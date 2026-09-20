@@ -7,7 +7,7 @@ struct VirtualShadowPageClearUniforms
 };
 
 ConstantBuffer<VirtualShadowPageClearUniforms> PageClear;
-StructuredBuffer<uint2> ActivePhysicalPages;
+StructuredBuffer<uint4> ActivePhysicalPages;
 RWTexture2D<uint> ShadowPhysicalAtlas;
 
 [shader("compute")]

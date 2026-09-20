@@ -122,56 +122,34 @@ internal readonly record struct VirtualShadowPoolResetPassData(
     }
 }
 
-internal readonly record struct VirtualShadowFrameResetPassData(
-    GraphBufferId ActivePageCount,
-    GraphBufferId RasterRegionGrid,
-    GraphBufferId ClusterInvocationDispatchArguments,
-    GraphBufferId PageWorkDispatchArguments,
-    GraphBufferId AllocationFailures)
+internal readonly record struct VirtualShadowReceiverMaskResetPassData(
+    GraphBufferId ReceiverMasks)
 {
     internal static void Declare(
         ref PassDefinition access,
-        ref VirtualShadowFrameResetPassData data)
-    {
-        Write(ref access, data.ActivePageCount);
-        Write(ref access, data.RasterRegionGrid);
-        Write(ref access, data.ClusterInvocationDispatchArguments);
-        Write(ref access, data.PageWorkDispatchArguments);
-        Write(ref access, data.AllocationFailures);
-    }
-
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in VirtualShadowFrameResetPassData data)
-    {
-        Clear(ref commands, data.ActivePageCount);
-        Clear(ref commands, data.RasterRegionGrid);
-        Clear(ref commands, data.ClusterInvocationDispatchArguments);
-        Clear(ref commands, data.PageWorkDispatchArguments);
-        Clear(ref commands, data.AllocationFailures);
-    }
-
-    private static void Write(ref PassDefinition access, GraphBufferId buffer) =>
+        ref VirtualShadowReceiverMaskResetPassData data) =>
         _ = access.Write(
-            buffer,
+            data.ReceiverMasks,
             BufferRange.Whole,
             PipelineSync.Copy,
             ResourceAccess.CopyDestination,
             WriteCoverage.Complete);
 
-    private static void Clear(ref CopyPassCommandScope commands, GraphBufferId buffer)
+    internal static void Record(
+        ref CopyPassCommandScope commands,
+        in VirtualShadowReceiverMaskResetPassData data)
     {
-        Buffer resource = commands.GetBuffer(buffer);
-        commands.ClearBuffer(resource, new BufferRange(0, resource.Info.Size));
+        Buffer buffer = commands.GetBuffer(data.ReceiverMasks);
+        commands.ClearBuffer(buffer, new BufferRange(0, buffer.Info.Size));
     }
 }
 
-internal readonly record struct VirtualShadowBufferClearPassData(GraphBufferInput Buffer)
+internal readonly record struct VirtualShadowBufferResetPassData(GraphBufferId Buffer)
 {
     internal static void Declare(
         ref PassDefinition access,
-        ref VirtualShadowBufferClearPassData data)
-        => _ = access.Write(
+        ref VirtualShadowBufferResetPassData data) =>
+        _ = access.Write(
             data.Buffer,
             BufferRange.Whole,
             PipelineSync.Copy,
@@ -180,55 +158,31 @@ internal readonly record struct VirtualShadowBufferClearPassData(GraphBufferInpu
 
     internal static void Record(
         ref CopyPassCommandScope commands,
-        in VirtualShadowBufferClearPassData data)
+        in VirtualShadowBufferResetPassData data)
     {
-        BufferRegion buffer = commands.GetBufferRegion(data.Buffer);
-        commands.ClearBuffer(buffer.Buffer, buffer.Range);
+        Buffer buffer = commands.GetBuffer(data.Buffer);
+        commands.ClearBuffer(buffer, new BufferRange(0, buffer.Info.Size));
     }
 }
 
-internal readonly record struct VirtualShadowPageTableCopyData(
-    GraphBufferInput Source,
-    GraphBufferInput Destination,
-    ulong ByteCount,
-    bool HasHistory)
+internal readonly record struct VirtualShadowInputBufferResetPassData(GraphBufferInput Buffer)
 {
     internal static void Declare(
         ref PassDefinition access,
-        ref VirtualShadowPageTableCopyData data)
-    {
-        if (data.HasHistory)
-        {
-            _ = access.Read(
-                data.Source,
-                BufferRange.Whole,
-                PipelineSync.Copy,
-                ResourceAccess.CopySource);
-        }
+        ref VirtualShadowInputBufferResetPassData data) =>
         _ = access.Write(
-            data.Destination,
+            data.Buffer,
             BufferRange.Whole,
             PipelineSync.Copy,
             ResourceAccess.CopyDestination,
             WriteCoverage.Complete);
-    }
 
     internal static void Record(
         ref CopyPassCommandScope commands,
-        in VirtualShadowPageTableCopyData data)
+        in VirtualShadowInputBufferResetPassData data)
     {
-        BufferRegion destination = commands.GetBufferRegion(data.Destination);
-        if (!data.HasHistory)
-        {
-            commands.ClearBuffer(destination.Buffer, new BufferRange(destination.Range.Offset, data.ByteCount));
-            return;
-        }
-        BufferRegion source = commands.GetBufferRegion(data.Source);
-        commands.CopyBuffer(new BufferCopy(
-            source.Buffer,
-            source.Range.Offset,
-            destination.Buffer,
-            destination.Range.Offset,
-            data.ByteCount));
+        BufferRegion region = commands.GetBufferRegion(data.Buffer);
+        commands.ClearBuffer(region.Buffer, region.Range);
     }
 }
+

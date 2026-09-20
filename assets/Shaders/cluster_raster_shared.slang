@@ -11,6 +11,13 @@ static const uint CLUSTER_RASTER_MAX_CLIPPED_VERTICES = 16u;
 
 interface IClusterRasterOutput
 {
+    int4 scissor(
+        uint visibleClusterIndex,
+        uint targetPolicy,
+        uint targetViewIndex,
+        uint screenWidth,
+        uint screenHeight);
+
     void write(
         int2 pixel,
         uint viewIndex,
@@ -29,6 +36,10 @@ struct ClusterRasterTriangle
     float C1;
     float C2;
     float3 DepthPlane;
+    float2 Screen0;
+    float2 Screen1;
+    float2 Screen2;
+    float3 InvW;
     int2 MinPixel;
     int2 MaxPixel;
     uint Valid;
@@ -58,29 +69,43 @@ uint ClusterRasterClipMask(float4 value)
 
 uint ClusterRasterClipTriangle(
     float4 source[3],
-    out float4 clipped[CLUSTER_RASTER_MAX_CLIPPED_VERTICES])
+    uint clipPlanes,
+    out float4 clipped[CLUSTER_RASTER_MAX_CLIPPED_VERTICES],
+    out float3 clippedSourceBarycentric[CLUSTER_RASTER_MAX_CLIPPED_VERTICES])
 {
     float4 first[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
     float4 second[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
+    float3 firstSourceBarycentric[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
+    float3 secondSourceBarycentric[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
     first[0] = source[0];
     first[1] = source[1];
     first[2] = source[2];
+    firstSourceBarycentric[0] = float3(1.0, 0.0, 0.0);
+    firstSourceBarycentric[1] = float3(0.0, 1.0, 0.0);
+    firstSourceBarycentric[2] = float3(0.0, 0.0, 1.0);
     uint count = 3u;
+    if (!all(isfinite(source[0])) || !all(isfinite(source[1])) || !all(isfinite(source[2])))
+        clipPlanes = 127u;
 
     [loop]
     for (uint plane = 0u; plane < 7u; plane++)
     {
+        // A plane whose vertices are all inside cannot change this polygon.
+        if ((clipPlanes & (1u << plane)) == 0u)
+            continue;
         uint outputCount = 0u;
         if (count == 0u)
             break;
 
         float4 previous = first[count - 1u];
+        float3 previousSourceBarycentric = firstSourceBarycentric[count - 1u];
         float previousDistance = ClusterRasterClipDistance(previous, plane);
         bool previousInside = previousDistance >= 0.0;
         [loop]
         for (uint index = 0u; index < count; index++)
         {
             float4 current = first[index];
+            float3 currentSourceBarycentric = firstSourceBarycentric[index];
             float currentDistance = ClusterRasterClipDistance(current, plane);
             bool currentInside = currentDistance >= 0.0;
 
@@ -90,13 +115,28 @@ uint ClusterRasterClipTriangle(
                 float amount = abs(denominator) > 1e-12
                     ? saturate(previousDistance / denominator)
                     : 0.0;
+                float4 intersection = lerp(previous, current, amount);
+                float3 sourceBarycentric = lerp(
+                    previousSourceBarycentric,
+                    currentSourceBarycentric,
+                    amount);
+                // Include newly rounded intersections, so later planes still handle
+                // a point that crosses a boundary through floating-point arithmetic.
+                clipPlanes |= all(isfinite(intersection)) ? ClusterRasterClipMask(intersection) : 127u;
                 if (outputCount < CLUSTER_RASTER_MAX_CLIPPED_VERTICES)
-                    second[outputCount++] = lerp(previous, current, amount);
+                {
+                    second[outputCount++] = intersection;
+                    secondSourceBarycentric[outputCount - 1u] = sourceBarycentric;
+                }
             }
             if (currentInside && outputCount < CLUSTER_RASTER_MAX_CLIPPED_VERTICES)
+            {
                 second[outputCount++] = current;
+                secondSourceBarycentric[outputCount - 1u] = currentSourceBarycentric;
+            }
 
             previous = current;
+            previousSourceBarycentric = currentSourceBarycentric;
             previousDistance = currentDistance;
             previousInside = currentInside;
         }
@@ -104,12 +144,22 @@ uint ClusterRasterClipTriangle(
         count = outputCount;
         [unroll]
         for (uint index = 0u; index < CLUSTER_RASTER_MAX_CLIPPED_VERTICES; index++)
+        {
             first[index] = index < count ? second[index] : 0.0.xxxx;
+            firstSourceBarycentric[index] = index < count
+                ? secondSourceBarycentric[index]
+                : 0.0.xxx;
+        }
     }
 
     [unroll]
     for (uint index = 0u; index < CLUSTER_RASTER_MAX_CLIPPED_VERTICES; index++)
+    {
         clipped[index] = index < count ? first[index] : 0.0.xxxx;
+        clippedSourceBarycentric[index] = index < count
+            ? firstSourceBarycentric[index]
+            : 0.0.xxx;
+    }
     return count;
 }
 
@@ -129,6 +179,11 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
         CLUSTER_RASTER_SUBPIXEL_SCALE_F;
     float2 v2 = (clipVerts[2].xy * inverseW.z * screenScale + screenBias) *
         CLUSTER_RASTER_SUBPIXEL_SCALE_F;
+
+    tri.Screen0 = v0 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
+    tri.Screen1 = v1 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
+    tri.Screen2 = v2 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
+    tri.InvW = inverseW;
 
     tri.Edge01 = v0 - v1;
     tri.Edge12 = v1 - v2;
@@ -179,18 +234,53 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
     return tri;
 }
 
+float3 ClusterRasterLinearBarycentric(
+    ClusterRasterTriangle triangle,
+    float2 pixelCenter)
+{
+    float2 edge0 = triangle.Screen1 - triangle.Screen0;
+    float2 edge1 = triangle.Screen2 - triangle.Screen0;
+    float2 point = pixelCenter - triangle.Screen0;
+    float determinant = edge0.x * edge1.y - edge0.y * edge1.x;
+    if (abs(determinant) <= 1e-12)
+        return float3(1.0, 0.0, 0.0);
+    float inverse = rcp(determinant);
+    float u = (point.x * edge1.y - point.y * edge1.x) * inverse;
+    float v = (edge0.x * point.y - edge0.y * point.x) * inverse;
+    return float3(1.0 - u - v, u, v);
+}
+
+float3 ClusterRasterPerspectiveBarycentric(
+    ClusterRasterTriangle triangle,
+    float3 linearBarycentric)
+{
+    float3 weighted = linearBarycentric * triangle.InvW;
+    float sum = weighted.x + weighted.y + weighted.z;
+    return abs(sum) > 1e-12
+        ? weighted / sum
+        : float3(1.0, 0.0, 0.0);
+}
+
 struct ClusterPixelRasterTask<
-    TPixel : IPixelEvaluate,
-    TOutput : IClusterRasterOutput> : IWaveTask
+    TVertex,
+    TVisibility : IVisibilityEvaluate<TVertex>,
+    TOutput : IClusterRasterOutput> : IWaveUniformTask<TVisibility>
 {
     ClusterRasterTriangle Triangle;
+    float3 SourceBarycentric0;
+    float3 SourceBarycentric1;
+    float3 SourceBarycentric2;
+    TVisibility.Varying Varying0;
+    TVisibility.Varying Varying1;
+    TVisibility.Varying Varying2;
     uint VisibilityValue;
+    uint VisibleClusterIndex;
+    uint TriangleID;
     uint ViewIndex;
     uint TargetPolicy;
     uint TargetViewIndex;
     uint PixelCount;
     uint Scanline;
-    TPixel Pixel;
     TOutput Output;
 
     [mutating] uint GetTaskCount()
@@ -198,7 +288,11 @@ struct ClusterPixelRasterTask<
         return PixelCount;
     }
 
-    [mutating] void ExecuteTask(uint sourceLane, uint localIndex, bool active)
+    [mutating] void ExecuteTask(
+        uniform TVisibility visibility,
+        uint sourceLane,
+        uint localIndex,
+        bool active)
     {
         ClusterRasterTriangle triangle;
         triangle.Edge01 = float2(
@@ -223,11 +317,41 @@ struct ClusterPixelRasterTask<
             WaveReadLaneAt(Triangle.DepthPlane.x, sourceLane),
             WaveReadLaneAt(Triangle.DepthPlane.y, sourceLane),
             WaveReadLaneAt(Triangle.DepthPlane.z, sourceLane));
+        triangle.Screen0 = float2(
+            WaveReadLaneAt(Triangle.Screen0.x, sourceLane),
+            WaveReadLaneAt(Triangle.Screen0.y, sourceLane));
+        triangle.Screen1 = float2(
+            WaveReadLaneAt(Triangle.Screen1.x, sourceLane),
+            WaveReadLaneAt(Triangle.Screen1.y, sourceLane));
+        triangle.Screen2 = float2(
+            WaveReadLaneAt(Triangle.Screen2.x, sourceLane),
+            WaveReadLaneAt(Triangle.Screen2.y, sourceLane));
+        triangle.InvW = float3(
+            WaveReadLaneAt(Triangle.InvW.x, sourceLane),
+            WaveReadLaneAt(Triangle.InvW.y, sourceLane),
+            WaveReadLaneAt(Triangle.InvW.z, sourceLane));
+        float3 sourceBarycentric0 = float3(
+            WaveReadLaneAt(SourceBarycentric0.x, sourceLane),
+            WaveReadLaneAt(SourceBarycentric0.y, sourceLane),
+            WaveReadLaneAt(SourceBarycentric0.z, sourceLane));
+        float3 sourceBarycentric1 = float3(
+            WaveReadLaneAt(SourceBarycentric1.x, sourceLane),
+            WaveReadLaneAt(SourceBarycentric1.y, sourceLane),
+            WaveReadLaneAt(SourceBarycentric1.z, sourceLane));
+        float3 sourceBarycentric2 = float3(
+            WaveReadLaneAt(SourceBarycentric2.x, sourceLane),
+            WaveReadLaneAt(SourceBarycentric2.y, sourceLane),
+            WaveReadLaneAt(SourceBarycentric2.z, sourceLane));
         uint visibilityValue = WaveReadLaneAt(VisibilityValue, sourceLane);
+        uint visibleClusterIndex = WaveReadLaneAt(VisibleClusterIndex, sourceLane);
+        uint triangleID = WaveReadLaneAt(TriangleID, sourceLane);
         uint viewIndex = WaveReadLaneAt(ViewIndex, sourceLane);
         uint targetPolicy = WaveReadLaneAt(TargetPolicy, sourceLane);
         uint targetViewIndex = WaveReadLaneAt(TargetViewIndex, sourceLane);
         uint scanline = WaveReadLaneAt(Scanline, sourceLane);
+        TVisibility.Varying varying0 = visibility.readLane(Varying0, sourceLane);
+        TVisibility.Varying varying1 = visibility.readLane(Varying1, sourceLane);
+        TVisibility.Varying varying2 = visibility.readLane(Varying2, sourceLane);
         if (!active)
             return;
 
@@ -271,10 +395,71 @@ struct ClusterPixelRasterTask<
                 triangle.DepthPlane.x +
                 triangle.DepthPlane.y * edge1 +
                 triangle.DepthPlane.z * edge2);
-            PixelEvaluateInput pixelInput;
+            float3 fanLinear = ClusterRasterLinearBarycentric(
+                triangle,
+                float2(pixel) + 0.5);
+            float3 fanPerspective = ClusterRasterPerspectiveBarycentric(
+                triangle,
+                fanLinear);
+            float3 fanLinearX = ClusterRasterLinearBarycentric(
+                triangle,
+                float2(pixel) + float2(1.5, 0.5));
+            float3 fanLinearY = ClusterRasterLinearBarycentric(
+                triangle,
+                float2(pixel) + float2(0.5, 1.5));
+            float3 fanPerspectiveX = ClusterRasterPerspectiveBarycentric(
+                triangle,
+                fanLinearX);
+            float3 fanPerspectiveY = ClusterRasterPerspectiveBarycentric(
+                triangle,
+                fanLinearY);
+            VisibilityInterpolationInput interpolation;
+            interpolation.LinearBarycentric =
+                sourceBarycentric0 * fanLinear.x +
+                sourceBarycentric1 * fanLinear.y +
+                sourceBarycentric2 * fanLinear.z;
+            interpolation.PerspectiveBarycentric =
+                sourceBarycentric0 * fanPerspective.x +
+                sourceBarycentric1 * fanPerspective.y +
+                sourceBarycentric2 * fanPerspective.z;
+            float3 linearX =
+                sourceBarycentric0 * fanLinearX.x +
+                sourceBarycentric1 * fanLinearX.y +
+                sourceBarycentric2 * fanLinearX.z;
+            float3 linearY =
+                sourceBarycentric0 * fanLinearY.x +
+                sourceBarycentric1 * fanLinearY.y +
+                sourceBarycentric2 * fanLinearY.z;
+            float3 perspectiveX =
+                sourceBarycentric0 * fanPerspectiveX.x +
+                sourceBarycentric1 * fanPerspectiveX.y +
+                sourceBarycentric2 * fanPerspectiveX.z;
+            float3 perspectiveY =
+                sourceBarycentric0 * fanPerspectiveY.x +
+                sourceBarycentric1 * fanPerspectiveY.y +
+                sourceBarycentric2 * fanPerspectiveY.z;
+            interpolation.LinearBarycentricDx =
+                linearX - interpolation.LinearBarycentric;
+            interpolation.LinearBarycentricDy =
+                linearY - interpolation.LinearBarycentric;
+            interpolation.PerspectiveBarycentricDx =
+                perspectiveX - interpolation.PerspectiveBarycentric;
+            interpolation.PerspectiveBarycentricDy =
+                perspectiveY - interpolation.PerspectiveBarycentric;
+            TVisibility.Varying varying = visibility.interpolatePixel(
+                varying0,
+                varying1,
+                varying2,
+                interpolation);
+            VisibilityPixelInput pixelInput;
             pixelInput.PixelCoord = uint3(pixel, viewIndex);
             pixelInput.Depth = depth;
-            PixelEvaluateResult pixelResult = Pixel.evaluate(pixelInput);
+            pixelInput.VisibleClusterIndex = visibleClusterIndex;
+            pixelInput.TriangleID = triangleID;
+            pixelInput.ViewIndex = viewIndex;
+            pixelInput.TargetPolicy = targetPolicy;
+            pixelInput.TargetViewIndex = targetViewIndex;
+            VisibilityPixelResult pixelResult = visibility.evaluate(pixelInput, varying);
             if (pixelResult.Visible == 0u)
                 continue;
             Output.write(
@@ -289,13 +474,16 @@ struct ClusterPixelRasterTask<
 };
 
 void RasterizeClusterTriangleWave<
-    TPixel : IPixelEvaluate,
+    TVertex,
+    TVisibility : IVisibilityEvaluate<TVertex>,
     TOutput : IClusterRasterOutput>(
-    uniform TPixel pixel,
+    uniform TVisibility visibility,
     uniform TOutput output,
     float4 clipVerts[3],
+    TVisibility.Varying varyings[3],
     int4 scissorRect,
-    uint visibilityValue,
+    uint visibleClusterIndex,
+    uint triangleID,
     uint viewIndex,
     uint targetPolicy,
     uint targetViewIndex,
@@ -309,9 +497,14 @@ void RasterizeClusterTriangleWave<
     sourceActive = sourceActive && ((mask0 & mask1 & mask2) == 0u);
     bool needsClipping = sourceActive && ((mask0 | mask1 | mask2) != 0u);
     float4 clipped[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
+    float3 clippedSourceBarycentric[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
     uint clippedCount = sourceActive ? 3u : 0u;
     if (needsClipping)
-        clippedCount = ClusterRasterClipTriangle(clipVerts, clipped);
+        clippedCount = ClusterRasterClipTriangle(
+            clipVerts,
+            mask0 | mask1 | mask2,
+            clipped,
+            clippedSourceBarycentric);
     uint fanTriangleCount = clippedCount >= 3u ? clippedCount - 2u : 0u;
     uint waveTriangleCount = WaveActiveMax(fanTriangleCount);
 
@@ -325,17 +518,42 @@ void RasterizeClusterTriangleWave<
             active ? (needsClipping ? clipped[fanIndex + 1u] : clipVerts[1]) : float4(0.0, 0.0, 0.0, 1.0),
             active ? (needsClipping ? clipped[fanIndex + 2u] : clipVerts[2]) : float4(0.0, 0.0, 0.0, 1.0),
         };
+        float3 fanSourceBarycentric[3] =
+        {
+            active
+                ? (needsClipping
+                    ? clippedSourceBarycentric[0]
+                    : float3(1.0, 0.0, 0.0))
+                : 0.0.xxx,
+            active
+                ? (needsClipping
+                    ? clippedSourceBarycentric[fanIndex + 1u]
+                    : float3(0.0, 1.0, 0.0))
+                : 0.0.xxx,
+            active
+                ? (needsClipping
+                    ? clippedSourceBarycentric[fanIndex + 2u]
+                    : float3(0.0, 0.0, 1.0))
+                : 0.0.xxx,
+        };
         ClusterRasterTriangle rasterTriangle = active
             ? SetupClusterRasterTriangle(fan, scissorRect, screenWidth, screenHeight)
             : (ClusterRasterTriangle)0;
 
-        ClusterPixelRasterTask<TPixel, TOutput> task;
+        ClusterPixelRasterTask<TVertex, TVisibility, TOutput> task;
         task.Triangle = rasterTriangle;
-        task.VisibilityValue = visibilityValue;
+        task.SourceBarycentric0 = fanSourceBarycentric[0];
+        task.SourceBarycentric1 = fanSourceBarycentric[1];
+        task.SourceBarycentric2 = fanSourceBarycentric[2];
+        task.Varying0 = varyings[0];
+        task.Varying1 = varyings[1];
+        task.Varying2 = varyings[2];
+        task.VisibilityValue = EncodeVisBuffer(visibleClusterIndex, triangleID);
+        task.VisibleClusterIndex = visibleClusterIndex;
+        task.TriangleID = triangleID;
         task.ViewIndex = viewIndex;
         task.TargetPolicy = targetPolicy;
         task.TargetViewIndex = targetViewIndex;
-        task.Pixel = pixel;
         task.Output = output;
         if (active && rasterTriangle.Valid != 0u)
         {
@@ -354,7 +572,8 @@ void RasterizeClusterTriangleWave<
             task.PixelCount = 0u;
             task.Scanline = 0u;
         }
-        WaveQueue::Distribute(task);
+        WaveQueue::DistributeWithUniform<TVisibility,
+            ClusterPixelRasterTask<TVertex, TVisibility, TOutput>>(task, visibility);
     }
 }
 

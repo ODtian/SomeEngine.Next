@@ -11,6 +11,8 @@ namespace SomeEngine.Render.Cluster;
 /// </summary>
 public sealed class ClusterResidencySystem : ISystem<RenderPrepareSystemContext>
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace =
+        new("render", "Prepare.ClusterResidency");
     private readonly ClusterRenderResources _resources;
 
     public ClusterResidencySystem(ClusterRenderResources resources)
@@ -25,6 +27,7 @@ public sealed class ClusterResidencySystem : ISystem<RenderPrepareSystemContext>
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         RequireWorld(context.World);
         LastResult = _resources.Prepare(context.ActiveScope);
     }
@@ -50,6 +53,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
     IRenderInstanceBatchSource<RenderInstanceSingleGroup>
     where TProducer : struct, IRenderInstanceProducer
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace =
+        new("render", "Prepare.ClusterInstances");
     private readonly ClusterRenderResources _resources;
     private readonly QueryDefinition _entities;
     private readonly ClusterBatchComposer _composer;
@@ -95,6 +100,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         RequireWorld(context.World);
         if (!_created)
             throw new InvalidOperationException("The Cluster instance system was not created.");
@@ -175,6 +181,13 @@ public sealed class ClusterInstanceSystem<TProducer> :
             ReadOnlyQueryPacket packet,
             uint lastSystemVersion) =>
             producer.GetChanges(packet, lastSystemVersion);
+
+        public bool AllRowsChanged(
+            ReadOnlyQueryPacket packet,
+            uint lastSystemVersion) =>
+            packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
+            || packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion)
+            || packet.AllRowsChangedSince<RenderMesh>(lastSystemVersion);
 
         public int CountGroups(ReadOnlyQueryPacket packet, int entityRow) => 1;
 

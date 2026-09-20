@@ -5,6 +5,7 @@ internal sealed partial class FrameExecutor
     private bool _submissionsInitialized;
     private Queue?[] _submissionQueues = [];
     private readonly HashSet<int> _submissionUpdates = [];
+    private readonly HashSet<int> _submissionMergeCandidates = [];
     private readonly HashSet<int> _submissionCycleSeeds = [];
     private readonly HashSet<int> _submissionWaveChanges = [];
     private readonly HashSet<int> _emptySubmissions = [];
@@ -85,7 +86,8 @@ internal sealed partial class FrameExecutor
                 split = true;
                 break;
             }
-            if (!split) break;
+            if (split) continue;
+            if (!MergeAdjacentSubmissions()) break;
         }
 
         foreach (int submission in _changedSubmissions)
@@ -164,6 +166,10 @@ internal sealed partial class FrameExecutor
             passes.Sort((left, right) => _executionOrder.Position(left).CompareTo(_executionOrder.Position(right)));
             break;
         }
+        _submissionMergeCandidates.Add(submission);
+        int nextPass = _sameQueueSuccessor[passes[^1]];
+        if (nextPass >= 0 && _submissionByPass[nextPass] >= 0)
+            _submissionMergeCandidates.Add(_submissionByPass[nextPass]);
         _dependencySet.Clear();
         foreach (int pass in passes)
         {
@@ -197,6 +203,58 @@ internal sealed partial class FrameExecutor
             int dependency = _submissionByPass[pass];
             if (dependency >= 0 && dependency != submission) _dependencySet.Add(dependency);
         }
+    }
+
+    private bool MergeAdjacentSubmissions()
+    {
+        while (_submissionMergeCandidates.Count != 0)
+        {
+            int later = _submissionMergeCandidates.First();
+            _submissionMergeCandidates.Remove(later);
+            List<int> laterPasses = _submissionPasses[later];
+            if (laterPasses.Count == 0) continue;
+            int previousPass = _sameQueuePredecessor[laterPasses[0]];
+            if (previousPass < 0) continue;
+            int earlier = _submissionByPass[previousPass];
+            if (earlier < 0 || earlier == later ||
+                !ReferenceEquals(_submissionQueues[earlier], _submissionQueues[later])) continue;
+            List<int> earlierPasses = _submissionPasses[earlier];
+            if (earlierPasses.Count == 0 || earlierPasses[^1] != previousPass) continue;
+
+            bool compatible = true;
+            // The earlier work must not acquire a wait it did not already have.
+            foreach (int dependency in _submissionDependencies[later])
+                if (dependency != earlier && !SubmissionDependsOn(earlier, dependency, _submissionCount))
+                {
+                    compatible = false;
+                    break;
+                }
+            if (!compatible) continue;
+            // A consumer that could start after the earlier batch must already
+            // require the later batch, so merging cannot postpone its release.
+            foreach (int consumer in _submissionConsumers[earlier])
+                if (consumer != later && !SubmissionDependsOn(consumer, later, _submissionCount))
+                {
+                    compatible = false;
+                    break;
+                }
+            if (!compatible) continue;
+
+            ChangeSubmissionMembers(earlier);
+            ChangeSubmissionMembers(later);
+            QueueSubmissionConsumers(earlier);
+            QueueSubmissionConsumers(later);
+            foreach (int pass in laterPasses)
+            {
+                earlierPasses.Add(pass);
+                _submissionByPass[pass] = earlier;
+                foreach (int consumer in _successors[pass]) QueuePassSubmission(consumer);
+                QueuePassSubmission(_sameQueueSuccessor[pass]);
+            }
+            laterPasses.Clear();
+            return true;
+        }
+        return false;
     }
 
     private bool FindSubmissionCycle(int start)

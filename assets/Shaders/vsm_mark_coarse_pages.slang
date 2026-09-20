@@ -10,17 +10,21 @@ struct VirtualShadowCoarsePageDemandUniforms
 
 ConstantBuffer<VirtualShadowCoarsePageDemandUniforms> CoarsePageDemand;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
-RWStructuredBuffer<uint> RequestedShadowPages;
+#include "vsm_page_request_common.slang"
 
-void PublishCoarsePage(
-    VirtualShadowMapParameters shadowView,
-    int2 coarseWorldPage)
+void PublishPage(
+    VirtualShadowMapParameters view,
+    uint mipLevel,
+    uint2 localPage)
 {
-    uint tableIndex = VirtualShadowCoarsePageTableIndex(
-        shadowView,
-        coarseWorldPage);
-    if (tableIndex < CoarsePageDemand.PageTableEntryCount)
-        RequestedShadowPages[tableIndex] = CoarsePageDemand.FrameIndex;
+    uint tableIndex = VirtualShadowPageTableIndex(view, mipLevel, localPage);
+    PublishVirtualShadowRequest(
+        tableIndex,
+        VSM_PAGE_REQUEST_COARSE,
+        CoarsePageDemand.FrameIndex,
+        CoarsePageDemand.PageTableEntryCount);
+    if ((view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
+        MarkVirtualShadowFullReceiverMask(tableIndex);
 }
 
 [shader("compute")]
@@ -30,21 +34,32 @@ void MarkVirtualShadowCoarsePages(uint3 dispatchThreadId : SV_DispatchThreadID)
     uint viewIndex = dispatchThreadId.x;
     if (viewIndex >= CoarsePageDemand.ViewCount)
         return;
+    VirtualShadowMapParameters view = ShadowViews[viewIndex];
 
-    VirtualShadowMapParameters shadowView = ShadowViews[viewIndex];
-    uint center = shadowView.VirtualResolution >> 1u;
-    int2 centerPage = VirtualShadowCoarseWorldPage(
-        shadowView,
-        uint2(center, center));
-
-    // Local-light maps need one lowest-mip representative. Directional clipmaps retain a
-    // two-by-two central footprint so clipmap scrolling never leaves the camera-side seam
-    // without coarse coverage.
-    PublishCoarsePage(shadowView, centerPage);
-    if (shadowView.LightKind != VSM_LIGHT_DIRECTIONAL)
+    if (view.LightKind == VSM_LIGHT_DIRECTIONAL)
+    {
+        int lastClipmapLevel =
+            view.FirstClipmapLevel + int(max(view.ClipmapLevelCount, 1u)) - 1;
+        if (view.ClipmapLevel == lastClipmapLevel)
+        {
+            uint lastMip = max(view.MipLevelCount, 1u) - 1u;
+            PublishPage(view, lastMip, 0u.xx);
+        }
+        if ((view.Flags & VSM_VIEW_COARSE_CLIP_LEVEL) == 0u)
+            return;
+        // UE-style directional coarse coverage: selected clipmap levels contribute only
+        // the center pages. Sampling continues into coarser clipmaps when this view
+        // has no resident page.
+        uint dimension = VirtualShadowMipPagesPerRow(view, 0u);
+        uint2 low = max(dimension / 2u, 1u) - 1u;
+        uint2 high = min(low + 1u, dimension - 1u);
+        PublishPage(view, 0u, uint2(low.x, low.y));
+        PublishPage(view, 0u, uint2(low.x, high.y));
+        PublishPage(view, 0u, uint2(high.x, low.y));
+        PublishPage(view, 0u, uint2(high.x, high.y));
         return;
+    }
 
-    PublishCoarsePage(shadowView, centerPage + int2(-1, 0));
-    PublishCoarsePage(shadowView, centerPage + int2(0, -1));
-    PublishCoarsePage(shadowView, centerPage + int2(-1, -1));
+    uint lastMip = max(view.MipLevelCount, 1u) - 1u;
+    PublishPage(view, lastMip, 0u.xx);
 }

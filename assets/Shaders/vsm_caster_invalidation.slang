@@ -7,15 +7,64 @@ struct VirtualShadowInvalidationUniforms
     uint ViewCount;
     uint PageTableEntryCount;
     uint PageDilation;
+    uint FrameIndex;
+    uint HierarchyWordsPerView;
+    uint Pad1;
+    uint Pad2;
 };
 
 ConstantBuffer<VirtualShadowInvalidationUniforms> Invalidation;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
 StructuredBuffer<float4> InstanceWorldBounds;
+StructuredBuffer<uint> ChangedInstances;
+StructuredBuffer<uint> RequestedShadowPages;
+StructuredBuffer<uint> RequestedPageFlags;
+StructuredBuffer<uint4> PageMetadata;
+StructuredBuffer<uint> AllocatedPageHierarchy;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint4> ShadowPageTable;
 
-StructuredBuffer<uint> ChangedInstances;
+bool OverlapsAllocatedPages(
+    uint viewIndex,
+    VirtualShadowMapParameters view,
+    uint mipLevel,
+    uint2 low,
+    uint2 high)
+{
+    uint2 extent = high - low + 1u;
+    uint maximumExtent = max(extent.x, extent.y);
+    uint hierarchyLevel =
+        maximumExtent > 1u ? uint(firstbithigh(maximumExtent)) : 0u;
+    uint maxHierarchyLevel =
+        uint(firstbithigh(max(VirtualShadowMipPagesPerRow(view, mipLevel), 1u)));
+    hierarchyLevel = min(hierarchyLevel, maxHierarchyLevel);
+
+    uint2 first = low >> hierarchyLevel;
+    uint2 last = high >> hierarchyLevel;
+    uint dimension =
+        VirtualShadowPageHierarchyDimension(view, mipLevel, hierarchyLevel);
+    uint wordsPerRow = (dimension + 31u) / 32u;
+    uint base =
+        viewIndex * Invalidation.HierarchyWordsPerView +
+        VirtualShadowPageHierarchyLevelOffset(view, mipLevel, hierarchyLevel);
+    uint firstWord = first.x / 32u;
+    uint lastWord = last.x / 32u;
+
+    for (uint row = first.y; row <= last.y; row++)
+    {
+        for (uint word = firstWord; word <= lastWord; word++)
+        {
+            uint mask = AllocatedPageHierarchy[base + row * wordsPerRow + word];
+            if (word == firstWord)
+                mask &= 0xFFFFFFFFu << (first.x & 31u);
+            if (word == lastWord)
+                mask &= 0xFFFFFFFFu >> (31u - (last.x & 31u));
+            if (mask != 0u)
+                return true;
+        }
+    }
+    return false;
+}
 
 bool ProjectShadowBounds(
     VirtualShadowMapParameters view,
@@ -24,23 +73,17 @@ bool ProjectShadowBounds(
     out float2 uvMin,
     out float2 uvMax)
 {
-    float3 corners[8];
-    corners[0] = float3(worldMin.x, worldMin.y, worldMin.z);
-    corners[1] = float3(worldMax.x, worldMin.y, worldMin.z);
-    corners[2] = float3(worldMin.x, worldMax.y, worldMin.z);
-    corners[3] = float3(worldMax.x, worldMax.y, worldMin.z);
-    corners[4] = float3(worldMin.x, worldMin.y, worldMax.z);
-    corners[5] = float3(worldMax.x, worldMin.y, worldMax.z);
-    corners[6] = float3(worldMin.x, worldMax.y, worldMax.z);
-    corners[7] = float3(worldMax.x, worldMax.y, worldMax.z);
-
     float2 ndcMin = 1e20.xx;
     float2 ndcMax = -1e20.xx;
     bool anyPoint = false;
     [unroll]
     for (uint corner = 0u; corner < 8u; corner++)
     {
-        float4 clip = mul(float4(corners[corner], 1.0), view.LightViewProjection);
+        float3 position = float3(
+            (corner & 1u) != 0u ? worldMax.x : worldMin.x,
+            (corner & 2u) != 0u ? worldMax.y : worldMin.y,
+            (corner & 4u) != 0u ? worldMax.z : worldMin.z);
+        float4 clip = mul(float4(position, 1.0), view.LightViewProjection);
         if (clip.w <= 1e-5)
         {
             uvMin = 0.0.xx;
@@ -68,60 +111,74 @@ bool ProjectShadowBounds(
     return true;
 }
 
-groupshared uint4 FineRect[2];
-groupshared int4 CoarseRect[2];
-
-void BuildShadowRect(uint index, VirtualShadowMapParameters view, float3 worldMin, float3 worldMax)
+bool BoundsOutsideLocalLight(
+    VirtualShadowMapParameters view,
+    float3 worldMin,
+    float3 worldMax)
 {
-    float2 uvMin;
-    float2 uvMax;
-    if (any(worldMin > worldMax) || !ProjectShadowBounds(view, worldMin, worldMax, uvMin, uvMax))
-    {
-        FineRect[index] = uint4(1u, 1u, 0u, 0u);
-        CoarseRect[index] = int4(1, 1, 0, 0);
-        return;
-    }
-    uint dimension = VirtualShadowPagesPerRow(view);
-    uint2 low = min((uint2)(uvMin * float(dimension)), dimension - 1u);
-    uint2 high = min((uint2)(uvMax * float(dimension)), dimension - 1u);
-    low -= min(low, Invalidation.PageDilation.xx);
-    high = min(high + Invalidation.PageDilation, dimension - 1u);
-    FineRect[index] = uint4(low, high);
-    // Both levels cover the same dilated footprint, including fractional clipmap origins.
-    uint2 virtualMin = low * view.PageSize;
-    uint2 virtualMax = min((high + 1u) * view.PageSize - 1u, view.VirtualResolution - 1u);
-    CoarseRect[index] = int4(VirtualShadowCoarseWorldPage(view, virtualMin),
-        VirtualShadowCoarseWorldPage(view, virtualMax));
+    if (view.LightKind == VSM_LIGHT_DIRECTIONAL || view.LightRange <= 0.0)
+        return false;
+    float3 center = (worldMin + worldMax) * 0.5;
+    float radius = length((worldMax - worldMin) * 0.5);
+    float3 delta = center - view.LightPosition;
+    float limit = view.LightRange + radius;
+    return dot(delta, delta) > limit * limit;
 }
 
-void InvalidateShadowRect(uint index, uint lane, VirtualShadowMapParameters view)
+void InvalidateBoundsInView(
+    uint viewIndex,
+    VirtualShadowMapParameters view,
+    float3 worldMin,
+    float3 worldMax)
 {
-    uint4 fine = FineRect[index];
-    if (any(fine.xy > fine.zw))
+    if (any(worldMin > worldMax) || BoundsOutsideLocalLight(view, worldMin, worldMax))
         return;
-    uint2 extent = fine.zw - fine.xy + 1u;
-    for (uint cell = lane; cell < extent.x * extent.y; cell += 64u)
+    float2 uvMin;
+    float2 uvMax;
+    if (!ProjectShadowBounds(view, worldMin, worldMax, uvMin, uvMax))
+        return;
+
+    uint firstMip = view.LightKind == VSM_LIGHT_DIRECTIONAL ? 0u : view.MinMipLevel;
+    uint mipCount = view.LightKind == VSM_LIGHT_DIRECTIONAL
+        ? 1u
+        : max(view.MipLevelCount, 1u);
+
+    [loop]
+    for (uint mip = firstMip; mip < mipCount; mip++)
     {
-        uint2 local = fine.xy + uint2(cell % extent.x, cell / extent.x);
-        uint tableIndex = VirtualShadowPageTableIndex(view, local);
-        if (tableIndex < Invalidation.PageTableEntryCount &&
-            IsVirtualShadowPageTag(ShadowPageTable[tableIndex], VirtualShadowWorldPage(view, local)))
+        uint dimension = VirtualShadowMipPagesPerRow(view, mip);
+        uint2 low = min((uint2)(uvMin * float(dimension)), dimension - 1u);
+        uint2 high = min((uint2)(uvMax * float(dimension)), dimension - 1u);
+        low -= min(low, Invalidation.PageDilation.xx);
+        high = min(high + Invalidation.PageDilation, dimension - 1u);
+        if (!OverlapsAllocatedPages(viewIndex, view, mip, low, high))
+            continue;
+        [loop]
+        for (uint y = low.y; y <= high.y; y++)
         {
-            uint ignored;
-            InterlockedExchange(ShadowPageTable[tableIndex].w, 0u, ignored);
-        }
-    }
-    int4 coarse = CoarseRect[index];
-    extent = uint2(coarse.zw - coarse.xy + 1);
-    for (uint cell = lane; cell < extent.x * extent.y; cell += 64u)
-    {
-        int2 world = coarse.xy + int2(cell % extent.x, cell / extent.x);
-        uint tableIndex = VirtualShadowCoarsePageTableIndex(view, world);
-        if (tableIndex < Invalidation.PageTableEntryCount &&
-            IsVirtualShadowPageTag(ShadowPageTable[tableIndex], world))
-        {
-            uint ignored;
-            InterlockedExchange(ShadowPageTable[tableIndex].w, 0u, ignored);
+            [loop]
+            for (uint x = low.x; x <= high.x; x++)
+            {
+                uint2 localPage = uint2(x, y);
+                uint tableIndex = VirtualShadowPageTableIndex(view, mip, localPage);
+                if (tableIndex >= Invalidation.PageTableEntryCount)
+                    continue;
+                int2 worldPage = VirtualShadowWorldPage(view, mip, localPage);
+                uint4 entry = ShadowPageTable[tableIndex];
+                if (!IsVirtualShadowPageTag(entry, worldPage) ||
+                    entry.x == VSM_PAGE_UNMAPPED || entry.x == VSM_PAGE_LOCKED)
+                {
+                    continue;
+                }
+                uint atlasPage;
+                if (!DecodeVirtualShadowPage(entry.x, atlasPage))
+                    continue;
+                uint requestFlags = PageMetadata[atlasPage].z;
+                if (RequestedShadowPages[tableIndex] == Invalidation.FrameIndex)
+                    requestFlags = RequestedPageFlags[tableIndex];
+                uint ignored;
+                InterlockedExchange(ShadowPageTable[tableIndex].w, 0u, ignored);
+            }
         }
     }
 }
@@ -131,18 +188,18 @@ void InvalidateShadowRect(uint index, uint lane, VirtualShadowMapParameters view
 void InvalidateMovedVirtualShadowCasters(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
 {
     uint changedIndex = group.x + group.y * 65535u;
-    if (changedIndex >= Invalidation.ChangedInstanceCount || group.z >= Invalidation.ViewCount)
+    if (changedIndex >= Invalidation.ChangedInstanceCount)
         return;
     uint instanceId = ChangedInstances[changedIndex];
-    VirtualShadowMapParameters view = ShadowViews[group.z];
-    if (lane == 0u)
+    float3 currentMin = InstanceWorldBounds[instanceId * 4u].xyz;
+    float3 currentMax = InstanceWorldBounds[instanceId * 4u + 1u].xyz;
+    float3 previousMin = InstanceWorldBounds[instanceId * 4u + 2u].xyz;
+    float3 previousMax = InstanceWorldBounds[instanceId * 4u + 3u].xyz;
+
+    for (uint viewIndex = lane; viewIndex < Invalidation.ViewCount; viewIndex += 64u)
     {
-        BuildShadowRect(0u, view, InstanceWorldBounds[instanceId * 4u].xyz,
-            InstanceWorldBounds[instanceId * 4u + 1u].xyz);
-        BuildShadowRect(1u, view, InstanceWorldBounds[instanceId * 4u + 2u].xyz,
-            InstanceWorldBounds[instanceId * 4u + 3u].xyz);
+        VirtualShadowMapParameters view = ShadowViews[viewIndex];
+        InvalidateBoundsInView(viewIndex, view, currentMin, currentMax);
+        InvalidateBoundsInView(viewIndex, view, previousMin, previousMax);
     }
-    GroupMemoryBarrierWithGroupSync();
-    InvalidateShadowRect(0u, lane, view);
-    InvalidateShadowRect(1u, lane, view);
 }

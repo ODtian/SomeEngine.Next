@@ -1,10 +1,74 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 
 namespace SomeEngine.RenderGraph.Tests;
 
 public sealed class RetainedHeapTests
 {
+    [Fact]
+    public void EarlierTransientResourceIsReactivatedAfterItsLaterAliasIsDisabled()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        using Buffer result = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(128, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphPassId laterRead;
+        GraphPassId earlierRead;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphBufferId later = edit.CreateBuffer(new(64, BufferUsages.CopySource | BufferUsages.CopyDestination));
+            GraphBufferId earlier = edit.CreateBuffer(new(64, BufferUsages.CopySource | BufferUsages.CopyDestination));
+            GraphBufferId destination = edit.RegisterExternalBuffer(result,
+                [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphPassId earlierWrite = Initialize(edit, earlier, 0x11111111);
+            earlierRead = Copy(edit, earlier, destination, 0);
+            GraphPassId laterWrite = Initialize(edit, later, 0x77777777);
+            laterRead = Copy(edit, later, destination, 64);
+            edit.OrderAfter(earlierRead, earlierWrite);
+            edit.OrderAfter(laterWrite, earlierRead);
+            edit.OrderAfter(laterRead, laterWrite);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int iteration = 0; iteration < 12; iteration++)
+        {
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                frame.SetPassEnabled(earlierRead, iteration != 1);
+                frame.SetPassEnabled(laterRead, iteration < 6);
+                frame.Execute(completions);
+                support.Wait(completions);
+            }
+            using MappedBuffer mapping = support.Backend.Map(result, MapType.Read, BufferRange.Whole);
+            mapping.Invalidate(mapping.Range);
+            Assert.All(mapping.Bytes[..64].ToArray(), value => Assert.Equal(0x11, value));
+            if (iteration < 6)
+                Assert.All(mapping.Bytes[64..128].ToArray(), value => Assert.Equal(0x77, value));
+        }
+
+        static GraphPassId Initialize(RenderGraphEdit edit, GraphBufferId buffer, uint value) =>
+            edit.AddCopyFramePass("initialize shared bytes", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                (buffer, value), default,
+                static (ref PassDefinition pass, ref (GraphBufferId Buffer, uint Value) data) =>
+                    pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Complete),
+                static (ref CopyPassCommandScope commands, in (GraphBufferId Buffer, uint Value) data) =>
+                    commands.ClearBuffer(commands.GetBuffer(data.Buffer), BufferRange.Whole, data.Value));
+
+        static GraphPassId Copy(RenderGraphEdit edit, GraphBufferId source, GraphBufferId destination, ulong offset) =>
+            edit.AddCopyFramePass("read shared bytes", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                (source, destination, offset), new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref (GraphBufferId Source, GraphBufferId Destination, ulong Offset) data) =>
+                {
+                    pass.Read(data.Source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+                    pass.Write(data.Destination, new(data.Offset, 64), PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Complete);
+                },
+                static (ref CopyPassCommandScope commands, in (GraphBufferId Source, GraphBufferId Destination, ulong Offset) data) =>
+                    commands.CopyBuffer(new(commands.GetBuffer(data.Source), 0, commands.GetBuffer(data.Destination), data.Offset, 64)));
+    }
+
     [Fact]
     public void UploadInputsAndReadbackOutputsCoexistAcrossDisjointGpuUses()
     {

@@ -6,8 +6,10 @@ internal sealed partial class FrameExecutor
     private int[][] _resourceEndFrontiers = [];
     private readonly HashSet<int> _materializeBuffers = [], _materializeTextures = [], _materializeViews = [];
 
-    private void MaterializationChanged((GraphAccessTargetKind Kind, int Index) key)
+    private void MaterializationChanged((GraphAccessTargetKind Kind, int Index) key, bool updateViewDescriptions = true)
     {
+        if (_resourceAccessLists.TryGetValue(key, out List<int>? commandAccesses))
+            foreach (int access in commandAccesses) _commandChanges.Add(_accesses[access].PassIndex);
         ChangeResourceParameters(key);
         GraphIdentity identity;
         if (key.Kind == GraphAccessTargetKind.Buffer && key.Index < _buffers.Count)
@@ -21,9 +23,32 @@ internal sealed partial class FrameExecutor
             identity = _textures[key.Index].Identity;
         }
         else return;
-        if (_resourceViewRows.TryGetValue(key, out HashSet<int>? rows)) _materializeViews.UnionWith(rows);
+        if (_resourceViewRows.TryGetValue(key, out HashSet<int>? rows))
+            foreach (int index in rows) InvalidateView(index);
         foreach (GraphIdentity view in _frame.StructureIndex.ResourceViews.GetValueOrDefault(identity, []))
-            if (_viewIndices.TryGetValue(view, out int index)) _materializeViews.Add(index);
+            if (_viewIndices.TryGetValue(view, out int index)) InvalidateView(index);
+        if (key.Kind == GraphAccessTargetKind.Texture &&
+            _resourceAccessLists.TryGetValue(key, out List<int>? accesses))
+            foreach (int access in accesses) InvalidateRasterRendering(_accesses[access].PassIndex);
+
+        void InvalidateView(int index)
+        {
+            _materializeViews.Add(index);
+            ref FrameView view = ref CollectionsMarshal.AsSpan(_views)[index];
+            view.View = null;
+            if (updateViewDescriptions && view.Definition is not null) _rowChanges.Views.Add(view.Identity);
+        }
+    }
+
+    private void MaterializeMissingResource((GraphAccessTargetKind Kind, int Index) key)
+    {
+        // Access and liveness changes do not change existing resource views. Newly active
+        // resources without backing memory still need allocation and dependent views.
+        if ((key.Kind == GraphAccessTargetKind.Buffer && (uint)key.Index < (uint)_buffers.Count &&
+             _buffers[key.Index].Resource is null) ||
+            (key.Kind == GraphAccessTargetKind.Texture && (uint)key.Index < (uint)_textures.Count &&
+             _textures[key.Index].Resource is null))
+            MaterializationChanged(key, updateViewDescriptions: false);
     }
 
     private void Materialize()
@@ -112,7 +137,7 @@ internal sealed partial class FrameExecutor
             ResourcePlacement placement = memory.GetPlacement(identity);
             if (key.Kind == GraphAccessTargetKind.Buffer) CollectionsMarshal.AsSpan(_buffers)[key.Index].Placement = placement;
             else CollectionsMarshal.AsSpan(_textures)[key.Index].Placement = placement;
-            _changedSynchronizationResources.Add(key);
+            ChangeSynchronization(key);
         }
         _materializeBuffers.Clear(); _materializeTextures.Clear(); _materializeViews.Clear();
     }
@@ -287,8 +312,8 @@ internal sealed partial class FrameExecutor
                 row.Resource = null; row.Placement = default; row.EntryBoundaryStates = null;
                 resourceIdentity = row.Identity;
             }
-            MaterializationChanged(key);
-            _changedSynchronizationResources.Add(key);
+            MaterializationChanged(key, updateViewDescriptions: false);
+            ChangeSynchronization(key);
             if (_resourceViewRows.TryGetValue(key, out HashSet<int>? viewRows))
                 foreach (int index in viewRows) CollectionsMarshal.AsSpan(_views)[index].View = null;
             foreach (GraphIdentity view in _frame.StructureIndex.ResourceViews.GetValueOrDefault(resourceIdentity, []))

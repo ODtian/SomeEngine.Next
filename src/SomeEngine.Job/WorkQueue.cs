@@ -23,7 +23,11 @@ internal interface IWorkQueue : IDisposable
         where TItem : struct, IWorkStreamItem<TItem>
         where TSource : struct, IWorkStreamItemSource<TItem>;
 
+    long WakeVersion { get; }
+
     bool TryExecuteOne(bool wait);
+
+    bool WaitAndExecuteOne(long wakeVersion);
 
     bool TryHandoffLatencyWork(
         object? state,
@@ -208,10 +212,15 @@ internal sealed class WorkQueue : IWorkQueue
         }
     }
 
-    public bool TryExecuteOne(bool wait)
-        => TryExecuteOne(wait, waitIndefinitely: false);
+    public long WakeVersion => Volatile.Read(ref _wakeEpoch);
 
-    private bool TryExecuteOne(bool wait, bool waitIndefinitely)
+    public bool TryExecuteOne(bool wait)
+        => TryExecuteOne(wait, waitIndefinitely: false, wait ? WakeVersion : 0);
+
+    public bool WaitAndExecuteOne(long wakeVersion)
+        => TryExecuteOne(wait: true, waitIndefinitely: false, wakeVersion, waitForState: true);
+
+    private bool TryExecuteOne(bool wait, bool waitIndefinitely, long wakeVersion, bool waitForState = false)
     {
         WorkStream stream;
         long publishedAt;
@@ -225,7 +234,7 @@ internal sealed class WorkQueue : IWorkQueue
                 out stole,
                 out priorityIndex))
         {
-            if (!wait || !WaitForWork(waitIndefinitely))
+            if (!wait || !WaitForWork(waitIndefinitely, wakeVersion, waitForState))
                 return false;
             if (!TryDequeueForWorker(
                     workerIndex,
@@ -388,7 +397,10 @@ internal sealed class WorkQueue : IWorkQueue
 
     public void Pulse()
     {
-        WakeWorkers();
+        // A completion changes the condition awaited by helpers, including
+        // workers joining child jobs. It does not create new executable work.
+        Interlocked.Increment(ref _wakeEpoch);
+        lock (_stateLock) Monitor.PulseAll(_stateLock);
     }
 
     public void Dispose()
@@ -474,9 +486,9 @@ internal sealed class WorkQueue : IWorkQueue
         WakeWorkers(drainerCount);
     }
 
-    private bool WaitForWork(bool waitIndefinitely)
+    private bool WaitForWork(bool waitIndefinitely, long observedEpoch, bool waitForState)
     {
-        bool workerThread = CurrentWorkerIndex != NoWorkerThread;
+        bool workerThread = CurrentWorkerIndex != NoWorkerThread && !waitForState;
         int spinCount = workerThread ? Math.Max(_baseSpinCount, s_spinBudget) : 0;
         for (int i = 0; i < spinCount; i++)
         {
@@ -491,7 +503,6 @@ internal sealed class WorkQueue : IWorkQueue
             s_spinBudget = Math.Max(_baseSpinCount, spinCount / 2);
         }
 
-        long observedEpoch = Volatile.Read(ref _wakeEpoch);
         object waitLock = workerThread ? _workerWaitLock : _stateLock;
         lock (waitLock)
         {
@@ -618,7 +629,7 @@ internal sealed class WorkQueue : IWorkQueue
                     return;
                 }
 
-                TryExecuteOne(wait: true, waitIndefinitely: true);
+                TryExecuteOne(wait: true, waitIndefinitely: true, WakeVersion);
             }
         }
         finally
@@ -838,7 +849,6 @@ internal readonly struct WorkBatch
         ReleaseSlotArray();
     }
 }
-
 
 
 

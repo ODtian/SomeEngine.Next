@@ -19,6 +19,8 @@ internal sealed class RasterFrameOnlyPassCallbackStorage<TState> : PassCallbackS
     internal override void ClearData() => _declarationState = default!;
     public void SetStaticData(in TState value) => _declarationState = value;
     public void SetFrameData(in TState value) => _declarationState = value;
+    public bool FrameDataEquals(in TState value) => DataEquals(_declarationState, value);
+    public bool FrameValueEquals(in TState value) => EqualityComparer<TState>.Default.Equals(_declarationState, value);
 
     internal override void Record(
         RenderGraphFrameState frame,
@@ -51,6 +53,8 @@ internal sealed class ComputeFrameOnlyPassCallbackStorage<TState> : PassCallback
     internal override void ClearData() => _declarationState = default!;
     public void SetStaticData(in TState value) => _declarationState = value;
     public void SetFrameData(in TState value) => _declarationState = value;
+    public bool FrameDataEquals(in TState value) => DataEquals(_declarationState, value);
+    public bool FrameValueEquals(in TState value) => EqualityComparer<TState>.Default.Equals(_declarationState, value);
 
     internal override void Record(
         RenderGraphFrameState frame,
@@ -83,6 +87,8 @@ internal sealed class CopyFrameOnlyPassCallbackStorage<TState> : PassCallbackSto
     internal override void ClearData() => _declarationState = default!;
     public void SetStaticData(in TState value) => _declarationState = value;
     public void SetFrameData(in TState value) => _declarationState = value;
+    public bool FrameDataEquals(in TState value) => DataEquals(_declarationState, value);
+    public bool FrameValueEquals(in TState value) => EqualityComparer<TState>.Default.Equals(_declarationState, value);
 
     internal override void Record(
         RenderGraphFrameState frame,
@@ -115,6 +121,8 @@ internal sealed class GeneralFrameOnlyPassCallbackStorage<TState> : PassCallback
     internal override void ClearData() => _declarationState = default!;
     public void SetStaticData(in TState value) => _declarationState = value;
     public void SetFrameData(in TState value) => _declarationState = value;
+    public bool FrameDataEquals(in TState value) => DataEquals(_declarationState, value);
+    public bool FrameValueEquals(in TState value) => EqualityComparer<TState>.Default.Equals(_declarationState, value);
 
     internal override void Record(
         RenderGraphFrameState frame,

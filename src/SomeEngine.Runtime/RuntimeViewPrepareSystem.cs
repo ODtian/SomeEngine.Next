@@ -11,6 +11,8 @@ namespace SomeEngine.Runtime;
 /// </summary>
 internal sealed class RuntimeViewPrepareSystem : ISystem<RenderPrepareSystemContext>
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace =
+        new("render", "Prepare.View");
     private readonly Entity _viewEntity;
     private readonly object _gate = new();
     private RenderView _pending;
@@ -38,6 +40,7 @@ internal sealed class RuntimeViewPrepareSystem : ISystem<RenderPrepareSystemCont
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         RenderView next;
         lock (_gate)
         {

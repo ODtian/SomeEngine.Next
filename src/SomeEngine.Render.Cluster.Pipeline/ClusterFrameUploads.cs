@@ -6,7 +6,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 namespace SomeEngine.Render.Cluster.Pipeline;
 
 /// <summary>Retains each declared upload by its graph identity and writes admitted generations.</summary>
-internal sealed class ClusterFrameUploads : IDisposable
+internal sealed partial class ClusterFrameUploads : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
@@ -33,6 +33,9 @@ internal sealed class ClusterFrameUploads : IDisposable
         if (_editing || _frameGeneration >= 0)
             throw new InvalidOperationException("Cluster upload data is already being edited or used by a frame.");
         _editing = true;
+        _originalUniformBuffer = _uniformBuffer;
+        _originalUniformSize = _uniformSize;
+        _originalUniformFree = _uniformFree;
     }
 
     internal GraphBufferId Declare(ref RenderGraphEdit edit, scoped ReadOnlySpan<byte> value,
@@ -117,11 +120,21 @@ internal sealed class ClusterFrameUploads : IDisposable
             if (change.Before is { } buffer) graph.RetireAfterSubmittedFrames(buffer);
         _bufferChanges.Clear();
         _valueChanges.Clear();
+        _uniformChanges.Clear();
     }
 
     internal void CancelDeclarations()
     {
         if (!_editing) return;
+        _uniformBuffer = _originalUniformBuffer;
+        _uniformSize = _originalUniformSize;
+        _uniformFree = _originalUniformFree;
+        foreach ((GraphBufferInput input, UniformData? previous) in _uniformChanges)
+        {
+            if (previous is null) _uniforms.Remove(input);
+            else _uniforms[input] = previous;
+        }
+        _uniformChanges.Clear();
         for (int index = _valueChanges.Count - 1; index >= 0; index--)
         {
             var change = _valueChanges[index];
@@ -150,6 +163,7 @@ internal sealed class ClusterFrameUploads : IDisposable
         _frameGeneration = generation;
         _writing = true;
         foreach (UploadBuffer buffer in _buffers.Values) buffer.Bound = false;
+        foreach (UniformData uniform in _uniforms.Values) uniform.Bound = false;
     }
 
     internal void WriteAndBind(ref RenderGraphFrame frame, int generation,
@@ -163,6 +177,7 @@ internal sealed class ClusterFrameUploads : IDisposable
     internal void CompleteFrame(ref RenderGraphFrame frame)
     {
         if (!_writing) throw new InvalidOperationException("Cluster upload writes are not active.");
+        CompleteUniforms(ref frame);
         foreach (UploadBuffer buffer in _buffers.Values)
         {
             if (!buffer.Bound) buffer.Bind(ref frame, _frameGeneration);
@@ -205,6 +220,7 @@ internal sealed class ClusterFrameUploads : IDisposable
             catch (Exception error) { (errors ??= []).Add(error); }
         }
         _buffers.Clear();
+        _uniforms.Clear();
         DiscardFrame();
         _disposed = true;
         if (errors is not null) throw new AggregateException("Cluster upload cleanup failed.", errors);
@@ -219,6 +235,7 @@ internal sealed class ClusterFrameUploads : IDisposable
         private MappedBuffer[] _mappings;
         private BufferBoundaryState[][] _states;
         private ImmutableList<BufferRange>[] _changedRanges;
+        private readonly int[] _bufferByGeneration;
 
         internal UploadBuffer(IGraphicsBackend backend, Device device, GraphBufferId id,
             in BufferDesc description, int generations, ClusterUploadData value)
@@ -230,6 +247,8 @@ internal sealed class ClusterFrameUploads : IDisposable
             _mappings = new MappedBuffer[generations];
             _states = new BufferBoundaryState[generations][];
             _changedRanges = new ImmutableList<BufferRange>[generations];
+            _bufferByGeneration = new int[generations];
+            Array.Fill(_bufferByGeneration, -1);
             try
             {
                 for (int generation = 0; generation < generations; generation++)
@@ -294,34 +313,50 @@ internal sealed class ClusterFrameUploads : IDisposable
 
         internal void WriteAndBind(ref RenderGraphFrame frame, int generation, scoped ReadOnlySpan<byte> value)
         {
+            _bufferByGeneration[generation] = -1;
+            int bufferIndex = FindWritableBuffer();
             // Retain the obligation to restore the default if a later frame does not override it.
-            _changedRanges[generation] = [new BufferRange(0, Description.Size)];
-            Write(generation, value);
-            BindResource(ref frame, generation);
+            _changedRanges[bufferIndex] = [new BufferRange(0, Description.Size)];
+            Write(bufferIndex, value);
+            BindResource(ref frame, generation, bufferIndex);
         }
 
         internal void Bind(ref RenderGraphFrame frame, int generation)
         {
-            foreach (BufferRange range in _changedRanges[generation])
+            // The admitted generation has finished its earlier GPU reads. Other
+            // generations can keep reading any buffer whose value is unchanged.
+            _bufferByGeneration[generation] = -1;
+            int bufferIndex = 0;
+            while (bufferIndex < _changedRanges.Length && !_changedRanges[bufferIndex].IsEmpty) bufferIndex++;
+            if (bufferIndex == _changedRanges.Length) bufferIndex = FindWritableBuffer();
+            foreach (BufferRange range in _changedRanges[bufferIndex])
             {
                 int offset = checked((int)range.Offset);
-                MappedBuffer mapping = _mappings[generation];
+                MappedBuffer mapping = _mappings[bufferIndex];
                 Value.CopyTo(mapping.Bytes.Slice(offset, checked((int)range.Size)), offset);
                 mapping.Flush(range);
             }
-            _changedRanges[generation] = [];
-            BindResource(ref frame, generation);
+            _changedRanges[bufferIndex] = [];
+            BindResource(ref frame, generation, bufferIndex);
         }
 
-        private void BindResource(ref RenderGraphFrame frame, int generation)
+        private int FindWritableBuffer()
         {
-            frame.BindExternalBuffer(Id, _buffers[generation]!, _states[generation]);
+            for (int bufferIndex = 0; bufferIndex < _buffers.Length; bufferIndex++)
+                if (!_bufferByGeneration.Contains(bufferIndex)) return bufferIndex;
+            throw new InvalidOperationException("Cluster upload generations still reference every buffer.");
+        }
+
+        private void BindResource(ref RenderGraphFrame frame, int generation, int bufferIndex)
+        {
+            frame.BindExternalBuffer(Id, _buffers[bufferIndex]!, _states[bufferIndex]);
+            _bufferByGeneration[generation] = bufferIndex;
             Bound = true;
         }
 
         internal void StoreStates(int generation, ReadOnlySpan<BufferBoundaryState> states)
         {
-            if (!states.IsEmpty) _states[generation] = states.ToArray();
+            if (!states.IsEmpty) _states[_bufferByGeneration[generation]] = states.ToArray();
         }
 
         private void Write(int generation, ReadOnlySpan<byte> value)

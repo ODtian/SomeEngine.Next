@@ -235,7 +235,9 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         ImGui.Text(metrics.Focused ? "Window focus: active" : "Window focus: inactive");
         ImGui.Separator();
         _ = ImGui.Checkbox("Animate scene", ref animateScene);
-        ImGui.TextUnformatted("Temporal resolve: enabled (8-sample centered Halton)");
+        ImGui.TextUnformatted(metrics.TemporalAntialiasing
+            ? "Temporal resolve: enabled (8-sample centered Halton)"
+            : "Temporal resolve: disabled");
         ImGui.Separator();
         ImGui.TextUnformatted("WASD + Space/Ctrl: move camera");
         ImGui.TextUnformatted("Hold right mouse: look");
@@ -1039,7 +1041,8 @@ internal readonly record struct RuntimeUiMetrics(
     float DpiScale,
     Vector2 JitterPixels,
     Vector3 CameraPosition,
-    bool Focused);
+    bool Focused,
+    bool TemporalAntialiasing);
 
 internal readonly record struct RuntimeUiPassData(
     RuntimeUiRenderer Renderer,

@@ -13,6 +13,8 @@ RWByteAddressBuffer BinnedSWDispatchArgs;
 RWByteAddressBuffer TessellationSeedDispatchArgs;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> ReserveCounters;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> PolicyRasterWorkCounter;
 static const uint BLOCK_SIZE = 128u;
 groupshared uint RasterTotalPrefix[BLOCK_SIZE];
 groupshared uint RasterSoftwarePrefix[BLOCK_SIZE];
@@ -54,6 +56,8 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV_Grou
             InterlockedAdd(ReserveCounters[2], RasterTotalPrefix[blockLast]);
             InterlockedAdd(ReserveCounters[3], RasterSoftwarePrefix[blockLast]);
         }
+        if (Uniforms.PolicyTarget != 0u)
+            InterlockedAdd(PolicyRasterWorkCounter[0], RasterTotalPrefix[blockLast]);
     }
     GroupMemoryBarrierWithGroupSync();
 

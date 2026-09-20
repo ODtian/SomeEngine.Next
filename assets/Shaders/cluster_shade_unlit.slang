@@ -28,7 +28,7 @@ UnlitPixelContext BuildUnlitPixelContext(
     return ctx;
 }
 
-struct UnlitMaterial : ISurfaceEvaluate
+struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
     Texture2D AlbedoMap;
     SamplerState MaterialSampler;
@@ -101,7 +101,7 @@ struct UnlitMaterial : ISurfaceEvaluate
 
 typedef StaticVertexEval VertexEvaluate;
 typedef LinearSurface DomainEvaluate;
-typedef OpaquePixelEvaluate PixelEvaluate;
+typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
 typedef UnlitMaterial SurfaceEvaluate;
 
 #include "cluster_material_entries.slang"

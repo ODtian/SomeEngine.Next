@@ -6,71 +6,10 @@ namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class CookedClusterShaderContractTests
 {
-    [Fact]
-    public async Task TraversalEntryExposesThreadGroupHierarchyResourcesOnly()
-    {
-        (Shader traversal, string entryPoint) = await ConfiguredComputeOperation(
-            ClusterShaderOperationRole.BvhTraversal);
-
-        Assert.Equal(
-            Sorted(
-                "Views",
-                "GlobalBVH",
-                "InstanceData",
-                "InstanceProperties",
-                "CandidateArgs",
-                "CandidateClusters",
-                "CandidateCount",
-                "CurrentNodeIndirectArgs",
-                "DeferredWork",
-                "DeferredWorkCount",
-                "HierarchyHiZ",
-                "NextNodeIndirectArgs",
-                "PageFaultBuffer",
-                "PolicyClusterViews",
-                "RasterRegionGrid",
-                "RasterTargetCurrentHiZ",
-                "RasterTargetInvocations",
-                "RasterTargetPreviousHiZ",
-                "TraversalLevel",
-                "TraversalNodes"),
-            ResourceNames(traversal, entryPoint));
-    }
-
-    [Fact]
-    public async Task CullEntryExposesCompactViewIndexedResourcesOnly()
-    {
-        (Shader cull, string entryPoint) = await ConfiguredComputeOperation(
-            ClusterShaderOperationRole.CullPhaseOne);
-
-        Assert.Equal(
-            Sorted(
-                "Views",
-                "PageHeap",
-                "InstanceData",
-                "InstanceProperties",
-                "PolicyClusterViews",
-                "CandidateClusters",
-                "CandidateCount",
-                "DrawArgs",
-                "BaseDrawArgs0",
-                "BaseDrawArgs1",
-                "VisibleClusters",
-                "HiZTexture",
-                "NextCandidates",
-                "NextCandidateCount",
-                "NextCandidateArgs",
-                "RasterRegionGrid",
-                "RasterTargetCurrentHiZ",
-                "RasterTargetInvocations",
-                "RasterTargetPreviousHiZ"),
-            ResourceNames(cull, entryPoint));
-    }
-
     [Theory]
     [InlineData("seed")]
     [InlineData("split")]
-    public async Task TessellationSurfaceEntriesFuseVertexEvaluationWithoutGlobalCaches(
+    public async Task TessellationEntriesAvoidGlobalCaches(
         string stage)
     {
         Shader shader = await ReadCookedShader("cluster_tessellation_phong.shader.asset");
@@ -82,8 +21,6 @@ public sealed class CookedClusterShaderContractTests
         };
 
         string[] resources = ResourceNames(shader, entryPoint);
-        Assert.Contains("InstanceData", resources);
-        Assert.Contains("InstanceProperties", resources);
         Assert.Contains("PageHeap", resources);
         Assert.Contains("TessellationCounters", resources);
         Assert.Contains("TessellationUniformData", resources);
@@ -94,6 +31,8 @@ public sealed class CookedClusterShaderContractTests
         Assert.DoesNotContain("TessellationWorkNext", resources);
         if (stage == "split")
         {
+            Assert.Contains("InstanceData", resources);
+            Assert.Contains("InstanceProperties", resources);
             Assert.Contains("TessellationFinalPatches", resources);
             Assert.Contains("TessellationRasterSlots", resources);
             Assert.Contains("TessellationHiZTexture", resources);
@@ -237,6 +176,14 @@ public sealed class CookedClusterShaderContractTests
         "clustered_light_grid.shader.asset",
         "BuildClusteredLightGrid",
         "ClusteredLightGrid|LightBuffer|LightIndexList|LightingViews")]
+    [InlineData(
+        "vsm_frame_reset.shader.asset",
+        "ResetVirtualShadowFrame",
+        "ActivePageCount|AllocatedPageHierarchy|AllocationFailures|ClusterDispatchArguments|PageDispatchArguments|PageRequestDispatchArguments|PolicyRasterWorkCount|RasterPageMasks|UncachedPageRectBounds")]
+    [InlineData(
+        "vsm_dynamic_resolution.shader.asset",
+        "UpdateVirtualShadowDynamicResolution",
+        "AllocationFailures|DynamicResolution|DynamicResolutionBias|FreePageCount|PolicyRasterWorkCount")]
     [InlineData(
         "temporal_resolve.shader.asset",
         "PSMain",

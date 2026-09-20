@@ -190,12 +190,23 @@ internal sealed class ClusterBinIndexMap<TKey, TStage> where TKey : notnull
         _updated = _updated.Clear();
         return _stages;
     }
-    internal ClusterUploadData GetIndices(uint capacity, ClusterUploadData previous, IEnumerable<int> addresses)
+    internal ClusterUploadData GetIndices(
+        uint capacity,
+        ClusterUploadData previous,
+        IEnumerable<int> addresses,
+        Func<TStage, uint, uint>? encodeIndex = null)
     {
         var changes = new List<(int Offset, byte[] Bytes)>();
         foreach (int address in addresses)
         {
-            uint index = _keys.TryGetValue(address, out TKey? key) ? _groups[key].Index : 0;
+            uint index = 0;
+            if (_keys.TryGetValue(address, out TKey? key))
+            {
+                Group group = _groups[key];
+                index = group.Index;
+                if (encodeIndex is not null)
+                    index = encodeIndex(group.Members.First().Value, index);
+            }
             byte[] bytes = new byte[sizeof(uint)];
             BinaryPrimitives.WriteUInt32LittleEndian(bytes, index);
             changes.Add((checked(address * sizeof(uint)), bytes));
@@ -453,7 +464,10 @@ internal sealed class ClusterRasterStages : IDisposable
         }
         var invocations = bins.GetStages(static (stage, index) => stage with { BinIndex = index });
         var result = new ClusterRasterStageSet(bins.GetIndices(
-            assignments.SlotCapacity, _resolved?.BinIndices ?? ClusterUploadData.Zero(0), addresses),
+            assignments.SlotCapacity,
+            _resolved?.BinIndices ?? ClusterUploadData.Zero(0),
+            addresses,
+            static (stage, index) => stage.Software is null ? index : index | 0x80000000u),
             invocations, bins.Range, [.. bins.Changes], [.. addresses], _resolved);
         _binIndices = bins;
         _resourceProperties = resourceProperties;
@@ -1427,6 +1441,7 @@ internal enum ClusterSoftwareRasterCoreResource : byte
     PolicyViews,
     PageHeap,
     VisibleClusters,
+    RasterWindows,
     BinnedClusters,
     BinMetadata,
     Depth,
@@ -1448,6 +1463,7 @@ internal enum ClusterHardwareRasterCoreResource : byte
     PageHeap,
     BinnedClusters,
     VisibleClusters,
+    RasterWindows,
     DrawMetadata,
     WinnerImage,
     WinnerBuffer,
@@ -1463,6 +1479,7 @@ internal enum ClusterTessellationCoreResource : byte
     PolicyViews,
     PageHeap,
     VisibleClusters,
+    RasterWindows,
     BinnedClusters,
     BinMetadata,
     RasterSlots,
@@ -1689,7 +1706,10 @@ internal sealed class ClusterLinkedStageLayout
             {
                 if (allowNeutralRasterTarget &&
                     (resource.Name, resource.Type) is
-                    ("RasterTargetInvocations", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetViews", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetPageHierarchy", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetPageTable", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetReceiverMasks", ResourceBindingType.BufferSrv) or
                     ("RasterTargetOutput", ResourceBindingType.TextureUav))
                     continue;
                 throw new InvalidDataException(
@@ -1845,6 +1865,7 @@ internal static class ClusterSoftwareRasterCoreResources
             ClusterSoftwareRasterCoreResource.PolicyViews or
             ClusterSoftwareRasterCoreResource.PageHeap or
             ClusterSoftwareRasterCoreResource.VisibleClusters or
+            ClusterSoftwareRasterCoreResource.RasterWindows or
             ClusterSoftwareRasterCoreResource.BinnedClusters or
             ClusterSoftwareRasterCoreResource.BinMetadata => ResourceBindingType.BufferSrv,
             ClusterSoftwareRasterCoreResource.InstanceProperties or
@@ -1876,6 +1897,7 @@ internal static class ClusterSoftwareRasterCoreResources
         "SoftwareRasterPolicyViews" => ClusterSoftwareRasterCoreResource.PolicyViews,
         "PageHeap" => ClusterSoftwareRasterCoreResource.PageHeap,
         "VisibleClusters" or "SoftwareRasterVisibleClusters" => ClusterSoftwareRasterCoreResource.VisibleClusters,
+        "VisibleClusterRasterWindows" => ClusterSoftwareRasterCoreResource.RasterWindows,
         "BinnedClusterIndexBuffer" or
         "SoftwareRasterBinnedClusterIndexBuffer" => ClusterSoftwareRasterCoreResource.BinnedClusters,
         "RasterBinMeta" or "SoftwareRasterBinMeta" => ClusterSoftwareRasterCoreResource.BinMetadata,
@@ -1908,6 +1930,7 @@ internal static class ClusterHardwareRasterCoreResources
             ClusterHardwareRasterCoreResource.PageHeap or
             ClusterHardwareRasterCoreResource.BinnedClusters or
             ClusterHardwareRasterCoreResource.VisibleClusters or
+            ClusterHardwareRasterCoreResource.RasterWindows or
             ClusterHardwareRasterCoreResource.DrawMetadata => ResourceBindingType.BufferSrv,
             ClusterHardwareRasterCoreResource.InstanceProperties or
             ClusterHardwareRasterCoreResource.Uniforms or
@@ -1938,6 +1961,7 @@ internal static class ClusterHardwareRasterCoreResources
         "BinnedClusterIndexBuffer" or
         "HardwareRasterBinnedClusterIndexBuffer" => ClusterHardwareRasterCoreResource.BinnedClusters,
         "VisibleClusters" or "HardwareRasterVisibleClusters" => ClusterHardwareRasterCoreResource.VisibleClusters,
+        "VisibleClusterRasterWindows" => ClusterHardwareRasterCoreResource.RasterWindows,
         "VisibleClusterMeta" or "HardwareRasterVisibleClusterMeta" => ClusterHardwareRasterCoreResource.DrawMetadata,
         "VisibilityWinnerImage" => ClusterHardwareRasterCoreResource.WinnerImage,
         "VisibilityWinnerBuffer" => ClusterHardwareRasterCoreResource.WinnerBuffer,
@@ -1961,6 +1985,7 @@ internal static class ClusterTessellationCoreResources
             ClusterTessellationCoreResource.PolicyViews or
             ClusterTessellationCoreResource.PageHeap or
             ClusterTessellationCoreResource.VisibleClusters or
+            ClusterTessellationCoreResource.RasterWindows or
             ClusterTessellationCoreResource.BinMetadata or
             ClusterTessellationCoreResource.RasterSlots or
             ClusterTessellationCoreResource.GroupedPatchIndices or
@@ -2003,6 +2028,7 @@ internal static class ClusterTessellationCoreResources
         "PageHeap" => ClusterTessellationCoreResource.PageHeap,
         "VisibleClusters" or
         "TessellationVisibleClusters" => ClusterTessellationCoreResource.VisibleClusters,
+        "VisibleClusterRasterWindows" => ClusterTessellationCoreResource.RasterWindows,
         "BinnedClusterIndexBuffer" or
         "TessellationBinnedClusterIndexBuffer" => ClusterTessellationCoreResource.BinnedClusters,
         "RasterBinMeta" or

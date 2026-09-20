@@ -19,6 +19,9 @@ The generator copies the built runtime, creates scenario geometry/materials, and
 | `wpo-alpha` | Eight displaced/checker-alpha spheres at near and far distances, producing both HW and SW work in hybrid mode |
 | `displacement` | Four spheres with an 8×8 bilinear-repeat height map and conservative min/max bounds texture |
 | `sparse-motion` | 128 spheres; only one instance moves |
+| `lighting` | Three colored spheres and a receiving floor, with directional, point and spot lights |
+| `occlusion` | A moving wall occludes and reveals a grid of 128 spheres |
+| `lod-near` / `lod-far` | The same source sphere at two distances, for LOD and page-residency comparisons |
 
 Run from the generated directory:
 
@@ -31,8 +34,16 @@ Run from the generated directory:
 
 `--hardware-raster` selects the full hardware path even on atomic64-capable devices. Hardware raster uses mesh shaders when the device supports the required limits; `--no-mesh-shaders` exercises the VS/PS path, including indexed tessellation. Omit `--hardware-raster` for normal HW/SW selection. Register-cached software Dice requires a 32-lane compute wave; the current shaders explicitly request it. Dynamic motion uses wall-clock time; separate dynamic runs are not synchronized image comparisons. Static captures should compare raw scene depth, visibility and motion as well as color: a full VSM fine-page pool can choose different resident pages across separate executions.
 
+`--frame-output image.bmp` saves the final presentation pixels as an uncompressed bitmap and refuses to replace an existing file. `--no-debug-ui` hides the overlay. Image export is independent of `--verify-frame-output`; both enable CPU readback and must be omitted from timing runs. Verification hides the overlay and checks scene variation together with actual Cluster candidates, visible clusters and shading work, without a fixed screen-coverage assumption. `maximumRecovered` reports the largest number of clusters recovered by second-phase occlusion culling during the run.
+
+Use `--no-vsm` and `--no-taa` for feature comparisons. Disabling TAA also disables projection jitter. For repeatable animation, use `--synchronous-frames --fixed-step 0.016666667`; `--scene-playback motion` additionally animates the camera and point lights, and `--scene-playback materials` also changes roughness.
+
+The displacement scenario uses its two domain textures for height and conservative bounds, with a white surface and the displaced geometric normal. It does not interpret the bounds texture as a normal map. The lighting scene is intended to expose missing shadow pages, light-range discontinuities and shadow invalidation. Local shadow resolution follows the receiver dimensions; `VirtualShadowMapSettings.LocalResolutionLodBias` adjusts that choice while directional clipmaps retain their own resolution policy.
+
 Read `tessDropped` and `tessLimited` independently. The former counts capacity loss; the latter reports reaching the quality/depth budget. A frame with no validation errors can still report a quality limit.
 
 `shadeBinTiles` counts full 8×8 tiles in the first material bin. `shadeItems` counts all emitted tile/quad work records, not pixels or shader invocations. A full tile record represents 64 pixels; a quad record carries a mask for one to four pixels of one material. Both records use 8 bytes. Hardware linear-repeat filtering is used for displacement height; analytic derivatives and conservative error bounds account for its finite interpolation precision.
 
 These are ordinary optional validation tools. See the [implementation and measurement record](../../wiki/architecture/Render-Enhancement-Optimization-2026-09-05.md) for measured cases and limits.
+
+The [2026-09-12 scene validation](../../wiki/architecture/Render-Scene-Validation-2026-09-12.md) records the VSM and TAA fixes and the measured limitations. Delete generated scenario directories and temporary captures after inspecting them.

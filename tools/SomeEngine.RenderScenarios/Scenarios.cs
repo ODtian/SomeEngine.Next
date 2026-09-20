@@ -8,11 +8,11 @@ using SomeEngine.Graphics;
 using Texture = SomeEngine.Assets.Schema.Texture;
 
 if (args.Length != 3)
-    throw new ArgumentException("Usage: SomeEngine.RenderScenarios <built-runtime-directory> <new-output-directory> <phong|factors|materials|wpo-alpha|displacement|sparse-motion>");
+    throw new ArgumentException("Usage: SomeEngine.RenderScenarios <built-runtime-directory> <new-output-directory> <phong|factors|materials|wpo-alpha|displacement|sparse-motion|lighting|occlusion|lod-near|lod-far>");
 string source = Path.GetFullPath(args[0]);
 string destination = Path.GetFullPath(args[1]);
 string mode = args[2];
-if (mode is not ("phong" or "factors" or "materials" or "wpo-alpha" or "displacement" or "sparse-motion"))
+if (mode is not ("phong" or "factors" or "materials" or "wpo-alpha" or "displacement" or "sparse-motion" or "lighting" or "occlusion" or "lod-near" or "lod-far"))
     throw new ArgumentException("Unknown scenario: " + mode);
 if (!File.Exists(Path.Combine(source, "SomeEngine.Runtime.dll")))
     throw new ArgumentException("Source must contain a built SomeEngine.Runtime.");
@@ -35,30 +35,72 @@ if (mode is "phong" or "factors" or "materials")
 else if (mode == "wpo-alpha")
 {
     string pixel = """
-struct CheckerPixel : IPixelEvaluate
+struct CheckerVarying
 {
-    PixelEvaluateResult evaluate(PixelEvaluateInput input)
+    float2 UV : TEXCOORD0;
+};
+
+struct CheckerVisibility : IVisibilityEvaluate<StandardVertex>
+{
+    typealias Varying = CheckerVarying;
+    Texture2D<float4> AlbedoMap;
+    SamplerState MaterialSampler;
+
+    Varying makeVarying(StandardVertex vertex, VisibilityVertexInput input)
     {
-        PixelEvaluateResult result;
-        result.Visible = ((input.PixelCoord.x / 8u + input.PixelCoord.y / 8u) & 1u) == 0u ? 1u : 0u;
+        Varying result;
+        result.UV = vertex.uv0;
+        return result;
+    }
+
+    Varying readLane(Varying value, uint lane)
+    {
+        Varying result;
+        result.UV = WaveReadLaneAt(value.UV, lane);
+        return result;
+    }
+
+    Varying interpolateVertex(Varying a, Varying b, Varying c, float3 bary)
+    {
+        Varying result;
+        result.UV = a.UV * bary.x + b.UV * bary.y + c.UV * bary.z;
+        return result;
+    }
+
+    Varying interpolatePixel(Varying a, Varying b, Varying c, VisibilityInterpolationInput input)
+    {
+        return interpolateVertex(a, b, c, input.PerspectiveBarycentric);
+    }
+
+    VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
+    {
+        VisibilityPixelResult result;
+        float alpha = AlbedoMap.SampleLevel(MaterialSampler, varying.UV, 0.0).a;
+        uint2 checker = uint2(floor(frac(varying.UV) * 8.0));
+        result.Visible = alpha > 0.5 && ((checker.x + checker.y) & 1u) == 0u ? 1u : 0u;
         result.Depth = input.Depth;
         return result;
     }
 };
 """;
     shader = shader.Replace("typedef StaticVertexEval VertexEvaluate;", pixel + "\ntypedef WaveVertexEval VertexEvaluate;")
-        .Replace("typedef OpaquePixelEvaluate PixelEvaluate;", "typedef CheckerPixel PixelEvaluate;");
+        .Replace("typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;", "typedef CheckerVisibility VisibilityEvaluate;");
 }
 else if (mode == "displacement")
 {
     string domain = """
 #include "texture_displacement.slang"
-struct SampledDisplacement : IDomainEvaluate
+struct SampledDisplacement : IDomainEvaluate<StandardVertex>
 {
+    typealias TriangleData = Triangle;
+    typealias Surface = SurfaceEval;
+
     Texture2D<float> AlbedoMap;
     Texture2D<float2> NormalMap;
     SamplerState MaterialSampler;
     TextureDisplacement surface() { return MakeTextureDisplacement(AlbedoMap, NormalMap, MaterialSampler, float2(0.0, 1.0), 0.15, -0.075); }
+    Triangle makeTriangle(StandardVertex a, StandardVertex b, StandardVertex c) { return MakeStandardTriangle(a,b,c); }
+    float3 cornerPosition(Triangle t, uint c) { return c == 0u ? t.Position0 : (c == 1u ? t.Position1 : t.Position2); }
     float3 position(Triangle t, float3 b) { return surface().position(t,b); }
     SurfaceEval eval(Triangle t, float3 b) { return surface().eval(t,b); }
     SurfaceBarycentrics reconstruct(Triangle t, SurfaceReconstructionInput i) { return surface().reconstruct(t,i); }
@@ -68,25 +110,67 @@ struct SampledDisplacement : IDomainEvaluate
 };
 """;
     shader = shader.Replace("typedef LinearSurface DomainEvaluate;", domain + "\ntypedef SampledDisplacement DomainEvaluate;") + "\n#include \"cluster_tessellation_entries.slang\"\n";
+    // This scenario uses these two material textures as height and height bounds.
+    // Its surface uses a white base and the displaced normal, not the bounds as a normal map.
+    string surfacePath = Path.Combine(destination, "assets", "Shaders", "standard.slang");
+    string surface = File.ReadAllText(surfacePath)
+        .Replace("float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);", "float4 albedoSample = 1.0.xxxx;")
+        .Replace("float3 normalTS     = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;", "float3 normalTS = float3(0.0, 0.0, 1.0);");
+    File.WriteAllText(surfacePath, surface);
 }
 
 if (mode == "materials")
 {
     const string pixel = """
-struct MaskPixel : IPixelEvaluate
+struct MaskVarying
 {
+    float2 UV : TEXCOORD0;
+};
+
+struct MaskVisibility : IVisibilityEvaluate<StandardVertex>
+{
+    typealias Varying = MaskVarying;
     Texture2D<float4> AlbedoMap;
     SamplerState MaterialSampler;
-    PixelEvaluateResult evaluate(PixelEvaluateInput input)
+
+    Varying makeVarying(StandardVertex vertex, VisibilityVertexInput input)
     {
-        PixelEvaluateResult result;
-        result.Visible = AlbedoMap.SampleLevel(MaterialSampler, float2(input.PixelCoord.xy % 64u) / 64.0, 0.0).x > 0.5 ? 1u : 0u;
+        Varying result;
+        result.UV = vertex.uv0;
+        return result;
+    }
+
+    Varying readLane(Varying value, uint lane)
+    {
+        Varying result;
+        result.UV = WaveReadLaneAt(value.UV, lane);
+        return result;
+    }
+
+    Varying interpolateVertex(Varying a, Varying b, Varying c, float3 bary)
+    {
+        Varying result;
+        result.UV = a.UV * bary.x + b.UV * bary.y + c.UV * bary.z;
+        return result;
+    }
+
+    Varying interpolatePixel(Varying a, Varying b, Varying c, VisibilityInterpolationInput input)
+    {
+        return interpolateVertex(a, b, c, input.PerspectiveBarycentric);
+    }
+
+    VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
+    {
+        VisibilityPixelResult result;
+        result.Visible = AlbedoMap.SampleLevel(MaterialSampler, varying.UV, 0.0).x > 0.5 ? 1u : 0u;
         result.Depth = input.Depth;
         return result;
     }
 };
 """;
-    shader = shader.Replace("typedef OpaquePixelEvaluate PixelEvaluate;", pixel + "\ntypedef MaskPixel PixelEvaluate;");
+    shader = shader.Replace(
+        "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
+        pixel + "\ntypedef MaskVisibility VisibilityEvaluate;");
 }
 File.WriteAllText(shaderPath, shader);
 AssetProject project = AssetAuthoring.CreateProject(destination);
@@ -97,15 +181,28 @@ if (!storage.TryFind(sceneId, out AssetEntry entry)) throw new InvalidOperationE
 await using var sceneDocument = await AssetProject.OpenAsync<RenderScene>(storage, entry);
 RenderScene scene = sceneDocument.Root;
 scene.Name = mode + " rendering scenario";
-scene.MeshInstances = scene.MeshInstances!.Take(mode == "phong" ? 1 : mode == "wpo-alpha" ? 8 : mode == "sparse-motion" ? 128 : 4).ToArray();
+int instanceCount = mode switch
+{
+    "phong" or "lod-near" or "lod-far" => 1,
+    "occlusion" or "sparse-motion" => 128,
+    "wpo-alpha" => 8,
+    _ => 4,
+};
+scene.MeshInstances = scene.MeshInstances!.Take(instanceCount).ToArray();
 for (int index = 0; index < scene.MeshInstances.Count; index++)
 {
     SceneMeshInstance instance = scene.MeshInstances[index];
     instance.Position = new SceneVector3 { X = 0, Y = 0, Z = 12 };
     instance.Scale = new SceneVector3 { X = 0.8f, Y = 0.8f, Z = 0.8f };
     instance.BoundsExpansion = mode == "wpo-alpha" ? .31f : 1;
+    if (mode is "lod-near" or "lod-far")
+    {
+        instance.Position.Z = mode == "lod-near" ? 6 : 80;
+        instance.BoundsExpansion = 0;
+        instance.MotionAmplitude = new SceneVector3();
+    }
 }
-if (mode is not ("phong" or "sparse-motion"))
+if (mode is not ("phong" or "sparse-motion" or "occlusion" or "lod-near" or "lod-far"))
 {
     for (int index = 0; index < scene.MeshInstances.Count; index++)
     {
@@ -183,6 +280,78 @@ if (mode == "sparse-motion")
         instance.MotionSeed = 1;
         instance.BoundsExpansion = 0;
     }
+}
+if (mode == "lighting")
+{
+    scene.Camera!.Position = new SceneVector3 { Y = 4, Z = -3 };
+    scene.Camera.Target = new SceneVector3 { Y = -.3f, Z = 9 };
+    for (int index = 0; index < 3; index++)
+    {
+        scene.MeshInstances[index].Position = new SceneVector3 { X = (index - 1) * 2.3f, Z = 8 + index };
+        scene.MeshInstances[index].MotionAmplitude = new SceneVector3 { X = index == 1 ? .8f : 0 };
+        scene.MeshInstances[index].BoundsExpansion = 0;
+    }
+    SceneMeshInstance floor = scene.MeshInstances[3];
+    Vector3[] corners = [new(-6, -.85f, 3), new(6, -.85f, 3), new(6, -.85f, 16), new(-6, -.85f, 16)];
+    List<RawAttribute> attributes =
+    [
+        new("NORMAL", [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3, SomeEngine.Assets.Data.ValueType.Int8, 3, true),
+        new("TANGENT", [1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1], 4, SomeEngine.Assets.Data.ValueType.Int8, 4, true),
+        new("TEXCOORD_0", [0, 0, 1, 0, 1, 1, 0, 1], 2, SomeEngine.Assets.Data.ValueType.Float16, 2, false),
+    ];
+    Mesh floorMesh = ClusterBuilder.ProcessRaw(corners, attributes, [0, 2, 1, 0, 3, 2],
+        [new MeshMaterialSlot(AssetGuid.Parse(floor.MaterialGuids![0]))], "Shadow receiver floor");
+    floor.MeshGuid = project.CreateAsset("assets/Meshes/floor.mesh.asset", floorMesh).ToFlatString();
+    floor.Position = new SceneVector3();
+    floor.Scale = new SceneVector3 { X = 1, Y = 1, Z = 1 };
+    floor.MotionAmplitude = new SceneVector3();
+    floor.BoundsExpansion = 0;
+    if (!storage.TryFind(AssetGuid.Parse(floor.MaterialGuids[0]), out AssetEntry materialEntry)) throw new InvalidOperationException();
+    await using var materialDocument = await AssetProject.OpenAsync<Material>(storage, materialEntry);
+    StandardMaterial material = (StandardMaterial)materialDocument.Root;
+    Vector4[] colors = [new(.8f, .12f, .08f, 1), new(.12f, .65f, .2f, 1), new(.08f, .25f, .8f, 1), new(.5f, .5f, .5f, 1)];
+    for (int index = 0; index < 4; index++)
+    {
+        material.AssetGuid = AssetGuid.New().ToFlatString();
+        material.Name = "Lighting surface " + index;
+        material.BaseColorTint = colors[index];
+        material.Roughness = .6f;
+        project.CreateAsset<Material>($"assets/Materials/lighting-{index}.material.asset", material);
+        scene.MeshInstances[index].MaterialGuids = [material.AssetGuid];
+    }
+    scene.DirectionalLights = [new SceneDirectionalLight { Direction = new SceneVector3 { X = .4f, Y = -1, Z = .6f },
+        Color = new SceneVector3 { X = 1, Y = 1, Z = 1 }, Intensity = 2 }];
+    scene.PointLights = [new ScenePointLight { Position = new SceneVector3 { X = -3, Y = 2, Z = 6 },
+        Color = new SceneVector3 { X = 1, Y = .25f, Z = .1f }, Range = 8, Intensity = 35 }];
+    scene.SpotLights = [new SceneSpotLight { Position = new SceneVector3 { X = 3, Y = 4, Z = 8 },
+        Direction = new SceneVector3 { X = -.25f, Y = -1, Z = .15f },
+        Color = new SceneVector3 { X = .15f, Y = .4f, Z = 1 }, Range = 10, Intensity = 80,
+        InnerConeCos = .95f, OuterConeCos = .8f }];
+}
+if (mode == "occlusion")
+{
+    foreach ((SceneMeshInstance instance, int index) in scene.MeshInstances.Select((value, index) => (value, index)))
+    {
+        instance.Position = new SceneVector3 { X = (index % 16 - 7.5f) * .8f, Y = (index / 16 - 3.5f) * .8f, Z = 18 };
+        instance.Scale = new SceneVector3 { X = .3f, Y = .3f, Z = .3f };
+        instance.MotionAmplitude = new SceneVector3();
+        instance.BoundsExpansion = 0;
+    }
+    List<RawAttribute> attributes =
+    [
+        new("NORMAL", [0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1], 3, SomeEngine.Assets.Data.ValueType.Int8, 3, true),
+        new("TEXCOORD_0", [0, 0, 1, 0, 1, 1, 0, 1], 2, SomeEngine.Assets.Data.ValueType.Float16, 2, false),
+    ];
+    string material = scene.MeshInstances[0].MaterialGuids![0];
+    Mesh wall = ClusterBuilder.ProcessRaw([new(-2, -3.5f, 0), new(2, -3.5f, 0), new(2, 3.5f, 0), new(-2, 3.5f, 0)],
+        attributes, [0, 2, 1, 0, 3, 2], [new MeshMaterialSlot(AssetGuid.Parse(material))], "Moving occluder");
+    scene.MeshInstances = [.. scene.MeshInstances, new SceneMeshInstance
+    {
+        MeshGuid = project.CreateAsset("assets/Meshes/occluder.mesh.asset", wall).ToFlatString(),
+        MaterialGuids = [material], Position = new SceneVector3 { Z = 10 }, Rotation = new SceneQuaternion(),
+        Scale = new SceneVector3 { X = 1, Y = 1, Z = 1 },
+        MotionAmplitude = new SceneVector3 { X = 4 }, MotionSeed = 1,
+    }];
 }
 project.CreateAsset("assets/Scenes/scenario.scene.asset", scene);
 Console.WriteLine(destination);

@@ -32,6 +32,10 @@ public sealed record RuntimeStartupOptions(
     public bool SynchronousFrames { get; init; }
     public string? ScenePlayback { get; init; }
     public float FixedFrameSeconds { get; init; }
+    public string? FrameOutputPath { get; init; }
+    public bool HideDebugUi { get; init; }
+    public bool TemporalAntialiasing { get; init; } = true;
+    public bool VirtualShadows { get; init; } = true;
 
     public static RuntimeStartupOptions Parse(string[] args)
     {
@@ -53,6 +57,10 @@ public sealed record RuntimeStartupOptions(
             disableSwitches: ["--no-vsync"],
             defaultValue: true);
         int frameLimit = ReadPositive(args, "--frames", defaultValue: 0);
+        string? frameOutputPath = ReadOptionalValue(args, "--frame-output");
+        if (frameOutputPath is not null &&
+            !Path.GetExtension(frameOutputPath).Equals(".bmp", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("--frame-output requires a .bmp destination.");
         string? playback = ReadOptionalValue(args, "--scene-playback");
         if (playback is not null and not "motion" and not "materials")
             throw new ArgumentException("--scene-playback requires 'motion' or 'materials'.");
@@ -111,6 +119,10 @@ public sealed record RuntimeStartupOptions(
             SynchronousFrames = synchronousFrames,
             ScenePlayback = playback,
             FixedFrameSeconds = fixedStep,
+            FrameOutputPath = frameOutputPath,
+            HideDebugUi = args.Contains("--no-debug-ui", StringComparer.OrdinalIgnoreCase),
+            TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
+            VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
         };
     }
 

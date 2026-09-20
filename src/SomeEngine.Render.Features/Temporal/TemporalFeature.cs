@@ -144,14 +144,14 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new TemporalInitializePassData(_colorHistory, _motionHistory, _sceneDepth, _depthHistory,
                     checked((uint)width), checked((uint)height)),
-                new PassOptions(Culling: PassCullingMode.NeverCull),
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 static (ref PassDefinition pass, ref TemporalInitializePassData data) => data.Declare(ref pass),
                 TemporalInitializePassData.Record);
             _resolvePass = edit.AddRasterFramePass(
                 "Temporal resolve",
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new TemporalResolvePassData(resolvedAttachment, width, height),
-                new PassOptions(Culling: PassCullingMode.NeverCull),
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 pipeline.Pipeline,
                 pipeline.Program.Layout.GetGlobalParamsVarLayout(),
                 default,
@@ -162,7 +162,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new TemporalHistoryPassData(resolved, _colorHistory, _sceneMotion, _motionHistory,
                     _sceneDepth, _depthHistory, checked((uint)width), checked((uint)height)),
-                new PassOptions(Culling: PassCullingMode.NeverCull),
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 static (ref PassDefinition pass, ref TemporalHistoryPassData data) => data.Declare(ref pass),
                 TemporalHistoryPassData.Record);
             edit.OrderAfter(_resolvePass, _initializePass);

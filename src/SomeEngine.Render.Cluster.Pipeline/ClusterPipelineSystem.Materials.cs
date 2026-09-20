@@ -1,4 +1,4 @@
-﻿using System.Collections.Immutable;
+using System.Collections.Immutable;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.Graphics;
@@ -126,7 +126,7 @@ public sealed partial class ClusterPipelineSystem
         ref PassDefinition pass,
         ClusterRasterInvocation invocation,
         ClusterRasterStageResources<ClusterTessellationCoreResource> stage,
-        GraphBufferId uniformBuffer,
+        GraphBufferInput uniformBuffer,
         bool phaseOne,
         uint nextLevelArgument,
         PipelineSync sync,
@@ -191,7 +191,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterTessellationCoreResource resource,
-        GraphBufferId uniformBuffer,
+        GraphBufferInput uniformBuffer,
         bool phaseOne,
         uint nextLevelArgument,
         PipelineSync sync)
@@ -240,6 +240,15 @@ public sealed partial class ClusterPipelineSystem
                         frame.VisibleClusters,
                         structureStride: VisibleClusterStride,
                         label: "Cluster tessellation visible clusters"),
+                    sync,
+                    BufferContentScope.CountBoundedPrefix);
+                return;
+            case ClusterTessellationCoreResource.RasterWindows:
+                _ = pass.Bind(
+                    graph.CreateBufferSrv(
+                        frame.VisibleClusterRasterWindows,
+                        structureStride: VisibleClusterRasterWindowStride,
+                        label: "Cluster tessellation raster windows"),
                     sync,
                     BufferContentScope.CountBoundedPrefix);
                 return;
@@ -413,7 +422,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterRasterInvocation invocation,
-        GraphBufferId uniformBuffer,
+        GraphBufferInput uniformBuffer,
         bool policyTarget)
     {
         ClusterRasterStageResources<ClusterSoftwareRasterCoreResource> stage =
@@ -472,8 +481,8 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterRasterInvocation invocation,
-        GraphBufferId uniformBuffer,
-        GraphBufferId dispatchUniformBuffer,
+        GraphBufferInput uniformBuffer,
+        GraphBufferInput dispatchUniformBuffer,
         bool policyTarget)
     {
         ClusterRasterStageResources<ClusterHardwareRasterCoreResource> stage =
@@ -535,12 +544,28 @@ public sealed partial class ClusterPipelineSystem
     {
         switch (resource.Name, resource.Type)
         {
-            case ("RasterTargetInvocations", ResourceBindingType.BufferSrv):
+            case ("RasterTargetViews", ResourceBindingType.BufferSrv):
                 _ = pass.Bind(
                     graph.CreateBufferSrv(
                         _frameResources.NeutralPolicyView,
-                        structureStride: 48,
-                        label: "Cluster neutral raster target invocation"),
+                        structureStride: 72,
+                        label: "Cluster neutral raster target view"),
+                    PipelineSync.AllShading);
+                return true;
+            case ("RasterTargetPageHierarchy", ResourceBindingType.BufferSrv):
+            case ("RasterTargetPageTable", ResourceBindingType.BufferSrv):
+            case ("RasterTargetReceiverMasks", ResourceBindingType.BufferSrv):
+                uint stride = resource.Name switch
+                {
+                    "RasterTargetPageHierarchy" => sizeof(uint),
+                    "RasterTargetPageTable" => 4u * sizeof(uint),
+                    _ => 2u * sizeof(uint),
+                };
+                _ = pass.Bind(
+                    graph.CreateBufferSrv(
+                        _frameResources.NeutralPolicyView,
+                        structureStride: stride,
+                        label: $"Cluster neutral {resource.Name}"),
                     PipelineSync.AllShading);
                 return true;
             case ("RasterTargetOutput", ResourceBindingType.TextureUav):
@@ -570,7 +595,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterSoftwareRasterCoreResource resource,
-        GraphBufferId uniformBuffer)
+        GraphBufferInput uniformBuffer)
     {
         FrameResources frame = _frameResources;
         switch (resource)
@@ -612,6 +637,15 @@ public sealed partial class ClusterPipelineSystem
                         frame.VisibleClusters,
                         structureStride: VisibleClusterStride,
                         label: "Cluster software raster visible clusters"),
+                    PipelineSync.ComputeShading,
+                    BufferContentScope.CountBoundedPrefix);
+                return;
+            case ClusterSoftwareRasterCoreResource.RasterWindows:
+                _ = pass.Bind(
+                    graph.CreateBufferSrv(
+                        frame.VisibleClusterRasterWindows,
+                        structureStride: VisibleClusterRasterWindowStride,
+                        label: "Cluster software raster windows"),
                     PipelineSync.ComputeShading,
                     BufferContentScope.CountBoundedPrefix);
                 return;
@@ -686,8 +720,8 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterHardwareRasterCoreResource resource,
-        GraphBufferId uniformBuffer,
-        GraphBufferId dispatchUniformBuffer)
+        GraphBufferInput uniformBuffer,
+        GraphBufferInput dispatchUniformBuffer)
     {
         FrameResources frame = _frameResources;
         switch (resource)
@@ -745,6 +779,15 @@ public sealed partial class ClusterPipelineSystem
                         frame.VisibleClusters,
                         structureStride: VisibleClusterStride,
                         label: "Cluster hardware raster visible clusters"),
+                    PipelineSync.AllShading,
+                    BufferContentScope.CountBoundedPrefix);
+                return;
+            case ClusterHardwareRasterCoreResource.RasterWindows:
+                _ = pass.Bind(
+                    graph.CreateBufferSrv(
+                        frame.VisibleClusterRasterWindows,
+                        structureStride: VisibleClusterRasterWindowStride,
+                        label: "Cluster hardware raster windows"),
                     PipelineSync.AllShading,
                     BufferContentScope.CountBoundedPrefix);
                 return;
@@ -824,7 +867,8 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private GraphBufferInput BindShadeResources(
-        ref RenderGraphEdit graph, GraphPassId passId, ClusterShadeInvocation invocation)
+        ref RenderGraphEdit graph, GraphPassId passId, ClusterShadeInvocation invocation,
+        ClusterShadeStageSet stages)
     {
         _materialInputsAreShade = true;
         _materialInputBin = invocation.BinIndex;
@@ -832,7 +876,8 @@ public sealed partial class ClusterPipelineSystem
         _shadeScalarsInput ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
         PassDefinition pass = graph.GetPass(passId);
         pass.SetParameterBlock(invocation.Pipeline.ParameterLayout);
-        GraphBufferInput uniformBuffer = graph.CreateBufferInput(BufferUsages.Constant);
+        GraphBufferInput uniformBuffer = UploadUniform(ref graph,
+            ShadeUniforms(invocation.BinIndex, stages), "Cluster shade parameters");
         ReadOnlySpan<ClusterLinkedStageResource> resources = invocation.Resources.Resources;
         for (int resourceIndex = 0; resourceIndex < resources.Length; resourceIndex++)
         {
@@ -1214,22 +1259,6 @@ public sealed partial class ClusterPipelineSystem
             new BufferRange(0, checked((ulong)_materialScalars.Offsets.Length))));
         graph.SetBufferInput(_shadeScalarsInput, new GraphBufferSlice(_scalarBytes,
             new BufferRange(0, checked((ulong)_materialScalars.Bytes.Length))));
-        Span<byte> uniformBytes = stackalloc byte[256];
-        uniformBytes.Clear();
-        foreach (ClusterShadeInvocation stage in stages.Invocations)
-        {
-            var uniforms = new ClusterShadeUniforms
-            {
-                ScreenWidth = checked((uint)_frameResources.Width),
-                ScreenHeight = checked((uint)_frameResources.Height),
-                ShadingBin = stage.BinIndex,
-                ShadeBinCount = stages.BinCount,
-                MaterialSlotCapacity = checked((uint)(stages.BinIndices.Length / sizeof(uint))),
-            };
-            System.Runtime.InteropServices.MemoryMarshal.Write(uniformBytes, in uniforms);
-            graph.SetBufferInput(_shadeGroups[stage.BinIndex].Uniforms, graph.Upload<byte>(
-                uniformBytes, BufferUsages.Constant, "Cluster shade parameters"));
-        }
     }
 
     private void UpdateMaterialInputs(ref RenderGraphFrame graph)

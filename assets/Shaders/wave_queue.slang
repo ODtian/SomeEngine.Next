@@ -23,6 +23,19 @@ interface IWaveTask
     [mutating] void ExecuteTask(uint srcLane, uint localIdx, bool bActive);
 };
 
+/// Wave task whose execution also receives one bound uniform value. This is for
+/// shader objects that can contain resource handles: the value remains a bound
+/// parameter and is never copied into the per-lane task state.
+interface IWaveUniformTask<TUniform>
+{
+    [mutating] uint GetTaskCount();
+    [mutating] void ExecuteTask(
+        uniform TUniform value,
+        uint srcLane,
+        uint localIdx,
+        bool bActive);
+};
+
 struct WaveQueue
 {
     // Find position of the n-th set bit (0-indexed) in a 32-bit mask.
@@ -132,6 +145,61 @@ struct WaveQueue
             // Execute unconditionally — WaveReadLaneAt inside ExecuteTask
             // requires all lanes active to avoid UNDEFINED reads.
             task.ExecuteTask(srcLane, localIdx, taskIdx < totalTasks);
+
+            workHead += activeLaneCount;
+            compactHead += MaskBitCount(boundaryBits);
+        }
+    }
+
+    /// Same distribution as Distribute(), but passes a bound uniform object to
+    /// task execution instead of requiring it to be copied into task state.
+    static void DistributeWithUniform<
+        TUniform,
+        T : IWaveUniformTask<TUniform>>(
+        inout T task,
+        uniform TUniform value)
+    {
+        uint myCount = task.GetTaskCount();
+        uint myOffset = WavePrefixSum(myCount);
+        uint totalTasks = WaveActiveSum(myCount);
+
+        if (totalTasks == 0)
+            return;
+
+        uint laneIdx = WavePrefixSum(1u);
+        uint activeLaneCount = WaveActiveSum(1u);
+
+        uint4 nonEmptyMask = WaveActiveBallot(myCount > 0);
+        uint numProducers = MaskBitCount(nonEmptyMask);
+        uint maxCompact = numProducers > 0 ? numProducers - 1 : 0;
+
+        uint compactHead = 0;
+        uint workHead = 0;
+
+        while (workHead < totalTasks)
+        {
+            uint4 boundaryMask = 0u.xxxx;
+            if (myCount > 0)
+            {
+                int lastSlot = int(myOffset + myCount - 1) - int(workHead);
+                if (lastSlot >= 0 && uint(lastSlot) < activeLaneCount)
+                    boundaryMask = OneBit(uint(lastSlot));
+            }
+            uint4 boundaryBits = uint4(
+                WaveActiveBitOr(boundaryMask.x),
+                WaveActiveBitOr(boundaryMask.y),
+                WaveActiveBitOr(boundaryMask.z),
+                WaveActiveBitOr(boundaryMask.w));
+
+            uint taskIdx = workHead + laneIdx;
+            uint prodOffset = MaskPrefixBitCount(boundaryBits, laneIdx);
+            uint compactIdx = compactHead + prodOffset;
+            uint srcLane = FindNthSetBit(nonEmptyMask, min(compactIdx, maxCompact));
+
+            uint srcStart = WaveReadLaneAt(myOffset, srcLane);
+            uint localIdx = taskIdx - srcStart;
+
+            task.ExecuteTask(value, srcLane, localIdx, taskIdx < totalTasks);
 
             workHead += activeLaneCount;
             compactHead += MaskBitCount(boundaryBits);

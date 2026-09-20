@@ -2,14 +2,19 @@
 
 public sealed partial class RenderGraph : IDisposable
 {
-    internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind)
+    internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind, bool refreshViews = true)
     {
-        foreach (FrameSlot frame in _frameSlots) frame.ChangeProperty(identity, kind);
+        foreach (FrameSlot frame in _frameSlots) frame.ChangeProperty(identity, kind, refreshViews);
     }
 
     internal void BoundaryChanged(GraphIdentity identity, GraphStoreKind kind)
     {
         foreach (FrameSlot frame in _frameSlots) frame.BoundaryChanged(identity, kind);
+    }
+
+    internal void CommandDataChanged(GraphIdentity identity)
+    {
+        foreach (FrameSlot frame in _frameSlots) frame.CommandDataChanged(identity);
     }
 
     private static long s_nextOwnerIdentity;
@@ -24,6 +29,9 @@ public sealed partial class RenderGraph : IDisposable
     private readonly object _structureGate = new();
     private readonly List<StructureTransition> _deferredRetirements = [];
     private GraphStructure _structure = new();
+    private GraphStructure? _editSource;
+    private GraphStructure? _editStructure;
+    private GraphEditChanges? _editChanges;
     private GraphStructureIndex _structureIndex = GraphStructureIndex.Empty;
     private long _editToken;
     private long _nextEditIdentity;
@@ -109,11 +117,10 @@ public sealed partial class RenderGraph : IDisposable
         try
         {
             lock (_structureGate)
-                return new RenderGraphEdit(
-                    this,
-                    token,
-                    _structure.Fork(),
-                    new GraphEditChanges());
+            {
+                _editSource = _structure;
+                return new RenderGraphEdit(this, token);
+            }
         }
         catch
         {
@@ -121,6 +128,19 @@ public sealed partial class RenderGraph : IDisposable
             throw;
         }
     }
+
+    internal GraphStructure ReadEditStructure => _editStructure ?? _editSource!;
+
+    internal GraphStructure EditStructure
+    {
+        get
+        {
+            if (_editStructure is not null) return _editStructure;
+            lock (_structureGate) return _editStructure ??= _editSource!.Fork();
+        }
+    }
+
+    internal GraphEditChanges EditChanges => _editChanges ??= new GraphEditChanges();
 
     public bool TryBeginFrame(
         out RenderGraphFrame frame,
@@ -282,9 +302,11 @@ public sealed partial class RenderGraph : IDisposable
         }
 
         foreach (Queue queue in _queues)
-            if (queue.Type == policy.Type && QueueSupports(kind, queue.Type))
+            if ((policy.AllowsAnyType || queue.Type == policy.Type) && QueueSupports(kind, queue.Type))
                 return;
-        throw new NotSupportedException($"No registered {policy.Type} Queue can execute the pass.");
+        throw new NotSupportedException(policy.AllowsAnyType
+            ? $"No registered Queue supports {kind} commands."
+            : $"No registered {policy.Type} Queue can execute the pass.");
     }
 
     internal void ResolveQueueCandidates(
@@ -304,10 +326,12 @@ public sealed partial class RenderGraph : IDisposable
         }
 
         foreach (Queue queue in _queues)
-            if (queue.Type == policy.Type && QueueSupports(kind, queue.Type))
+            if ((policy.AllowsAnyType || queue.Type == policy.Type) && QueueSupports(kind, queue.Type))
                 destination.Add(queue);
         if (destination.Count == 0)
-            throw new NotSupportedException($"No registered {policy.Type} Queue can execute the pass.");
+            throw new NotSupportedException(policy.AllowsAnyType
+                ? $"No registered Queue supports {kind} commands."
+                : $"No registered {policy.Type} Queue can execute the pass.");
     }
 
     private static bool QueueSupports(GraphPassKind kind, QueueType queueType) => kind switch
@@ -328,17 +352,16 @@ public sealed partial class RenderGraph : IDisposable
             throw new NotSupportedException($"A {kind} pass cannot execute on a {type} Queue.");
     }
 
-    internal void CommitEdit(
-        long token,
-        GraphStructure staging,
-        GraphEditChanges changes)
+    internal void CommitEdit(long token)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.EditCommit);
         EnsureEdit(token);
         lock (_structureGate)
         {
             GraphStructure previous = _structure;
-            if (changes.IsEmpty)
+            GraphStructure staging = _editStructure ?? _editSource!;
+            GraphEditChanges? changes = _editChanges;
+            if (changes is null || changes.IsEmpty)
             {
 #if DEBUG
                 LastEditStatistics = default;
@@ -406,8 +429,15 @@ public sealed partial class RenderGraph : IDisposable
 
     private void EndEdit(long token)
     {
-        if (Interlocked.CompareExchange(ref _editToken, 0, token) != token)
-            throw new InvalidOperationException("The render graph edit token is no longer active.");
+        lock (_structureGate)
+        {
+            if (Volatile.Read(ref _editToken) != token)
+                throw new InvalidOperationException("The render graph edit token is no longer active.");
+            _editSource = null;
+            _editStructure = null;
+            _editChanges = null;
+            Interlocked.Exchange(ref _editToken, 0);
+        }
     }
 
     internal void EndFrame(ulong identity)

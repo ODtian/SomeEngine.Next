@@ -27,6 +27,16 @@ WriteGeneratedFile(
     BuildRenderInstanceLayoutSource(instanceProperties));
 
 AssetProject project = AssetAuthoring.CreateProject(projectRoot);
+RemoveObsoleteAsset(
+    projectRoot,
+    project,
+    "assets/Shaders/vsm_build_raster_regions.slang",
+    "assets/Shaders/vsm_build_raster_regions.shader.asset");
+if (args.Contains("--virtual-shadow-only", StringComparer.Ordinal))
+{
+    GenerateVirtualShadowMapShaders(project);
+    return;
+}
 if (args.Contains("--cluster-pipeline-only", StringComparer.Ordinal))
 {
     GenerateClusterPipeline(project);
@@ -181,8 +191,11 @@ string[] shaderSources =
     "vsm_allocate_pages.slang",
     "vsm_caster_invalidation.slang",
     "vsm_clear_pages.slang",
+    "vsm_dynamic_resolution.slang",
+    "vsm_frame_reset.slang",
     "vsm_mark_coarse_pages.slang",
     "vsm_mark_pages.slang",
+    "vsm_page_hiz.slang",
     "vsm_page_pool.slang",
     "vsm_state_init.slang",
     "vsm_view_compact.slang",
@@ -816,6 +829,9 @@ static AssetGuid GenerateVirtualShadowMapShaders(AssetProject project)
         new VirtualShadowMapShaders
         {
             Name = "Default Virtual Shadow",
+            ResetFrame = Shader(
+                ResolveRequired(project, "assets/Shaders/vsm_frame_reset.slang"),
+                "ResetVirtualShadowFrame", ShaderStage.Compute),
             MarkPages = Shader(
                 ResolveRequired(project, "assets/Shaders/vsm_mark_pages.slang"),
                 "MarkVirtualShadowPages",
@@ -855,6 +871,10 @@ static AssetGuid GenerateVirtualShadowMapShaders(AssetProject project)
             ReducePageHiZ = Shader(
                 ResolveRequired(project, "assets/Shaders/vsm_page_hiz_reduce.slang"),
                 "ReduceVirtualShadowPageHiZ",
+                ShaderStage.Compute),
+            DynamicResolution = Shader(
+                ResolveRequired(project, "assets/Shaders/vsm_dynamic_resolution.slang"),
+                "UpdateVirtualShadowDynamicResolution",
                 ShaderStage.Compute),
         });
     Console.WriteLine($"  VirtualShadowMap: {outputPath}");

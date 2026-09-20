@@ -1,32 +1,131 @@
 #ifndef CLUSTER_RASTER_TARGET_FILTER_SLANG
 #define CLUSTER_RASTER_TARGET_FILTER_SLANG
 
-#include "cluster_raster_region_access.slang"
+#include "cluster_raster_target_view.slang"
+#include "cluster_view_access.slang"
+
+StructuredBuffer<ClusterRasterTargetView> RasterTargetViews;
+StructuredBuffer<uint> RasterTargetPageHierarchy;
+StructuredBuffer<uint4> RasterTargetPageTable;
+StructuredBuffer<uint2> RasterTargetReceiverMasks;
 Texture2DArray<float> RasterTargetCurrentHiZ;
 Texture2DArray<float> RasterTargetPreviousHiZ;
-StructuredBuffer<uint> RasterRegionGrid;
 
-uint4 ClusterRasterGridBounds(float2 minUv, float2 maxUv, ClusterViewUniforms view)
+uint2 ClusterTargetPixelMin(float2 uv, ClusterViewUniforms view)
 {
-    uint dimension = max(view.Pad6, 1u);
-    uint2 first = min(uint2(saturate(minUv) * dimension), dimension - 1u);
-    uint2 last = min(uint2(saturate(maxUv) * dimension), dimension - 1u);
-    return uint4(first, last);
+    return uint2(max(floor(uv * float2(view.ScreenWidth, view.ScreenHeight)), 0.0.xx));
 }
 
-uint ClusterRasterGridMask(uint row, uint word, uint4 bounds, ClusterViewUniforms view)
+uint2 ClusterTargetPixelMax(float2 uv, ClusterViewUniforms view)
 {
-    uint mask = RasterRegionGrid[view.TargetViewIndex + row * ((view.Pad6 + 31u) / 32u) + word];
-    if (word == bounds.x / 32u)
-        mask &= 0xFFFFFFFFu << (bounds.x & 31u);
-    if (word == bounds.z / 32u)
-        mask &= 0xFFFFFFFFu >> (31u - (bounds.z & 31u));
+    return uint2(max(ceil(uv * float2(view.ScreenWidth, view.ScreenHeight)) - 1.0, 0.0.xx));
+}
+
+bool ClusterTargetPixelBounds(
+    float2 minUv,
+    float2 maxUv,
+    ClusterViewUniforms view,
+    ClusterRasterTargetView target,
+    out uint2 firstPixel,
+    out uint2 lastPixel)
+{
+    if (any(maxUv < 0.0.xx) || any(minUv > 1.0.xx) || any(maxUv < minUv))
+    {
+        firstPixel = 0u.xx;
+        lastPixel = 0u.xx;
+        return false;
+    }
+
+    uint limit = max(target.MipResolution, 1u) - 1u;
+    firstPixel = min(ClusterTargetPixelMin(saturate(minUv), view), limit.xx);
+    lastPixel = min(ClusterTargetPixelMax(saturate(maxUv), view), limit.xx);
+    return all(firstPixel <= lastPixel);
+}
+
+uint ClusterTargetHierarchyWordMask(
+    ClusterRasterTargetView target,
+    uint hierarchyLevel,
+    uint row,
+    uint word,
+    uint firstColumn,
+    uint lastColumn)
+{
+    uint mask = RasterTargetPageHierarchy[
+        ClusterRasterTargetHierarchyIndex(
+            target, hierarchyLevel, row, word)];
+    if (word == firstColumn / 32u)
+        mask &= 0xFFFFFFFFu << (firstColumn & 31u);
+    if (word == lastColumn / 32u)
+        mask &= 0xFFFFFFFFu >> (31u - (lastColumn & 31u));
     return mask;
 }
 
-uint ClusterRasterGridRegion(uint row, uint column, ClusterViewUniforms view)
+bool ClusterTargetReceiverAccepts(
+    ClusterRasterTargetView target,
+    uint2 localPage,
+    uint2 firstPixel,
+    uint2 lastPixel)
 {
-    return RasterRegionGrid[view.Pad5 + row * view.Pad6 + column] - 1u;
+    if (target.ReceiverMaskEnabled == 0u)
+        return true;
+
+    uint tableIndex = ClusterRasterTargetTableIndex(target, localPage);
+    uint2 receiverMask = RasterTargetReceiverMasks[tableIndex];
+    if (all(receiverMask == 0u.xx))
+        return false;
+
+    uint2 pageOrigin = localPage * target.PageSize;
+    uint2 localFirst = firstPixel > pageOrigin
+        ? firstPixel - pageOrigin
+        : 0u.xx;
+    uint2 localLast = min(lastPixel - min(lastPixel, pageOrigin), target.PageSize - 1u);
+
+    uint2 firstCell = min(
+        localFirst * 8u / max(target.PageSize, 1u),
+        7u.xx);
+    uint2 lastCell = min(
+        localLast * 8u / max(target.PageSize, 1u),
+        7u.xx);
+    uint columnMask =
+        (0xFFu << firstCell.x) &
+        (0xFFu >> (7u - lastCell.x));
+
+    for (uint row = firstCell.y; row <= lastCell.y; row++)
+    {
+        uint rowMask = row < 4u
+            ? (receiverMask.x >> (row * 8u)) & 0xFFu
+            : (receiverMask.y >> ((row - 4u) * 8u)) & 0xFFu;
+        if ((rowMask & columnMask) != 0u)
+            return true;
+    }
+    return false;
+}
+
+bool ClusterTargetPageRequested(
+    ClusterRasterTargetView target,
+    uint2 localPage)
+{
+    uint word = localPage.x / 32u;
+    uint bit = 1u << (localPage.x & 31u);
+    return (RasterTargetPageHierarchy[
+        ClusterRasterTargetHierarchyIndex(
+            target, 0u, localPage.y, word)] & bit) != 0u;
+}
+
+bool ClusterTargetPageBounds(
+    ClusterRasterTargetView target,
+    uint2 firstPixel,
+    uint2 lastPixel,
+    out uint2 firstPage,
+    out uint2 lastPage)
+{
+    firstPage = max(
+        firstPixel / target.PageSize,
+        target.UncachedPageRect.xy);
+    lastPage = min(
+        lastPixel / target.PageSize,
+        target.UncachedPageRect.zw);
+    return all(firstPage <= lastPage);
 }
 
 bool ClusterTargetPolicyScreenBoundsAccepts(
@@ -34,63 +133,152 @@ bool ClusterTargetPolicyScreenBoundsAccepts(
     float2 maxUv,
     ClusterViewUniforms view)
 {
-    if (any(maxUv < 0.0.xx) || any(minUv > 1.0.xx) || any(maxUv < minUv))
+    ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
+    uint2 firstPixel;
+    uint2 lastPixel;
+    if (!ClusterTargetPixelBounds(
+            minUv, maxUv, view, target, firstPixel, lastPixel))
         return false;
-    uint4 bounds = ClusterRasterGridBounds(minUv, maxUv, view);
-    for (uint row = bounds.y; row <= bounds.w; row++)
-        for (uint word = bounds.x / 32u; word <= bounds.z / 32u; word++)
-            if (ClusterRasterGridMask(row, word, bounds, view) != 0u)
+
+    uint2 firstPage;
+    uint2 lastPage;
+    if (!ClusterTargetPageBounds(
+            target, firstPixel, lastPixel, firstPage, lastPage))
+        return false;
+    uint2 pageExtent = lastPage - firstPage + 1u;
+    uint maximumExtent = max(pageExtent.x, pageExtent.y);
+    uint hierarchyLevel =
+        maximumExtent > 1u ? uint(firstbithigh(maximumExtent)) : 0u;
+    hierarchyLevel = min(
+        hierarchyLevel,
+        uint(firstbithigh(max(target.PagesPerRow, 1u))));
+    uint2 firstCell = firstPage >> hierarchyLevel;
+    uint2 lastCell = lastPage >> hierarchyLevel;
+    uint firstWord = firstCell.x / 32u;
+    uint lastWord = lastCell.x / 32u;
+
+    for (uint row = firstCell.y; row <= lastCell.y; row++)
+    {
+        for (uint word = firstWord; word <= lastWord; word++)
+        {
+            if (ClusterTargetHierarchyWordMask(
+                    target,
+                    hierarchyLevel,
+                    row,
+                    word,
+                    firstCell.x,
+                    lastCell.x) != 0u)
                 return true;
+        }
+    }
     return false;
 }
 
-bool RasterTargetWorldAabbOutsideFrustum(
-    float3 worldMin,
-    float3 worldMax,
-    bool usePrevious,
-    ClusterViewUniforms view)
-{
-    float4x4 viewProjection = usePrevious ? view.PrevViewProj : view.ViewProj;
-    bool4 outsideSides = true.xxxx;
-    bool2 outsideDepth = true.xx;
-    [unroll]
-    for (uint index = 0u; index < 8u; index++)
-    {
-        float3 corner = float3(
-            (index & 1u) != 0u ? worldMax.x : worldMin.x,
-            (index & 2u) != 0u ? worldMax.y : worldMin.y,
-            (index & 4u) != 0u ? worldMax.z : worldMin.z);
-        float4 clip = mul(float4(corner, 1.0), viewProjection);
-        outsideSides &= bool4(
-            clip.x < -clip.w,
-            clip.x > clip.w,
-            clip.y < -clip.w,
-            clip.y > clip.w);
-        outsideDepth &= bool2(clip.z < 0.0, clip.z > clip.w);
-    }
-    return any(outsideSides) || any(outsideDepth);
-}
-
-float SampleRasterTargetHiZMax(
-    Texture2DArray<float> source,
+bool ClusterTargetPolicyRasterBoundsWindow(
     float2 minUv,
     float2 maxUv,
-    uint mip,
-    uint layer,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view,
+    out uint2 rasterWindow)
 {
-    float2 fullSize = 1.0.xx / max(view.HiZInvSize, 1e-6.xx);
-    float divisor = exp2(float(mip));
-    float2 mipMax = max(1.0.xx, floor(fullSize / divisor)) - 1.0.xx;
-    float2 pixelMin = minUv * fullSize / divisor;
-    float2 pixelMax = maxUv * fullSize / divisor;
-    int2 p0 = int2(clamp(pixelMin, 0.0.xx, mipMax));
-    int2 p1 = int2(clamp(float2(pixelMax.x, pixelMin.y), 0.0.xx, mipMax));
-    int2 p2 = int2(clamp(float2(pixelMin.x, pixelMax.y), 0.0.xx, mipMax));
-    int2 p3 = int2(clamp(pixelMax, 0.0.xx, mipMax));
+    rasterWindow = 0u.xx;
+    ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
+    uint2 firstPixel;
+    uint2 lastPixel;
+    if (!ClusterTargetPixelBounds(
+            minUv, maxUv, view, target, firstPixel, lastPixel))
+        return false;
+
+    uint2 firstPage;
+    uint2 lastPage;
+    if (!ClusterTargetPageBounds(
+            target, firstPixel, lastPixel, firstPage, lastPage))
+        return false;
+    uint2 acceptedFirst = lastPage;
+    uint2 acceptedLast = firstPage;
+    bool accepted = false;
+    uint firstWord = firstPage.x / 32u;
+    uint lastWord = lastPage.x / 32u;
+    for (uint row = firstPage.y; row <= lastPage.y; row++)
+    {
+        for (uint word = firstWord; word <= lastWord; word++)
+        {
+            uint mask = ClusterTargetHierarchyWordMask(
+                target,
+                0u,
+                row,
+                word,
+                firstPage.x,
+                lastPage.x);
+            while (mask != 0u)
+            {
+                uint column = word * 32u + firstbitlow(mask);
+                mask &= mask - 1u;
+                uint2 localPage = uint2(column, row);
+                if (ClusterTargetReceiverAccepts(
+                        target, localPage, firstPixel, lastPixel))
+                {
+                    acceptedFirst = min(acceptedFirst, localPage);
+                    acceptedLast = max(acceptedLast, localPage);
+                    accepted = true;
+                }
+            }
+        }
+    }
+    if (accepted)
+        rasterWindow = ClusterPackRasterTargetPageWindow(
+            uint4(acceptedFirst, acceptedLast));
+    return accepted;
+}
+
+bool ClusterTargetEntryValid(
+    ClusterRasterTargetView target,
+    uint2 localPage,
+    out uint physicalPage)
+{
+    uint tableIndex = ClusterRasterTargetTableIndex(target, localPage);
+    uint4 entry = RasterTargetPageTable[tableIndex];
+    int2 expectedWorldPage = ClusterRasterTargetWorldPage(target, localPage);
+    if (entry.x == 0u || entry.x == 0xFFFFFFFFu ||
+        entry.w != target.CacheGeneration ||
+        asint(entry.y) != expectedWorldPage.x ||
+        asint(entry.z) != expectedWorldPage.y)
+    {
+        physicalPage = 0u;
+        return false;
+    }
+    physicalPage = entry.x - 1u;
+    return true;
+}
+
+float ClusterTargetHiZMax(
+    Texture2DArray<float> source,
+    ClusterRasterTargetView target,
+    uint physicalPage,
+    uint2 localPage,
+    uint2 firstPixel,
+    uint2 lastPixel,
+    uint mip)
+{
+    uint2 pageOrigin = localPage * target.PageSize;
+    uint2 localFirst = firstPixel > pageOrigin
+        ? firstPixel - pageOrigin
+        : 0u.xx;
+    uint2 localLast = min(lastPixel - min(lastPixel, pageOrigin), target.PageSize - 1u);
+
+    uint baseSize = max(target.PageSize / 2u, 1u);
+    uint mipSize = max(baseSize >> mip, 1u);
+    uint2 p0 = min((localFirst / 2u) >> mip, mipSize - 1u);
+    uint2 p3 = min((localLast / 2u) >> mip, mipSize - 1u);
+    uint2 p1 = uint2(p3.x, p0.y);
+    uint2 p2 = uint2(p0.x, p3.y);
+
     return max(
-        max(source.Load(int4(p0, layer, mip)), source.Load(int4(p1, layer, mip))),
-        max(source.Load(int4(p2, layer, mip)), source.Load(int4(p3, layer, mip))));
+        max(
+            source.Load(int4(p0, physicalPage, mip)),
+            source.Load(int4(p1, physicalPage, mip))),
+        max(
+            source.Load(int4(p2, physicalPage, mip)),
+            source.Load(int4(p3, physicalPage, mip))));
 }
 
 bool ClusterTargetPolicyAccepts(
@@ -107,45 +295,6 @@ bool ClusterTargetPolicyAccepts(
         view);
 }
 
-bool ClusterRasterRegionOccluded(
-    float2 minUv,
-    float2 maxUv,
-    float nearDepth,
-    bool usePrevious,
-    ClusterViewUniforms view)
-{
-    ClusterRasterTargetInvocation invocation =
-        RasterTargetInvocations[view.TargetViewIndex];
-    uint layer = usePrevious
-        ? invocation.PreviousHiZLayer
-        : invocation.CurrentHiZLayer;
-    if (layer == CLUSTER_INVALID_HIZ_LAYER || view.HiZMipCount == 0u)
-        return false;
-
-    float2 pixelExtent = float2(max(invocation.OutputExtent, 1u.xx));
-    float2 pixelDiameter = max((maxUv - minUv) * pixelExtent, 1.0.xx);
-    uint mip = min(
-        uint(max(0.0, ceil(log2(max(pixelDiameter.x, pixelDiameter.y))))),
-        view.HiZMipCount - 1u);
-    float hizDepth = usePrevious
-        ? SampleRasterTargetHiZMax(
-            RasterTargetPreviousHiZ,
-            minUv,
-            maxUv,
-            mip,
-            layer,
-            view)
-        : SampleRasterTargetHiZMax(
-            RasterTargetCurrentHiZ,
-            minUv,
-            maxUv,
-            mip,
-            layer,
-            view);
-    float epsilon = 5e-5 + 0.5 * max(view.HiZInvSize.x, view.HiZInvSize.y);
-    return nearDepth > hizDepth + epsilon;
-}
-
 bool ClusterTargetPolicyScreenBoundsOccluded(
     float2 minUv,
     float2 maxUv,
@@ -153,31 +302,89 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
     bool usePrevious,
     ClusterViewUniforms view)
 {
-    if (view.ViewPadding != 0u)
-        return ClusterRasterRegionOccluded(minUv, maxUv, nearDepth, usePrevious, view);
-    uint4 bounds = ClusterRasterGridBounds(minUv, maxUv, view);
-    for (uint row = bounds.y; row <= bounds.w; row++)
+    if (view.TargetPolicy == 0u || view.HiZMipCount == 0u)
+        return false;
+    if (usePrevious && view.HasPrevHistory == 0u)
+        return false;
+
+    ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
+    uint2 firstPixel;
+    uint2 lastPixel;
+    if (!ClusterTargetPixelBounds(
+            minUv, maxUv, view, target, firstPixel, lastPixel))
+        return false;
+
+    uint2 firstPage;
+    uint2 lastPage;
+    if (!ClusterTargetPageBounds(
+            target, firstPixel, lastPixel, firstPage, lastPage))
+        return false;
+    uint firstWord = firstPage.x / 32u;
+    uint lastWord = lastPage.x / 32u;
+    bool tested = false;
+
+    for (uint row = firstPage.y; row <= lastPage.y; row++)
     {
-        for (uint word = bounds.x / 32u; word <= bounds.z / 32u; word++)
+        for (uint word = firstWord; word <= lastWord; word++)
         {
-            uint mask = ClusterRasterGridMask(row, word, bounds, view);
+            uint mask = ClusterTargetHierarchyWordMask(
+                target, 0u, row, word, firstPage.x, lastPage.x);
             while (mask != 0u)
             {
                 uint column = word * 32u + firstbitlow(mask);
                 mask &= mask - 1u;
-                uint regionIndex = ClusterRasterGridRegion(row, column, view);
-                ClusterViewUniforms regionView = ClusterApplyRasterRegion(
-                    view, RasterTargetInvocations[regionIndex], regionIndex);
-                float2 page = float2(column, row);
-                if (!ClusterRasterRegionOccluded(
-                        saturate(minUv * view.Pad6 - page),
-                        saturate(maxUv * view.Pad6 - page),
-                        nearDepth, usePrevious, regionView))
+                uint2 localPage = uint2(column, row);
+                if (!ClusterTargetReceiverAccepts(
+                        target, localPage, firstPixel, lastPixel))
+                    continue;
+
+                uint physicalPage;
+                if (!ClusterTargetEntryValid(target, localPage, physicalPage))
+                    return false;
+
+                uint2 pageOrigin = localPage * target.PageSize;
+                uint2 localFirst = firstPixel > pageOrigin
+                    ? firstPixel - pageOrigin
+                    : 0u.xx;
+                uint2 localLast = min(
+                    lastPixel - min(lastPixel, pageOrigin),
+                    target.PageSize - 1u);
+                uint2 diameter = localLast - localFirst + 1u;
+                uint hizMip = min(
+                    uint(max(0.0, ceil(log2(float(max(diameter.x, diameter.y)))) - 1.0)),
+                    view.HiZMipCount - 1u);
+                float hizDepth;
+                if (usePrevious)
+                {
+                    hizDepth = ClusterTargetHiZMax(
+                        RasterTargetPreviousHiZ,
+                        target,
+                        physicalPage,
+                        localPage,
+                        firstPixel,
+                        lastPixel,
+                        hizMip);
+                }
+                else
+                {
+                    hizDepth = ClusterTargetHiZMax(
+                        RasterTargetCurrentHiZ,
+                        target,
+                        physicalPage,
+                        localPage,
+                        firstPixel,
+                        lastPixel,
+                        hizMip);
+                }
+                tested = true;
+                float epsilon = 5e-5 +
+                    1.0 / float(max(target.PageSize, 1u));
+                if (nearDepth <= hizDepth + epsilon)
                     return false;
             }
         }
     }
-    return true;
+    return tested;
 }
 
 bool ClusterTargetPolicyWorldBoundsOccluded(
@@ -187,12 +394,6 @@ bool ClusterTargetPolicyWorldBoundsOccluded(
     ClusterViewUniforms view)
 {
     if (usePrevious && view.HasPrevHistory == 0u)
-        return false;
-    if (RasterTargetWorldAabbOutsideFrustum(
-            worldMin,
-            worldMax,
-            usePrevious,
-            view))
         return false;
 
     float2 minUv;
