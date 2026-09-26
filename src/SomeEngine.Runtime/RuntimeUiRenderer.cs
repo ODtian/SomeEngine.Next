@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using ImGuiNET;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 using SlangShaderSharp;

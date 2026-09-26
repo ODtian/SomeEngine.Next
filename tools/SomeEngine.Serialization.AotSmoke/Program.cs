@@ -1,7 +1,10 @@
+using System.Buffers;
+using System.Collections.Immutable;
 using System.Runtime.InteropServices;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
+using SomeEngine.Serialization.Streaming;
 
 namespace SomeEngine.Tools.SerializationAotSmoke;
 
@@ -20,6 +23,8 @@ internal static class Program
         try
         {
             int serializedLength = RunContractViewSmoke();
+            RunStandardBufferSmoke();
+            RunPageSmoke();
 
             var catalog = new BinaryContractCatalog();
             global::SomeEngine.GeneratedContracts.Assembly_SomeEngine_Serialization_AotSmoke
@@ -65,11 +70,58 @@ internal static class Program
         }
     }
 
+    private static void RunPageSmoke()
+    {
+        using var arena = new PageArena(new ResidencyBudgetLedger());
+        using var writer = new PageBufferWriter(arena);
+        SmokeContract expected = CreateExpected();
+        BinarySerializer.Write(writer, expected);
+        using var read = writer.Retain();
+        SmokeContract actual = BinarySerializer.Deserialize<SmokeContract>(read.Sequence);
+        Require(actual.AssetId == expected.AssetId, "Page encoding lost the root identity.");
+        using var decodedPoints = new PageList<SmokePoint>(arena);
+        var target = new SmokeContract { Points = decodedPoints };
+        BinarySerializer.DeserializeInto(read.Sequence, target);
+        Require(ReferenceEquals(target.Points, decodedPoints) && decodedPoints.Count == 2,
+            "Decoding replaced the selected point storage.");
+        using var points = new PageList<SmokePoint>(arena);
+        points.Add(new SmokePoint { X = 1, Y = 2 });
+        using var branch = points.Duplicate();
+        branch[0] = new SmokePoint { X = 4, Y = 5 };
+        Require(points[0].X == 1 && branch[0].X == 4, "A page write changed another branch.");
+
+        var access = new PageAccess();
+        using var values = new PageList<SmokeValues>(arena, access);
+        values.Add(new() { Name = "first", Bytes = ImmutableArray.Create<byte>(1, 2, 3) });
+        using var otherValues = values.Duplicate();
+        otherValues[0] = values[0] with { Name = "second" };
+        Require(values[0].Name == "first", "A reference page assignment changed another branch.");
+        var encoded = new ArrayBufferWriter<byte>();
+        BinarySerializer.Write(encoded, values[0]);
+        SmokeValues decoded = BinarySerializer.Deserialize<SmokeValues>(encoded.WrittenSpan);
+        Require(decoded.Bytes.AsSpan().SequenceEqual(values[0].Bytes.AsSpan()), "Immutable array encoding changed.");
+
+        using var buffers = new PageBufferMap(arena, access);
+        buffers.Set(17, new byte[] { 2, 3, 5 });
+        using var otherBuffers = buffers.Duplicate();
+        buffers.Write(17, 0, 1, (_, bytes) =>
+        {
+            bool rejected = false;
+            try { using var invalid = values.Duplicate(); }
+            catch (InvalidOperationException) { rejected = true; }
+            Require(rejected, "Chunk writes did not exclude sibling content sharing.");
+            bytes[0] = 7;
+        });
+        using PageBuffer previous = otherBuffers.DuplicateBuffer(17);
+        using var previousStream = new PageBufferStream(previous, writable: false);
+        Require(previousStream.ReadByte() == 2, "A mapped page write changed another branch.");
+    }
+
     private static int RunContractViewSmoke()
     {
         SmokeContract expected = CreateExpected();
         byte[] serialized = GC.AllocateUninitializedArray<byte>(ContractDestinationCapacity);
-        if (!BinaryContractSerializer.TryWrite(serialized, expected, out int serializedLength))
+        if (!BinarySerializer.TryWrite(serialized, expected, out int serializedLength))
         {
             throw new InvalidOperationException(
                 $"The fixed {ContractDestinationCapacity}-byte contract destination is too small; " +
@@ -107,6 +159,32 @@ internal static class Program
         Require(!longView.GetPointsEncoded().IsEmpty,
             "Generated long-lived View collection slice changed.");
         return serializedLength;
+    }
+
+    private static void RunStandardBufferSmoke()
+    {
+        SmokeContract expected = CreateExpected();
+        var output = new ArrayBufferWriter<byte>();
+        BinarySerializer.Write(output, expected);
+        var first = new BytesSegment(output.WrittenMemory[..3]);
+        BytesSegment last = first.Append(output.WrittenMemory[3..]);
+        var sequence = new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
+        SmokeContract decoded = BinarySerializer.Deserialize<SmokeContract>(sequence);
+        Require(decoded.Revision == expected.Revision && decoded.Name == expected.Name,
+            "Standard segmented input changed encoded fields under Native AOT.");
+        Require(decoded.Payload!.Value.Span.SequenceEqual(expected.Payload!.Value.Span),
+            "Standard segmented input changed the payload under Native AOT.");
+    }
+
+    private sealed class BytesSegment : ReadOnlySequenceSegment<byte>
+    {
+        internal BytesSegment(ReadOnlyMemory<byte> memory) => Memory = memory;
+        internal BytesSegment Append(ReadOnlyMemory<byte> memory)
+        {
+            var next = new BytesSegment(memory) { RunningIndex = RunningIndex + Memory.Length };
+            Next = next;
+            return next;
+        }
     }
 
     private static int RunNativeBlockSmoke()
@@ -206,6 +284,21 @@ internal static class Program
             for (int index = 0; index < compressed.Memory.Length; index++)
                 Require(compressed.Memory.Span[index] == (byte)(index % 251),
                     "Decompressed chunk contents did not round-trip under NativeAOT.");
+            using var arena = new PageArena(new ResidencyBudgetLedger(),
+                new() { MaximumPageSize = 1024, AllocationSize = 16384 });
+            await using var cache = ChunkRequestScheduler.CreateForDocument(chunkDocument, arena, 64 * 1024);
+            using var acquiredPages = await cache.AcquireAsync(CompressedChunkKey);
+            using PageRange<byte> retainedPages = acquiredPages.RetainPages();
+            acquiredPages.Dispose();
+            await cache.DisposeAsync();
+            await chunkDocument.DisposeAsync();
+            int position = 0;
+            foreach (ReadOnlyMemory<byte> segment in retainedPages.Sequence)
+                foreach (byte value in segment.Span)
+                    Require(value == (byte)(position++ % 251), "Retained decoded pages changed after cache disposal.");
+            Require(position == CompressedChunkLength, "Retained decoded page length changed.");
+            retainedPages.Dispose();
+            Require(arena.Residency.Used(ResidencyClass.DecodedCpu) == 0, "Decoded pages leaked their transferred budget.");
             generation = rootViewDocument.Generation;
         }
 
@@ -300,7 +393,7 @@ internal static class Program
     }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 internal sealed partial class SmokeContract
 {
     public int Revision { get; set; }
@@ -311,14 +404,21 @@ internal sealed partial class SmokeContract
     public IList<SmokePoint>? Points { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 internal partial struct SmokePoint
 {
     public float X { get; set; }
     public float Y { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable]
+internal sealed partial record SmokeValues
+{
+    public string Name { get; init; } = "";
+    public ImmutableArray<byte> Bytes { get; init; } = [];
+}
+
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 [BinaryNativeLayout("SomeEngine.NativeVertex.v1")]
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 internal partial struct NativeVertex

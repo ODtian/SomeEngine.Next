@@ -22,7 +22,7 @@ public ref struct BinaryDataWriter
         throwOnInvalidBytes: true);
 
     private Span<byte> _destination;
-    private readonly IStreamingBinarySink? _output;
+    private readonly IBufferWriter<byte>? _output;
     private int _written;
 
     public BinaryDataWriter(Span<byte> destination)
@@ -32,7 +32,8 @@ public ref struct BinaryDataWriter
         _written = 0;
     }
 
-    internal BinaryDataWriter(IStreamingBinarySink output)
+    /// <summary>Writes once to the supplied output; flushing and lifetime remain with the caller.</summary>
+    public BinaryDataWriter(IBufferWriter<byte> output)
     {
         ArgumentNullException.ThrowIfNull(output);
         _destination = default;
@@ -213,8 +214,7 @@ public ref struct BinaryDataWriter
                     out _);
                 if (charsUsed == 0)
                     throw new InvalidOperationException("UTF-8 encoder made no progress.");
-                _output.WriteDirect(buffer[..bytesUsed]);
-                AdvanceCount(bytesUsed);
+                WriteBytes(buffer[..bytesUsed]);
                 remaining = remaining[charsUsed..];
             }
             encoder.Convert(
@@ -228,8 +228,7 @@ public ref struct BinaryDataWriter
                 throw new InvalidOperationException("UTF-8 encoder did not complete after consuming the string.");
             if (finalBytes != 0)
             {
-                _output.WriteDirect(buffer[..finalBytes]);
-                AdvanceCount(finalBytes);
+                WriteBytes(buffer[..finalBytes]);
             }
             return;
         }
@@ -276,8 +275,20 @@ public ref struct BinaryDataWriter
 
         if (_output is not null)
         {
-            _output.WriteDirect(value);
-            AdvanceCount(value.Length);
+            int total = value.Length;
+            if (_output is IStreamingBinarySink direct)
+                direct.WriteDirect(value);
+            else
+            {
+                while (!value.IsEmpty)
+                {
+                    int count = Math.Min(value.Length, 16 * 1024);
+                    value[..count].CopyTo(_output.GetSpan(count));
+                    _output.Advance(count);
+                    value = value[count..];
+                }
+            }
+            AdvanceCount(total);
             return;
         }
 
@@ -294,8 +305,20 @@ public ref struct BinaryDataWriter
 
         if (_output is not null)
         {
-            _output.WriteZeroesDirect(count);
-            AdvanceCount(count);
+            int total = count;
+            if (_output is IStreamingBinarySink direct)
+                direct.WriteZeroesDirect(count);
+            else
+            {
+                while (count > 0)
+                {
+                    int length = Math.Min(count, 16 * 1024);
+                    _output.GetSpan(length)[..length].Clear();
+                    _output.Advance(length);
+                    count -= length;
+                }
+            }
+            AdvanceCount(total);
             return;
         }
 

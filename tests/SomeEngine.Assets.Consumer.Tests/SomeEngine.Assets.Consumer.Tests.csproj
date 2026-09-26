@@ -15,8 +15,14 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.9" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
+    <ProjectReference Include="../../samples/SomeEngine.Curves.Assets/SomeEngine.Curves.Assets.csproj" />
+    <ProjectReference Include="../../templates/DefaultProject/Game.Importing/Game.Importing.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets/SomeEngine.Assets.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Reference Include="SomeEngine.Generators"
+               HintPath="../../src/SomeEngine.Generators/bin/$(Configuration)/netstandard2.0/SomeEngine.Generators.dll" />
   </ItemGroup>
 </Project>

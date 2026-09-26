@@ -1,7 +1,8 @@
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Serialization.Streaming;
@@ -144,8 +145,7 @@ public sealed class PageStreamTests
         using ControlledRuntimeMesh waiting = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             MeshWithBvh("Waiting", Leaf()),
             PageBytes);
-        ClusterMeshRegistration waitingRegistration = await manager.AddMeshAsync(
-            waiting.Mesh);
+        ClusterMeshRegistration waitingRegistration = await manager.AddMeshAsync(waiting.Mesh, pageSource: waiting.PageSource);
         Mesh waitingHandle = waitingRegistration.Mesh;
         SubmitPublication(manager);
         Assert.True(manager.TryGetPublishedRoot(waitingHandle, out uint waitingFaultNode));
@@ -281,8 +281,7 @@ public sealed class PageStreamTests
                 cancellationToken.ThrowIfCancellationRequested();
             };
             sources[index] = controlled.Source;
-            ClusterMeshRegistration registration = await manager.AddMeshAsync(
-                controlled.Mesh);
+            ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh, pageSource: controlled.PageSource);
             meshes[index] = registration.Mesh;
             Assert.Equal(1u, registration.PageCount);
         }
@@ -634,8 +633,7 @@ public sealed class PageStreamTests
             using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
                 MeshWithBvh($"Budget{index}", Leaf()),
                 PageBytes);
-            ClusterMeshRegistration registration = await manager.AddMeshAsync(
-                controlled.Mesh);
+            ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh, pageSource: controlled.PageSource);
             meshes[index] = registration.Mesh;
             uint pageId = registration.FirstPageId;
             controlled.Source.BeforeRead = async (_, _, cancellationToken) =>
@@ -685,7 +683,7 @@ public sealed class PageStreamTests
         using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             MeshWithBvh("Retiring", Leaf()),
             PageBytes);
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh, pageSource: controlled.PageSource);
         Mesh mesh = registration.Mesh;
         SubmitPublication(manager);
         Assert.True(manager.TryGetPublishedRoot(mesh, out uint faultNode));
@@ -831,7 +829,7 @@ public sealed class PageStreamTests
         using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             asset,
             PageBytes);
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh, pageSource: controlled.PageSource);
         Mesh mesh = registration.Mesh;
         Assert.Same(controlled.Mesh, mesh);
         Assert.Equal(1u, registration.PageCount);
@@ -903,14 +901,8 @@ public sealed class PageStreamTests
         byte[] payload = new byte[PageBytes + nodes.Length * Marshal.SizeOf<ClusterBVHNode>()];
         ClusterTestAssets.CreatePageData().CopyTo(payload, 0);
         MemoryMarshal.AsBytes(nodes.AsSpan()).CopyTo(payload.AsSpan(PageBytes));
-        return new Mesh
-        {
-            Name = name,
-            Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
-            Payload = payload,
-            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
-            BvhOffset = PageBytes,
-        };
+        return Mesh.Create(name, ClusterTestAssets.StandardVertexEncoding, payload.AsMemory(), PageBytes,
+            new Bounds { Center = new Vec3(), Radius = 1f });
     }
 
     private static ClusterBVHNode Leaf()

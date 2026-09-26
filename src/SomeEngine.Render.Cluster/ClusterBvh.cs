@@ -2,8 +2,9 @@ using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Core.Collections;
 
 namespace SomeEngine.Render.Cluster;

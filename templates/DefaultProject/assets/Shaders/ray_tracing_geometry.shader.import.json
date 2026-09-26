@@ -1,0 +1,44 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 26,
+  "input_hash": "4b6a188ea3b0042ffcc9c02b3c92bd85af1e8a8d2bd3792bd26c702c6ea36084",
+  "inputs": [
+    {
+      "relative_path": "../../assets/Shaders/cluster_structures.slang",
+      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
+    },
+    {
+      "relative_path": "../../assets/Shaders/feature_visible_clusters.slang",
+      "content_hash": "7fc33f17a093e88175b5e620c9b7d3034141cd46c23d5f55fa1a82713f6232c2"
+    },
+    {
+      "relative_path": "../../assets/Shaders/ray_tracing_geometry.slang",
+      "content_hash": "42588dd4f94d53ccd5010e40dfd619b4857f23b6bef3eb6d095c8add26f84917"
+    },
+    {
+      "relative_path": "assets/Shaders/Pipeline/build_ray_tracing_geometry.slang",
+      "content_hash": "025b5f1a06e8487790911292fae0a60d90796cc66d66cfcddd7a1093eb8a35ce"
+    },
+    {
+      "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+    },
+    {
+      "relative_path": "assets/Shaders/ray_tracing_geometry.shader",
+      "content_hash": "df948a0a5a1bae87e6daf381bf8562373a318f0646e137d953dae4d61487596b"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "f950c332-8897-5f3a-9b27-6b641f44871e",
+      "sub_asset_key": "",
+      "input_hash": "4b6a188ea3b0042ffcc9c02b3c92bd85af1e8a8d2bd3792bd26c702c6ea36084",
+      "dependencies": [],
+      "asset_path": "ray_tracing_geometry.shader.asset",
+      "version": "49cba896-4c9e-c10f-889c-b8a5370790ed",
+      "content_hash": "12C7D0B4B1104EE51F1FA1607DCDCD26459C4721CE0620AE3BE67600DFD15547",
+      "asset_dependencies": []
+    }
+  ]
+}

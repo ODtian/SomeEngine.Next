@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ProjectContentRoot Condition="'$(ProjectContentRoot)' == ''">$(DefaultProjectDirectory)</ProjectContentRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Game.Assets/Game.Assets.csproj" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
+    <Content Include="$(ProjectContentRoot)/assets/**/*.asset" Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(ProjectContentRoot)/Library/AssetManifest/**/*" Link="Library/AssetManifest/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

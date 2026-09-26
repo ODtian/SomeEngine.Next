@@ -1,5 +1,8 @@
 using System.Text.Json;
+using System.Buffers.Binary;
 
+using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
 namespace SomeEngine.Assets.Importers;
 
 internal static class GltfDeps
@@ -7,53 +10,28 @@ internal static class GltfDeps
     public static ImportInputs? ReadInputs(
         string projectRoot,
         string fullSourcePath,
-        SourceMeta sourceMeta,
-        GltfImporterSettings settings)
+        GltfImporterSettings settings, string implementationVersion, string overrides, bool includeMaterialTemplates)
     {
         List<FileDependency> dependencies = [];
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         if (!Add(projectRoot, fullSourcePath, dependencies, seen))
         {
             return null;
         }
 
-        if (!AddProject(projectRoot, settings.LitMaterialTemplate, dependencies, seen)
-            || !AddProject(projectRoot, settings.UnlitMaterialTemplate, dependencies, seen))
+        if (includeMaterialTemplates && (!AddProject(projectRoot, settings.LitMaterialTemplate, dependencies, seen)
+            || !AddProject(projectRoot, settings.UnlitMaterialTemplate, dependencies, seen)))
         {
             return null;
         }
 
-        if (string.Equals(Path.GetExtension(fullSourcePath), ".gltf", StringComparison.OrdinalIgnoreCase)
-            && !AddUris(projectRoot, fullSourcePath, dependencies, seen))
+        if (!AddUris(projectRoot, fullSourcePath, dependencies, seen))
         {
             return null;
         }
 
-        string settingsFingerprint = sourceMeta.ImporterSettings?.GetRawText() ?? string.Empty;
-        return ImportHash.Create(dependencies, GltfSourceImporter.ImporterVersion, settingsFingerprint);
-    }
-
-    public static void SaveMeta(
-        string outputPath,
-        string? assetGuid,
-        SourceMeta sourceMeta,
-        string sourcePath,
-        string subAssetKey,
-        ImportInputs fingerprint)
-    {
-        if (!Guid.TryParse(assetGuid, out Guid parsedGuid) || (parsedGuid == System.Guid.Empty))
-        {
-            return;
-        }
-
-        sourceMeta.Inputs = fingerprint.Dependencies;
-        sourceMeta.SetOutput(new SourceOutput
-        {
-            AssetGuid = parsedGuid, SubAssetKey = subAssetKey,
-            InputHash = fingerprint.InputHash, Dependencies = fingerprint.Dependencies,
-            AssetPath = Path.GetFullPath(outputPath),
-        });
-        SourceMeta.Save(sourcePath, sourceMeta);
+        string encodedSettings = JsonSerializer.Serialize(settings, GltfSettingsJson.Default.GltfImporterSettings);
+        return ImportHash.Create(dependencies, GltfSourceImporter.ImporterVersion, encodedSettings, implementationVersion, overrides);
     }
 
     public static string FullPath(string projectRoot, string path)
@@ -101,12 +79,27 @@ internal static class GltfDeps
         List<FileDependency> dependencies,
         HashSet<string> seen)
     {
-        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(fullSourcePath));
+        using JsonDocument document = ReadJson(fullSourcePath);
         JsonElement root = document.RootElement;
         string sourceDirectory = Path.GetDirectoryName(fullSourcePath)!;
 
         return AddUriArray(projectRoot, sourceDirectory, root, "buffers", dependencies, seen)
             && AddUriArray(projectRoot, sourceDirectory, root, "images", dependencies, seen);
+    }
+
+    private static JsonDocument ReadJson(string path)
+    {
+        using FileStream stream = File.OpenRead(path);
+        if (!path.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)) return JsonDocument.Parse(stream);
+        Span<byte> header = stackalloc byte[20];
+        stream.ReadExactly(header);
+        if (BinaryPrimitives.ReadUInt32LittleEndian(header) != 0x46546C67
+            || BinaryPrimitives.ReadUInt32LittleEndian(header[4..]) != 2
+            || BinaryPrimitives.ReadUInt32LittleEndian(header[16..]) != 0x4E4F534A)
+            throw new InvalidDataException("The glTF binary container does not begin with a version 2 JSON chunk.");
+        byte[] json = new byte[checked((int)BinaryPrimitives.ReadUInt32LittleEndian(header[12..]))];
+        stream.ReadExactly(json);
+        return JsonDocument.Parse(json);
     }
 
     private static bool AddUriArray(

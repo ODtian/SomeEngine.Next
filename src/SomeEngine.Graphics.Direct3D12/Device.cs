@@ -1193,6 +1193,9 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         internal bool IsComplete(ulong value)
+            => ReadCompletedValue() >= value;
+
+        internal ulong ReadCompletedValue()
         {
             _device.ThrowIfUnavailable();
             ulong completed = ResourceTrace.GetCompletedValue(Fence);
@@ -1204,7 +1207,7 @@ internal sealed unsafe partial class D3D12Backend
                     "D3D12 reported the device-removal completion sentinel.",
                     DxgiErrorDeviceRemoved);
             }
-            return completed >= value;
+            return completed;
         }
 
         internal void CollectCompleted()

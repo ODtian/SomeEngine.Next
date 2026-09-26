@@ -1,8 +1,9 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Render.Frame;
@@ -207,14 +208,8 @@ public sealed class ClusterResidencyPublicationTests
         };
         leaf.SetLeafData(clusterStart: 0, clusterCount: 1);
         MemoryMarshal.Write(payload.AsSpan(page.Length, bvhBytes), in leaf);
-        return new Mesh
-        {
-            Name = name,
-            Bounds = new Bounds { Center = new Vec3(), Radius = 1 },
-            Payload = payload,
-            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
-            BvhOffset = PageAllocationBytes,
-        };
+        return Mesh.Create(name, ClusterTestAssets.StandardVertexEncoding, payload.AsMemory(), PageAllocationBytes,
+            new Bounds { Center = new Vec3(), Radius = 1 });
     }
 
     private sealed class WarpResidencyTestSupport : IDisposable

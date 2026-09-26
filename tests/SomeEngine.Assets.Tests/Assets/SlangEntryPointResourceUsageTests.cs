@@ -1,5 +1,6 @@
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -19,7 +20,7 @@ public sealed class SlangEntryPointResourceUsageTests
         File.WriteAllText(sourcePath, Source);
         try
         {
-            ShaderData shader = SlangShaderImporter.ImportTransient(sourcePath);
+            using ShaderAsset shader = ShaderTestCompilation.Compile(sourcePath);
             AssertResources(shader, "FirstMain", "FirstInput", "Output");
             AssertResources(shader, "SecondMain", "SecondInput", "Output");
         }
@@ -30,14 +31,14 @@ public sealed class SlangEntryPointResourceUsageTests
     }
 
     private static void AssertResources(
-        ShaderData shader,
+        ShaderAsset shader,
         string entryPoint,
         string first,
         string second)
     {
         foreach (string backend in new[] { "dxil", "spirv" })
         {
-            ShaderEntryPointReflection reflection = shader.EntryPointReflections!.Single(value =>
+            ShaderEntryPointReflection reflection = shader.GetBlock<ShaderBlock>().EntryPointReflections!.Single(value =>
                 string.Equals(value.Backend, backend, StringComparison.Ordinal)
                 && string.Equals(value.EntryPoint, entryPoint, StringComparison.Ordinal)
                 && value.Stage == ShaderStage.Compute);

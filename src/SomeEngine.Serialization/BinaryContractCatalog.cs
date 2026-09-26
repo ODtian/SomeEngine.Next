@@ -13,7 +13,7 @@ public sealed class BinaryContractCatalog
         .ToArray();
 
     public BinaryContractCatalog Register<T>()
-        where T : IBinaryContract<T>
+        where T : IBinarySerializable<T>
     {
         if (_frozen)
             throw new InvalidOperationException("Binary contract catalog is frozen.");

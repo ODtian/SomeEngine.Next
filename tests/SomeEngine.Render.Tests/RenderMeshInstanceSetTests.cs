@@ -1,6 +1,7 @@
 using System.Numerics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
 

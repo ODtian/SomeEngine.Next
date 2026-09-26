@@ -15,11 +15,12 @@ namespace SomeEngine.Generators;
 #pragma warning disable RS2008 // This generator is intentionally delivered without editing analyzer release metadata.
 
 [Generator]
-public sealed class BinaryContractGenerator : IIncrementalGenerator
+public sealed partial class BinaryContractGenerator : IIncrementalGenerator
 {
-    private const string ContractAttributeName = "SomeEngine.Serialization.BinaryContractAttribute";
+    private const string ContractAttributeName = "SomeEngine.Serialization.BinarySerializableAttribute";
     private const string NativeLayoutAttributeName = "SomeEngine.Serialization.BinaryNativeLayoutAttribute";
     private const string NameAttributeName = "SomeEngine.Serialization.BinaryNameAttribute";
+    private const string FieldsAttributeName = "SomeEngine.Serialization.BinaryFieldsAttribute";
     private const string IgnoreAttributeName = "SomeEngine.Serialization.BinaryIgnoreAttribute";
     private const string ChunkAttributeName = "SomeEngine.Serialization.BinaryChunkAttribute";
     private const string UnionAttributeName = "SomeEngine.Serialization.BinaryUnionAttribute";
@@ -55,7 +56,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor InvalidMemberAccess = new(
         "SEBC002",
         "Binary contract member is not publicly writable",
-        "Binary contract member '{0}' must be a public instance field, or a public instance property with a public getter and public setter",
+        "Binary contract member '{0}' must be a writable public instance field, or a public instance property with a public getter and a setter accessible to its generated codec",
         "SomeEngine.Serialization",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -132,6 +133,11 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor InvalidFieldOrder = new(
+        "SEBC012", "Binary field order is incomplete or ambiguous",
+        "Binary fields for '{0}' are invalid: {1}", "SomeEngine.Serialization",
+        DiagnosticSeverity.Error, isEnabledByDefault: true);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         IncrementalValuesProvider<INamedTypeSymbol> candidates = context.SyntaxProvider.ForAttributeWithMetadataName(
@@ -145,10 +151,11 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     }
 
     private static void Generate(
-        SourceProductionContext context,
+        SourceProductionContext output,
         Compilation compilation,
         ImmutableArray<INamedTypeSymbol> discovered)
     {
+        SourceProductionContext context = output;
         string catalogNamespace =
             "SomeEngine.GeneratedContracts.Assembly_" +
             Sanitize(compilation.AssemblyName ?? "UnknownAssembly");
@@ -169,10 +176,10 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
 
         foreach (ContractModel model in models.Values)
         {
-            if (model.IsManuallyImplemented)
+            if (model.UsesExistingCodec)
                 continue;
             ValidateContractType(context, model);
-            BuildMembers(context, model, models);
+            BuildMembers(context, model, models, compilation);
             BuildChunkReferences(context, model);
         }
 
@@ -189,8 +196,15 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         if (valid.Count == 0)
             return;
 
-        foreach (ContractModel model in valid.Where(static model => !model.IsManuallyImplemented))
+        foreach (ContractModel model in valid.Where(static model => !model.UsesExistingCodec))
         {
+            model.HasText = HasAttribute(model.Symbol, TextAttributeName);
+            if (model.HasText && !SupportsText(model, out string textFailure))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(InvalidTextShape, model.Symbol.Locations.FirstOrDefault(),
+                    model.Symbol.Name, textFailure));
+                model.HasText = false;
+            }
             bool runtimeFingerprint = RequiresRuntimeFingerprint(model, new HashSet<ContractModel>());
             model.RequiresRuntimeFingerprint = runtimeFingerprint;
             if (!runtimeFingerprint)
@@ -242,7 +256,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
 
         string logicalName = explicitLogicalName ?? StableName(type);
         ContractModel model = new(type, epoch, logicalName);
-        model.IsManuallyImplemented = ImplementsContractInterface(type);
+        model.UsesExistingCodec = ImplementsContractInterface(type);
         AttributeData? nativeLayout = FindAttribute(type, NativeLayoutAttributeName);
         if (nativeLayout is not null)
         {
@@ -280,7 +294,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         foreach (INamedTypeSymbol implemented in type.AllInterfaces)
         {
             if (implemented.Arity != 1 ||
-                !string.Equals(implemented.Name, "IBinaryContract", StringComparison.Ordinal) ||
+                !string.Equals(implemented.Name, "IBinarySerializable", StringComparison.Ordinal) ||
                 !string.Equals(
                     implemented.ContainingNamespace?.ToDisplayString(),
                     "SomeEngine.Serialization",
@@ -308,15 +322,6 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             reasons.Add("static types are not contracts");
         if (type.TypeKind == TypeKind.Class && type.IsAbstract)
             reasons.Add("abstract contract classes cannot be constructed");
-        if (type.TypeKind == TypeKind.Class &&
-            type.BaseType is INamedTypeSymbol baseType &&
-            baseType.SpecialType != SpecialType.System_Object)
-        {
-            reasons.Add(
-                $"contract inheritance from '{StableName(baseType)}' is unsupported because inherited storage cannot be silently omitted");
-        }
-        if (type.TypeKind == TypeKind.Struct && type.IsReadOnly)
-            reasons.Add("readonly contract structs cannot be populated");
         if (type.IsRefLikeType)
             reasons.Add("ref-like contract structs are not supported");
         if (!IsPartial(type))
@@ -353,6 +358,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             "SpanView",
             "View",
             "ValidateCanonical",
+            "ValidateView",
             "CreateView",
             "OpenDocumentViewAsync",
         };
@@ -366,6 +372,10 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 reasons.Add($"member name '{member.Name}' is reserved by the generated contract implementation");
             }
         }
+
+        if (FindAttribute(type, SharedValueTypes.AttributeName) is not null
+            && !SharedValueTypes.IsShareable(type, out string valueReason))
+            reasons.Add("BinaryValue cannot be verified: " + valueReason);
 
         if (reasons.Count != 0)
         {
@@ -391,7 +401,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
 
     private static void BuildChunkReferences(SourceProductionContext context, ContractModel model)
     {
-        foreach (ISymbol payload in model.Symbol.GetMembers()
+        foreach (ISymbol payload in DataMembers(model.Symbol)
                      .Where(static member => !member.IsStatic && !member.IsImplicitlyDeclared))
         {
             AttributeData? attribute = FindAttribute(payload, ChunkAttributeName);
@@ -447,9 +457,9 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     private static void BuildMembers(
         SourceProductionContext context,
         ContractModel model,
-        Dictionary<INamedTypeSymbol, ContractModel> models)
+        Dictionary<INamedTypeSymbol, ContractModel> models, Compilation compilation)
     {
-        IEnumerable<ISymbol> publicInstanceMembers = model.Symbol.GetMembers()
+        IEnumerable<ISymbol> publicInstanceMembers = DataMembers(model.Symbol)
             .Where(static member => !member.IsStatic &&
                                     !member.IsImplicitlyDeclared &&
                                     member.DeclaredAccessibility == Accessibility.Public &&
@@ -467,7 +477,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             {
                 if (property.IsIndexer ||
                     property.GetMethod?.DeclaredAccessibility != Accessibility.Public ||
-                    property.SetMethod?.DeclaredAccessibility != Accessibility.Public)
+                    property.SetMethod is null || !compilation.IsSymbolAccessibleWithin(property.SetMethod, model.Symbol, model.Symbol))
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
                         InvalidMemberAccess,
@@ -560,9 +570,57 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             model.IsValid = false;
         }
 
-        model.Members.Sort(static (left, right) => StringComparer.Ordinal.Compare(left.LogicalName, right.LogicalName));
+        AttributeData? fields = FindAttribute(model.Symbol, FieldsAttributeName);
+        if (fields is null)
+            model.Members.Sort(static (left, right) => StringComparer.Ordinal.Compare(left.LogicalName, right.LogicalName));
+        else
+        {
+            var positions = new Dictionary<string, int>(StringComparer.Ordinal);
+            var problems = new List<string>();
+            ImmutableArray<TypedConstant> names = fields.ConstructorArguments[0].IsNull
+                ? ImmutableArray<TypedConstant>.Empty : fields.ConstructorArguments[0].Values;
+            if (fields.ConstructorArguments[0].IsNull) problems.Add("the field list is null");
+            foreach (TypedConstant item in names)
+            {
+                string name = item.Value as string ?? "";
+                if (string.IsNullOrWhiteSpace(name)) problems.Add("a field name is empty");
+                else if (positions.ContainsKey(name)) problems.Add($"field '{name}' is repeated");
+                else positions.Add(name, positions.Count);
+            }
+            foreach (MemberModel member in model.Members)
+                if (!positions.ContainsKey(member.Symbol.Name)) problems.Add($"field '{member.Symbol.Name}' is missing");
+            foreach (string name in positions.Keys)
+                if (!model.Members.Any(member => member.Symbol.Name == name)) problems.Add($"field '{name}' is not serialized");
+            if (problems.Count != 0)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(InvalidFieldOrder, ContractLocation(model.Symbol),
+                    StableName(model.Symbol), string.Join("; ", problems)));
+                model.IsValid = false;
+            }
+            else model.Members.Sort((left, right) => positions[left.Symbol.Name].CompareTo(positions[right.Symbol.Name]));
+        }
         for (int index = 0; index < model.Members.Count; index++)
             model.Members[index].Index = index;
+
+        foreach (var ambiguous in model.Members.GroupBy(member => member.Symbol.Name, StringComparer.Ordinal)
+                     .Where(group => group.Count() > 1))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(InvalidFieldOrder, ContractLocation(model.Symbol),
+                StableName(model.Symbol), $"inherited field name '{ambiguous.Key}' is hidden or repeated"));
+            model.IsValid = false;
+        }
+    }
+
+    private static IEnumerable<ISymbol> DataMembers(INamedTypeSymbol type)
+    {
+        var declarations = new Stack<INamedTypeSymbol>();
+        for (INamedTypeSymbol? current = type;
+             current is not null && current.SpecialType != SpecialType.System_Object && current.SpecialType != SpecialType.System_ValueType;
+             current = current.BaseType)
+            declarations.Push(current);
+        foreach (INamedTypeSymbol declaration in declarations)
+            foreach (ISymbol member in declaration.GetMembers())
+                yield return member;
     }
 
     private static void BuildNativeLayouts(
@@ -604,7 +662,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         model.NativeValidationState = NativeValidationState.Visiting;
         if (!model.IsValid)
             return FailNativeLayout(model, "the canonical binary contract is invalid and cannot host generated native proof metadata");
-        if (model.IsManuallyImplemented)
+        if (model.UsesExistingCodec)
             return FailNativeLayout(model, "manually implemented contracts cannot receive a generated native-layout proof");
         if (model.Symbol.TypeKind != TypeKind.Struct || model.Symbol.IsRefLikeType)
             return FailNativeLayout(model, "only non-ref contract structs can have proven native layout");
@@ -816,6 +874,8 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     {
         if (type.TypeKind == TypeKind.Enum && type is INamedTypeSymbol enumType)
         {
+            if (string.IsNullOrWhiteSpace(EnumName(enumType)))
+            { shape = null; reason = "an enum BinaryName must contain non-whitespace text"; return false; }
             if (!TryGetFixedScalarLayout(enumType.EnumUnderlyingType!, out int enumSize, out string scalarToken))
             {
                 shape = null;
@@ -850,7 +910,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             if (!models.TryGetValue(nestedStruct, out ContractModel? nestedContract))
             {
                 shape = null;
-                reason = "nested structs must be BinaryContract types in the same source-generation compilation";
+                reason = "nested structs must be BinarySerializable types in the same source-generation compilation";
                 return false;
             }
 
@@ -1093,9 +1153,19 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                     return true;
                 }
 
+                if (nullableValue is INamedTypeSymbol immutableArray && IsImmutableArray(immutableArray))
+                {
+                    if (!TryClassify(immutableArray.TypeArguments[0], models, out ShapeModel? element, out reason))
+                    { shape = null; return false; }
+                    shape = ShapeModel.Collection(CollectionKind.NullableImmutableArray, element!, immutableArray.TypeArguments[0], allowsNull: true);
+                    return true;
+                }
+
                 if (nullableValue is INamedTypeSymbol nullableEnum &&
                     nullableEnum.TypeKind == TypeKind.Enum)
                 {
+                    if (string.IsNullOrWhiteSpace(EnumName(nullableEnum)))
+                    { shape = null; reason = "an enum BinaryName must contain non-whitespace text"; return false; }
                     PrimitiveKind underlying = ClassifyPrimitive(nullableEnum.EnumUnderlyingType!);
                     if (underlying == PrimitiveKind.None)
                     {
@@ -1111,9 +1181,9 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
 
                 if (nullableValue is INamedTypeSymbol nestedStruct &&
                     nestedStruct.TypeKind == TypeKind.Struct &&
-                    models.TryGetValue(nestedStruct, out ContractModel? nullableContract))
+                    TryGetCodec(nestedStruct, models, out ContractModel? nullableContract))
                 {
-                    shape = ShapeModel.NullableContract(nullableContract);
+                    shape = ShapeModel.NullableContract(nullableContract!);
                     reason = string.Empty;
                     return true;
                 }
@@ -1130,12 +1200,12 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 return true;
             }
 
-            if (models.TryGetValue(named, out ContractModel? contract))
+            if (TryGetCodec(named, models, out ContractModel? contract))
             {
                 if (named.TypeKind == TypeKind.Class)
-                    shape = ShapeModel.ContractClass(contract, AllowsNull(type));
+                    shape = ShapeModel.ContractClass(contract!, AllowsNull(type));
                 else if (named.TypeKind == TypeKind.Struct)
-                    shape = ShapeModel.ContractStruct(contract);
+                    shape = ShapeModel.ContractStruct(contract!);
                 else
                 {
                     shape = null;
@@ -1215,7 +1285,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             if (FindAttribute(named, ContractAttributeName) is not null)
             {
                 shape = null;
-                reason = "the referenced contract is outside this source-generation compilation, so its schema closure is unavailable";
+                reason = "the referenced type must provide static serialization and view-validation interfaces";
                 return false;
             }
         }
@@ -1238,6 +1308,27 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
 
     private static bool AllowsNull(ITypeSymbol type) =>
         type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.Annotated;
+
+    private static string EnumName(INamedTypeSymbol type)
+    {
+        AttributeData? attribute = FindAttribute(type, NameAttributeName);
+        return attribute is null ? StableName(type) : attribute.ConstructorArguments[0].Value as string ?? "";
+    }
+
+    private static bool TryGetCodec(INamedTypeSymbol type, Dictionary<INamedTypeSymbol, ContractModel> models,
+        out ContractModel? model)
+    {
+        if (models.TryGetValue(type, out model)) return true;
+        if (!ImplementsContractInterface(type) || !type.AllInterfaces.Any(item =>
+                item.OriginalDefinition.ToDisplayString() == "SomeEngine.Serialization.IBinaryCustomViewContract<TSelf>"
+                && SymbolEqualityComparer.Default.Equals(item.TypeArguments[0], type)))
+            return false;
+        AttributeData? attribute = FindAttribute(type, ContractAttributeName);
+        string name = attribute?.NamedArguments.FirstOrDefault(item => item.Key == "LogicalName").Value.Value as string
+            ?? StableName(type);
+        model = new((INamedTypeSymbol)type.WithNullableAnnotation(NullableAnnotation.NotAnnotated), 1, name) { UsesExistingCodec = true };
+        return true;
+    }
 
     private static bool TryBuildUnion(
         INamedTypeSymbol unionType,
@@ -1284,7 +1375,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             if (!models.TryGetValue(caseType, out ContractModel? contract))
             {
                 union = null;
-                reason = $"union case '{StableName(caseType)}' must be a [BinaryContract] in this compilation";
+                reason = $"union case '{StableName(caseType)}' must be a [BinarySerializable] in this compilation";
                 return false;
             }
 
@@ -1411,13 +1502,20 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     {
         return type is INamedTypeSymbol named &&
                named.Arity == 1 &&
-               string.Equals(named.Name, "Memory", StringComparison.Ordinal) &&
+               named.Name is "Memory" or "ReadOnlyMemory" &&
                string.Equals(named.ContainingNamespace?.ToDisplayString(), "System", StringComparison.Ordinal) &&
                named.TypeArguments[0].SpecialType == SpecialType.System_Byte;
     }
 
     private static bool TryGetCollectionKind(INamedTypeSymbol type, out CollectionKind kind)
     {
+        if (IsImmutableArray(type)) { kind = CollectionKind.ImmutableArray; return true; }
+        if (type.Arity == 1 && type.Name == "ImmutableList" &&
+            type.ContainingNamespace.ToDisplayString() == "System.Collections.Immutable")
+        {
+            kind = CollectionKind.ImmutableList;
+            return true;
+        }
         if (type.Arity == 1 &&
             string.Equals(type.ContainingNamespace?.ToDisplayString(), "System.Collections.Generic", StringComparison.Ordinal))
         {
@@ -1591,7 +1689,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         ContractModel model,
         HashSet<ContractModel> visiting)
     {
-        if (model.IsManuallyImplemented)
+        if (model.UsesExistingCodec)
             return true;
         if (model.RequiresRuntimeFingerprint.HasValue)
             return model.RequiresRuntimeFingerprint.Value;
@@ -1634,7 +1732,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
 
     private static ulong ComputeFingerprint(ContractModel model)
     {
-        if (model.IsManuallyImplemented)
+        if (model.UsesExistingCodec)
             throw new InvalidOperationException("A manually implemented contract has no generator-computable fingerprint.");
         if (model.Fingerprint.HasValue)
             return model.Fingerprint.Value;
@@ -1673,7 +1771,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 break;
             case ShapeKind.Enum:
             case ShapeKind.NullableEnum:
-                descriptor.WriteToken(StableName(shape.EnumType!));
+                descriptor.WriteToken(EnumName(shape.EnumType!));
                 descriptor.WriteByte((byte)shape.PrimitiveKind);
                 IFieldSymbol[] values = shape.EnumType!.GetMembers()
                     .OfType<IFieldSymbol>()
@@ -1702,7 +1800,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 descriptor.WriteUInt64(ComputeFingerprint(shape.NestedContract));
                 break;
             case ShapeKind.Collection:
-                descriptor.WriteByte((byte)shape.CollectionKind);
+                descriptor.WriteByte((byte)WireCollectionKind(shape.CollectionKind));
                 descriptor.WriteByte(shape.AllowsNull ? (byte)1 : (byte)0);
                 WriteShapeDescriptor(descriptor, shape.Element!);
                 break;
@@ -1802,7 +1900,10 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             indent++;
         }
 
-        AppendIndent(source, indent).AppendLine(PartialTypeHeader(model.Symbol, model.Symbol));
+        if (FindAttribute(model.Symbol, SharedValueTypes.AttributeName) is null
+            && SharedValueTypes.IsShareable(model.Symbol, out _))
+            AppendIndent(source, indent).AppendLine("[global::SomeEngine.Serialization.BinaryValue]");
+        AppendIndent(source, indent).AppendLine(PartialTypeHeader(model.Symbol, model.Symbol, model.HasText));
         AppendIndent(source, indent).AppendLine("{");
         indent++;
 
@@ -1867,6 +1968,8 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         EmitWriteMethod(source, model, catalogTypeName, indent);
         source.AppendLine();
         EmitReadMethod(source, model, indent);
+        EmitReadIntoMethod(source, model, indent);
+        if (model.HasText) EmitTextMethods(source, model, indent);
         source.AppendLine();
         EmitViewSurface(source, model, indent);
         foreach (MemberModel member in model.Members)
@@ -1954,6 +2057,66 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         AppendIndent(source, indent).AppendLine("}");
     }
 
+    private static bool IsImmutableArray(INamedTypeSymbol type)
+        => type.Arity == 1 && type.Name == "ImmutableArray"
+           && type.ContainingNamespace.ToDisplayString() == "System.Collections.Immutable";
+
+    private static bool SupportsObjectReader(INamedTypeSymbol type)
+        => type.TypeKind == TypeKind.Class && DataMembers(type).OfType<IPropertySymbol>()
+            .Where(property => !property.IsStatic && property.DeclaredAccessibility == Accessibility.Public
+                && !HasAttribute(property, IgnoreAttributeName))
+            .All(property => property.SetMethod?.IsInitOnly != true);
+
+    private static void EmitReadIntoMethod(StringBuilder source, ContractModel model, int indent)
+    {
+        if (!SupportsObjectReader(model.Symbol)) return;
+        AppendIndent(source, indent).Append("public static void ReadInto(ref global::SomeEngine.Serialization.BinaryDataReader reader, ")
+            .Append(model.Symbol.ToDisplayString(QualifiedTypeFormat)).AppendLine(" target)");
+        AppendIndent(source, indent).AppendLine("{");
+        AppendIndent(source, indent + 1).AppendLine("global::System.ArgumentNullException.ThrowIfNull(target);");
+        AppendIndent(source, indent + 1).AppendLine("reader.EnterObject();");
+        AppendIndent(source, indent + 1).AppendLine("try {");
+        foreach (MemberModel member in model.Members)
+        {
+            string target = "target." + Escape(member.Symbol.Name);
+            if (member.Shape.Kind == ShapeKind.Collection
+                && (member.Shape.CollectionKind == CollectionKind.List || member.Shape.CollectionKind == CollectionKind.IList))
+            {
+                string suffix = member.Index.ToString(CultureInfo.InvariantCulture);
+                string elementType = member.Shape.ElementType!.ToDisplayString(QualifiedTypeFormat);
+                AppendIndent(source, indent + 2).AppendLine("if (!reader.ReadBoolean()) {");
+                if (member.Shape.AllowsNull)
+                    AppendIndent(source, indent + 3).Append(target).AppendLine(" = null;");
+                else
+                    AppendIndent(source, indent + 3).AppendLine("throw new global::System.IO.InvalidDataException(\"A non-nullable collection was encoded as null.\");");
+                AppendIndent(source, indent + 2).AppendLine("} else {");
+                AppendIndent(source, indent + 3).Append("int count").Append(suffix)
+                    .Append(" = reader.ReadCollectionCount(\"list element\", global::System.Runtime.CompilerServices.Unsafe.SizeOf<")
+                    .Append(elementType).AppendLine(">(), fixedAllocationBytes: 56);");
+                AppendIndent(source, indent + 3).Append("var values").Append(suffix).Append(" = ").Append(target).AppendLine(";");
+                AppendIndent(source, indent + 3).Append("bool replace").Append(suffix).Append(" = values").Append(suffix)
+                    .Append(" is null || ((global::System.Collections.Generic.ICollection<").Append(elementType)
+                    .Append(">)values").Append(suffix).AppendLine(").IsReadOnly;");
+                AppendIndent(source, indent + 3).Append("if (replace").Append(suffix).AppendLine(") {");
+                AppendIndent(source, indent + 4).Append("values").Append(suffix)
+                    .Append(" = new global::System.Collections.Generic.List<").Append(elementType).Append(">(count").Append(suffix).AppendLine(");");
+                AppendIndent(source, indent + 3).Append("} else values").Append(suffix).AppendLine("!.Clear();");
+                AppendIndent(source, indent + 3).Append("for (int i").Append(suffix).Append(" = 0; i").Append(suffix)
+                    .Append(" < count").Append(suffix).Append("; i").Append(suffix).AppendLine("++) {");
+                AppendIndent(source, indent + 4).Append(elementType).Append(" item").Append(suffix).AppendLine(";");
+                EmitReadValue(source, member.Shape.Element!, "item" + suffix, indent + 4, "Into" + suffix);
+                AppendIndent(source, indent + 4).Append("values").Append(suffix).Append("!.Add(item").Append(suffix).AppendLine(");");
+                AppendIndent(source, indent + 3).AppendLine("}");
+                AppendIndent(source, indent + 3).Append("if (replace").Append(suffix).Append(") ")
+                    .Append(target).Append(" = values").Append(suffix).AppendLine(";");
+                AppendIndent(source, indent + 2).AppendLine("}");
+            }
+            else AppendIndent(source, indent + 2).Append(target).Append(" = ").Append(ReadHelperName(member)).AppendLine("(ref reader);");
+        }
+        AppendIndent(source, indent + 1).AppendLine("} finally { reader.ExitObject(); }");
+        AppendIndent(source, indent).AppendLine("}");
+    }
+
     private static bool RequiresNonNullReference(ShapeModel shape) =>
         !shape.AllowsNull &&
         (shape.Kind == ShapeKind.String ||
@@ -1983,6 +2146,25 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         if (model.Members.Count == 0)
         {
             AppendIndent(source, indent).Append("return new ").Append(contractType).AppendLine("();");
+            return;
+        }
+
+        if (SupportsObjectReader(model.Symbol)
+            && model.Symbol.AllInterfaces.Any(type => type.ToDisplayString() == "System.IDisposable")
+            && model.Members.All(member => member.Symbol is not IPropertySymbol { IsRequired: true }
+                && member.Symbol is not IFieldSymbol { IsRequired: true }))
+        {
+            AppendIndent(source, indent).Append("var result = new ").Append(contractType).AppendLine("();");
+            AppendIndent(source, indent).AppendLine("try {");
+            foreach (MemberModel member in model.Members)
+                AppendIndent(source, indent + 1).Append("result.").Append(Escape(member.Symbol.Name)).Append(" = __field")
+                    .Append(member.Index.ToString(CultureInfo.InvariantCulture)).AppendLine(";");
+            AppendIndent(source, indent + 1).AppendLine("return result;");
+            AppendIndent(source, indent).AppendLine("} catch (global::System.Exception failure) {");
+            AppendIndent(source, indent + 1).AppendLine("try { ((global::System.IDisposable)result).Dispose(); }");
+            AppendIndent(source, indent + 1).AppendLine("catch (global::System.Exception cleanup) { throw new global::System.AggregateException(\"Applying decoded fields and releasing the result failed.\", failure, cleanup); }");
+            AppendIndent(source, indent + 1).AppendLine("throw;");
+            AppendIndent(source, indent).AppendLine("}");
             return;
         }
 
@@ -2101,7 +2283,9 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 AppendIndent(source, indent).AppendLine("}");
                 return;
             case ShapeKind.Collection:
-                AppendIndent(source, indent).Append("if (").Append(expression).AppendLine(" is null)");
+                string collection = shape.CollectionKind == CollectionKind.NullableImmutableArray ? expression + ".Value" : expression;
+                AppendIndent(source, indent).Append("if (").Append(expression)
+                    .AppendLine(shape.CollectionKind == CollectionKind.ImmutableArray ? ".IsDefault)" : " is null)");
                 AppendIndent(source, indent).AppendLine("{");
                 if (shape.AllowsNull)
                     AppendIndent(source, indent + 1).AppendLine("writer.WriteBoolean(false);");
@@ -2110,19 +2294,17 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 AppendIndent(source, indent).AppendLine("}");
                 AppendIndent(source, indent).AppendLine("else");
                 AppendIndent(source, indent).AppendLine("{");
+                if (shape.CollectionKind == CollectionKind.NullableImmutableArray)
+                    AppendIndent(source, indent + 1).Append("if (").Append(collection).AppendLine(".IsDefault) throw new global::System.IO.InvalidDataException(\"An immutable array must be initialized.\");");
                 AppendIndent(source, indent + 1).AppendLine("writer.WriteBoolean(true);");
                 AppendIndent(source, indent + 1).Append("int __elementCount").Append(suffix)
-                    .Append(" = ").Append(expression)
-                    .Append(shape.CollectionKind == CollectionKind.Array ? ".Length" : ".Count").AppendLine(";");
+                    .Append(" = ").Append(collection)
+                    .Append(shape.CollectionKind is CollectionKind.Array or CollectionKind.ImmutableArray or CollectionKind.NullableImmutableArray ? ".Length" : ".Count").AppendLine(";");
                 AppendIndent(source, indent + 1).Append("writer.WriteInt32(__elementCount")
                     .Append(suffix).AppendLine(");");
-                AppendIndent(source, indent + 1).Append("for (int __elementIndex").Append(suffix)
-                    .Append(" = 0; __elementIndex").Append(suffix).Append(" < __elementCount").Append(suffix)
-                    .Append("; __elementIndex").Append(suffix).AppendLine("++)");
+                AppendIndent(source, indent + 1).Append("foreach (").Append(shape.ElementType!.ToDisplayString(QualifiedTypeFormat))
+                    .Append(" __element").Append(suffix).Append(" in ").Append(collection).AppendLine(")");
                 AppendIndent(source, indent + 1).AppendLine("{");
-                AppendIndent(source, indent + 2).Append(shape.ElementType!.ToDisplayString(QualifiedTypeFormat))
-                    .Append(" __element").Append(suffix).Append(" = ").Append(expression)
-                    .Append("[__elementIndex").Append(suffix).AppendLine("];");
                 EmitWriteValue(source, shape.Element!, "__element" + suffix, indent + 2, suffix + "Element");
                 AppendIndent(source, indent + 1).AppendLine("}");
                 AppendIndent(source, indent).AppendLine("}");
@@ -2242,6 +2424,18 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                         .Append(shape.ElementType.ToDisplayString(QualifiedTypeFormat)).Append("[__elementCount")
                         .Append(suffix).AppendLine("];");
                 }
+                else if (shape.CollectionKind is CollectionKind.ImmutableArray or CollectionKind.NullableImmutableArray)
+                {
+                    AppendIndent(source, indent + 1).Append("var __elements").Append(suffix)
+                        .Append(" = global::System.Collections.Immutable.ImmutableArray.CreateBuilder<")
+                        .Append(shape.ElementType!.ToDisplayString(QualifiedTypeFormat)).Append(">(__elementCount").Append(suffix).AppendLine(");");
+                }
+                else if (shape.CollectionKind == CollectionKind.ImmutableList)
+                {
+                    AppendIndent(source, indent + 1).Append("var __elements").Append(suffix)
+                        .Append(" = global::System.Collections.Immutable.ImmutableList.CreateBuilder<")
+                        .Append(shape.ElementType!.ToDisplayString(QualifiedTypeFormat)).AppendLine(">();");
+                }
                 else
                 {
                     AppendIndent(source, indent + 1)
@@ -2271,7 +2465,8 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 }
                 AppendIndent(source, indent + 1).AppendLine("}");
                 AppendIndent(source, indent + 1).Append(target).Append(" = __elements")
-                    .Append(suffix).AppendLine(";");
+                    .Append(suffix).Append(shape.CollectionKind == CollectionKind.ImmutableList ? ".ToImmutable()"
+                        : shape.CollectionKind is CollectionKind.ImmutableArray or CollectionKind.NullableImmutableArray ? ".MoveToImmutable()" : "").AppendLine(";");
                 AppendIndent(source, indent).AppendLine("}");
                 return;
             case ShapeKind.Dictionary:
@@ -2484,7 +2679,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         AppendIndent(source, indent).AppendLine("{");
         AppendIndent(source, indent + 1)
             .AppendLine("global::SomeEngine.Serialization.BinaryViewReader reader = new global::SomeEngine.Serialization.BinaryViewReader(source, limits);");
-        AppendIndent(source, indent + 1).Append(GeneratedMemberPrefix).AppendLine("ValidateView(ref reader);");
+        AppendIndent(source, indent + 1).AppendLine("ValidateView(ref reader);");
         AppendIndent(source, indent + 1).Append("reader.EnsureFullyConsumed(")
             .Append(Literal($"contract view '{model.LogicalName}'")).AppendLine(");");
         AppendIndent(source, indent).AppendLine("}");
@@ -2508,8 +2703,6 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         source.AppendLine();
 
         EmitViewValidator(source, model, indent);
-        source.AppendLine();
-        EmitViewFieldLocator(source, model, indent);
 
         foreach (MemberModel member in model.Members)
         {
@@ -2525,8 +2718,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
 
     private static void EmitViewValidator(StringBuilder source, ContractModel model, int indent)
     {
-        AppendIndent(source, indent).Append("internal static void ").Append(GeneratedMemberPrefix)
-            .AppendLine("ValidateView(ref global::SomeEngine.Serialization.BinaryViewReader reader)");
+        AppendIndent(source, indent).AppendLine("public static void ValidateView(ref global::SomeEngine.Serialization.BinaryViewReader reader)");
         AppendIndent(source, indent).AppendLine("{");
         AppendIndent(source, indent + 1).AppendLine("reader.EnterObject();");
         AppendIndent(source, indent + 1).AppendLine("try");
@@ -2554,42 +2746,76 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         }
     }
 
-    private static void EmitViewFieldLocator(StringBuilder source, ContractModel model, int indent)
+    private static int? FixedViewSize(ShapeModel shape)
     {
-        AppendIndent(source, indent).Append("private static bool ").Append(GeneratedMemberPrefix)
-            .AppendLine("TryGetViewField(");
-        AppendIndent(source, indent + 1).AppendLine("global::System.ReadOnlySpan<byte> source,");
-        AppendIndent(source, indent + 1).AppendLine("int requestedIndex,");
-        AppendIndent(source, indent + 1).AppendLine("global::SomeEngine.Serialization.BinaryReadLimits? limits,");
-        AppendIndent(source, indent + 1).AppendLine("out global::System.ReadOnlySpan<byte> encoded)");
-        AppendIndent(source, indent).AppendLine("{");
-        AppendIndent(source, indent + 1)
-            .AppendLine("global::SomeEngine.Serialization.BinaryViewReader reader = new global::SomeEngine.Serialization.BinaryViewReader(source, limits);");
-        AppendIndent(source, indent + 1).AppendLine("reader.EnterObject();");
-        AppendIndent(source, indent + 1).AppendLine("try");
-        AppendIndent(source, indent + 1).AppendLine("{");
+        if (shape.Kind == ShapeKind.Primitive || shape.Kind == ShapeKind.Enum)
+        {
+            switch (shape.PrimitiveKind)
+            {
+                case PrimitiveKind.Boolean: case PrimitiveKind.Byte: case PrimitiveKind.SByte: return 1;
+                case PrimitiveKind.Int16: case PrimitiveKind.UInt16: case PrimitiveKind.Char: return 2;
+                case PrimitiveKind.Int32: case PrimitiveKind.UInt32: case PrimitiveKind.Single: return 4;
+                case PrimitiveKind.Int64: case PrimitiveKind.UInt64: case PrimitiveKind.Double: return 8;
+                case PrimitiveKind.Guid: return 16;
+            }
+        }
+        if ((shape.Kind == ShapeKind.ContractStruct || shape.Kind == ShapeKind.ContractClass && !shape.AllowsNull)
+            && shape.NestedContract is { UsesExistingCodec: false } nested)
+        {
+            int size = shape.Kind == ShapeKind.ContractClass ? 1 : 0;
+            foreach (MemberModel member in nested.Members)
+            {
+                int? fieldSize = FixedViewSize(member.Shape);
+                if (!fieldSize.HasValue) return null;
+                size = checked(size + fieldSize.Value);
+            }
+            return size;
+        }
+        return null;
+    }
+
+    private static int? FixedViewOffset(ContractModel model, int index)
+    {
+        int offset = 0;
+        for (int i = 0; i < index; i++)
+        {
+            int? length = FixedViewSize(model.Members[i].Shape);
+            if (!length.HasValue) return null;
+            offset = checked(offset + length.Value);
+        }
+        return offset;
+    }
+
+    private static string ViewOffset(ContractModel model, int index)
+        => FixedViewOffset(model, index)?.ToString(CultureInfo.InvariantCulture)
+           ?? "_fieldStart" + index.ToString(CultureInfo.InvariantCulture);
+
+    private static void EmitViewOffsets(StringBuilder source, ContractModel model, int indent)
+    {
+        foreach (MemberModel member in model.Members)
+            if (!FixedViewOffset(model, member.Index).HasValue)
+                AppendIndent(source, indent).Append("private readonly int ").Append(ViewOffset(model, member.Index)).AppendLine(";");
+    }
+
+    private static void EmitViewInitialization(StringBuilder source, ContractModel model, int indent, string input)
+    {
+        if (model.Members.All(member => FixedViewOffset(model, member.Index).HasValue))
+        {
+            AppendIndent(source, indent).Append("ValidateCanonical(").Append(input).AppendLine(", effectiveLimits);");
+            return;
+        }
+        AppendIndent(source, indent).Append("var reader = new global::SomeEngine.Serialization.BinaryViewReader(")
+            .Append(input).AppendLine(", effectiveLimits);");
+        AppendIndent(source, indent).AppendLine("reader.EnterObject();");
+        AppendIndent(source, indent).AppendLine("try {");
         foreach (MemberModel member in model.Members)
         {
-            AppendIndent(source, indent + 2).Append("int __fieldStart")
-                .Append(member.Index.ToString(CultureInfo.InvariantCulture)).AppendLine(" = reader.Position;");
-            AppendIndent(source, indent + 2).Append(ViewValidateHelperName(member)).AppendLine("(ref reader);");
-            AppendIndent(source, indent + 2).Append("if (requestedIndex == ")
-                .Append(member.Index.ToString(CultureInfo.InvariantCulture)).AppendLine(")");
-            AppendIndent(source, indent + 2).AppendLine("{");
-            AppendIndent(source, indent + 3).Append("encoded = source.Slice(__fieldStart")
-                .Append(member.Index.ToString(CultureInfo.InvariantCulture)).Append(", reader.Position - __fieldStart")
-                .Append(member.Index.ToString(CultureInfo.InvariantCulture)).AppendLine(");");
-            AppendIndent(source, indent + 3).AppendLine("return true;");
-            AppendIndent(source, indent + 2).AppendLine("}");
+            if (!FixedViewOffset(model, member.Index).HasValue)
+                AppendIndent(source, indent + 1).Append(ViewOffset(model, member.Index)).AppendLine(" = reader.Position;");
+            AppendIndent(source, indent + 1).Append(ViewValidateHelperName(member)).AppendLine("(ref reader);");
         }
-        AppendIndent(source, indent + 2).AppendLine("encoded = default;");
-        AppendIndent(source, indent + 2).AppendLine("return false;");
-        AppendIndent(source, indent + 1).AppendLine("}");
-        AppendIndent(source, indent + 1).AppendLine("finally");
-        AppendIndent(source, indent + 1).AppendLine("{");
-        AppendIndent(source, indent + 2).AppendLine("reader.ExitObject();");
-        AppendIndent(source, indent + 1).AppendLine("}");
-        AppendIndent(source, indent).AppendLine("}");
+        AppendIndent(source, indent).AppendLine("} finally { reader.ExitObject(); }");
+        AppendIndent(source, indent).AppendLine("reader.EnsureFullyConsumed(\"contract view\");");
     }
 
     private static void EmitValidateViewValue(
@@ -2716,7 +2942,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     private static void EmitNestedViewValidation(StringBuilder source, ContractModel nested, int indent)
     {
         AppendIndent(source, indent).Append(nested.Symbol.ToDisplayString(QualifiedTypeFormat))
-            .Append(nested.IsManuallyImplemented ? ".ValidateView(ref reader);" : ".__SomeEngineBinaryContract_ValidateView(ref reader);")
+            .Append(".ValidateView(ref reader);")
             .AppendLine();
     }
 
@@ -2780,13 +3006,9 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             string typeName = member.Type.ToDisplayString(QualifiedTypeFormat);
             AppendIndent(source, indent).Append("private static ").Append(typeName).Append(' ')
                 .Append(ViewDecodeHelperName(member)).AppendLine("(");
-            AppendIndent(source, indent + 1).AppendLine("global::System.ReadOnlySpan<byte> source,");
+            AppendIndent(source, indent + 1).AppendLine("global::System.ReadOnlySpan<byte> encoded,");
             AppendIndent(source, indent + 1).AppendLine("global::SomeEngine.Serialization.BinaryReadLimits? limits)");
             AppendIndent(source, indent).AppendLine("{");
-            AppendIndent(source, indent + 1).Append("if (!").Append(GeneratedMemberPrefix)
-                .Append("TryGetViewField(source, ").Append(member.Index.ToString(CultureInfo.InvariantCulture))
-                .AppendLine(", limits, out global::System.ReadOnlySpan<byte> encoded))");
-            AppendIndent(source, indent + 2).AppendLine("throw new global::System.IO.InvalidDataException(\"Contract view field is absent.\");");
             AppendIndent(source, indent + 1)
                 .AppendLine("global::SomeEngine.Serialization.BinaryViewReader reader = new global::SomeEngine.Serialization.BinaryViewReader(encoded, limits);");
             string read = "reader." + ReaderMethod(member.Shape.PrimitiveKind) + "()";
@@ -2804,25 +3026,12 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         }
         else if (member.Shape.Kind == ShapeKind.String || member.Shape.Kind == ShapeKind.Memory)
         {
-            bool isString = member.Shape.Kind == ShapeKind.String;
             AppendIndent(source, indent).Append("private static bool ").Append(ViewSliceHelperName(member)).AppendLine("(");
-            AppendIndent(source, indent + 1).AppendLine("global::System.ReadOnlySpan<byte> source,");
+            AppendIndent(source, indent + 1).AppendLine("global::System.ReadOnlySpan<byte> encoded,");
             AppendIndent(source, indent + 1).AppendLine("global::SomeEngine.Serialization.BinaryReadLimits? limits,");
             AppendIndent(source, indent + 1).AppendLine("out global::System.ReadOnlySpan<byte> value)");
             AppendIndent(source, indent).AppendLine("{");
-            AppendIndent(source, indent + 1).Append("if (!").Append(GeneratedMemberPrefix)
-                .Append("TryGetViewField(source, ").Append(member.Index.ToString(CultureInfo.InvariantCulture))
-                .AppendLine(", limits, out global::System.ReadOnlySpan<byte> encoded))");
-            AppendIndent(source, indent + 1).AppendLine("{");
-            AppendIndent(source, indent + 2).AppendLine("value = default;");
-            AppendIndent(source, indent + 2).AppendLine("return false;");
-            AppendIndent(source, indent + 1).AppendLine("}");
-            AppendIndent(source, indent + 1)
-                .AppendLine("global::SomeEngine.Serialization.BinaryViewReader reader = new global::SomeEngine.Serialization.BinaryViewReader(encoded, limits);");
-            AppendIndent(source, indent + 1).Append("_ = reader.")
-                .Append(isString ? "ReadStringBytes" : "ReadMemoryBytes")
-                .AppendLine("(out bool isNull);");
-            AppendIndent(source, indent + 1).AppendLine("reader.EnsureFullyConsumed(\"span view field\");");
+            AppendIndent(source, indent + 1).AppendLine("bool isNull = global::System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(encoded) == -1;");
             if (!member.Shape.AllowsNull)
             {
                 AppendIndent(source, indent + 1).AppendLine("if (isNull)");
@@ -2849,13 +3058,14 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         AppendIndent(source, indent).AppendLine("{");
         AppendIndent(source, indent + 1).AppendLine("private readonly global::System.ReadOnlySpan<byte> _source;");
         AppendIndent(source, indent + 1).AppendLine("private readonly global::SomeEngine.Serialization.BinaryReadLimits _limits;");
+        EmitViewOffsets(source, model, indent + 1);
         source.AppendLine();
         AppendIndent(source, indent + 1).AppendLine("public SpanView(");
         AppendIndent(source, indent + 2).AppendLine("global::System.ReadOnlySpan<byte> source,");
         AppendIndent(source, indent + 2).AppendLine("global::SomeEngine.Serialization.BinaryReadLimits? limits = null)");
         AppendIndent(source, indent + 1).AppendLine("{");
         AppendIndent(source, indent + 2).AppendLine("global::SomeEngine.Serialization.BinaryReadLimits effectiveLimits = limits ?? global::SomeEngine.Serialization.BinaryReadLimits.Default;");
-        AppendIndent(source, indent + 2).AppendLine("ValidateCanonical(source, effectiveLimits);");
+        EmitViewInitialization(source, model, indent + 2, "source");
         AppendIndent(source, indent + 2).AppendLine("_source = source;");
         AppendIndent(source, indent + 2).AppendLine("_limits = effectiveLimits;");
         AppendIndent(source, indent + 1).AppendLine("}");
@@ -2865,7 +3075,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         foreach (MemberModel member in model.Members)
         {
             source.AppendLine();
-            EmitViewAccessors(source, member, indent + 1, "_source", "_limits");
+            EmitViewAccessors(source, model, member, indent + 1, "_source", "_limits");
         }
         EmitChunkViewAccessors(source, model, indent + 1);
         AppendIndent(source, indent).AppendLine("}");
@@ -2882,6 +3092,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         AppendIndent(source, indent + 1)
             .AppendLine("private readonly global::SomeEngine.Serialization.BinaryContractViewOwner _owner;");
         AppendIndent(source, indent + 1).AppendLine("private readonly global::SomeEngine.Serialization.BinaryReadLimits _limits;");
+        EmitViewOffsets(source, model, indent + 1);
         source.AppendLine();
         AppendIndent(source, indent + 1).AppendLine("public View(");
         AppendIndent(source, indent + 2)
@@ -2890,7 +3101,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         AppendIndent(source, indent + 1).AppendLine("{");
         AppendIndent(source, indent + 2).AppendLine("global::System.ArgumentNullException.ThrowIfNull(owner);");
         AppendIndent(source, indent + 2).AppendLine("global::SomeEngine.Serialization.BinaryReadLimits effectiveLimits = limits ?? global::SomeEngine.Serialization.BinaryReadLimits.Default;");
-        AppendIndent(source, indent + 2).AppendLine("ValidateCanonical(owner.Span, effectiveLimits);");
+        EmitViewInitialization(source, model, indent + 2, "owner.Span");
         AppendIndent(source, indent + 2).AppendLine("_owner = owner;");
         AppendIndent(source, indent + 2).AppendLine("_limits = effectiveLimits;");
         AppendIndent(source, indent + 1).AppendLine("}");
@@ -2900,7 +3111,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         foreach (MemberModel member in model.Members)
         {
             source.AppendLine();
-            EmitViewAccessors(source, member, indent + 1, "_owner.Span", "_limits");
+            EmitViewAccessors(source, model, member, indent + 1, "_owner.Span", "_limits");
         }
         EmitChunkViewAccessors(source, model, indent + 1);
         AppendIndent(source, indent).AppendLine("}");
@@ -2924,6 +3135,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
 
     private static void EmitViewAccessors(
         StringBuilder source,
+        ContractModel model,
         MemberModel member,
         int indent,
         string sourceExpression,
@@ -2932,10 +3144,14 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         string stem = ViewGetterStem(member);
         AppendIndent(source, indent).Append("public bool Try").Append(stem)
             .AppendLine("Encoded(out global::System.ReadOnlySpan<byte> encoded)");
-        AppendIndent(source, indent).Append("    => ").Append(GeneratedMemberPrefix)
-            .Append("TryGetViewField(").Append(sourceExpression).Append(", ")
-            .Append(member.Index.ToString(CultureInfo.InvariantCulture)).Append(", ")
-            .Append(limitsExpression).AppendLine(", out encoded);");
+        string offset = ViewOffset(model, member.Index);
+        string end = member.Index + 1 == model.Members.Count ? "bytes.Length" : ViewOffset(model, member.Index + 1);
+        string length = FixedViewSize(member.Shape)?.ToString(CultureInfo.InvariantCulture) ?? end + " - " + offset;
+        AppendIndent(source, indent).AppendLine("{");
+        AppendIndent(source, indent + 1).Append("global::System.ReadOnlySpan<byte> bytes = ").Append(sourceExpression).AppendLine(";");
+        AppendIndent(source, indent + 1).Append("encoded = bytes.Slice(").Append(offset).Append(", ").Append(length).AppendLine(");");
+        AppendIndent(source, indent + 1).AppendLine("return true;");
+        AppendIndent(source, indent).AppendLine("}");
         AppendIndent(source, indent).Append("public global::System.ReadOnlySpan<byte> ").Append(stem)
             .AppendLine("Encoded()");
         AppendIndent(source, indent).AppendLine("{");
@@ -2951,7 +3167,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         {
             AppendIndent(source, indent).Append("public ").Append(member.Type.ToDisplayString(QualifiedTypeFormat))
                 .Append(' ').Append(stem).Append("() => ").Append(ViewDecodeHelperName(member))
-                .Append('(').Append(sourceExpression).Append(", ").Append(limitsExpression).AppendLine(");");
+                .Append('(').Append(stem).Append("Encoded(), ").Append(limitsExpression).AppendLine(");");
         }
         else if (member.Shape.Kind == ShapeKind.String || member.Shape.Kind == ShapeKind.Memory)
         {
@@ -2959,7 +3175,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 .Append(member.Shape.Kind == ShapeKind.String ? "Utf8" : "Bytes")
                 .AppendLine("(out global::System.ReadOnlySpan<byte> value)");
             AppendIndent(source, indent).Append("    => ").Append(ViewSliceHelperName(member))
-                .Append('(').Append(sourceExpression).Append(", ").Append(limitsExpression)
+                .Append('(').Append(stem).Append("Encoded(), ").Append(limitsExpression)
                 .AppendLine(", out value);");
         }
     }
@@ -3055,7 +3271,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
             case ShapeKind.Enum:
             case ShapeKind.NullableEnum:
             {
-                length = checked(length + RuntimeTokenLength(StableName(shape.EnumType!)) + sizeof(byte) + sizeof(uint));
+                length = checked(length + RuntimeTokenLength(EnumName(shape.EnumType!)) + sizeof(byte) + sizeof(uint));
                 foreach (IFieldSymbol value in shape.EnumType!.GetMembers()
                              .OfType<IFieldSymbol>()
                              .Where(static field => field.HasConstantValue && !field.IsImplicitlyDeclared))
@@ -3108,7 +3324,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 break;
             case ShapeKind.Enum:
             case ShapeKind.NullableEnum:
-                EmitRuntimeToken(source, StableName(shape.EnumType!), indent);
+                EmitRuntimeToken(source, EnumName(shape.EnumType!), indent);
                 AppendIndent(source, indent).Append("__descriptor.WriteByte(")
                     .Append(((byte)shape.PrimitiveKind).ToString(CultureInfo.InvariantCulture)).AppendLine(");");
                 IFieldSymbol[] values = shape.EnumType!.GetMembers()
@@ -3148,7 +3364,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 break;
             case ShapeKind.Collection:
                 AppendIndent(source, indent).Append("__descriptor.WriteByte(")
-                    .Append(((byte)shape.CollectionKind).ToString(CultureInfo.InvariantCulture)).AppendLine(");");
+                    .Append(((byte)WireCollectionKind(shape.CollectionKind)).ToString(CultureInfo.InvariantCulture)).AppendLine(");");
                 AppendIndent(source, indent).Append("__descriptor.WriteByte(")
                     .Append(shape.AllowsNull ? "1" : "0").AppendLine(");");
                 EmitRuntimeShapeDescriptor(source, shape.Element!, indent);
@@ -3234,7 +3450,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         return source.ToString();
     }
 
-    private static string PartialTypeHeader(INamedTypeSymbol type, INamedTypeSymbol? interfaceType)
+    private static string PartialTypeHeader(INamedTypeSymbol type, INamedTypeSymbol? interfaceType, bool text = false)
     {
         StringBuilder header = new();
         string accessibility = AccessibilityText(type.DeclaredAccessibility);
@@ -3268,11 +3484,24 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         header.Append(Escape(type.Name));
         if (interfaceType is not null)
         {
-            header.Append(" : global::SomeEngine.Serialization.IBinaryContract<")
+            header.Append(" : global::SomeEngine.Serialization.IBinarySerializable<")
                 .Append(interfaceType.ToDisplayString(QualifiedTypeFormat)).Append(">, ")
                 .Append("global::SomeEngine.Serialization.IBinaryViewContract<")
                 .Append(interfaceType.ToDisplayString(QualifiedTypeFormat)).Append(", ")
                 .Append(interfaceType.ToDisplayString(QualifiedTypeFormat)).Append(".View>");
+            header.Append(", global::SomeEngine.Serialization.IBinaryCustomViewContract<")
+                .Append(interfaceType.ToDisplayString(QualifiedTypeFormat)).Append('>');
+            if (SupportsObjectReader(interfaceType))
+                header.Append(", global::SomeEngine.Serialization.IBinaryObjectReader<")
+                    .Append(interfaceType.ToDisplayString(QualifiedTypeFormat)).Append('>');
+            if (text)
+            {
+                header.Append(", global::SomeEngine.Serialization.ITextSerializable<")
+                    .Append(interfaceType.ToDisplayString(QualifiedTypeFormat)).Append('>');
+                if (SupportsObjectReader(interfaceType))
+                    header.Append(", global::SomeEngine.Serialization.ITextObjectReader<")
+                        .Append(interfaceType.ToDisplayString(QualifiedTypeFormat)).Append('>');
+            }
         }
         return header.ToString();
     }
@@ -3466,11 +3695,18 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         NullableEnum = 11,
     }
 
+    private static CollectionKind WireCollectionKind(CollectionKind kind)
+        => kind == CollectionKind.ImmutableList ? CollectionKind.IList
+            : kind is CollectionKind.ImmutableArray or CollectionKind.NullableImmutableArray ? CollectionKind.Array : kind;
+
     private enum CollectionKind : byte
     {
         Array = 1,
         List = 2,
         IList = 3,
+        ImmutableList = 4,
+        ImmutableArray = 5,
+        NullableImmutableArray = 6,
     }
 
     private enum DictionaryKind : byte
@@ -3512,7 +3748,8 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         internal string TypeId { get; set; } = string.Empty;
         internal List<MemberModel> Members { get; } = new();
         internal bool IsValid { get; set; } = true;
-        internal bool IsManuallyImplemented { get; set; }
+        internal bool UsesExistingCodec { get; set; }
+        internal bool HasText { get; set; }
         internal bool? RequiresRuntimeFingerprint { get; set; }
         internal string? CycleDescription { get; set; }
         internal ulong? Fingerprint { get; set; }

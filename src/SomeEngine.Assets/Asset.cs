@@ -1,160 +1,222 @@
-using System.ComponentModel;
+using System.Runtime.ExceptionServices;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
+using SomeEngine.Serialization.Streaming;
 using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.Assets;
 
-/// <summary>Opened disk content for a domain type. It never contains an instance of that type.</summary>
-public sealed class Asset<T> : IDisposable, IAsyncDisposable where T : class
+/// <summary>Identity, selected file access and common saving for independently declared asset content.</summary>
+public abstract partial class Asset : IDisposable, IAsyncDisposable
 {
-    private readonly object _gate = new();
     private AssetFile? _file;
+    private bool _disposed;
+    private Guid _id;
+    private string _name = "";
+    private string _assetType = "";
+    protected PageAccess Access { get; } = new();
 
-    internal Asset(AssetFile file) => _file = file;
-
-    public AssetId<T> Id => new(File.Entry.AssetGuid);
-    public Guid Version => File.Entry.Version;
-    public string Name => File.Entry.Name;
-    public IReadOnlyList<Guid> Dependencies => File.Entry.Dependencies;
-    public static string FileType => AssetFormat<T>.Current.AssetType;
-    public static string PathSuffix => AssetFormat<T>.Current.PathSuffix;
-    public static ulong SchemaHash => AssetFormat<T>.Current.WireType.SchemaFingerprint;
-
-    internal AssetFile File => Volatile.Read(ref _file)
-        ?? throw new ObjectDisposedException(nameof(Asset<T>));
-
-    // These methods are emitted into the assembly declaring the file fields. They are not a
-    // second asset API: only generated code knows the associated concrete field type.
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public static void RegisterGenerated<TFields>(
-        string assetType,
-        string pathSuffix,
-        Func<TFields, Guid> getId,
-        Func<TFields, string> getName,
-        Func<TFields, string, IReadOnlyList<Guid>> getDependencies,
-        Func<TFields, BinaryDocumentWriter> createWriter,
-        Func<TFields, TFields> copyFields)
-        where TFields : class, IBinaryContract<TFields>
+    protected Asset(PageArena? pages = null, Guid id = default)
     {
-        AssetFormat<T>.Register(new AssetFormat<T>(
-            assetType, pathSuffix,
-            new(TFields.TypeId, TFields.SchemaFingerprint, TFields.Compatibility, TFields.SchemaEpoch),
-            async (source, entry, limits, ct) =>
+        Pages = pages ?? PageArena.Shared;
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+    }
+
+    protected Asset(Asset source)
+    {
+        lock (source.Access.SyncRoot)
+        {
+            source.RequireIdle();
+            Pages = source.Pages;
+            _id = source._id;
+            _name = source._name;
+            AssetType = source.AssetType;
+            _file = source._file?.Retain();
+            CopyBlocksFrom(source);
+        }
+    }
+
+    public Guid Id
+    {
+        get { lock (Access.SyncRoot) { RequireIdle(); return _id; } }
+        protected set
+        {
+            lock (Access.SyncRoot)
             {
-                BinaryDocument<TFields> document = await BinaryDocument<TFields>.OpenAsync(
-                    source, ownsSource: true, limits, ct).ConfigureAwait(false);
-                try
-                {
-                    TFields fields = document.Root;
-                    Guid id = getId(fields);
-                    if (id == Guid.Empty || (entry.AssetGuid != Guid.Empty && id != entry.AssetGuid))
-                        throw new InvalidDataException($"Asset {entry.AssetGuid} root declares GUID {id}.");
-                    return new AssetFile<TFields>(
-                        entry with
-                        {
-                            AssetGuid = id,
-                            Version = document.Generation,
-                            Name = getName(fields),
-                            Dependencies = Array.AsReadOnly(getDependencies(fields, entry.Path).ToArray()),
-                        }, fields, document, createWriter, copyFields);
-                }
-                catch
-                {
-                    await document.DisposeAsync().ConfigureAwait(false);
-                    throw;
-                }
-            }));
+                RequireIdle();
+                if (value == Guid.Empty) throw new InvalidDataException("An asset ID cannot be empty.");
+                if (_file is not null && value != _id)
+                    throw new InvalidDataException("Content from another identity cannot be decoded into this file access.");
+                _id = value;
+            }
+        }
     }
 
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public static Asset<T> CreateGenerated<TFields>(
-        TFields fields,
-        Guid id,
-        string name,
-        IReadOnlyList<Guid> dependencies,
-        Func<TFields, BinaryDocumentWriter> createWriter,
-        Func<TFields, TFields> copyFields)
-        where TFields : class, IBinaryContract<TFields>
+    public string Name
     {
-        AssetFormat<T> format = AssetFormat<T>.Current;
-        if (TFields.TypeId != format.WireType.TypeId)
-            throw new ArgumentException("The file fields do not belong to this asset type.", nameof(fields));
-        return new Asset<T>(new AssetFile<TFields>(
-            new AssetEntry(id, format.AssetType, format.WireType.SchemaFingerprint, Guid.Empty)
-            { Name = name, Dependencies = Array.AsReadOnly(dependencies.ToArray()) },
-            copyFields(fields), null, createWriter, copyFields));
+        get { lock (Access.SyncRoot) { RequireIdle(); return _name; } }
+        set { lock (Access.SyncRoot) { RequireIdle(); _name = value ?? throw new ArgumentNullException(nameof(value)); } }
     }
 
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public TFields GetFieldsGenerated<TFields>() where TFields : class, IBinaryContract<TFields>
-        => ((AssetFile<TFields>)File).CopyFields();
-
-    internal AssetFile DuplicateFile()
+    public string AssetType
     {
-        lock (_gate)
-            return File.Duplicate();
+        get { lock (Access.SyncRoot) { RequireIdle(); return _assetType; } }
+        protected set
+        {
+            lock (Access.SyncRoot)
+            {
+                RequireIdle();
+                if (_file is not null && value != _assetType)
+                    throw new InvalidDataException("Content from another type cannot be decoded into this file access.");
+                _assetType = value ?? throw new ArgumentNullException(nameof(value));
+            }
+        }
+    }
+    [BinaryIgnore] public PageArena Pages { get; }
+    [BinaryIgnore] public ChunkStreamingMetrics? StreamingMetrics
+    {
+        get { using AssetFile? file = RetainFile(); return file?.StreamingMetrics; }
+    }
+    [BinaryIgnore] public Guid SourceVersion { get { lock (Access.SyncRoot) { RequireIdle(); return _file?.Version ?? Guid.Empty; } } }
+    [BinaryIgnore] public string SourcePath { get { lock (Access.SyncRoot) { RequireIdle(); return _file?.Path ?? ""; } } }
+
+    protected void RequireOpen() => ObjectDisposedException.ThrowIf(_disposed, this);
+    protected void RequireIdle() { RequireOpen(); Access.RequireIdle(); }
+
+    protected void AttachFile(AssetFile file)
+    {
+        AssetEntry entry = file.Describe();
+        lock (Access.SyncRoot)
+        {
+            RequireIdle();
+            if (entry.AssetGuid != _id || entry.AssetType != _assetType)
+                throw new InvalidDataException("The file identity or type differs from the decoded asset.");
+            if (_file is not null) throw new InvalidOperationException("This asset already has a selected file.");
+            ValidateFileContent();
+            _file = file.Retain();
+        }
     }
 
-    /// <summary>Generated domain code obtains its own concrete document access for streaming.</summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public BinaryDocument<TFields>? OpenDocumentGenerated<TFields>()
-        where TFields : class, IBinaryContract<TFields>
+    protected AssetFile? RetainFile()
     {
-        lock (_gate)
-            return ((AssetFile<TFields>)File).Document?.Duplicate();
+        lock (Access.SyncRoot) { RequireIdle(); return _file?.Retain(); }
     }
+
+    public abstract Asset Duplicate();
+
+    /// <summary>Shares content with a new independent identity. Source chunks remain available for later saving.</summary>
+    public virtual Asset CreateCopy(Guid id = default)
+    {
+        lock (Access.SyncRoot)
+        {
+            RequireIdle();
+            Guid identity = id == Guid.Empty ? Guid.NewGuid() : id;
+            if (identity == _id) throw new ArgumentException("Use Duplicate to keep the same asset identity.", nameof(id));
+            Asset copy = Duplicate();
+            copy._id = identity;
+            return copy;
+        }
+    }
+
+    protected virtual void ValidateContent() { }
+    protected virtual void ValidateFileContent() { }
+
+    protected AssetEntry Describe(ulong schema, IEnumerable<Guid> references)
+        => new(Id, AssetType, schema, SourceVersion)
+        {
+            Name = Name, Path = SourcePath,
+            Dependencies = references.Where(static id => id != Guid.Empty).Distinct().Order().ToArray(),
+        };
+
+    protected static async ValueTask<AssetEntry> SaveFileAsync(BinaryDocumentWriter writer, string path,
+        string pathSuffix, AssetEntry entry, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!path.EndsWith(pathSuffix, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Asset path '{path}' must end with '{pathSuffix}'.");
+        Guid version = await WriteFileAsync(path, async (stream, token) =>
+        {
+            await writer.WriteAsync(stream, cancellationToken: token).ConfigureAwait(false);
+            return await BinaryDocument.ReadVersionAsync(stream, token).ConfigureAwait(false);
+        }, async (destination, token) =>
+        {
+            await using BinaryDocument existing = await BinaryDocument.OpenAsync(FileRangeSource.Open(destination),
+                writer.RootDescriptor, ownsSource: true, cancellationToken: token).ConfigureAwait(false);
+            if (existing.CreateRootReader().ReadGuid() != entry.AssetGuid)
+                throw new InvalidDataException("The destination path belongs to a different asset identity.");
+        }, cancellationToken).ConfigureAwait(false);
+        return entry with { Path = Path.GetFullPath(path), Version = version };
+    }
+
+    internal static async ValueTask<TResult> WriteFileAsync<TResult>(string path,
+        Func<FileStream, CancellationToken, ValueTask<TResult>> write,
+        Func<string, CancellationToken, ValueTask> checkDestination, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string fullPath = Path.GetFullPath(path);
+        string directory = Path.GetDirectoryName(fullPath)!;
+        Directory.CreateDirectory(directory);
+        string temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            TResult result;
+            await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.ReadWrite,
+                FileShare.None, 128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                result = await write(stream, cancellationToken).ConfigureAwait(false);
+                stream.Flush(flushToDisk: true);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (File.Exists(fullPath))
+            {
+                await checkDestination(fullPath, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Replace(temporaryPath, fullPath, null);
+            }
+            else File.Move(temporaryPath, fullPath);
+            return result;
+        }
+        catch
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+            throw;
+        }
+    }
+
+    protected virtual void ReleaseContent() { }
 
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
-
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         AssetFile? file;
-        lock (_gate)
-            file = Interlocked.Exchange(ref _file, null);
-        return file?.DisposeAsync() ?? ValueTask.CompletedTask;
-    }
-}
-
-internal abstract class AssetFile(AssetEntry entry) : IAsyncDisposable
-{
-    internal AssetEntry Entry { get; } = entry;
-    internal abstract long RootByteLength { get; }
-    internal abstract AssetFile Duplicate();
-    internal abstract ValueTask WriteAsync(FileStream destination, CancellationToken cancellationToken);
-    public abstract ValueTask DisposeAsync();
-}
-
-internal sealed class AssetFile<TFields>(
-    AssetEntry entry,
-    TFields fields,
-    BinaryDocument<TFields>? document,
-    Func<TFields, BinaryDocumentWriter> createWriter,
-    Func<TFields, TFields> copyFields) : AssetFile(entry)
-    where TFields : class, IBinaryContract<TFields>
-{
-    internal TFields Fields { get; } = fields;
-    internal BinaryDocument<TFields>? Document { get; } = document;
-    internal override long RootByteLength => Document?.RootByteLength ?? 0;
-    internal TFields CopyFields() => copyFields(Fields);
-
-    internal override AssetFile Duplicate()
-        => new AssetFile<TFields>(Entry, Fields, Document?.Duplicate(), createWriter, copyFields);
-
-    internal override async ValueTask WriteAsync(FileStream destination, CancellationToken cancellationToken)
-    {
-        if (Document is not null)
+        Task[] blockReads;
+        Exception? contentError = null;
+        lock (Access.SyncRoot)
         {
-            await Document.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
-            return;
+            if (_disposed) return;
+            RequireIdle();
+            _disposed = true;
+            file = _file;
+            _file = null;
+            blockReads = ActiveBlockReads();
+            try
+            {
+                try { ReleaseContent(); }
+                finally { ReleaseBlocks(); }
+            }
+            catch (Exception error) { contentError = error; }
         }
-        BinaryDocumentWriter writer = createWriter(CopyFields())
-            ?? throw new InvalidDataException("The asset encoder returned no document.");
-        if (writer.RootDescriptor != new BinaryWireTypeDescriptor(
-            TFields.TypeId, TFields.SchemaFingerprint, TFields.Compatibility, TFields.SchemaEpoch))
-            throw new InvalidDataException("The asset encoder returned a different file format.");
-        await writer.WriteAsync(destination, cancellationToken: cancellationToken).ConfigureAwait(false);
+        try
+        {
+            try { _blockReadCancellation?.Cancel(); }
+            catch (Exception error) { contentError = contentError is null ? error : new AggregateException(contentError, error); }
+            try { if (blockReads.Length != 0) await Task.WhenAll(blockReads).ConfigureAwait(false); }
+            catch { /* Acquisition reports its failure to its own callers; retained sources still complete cleanup. */ }
+            if (file is not null) await file.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception error) when (contentError is not null)
+        { throw new AggregateException("Asset content and file cleanup failed.", contentError, error); }
+        finally { _blockReadCancellation?.Dispose(); }
+        if (contentError is not null) ExceptionDispatchInfo.Capture(contentError).Throw();
     }
-
-    public override ValueTask DisposeAsync() => Document?.DisposeAsync() ?? ValueTask.CompletedTask;
 }

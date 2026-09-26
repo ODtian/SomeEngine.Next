@@ -1,5 +1,6 @@
 using System.Reflection;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Features.Debugging;
 using SomeEngine.Render.Features.GeometryExport;

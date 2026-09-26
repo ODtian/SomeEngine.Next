@@ -1,5 +1,6 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SlangShaderSharp;
 using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
@@ -29,24 +30,20 @@ public sealed class LinkedComputePipeline : IDisposable
     public static LinkedComputePipeline Create(
         IGraphicsBackend backend,
         Device device,
-        VirtualShadowMapShaders shaders,
-        ShaderRef? shader,
+        ShaderEntry? shader,
         string label)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(shaders);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         if (shader is null ||
             shader.Stage != ShaderStage.Compute ||
-            string.IsNullOrWhiteSpace(shader.EntryPoint) ||
-            !Guid.TryParse(shader.AssetGuid, out Guid shaderGuid) ||
-            (shaderGuid == System.Guid.Empty))
+            string.IsNullOrWhiteSpace(shader.EntryPoint) || shader.Shader is null)
         {
             throw new InvalidDataException(
                 $"Compute pipeline '{label}' has no valid shader entry.");
         }
-        Shader loaded = shaders.GetShader(shader);
+        Shader loaded = shader.Shader;
         return Create(backend, device, loaded, shader.EntryPoint, label);
     }
 

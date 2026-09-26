@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Cluster.Pipeline;

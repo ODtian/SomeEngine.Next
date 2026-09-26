@@ -26,7 +26,7 @@ public sealed class GeneratedContractTests
         };
 
         OwnedTestEncoding bytes = OwnedTestEncoding.Encode(expected);
-        GeneratedExactContract actual = BinaryContractSerializer.Deserialize<GeneratedExactContract>(bytes.Span);
+        GeneratedExactContract actual = BinarySerializer.Deserialize<GeneratedExactContract>(bytes.Span);
 
         Assert.True(actual.Enabled);
         Assert.Equal(expected.Id, actual.Id);
@@ -47,9 +47,9 @@ public sealed class GeneratedContractTests
             new GeneratedNullableEnumContract { Value = null });
 
         GeneratedNullableEnumContract present =
-            BinaryContractSerializer.Deserialize<GeneratedNullableEnumContract>(presentBytes.Span);
+            BinarySerializer.Deserialize<GeneratedNullableEnumContract>(presentBytes.Span);
         GeneratedNullableEnumContract absent =
-            BinaryContractSerializer.Deserialize<GeneratedNullableEnumContract>(absentBytes.Span);
+            BinarySerializer.Deserialize<GeneratedNullableEnumContract>(absentBytes.Span);
         var presentView = new GeneratedNullableEnumContract.SpanView(presentBytes.Span);
         var absentView = new GeneratedNullableEnumContract.SpanView(absentBytes.Span);
 
@@ -73,7 +73,7 @@ public sealed class GeneratedContractTests
         };
 
         OwnedTestEncoding encoded = OwnedTestEncoding.Encode(expected);
-        GeneratedExactContract actual = BinaryContractSerializer.Deserialize<GeneratedExactContract>(encoded.Span);
+        GeneratedExactContract actual = BinarySerializer.Deserialize<GeneratedExactContract>(encoded.Span);
 
         Assert.True(encoded.Length > 60_000);
         Assert.Equal(expected.Name, actual.Name);
@@ -91,7 +91,7 @@ public sealed class GeneratedContractTests
         var expected = new GeneratedExactContract { Points = points };
 
         OwnedTestEncoding bytes = OwnedTestEncoding.Encode(expected);
-        GeneratedExactContract actual = BinaryContractSerializer.Deserialize<GeneratedExactContract>(bytes.Span);
+        GeneratedExactContract actual = BinarySerializer.Deserialize<GeneratedExactContract>(bytes.Span);
 
         Assert.Equal(1, points.CountReads);
         Assert.Equal(2, actual.Points!.Count);
@@ -117,7 +117,7 @@ public sealed class GeneratedContractTests
         using BinaryContractViewOwner owner = BinaryContractViewOwner.Borrow(encoded.Memory);
         GeneratedChunkContract.View view = GeneratedChunkContract.CreateView(owner);
         Assert.Equal(expected, view.PayloadChunk);
-        GeneratedChunkContract decoded = BinaryContractSerializer.Deserialize<GeneratedChunkContract>(encoded.Span);
+        GeneratedChunkContract decoded = BinarySerializer.Deserialize<GeneratedChunkContract>(encoded.Span);
         Assert.Equal(expected, decoded.PayloadChunk);
         Assert.Null(decoded.Payload);
     }
@@ -175,7 +175,7 @@ public sealed class GeneratedContractTests
         };
 
         OwnedTestEncoding bytes = OwnedTestEncoding.Encode(expected);
-        GeneratedCurrentContract actual = BinaryContractSerializer.Deserialize<GeneratedCurrentContract>(bytes.Span);
+        GeneratedCurrentContract actual = BinarySerializer.Deserialize<GeneratedCurrentContract>(bytes.Span);
         var catalog = new BinaryContractCatalog();
         global::SomeEngine.GeneratedContracts.Assembly_SomeEngine_Serialization_Tests
             .GeneratedBinaryContractCatalog.RegisterAll(catalog);
@@ -209,11 +209,11 @@ public sealed class GeneratedContractTests
         });
 
         Assert.Throws<InvalidDataException>(() =>
-            BinaryContractSerializer.Deserialize<GeneratedExactContract>(
+            BinarySerializer.Deserialize<GeneratedExactContract>(
                 exactBytes.Span,
                 new BinaryReadLimits { MaxAllocationBytes = 800 }));
         Assert.Throws<InvalidDataException>(() =>
-            BinaryContractSerializer.Deserialize<GeneratedCurrentContract>(
+            BinarySerializer.Deserialize<GeneratedCurrentContract>(
                 currentBytes.Span,
                 new BinaryReadLimits { MaxAllocationBytes = 100 }));
     }
@@ -297,7 +297,7 @@ public sealed class GeneratedContractTests
 
         OwnedTestEncoding firstBytes = OwnedTestEncoding.Encode(first);
         OwnedTestEncoding secondBytes = OwnedTestEncoding.Encode(second);
-        GeneratedShapeRecord actual = BinaryContractSerializer.Deserialize<GeneratedShapeRecord>(firstBytes.Span);
+        GeneratedShapeRecord actual = BinarySerializer.Deserialize<GeneratedShapeRecord>(firstBytes.Span);
 
         Assert.True(firstBytes.Span.SequenceEqual(secondBytes.Span));
         Assert.Equal(first.Numbers, actual.Numbers);
@@ -593,14 +593,14 @@ public sealed class GeneratedContractTests
         => GeneratedShapeRecord.ValidateCanonical(input);
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial struct GeneratedPoint
 {
     public float X { get; set; }
     public float Y { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 [BinaryNativeLayout("SomeEngine.Serialization.Tests.GeneratedNativeVector2.v1")]
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 public partial struct GeneratedNativeVector2
@@ -609,7 +609,7 @@ public partial struct GeneratedNativeVector2
     public float Y;
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 [BinaryNativeLayout("SomeEngine.Serialization.Tests.GeneratedNativeVertex.v1")]
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 public partial struct GeneratedNativeVertex
@@ -619,7 +619,7 @@ public partial struct GeneratedNativeVertex
     public uint Flags;
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial class GeneratedExactContract
 {
     public bool Enabled { get; set; }
@@ -629,7 +629,7 @@ public partial class GeneratedExactContract
     public IList<GeneratedPoint>? Points { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial class GeneratedChunkContract
 {
     public ulong ChunkKey { get; set; }
@@ -640,7 +640,7 @@ public partial class GeneratedChunkContract
     public Memory<byte>? Payload { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema, Epoch = 3)]
+[BinarySerializable(BinaryCompatibility.ExactSchema, Epoch = 3)]
 public partial class GeneratedCurrentContract
 {
     public int Id { get; set; }
@@ -660,7 +660,7 @@ public enum GeneratedOptionalValue : byte
     Second = 2,
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial class GeneratedNullableEnumContract
 {
     public GeneratedOptionalValue? Value { get; set; }
@@ -669,21 +669,21 @@ public partial class GeneratedNullableEnumContract
 [BinaryUnion(typeof(GeneratedNumberNode), typeof(GeneratedTextNode))]
 public interface IGeneratedNode;
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 [BinaryUnionCase(10)]
 public sealed partial class GeneratedNumberNode : IGeneratedNode
 {
     public int Number { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 [BinaryUnionCase(20)]
 public sealed partial class GeneratedTextNode : IGeneratedNode
 {
     public string Text { get; set; } = string.Empty;
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial record class GeneratedShapeRecord
 {
     public string RequiredName { get; set; } = string.Empty;
@@ -697,37 +697,37 @@ public partial record class GeneratedShapeRecord
     public IGeneratedNode? OptionalNode { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial class GeneratedNonNullableString
 {
     public string Value { get; set; } = string.Empty;
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial class GeneratedDictionaryOnly
 {
     public Dictionary<string, int> Value { get; set; } = new(StringComparer.Ordinal);
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial class GeneratedUnionOnly
 {
     public IGeneratedNode Value { get; set; } = new GeneratedNumberNode();
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial class GeneratedListOnly
 {
     public List<int> Value { get; set; } = [];
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 public partial class GeneratedNestedClassOnly
 {
     public GeneratedNumberNode Value { get; set; } = new();
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema, Epoch = 1)]
+[BinarySerializable(BinaryCompatibility.ExactSchema, Epoch = 1)]
 public partial class GeneratedCurrentRequired
 {
     public string Value { get; set; } = string.Empty;

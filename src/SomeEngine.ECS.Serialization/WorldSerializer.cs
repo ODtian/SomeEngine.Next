@@ -31,7 +31,7 @@ public static partial class WorldSerializer
         using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
         PayloadFormat.WriteHeader(writer, SnapshotPayloadKind.Component, new[] { runtime }, options.Contract);
         writer.Write(0);
-        PayloadBytes.WriteComponent(writer, valueRuntime, in value);
+        PayloadBytes.WriteComponent(writer, valueRuntime, in value, options.ExternalReferences);
     }
 
     public static T ReadComponent<T>(
@@ -106,7 +106,7 @@ public static partial class WorldSerializer
         var manifestIndex = BuildManifestIndex(manifest);
         using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
         PayloadFormat.WriteHeader(writer, SnapshotPayloadKind.Entity, manifest, options.Contract);
-        EntityCodec.WriteRecord(writer, admitted, entity, manifest, manifestIndex);
+        EntityCodec.WriteRecord(writer, admitted, entity, manifest, manifestIndex, options.ExternalReferences);
     }
 
     public static void WriteEntities(
@@ -138,7 +138,7 @@ public static partial class WorldSerializer
         PayloadFormat.WriteHeader(writer, SnapshotPayloadKind.EntitySet, manifest, options.Contract);
         writer.Write(entities.Length);
         for (int i = 0; i < entities.Length; i++)
-            EntityCodec.WriteRecord(writer, admitted, entities[i], manifest, manifestIndex);
+            EntityCodec.WriteRecord(writer, admitted, entities[i], manifest, manifestIndex, options.ExternalReferences);
     }
 
     public static void WriteQuery(
@@ -180,7 +180,7 @@ public static partial class WorldSerializer
         {
             foreach (var row in cursor.Rows)
             {
-                EntityCodec.WriteRecord(writer, admitted, row.Entity, manifest, manifestIndex);
+                EntityCodec.WriteRecord(writer, admitted, row.Entity, manifest, manifestIndex, options.ExternalReferences);
                 written = checked(written + 1);
             }
         });
@@ -264,14 +264,15 @@ public static partial class WorldSerializer
             writer.Write(slot.IsAlive);
         }
 
-        WriteWorldEntities(writer, admitted, capturePlan, manifestIndex);
+        WriteWorldEntities(writer, admitted, capturePlan, manifestIndex, options.ExternalReferences);
         TopologyCodec.WriteAll(
             writer,
             admitted,
             registry,
             options.Contract,
             options.MaximumTopologyRecords,
-            options.MaximumTopologyPayloadBytes);
+            options.MaximumTopologyPayloadBytes,
+            options.ExternalReferences);
         writer.Flush();
         afterOutput?.Invoke();
     }
@@ -391,7 +392,7 @@ public static partial class WorldSerializer
         BinaryWriter writer,
         AdmittedWorldWrite admitted,
         WorldWritePlan capturePlan,
-        IReadOnlyDictionary<Guid, int> manifestIndex)
+        IReadOnlyDictionary<Guid, int> manifestIndex, ISet<ExternalReferenceKey>? references)
     {
         writer.Write(admitted.LiveEntityCount);
         for (int i = 0; i < admitted.SlotCount; i++)
@@ -439,7 +440,7 @@ public static partial class WorldSerializer
 
                 writer.Write(manifestIndex[runtime.Entry.TypeKey.StableId]);
 
-                PayloadBytes.WriteItemAdmitted(writer, runtime, admitted, entity);
+                PayloadBytes.WriteItemAdmitted(writer, runtime, admitted, entity, references);
             }
         }
     }
@@ -451,7 +452,7 @@ public static partial class WorldSerializer
             AdmittedWorldWrite admitted,
             Entity entity,
             ReadOnlySpan<SerializationTypeRuntime> manifest,
-            IReadOnlyDictionary<Guid, int> manifestIndex)
+            IReadOnlyDictionary<Guid, int> manifestIndex, ISet<ExternalReferenceKey>? references)
         {
             var dataWriter = new DataWriter(writer);
             dataWriter.WriteEntity(entity);
@@ -470,7 +471,7 @@ public static partial class WorldSerializer
                     continue;
 
                 writer.Write(manifestIndex[runtime.Entry.TypeKey.StableId]);
-                PayloadBytes.WriteItemAdmitted(writer, runtime, admitted, entity);
+                PayloadBytes.WriteItemAdmitted(writer, runtime, admitted, entity, references);
             }
         }
     }
@@ -727,7 +728,7 @@ public static partial class WorldSerializer
         public static void WriteComponent<T>(
             BinaryWriter writer,
             ValueSerializationRuntime<T> runtime,
-            in T value)
+            in T value, ISet<ExternalReferenceKey>? references)
             where T : struct
         {
             writer.Flush();
@@ -741,7 +742,7 @@ public static partial class WorldSerializer
                        SerializationBinary.StrictUtf8,
                        leaveOpen: true))
             {
-                var payloadWriter = new DataWriter(payloadBinaryWriter);
+                var payloadWriter = new DataWriter(payloadBinaryWriter, references);
                 runtime.WriteStandalone(ref payloadWriter, in value);
                 payloadBinaryWriter.Flush();
             }
@@ -752,7 +753,7 @@ public static partial class WorldSerializer
             BinaryWriter writer,
             SerializationTypeRuntime runtime,
             AdmittedWorldWrite admitted,
-            Entity entity)
+            Entity entity, ISet<ExternalReferenceKey>? references = null)
         {
             writer.Flush();
             using var counter = new BoundedCountingWriteStream(
@@ -765,7 +766,7 @@ public static partial class WorldSerializer
                        SerializationBinary.StrictUtf8,
                        leaveOpen: true))
             {
-                var payloadWriter = new DataWriter(payloadBinaryWriter);
+                var payloadWriter = new DataWriter(payloadBinaryWriter, references);
                 runtime.WriteAdmitted(ref payloadWriter, admitted, entity);
                 payloadBinaryWriter.Flush();
             }

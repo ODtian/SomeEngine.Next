@@ -35,7 +35,8 @@ internal static class TopologyCodec
         SerializationRegistry registry,
         SerializationContract contract,
         long maximumRecords,
-        long maximumPayloadBytes)
+        long maximumPayloadBytes,
+        ISet<ExternalReferenceKey>? references = null)
     {
         ValidateWriteContract(registry, contract);
         var recordBudget = new TopologyCaptureBudget(maximumRecords);
@@ -52,7 +53,7 @@ internal static class TopologyCodec
                 runtime,
                 admitted,
                 recordBudget,
-                payloadBudget);
+                payloadBudget, references);
         }
     }
 
@@ -61,7 +62,7 @@ internal static class TopologyCodec
         TopologySerializationRuntime runtime,
         AdmittedWorldWrite admitted,
         TopologyCaptureBudget recordBudget,
-        TopologyWriteBudget budget)
+        TopologyWriteBudget budget, ISet<ExternalReferenceKey>? references)
     {
         writer.Flush();
         string stableName = runtime.TypeKey.StableName;
@@ -78,7 +79,7 @@ internal static class TopologyCodec
                    SerializationBinary.StrictUtf8,
                    leaveOpen: true))
         {
-            runtime.WriteAdmitted(payloadWriter, admitted, recordBudget);
+            runtime.WriteAdmitted(payloadWriter, admitted, recordBudget, references);
             payloadWriter.Flush();
         }
         budget.AddPayloadBytes(output.BytesWritten, stableName);

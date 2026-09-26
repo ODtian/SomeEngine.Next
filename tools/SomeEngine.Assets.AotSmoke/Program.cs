@@ -1,49 +1,145 @@
+using SomeEngine.ECS;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
+using SomeEngine.Resources.Geometry;
+using SomeEngine.Serialization;
+using SomeEngine.Serialization.Containers;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using SomeEngine.Serialization.Streaming;
 
+Game.Assets.MaterialTypes.Register();
 string directory = Path.Combine(Path.Combine(Directory.GetCurrentDirectory(), "obj"), $"SomeEngine-Assets-Aot-{Guid.NewGuid():N}");
 Directory.CreateDirectory(directory);
 const string relativePath = "native.texture.asset";
 string path = Path.Combine(directory, relativePath);
 try
 {
+    await SomeEngine.Assets.AotSmoke.ImportingSmoke.RunAsync(directory);
     var project = new AssetProject(directory, []);
-    Guid expectedGuid = WriteTextureData(project, relativePath);
+    Guid expectedGuid = await WriteTextureAsync(project, path);
 
     await using var loader = new AssetLoader(project.CreateStorage());
-    Asset<Texture>[] opened = await Task.WhenAll(
-        loader.OpenAsync(new AssetId<Texture>(expectedGuid)).AsTask(),
-        loader.OpenAsync(new AssetId<Texture>(expectedGuid)).AsTask());
-    await using Asset<Texture> first = opened[0];
-    await using Asset<Texture> second = opened[1];
+    TextureAsset[] opened = await Task.WhenAll(
+        TextureAsset.OpenAsync(loader, new AssetId<TextureAsset>(expectedGuid)).AsTask(),
+        TextureAsset.OpenAsync(loader, new AssetId<TextureAsset>(expectedGuid)).AsTask());
+    await using TextureAsset first = opened[0];
+    await using TextureAsset second = opened[1];
     if (ReferenceEquals(first, second) || first.Id != second.Id)
         throw new InvalidOperationException("Disk opens must have independent close boundaries.");
-    await using Texture original = await Texture.CreateAsync(first);
-    await using Texture other = await Texture.CreateAsync(second);
+    await using Texture original = await first.GetBlock<TextureBlock>().CreateAsync(first.Name, firstMip: 0);
+    await using Texture other = await second.GetBlock<TextureBlock>().CreateAsync(second.Name);
     if (ReferenceEquals(original, other))
         throw new InvalidOperationException("Domain instances must be independent.");
     await first.DisposeAsync();
     await second.DisposeAsync();
     await loader.DisposeAsync();
-    using ResidentChunkLease mip = await original.AcquireMipTileAsync(0, 0, 0);
-    if (mip.Memory.Length != 16 || mip.Memory.Span[0] != 255)
+    if (!original.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out var mip))
+        throw new InvalidOperationException("Explicitly acquired texture pixels are missing.");
+    using var mipRead = mip;
+    if (mipRead.Sequence.Length != 16 || mipRead.Sequence.FirstSpan[0] != 255)
         throw new InvalidOperationException("Texture streaming must survive asset and loader closure.");
-    await using Asset<Texture> replacement = await AssetLoader.OpenFileAsync<Texture>(path);
-    await original.UpdateAsync(replacement);
+    await using TextureAsset replacement = await TextureAsset.OpenAsync(path);
+    await replacement.GetBlock<TextureBlock>().UpdateAsync(original, replacement.Name);
     if (original.Revision != 2 || other.Revision != 1)
         throw new InvalidOperationException("Updating one domain object changed another instance.");
-    using Asset<SmokePalette> paletteFile = new SmokePaletteFields
+    using var paletteFile = new SmokePaletteAsset
     {
-        Name = "palette", Colors = [0xff123456u, 0xffabcdefu],
-    }.ToAsset();
-    Guid paletteId = project.CreateAsset("palette.palette.asset", paletteFile);
+        Name = "palette",
+    };
+    using var paletteBlock = new SmokePaletteBlock { Colors = [0xff123456u, 0xffabcdefu] };
+    paletteFile.SetBlock(paletteBlock);
+    Guid paletteId = project.RegisterAsset(await paletteFile.SaveAsync(Path.Combine(directory, "palette.palette.asset")));
     await using var paletteLoader = new AssetLoader(project.CreateStorage());
-    await using Asset<SmokePalette> paletteContent = await paletteLoader.OpenAsync(new AssetId<SmokePalette>(paletteId));
-    SmokePalette palette = SmokePalette.Create(paletteContent);
+    await using SmokePaletteAsset paletteContent = await SmokePaletteAsset.OpenAsync(paletteLoader, new AssetId<SmokePaletteAsset>(paletteId));
+    SmokePalette palette = (await paletteContent.GetBlockAsync<SmokePaletteBlock>()).Create(paletteContent.Name);
     if (palette.Colors.Length != 2 || palette.Colors[1] != 0xffabcdefu)
         throw new InvalidOperationException("Downstream generated asset format did not run under NativeAOT.");
-    Console.WriteLine($"assets-nativeaot-smoke:ok schema={Asset<Texture>.SchemaHash:X16} instances=2 independent-open=ok streaming-after-close=ok update=ok extension=ok");
+    using var mesh = CreateMesh();
+    using var meshCopy = mesh.Duplicate();
+    using var meshRead = mesh.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+    long marker = MeshPageHeader.Size + PackedCluster.SizeInBytes;
+    meshCopy.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Write(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey, marker, new byte[] { 9 });
+    using var originalBytes = mesh.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.DuplicateBuffer(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+    using var copiedBytes = meshCopy.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.DuplicateBuffer(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+    if (meshRead.Sequence.Slice(marker, 1).FirstSpan[0] != 1 || originalBytes[marker] != 1 || copiedBytes[marker] != 9)
+        throw new InvalidOperationException("A mesh byte edit changed another branch or reader.");
+    AssetEntry meshEntry = await meshCopy.SaveAsync(Path.Combine(directory, "mesh.mesh.asset"));
+    using var meshFile = await MeshAsset.OpenAsync(meshEntry.Path);
+    using Mesh readyMesh = await meshFile.GetBlock<ClusterMeshBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
+    if (readyMesh.TryRetainPage(0, out var unexpected))
+    {
+        unexpected.Dispose();
+        throw new InvalidOperationException("Mesh creation implicitly acquired future geometry pages.");
+    }
+    await meshFile.GetBlock<ClusterMeshBlock>().LoadPagesAsync(readyMesh, [0]);
+    meshFile.Dispose();
+    byte[] page = new byte[readyMesh.GetPageByteLength(0)];
+    readyMesh.ReadPage(0, page);
+    if (page[marker] != 9) throw new InvalidOperationException("Saved Mesh pages lost an edit or require a closed source.");
+    using var parent = new StandardMaterialAsset();
+    _ = new StandardMaterialParameters(parent.GetBlock<MaterialBlock>()) { Roughness = 0.25f };
+    project.RegisterAsset(await parent.SaveAsync(Path.Combine(directory, "parent.material.asset")));
+    await using var materialLoader = new AssetLoader(project.CreateStorage());
+    using var child = new StandardMaterialAsset();
+    child.GetBlock<MaterialBlock>().Parent = parent.Reference;
+    _ = new StandardMaterialParameters(child.GetBlock<MaterialBlock>()) { Roughness = 0 };
+    AssetEntry childEntry = await child.SaveAsync(Path.Combine(directory, "child.material.asset"));
+    using var childRead = await StandardMaterialAsset.OpenAsync(childEntry.Path);
+    using var zero = await childRead.CreateAsync(materialLoader);
+    if (zero.Roughness != 0 || childRead.SourceVersion != childEntry.Version)
+        throw new InvalidOperationException("A material lost its explicit zero override or output version.");
+    using var childCopy = childRead.Duplicate();
+    childCopy.GetBlock<MaterialBlock>().Reset(nameof(StandardMaterial.Roughness));
+    using var inherited = await childCopy.CreateAsync(materialLoader);
+    if (inherited.Roughness != 0.25f || !childRead.GetBlock<MaterialBlock>().HasOverride(nameof(StandardMaterial.Roughness)))
+        throw new InvalidOperationException("Resetting an override changed another branch or lost inheritance.");
+    var worldTypes = new SerializationRegistry().Register<SmokeWorldValue, SmokeWorldCodec>(
+        new(new Guid("91165D12-730E-4EA2-8183-4C7B1BED4417"), nameof(SmokeWorldValue), 0x534D4F4B450001UL));
+    using var world = new World();
+    var entity = world.CreateEntity(new SmokeWorldValue { Number = 16, Reference = new(parent.Id) });
+    using var worldAsset = new WorldAsset { Name = "world" };
+    worldAsset.WriteWorld(world, worldTypes);
+    using var worldCopy = worldAsset.Duplicate();
+    world.Replace(entity, new SmokeWorldValue { Number = 21 });
+    worldCopy.WriteWorld(world, worldTypes);
+    AssetEntry worldEntry = await worldAsset.SaveAsync(Path.Combine(directory, "world.scene.asset"));
+    using var openedWorld = await WorldAsset.OpenAsync(worldEntry.Path);
+    using World loadedWorld = await openedWorld.LoadAsync(worldTypes);
+    using World changedWorld = await worldCopy.LoadAsync(worldTypes);
+    if (!loadedWorld.IsAlive(entity) || loadedWorld.Read<SmokeWorldValue>(entity).Number != 16
+        || changedWorld.Read<SmokeWorldValue>(entity).Number != 21
+        || !worldEntry.Dependencies.SequenceEqual(new[] { parent.Id }))
+        throw new InvalidOperationException("World asset persistence lost ECS identity, independent content, or dependencies.");
+    string curvePath = Path.Combine(directory, "curve.source");
+    using var curveAsset = new SomeEngine.Examples.Curves.CurveAsset
+        { Name = "speed" };
+    curveAsset.GetBlock<SomeEngine.Examples.Curves.CurveBlock>().Points = [new(0, 1), new(1, 5)];
+    await curveAsset.SaveSourceAsync(curvePath);
+    using var curveSource = await SomeEngine.Examples.Curves.CurveAsset.OpenSourceAsync(curvePath);
+    using var curve = curveSource.GetBlock<SomeEngine.Examples.Curves.CurveBlock>().CreateCurve();
+    curveSource.GetBlock<SomeEngine.Examples.Curves.CurveBlock>().Points[1] = new(1, 9);
+    if (curve.Evaluate(0.5f) != 3 || curveSource.Id != curveAsset.Id)
+        throw new InvalidOperationException("External text decoding lost identity or shared points.");
+    curveSource.GetBlock<SomeEngine.Examples.Curves.CurveBlock>().Update(curve);
+    curveSource.Dispose();
+    curveAsset.Dispose();
+    if (curve.Evaluate(0.5f) != 5)
+        throw new InvalidOperationException("The curve lost its data when its source closed.");
+    var textShapes = new SmokeTextChoices { Values = new Dictionary<SmokeTextMode, ISmokeTextChoice?>
+        { [SmokeTextMode.Linear] = new SmokeTextNumber { Number = 3 }, [SmokeTextMode.Constant] = null } };
+    var textDecoded = TextSerializer.Deserialize<SmokeTextChoices>(TextSerializer.Serialize(textShapes));
+    if (textDecoded.Values[SmokeTextMode.Linear] is not SmokeTextNumber { Number: 3 }
+        || textDecoded.Values[SmokeTextMode.Constant] is not null)
+        throw new InvalidOperationException("Static text dictionary, enum or union encoding failed.");
+    using var shaderFile = await ShaderAsset.OpenAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "triangle.shader.asset"));
+    using var shader = await shaderFile.GetBlock<ShaderBlock>().CreateAsync(shaderFile.Name);
+    shaderFile.Dispose();
+    if (shader.Programs is not { Count: 2 } || shader.Programs.Any(value => value is null || value.EntryPoints.Count == 0))
+        throw new InvalidOperationException("Built shader code did not survive its file closing.");
+    Console.WriteLine($"assets-nativeaot-smoke:ok schema={TextureAsset.SchemaHash:X16} instances=2 independent-open=ok ready-after-close=ok update=ok extension=ok mesh-file=ok material-inheritance=ok world=ok curve-source=ok text-shapes=ok shader-file=ok");
 }
 finally
 {
@@ -51,7 +147,7 @@ finally
         Directory.Delete(directory, recursive: true);
 }
 
-static Guid WriteTextureData(AssetProject project, string relativePath)
+static async ValueTask<Guid> WriteTextureAsync(AssetProject project, string path)
 {
     byte[] mipZero =
     [
@@ -61,11 +157,8 @@ static Guid WriteTextureData(AssetProject project, string relativePath)
         255, 255, 255, 255,
     ];
     byte[] mipOne = [127, 127, 127, 255];
-    return project.CreateAsset(
-        relativePath,
-        new TextureData
+    using var pixels = new TextureBlock
         {
-            Name = "native-aot",
             Width = 2,
             Height = 2,
             Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
@@ -87,7 +180,7 @@ static Guid WriteTextureData(AssetProject project, string relativePath)
                     Height = 1,
                     RowPitch = 4,
                     SlicePitch = 4,
-                    Payload = mipOne,
+                    ChunkKey = TextureTiles.ChunkKey(1, 0, 0), DecodedLength = checked((ulong)mipOne.Length),
                 },
                 new TextureMipTile
                 {
@@ -96,25 +189,103 @@ static Guid WriteTextureData(AssetProject project, string relativePath)
                     Height = 2,
                     RowPitch = 8,
                     SlicePitch = 16,
-                    Payload = mipZero,
+                    ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = checked((ulong)mipZero.Length),
                 },
             ],
-        }.ToAsset());
+        };
+    pixels.Chunks.Set(TextureTiles.ChunkKey(0, 0, 0), mipZero);
+    pixels.Chunks.Set(TextureTiles.ChunkKey(1, 0, 0), mipOne);
+    using var texture = new TextureAsset { Name = "native-aot" };
+    texture.SetBlock(pixels);
+    return project.RegisterAsset(await texture.SaveAsync(path));
 }
 
 
-public sealed class SmokePalette(uint[] colors)
+static MeshAsset CreateMesh()
 {
-    public uint[] Colors { get; } = colors;
-    public static SmokePalette Create(Asset<SmokePalette> asset)
-        => new(asset.GetFieldsGenerated<SmokePaletteFields>().Colors);
+    const string encoding = "aot-smoke.opaque-vertex";
+    int vertices = MeshPageHeader.Size + PackedCluster.SizeInBytes;
+    int bvhOffset = vertices + 1 + 3;
+    using var bytes = new PageBuffer(PageArena.Shared, bvhOffset + Unsafe.SizeOf<ClusterBVHNode>());
+    var header = new MeshPageHeader
+    {
+        ClusterCount = 1, TotalVertexCount = 1, TotalTriangleCount = 1, VertexBlobBytes = 1,
+        ClustersOffset = MeshPageHeader.Size, VertexBlobsOffset = (uint)vertices,
+        IndicesOffset = (uint)(vertices + 1), ExtensionDataOffset = (uint)bvhOffset,
+        VertexEncodingHash = VertexEncodingCompatibility.Hash(encoding),
+    };
+    bytes.Write(0, header);
+    bytes.Write(MeshPageHeader.Size, new PackedCluster { VertexBlobSize = 1, PackedCounts = 1 | (1u << 8),
+        ExtensionOffset = uint.MaxValue, MaterialTableOffset = uint.MaxValue });
+    bytes[vertices] = 1;
+    var bvh = new ClusterBVHNode { NodeType = 1 };
+    bvh.SetLeafData(0, 1);
+    bytes.Write(bvhOffset, bvh);
+    var result = new MeshAsset { Name = "mesh" };
+    using var geometry = new MeshBlock();
+    using var clusters = new ClusterMeshBlock { VertexEncoding = encoding };
+    try
+    {
+        clusters.SetPayload(bytes, (ulong)bvhOffset);
+        result.SetBlock(geometry);
+        result.SetBlock(clusters);
+        return result;
+    }
+    catch { result.Dispose(); throw; }
 }
 
-[Asset(typeof(SmokePalette), ".palette.asset")]
-[SomeEngine.Serialization.BinaryContract]
-public sealed partial class SmokePaletteFields
+[Asset(".palette.asset"), BinarySerializable]
+[BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
+public sealed partial class SmokePaletteAsset : Asset
 {
-    public string? AssetGuid { get; set; }
-    public string Name { get; set; } = "";
-    public uint[] Colors { get; set; } = [];
+    public new System.Collections.Immutable.ImmutableArray<AssetBlockDescription> BlockDescriptions
+    { get => base.BlockDescriptions; private set => base.BlockDescriptions = value; }
+}
+[AssetBlock, BinarySerializable, BinaryFields(nameof(Colors))]
+public sealed partial class SmokePaletteBlock : AssetPageBlock
+{
+    public partial IList<uint> Colors { get; set; }
+    public SmokePalette Create(string name)
+    {
+        using var copy = Duplicate();
+        return new(name, copy.Colors.ToArray());
+    }
+}
+
+public sealed record SmokePalette(string Name, uint[] Colors);
+
+public enum SmokeTextMode : byte { Constant, Linear }
+
+[BinaryUnion(typeof(SmokeTextNumber))]
+public interface ISmokeTextChoice;
+
+[BinarySerializable, TextSerializable, BinaryUnionCase(1)]
+[BinaryFields(nameof(Number))]
+public sealed partial class SmokeTextNumber : ISmokeTextChoice
+{
+    public int Number { get; set; }
+}
+
+[BinarySerializable, TextSerializable]
+[BinaryFields(nameof(Values))]
+public sealed partial class SmokeTextChoices
+{
+    public IDictionary<SmokeTextMode, ISmokeTextChoice?> Values { get; set; } = new Dictionary<SmokeTextMode, ISmokeTextChoice?>();
+}
+
+public struct SmokeWorldValue : SomeEngine.ECS.IComponent
+{
+    public int Number;
+    public ExternalReferenceKey Reference;
+}
+
+public struct SmokeWorldCodec : ICanonicalComponentCodec<SmokeWorldValue>
+{
+    public void Write(ref DataWriter writer, in SmokeWorldValue value)
+    {
+        writer.WriteInt32(value.Number);
+        writer.WriteExternalReference(value.Reference);
+    }
+    public void Read(ref DataReader reader, out SmokeWorldValue value)
+        => value = new() { Number = reader.ReadInt32(), Reference = reader.ReadExternalReference() };
 }

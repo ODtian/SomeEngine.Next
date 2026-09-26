@@ -1,4 +1,5 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.ECS.Components;
 using SomeEngine.Render.Materials;
 

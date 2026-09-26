@@ -1,32 +1,24 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
 internal static class CookedShaderTestProgram
 {
-    private static readonly Lazy<CookedShaderProgram> s_program = new(Load);
+    private static readonly Lazy<SlangShaderSharp.ShaderProgram> s_program = new(Load);
 
-    internal static CookedShaderProgram Create()
-    {
-        CookedShaderProgram source = s_program.Value;
-        return new CookedShaderProgram
-        {
-            Backend = source.Backend,
-            Data = source.Data!.Value.ToArray(),
-            ContentHash = source.ContentHash,
-            Program = source.Program,
-        };
-    }
+    internal static SlangShaderSharp.ShaderProgram Create() => s_program.Value;
 
-    private static CookedShaderProgram Load()
+    private static SlangShaderSharp.ShaderProgram Load()
     {
         string path = Path.Combine(
             AppContext.BaseDirectory,
             "Content",
             "Shaders",
             "hello_triangle.shader.asset");
-        ShaderData shader = ShaderData.ReadAsync(path).AsTask().GetAwaiter().GetResult();
+        using ShaderAsset asset = ShaderAsset.OpenAsync(path).AsTask().GetAwaiter().GetResult();
+        using Shader shader = asset.GetBlock<ShaderBlock>().CreateAsync(asset.Name).AsTask().GetAwaiter().GetResult();
         return shader.Programs!.Single(program =>
-            string.Equals(program.Backend, "spirv", StringComparison.Ordinal));
+            string.Equals(program!.Backend, "spirv", StringComparison.Ordinal))!;
     }
 }

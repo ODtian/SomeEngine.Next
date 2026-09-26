@@ -7,16 +7,20 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Schema;
-using MeshData = SomeEngine.Assets.Schema.MeshData;
-using ValueType = SomeEngine.Assets.Data.ValueType;
+using SomeEngine.Resources;
+using SomeEngine.Serialization.Containers;
+using SomeEngine.Serialization.IO;
+using MeshAsset = SomeEngine.Assets.Schema.MeshAsset;
+using ValueType = SomeEngine.Resources.Geometry.ValueType;
+using Stream = System.IO.Stream;
 
 namespace SomeEngine.Assets.Importers;
 
 public static partial class ClusterBuilder
 {
-    private static MeshData ProcessRawCore(
+    private static MeshAsset ProcessRawCore(
         Vector3[] rawPos,
         List<RawAttribute> rawAttributes,
         uint[] rawIndices,
@@ -30,7 +34,8 @@ public static partial class ClusterBuilder
             throw new ArgumentOutOfRangeException(
                 nameof(materialSlots),
                 "Cluster meshes require between one and 256 material/deform cook slots.");
-        using FileStream stream = CreatePageStream();
+        using var payload = new PageBuffer(PageArena.Shared);
+        using var stream = new PageBufferStream(payload);
         var scratch = new RawMeshScratch(rawPos.Length);
         try
         {
@@ -44,10 +49,11 @@ public static partial class ClusterBuilder
                 meshletBuild,
                 vertexEncoder);
             long bvhOffset = WriteBvh(stream, clusterInfos);
+            using PageBuffer content = payload.Slice(0, stream.Length);
             return CreateMeshAsset(
                 name,
                 materialSlots,
-                stream,
+                content,
                 meshletBuild.Bounds,
                 vertexEncoder.Compatibility,
                 bvhOffset);
@@ -56,17 +62,6 @@ public static partial class ClusterBuilder
         {
             scratch.Return();
         }
-    }
-
-    private static FileStream CreatePageStream()
-    {
-        return new FileStream(
-            Path.GetTempFileName(),
-            FileMode.Create,
-            FileAccess.ReadWrite,
-            FileShare.None,
-            4096,
-            FileOptions.DeleteOnClose);
     }
 
     private static PreparedRawMesh PrepareRawMesh(
@@ -257,7 +252,7 @@ public static partial class ClusterBuilder
     }
 
     private static List<ClusterInfo> WriteMeshPages(
-        FileStream stream,
+        Stream stream,
         byte[] pageBuffer,
         PreparedRawMesh prepared,
         MeshletBuild meshletBuild,
@@ -267,7 +262,7 @@ public static partial class ClusterBuilder
         return writer.Write();
     }
 
-    private static long WriteBvh(FileStream stream, List<ClusterInfo> clusterInfos)
+    private static long WriteBvh(Stream stream, List<ClusterInfo> clusterInfos)
     {
         List<ClusterBVHNode> bvhNodes = BuildBvh(clusterInfos);
         long bvhOffset = stream.Position;
@@ -277,47 +272,51 @@ public static partial class ClusterBuilder
         return bvhOffset;
     }
 
-    private static MeshData CreateMeshAsset(
+    private static MeshAsset CreateMeshAsset(
         string name,
         IReadOnlyList<MeshMaterialSlot> materialSlots,
-        FileStream stream,
+        PageBuffer payload,
         MeshBoundsInfo bounds,
         string vertexEncoding,
         long bvhOffset)
     {
-        var meshAsset = new MeshData
+        using var geometry = new MeshBlock
         {
-            Name = name,
             Bounds = CreateBounds(bounds),
-            VertexEncoding = vertexEncoding,
-            Payload = new byte[stream.Length],
-            BvhOffset = (ulong)bvhOffset,
             Regions = CreateMeshRegions(materialSlots.Count),
-            MaterialGuids = materialSlots
-                .Where(static slot => (slot.MaterialGuid != System.Guid.Empty))
-                .Select(static slot => slot.MaterialGuid.ToString())
-                .Distinct(StringComparer.Ordinal)
+        };
+        using var materials = new MeshMaterialsBlock
+        {
+            Materials = materialSlots
+                .Select(static slot => new AssetId<MaterialAsset>(slot.MaterialGuid))
                 .ToArray(),
         };
-        stream.Seek(0, SeekOrigin.Begin);
-        meshAsset.Payload!.Value.Span.Clear();
-        stream.ReadExactly(meshAsset.Payload.Value.Span);
-        return meshAsset;
+        using var clusters = new ClusterMeshBlock { VertexEncoding = vertexEncoding };
+        clusters.SetPayload(payload, checked((ulong)bvhOffset));
+        var meshAsset = new MeshAsset { Name = name };
+        try
+        {
+            meshAsset.SetBlock(geometry);
+            meshAsset.SetBlock(clusters);
+            meshAsset.SetBlock(materials);
+            return meshAsset;
+        }
+        catch { meshAsset.Dispose(); throw; }
     }
 
-    private static SomeEngine.Assets.Schema.Bounds CreateBounds(MeshBoundsInfo bounds)
+    private static SomeEngine.Resources.Bounds CreateBounds(MeshBoundsInfo bounds)
     {
         Vector3 center = (bounds.Min + bounds.Max) * 0.5f;
-        return new SomeEngine.Assets.Schema.Bounds
+        return new SomeEngine.Resources.Bounds
         {
             Center = CreateVec3(center),
             Radius = bounds.MaxExtent * 0.5f,
         };
     }
 
-    private static SomeEngine.Assets.Schema.Vec3 CreateVec3(Vector3 value)
+    private static SomeEngine.Resources.Vec3 CreateVec3(Vector3 value)
     {
-        return new SomeEngine.Assets.Schema.Vec3
+        return new SomeEngine.Resources.Vec3
         {
             X = value.X,
             Y = value.Y,
@@ -384,7 +383,7 @@ public static partial class ClusterBuilder
     private sealed partial class MeshPageWriter
     {
         public MeshPageWriter(
-            FileStream stream,
+            Stream stream,
             byte[] pageBuffer,
             PreparedRawMesh mesh,
             MeshletBuild meshletBuild,
@@ -392,15 +391,15 @@ public static partial class ClusterBuilder
         {
             Stream = stream;
             PageBuffer = pageBuffer;
-            MeshData = mesh;
+            MeshInput = mesh;
             MeshletBuild = meshletBuild;
             VertexEncoder = vertexEncoder;
             VertexEncodingHash = VertexEncodingCompatibility.Hash(vertexEncoder.Compatibility);
         }
 
-        private FileStream Stream { get; }
+        private Stream Stream { get; }
         private byte[] PageBuffer { get; }
-        private PreparedRawMesh MeshData { get; }
+        private PreparedRawMesh MeshInput { get; }
         private MeshletBuild MeshletBuild { get; }
         private IClusterVertexEncoder VertexEncoder { get; }
         private ulong VertexEncodingHash { get; }
@@ -469,8 +468,8 @@ public static partial class ClusterBuilder
             }
 
             EncodedClusterVertices output = VertexEncoder.Encode(
-                new ReadOnlySpan<Vector3>(MeshData.Positions, 0, MeshData.VertexCount),
-                MeshData.Attributes,
+                new ReadOnlySpan<Vector3>(MeshInput.Positions, 0, MeshInput.VertexCount),
+                MeshInput.Attributes,
                 CollectionsMarshal.AsSpan(LocalVertices));
             if (output.Blob.IsEmpty)
                 throw new InvalidDataException("A cluster vertex encoder returned an empty opaque blob.");

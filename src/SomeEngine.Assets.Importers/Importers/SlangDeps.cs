@@ -5,19 +5,6 @@ namespace SomeEngine.Assets.Importers;
 
 internal static class SlangDeps
 {
-    public static bool Matches(Schema.ShaderData asset, SourceOutput existingAsset)
-    {
-        if (string.IsNullOrWhiteSpace(asset.AssetGuid))
-        {
-            return false;
-        }
-
-        return Guid.TryParse(asset.AssetGuid, out var assetGuid)
-            && assetGuid == existingAsset.AssetGuid
-            && asset.ImportTrace?.ContentFingerprint == existingAsset.InputHash
-;
-    }
-
     public static FileDependency[] Collect(
         IModule module,
         string sourcePath,
@@ -84,38 +71,10 @@ internal static class SlangDeps
         return ImportHash.Create(currentDependencies, importerVersion, extraParts);
     }
 
-    public static string ProjectRoot(string sourcePath)
-    {
-        string? current = Path.GetDirectoryName(Path.GetFullPath(sourcePath));
-        while (!string.IsNullOrEmpty(current))
-        {
-            if (File.Exists(Path.Combine(current, "SomeEngine.slnx"))
-                || File.Exists(Path.Combine(current, "Directory.Build.props")))
-            {
-                return current;
-            }
-
-            current = Path.GetDirectoryName(current);
-        }
-
-        string cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
-        if (Path.Exists(cwd) && sourcePath.StartsWith(cwd, StringComparison.OrdinalIgnoreCase))
-        {
-            return cwd;
-        }
-
-        return Path.GetDirectoryName(Path.GetFullPath(sourcePath)) ?? cwd;
-    }
-
-    private static string RelPath(string projectRoot, string fullPath)
+    internal static string RelPath(string projectRoot, string fullPath)
     {
         string normalizedRoot = Path.GetFullPath(projectRoot);
         string normalizedPath = Path.GetFullPath(fullPath);
-        if (!normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            return Path.GetFileName(normalizedPath);
-        }
-
         return Path.GetRelativePath(normalizedRoot, normalizedPath).Replace('\\', '/');
     }
 

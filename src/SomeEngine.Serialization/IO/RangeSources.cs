@@ -15,9 +15,9 @@ public interface IRangeSource : IAsyncDisposable
     bool LeasesAreImmutable => false;
 
     /// <summary>
-    /// Whether this source itself keeps the complete addressed bytes resident in memory (including
-    /// a memory mapping). The default is deliberately conservative so wrappers must explicitly
-    /// propagate the capability instead of silently enabling a second final payload backing.
+    /// Whether this source itself keeps the addressed bytes resident in memory, including a mapping.
+    /// This describes storage for accounting; it does not forbid decoding into a separate result.
+    /// Wrappers propagate the underlying capability. Unknown sources conservatively report true.
     /// </summary>
     bool RetainsResidentBacking => true;
 
