@@ -43,6 +43,40 @@ public sealed class ReadOnlyQueryPacketJobTests
         }
     }
 
+    [Fact]
+    public void AllRowsChangedSinceRequiresEveryRowInTheSlice()
+    {
+        var world = new World();
+        Entity[] entities = Enumerable.Range(0, 4).Select(i => world.CreateEntity(new PacketValue(i))).ToArray();
+        uint baseline = world.CurrentTick;
+        _ = world.AcquireSystemVersion();
+        world.Replace(entities[0], new PacketValue(10));
+        world.Replace(entities[1], new PacketValue(11));
+        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<PacketValue>().Build());
+
+        world.ExecuteReadSnapshot(query, cursor =>
+        {
+            using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 4);
+            var job = new AllRowsChangedJob(baseline);
+            packets.ExecuteInline(in job);
+        });
+
+        world.ReleaseQuery(query);
+    }
+
+    private readonly struct AllRowsChangedJob(uint baseline) : IReadOnlyQueryPacketJob
+    {
+        public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet)
+        {
+            Assert.Equal(0, context.OutputStart);
+            Assert.Equal(4, packet.Count);
+            Assert.False(packet.AllRowsChangedSince<PacketValue>(baseline));
+            Assert.True(packet.Slice(0, 2).AllRowsChangedSince<PacketValue>(baseline));
+            Assert.False(packet.Slice(1, 2).AllRowsChangedSince<PacketValue>(baseline));
+            Assert.False(packet.Slice(0, 0).AllRowsChangedSince<PacketValue>(baseline));
+        }
+    }
+
     private readonly record struct PacketElement(int Value) : IBufferElement;
 
     [Fact]

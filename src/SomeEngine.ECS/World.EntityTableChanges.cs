@@ -7,6 +7,24 @@ namespace SomeEngine.ECS;
 
 public partial class World
 {
+    internal bool TryGetEntityQueryRow(QueryState query, Entity entity, uint last, uint current,
+        out QueryRow row)
+    {
+        if (_entities.Store.IsAlive(entity))
+        {
+            EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
+            if (record.Archetype is not null && query.TryGetMatch(record.Archetype, out var match) &&
+                match.MatchesChunkFilter(record.Chunk!, last) &&
+                match.MatchesRow(record.Chunk!, record.RowInChunk, last))
+            {
+                row = new QueryRow(this, match, record.Chunk!, record.RowInChunk, last, current);
+                return true;
+            }
+        }
+        row = default;
+        return false;
+    }
+
     internal bool TryGetEntityQueryChunk(QueryState query, Entity entity,
         out QueryArchetypeMatch match, out Chunk chunk)
     {

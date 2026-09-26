@@ -124,8 +124,12 @@ internal sealed partial class Scheduler
         {
             bool waited = false;
             SpinWait spinWait = new();
-            while (!_completion.IsCompleted(lease))
+            while (true)
             {
+                // Capture before checking completion so a completion notification
+                // between the check and the wait cannot be lost.
+                long wakeVersion = _workQueue.WakeVersion;
+                if (_completion.IsCompleted(lease)) break;
                 if (!waited)
                 {
                     _counters.Waited();
@@ -144,10 +148,7 @@ internal sealed partial class Scheduler
                     continue;
                 }
 
-                if (!_workQueue.TryExecuteOne(wait: true))
-                {
-                    Thread.Yield();
-                }
+                _workQueue.WaitAndExecuteOne(wakeVersion);
 
                 spinWait = new SpinWait();
             }

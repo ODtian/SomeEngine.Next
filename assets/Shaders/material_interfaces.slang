@@ -1,7 +1,8 @@
 #ifndef MATERIAL_INTERFACES_SLANG
 #define MATERIAL_INTERFACES_SLANG
 
-#include "triangle_surface.slang"
+#include "domain_interfaces.slang"
+#include "visibility_evaluate.slang"
 
 [__AttributeUsage(_AttributeTargets.Var)]
 struct InstancePropertyAttribute
@@ -10,43 +11,15 @@ struct InstancePropertyAttribute
     string accessor;
 };
 
-struct PixelEvaluateInput
-{
-    uint3 PixelCoord;
-    float Depth;
-};
-
-struct PixelEvaluateResult
-{
-    uint Visible;
-    float Depth;
-};
-
-interface IPixelEvaluate
-{
-    PixelEvaluateResult evaluate(PixelEvaluateInput input);
-};
-
-struct OpaquePixelEvaluate : IPixelEvaluate
-{
-    PixelEvaluateResult evaluate(PixelEvaluateInput input)
-    {
-        PixelEvaluateResult result;
-        result.Visible = 1u;
-        result.Depth = input.Depth;
-        return result;
-    }
-};
-
-interface ISurfaceEvaluate
+interface ISurfaceEvaluate<TSurface, TTriangle>
 {
     void evaluateSurface(
         uint3 pixelCoord,
         uint instanceID,
         uint materialSlot,
-        SurfaceEval surface,
+        TSurface surface,
         float3 bary,
-        Triangle triangle,
+        TTriangle triangle,
         RWTexture2DArray<float4> outputColor);
 
     void evaluateDebug(
@@ -54,9 +27,9 @@ interface ISurfaceEvaluate
         uint3 pixelCoord,
         uint instanceID,
         uint materialSlot,
-        SurfaceEval surface,
+        TSurface surface,
         float3 bary,
-        Triangle triangle,
+        TTriangle triangle,
         RWTexture2DArray<float4> outputColor);
 };
 

@@ -2,7 +2,7 @@
   "asset_guid": "ad727890-e164-5627-ba6a-17b99e9a9f62",
   "source_guid": "f365980e-c4cc-4754-8a39-0439d53f691f",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "0a317c8ba658a785c91c9bf61e6fc7588b7c5516b2c6512e57f256773f79c4be",
+  "content_fingerprint": "db002b9e67640c1e9ac0427c605948eba314f41012512b12428e1292bbeeb641",
   "dependencies": [
     {
       "path": "assets/Shaders/hiz_common.slang",
@@ -10,7 +10,7 @@
     },
     {
       "path": "assets/Shaders/hiz_init.slang",
-      "hash": "6771a10b99a145ff9b23217ed2ef284b3ca2a1c01ef39a4fd0933e975df0d615"
+      "hash": "219de5105c5af8cb868131bff8c0680553736e6da0f79bcd39dbc9d9bcf33fdb"
     },
     {
       "path": "assets/Shaders/resource_effects.slang",

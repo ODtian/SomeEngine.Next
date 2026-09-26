@@ -4,7 +4,7 @@
 
 typedef StaticVertexEval VertexEvaluate;
 typedef LinearSurface DomainEvaluate;
-typedef OpaquePixelEvaluate PixelEvaluate;
+typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
 typedef StandardMaterial SurfaceEvaluate;
 
 #include "cluster_material_entries.slang"

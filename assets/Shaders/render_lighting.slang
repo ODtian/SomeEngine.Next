@@ -33,7 +33,7 @@ struct ClusteredLightGridParameters
     uint ScreenWidth;
     uint ScreenHeight;
     uint CellCountPerView;
-    uint Pad0;
+    uint GroupsPerLight;
 };
 
 uint ClusteredLightDepthSlice(

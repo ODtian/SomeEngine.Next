@@ -52,13 +52,14 @@ public struct PackedCluster
     // 76: undefined slow material path sentinel (must be uint.MaxValue)
     public uint MaterialTableOffset;
 
-    // 80: VRB batch encoding
-    public uint VRBBatchInfo;
+    // 80..95: inline vertex-reuse batch data. The first 12 bits store up to three
+    // material-range batch counts; the remaining bits store 5-bit triangle counts.
+    public uint VertReuseBatchWord0;
+    public uint VertReuseBatchWord1;
+    public uint VertReuseBatchWord2;
+    public uint VertReuseBatchWord3;
 
-    // 84: reserved for a future Cluster-owned protocol extension
-    public uint Reserved;
-
-    public const int SizeInBytes = 88;
+    public const int SizeInBytes = 96;
 
     public ushort TriangleStart
     {

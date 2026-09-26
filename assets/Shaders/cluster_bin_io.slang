@@ -28,7 +28,7 @@ uint SlotBin(
     uint maxBins)
 {
     uint key = GetStageSlot(slots, slotOffset, localMaterialIndex, capacity);
-    return ValidBin(key, maxBins);
+    return ValidBin(key & 0x7FFFFFFFu, maxBins);
 }
 
 void WriteDispatch(
@@ -126,7 +126,7 @@ void ScatterRaster(
     RWStructuredBuffer<uint> indices,
     uint bin,
     uint visible,
-    uint batchIndex,
+    uint workIndex,
     bool sw)
 {
     if (!IsBin(bin)) return;
@@ -147,12 +147,12 @@ void ScatterRaster(
     uint local = localBase + WaveMaskPrefix(matching, WaveGetLaneIndex());
     if (sw)
     {
-        indices[offset + local] = visible | (batchIndex << 22u);
+        indices[offset + local] = visible | (workIndex << 22u);
         return;
     }
 
     uint swCount = bins[bin].BinSWCount;
-    indices[offset + swCount + local] = visible | (batchIndex << 22u);
+    indices[offset + swCount + local] = visible | (workIndex << 22u);
 }
 
 #endif

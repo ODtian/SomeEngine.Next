@@ -2,11 +2,11 @@
   "asset_guid": "f6e9d4ed-6534-5cda-be15-c733ae158d48",
   "source_guid": "1cc7de1e-43e0-49cd-b30a-3460cccadc19",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "8de226b44238e98deb6cc2e89d6b02666cb6b07bddab82d19e9b78e45eeec4e0",
+  "content_fingerprint": "2afcb5b57e9c1e711c38c6a868d817c35ebf83dac240230c1a2dce15d970e340",
   "dependencies": [
     {
       "path": "assets/Shaders/clustered_light_grid.slang",
-      "hash": "f9d26e6a68b684c841066223c14da4c016b4070ce411362d25acea9f81c64338"
+      "hash": "f90c9eac551fe07150bca669089cf63895c1595ac8cc34c13e136b910bd06708"
     },
     {
       "path": "assets/Shaders/common.slang",
@@ -14,7 +14,7 @@
     },
     {
       "path": "assets/Shaders/render_lighting.slang",
-      "hash": "641bd1ab8818b5a6d7e1ec16f64d83ace1add9f8671b40aec77a40e7fa67b690"
+      "hash": "2fd33e5b67b0655f9e8479da4e8e7c19b29ed357b812b5925ad1232fa26f3b3d"
     },
     {
       "path": "assets/Shaders/resource_effects.slang",

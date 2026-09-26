@@ -11,6 +11,8 @@ namespace SomeEngine.Render.Lighting;
 /// </summary>
 public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "LightSet.Update", detail: true);
+
     private readonly RenderLightSet _lights = new();
     private QueryHandle _directional;
     private QueryHandle _point;
@@ -56,6 +58,7 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         if (!_created)
             throw new InvalidOperationException("The render-light set system was not created.");
         long topologyRevision = context.World.PublishedTopologyRevision;

@@ -5,7 +5,7 @@ ByteAddressBuffer PageHeap;
 
 typedef StaticVertexEval VertexEvaluate;
 typedef PhongTessellation DomainEvaluate;
-typedef OpaquePixelEvaluate PixelEvaluate;
+typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
 
 #include "cluster_tessellation_entries.slang"
 

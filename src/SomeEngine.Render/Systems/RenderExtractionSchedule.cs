@@ -337,10 +337,9 @@ public sealed class RenderExtractionSystems : IDisposable
         // All invariants are checked before the first in-place write. With the topology frontier
         // held and no user callbacks in the changed domains, the remaining operations contain no
         // ordinary failure point and do not need a detached structural root.
-        _context.ValidateTransformChanges();
         foreach (IRenderExtractionSystem system in _changedSystems) system.ValidateChanges(_context);
         _renderWorld.AcquireSystemVersion();
-        _context.ApplyTransformChanges();
+        _context.ApplyTransformValueChanges();
         foreach (IRenderExtractionSystem system in _changedSystems) system.ApplyChanges(_context);
         return true;
     }
@@ -433,6 +432,7 @@ public sealed class RenderExtractionContext : IDisposable
 {
     private readonly RenderWorld _world;
     private readonly QueryHandle _renderSources;
+    private readonly QueryHandle _transformWrites;
     private ImmutableDictionary<Entity, Entity> _mirrorBySource = ImmutableDictionary<Entity, Entity>.Empty;
     private ImmutableDictionary<Entity, Entity>? _previousMirrors;
     private readonly HashSet<Entity> _sourceChanges = [];
@@ -443,12 +443,29 @@ public sealed class RenderExtractionContext : IDisposable
     private readonly Dictionary<Entity, RenderTransform> _retainedTransforms = [];
     private HashSet<Entity> _movingTransforms = [];
     private HashSet<Entity> _nextMovingTransforms = [];
+    private readonly List<TransformWrite> _transformUpdates = [];
+
+    private readonly record struct TransformWrite(
+        Entity Entity,
+        RenderTransform Current,
+        RenderPreviousTransform Previous,
+        bool WriteCurrent,
+        bool WritePrevious);
 
     internal RenderExtractionContext(RenderWorld world)
     {
         _world = world;
         _renderSources = world.Query(new QueryDefinitionBuilder().Read<RenderSource>());
-
+        try
+        {
+            _transformWrites = world.Query(new QueryDefinitionBuilder()
+                .ReadWrite<RenderTransform>().ReadWrite<RenderPreviousTransform>());
+        }
+        catch
+        {
+            world.ReleaseQuery(_renderSources);
+            throw;
+        }
     }
 
     public RenderWorld World => _world;
@@ -594,17 +611,7 @@ public sealed class RenderExtractionContext : IDisposable
 
     /// <summary>Collects a changed source transform for the same publication as feature data.</summary>
     public void CollectTransformChange(Entity source, in RenderTransform value) =>
-        _transformChanges[source] = value;
-
-    internal void ValidateTransformChanges()
-    {
-        foreach (Entity source in _transformChanges.Keys)
-        {
-            Entity entity = RequireMirror(source);
-            RequireExisting<RenderTransform>(entity);
-            RequireExisting<RenderPreviousTransform>(entity);
-        }
-    }
+        _transformChanges[RequireMirror(source)] = value;
 
     internal void ApplyTransformChanges()
     {
@@ -612,8 +619,70 @@ public sealed class RenderExtractionContext : IDisposable
         foreach (Entity entity in _movingTransforms)
             if (_world.IsAlive(entity) && _world.Has<RenderTransform>(entity))
                 UpdateExisting(entity, new RenderPreviousTransform(_world.Read<RenderTransform>(entity)));
-        foreach ((Entity source, RenderTransform value) in _transformChanges)
-            UpsertTransform(RequireMirror(source), value);
+        foreach ((Entity entity, RenderTransform value) in _transformChanges)
+            UpsertTransform(entity, value);
+    }
+
+    internal void ApplyTransformValueChanges()
+    {
+        if (!HasTransformChanges) return;
+        RenderExtractionContext state = this;
+        _world.ExecuteQuery(_transformWrites, ref state,
+            static (QueryCursor query, ref RenderExtractionContext context) => context.ApplyTransformValues(query));
+    }
+
+    private void ApplyTransformValues(QueryCursor query)
+    {
+        // Resolve each source once, validate every destination and compute the writes before
+        // changing either column. The query protects both columns and entity membership until
+        // all writes finish. This scratch contains only this update's changed values.
+        _transformUpdates.Clear();
+        _nextMovingTransforms.Clear();
+        try
+        {
+            foreach ((Entity entity, RenderTransform value) in _transformChanges)
+            {
+                if (!query.TryGetRow(entity, out QueryRow row))
+                    throw new InvalidOperationException("A render mirror is missing its transform or motion history.");
+                RenderTransform current = row.Read<RenderTransform>();
+                var previous = new RenderPreviousTransform(current);
+                bool writeCurrent = current != value;
+                bool writePrevious = row.Read<RenderPreviousTransform>() != previous;
+                if (writeCurrent || writePrevious)
+                    _transformUpdates.Add(new(entity, value, previous, writeCurrent, writePrevious));
+                // During validation this set also excludes already checked destinations from
+                // the history-only walk. It is reduced to moving destinations before writes.
+                _nextMovingTransforms.Add(entity);
+            }
+
+            foreach (Entity entity in _movingTransforms)
+            {
+                if (_nextMovingTransforms.Contains(entity)) continue;
+                if (!query.TryGetRow(entity, out QueryRow row))
+                {
+                    if (_world.IsAlive(entity) && _world.Has<RenderTransform>(entity))
+                        RequireExisting<RenderPreviousTransform>(entity);
+                    continue;
+                }
+                var previous = new RenderPreviousTransform(row.Read<RenderTransform>());
+                if (row.Read<RenderPreviousTransform>() != previous)
+                    _transformUpdates.Add(new(entity, default, previous, false, true));
+            }
+
+            _nextMovingTransforms.Clear();
+            foreach (TransformWrite update in _transformUpdates)
+                if (update.WriteCurrent) _nextMovingTransforms.Add(update.Entity);
+            foreach (TransformWrite update in _transformUpdates)
+            {
+                _ = query.TryGetRow(update.Entity, out QueryRow row);
+                if (update.WritePrevious) row.Write<RenderPreviousTransform>() = update.Previous;
+                if (update.WriteCurrent) row.Write<RenderTransform>() = update.Current;
+            }
+        }
+        finally
+        {
+            _transformUpdates.Clear();
+        }
     }
 
     internal void AcceptTransformChanges()
@@ -691,6 +760,7 @@ public sealed class RenderExtractionContext : IDisposable
 
     public void Dispose()
     {
+        _world.ReleaseQuery(_transformWrites);
         _world.ReleaseQuery(_renderSources);
     }
 }

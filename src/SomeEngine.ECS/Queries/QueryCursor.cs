@@ -40,6 +40,10 @@ public readonly ref struct QueryCursor
 
     internal World Owner => _world;
 
+    /// <summary>Finds one entity within this query, applying the same filters and access rules as row iteration.</summary>
+    public bool TryGetRow(Entity entity, out QueryRow row) =>
+        _world.TryGetEntityQueryRow(_plan, entity, LastSystemVersion, CurrentSystemVersion, out row);
+
     /// <summary>Visits each changed table chunk once, combining known membership changes with read-column versions.</summary>
     public QueryChangedChunkEnumerator ChangedChunks(EntityTableChangeBatch changes)
     {

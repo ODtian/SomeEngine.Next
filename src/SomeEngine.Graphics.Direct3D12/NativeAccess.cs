@@ -485,7 +485,7 @@ internal sealed unsafe partial class D3D12Backend
             }
 
             _device.ThrowIfUnavailable();
-            return List;
+            return RequireNativeRecording(List);
         }
     }
 }

@@ -86,6 +86,7 @@ internal sealed unsafe partial class D3D12Backend
                 nameof(bindings));
         D3D12PersistentParameterData current =
             RequireCurrentPersistentParameterData(native);
+        command.Recording.TrackRepeatedParameters(native, current);
         if (command.PersistentBindingIdentityEqual(native, current))
             return;
         D3D12Pipeline pipeline = command.Pipeline;

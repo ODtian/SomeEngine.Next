@@ -309,7 +309,7 @@ public ref partial struct RenderGraphEdit
         {
             foreach (GraphIdentity access in pass.Accesses)
             {
-                if (Staging.Accesses.Contains(access))
+                if (Structure.Accesses.Contains(access))
                     _ = Staging.Accesses.Remove(access);
             }
             _ = Staging.Passes.Remove(identity);
@@ -380,6 +380,6 @@ public ref partial struct RenderGraphEdit
     private GraphTexture ResolveTexture(GraphTextureId texture)
     {
         ValidateTexture(texture);
-        return Staging.Textures.Get(texture.Value);
+        return Structure.Textures.Get(texture.Value);
     }
 }

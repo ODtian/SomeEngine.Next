@@ -12,8 +12,10 @@ internal sealed class FrameSlot : IDisposable
         if (_state is not null) _edits.Add(changes);
     }
 
-    internal void ChangeProperty(GraphIdentity identity, GraphStoreKind kind) => _state?.ChangeProperty(identity, kind);
+    internal void ChangeProperty(GraphIdentity identity, GraphStoreKind kind, bool refreshViews) =>
+        _state?.ChangeProperty(identity, kind, refreshViews);
     internal void BoundaryChanged(GraphIdentity identity, GraphStoreKind kind) => _state?.BoundaryChanged(identity, kind);
+    internal void CommandDataChanged(GraphIdentity identity) => _state?.CommandDataChanged(identity);
 
     internal FrameSlot(int index)
     {
@@ -53,7 +55,12 @@ internal sealed class FrameSlot : IDisposable
             }
             _state.ApplyEdit(changes);
         }
-        foreach (GraphEditChanges changes in _edits) _state.ApplyEdit(changes);
+        foreach (GraphEditChanges changes in _edits)
+        {
+            foreach (GraphIdentity buffer in changes.Buffers)
+                if (!structureIndex.Structure.Buffers.Contains(buffer)) TransientResources!.RemoveBufferData(buffer);
+            _state.ApplyEdit(changes);
+        }
         _edits.Clear();
         return _state;
     }

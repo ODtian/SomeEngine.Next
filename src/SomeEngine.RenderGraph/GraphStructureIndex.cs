@@ -8,13 +8,13 @@ internal sealed class GraphStructureIndex
     internal static readonly GraphStructureIndex Empty = new(new GraphStructure());
     private GraphStructureIndex(GraphStructure structure) => Structure = structure;
     internal GraphStructure Structure { get; private set; }
-    internal ImmutableList<GraphIdentity> BufferIds => Structure.Buffers.Identities;
-    internal ImmutableList<GraphIdentity> TextureIds => Structure.Textures.Identities;
-    internal ImmutableList<GraphIdentity> QueryPoolIds => Structure.QueryPools.Identities;
-    internal ImmutableList<GraphIdentity> ShaderTableIds => Structure.ShaderTables.Identities;
-    internal ImmutableList<GraphIdentity> ViewIds => Structure.Views.Identities;
-    internal ImmutableList<GraphIdentity> PassIds => Structure.Passes.Identities;
-    internal ImmutableList<GraphIdentity> AccessIds => Structure.Accesses.Identities;
+    internal GraphTable<GraphIdentity> BufferIds => Structure.Buffers.Identities;
+    internal GraphTable<GraphIdentity> TextureIds => Structure.Textures.Identities;
+    internal GraphTable<GraphIdentity> QueryPoolIds => Structure.QueryPools.Identities;
+    internal GraphTable<GraphIdentity> ShaderTableIds => Structure.ShaderTables.Identities;
+    internal GraphTable<GraphIdentity> ViewIds => Structure.Views.Identities;
+    internal GraphTable<GraphIdentity> PassIds => Structure.Passes.Identities;
+    internal GraphTable<GraphIdentity> AccessIds => Structure.Accesses.Identities;
     internal ImmutableDictionary<Resource, GraphIdentity> ResourceIdentities { get; private set; } =
         ImmutableDictionary.Create<Resource, GraphIdentity>(ReferenceEqualityComparer.Instance);
     internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> ResourceAccesses { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;

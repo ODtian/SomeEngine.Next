@@ -1014,7 +1014,7 @@ internal sealed partial class FrameExecutor
         _stateUpdateResourcesChanged.Add((kind, index));
         _analysisChanged = true;
         _changedAnalysisResources.Add((kind, index));
-        _changedSynchronizationResources.Add((kind, index));
+        ChangeSynchronization((kind, index));
         _changedLifetimeResources.Add((kind, index));
     }
 
@@ -1091,6 +1091,9 @@ internal sealed partial class FrameExecutor
                 if (previous is null || !previous.Roots.Contains(root)) ChangeRoot(root, 1);
             if (previous is null)
             {
+                // The reused storage may still hold another resource's old hazards after
+                // the last swap. This new resource has contributed no execution edges yet.
+                _collectDependencies.Hazards.Clear();
                 _resourceDependencies.Add(resource, _collectDependencies);
                 _dependencyScratch = new();
             }
@@ -1104,7 +1107,7 @@ internal sealed partial class FrameExecutor
         UpdateLiveness();
         foreach (var resource in _changedHazardResources)
         {
-            MaterializationChanged(resource);
+            MaterializeMissingResource(resource);
             if (!_resourceDependencies.TryGetValue(resource, out ResourceDependencies? previous)) continue;
             _collectDependencies = _dependencyScratch;
             _collectDependencies.Hazards.Clear();

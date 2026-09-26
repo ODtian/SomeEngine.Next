@@ -1,4 +1,5 @@
 using SomeEngine.Render.Cluster;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -9,6 +10,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 public sealed class ClusterStreamingFeedbackChannel
 {
     private const int Capacity = 2;
+    private static readonly byte[][] EmptyPayloads = [[]];
     private readonly ClusterStreamingFeedbackPacket[] _packets =
         new ClusterStreamingFeedbackPacket[Capacity];
     private int _readIndex;
@@ -18,6 +20,11 @@ public sealed class ClusterStreamingFeedbackChannel
     {
         if (!ticket.IsValid)
             throw new ArgumentException("Cluster streaming feedback requires a valid ticket.", nameof(ticket));
+        uint reportedCount = MemoryMarshal.Read<uint>(payload);
+        int storedCount = checked((int)Math.Min(reportedCount, (uint)(payload.Length / sizeof(uint) - 1)));
+        // Preserve the reported count, including overflow, without copying unused
+        // queue capacity. An empty payload decodes to zero faults for this ticket.
+        byte[] bytes = reportedCount == 0 ? [] : payload[..((storedCount + 1) * sizeof(uint))].ToArray();
         for (int offset = 0; offset < _count; offset++)
         {
             int packetIndex = (_readIndex + offset) % Capacity;
@@ -27,7 +34,7 @@ public sealed class ClusterStreamingFeedbackChannel
 
             byte[][] payloads = new byte[packet.Payloads.Length + 1][];
             packet.Payloads.CopyTo(payloads, 0);
-            payloads[^1] = payload.ToArray();
+            payloads[^1] = bytes;
             _packets[packetIndex] = new ClusterStreamingFeedbackPacket(ticket, payloads);
             return;
         }
@@ -37,7 +44,7 @@ public sealed class ClusterStreamingFeedbackChannel
                 "Cluster streaming feedback was not consumed before its fixed publication capacity filled.");
         }
         int writeIndex = (_readIndex + _count) % Capacity;
-        _packets[writeIndex] = new ClusterStreamingFeedbackPacket(ticket, [payload.ToArray()]);
+        _packets[writeIndex] = new ClusterStreamingFeedbackPacket(ticket, bytes.Length == 0 ? EmptyPayloads : [bytes]);
         _count++;
     }
 

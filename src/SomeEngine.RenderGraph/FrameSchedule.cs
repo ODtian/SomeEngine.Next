@@ -84,9 +84,9 @@ internal sealed partial class FrameExecutor
         foreach (int pass in _executionOrder.Changed)
         {
             MarkPassResources(pass, _changedLifetimeResources);
-            MarkPassResources(pass, _changedSynchronizationResources);
+            ChangePassSynchronization(pass);
             if (_synchronizationByPass.TryGetValue(pass, out var resources))
-                _changedSynchronizationResources.UnionWith(resources);
+                foreach (var resource in resources) ChangeSynchronization(resource);
         }
         if (_executionOrder.Changed.Count != 0)
         {
@@ -248,6 +248,7 @@ internal sealed partial class FrameExecutor
             long chosenStart = long.MaxValue;
             int chosenRank = int.MinValue;
             long chosenDeclaration = long.MaxValue;
+            int chosenTransfers = int.MaxValue;
 
             for (int readyIndex = 0; readyIndex < _scheduleReady.Count; readyIndex++)
             {
@@ -256,16 +257,30 @@ internal sealed partial class FrameExecutor
                     _passes[pass].QueuePolicy,
                     _passes[pass].Kind,
                     _queueCandidateScratch);
+                int minimumTransfers = int.MaxValue;
+                if (_passes[pass].QueuePolicy.AllowsAnyType)
+                {
+                    foreach (Queue candidate in _queueCandidateScratch)
+                    {
+                        int transfers = 0;
+                        foreach (int predecessor in _predecessors[pass])
+                            if (_live[predecessor] && !ReferenceEquals(_passes[predecessor].Queue, candidate)) transfers++;
+                        minimumTransfers = Math.Min(minimumTransfers, transfers);
+                    }
+                }
                 foreach (Queue queue in _queueCandidateScratch)
                 {
                     _queueTime.TryGetValue(queue, out int queueAvailable);
                     int predecessorFinish = 0;
+                    int transfers = 0;
                     foreach (int predecessor in _predecessors[pass])
                     {
                         if (!_live[predecessor]) continue;
                         int finish = _componentFinish[predecessor];
                         if (finish > predecessorFinish) predecessorFinish = finish;
+                        if (!ReferenceEquals(_passes[predecessor].Queue, queue)) transfers++;
                     }
+                    if (transfers > minimumTransfers) continue;
                     long start = Math.Max(queueAvailable, predecessorFinish);
                     int rank = criticalRanks[pass];
                     long declaration = _passes[pass].DeclarationOrdinal;
@@ -277,7 +292,8 @@ internal sealed partial class FrameExecutor
                           start == chosenStart && rank > chosenRank ||
                           start == chosenStart && rank == chosenRank && declaration < chosenDeclaration ||
                           start == chosenStart && rank == chosenRank && declaration == chosenDeclaration &&
-                          QueueBefore(queue, chosenQueue);
+                          (transfers < chosenTransfers ||
+                           transfers == chosenTransfers && QueueBefore(queue, chosenQueue));
                     if (!better) continue;
                     chosenReady = readyIndex;
                     chosenPass = pass;
@@ -285,6 +301,7 @@ internal sealed partial class FrameExecutor
                     chosenStart = start;
                     chosenRank = rank;
                     chosenDeclaration = declaration;
+                    chosenTransfers = transfers;
                 }
             }
 
@@ -296,7 +313,7 @@ internal sealed partial class FrameExecutor
             {
                 _executionOrder.Changed.Add(chosenPass);
                 _frontierSeeds.Add(chosenPass);
-                MarkPassResources(chosenPass, _changedSynchronizationResources);
+                ChangePassSynchronization(chosenPass);
                 ChangeRecording(chosenPass);
             }
             row.Queue = chosenQueue;

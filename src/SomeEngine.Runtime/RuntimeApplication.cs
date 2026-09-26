@@ -368,7 +368,9 @@ internal static class RuntimeApplication
             device,
             [graphicsQueue, computeQueue, copyQueue],
             new RenderGraphDesc(
-                MaximumFramesInFlight: 3,
+                // Instance and readback storage already limit this renderer to two in-flight
+                // frames. Match that count instead of rotating a third copy of graph data.
+                MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
         var outputDescription = new ClusterPipelineOutputDescription(boot.Width, boot.Height, 1);
         using var lighting = new LightingFeature(
@@ -385,7 +387,7 @@ internal static class RuntimeApplication
         var lightSystem = new RenderLightSetSystem();
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
         var streamingConsumer = new ClusterStreamingFeedbackConsumer(cluster, streamingFeedback);
-        var shadowSettings = new VirtualShadowMapSettings();
+        var shadowSettings = new VirtualShadowMapSettings { Enabled = options.VirtualShadows };
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
             metrics: options.VerifyFrameOutput);
@@ -470,7 +472,7 @@ internal static class RuntimeApplication
         try
         {
             frameSystems.Initialize();
-            outputVerifier = options.VerifyFrameOutput
+            outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
                 ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                 : null;
             ui = new RuntimeUiRenderer(
@@ -491,8 +493,9 @@ internal static class RuntimeApplication
             int frameIndex = 0;
             long traceFrameIndex = 0;
             bool animateScene = options.DynamicScene;
-            bool debugUiOpen = true;
+            bool debugUiOpen = !options.HideDebugUi && !options.VerifyFrameOutput;
             FrameOutputMetrics? verifiedOutput = null;
+            uint maximumRecoveredClusters = 0;
             while (options.FrameLimit == 0 || frameIndex < options.FrameLimit)
             {
                 using var frameTrace = EngineTrace.BeginFrame(++traceFrameIndex);
@@ -601,7 +604,7 @@ internal static class RuntimeApplication
                     width = clientWidth;
                     height = clientHeight;
                     cameraCut = true;
-                    outputVerifier = options.VerifyFrameOutput
+                    outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
                         ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                         : null;
                 }
@@ -630,6 +633,7 @@ internal static class RuntimeApplication
                     width,
                     height,
                     checked((uint)frameIndex),
+                    temporalResolveEnabled: options.TemporalAntialiasing,
                     cameraCut: cameraCut);
                 viewSystem.Stage(viewFrame.View);
                 ui.DrawDebugWindow(
@@ -643,7 +647,8 @@ internal static class RuntimeApplication
                         window.DpiScale,
                         viewFrame.JitterPixels,
                         scene.Camera.Position,
-                        window.HasFocus));
+                        window.HasFocus,
+                        options.TemporalAntialiasing));
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: applying extracted scene.");
@@ -767,9 +772,16 @@ internal static class RuntimeApplication
                     viewEntity,
                     outputVerifier,
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
-                    options.SynchronousFrames);
+                    options.SynchronousFrames,
+                    options.TemporalAntialiasing);
                 if (frameOutput is FrameOutputMetrics output)
                     verifiedOutput = output;
+                if (options.VerifyFrameOutput)
+                {
+                    ClusterFrameMetrics metrics = pipeline.CaptureFrameMetrics();
+                    maximumRecoveredClusters = Math.Max(maximumRecoveredClusters,
+                        metrics.PhaseTwoSoftwareClusters + metrics.PhaseTwoHardwareClusters);
+                }
 
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
@@ -792,6 +804,8 @@ internal static class RuntimeApplication
 
             if (frameIndex > 0)
             {
+                if (options.FrameOutputPath is not null)
+                    outputVerifier!.SaveImage(options.FrameOutputPath);
                 ClusterRenderDiagnostics diagnostics = cluster.CaptureDiagnostics();
                 ClusterResidencyDiagnostics residency = diagnostics.Residency;
                 Console.WriteLine(
@@ -808,7 +822,7 @@ internal static class RuntimeApplication
                     throw new InvalidOperationException(
                         "Cluster streaming did not reach a healthy published state; see residency diagnostics.");
                 }
-                if (outputVerifier is not null)
+                if (options.VerifyFrameOutput)
                 {
                     FrameOutputMetrics output = verifiedOutput ?? throw new InvalidOperationException(
                         "Frame-output verification was requested, but the runtime rendered no frames.");
@@ -835,6 +849,7 @@ internal static class RuntimeApplication
                         $"{frameMetrics.PhaseTwoDispatchGroups} groups, " +
                         $"phase2={frameMetrics.PhaseTwoSoftwareClusters} SW+" +
                         $"{frameMetrics.PhaseTwoHardwareClusters} HW, " +
+                        $"maximumRecovered={maximumRecoveredClusters}, " +
                         $"rasterBatches={frameMetrics.RasterBatches} total/" +
                         $"{frameMetrics.SoftwareRasterBatches} SW, " +
                         $"shadeBinTiles={frameMetrics.FirstShadeBinTiles}, " +
@@ -875,10 +890,10 @@ internal static class RuntimeApplication
                         frameMetrics.CandidateCount != 0 &&
                         visibleClusters != 0 &&
                         frameMetrics.ShadingWorkItems != 0;
-                    if (!output.HasSubstantialCoverage || !clusterOutputHealthy)
+                    if (!output.HasVisibleVariation || !clusterOutputHealthy)
                     {
                         throw new InvalidOperationException(
-                            "The Cluster frame did not produce substantial visible output together with " +
+                            "The Cluster frame did not produce visible output together with " +
                             "candidates, visible clusters, and shaded pixels.");
                     }
                 }
@@ -917,7 +932,8 @@ internal static class RuntimeApplication
             throw new InvalidOperationException("The render prepare boundary is not available.");
         using (scope)
         {
-            _ = systems.ApplyExtraction(scope);
+            using (EngineTrace.Begin(ApplicationTrace.ExtractionApply))
+                _ = systems.ApplyExtraction(scope);
             if (reportMilestones)
                 Console.WriteLine("First frame: preparing streamed meshes.");
             // Mesh discovery reads only the newly published RenderWorld. Asset I/O may complete
@@ -939,8 +955,10 @@ internal static class RuntimeApplication
             streamingFeedback.Pump();
             if (reportMilestones)
                 Console.WriteLine("First frame: publishing prepare systems.");
-            systems.Update(scope);
-            scope.Commit();
+            using (EngineTrace.Begin(ApplicationTrace.PrepareSystems))
+                systems.Update(scope);
+            using (EngineTrace.Begin(ApplicationTrace.PrepareCommit))
+                scope.Commit();
         }
     }
 
@@ -969,7 +987,8 @@ internal static class RuntimeApplication
         Entity viewEntity,
         FrameOutputVerifier? outputVerifier,
         RenderGraphDiagnosticsHandler? graphDiagnostics,
-        bool synchronousFrames)
+        bool synchronousFrames,
+        bool temporalAntialiasing)
     {
         using var trace = EngineTrace.Begin(ApplicationTrace.Execute);
         if (!coordinator.TryBeginFrame(out RenderFrame? frame))
@@ -990,27 +1009,31 @@ internal static class RuntimeApplication
             try
             {
                 RenderGraphFrame graphFrame = graph.BeginFrame(
-                    new RenderGraphFrameOptions(Diagnostics: graphDiagnostics));
+                    new RenderGraphFrameOptions(
+                        SubmissionMode: FrameSubmissionMode.RecordAhead,
+                        Diagnostics: graphDiagnostics));
                 try
                 {
                     if (reportMilestones)
                         Console.WriteLine("First frame: recording render systems.");
                     presentation.Bind(ref graphFrame, image, graphicsQueue);
-                    systems.Update(frame, graphFrame);
+                    using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
+                        systems.Update(frame, graphFrame);
                     var motion = new MotionFeatureOutput(
                         clusterOutputs.MotionVectors,
                         clusterOutputs.Width,
                         clusterOutputs.Height,
                         clusterOutputs.ViewCount);
-                    temporal.Record(
-                        ref graphFrame,
-                        clusterOutputs.MaterialColor,
-                        clusterOutputs.Depth,
-                        motion,
-                        TemporalResolveSettings.Default,
-                        enabled: true,
-                        cameraCut: cameraCut,
-                        view: viewEntity);
+                    using (EngineTrace.Begin(ApplicationTrace.TemporalRecording))
+                        temporal.Record(
+                            ref graphFrame,
+                            clusterOutputs.MaterialColor,
+                            clusterOutputs.Depth,
+                            motion,
+                            TemporalResolveSettings.Default,
+                            enabled: temporalAntialiasing,
+                            cameraCut: cameraCut,
+                            view: viewEntity);
                     translucency.Record(
                         ref graphFrame,
                         temporal.Output.ResolvedColor,
@@ -1031,7 +1054,8 @@ internal static class RuntimeApplication
                         completions,
                         submittedQueueCount);
                     ReadOnlySpan<QueueCompletion> execution = completions.AsSpan(0, completionCount);
-                    frame.Complete(execution);
+                    using (EngineTrace.Begin(ApplicationTrace.FrameCompletion))
+                        frame.Complete(execution);
                     if (synchronousFrames && outputVerifier is null)
                         Wait(backend, execution, window, synchronousFrames);
                     if (outputVerifier is not null)

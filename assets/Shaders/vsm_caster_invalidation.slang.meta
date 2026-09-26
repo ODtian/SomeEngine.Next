@@ -2,6 +2,6 @@
   "source_guid": "41b955c1-bfe2-4ed7-88c0-62bbc1e724b1",
   "importer": "SlangShaderImporter",
   "importer_settings": {
-    "cook_profile": "d3d12-sm6.2"
+    "cook_profile": "default"
   }
 }
