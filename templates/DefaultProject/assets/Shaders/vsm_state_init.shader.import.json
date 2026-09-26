@@ -1,23 +1,23 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "d76a1f5a0023ea9559cd9059b6ddd89cfa1cd8b10b584915ad103f84eb5ea2cf",
+  "input_hash": "2732eadeba02facf0d32633b6ebcb2216ce5791928df2cfdf527798f8423ea0c",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "3436134d8cc5fdaad6fbb862f1e15ca6c7bec3e15fbaff54a4937e7ab0250c46"
+      "content_hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_state_init.slang",
-      "content_hash": "3ef3023b1f9056ea35baabbb57106853ac608c6287066bc87220ee8406ba144d"
+      "content_hash": "59dd6616976257c606e9e854c8ae20415835e3286132ab93df6f80cf2504c7e2"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_state_init.slang",
-      "content_hash": "fc6b14184560045d3542ddcde14cb547bd0e64525d58745c2222668985b8abd1"
+      "content_hash": "aaef0f4a2563c2fdef38bff0d25224b13a80e7621800ddcdd49d0a5c63803267"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/vsm_state_init.shader",
-      "content_hash": "a79bf5ed796182805266d58bfa571010236dba9e42cd57d69f7cce73fdc3d8fe"
+      "content_hash": "ba59a13f7bbebeeb6e099f5023b8d866f1043a7005838e72fd982ff3f78586d1"
     }
   ],
   "reported_inputs": [],
@@ -33,11 +33,11 @@
     {
       "asset_guid": "1e7496e8-29c3-5314-93f3-b651809d52cc",
       "sub_asset_key": "",
-      "input_hash": "d76a1f5a0023ea9559cd9059b6ddd89cfa1cd8b10b584915ad103f84eb5ea2cf",
+      "input_hash": "2732eadeba02facf0d32633b6ebcb2216ce5791928df2cfdf527798f8423ea0c",
       "dependencies": [],
       "asset_path": "vsm_state_init.shader.asset",
-      "version": "4b14f695-2fdb-c3c9-1532-a8aebf5e9078",
-      "content_hash": "460A5C7E4EFA41D1A73EEA4F96F9E222F7EF43FDF65FE7210DC53D34C18AD8FF",
+      "version": "a013a3d2-32d3-4586-5acf-316eab7263f8",
+      "content_hash": "D8175AB8BCB313BED56AA4CA88C82E378D2AEE8A1239D1FF117C69B2C9424B69",
       "asset_dependencies": []
     }
   ]

@@ -1,23 +1,19 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "7cf465d2f98c8e66f1f6f2037dbc8edff1cd29c39faed772b9a72f359529dc71",
+  "input_hash": "f4ad7160d5a4a6d14ea709997266de6896b677e5c46bd716178f2c41c38f5b76",
   "inputs": [
     {
-      "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
-    },
-    {
       "relative_path": "../../assets/Shaders/vsm_allocate_pages.slang",
-      "content_hash": "63fe402484a604d604c2f0572d0d6586c95bbf7f3b9bbc1d345ec98417c81c25"
+      "content_hash": "19feb5d49fa3ee3b97a00de7eaefe176efec327910acdf5f4f51cfef81bca58a"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "3436134d8cc5fdaad6fbb862f1e15ca6c7bec3e15fbaff54a4937e7ab0250c46"
+      "content_hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_allocate_pages.slang",
-      "content_hash": "ddeaedcc6c44207fc1a07ed0fad6da164c88298aadfd8ab70325a9194a54895f"
+      "content_hash": "d926a1eb2ad55a942ac18042c8fda2f9467f7695c63bd4f3ac72fcc7fb6e483e"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,7 +21,7 @@
     },
     {
       "relative_path": "assets/Shaders/vsm_allocate_pages.shader",
-      "content_hash": "8b7cae7e59516276a75186caa4f33417bb1ec27e92caf5acbaba5dcac085c5f2"
+      "content_hash": "b49a67c3bc76c9be62dc16319dd406511d9c68fca82f01b37b8c34aada402be5"
     }
   ],
   "reported_inputs": [],
@@ -33,11 +29,11 @@
     {
       "asset_guid": "cdb38623-09dd-5e2f-a3fb-cf0b111eddd5",
       "sub_asset_key": "",
-      "input_hash": "7cf465d2f98c8e66f1f6f2037dbc8edff1cd29c39faed772b9a72f359529dc71",
+      "input_hash": "f4ad7160d5a4a6d14ea709997266de6896b677e5c46bd716178f2c41c38f5b76",
       "dependencies": [],
       "asset_path": "vsm_allocate_pages.shader.asset",
-      "version": "58cf6964-2897-91c3-5b59-3a05776ef2e8",
-      "content_hash": "E528DCFC4936DACDF7130BE08C85E2A6BE59A92AE34E41513A34114DE3E17F7E",
+      "version": "2fada31e-ab8d-e687-b8fb-33c7eb2c5a0d",
+      "content_hash": "0FBBE6DB03D8ADB09B2CA1123E10EE5F5E0316F204EB0E6AA793395A29D30E8B",
       "asset_dependencies": []
     }
   ]

@@ -13,22 +13,6 @@ public sealed class Mesh : IDisposable, IAsyncDisposable
     private readonly object _gate = new();
     private PageBufferMap? _buffers;
     private Mesh() { }
-    private readonly List<Mesh> _capturedContents = [];
-    private Mesh? _capturedContent;
-    public event Action<Mesh>? Changed;
-
-    /// <summary>Shares ready pages at the extraction boundary, independent of later updates.</summary>
-    public Mesh CaptureData()
-    {
-        lock (_gate)
-        {
-            RequireOpen();
-            if (_capturedContent is not null && _capturedContent.Revision == Revision) return _capturedContent;
-            Mesh content = Duplicate();
-            _capturedContents.Add(content);
-            return _capturedContent = content;
-        }
-    }
     public string? Name { get; private set; }
     public Bounds? Bounds { get; private set; }
     public string VertexEncoding { get; private set; } = "";
@@ -209,18 +193,11 @@ public sealed class Mesh : IDisposable, IAsyncDisposable
         }
         catch { content.Buffers.Dispose(); throw; }
         previous.Dispose();
-        Changed?.Invoke(this);
     }
     private void RequireOpen() => ObjectDisposedException.ThrowIf(_buffers is null, this);
     public void Dispose()
     {
-        lock (_gate)
-        {
-            Interlocked.Exchange(ref _buffers, null)?.Dispose();
-            foreach (Mesh content in _capturedContents) content.Dispose();
-            _capturedContents.Clear();
-            _capturedContent = null;
-        }
+        lock (_gate) Interlocked.Exchange(ref _buffers, null)?.Dispose();
     }
     public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
 }

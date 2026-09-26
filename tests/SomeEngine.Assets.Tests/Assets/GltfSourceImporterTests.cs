@@ -18,31 +18,6 @@ namespace SomeEngine.Tests.Assets;
 public class GltfSourceImporterTests
 {
     [Fact]
-    public async Task ImportUsesCallerStorageAndReleasesItAfterCommit()
-    {
-        string directory = CreateTempDir();
-        try
-        {
-            string path = WriteTestProject(directory, writeImporterSettings: false);
-            using var pages = new PageArena(new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 16 * 1024 * 1024 }));
-            var importer = new GltfSourceImporter(services =>
-            {
-                ProjectAssetCapabilities.AddAssetCapabilities(services);
-                services.AddSingleton<IGltfMaterialConversion, ProjectGltfMaterialConversion>();
-                services.AddSingleton<IClusterVertexEncoder>(StandardClusterVertexEncoder.Instance);
-            }, ProjectAssetCapabilities.BuildVersion, pages);
-            var assets = await ImportAsync(importer, directory, path);
-            Assert.Contains(assets, value => value.SubAssetKey.StartsWith("texture:"));
-            Assert.True(pages.Statistics.RequestedBytes > 0);
-            Assert.Equal(0, pages.Residency.Used(ResidencyClass.DecodedCpu));
-            // Successful reimport also proves the importer did not dispose the borrowed pool.
-            await ImportAsync(importer, directory, path);
-            Assert.Equal(0, pages.Residency.Used(ResidencyClass.DecodedCpu));
-        }
-        finally { Directory.Delete(directory, recursive: true); }
-    }
-
-    [Fact]
     public async Task GeometryImportPreservesUnboundRegionsAndSourceCorrespondence()
     {
         string dir = CreateTempDir();

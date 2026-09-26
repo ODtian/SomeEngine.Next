@@ -14,20 +14,17 @@ namespace SomeEngine.Assets.Importers;
 
 public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImportOverrides>
 {
-    public const uint ImporterVersion = 8;
+    public const uint ImporterVersion = 7;
     public static readonly Guid SourceImporterId = new("b0c10195-d8d1-46ab-81b8-f8c54db7d0aa");
     private readonly Action<IServiceCollection> _configureServices;
     private readonly string _capabilitiesVersion;
-    private readonly PageArena _pages;
 
-    /// <param name="pages">Caller-held storage for imported assets. The caller keeps it alive until import completes.</param>
-    public GltfSourceImporter(Action<IServiceCollection> configureServices, string capabilitiesVersion, PageArena? pages = null)
+    public GltfSourceImporter(Action<IServiceCollection> configureServices, string capabilitiesVersion)
     {
         ArgumentNullException.ThrowIfNull(configureServices);
         ArgumentException.ThrowIfNullOrWhiteSpace(capabilitiesVersion);
         _configureServices = configureServices;
         _capabilitiesVersion = capabilitiesVersion;
-        _pages = pages ?? PageArena.Shared;
     }
 
     public Guid Id => SourceImporterId;
@@ -85,17 +82,17 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
 
         context.ConfigureAssets<GltfMesh, MeshAsset>(
             mesh => ElementKey(settings, "mesh", mesh.LogicalIndex, mesh),
-            (mesh, id) => new MeshAsset(_pages, id) { Name = mesh.Name ?? $"Mesh_{mesh.LogicalIndex}" },
+            static (mesh, id) => new MeshAsset(PageArena.Shared, id) { Name = mesh.Name ?? $"Mesh_{mesh.LogicalIndex}" },
             (_, id) => OutputPath(context.SourcePath, "mesh", id),
             static (asset, path, token) => asset.SaveAsync(path, token));
         context.ConfigureAssets<GltfMaterial, MaterialAsset>(
             material => ElementKey(settings, "material", material.LogicalIndex, material),
-            (material, id) => new MaterialAsset(_pages, id) { Name = material.Name ?? $"Material_{material.LogicalIndex}" },
+            static (material, id) => new MaterialAsset(PageArena.Shared, id) { Name = material.Name ?? $"Material_{material.LogicalIndex}" },
             (_, id) => OutputPath(context.SourcePath, "material", id),
             static (asset, path, token) => asset.SaveAsync(path, token));
         context.ConfigureAssets<GltfTexture, TextureAsset>(
             texture => ElementKey(settings, "texture", texture.LogicalIndex, texture),
-            (texture, id) => new TextureAsset(_pages, id) { Name = texture.Name ?? texture.PrimaryImage?.Name ?? $"Texture_{texture.LogicalIndex}" },
+            static (texture, id) => new TextureAsset(PageArena.Shared, id) { Name = texture.Name ?? texture.PrimaryImage?.Name ?? $"Texture_{texture.LogicalIndex}" },
             (_, id) => OutputPath(context.SourcePath, "texture", id),
             static (asset, path, token) => asset.SaveAsync(path, token));
 

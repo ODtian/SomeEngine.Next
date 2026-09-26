@@ -1,6 +1,7 @@
 using SomeEngine.Resources;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Render.Components;

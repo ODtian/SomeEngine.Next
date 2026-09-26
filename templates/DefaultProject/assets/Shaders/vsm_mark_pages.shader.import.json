@@ -1,35 +1,23 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "4c538592d7f189dce742c9a0b0f4ff43879edd484a7b39a4b3fb4f0a0b014853",
+  "input_hash": "d3af237df0a983b2526ce621740153df0aa45b788945c98f1fa82d902f626bb7",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/render_lighting.slang",
-      "content_hash": "b1f856269f4f8ab8811fe6a976965ca3835ceb787fd86559f289be687bc73032"
-    },
-    {
-      "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "c764a5c47ff78017cf2a2fcd1b0ed1ee078d52e6d050395ff2da9a2d1b9c98b3"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_mark_pages.slang",
-      "content_hash": "48a182f1c7f977a4564e39d918901680eb646a54bec999db92ff77247693e91c"
-    },
-    {
-      "relative_path": "../../assets/Shaders/vsm_page_request_common.slang",
-      "content_hash": "bed989bcd20d3a5e02285d1956a51a384a8a7900fc9e8d9214f078fa6e95e14a"
+      "content_hash": "d208672073b5033ac647081a7936d2b977538798ac95cbecee467abf07ea6270"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "3436134d8cc5fdaad6fbb862f1e15ca6c7bec3e15fbaff54a4937e7ab0250c46"
-    },
-    {
-      "relative_path": "../../assets/Shaders/wave_aggregation.slang",
-      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+      "content_hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_mark_pages.slang",
-      "content_hash": "8578d7918927ca46d1a36150a0bf1bd6f20a2486f22e82e0261c6c7d1b5bf80c"
+      "content_hash": "83b86f57a7e68aa2e1bfe494ccf6aec0c52845e3b61227f0394f8d1e102833bf"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -37,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/vsm_mark_pages.shader",
-      "content_hash": "b3dcfec4a3d0bef1aeb31481061a61de24f30ce52272e61a9911f2da075ee2eb"
+      "content_hash": "50bd72642fe8b1d2b94025b5e01a4c217ac5f2b596f77b27f3b460fce884f1cf"
     }
   ],
   "reported_inputs": [],
@@ -45,11 +33,11 @@
     {
       "asset_guid": "6c441d68-a857-5643-9923-2d03131e0a37",
       "sub_asset_key": "",
-      "input_hash": "4c538592d7f189dce742c9a0b0f4ff43879edd484a7b39a4b3fb4f0a0b014853",
+      "input_hash": "d3af237df0a983b2526ce621740153df0aa45b788945c98f1fa82d902f626bb7",
       "dependencies": [],
       "asset_path": "vsm_mark_pages.shader.asset",
-      "version": "69e4ebea-b2a8-3d78-e7ab-b88b842fc9bb",
-      "content_hash": "CB513414B8A2DE99CAD1AE9A01649D1031B505871D4384A7725DB7F3005EDF00",
+      "version": "a5acd7fb-56c9-c0aa-70df-d90b3ec82e20",
+      "content_hash": "EC236296F99DD34FFD3A458FE2E00ABE18A5B6AA32C3BA2383924F4BD8823F13",
       "asset_dependencies": []
     }
   ]

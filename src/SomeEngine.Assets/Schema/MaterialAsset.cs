@@ -153,16 +153,7 @@ public partial class MaterialAsset : Asset
         foreach (MaterialParameter value in content.Parameters) result.Values[value.Name] = value;
         return result;
     }
-    public ValueTask<Material> CreateAsync(AssetLoader loader, CancellationToken cancellationToken = default)
-        => CreateAsync(loader, null, null, cancellationToken);
-
-    /// <summary>Creates material fields using direct references returned by the caller.
-    /// Supplied shader and texture objects remain the caller's responsibility; disposing the material
-    /// does not dispose them. Omitted loaders create private dependencies as in the simple overload.</summary>
-    public async ValueTask<Material> CreateAsync(AssetLoader loader,
-        Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>>? loadShader,
-        Func<AssetId<TextureAsset>, CancellationToken, ValueTask<Texture>>? loadTexture,
-        CancellationToken cancellationToken = default)
+    public async ValueTask<Material> CreateAsync(AssetLoader loader, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(loader);
         using MaterialAsset copy = Duplicate();
@@ -179,14 +170,9 @@ public partial class MaterialAsset : Asset
         {
             if (!resolved.Shader.IsEmpty)
             {
-                if (loadShader is not null)
-                    shader = await loadShader(resolved.Shader, cancellationToken).ConfigureAwait(false);
-                else
-                {
-                    await using ShaderAsset file = await ShaderAsset.OpenAsync(loader, resolved.Shader, cancellationToken).ConfigureAwait(false);
-                    ShaderBlock code = await file.GetBlockAsync<ShaderBlock>(cancellationToken).ConfigureAwait(false);
-                    shader = await code.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
-                }
+                await using ShaderAsset file = await ShaderAsset.OpenAsync(loader, resolved.Shader, cancellationToken).ConfigureAwait(false);
+                ShaderBlock code = await file.GetBlockAsync<ShaderBlock>(cancellationToken).ConfigureAwait(false);
+                shader = await code.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
             }
             foreach (MaterialParameter value in resolved.Values.Values)
             {
@@ -195,24 +181,18 @@ public partial class MaterialAsset : Asset
                 {
                     if (!textures.TryGetValue(value.Texture.Value, out texture))
                     {
-                        if (loadTexture is not null)
-                            texture = await loadTexture(value.Texture, cancellationToken).ConfigureAwait(false);
-                        else
-                        {
-                            await using TextureAsset file = await TextureAsset.OpenAsync(loader, value.Texture, cancellationToken).ConfigureAwait(false);
-                            TextureBlock pixels = await file.GetBlockAsync<TextureBlock>(cancellationToken).ConfigureAwait(false);
-                            texture = await pixels.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
-                        }
+                        await using TextureAsset file = await TextureAsset.OpenAsync(loader, value.Texture, cancellationToken).ConfigureAwait(false);
+                        TextureBlock pixels = await file.GetBlockAsync<TextureBlock>(cancellationToken).ConfigureAwait(false);
+                        texture = await pixels.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
                         textures.Add(value.Texture.Value, texture);
                     }
                 }
                 values.Add((value.ToValue(), texture));
             }
             cancellationToken.ThrowIfCancellationRequested();
-            Texture[] createdTextures = loadTexture is null ? [.. textures.Values] : [];
+            Texture[] created = [.. textures.Values];
             transferred = true;
-            result.InitializeContent(copy.Name, shader, values,
-                loadShader is null ? shader : null, createdTextures);
+            result.InitializeContent(copy.Name, shader, created, values);
             return result;
         }
         catch
@@ -222,17 +202,13 @@ public partial class MaterialAsset : Asset
             {
                 if (!transferred)
                 {
-                    if (loadTexture is null)
-                        foreach (Texture texture in textures.Values) texture.Dispose();
-                    if (loadShader is null) shader?.Dispose();
+                    foreach (Texture texture in textures.Values) texture.Dispose();
+                    shader?.Dispose();
                 }
             }
             throw;
         }
     }
-    /// <summary>Loads and applies replacement content while the caller holds its resource update boundary.</summary>
-    /// <remarks>Keep CPU rendering paused until this operation finishes. To overlap file loading
-    /// with rendering, use CreateAsync first and call Material.Update at the next update boundary.</remarks>
     public async ValueTask UpdateAsync(Material material, AssetLoader loader, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(material);

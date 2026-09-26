@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "11dc81d980e66330f93b993d0388d5c9b272db24ef2cf28a653cd1b2edada016",
+  "input_hash": "7ea8b79ab41e373b16a6203bd752e69ed024a26a6fadc36a28684884104a4b14",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/hiz_common.slang",
@@ -9,15 +9,15 @@
     },
     {
       "relative_path": "../../assets/Shaders/hiz_init.slang",
-      "content_hash": "219de5105c5af8cb868131bff8c0680553736e6da0f79bcd39dbc9d9bcf33fdb"
+      "content_hash": "6771a10b99a145ff9b23217ed2ef284b3ca2a1c01ef39a4fd0933e975df0d615"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_hiz_init.slang",
-      "content_hash": "126e8e6e9954abb8791d49138bb315b1a995f24014acb9fd418c7c9a42e2e69f"
+      "content_hash": "ce440597f60f4b36b5d75833626d8457e842254b5332231fbb6f8010fac56a5c"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/hiz_init.shader",
-      "content_hash": "206de038abd609af21648f5c164018f96051490f738f7ca17a14ad8e4531d4de"
+      "content_hash": "70e5c36b5020e5ca3a0bcaf069c55f1209500fe9eb94c809baa2d7a451bc3617"
     }
   ],
   "reported_inputs": [],
@@ -33,11 +33,11 @@
     {
       "asset_guid": "ad727890-e164-5627-ba6a-17b99e9a9f62",
       "sub_asset_key": "",
-      "input_hash": "11dc81d980e66330f93b993d0388d5c9b272db24ef2cf28a653cd1b2edada016",
+      "input_hash": "7ea8b79ab41e373b16a6203bd752e69ed024a26a6fadc36a28684884104a4b14",
       "dependencies": [],
       "asset_path": "hiz_init.shader.asset",
-      "version": "fa3cf0c7-86dc-ed4a-d3ca-904dc7420fa1",
-      "content_hash": "E5DD970C3727AC6CF66577DEA464EC59F31C590BB7FE777412C93EC3E65B2C21",
+      "version": "0507a895-60dc-0032-686f-9a47fb2d346a",
+      "content_hash": "B114738FB328A4DD8719D93FA87E932344FC8941195958B9471A167533E824C6",
       "asset_dependencies": []
     }
   ]

@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "a5b1475431e09d94fac0bfbce99c5016792ec62c894a5fb27b41a0d24d6a4229",
+  "input_hash": "daa49402c5dc0aa7973d4eece506f248d7cb8f1d08bd72e54f19426f28228518",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_deferred_resume.slang",
@@ -9,11 +9,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "8b0a185ac68ba4914c404c61e292df4f0ea7a705a6cccdccd220a85a3069d2b0"
+      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -21,11 +21,11 @@
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_cluster_deferred_resume.slang",
-      "content_hash": "b6b83c980c98cb146902008a8645cfe9f257950ada3f44a727b467dd526c4d2e"
+      "content_hash": "c8a1f6e75a9574d8f0ab251886d4385dfb6594cfea8b139337dd98d55f7c7688"
     },
     {
       "relative_path": "assets/Shaders/cluster_deferred_resume.shader",
-      "content_hash": "370618a35ef65a91dfc8adb6ebbfd8b395fe7e776d981f288488b991368b5014"
+      "content_hash": "8e523a6b9a6e7064ef5f708875510fb820845933a53cd9df6acab671dda07da2"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -37,11 +37,11 @@
     {
       "asset_guid": "1c40ffb4-67dc-523b-bc03-c033d51f1c86",
       "sub_asset_key": "",
-      "input_hash": "a5b1475431e09d94fac0bfbce99c5016792ec62c894a5fb27b41a0d24d6a4229",
+      "input_hash": "daa49402c5dc0aa7973d4eece506f248d7cb8f1d08bd72e54f19426f28228518",
       "dependencies": [],
       "asset_path": "cluster_deferred_resume.shader.asset",
-      "version": "0866da1e-c8ae-8552-b023-955d47bd0b31",
-      "content_hash": "9F05B00FABB3E37BB6C079BFE12ED1DA8BF624C3C02906D846F9C9086AF609C6",
+      "version": "0bf87391-a503-0fb6-ca82-7e4e8679f378",
+      "content_hash": "BE4B8B2C1161651F108519BD7F344C0FF3BF9994895740CD2D8227CF2836F7D9",
       "asset_dependencies": []
     }
   ]

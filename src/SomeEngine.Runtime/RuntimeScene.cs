@@ -206,6 +206,21 @@ internal sealed class RuntimeScene : IDisposable
         finally { world.ReleaseQuery(query); }
     }
 
+    private static Entity[] Entities(World world, QueryDefinitionBuilder definition)
+    {
+        QueryHandle query = world.Query(definition);
+        var entities = new List<Entity>();
+        try
+        {
+            world.ExecuteQuery(query, ref entities, static (QueryCursor rows, ref List<Entity> values) =>
+            {
+                foreach (var row in rows.Rows) values.Add(row.Entity);
+            });
+            return [.. entities];
+        }
+        finally { world.ReleaseQuery(query); }
+    }
+
     internal Matrix4x4 Projection(int viewportWidth, int viewportHeight)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(viewportWidth);

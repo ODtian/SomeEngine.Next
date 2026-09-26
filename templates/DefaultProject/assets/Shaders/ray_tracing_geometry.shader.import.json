@@ -1,11 +1,11 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "0e16c386b63d2e81e4dd24ceec451090cf5dae774c25d6a97be50846bb3037aa",
+  "input_hash": "4b6a188ea3b0042ffcc9c02b3c92bd85af1e8a8d2bd3792bd26c702c6ea36084",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "8b0a185ac68ba4914c404c61e292df4f0ea7a705a6cccdccd220a85a3069d2b0"
+      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
     },
     {
       "relative_path": "../../assets/Shaders/feature_visible_clusters.slang",
@@ -17,7 +17,7 @@
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_ray_tracing_geometry.slang",
-      "content_hash": "4f6cae36b3d93fa29b944d6f0a161295b15db7776dd16b39220360a3bf7e37c9"
+      "content_hash": "025b5f1a06e8487790911292fae0a60d90796cc66d66cfcddd7a1093eb8a35ce"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/ray_tracing_geometry.shader",
-      "content_hash": "da5d95f4916955c0fc53f3f555e55b773dfd3119c4cc8f1c7a0a71ce71cff1c9"
+      "content_hash": "df948a0a5a1bae87e6daf381bf8562373a318f0646e137d953dae4d61487596b"
     }
   ],
   "reported_inputs": [],
@@ -33,11 +33,11 @@
     {
       "asset_guid": "f950c332-8897-5f3a-9b27-6b641f44871e",
       "sub_asset_key": "",
-      "input_hash": "0e16c386b63d2e81e4dd24ceec451090cf5dae774c25d6a97be50846bb3037aa",
+      "input_hash": "4b6a188ea3b0042ffcc9c02b3c92bd85af1e8a8d2bd3792bd26c702c6ea36084",
       "dependencies": [],
       "asset_path": "ray_tracing_geometry.shader.asset",
-      "version": "286ad270-53c2-6c12-ca41-dc16aeb232c3",
-      "content_hash": "D01AB9DD538DC0E8B2D7AE7F48FAF4BE7DB65DD7578CE777172DDB0E6A09AE27",
+      "version": "49cba896-4c9e-c10f-889c-b8a5370790ed",
+      "content_hash": "12C7D0B4B1104EE51F1FA1607DCDCD26459C4721CE0620AE3BE67600DFD15547",
       "asset_dependencies": []
     }
   ]
