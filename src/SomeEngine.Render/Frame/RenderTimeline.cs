@@ -8,8 +8,14 @@ namespace SomeEngine.Render.Frame;
 /// </summary>
 internal sealed class RenderTimeline
 {
-    private readonly QueueCompletion[][] _generationFences;
+    private readonly GenerationUse[] _generations;
     private readonly RenderDevice _renderDevice;
+
+    private struct GenerationUse
+    {
+        internal QueueCompletion[] Fences;
+        internal ulong LastFrame;
+    }
 
     internal RenderTimeline(
         RenderFrameCoordinator owner,
@@ -22,9 +28,9 @@ internal sealed class RenderTimeline
         Owner = owner;
         _renderDevice = renderDevice;
         Device = renderDevice.Device;
-        _generationFences = new QueueCompletion[generationCount][];
+        _generations = new GenerationUse[generationCount];
         for (int generation = 0; generation < generationCount; generation++)
-            _generationFences[generation] = [];
+            _generations[generation].Fences = [];
     }
 
     /// <summary>The graphics device owner to which this timeline is permanently bound.</summary>
@@ -32,7 +38,7 @@ internal sealed class RenderTimeline
 
     internal RenderFrameCoordinator Owner { get; }
 
-    internal int GenerationCount => _generationFences.Length;
+    internal int GenerationCount => _generations.Length;
 
     internal ulong LastSubmissionSequence { get; set; }
 
@@ -45,8 +51,19 @@ internal sealed class RenderTimeline
         ReadOnlySpan<QueueCompletion> fences)
     {
         ValidateGeneration(generation);
-        _generationFences[generation] = RenderQueueCompletions.Merge(
-            _generationFences[generation], fences);
+        ref GenerationUse use = ref _generations[generation];
+        use.Fences = RenderQueueCompletions.Merge(use.Fences, fences);
+        // The coordinator publishes this frame's sequence after registering its readers.
+        use.LastFrame = LastSubmissionSequence + 1;
+    }
+
+    internal int GetOldestSubmittedGeneration()
+    {
+        int oldest = 0;
+        for (int generation = 1; generation < _generations.Length; generation++)
+            if (_generations[generation].LastFrame < _generations[oldest].LastFrame)
+                oldest = generation;
+        return oldest;
     }
 
     internal bool IsGenerationAvailable(int generation)
@@ -66,12 +83,12 @@ internal sealed class RenderTimeline
     internal QueueCompletion[] GetGenerationFences(int generation)
     {
         ValidateGeneration(generation);
-        return _generationFences[generation].ToArray();
+        return _generations[generation].Fences.ToArray();
     }
 
     private void ValidateGeneration(int generation)
     {
-        if ((uint)generation >= (uint)_generationFences.Length)
+        if ((uint)generation >= (uint)_generations.Length)
             throw new ArgumentOutOfRangeException(nameof(generation));
     }
 }

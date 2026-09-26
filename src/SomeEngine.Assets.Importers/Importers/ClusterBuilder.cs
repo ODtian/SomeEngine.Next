@@ -399,7 +399,7 @@ public static partial class ClusterBuilder
         GltfMesh mesh,
         IReadOnlyList<MeshMaterialSlot> materialSlots)
     {
-        AttributeDefinition[] definitions = ReadAttributeDefinitions(mesh.Primitives[0]);
+        AttributeDefinition[] definitions = ReadAttributeDefinitions(mesh);
         MeshAssemblyState state = CreateMeshAssemblyState(definitions);
         uint vertexOffset = 0;
         for (int primitiveIndex = 0; primitiveIndex < mesh.Primitives.Count; primitiveIndex++)
@@ -432,20 +432,27 @@ public static partial class ClusterBuilder
         return state;
     }
 
-    private static AttributeDefinition[] ReadAttributeDefinitions(MeshPrimitive primitive)
+    private static AttributeDefinition[] ReadAttributeDefinitions(GltfMesh mesh)
     {
-        var definitions = new List<AttributeDefinition>();
-        foreach (string key in primitive.VertexAccessors.Keys)
+        var definitions = new Dictionary<string, AttributeDefinition>(StringComparer.Ordinal);
+        foreach (MeshPrimitive primitive in mesh.Primitives)
+        foreach ((string key, Accessor accessor) in primitive.VertexAccessors)
         {
             if (key == "POSITION")
             {
                 continue;
             }
 
-            definitions.Add(CreateAttributeDefinition(key, primitive.GetVertexAccessor(key)));
+            AttributeDefinition definition = CreateAttributeDefinition(key, accessor);
+            if (definitions.TryGetValue(key, out AttributeDefinition previous))
+            {
+                if (previous.Dimension != definition.Dimension)
+                    throw new NotSupportedException($"Mesh '{mesh.Name}' uses different dimensions for '{key}' across primitives.");
+            }
+            else definitions.Add(key, definition);
         }
 
-        return definitions.ToArray();
+        return definitions.Values.ToArray();
     }
 
     private static AttributeDefinition CreateAttributeDefinition(string key, Accessor accessor)
@@ -519,10 +526,13 @@ public static partial class ClusterBuilder
         MeshPrimitive primitive,
         uint vertexOffset)
     {
-        var source = primitive.GetIndexAccessor().AsIndicesArray();
-        for (int index = 0; index < source.Count; index++)
+        if (primitive.DrawPrimitiveType is not (PrimitiveType.TRIANGLES or PrimitiveType.TRIANGLE_STRIP or PrimitiveType.TRIANGLE_FAN))
+            throw new NotSupportedException($"Cluster geometry requires triangles, received {primitive.DrawPrimitiveType}.");
+        foreach (var (a, b, c) in primitive.GetTriangleIndices())
         {
-            indices.Add((uint)(source[index] + vertexOffset));
+            indices.Add(checked((uint)a + vertexOffset));
+            indices.Add(checked((uint)b + vertexOffset));
+            indices.Add(checked((uint)c + vertexOffset));
         }
     }
 

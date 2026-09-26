@@ -11,7 +11,8 @@ struct ClusterViewUniforms
 
     uint Pad0;
     uint MaxCandidates;
-    uint ViewPadding;
+    // Optional sphere centered at CameraPos; zero leaves only the frustum limits.
+    float CullingRadius;
     uint InstanceCount;
 
     uint MaxPageFaults;
@@ -39,7 +40,9 @@ struct ClusterViewUniforms
 
     uint TargetPolicy;
     uint TargetViewIndex;
-    uint Pad5;
+    // Zero disables reuse. Within one target policy, equal nonzero indices identify
+    // identical ViewProj, CameraPos, CullingRadius and CullingEnabled values.
+    uint CullingProjectionIndex;
     uint Pad6;
 };
 

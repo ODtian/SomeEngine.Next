@@ -52,7 +52,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
     private readonly HeapByteBudget _budget;
     private readonly List<PersistentHeapPage> _pages = [];
     private readonly HashSet<PersistentHeapPage> _discardedPages = [];
-    private readonly List<PendingResourceRetirement> _retirements = [];
+    private readonly List<ResourceRetirement> _retirements = [];
     private readonly Dictionary<Resource, ResourcePlacement> _allocations =
         new(ReferenceEqualityComparer.Instance);
 
@@ -418,11 +418,20 @@ internal sealed class PersistentResourceAllocator : IDisposable
     }
 
     internal void Retire(IDisposable value, ReadOnlySpan<QueueCompletion> completions)
+        => Retire([value], completions);
+
+    internal void Retire(ReadOnlySpan<IDisposable> values, ReadOnlySpan<QueueCompletion> completions)
     {
-        ResourcePlacement? placement = value is Resource resource && _allocations.Remove(resource, out ResourcePlacement found)
-            ? found
-            : null;
-        _retirements.Add(new PendingResourceRetirement(value, placement, completions.ToArray()));
+        var resources = new RetiredResource[values.Length];
+        for (int index = 0; index < values.Length; index++)
+        {
+            IDisposable value = values[index];
+            ResourcePlacement? placement = value is Resource resource && _allocations.Remove(resource, out ResourcePlacement found)
+                ? found
+                : null;
+            resources[index] = new RetiredResource(value, placement);
+        }
+        _retirements.Add(new ResourceRetirement(resources, completions.ToArray()));
     }
 
     private void Release(in ResourcePlacement placement)
@@ -435,14 +444,13 @@ internal sealed class PersistentResourceAllocator : IDisposable
     {
         for (int i = _retirements.Count - 1; i >= 0; i--)
         {
-            PendingResourceRetirement retirement = _retirements[i];
+            ResourceRetirement retirement = _retirements[i];
             bool ready = true;
             foreach (QueueCompletion completion in retirement.Completions)
                 if (!_backend.IsComplete(completion)) { ready = false; break; }
             if (!ready) continue;
-            retirement.Value.Dispose();
-            if (retirement.Placement.HasValue) Release(retirement.Placement.Value);
             _retirements.RemoveAt(i);
+            Release(retirement.Resources);
         }
         foreach (PersistentHeapPage page in _discardedPages.ToArray())
         {
@@ -458,10 +466,9 @@ internal sealed class PersistentResourceAllocator : IDisposable
     {
         for (int index = _retirements.Count - 1; index >= 0; index--)
         {
-            PendingResourceRetirement retirement = _retirements[index];
-            retirement.Value.Dispose();
-            if (retirement.Placement.HasValue) Release(retirement.Placement.Value);
+            ResourceRetirement retirement = _retirements[index];
             _retirements.RemoveAt(index);
+            Release(retirement.Resources);
         }
         for (int index = _pages.Count - 1; index >= 0; index--)
         {
@@ -493,9 +500,30 @@ internal sealed class PersistentResourceAllocator : IDisposable
         return checked(value + 1);
     }
 
-    private readonly record struct PendingResourceRetirement(
+    private void Release(ReadOnlySpan<RetiredResource> resources)
+    {
+        List<Exception>? errors = null;
+        foreach (RetiredResource resource in resources)
+        {
+            try
+            {
+                resource.Value.Dispose();
+                if (resource.Placement.HasValue) Release(resource.Placement.Value);
+            }
+            catch (Exception error)
+            {
+                (errors ??= []).Add(error);
+            }
+        }
+        if (errors is not null) throw new AggregateException("Resource retirement failed.", errors);
+    }
+
+    private readonly record struct RetiredResource(
         IDisposable Value,
-        ResourcePlacement? Placement,
+        ResourcePlacement? Placement);
+
+    private readonly record struct ResourceRetirement(
+        RetiredResource[] Resources,
         QueueCompletion[] Completions);
 }
 

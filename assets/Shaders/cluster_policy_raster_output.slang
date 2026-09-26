@@ -7,6 +7,35 @@
 
 StructuredBuffer<uint2> VisibleClusterRasterWindows;
 
+uint2 ClusterRasterTargetPixelOrigin(uint visibleClusterIndex, ClusterViewUniforms view)
+{
+    if (view.TargetPolicy == 0u) return 0u.xx;
+    ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
+    if (target.RasterWindowPages == 0u) return 0u.xx;
+    return ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindows[visibleClusterIndex]).xy * target.PageSize;
+}
+
+float4 ClusterHardwareRasterPosition(float4 clip, uint visibleClusterIndex,
+    ClusterViewUniforms view, float2 rasterSize)
+{
+    float2 scale = float2(view.ScreenWidth, view.ScreenHeight) / rasterSize;
+    float2 origin = float2(ClusterRasterTargetPixelOrigin(visibleClusterIndex, view));
+    clip.xy = clip.xy * scale + clip.w * (float2(scale.x - 1.0, 1.0 - scale.y) +
+        float2(-2.0, 2.0) * origin / rasterSize);
+    return clip;
+}
+
+float2 ClusterRasterTargetViewport(ClusterViewUniforms view)
+{
+    if (view.TargetPolicy != 0u)
+    {
+        ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
+        if (target.RasterWindowPages != 0u)
+            return float(target.RasterWindowPages * target.PageSize).xx;
+    }
+    return float2(view.ScreenWidth, view.ScreenHeight);
+}
+
 bool ClusterRasterTargetWindowContainsPixel(
     uint visibleClusterIndex,
     uint targetViewIndex,
@@ -101,6 +130,23 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
         if (WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
             return;
         WriteRasterTargetDepth(pixel, targetViewIndex, depth);
+    }
+};
+
+// This output is selected only for a raster stream whose views target depth pages.
+struct ClusterRasterOutputTarget : IClusterRasterOutput
+{
+    int4 scissor(uint visibleClusterIndex, uint targetPolicy, uint targetViewIndex,
+        uint screenWidth, uint screenHeight)
+    {
+        return PrepareRasterTargetScissor(visibleClusterIndex, targetViewIndex, screenWidth, screenHeight);
+    }
+
+    void write(int2 pixel, uint viewIndex, uint targetPolicy, uint targetViewIndex,
+        float depth, uint visibilityValue)
+    {
+        if (!WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
+            WriteRasterTargetDepth(pixel, targetViewIndex, depth);
     }
 };
 

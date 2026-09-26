@@ -119,15 +119,11 @@ float3 ComputeBarycentric(float2 p, float2 v0, float2 v1, float2 v2)
     float2 e1 = v2 - v0;
     float2 ep = p - v0;
 
-    float d00 = dot(e0, e0);
-    float d01 = dot(e0, e1);
-    float d11 = dot(e1, e1);
-    float dp0 = dot(ep, e0);
-    float dp1 = dot(ep, e1);
-
-    float invDenom = 1.0 / (d00 * d11 - d01 * d01);
-    float u = (d11 * dp0 - d01 * dp1) * invDenom;
-    float v = (d00 * dp1 - d01 * dp0) * invDenom;
+    // Solve the two screen-space edge equations directly. Forming their Gram
+    // matrix adds work and squares the condition number for thin triangles.
+    float invDenom = 1.0 / (e0.x * e1.y - e0.y * e1.x);
+    float u = (ep.x * e1.y - ep.y * e1.x) * invDenom;
+    float v = (e0.x * ep.y - e0.y * ep.x) * invDenom;
 
     return float3(1.0 - u - v, u, v);
 }

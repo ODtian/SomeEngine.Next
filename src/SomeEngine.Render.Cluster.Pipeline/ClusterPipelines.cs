@@ -133,13 +133,22 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
 {
     private ClusterRasterPipeline(
         ShaderProgram program,
-        GraphicsPipeline pipeline, bool usesMesh)
+        GraphicsPipeline pipeline, bool usesMesh, string geometryEntry)
         : base(program, pipeline)
     {
         UsesMesh = usesMesh;
+        GeometryEntry = geometryEntry;
     }
 
     internal bool UsesMesh { get; }
+
+    internal string GeometryEntry { get; }
+
+    internal bool UsesMaterialRanges => GeometryEntry is "MSVisBufferMeshlet" or ClusterMaterialEntries.HardwareMeshlet;
+
+    internal static bool SupportsMeshlets(IGraphicsBackend backend, Device device) =>
+        SupportsMesh(backend, device) && backend.TryGetCapability(device, out MeshShaders? mesh) &&
+        mesh!.MaximumOutputVertices >= 64 && mesh.MaximumOutputPrimitives >= 128;
 
     internal static bool SupportsMesh(IGraphicsBackend backend, Device device) =>
         backend.TryGetCapability(device, out MeshShaders? mesh) && mesh is not null &&
@@ -208,7 +217,7 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
                     rasterizer, multisample, depthStencil, blend, attachments,
                     DynamicStates.Viewport | DynamicStates.Scissor, name))
                 : backend.CreateGraphicsPipeline(device, description);
-            return new ClusterRasterPipeline(vertex.Program, pipeline, usesMesh);
+            return new ClusterRasterPipeline(vertex.Program, pipeline, usesMesh, vertexEntryPoint);
         }
         catch (Exception primary)
         {

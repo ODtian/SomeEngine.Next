@@ -72,6 +72,13 @@ public sealed class RenderInstanceStorageSystem : IDisposable
 
     public int PropertyDataBytes => Storage.PropertyDataBytes;
 
+    /// <summary>
+    /// Gets the shared GPU transfer for this store and graph. Call before opening an edit or
+    /// frame; the first call installs its buffer and passes in a committed graph edit.
+    /// </summary>
+    public RenderInstanceDataTransfer GetDataTransfer(global::SomeEngine.RenderGraph.RenderGraph graph) =>
+        Storage.GetDataTransfer(graph);
+
     internal RenderInstanceResources Storage
     {
         get
@@ -123,7 +130,8 @@ public sealed class RenderInstanceStorageSystem : IDisposable
         RenderPrepareScope scope,
         RenderInstanceWriteScope write,
         RenderInstanceBatch batch,
-        RenderInstancePropertyLayout properties)
+        RenderInstancePropertyLayout properties,
+        RenderInstancePropertyLayout? replacedProperties)
     {
         ArgumentNullException.ThrowIfNull(scope);
         RequireWriteScope(scope, write);
@@ -131,7 +139,7 @@ public sealed class RenderInstanceStorageSystem : IDisposable
         ArgumentNullException.ThrowIfNull(properties);
 
         RenderInstanceBatchComposition composition =
-            write.BeginBatchUpdate(batch, properties);
+            write.BeginBatchUpdate(batch, properties, replacedProperties);
         return new RenderInstanceWriteHandle(write, composition);
     }
 

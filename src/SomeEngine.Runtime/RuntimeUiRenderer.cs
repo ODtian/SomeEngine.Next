@@ -210,7 +210,7 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
     internal void DrawDebugWindow(
         ref bool open,
         ref bool animateScene,
-        in RuntimeUiMetrics metrics)
+        in RuntimeUiMetrics metrics, SceneTestPlatform? platform = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         MakeCurrent();
@@ -218,8 +218,8 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
             return;
 
         ImGui.SetNextWindowPos(new Vector2(24.0f, 24.0f), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(420.0f, 330.0f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("SomeEngine Runtime", ref open))
+        ImGui.SetNextWindowSize(new Vector2(460.0f, 580.0f), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("SomeEngine Test Platform", ref open))
         {
             ImGui.End();
             return;
@@ -234,6 +234,7 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         ImGui.Text($"TAA jitter ({metrics.JitterPixels.X:F4}, {metrics.JitterPixels.Y:F4}) px");
         ImGui.Text($"Camera ({metrics.CameraPosition.X:F2}, {metrics.CameraPosition.Y:F2}, {metrics.CameraPosition.Z:F2})");
         ImGui.Text(metrics.Focused ? "Window focus: active" : "Window focus: inactive");
+        platform?.Draw();
         ImGui.Separator();
         _ = ImGui.Checkbox("Animate scene", ref animateScene);
         ImGui.TextUnformatted(metrics.TemporalAntialiasing

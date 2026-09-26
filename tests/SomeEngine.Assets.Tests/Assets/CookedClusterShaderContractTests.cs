@@ -2,6 +2,9 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Tests;
+using System.Runtime.InteropServices;
+using SlangShaderSharp;
+using SomeEngine.Render.Shadows;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -173,6 +176,31 @@ public sealed class CookedClusterShaderContractTests
     }
 
     [Theory]
+    [InlineData("ClusterRasterSoftwareTarget", ShaderStage.Compute)]
+    [InlineData("ClusterRasterSoftwareMeshletTarget", ShaderStage.Compute)]
+    [InlineData("ClusterRasterPixelTarget", ShaderStage.Pixel)]
+    [InlineData("ClusterRasterMeshPixelTarget", ShaderStage.Pixel)]
+    public async Task DepthTargetEntriesDoNotRequirePrimaryVisibilityOutputs(
+        string entryPoint,
+        ShaderStage stage)
+    {
+        Shader shader = await ReadTemplateShader("standard.shader.asset");
+        foreach (SomeEngine.Graphics.ShaderTarget target in new[]
+        {
+            SomeEngine.Graphics.ShaderTarget.Dxil,
+            SomeEngine.Graphics.ShaderTarget.Spirv,
+        })
+        {
+            _ = shader.RequireEntry(target, entryPoint, stage);
+            string[] resources = ResourceNames(shader, entryPoint,
+                target == SomeEngine.Graphics.ShaderTarget.Dxil ? "dxil" : "spirv");
+            Assert.Contains("RasterTargetOutput", resources);
+            Assert.DoesNotContain("VisibilityWinnerImage", resources);
+            Assert.DoesNotContain("VisibilityWinnerBuffer", resources);
+        }
+    }
+
+    [Theory]
     [InlineData(
         "clustered_light_grid.shader.asset",
         "BuildClusteredLightGrid",
@@ -180,7 +208,7 @@ public sealed class CookedClusterShaderContractTests
     [InlineData(
         "temporal_resolve.shader.asset",
         "PSMain",
-        "MotionVectors|PreviousMotionVectors|PreviousSceneColor|PreviousSceneDepth|SceneColor|SceneDepth|TemporalResolveUniforms")]
+        "MotionVectors|SceneColor|SceneDepth|TemporalHistory|TemporalResolveUniforms")]
     [InlineData(
         "render_debug_overlay.shader.asset",
         "PSMain",
@@ -232,9 +260,9 @@ public sealed class CookedClusterShaderContractTests
         return (shader, shaderRef.EntryPoint!);
     }
 
-    private static string[] ResourceNames(Shader shader, string entryPoint)
+    private static string[] ResourceNames(Shader shader, string entryPoint, string target = "dxil")
     {
-        Assert.True(shader.TryReflection("dxil", entryPoint, out ShaderEntryPointReflection reflection));
+        Assert.True(shader.TryReflection(target, entryPoint, out ShaderEntryPointReflection reflection));
         IList<ShaderResourceReflection> resources = Assert.IsAssignableFrom<IList<ShaderResourceReflection>>(
             reflection.Reflection?.Resources);
         var names = new string[resources.Count];
@@ -242,6 +270,55 @@ public sealed class CookedClusterShaderContractTests
             names[index] = Assert.IsType<string>(resources[index].Name);
         Array.Sort(names, StringComparer.Ordinal);
         return names;
+    }
+
+    [Theory]
+    [InlineData("standard.shader.asset", "VirtualShadowViews")]
+    [InlineData("vsm_view_compact.shader.asset", "ShadowViews")]
+    public async Task ShadowViewBuffersAcceptTheSameCpuDataOnBothTargets(string asset, string resource)
+    {
+        using Shader shader = await ReadTemplateShader(asset);
+        foreach (string target in new[] { "dxil", "spirv" })
+        {
+            ShaderTypeLayout element = StructuredElement(shader, target, resource);
+            Assert.Equal((nuint)Marshal.SizeOf<VirtualShadowView>(), element.GetStride(SlangParameterCategory.Uniform));
+            for (uint index = 0; index < element.FieldCount; index++)
+            {
+                ShaderVariableLayout field = element.GetFieldByIndex(index);
+                Assert.Equal((nuint)Marshal.OffsetOf<VirtualShadowView>(field.Name), field.GetOffset());
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("standard.shader.asset")]
+    [InlineData("vsm_view_compact.shader.asset")]
+    public async Task RasterTargetViewsUseTheSameFormatOnBothTargets(string asset)
+    {
+        using Shader shader = await ReadTemplateShader(asset);
+        ShaderTypeLayout first = StructuredElement(shader, "dxil", "RasterTargetViews");
+        ShaderTypeLayout second = StructuredElement(shader, "spirv", "RasterTargetViews");
+        Assert.Equal(first.GetStride(SlangParameterCategory.Uniform), second.GetStride(SlangParameterCategory.Uniform));
+        Assert.Equal(first.FieldCount, second.FieldCount);
+        for (uint index = 0; index < first.FieldCount; index++)
+        {
+            Assert.Equal(first.GetFieldByIndex(index).Name, second.GetFieldByIndex(index).Name);
+            Assert.Equal(first.GetFieldByIndex(index).GetOffset(), second.GetFieldByIndex(index).GetOffset());
+        }
+    }
+
+    private static ShaderTypeLayout StructuredElement(Shader shader, string target, string resource)
+    {
+        Assert.True(shader.TryProgram(target, out ShaderProgram code));
+        ShaderTypeLayout data = code.Layout.GetGlobalParamsVarLayout().TypeLayout;
+        if (data.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
+            data = data.ElementTypeLayout;
+        for (uint index = 0; index < data.FieldCount; index++)
+        {
+            ShaderVariableLayout field = data.GetFieldByIndex(index);
+            if (field.Name == resource) return field.TypeLayout.ElementTypeLayout;
+        }
+        throw new InvalidDataException($"Shader {shader.Name} has no {resource} buffer for {target}.");
     }
 
     private static async ValueTask<Shader> ReadCookedShader(string assetName)

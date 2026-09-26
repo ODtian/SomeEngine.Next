@@ -16,7 +16,7 @@ internal struct ClusterViewUniforms
 
     internal uint Pad0;
     internal uint MaxCandidates;
-    internal uint ViewPadding;
+    internal float CullingRadius;
     internal uint InstanceCount;
 
     internal uint MaxPageFaults;
@@ -44,7 +44,7 @@ internal struct ClusterViewUniforms
 
     internal uint TargetPolicy;
     internal uint TargetViewIndex;
-    internal uint Pad5;
+    internal uint CullingProjectionIndex;
     internal uint Pad6;
 
     internal static ClusterViewUniforms Create(

@@ -289,6 +289,10 @@ internal sealed partial class FrameExecutor
             } while (position < accesses.Count && _accesses[accesses[position]].PassIndex == pass);
             Queue queue = _passes[pass].Queue!;
             bool seen = _bufferQueueStates.TryGetValue(queue, out BufferPhysicalState previous);
+            bool mergeReads = seen && !previous.Writes && !writes &&
+                !ResourceAccessRules.Writes(previous.Access | access);
+            if (!writes && !mergeReads && !ResourceAccessRules.Writes(access))
+                IncludeFollowingBufferReads(accesses, position, queue, ref sync, ref access);
             if (!seen && !resource.Placement.Aliases)
                 AddInitialCompletions(resource.EntryBoundaryStates, queue, pass);
             if (!seen && resource.Placement.Aliases)
@@ -310,12 +314,29 @@ internal sealed partial class FrameExecutor
             else AddUnique(_bufferReaders, pass);
 
             bool mergeAtomic = seen && previous.AtomicMergeable && atomic && writes && previous.Access == access;
-            if (seen && !mergeAtomic &&
+            if (seen && !mergeAtomic && !mergeReads &&
                 (previous.Writes || writes || previous.Sync != sync || previous.Access != access))
                 AddBufferTransition(previous.LastPass, pass, buffer, previous.Sync, sync,
                     previous.Access, access, false);
             _bufferQueueStates[queue] = new BufferPhysicalState(
-                mergeAtomic ? previous.Sync | sync : sync, access, queue, pass, writes, atomic && writes);
+                mergeAtomic || mergeReads ? previous.Sync | sync : sync,
+                mergeReads ? MergeBufferAccess(previous.Access, access) : access,
+                queue, pass, writes, atomic && writes);
+        }
+    }
+
+    private void IncludeFollowingBufferReads(List<int> accesses, int position, Queue queue,
+        ref PipelineSync sync, ref ResourceAccess access)
+    {
+        // The write-to-read barrier must make the write visible to every reader,
+        // including later shader stages, before read-to-read barriers can be omitted.
+        for (int index = position; index < accesses.Count; index++)
+        {
+            FrameResourceAccess next = _accesses[accesses[index]];
+            if (next.Mode != GraphAccessMode.Read || ResourceAccessRules.Writes(next.Access)) break;
+            if (!ReferenceEquals(_passes[next.PassIndex].Queue, queue)) continue;
+            sync |= next.Sync;
+            access = MergeBufferAccess(access, next.Access);
         }
     }
 

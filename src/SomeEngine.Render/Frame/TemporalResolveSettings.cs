@@ -7,7 +7,8 @@ public readonly record struct TemporalResolveUniforms(
     float HistoryWeight,
     float NeighborhoodClampScale,
     float NeighborhoodClampMin,
-    float MotionRejectionScale);
+    float MotionRejectionScale,
+    uint HistoryLayer = 0);
 
 public readonly record struct TemporalResolveSettings(
     float HistoryWeight,

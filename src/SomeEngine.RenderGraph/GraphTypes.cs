@@ -21,6 +21,11 @@ public enum BufferContentScope : byte
 {
     FullRange,
     CountBoundedPrefix,
+    /// <summary>
+    /// Disjoint GPU-produced ranges identified by separate offsets and counts.
+    /// Consumers may read only the elements inside those ranges.
+    /// </summary>
+    CountBoundedRanges,
 }
 
 public enum PassCullingMode : byte

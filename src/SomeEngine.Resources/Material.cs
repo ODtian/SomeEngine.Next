@@ -7,6 +7,10 @@ using SomeEngine.Serialization;
 namespace SomeEngine.Resources;
 
 /// <summary>A material has concrete properties and actual shader and texture references.</summary>
+/// <remarks>
+/// Shared by game and rendering worlds. Change its fields after CPU frame recording completes
+/// and before the next render preparation. Extraction transfers references, not property copies.
+/// </remarks>
 [SomeEngine.Serialization.AssetUse]
 public abstract partial class Material : IDisposable
 {
@@ -18,43 +22,7 @@ public abstract partial class Material : IDisposable
     private Shader? _shader;
     private static long _nextMaterialId;
     private readonly long _materialId = Interlocked.Increment(ref _nextMaterialId);
-    private MaterialData? _capturedData;
-    private ulong _capturedSourceRevision;
-
-    /// <summary>Copies material values through the game-to-render extraction boundary.</summary>
-    public MaterialData CaptureData()
-    {
-        MaterialData? previous = _capturedData;
-        bool changed = previous is null || _capturedSourceRevision != Revision;
-        object?[]? values = changed ? new object?[PropertyCount] : null;
-        for (int index = 0; index < PropertyCount; index++)
-        {
-            uint property = (uint)index;
-            if (!changed && Properties[index].ValueType != typeof(Texture)) continue;
-            object? value = GetValue(property);
-            if (value is Texture texture) value = texture.CaptureData();
-            if (!changed && Equals(previous!.GetValue(property), value)) continue;
-            if (values is null)
-            {
-                values = new object?[PropertyCount];
-                for (int before = 0; before < index; before++) values[before] = previous!.GetValue((uint)before);
-            }
-            changed = true;
-            values[index] = value;
-        }
-        if (!changed) return previous!;
-        ulong revision = checked((previous?.Revision ?? 0) + 1);
-        var revisions = new ulong[PropertyCount];
-        for (int index = 0; index < PropertyCount; index++)
-            revisions[index] = previous is not null && Equals(previous.GetValue((uint)index), values![index])
-                ? previous.GetPropertyRevision((uint)index) : revision;
-        _capturedSourceRevision = Revision;
-        return _capturedData = new MaterialData(_materialId, revision, Name, null, Shader,
-            [.. Properties], values!, revisions);
-    }
-
-    public Texture[] CaptureTextureReferences() => Enumerable.Range(0, PropertyCount)
-        .Select(index => GetTexture((uint)index)).OfType<Texture>().Distinct().ToArray();
+    public long MaterialId => _materialId;
 
     public virtual object? GetValue(uint index) => throw new ArgumentOutOfRangeException(nameof(index));
 
@@ -152,11 +120,11 @@ public abstract partial class Material : IDisposable
 
     // Called on a newly created, unpublished material. The dependencies transfer before setters run,
     // so a failed initialization is cleaned up by disposing that material.
-    internal void InitializeContent(string? name, Shader? shader, Texture[] textures,
-        IEnumerable<(MaterialValue Value, Texture? Texture)> values)
+    internal void InitializeContent(string? name, Shader? shader,
+        IEnumerable<(MaterialValue Value, Texture? Texture)> values, Shader? createdShader, Texture[] createdTextures)
     {
-        _createdShader = shader;
-        _createdTextures = textures;
+        _createdShader = createdShader;
+        _createdTextures = createdTextures;
         _changingProperties = true;
         try
         {

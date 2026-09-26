@@ -1,11 +1,10 @@
 #include "fullscreen_triangle.slang"
 
 Texture2DArray<float4> SceneColor;
-Texture2D<float4> PreviousSceneColor;
 Texture2DArray<float2> MotionVectors;
-Texture2D<float2> PreviousMotionVectors;
 Texture2DArray<float> SceneDepth;
-Texture2D<float> PreviousSceneDepth;
+// Two generations share fixed bindings. Preserve the original half color/motion and float depth bits.
+RWTexture2DArray<uint4> TemporalHistory;
 
 struct TemporalResolveUniformData
 {
@@ -13,6 +12,7 @@ struct TemporalResolveUniformData
     float NeighborhoodClampScale;
     float NeighborhoodClampMin;
     float MotionRejectionScale;
+    uint HistoryLayer;
 };
 
 ConstantBuffer<TemporalResolveUniformData> TemporalResolveUniforms;
@@ -39,9 +39,28 @@ float3 YCoCgToRgb(float3 color)
         rbAverage - color.y * 0.5);
 }
 
-float LoadDepthClamped(Texture2D<float> depthTexture, int2 pixel, int2 maxPixel)
+uint4 LoadPreviousHistory(int2 pixel)
 {
-    return depthTexture.Load(int3(clamp(pixel, int2(0, 0), maxPixel), 0));
+    return TemporalHistory[uint3(pixel, TemporalResolveUniforms.HistoryLayer ^ 1u)];
+}
+
+float2 UnpackHistoryPair(uint value)
+{
+    return float2(f16tof32(value & 0xffffu), f16tof32(value >> 16u));
+}
+
+uint PackHistoryPair(float2 value)
+{
+    return f32tof16(value.x) | (f32tof16(value.y) << 16u);
+}
+
+float4 StoreTemporalHistory(int2 pixel, float4 color)
+{
+    float2 motion = MotionVectors.Load(int4(pixel, 0, 0));
+    float depth = SceneDepth.Load(int4(pixel, 0, 0));
+    TemporalHistory[uint3(pixel, TemporalResolveUniforms.HistoryLayer)] = uint4(
+        PackHistoryPair(color.xy), PackHistoryPair(color.zw), PackHistoryPair(motion), asuint(depth));
+    return color;
 }
 
 float LoadCurrentDepthClamped(int2 pixel, int2 maxPixel)
@@ -154,49 +173,43 @@ float ResolveHistoryWeight(
     return saturate(baseWeight) * (1.0 - rejection);
 }
 
-float4 LoadPreviousSceneColorBilinear(float2 uv, float2 size, int2 maxPixel)
+struct TemporalHistorySample
 {
-    float2 pixel = uv * size - 0.5;
-    int2 p0 = int2(floor(pixel));
-    int2 p1 = p0 + int2(1, 1);
-    float2 f = frac(pixel);
+    float4 Color;
+    float2 Motion;
+    float Depth;
+};
 
-    float4 c00 = PreviousSceneColor.Load(int3(clamp(p0, int2(0, 0), maxPixel), 0));
-    float4 c10 = PreviousSceneColor.Load(int3(clamp(int2(p1.x, p0.y), int2(0, 0), maxPixel), 0));
-    float4 c01 = PreviousSceneColor.Load(int3(clamp(int2(p0.x, p1.y), int2(0, 0), maxPixel), 0));
-    float4 c11 = PreviousSceneColor.Load(int3(clamp(p1, int2(0, 0), maxPixel), 0));
-
-    return lerp(lerp(c00, c10, f.x), lerp(c01, c11, f.x), f.y);
+TemporalHistorySample DecodeTemporalHistory(uint4 value)
+{
+    TemporalHistorySample result;
+    result.Color = float4(UnpackHistoryPair(value.x), UnpackHistoryPair(value.y));
+    result.Motion = UnpackHistoryPair(value.z);
+    result.Depth = asfloat(value.w);
+    return result;
 }
 
-float LoadPreviousDepthBilinear(float2 uv, float2 size, int2 maxPixel)
+TemporalHistorySample MixTemporalHistory(
+    TemporalHistorySample a, TemporalHistorySample b, float weight)
 {
-    float2 pixel = uv * size - 0.5;
-    int2 p0 = int2(floor(pixel));
-    int2 p1 = p0 + int2(1, 1);
-    float2 f = frac(pixel);
-
-    float d00 = LoadDepthClamped(PreviousSceneDepth, p0, maxPixel);
-    float d10 = LoadDepthClamped(PreviousSceneDepth, int2(p1.x, p0.y), maxPixel);
-    float d01 = LoadDepthClamped(PreviousSceneDepth, int2(p0.x, p1.y), maxPixel);
-    float d11 = LoadDepthClamped(PreviousSceneDepth, p1, maxPixel);
-
-    return lerp(lerp(d00, d10, f.x), lerp(d01, d11, f.x), f.y);
+    TemporalHistorySample result;
+    result.Color = lerp(a.Color, b.Color, weight);
+    result.Motion = lerp(a.Motion, b.Motion, weight);
+    result.Depth = lerp(a.Depth, b.Depth, weight);
+    return result;
 }
 
-float2 LoadPreviousMotionBilinear(float2 uv, float2 size, int2 maxPixel)
+TemporalHistorySample LoadPreviousHistoryBilinear(float2 uv, float2 size, int2 maxPixel)
 {
     float2 pixel = uv * size - 0.5;
     int2 p0 = int2(floor(pixel));
     int2 p1 = p0 + int2(1, 1);
     float2 f = frac(pixel);
-
-    float2 m00 = PreviousMotionVectors.Load(int3(clamp(p0, int2(0, 0), maxPixel), 0));
-    float2 m10 = PreviousMotionVectors.Load(int3(clamp(int2(p1.x, p0.y), int2(0, 0), maxPixel), 0));
-    float2 m01 = PreviousMotionVectors.Load(int3(clamp(int2(p0.x, p1.y), int2(0, 0), maxPixel), 0));
-    float2 m11 = PreviousMotionVectors.Load(int3(clamp(p1, int2(0, 0), maxPixel), 0));
-
-    return lerp(lerp(m00, m10, f.x), lerp(m01, m11, f.x), f.y);
+    TemporalHistorySample h00 = DecodeTemporalHistory(LoadPreviousHistory(clamp(p0, int2(0, 0), maxPixel)));
+    TemporalHistorySample h10 = DecodeTemporalHistory(LoadPreviousHistory(clamp(int2(p1.x, p0.y), int2(0, 0), maxPixel)));
+    TemporalHistorySample h01 = DecodeTemporalHistory(LoadPreviousHistory(clamp(int2(p0.x, p1.y), int2(0, 0), maxPixel)));
+    TemporalHistorySample h11 = DecodeTemporalHistory(LoadPreviousHistory(clamp(p1, int2(0, 0), maxPixel)));
+    return MixTemporalHistory(MixTemporalHistory(h00, h10, f.x), MixTemporalHistory(h01, h11, f.x), f.y);
 }
 
 float2 LoadDilatedMotionByClosestDepth(int2 pixel, int2 maxPixel, out float closestDepth)
@@ -221,9 +234,8 @@ float2 LoadDilatedMotionByClosestDepth(int2 pixel, int2 maxPixel, out float clos
     return closestMotion;
 }
 
-float VelocityDisocclusionRejection(float2 previousUv, float2 motion, float2 size, int2 maxPixel)
+float VelocityDisocclusionRejection(float2 previousMotion, float2 motion, float2 size)
 {
-    float2 previousMotion = LoadPreviousMotionBilinear(previousUv, size, maxPixel);
     float velocityDeltaPixels = length((previousMotion - motion) * size);
     return saturate((velocityDeltaPixels - 0.25) * 0.08);
 }
@@ -241,7 +253,7 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
     int2 pixel = int2(input.Position.xy);
     float4 current = SceneColor.Load(int4(pixel, 0, 0));
     if (TemporalResolveUniforms.HistoryWeight <= 0.0)
-        return current;
+        return StoreTemporalHistory(pixel, current);
 
     uint width;
     uint height;
@@ -261,17 +273,18 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
     float2 motion = LoadDilatedMotionByClosestDepth(pixel, maxPixel, closestDepth);
     // Retain subpixel silhouette coverage, but do not accumulate an old surface in empty background.
     if (closestDepth >= 1.0)
-        return current;
+        return StoreTemporalHistory(pixel, current);
     float2 previousUv = uv - motion;
     if (any(previousUv < float2(0.0, 0.0)) || any(previousUv > float2(1.0, 1.0)))
-        return current;
+        return StoreTemporalHistory(pixel, current);
 
-    float4 previous = LoadPreviousSceneColorBilinear(previousUv, size, maxPixel);
+    TemporalHistorySample history = LoadPreviousHistoryBilinear(previousUv, size, maxPixel);
+    float4 previous = history.Color;
     float3 boundedPrevious = ClipHistoryToCurrentNeighborhood(pixel, maxPixel, current.rgb, previous.rgb);
     float currentDepth = LoadCurrentDepthClamped(pixel, maxPixel);
-    float previousDepth = LoadPreviousDepthBilinear(previousUv, size, maxPixel);
+    float previousDepth = history.Depth;
     float depthRejection = DepthDisocclusionRejection(currentDepth, previousDepth);
-    float velocityRejection = VelocityDisocclusionRejection(previousUv, motion, size, maxPixel);
+    float velocityRejection = VelocityDisocclusionRejection(history.Motion, motion, size);
     float weight = ResolveHistoryWeight(
         TemporalResolveUniforms.HistoryWeight,
         motion,
@@ -282,5 +295,5 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
     weight *= 1.0 - max(depthRejection, velocityRejection);
     float3 resolved = lerp(current.rgb, boundedPrevious, weight);
 
-    return float4(resolved, current.a);
+    return StoreTemporalHistory(pixel, float4(resolved, current.a));
 }

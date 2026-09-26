@@ -2,6 +2,7 @@
 #define VSM_PAGE_REQUEST_COMMON_SLANG
 
 #include "resource_effects.slang"
+#include "wave_aggregation.slang"
 
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> RequestedShadowPages;
@@ -21,6 +22,13 @@ void PublishVirtualShadowRequest(
     uint pageTableEntryCount)
 {
     if (tableIndex >= pageTableEntryCount)
+        return;
+
+    // Receiver pixels in a wave frequently request the same page. Only one
+    // lane needs to publish each identical request; other lanes still mark
+    // their receiver cells after this function returns.
+    uint4 matchingRequests = WaveMatchingLanes(tableIndex) & WaveMatchingLanes(flags);
+    if (WaveGetLaneIndex() != WaveMaskFirstLane(matchingRequests))
         return;
 
     uint previous;
@@ -48,6 +56,9 @@ void MarkVirtualShadowReceiverMask(
     uint2 pagePixel = virtualPixel & (pageSize - 1u);
     uint2 cell = min(pagePixel >> maskShift, 7u.xx);
     uint bit = cell.y * 8u + cell.x;
+    uint4 matchingCells = WaveMatchingLanes(tableIndex) & WaveMatchingLanes(bit);
+    if (WaveGetLaneIndex() != WaveMaskFirstLane(matchingCells))
+        return;
     uint ignored;
     if (bit < 32u)
         InterlockedOr(PageReceiverMasks[tableIndex].x, 1u << bit, ignored);

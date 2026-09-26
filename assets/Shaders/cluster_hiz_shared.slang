@@ -89,10 +89,11 @@ void BuildWorldAabbScreenBoundsAndNearDepth(
     float2 onePixel = float2(1.0 / view.ScreenWidth, 1.0 / view.ScreenHeight);
     if (view.HiZMipCount > 0u)
         onePixel = max(view.HiZInvSize, 1e-6.xx);
-    maxUv = min(1.0.xx, max(maxUv, minUv + onePixel));
-
-    float pixelDiameterX = (maxUv.x - minUv.x) / onePixel.x;
-    float pixelDiameterY = (maxUv.y - minUv.y) / onePixel.y;
+    // Raster selection needs the geometry footprint, without HiZ's minimum
+    // query size. Expand only when sampling the hierarchy below.
+    float2 queryMaxUv = min(1.0.xx, max(maxUv, minUv + onePixel));
+    float pixelDiameterX = (queryMaxUv.x - minUv.x) / onePixel.x;
+    float pixelDiameterY = (queryMaxUv.y - minUv.y) / onePixel.y;
     float pixelDiameter = max(1.0, max(pixelDiameterX, pixelDiameterY));
     float mipValue = max(0.0, ceil(log2(pixelDiameter)));
     uint maxMip = view.HiZMipCount > 0u ? view.HiZMipCount - 1u : 0u;
@@ -115,6 +116,7 @@ float SampleHiZMax(
     uint viewIndex,
     ClusterViewUniforms view)
 {
+    maxUv = min(1.0.xx, max(maxUv, minUv + max(view.HiZInvSize, 1e-6.xx)));
     float2 fullSize = 1.0.xx / max(view.HiZInvSize, 1e-6.xx);
     float2 pixelMin = minUv * fullSize;
     float2 pixelMax = maxUv * fullSize;

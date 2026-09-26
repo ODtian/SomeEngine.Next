@@ -8,6 +8,57 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class VirtualShadowSamplingTests
 {
     [Theory]
+    [InlineData(64.0f, 64.0f, true, false, .2f)]
+    [InlineData(127.75f, 64.0f, true, true, .2f)]
+    [InlineData(127.75f, 127.75f, true, true, .2f)]
+    [InlineData(200.0f, 200.0f, false, false, .2f)]
+    [InlineData(125.5f, 64.0f, true, false, .49f)]
+    public void FilteredShadowsPreservePageInteriorsBordersAndCoarseFallback(
+        float pixelX, float pixelY, bool finePages, bool mixed, float occluderDepth)
+    {
+        uint[] view = CreateView(0);
+        view[16] = 256;
+        view[34] = 2;
+        uint[] pages = new uint[5 * 4];
+        for (int page = 0; page < 5; page++)
+        {
+            if (page < 4 && !finePages) continue;
+            pages[page * 4] = (uint)page + 1;
+            pages[page * 4 + 1] = page < 4 ? (uint)page % 2 : 0;
+            pages[page * 4 + 2] = page < 4 ? (uint)page / 2 : 0;
+            pages[page * 4 + 3] = 7;
+        }
+        uint[] pixels = Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.2f), 512 * 256).ToArray();
+        for (int page = 0; page <= 4; page += 4)
+            for (int y = 0; y < 128; y++)
+                Array.Fill(pixels, BitConverter.SingleToUInt32Bits(1.0f - occluderDepth), (page / 4 * 128 + y) * 512, 128);
+        uint[] position = [BitConverter.SingleToUInt32Bits(pixelX), BitConverter.SingleToUInt32Bits(pixelY)];
+        uint[][] result = ExecuteSource("""
+            #include "vsm_sampling.slang"
+            StructuredBuffer<VirtualShadowMapParameters> Views;
+            StructuredBuffer<uint4> Pages;
+            Texture2D<uint> Atlas;
+            StructuredBuffer<float2> Pixels;
+            RWStructuredBuffer<float> Result;
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void SampleShadow()
+            {
+                float2 uv = Pixels[0] / 256.0;
+                float3 world = float3(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.5);
+                Result[0] = SampleVirtualShadowMapFiltered(Views[0], Pages, Atlas, world,
+                    0u, 8u, 16u, 4.0, 8.0);
+            }
+            """, "SampleShadow", new(1, 1, 1),
+            [(view, ResourceBindingType.BufferSrv, 176), (pages, ResourceBindingType.BufferSrv, 16),
+             (position, ResourceBindingType.BufferSrv, 8), (new uint[1], ResourceBindingType.BufferUav, 4)],
+            new SampledImage(512, 256, pixels, 2));
+        float visibility = BitConverter.UInt32BitsToSingle(result[0][0]);
+        if (mixed) Assert.InRange(visibility, 1.0f / 16, 15.0f / 16);
+        else Assert.Equal(0.0f, visibility);
+    }
+
+    [Theory]
     [InlineData(1u)]
     [InlineData(2u)]
     public void LocalLightFallbackCoversAllProjectionCorners(uint lightKind)
@@ -37,7 +88,7 @@ public sealed class VirtualShadowSamplingTests
                     VirtualShadowMipPagePixel(view, context.MipLevel, pixel));
             }
             """, "CheckCorners", new(1, 1, 1),
-            [(view, ResourceBindingType.BufferSrv, 172), (pages, ResourceBindingType.BufferSrv, 16),
+            [(view, ResourceBindingType.BufferSrv, 176), (pages, ResourceBindingType.BufferSrv, 16),
              (new uint[16], ResourceBindingType.BufferUav, 16)]);
         for (int corner = 0; corner < 4; corner++)
         {
@@ -83,7 +134,7 @@ public sealed class VirtualShadowSamplingTests
                 Result[0] = visibility > 0.5 ? 1u : 0u;
             }
             """, "FindView", new(1, 1, 1),
-            [(views, ResourceBindingType.BufferSrv, 172), (pages, ResourceBindingType.BufferSrv, 16),
+            [(views, ResourceBindingType.BufferSrv, 176), (pages, ResourceBindingType.BufferSrv, 16),
              (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2));
         Assert.Equal(firstResident == 3 ? 1u : 0u, result[0][0]);
     }
@@ -100,7 +151,7 @@ public sealed class VirtualShadowSamplingTests
         const int pages = 341;
         uint[][] result = Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
             [([1, pages, 9, 0], ResourceBindingType.ConstantBuffer, 0),
-             (view, ResourceBindingType.BufferSrv, 172), (new uint[pages], ResourceBindingType.BufferUav, 4),
+             (view, ResourceBindingType.BufferSrv, 176), (new uint[pages], ResourceBindingType.BufferUav, 4),
              (new uint[pages], ResourceBindingType.BufferUav, 4), (new uint[pages], ResourceBindingType.BufferUav, 4),
              ([0], ResourceBindingType.BufferUav, 4), (new uint[pages * 2], ResourceBindingType.BufferUav, 8)]);
         int[] expected = selectedLevel ? [119, 120, 135, 136, 340] : [340];
@@ -110,7 +161,7 @@ public sealed class VirtualShadowSamplingTests
 
     private static uint[] CreateView(int level)
     {
-        uint[] view = new uint[43];
+        uint[] view = new uint[44];
         Matrix4x4 matrix = Matrix4x4.Identity;
         MemoryMarshal.Write(MemoryMarshal.AsBytes(view.AsSpan()), in matrix);
         view[16] = 2048;

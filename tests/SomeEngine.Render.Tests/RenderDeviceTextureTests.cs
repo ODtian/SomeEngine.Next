@@ -420,6 +420,63 @@ public sealed class RenderDeviceTextureTests
         secondRenderer.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeviceFirstUsedDuringAnUpdateJoinsCompletionAndCanCancel(bool cancel)
+    {
+        var description = new TextureDesc(GraphicsTextureDimension.Texture2D,
+            1, 1, 1, 1, 1, 1, Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination);
+        using EngineTexture texture = EngineTexture.Create(description,
+            [Tile(0, 0, 1, 1, [7])], GraphicsTextureViewDimension.Texture2D);
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device firstDevice = CreateWarpDevice(backend, "existing texture device");
+        using Device secondDevice = CreateWarpDevice(backend, "new texture device");
+        using var firstRenderer = new RenderDevice(backend, firstDevice);
+        using var secondRenderer = new RenderDevice(backend, secondDevice);
+        using var firstGraph = CreateGraph(backend, firstDevice);
+        using var secondGraph = CreateGraph(backend, secondDevice);
+        RhiTexture old = ExecuteTextureFrame(firstGraph, firstRenderer, texture);
+        Task update = texture.UpdateAsync(description,
+            [Tile(0, 0, 1, 1, [9])], GraphicsTextureViewDimension.Texture2D).AsTask();
+        RenderGraphFrame frame = secondGraph.BeginFrame();
+        try
+        {
+            GraphPassId consumer = frame.AddGeneralPass("new device texture",
+                PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition _, ref int _) => { },
+                static (ref GeneralPassCommandScope _, in int _) => { });
+            _ = secondRenderer.PrepareTexture(ref frame, consumer, texture);
+            _ = ExecuteTextureFrame(firstGraph, firstRenderer, texture);
+            Assert.False(update.IsCompleted);
+            Assert.Equal(1ul, texture.Revision);
+            if (!cancel)
+            {
+                var completions = new QueueCompletion[secondGraph.MaximumQueueCompletionCount];
+                int count = frame.Execute(completions);
+                secondRenderer.TrackSubmission(completions.AsSpan(0, count));
+            }
+        }
+        finally { frame.Dispose(); }
+        if (cancel)
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => update.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.Equal(1ul, texture.Revision);
+            Assert.Same(old, firstRenderer.GetTexture(texture));
+            Assert.False(texture.TryGetTexture(secondDevice, out _));
+            _ = ExecuteTextureFrame(secondGraph, secondRenderer, texture);
+        }
+        else
+        {
+            await update.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(2ul, texture.Revision);
+            Assert.NotSame(old, firstRenderer.GetTexture(texture));
+        }
+        firstRenderer.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+        secondRenderer.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+    }
+
     private static async Task WaitForUpdateAsync(EngineTexture texture, Task update)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -457,14 +514,17 @@ public sealed class RenderDeviceTextureTests
                 view.Description.Format,
                 view.Description.Dimension,
                 "Texture test graph view");
-            _ = frame.AddGeneralPass(
-                "Texture test reader",
-                PassQueueSelection.AnyOfType(QueueType.Graphics),
-                graphView,
-                new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition definition, ref GraphTextureSrvId value) =>
-                    _ = definition.Read(value, PipelineSync.AllShading),
-                static (ref GeneralPassCommandScope _, in GraphTextureSrvId _) => { });
+            var consumers = new GraphPassId[2];
+            for (int index = 0; index < consumers.Length; index++)
+                consumers[index] = frame.AddGeneralPass(
+                    "Texture test reader " + index,
+                    PassQueueSelection.AnyOfType(QueueType.Graphics),
+                    graphView,
+                    new PassOptions(Culling: PassCullingMode.NeverCull),
+                    static (ref PassDefinition definition, ref GraphTextureSrvId value) =>
+                        _ = definition.Read(value, PipelineSync.AllShading),
+                    static (ref GeneralPassCommandScope _, in GraphTextureSrvId _) => { });
+            Assert.Same(resource, renderDevice.PrepareTexture(ref frame, consumers, asset));
             count = frame.Execute(completions);
         }
         finally

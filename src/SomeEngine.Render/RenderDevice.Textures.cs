@@ -108,23 +108,31 @@ public sealed partial class RenderDevice
     public RhiTexture PrepareTexture(
         ref RenderGraphFrame frame,
         GraphPassId consumer,
+        EngineTexture asset) => PrepareTexture(ref frame, [consumer], asset);
+
+    /// <summary>Prepares one texture and orders every supplied consumer after its uploads.</summary>
+    public RhiTexture PrepareTexture(
+        ref RenderGraphFrame frame,
+        scoped ReadOnlySpan<GraphPassId> consumers,
         EngineTexture asset)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(asset);
         EngineTexture content = asset.GetUploadContent();
-        if (!content.HasBootstrap)
+        _ = asset.TryGetDeviceData(_device, out TextureRealization? realization);
+        if ((realization is null || !realization.Initialized || realization.Revision != content.Revision) &&
+            !content.HasBootstrap)
             throw new InvalidOperationException("A Texture must have a resident Bootstrap before rendering.");
 
-        TextureRealization? realization;
-        if (!asset.TryGetDeviceData(_device, out realization))
+        if (realization is null)
         {
             realization = CreateTexture(TextureShape.From(content, _device), content.Name);
             try
             {
-                UploadCurrentResident(ref frame, consumer, content, realization, replaceContents: true);
+                UploadCurrentResident(ref frame, content, realization, replaceContents: true);
                 realization.Revision = content.Revision;
                 realization.Initialized = true;
+                if (!ReferenceEquals(content, asset)) realization.ReplacedAsset = asset;
                 asset.SetDeviceData(_device, realization);
                 _textures.Add(asset);
                 realization.TextureObject = asset;
@@ -138,7 +146,7 @@ public sealed partial class RenderDevice
         }
         else if (!realization.Initialized && ReferenceEquals(content, asset))
         {
-            UploadCurrentResident(ref frame, consumer, content, realization, replaceContents: true);
+            UploadCurrentResident(ref frame, content, realization, replaceContents: true);
             realization.Revision = content.Revision;
             realization.Initialized = true;
         }
@@ -149,7 +157,7 @@ public sealed partial class RenderDevice
                 TextureRealization replacement = CreateTexture(nextShape, content.Name);
                 try
                 {
-                    UploadCurrentResident(ref frame, consumer, content, replacement, replaceContents: true);
+                    UploadCurrentResident(ref frame, content, replacement, replaceContents: true);
                     replacement.Revision = content.Revision;
                     replacement.Initialized = true;
                 }
@@ -169,23 +177,22 @@ public sealed partial class RenderDevice
         }
         else
         {
-            UploadCurrentResident(ref frame, consumer, content, realization, replaceContents: false);
+            UploadCurrentResident(ref frame, content, realization, replaceContents: false);
         }
 
         EnsureImported(ref frame, realization);
-        EnsureFinalizationPass(ref frame, realization);
-        foreach (GraphPassId upload in realization.UploadPasses)
-        {
-            frame.OrderAfter(consumer, upload);
-            frame.OrderAfter(realization.FinalizationPass, upload);
-        }
-        frame.OrderAfter(realization.FinalizationPass, consumer);
+        OrderTextureConsumers(ref frame, realization, consumers);
         return realization.Resource;
     }
 
     public RhiTexture PrepareMissingTexture(
         ref RenderGraphFrame frame,
-        GraphPassId consumer)
+        GraphPassId consumer) => PrepareMissingTexture(ref frame, [consumer]);
+
+    /// <summary>Prepares the fallback texture and orders every supplied consumer after its upload.</summary>
+    public RhiTexture PrepareMissingTexture(
+        ref RenderGraphFrame frame,
+        scoped ReadOnlySpan<GraphPassId> consumers)
     {
         ThrowIfDisposed();
         TextureRealization realization = RequireMissingTexture();
@@ -213,14 +220,21 @@ public sealed partial class RenderDevice
             realization.Initialized = true;
             realization.FirstResidentMip = 0;
         }
+        OrderTextureConsumers(ref frame, realization, consumers);
+        return realization.Resource;
+    }
+
+    private static void OrderTextureConsumers(ref RenderGraphFrame frame,
+        TextureRealization realization, scoped ReadOnlySpan<GraphPassId> consumers)
+    {
+        if (realization.UploadPasses.Count == 0) return;
         EnsureFinalizationPass(ref frame, realization);
         foreach (GraphPassId upload in realization.UploadPasses)
         {
-            frame.OrderAfter(consumer, upload);
+            foreach (GraphPassId consumer in consumers) frame.OrderAfter(consumer, upload);
             frame.OrderAfter(realization.FinalizationPass, upload);
         }
-        frame.OrderAfter(realization.FinalizationPass, consumer);
-        return realization.Resource;
+        foreach (GraphPassId consumer in consumers) frame.OrderAfter(realization.FinalizationPass, consumer);
     }
 
     private void CreateMissingTexture()
@@ -297,13 +311,16 @@ public sealed partial class RenderDevice
 
     private void UploadCurrentResident(
         ref RenderGraphFrame frame,
-        GraphPassId consumer,
         EngineTexture asset,
         TextureRealization realization,
         bool replaceContents)
     {
         EnsureNoOtherUploadFrame(ref frame, realization);
         EnsureImported(ref frame, realization);
+        // Fully uploaded content cannot acquire another tile without a new content
+        // revision. Keep frame synchronization, but skip repeated pixel discovery.
+        if (!replaceContents && realization.UploadedChunks.Count == asset.MipTiles.Count)
+            return;
         PreparedTile[] tiles = PrepareResidentTiles(asset, realization, replaceContents);
         if (replaceContents && tiles.Length == 0)
             throw new InvalidOperationException("A replacement Texture has no resident Bootstrap payload.");
@@ -323,8 +340,6 @@ public sealed partial class RenderDevice
         UpdateResidentMip(asset, realization);
         if (realization.FirstResidentMip > asset.BootstrapMipLevel)
             throw new InvalidOperationException("The resident Texture payload does not contain its Bootstrap mip.");
-        foreach (GraphPassId upload in realization.UploadPasses)
-            frame.OrderAfter(consumer, upload);
     }
 
     private PreparedTile[] PrepareResidentTiles(
@@ -450,6 +465,7 @@ public sealed partial class RenderDevice
         realization.FrameIdentity = frame.FrameIdentity;
         realization.UploadPasses.Clear();
         realization.FinalizationScheduled = false;
+        realization.FinalizationPass = default;
         TextureBoundaryState[] boundaries = CreateBoundaryStates(realization);
         realization.GraphResource = frame.Import(realization.Resource, boundaries);
         frame.ObserveExecution(realization);
@@ -794,7 +810,7 @@ public sealed partial class RenderDevice
             realization.RequestRelease();
             return;
         }
-        if (replaced is null || replacedAsset is null)
+        if (replacedAsset is null)
             return;
 
         if (executed && asset is not null && !ReferenceEquals(asset, replacedAsset))
@@ -807,9 +823,10 @@ public sealed partial class RenderDevice
             ConfirmTextureUpdate(realization);
             return;
         }
-        CancelTextureUpdate(realization);
-        if (asset is not null)
+        if (asset is not null && !ReferenceEquals(asset, replacedAsset))
             replacedAsset.FailDeviceUpdate(asset, new OperationCanceledException("Texture upload frame did not complete."));
+        else
+            CancelTextureUpdate(realization);
     }
 
     private void ConfirmTextureUpdate(TextureRealization data)
@@ -829,7 +846,8 @@ public sealed partial class RenderDevice
             bool wroteContents = false;
             foreach (GraphPassId pass in realization.UploadPasses)
                 wroteContents |= result.TryGetPassCompletion(pass, out _);
-            FinishUpload(realization, result.TryGetPassCompletion(realization.FinalizationPass, out _), wroteContents);
+            FinishUpload(realization, realization.FinalizationScheduled &&
+                result.TryGetPassCompletion(realization.FinalizationPass, out _), wroteContents);
             if (!result.SubmittedCompletions.IsEmpty) TrackSubmission(result.SubmittedCompletions);
         }
         finally
@@ -844,9 +862,17 @@ public sealed partial class RenderDevice
     {
         EngineTexture? texture = data.ReplacedAsset;
         TextureRealization? previous = data.ReplacedRealization;
-        if (texture is null || previous is null) return;
-        if (!texture.IsDisposed) texture.SetDeviceData(_device, previous);
-        else previous.RequestRelease();
+        if (texture is null) return;
+        if (previous is not null)
+        {
+            if (!texture.IsDisposed) texture.SetDeviceData(_device, previous);
+            else previous.RequestRelease();
+        }
+        else
+        {
+            texture.RemoveDeviceData(_device);
+            _textures.Remove(texture);
+        }
         data.ReplacedRealization = null;
         data.ReplacedAsset = null;
         if (data.PendingFrameGraph is not null) data.ReleaseAfterUpload = true;

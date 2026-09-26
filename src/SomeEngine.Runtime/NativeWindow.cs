@@ -177,17 +177,35 @@ internal sealed class NativeWindow : IDisposable
 
     internal void WaitForEvents(TimeSpan timeout)
     {
+        _ = MsgWaitForMultipleObjectsEx(0, 0, GetWaitMilliseconds(timeout), QueueAllInput, WaitInputAvailable);
+    }
+
+    internal void WaitForEvents(WaitHandle completion, TimeSpan timeout)
+    {
+        var handle = completion.SafeWaitHandle;
+        bool referenced = false;
+        try
+        {
+            handle.DangerousAddRef(ref referenced);
+            nint value = handle.DangerousGetHandle();
+            uint result = MsgWaitForMultipleObjectsEx(
+                1, in value, GetWaitMilliseconds(timeout), QueueAllInput, WaitInputAvailable);
+            if (result == uint.MaxValue)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Waiting for task completion and window messages failed.");
+        }
+        finally
+        {
+            if (referenced) handle.DangerousRelease();
+        }
+    }
+
+    private static uint GetWaitMilliseconds(TimeSpan timeout)
+    {
         if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
             throw new ArgumentOutOfRangeException(nameof(timeout));
-        uint milliseconds = timeout == Timeout.InfiniteTimeSpan
+        return timeout == Timeout.InfiniteTimeSpan
             ? uint.MaxValue
             : checked((uint)Math.Clamp((long)Math.Ceiling(timeout.TotalMilliseconds), 0, uint.MaxValue - 1L));
-        _ = MsgWaitForMultipleObjectsEx(
-            0,
-            0,
-            milliseconds,
-            QueueAllInput,
-            WaitInputAvailable);
     }
 
     public void Dispose()
@@ -634,6 +652,14 @@ internal sealed class NativeWindow : IDisposable
     private static extern uint MsgWaitForMultipleObjectsEx(
         uint count,
         nint handles,
+        uint milliseconds,
+        uint wakeMask,
+        uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint MsgWaitForMultipleObjectsEx(
+        uint count,
+        in nint handles,
         uint milliseconds,
         uint wakeMask,
         uint flags);

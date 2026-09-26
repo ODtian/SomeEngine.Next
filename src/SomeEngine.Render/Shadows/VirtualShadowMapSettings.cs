@@ -29,8 +29,9 @@ public sealed record VirtualShadowMapSettings
     public float DirectionalNearPlane { get; init; } = 0.1f;
     public float DirectionalFarPlane { get; init; } = 1000.0f;
     public float LocalNearPlane { get; init; } = 0.05f;
-    public float BlockerSearchRadiusTexels { get; init; } = 4.0f;
-    public float MaxFilterRadiusTexels { get; init; } = 8.0f;
+    public float BlockerSearchRadiusTexels { get; init; }
+    /// <summary>Zero selects one depth comparison without blocker search or filtering.</summary>
+    public float MaxFilterRadiusTexels { get; init; }
     public uint BlockerSampleCount { get; init; } = 8;
     public uint FilterSampleCount { get; init; } = 16;
 

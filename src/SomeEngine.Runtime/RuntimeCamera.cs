@@ -24,6 +24,15 @@ internal sealed class RuntimeCamera
     }
 
     internal Vector3 Position { get; private set; }
+    internal Vector3 Forward => _forward;
+
+    internal void SetView(Vector3 position, Vector3 target)
+    {
+        SetPosition(position);
+        Vector3 direction = Vector3.Normalize(target - position);
+        if (MathF.Abs(Vector3.Dot(direction, _worldUp)) < MaximumUpAlignment)
+            _forward = direction;
+    }
 
     internal void SetPosition(Vector3 position)
     {

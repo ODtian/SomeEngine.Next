@@ -31,7 +31,7 @@ public sealed class ClusterMaterialAssignments
 }
 
 /// <summary>
-/// Extracted material values with persistent mesh-local offsets. Removing a sequence does not
+/// Shared material references with persistent mesh-local offsets. Removing a sequence does not
 /// renumber another entity; unused ranges can be reused by later sequences of the same length.
 /// </summary>
 public sealed class ClusterMaterialAssignmentSet
@@ -41,7 +41,7 @@ public sealed class ClusterMaterialAssignmentSet
     private ImmutableDictionary<ClusterMaterialSequence, (uint Offset, int References)> _sequences = ImmutableDictionary<ClusterMaterialSequence, (uint, int)>.Empty;
     private ImmutableDictionary<int, ImmutableStack<uint>> _free = ImmutableDictionary<int, ImmutableStack<uint>>.Empty;
     private ImmutableDictionary<int, (long Material, string Encoding)> _entries = ImmutableDictionary<int, (long, string)>.Empty;
-    private ImmutableDictionary<long, MaterialData> _values = ImmutableDictionary<long, MaterialData>.Empty;
+    private ImmutableDictionary<long, (Material Resource, ulong Revision)> _values = ImmutableDictionary<long, (Material Resource, ulong Revision)>.Empty;
     private ImmutableDictionary<long, ImmutableHashSet<int>> _materialOffsets = ImmutableDictionary<long, ImmutableHashSet<int>>.Empty;
     private ImmutableHashSet<long> _changes = ImmutableHashSet<long>.Empty;
     private ImmutableHashSet<int> _changedOffsets = ImmutableHashSet<int>.Empty;
@@ -66,20 +66,25 @@ public sealed class ClusterMaterialAssignmentSet
     public uint SlotCount => checked((uint)_entries.Count);
     public uint SlotCapacity => Math.Max(1u, _capacity);
     public uint MaterialCount => checked((uint)_values.Count);
-    public IEnumerable<MaterialData> DistinctMaterials => _values.Values;
+    public IEnumerable<Material> DistinctMaterials => _values.Values.Select(value => value.Resource);
     internal IEnumerable<long> ChangedMaterialIds => _changes;
-    internal IEnumerable<MaterialData> ChangedMaterials => _changes.Where(_values.ContainsKey).Select(id => _values[id]);
+    internal IEnumerable<Material> ChangedMaterials => _changes.Where(_values.ContainsKey).Select(id => _values[id].Resource);
     internal IEnumerable<int> ActiveOffsets => _entries.Keys;
     internal IEnumerable<int> ChangedOffsets => _changedOffsets;
     internal IEnumerable<Entity> Entities => _entities.Keys;
     internal IEnumerable<int> GetMaterialOffsets(long id) =>
         _materialOffsets.TryGetValue(id, out var offsets) ? offsets : [];
-    internal bool TryGetMaterial(long id, out MaterialData material) => _values.TryGetValue(id, out material!);
-    internal bool TryGetEntry(int offset, out MaterialData material, out string encoding)
+    internal bool TryGetMaterial(long id, out Material material)
+    {
+        bool found = _values.TryGetValue(id, out var value);
+        material = value.Resource!;
+        return found;
+    }
+    internal bool TryGetEntry(int offset, out Material material, out string encoding)
     {
         if (_entries.TryGetValue(offset, out var entry))
         {
-            material = _values[entry.Material];
+            material = _values[entry.Material].Resource;
             encoding = entry.Encoding;
             return true;
         }
@@ -112,11 +117,14 @@ public sealed class ClusterMaterialAssignmentSet
     {
         private readonly ClusterMaterialAssignmentSet _source;
         private readonly ClusterMaterialAssignmentSet _result;
+        private readonly RenderWorld _world;
+        private readonly HashSet<long> _neededMaterials = [];
         private bool _topologyChanged;
-        internal Update(ClusterMaterialAssignmentSet source)
+        internal Update(ClusterMaterialAssignmentSet source, RenderWorld world)
         {
             _source = source;
             _result = new(source);
+            _world = world;
         }
 
         internal void Set(Entity entity, ReadOnlySpan<RenderMaterialBinding> bindings, string encoding)
@@ -124,7 +132,6 @@ public sealed class ClusterMaterialAssignmentSet
             if (bindings.IsEmpty) throw new InvalidOperationException("A Cluster mesh instance has no material binding.");
             if (_result._entities.TryGetValue(entity, out var previous) && previous.Matches(bindings, encoding))
             {
-                foreach (RenderMaterialBinding binding in bindings) SetValue(binding.Material);
                 return;
             }
             Remove(entity);
@@ -148,7 +155,7 @@ public sealed class ClusterMaterialAssignmentSet
                 for (int index = 0; index < bindings.Length; index++)
                 {
                     int address = checked((int)offset + index);
-                    long id = bindings[index].Material.MaterialId;
+                    long id = bindings[index].MaterialId;
                     _result._entries = _result._entries.Add(address, (id, encoding));
                     ImmutableHashSet<int> addresses = _result._materialOffsets.TryGetValue(id, out var existing)
                         ? existing : ImmutableHashSet<int>.Empty;
@@ -158,13 +165,16 @@ public sealed class ClusterMaterialAssignmentSet
                 _topologyChanged = true;
             }
             _result._entities = _result._entities.Add(entity, sequence);
-            foreach (RenderMaterialBinding binding in bindings) SetValue(binding.Material);
+            foreach (RenderMaterialBinding binding in bindings)
+                if (!_result._values.ContainsKey(binding.MaterialId))
+                    _neededMaterials.Add(binding.MaterialId);
         }
 
-        private void SetValue(MaterialData material)
+        internal void SetValue(Material material)
         {
-            if (_result._values.TryGetValue(material.MaterialId, out var value) && ReferenceEquals(value, material)) return;
-            _result._values = _result._values.SetItem(material.MaterialId, material);
+            if (!_result._materialOffsets.ContainsKey(material.MaterialId)) return;
+            if (_result._values.TryGetValue(material.MaterialId, out var value) && ReferenceEquals(value.Resource, material) && value.Revision == material.Revision) return;
+            _result._values = _result._values.SetItem(material.MaterialId, (material, material.Revision));
             _result._changes = _result._changes.Add(material.MaterialId);
         }
 
@@ -202,6 +212,9 @@ public sealed class ClusterMaterialAssignmentSet
 
         internal ClusterMaterialAssignmentSet Complete()
         {
+            foreach (long id in _neededMaterials)
+                if (_result._materialOffsets.ContainsKey(id) && !_result._values.ContainsKey(id))
+                    SetValue(_world.ReadMaterial(id));
             if (_topologyChanged) _result.TopologyVersion = checked(_source.TopologyVersion + 1);
             return _result;
         }
@@ -221,7 +234,7 @@ internal sealed class ClusterMaterialSequence : IEquatable<ClusterMaterialSequen
         hash.Add(encoding, StringComparer.Ordinal);
         for (int index = 0; index < bindings.Length; index++)
         {
-            _materials[index] = bindings[index].Material.MaterialId;
+            _materials[index] = bindings[index].MaterialId;
             hash.Add(_materials[index]);
         }
         _hash = hash.ToHashCode();
@@ -231,7 +244,7 @@ internal sealed class ClusterMaterialSequence : IEquatable<ClusterMaterialSequen
     {
         if (_encoding != encoding || bindings.Length != _materials.Length) return false;
         for (int index = 0; index < bindings.Length; index++)
-            if (bindings[index].Material.MaterialId != _materials[index]) return false;
+            if (bindings[index].MaterialId != _materials[index]) return false;
         return true;
     }
     public bool Equals(ClusterMaterialSequence? other) => ReferenceEquals(this, other) ||
@@ -247,6 +260,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
         new("render", "Prepare.ClusterMaterials");
     private readonly ClusterMaterialAssignments _assignments;
     private QueryHandle _query;
+    private QueryHandle _materialQuery;
     private EntityTableChanges? _tableChanges;
     private bool _created;
     public ClusterMaterialAssignmentSystem(ClusterMaterialAssignments assignments) =>
@@ -258,8 +272,17 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
     {
         if (_created) throw new InvalidOperationException("The material assignment system is already created.");
         _query = context.World.Query(EntityQuery());
-        try { _tableChanges = context.World.ObserveEntityTables(); }
-        catch { context.World.ReleaseQuery(_query); throw; }
+        try
+        {
+            _materialQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderMaterialReference>());
+            _tableChanges = context.World.ObserveEntityTables();
+        }
+        catch
+        {
+            if (_materialQuery.IsValid) context.World.ReleaseQuery(_materialQuery);
+            context.World.ReleaseQuery(_query);
+            throw;
+        }
         _created = true;
     }
     public void OnUpdate(ref RenderPrepareSystemContext context)
@@ -267,10 +290,12 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         if (!_created) throw new InvalidOperationException("The material assignment system was not created.");
         EntityTableChangeBatch membership = _tableChanges!.Read();
-        var update = new AssignmentChanges(_assignments.Current);
+        var update = new AssignmentChanges(_assignments.Current, context.World);
         foreach (Entity entity in membership.Entities) update.CollectMembership(context.World, entity);
         context.World.ExecuteQuery(_query, context.LastSystemVersion, ref update,
             static (QueryCursor query, ref AssignmentChanges changes) => changes.Collect(query));
+        context.World.ExecuteQuery(_materialQuery, context.LastSystemVersion, ref update,
+            static (QueryCursor query, ref AssignmentChanges changes) => changes.CollectMaterials(query));
         _assignments.Publish(update.Complete());
         _tableChanges.Accept(membership);
     }
@@ -278,14 +303,16 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
     {
         if (!_created) return;
         context.World.ReleaseQuery(_query);
+        context.World.ReleaseQuery(_materialQuery);
         _query = default;
+        _materialQuery = default;
         _tableChanges!.Dispose();
         _tableChanges = null;
         _created = false;
     }
-    private sealed class AssignmentChanges(ClusterMaterialAssignmentSet source)
+    private sealed class AssignmentChanges(ClusterMaterialAssignmentSet source, RenderWorld world)
     {
-        private readonly ClusterMaterialAssignmentSet.Update _update = new(source);
+        private readonly ClusterMaterialAssignmentSet.Update _update = new(source, world);
         private readonly HashSet<Entity> _membership = [];
 
         internal void CollectMembership(RenderWorld world, Entity entity)
@@ -309,6 +336,15 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
 
         private readonly record struct MaterialBindings(
             ClusterMaterialAssignmentSet.Update Update, Entity Entity, string Encoding);
+        internal void CollectMaterials(QueryCursor query)
+        {
+            foreach (QueryChunkView chunk in query.Chunks)
+            {
+                ReadOnlySpan<RenderMaterialReference> values = chunk.Read<RenderMaterialReference>();
+                for (int row = 0; row < values.Length; row++)
+                    _update.SetValue(values[row].Material);
+            }
+        }
         internal void Collect(QueryCursor query)
         {
             foreach (QueryChunkView chunk in query.Chunks)

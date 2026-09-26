@@ -5,6 +5,13 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class RuntimeStartupOptionsConsumerTests
 {
     [Fact]
+    public void SpatialInstanceGroupsAreAnExplicitCullingChoice()
+    {
+        Assert.False(RuntimeStartupOptions.Parse([]).UseInstanceGroups);
+        Assert.True(RuntimeStartupOptions.Parse(["--instance-groups"]).UseInstanceGroups);
+    }
+
+    [Fact]
     public void ImageExportAndFeatureComparisonsKeepVerificationOptional()
     {
         var options = RuntimeStartupOptions.Parse(["--frame-output", "scene.bmp", "--no-debug-ui", "--no-taa", "--no-vsm"]);
@@ -41,9 +48,16 @@ public sealed class RuntimeStartupOptionsConsumerTests
     public void FixedStepsMustBeFiniteAndPositive(string seconds)
         => Assert.Throws<ArgumentException>(() => RuntimeStartupOptions.Parse(["--fixed-step", seconds]));
 
-    [Fact]
-    public void ScriptedSceneChangesRequireSynchronousFrames()
-        => Assert.Throws<ArgumentException>(() => RuntimeStartupOptions.Parse(["--scene-playback", "motion"]));
+    [Theory]
+    [InlineData("motion")]
+    [InlineData("materials")]
+    [InlineData("camera")]
+    public void ScriptedSceneChangesCanUseNormalFrameOverlap(string playback)
+    {
+        RuntimeStartupOptions options = RuntimeStartupOptions.Parse(["--scene-playback", playback]);
+        Assert.Equal(playback, options.ScenePlayback);
+        Assert.False(options.SynchronousFrames);
+    }
 
     [Fact]
     public void Hidden_validation_can_force_the_hardware_path_without_changing_the_adapter()

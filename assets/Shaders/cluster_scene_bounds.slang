@@ -7,7 +7,7 @@ struct ClusterSceneUniforms
 {
     uint InstanceCount;
     uint HasPreviousBounds;
-    uint Pad0;
+    uint UseInstanceGroups;
     uint Pad1;
 };
 ConstantBuffer<ClusterSceneUniforms> Scene;
@@ -32,7 +32,7 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
     float3 worldMax = -1e30.xxx;
     if (index < Scene.InstanceCount)
     {
-        uint instance = SceneInstances[index];
+        uint instance = Scene.UseInstanceGroups != 0u ? SceneInstances[index] : index;
         uint root = LoadClusterBvhRoot(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BVH_ROOT_METADATA_WORD), instance);
         float3 previousMin = worldMin;
@@ -62,6 +62,9 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
         InstanceWorldBounds[instance * 4u + 2u] = float4(previousMin, 0.0);
         InstanceWorldBounds[instance * 4u + 3u] = float4(previousMax, 0.0);
     }
+    if (Scene.UseInstanceGroups == 0u)
+        return;
+
     uint wave = lane / WaveGetLaneCount();
     float3 low = WaveActiveMin(worldMin);
     float3 high = WaveActiveMax(worldMax);

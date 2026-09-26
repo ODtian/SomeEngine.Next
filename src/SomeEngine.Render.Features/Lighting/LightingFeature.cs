@@ -34,7 +34,7 @@ public readonly record struct LightingFeatureResources(
 /// Standard shade discovers these resources from its final linked program through the generic
 /// graph resource boundary.
 /// </summary>
-public sealed class LightingFeature : IGraphResourceProvider, IDisposable
+public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRenderGraphFrameExecutionObserver
 {
     private const uint ThreadCount = 64;
     private readonly LinkedComputePipeline _pipeline;
@@ -53,6 +53,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable
     private readonly ClusteredLightGridParameters[] _viewParameters;
     private readonly GraphBufferInput _frameLights;
     private readonly GraphBufferInput _frameViews;
+    private bool _cookieInitialized;
     private bool _disposed;
 
     public LightingFeature(
@@ -311,8 +312,14 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable
                 checked((uint)views.Length),
                 parameters[0].GroupsPerLight)));
         graph.SetPassEnabled(_clearPass, true);
-        graph.SetPassEnabled(_cookieInitializePass, true);
+        graph.SetPassEnabled(_cookieInitializePass, !_cookieInitialized);
+        if (!_cookieInitialized) graph.ObserveExecution(this);
         graph.SetPassEnabled(_buildPass, enabled && nonDirectionalCount != 0);
+    }
+
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    {
+        if (result.TryGetPassCompletion(_cookieInitializePass, out _)) _cookieInitialized = true;
     }
 
     public bool TryResolve(

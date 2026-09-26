@@ -59,6 +59,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
     private readonly ClusterRenderResources _resources;
     private readonly QueryDefinition _entities;
     private readonly ClusterBatchComposer _composer;
+    private readonly InstanceColumnChanges _columnChanges = new();
     private readonly RenderInstanceBatchBuilder<RenderInstanceSingleGroup> _builder;
     private QueryHandle _entityQuery;
     private int _publishedMeshCount;
@@ -80,7 +81,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
                 exactShaderLayout,
                 resources.CreateGeometryProducer(),
                 additional);
-        _composer = new ClusterBatchComposer(exactShaderLayout, combined);
+        _composer = new ClusterBatchComposer(exactShaderLayout, combined, _columnChanges);
         _builder = new RenderInstanceBatchBuilder<RenderInstanceSingleGroup>(
             groupingPartitions: 1,
             rowsPerPacket);
@@ -113,6 +114,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
         _resources.EnterInstanceComposition();
         try
         {
+            _columnChanges.Reset(context.LastSystemVersion);
             _ = _builder.Update(
                 context,
                 _entityQuery,
@@ -171,11 +173,32 @@ public sealed class ClusterInstanceSystem<TProducer> :
         }
     }
 
+    private sealed class InstanceColumnChanges
+    {
+        internal const int CurrentTransform = 1, PreviousTransform = 2, Mesh = 4, Additional = 8;
+        internal const int InitialValues = 16;
+        internal const int All = CurrentTransform | PreviousTransform | Mesh | Additional | InitialValues;
+        private int _fields;
+        private int _partialTransformChanges;
+        internal uint LastVersion { get; private set; }
+        internal int Fields => Volatile.Read(ref _fields);
+        internal bool AllTransformsChanged => Volatile.Read(ref _partialTransformChanges) == 0;
+        internal void Reset(uint lastVersion)
+        {
+            LastVersion = lastVersion;
+            _fields = 0;
+            _partialTransformChanges = 0;
+        }
+        internal void Add(int fields) => Interlocked.Or(ref _fields, fields);
+        internal void RecordPartialTransformChanges() => Interlocked.Exchange(ref _partialTransformChanges, 1);
+    }
+
     private readonly struct ClusterBatchComposer(
         RenderInstancePropertyLayout layout,
         RenderInstanceProducerBundle<
             ClusterRenderResources.ClusterGeometryProducer,
-            TProducer> producer) :
+            TProducer> producer,
+        InstanceColumnChanges columns) :
         IRenderInstanceBatchComposer<RenderInstanceSingleGroup>
     {
         public RenderInstanceChanges GetChanges(
@@ -183,10 +206,31 @@ public sealed class ClusterInstanceSystem<TProducer> :
             uint lastSystemVersion) =>
             producer.GetChanges(packet, lastSystemVersion);
 
+        public RenderInstanceChanges CollectChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion)
+        {
+            if (!packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion) ||
+                !packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion))
+                columns.RecordPartialTransformChanges();
+            RenderInstanceChanges changes = GetChanges(packet, lastSystemVersion);
+            if ((changes & RenderInstanceChanges.Structure) != 0)
+                columns.Add(InstanceColumnChanges.All);
+            else if (changes != RenderInstanceChanges.None)
+            {
+                int fields = 0;
+                if (packet.ChangedSince<RenderTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.CurrentTransform;
+                if (packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.PreviousTransform;
+                if (packet.ChangedSince<RenderMesh>(lastSystemVersion)) fields |= InstanceColumnChanges.Mesh;
+                if (producer.Second.GetChanges(packet, lastSystemVersion) != RenderInstanceChanges.None)
+                    fields |= InstanceColumnChanges.Additional;
+                columns.Add(fields);
+            }
+            return changes;
+        }
+
         public bool AllRowsChanged(
             ReadOnlyQueryPacket packet,
             uint lastSystemVersion) =>
-            packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
+            columns.AllTransformsChanged || packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
             || packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion)
             || packet.AllRowsChangedSince<RenderMesh>(lastSystemVersion);
 
@@ -203,10 +247,29 @@ public sealed class ClusterInstanceSystem<TProducer> :
         public RenderInstancePropertyLayout GetLayout(
             in RenderInstanceSingleGroup group) => layout;
 
+        public RenderInstancePropertyLayout? GetReplacedProperties(in RenderInstanceSingleGroup group, bool writeAll) =>
+            writeAll || columns.AllTransformsChanged ? RenderInstanceTransformProperties.Layout : null;
+
         public void Bind(
             in RenderInstanceSingleGroup group,
-            RenderInstanceWriteSlice destination) =>
+            RenderInstanceWriteSlice destination)
+        {
+            columns.Add(InstanceColumnChanges.All);
             producer.Bind(destination);
+        }
+
+        public void BindUpdate(in RenderInstanceSingleGroup group,
+            RenderInstanceWriteSlice destination, bool writeAll)
+        {
+            if (writeAll) columns.Add(InstanceColumnChanges.All);
+            int fields = columns.Fields;
+            producer.First.Bind(destination.Restrict(producer.First.Properties),
+                (fields & InstanceColumnChanges.CurrentTransform) != 0,
+                (fields & InstanceColumnChanges.PreviousTransform) != 0,
+                (fields & InstanceColumnChanges.Mesh) != 0);
+            if ((fields & InstanceColumnChanges.Additional) != 0)
+                producer.Second.Bind(destination.Restrict(producer.Second.Properties));
+        }
 
         public void Write(
             in RenderInstanceSingleGroup group,
@@ -214,7 +277,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
             ReadOnlyQueryPacket packet,
             int entityRow,
             RenderInstanceWriteSlice destination) =>
-            producer.Write(destination, packet.Slice(entityRow, 1));
+            WritePacket(in group, groupIndex, packet.Slice(entityRow, 1), destination);
 
         public void WritePacket(
             in RenderInstanceSingleGroup group,
@@ -224,7 +287,16 @@ public sealed class ClusterInstanceSystem<TProducer> :
         {
             if (groupIndex != 0)
                 throw new ArgumentOutOfRangeException(nameof(groupIndex));
-            producer.Write(destination, packet);
+            int fields = columns.Fields;
+            bool all = (fields & InstanceColumnChanges.InitialValues) != 0;
+            uint lastVersion = columns.LastVersion;
+            producer.First.Write(destination.Restrict(producer.First.Properties), packet,
+                all || (fields & InstanceColumnChanges.CurrentTransform) != 0 && packet.ChangedSince<RenderTransform>(lastVersion),
+                all || (fields & InstanceColumnChanges.PreviousTransform) != 0 && packet.ChangedSince<RenderPreviousTransform>(lastVersion),
+                all || (fields & InstanceColumnChanges.Mesh) != 0 && packet.ChangedSince<RenderMesh>(lastVersion));
+            if (all || (fields & InstanceColumnChanges.Additional) != 0 &&
+                producer.Second.GetChanges(packet, lastVersion) != RenderInstanceChanges.None)
+                producer.Second.Write(destination.Restrict(producer.Second.Properties), packet);
         }
     }
 }

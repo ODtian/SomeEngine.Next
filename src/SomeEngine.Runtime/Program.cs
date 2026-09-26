@@ -2,7 +2,7 @@ namespace SomeEngine.Runtime;
 
 public static class Application
 {
-    public static async Task<int> RunAsync(string[] args, Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null)
+    public static async Task<int> RunAsync(string[] args, Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null, SceneTestPlatform? platform = null)
     {
         try
         {
@@ -38,7 +38,7 @@ public static class Application
 
             bool useWarp = args.Any(static value =>
                 string.Equals(value, "--warp", StringComparison.OrdinalIgnoreCase));
-            await RuntimeApplication.RunAsync(options, useWarp, animateMaterial).ConfigureAwait(false);
+            await RuntimeApplication.RunAsync(options, useWarp, animateMaterial, platform).ConfigureAwait(false);
             return 0;
         }
         catch (Exception failure)

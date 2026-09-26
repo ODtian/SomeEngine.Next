@@ -34,9 +34,10 @@ public sealed partial class ClusterPipelineSystem
             ReconcileStageResources(ref edit, assignments, rasterStages, shadeStages);
             UpdateShadeBinning(ref edit);
             UpdateShadeGroups(ref edit, shadeStages);
-            var materialBuffers = UpdateMaterialBuffers(ref edit, assignments);
+            var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
             edit.Commit();
-            _materialBuffers = materialBuffers;
+            _materialBuffers = materialResources.Buffers;
+            AcceptMaterialTextures(materialResources.Textures);
         }
         catch
         {
@@ -142,6 +143,18 @@ public sealed partial class ClusterPipelineSystem
         return after.MoveNext() ? _shadeGroups[after.Current].Pass : _shadeCompleteBefore;
     }
 
+    private static uint CalculateShadeBinItemCapacity(in FrameResources frame)
+    {
+        ulong itemCapacity = Math.Min((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount, uint.MaxValue);
+        ulong quadWidth = ((ulong)frame.Width + 1u) / 2u;
+        ulong quadHeight = ((ulong)frame.Height + 1u) / 2u;
+        ulong quads = quadWidth * quadHeight * frame.ViewCount;
+        // Reserve a disjoint worst-case range per bin only when it fits the existing
+        // pixel buffer. Larger bin sets retain compact count/reserve/scatter storage.
+        return quads != 0 && quads <= uint.MaxValue && frame.ShadeBinCount <= itemCapacity / quads
+            ? (uint)quads : 0u;
+    }
+
     private void UpdateShadeBinning(ref RenderGraphEdit graph)
     {
         Span<ClusterShadeBinUniforms> value = stackalloc ClusterShadeBinUniforms[1];
@@ -151,6 +164,7 @@ public sealed partial class ClusterPipelineSystem
             ScreenHeight = checked((uint)_frameResources.Height),
             ShadeBinCount = _frameResources.ShadeBinCount,
             SlotCapacity = _frameResources.SlotCapacity,
+            BinItemCapacity = CalculateShadeBinItemCapacity(_frameResources),
         };
         _uploads!.SetUniformValue(ref graph, _shadeBinUniforms, MemoryMarshal.AsBytes(value));
     }

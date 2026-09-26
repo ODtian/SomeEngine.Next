@@ -813,7 +813,8 @@ public sealed class VirtualShadowMap : IDisposable
         left.ClipmapLevelCount == right.ClipmapLevelCount &&
         left.MipLevelCount == right.MipLevelCount &&
         left.MinMipLevel == right.MinMipLevel &&
-        left.Flags == right.Flags &&
+        (left.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) ==
+            (right.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) &&
         left.LightKind == right.LightKind &&
         left.FaceIndex == right.FaceIndex &&
         left.LightPosition == right.LightPosition &&

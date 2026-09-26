@@ -92,19 +92,20 @@ internal sealed partial class FrameExecutor
         {
             FrameResourceAccess access = _accesses[index];
             if (!access.Connected) continue;
-            accesses.Add(new RenderGraphAccessDiagnostic(
-                new GraphPassId(_passes[access.PassIndex].Identity),
-                access.TargetKind,
-                access.ResourceIndex,
-                access.Mode,
-                access.Coverage,
-                access.Sync,
-                access.Access,
-                access.BufferRange,
-                access.TextureRange,
-                access.TextureLayout,
-                access.ResultContents,
-                access.BufferContentScope, access.QueryRange));
+            foreach (BufferRange range in access.BufferRanges)
+                accesses.Add(new RenderGraphAccessDiagnostic(
+                    new GraphPassId(_passes[access.PassIndex].Identity),
+                    access.TargetKind,
+                    access.ResourceIndex,
+                    access.Mode,
+                    access.Coverage,
+                    access.Sync,
+                    access.Access,
+                    range,
+                    access.TextureRange,
+                    access.TextureLayout,
+                    access.ResultContents,
+                    access.BufferContentScope, access.QueryRange));
         }
 
         var dependencies = new List<RenderGraphDependencyDiagnostic>();

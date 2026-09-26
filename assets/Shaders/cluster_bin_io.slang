@@ -28,7 +28,7 @@ uint SlotBin(
     uint maxBins)
 {
     uint key = GetStageSlot(slots, slotOffset, localMaterialIndex, capacity);
-    return ValidBin(key & 0x7FFFFFFFu, maxBins);
+    return ValidBin(key & 0x1FFFFFFFu, maxBins);
 }
 
 void WriteDispatch(
@@ -50,6 +50,9 @@ void ClearRaster(
     bins[bin].BinHWCount = 0;
     bins[bin].SWCursor = 0;
     bins[bin].HWCursor = 0;
+    bins[bin].ClusterOffset = 0;
+    bins[bin].BinCapacity = 0;
+    bins[bin].HardwareOffset = 0;
 }
 
 void CountRaster(
@@ -103,19 +106,23 @@ void ReserveRaster(
     if (bin >= maxBins) return;
 
     uint total = swCount + hwCount;
-    uint totalOffset = totalBase + totalInc - total;
+    uint capacity = bins[bin].BinCapacity;
+    bool direct = capacity != 0u;
+    uint totalOffset = direct ? bins[bin].ClusterOffset : totalBase + totalInc - total;
     uint swOffset = swBase + swInc - swCount;
+    uint hardwareOffset = direct ? bins[bin].HardwareOffset : totalOffset + swCount;
 
     bins[bin].ClusterOffset = totalOffset;
-    bins[bin].BinCapacity = total;
+    bins[bin].BinCapacity = direct ? capacity : total;
     bins[bin].SWCursor = 0;
     bins[bin].HWCursor = 0;
     bins[bin].SWOffset = swOffset;
+    bins[bin].HardwareOffset = hardwareOffset;
 
     StoreDrawInstancedArgs(
         hwArgs,
         bin * 32u,
-        DrawInstancedArgs(96, hwCount, 0, totalOffset + swCount));
+        DrawInstancedArgs(96, hwCount, 0, hardwareOffset));
     StoreDispatchArgs(hwArgs, bin * 32u + 16u, BinDispatch(hwCount));
     hwArgs.Store(bin * 32u + 28u, 0u);
     WriteDispatch(swArgs, bin, swCount);

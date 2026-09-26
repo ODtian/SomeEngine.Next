@@ -66,7 +66,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
     /// Returns this extension's compact value offset for one Material slot. Resolve this while
     /// building the shader/pipeline binding; render code should use the resulting constant.
     /// </summary>
-    public uint GetValueOffset(MaterialData material, uint materialSlot)
+    public uint GetValueOffset(Material material, uint materialSlot)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(material);
@@ -82,7 +82,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
     }
 
     public void SetTextureSrv(
-        MaterialData material,
+        Material material,
         uint materialSlot,
         in TextureSubresourceRange range,
         Format? format = null,
@@ -93,7 +93,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
             new TextureRequest(MaterialResourceKind.TextureSrv, range, format, dimension));
 
     public void SetTextureUav(
-        MaterialData material,
+        Material material,
         uint materialSlot,
         in TextureSubresourceRange range,
         Format? format = null,
@@ -104,7 +104,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
             new TextureRequest(MaterialResourceKind.TextureUav, range, format, dimension));
 
     private void SetTextureRequest(
-        MaterialData material,
+        Material material,
         uint materialSlot,
         in TextureRequest request)
     {
@@ -134,7 +134,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
     public uint Use(
         ref RenderGraphFrame frame,
         ref PassDefinition pass,
-        MaterialData material,
+        Material material,
         PipelineSync sync)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -174,7 +174,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
         FlushDirty(ref frame);
     }
 
-    public void Remove(ref RenderGraphFrame frame, MaterialData material)
+    public void Remove(ref RenderGraphFrame frame, Material material)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(material);
@@ -190,7 +190,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
     private void UpdateMaterial(
         ref RenderGraphFrame frame,
         ref PassDefinition pass,
-        MaterialData material,
+        Material material,
         MaterialState state,
         PipelineSync sync)
     {
@@ -315,7 +315,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
 
     private void UpdateTextureSlot(
         ref RenderGraphFrame frame,
-        MaterialData material,
+        Material material,
         MaterialState state,
         int valueIndex,
         uint materialSlot,
@@ -364,7 +364,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
 
     private void UpdateSamplerSlot(
         ref RenderGraphFrame frame,
-        MaterialData material,
+        Material material,
         MaterialState state,
         int valueIndex,
         uint materialSlot,
@@ -416,7 +416,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
     private void UpdateDeviceResourceSlot(
         ref RenderGraphFrame frame,
         ref PassDefinition pass,
-        MaterialData material,
+        Material material,
         MaterialState state,
         int valueIndex,
         uint materialSlot,
@@ -555,7 +555,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
                 ResourceContentState.Defined)]);
     }
 
-    private MaterialResourceBinding[] ResolveMaterialBindings(MaterialData material)
+    private MaterialResourceBinding[] ResolveMaterialBindings(Material material)
     {
         IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
         var result = new List<MaterialResourceBinding>(definitions.Count);

@@ -12,14 +12,17 @@ public sealed class RenderTestDevice : IDisposable
     public RenderDevice RenderDevice { get; }
     public RenderFrameCoordinator Coordinator { get; }
 
-    public RenderTestDevice()
+    public RenderTestDevice() : this(DeviceFeatures.None) { }
+
+    internal RenderTestDevice(DeviceFeatures features, DeviceQueueDesc[]? queues = null)
     {
         var options = new AdapterEnumerationOptions(AdapterPreference.HighPerformance, IncludeSoftware: true);
         Backend.TryEnumerateAdapters(options, [], out int count);
         var adapters = new AdapterInfo[count];
         Backend.TryEnumerateAdapters(options, adapters, out _);
         AdapterInfo warp = adapters.First(adapter => !adapter.HardwareAccelerated);
-        Device = Backend.CreateDevice(new DeviceDesc(warp.Id, [new DeviceQueueDesc(QueueType.Graphics)], label: "Render public behavior tests"));
+        Device = Backend.CreateDevice(new DeviceDesc(warp.Id, queues ?? [new DeviceQueueDesc(QueueType.Graphics)],
+            requiredFeatures: features, label: "Render public behavior tests"));
         RenderDevice = new RenderDevice(Backend, Device);
         Coordinator = new RenderFrameCoordinator(RenderDevice);
     }

@@ -312,7 +312,8 @@ void SeedTessellationRasterBin<TVE : IVertexEvaluate>(
     if (localBatch >= batchCount)
         return;
 
-    uint binnedIndex = bin.ClusterOffset + localBatch;
+    uint binnedIndex = localBatch < bin.BinSWCount
+        ? bin.ClusterOffset + localBatch : bin.HardwareOffset + localBatch - bin.BinSWCount;
     uint batch = TessellationBinnedClusterIndexBuffer[binnedIndex];
     uint visibleClusterIndex = RasterWorkVisibleIndex(batch);
     DrawRequest request = TessellationVisibleClusters[visibleClusterIndex];

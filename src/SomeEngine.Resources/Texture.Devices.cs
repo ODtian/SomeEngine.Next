@@ -60,12 +60,14 @@ public sealed partial class Texture
         lock (_deviceGate)
         {
             if (!ReferenceEquals(_replacement, content) || _committingUpdate) return;
+            // Detach the update before canceling device data: removing a newly registered
+            // device during cancellation must not commit the failed replacement.
+            _replacement = null;
+            _updateDevices = null;
             List<Exception>? cleanupErrors = null;
             foreach (ITextureDeviceData data in _devices.Values.ToArray())
                 try { data.CancelUpdate(); }
                 catch (Exception cleanup) { (cleanupErrors ??= []).Add(cleanup); }
-            _replacement = null;
-            _updateDevices = null;
             if (cleanupErrors is not null)
                 _updateCompletion!.TrySetException(new AggregateException([error, .. cleanupErrors]));
             else if (error is OperationCanceledException canceled) _updateCompletion!.TrySetCanceled(canceled.CancellationToken);
@@ -87,7 +89,10 @@ public sealed partial class Texture
             _committingUpdate = true;
             // ApplyReloadAsync switches fields and detaches the replacement's byte sources
             // before its first asynchronous cleanup. Later cancellation cannot undo commit.
-            cleanup = ApplyReloadAsync(this, replacement, CancellationToken.None).AsTask();
+            // Content has already switched when observer or cleanup callbacks fail.
+            // Keep completing the update boundary and report those failures to its caller.
+            try { cleanup = ApplyReloadAsync(this, replacement, CancellationToken.None).AsTask(); }
+            catch (Exception error) { cleanup = Task.FromException(error); }
             foreach (ITextureDeviceData data in _devices.Values)
                 try { data.ConfirmUpdate(); }
                 catch (Exception error) { errors.Add(error); }
@@ -142,6 +147,7 @@ public sealed partial class Texture
         lock (_deviceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed != 0, this);
+            if (!_devices.ContainsKey(device)) _updateDevices?.Add(device);
             _devices[device] = data;
         }
     }

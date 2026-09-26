@@ -55,6 +55,7 @@ internal readonly ref struct ClusterRenderBinding
         InstancePropertyMetadata = instanceProperties.Metadata;
         InstancePropertyMetadataRange = instanceProperties.MetadataRange;
         PropertyDataEndpoints = instanceProperties.PropertyDataEndpoints;
+        InstanceData = instanceProperties;
         InstancePropertyMetadataEndpoints = instanceProperties.MetadataEndpoints;
         InstanceGeneration = instanceProperties.Generation;
         DispatchExtent = instanceProperties.InstanceCount;
@@ -88,6 +89,8 @@ internal readonly ref struct ClusterRenderBinding
 
     internal BufferBoundaryState[] PropertyDataEndpoints { get; }
 
+    internal RenderInstanceBatchView InstanceData { get; }
+
     internal BufferBoundaryState[] InstancePropertyMetadataEndpoints { get; }
 
     internal int InstanceGeneration { get; }
@@ -106,6 +109,7 @@ internal readonly ref struct ClusterRenderBinding
 /// </summary>
 public sealed class ClusterRenderResources : IDisposable
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UseTrace = new("render", "Cluster.ResourceUse");
     private static readonly ConditionalWeakTable<RenderWorld, ClusterWorldClaim> s_worldClaims = new();
 
     private const int LifecycleActive = 0;
@@ -371,6 +375,7 @@ public sealed class ClusterRenderResources : IDisposable
         RenderInstanceBatch instanceProperties,
         RenderInstancePropertyLayout shaderContract)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UseTrace);
         ArgumentNullException.ThrowIfNull(frame);
         ArgumentNullException.ThrowIfNull(instanceProperties);
         ArgumentNullException.ThrowIfNull(shaderContract);
@@ -817,17 +822,28 @@ public sealed class ClusterRenderResources : IDisposable
                 : RenderInstanceChanges.None;
 
         public void Bind(RenderInstanceWriteSlice destination)
+            => Bind(destination, true, true, true);
+
+        internal void Bind(RenderInstanceWriteSlice destination, bool current, bool previous, bool mesh)
         {
-            destination.BindPerInstance(_currentTransform);
-            destination.BindPerInstance(_previousTransform);
-            destination.BindPerInstance(_bvhRoot);
-            destination.BindPerInstance(_boundsExpansion);
+            if (current) destination.BindPerInstance(_currentTransform);
+            if (previous) destination.BindPerInstance(_previousTransform);
+            if (mesh)
+            {
+                destination.BindPerInstance(_bvhRoot);
+                destination.BindPerInstance(_boundsExpansion);
+            }
         }
 
         public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
+            => Write(destination, packet, true, true, true);
+
+        internal void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
+            bool current, bool previous, bool mesh)
         {
-            destination.Write(_currentTransform, packet.Read<RenderTransform>());
-            destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
+            if (current) destination.Write(_currentTransform, packet.Read<RenderTransform>());
+            if (previous) destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
+            if (!mesh) return;
 
             ReadOnlySpan<RenderMesh> renderMeshes = packet.Read<RenderMesh>();
             uint[]? rentedRoots = null;

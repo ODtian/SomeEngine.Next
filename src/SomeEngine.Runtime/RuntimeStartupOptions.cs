@@ -24,6 +24,7 @@ public sealed record RuntimeStartupOptions(
 {
     public bool HideWindow { get; init; }
     public bool ForceHardwareRaster { get; init; }
+    public bool UseInstanceGroups { get; init; }
     public bool DisableMeshShaders { get; init; }
     public string? TraceOutput { get; init; }
     public bool TraceDetail { get; init; }
@@ -62,11 +63,9 @@ public sealed record RuntimeStartupOptions(
             !Path.GetExtension(frameOutputPath).Equals(".bmp", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("--frame-output requires a .bmp destination.");
         string? playback = ReadOptionalValue(args, "--scene-playback");
-        if (playback is not null and not "motion" and not "materials")
-            throw new ArgumentException("--scene-playback requires 'motion' or 'materials'.");
+        if (playback is not null and not "motion" and not "materials" and not "camera")
+            throw new ArgumentException("--scene-playback requires 'motion', 'materials', or 'camera'.");
         bool synchronousFrames = args.Contains("--synchronous-frames", StringComparer.OrdinalIgnoreCase);
-        if (playback is not null && !synchronousFrames)
-            throw new ArgumentException("Scene playback requires --synchronous-frames so scene mutations finish in their frame.");
         float fixedStep = 0;
         string? stepText = ReadOptionalValue(args, "--fixed-step");
         if (stepText is not null && (!float.TryParse(stepText, System.Globalization.CultureInfo.InvariantCulture, out fixedStep)
@@ -111,6 +110,7 @@ public sealed record RuntimeStartupOptions(
         {
             HideWindow = args.Contains("--hidden-window", StringComparer.OrdinalIgnoreCase),
             ForceHardwareRaster = args.Contains("--hardware-raster", StringComparer.OrdinalIgnoreCase),
+            UseInstanceGroups = args.Contains("--instance-groups", StringComparer.OrdinalIgnoreCase),
             DisableMeshShaders = args.Contains("--no-mesh-shaders", StringComparer.OrdinalIgnoreCase),
             TraceOutput = ReadOptionalValue(args, "--trace"),
             TraceDetail = args.Contains("--trace-detail", StringComparer.OrdinalIgnoreCase),

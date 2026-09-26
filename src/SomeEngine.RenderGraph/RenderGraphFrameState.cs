@@ -19,6 +19,7 @@ internal sealed partial class RenderGraphFrameState
     private readonly Dictionary<Texture, GraphTextureId> _importedTextures =
         new(ReferenceEqualityComparer.Instance);
     private readonly List<IRenderGraphFrameExecutionObserver> _executionObservers = [];
+    private readonly List<IDisposable> _frameRetirements = [];
     private readonly FrameExecutor _executor;
     private readonly Dictionary<GraphIdentity, FrameTransientResourceAllocator.UploadPage> _bufferData = [];
     private bool _executorActive;
@@ -112,7 +113,7 @@ internal sealed partial class RenderGraphFrameState
     internal void RetireAfterFrame(IDisposable value)
     {
         EnsureAuthoring();
-        _executionObservers.Add(new FrameRetirement(Graph, value));
+        _frameRetirements.Add(value);
     }
 
     internal void ObserveExecution(IRenderGraphFrameExecutionObserver observer)
@@ -372,6 +373,7 @@ internal sealed partial class RenderGraphFrameState
             ref FrameBuffer buffer = ref CollectionsMarshal.AsSpan(_dynamicBuffers)[page.GraphBuffer.Value.Slot];
             buffer.Resource = resource;
             buffer.EntryBoundaryStates = page.BoundaryStates;
+            buffer.UploadData = page;
             _importedBuffers.Add(resource, page.GraphBuffer);
         }
         return new GraphBufferSlice(page.GraphBuffer, range);
@@ -1085,8 +1087,17 @@ internal sealed partial class RenderGraphFrameState
         }
         finally
         {
-            ClearFrameData();
-            Graph.EndFrame(Identity);
+            try
+            {
+                if (_frameRetirements.Count != 0)
+                    Graph.RetireAfterSubmittedFrames(CollectionsMarshal.AsSpan(_frameRetirements));
+            }
+            finally
+            {
+                _frameRetirements.Clear();
+                ClearFrameData();
+                Graph.EndFrame(Identity);
+            }
         }
     }
 
@@ -1440,19 +1451,6 @@ internal sealed partial class RenderGraphFrameState
         }
         if (errors is not null)
             throw new AggregateException("Render graph completion callbacks failed.", errors);
-    }
-
-    private sealed class FrameRetirement(RenderGraph graph, IDisposable value)
-        : IRenderGraphFrameExecutionObserver
-    {
-        private IDisposable? _value = value;
-
-        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
-        {
-            IDisposable? retired = Interlocked.Exchange(ref _value, null);
-            if (retired is not null)
-                graph.RetireAfterSubmittedFrames(retired);
-        }
     }
 
     private sealed class InputData<T>

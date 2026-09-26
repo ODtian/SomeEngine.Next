@@ -36,6 +36,7 @@ public sealed partial class RenderDevice : IDisposable
     /// <summary>
     /// Publishes Queue completions for work using this RenderDevice. The maximum value per Queue
     /// becomes the retirement boundary for resources replaced after this call.
+    /// Completed resources are released by CollectCompleted at the frame boundary.
     /// </summary>
     public void TrackSubmission(ReadOnlySpan<QueueCompletion> completions)
     {
@@ -55,7 +56,6 @@ public sealed partial class RenderDevice : IDisposable
             }
             foreach (ref readonly QueueCompletion completion in completions)
                 MergeCompletion(_submitted, completion);
-            CollectCompletedLocked();
         }
     }
 

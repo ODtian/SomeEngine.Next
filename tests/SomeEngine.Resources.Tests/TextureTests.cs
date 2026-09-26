@@ -9,6 +9,54 @@ namespace SomeEngine.Resources.Tests;
 public sealed class TextureTests
 {
     [Fact]
+    public async Task ObserverFailureFinishesTheContentUpdateAndNotifiesRemainingObservers()
+    {
+        using var texture = SinglePixel(3);
+        var replacement = SinglePixel(9);
+        int notified = 0;
+        texture.Changed += _ => throw new InvalidOperationException("observer failure");
+        texture.Changed += _ => notified++;
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            texture.UpdateAsync(replacement).AsTask().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.False(texture.IsUpdating);
+        Assert.True(replacement.IsDisposed);
+        Assert.Equal(1, notified);
+        Assert.Equal(2ul, texture.Revision);
+        Assert.True(texture.TryRetainTile(texture.MipTiles[0].ChunkKey, out PageRange<byte>? bytes));
+        using (bytes) Assert.Equal(new byte[] { 9, 9, 9, 9 }, bytes.Sequence.ToArray());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AddedPixelsStayOnTheSameResourceAndNotifyEveryObserver(bool failingObserver)
+    {
+        using var arena = new PageArena(new ResidencyBudgetLedger());
+        TextureMipTile fine = Tile(0, 4), coarse = Tile(1, 2);
+        using var initial = new PageBufferMap(arena);
+        initial.Set(coarse.ChunkKey, new byte[16]);
+        using var texture = Create([fine, coarse], initial);
+        Assert.False(texture.TryRetainTile(fine.ChunkKey, out _));
+        ulong revision = texture.Revision;
+        int notifications = 0;
+        if (failingObserver) texture.Changed += _ => throw new InvalidOperationException("observer failure");
+        texture.Changed += _ => notifications++;
+        using var additional = new PageBufferMap(arena);
+        additional.Set(fine.ChunkKey, Enumerable.Repeat((byte)9, 64).ToArray());
+
+        if (failingObserver)
+            Assert.Throws<AggregateException>(() => texture.AddPixels(additional, revision));
+        else texture.AddPixels(additional, revision);
+        Assert.Equal(1, notifications);
+        Assert.Equal(revision, texture.Revision);
+        Assert.True(texture.TryRetainTile(fine.ChunkKey, out PageRange<byte>? bytes));
+        using (bytes) Assert.Equal(Enumerable.Repeat((byte)9, 64), bytes.Sequence.ToArray());
+
+        texture.AddPixels(additional, revision);
+        Assert.Equal(1, notifications);
+    }
+
+    [Fact]
     public void TileKeysKeepTheirPersistedIdentityAcrossNamespaceMoves()
     {
         ulong expected = SomeEngine.Serialization.BinaryFieldKey.FromName(

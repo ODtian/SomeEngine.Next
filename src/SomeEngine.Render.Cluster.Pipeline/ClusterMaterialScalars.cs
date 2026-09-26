@@ -37,7 +37,7 @@ internal sealed class ClusterMaterialScalars
         var offsetWrites = new List<(int Offset, byte[] Bytes)>();
         foreach (int address in addresses)
         {
-            bool exists = assignments.TryGetEntry(address, out MaterialData material, out _);
+            bool exists = assignments.TryGetEntry(address, out Material material, out _);
             // Complete every potentially failing encoding before publishing any new bytes.
             byte[] value = exists ? stages.ScalarLayouts[address].Encode(material) : [];
             bool allocated = ranges.TryGetValue(address, out var range);

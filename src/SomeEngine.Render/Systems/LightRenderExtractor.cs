@@ -18,82 +18,6 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
     private readonly HashSet<Entity> _spotSources = [];
     private readonly HashSet<Entity> _cookieSources = [];
 
-    private readonly object _cookieChangesGate = new();
-    private readonly Dictionary<Entity, LightCookie> _sourceCookies = [];
-    private readonly Dictionary<Texture, HashSet<Entity>> _cookieAssets = [];
-    private readonly HashSet<Entity> _changedCookies = [];
-    private readonly HashSet<Entity> _collectedCookies = [];
-    private readonly List<(Entity Source, RenderLightCookie Cookie)> _cookieChanges = [];
-
-    private RenderLightCookie TrackCookie(Entity source, in LightCookie cookie)
-    {
-        lock (_cookieChangesGate)
-        {
-            UntrackCookie(source);
-            _sourceCookies[source] = cookie;
-            if (!_cookieAssets.TryGetValue(cookie.Texture, out var sources))
-            {
-                _cookieAssets.Add(cookie.Texture, sources = []);
-                cookie.Texture.Changed += CollectCookieChange;
-            }
-            sources.Add(source);
-            _changedCookies.Add(source);
-            _collectedCookies.Add(source);
-            return ExtractCookie(cookie);
-        }
-    }
-
-    private void UntrackCookie(Entity source)
-    {
-        if (!_sourceCookies.Remove(source, out LightCookie cookie)) return;
-        HashSet<Entity> sources = _cookieAssets[cookie.Texture];
-        sources.Remove(source);
-        if (sources.Count == 0)
-        {
-            cookie.Texture.Changed -= CollectCookieChange;
-            _cookieAssets.Remove(cookie.Texture);
-        }
-        _changedCookies.Remove(source);
-    }
-
-    private void CollectCookieChange(Texture texture)
-    {
-        lock (_cookieChangesGate)
-            if (_cookieAssets.TryGetValue(texture, out var sources)) _changedCookies.UnionWith(sources);
-    }
-
-    public bool CompleteCollection(RenderExtractionContext context, bool fullCollection)
-    {
-        lock (_cookieChangesGate)
-        {
-            if (fullCollection)
-                foreach (Entity source in context.ChangedSources)
-                    if (!_collectedCookies.Contains(source)) UntrackCookie(source);
-            foreach (Entity source in _changedCookies.ToArray())
-            {
-                if (_collectedCookies.Contains(source)) continue;
-                RenderLightCookie cookie = ExtractCookie(_sourceCookies[source]);
-                if (context.World.Read<RenderLightCookie>(context.RequireMirror(source)) == cookie)
-                {
-                    _changedCookies.Remove(source);
-                    continue;
-                }
-                _cookieChanges.Add((source, cookie));
-                _cookieSources.Add(source);
-            }
-            return _cookieChanges.Count != 0;
-        }
-    }
-
-    public void Dispose()
-    {
-        lock (_cookieChangesGate)
-        {
-            foreach (Texture texture in _cookieAssets.Keys) texture.Changed -= CollectCookieChange;
-            _cookieAssets.Clear(); _sourceCookies.Clear(); _changedCookies.Clear();
-        }
-    }
-
     public bool CanApplyChangesDirect => true;
 
     public void DeclareReads(RenderExtractionQuery query)
@@ -117,8 +41,6 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         _pointSources.Clear();
         _spotSources.Clear();
         _cookieSources.Clear();
-        _collectedCookies.Clear();
-        _cookieChanges.Clear();
     }
 
     public void Collect(QueryChunkView chunk)
@@ -134,7 +56,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         {
             Entity source = entities[row];
             RenderLightCookie cookie = hasCookies && (hasDirectional || hasPoints || hasSpots)
-                ? TrackCookie(source, cookies[row]) : default;
+                ? ExtractCookie(cookies[row]) : default;
             if (hasDirectional)
             {
                 _directional.Add(new DirectionalSnapshot(
@@ -251,7 +173,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             if (!cookieChanged || (!hasDirectional && !hasPoints && !hasSpots))
                 continue;
 
-            RenderLightCookie cookie = TrackCookie(source, cookies[row]);
+            RenderLightCookie cookie = ExtractCookie(cookies[row]);
             if (hasDirectional)
             {
                 _directional.Add(new DirectionalSnapshot(
@@ -314,8 +236,6 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
                 context.Upsert(entity, snapshot.Cookie);
         }
 
-        foreach (var change in _cookieChanges)
-            context.Upsert(context.RetainMirror(change.Source), change.Cookie);
         ReadOnlySpan<RenderMirror> mirrors = context.Mirrors;
         for (int index = 0; index < mirrors.Length; index++)
         {
@@ -333,8 +253,6 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
 
     public void ApplyChanges(RenderExtractionContext context)
     {
-        foreach (var change in _cookieChanges)
-            context.UpdateExisting(context.RequireMirror(change.Source), change.Cookie);
         for (int index = 0; index < _directional.Count; index++)
         {
             DirectionalSnapshot snapshot = _directional[index];
@@ -366,8 +284,6 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
 
     public void ValidateChanges(RenderExtractionContext context)
     {
-        foreach (var change in _cookieChanges)
-            context.RequireExisting<RenderLightCookie>(context.RequireMirror(change.Source));
         for (int index = 0; index < _directional.Count; index++)
         {
             DirectionalSnapshot snapshot = _directional[index];
@@ -415,7 +331,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             source.LayerMask);
 
     private static RenderLightCookie ExtractCookie(in LightCookie source)
-        => new(source.Texture.CaptureData(), source.Strength, source.ScaleOffset, source.WorldToCookie);
+        => new(source.Texture, source.Strength, source.ScaleOffset, source.WorldToCookie);
 
     private readonly record struct DirectionalSnapshot(
         Entity Source,

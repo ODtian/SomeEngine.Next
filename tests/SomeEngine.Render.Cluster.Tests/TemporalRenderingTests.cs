@@ -106,8 +106,22 @@ public sealed class TemporalRenderingTests
         Assert.InRange(Render(0, secondView, depthValue: 1, foregroundEdge: true, sampleX: 1), .89f, .91f);
         Assert.Equal(0, Render(0, secondView, depthValue: 1, sampleX: 1));
 
+        // Unfinished GPU frames still form one history sequence; a canceled frame adds no sample.
+        Render(1, firstView, cameraCut: true);
+        Render(.8f, firstView, readResult: false);
+        Render(.1f, firstView, cancel: true);
+        Render(.8f, firstView, readResult: false);
+        Assert.InRange(Render(.8f, firstView), .945f, .947f);
+        foreach (float value in new[] { (float)Half.Epsilon, .00003f, -.00003f, -2f, 4f, 32752f })
+        {
+            float expected = (float)(Half)value;
+            Assert.Equal(expected, Render(value, firstView, cameraCut: true));
+            Assert.Equal(expected, Render(value, firstView));
+            Assert.Equal(expected, Render(value, firstView));
+        }
+
         float Render(float red, Entity view, bool enabled = true, bool cameraCut = false, bool cancel = false,
-            float depthValue = .5f, bool foregroundEdge = false, int sampleX = 0)
+            float depthValue = .5f, bool foregroundEdge = false, int sampleX = 0, bool readResult = true)
         {
             byte[] bytes = new byte[3072];
             for (int y = 0; y < 4; y++)
@@ -128,6 +142,7 @@ public sealed class TemporalRenderingTests
                 if (cancel) return 0;
                 var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
                 frame.Execute(completions);
+                if (!readResult) return 0;
                 foreach (QueueCompletion completion in completions)
                     if (completion != default)
                         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));

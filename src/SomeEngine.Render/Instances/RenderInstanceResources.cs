@@ -76,6 +76,13 @@ public readonly record struct RenderInstanceBatchView(
     int Generation,
     ulong ContentRevision)
 {
+    /// <summary>
+    /// Byte ranges allocated to this batch in PropertyData, at their original offsets.
+    /// Consumers may copy these ranges without interpreting property metadata. Both shared
+    /// and per-instance storage are included so changing a binding does not change the ranges.
+    /// </summary>
+    public ReadOnlyMemory<BufferRange> PropertyDataRanges { get; init; }
+
     internal BufferBoundaryState[] PropertyDataEndpoints { get; init; } = [];
 
     internal BufferBoundaryState[] MetadataEndpoints { get; init; } = [];
@@ -94,7 +101,8 @@ public sealed class RenderInstanceBatch
         int slot,
         RenderInstancePropertyLayout contract,
         int instanceCount,
-        ulong contentRevision)
+        ulong contentRevision,
+        BufferRange[] propertyDataRanges)
     {
         Owner = owner;
         Allocation = allocation;
@@ -102,6 +110,7 @@ public sealed class RenderInstanceBatch
         Contract = contract;
         InstanceCount = instanceCount;
         ContentRevision = contentRevision;
+        PropertyDataRanges = propertyDataRanges;
         _chunkRevisions = new ulong[(instanceCount + 63) / 64];
         Array.Fill(_chunkRevisions, contentRevision);
         _instanceRevisions = new ulong[instanceCount];
@@ -120,7 +129,7 @@ public sealed class RenderInstanceBatch
     private readonly ulong[] _chunkRevisions;
     private readonly ulong[] _instanceRevisions;
 
-    /// <summary>Appends rows modified after the supplied revision, skipping unchanged chunks.</summary>
+    /// <summary>Appends rows modified after the supplied revision in increasing row order, skipping unchanged chunks.</summary>
     public void CollectChangedInstances(ulong afterRevision, List<uint> destination)
     {
         ArgumentNullException.ThrowIfNull(destination);
@@ -160,6 +169,8 @@ public sealed class RenderInstanceBatch
     internal int Slot { get; }
 
     internal RenderInstancePropertyLayout Contract { get; }
+
+    internal ReadOnlyMemory<BufferRange> PropertyDataRanges { get; }
 }
 
 /// <summary>
@@ -178,6 +189,7 @@ internal sealed class RenderInstanceResources : IDisposable
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly RenderTimeline _timeline;
+    private readonly ConditionalWeakTable<global::SomeEngine.RenderGraph.RenderGraph, RenderInstanceDataTransfer> _transfers = new();
     private readonly UploadBuffer?[] _propertyData;
     private readonly UploadBuffer[] _batchMetadata;
     private readonly bool[] _generationNeedsFlush = new bool[2];
@@ -446,6 +458,7 @@ internal sealed class RenderInstanceResources : IDisposable
             generation,
             metadata.ContentRevision)
         {
+            PropertyDataRanges = metadata.PropertyDataRanges,
             PropertyDataEndpoints = _propertyData[generation]?.CaptureEndpoints() ?? [],
             MetadataEndpoints = _batchMetadata[generation].CaptureEndpoints(),
         };
@@ -459,6 +472,42 @@ internal sealed class RenderInstanceResources : IDisposable
         _propertyData[generation]?.StoreStates(properties);
         _batchMetadata[generation].StoreStates(metadata);
     }
+
+    internal RenderInstanceDataTransfer GetDataTransfer(global::SomeEngine.RenderGraph.RenderGraph graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ThrowIfNotActive();
+        if (!ReferenceEquals(graph.Device, _device))
+            throw new ArgumentException("The graph belongs to another graphics device.", nameof(graph));
+        if (PropertyDataBytes == 0)
+            throw new InvalidOperationException("The instance store has no managed property data to transfer.");
+        return _transfers.GetValue(graph, target =>
+        {
+            var edit = target.BeginEdit();
+            try
+            {
+                var transfer = new RenderInstanceDataTransfer(this, ref edit);
+                edit.Commit();
+                return transfer;
+            }
+            finally { edit.Dispose(); }
+        });
+    }
+
+    internal void BindDataSources(ref RenderGraphFrame frame, GraphBufferId[] sources)
+    {
+        for (int generation = 0; generation < sources.Length; generation++)
+        {
+            UploadBuffer data = _propertyData[generation]!;
+            frame.BindExternalBuffer(sources[generation], data.Handle, data.CaptureEndpoints());
+        }
+    }
+
+    internal void StorePropertyReadStates(int generation, ReadOnlySpan<BufferBoundaryState> states) =>
+        _propertyData[generation]!.StoreStates(states);
+
+    internal void StoreMetadataReadStates(int generation, ReadOnlySpan<BufferBoundaryState> states) =>
+        _batchMetadata[generation].StoreStates(states);
 
     public RenderInstanceDiagnostics CaptureDiagnostics()
     {
@@ -755,7 +804,33 @@ internal sealed class RenderInstanceResources : IDisposable
             batchSlot,
             contract,
             _batchRows[batchSlot].Count,
-            NextContentRevision());
+            NextContentRevision(),
+            GetBatchDataRanges(batchSlot, contract));
+    }
+
+    private BufferRange[] GetBatchDataRanges(int batchIndex, RenderInstancePropertyLayout properties)
+    {
+        PackedRange rows = _batchRows[batchIndex];
+        var ranges = new List<BufferRange>();
+        foreach (PropertyStorage storage in _properties)
+        {
+            RenderInstancePropertyEncoding encoding = storage.Descriptor.Encoding;
+            if (!encoding.HasManagedStorage || !properties.Contains(storage.Descriptor.Key)) continue;
+            Add(SharedElementRange(storage, batchIndex));
+            if (rows.Count != 0)
+                Add(new BufferRange(
+                    checked((ulong)(storage.InstanceBase + rows.Start * encoding.StorageStride)),
+                    checked((ulong)(rows.Count * encoding.StorageStride))));
+        }
+        return ranges.ToArray();
+
+        void Add(BufferRange range)
+        {
+            if (ranges.Count != 0 && ranges[^1].Offset + ranges[^1].Size == range.Offset)
+                ranges[^1] = new BufferRange(ranges[^1].Offset, ranges[^1].Size + range.Size);
+            else
+                ranges.Add(range);
+        }
     }
 
     internal void ReleaseBatch(RenderInstanceBatch metadata)
@@ -770,7 +845,8 @@ internal sealed class RenderInstanceResources : IDisposable
 
     internal BatchLease BeginBatchUpdate(
         RenderInstanceBatch batch,
-        RenderInstancePropertyLayout properties)
+        RenderInstancePropertyLayout properties,
+        RenderInstancePropertyLayout? replacedProperties)
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(properties);
@@ -779,10 +855,13 @@ internal sealed class RenderInstanceResources : IDisposable
         ValidateBatchReady(batch.Slot);
         foreach (RenderInstancePropertyDescriptor property in properties.Properties)
             _ = batch.Contract.RequireCompatible(property, nameof(properties));
+        if (replacedProperties is not null)
+            foreach (RenderInstancePropertyDescriptor property in replacedProperties.Properties)
+                _ = properties.RequireCompatible(property, nameof(replacedProperties));
         int writeGeneration = RequireWriteGeneration();
         int publishedGeneration = _batchGenerations[batch.Slot];
         if (writeGeneration != publishedGeneration)
-            CopyBatchState(batch.Slot, _batchRows[batch.Slot], publishedGeneration, writeGeneration);
+            CopyBatchState(batch.Slot, _batchRows[batch.Slot], publishedGeneration, writeGeneration, replacedProperties);
         else
             _batchOriginalBytes.Add(batch.Slot, CaptureBatchBytes(batch.Slot, properties, writeGeneration));
         _batchReady[batch.Slot] = false;
@@ -878,7 +957,8 @@ internal sealed class RenderInstanceResources : IDisposable
         int batchSlot,
         PackedRange rows,
         int sourceGeneration,
-        int destinationGeneration)
+        int destinationGeneration,
+        RenderInstancePropertyLayout? replacedProperties)
     {
         if (sourceGeneration == destinationGeneration)
             return;
@@ -906,6 +986,8 @@ internal sealed class RenderInstanceResources : IDisposable
         for (int ordinal = 0; ordinal < _properties.Length; ordinal++)
         {
             PropertyStorage storage = _properties[ordinal];
+            if (replacedProperties?.Contains(storage.Descriptor.Key) == true)
+                continue;
             RenderInstancePropertyEncoding encoding = storage.Descriptor.Encoding;
             if (!encoding.HasManagedStorage)
                 continue;
@@ -1329,7 +1411,7 @@ internal sealed class RenderInstanceResources : IDisposable
             return admitted;
         }
 
-        int preferred = _preferredGeneration;
+        int preferred = _timeline.GetOldestSubmittedGeneration();
         int alternate = 1 - preferred;
         long started = Environment.TickCount64;
         while (true)
@@ -1384,7 +1466,9 @@ internal sealed class RenderInstanceResources : IDisposable
         }
 
         generation = -1;
-        retirementFences = _timeline.GetGenerationFences(preferred);
+        // Locality chooses an already-free buffer. When both are busy, wait for the
+        // older readers instead of draining the most recently submitted frame.
+        retirementFences = _timeline.GetGenerationFences(_timeline.GetOldestSubmittedGeneration());
         if (retirementFences.Length == 0)
         {
             throw new InvalidOperationException(
@@ -1736,13 +1820,14 @@ internal sealed class RenderInstanceWriteScope : IDisposable
 
     internal RenderInstanceBatchComposition BeginBatchUpdate(
         RenderInstanceBatch batch,
-        RenderInstancePropertyLayout properties)
+        RenderInstancePropertyLayout properties,
+        RenderInstancePropertyLayout? replacedProperties)
     {
         RenderInstanceResources.BatchLease lease =
-            Resources.BeginBatchUpdate(batch, properties);
+            Resources.BeginBatchUpdate(batch, properties, replacedProperties);
         try
         {
-            var composition = new RenderInstanceBatchComposition(this, lease, batch, properties);
+            var composition = new RenderInstanceBatchComposition(this, lease, batch, properties, replacedProperties);
             _activeBatchBuilders++;
             return composition;
         }
@@ -1836,8 +1921,9 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         RenderInstanceWriteScope scope,
         RenderInstanceResources.BatchLease lease,
         RenderInstanceBatch existingBatch,
-        RenderInstancePropertyLayout authorization)
-        : this(scope, lease, existingBatch, authorization, CompositionMode.Update)
+        RenderInstancePropertyLayout authorization,
+        RenderInstancePropertyLayout? replacedProperties)
+        : this(scope, lease, existingBatch, authorization, CompositionMode.Update, replacedProperties)
     {
     }
 
@@ -1846,7 +1932,8 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         RenderInstanceResources.BatchLease lease,
         RenderInstanceBatch? existingBatch,
         RenderInstancePropertyLayout authorization,
-        CompositionMode mode)
+        CompositionMode mode,
+        RenderInstancePropertyLayout? replacedProperties = null)
     {
         if ((mode == CompositionMode.Create) != (existingBatch is null))
         {
@@ -1864,9 +1951,10 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         _instanceCount = lease.Rows.Count;
         _propertyStates = new long[lease.Contract.Properties.Count];
         _changedChunks = mode == CompositionMode.Update ? new long[(_instanceCount + 63) / 64] : [];
-        if (mode == CompositionMode.Create)
+        RenderInstancePropertyLayout? requiredProperties = mode == CompositionMode.Create ? authorization : replacedProperties;
+        if (requiredProperties is not null)
         {
-            foreach (RenderInstancePropertyDescriptor property in authorization.Properties)
+            foreach (RenderInstancePropertyDescriptor property in requiredProperties.Properties)
             {
                 RenderInstancePropertyDescriptor destination =
                     lease.Contract.RequireCompatible(property, nameof(authorization));
@@ -2125,7 +2213,11 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
             if (_mode == CompositionMode.Update)
             {
                 if (binding == Unbound)
+                {
+                    if ((state & Required) != 0)
+                        throw new InvalidOperationException($"Replaced instance property '{_contract.Properties[ordinal].Key}' was not bound.");
                     continue;
+                }
                 touched = true;
                 long updateWrittenCount = state >> WrittenCountShift;
                 if (binding == PerInstance && updateWrittenCount == 0 && _instanceCount != 0)
@@ -2134,6 +2226,8 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
                         $"Updated render instance property '{_contract.Properties[ordinal].Key}' " +
                         "was bound per-instance but no rows were written.");
                 }
+                if (binding == PerInstance && (state & Required) != 0 && updateWrittenCount != _instanceCount)
+                    throw new InvalidOperationException($"Replaced instance property '{_contract.Properties[ordinal].Key}' must contain every instance value.");
                 continue;
             }
 

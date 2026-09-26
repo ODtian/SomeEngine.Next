@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -396,6 +395,9 @@ public sealed class RenderExtractionQuery
 
     internal QueryDefinition BuildDestinationAccess() => _destination.Build();
 
+    internal void ReadDestination<T>() where T : struct, IComponent =>
+        _destination.Optional<T>(QueryAccess.Read);
+
     public void ReadOptional<T>() where T : struct
         => _builder.Optional<T>(QueryAccess.Read);
 
@@ -446,24 +448,29 @@ public sealed class RenderExtractionContext : IDisposable
     private readonly RenderWorld _world;
     private readonly QueryHandle _renderSources;
     private readonly QueryHandle _transformWrites;
-    private ImmutableDictionary<Entity, Entity> _mirrorBySource = ImmutableDictionary<Entity, Entity>.Empty;
-    private ImmutableDictionary<Entity, Entity>? _previousMirrors;
+    private readonly Dictionary<Entity, Entity> _mirrorBySource = [];
+    private readonly Dictionary<Entity, Entity> _previousMirrors = [];
     private readonly HashSet<Entity> _sourceChanges = [];
     internal IEnumerable<Entity> ChangedSources => _sourceChanges;
     private readonly HashSet<Entity> _retainedSources = [];
     private readonly List<RenderMirror> _mirrors = [];
     private readonly Dictionary<Entity, RenderTransform> _transformChanges = [];
     private readonly Dictionary<Entity, RenderTransform> _retainedTransforms = [];
-    private HashSet<Entity> _movingTransforms = [];
-    private HashSet<Entity> _nextMovingTransforms = [];
+    // Transform dictionaries and query rows already contribute each destination once.
+    private List<Entity> _movingTransforms = [];
+    private List<Entity> _nextMovingTransforms = [];
+    private readonly HashSet<Entity> _stoppedTransforms = [];
     private readonly List<TransformWrite> _transformUpdates = [];
+    private readonly List<TransformChunkChanges> _transformChunks = [];
 
     private readonly record struct TransformWrite(
         Entity Entity,
         RenderTransform Current,
-        RenderPreviousTransform Previous,
         bool WriteCurrent,
-        bool WritePrevious);
+        bool WritePrevious,
+        int RowIndex = -1);
+
+    private readonly record struct TransformChunkChanges(int First, int Count, int CurrentCount, int PreviousCount);
 
     internal RenderExtractionContext(RenderWorld world)
     {
@@ -526,7 +533,7 @@ public sealed class RenderExtractionContext : IDisposable
 
     internal void BeginCandidate()
     {
-        _previousMirrors = _mirrorBySource;
+        _previousMirrors.Clear();
         _mirrors.Clear();
         foreach (Entity source in _sourceChanges)
             if (_mirrorBySource.TryGetValue(source, out Entity entity))
@@ -561,7 +568,7 @@ public sealed class RenderExtractionContext : IDisposable
 
     internal void RefreshMirrors()
     {
-        _mirrorBySource = _mirrorBySource.Clear();
+        _mirrorBySource.Clear();
         _mirrors.Clear();
         RenderExtractionContext state = this;
         _world.ExecuteQuery(
@@ -586,7 +593,7 @@ public sealed class RenderExtractionContext : IDisposable
                     throw new InvalidOperationException(
                         $"RenderWorld contains more than one mirror for {source}.");
                 }
-                _mirrorBySource = _mirrorBySource.Add(source, renderEntity);
+                _mirrorBySource.Add(source, renderEntity);
                 _sourceChanges.Add(source);
             }
         }
@@ -600,7 +607,8 @@ public sealed class RenderExtractionContext : IDisposable
 
         entity = _world.CreateEntity();
         _world.Add(entity, new RenderSource(source));
-        _mirrorBySource = _mirrorBySource.Add(source, entity);
+        _previousMirrors.TryAdd(source, Entity.Null);
+        _mirrorBySource.Add(source, entity);
         return entity;
     }
 
@@ -646,6 +654,13 @@ public sealed class RenderExtractionContext : IDisposable
 
     private void ApplyTransformValues(QueryCursor query)
     {
+        // Dense motion is cheaper to read and write by column. Sparse edits keep
+        // the entity lookup path so their cost does not scale with the whole world.
+        if (_transformChanges.Count >= 64 && _transformChanges.Count >= _mirrorBySource.Count / 2)
+        {
+            ApplyTransformColumns(query);
+            return;
+        }
         // Resolve each source once, validate every destination and compute the writes before
         // changing either column. The query protects both columns and entity membership until
         // all writes finish. This scratch contains only this update's changed values.
@@ -662,15 +677,13 @@ public sealed class RenderExtractionContext : IDisposable
                 bool writeCurrent = current != value;
                 bool writePrevious = row.Read<RenderPreviousTransform>() != previous;
                 if (writeCurrent || writePrevious)
-                    _transformUpdates.Add(new(entity, value, previous, writeCurrent, writePrevious));
-                // During validation this set also excludes already checked destinations from
-                // the history-only walk. It is reduced to moving destinations before writes.
-                _nextMovingTransforms.Add(entity);
+                    _transformUpdates.Add(new(entity, value, writeCurrent, writePrevious));
+                if (writeCurrent) _nextMovingTransforms.Add(entity);
             }
 
             foreach (Entity entity in _movingTransforms)
             {
-                if (_nextMovingTransforms.Contains(entity)) continue;
+                if (_transformChanges.ContainsKey(entity)) continue;
                 if (!query.TryGetRow(entity, out QueryRow row))
                 {
                     if (_world.IsAlive(entity) && _world.Has<RenderTransform>(entity))
@@ -679,16 +692,13 @@ public sealed class RenderExtractionContext : IDisposable
                 }
                 var previous = new RenderPreviousTransform(row.Read<RenderTransform>());
                 if (row.Read<RenderPreviousTransform>() != previous)
-                    _transformUpdates.Add(new(entity, default, previous, false, true));
+                    _transformUpdates.Add(new(entity, default, false, true));
             }
 
-            _nextMovingTransforms.Clear();
-            foreach (TransformWrite update in _transformUpdates)
-                if (update.WriteCurrent) _nextMovingTransforms.Add(update.Entity);
             foreach (TransformWrite update in _transformUpdates)
             {
                 _ = query.TryGetRow(update.Entity, out QueryRow row);
-                if (update.WritePrevious) row.Write<RenderPreviousTransform>() = update.Previous;
+                if (update.WritePrevious) row.Write<RenderPreviousTransform>() = new(row.Read<RenderTransform>());
                 if (update.WriteCurrent) row.Write<RenderTransform>() = update.Current;
             }
         }
@@ -698,9 +708,93 @@ public sealed class RenderExtractionContext : IDisposable
         }
     }
 
+    private void ApplyTransformColumns(QueryCursor query)
+    {
+        _transformUpdates.Clear();
+        _transformChunks.Clear();
+        _nextMovingTransforms.Clear();
+        try
+        {
+            // Check stopped or removed mirrors before either column is changed.
+            _stoppedTransforms.Clear();
+            foreach (Entity entity in _movingTransforms)
+            {
+                if (_transformChanges.ContainsKey(entity)) continue;
+                _stoppedTransforms.Add(entity);
+                if (!query.TryGetRow(entity, out _) &&
+                    _world.IsAlive(entity) && _world.Has<RenderTransform>(entity))
+                    RequireExisting<RenderPreviousTransform>(entity);
+            }
+
+            int matchedChanges = 0;
+            foreach (QueryChunkView chunk in query.Chunks)
+            {
+                ReadOnlySpan<Entity> entities = chunk.Entities;
+                ReadOnlySpan<RenderTransform> current = chunk.Read<RenderTransform>();
+                ReadOnlySpan<RenderPreviousTransform> previous = chunk.Read<RenderPreviousTransform>();
+                int first = _transformUpdates.Count, currentCount = 0, previousCount = 0;
+                for (int row = 0; row < entities.Length; row++)
+                {
+                    Entity entity = entities[row];
+                    bool changed = _transformChanges.TryGetValue(entity, out RenderTransform value);
+                    if (changed) matchedChanges++;
+                    else if (!_stoppedTransforms.Contains(entity)) continue;
+                    var history = new RenderPreviousTransform(current[row]);
+                    bool writeCurrent = changed && current[row] != value;
+                    bool writePrevious = previous[row] != history;
+                    if (writeCurrent)
+                    {
+                        currentCount++;
+                        _nextMovingTransforms.Add(entity);
+                    }
+                    if (writePrevious) previousCount++;
+                    if (writeCurrent || writePrevious)
+                        _transformUpdates.Add(new(entity, value, writeCurrent, writePrevious, row));
+                }
+                _transformChunks.Add(new(first, _transformUpdates.Count - first, currentCount, previousCount));
+            }
+            if (matchedChanges != _transformChanges.Count)
+                throw new InvalidOperationException("A render mirror is missing its transform or motion history.");
+
+            // Query membership cannot change inside this callback. Revisit chunks
+            // in the same order without resolving each entity a second time.
+            int chunkIndex = 0;
+            foreach (QueryChunkView chunk in query.Chunks)
+            {
+                TransformChunkChanges changes = _transformChunks[chunkIndex++];
+                if (changes.Count == 0) continue;
+                ReadOnlySpan<RenderTransform> before = chunk.Read<RenderTransform>();
+                Span<RenderTransform> current = changes.CurrentCount == chunk.Count ? chunk.Write<RenderTransform>() : default;
+                Span<RenderPreviousTransform> previous = changes.PreviousCount == chunk.Count ? chunk.Write<RenderPreviousTransform>() : default;
+                int end = changes.First + changes.Count;
+                for (int index = changes.First; index < end; index++)
+                {
+                    TransformWrite update = _transformUpdates[index];
+                    if (update.WritePrevious)
+                    {
+                        var history = new RenderPreviousTransform(before[update.RowIndex]);
+                        if (!previous.IsEmpty) previous[update.RowIndex] = history;
+                        else chunk.Write<RenderPreviousTransform>(update.RowIndex) = history;
+                    }
+                    if (update.WriteCurrent)
+                    {
+                        if (!current.IsEmpty) current[update.RowIndex] = update.Current;
+                        else chunk.Write<RenderTransform>(update.RowIndex) = update.Current;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _transformUpdates.Clear();
+            _transformChunks.Clear();
+            _stoppedTransforms.Clear();
+        }
+    }
+
     internal void AcceptTransformChanges()
     {
-        _previousMirrors = null;
+        _previousMirrors.Clear();
         (_movingTransforms, _nextMovingTransforms) = (_nextMovingTransforms, _movingTransforms);
         _nextMovingTransforms.Clear();
         _transformChanges.Clear();
@@ -709,11 +803,10 @@ public sealed class RenderExtractionContext : IDisposable
 
     internal void CancelTransformChanges()
     {
-        if (_previousMirrors is not null)
-        {
-            _mirrorBySource = _previousMirrors;
-            _previousMirrors = null;
-        }
+        foreach ((Entity source, Entity previous) in _previousMirrors)
+            if (previous == Entity.Null) _mirrorBySource.Remove(source);
+            else _mirrorBySource[source] = previous;
+        _previousMirrors.Clear();
         _transformChanges.Clear();
         _retainedTransforms.Clear();
         _nextMovingTransforms.Clear();
@@ -727,7 +820,8 @@ public sealed class RenderExtractionContext : IDisposable
             if (!_retainedSources.Contains(mirror.Source))
             {
                 _world.DestroyEntity(mirror.RenderEntity);
-                _mirrorBySource = _mirrorBySource.Remove(mirror.Source);
+                _previousMirrors.TryAdd(mirror.Source, mirror.RenderEntity);
+                _mirrorBySource.Remove(mirror.Source);
             }
         }
     }
