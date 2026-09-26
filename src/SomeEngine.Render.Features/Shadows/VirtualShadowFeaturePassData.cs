@@ -164,3 +164,24 @@ internal readonly record struct VirtualShadowBufferResetPassData(GraphBufferId B
         commands.ClearBuffer(buffer, new BufferRange(0, buffer.Info.Size));
     }
 }
+
+internal readonly record struct VirtualShadowInputBufferResetPassData(GraphBufferInput Buffer)
+{
+    internal static void Declare(
+        ref PassDefinition access,
+        ref VirtualShadowInputBufferResetPassData data) =>
+        _ = access.Write(
+            data.Buffer,
+            BufferRange.Whole,
+            PipelineSync.Copy,
+            ResourceAccess.CopyDestination,
+            WriteCoverage.Complete);
+
+    internal static void Record(
+        ref CopyPassCommandScope commands,
+        in VirtualShadowInputBufferResetPassData data)
+    {
+        BufferRegion region = commands.GetBufferRegion(data.Buffer);
+        commands.ClearBuffer(region.Buffer, region.Range);
+    }
+}

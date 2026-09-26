@@ -478,6 +478,17 @@ internal sealed partial class FrameExecutor
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.CommandLists);
         int end = checked(start + count);
         if (TryRepeatBatch(new RecordingBatch(passes, start, count, preparedAccessCount, context))) return;
+        if (accessCount < 0)
+        {
+            accessCount = 0;
+            for (int item = start; item < end; item++)
+            {
+                int pass = passes[item];
+                DevelopmentCheck.Require(ReferenceEquals(_passes[pass].Queue, queue),
+                    "A recording batch spans multiple Queues.");
+                accessCount = checked(accessCount + _passAccesses[pass].Count);
+            }
+        }
 
         bool begun = false;
         try
@@ -606,23 +617,38 @@ internal sealed partial class FrameExecutor
         bool workerEligible = (_frame.Options.Debug & RenderGraphDebugOptions.DisableParallelRecording) == 0;
         foreach (int pass in passes)
             workerEligible &= _passes[pass].Options.Recording == PassRecordingMode.WorkerEligible;
-        var units = new List<RecordingBatch>(Math.Max(previous.Length, 1));
+        int unitCount = passes.Count == 0 ? 0 : workerEligible
+            ? Math.Min(maximumUnitCount, Math.Max(1, (passes.Count + 15) / 16)) : 1;
+        var units = new List<RecordingBatch>(unitCount);
         try
         {
             int start = 0;
-            while (start < passes.Count)
+            for (int unit = 0; start < passes.Count; unit++)
             {
-                bool repeatable = CanRepeatCommands(passes[start]);
-                int end = start + 1;
-                while (end < passes.Count && CanRepeatCommands(passes[end]) == repeatable) end++;
-                // Keep adjacent passes that allow command reuse in one native list.
-                // Split the remaining callbacks for parallel recording.
-                int unitCount = repeatable || !workerEligible ? 1 :
-                    Math.Min(maximumUnitCount, Math.Max(1, (end - start + 15) / 16));
-                ulong remainingWeight = 0;
-                for (int index = start; index < end; index++)
-                    remainingWeight = SaturatingAdd(remainingWeight, RecordingWeight(passes[index]));
-                for (int unit = 0; start < end; unit++)
+                int remainingUnits = Math.Max(1, unitCount - unit);
+                int maximumEnd = passes.Count - (remainingUnits - 1);
+                ulong divisor = (ulong)remainingUnits;
+                ulong targetWeight = remainingWeight / divisor +
+                    (remainingWeight % divisor == 0 ? 0UL : 1UL);
+                int count = 0;
+                ulong weight = 0;
+                while (start + count < maximumEnd)
+                {
+                    if (count != 0 &&
+                        _passes[passes[start + count]].Options.RepeatCommands != _passes[passes[start]].Options.RepeatCommands)
+                        break;
+                    ulong nextWeight = RecordingWeight(passes[start + count]);
+                    ulong combinedWeight = SaturatingAdd(weight, nextWeight);
+                    if (count != 0 && weight < targetWeight &&
+                        combinedWeight > targetWeight &&
+                        targetWeight - weight <= combinedWeight - targetWeight)
+                        break;
+                    weight = combinedWeight;
+                    count++;
+                    if (weight >= targetWeight)
+                        break;
+                }
+                if (count == 0)
                 {
                     int remainingUnits = Math.Max(1, unitCount - unit);
                     int maximumEnd = end - (remainingUnits - 1);
@@ -656,6 +682,19 @@ internal sealed partial class FrameExecutor
                     start += count;
                     remainingWeight = remainingWeight > weight ? remainingWeight - weight : 0;
                 }
+                CommandContext? context = unit < previous.Length ? previous[unit].Context : null;
+                Queue queue = _passes[passes[start]].Queue!;
+                if (context?.QueueType != queue.Type || context?.QueueIndex != queue.Index) context = null;
+                units.Add(CreateRecordingBatch(
+                    passes,
+                    start,
+                    count,
+                    -1,
+                    context));
+                start += count;
+                remainingWeight = remainingWeight > weight
+                    ? remainingWeight - weight
+                    : 0;
             }
         }
         catch
@@ -705,7 +744,8 @@ internal sealed partial class FrameExecutor
         for (int item = batch.Start; item < batch.Start + batch.Count; item++)
         {
             int pass = batch.Passes[item];
-            if (!CanRepeatCommands(pass) || _commandChanges.Contains(pass)) return false;
+            if (!_passes[pass].Options.RepeatCommands || _passes[pass].PersistentCallbacks is null ||
+                _commandChanges.Contains(pass)) return false;
         }
         if (!_frame.Backend.TryRepeatCommands(batch.Context, out RecordedCommands commands)) return false;
         int first = batch.Passes[batch.Start];

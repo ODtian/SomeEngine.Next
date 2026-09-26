@@ -17,7 +17,7 @@ public enum VirtualShadowLightKind : uint
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 public struct VirtualShadowView
 {
-    public const int SizeInBytes = 176;
+    public const int SizeInBytes = 172;
     public const int PageTableEntrySizeInBytes = 16;
 
     public Matrix4x4 LightViewProjection;

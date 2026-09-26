@@ -69,7 +69,7 @@ public struct VirtualShadowInvalidationUniforms
     public uint PageDilation;
     public uint FrameIndex;
     public uint HierarchyWordsPerView;
-    public uint MipLevelCount;
+    public uint Pad1;
     public uint Pad2;
 }
 

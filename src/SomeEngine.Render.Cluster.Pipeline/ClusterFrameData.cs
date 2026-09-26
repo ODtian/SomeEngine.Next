@@ -53,9 +53,7 @@ internal struct ClusterRasterBinningUniforms
     internal uint MaxVisibleClusters;
     internal uint CollectMetrics;
     internal uint PolicyTarget;
-    internal uint ScreenWidth;
-    internal uint ScreenHeight;
-    internal uint ViewCount;
+    internal uint Pad2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]

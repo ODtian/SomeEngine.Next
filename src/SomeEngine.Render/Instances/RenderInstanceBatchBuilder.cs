@@ -51,11 +51,6 @@ public interface IRenderInstanceBatchComposer<TGroupKey>
         ReadOnlyQueryPacket packet,
         uint lastSystemVersion);
 
-    /// <summary>Collects update data before any batch is bound or written.</summary>
-    /// <remarks>Packets may be collected concurrently; shared update data must support concurrent writes.</remarks>
-    RenderInstanceChanges CollectChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
-        GetChanges(packet, lastSystemVersion);
-
     /// <summary>
     /// Returns true when every row in this packet must be rewritten. Implementations may use a
     /// cheap dense-change test; returning false preserves the row-range fallback.

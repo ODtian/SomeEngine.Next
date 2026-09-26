@@ -18,6 +18,89 @@ namespace SomeEngine.Render.Tests;
 
 public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(129)]
+    [InlineData(1025)]
+    public void Extract_MixedMotionAndUnchangedWritesAdvanceHistoryOnce(int count)
+    {
+        using World mainWorld = new();
+        using RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
+        Mesh mesh = MeshAsset(1, 1);
+        Entity[] sources = Enumerable.Range(0, count).Select(index =>
+            AddMeshSource(mainWorld, mesh, 0, new Vector3(index, 0, 0))).ToArray();
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        Entity[] mirrors = sources.Select(source => extraction.RequireMirror(source)).ToArray();
+        Vector3[] positions = Enumerable.Range(0, count).Select(index => new Vector3(index, 0, 0)).ToArray();
+        for (int iteration = 0; iteration < 8; iteration++)
+        {
+            Vector3[] previous = positions.ToArray();
+            for (int index = 0; index < count; index++)
+            {
+                int action = (index + iteration) % 4;
+                if (action == 0) positions[index] += new Vector3(0, 1, 2);
+                if (action <= 1) Move(mainWorld, sources[index], positions[index]);
+            }
+            ExtractAndApply(extraction, mainWorld, renderWorld);
+            for (int index = 0; index < count; index++)
+            {
+                Assert.Equal(positions[index], renderWorld.Read<RenderTransform>(mirrors[index]).Position);
+                Assert.Equal(previous[index], renderWorld.Read<RenderPreviousTransform>(mirrors[index]).Value.Position);
+            }
+        }
+    }
+
+    [Fact]
+    public void Extract_MissingMotionHistoryRejectsChangesBeforeAnyTransformWrite()
+    {
+        using World mainWorld = new();
+        using RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
+        Mesh mesh = MeshAsset(1, 1);
+        Entity first = AddMeshSource(mainWorld, mesh, 0, Vector3.One);
+        Entity second = AddMeshSource(mainWorld, mesh, 0, new Vector3(2));
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        Entity firstMirror = extraction.RequireMirror(first);
+        Entity secondMirror = extraction.RequireMirror(second);
+        renderWorld.Remove<RenderPreviousTransform>(secondMirror);
+        Move(mainWorld, first, new Vector3(3));
+        Move(mainWorld, second, new Vector3(4));
+        Assert.Throws<InvalidOperationException>(() => ExtractAndApply(extraction, mainWorld, renderWorld));
+        Assert.Equal(Vector3.One, renderWorld.Read<RenderTransform>(firstMirror).Position);
+        Assert.Equal(Vector3.One, renderWorld.Read<RenderPreviousTransform>(firstMirror).Value.Position);
+        Assert.Equal(new Vector3(2), renderWorld.Read<RenderTransform>(secondMirror).Position);
+        renderWorld.Add(secondMirror, new RenderPreviousTransform(renderWorld.Read<RenderTransform>(secondMirror)));
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        Assert.Equal(new Vector3(3), renderWorld.Read<RenderTransform>(firstMirror).Position);
+        Assert.Equal(Vector3.One, renderWorld.Read<RenderPreviousTransform>(firstMirror).Value.Position);
+        Assert.Equal(new Vector3(4), renderWorld.Read<RenderTransform>(secondMirror).Position);
+        Assert.Equal(new Vector3(2), renderWorld.Read<RenderPreviousTransform>(secondMirror).Value.Position);
+    }
+
+    [Fact]
+    public void Extract_ContinuousMotionAndStoppingAdvanceHistoryOnce()
+    {
+        using World mainWorld = new();
+        using RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
+        Entity source = AddMeshSource(mainWorld, MeshAsset(1, 1), 0, Vector3.Zero);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        Entity mirror = Mirror(renderWorld, source);
+        Vector3 previous = Vector3.Zero;
+        Vector3[] positions = [new(1, 2, 3), new(4, 5, 6), new(4, 5, 6), new(4, 5, 6), new(-2, 1, 7)];
+        foreach (Vector3 position in positions)
+        {
+            Move(mainWorld, source, position);
+            ExtractAndApply(extraction, mainWorld, renderWorld);
+            Assert.Equal(position, renderWorld.Read<RenderTransform>(mirror).Position);
+            Assert.Equal(previous, renderWorld.Read<RenderPreviousTransform>(mirror).Value.Position);
+            previous = position;
+        }
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        Assert.Equal(previous, renderWorld.Read<RenderPreviousTransform>(mirror).Value.Position);
+    }
+
     [Fact]
     public void SharedMaterialEditsKeepTheSameResourceAndDoNotExtractEntityChanges()
     {

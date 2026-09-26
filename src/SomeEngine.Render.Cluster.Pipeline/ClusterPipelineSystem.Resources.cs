@@ -164,10 +164,10 @@ public sealed partial class ClusterPipelineSystem
             "Cluster neutral policy counter");
         frame.NeutralPolicyView = UploadBytes(
             ref graph,
-            // Shared by the neutral target-view (80 B), page-table (16 B),
+            // Shared by the neutral target-view (72 B), page-table (16 B),
             // receiver-mask (8 B) and uint views. Keep the byte size aligned to
             // every structured interpretation.
-            stackalloc byte[checked((int)ClusterRenderContext.TargetViewSizeInBytes)],
+            stackalloc byte[144],
             BufferUsages.ShaderRead,
             "Cluster neutral target view");
         frame.TraversalNodes = frame.AddBuffer(
@@ -884,8 +884,7 @@ public sealed partial class ClusterPipelineSystem
         uploads.BeginFrame(generation);
         try
         {
-            graph.SetBufferData(_frameResources.PackedViews, MemoryMarshal.AsBytes(packedViews));
-            WriteUniform(ref graph, uploads, generation, _sceneValues, _sceneUniforms);
+        graph.SetBufferData(_frameResources.PackedViews, MemoryMarshal.AsBytes(packedViews));
             WriteUniform(ref graph, uploads, generation, new ClusterTraversalSeedUniforms
             {
                 ViewCount = checked((uint)primaryViewCount), ViewIndexMode = 0u,

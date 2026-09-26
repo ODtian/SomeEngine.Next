@@ -202,8 +202,6 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     uint atlasPage = 0u;
     uint packedPage = VSM_PAGE_UNMAPPED;
     uint previousLayer = 0xFFFFFFFFu;
-    bool partialReceivers = sameTag && entry.w != view.CacheGeneration &&
-        (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u;
     if (sameTag)
     {
         if (!DecodeVirtualShadowPage(entry.x, atlasPage))
@@ -216,9 +214,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         bool detailUpgrade =
             (requestFlags & VSM_PAGE_REQUEST_DETAIL) != 0u &&
             (previousFlags & VSM_PAGE_REQUEST_DETAIL) == 0u;
-        // A receiver-masked depth page is incomplete even if its projection and
-        // casters did not change. Render it fully once before retaining it.
-        if (entry.w == view.CacheGeneration && !detailUpgrade && PageMetadata[atlasPage].w == 0u)
+        if (entry.w == view.CacheGeneration && !detailUpgrade)
             return;
     }
     else if (entry.x != VSM_PAGE_UNMAPPED && entry.x != VSM_PAGE_LOCKED)
@@ -247,9 +243,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
     PageMetadata[atlasPage].y = view.CacheGeneration;
     PageMetadata[atlasPage].z = requestFlags;
-    PageMetadata[atlasPage].w = partialReceivers ? 1u : 0u;
-    if (!partialReceivers)
-        PageReceiverMasks[tableIndex] = 0xFFFFFFFFu.xx;
+    PageMetadata[atlasPage].w = 0u;
     PublishDirtyPage(
         tableIndex,
         viewIndex,

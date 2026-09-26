@@ -295,9 +295,6 @@ public sealed partial class ClusterPipelineSystem
                     MaxVisibleClusters = _options.MaxCandidates,
                     CollectMetrics = _options.EnableFrameMetricsReadback ? 1u : 0u,
                     PolicyTarget = binning.PolicyTarget ? 1u : 0u,
-                    ScreenWidth = checked((uint)_frameResources.Width),
-                    ScreenHeight = checked((uint)_frameResources.Height),
-                    ViewCount = _frameResources.ViewCount,
                 };
                 _uploads!.SetUniformValue(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(uniforms));
             }

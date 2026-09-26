@@ -13,7 +13,7 @@ public sealed class CookedClusterShaderContractTests
     [Theory]
     [InlineData("seed")]
     [InlineData("split")]
-    public async Task TessellationSurfaceEntriesFuseVertexEvaluationWithoutGlobalCaches(
+    public async Task TessellationEntriesAvoidGlobalCaches(
         string stage)
     {
         Shader shader = await ReadCookedShader("cluster_tessellation_phong.shader.asset");
@@ -205,6 +205,14 @@ public sealed class CookedClusterShaderContractTests
         "clustered_light_grid.shader.asset",
         "BuildClusteredLightGrid",
         "ClusteredLightGrid|LightBuffer|LightIndexList|LightingViews")]
+    [InlineData(
+        "vsm_frame_reset.shader.asset",
+        "ResetVirtualShadowFrame",
+        "ActivePageCount|AllocatedPageHierarchy|AllocationFailures|ClusterDispatchArguments|PageDispatchArguments|PageRequestDispatchArguments|PolicyRasterWorkCount|RasterPageMasks|UncachedPageRectBounds")]
+    [InlineData(
+        "vsm_dynamic_resolution.shader.asset",
+        "UpdateVirtualShadowDynamicResolution",
+        "AllocationFailures|DynamicResolution|DynamicResolutionBias|FreePageCount|PolicyRasterWorkCount")]
     [InlineData(
         "temporal_resolve.shader.asset",
         "PSMain",

@@ -496,9 +496,7 @@ internal sealed class ClusterRasterStages : IDisposable
             assignments.SlotCapacity,
             _resolved?.BinIndices ?? ClusterUploadData.Zero(0),
             addresses,
-            static (stage, index) => index | (stage.Software is null ? 0u : 0x80000000u) |
-                (stage.Hardware.UsesMaterialRanges && stage.Tessellation is null ? 0x40000000u : 0u) |
-                (stage.SoftwareUsesMaterialRanges && stage.Tessellation is null ? 0x20000000u : 0u)),
+            static (stage, index) => stage.Software is null ? index : index | 0x80000000u),
             invocations, bins.Range, [.. bins.Changes], [.. addresses], _resolved);
         _binIndices = bins;
         _resourceProperties = resourceProperties;

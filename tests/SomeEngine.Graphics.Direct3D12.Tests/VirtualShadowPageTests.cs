@@ -10,64 +10,35 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class VirtualShadowPageTests
 {
     [Theory]
-    [InlineData(5u, 0u, 0u, 0u)]
-    [InlineData(5u, 1u, 1u, 0u)]
-    [InlineData(0u, 0u, 1u, 1u)]
-    [InlineData(4u, 0u, 1u, 1u)]
-    public void CachedPagesAreReusedOnlyAfterTheirReceiverCoverageIsComplete(
-        uint generation, uint partialBefore, uint renderCount, uint partialAfter)
-    {
-        uint[] view = new uint[44];
-        view[16] = 128; view[17] = 128; view[24] = 5; view[34] = 1; view[36] = 4;
-        uint[][] result = Execute("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(1, 1, 1),
-        [
-            ([1, 1, 1, 1, 3, 1, 1, 1], ResourceBindingType.ConstantBuffer, 0),
-            (view, ResourceBindingType.BufferSrv, 176),
-            ([0], ResourceBindingType.BufferSrv, 4), ([1], ResourceBindingType.BufferSrv, 4),
-            ([1], ResourceBindingType.BufferSrv, 4),
-            ([1, 0, 0, generation], ResourceBindingType.BufferUav, 16),
-            ([0], ResourceBindingType.BufferUav, 4),
-            ([1, 5, 1, partialBefore], ResourceBindingType.BufferUav, 16),
-            ([0], ResourceBindingType.BufferUav, 4), ([0], ResourceBindingType.BufferUav, 4),
-            ([0], ResourceBindingType.BufferUav, 4), ([0], ResourceBindingType.BufferUav, 4),
-            (new uint[4], ResourceBindingType.BufferUav, 16), ([0], ResourceBindingType.BufferUav, 4),
-            ([uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
-            ([0], ResourceBindingType.BufferUav, 4), ([0, 0], ResourceBindingType.BufferUav, 4),
-            ([1, 0], ResourceBindingType.BufferUav, 8),
-        ]);
-        Assert.Equal(renderCount, result[8][0]);
-        Assert.Equal(partialAfter, result[2][3]);
-        Assert.Equal(5u, result[0][3]);
-        Assert.Equal(renderCount != 0 && partialAfter == 0
-            ? new[] { uint.MaxValue, uint.MaxValue } : new uint[] { 1, 0 }, result[12]);
-    }
-
-    [Theory]
     [InlineData(0, -17, 5)]
     [InlineData(1, 0, 0)]
     [InlineData(2, 0, 0)]
     public void CoarsePagesCoverEveryFinePageIncludingScrolledBorders(uint lightKind, int originX, int originY)
     {
-        const int pages = 21845;
-        uint[] view = new uint[44];
-        view[16] = 16384; view[17] = 128;
-        view[21] = unchecked((uint)originX); view[25] = unchecked((uint)originY);
-        view[33] = 1; view[34] = 8; view[37] = lightKind;
+        uint[] view = new uint[42];
+        view[16] = 16384;
+        view[17] = 128;
+        view[21] = unchecked((uint)originX);
+        view[25] = unchecked((uint)originY);
+        view[34] = 5;
+        view[36] = lightKind;
         uint[][] result = Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
         [
-            ([1, pages, 7, 0], ResourceBindingType.ConstantBuffer, 0),
-            (view, ResourceBindingType.BufferSrv, 176),
-            (new uint[pages], ResourceBindingType.BufferUav, 4),
-            (new uint[pages], ResourceBindingType.BufferUav, 4),
-            (new uint[pages], ResourceBindingType.BufferUav, 4),
-            ([0], ResourceBindingType.BufferUav, 4),
-            (new uint[pages * 2], ResourceBindingType.BufferUav, 8),
+            ([1, 64, 7, 0], ResourceBindingType.ConstantBuffer, 0),
+            (view, ResourceBindingType.BufferSrv, 168),
+            (new uint[64], ResourceBindingType.BufferUav, 4),
         ]);
-        Assert.Equal(7u, result[0][pages - 1]);
-        Assert.Equal(1, result[0].Count(value => value != 0));
-        Assert.Equal(2u, result[1][pages - 1]);
-        Assert.Equal((uint)pages - 1, result[2][0]);
-        Assert.Equal(1u, result[3][0]);
+        var requiredPages = new HashSet<int>();
+        for (int y = 0; y < 128; y++)
+        for (int x = 0; x < 128; x++)
+        {
+            int coarseX = (int)Math.Floor((originX + x) / 32.0);
+            int coarseY = (int)Math.Floor((originY + y) / 32.0);
+            int tableIndex = (coarseY & 7) * 8 + (coarseX & 7);
+            requiredPages.Add(tableIndex);
+            Assert.Equal(7u, result[0][tableIndex]);
+        }
+        Assert.Equal(requiredPages.Count, result[0].Count(value => value != 0));
     }
 
     [Theory]

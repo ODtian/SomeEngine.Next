@@ -765,7 +765,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             _ => throw new ArgumentOutOfRangeException(nameof(index)),
         };
 
-    public bool TryGetPublishedRoot(Mesh mesh, out uint root)
+    public bool TryGetPublishedRoot(MeshData mesh, out uint root)
     {
         lock (_gate)
         {

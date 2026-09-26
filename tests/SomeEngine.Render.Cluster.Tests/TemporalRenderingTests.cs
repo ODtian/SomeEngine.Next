@@ -1,4 +1,3 @@
-using SomeEngine.Resources;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
@@ -24,9 +23,8 @@ public sealed class TemporalRenderingTests
         string root = FindRoot();
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library", "AssetManifest"));
         await using var assets = new AssetLoader(new LooseAssetStorage(root, manifest));
-        var record = manifest.List(ShaderAsset.FileType).Single(item => item.Name == "temporal_resolve");
-        using ShaderAsset file = await ShaderAsset.OpenAsync(assets, new(record.AssetGuid));
-        using Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(file.Name);
+        var record = manifest.List(AssetType<Shader>.Name).Single(item => item.Name == "temporal_resolve");
+        Shader shader = await assets.LoadAsync(new AssetId<Shader>(record.Guid));
         using IGraphicsBackend backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         var enumeration = new AdapterEnumerationOptions(AdapterPreference.HighPerformance, IncludeSoftware: true);
         backend.TryEnumerateAdapters(enumeration, [], out int count);
@@ -106,22 +104,8 @@ public sealed class TemporalRenderingTests
         Assert.InRange(Render(0, secondView, depthValue: 1, foregroundEdge: true, sampleX: 1), .89f, .91f);
         Assert.Equal(0, Render(0, secondView, depthValue: 1, sampleX: 1));
 
-        // Unfinished GPU frames still form one history sequence; a canceled frame adds no sample.
-        Render(1, firstView, cameraCut: true);
-        Render(.8f, firstView, readResult: false);
-        Render(.1f, firstView, cancel: true);
-        Render(.8f, firstView, readResult: false);
-        Assert.InRange(Render(.8f, firstView), .945f, .947f);
-        foreach (float value in new[] { (float)Half.Epsilon, .00003f, -.00003f, -2f, 4f, 32752f })
-        {
-            float expected = (float)(Half)value;
-            Assert.Equal(expected, Render(value, firstView, cameraCut: true));
-            Assert.Equal(expected, Render(value, firstView));
-            Assert.Equal(expected, Render(value, firstView));
-        }
-
         float Render(float red, Entity view, bool enabled = true, bool cameraCut = false, bool cancel = false,
-            float depthValue = .5f, bool foregroundEdge = false, int sampleX = 0, bool readResult = true)
+            float depthValue = .5f, bool foregroundEdge = false, int sampleX = 0)
         {
             byte[] bytes = new byte[3072];
             for (int y = 0; y < 4; y++)
@@ -142,7 +126,6 @@ public sealed class TemporalRenderingTests
                 if (cancel) return 0;
                 var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
                 frame.Execute(completions);
-                if (!readResult) return 0;
                 foreach (QueueCompletion completion in completions)
                     if (completion != default)
                         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
@@ -162,7 +145,7 @@ public sealed class TemporalRenderingTests
     private static string FindRoot()
     {
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
-            if (File.Exists(Path.Combine(directory.FullName, "SomeEngine.slnx"))) return Path.Combine(directory.FullName, "templates", "DefaultProject");
+            if (File.Exists(Path.Combine(directory.FullName, "SomeEngine.slnx"))) return directory.FullName;
         throw new DirectoryNotFoundException();
     }
 }

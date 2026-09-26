@@ -108,23 +108,6 @@ void MSVisBuffer(
         vertex, visibility, groupId, lane, vertices, indices, primitives);
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("finite")]
-[shader("mesh")]
-[outputtopology("triangle")]
-[numthreads(32, 1, 1)]
-void MSVisBufferMeshlet(
-    uint3 groupId : SV_GroupID, uint lane : SV_GroupIndex,
-    out vertices ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertices[64],
-    out indices uint3 indices[128],
-    out primitives ClusterMeshPrimitive primitives[128])
-{
-    StaticVertexEval vertex;
-    DefaultVisibilityEvaluate visibility;
-    BuildVisBufferMeshlet<StaticVertexEval, DefaultVisibilityEvaluate>(
-        vertex, visibility, groupId, lane, vertices, indices, primitives);
-}
-
 [shader("pixel")]
 float4 PSMain(PSInput input) : SV_TARGET
 {

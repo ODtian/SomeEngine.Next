@@ -311,8 +311,7 @@ bool LoadAndFilterCandidate(
     out PackedCluster cluster,
     out RenderInstanceTransform t,
     out float boundsExpansion,
-    out uint2 rasterWindow,
-    out ClusterScreenBounds currentBounds)
+    out uint2 rasterWindow)
 {
     pageOffset = 0;
     clusterID = 0;
@@ -323,8 +322,6 @@ bool LoadAndFilterCandidate(
     t = (RenderInstanceTransform)0;
     boundsExpansion = 0.0;
     rasterWindow = 0u.xx;
-    currentBounds = (ClusterScreenBounds)0;
-    currentBounds.MaxUv = 1.0.xx;
 
     uint count = CandidateCount[0];
     uint capacity;
@@ -357,81 +354,33 @@ bool LoadAndFilterCandidate(
     if (!PassesLODFilter(cluster, t, view))
         return false;
 
-#if CLUSTER_CULL_PHASE == 2
-    bool needsCurrentBounds = true;
-#else
-    bool needsCurrentBounds = view.TargetPolicy != 0u || view.HasPrevHistory == 0u;
-#endif
-    if (needsCurrentBounds && (view.CullingEnabled != 0u || view.TargetPolicy != 0u))
-        currentBounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, false, view);
-    if (view.TargetPolicy != 0u && !ClusterTargetPolicyRasterBoundsWindow(
-            currentBounds.MinUv, currentBounds.MaxUv, view, rasterWindow))
-        return false;
-    if (view.CullingEnabled == 0u)
+    if (view.TargetPolicy != 0u)
     {
-        currentBounds = (ClusterScreenBounds)0;
-        currentBounds.MaxUv = 1.0.xx;
+        float2 minUv;
+        float2 maxUv;
+        float nearDepth;
+        uint unusedMip;
+        BuildClusterAabbScreenBoundsAndNearDepth(
+            cluster,
+            t,
+            false,
+            boundsExpansion,
+            view,
+            minUv,
+            maxUv,
+            nearDepth,
+            unusedMip);
+        if (!ClusterTargetPolicyRasterBoundsWindow(
+                minUv, maxUv, view, rasterWindow))
+            return false;
     }
     return true;
 }
 
 #if CLUSTER_CULL_PHASE == 2
-void AppendVisibleWindow(uint pageOffset, uint clusterID, uint instanceID,
+void AppendVisiblePhase2(uint pageOffset, uint clusterID, uint instanceID,
     uint viewIndex, uint2 rasterWindow, bool isSW, uint maxCandidates);
 #endif
-
-// Hardware work is bounded by the target's raster window, independently of
-// its virtual resolution. Empty windows never enter the raster bins.
-void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
-    uint viewIndex, uint2 rasterWindow, bool isSW, uint maxCandidates)
-{
-    ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
-    if (isSW || view.TargetPolicy == 0u)
-    {
-        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, isSW, maxCandidates);
-        return;
-    }
-    ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
-    uint windowSize = target.RasterWindowPages;
-    if (windowSize == 0u)
-    {
-        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, false, maxCandidates);
-        return;
-    }
-    uint4 pages = ClusterUnpackRasterTargetPageWindow(rasterWindow);
-    // The candidate filter already clipped this rectangle to accepted pages.
-    // Only rectangles spanning several hardware windows need another partition.
-    if (all(pages.zw - pages.xy < windowSize))
-    {
-        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, false, maxCandidates);
-        return;
-    }
-    for (uint y = pages.y; y <= pages.w; y += windowSize)
-    {
-        for (uint x = pages.x; x <= pages.z; x += windowSize)
-        {
-            uint2 last = min(uint2(x, y) + windowSize - 1u, pages.zw);
-            uint4 clipped = uint4(last, uint2(x, y));
-            bool accepted = false;
-            for (uint row = y; row <= last.y; row++)
-            {
-                uint firstWord = x / 32u;
-                uint lastWord = last.x / 32u;
-                for (uint word = firstWord; word <= lastWord; word++)
-                {
-                    uint mask = ClusterTargetHierarchyWordMask(target, 0u, row, word, x, last.x);
-                    if (mask == 0u) continue;
-                    clipped.xy = min(clipped.xy, uint2(word * 32u + firstbitlow(mask), row));
-                    clipped.zw = max(clipped.zw, uint2(word * 32u + firstbithigh(mask), row));
-                    accepted = true;
-                }
-            }
-            if (accepted)
-                AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex,
-                    ClusterPackRasterTargetPageWindow(clipped), false, maxCandidates);
-        }
-    }
-}
 
 #if CLUSTER_CULL_PHASE == 1
 [shader("compute")]
@@ -447,7 +396,6 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     RenderInstanceTransform t;
     float boundsExpansion;
     uint2 rasterWindow;
-    ClusterScreenBounds currentBounds;
     bool valid = LoadAndFilterCandidate(
             dispatchThreadID.x,
             pageOffset,
@@ -458,14 +406,11 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
             cluster,
             t,
             boundsExpansion,
-            rasterWindow,
-            currentBounds);
+            rasterWindow);
     if (!valid)
         return;
 
-    ClusterScreenBounds bounds = currentBounds;
-    bool occluded = false;
-    if (view.HasPrevHistory != 0u && view.CullingEnabled != 0u)
+    if (view.HasPrevHistory == 0)
     {
         bounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, true, view);
         occluded = IsOccludedByHiZ(bounds, true, viewIndex, view);
@@ -568,7 +513,6 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     RenderInstanceTransform t;
     float boundsExpansion;
     uint2 rasterWindow;
-    ClusterScreenBounds currentBounds;
     bool valid = LoadAndFilterCandidate(
             dispatchThreadID.x,
             pageOffset,
@@ -579,12 +523,20 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
             cluster,
             t,
             boundsExpansion,
-            rasterWindow,
-            currentBounds);
+            rasterWindow);
     if (!valid)
         return;
 
-    bool occluded = IsOccludedByHiZ(currentBounds, false, viewIndex, view);
+    float2 minUv, maxUv;
+    bool occluded = IsOccludedByHiZ(
+        cluster,
+        t,
+        boundsExpansion,
+        false,
+        viewIndex,
+        view,
+        minUv,
+        maxUv);
     if (!occluded)
     {
         bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, view);

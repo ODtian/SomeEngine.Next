@@ -21,14 +21,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 /// </summary>
 public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemContext>, IRenderGraphFrameExecutionObserver
 {
-    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "Cluster.Update");
-    private static readonly SomeEngine.Diagnostics.TraceSite MaterialInputsTrace = new("render", "Cluster.MaterialInputs");
-    private static readonly SomeEngine.Diagnostics.TraceSite ResidencyReadsTrace = new("render", "Cluster.ResidencyReads");
-    private static readonly SomeEngine.Diagnostics.TraceSite FrameResourcesTrace = new("render", "Cluster.FrameResources");
-    private static readonly SomeEngine.Diagnostics.TraceSite FrameUploadsTrace = new("render", "Cluster.FrameUploads");
-    private static readonly SomeEngine.Diagnostics.TraceSite InstanceTransferTrace = new("render", "Cluster.InstanceTransfer");
-    private static readonly SomeEngine.Diagnostics.TraceSite SceneBoundsTrace = new("render", "Cluster.SceneBounds");
-    private static readonly SomeEngine.Diagnostics.TraceSite RasterInputsTrace = new("render", "Cluster.RasterInputs");
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "Cluster.Update", detail: true);
 
     private const int ReadbackGenerationCount = 2;
     private const int RasterEpochCount = 4;
@@ -869,15 +862,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     "Cluster active policy views");
             if (_renderContext.IsValid)
                 _renderContext.InvocationSourceBinder(ref graph, _framePolicyViews);
-            using (SomeEngine.Diagnostics.EngineTrace.Begin(FrameResourcesTrace))
-                BindFrameResources(
-                    ref graph,
-                    in binding,
-                    history);
-            using (SomeEngine.Diagnostics.EngineTrace.Begin(InstanceTransferTrace))
-                _instanceDataTransfer?.Stage(ref graph, batch, binding.InstanceData);
-            using (SomeEngine.Diagnostics.EngineTrace.Begin(SceneBoundsTrace))
-                BindSceneBounds(ref graph, batch, policyViewCount != 0);
+            BindFrameResources(
+                ref graph,
+                in binding,
+                history);
+            BindSceneBounds(ref graph, batch, policyViewCount != 0);
             RecordResidencyUploads(ref graph, in binding);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyReadsTrace))
                 DeclareResidencyReads(ref graph, in binding);
@@ -1065,7 +1054,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _frameResources.NeutralPolicyView,
-                structureStride: ClusterRenderContext.TargetViewSizeInBytes,
+                structureStride: 72,
                 label: "Cluster neutral raster target view"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(

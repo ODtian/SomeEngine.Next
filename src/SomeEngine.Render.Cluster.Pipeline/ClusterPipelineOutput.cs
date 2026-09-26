@@ -78,8 +78,7 @@ public readonly record struct ClusterRenderContext(
     uint OcclusionMipCount,
     uint OcclusionTexelSize,
     GraphPassId FinishBefore = default,
-    bool HardwareRasterOnly = false,
-    GraphPassId BoundsConsumer = default)
+    bool HardwareRasterOnly = false)
 {
     public const uint TargetViewSizeInBytes = 80;
 

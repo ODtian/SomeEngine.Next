@@ -28,7 +28,7 @@ uint SlotBin(
     uint maxBins)
 {
     uint key = GetStageSlot(slots, slotOffset, localMaterialIndex, capacity);
-    return ValidBin(key & 0x1FFFFFFFu, maxBins);
+    return ValidBin(key & 0x7FFFFFFFu, maxBins);
 }
 
 void WriteDispatch(

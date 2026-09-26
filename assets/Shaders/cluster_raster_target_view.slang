@@ -19,12 +19,11 @@ struct ClusterRasterTargetView
     uint TableOriginY;
 
     uint ReceiverMaskEnabled;
-    uint RasterWindowPages;
-    uint2 Padding;
+    uint Pad0;
     uint4 UncachedPageRect;
 };
 
-static const uint CLUSTER_RASTER_TARGET_VIEW_BYTES = 80u;
+static const uint CLUSTER_RASTER_TARGET_VIEW_BYTES = 72u;
 
 uint2 ClusterPackRasterTargetPageWindow(uint4 pageWindow)
 {

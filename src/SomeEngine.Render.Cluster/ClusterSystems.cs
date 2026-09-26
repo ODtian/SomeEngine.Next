@@ -206,31 +206,10 @@ public sealed class ClusterInstanceSystem<TProducer> :
             uint lastSystemVersion) =>
             producer.GetChanges(packet, lastSystemVersion);
 
-        public RenderInstanceChanges CollectChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion)
-        {
-            if (!packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion) ||
-                !packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion))
-                columns.RecordPartialTransformChanges();
-            RenderInstanceChanges changes = GetChanges(packet, lastSystemVersion);
-            if ((changes & RenderInstanceChanges.Structure) != 0)
-                columns.Add(InstanceColumnChanges.All);
-            else if (changes != RenderInstanceChanges.None)
-            {
-                int fields = 0;
-                if (packet.ChangedSince<RenderTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.CurrentTransform;
-                if (packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.PreviousTransform;
-                if (packet.ChangedSince<RenderMesh>(lastSystemVersion)) fields |= InstanceColumnChanges.Mesh;
-                if (producer.Second.GetChanges(packet, lastSystemVersion) != RenderInstanceChanges.None)
-                    fields |= InstanceColumnChanges.Additional;
-                columns.Add(fields);
-            }
-            return changes;
-        }
-
         public bool AllRowsChanged(
             ReadOnlyQueryPacket packet,
             uint lastSystemVersion) =>
-            columns.AllTransformsChanged || packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
+            packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
             || packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion)
             || packet.AllRowsChangedSince<RenderMesh>(lastSystemVersion);
 

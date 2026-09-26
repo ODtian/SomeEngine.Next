@@ -107,7 +107,8 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
             _initializePass = edit.AddCopyFramePass(
                 "Initialize temporal histories",
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
-                new TemporalInitializePassData(_history),
+                new TemporalInitializePassData(_colorHistory, _motionHistory, _sceneDepth, _depthHistory,
+                    checked((uint)width), checked((uint)height)),
                 new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 static (ref PassDefinition pass, ref TemporalInitializePassData data) => data.Declare(ref pass),
                 TemporalInitializePassData.Record);
@@ -121,6 +122,14 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 default,
                 TemporalResolvePassData.Declare,
                 TemporalResolvePassData.Record);
+            _historyPass = edit.AddCopyFramePass(
+                "Update temporal history",
+                PassQueueSelection.AnyOfType(QueueType.Graphics),
+                new TemporalHistoryPassData(resolved, _colorHistory, _sceneMotion, _motionHistory,
+                    _sceneDepth, _depthHistory, checked((uint)width), checked((uint)height)),
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                static (ref PassDefinition pass, ref TemporalHistoryPassData data) => data.Declare(ref pass),
+                TemporalHistoryPassData.Record);
             edit.OrderAfter(_resolvePass, _initializePass);
             PassDefinition resolve = edit.GetPass(_resolvePass);
             foreach (TemporalResource resource in _resourceOrder)

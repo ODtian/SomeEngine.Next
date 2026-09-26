@@ -556,7 +556,7 @@ public sealed partial class ClusterPipelineSystem
                 _ = pass.Bind(
                     graph.CreateBufferSrv(
                         _frameResources.NeutralPolicyView,
-                        structureStride: ClusterRenderContext.TargetViewSizeInBytes,
+                        structureStride: 72,
                         label: "Cluster neutral raster target view"),
                     PipelineSync.AllShading);
                 return true;

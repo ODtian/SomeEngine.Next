@@ -74,12 +74,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     view.HiZInvSize = 2.0.xx / float(max(mipResolution, 2u));
     view.TargetPolicy = 1u;
     view.TargetViewIndex = compactIndex;
-    view.CullingProjectionIndex = sourceViewIndex + 1u;
-    // A cube-face far plane also includes corners beyond the local light's sphere.
-    // Such casters cannot occlude receivers inside the light's actual influence.
-    view.CullingRadius = (source.LightKind == VSM_LIGHT_POINT || source.LightKind == VSM_LIGHT_SPOT)
-        ? source.LightRange : 0.0;
-    if (view.CullingRadius > 0.0) view.CameraPos = source.LightPosition;
+    view.ViewPadding = 0u;
     view.HasPrevHistory =
         ViewCompact.HasPreviousHistory != 0u &&
         (source.Flags & VSM_VIEW_PREVIOUS_PROJECTION_VALID) != 0u;
@@ -108,8 +103,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     target.TableOriginY = asuint(worldOrigin.y) & pageMask;
     target.ReceiverMaskEnabled =
         (source.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u ? 1u : 0u;
-    target.RasterWindowPages = 8u;
-    target.Padding = uint2(0, 0);
+    target.Pad0 = 0u;
     target.UncachedPageRect = uncachedRect;
     RasterTargetViews[compactIndex] = target;
 }

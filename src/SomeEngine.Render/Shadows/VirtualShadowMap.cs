@@ -66,7 +66,6 @@ public sealed class VirtualShadowMap : IDisposable
         settings.Validate();
         LinkedComputePipeline? markPages = null;
         LinkedComputePipeline? resetFrame = null;
-        LinkedComputePipeline? resetReceiverMasks = null;
         LinkedComputePipeline? markCoarsePages = null;
         LinkedComputePipeline? allocatePages = null;
         LinkedComputePipeline? clearPages = null;
@@ -81,10 +80,8 @@ public sealed class VirtualShadowMap : IDisposable
         Texture? atlas = null;
         try
         {
-            resetReceiverMasks = LinkedComputePipeline.Create(
-                _backend, _device, shaders.ResetReceiverMasks, "Virtual shadow receiver mask reset");
             resetFrame = LinkedComputePipeline.Create(
-                _backend, _device, shaders.ResetFrame, "Virtual shadow frame reset");
+                _backend, _device, assets, shaders.ResetFrame, "Virtual shadow frame reset");
             markPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
@@ -138,6 +135,7 @@ public sealed class VirtualShadowMap : IDisposable
             dynamicResolution = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                assets,
                 shaders.DynamicResolution,
                 "Virtual shadow dynamic resolution feedback");
             physicalPageOwners = _backend.CreateBuffer(
@@ -180,7 +178,6 @@ public sealed class VirtualShadowMap : IDisposable
             if (markCoarsePages is not null) TryDispose(markCoarsePages, ref cleanupFailures);
             if (markPages is not null) TryDispose(markPages, ref cleanupFailures);
             if (resetFrame is not null) TryDispose(resetFrame, ref cleanupFailures);
-            if (resetReceiverMasks is not null) TryDispose(resetReceiverMasks, ref cleanupFailures);
             if (cleanupFailures is not null)
             {
                 cleanupFailures.Insert(0, primary);
@@ -193,7 +190,6 @@ public sealed class VirtualShadowMap : IDisposable
 
         PageMarkPipeline = markPages;
         FrameResetPipeline = resetFrame;
-        ReceiverMaskResetPipeline = resetReceiverMasks;
         CoarsePageMarkPipeline = markCoarsePages;
         PageAllocatePipeline = allocatePages;
         PageClearPipeline = clearPages;
@@ -225,7 +221,6 @@ public sealed class VirtualShadowMap : IDisposable
 
     public VirtualShadowMapSettings Settings { get; }
     public LinkedComputePipeline FrameResetPipeline { get; }
-    public LinkedComputePipeline ReceiverMaskResetPipeline { get; }
     public LinkedComputePipeline PageMarkPipeline { get; }
     public LinkedComputePipeline CoarsePageMarkPipeline { get; }
     public LinkedComputePipeline PageAllocatePipeline { get; }
@@ -813,8 +808,7 @@ public sealed class VirtualShadowMap : IDisposable
         left.ClipmapLevelCount == right.ClipmapLevelCount &&
         left.MipLevelCount == right.MipLevelCount &&
         left.MinMipLevel == right.MinMipLevel &&
-        (left.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) ==
-            (right.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) &&
+        left.Flags == right.Flags &&
         left.LightKind == right.LightKind &&
         left.FaceIndex == right.FaceIndex &&
         left.LightPosition == right.LightPosition &&
@@ -856,7 +850,6 @@ public sealed class VirtualShadowMap : IDisposable
         TryDispose(CoarsePageMarkPipeline, ref failures);
         TryDispose(PageMarkPipeline, ref failures);
         TryDispose(FrameResetPipeline, ref failures);
-        TryDispose(ReceiverMaskResetPipeline, ref failures);
         Array.Clear(_pageTableEndpoint);
         Array.Clear(_physicalPageOwnersEndpoint);
         Array.Clear(_atlasEndpoint);

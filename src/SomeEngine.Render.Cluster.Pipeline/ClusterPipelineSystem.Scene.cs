@@ -33,7 +33,7 @@ public sealed partial class ClusterPipelineSystem
     private Vector3[] _scenePositions = [];
     private uint[] _sceneRemap = [];
     private uint[] _sceneInstances = [];
-    private (bool Geometry, bool Targets, bool Scatter)? _geometryPassesEnabled;
+    private (bool Geometry, bool Targets)? _geometryPassesEnabled;
 
     private void InstallSceneBounds(ref RenderGraphEdit graph)
     {
@@ -125,8 +125,7 @@ public sealed partial class ClusterPipelineSystem
 
     private void SetGeometryPassesEnabled(ref RenderGraphFrame graph, bool hasGeometry, bool hasTargetGeometry)
     {
-        bool scatter = hasGeometry && CalculateShadeBinItemCapacity(_frameResources) == 0u;
-        if (_geometryPassesEnabled == (hasGeometry, hasTargetGeometry, scatter)) return;
+        if (_geometryPassesEnabled == (hasGeometry, hasTargetGeometry)) return;
         graph.SetPassEnabled(_traversalSeedPass, hasGeometry);
         foreach (GraphPassId pass in _traversalLevelPasses)
             graph.SetPassEnabled(pass, hasGeometry);
@@ -183,7 +182,7 @@ public sealed partial class ClusterPipelineSystem
         graph.SetPassEnabled(_shadeScatterPass, scatter);
         foreach (ShadeGroup group in _shadeGroups.Values)
             graph.SetPassEnabled(group.Pass, hasGeometry);
-        _geometryPassesEnabled = (hasGeometry, hasTargetGeometry, scatter);
+        _geometryPassesEnabled = (hasGeometry, hasTargetGeometry);
     }
 
     private void BindSceneSeed(ref RenderGraphEdit graph, ref PassDefinition pass)
