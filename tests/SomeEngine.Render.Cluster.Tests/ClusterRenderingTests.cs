@@ -26,15 +26,57 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class ClusterRenderingTests
 {
     [Theory]
-    [InlineData(1, 1, false, false, false, false)]
-    [InlineData(3, 2, true, false, false, false)]
-    [InlineData(32, 32, true, true, false, false)]
-    [InlineData(3, 2, true, false, true, false)]
-    [InlineData(32, 32, true, true, true, false)]
-    [InlineData(32, 32, true, true, false, true)]
-    [InlineData(32, 32, false, true, false, true)]
-    public async Task GeometryChangesAndRemovalPreserveOutputAfterCancellation(
-        int width, int height, bool asyncCompute, bool changeGeometry, bool vulkan, bool shadeColor)
+    [InlineData(1, 1, false, false, false, false, false)]
+    [InlineData(3, 2, true, false, false, false, false)]
+    [InlineData(32, 32, true, true, false, false, false)]
+    [InlineData(3, 2, true, false, true, false, false)]
+    [InlineData(32, 32, true, true, true, false, false)]
+    [InlineData(32, 32, true, true, false, true, false)]
+    [InlineData(32, 32, false, true, false, true, false)]
+    [InlineData(32, 32, false, true, true, true, false)]
+    [InlineData(32, 32, true, true, true, true, false)]
+    [InlineData(31, 29, true, true, false, true, false)]
+    [InlineData(31, 29, true, true, true, true, false)]
+    [InlineData(32, 32, true, true, false, true, true)]
+    [InlineData(32, 32, true, true, true, true, true)]
+    public Task GeometryChangesAndRemovalPreserveOutputAfterCancellation(
+        int width, int height, bool asyncCompute, bool changeGeometry, bool vulkan, bool shadeColor, bool softwareRaster) =>
+        RenderGeometryChanges(width, height, asyncCompute, changeGeometry, vulkan, shadeColor, softwareRaster, false);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task MaterialAdditionsAndRemovalPreserveVisibleOutput(bool vulkan) =>
+        RenderGeometryChanges(31, 29, true, true, vulkan, true, false, true);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task ManyShaderMaterialsPreserveVisibleOutputWithSharedCandidateCapacity(bool vulkan) =>
+        RenderGeometryChanges(31, 29, true, true, vulkan, true, false, true,
+            candidateCapacity: 1024, extraMaterialCount: 64, separateShaders: true);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CameraMovementRecoversHiddenGeometryWithoutChangingTheScene(bool vulkan)
+    {
+        List<byte[]> withHistory = [], withoutHistory = [];
+        await RenderGeometryChanges(32, 32, true, true, vulkan, true, true, false,
+            cameraMovement: true, discardCameraHistory: true, cameraImages: withoutHistory);
+        await RenderGeometryChanges(32, 32, true, true, vulkan, true, true, false,
+            cameraMovement: true, cameraImages: withHistory);
+        Assert.Equal(withoutHistory.Count, withHistory.Count);
+        for (int frame = 24; frame < withHistory.Count; frame++)
+            Assert.True(withHistory[frame].AsSpan().SequenceEqual(withoutHistory[frame]),
+                $"Camera frame {frame} must match rendering without previous-frame occlusion.");
+    }
+
+    private async Task RenderGeometryChanges(
+        int width, int height, bool asyncCompute, bool changeGeometry, bool vulkan, bool shadeColor,
+        bool softwareRaster, bool addMaterialVariants, bool cameraMovement = false,
+        bool discardCameraHistory = false, List<byte[]>? cameraImages = null,
+        uint? candidateCapacity = null, int extraMaterialCount = 6, bool separateShaders = false)
     {
         string root = FindRoot();
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library", "AssetManifest"));
@@ -59,17 +101,52 @@ public sealed class ClusterRenderingTests
         Queue copy = backend.GetQueue(device, QueueType.Copy);
         using var mainWorld = new World();
         Entity source = Entity.Null;
-        Mesh? mesh = changeGeometry ? await assets.LoadAsync(new AssetId<Mesh>(
-            manifest.List(AssetType<Mesh>.Name).First(value => value.Name == "IcoSphere").Guid)) : null;
-        Material? material = changeGeometry ? await assets.LoadAsync(new AssetId<Material>(
-            manifest.List(AssetType<Material>.Name).First(value => value.Name == "TestUnlit_1").Guid)) : null;
-        await using var secondAssets = new AssetLoader(new LooseAssetStorage(root, manifest));
-        Material? secondMaterial = shadeColor ? await secondAssets.LoadAsync(new AssetId<Material>(
-            manifest.List(AssetType<Material>.Name).First(value => value.Name == "TestUnlit_1").Guid)) : null;
+        using Mesh? mesh = changeGeometry ? await ReadMesh() : null;
+        using Material? material = changeGeometry ? await ReadMaterial() : null;
+        using Material? secondMaterial = shadeColor ? await ReadMaterial() : null;
+
+        using SomeEngine.Resources.Texture? sharedTexture = shadeColor ? CreateColorTexture(255) : null;
+        Task? textureUpdate = null;
+
+        static SomeEngine.Resources.Texture CreateColorTexture(byte value) => SomeEngine.Resources.Texture.Create(
+            new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,
+                TextureUsages.Sampled | TextureUsages.CopyDestination),
+            [new TexturePixels(new TextureMipTile { Width = 1, Height = 1, RowPitch = 4, SlicePitch = 4 },
+                new byte[] { value, value, value, 255 })], SomeEngine.Graphics.TextureViewDimension.Texture2D);
+
+        async Task<Mesh> ReadMesh()
+        {
+            using MeshAsset value = await MeshAsset.OpenAsync(assets, new(manifest.List(MeshAsset.FileType).First().AssetGuid));
+            ClusterMeshBlock geometry = value.GetBlock<ClusterMeshBlock>();
+            Mesh result = await geometry.CreateAsync(value.GetBlock<MeshBlock>(), value.Name);
+            await geometry.LoadPagesAsync(result, Enumerable.Range(0, result.PageCount));
+            return result;
+        }
+        async Task<Material> ReadMaterial()
+        {
+            using MaterialAsset value = await MaterialAsset.OpenAsync(assets,
+                new(manifest.List(MaterialAsset.FileType).First(item => item.Name == "Unlit").AssetGuid));
+            return await value.CreateAsync(assets);
+        }
+        Entity AddCameraMesh(Vector3 position, float scale, Material value)
+        {
+            Entity entity = mainWorld.CreateEntity(new MeshInstance { Mesh = mesh! });
+            mainWorld.Add(entity, new WorldTransform { Qvvs = new TransformQvvs(position, Quaternion.Identity, scale) });
+            mainWorld.AddBuffer<MeshMaterialBinding>(entity);
+            mainWorld.ExecuteBufferWrite<MeshMaterialBinding, Material>(entity, ref value,
+                static (DynamicBuffer<MeshMaterialBinding> buffer, ref Material item) => buffer.Add(new MeshMaterialBinding(item)));
+            return entity;
+        }
         Entity secondSource = Entity.Null;
+        List<Material> extraMaterials = [];
+        List<Shader> extraShaders = [];
+        List<Entity> extraSources = [];
         if (shadeColor)
         {
+            Assert.IsType<UnlitMaterial>(material).AlbedoMap = sharedTexture;
+            Assert.IsType<UnlitMaterial>(secondMaterial).AlbedoMap = sharedTexture;
             Assert.IsType<UnlitMaterial>(material).BaseColorTint = new Vector4(.8f, .1f, .2f, 1);
+            Assert.IsType<UnlitMaterial>(secondMaterial).BaseColorTint = new Vector4(.05f, .1f, .9f, 1);
             Assert.IsType<UnlitMaterial>(secondMaterial).MaterialSampler = new SamplerDesc(
                 FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
                 AddressType.Repeat, AddressType.Repeat, AddressType.Repeat);
@@ -82,7 +159,8 @@ public sealed class ClusterRenderingTests
         using var coordinator = new RenderFrameCoordinator(renderDevice);
         var instances = new RenderInstanceStorageSystem(backend, device, coordinator, world,
             ClusterRenderFeature.InstanceLayout, new RenderInstanceOptions
-            { RowCapacity = shadeColor ? 8 : 2, BatchCapacity = shadeColor ? 4 : 2 });
+            { RowCapacity = shadeColor ? Math.Max(16, (extraMaterialCount + 2) * 3) : 2,
+                BatchCapacity = shadeColor ? 16 : 2 });
         var cluster = new ClusterRenderResources(backend, device, coordinator, world, instances,
             new ClusterRenderOptions { Residency = new ClusterResidencyOptions
             { PageHeapCapacityBytes = 1048576, BvhCapacityBytes = 65536, PageFaultCapacity = 16 } });
@@ -153,13 +231,29 @@ public sealed class ClusterRenderingTests
 
             var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
             bool sawVisibility = false;
+            bool sawCameraRecovery = false;
             // Streaming feedback and material textures arrive through completed frames.
             // Keep each color-test edit in place for six frames before reading its result.
             for (int renderIndex = 0; renderIndex < (shadeColor ? 108 : changeGeometry ? 18 : 3); renderIndex++)
             {
                 int iteration = shadeColor ? renderIndex / 6 : renderIndex;
                 bool applyChanges = !shadeColor || renderIndex % 6 == 0;
-                if (applyChanges && changeGeometry && iteration == 1)
+                if (cameraMovement)
+                {
+                    if (renderIndex == 0)
+                    {
+                        source = AddCameraMesh(new Vector3(0, 0, -5), 1f, material!);
+                        secondSource = AddCameraMesh(new Vector3(0, 0, -2), 1.2f, secondMaterial!);
+                    }
+                    float horizontal = Math.Clamp((renderIndex - 24) * 0.1f, 0, 4);
+                    world.Replace(viewEntity, world.Read<RenderView>(viewEntity) with
+                    {
+                        View = Matrix4x4.CreateLookAt(new Vector3(horizontal, 0, 0),
+                            new Vector3(0, 0, -5), Vector3.UnitY),
+                        CameraCut = discardCameraHistory,
+                    });
+                }
+                else
                 {
                     if (shadeColor && renderIndex is 42 or 43)
                         world.Replace(viewEntity, world.Read<RenderView>(viewEntity) with { CameraCut = renderIndex == 42 });
@@ -253,24 +347,6 @@ public sealed class ClusterRenderingTests
                     }
                     if (applyChanges && changeGeometry && iteration == 16) mainWorld.DestroyEntity(source);
                 }
-                if (applyChanges && changeGeometry && iteration == 8)
-                    Assert.IsType<UnlitMaterial>(material).BaseColorTint = new Vector4(0.1f, 0.8f, 0.2f, 1);
-                if (applyChanges && shadeColor && iteration is 6 or 12)
-                {
-                    secondSource = mainWorld.CreateEntity(new MeshInstance { Mesh = mesh! });
-                    mainWorld.Add(secondSource, new WorldTransform
-                    { Qvvs = new TransformQvvs(new Vector3(2, 0, -4), Quaternion.Identity) });
-                    mainWorld.AddBuffer<MeshMaterialBinding>(secondSource);
-                    Material value = secondMaterial!;
-                    mainWorld.ExecuteBufferWrite<MeshMaterialBinding, Material>(secondSource, ref value,
-                        static (SomeEngine.ECS.DynamicBuffer<MeshMaterialBinding> buffer, ref Material data) => buffer.Add(new MeshMaterialBinding(data)));
-                }
-                if (applyChanges && shadeColor && iteration is 10 or 16)
-                {
-                    mainWorld.DestroyEntity(secondSource);
-                    secondSource = Entity.Null;
-                }
-                if (applyChanges && changeGeometry && iteration == 16) mainWorld.DestroyEntity(source);
                 extraction.Extract(mainWorld);
                 Assert.True(coordinator.TryBeginPrepare(out var update));
                 using (update)
@@ -334,24 +410,48 @@ public sealed class ClusterRenderingTests
                     continue;
                 }
                 bool populated = changeGeometry && iteration is >= 1 and < 16;
-                if (shadeColor && populated && iteration >= 4 && renderIndex % 6 == 5)
+                if (shadeColor && populated && iteration >= 3 &&
+                    (renderIndex % 6 == 5 || iteration is 4 or 7 && applyChanges))
                 {
                     Vector4 expected = Assert.IsType<UnlitMaterial>(material).BaseColorTint;
+                    if (iteration >= 7) expected *= 128f / 255f;
                     int matching = 0;
+                    int occluderPixels = 0;
                     float maximum = 0;
+                    Vector4 maximumColor = Vector4.Zero;
                     for (int y = 0; y < height; y++)
                     {
                         ReadOnlySpan<Half> row = MemoryMarshal.Cast<byte, Half>(mapping.Bytes.Slice(y * 256, width * 8));
                         for (int x = 0; x < width; x++)
                         {
                             maximum = Math.Max(maximum, (float)row[x * 4]);
+                            maximumColor = Vector4.Max(maximumColor, new Vector4(
+                                (float)row[x * 4], (float)row[x * 4 + 1],
+                                (float)row[x * 4 + 2], (float)row[x * 4 + 3]));
                             if (Math.Abs((float)row[x * 4] - expected.X) < .01f &&
                                 Math.Abs((float)row[x * 4 + 1] - expected.Y) < .01f &&
                                 Math.Abs((float)row[x * 4 + 2] - expected.Z) < .01f) matching++;
+                            if (Math.Abs((float)row[x * 4] - .05f) < .01f &&
+                                Math.Abs((float)row[x * 4 + 2] - .9f) < .01f) occluderPixels++;
                         }
                     }
-                    Assert.True(matching > 0, $"Frame {iteration} must show the current unlit color; maximum red was {maximum}.");
-                    sawVisibility = true;
+                    if (iteration == 3)
+                    {
+                        Assert.Equal(0, matching);
+                        Assert.True(occluderPixels > 0,
+                            $"The front mesh must hide the rear mesh before movement. Maximum color: {maximumColor}; {pipeline.CaptureFrameMetrics()}");
+                    }
+                    else
+                    {
+                        Assert.True(matching > 0, $"Frame {iteration} must show the current unlit color; maximum red was {maximum}.");
+                        sawVisibility = true;
+                    }
+                    if (iteration == 4 && applyChanges)
+                    {
+                        ClusterFrameMetrics metrics = pipeline.CaptureFrameMetrics();
+                        Assert.True(metrics.PhaseTwoHardwareClusters + metrics.PhaseTwoSoftwareClusters > 0,
+                            "Moving the occluder must recover the hidden mesh during the same frame.");
+                    }
                 }
                 else if (populated && !shadeColor)
                     for (int y = 0; y < height; y++)
@@ -359,7 +459,19 @@ public sealed class ClusterRenderingTests
                 if (!populated && !shadeColor)
                     for (int y = 0; y < height; y++)
                         Assert.All(mapping.Bytes.Slice(y * 256, width * 4).ToArray(), value => Assert.Equal(0, value));
-                Assert.Equal((populated ? 1 : 0) + (secondSource != Entity.Null ? 1 : 0), pipeline.CurrentInstanceCount);
+                if (!populated && shadeColor)
+                    for (int y = 0; y < height; y++)
+                    {
+                        ReadOnlySpan<Half> row = MemoryMarshal.Cast<byte, Half>(mapping.Bytes.Slice(y * 256, width * 8));
+                        for (int x = 0; x < width; x++)
+                        {
+                            Assert.Equal((Half)0, row[x * 4]);
+                            Assert.Equal((Half)0, row[x * 4 + 1]);
+                            Assert.Equal((Half)0, row[x * 4 + 2]);
+                            Assert.Equal((Half)1, row[x * 4 + 3]);
+                        }
+                    }
+                Assert.Equal((populated ? 1 : 0) + (secondSource != Entity.Null ? 1 : 0) + extraSources.Count, pipeline.CurrentInstanceCount);
             }
             if (cameraMovement && !discardCameraHistory)
                 Assert.True(sawCameraRecovery, "Camera movement must exercise second-phase recovery.");

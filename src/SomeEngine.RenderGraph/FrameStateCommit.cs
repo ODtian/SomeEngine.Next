@@ -421,6 +421,15 @@ internal sealed partial class FrameExecutor
     private void StoreBufferStates(int resourceIndex, BufferBoundaryState[] boundaryStates)
     {
         ref FrameBuffer frameBuffer = ref CollectionsMarshal.AsSpan(_buffers)[resourceIndex];
+        // Upload storage is reused independently for each frame in flight. Its
+        // last submitted state belongs to that buffer, not the graph declaration.
+        if (frameBuffer.UploadData is { } upload)
+        {
+            upload.BoundaryStates = boundaryStates;
+            frameBuffer.EntryBoundaryStates = boundaryStates;
+            _changedBoundaryResources.Add((GraphAccessTargetKind.Buffer, resourceIndex));
+            return;
+        }
         if (frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent && frameBuffer.Definition is { } resource)
             resource.BoundaryStates = boundaryStates;
         else

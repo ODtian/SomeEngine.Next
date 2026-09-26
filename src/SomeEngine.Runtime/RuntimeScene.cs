@@ -18,8 +18,6 @@ internal sealed class RuntimeScene : IDisposable
     private (Mesh Mesh, MeshPayloadSource Source)[] _meshes = [];
     private readonly (Entity Entity, PointLight Value)[] _playbackLights;
     private readonly Material[] _playbackMaterials;
-    private Shader[] _shaders = [];
-    private Texture[] _textures = [];
     private readonly Vector3 _initialCameraPosition;
     private readonly Vector3 _cameraOrbitTarget;
     private static readonly SomeEngine.Diagnostics.TraceSite MovingMeshesTrace = new("scene", "MovingMeshes");
@@ -77,8 +75,6 @@ internal sealed class RuntimeScene : IDisposable
         SceneCamera camera = world.Read<SceneCamera>(cameras[0]);
         var meshes = new Dictionary<Guid, (Mesh Mesh, MeshPayloadSource Source)>();
         var materials = new Dictionary<Guid, Material>();
-        var shaders = new Dictionary<Guid, Shader>();
-        var textures = new Dictionary<Guid, Texture>();
         Vector3 meshPositionMin = new(float.PositiveInfinity);
         Vector3 meshPositionMax = new(float.NegativeInfinity);
         try
@@ -111,7 +107,7 @@ internal sealed class RuntimeScene : IDisposable
                     if (!materials.TryGetValue(id.Value, out Material? material))
                     {
                         using MaterialAsset file = await MaterialAsset.OpenAsync(assets, id).ConfigureAwait(false);
-                        material = await file.CreateAsync(assets, LoadShaderAsync, LoadTextureAsync).ConfigureAwait(false);
+                        material = await file.CreateAsync(assets).ConfigureAwait(false);
                         materials.Add(id.Value, material);
                     }
                     bindings[index] = new(material);
@@ -148,7 +144,7 @@ internal sealed class RuntimeScene : IDisposable
                 return new RuntimeScene(world, playbackLights, [.. materials.Values], motionQuery,
                     runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
                     camera.FarPlane, instances.Length, meshPositionMin, meshPositionMax)
-                    { _meshes = [.. meshes.Values], _shaders = [.. shaders.Values], _textures = [.. textures.Values] };
+                    { _meshes = [.. meshes.Values] };
             }
             catch { world.ReleaseQuery(motionQuery); throw; }
         }
@@ -157,10 +153,6 @@ internal sealed class RuntimeScene : IDisposable
             var errors = new List<Exception> { failure };
             foreach (Material material in materials.Values)
                 try { material.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
-            foreach (Texture texture in textures.Values)
-                try { texture.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
-            foreach (Shader shader in shaders.Values)
-                try { shader.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
             foreach (var mesh in meshes.Values)
             {
                 try { mesh.Mesh.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
@@ -170,40 +162,6 @@ internal sealed class RuntimeScene : IDisposable
             throw;
         }
 
-        async ValueTask<Shader> LoadShaderAsync(AssetId<ShaderAsset> id, CancellationToken cancellationToken)
-        {
-            if (shaders.TryGetValue(id.Value, out Shader? shader)) return shader;
-            using ShaderAsset file = await ShaderAsset.OpenAsync(assets, id, cancellationToken).ConfigureAwait(false);
-            ShaderBlock code = await file.GetBlockAsync<ShaderBlock>(cancellationToken).ConfigureAwait(false);
-            shader = await code.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
-            shaders.Add(id.Value, shader);
-            return shader;
-        }
-
-        async ValueTask<Texture> LoadTextureAsync(AssetId<TextureAsset> id, CancellationToken cancellationToken)
-        {
-            if (textures.TryGetValue(id.Value, out Texture? texture)) return texture;
-            using TextureAsset file = await TextureAsset.OpenAsync(assets, id, cancellationToken).ConfigureAwait(false);
-            TextureBlock pixels = await file.GetBlockAsync<TextureBlock>(cancellationToken).ConfigureAwait(false);
-            texture = await pixels.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
-            textures.Add(id.Value, texture);
-            return texture;
-        }
-    }
-
-    private static Entity[] Entities(World world, QueryDefinitionBuilder definition)
-    {
-        QueryHandle query = world.Query(definition);
-        var entities = new List<Entity>();
-        try
-        {
-            world.ExecuteQuery(query, ref entities, static (QueryCursor rows, ref List<Entity> values) =>
-            {
-                foreach (var row in rows.Rows) values.Add(row.Entity);
-            });
-            return [.. entities];
-        }
-        finally { world.ReleaseQuery(query); }
     }
 
     private static Entity[] Entities(World world, QueryDefinitionBuilder definition)
@@ -308,10 +266,6 @@ internal sealed class RuntimeScene : IDisposable
         catch (Exception error) { errors.Add(error); }
         foreach (Material material in _playbackMaterials)
             try { material.Dispose(); } catch (Exception error) { errors.Add(error); }
-        foreach (Texture texture in _textures)
-            try { texture.Dispose(); } catch (Exception error) { errors.Add(error); }
-        foreach (Shader shader in _shaders)
-            try { shader.Dispose(); } catch (Exception error) { errors.Add(error); }
         foreach (var mesh in _meshes)
         {
             try { mesh.Mesh.Dispose(); } catch (Exception error) { errors.Add(error); }

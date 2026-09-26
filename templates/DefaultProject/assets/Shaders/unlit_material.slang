@@ -100,9 +100,5 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
     }
 };
 
-typedef StaticVertexEval VertexEvaluate;
-typedef LinearSurface DomainEvaluate;
-typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
-typedef UnlitMaterial SurfaceEvaluate;
 
 #endif

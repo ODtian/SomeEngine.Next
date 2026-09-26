@@ -1459,12 +1459,6 @@ internal sealed partial class RenderGraphFrameState
         internal ulong Frame;
     }
 
-    private sealed class InputData<T>
-    {
-        internal T Value = default!;
-        internal ulong Frame;
-    }
-
     // Input keys can disappear after graph edits. Weak keys avoid keeping removed inputs
     // and their resources alive while preserving values between uses of this frame.
     private readonly ConditionalWeakTable<GraphBufferInput, InputData<GraphBufferSlice>> _bufferInputs = new();

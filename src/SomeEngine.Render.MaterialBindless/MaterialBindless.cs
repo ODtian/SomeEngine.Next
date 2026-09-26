@@ -198,7 +198,12 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
         {
             ref readonly MaterialResourceBinding binding = ref state.Bindings[valueIndex];
             uint materialSlot = binding.MaterialSlot;
-            object? raw = material.GetValue(materialSlot);
+            object? raw = binding.Kind switch
+            {
+                MaterialResourceKind.TextureSrv or MaterialResourceKind.TextureUav => material.GetTexture(materialSlot),
+                MaterialResourceKind.Sampler => material.GetSampler(materialSlot),
+                _ => material.GetDeviceResource(materialSlot),
+            };
             switch (binding.Kind)
             {
                 case MaterialResourceKind.TextureSrv:

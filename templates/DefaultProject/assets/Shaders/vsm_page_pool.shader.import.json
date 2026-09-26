@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "fdd2d988ca44723fd17627341123f9687d28fae674a3b1b7a4c52f35dd4eec6c",
+  "input_hash": "80e41a23844059cecc642ac77fcb98f87cb84e01976ff278deaf1efc444366f2",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -9,7 +9,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_pool.slang",
-      "content_hash": "92b7fe177ad1cd0fb792192e51f2e16a11e87df8dfdbff6abc3c9b7cded53442"
+      "content_hash": "60e82f776c69e9e185a16a709876de2cc0e3727a265b4c3839c4bd41f664b007"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_sampling.slang",
+      "content_hash": "837b0b10873b6a43616d7fd85345a659169334e8a5c5a612408c03dbc0a3ad75"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -17,7 +21,7 @@
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_page_pool.slang",
-      "content_hash": "f13c08fbf58658d3d11360389871e79bdd86da846faff382b54f7f2695c9d1fa"
+      "content_hash": "aeeb903bed97ca257e8a779081a75b4588167373bc043a48f101e0689b90e99b"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,7 +29,7 @@
     },
     {
       "relative_path": "assets/Shaders/vsm_page_pool.shader",
-      "content_hash": "a0756544f491687e1db3cf3f8cdb23ee2e059d7abd9636646133d2bde454527d"
+      "content_hash": "1a8eae27d3cd0cd2b9a1b23db37c6934529d1f594b7303bf18215e50328eb76f"
     }
   ],
   "reported_inputs": [],
@@ -33,11 +37,11 @@
     {
       "asset_guid": "8dc4f300-2445-575b-acbf-df0f4b9e073a",
       "sub_asset_key": "",
-      "input_hash": "fdd2d988ca44723fd17627341123f9687d28fae674a3b1b7a4c52f35dd4eec6c",
+      "input_hash": "80e41a23844059cecc642ac77fcb98f87cb84e01976ff278deaf1efc444366f2",
       "dependencies": [],
       "asset_path": "vsm_page_pool.shader.asset",
-      "version": "2fb7c58c-5d55-6bd2-06f4-bbc8ded5e78e",
-      "content_hash": "FF4B23899792A18555355859B57146F2860F330482506BF77BDB12404BB18E81",
+      "version": "8d1c1623-d306-c5ae-866b-09ccb196306b",
+      "content_hash": "0BE612690F52533F7D4D03987D17F3B68B92C2146C943658076F35E92184FEA1",
       "asset_dependencies": []
     }
   ]

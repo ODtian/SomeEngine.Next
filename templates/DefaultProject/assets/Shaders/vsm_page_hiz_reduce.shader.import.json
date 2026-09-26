@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "94c6151cb6dc1e2be1723afa5d7672b8f7809165b3f6e2819e1cc414d85de514",
+  "input_hash": "fb0ab0968c95c9048f67dae2b2a99531e9c7ec464b915617c3fe5ebc732f8189",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_hiz_common.slang",
-      "content_hash": "3f8623db46777e7ae64848399f8bb7edaa735a7b441e2d4b6b5a24c163c6b6a8"
+      "content_hash": "dee7ba9a7248593d702d468cabfcbe553dc291c90876f1736f57efca562ab53b"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_hiz_reduce.slang",
@@ -17,7 +17,7 @@
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_page_hiz_reduce.slang",
-      "content_hash": "b182be396257e682574ca18dea1297329f7402a92c48913d987f30f69f5fa252"
+      "content_hash": "ce6626cdd75b07749affccf7a0e45c9ffd7de1c842b86f8992cb76d5c817f830"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/vsm_page_hiz_reduce.shader",
-      "content_hash": "307e9504323b724b706d006e6e7910e794b5045704d47e1474dcd7906541ffb8"
+      "content_hash": "5c3b693036f492299a805c30685c01707000eeb93ee44461f6cbb2ec74c4c765"
     }
   ],
   "reported_inputs": [],
@@ -33,11 +33,11 @@
     {
       "asset_guid": "c54545f1-3b34-5be8-b087-af5ede9f704c",
       "sub_asset_key": "",
-      "input_hash": "94c6151cb6dc1e2be1723afa5d7672b8f7809165b3f6e2819e1cc414d85de514",
+      "input_hash": "fb0ab0968c95c9048f67dae2b2a99531e9c7ec464b915617c3fe5ebc732f8189",
       "dependencies": [],
       "asset_path": "vsm_page_hiz_reduce.shader.asset",
-      "version": "ae6432d4-c007-a93c-f188-10001b301ee6",
-      "content_hash": "D6B8AADCBDFCC9FB5E800FC993149D7F41624B5C854396048730E6851F62F739",
+      "version": "3af4babd-3266-eb3a-3ec9-2649884c053a",
+      "content_hash": "CBDD00606AAB7589AEDB7E4FE62BCDB898694F207CF76FE2134275AE50812A1F",
       "asset_dependencies": []
     }
   ]

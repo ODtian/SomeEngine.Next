@@ -54,7 +54,6 @@ StructuredBuffer<RasterBinEntry> SoftwareRasterBinMeta;
 RWByteAddressBuffer SoftwareRasterDebugOutput;
 
 static const uint SOFTWARE_RASTER_GROUP_SIZE = 32u;
-static const uint SOFTWARE_RASTER_CLUSTER_VERTEX_CAPACITY = 64u;
 
 uint SoftwareRasterVertexRank(uint2 usedVertices, uint localVertex)
 {
@@ -63,6 +62,28 @@ uint SoftwareRasterVertexRank(uint2 usedVertices, uint localVertex)
     return localVertex < 32u
         ? countbits(usedVertices.x & lower)
         : countbits(usedVertices.x) + countbits(usedVertices.y & lower);
+}
+
+uint SoftwareRasterVertexIndex(uint2 usedVertices, uint rank)
+{
+    uint lowerCount = countbits(usedVertices.x);
+    bool upperWord = rank >= lowerCount;
+    uint bits = upperWord ? usedVertices.y : usedVertices.x;
+    uint vertex = upperWord ? 32u : 0u;
+    rank -= upperWord ? lowerCount : 0u;
+    // Select the ranked set bit in five steps instead of scanning every vertex.
+    [unroll]
+    for (uint width = 16u; width != 0u; width >>= 1u)
+    {
+        uint count = countbits(bits & ((1u << width) - 1u));
+        if (rank >= count)
+        {
+            rank -= count;
+            bits >>= width;
+            vertex += width;
+        }
+    }
+    return vertex;
 }
 
 // ─── Vertex Fetch (from PageHeap, same as cluster_draw.slang) ───
@@ -183,6 +204,60 @@ void SWRasterKernel<
     DecodeRasterWorkRange(PageHeap, req, binEntry, rangeStart, rangeEnd);
     uint rangeTriangleCount = rangeEnd > rangeStart ? rangeEnd - rangeStart : 0u;
 
+    if (allowMaterialRanges && RasterWorkIsRange(binEntry >> 22u))
+    {
+        float4 firstClip = 0.0.xxxx;
+        float4 secondClip = 0.0.xxxx;
+        VisibilityEvaluate.Varying firstVarying = {};
+        VisibilityEvaluate.Varying secondVarying = {};
+        [unroll]
+        for (uint vertexHalf = 0u; vertexHalf < 2u; vertexHalf++)
+        {
+            uint localVertex = groupThreadIndex + vertexHalf * 32u;
+            if (localVertex < vertexCount)
+            {
+                VertexEvalContext ctx = MakeSWRasterVertexEvalContext(
+                    vertexBlobAddress, vertexBlobSize, localVertex, realInstanceID, transform);
+                VertexEvaluate.Vertex vertex = evaluator.evaluate(ctx);
+                float4 clip = mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
+                VisibilityVertexInput input;
+                input.VisibleClusterIndex = originalIndex;
+                input.InstanceID = realInstanceID;
+                input.ViewIndex = viewIndex;
+                input.LocalVertexIndex = localVertex;
+                VisibilityEvaluate.Varying varying = visibility.makeVarying(vertex, input);
+                if (vertexHalf == 0u) { firstClip = clip; firstVarying = varying; }
+                else { secondClip = clip; secondVarying = varying; }
+            }
+        }
+        // Keep opaque user varyings in their producer lanes for the entire range.
+        // Every lane participates in each triangle batch's wave operations.
+        for (uint triangleBase = rangeStart; triangleBase < rangeEnd; triangleBase += 32u)
+        {
+            uint triangle = triangleBase + groupThreadIndex;
+            bool active = triangle < rangeEnd;
+            float4 clips[3];
+            VisibilityEvaluate.Varying triangleVaryings[3];
+            [unroll]
+            for (uint corner = 0u; corner < 3u; corner++)
+            {
+                uint vertex = active ? FetchVertexIndex(pageOffset, idxOffset, tStart, triangle, corner) : 0u;
+                uint lane = vertex & 31u;
+                float4 first = WaveReadLaneAt(firstClip, lane);
+                float4 second = WaveReadLaneAt(secondClip, lane);
+                VisibilityEvaluate.Varying firstValue = visibility.readLane(firstVarying, lane);
+                VisibilityEvaluate.Varying secondValue = visibility.readLane(secondVarying, lane);
+                clips[corner] = vertex < 32u ? first : second;
+                triangleVaryings[corner] = vertex < 32u ? firstValue : secondValue;
+            }
+            RasterizeClusterTriangleWave<VertexEvaluate.Vertex, VisibilityEvaluate, TOutput>(
+                visibility, rasterOutput, clips, triangleVaryings, scissor, originalIndex,
+                triangle, viewIndex, view.TargetPolicy, view.TargetViewIndex, active,
+                view.ScreenWidth, view.ScreenHeight);
+        }
+        return;
+    }
+
     uint localTriIdx = rangeStart + groupThreadIndex;
     bool bTriValid = groupThreadIndex < rangeTriangleCount;
     uint3 vertIndices = 0u.xxx;
@@ -217,22 +292,7 @@ void SWRasterKernel<
     // user visibility evaluator to transport its opaque Varying.
     uint producerLocalVertex = 0xFFFFFFFFu;
     if (groupThreadIndex < uniqueVertexCount)
-    {
-        [loop]
-        for (uint localVertex = 0u;
-             localVertex < min(vertexCount, SOFTWARE_RASTER_CLUSTER_VERTEX_CAPACITY);
-             localVertex++)
-        {
-            uint mask = localVertex < 32u ? usedVertices.x : usedVertices.y;
-            if ((mask & (1u << (localVertex & 31u))) == 0u)
-                continue;
-            if (SoftwareRasterVertexRank(usedVertices, localVertex) == groupThreadIndex)
-            {
-                producerLocalVertex = localVertex;
-                break;
-            }
-        }
-    }
+        producerLocalVertex = SoftwareRasterVertexIndex(usedVertices, groupThreadIndex);
 
     float4 producerClip = 0.0.xxxx;
     VisibilityEvaluate.Varying producerVarying = {};

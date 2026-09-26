@@ -253,7 +253,7 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
     int2 pixel = int2(input.Position.xy);
     float4 current = SceneColor.Load(int4(pixel, 0, 0));
     if (TemporalResolveUniforms.HistoryWeight <= 0.0)
-        return current;
+        return StoreTemporalHistory(pixel, current);
 
     uint width;
     uint height;
@@ -273,7 +273,7 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
     float2 motion = LoadDilatedMotionByClosestDepth(pixel, maxPixel, closestDepth);
     // Retain subpixel silhouette coverage, but do not accumulate an old surface in empty background.
     if (closestDepth >= 1.0)
-        return current;
+        return StoreTemporalHistory(pixel, current);
     float2 previousUv = uv - motion;
     if (any(previousUv < float2(0.0, 0.0)) || any(previousUv > float2(1.0, 1.0)))
         return StoreTemporalHistory(pixel, current);

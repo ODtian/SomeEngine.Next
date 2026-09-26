@@ -52,9 +52,6 @@ public sealed class MaterialFileTests
         using Material second = await copy.CreateAsync(loader);
         StandardMaterial a = Assert.IsType<StandardMaterial>(first);
         StandardMaterial b = Assert.IsType<StandardMaterial>(second);
-        using Material shared = await copy.CreateAsync(loader, null, (_, _) => ValueTask.FromResult(b.AlbedoMap!));
-        Assert.Same(b.AlbedoMap, Assert.IsType<StandardMaterial>(shared).AlbedoMap);
-        shared.Dispose();
         Assert.Equal(0.8f, a.Roughness);
         Assert.Equal(new Vector4(0.2f, 0.4f, 0.6f, 1f), a.BaseColorTint);
         Assert.NotSame(a.AlbedoMap, b.AlbedoMap);

@@ -1,4 +1,3 @@
-using SomeEngine.Resources;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;

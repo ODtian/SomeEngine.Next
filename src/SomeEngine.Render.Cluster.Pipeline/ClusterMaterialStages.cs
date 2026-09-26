@@ -312,7 +312,12 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
         in ClusterMaterialStageBinding binding,
         string name)
     {
-        object? value = material.GetValue(binding.MaterialSlot);
+        object? value = binding.Type switch
+        {
+            ResourceBindingType.TextureSrv or ResourceBindingType.TextureUav => material.GetTexture(binding.MaterialSlot),
+            ResourceBindingType.Sampler => material.GetSampler(binding.MaterialSlot),
+            _ => material.GetDeviceResource(binding.MaterialSlot),
+        };
         return binding.Type switch
         {
             ResourceBindingType.TextureSrv => value switch

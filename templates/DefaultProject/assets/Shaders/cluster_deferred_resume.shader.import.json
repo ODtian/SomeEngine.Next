@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "daa49402c5dc0aa7973d4eece506f248d7cb8f1d08bd72e54f19426f28228518",
+  "input_hash": "f2ce12bf5f188e976d406003112c90a6805b2d80af6a6964c5ceea77e6b53c5b",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_deferred_resume.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
+      "content_hash": "994085152e0eea36c13e0ffee1714a1eb43d22a70b80646da26c108088fef1cc"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -21,11 +21,11 @@
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_cluster_deferred_resume.slang",
-      "content_hash": "c8a1f6e75a9574d8f0ab251886d4385dfb6594cfea8b139337dd98d55f7c7688"
+      "content_hash": "b6b83c980c98cb146902008a8645cfe9f257950ada3f44a727b467dd526c4d2e"
     },
     {
       "relative_path": "assets/Shaders/cluster_deferred_resume.shader",
-      "content_hash": "8e523a6b9a6e7064ef5f708875510fb820845933a53cd9df6acab671dda07da2"
+      "content_hash": "370618a35ef65a91dfc8adb6ebbfd8b395fe7e776d981f288488b991368b5014"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -37,11 +37,11 @@
     {
       "asset_guid": "1c40ffb4-67dc-523b-bc03-c033d51f1c86",
       "sub_asset_key": "",
-      "input_hash": "daa49402c5dc0aa7973d4eece506f248d7cb8f1d08bd72e54f19426f28228518",
+      "input_hash": "f2ce12bf5f188e976d406003112c90a6805b2d80af6a6964c5ceea77e6b53c5b",
       "dependencies": [],
       "asset_path": "cluster_deferred_resume.shader.asset",
-      "version": "0bf87391-a503-0fb6-ca82-7e4e8679f378",
-      "content_hash": "BE4B8B2C1161651F108519BD7F344C0FF3BF9994895740CD2D8227CF2836F7D9",
+      "version": "5dee5f32-4a29-5839-2e2c-6d4c2d26bd8f",
+      "content_hash": "7344E9319A1C2F40D073DDE3800B6B59DB76BED6034CC664634A040F9DF8120C",
       "asset_dependencies": []
     }
   ]

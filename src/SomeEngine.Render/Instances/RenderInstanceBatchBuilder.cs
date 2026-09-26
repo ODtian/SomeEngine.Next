@@ -51,6 +51,11 @@ public interface IRenderInstanceBatchComposer<TGroupKey>
         ReadOnlyQueryPacket packet,
         uint lastSystemVersion);
 
+    /// <summary>Collects update data before any batch is bound or written.</summary>
+    /// <remarks>Packets may be collected concurrently; shared update data must support concurrent writes.</remarks>
+    RenderInstanceChanges CollectChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
+        GetChanges(packet, lastSystemVersion);
+
     /// <summary>
     /// Returns true when every row in this packet must be rewritten. Implementations may use a
     /// cheap dense-change test; returning false preserves the row-range fallback.
@@ -826,13 +831,23 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         {
             Current = null;
             List<Exception>? failures = null;
+            for (int group = 0; group < groupCount; group++)
+            {
+                RenderInstanceWriteHandle? handle = handles[group];
+                handles[group] = null;
+                try { handle?.Dispose(); }
+                catch (Exception cleanupFailure)
+                {
+                    (failures ??= [failure]).Add(cleanupFailure);
+                }
+            }
             try
             {
                 Retire(context, current);
             }
             catch (Exception cleanupFailure)
             {
-                failures = [failure, cleanupFailure];
+                (failures ??= [failure]).Add(cleanupFailure);
             }
             if (failures is not null)
                 throw new AggregateException(

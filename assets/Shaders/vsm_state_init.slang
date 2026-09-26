@@ -26,14 +26,6 @@ RWStructuredBuffer<uint> RequestedPageFlags;
 RWStructuredBuffer<uint> RequestedPageCount;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint2> PageReceiverMasks;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> AlternateRequestedShadowPages;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> AlternateRequestedPageFlags;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> AlternateRequestedPageCount;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint2> AlternatePageReceiverMasks;
 
 static const uint VSM_UNOWNED_PAGE = 0xFFFFFFFFu;
 
@@ -49,14 +41,10 @@ void InitializeVirtualShadowState(uint3 threadId : SV_DispatchThreadID)
         RequestedShadowPages[index] = 0u;
         RequestedPageFlags[index] = 0u;
         PageReceiverMasks[index] = 0u.xx;
-        AlternateRequestedShadowPages[index] = 0u;
-        AlternateRequestedPageFlags[index] = 0u;
-        AlternatePageReceiverMasks[index] = 0u.xx;
     }
     if (index == 0u)
     {
         RequestedPageCount[0] = 0u;
-        AlternateRequestedPageCount[0] = 0u;
     }
     if (index < StateInit.MaxPhysicalPages)
     {

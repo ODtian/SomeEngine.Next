@@ -29,6 +29,7 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     public GraphicsViewDimension SampledDimension { get; private set; }
     public ImmutableList<TextureMipTile> MipTiles { get; private set; } = [];
     public ulong Revision { get; private set; } = 1;
+    public event Action<Texture>? Changed;
     public uint BootstrapMipLevel => MipLevelCount - 1;
     public PageArena Pages => (_pixels ?? throw new ObjectDisposedException(nameof(Texture))).Arena;
     public bool HasBootstrap
@@ -128,6 +129,7 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
             _pixels = replacement;
             previous.Dispose();
         }
+        RaiseChanged();
     }
 
     private void ValidatePixels(PageBufferMap pixels)
@@ -185,7 +187,19 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         current._pixels = Interlocked.Exchange(ref replacement._pixels, null);
         current.Revision = revision;
         previous?.Dispose();
+        current.RaiseChanged();
         return ValueTask.CompletedTask;
+    }
+
+    private void RaiseChanged()
+    {
+        if (Changed is not { } changed) return;
+        List<Exception>? errors = null;
+        foreach (Action<Texture> notify in changed.GetInvocationList())
+            try { notify(this); }
+            catch (Exception error) { (errors ??= []).Add(error); }
+        if (errors is not null)
+            throw new AggregateException("Texture contents changed, but one or more observers failed.", errors);
     }
 
     public void Dispose()

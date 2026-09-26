@@ -43,7 +43,7 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID)
             InterlockedAdd(ReserveCounters[3], waveSoftware);
         }
         if (Uniforms.PolicyTarget != 0u)
-            InterlockedAdd(PolicyRasterWorkCounter[0], RasterTotalPrefix[blockLast]);
+            InterlockedAdd(PolicyRasterWorkCounter[0], waveTotal);
     }
     totalBase = WaveReadLaneFirst(totalBase);
     softwareBase = WaveReadLaneFirst(softwareBase);

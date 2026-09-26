@@ -1,11 +1,11 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "6d9bad5da1ef3158b4143f52ff4f009b923cc9b3c275c02d60c0336b0d0a4c13",
+  "input_hash": "ddca896368eb9eeb6a3afa4eee50d5914e99d94d10886de1894f83bb50d1204f",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/clustered_light_grid.slang",
-      "content_hash": "7dbc14060b7db530a8c1dc92dbe515972f090d74517417e82fc5e9df30adf8c0"
+      "content_hash": "3ce3d32009eb6b753d250444a31ee63e535f6dbef52610e50d712feeab72cf73"
     },
     {
       "relative_path": "../../assets/Shaders/common.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/render_lighting.slang",
-      "content_hash": "c764a5c47ff78017cf2a2fcd1b0ed1ee078d52e6d050395ff2da9a2d1b9c98b3"
+      "content_hash": "b1f856269f4f8ab8811fe6a976965ca3835ceb787fd86559f289be687bc73032"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -21,11 +21,11 @@
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_clustered_light_grid.slang",
-      "content_hash": "0687940cda3af299857a8d7036f3503d4b9d78c2f4138f9bcd78ce487f871438"
+      "content_hash": "abebf8885d819ecb47230c59b8e5517c1d190647228448a5006207b28577d600"
     },
     {
       "relative_path": "assets/Shaders/clustered_light_grid.shader",
-      "content_hash": "507b056a4fb12488eda0b91efafe73166e787cf56c0372b7c767a050d6c5e493"
+      "content_hash": "34e349ce0b49ef1e0b772bedcf7be6cbcf12aedb2d18da1d5f3ba2d44865bec0"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -37,11 +37,11 @@
     {
       "asset_guid": "f6e9d4ed-6534-5cda-be15-c733ae158d48",
       "sub_asset_key": "",
-      "input_hash": "6d9bad5da1ef3158b4143f52ff4f009b923cc9b3c275c02d60c0336b0d0a4c13",
+      "input_hash": "ddca896368eb9eeb6a3afa4eee50d5914e99d94d10886de1894f83bb50d1204f",
       "dependencies": [],
       "asset_path": "clustered_light_grid.shader.asset",
-      "version": "2060ed81-ad88-408e-51be-39d015e423be",
-      "content_hash": "FD2B14C9C325439AE5474F88E5E4E15EEBDB8D889970B52AF0E0BADB0A3AB728",
+      "version": "320be270-d9b5-d8c4-00d7-968debefbbc8",
+      "content_hash": "401668E4A0D0E0EF072F2D2C6B7FB8219C0802F3471CC0A47153574397C6AFB3",
       "asset_dependencies": []
     }
   ]

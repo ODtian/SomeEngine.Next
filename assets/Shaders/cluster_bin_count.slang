@@ -15,65 +15,29 @@ ByteAddressBuffer ClusterReadOffsetArgs2;
 StructuredBuffer<uint> RasterSlots;
 ByteAddressBuffer PageHeap;
 
-void CountRasterBatches(
-    uint slotOffset,
-    uint4 vertReuseBatchWords,
-    uint triangleCount,
-    uint packedMaterials,
-    uint packedRanges,
-    bool isSoftware)
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<uint> BinnedClusterIndexBuffer;
+
+void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware)
 {
-    if (triangleCount == 0u)
-        return;
-
-    uint rangeCount = MaterialRangeCount(packedRanges, triangleCount);
-    uint triangleStart = 0u;
-    uint flatBatchIndex = 0u;
-    uint rangeIndex = 0u;
-    while (rangeIndex < rangeCount)
+    if (!IsBin(bin)) return;
+    uint capacity = RasterBinMeta[bin].BinCapacity;
+    if (capacity == 0u)
     {
-        uint rangeEnd = MaterialRangeEnd(packedRanges, triangleCount, rangeIndex);
-        uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
-        uint bin = RasterKey(RasterSlots, Uniforms, slotOffset, material);
-        uint batchCount = VertReuseBatchCount(vertReuseBatchWords, rangeIndex);
-        bool useVertReuseBatches = !isSoftware || RasterSoftwareUsesVertReuseBatches(
-            RasterSlots, Uniforms, slotOffset, material);
-        if (!useVertReuseBatches)
-        {
-            uint mergedRangeCount = 1u;
-            uint mergedBatchCount = batchCount;
-            while (rangeIndex + mergedRangeCount < rangeCount)
-            {
-                uint nextRange = rangeIndex + mergedRangeCount;
-                uint nextStart = MaterialRangeEnd(packedRanges, triangleCount, nextRange - 1u);
-                uint nextMaterial = LocalMaterial(packedMaterials, packedRanges, nextStart);
-                uint nextBin = RasterKey(RasterSlots, Uniforms, slotOffset, nextMaterial);
-                bool nextUsesBatches = RasterSoftwareUsesVertReuseBatches(
-                    RasterSlots, Uniforms, slotOffset, nextMaterial);
-                if (nextBin != bin || nextUsesBatches)
-                    break;
-                mergedBatchCount += VertReuseBatchCount(vertReuseBatchWords, nextRange);
-                mergedRangeCount++;
-            }
-
-            CountRaster(RasterBinMeta, bin, true);
-            flatBatchIndex += mergedBatchCount;
-            rangeIndex += mergedRangeCount;
-            triangleStart = MaterialRangeEnd(
-                packedRanges, triangleCount, rangeIndex - 1u);
-            continue;
-        }
-
-        for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
-        {
-            CountRaster(RasterBinMeta, bin, isSoftware);
-            triangleStart = min(
-                triangleStart + VertReuseBatchTriangleCount(vertReuseBatchWords, flatBatchIndex),
-                rangeEnd);
-            flatBatchIndex++;
-        }
-        triangleStart = rangeEnd;
-        rangeIndex++;
+        CountRaster(RasterBinMeta, bin, isSoftware);
+        return;
+    }
+    uint key = (bin << 1u) | (isSoftware ? 1u : 0u);
+    uint4 matching = WaveMatchingLanes(key);
+    uint lane = WaveGetLaneIndex();
+    uint leader = WaveMaskFirstLane(matching);
+    uint first = 0u;
+    if (lane == leader)
+    {
+        if (isSoftware)
+            InterlockedAdd(RasterBinMeta[bin].BinSWCount, WaveMaskBitCount(matching), first);
+        else
+            InterlockedAdd(RasterBinMeta[bin].BinHWCount, WaveMaskBitCount(matching), first);
     }
     uint item = WaveReadLaneAt(first, leader) + WaveMaskPrefix(matching, lane);
     // Keep both lists in append order. The hardware region starts after the
@@ -107,6 +71,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
 
     DrawRequest entry = VisibleClusters[visibleIndex];
     uint4 vertReuseBatchWords;
+    uint vertexCount;
     uint triangleCount;
     uint packedMaterials;
     uint packedRanges;
@@ -114,6 +79,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         PageHeap,
         entry,
         vertReuseBatchWords,
+        vertexCount,
         triangleCount,
         packedMaterials,
         packedRanges);
@@ -127,6 +93,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         visibleIndex,
         slotOffset,
         vertReuseBatchWords,
+        vertexCount,
         triangleCount,
         packedMaterials,
         packedRanges,

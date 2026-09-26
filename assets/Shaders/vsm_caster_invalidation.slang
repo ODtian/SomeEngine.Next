@@ -9,7 +9,7 @@ struct VirtualShadowInvalidationUniforms
     uint PageDilation;
     uint FrameIndex;
     uint HierarchyWordsPerView;
-    uint Pad1;
+    uint MipLevelCount;
     uint Pad2;
 };
 
@@ -21,6 +21,7 @@ StructuredBuffer<uint> RequestedShadowPages;
 StructuredBuffer<uint> RequestedPageFlags;
 StructuredBuffer<uint4> PageMetadata;
 StructuredBuffer<uint> AllocatedPageHierarchy;
+StructuredBuffer<uint4> AllocatedPageRectBounds;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint4> ShadowPageTable;
 
@@ -87,13 +88,11 @@ bool ProjectShadowBounds(
             (corner & 2u) != 0u ? worldMax.y : worldMin.y,
             (corner & 4u) != 0u ? worldMax.z : worldMin.z);
         float4 clip = mul(float4(position, 1.0), view.LightViewProjection);
-        if (clip.w <= 1e-5)
-        {
-            uvMin = 0.0.xx;
-            uvMax = 1.0.xx;
-            return true;
-        }
-        float2 ndc = clip.xy / clip.w;
+        minW = min(minW, clip.w);
+        maxW = max(maxW, clip.w);
+        sideDistances = min(sideDistances, float4(clip.xy, -clip.xy) - clip.w);
+        depthDistances = min(depthDistances, float2(-clip.z, clip.z - clip.w));
+        float2 ndc = clip.xy / max(clip.w, 1e-5);
         ndcMin = min(ndcMin, ndc);
         ndcMax = max(ndcMax, ndc);
     }
@@ -128,11 +127,9 @@ bool BoundsOutsideLocalLight(
 {
     if (view.LightKind == VSM_LIGHT_DIRECTIONAL || view.LightRange <= 0.0)
         return false;
-    float3 center = (worldMin + worldMax) * 0.5;
-    float radius = length((worldMax - worldMin) * 0.5);
-    float3 delta = center - view.LightPosition;
-    float limit = view.LightRange + radius;
-    return dot(delta, delta) > limit * limit;
+    float3 distance = max(max(worldMin - view.LightPosition, view.LightPosition - worldMax), 0.0.xxx);
+    float radius = view.LightRange * 1.00001 + 1e-5;
+    return dot(distance, distance) > radius * radius;
 }
 
 void InvalidateBoundsInView(
@@ -161,7 +158,11 @@ void InvalidateBoundsInView(
         uint2 high = min((uint2)(uvMax * float(dimension)), dimension - 1u);
         low -= min(low, Invalidation.PageDilation.xx);
         high = min(high + Invalidation.PageDilation, dimension - 1u);
-        if (!OverlapsAllocatedPages(viewIndex, view, mip, low, high))
+        // Include cached pages even when they are not requested this frame.
+        uint4 allocatedRect = AllocatedPageRectBounds[viewIndex * Invalidation.MipLevelCount + mip];
+        low = max(low, allocatedRect.xy);
+        high = min(high, allocatedRect.zw);
+        if (any(low > high) || !OverlapsAllocatedPages(viewIndex, view, mip, low, high))
             continue;
         [loop]
         for (uint y = low.y; y <= high.y; y++)

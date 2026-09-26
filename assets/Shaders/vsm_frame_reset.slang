@@ -5,6 +5,8 @@ RWByteAddressBuffer ActivePageCount;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint4> UncachedPageRectBounds;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<uint4> AllocatedPageRectBounds;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer RasterPageMasks;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer AllocatedPageHierarchy;
@@ -46,6 +48,8 @@ void ResetVirtualShadowFrame(uint3 groupId : SV_GroupID, uint threadIndex : SV_G
     uint rectStride;
     UncachedPageRectBounds.GetDimensions(rectCount, rectStride);
     if (index < rectCount)
-        UncachedPageRectBounds[index] =
-            uint4(0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u);
+    {
+        UncachedPageRectBounds[index] = uint4(0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u);
+        AllocatedPageRectBounds[index] = uint4(0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u);
+    }
 }

@@ -11,7 +11,9 @@ struct RasterBinningUniforms
     uint MaxVisibleClusters;
     uint CollectMetrics;
     uint PolicyTarget;
-    uint Pad2;
+    uint ScreenWidth;
+    uint ScreenHeight;
+    uint ViewCount;
 };
 
 static const uint RASTER_WORK_RANGE_BIT = 0x200u;
@@ -52,6 +54,16 @@ bool RasterSoftwareUsesVertReuseBatches(
 {
     uint value = GetStageSlot(stages, stageOffset, localMaterialIndex, uniforms.SlotCapacity);
     return value != SLOT_INVALID && (value & 0x80000000u) != 0u;
+}
+
+bool RasterUsesVertReuseBatches(
+    StructuredBuffer<uint> stages, RasterBinningUniforms uniforms,
+    uint stageOffset, uint localMaterialIndex, bool isSoftware, uint vertexCount, uint triangleCount)
+{
+    uint value = GetStageSlot(stages, stageOffset, localMaterialIndex, uniforms.SlotCapacity);
+    return isSoftware ? (value & 0x80000000u) != 0u &&
+        ((value & 0x20000000u) == 0u || vertexCount > 64u) :
+        (value & 0x40000000u) == 0u || vertexCount > 64u || triangleCount > 128u;
 }
 
 uint4 LoadVertReuseBatchWords(ByteAddressBuffer pageHeap, uint clusterOffset)
@@ -123,6 +135,7 @@ void ReadClusterBinData(
     ByteAddressBuffer pageHeap,
     DrawRequest entry,
     out uint4 vertReuseBatchWords,
+    out uint vertexCount,
     out uint triangleCount,
     out uint packedMaterials,
     out uint packedRanges)
@@ -136,6 +149,16 @@ void ReadClusterBinData(
     packedMaterials = pageHeap.Load(clusterOffset + 68u);
     packedRanges = pageHeap.Load(clusterOffset + 72u);
     vertReuseBatchWords = LoadVertReuseBatchWords(pageHeap, clusterOffset);
+}
+
+// Existing callers that need material ranges can ignore the vertex count.
+void ReadClusterBinData(
+    ByteAddressBuffer pageHeap, DrawRequest entry, out uint4 vertReuseBatchWords,
+    out uint triangleCount, out uint packedMaterials, out uint packedRanges)
+{
+    uint vertexCount;
+    ReadClusterBinData(pageHeap, entry, vertReuseBatchWords, vertexCount,
+        triangleCount, packedMaterials, packedRanges);
 }
 
 uint RasterKey(

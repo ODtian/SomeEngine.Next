@@ -13,7 +13,7 @@ internal static class D3D12TestCompute
         => ExecuteSource($"#include \"{file}\"", entry, dispatch, inputs);
 
     internal static uint[][] ExecuteSource(string source, string entry, DispatchArguments dispatch,
-        (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs)
+        (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs, SampledImage? image = null)
     {
         string? directory = null;
         for (DirectoryInfo? current = new(AppContext.BaseDirectory); current is not null; current = current.Parent)

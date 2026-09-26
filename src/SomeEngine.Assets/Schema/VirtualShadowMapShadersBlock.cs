@@ -4,9 +4,11 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetPageBlock
 {
+    public partial ShaderRef? ResetReceiverMasks { get; set; }
+    public partial ShaderRef? ResetFrame { get; set; }
     public partial ShaderRef? MarkPages { get; set; }
     public partial ShaderRef? MarkCoarsePages { get; set; }
     public partial ShaderRef? AllocatePages { get; set; }
@@ -17,6 +19,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetPageBlock
     public partial ShaderRef? CompactViews { get; set; }
     public partial ShaderRef? InitializePageHiZ { get; set; }
     public partial ShaderRef? ReducePageHiZ { get; set; }
+    public partial ShaderRef? DynamicResolution { get; set; }
 
     protected override void ValidateContent() => Validate("shader settings");
 
@@ -32,6 +35,8 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetPageBlock
             var result = new VirtualShadowMapShaders
             {
                 Name = name,
+                ResetReceiverMasks = copy.ResetReceiverMasks!.Resolve(shaders),
+                ResetFrame = copy.ResetFrame!.Resolve(shaders),
                 MarkPages = copy.MarkPages!.Resolve(shaders),
                 MarkCoarsePages = copy.MarkCoarsePages!.Resolve(shaders),
                 AllocatePages = copy.AllocatePages!.Resolve(shaders),
@@ -42,6 +47,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetPageBlock
                 CompactViews = copy.CompactViews!.Resolve(shaders),
                 InitializePageHiZ = copy.InitializePageHiZ!.Resolve(shaders),
                 ReducePageHiZ = copy.ReducePageHiZ!.Resolve(shaders),
+                DynamicResolution = copy.DynamicResolution!.Resolve(shaders),
             };
             cancellationToken.ThrowIfCancellationRequested();
             return result;
