@@ -6,27 +6,34 @@ Instrumentation uses C# thread buffers and a C# file writer. It does not use Tra
 
 ## Capture
 
-Build the DefaultProject content first with `dotnet run --project tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj -c Release -- --engine <repository-root>`. The executable is Game.App; SomeEngine.Runtime is a library. See [the integrated baseline](../../docs/Integrated-Frame-Baseline-2026-09-20.md) for measured settings and limitations.
+DefaultGame now supplies the in-game scene and measurement platform. Build its content
+and the imported scenes first, then run the application without rendering command-line options.
+Use F1 to open the panel, F2/F3/F4 for spheres/Sponza/Amazon Bistro, F9 for a measurement
+without trace, and F10 for CPU traces of every scene. Detailed and allocation tracing
+are selected in that same panel. Traced runs must be compared separately from ordinary timing runs.
 
 ```powershell
-dotnet run --project templates/DefaultProject/Game.App/Game.App.csproj -c Release -- --frames 512 --hidden-window --no-vsync --trace capture.setrace --trace-detail --trace-allocations
+dotnet build templates/DefaultProject/Game.App/Game.App.csproj -c Release
+./tools/Measure-Scenes.ps1
+./tools/Measure-Scenes.ps1 -Trace
 ```
 
-The destination must not already exist. `--trace-detail` includes RHI/native call sites and individual RG row updates. Without it, the recording retains application, ECS, Job, and RG intervals. `--trace-allocations` additionally reads each thread's managed allocation counter at scope boundaries.
+The script controls the same in-game action and limits the complete application run to 60 seconds.
+Content building is separate. A scene that does not finish streaming in time is marked incomplete;
+it does not receive a passing steady-state timing. Reports and optional `.setrace` files are written
+under the application's `Performance` directory. See [current measurements](../../docs/Scene-Performance-2026-09-22.md).
 
-`--trace-frames-only` records frame intervals and counters while suppressing operation scopes and context associations. This is the low-overhead control for quantifying the effect of detailed instrumentation; it cannot measure worker costs or allocation breakdowns.
+The panel also controls scene playback, TAA, shadows, hardware raster, instance groups,
+mesh shaders, asynchronous compute, synchronous CPU/GPU frames, validation and geometry memory.
+Keep those conditions, resolution, animation and JIT configuration equal in performance comparisons.
+F8 captures the current image separately from performance sampling.
 
-For repeatable renderer measurements with all work completed in its frame:
-
-```powershell
-dotnet run --project templates/DefaultProject/Game.App/Game.App.csproj -c Release -- --frames 512 --hidden-window --no-vsync --synchronous-frames --scene-playback materials --fixed-step 0.016666667 --trace capture.setrace --trace-detail --trace-allocations
-```
-
-`--synchronous-frames` updates and extracts the current scene in the current frame, and waits for its GPU completion events before presenting. It retains the actual update, extraction, recording, submission, and wait costs. It does not pipeline scene work into the next frame. Normal application scheduling remains available when this diagnostic mode is not selected.
-
-The application's `motion` playback moves authored mesh instances, the camera, and point lights. `materials` additionally changes standard-material roughness every frame. These are controlled scene inputs, not a claim to reproduce an entire AAA game. The trace includes the numbers of moving meshes, moving lights, and changing materials. `--no-async-compute` provides a separate queue-strategy comparison. Image/GPU validation runs should be reported separately from timing runs because readback and validation themselves cost time.
+`SomeEngine.Runtime` remains a library. Its startup parser is available to other host applications;
+DefaultGame itself no longer uses startup flags for these tests.
 
 ## Read and analyze
+
+The panel's Camera sweep playback keeps the moving instances, lights, and material changes and adds camera orbit and rotation around its initial viewing direction. The orbit uses up to 0.45 radians of yaw and 0.1 radians of pitch. Use it separately from the Material changes baseline, whose camera only translates slightly, to exercise changes in visibility without declaring camera cuts.
 
 ```powershell
 dotnet run --project tools/SomeEngine.Trace -c Release -- inspect capture.setrace

@@ -45,7 +45,7 @@
 
 ## Game World 材质与共享资产的当前证据
 
-- `MeshMaterialBinding` 持有游戏侧 `Material`；`RenderMaterialBinding` 只持有提取所得 `MaterialData`。后者不暴露可编辑源对象，属性值、定义和修订数组在捕获时复制，并在同次提取中复用同一材质版本。
+- `MeshMaterialBinding` 持有游戏侧 `Material`；`RenderMaterialBinding` 只持有 `MaterialId`。Rendering world 用独立的 `RenderMaterialValue` 实体持有每份提取所得 `MaterialData`，通过 `RenderWorld.ReadMaterial(id)` 读取。共享材质值只更新一次，不重写引用它的实例绑定；数据与绑定仍在原有提取边界提交。
 - 材质通知只由 `MeshRenderExtractor` 订阅。源实体与材质的正反索引都属于提取输入关系，解绑和销毁撤销订阅。脏通知在已发布 Render World 确实包含对应值后才消费，因此提取或应用失败不会丢失通知。材质缓冲写入使用 ECS 事务。
 - Cluster 和 MaterialBindless 消费 `MaterialData`。Cluster 的标量变化沿已变更实体行、材质身份和属性修订号传递，保留绑定偏移；图接受的分配根与最新提取根分别代表两个不同的有效版本，不另建一份可编辑材质表。
 - `AssetLoader.ReloadAsync` 只排队，`ApplyUpdatesAsync` 在宿主的共享内容更新边界执行。宿主现在先等待后台 Game World 提取退出，再应用替换；之后才进入渲染准备。纹理 GPU 替换由 `RenderDevice.Textures.cs` 按资产修订处理，具体在途资源与失败路径仍属于下列未闭环项。
@@ -69,7 +69,7 @@
 ## 资产、纹理和实例的进一步核查
 
 - `AssetUpdate.Accept()` 是加载器的内容接受点。内置重载先验证/构造，再替换内容并接受；通知和旧资源清理放在接受之后。所有通知接收者都会收到事件，单个观察者抛错不跳过提取器。加载器不通过回滚修订号掩盖已替换内容；失败清理保留候选或清理回调，在后续更新/关闭时重试。关闭完成以前保留底层 storage。
-- `MaterialData` 中的纹理值和 `RenderLightCookie` 使用 TextureData。每个版本固定元数据及 tile 选择；提取器维护实际 material→texture、cookie→texture 关系，纹理通知只使对应源实体变脏。材质捕获版本包含嵌套纹理的版本，属性版本只对实际变化属性推进。Game World 原材质与纹理对象不作为 render material 的可编辑值暴露。
+- `MaterialData` 中的纹理值和 `RenderLightCookie` 使用 TextureData。每个版本固定元数据及 tile 选择；提取器维护实际 material→texture、cookie→texture 关系，纹理通知只更新对应共享材质或 cookie 的源实体。材质捕获版本包含嵌套纹理的版本，属性版本只对实际变化属性推进。Game World 原材质与纹理对象不作为 render material 的可编辑值暴露。
 - RenderDevice 的纹理缓存按资产身份和内容修订索引，旧内容使用弱关联，创建后续版本时回收同一资产下已无内容引用且无活动 CPU 帧的旧缓存。每次导入纹理均登记 Graph 结束观察，保留实际子资源状态和队列完成条件，删除默认 Graphics 队列/ShaderResource 状态猜测。未提交、部分上传、完整上传分别处理；上传事实由最终相关 Pass 是否接受决定。
 - 实例存储的可用性查询不再固定写入代次。只有取得 prepare timeline 并打开映射的写入范围才持有该代次。刷新失败保留该代次未刷新状态；渲染读取先重试刷新，成功后才绑定 GPU 资源。批次候选取消恢复原字节和可见状态。没有产品消费者的 internal RenderInstanceSet 已删除；公开 RenderMeshInstanceSet 保留。
 - Validation 的身份登记现在订阅 GraphicsObject 的 Dispose 事件，不再通过新建对象时全表扫描来发现终止。Queue 的观察表随所属 Device 终止清理；可执行命令独立订阅放弃/设备终止事件，已提交观察记录由提交结果移除。底层终止通知逐个派发，观察者失败不能阻止其他观察者或原生收尾。
