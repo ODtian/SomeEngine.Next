@@ -54,6 +54,8 @@ Texture2DArray<float> HierarchyHiZ;
 RWStructuredBuffer<DrawRequest> DeferredWork;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> DeferredWorkCount;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWByteAddressBuffer DeferredWorkDispatchArgs;
 
 StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
 
@@ -122,7 +124,12 @@ void AppendDeferredTraversalNode(ClusterTraversalNode node, uint maxNodes)
     uint waveBase = 0u;
     uint waveCount = WaveMaskBitCount(activeMask);
     if (lane == leader)
+    {
         InterlockedAdd(DeferredWorkCount[0], waveCount, waveBase);
+        uint published = min(waveBase + waveCount, maxNodes);
+        uint ignored;
+        DeferredWorkDispatchArgs.InterlockedMax(0u, (published + 63u) / 64u, ignored);
+    }
     waveBase = WaveReadLaneAt(waveBase, leader);
     uint output = waveBase + WaveMaskPrefix(activeMask, lane);
     if (output < maxNodes)
@@ -181,6 +188,7 @@ void ProcessTraversalLevel(
     if (validNode)
         ClusterNodeWorldBounds(node, transform, boundsExpansion, worldMin, worldMax);
     uint inputViews = validNode ? parent.ViewMask : 0u;
+    ClusterBoundsProjection previousProjection = (ClusterBoundsProjection)0;
     uint remainingViews = WaveActiveBitOr(inputViews);
     while (remainingViews != 0u)
     {
@@ -191,7 +199,7 @@ void ProcessTraversalLevel(
         uint viewIndex = viewBase + bit;
         ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
         ClusterProjectedBounds projectedBounds;
-        bool outside = ProjectWorldAabb(worldMin, worldMax, view, projectedBounds);
+        bool outside = ProjectWorldAabbForView(worldMin, worldMax, view, previousProjection, projectedBounds);
         if ((view.CullingEnabled != 0u && outside) || !ClusterNodePassesLod(node, transform, view))
             continue;
         uint state = ClusterHierarchyNodeState(worldMin, worldMax, projectedBounds, viewIndex, view);

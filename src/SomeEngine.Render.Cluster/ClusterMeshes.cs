@@ -32,7 +32,8 @@ internal readonly record struct ClusterMeshRegistration(
     Mesh Mesh,
     uint FirstPageId,
     uint PageCount,
-    uint RootNode);
+    uint RootNode,
+    uint[] LowestDetailPageIds);
 
 internal sealed record ClusterMeshPublication(
     ClusterBvhPublication Bvh,
@@ -771,6 +772,15 @@ internal sealed partial class ClusterMeshes : IDisposable
         {
             ThrowIfDisposed();
             return _bvh.TryPublishedRoot(mesh, out root);
+        }
+    }
+
+    internal bool TryGetRegisteredRoot(Mesh mesh, out uint root)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            return _bvh.TryRegisteredRoot(mesh, out root);
         }
     }
 

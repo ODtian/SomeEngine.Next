@@ -37,11 +37,14 @@ public sealed record ClusterPipelineOptions
 
     public bool ForceHardwareRaster { get; init; }
 
+    /// <summary>Tests spatial groups before individual instances. Disabled to avoid maintaining groups unless their culling benefit warrants it.</summary>
+    public bool UseInstanceGroups { get; init; }
+
     /// <summary>
     /// Maximum projected Cluster edge length routed to software rasterization.  The hard
     /// 64-pixel software bounding-box limit remains authoritative.
     /// </summary>
-    public float SoftwareRasterEdgeThreshold { get; init; } = 32.0f;
+    public float SoftwareRasterEdgeThreshold { get; init; } = 4.0f;
 
     public bool EnableFrameMetricsReadback { get; init; }
 

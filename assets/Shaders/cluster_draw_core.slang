@@ -6,6 +6,7 @@
 #include "material_interfaces.slang"
 #include "cluster_view_access.slang"
 #include "cluster_mesh_topology.slang"
+#include "cluster_policy_raster_output.slang"
 
 struct DrawUniforms
 {
@@ -73,6 +74,17 @@ uint LoadLocalVertexIndex(uint pageOffset, uint idxOffset, uint tStart, uint tri
     uint shift = (indexByteAddr & 3u) * 8u;
     uint packedIndex = PageHeap.Load(alignedAddr);
     return (packedIndex >> shift) & 0xFFu;
+}
+
+// A three-byte triangle tuple spans at most two aligned words.
+uint3 LoadLocalTriangleIndices(uint pageOffset, uint indexOffset, uint triangleStart, uint triangleIndex)
+{
+    uint address = pageOffset + indexOffset + triangleStart + triangleIndex * 3u;
+    uint wordAddress = address & ~3u;
+    uint shift = (address & 3u) * 8u;
+    uint indices = PageHeap.Load(wordAddress) >> shift;
+    if (shift > 8u) indices |= PageHeap.Load(wordAddress + 4u) << (32u - shift);
+    return uint3(indices & 255u, (indices >> 8u) & 255u, (indices >> 16u) & 255u);
 }
 
 bool DecodeDrawVertex(
@@ -207,12 +219,8 @@ ClusterRasterPixelInput<TVisibility.Varying> BuildVisBufferVertex<TVE, TVisibili
     output.Pos = mul(
         float4(evaluator.getPosition(vertex), 1.0),
         view.ViewProj);
-    float2 rasterScale = float2(
-        view.ScreenWidth / float(HardwareRasterUniformData.RasterWidth),
-        view.ScreenHeight / float(HardwareRasterUniformData.RasterHeight));
-    output.Pos.xy = output.Pos.xy * rasterScale + output.Pos.w * float2(
-        rasterScale.x - 1.0,
-        1.0 - rasterScale.y);
+    output.Pos = ClusterHardwareRasterPosition(output.Pos, visibleClusterIndex, view,
+        float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight));
     VisibilityVertexInput visibilityInput;
     visibilityInput.VisibleClusterIndex = visibleClusterIndex;
     visibilityInput.InstanceID = realInstanceID;
@@ -232,6 +240,92 @@ ClusterRasterPixelInput<TVisibility.Varying> BuildVisBufferVertex<TVE, TVisibili
 [ForceInline]
 // Import validation limits every hardware reuse batch to 32 distinct vertices
 // and 32 triangles, independently of the cluster's vertex-index range.
+[ForceInline]
+void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCapacity : int>(
+    uniform TVE evaluator,
+    uniform TVisibility visibility,
+    uint3 groupId,
+    uint lane,
+    out vertices ClusterRasterVertexData<TVisibility.Varying> vertices[VertexCapacity],
+    out indices uint3 indices[TriangleCapacity],
+    out primitives ClusterMeshPrimitive primitives[TriangleCapacity])
+    where TVE : IVertexEvaluate
+    where TVisibility : IVisibilityEvaluate<TVE.Vertex>
+{
+    uint batchIndex = groupId.x + groupId.y * 65535u;
+    DrawInstancedArgs args = LoadDrawInstancedArgs(HardwareRasterVisibleClusterMeta,
+        HardwareRasterDispatchUniformData.DrawArgsByteOffset);
+    bool validBatch = batchIndex < args.InstanceCount;
+    bool fullRange = false;
+    uint visible = 0u;
+    DrawRequest request = (DrawRequest)0;
+    uint first = 0u, end = 0u;
+    uint address = 0u, size = 0u, triangleStart = 0u, counts = 0u, indexOffset = 0u;
+    if (validBatch)
+    {
+        uint batch = HardwareRasterBinnedClusterIndexBuffer[args.StartInstance + batchIndex];
+        visible = RasterWorkVisibleIndex(batch);
+        fullRange = TriangleCapacity > 32 && RasterWorkIsRange(batch >> 22u);
+        request = HardwareRasterVisibleClusters[visible];
+        DecodeRasterWorkRange(PageHeap, request, batch, first, end);
+        LoadClusterInfo(PageHeap, request.PageOffset, DrawRequestClusterID(request),
+            address, size, triangleStart, counts);
+        indexOffset = PageHeap.Load(request.PageOffset + 24u);
+    }
+    uint triangleCount = end > first ? end - first : 0u;
+    uint3 triangle = 0u.xxx;
+    if (!fullRange && lane < triangleCount)
+        triangle = LoadLocalTriangleIndices(request.PageOffset, indexOffset, triangleStart, first + lane);
+    ClusterMeshVertexMask used = (ClusterMeshVertexMask)0;
+    if (!fullRange) used = BuildClusterMeshVertexMask(triangle, lane < triangleCount, lane);
+    // Wrapped indirect dispatches include padding groups. Every group declares its
+    // output counts, including zero, before any early return from the mesh shader.
+    SetMeshOutputCounts(fullRange ? (counts & 0xFFu) : ClusterMeshVertexCount(used), triangleCount);
+    if (!validBatch) return;
+    uint viewIndex = DrawRequestViewIndex(request);
+    ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, viewIndex);
+    RenderInstanceTransform transform = GetCurrentInstanceTransform(request.InstanceID);
+    for (uint localVertex = lane; localVertex < (counts & 0xFFu); localVertex += 32u)
+    {
+        uint mask = used.Words[localVertex / 32u];
+        if (!fullRange && (mask & (1u << (localVertex & 31u))) == 0u) continue;
+        VertexEvalContext context = MakeDrawVertexEvalContext(address, size, localVertex,
+            request.InstanceID, transform);
+        TVE.Vertex value = evaluator.evaluate(context);
+        ClusterRasterVertexData<TVisibility.Varying> output = {};
+        output.Pos = mul(float4(evaluator.getPosition(value), 1.0), view.ViewProj);
+        output.Pos = ClusterHardwareRasterPosition(output.Pos, visible, view,
+            float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight));
+        VisibilityVertexInput visibilityInput;
+        visibilityInput.VisibleClusterIndex = visible;
+        visibilityInput.InstanceID = request.InstanceID;
+        visibilityInput.ViewIndex = viewIndex;
+        visibilityInput.LocalVertexIndex = localVertex;
+        output.Varying = visibility.makeVarying(value, visibilityInput);
+        vertices[fullRange ? localVertex : ClusterMeshVertexRank(used, localVertex)] = output;
+    }
+    [unroll]
+    for (uint part = 0u; part < uint(TriangleCapacity) / 32u; part++)
+    {
+        uint triangleIndex = lane + part * 32u;
+        if (triangleIndex >= triangleCount) continue;
+        uint3 outputTriangle = LoadLocalTriangleIndices(
+            request.PageOffset, indexOffset, triangleStart, first + triangleIndex);
+        indices[triangleIndex] = fullRange ? outputTriangle : uint3(ClusterMeshVertexRank(used, outputTriangle.x),
+            ClusterMeshVertexRank(used, outputTriangle.y), ClusterMeshVertexRank(used, outputTriangle.z));
+        ClusterMeshPrimitive output;
+        output.VisibleClusterIndex = visible;
+        output.TriangleID = first + triangleIndex;
+        output.ViewIndex = viewIndex;
+        output.RenderTargetIndex = view.TargetPolicy == 0u ? view.TargetViewIndex : 0u;
+        primitives[triangleIndex].VisibleClusterIndex = output.VisibleClusterIndex;
+        primitives[triangleIndex].TriangleID = output.TriangleID;
+        primitives[triangleIndex].ViewIndex = output.ViewIndex;
+        primitives[triangleIndex].RenderTargetIndex = output.RenderTargetIndex;
+    }
+}
+
+[ForceInline]
 void BuildVisBufferMesh<TVE, TVisibility>(
     uniform TVE evaluator,
     uniform TVisibility visibility,
@@ -243,70 +337,24 @@ void BuildVisBufferMesh<TVE, TVisibility>(
     where TVE : IVertexEvaluate
     where TVisibility : IVisibilityEvaluate<TVE.Vertex>
 {
-    uint batchIndex = groupId.x + groupId.y * 65535u;
-    DrawInstancedArgs args = LoadDrawInstancedArgs(HardwareRasterVisibleClusterMeta,
-        HardwareRasterDispatchUniformData.DrawArgsByteOffset);
-    if (batchIndex >= args.InstanceCount)
-        return;
-    uint batch = HardwareRasterBinnedClusterIndexBuffer[args.StartInstance + batchIndex];
-    uint visible = RasterWorkVisibleIndex(batch);
-    DrawRequest request = HardwareRasterVisibleClusters[visible];
-    uint first, end;
-    DecodeRasterWorkRange(PageHeap, request, batch, first, end);
-    uint triangleCount = end > first ? end - first : 0u;
-    uint address, size, triangleStart, counts;
-    LoadClusterInfo(PageHeap, request.PageOffset, DrawRequestClusterID(request),
-        address, size, triangleStart, counts);
-    uint indexOffset = PageHeap.Load(request.PageOffset + 24u);
-    uint3 triangle = 0u.xxx;
-    if (lane < triangleCount)
-    {
-        [unroll]
-        for (uint corner = 0u; corner < 3u; corner++)
-        {
-            uint index = LoadLocalVertexIndex(request.PageOffset, indexOffset, triangleStart, first + lane, corner);
-            triangle[corner] = index;
-        }
-    }
-    ClusterMeshVertexMask used = BuildClusterMeshVertexMask(triangle, lane < triangleCount, lane);
-    SetMeshOutputCounts(ClusterMeshVertexCount(used), triangleCount);
-    uint viewIndex = DrawRequestViewIndex(request);
-    ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, viewIndex);
-    float2 rasterScale = float2(view.ScreenWidth, view.ScreenHeight) /
-        float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight);
-    for (uint localVertex = lane; localVertex < (counts & 0xFFu); localVertex += 32u)
-    {
-        uint mask = used.Words[localVertex / 32u];
-        if ((mask & (1u << (localVertex & 31u))) == 0u) continue;
-        VertexEvalContext context = MakeDrawVertexEvalContext(address, size, localVertex,
-            request.InstanceID, GetCurrentInstanceTransform(request.InstanceID));
-        TVE.Vertex value = evaluator.evaluate(context);
-        ClusterRasterVertexData<TVisibility.Varying> output = {};
-        output.Pos = mul(float4(evaluator.getPosition(value), 1.0), view.ViewProj);
-        output.Pos.xy = output.Pos.xy * rasterScale + output.Pos.w *
-            float2(rasterScale.x - 1.0, 1.0 - rasterScale.y);
-        VisibilityVertexInput visibilityInput;
-        visibilityInput.VisibleClusterIndex = visible;
-        visibilityInput.InstanceID = request.InstanceID;
-        visibilityInput.ViewIndex = viewIndex;
-        visibilityInput.LocalVertexIndex = localVertex;
-        output.Varying = visibility.makeVarying(value, visibilityInput);
-        vertices[ClusterMeshVertexRank(used, localVertex)] = output;
-    }
-    if (lane < triangleCount)
-    {
-        indices[lane] = uint3(ClusterMeshVertexRank(used, triangle.x),
-            ClusterMeshVertexRank(used, triangle.y), ClusterMeshVertexRank(used, triangle.z));
-        ClusterMeshPrimitive output;
-        output.VisibleClusterIndex = visible;
-        output.TriangleID = first + lane;
-        output.ViewIndex = viewIndex;
-        output.RenderTargetIndex = view.TargetPolicy == 0u ? view.TargetViewIndex : 0u;
-        primitives[lane].VisibleClusterIndex = output.VisibleClusterIndex;
-        primitives[lane].TriangleID = output.TriangleID;
-        primitives[lane].ViewIndex = output.ViewIndex;
-        primitives[lane].RenderTargetIndex = output.RenderTargetIndex;
-    }
+    BuildClusterMesh<TVE, TVisibility, 32, 32>(
+        evaluator, visibility, groupId, lane, vertices, indices, primitives);
+}
+
+[ForceInline]
+void BuildVisBufferMeshlet<TVE, TVisibility>(
+    uniform TVE evaluator,
+    uniform TVisibility visibility,
+    uint3 groupId,
+    uint lane,
+    out vertices ClusterRasterVertexData<TVisibility.Varying> vertices[64],
+    out indices uint3 indices[128],
+    out primitives ClusterMeshPrimitive primitives[128])
+    where TVE : IVertexEvaluate
+    where TVisibility : IVisibilityEvaluate<TVE.Vertex>
+{
+    BuildClusterMesh<TVE, TVisibility, 64, 128>(
+        evaluator, visibility, groupId, lane, vertices, indices, primitives);
 }
 
 ClusterRasterPixelInput<TVarying> MakeMeshPixelInput<TVarying>(

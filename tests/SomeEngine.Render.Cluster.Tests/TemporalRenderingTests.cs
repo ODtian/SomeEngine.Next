@@ -105,9 +105,34 @@ public sealed class TemporalRenderingTests
         Render(1, secondView, cameraCut: true, depthValue: .9999f);
         Assert.InRange(Render(0, secondView, depthValue: 1, foregroundEdge: true, sampleX: 1), .89f, .91f);
         Assert.Equal(0, Render(0, secondView, depthValue: 1, sampleX: 1));
+        Render(1, secondView, cameraCut: true, depthValue: .5f);
+        Assert.InRange(Render(0, secondView, depthValue: 1, foregroundDepth: .5f,
+            foregroundEdge: true, sampleX: 1), .89f, .91f);
+
+        // Unfinished GPU frames still form one history sequence; a canceled frame adds no sample.
+        Render(1, firstView, cameraCut: true);
+        Render(.8f, firstView, readResult: false);
+        Render(.1f, firstView, cancel: true);
+        Render(.8f, firstView, readResult: false);
+        Assert.InRange(Render(.8f, firstView), .945f, .947f);
+        foreach (float value in new[] { (float)Half.Epsilon, .00003f, -.00003f, -2f, 4f, 32752f })
+        {
+            float expected = (float)(Half)value;
+            Assert.Equal(expected, Render(value, firstView, cameraCut: true));
+            Assert.Equal(expected, Render(value, firstView));
+            Assert.Equal(expected, Render(value, firstView));
+        }
+        Assert.Equal(0, Render(0, secondView, cameraCut: true, foregroundEdge: true, sampleX: 1));
+        Assert.InRange(Render(0, secondView, foregroundEdge: true, sampleX: 1,
+            jitterPixels: new Vector2(.25f, 0), encodedMotion: new Vector2(.0625f, 0)), 0, .001f);
+        Render(1, secondView, cameraCut: true);
+        Assert.InRange(Render(0, secondView, settings: TemporalResolveSettings.Default), 0, .02f);
 
         float Render(float red, Entity view, bool enabled = true, bool cameraCut = false, bool cancel = false,
-            float depthValue = .5f, bool foregroundEdge = false, int sampleX = 0)
+            float depthValue = .5f, float foregroundDepth = .9999f,
+            bool foregroundEdge = false, int sampleX = 0, bool readResult = true,
+            Vector2 jitterPixels = default, Vector2 encodedMotion = default,
+            TemporalResolveSettings? settings = null)
         {
             byte[] bytes = new byte[3072];
             for (int y = 0; y < 4; y++)
@@ -116,7 +141,9 @@ public sealed class TemporalRenderingTests
                 bool foreground = foregroundEdge && x == 0;
                 Half[] pixel = [(Half)(foreground ? 1 : red), (Half)0, (Half)0, (Half)1];
                 MemoryMarshal.AsBytes(pixel.AsSpan()).CopyTo(bytes.AsSpan(y * 256 + x * 8));
-                float distance = foreground ? .9999f : depthValue;
+                Half[] motionPixel = [(Half)encodedMotion.X, (Half)encodedMotion.Y];
+                MemoryMarshal.AsBytes(motionPixel.AsSpan()).CopyTo(bytes.AsSpan(1024 + y * 256 + x * 4));
+                float distance = foreground ? foregroundDepth : depthValue;
                 MemoryMarshal.Write(bytes.AsSpan(2048 + y * 256 + x * 4), in distance);
             }
             var frame = graph.BeginFrame();
@@ -124,10 +151,12 @@ public sealed class TemporalRenderingTests
             {
                 frame.SetBufferInput(input, frame.Upload<byte>(bytes, BufferUsages.CopySource));
                 temporal.Record(ref frame, color, depth, new MotionFeatureOutput(motion, 4, 4, 1),
-                    new TemporalResolveSettings(.9f, 2, 1, 0), enabled, cameraCut, view);
+                    settings ?? new TemporalResolveSettings(.9f, 2, 1, 0), enabled, cameraCut, view,
+                    jitterPixels);
                 if (cancel) return 0;
                 var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
                 frame.Execute(completions);
+                if (!readResult) return 0;
                 foreach (QueueCompletion completion in completions)
                     if (completion != default)
                         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));

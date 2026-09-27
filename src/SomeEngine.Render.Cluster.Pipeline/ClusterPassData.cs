@@ -6,13 +6,14 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 internal struct ClusterTraversalSeedUniforms
 {
     internal uint ViewCount;
     internal uint ViewIndexMode;
     internal uint MaxNodes;
     internal uint ArgsOffset;
+    internal uint UseInstanceGroups;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -63,6 +64,20 @@ internal readonly record struct ClusterIndirectDispatchParameters(
                 new BufferRange(parameters.Offset, ClusterIndirectAbi.DispatchBytes)),
             1);
     }
+}
+
+// Matches the records written by cluster_bin_reset.slang. These arguments are
+// rebuilt with the raster bins; the graph and its consumers remain installed.
+internal static class ClusterRasterArguments
+{
+    internal const ulong VisibilityResolveOffset = 16;
+    internal const ulong HiZFirstOffset = 32;
+    internal const ulong HiZTailOffset = 44;
+    internal const ulong RasterScatterOffset = 56;
+    internal const ulong HiZPairsOffset = 68;
+
+    internal static ulong HiZPairOffset(int mip) =>
+        HiZPairsOffset + checked((ulong)mip * ClusterIndirectAbi.DispatchBytes);
 }
 
 internal readonly record struct ClusterFullscreenParameters(
@@ -197,9 +212,9 @@ internal readonly record struct ClusterContinuationResetParameters(
         commands.ClearBuffer(
             phaseTwoCandidateCount,
             new BufferRange(0, phaseTwoCandidateCount.Info.Size));
-        commands.ClearBuffer(
-            phaseTwoCandidateArgs,
-            new BufferRange(0, phaseTwoCandidateArgs.Info.Size));
+        commands.CopyBuffer(new BufferCopy(
+            commands.GetBuffer(data.CandidateArgsInitialization), 0,
+            phaseTwoCandidateArgs, 0, 16));
         commands.ClearBuffer(postDrawArgs, new BufferRange(0, postDrawArgs.Info.Size));
         commands.CopyBuffer(new BufferCopy(
             commands.GetBuffer(data.CandidateArgsInitialization),

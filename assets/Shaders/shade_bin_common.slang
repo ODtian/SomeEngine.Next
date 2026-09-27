@@ -12,7 +12,7 @@ struct ShadeBinUniforms
     uint ScreenHeight;
     uint ShadeBinCount;
     uint SlotCapacity;
-    uint Pad0;
+    uint BinItemCapacity;
     uint Pad1;
     uint Pad2;
     uint Pad3;

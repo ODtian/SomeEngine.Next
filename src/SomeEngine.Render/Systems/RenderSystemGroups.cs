@@ -58,15 +58,18 @@ public readonly struct RenderPrepareSystemContext
     /// <summary>
     /// Opens declared properties of a live batch for an in-place rewrite. The caller must use the
     /// full exact layout whenever entity membership or row order changed.
+    /// Replaced properties must receive a complete binding and every instance value before Publish returns.
     /// </summary>
     public RenderInstanceWriteHandle RewriteBatch(
         RenderInstanceBatch batch,
-        RenderInstancePropertyLayout properties) =>
+        RenderInstancePropertyLayout properties,
+        RenderInstancePropertyLayout? replacedProperties = null) =>
         RequireInstances().RewriteBatch(
             RequireScope(),
             RequireWriteScope(),
             batch,
-            properties);
+            properties,
+            replacedProperties);
 
     public void Retire(RenderInstanceBatch batch) =>
         RequireInstances().Retire(RequireScope(), RequireWriteScope(), batch);

@@ -16,26 +16,28 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 {
     private readonly List<MeshSnapshot> _snapshots = [];
     private readonly List<InstancedSnapshot> _instancedSnapshots = [];
-    private readonly List<MaterialData> _materials = [];
+    private readonly List<Material> _materials = [];
     private readonly HashSet<Entity> _meshSources = [];
     private readonly HashSet<Entity> _instancedSources = [];
     private readonly Dictionary<Entity, Material[]> _sourceMaterials = [];
     private readonly Dictionary<Material, HashSet<Entity>> _materialSources = [];
-    private readonly HashSet<Entity> _changedMaterialSources = [];
+    private readonly HashSet<Material> _addedMaterials = [];
+    private readonly HashSet<long> _removedMaterials = [];
     private readonly HashSet<Entity> _collectedMaterialSources = [];
     private readonly object _assetChangesGate = new();
-    private readonly Dictionary<Material, MaterialData> _capturedMaterials = [];
+    private readonly HashSet<Material> _referencedMaterials = [];
     private readonly Dictionary<Entity, MeshInstance> _sourceMeshes = [];
     private readonly Dictionary<Mesh, HashSet<Entity>> _meshAssetSources = [];
     private readonly HashSet<Entity> _changedMeshSources = [];
     private readonly HashSet<Entity> _collectedMeshSources = [];
-    private readonly Dictionary<Material, Texture[]> _materialTextures = [];
-    private readonly Dictionary<Texture, HashSet<Material>> _textureMaterials = [];
 
-    public bool CanApplyChangesDirect => false;
+    public bool CanApplyChangesDirect =>
+        _snapshots.Count == 0 && _instancedSnapshots.Count == 0 && _removedMaterials.Count == 0;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
+        query.Write<RenderMaterialReference>();
+        query.ReadDestination<RenderMaterialIndex>();
         query.Write<RenderMesh>();
         query.Write<RenderInstancedMesh>();
         query.ReadOptional<WorldTransform>();
@@ -52,16 +54,14 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         _meshSources.Clear();
         _instancedSources.Clear();
         _collectedMaterialSources.Clear();
-        _capturedMaterials.Clear();
+        _referencedMaterials.Clear();
         _collectedMeshSources.Clear();
     }
 
-    private MaterialData CaptureMaterial(Material material)
+    private Material CollectMaterial(Material material)
     {
-        if (_capturedMaterials.TryGetValue(material, out MaterialData? data)) return data;
-        data = material.CaptureData();
-        _capturedMaterials.Add(material, data);
-        return data;
+        _referencedMaterials.Add(material);
+        return material;
     }
 
     private Mesh TrackMesh(Entity source, in MeshInstance instance)
@@ -116,14 +116,13 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 if (!_materialSources.TryGetValue(material, out var sources))
                 {
                     _materialSources.Add(material, sources = []);
-                    material.Changed += CollectMaterialChange;
-                    TrackMaterialTextures(material);
+                    _addedMaterials.Add(material);
+                    _removedMaterials.Remove(material.MaterialId);
                 }
                 sources.Add(source);
             }
             _sourceMaterials.Add(source, materials);
             _collectedMaterialSources.Add(source);
-            _changedMaterialSources.Add(source);
         }
     }
 
@@ -135,58 +134,10 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             if (!_materialSources.TryGetValue(material, out var sources)) continue;
             sources.Remove(source);
             if (sources.Count != 0) continue;
-            material.Changed -= CollectMaterialChange;
-            UntrackMaterialTextures(material);
             _materialSources.Remove(material);
+            _addedMaterials.Remove(material);
+            _removedMaterials.Add(material.MaterialId);
         }
-        _changedMaterialSources.Remove(source);
-    }
-
-    private void CollectMaterialChange(Material material)
-    {
-        lock (_assetChangesGate)
-            if (_materialSources.TryGetValue(material, out var sources))
-            {
-                TrackMaterialTextures(material);
-                _changedMaterialSources.UnionWith(sources);
-            }
-    }
-
-    private void TrackMaterialTextures(Material material)
-    {
-        UntrackMaterialTextures(material);
-        Texture[] textures = material.CaptureTextureReferences();
-        _materialTextures.Add(material, textures);
-        foreach (Texture texture in textures)
-        {
-            if (!_textureMaterials.TryGetValue(texture, out var materials))
-            {
-                _textureMaterials.Add(texture, materials = []);
-                texture.Changed += CollectTextureChange;
-            }
-            materials.Add(material);
-        }
-    }
-
-    private void UntrackMaterialTextures(Material material)
-    {
-        if (!_materialTextures.Remove(material, out Texture[]? textures)) return;
-        foreach (Texture texture in textures)
-        {
-            HashSet<Material> materials = _textureMaterials[texture];
-            materials.Remove(material);
-            if (materials.Count != 0) continue;
-            texture.Changed -= CollectTextureChange;
-            _textureMaterials.Remove(texture);
-        }
-    }
-
-    private void CollectTextureChange(Texture texture)
-    {
-        lock (_assetChangesGate)
-            if (_textureMaterials.TryGetValue(texture, out var materials))
-                foreach (Material material in materials)
-                    _changedMaterialSources.UnionWith(_materialSources[material]);
     }
 
     public bool CompleteCollection(RenderExtractionContext context, bool fullCollection)
@@ -219,33 +170,18 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 _meshSources.Add(source);
                 changed = true;
             }
-            foreach (Entity source in _changedMaterialSources.ToArray())
+            foreach (Material material in _addedMaterials.ToArray())
             {
-                if (_collectedMaterialSources.Contains(source)) continue;
-                Material[] materials = _sourceMaterials[source];
-                int offset = _materials.Count;
-                foreach (Material material in materials) _materials.Add(CaptureMaterial(material));
-                Entity entity = context.RequireMirror(source);
-                var comparison = new MaterialSliceComparison(_materials, offset, materials.Length);
-                context.World.ExecuteBufferRead<RenderMaterialBinding, MaterialSliceComparison>(
-                    entity, ref comparison, CompareMaterials);
-                if (comparison.Equal)
-                {
-                    // Only consume a notification after the Render World contains its data.
-                    // A failed extraction therefore leaves the same source eligible for retry.
-                    bool current = true;
-                    foreach (Material material in materials)
-                        if (!ReferenceEquals(material.CaptureData(), _capturedMaterials[material]))
-                            current = false;
-                    if (current) _changedMaterialSources.Remove(source);
-                    _materials.RemoveRange(offset, materials.Length);
-                    continue;
-                }
-                _snapshots.Add(new MeshSnapshot(source, default, null!, 0, true,
-                    offset, materials.Length, MeshChanged: false, MaterialsChanged: true, null));
-                _meshSources.Add(source);
-                changed = true;
+                Material data = CollectMaterial(material);
+                if (context.World.TryReadMaterial(data.MaterialId, out Material? current) &&
+                    ReferenceEquals(current, data))
+                    _addedMaterials.Remove(material);
+                else
+                    changed = true;
             }
+            foreach (long id in _removedMaterials.ToArray())
+                if (context.World.TryReadMaterial(id, out _)) changed = true;
+                else _removedMaterials.Remove(id);
             return changed;
         }
     }
@@ -254,18 +190,15 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
     {
         lock (_assetChangesGate)
         {
-            foreach (Material material in _materialSources.Keys)
-                material.Changed -= CollectMaterialChange;
+            Reset();
             _materialSources.Clear();
             _sourceMaterials.Clear();
-            _changedMaterialSources.Clear();
+            _addedMaterials.Clear();
+            _removedMaterials.Clear();
             foreach (Mesh mesh in _meshAssetSources.Keys) mesh.Changed -= CollectMeshChange;
             _meshAssetSources.Clear();
             _sourceMeshes.Clear();
             _changedMeshSources.Clear();
-            foreach (Texture texture in _textureMaterials.Keys) texture.Changed -= CollectTextureChange;
-            _textureMaterials.Clear();
-            _materialTextures.Clear();
         }
     }
 
@@ -296,7 +229,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialCount = bindings.Length;
                     TrackMaterials(entities[row], bindings);
                     for (int index = 0; index < bindings.Length; index++)
-                        _materials.Add(CaptureMaterial(bindings[index].Material));
+                        _materials.Add(CollectMaterial(bindings[index].Material));
                 }
 
                 _snapshots.Add(new MeshSnapshot(
@@ -372,7 +305,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialCount = bindings.Length;
                     TrackMaterials(entities[row], bindings);
                     for (int index = 0; index < bindings.Length; index++)
-                        _materials.Add(CaptureMaterial(bindings[index].Material));
+                        _materials.Add(CollectMaterial(bindings[index].Material));
                 }
 
                 MeshInstance mesh = meshes[row];
@@ -407,6 +340,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public void Apply(RenderExtractionContext context)
     {
+        context.World.UpdateMaterials(_referencedMaterials, _removedMaterials);
         for (int index = 0; index < _snapshots.Count; index++)
         {
             MeshSnapshot snapshot = _snapshots[index];
@@ -448,6 +382,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public void ApplyChanges(RenderExtractionContext context)
     {
+        context.World.UpdateMaterials(_referencedMaterials, _removedMaterials);
         for (int index = 0; index < _snapshots.Count; index++)
         {
             MeshSnapshot snapshot = _snapshots[index];
@@ -482,6 +417,9 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public void ValidateChanges(RenderExtractionContext context)
     {
+        foreach (Material data in _referencedMaterials)
+            if (!context.World.TryReadMaterial(data.MaterialId, out _))
+                throw new InvalidOperationException($"The rendering world has no material {data.MaterialId} to update.");
         for (int index = 0; index < _snapshots.Count; index++)
         {
             MeshSnapshot snapshot = _snapshots[index];
@@ -559,7 +497,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 for (int index = 0; index < source.Count; index++)
                 {
                     buffer.Add(
-                        new RenderMaterialBinding(source.Values[source.Offset + index]));
+                        new RenderMaterialBinding(source.Values[source.Offset + index].MaterialId));
                 }
             });
     }
@@ -574,7 +512,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             return;
         }
         for (int index = 0; index < current.Length; index++)
-            if (!ReferenceEquals(current[index].Material, state.Values[state.Offset + index]))
+            if (current[index].MaterialId != state.Values[state.Offset + index].MaterialId)
             {
                 state.Equal = false;
                 return;
@@ -600,16 +538,16 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         bool Changed);
 
     private readonly record struct MaterialSlice(
-        List<MaterialData> Values,
+        List<Material> Values,
         int Offset,
         int Count);
 
     private struct MaterialSliceComparison(
-        List<MaterialData> values,
+        List<Material> values,
         int offset,
         int count)
     {
-        internal List<MaterialData> Values = values;
+        internal List<Material> Values = values;
         internal int Offset = offset;
         internal int Count = count;
         internal bool Equal = true;

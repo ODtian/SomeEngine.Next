@@ -15,8 +15,15 @@ internal static class ClusterMaterialEntries
     internal const string Shade = "ClusterShade";
     internal const string SoftwareRasterImageAtomic64 = "ClusterRasterSoftwareImageAtomic64";
     internal const string SoftwareRasterBufferAtomic64 = "ClusterRasterSoftwareBufferAtomic64";
+    internal const string SoftwareMeshletImageAtomic64 = "ClusterRasterSoftwareMeshletImageAtomic64";
+    internal const string SoftwareMeshletBufferAtomic64 = "ClusterRasterSoftwareMeshletBufferAtomic64";
+    internal const string SoftwareTarget = "ClusterRasterSoftwareTarget";
+    internal const string SoftwareMeshletTarget = "ClusterRasterSoftwareMeshletTarget";
+    internal const string HardwarePixelTarget = "ClusterRasterPixelTarget";
+    internal const string HardwareMeshPixelTarget = "ClusterRasterMeshPixelTarget";
     internal const string HardwareVertex = "ClusterRasterVertex";
     internal const string HardwareMesh = "ClusterRasterMesh";
+    internal const string HardwareMeshlet = "ClusterRasterMeshlet";
     internal const string HardwarePixelImageAtomic64 = "ClusterRasterPixelImageAtomic64";
     internal const string HardwarePixelBufferAtomic64 = "ClusterRasterPixelBufferAtomic64";
     internal const string HardwarePixelHardwareOnly = "ClusterRasterPixelHardwareOnly";
@@ -66,8 +73,8 @@ internal static class ClusterMaterialEntries
             if (binding.IsMaterialResource) properties.Add(binding.MaterialSlot);
     }
 
-    internal static Shader RequireShader(MaterialData material)
-        => material.ShaderAsset ?? throw new InvalidDataException(
+    internal static Shader RequireShader(Material material)
+        => material.Shader ?? throw new InvalidDataException(
             $"Material '{material.Name}' has no loaded user shader.");
 
     internal static bool HasEntry(
@@ -91,7 +98,9 @@ internal readonly record struct ClusterRasterCompatibilityKey(
     ClusterComputePipeline? Software,
     ClusterRasterPipeline Hardware,
     ClusterTessellationCompatibilityKey? Tessellation,
-    uint StageAbiRevision);
+    uint StageAbiRevision,
+    ClusterComputePipeline? TargetSoftware = null,
+    ClusterRasterPipeline? TargetHardware = null);
 
 internal readonly record struct ClusterShadeCompatibilityKey(
     ShaderProgram Program,
@@ -225,7 +234,7 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
     }
 
     internal static ClusterCommandBindingKey Create(
-        MaterialData material,
+        Material material,
         ClusterLinkedStageLayout resources,
         ClusterMaterialStageBinding[] bindings)
     {
@@ -263,6 +272,27 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
         return new ClusterCommandBindingKey(values);
     }
 
+    internal void CollectBuffers(HashSet<SomeEngine.Graphics.Buffer> buffers)
+    {
+        foreach (BindingValue binding in _values)
+            switch (binding.Value)
+            {
+                case BufferCbvValue view: buffers.Add(view.Buffer); break;
+                case BufferSrvValue view: buffers.Add(view.Buffer); break;
+                case BufferUavValue view:
+                    buffers.Add(view.Buffer);
+                    if (view.CounterBuffer is { } counter) buffers.Add(counter);
+                    break;
+                case AccelerationValue view: buffers.Add(view.Resource.Info.Storage); break;
+            }
+    }
+
+    internal void CollectTextures(HashSet<SomeEngine.Resources.Texture> textures)
+    {
+        foreach (BindingValue binding in _values)
+            if (binding.Value is TextureValue value) textures.Add(value.Texture);
+    }
+
     public bool Equals(ClusterCommandBindingKey? other)
     {
         if (ReferenceEquals(this, other))
@@ -278,7 +308,7 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
     public override int GetHashCode() => _hash;
 
     private static object? Normalize(
-        MaterialData material,
+        Material material,
         in ClusterMaterialStageBinding binding,
         string name)
     {
@@ -317,7 +347,7 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
         };
     }
 
-    private static InvalidDataException InvalidValue(MaterialData material, string name, string expected)
+    private static InvalidDataException InvalidValue(Material material, string name, string expected)
         => new($"Material '{material.Name}' slot '{name}' is not a {expected}.");
 
     private readonly record struct BindingValue(ResourceBindingType Type, object? Value);
@@ -433,7 +463,7 @@ internal sealed class ClusterRasterStages : IDisposable
             resourceProperties = resourceProperties.Remove(material);
         foreach (int address in addresses)
         {
-            if (!assignments.TryGetEntry(address, out MaterialData material, out string encoding))
+            if (!assignments.TryGetEntry(address, out Material material, out string encoding))
             {
                 bins.Remove(address);
                 continue;
@@ -443,6 +473,10 @@ internal sealed class ClusterRasterStages : IDisposable
             if (invocation.SoftwareResources is { } software)
                 ClusterMaterialEntries.AddResourceProperties(properties, software.MaterialBindings);
             ClusterMaterialEntries.AddResourceProperties(properties, invocation.HardwareResources.MaterialBindings);
+            if (invocation.TargetStages?.SoftwareResources is { } targetSoftware)
+                ClusterMaterialEntries.AddResourceProperties(properties, targetSoftware.MaterialBindings);
+            if (invocation.TargetStages?.HardwareResources is { } targetHardware)
+                ClusterMaterialEntries.AddResourceProperties(properties, targetHardware.MaterialBindings);
             if (invocation.Tessellation is { } tessellation)
             {
                 ClusterMaterialEntries.AddResourceProperties(properties, tessellation.SeedResources.MaterialBindings);
@@ -462,7 +496,9 @@ internal sealed class ClusterRasterStages : IDisposable
             assignments.SlotCapacity,
             _resolved?.BinIndices ?? ClusterUploadData.Zero(0),
             addresses,
-            static (stage, index) => stage.Software is null ? index : index | 0x80000000u),
+            static (stage, index) => index | (stage.Software is null ? 0u : 0x80000000u) |
+                (stage.Hardware.UsesMaterialRanges && stage.Tessellation is null ? 0x40000000u : 0u) |
+                (stage.SoftwareUsesMaterialRanges && stage.Tessellation is null ? 0x20000000u : 0u)),
             invocations, bins.Range, [.. bins.Changes], [.. addresses], _resolved);
         _binIndices = bins;
         _resourceProperties = resourceProperties;
@@ -471,7 +507,7 @@ internal sealed class ClusterRasterStages : IDisposable
         return result;
     }
 
-    private ClusterRasterInvocation ResolveInvocation(MaterialData material, string vertexEncoding)
+    private ClusterRasterInvocation ResolveInvocation(Material material, string vertexEncoding)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
         ShaderTarget target = _device.Capabilities.ShaderTarget;
@@ -482,6 +518,13 @@ internal sealed class ClusterRasterStages : IDisposable
         string? softwareEntry = _visibilityMode == ClusterVisibilityMode.HardwareOnly
             ? null
             : ClusterMaterialEntries.SoftwareRaster(_visibilityMode);
+        string meshletSoftwareEntry = _visibilityMode == ClusterVisibilityMode.ImageAtomic64
+            ? ClusterMaterialEntries.SoftwareMeshletImageAtomic64
+            : ClusterMaterialEntries.SoftwareMeshletBufferAtomic64;
+        bool softwareUsesMaterialRanges = softwareEntry is not null &&
+            ClusterMaterialEntries.HasEntry(shader, target, meshletSoftwareEntry, ShaderStage.Compute);
+        if (softwareUsesMaterialRanges)
+            softwareEntry = meshletSoftwareEntry;
         string hardwarePixelEntry = ClusterMaterialEntries.HardwarePixel(_visibilityMode, ClusterRasterPipeline.SupportsMesh(_backend, _device));
         string? tessellationDiceEntry = _visibilityMode == ClusterVisibilityMode.HardwareOnly
             ? null
@@ -489,13 +532,17 @@ internal sealed class ClusterRasterStages : IDisposable
         bool hasSoftware = softwareEntry is not null && ClusterMaterialEntries.HasEntry(
             shader, target, softwareEntry, ShaderStage.Compute);
         bool usesMesh = ClusterRasterPipeline.SupportsMesh(_backend, _device);
-        string hardwareEntry = usesMesh ? ClusterMaterialEntries.HardwareMesh : ClusterMaterialEntries.HardwareVertex;
         bool hasMesh = ClusterMaterialEntries.HasEntry(shader, target, ClusterMaterialEntries.HardwareMesh, ShaderStage.Mesh);
+        bool hasMeshlet = ClusterMaterialEntries.HasEntry(shader, target, ClusterMaterialEntries.HardwareMeshlet, ShaderStage.Mesh);
+        string hardwareEntry = usesMesh ? ClusterMaterialEntries.HardwareMesh : ClusterMaterialEntries.HardwareVertex;
+        if (usesMesh && hasMeshlet && ClusterRasterPipeline.SupportsMeshlets(_backend, _device))
+            hardwareEntry = ClusterMaterialEntries.HardwareMeshlet;
+        bool selectedMeshAvailable = hardwareEntry == ClusterMaterialEntries.HardwareMeshlet ? hasMeshlet : hasMesh;
         bool hasVertex = ClusterMaterialEntries.HasEntry(
             shader, target, ClusterMaterialEntries.HardwareVertex, ShaderStage.Vertex);
         bool hasPixel = ClusterMaterialEntries.HasEntry(
             shader, target, hardwarePixelEntry, ShaderStage.Pixel);
-        bool hasVisibilityRaster = hasSoftware || hasVertex || hasMesh || hasPixel;
+        bool hasVisibilityRaster = hasSoftware || hasVertex || hasMesh || hasMeshlet || hasPixel;
         if (!hasVisibilityRaster)
         {
             if (!string.Equals(vertexEncoding, _defaultVertexEncoding, StringComparison.Ordinal))
@@ -511,7 +558,7 @@ internal sealed class ClusterRasterStages : IDisposable
         else
         {
             if ((_visibilityMode != ClusterVisibilityMode.HardwareOnly && !hasSoftware) ||
-                !hasVertex || (usesMesh && !hasMesh) ||
+                !hasVertex || (usesMesh && !selectedMeshAvailable) ||
                 !hasPixel)
             {
                 throw new InvalidDataException(
@@ -581,17 +628,21 @@ internal sealed class ClusterRasterStages : IDisposable
             hardware,
             bounds,
             hasVisibilityRaster ? shader : null,
-            hasTessellationOverride ? shader : null);
+            hasTessellationOverride ? shader : null,
+            softwareEntry,
+            softwareUsesMaterialRanges);
     }
 
     private ClusterRasterInvocation CreateInvocation(
-        MaterialData material,
+        Material material,
         string vertexEncoding,
         ClusterComputePipeline? software,
         ClusterRasterPipeline hardware,
         ClusterConservativeBounds bounds,
         Shader? visibilityShader,
-        Shader? tessellationShader)
+        Shader? tessellationShader,
+        string? softwareEntry,
+        bool softwareUsesMaterialRanges)
     {
         ClusterRasterStageResources<ClusterSoftwareRasterCoreResource>? softwareResources = software is null
             ? null
@@ -599,7 +650,7 @@ internal sealed class ClusterRasterStages : IDisposable
                 material,
                 software.ParameterLayout,
                 visibilityShader,
-                visibilityShader is null ? null : ClusterMaterialEntries.SoftwareRaster(_visibilityMode),
+                visibilityShader is null ? null : softwareEntry,
                 null,
                 ClusterSoftwareRasterCoreResources.Resolve,
                 ClusterSoftwareRasterCoreResources.Contains);
@@ -607,8 +658,7 @@ internal sealed class ClusterRasterStages : IDisposable
             material,
             hardware.ParameterLayout,
             visibilityShader,
-            visibilityShader is null ? null : hardware.UsesMesh
-                ? ClusterMaterialEntries.HardwareMesh : ClusterMaterialEntries.HardwareVertex,
+            visibilityShader is null ? null : hardware.GeometryEntry,
             visibilityShader is null ? null : ClusterMaterialEntries.HardwarePixel(_visibilityMode, hardware.UsesMesh),
             ClusterHardwareRasterCoreResources.Resolve,
             ClusterHardwareRasterCoreResources.Contains);
@@ -624,6 +674,19 @@ internal sealed class ClusterRasterStages : IDisposable
                 material,
                 hardwareResources.Resources,
                 hardwareResources.MaterialBindings));
+        ClusterRasterTargetStages? targetStages = visibilityShader is null
+            ? null
+            : CreateTargetStages(material, visibilityShader, vertexEncoding, hardware, softwareUsesMaterialRanges);
+        if (targetStages?.Software is not null &&
+            ClusterGeometryContracts.RequireConservativeBounds(
+                visibilityShader!, softwareUsesMaterialRanges
+                    ? ClusterMaterialEntries.SoftwareMeshletTarget : ClusterMaterialEntries.SoftwareTarget,
+                $"Material '{material.Name}' target software raster") != ClusterConservativeBounds.Finite)
+            bounds = ClusterConservativeBounds.Unbounded;
+        if (targetStages?.SoftwareResources is { } targetSoftware)
+            bindingKeys.Add(ClusterCommandBindingKey.Create(material, targetSoftware.Resources, targetSoftware.MaterialBindings));
+        if (targetStages?.HardwareResources is { } targetHardware)
+            bindingKeys.Add(ClusterCommandBindingKey.Create(material, targetHardware.Resources, targetHardware.MaterialBindings));
         ClusterTessellationInvocation? tessellation = null;
         if (tessellationShader is not null)
         {
@@ -744,7 +807,9 @@ internal sealed class ClusterRasterStages : IDisposable
             software,
             hardware,
             tessellation?.Key,
-            StageAbiRevision: 4);
+            StageAbiRevision: 4,
+            TargetSoftware: targetStages?.Software,
+            TargetHardware: targetStages?.Hardware);
         return new ClusterRasterInvocation(
             0,
             material,
@@ -756,11 +821,48 @@ internal sealed class ClusterRasterStages : IDisposable
             bounds,
             softwareResources,
             hardwareResources,
-            commandBindings);
+            commandBindings)
+        {
+            SoftwareUsesMaterialRanges = softwareUsesMaterialRanges,
+            TargetStages = targetStages,
+        };
+    }
+
+    private ClusterRasterTargetStages? CreateTargetStages(
+        Material material,
+        Shader shader,
+        string vertexEncoding,
+        ClusterRasterPipeline primaryHardware,
+        bool softwareUsesMaterialRanges)
+    {
+        string softwareEntry = softwareUsesMaterialRanges
+            ? ClusterMaterialEntries.SoftwareMeshletTarget
+            : ClusterMaterialEntries.SoftwareTarget;
+        string pixelEntry = primaryHardware.UsesMesh
+            ? ClusterMaterialEntries.HardwareMeshPixelTarget
+            : ClusterMaterialEntries.HardwarePixelTarget;
+        ShaderTarget target = _device.Capabilities.ShaderTarget;
+        ClusterComputePipeline? software = _visibilityMode != ClusterVisibilityMode.HardwareOnly &&
+            ClusterMaterialEntries.HasEntry(shader, target, softwareEntry, ShaderStage.Compute)
+                ? ResolveSoftwarePipeline(material, shader, softwareEntry, vertexEncoding)
+                : null;
+        ClusterRasterPipeline? hardware = ClusterMaterialEntries.HasEntry(shader, target, pixelEntry, ShaderStage.Pixel)
+            ? ResolveHardwarePipeline(material, shader, primaryHardware.GeometryEntry,
+                pixelEntry, vertexEncoding, targetOutput: true)
+            : null;
+        if (software is null && hardware is null)
+            return null;
+        var softwareResources = software is null ? null : ResolveRasterResources(
+            material, software.ParameterLayout, shader, softwareEntry, null,
+            ClusterSoftwareRasterCoreResources.Resolve, ClusterSoftwareRasterCoreResources.Contains);
+        var hardwareResources = hardware is null ? null : ResolveRasterResources(
+            material, hardware.ParameterLayout, shader, hardware.GeometryEntry, pixelEntry,
+            ClusterHardwareRasterCoreResources.Resolve, ClusterHardwareRasterCoreResources.Contains);
+        return new ClusterRasterTargetStages(software, hardware, softwareResources, hardwareResources);
     }
 
     private ClusterRasterStageResources<TCore> ResolveRasterResources<TCore>(
-        MaterialData material,
+        Material material,
         ShaderVariableLayout parameterLayout,
         Shader? shader,
         string? firstEntry,
@@ -822,7 +924,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private static ClusterMaterialStageBinding[] ResolveMaterialBindings(
-        MaterialData material,
+        Material material,
         ClusterLinkedStageLayout resources,
         IReadOnlyDictionary<string, byte> materialResources,
         GraphResourceBinder?[] featureBinders)
@@ -847,7 +949,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private static uint FindMaterialSlot(
-        MaterialData material,
+        Material material,
         IReadOnlyList<MaterialPropertyDefinition> slots,
         string name)
     {
@@ -861,7 +963,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private ClusterComputePipeline ResolveSoftwarePipeline(
-        MaterialData material,
+        Material material,
         Shader shader,
         string entryPoint,
         string vertexEncoding)
@@ -888,7 +990,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private ClusterComputePipeline ResolveTessellationPipeline(
-        MaterialData material,
+        Material material,
         Shader shader,
         string entryPoint,
         string vertexEncoding,
@@ -916,18 +1018,19 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private ClusterRasterPipeline ResolveHardwarePipeline(
-        MaterialData material,
+        Material material,
         Shader shader,
         string vertexEntry,
         string pixelEntry,
-        string vertexEncoding)
+        string vertexEncoding,
+        bool targetOutput = false)
     {
         ClusterStageTargets.RequireVertexEncoding(
             shader,
             vertexEntry,
             vertexEncoding,
             $"Material '{material.Name}' hardware raster");
-        ShaderStage geometryStage = vertexEntry is ClusterMaterialEntries.HardwareMesh or ClusterMaterialEntries.TessellationHardwareMesh
+        ShaderStage geometryStage = vertexEntry is ClusterMaterialEntries.HardwareMesh or ClusterMaterialEntries.HardwareMeshlet or ClusterMaterialEntries.TessellationHardwareMesh
             ? ShaderStage.Mesh : ShaderStage.Vertex;
         CookedShaderEntry vertex = shader.RequireEntry(
             _device.Capabilities.ShaderTarget,
@@ -948,14 +1051,14 @@ internal sealed class ClusterRasterStages : IDisposable
             shader,
             vertexEntry,
             pixelEntry,
-            _visibilityMode == ClusterVisibilityMode.HardwareOnly
+            !targetOutput && _visibilityMode == ClusterVisibilityMode.HardwareOnly
                 ? [Format.R32UInt]
                 : [],
-            depthStencilFormat: _visibilityMode == ClusterVisibilityMode.HardwareOnly
+            depthStencilFormat: !targetOutput && _visibilityMode == ClusterVisibilityMode.HardwareOnly
                 ? Format.D32Float
                 : null,
             rasterizer: new RasterizerState(Cull: CullType.Back),
-            depthStencil: _visibilityMode == ClusterVisibilityMode.HardwareOnly
+            depthStencil: !targetOutput && _visibilityMode == ClusterVisibilityMode.HardwareOnly
                 ? new DepthStencilState(
                     DepthTest: true,
                     DepthWrite: true,
@@ -972,7 +1075,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private static ClusterConservativeBounds ResolveBounds(
-        MaterialData material,
+        Material material,
         Shader shader,
         string softwareEntry,
         string vertexEntry)
@@ -1065,7 +1168,7 @@ internal sealed class ClusterRasterStageSet
 
 internal sealed record ClusterRasterInvocation(
     uint BinIndex,
-    MaterialData Material,
+    Material Material,
     string VertexEncoding,
     ClusterRasterCompatibilityKey Key,
     ClusterComputePipeline? Software,
@@ -1076,9 +1179,14 @@ internal sealed record ClusterRasterInvocation(
     ClusterRasterStageResources<ClusterHardwareRasterCoreResource> HardwareResources,
     ClusterCommandBindingKey CommandBindings)
 {
+    internal bool SoftwareUsesMaterialRanges { get; init; }
+    internal ClusterRasterTargetStages? TargetStages { get; init; }
+
     internal bool HasSameBindings(ClusterRasterInvocation other) =>
         SameBindings(SoftwareResources, other.SoftwareResources) &&
         SameBindings(HardwareResources, other.HardwareResources) &&
+        SameBindings(TargetStages?.SoftwareResources, other.TargetStages?.SoftwareResources) &&
+        SameBindings(TargetStages?.HardwareResources, other.TargetStages?.HardwareResources) &&
         SameBindings(Tessellation?.SeedResources, other.Tessellation?.SeedResources) &&
         SameBindings(Tessellation?.SplitResources, other.Tessellation?.SplitResources) &&
         SameBindings(Tessellation?.DiceResources, other.Tessellation?.DiceResources) &&
@@ -1089,6 +1197,12 @@ internal sealed record ClusterRasterInvocation(
         ReferenceEquals(left, right) || left is not null && right is not null &&
         left.MaterialBindings.AsSpan().SequenceEqual(right.MaterialBindings);
 }
+
+internal sealed record ClusterRasterTargetStages(
+    ClusterComputePipeline? Software,
+    ClusterRasterPipeline? Hardware,
+    ClusterRasterStageResources<ClusterSoftwareRasterCoreResource>? SoftwareResources,
+    ClusterRasterStageResources<ClusterHardwareRasterCoreResource>? HardwareResources);
 
 internal sealed record ClusterTessellationInvocation(
     ClusterTessellationCompatibilityKey Key,
@@ -1182,7 +1296,7 @@ internal sealed class ClusterShadeStages : IDisposable
         var scalarLayouts = _resolved.ScalarLayouts;
         foreach (int address in addresses)
         {
-            if (!assignments.TryGetEntry(address, out MaterialData material, out string encoding))
+            if (!assignments.TryGetEntry(address, out Material material, out string encoding))
             {
                 bins.Remove(address);
                 scalarLayouts = scalarLayouts.Remove(address);
@@ -1209,7 +1323,7 @@ internal sealed class ClusterShadeStages : IDisposable
         return result;
     }
 
-    private ClusterShadeInvocation CreateInvocation(MaterialData material, string vertexEncoding)
+    private ClusterShadeInvocation CreateInvocation(Material material, string vertexEncoding)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
         string entryPoint = ClusterMaterialEntries.Shade;
@@ -1284,7 +1398,7 @@ internal sealed class ClusterShadeStages : IDisposable
     }
 
     private static ClusterMaterialStageBinding[] ResolveMaterialBindings(
-        MaterialData material,
+        Material material,
         ClusterLinkedStageLayout resources,
         IReadOnlyDictionary<string, byte> materialResources,
         GraphResourceBinder?[] featureResourceBinders)
@@ -1410,7 +1524,7 @@ internal sealed class ClusterShadeStageSet
 
 internal sealed record ClusterShadeInvocation(
     uint BinIndex,
-    MaterialData Material,
+    Material Material,
     string VertexEncoding,
     ClusterShadeCompatibilityKey Key,
     ClusterComputePipeline Pipeline,

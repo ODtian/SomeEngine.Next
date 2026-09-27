@@ -51,6 +51,11 @@ public interface IRenderInstanceBatchComposer<TGroupKey>
         ReadOnlyQueryPacket packet,
         uint lastSystemVersion);
 
+    /// <summary>Collects update data before any batch is bound or written.</summary>
+    /// <remarks>Packets may be collected concurrently; shared update data must support concurrent writes.</remarks>
+    RenderInstanceChanges CollectChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
+        GetChanges(packet, lastSystemVersion);
+
     /// <summary>
     /// Returns true when every row in this packet must be rewritten. Implementations may use a
     /// cheap dense-change test; returning false preserves the row-range fallback.
@@ -71,8 +76,15 @@ public interface IRenderInstanceBatchComposer<TGroupKey>
     /// <summary>Resolves the exact property layout for one concrete group.</summary>
     RenderInstancePropertyLayout GetLayout(in TGroupKey group);
 
+    /// <summary>Columns whose bindings and every row will be replaced during this update.</summary>
+    RenderInstancePropertyLayout? GetReplacedProperties(in TGroupKey group, bool writeAll) => null;
+
     /// <summary>Binds shared/per-instance metadata once for one allocated group.</summary>
     void Bind(in TGroupKey group, RenderInstanceWriteSlice destination);
+
+    /// <summary>Binds columns for an existing batch; a forced rewrite must initialize every column.</summary>
+    void BindUpdate(in TGroupKey group, RenderInstanceWriteSlice destination, bool writeAll) =>
+        Bind(in group, destination);
 
     /// <summary>
     /// Writes one entity contribution into a one-row destination. The group index is local to the
@@ -779,14 +791,15 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             for (int group = 0; group < groupCount; group++)
             {
                 RenderInstanceBatchGroup<TGroupKey> currentGroup = groups[group];
+                TGroupKey key = currentGroup.Key;
                 RenderInstanceWriteHandle handle = context.RewriteBatch(
                     currentGroup.Batch,
-                    currentGroup.Layout);
+                    currentGroup.Layout,
+                    composer.GetReplacedProperties(in key, writeAll));
                 handles[group] = handle;
                 RenderInstanceWriteSlice destination = handle.OpenWrite(currentGroup.Layout);
                 destinations[group] = destination;
-                TGroupKey key = currentGroup.Key;
-                composer.Bind(in key, destination);
+                composer.BindUpdate(in key, destination, writeAll);
             }
 
             var fillJob = new RewriteCurrentJob<TComposer>(
@@ -886,7 +899,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             in ReadOnlyQueryPacketContext context,
             ReadOnlyQueryPacket packet)
         {
-            RenderInstanceChanges changes = composer.GetChanges(
+            RenderInstanceChanges changes = composer.CollectChanges(
                 packet,
                 context.LastSystemVersion);
             if ((changes & ~KnownChanges) != 0)

@@ -25,6 +25,7 @@ struct VirtualShadowMapParameters
     uint Flags;
     uint LightKind;
     uint FaceIndex;
+    uint Padding;
     float3 LightPosition;
     float LightRange;
 };
@@ -78,26 +79,18 @@ uint VirtualShadowMipOffset(
     VirtualShadowMapParameters parameters,
     uint mipLevel)
 {
-    uint result = 0u;
-    [loop]
-    for (uint level = 0u; level < mipLevel; level++)
-    {
-        uint dimension = VirtualShadowMipPagesPerRow(parameters, level);
-        result += dimension * dimension;
-    }
-    return result;
+    uint dimension = VirtualShadowPagesPerRow(parameters);
+    uint shrinkingLevels = min(mipLevel, (uint)firstbithigh(dimension));
+    uint lastDimension = dimension >> shrinkingLevels;
+    // Page dimensions are powers of two. Sum the area series without walking
+    // earlier mips for every lookup; any remaining levels contain one page.
+    return ((dimension * dimension - lastDimension * lastDimension) / 3u) * 4u +
+        mipLevel - shrinkingLevels;
 }
 
 uint VirtualShadowPageTableEntriesPerView(VirtualShadowMapParameters parameters)
 {
-    uint result = 0u;
-    [loop]
-    for (uint level = 0u; level < parameters.MipLevelCount; level++)
-    {
-        uint dimension = VirtualShadowMipPagesPerRow(parameters, level);
-        result += dimension * dimension;
-    }
-    return result;
+    return VirtualShadowMipOffset(parameters, parameters.MipLevelCount);
 }
 
 uint VirtualShadowPageHierarchyMipWordCount(
@@ -502,23 +495,59 @@ bool TryReadVirtualShadowDepthCached(
         resolvedMip);
 }
 
-float SampleVirtualShadowMapFilteredProjected(
+bool TryReadVirtualShadowFilterDepth(
+    VirtualShadowMapParameters parameters,
+    StructuredBuffer<uint4> pageTable,
+    Texture2D<uint> atlas,
+    VirtualShadowFilterContext context,
+    uint2 pixel,
+    uint resolution,
+    bool insidePage,
+    uint2 atlasOrigin,
+    out float storedDepth)
+{
+    if (insidePage)
+    {
+        uint2 atlasPixel = atlasOrigin + (pixel & (parameters.PageSize - 1u));
+        storedDepth = 1.0 - asfloat(atlas.Load(int3(atlasPixel, 0)));
+        return true;
+    }
+    return TryReadVirtualShadowDepthCached(
+        parameters, pageTable, atlas, context, float2(pixel) / float(resolution), storedDepth);
+}
+
+float FilterVirtualShadowPage(
     VirtualShadowMapParameters parameters,
     StructuredBuffer<uint4> pageTable,
     Texture2D<uint> atlas,
     float3 ndc,
     float2 uv,
-    uint firstMip,
+    VirtualShadowFilterContext context,
     uint blockerSampleCount,
     uint filterSampleCount,
     float blockerSearchRadiusTexels,
     float maxFilterRadiusTexels)
 {
-    VirtualShadowFilterContext context = BuildVirtualShadowFilterContext(
-        parameters, pageTable, firstMip, uv);
+    if (maxFilterRadiusTexels <= 0.0)
+    {
+        if (!context.Resident)
+            return 0.0;
+        uint resolution = VirtualShadowMipResolution(parameters, context.MipLevel);
+        uint2 pixel = min((uint2)(uv * float(resolution)), resolution - 1u);
+        float storedDepth = ReadVirtualShadowDepth(
+            parameters, atlas, context.AtlasPage, pixel & (parameters.PageSize - 1u));
+        return ndc.z <= storedDepth + parameters.DepthBias ? 1.0 : 0.0;
+    }
     uint filterMip = context.MipLevel;
     uint filterResolution = VirtualShadowMipResolution(parameters, filterMip);
     float2 virtualPosition = uv * float(filterResolution);
+    float radius = max(blockerSearchRadiusTexels, maxFilterRadiusTexels);
+    uint2 pageOrigin = context.LocalPage * parameters.PageSize;
+    bool insidePage = context.Resident &&
+        all(virtualPosition - radius >= float2(pageOrigin)) &&
+        all(virtualPosition + radius < float2(pageOrigin + parameters.PageSize));
+    uint2 atlasOrigin = uint2(context.AtlasPage & (parameters.PhysicalPagesPerRow - 1u),
+        context.AtlasPage >> firstbithigh(parameters.PhysicalPagesPerRow)) * parameters.PageSize;
     float angle = frac(sin(dot(
         floor(virtualPosition),
         float2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
@@ -532,13 +561,14 @@ float SampleVirtualShadowMapFilteredProjected(
     {
         float2 offset = RotateVirtualShadowDiskSample(
             VirtualShadowDiskSample(index), sine, cosine) * blockerSearchRadiusTexels;
-        float2 sampleUv = clamp(
+        uint2 samplePixel = (uint2)clamp(
             floor(virtualPosition + offset),
             0.0,
-            float(filterResolution - 1u)) / float(filterResolution);
+            float(filterResolution - 1u));
         float storedDepth;
-        bool resident = TryReadVirtualShadowDepthCached(
-            parameters, pageTable, atlas, context, sampleUv, storedDepth);
+        bool resident = TryReadVirtualShadowFilterDepth(
+            parameters, pageTable, atlas, context, samplePixel, filterResolution,
+            insidePage, atlasOrigin, storedDepth);
         if (!resident)
         {
             blockerCount++;
@@ -556,27 +586,47 @@ float SampleVirtualShadowMapFilteredProjected(
     float averageBlockerDepth = blockerDepthSum / float(blockerCount);
     float separation = saturate(
         (ndc.z - averageBlockerDepth) / max(averageBlockerDepth, 1e-4));
+    // Searching for blockers does not set the minimum penumbra width.
     float filterRadius = min(
         maxFilterRadiusTexels,
-        blockerSearchRadiusTexels + separation * maxFilterRadiusTexels);
+        max(1.0, separation * maxFilterRadiusTexels));
     float visibility = 0.0;
     uint sampleCount = min(filterSampleCount, 16u);
     for (uint index = 0u; index < sampleCount; index++)
     {
         float2 offset = RotateVirtualShadowDiskSample(
             VirtualShadowDiskSample(index), sine, cosine) * filterRadius;
-        float2 sampleUv = clamp(
+        uint2 samplePixel = (uint2)clamp(
             floor(virtualPosition + offset),
             0.0,
-            float(filterResolution - 1u)) / float(filterResolution);
+            float(filterResolution - 1u));
         float storedDepth;
-        if (TryReadVirtualShadowDepthCached(
-                parameters, pageTable, atlas, context, sampleUv, storedDepth))
+        if (TryReadVirtualShadowFilterDepth(
+                parameters, pageTable, atlas, context, samplePixel, filterResolution,
+                insidePage, atlasOrigin, storedDepth))
         {
             visibility += ndc.z <= storedDepth + parameters.DepthBias ? 1.0 : 0.0;
         }
     }
     return visibility / float(max(sampleCount, 1u));
+}
+
+float SampleVirtualShadowMapFilteredProjected(
+    VirtualShadowMapParameters parameters,
+    StructuredBuffer<uint4> pageTable,
+    Texture2D<uint> atlas,
+    float3 ndc,
+    float2 uv,
+    uint firstMip,
+    uint blockerSampleCount,
+    uint filterSampleCount,
+    float blockerSearchRadiusTexels,
+    float maxFilterRadiusTexels)
+{
+    VirtualShadowFilterContext context = BuildVirtualShadowFilterContext(
+        parameters, pageTable, firstMip, uv);
+    return FilterVirtualShadowPage(parameters, pageTable, atlas, ndc, uv, context,
+        blockerSampleCount, filterSampleCount, blockerSearchRadiusTexels, maxFilterRadiusTexels);
 }
 
 float SampleVirtualShadowMapFiltered(
@@ -645,13 +695,13 @@ float SampleDirectionalVirtualShadowMap(
                 uv);
             if (!context.Resident)
                 continue;
-            return SampleVirtualShadowMapFilteredProjected(
+            return FilterVirtualShadowPage(
                 views[firstView + level],
                 pageTable,
                 atlas,
                 ndc,
                 uv,
-                0u,
+                context,
                 blockerSampleCount,
                 filterSampleCount,
                 blockerSearchRadiusTexels,

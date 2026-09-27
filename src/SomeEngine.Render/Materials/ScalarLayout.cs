@@ -181,7 +181,7 @@ public sealed class ScalarLayout
             WriteFloatField(fieldBytes, field.ComponentCount, value);
     }
 
-    internal ScalarMaterialLayout Resolve(MaterialData material)
+    internal ScalarMaterialLayout Resolve(Material material)
     {
         ArgumentNullException.ThrowIfNull(material);
         IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
@@ -208,7 +208,7 @@ public sealed class ScalarLayout
         return new ScalarMaterialLayout(this, [.. bindings]);
     }
 
-    private byte[] Encode(MaterialData material, ReadOnlySpan<ScalarMaterialBinding> bindings)
+    private byte[] Encode(Material material, ReadOnlySpan<ScalarMaterialBinding> bindings)
     {
         var result = new byte[ByteSize];
         WriteHeader(result);
@@ -263,7 +263,7 @@ public sealed class ScalarLayout
         internal uint LayoutHash => _layout.LayoutHash;
         internal uint PayloadByteSize => _layout.PayloadByteSize;
 
-        internal byte[] Encode(MaterialData material) => _layout.Encode(material, _bindings);
+        internal byte[] Encode(Material material) => _layout.Encode(material, _bindings);
     }
 
     internal readonly record struct ScalarMaterialBinding(

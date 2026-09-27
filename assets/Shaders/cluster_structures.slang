@@ -274,7 +274,7 @@ struct RasterBinEntry
     uint SWCursor;
     uint HWCursor;
     uint SWOffset;     // Exclusive prefix sum of SW clusters only across bins
-    uint Pad;
+    uint HardwareOffset;
 };
 
 // 12-byte geometry work item. Cluster ids are bounded to 12 bits by the packed-page ABI;

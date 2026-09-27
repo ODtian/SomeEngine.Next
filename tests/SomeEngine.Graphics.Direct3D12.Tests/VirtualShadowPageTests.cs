@@ -10,20 +10,53 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class VirtualShadowPageTests
 {
     [Theory]
+    [InlineData(5u, 0u, 0u, 0u)]
+    [InlineData(5u, 1u, 1u, 0u)]
+    [InlineData(0u, 0u, 1u, 1u)]
+    [InlineData(4u, 0u, 1u, 1u)]
+    public void CachedPagesAreReusedOnlyAfterTheirReceiverCoverageIsComplete(
+        uint generation, uint partialBefore, uint renderCount, uint partialAfter)
+    {
+        uint[] view = new uint[44];
+        view[16] = 128; view[17] = 128; view[24] = 5; view[34] = 1; view[36] = 4;
+        uint[][] result = Execute("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(1, 1, 1),
+        [
+            ([1, 1, 1, 1, 3, 1, 1, 1], ResourceBindingType.ConstantBuffer, 0),
+            (view, ResourceBindingType.BufferSrv, 176),
+            ([0], ResourceBindingType.BufferSrv, 4), ([1], ResourceBindingType.BufferSrv, 4),
+            ([1], ResourceBindingType.BufferSrv, 4),
+            ([1, 0, 0, generation], ResourceBindingType.BufferUav, 16),
+            ([0], ResourceBindingType.BufferUav, 4),
+            ([1, 5, 1, partialBefore], ResourceBindingType.BufferUav, 16),
+            ([0], ResourceBindingType.BufferUav, 4), ([0], ResourceBindingType.BufferUav, 4),
+            ([0], ResourceBindingType.BufferUav, 4), ([0], ResourceBindingType.BufferUav, 4),
+            (new uint[4], ResourceBindingType.BufferUav, 16), ([0], ResourceBindingType.BufferUav, 4),
+            ([uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
+            ([0], ResourceBindingType.BufferUav, 4), ([0, 0], ResourceBindingType.BufferUav, 4),
+            ([1, 0], ResourceBindingType.BufferUav, 8),
+        ]);
+        Assert.Equal(renderCount, result[8][0]);
+        Assert.Equal(partialAfter, result[2][3]);
+        Assert.Equal(5u, result[0][3]);
+        Assert.Equal(renderCount != 0 && partialAfter == 0
+            ? new[] { uint.MaxValue, uint.MaxValue } : new uint[] { 1, 0 }, result[12]);
+    }
+
+    [Theory]
     [InlineData(0, -17, 5)]
     [InlineData(1, 0, 0)]
     [InlineData(2, 0, 0)]
     public void CoarsePagesCoverEveryFinePageIncludingScrolledBorders(uint lightKind, int originX, int originY)
     {
         const int pages = 21845;
-        uint[] view = new uint[43];
+        uint[] view = new uint[44];
         view[16] = 16384; view[17] = 128;
         view[21] = unchecked((uint)originX); view[25] = unchecked((uint)originY);
         view[33] = 1; view[34] = 8; view[37] = lightKind;
         uint[][] result = Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
         [
             ([1, pages, 7, 0], ResourceBindingType.ConstantBuffer, 0),
-            (view, ResourceBindingType.BufferSrv, 172),
+            (view, ResourceBindingType.BufferSrv, 176),
             (new uint[pages], ResourceBindingType.BufferUav, 4),
             (new uint[pages], ResourceBindingType.BufferUav, 4),
             (new uint[pages], ResourceBindingType.BufferUav, 4),
@@ -60,13 +93,13 @@ public sealed class VirtualShadowPageTests
         }
         var requested = new uint[1024];
         Array.Fill(requested, 10u, 0, requests);
-        uint[] views = new uint[43];
+        uint[] views = new uint[44];
         views[16] = 4096; views[17] = 128; views[21] = unchecked((uint)-3);
         views[24] = 5; views[25] = 5; views[34] = 1;
         uint[][] result = Execute("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(16, 1, 1),
         [
             ([1024, 1024, capacity, 1, 10, 8, 63, 1], ResourceBindingType.ConstantBuffer, 0),
-            (views, ResourceBindingType.BufferSrv, 172),
+            (views, ResourceBindingType.BufferSrv, 176),
             (Enumerable.Range(0, requests).Select(index => (uint)index).ToArray(), ResourceBindingType.BufferSrv, 4),
             ([requests], ResourceBindingType.BufferSrv, 4),
             (Enumerable.Repeat(1u, 1024).ToArray(), ResourceBindingType.BufferSrv, 4),
@@ -79,6 +112,7 @@ public sealed class VirtualShadowPageTests
             ([uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
             (new uint[63], ResourceBindingType.BufferUav, 4),
             ([0, 0], ResourceBindingType.BufferUav, 4),
+            (new uint[2048], ResourceBindingType.BufferUav, 8),
         ]);
         Assert.Equal(0u, result[4][0]);
         Assert.All(result[6], count => Assert.Equal(0u, count));
@@ -106,7 +140,7 @@ public sealed class VirtualShadowPageTests
     public void Dirty_casters_invalidate_both_transforms_and_dilated_coarse_pages_with_overlapping_groups()
     {
         const int dimension = 16, pages = 320;
-        uint[] views = new uint[43];
+        uint[] views = new uint[44];
         Matrix4x4 matrix = Matrix4x4.Identity;
         MemoryMarshal.Write(MemoryMarshal.AsBytes(views.AsSpan()), in matrix);
         views[16] = 2048; views[17] = 128; views[21] = unchecked((uint)-3);
@@ -137,13 +171,14 @@ public sealed class VirtualShadowPageTests
         }
         uint[][] result = Execute("vsm_caster_invalidation.slang", "InvalidateMovedVirtualShadowCasters", new(2, 1, 1),
         [
-            ([2, 1, pages, 1, 10, 46, 0, 0], ResourceBindingType.ConstantBuffer, 0),
-            (views, ResourceBindingType.BufferSrv, 172), (bounds, ResourceBindingType.BufferSrv, 16),
+            ([2, 1, pages, 1, 10, 46, 2, 0], ResourceBindingType.ConstantBuffer, 0),
+            (views, ResourceBindingType.BufferSrv, 176), (bounds, ResourceBindingType.BufferSrv, 16),
             ([0, 2], ResourceBindingType.BufferSrv, 4),
             (new uint[pages], ResourceBindingType.BufferSrv, 4),
             (new uint[pages], ResourceBindingType.BufferSrv, 4),
             (new uint[pages * 4], ResourceBindingType.BufferSrv, 16),
             (Enumerable.Repeat(uint.MaxValue, 46).ToArray(), ResourceBindingType.BufferSrv, 4),
+            ([0, 0, 15, 15, 0, 0, 7, 7], ResourceBindingType.BufferSrv, 16),
             (table, ResourceBindingType.BufferUav, 16),
         ]);
         HashSet<int> expected = [];
@@ -168,9 +203,11 @@ public sealed class VirtualShadowPageTests
     private static uint Float(float value) => BitConverter.SingleToUInt32Bits(value);
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Spatial_chunks_cover_reordered_instances_and_keep_the_last_rendered_bounds(bool history)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void Instance_bounds_preserve_current_and_previous_transforms(bool history, bool instanceGroups)
     {
         const int count = 129;
         int currentOffset = count * 8, previousOffset = currentOffset + count * 48;
@@ -195,14 +232,14 @@ public sealed class VirtualShadowPageTests
         node[4] = node[5] = node[6] = Float(1);
         uint[][] result = Execute("cluster_scene_bounds.slang", "BuildClusterSceneBounds", new(3, 1, 1),
         [
-            ([(uint)count, history ? 1u : 0u, 0, 0], ResourceBindingType.ConstantBuffer, 0),
+            ([(uint)count, history ? 1u : 0u, instanceGroups ? 1u : 0u, 0], ResourceBindingType.ConstantBuffer, 0),
             (node, ResourceBindingType.BufferSrv, 64), (data, ResourceBindingType.BufferSrv, 0),
             ([0x80000000, 0x80000000 | count * 4, 0, 0x80000000 | (uint)currentOffset,
                 0x80000000 | (uint)previousOffset], ResourceBindingType.ConstantBuffer, 0),
             (order, ResourceBindingType.BufferSrv, 4), (new uint[3 * 8], ResourceBindingType.BufferUav, 16),
             (bounds, ResourceBindingType.BufferUav, 16),
         ]);
-        for (int chunk = 0; chunk < 3; chunk++)
+        for (int chunk = 0; instanceGroups && chunk < 3; chunk++)
         {
             int first = chunk * 64, last = Math.Min(count, first + 64) - 1;
             Assert.Equal(Float(order[last] - 1.25f), result[0][chunk * 8]);

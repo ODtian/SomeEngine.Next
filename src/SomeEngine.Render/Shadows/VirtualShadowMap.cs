@@ -300,11 +300,12 @@ public sealed class VirtualShadowMap : IDisposable
                 "The receiver projection must have a finite non-zero horizontal scale and viewport.",
                 nameof(receiverView));
         }
-        float lodScale = 0.5f / projectionScale *
+        // A level spans 8 * 2^level world units. Match its texel size to
+        // one receiver pixel at the distance used by the clipmap selection.
+        float lodScale = 0.25f / projectionScale *
             Settings.VirtualResolution / receiverView.ViewportWidth;
-        float resolutionLodBias = MathF.Max(
-            0.0f,
-            Settings.DirectionalResolutionLodBias + MathF.Log2(lodScale));
+        float resolutionLodBias =
+            Settings.DirectionalResolutionLodBias + MathF.Log2(lodScale);
         uint physicalPagesPerRow = Settings.AtlasSize / Settings.PageSize;
         uint virtualPagesPerRow = Settings.VirtualResolution / Settings.PageSize;
         uint pageTableEntriesPerView = Settings.PageTableEntriesPerView;
@@ -813,7 +814,8 @@ public sealed class VirtualShadowMap : IDisposable
         left.ClipmapLevelCount == right.ClipmapLevelCount &&
         left.MipLevelCount == right.MipLevelCount &&
         left.MinMipLevel == right.MinMipLevel &&
-        left.Flags == right.Flags &&
+        (left.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) ==
+            (right.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) &&
         left.LightKind == right.LightKind &&
         left.FaceIndex == right.FaceIndex &&
         left.LightPosition == right.LightPosition &&

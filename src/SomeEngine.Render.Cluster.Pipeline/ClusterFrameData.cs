@@ -53,7 +53,9 @@ internal struct ClusterRasterBinningUniforms
     internal uint MaxVisibleClusters;
     internal uint CollectMetrics;
     internal uint PolicyTarget;
-    internal uint Pad2;
+    internal uint ScreenWidth;
+    internal uint ScreenHeight;
+    internal uint ViewCount;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -85,7 +87,7 @@ internal struct ClusterShadeBinUniforms
     internal uint ScreenHeight;
     internal uint ShadeBinCount;
     internal uint SlotCapacity;
-    internal uint Pad0;
+    internal uint BinItemCapacity;
     internal uint Pad1;
     internal uint Pad2;
     internal uint Pad3;

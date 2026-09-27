@@ -78,8 +78,11 @@ public readonly record struct ClusterRenderContext(
     uint OcclusionMipCount,
     uint OcclusionTexelSize,
     GraphPassId FinishBefore = default,
-    bool HardwareRasterOnly = false)
+    bool HardwareRasterOnly = false,
+    GraphPassId BoundsConsumer = default)
 {
+    public const uint TargetViewSizeInBytes = 80;
+
     public bool IsValid =>
         PolicyId != 0u &&
         FilterResourcesBinder is not null &&

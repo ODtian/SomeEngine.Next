@@ -124,6 +124,8 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
         TessellationPolicyViews,
         viewIndex);
     output.Pos = mul(float4(position, 1.0), view.ViewProj);
+    output.Pos = ClusterHardwareRasterPosition(output.Pos, patch.VisibleClusterIndex, view,
+        ClusterRasterTargetViewport(view));
     output.Varying = visibility.interpolateVertex(
         sourceVaryings[0],
         sourceVaryings[1],
@@ -188,7 +190,9 @@ void ClusterTessellationHardwareMesh(
             DecodeTessellationPatchBarycentric(patch, 0u),
             DecodeTessellationPatchBarycentric(patch, 1u),
             DecodeTessellationPatchBarycentric(patch, 2u), localBary);
-        vertices[index].Pos = mul(float4(domain.position(triangle, sourceBary), 1.0), view.ViewProj);
+        float4 clip = mul(float4(domain.position(triangle, sourceBary), 1.0), view.ViewProj);
+        vertices[index].Pos = ClusterHardwareRasterPosition(clip, patch.VisibleClusterIndex, view,
+            ClusterRasterTargetViewport(view));
         vertices[index].Varying = visibility.interpolateVertex(
             sourceVaryings[0],
             sourceVaryings[1],
@@ -220,6 +224,7 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
         TessellationViews,
         TessellationPolicyViews,
         input.ViewIndex);
+    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
     pixelInput.Depth = input.Pos.z;

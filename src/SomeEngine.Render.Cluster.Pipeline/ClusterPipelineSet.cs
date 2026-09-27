@@ -294,11 +294,16 @@ internal sealed class ClusterPipelineSet : IDisposable
                 throw new InvalidDataException($"Cluster shader operation '{role}' has inconsistent resolved shader assets.");
             bool usesMesh = role == ClusterShaderOperationRole.HardwareVisibilityRaster &&
                 ClusterRasterPipeline.SupportsMesh(backend, device);
+            string geometryEntry = vertexEntry ?? vertex.EntryPoint!;
+            if (usesMesh)
+                geometryEntry = ClusterRasterPipeline.SupportsMeshlets(backend, device) &&
+                    ClusterMaterialEntries.HasEntry(shader, device.Capabilities.ShaderTarget, "MSVisBufferMeshlet", ShaderStage.Mesh)
+                        ? "MSVisBufferMeshlet" : "MSVisBuffer";
             created = ClusterRasterPipeline.Create(
                 backend,
                 device,
                 shader,
-                usesMesh ? "MSVisBuffer" : vertexEntry ?? vertex.EntryPoint!,
+                geometryEntry,
                 pixelEntry ?? pixel.EntryPoint!,
                 colorFormats,
                 depthStencilFormat,

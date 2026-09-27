@@ -17,80 +17,12 @@ ByteAddressBuffer ClusterReadOffsetArgs2;
 StructuredBuffer<uint> RasterSlots;
 ByteAddressBuffer PageHeap;
 
-void ScatterRasterBatches(
-    uint visibleIndex,
-    uint slotOffset,
-    uint4 vertReuseBatchWords,
-    uint triangleCount,
-    uint packedMaterials,
-    uint packedRanges,
-    bool isSoftware)
+void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware)
 {
-    if (triangleCount == 0u)
-        return;
-
-    uint rangeCount = MaterialRangeCount(packedRanges, triangleCount);
-    uint triangleStart = 0u;
-    uint flatBatchIndex = 0u;
-    uint rangeIndex = 0u;
-    while (rangeIndex < rangeCount)
-    {
-        uint rangeEnd = MaterialRangeEnd(packedRanges, triangleCount, rangeIndex);
-        uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
-        uint bin = RasterKey(RasterSlots, Uniforms, slotOffset, material);
-        uint batchCount = VertReuseBatchCount(vertReuseBatchWords, rangeIndex);
-        bool useVertReuseBatches = !isSoftware || RasterSoftwareUsesVertReuseBatches(
-            RasterSlots, Uniforms, slotOffset, material);
-        if (!useVertReuseBatches)
-        {
-            uint mergedRangeCount = 1u;
-            uint mergedBatchCount = batchCount;
-            while (rangeIndex + mergedRangeCount < rangeCount)
-            {
-                uint nextRange = rangeIndex + mergedRangeCount;
-                uint nextStart = MaterialRangeEnd(packedRanges, triangleCount, nextRange - 1u);
-                uint nextMaterial = LocalMaterial(packedMaterials, packedRanges, nextStart);
-                uint nextBin = RasterKey(RasterSlots, Uniforms, slotOffset, nextMaterial);
-                bool nextUsesBatches = RasterSoftwareUsesVertReuseBatches(
-                    RasterSlots, Uniforms, slotOffset, nextMaterial);
-                if (nextBin != bin || nextUsesBatches)
-                    break;
-                mergedBatchCount += VertReuseBatchCount(vertReuseBatchWords, nextRange);
-                mergedRangeCount++;
-            }
-
-            ScatterRaster(
-                RasterBinMeta,
-                BinnedClusterIndexBuffer,
-                bin,
-                visibleIndex,
-                RasterRangeWorkIndex(rangeIndex, mergedRangeCount),
-                true);
-            flatBatchIndex += mergedBatchCount;
-            rangeIndex += mergedRangeCount;
-            triangleStart = MaterialRangeEnd(
-                packedRanges, triangleCount, rangeIndex - 1u);
-            continue;
-        }
-
-        for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
-        {
-            ScatterRaster(
-                RasterBinMeta,
-                BinnedClusterIndexBuffer,
-                bin,
-                visibleIndex,
-                flatBatchIndex,
-                isSoftware);
-            triangleStart = min(
-                triangleStart + VertReuseBatchTriangleCount(vertReuseBatchWords, flatBatchIndex),
-                rangeEnd);
-            flatBatchIndex++;
-        }
-        triangleStart = rangeEnd;
-        rangeIndex++;
-    }
+    ScatterRaster(RasterBinMeta, BinnedClusterIndexBuffer, bin, visibleIndex, workIndex, isSoftware);
 }
+
+#include "cluster_bin_batches.slang"
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -115,6 +47,7 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
 
     DrawRequest entry = VisibleClusters[visibleIndex];
     uint4 vertReuseBatchWords;
+    uint vertexCount;
     uint triangleCount;
     uint packedMaterials;
     uint packedRanges;
@@ -122,6 +55,7 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         PageHeap,
         entry,
         vertReuseBatchWords,
+        vertexCount,
         triangleCount,
         packedMaterials,
         packedRanges);
@@ -131,10 +65,11 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
             InstanceProperties,
             CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
         entry.InstanceID);
-    ScatterRasterBatches(
+    BuildRasterBatches(
         visibleIndex,
         slotOffset,
         vertReuseBatchWords,
+        vertexCount,
         triangleCount,
         packedMaterials,
         packedRanges,

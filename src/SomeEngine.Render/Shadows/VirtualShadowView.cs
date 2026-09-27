@@ -17,7 +17,7 @@ public enum VirtualShadowLightKind : uint
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 public struct VirtualShadowView
 {
-    public const int SizeInBytes = 172;
+    public const int SizeInBytes = 176;
     public const int PageTableEntrySizeInBytes = 16;
 
     public Matrix4x4 LightViewProjection;
@@ -42,6 +42,8 @@ public struct VirtualShadowView
     public uint Flags;
     public VirtualShadowLightKind LightKind;
     public uint FaceIndex;
+    // Keep the float3 on a 16-byte boundary in both shader targets.
+    public uint Padding;
     public Vector3 LightPosition;
     public float LightRange;
 }

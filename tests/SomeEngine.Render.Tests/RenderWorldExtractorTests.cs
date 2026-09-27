@@ -18,6 +18,99 @@ namespace SomeEngine.Render.Tests;
 
 public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
+    [Fact]
+    public void SharedMaterialEditsKeepTheSameResourceAndDoNotExtractEntityChanges()
+    {
+        using World main = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        using var material = new StandardMaterial();
+        for (int index = 0; index < 128; index++)
+        {
+            Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, new Vector3(index, 0, 0));
+            SetSourceBindings(main, source, material, default!, 1);
+        }
+        ExtractAndApply(extraction, main, render);
+        Material before = render.ReadMaterial(material.MaterialId);
+        uint version = render.AcquireSystemVersion();
+        int materialWrites = 0;
+        render.Hooks<RenderMaterialReference>().OnReplace((DeferredWorld _, Entity _, in RenderMaterialReference _) => materialWrites++);
+        material.Roughness = 0.9f;
+        extraction.Extract(main);
+        Assert.Same(before, render.ReadMaterial(material.MaterialId));
+        graphics.Apply(extraction, render);
+        Assert.Same(material, render.ReadMaterial(material.MaterialId));
+        Assert.Equal(0.9f, Assert.IsType<StandardMaterial>(render.ReadMaterial(material.MaterialId)).Roughness);
+        Assert.Equal(0, materialWrites);
+        QueryHandle query = render.Query(new QueryDefinitionBuilder().ReadBuffer<RenderMaterialBinding>());
+        try
+        {
+            bool bindingsChanged = false;
+            render.ExecuteQuery(query, version, ref bindingsChanged,
+                static (QueryCursor rows, ref bool changed) =>
+                {
+                    foreach (QueryChunkView chunk in rows.Chunks)
+                        changed |= chunk.HasBufferChangedSinceLastSystemVersion<RenderMaterialBinding>();
+                });
+            Assert.False(bindingsChanged);
+        }
+        finally { render.ReleaseQuery(query); }
+    }
+
+    [Fact]
+    public void MaterialReferenceChangesCrossExtractionAndLastRemovalReleasesTheReference()
+    {
+        using World main = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        using var first = new StandardMaterial();
+        using var second = new StandardMaterial();
+        Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
+        SetSourceBindings(main, source, first, default!, 1);
+        ExtractAndApply(extraction, main, render);
+        Assert.Same(first, render.ReadMaterial(first.MaterialId));
+        SetSourceBindings(main, source, second, default!, 1);
+        extraction.Extract(main);
+        Assert.Same(first, render.ReadMaterial(first.MaterialId));
+        graphics.Apply(extraction, render);
+        Assert.Same(second, render.ReadMaterial(second.MaterialId));
+        Assert.Throws<KeyNotFoundException>(() => render.ReadMaterial(first.MaterialId));
+        main.DestroyEntity(source);
+        ExtractAndApply(extraction, main, render);
+        Assert.Throws<KeyNotFoundException>(() => render.ReadMaterial(second.MaterialId));
+        Assert.False(first.IsDisposed);
+        Assert.False(second.IsDisposed);
+    }
+
+    [Fact]
+    public async Task TextureContentChangesKeepMaterialAndCookieReferencesWithoutEntityWrites()
+    {
+        using World main = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor(), new LightRenderExtractor());
+        using Texture texture = TextureAsset(91, 1);
+        using var material = new StandardMaterial { AlbedoMap = texture };
+        Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
+        SetSourceBindings(main, source, material, default!, 1);
+        main.Add(source, new DirectionalLight(Vector3.UnitZ, Vector3.One, 1));
+        main.Add(source, new LightCookie(texture, 1, Vector4.One, Matrix4x4.Identity));
+        ExtractAndApply(extraction, main, render);
+        Entity mirror = extraction.RequireMirror(source);
+        int writes = 0;
+        render.Hooks<RenderMaterialReference>().OnReplace((DeferredWorld _, Entity _, in RenderMaterialReference _) => writes++);
+        render.Hooks<RenderLightCookie>().OnReplace((DeferredWorld _, Entity _, in RenderLightCookie _) => writes++);
+        ulong materialRevision = material.Revision;
+        ulong textureRevision = texture.Revision;
+        await texture.UpdateAsync(TextureAsset(92, 1));
+        ExtractAndApply(extraction, main, render);
+        Assert.Equal(textureRevision + 1, texture.Revision);
+        Assert.Equal(materialRevision, material.Revision);
+        Assert.Equal(0, writes);
+        Assert.Same(material, render.ReadMaterial(material.MaterialId));
+        Assert.Same(texture, material.AlbedoMap);
+        Assert.Same(texture, render.Read<RenderLightCookie>(mirror).Texture);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(129)]
@@ -51,31 +144,36 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         }
     }
 
-    [Fact]
-    public void Extract_MissingMotionHistoryRejectsChangesBeforeAnyTransformWrite()
+    [Theory]
+    [InlineData(2)]
+    [InlineData(129)]
+    public void Extract_MissingMotionHistoryRejectsChangesBeforeAnyTransformWrite(int count)
     {
         using World mainWorld = new();
         using RenderWorld renderWorld = new();
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Mesh mesh = MeshAsset(1, 1);
-        Entity first = AddMeshSource(mainWorld, mesh, 0, Vector3.One);
-        Entity second = AddMeshSource(mainWorld, mesh, 0, new Vector3(2));
+        Entity[] sources = Enumerable.Range(0, count)
+            .Select(index => AddMeshSource(mainWorld, mesh, 0, new Vector3(index + 1))).ToArray();
         ExtractAndApply(extraction, mainWorld, renderWorld);
-        Entity firstMirror = extraction.RequireMirror(first);
-        Entity secondMirror = extraction.RequireMirror(second);
+        Entity[] mirrors = sources.Select(extraction.RequireMirror).ToArray();
+        Entity secondMirror = mirrors[^1];
         renderWorld.Remove<RenderPreviousTransform>(secondMirror);
-        Move(mainWorld, first, new Vector3(3));
-        Move(mainWorld, second, new Vector3(4));
+        for (int index = 0; index < count; index++) Move(mainWorld, sources[index], new Vector3(index + 3));
         Assert.Throws<InvalidOperationException>(() => ExtractAndApply(extraction, mainWorld, renderWorld));
-        Assert.Equal(Vector3.One, renderWorld.Read<RenderTransform>(firstMirror).Position);
-        Assert.Equal(Vector3.One, renderWorld.Read<RenderPreviousTransform>(firstMirror).Value.Position);
-        Assert.Equal(new Vector3(2), renderWorld.Read<RenderTransform>(secondMirror).Position);
+        for (int index = 0; index < count; index++)
+        {
+            Assert.Equal(new Vector3(index + 1), renderWorld.Read<RenderTransform>(mirrors[index]).Position);
+            if (index < count - 1)
+                Assert.Equal(new Vector3(index + 1), renderWorld.Read<RenderPreviousTransform>(mirrors[index]).Value.Position);
+        }
         renderWorld.Add(secondMirror, new RenderPreviousTransform(renderWorld.Read<RenderTransform>(secondMirror)));
         ExtractAndApply(extraction, mainWorld, renderWorld);
-        Assert.Equal(new Vector3(3), renderWorld.Read<RenderTransform>(firstMirror).Position);
-        Assert.Equal(Vector3.One, renderWorld.Read<RenderPreviousTransform>(firstMirror).Value.Position);
-        Assert.Equal(new Vector3(4), renderWorld.Read<RenderTransform>(secondMirror).Position);
-        Assert.Equal(new Vector3(2), renderWorld.Read<RenderPreviousTransform>(secondMirror).Value.Position);
+        for (int index = 0; index < count; index++)
+        {
+            Assert.Equal(new Vector3(index + 3), renderWorld.Read<RenderTransform>(mirrors[index]).Position);
+            Assert.Equal(new Vector3(index + 1), renderWorld.Read<RenderPreviousTransform>(mirrors[index]).Value.Position);
+        }
     }
 
     [Fact]
@@ -1257,6 +1355,8 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         Material second,
         int count)
     {
+        if (count > 0) Assert.Same(first, renderWorld.ReadMaterial(first.MaterialId));
+        if (count > 1) Assert.Same(second, renderWorld.ReadMaterial(second.MaterialId));
         MaterialBindingExpectation state = new(first, second, count);
         renderWorld.ExecuteBufferRead<RenderMaterialBinding, MaterialBindingExpectation>(
             entity,
@@ -1266,9 +1366,9 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
                 ReadOnlySpan<RenderMaterialBinding> bindings = buffer.AsSpan();
                 Assert.Equal(expected.Count, bindings.Length);
                 if (expected.Count > 0)
-                    Assert.Same(expected.First!.CaptureData(), bindings[0].Material);
+                    Assert.Equal(expected.First!.MaterialId, bindings[0].MaterialId);
                 if (expected.Count > 1)
-                    Assert.Same(expected.Second!.CaptureData(), bindings[1].Material);
+                    Assert.Equal(expected.Second!.MaterialId, bindings[1].MaterialId);
             });
     }
 
@@ -1305,7 +1405,7 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
 
     private static void AssertLightCookie(in LightCookie expected, in RenderLightCookie actual)
     {
-        Assert.Equal(expected.Texture.CaptureData(), actual.Texture);
+        Assert.Equal(expected.Texture, actual.Texture);
         Assert.Equal(expected.Strength, actual.Strength);
         Assert.Equal(expected.ScaleOffset, actual.ScaleOffset);
         Assert.Equal(expected.WorldToCookie, actual.WorldToCookie);

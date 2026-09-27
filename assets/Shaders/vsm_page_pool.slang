@@ -35,6 +35,8 @@ RWStructuredBuffer<uint> EvictionPages;
 RWStructuredBuffer<uint> EvictionBucketCounts;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> AllocatedPageHierarchy;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint4> AllocatedPageRectBounds;
 
 static const uint VSM_UNOWNED_PAGE = 0xFFFFFFFFu;
 
@@ -50,6 +52,11 @@ void PublishAllocatedPage(
     uint dimension = VirtualShadowMipPagesPerRow(view, mipLevel);
     uint2 page = localPage;
     uint ignored;
+    uint rectIndex = viewIndex * PagePool.MipLevelCount + mipLevel;
+    InterlockedMin(AllocatedPageRectBounds[rectIndex].x, localPage.x, ignored);
+    InterlockedMin(AllocatedPageRectBounds[rectIndex].y, localPage.y, ignored);
+    InterlockedMax(AllocatedPageRectBounds[rectIndex].z, localPage.x, ignored);
+    InterlockedMax(AllocatedPageRectBounds[rectIndex].w, localPage.y, ignored);
     [loop]
     while (true)
     {

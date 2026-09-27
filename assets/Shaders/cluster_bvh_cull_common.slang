@@ -52,6 +52,33 @@ void ClusterNodeWorldBounds(
     }
 }
 
+bool IsWorldAabbOutsideView(float3 worldMin, float3 worldMax, ClusterViewUniforms view)
+{
+    if (view.CullingRadius > 0.0)
+    {
+        float3 distance = max(max(worldMin - view.CameraPos, view.CameraPos - worldMax), 0.0.xxx);
+        float radius = view.CullingRadius * 1.00001 + 1e-5;
+        if (dot(distance, distance) > radius * radius) return true;
+    }
+    float3 center = (worldMin + worldMax) * 0.5;
+    float3 extent = (worldMax - worldMin) * 0.5;
+    float4 clip = mul(float4(center, 1.0), view.ViewProj);
+    float4 magnitude = mul(float4(abs(center), 1.0), abs(view.ViewProj));
+    float3 x = float3(view.ViewProj[0][0], view.ViewProj[1][0], view.ViewProj[2][0]);
+    float3 y = float3(view.ViewProj[0][1], view.ViewProj[1][1], view.ViewProj[2][1]);
+    float3 z = float3(view.ViewProj[0][2], view.ViewProj[1][2], view.ViewProj[2][2]);
+    float3 w = float3(view.ViewProj[0][3], view.ViewProj[1][3], view.ViewProj[2][3]);
+    float4 radius = float4(dot(extent, abs(w + x)), dot(extent, abs(w - x)),
+        dot(extent, abs(w + y)), dot(extent, abs(w - y)));
+    float4 distance = clip.wwww + float4(clip.x, -clip.x, clip.y, -clip.y);
+    float4 rounding = (magnitude.wwww + magnitude.xxyy + radius + 1.0) * 9.5367431640625e-7;
+    if (any(distance + radius < -rounding)) return true;
+    float2 depthRadius = float2(dot(extent, abs(z)), dot(extent, abs(w - z)));
+    float2 depthDistance = float2(clip.z, clip.w - clip.z);
+    float2 depthRounding = (float2(magnitude.z, magnitude.w + magnitude.z) + depthRadius + 1.0) * 9.5367431640625e-7;
+    return any(depthDistance + depthRadius < -depthRounding);
+}
+
 bool ProjectWorldAabb(
     float3 worldMin,
     float3 worldMax,
@@ -68,6 +95,10 @@ bool ProjectWorldAabb(
     projectedBounds.NdcMax = float2(-1e30, -1e30);
     projectedBounds.NearDepth = 1.0;
     projectedBounds.CrossesNearPlane = false;
+    // Projection and perspective division are needed only after the cheap plane test.
+    // Keep the original corner path for survivors and for explicitly disabled culling.
+    if (view.CullingEnabled != 0u && IsWorldAabbOutsideView(worldMin, worldMax, view))
+        return true;
 
     [unroll]
     for (uint corner = 0u; corner < 8u; corner++)
@@ -104,6 +135,31 @@ bool ProjectWorldAabb(
     return outsideLeft == 8u || outsideRight == 8u ||
         outsideBottom == 8u || outsideTop == 8u ||
         outsideNear == 8u || outsideFar == 8u;
+}
+
+// Reuse is local to one fixed world AABB; callers reset this data for each node.
+struct ClusterBoundsProjection
+{
+    uint2 View;
+    bool Outside;
+    ClusterProjectedBounds Bounds;
+};
+
+bool ProjectWorldAabbForView(
+    float3 worldMin, float3 worldMax, ClusterViewUniforms view,
+    inout ClusterBoundsProjection previous,
+    out ClusterProjectedBounds projectedBounds)
+{
+    if (view.CullingProjectionIndex == 0u)
+        return ProjectWorldAabb(worldMin, worldMax, view, projectedBounds);
+    uint2 projection = uint2(view.TargetPolicy, view.CullingProjectionIndex);
+    if (any(previous.View != projection))
+    {
+        previous.Outside = ProjectWorldAabb(worldMin, worldMax, view, previous.Bounds);
+        previous.View = projection;
+    }
+    projectedBounds = previous.Bounds;
+    return previous.Outside;
 }
 
 bool ProjectClusterNode(

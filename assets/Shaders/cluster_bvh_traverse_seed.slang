@@ -11,6 +11,8 @@ struct ClusterTraversalSeedUniforms
     uint ViewIndexMode;
     uint MaxNodes;
     uint ArgsOffset;
+    uint UseInstanceGroups;
+    uint3 Padding;
 };
 
 StructuredBuffer<ClusterViewUniforms> Views;
@@ -27,6 +29,8 @@ Texture2DArray<float> HierarchyHiZ;
 RWStructuredBuffer<DrawRequest> DeferredWork;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> DeferredWorkCount;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWByteAddressBuffer DeferredWorkDispatchArgs;
 
 #include "cluster_hiz_shared.slang"
 #include "cluster_target_policy_contract.slang"
@@ -51,6 +55,20 @@ uint ClusterSeedViewIndex(uint compactViewIndex)
         : ClusterEncodePolicyViewIndex(compactViewIndex);
 }
 
+// Reject sample-free roots before expanding their hierarchy.
+bool ClusterSeedTargetAccepts(ClusterProjectedBounds bounds, ClusterViewUniforms view)
+{
+    [branch]
+    if (view.TargetPolicy == 0u) return true;
+    if (view.CullingEnabled == 0u || bounds.CrossesNearPlane)
+        return ClusterTargetPolicyScreenBoundsAccepts(0.0.xx, 1.0.xx, view);
+    float2 minUv = float2(bounds.NdcMin.x, -bounds.NdcMax.y) * 0.5 + 0.5;
+    float2 maxUv = float2(bounds.NdcMax.x, -bounds.NdcMin.y) * 0.5 + 0.5;
+    if (!RasterBoundsCoverPixelCenters(minUv, maxUv, uint2(view.ScreenWidth, view.ScreenHeight)))
+        return false;
+    return ClusterTargetPolicyScreenBoundsAccepts(minUv, maxUv, view);
+}
+
 uint ClusterSeedBoundsState(
     float3 worldMin,
     float3 worldMax,
@@ -58,7 +76,7 @@ uint ClusterSeedBoundsState(
     uint viewIndex,
     ClusterViewUniforms view)
 {
-    if (!ClusterTargetPolicyAccepts(projectedBounds, view))
+    if (!ClusterSeedTargetAccepts(projectedBounds, view))
         return 0u;
     if (view.CullingEnabled == 0u ||
         view.HasPrevHistory == 0u ||
@@ -115,47 +133,55 @@ void SeedHierarchyRoots(
     uint firstViewIndex = ClusterSeedViewIndex(viewSlotBase);
     bool valid = activeViewCount != 0u &&
         sortedIndex < LoadClusterCullView(Views, PolicyClusterViews, firstViewIndex).InstanceCount;
-    if (groupThreadIndex == 0u)
+    uint activeGroupViews = activeViewCount == 32u ? 0xFFFFFFFFu : (1u << activeViewCount) - 1u;
+    uint occludedGroupViews = 0u;
+    if (TraversalSeed.UseInstanceGroups != 0u)
     {
-        ClusterSceneWorldMin[0] = SceneChunks[groupID.x * 2u].xyz;
-        ClusterSceneWorldMax[0] = SceneChunks[groupID.x * 2u + 1u].xyz;
-        ClusterSceneActiveViewMask = 0u;
-        ClusterSceneOccludedViewMask = 0u;
-    }
-    GroupMemoryBarrierWithGroupSync();
+        if (groupThreadIndex == 0u)
+        {
+            ClusterSceneWorldMin[0] = SceneChunks[groupID.x * 2u].xyz;
+            ClusterSceneWorldMax[0] = SceneChunks[groupID.x * 2u + 1u].xyz;
+            ClusterSceneActiveViewMask = 0u;
+            ClusterSceneOccludedViewMask = 0u;
+        }
+        GroupMemoryBarrierWithGroupSync();
 
-    if (groupThreadIndex < activeViewCount &&
-        all(ClusterSceneWorldMin[0] <= ClusterSceneWorldMax[0]))
-    {
-        uint viewSlot = viewSlotBase + groupThreadIndex;
-        uint viewIndex = ClusterSeedViewIndex(viewSlot);
-        ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
-        bool active = true;
-        ClusterProjectedBounds sceneBounds;
-        bool outside = ProjectWorldAabb(
-            ClusterSceneWorldMin[0],
-            ClusterSceneWorldMax[0],
-            view,
-            sceneBounds);
-        active = active && (view.CullingEnabled == 0u || !outside);
-        uint boundsState = active
-            ? ClusterSeedBoundsState(
+        if (groupThreadIndex < activeViewCount &&
+            all(ClusterSceneWorldMin[0] <= ClusterSceneWorldMax[0]))
+        {
+            uint viewSlot = viewSlotBase + groupThreadIndex;
+            uint viewIndex = ClusterSeedViewIndex(viewSlot);
+            ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
+            bool active = true;
+            ClusterProjectedBounds sceneBounds;
+            bool outside = ProjectWorldAabb(
                 ClusterSceneWorldMin[0],
                 ClusterSceneWorldMax[0],
-                sceneBounds,
-                viewIndex,
-                view)
-            : 0u;
-        if (boundsState != 0u)
-            InterlockedOr(ClusterSceneActiveViewMask, 1u << groupThreadIndex);
-        if (boundsState == 2u)
-            InterlockedOr(ClusterSceneOccludedViewMask, 1u << groupThreadIndex);
-    }
-    GroupMemoryBarrierWithGroupSync();
+                view,
+                sceneBounds);
+            active = active && (view.CullingEnabled == 0u || !outside);
+            uint boundsState = active
+                ? ClusterSeedBoundsState(
+                    ClusterSceneWorldMin[0],
+                    ClusterSceneWorldMax[0],
+                    sceneBounds,
+                    viewIndex,
+                    view)
+                : 0u;
+            if (boundsState != 0u)
+                InterlockedOr(ClusterSceneActiveViewMask, 1u << groupThreadIndex);
+            if (boundsState == 2u)
+                InterlockedOr(ClusterSceneOccludedViewMask, 1u << groupThreadIndex);
+        }
+        GroupMemoryBarrierWithGroupSync();
 
-    if (ClusterSceneActiveViewMask == 0u)
+        activeGroupViews = ClusterSceneActiveViewMask;
+        occludedGroupViews = ClusterSceneOccludedViewMask;
+    }
+
+    if (activeGroupViews == 0u)
         return;
-    if (valid) instanceID = SceneInstances[sortedIndex];
+    if (valid) instanceID = TraversalSeed.UseInstanceGroups != 0u ? SceneInstances[sortedIndex] : sortedIndex;
     uint rootIndex = valid
         ? LoadClusterBvhRoot(
             InstanceData,
@@ -169,7 +195,6 @@ void SeedHierarchyRoots(
     float3 instanceWorldMax = -1e30.xxx;
     ClusterBVHNode root = (ClusterBVHNode)0;
     RenderInstanceTransform transform = (RenderInstanceTransform)0;
-    float boundsExpansion = 0.0;
     if (valid)
     {
         root = GlobalBVH[rootIndex];
@@ -179,19 +204,12 @@ void SeedHierarchyRoots(
                 InstanceProperties,
                 RENDER_CURRENT_TRANSFORM_METADATA_WORD),
             instanceID);
-        boundsExpansion = max(
-            0.0,
-            LoadClusterBoundsExpansion(
-                InstanceData,
-                LoadRenderInstanceMetadata(
-                    InstanceProperties,
-                    CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
-                instanceID));
         instanceWorldMin = InstanceWorldBounds[instanceID * 4u].xyz;
         instanceWorldMax = InstanceWorldBounds[instanceID * 4u + 1u].xyz;
     }
 
 
+    ClusterBoundsProjection previousProjection = (ClusterBoundsProjection)0;
     uint activeViewMask = 0u;
     uint deferredViewMask = 0u;
     if (valid)
@@ -199,7 +217,7 @@ void SeedHierarchyRoots(
         [loop]
         for (uint bit = 0u; bit < activeViewCount; bit++)
         {
-            if ((ClusterSceneActiveViewMask & (1u << bit)) == 0u)
+            if ((activeGroupViews & (1u << bit)) == 0u)
                 continue;
             uint viewSlot = viewSlotBase + bit;
             uint viewIndex = ClusterSeedViewIndex(viewSlot);
@@ -207,18 +225,18 @@ void SeedHierarchyRoots(
             if (instanceID >= view.InstanceCount)
                 continue;
             ClusterProjectedBounds projectedBounds;
-            bool outsideFrustum = ProjectClusterNode(
-                root,
-                transform,
-                boundsExpansion,
+            bool outsideFrustum = ProjectWorldAabbForView(
+                instanceWorldMin,
+                instanceWorldMax,
                 view,
+                previousProjection,
                 projectedBounds);
             if (view.CullingEnabled != 0u && outsideFrustum)
                 continue;
             if (!ClusterNodePassesLod(root, transform, view))
                 continue;
-            uint boundsState = (ClusterSceneOccludedViewMask & (1u << bit)) != 0u
-                ? (ClusterTargetPolicyAccepts(projectedBounds, view) ? 2u : 0u)
+            uint boundsState = (occludedGroupViews & (1u << bit)) != 0u
+                ? (ClusterSeedTargetAccepts(projectedBounds, view) ? 2u : 0u)
                 : ClusterSeedBoundsState(
                     instanceWorldMin,
                     instanceWorldMax,
@@ -238,7 +256,7 @@ void SeedHierarchyRoots(
     uint outputOffset = WavePrefixSum(outputCount);
     uint waveCount = WaveActiveSum(outputCount);
     uint waveBase = 0u;
-    if (WaveIsFirstLane())
+    if (WaveIsFirstLane() && waveCount != 0u)
     {
         NodeIndirectArgs.InterlockedAdd(
             TraversalSeed.ArgsOffset + 12u,
@@ -273,8 +291,13 @@ void SeedHierarchyRoots(
     uint deferredOffset = WavePrefixSum(deferredCount);
     uint deferredWaveCount = WaveActiveSum(deferredCount);
     uint deferredWaveBase = 0u;
-    if (WaveIsFirstLane())
+    if (WaveIsFirstLane() && deferredWaveCount != 0u)
+    {
         InterlockedAdd(DeferredWorkCount[0], deferredWaveCount, deferredWaveBase);
+        uint published = min(deferredWaveBase + deferredWaveCount, TraversalSeed.MaxNodes);
+        uint ignored;
+        DeferredWorkDispatchArgs.InterlockedMax(0u, (published + 63u) / 64u, ignored);
+    }
     deferredWaveBase = WaveReadLaneFirst(deferredWaveBase);
     uint localDeferred = 0u;
     [loop]

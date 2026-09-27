@@ -3,6 +3,7 @@
 
 #include "cluster_raster_target_view.slang"
 #include "cluster_view_access.slang"
+#include "raster_sample_bounds.slang"
 
 StructuredBuffer<ClusterRasterTargetView> RasterTargetViews;
 StructuredBuffer<uint> RasterTargetPageHierarchy;
@@ -181,6 +182,8 @@ bool ClusterTargetPolicyRasterBoundsWindow(
     out uint2 rasterWindow)
 {
     rasterWindow = 0u.xx;
+    if (!RasterBoundsCoverPixelCenters(minUv, maxUv, uint2(view.ScreenWidth, view.ScreenHeight)))
+        return false;
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
     uint2 firstPixel;
     uint2 lastPixel;
@@ -307,6 +310,7 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
     if (usePrevious && view.HasPrevHistory == 0u)
         return false;
 
+    maxUv = min(1.0.xx, max(maxUv, minUv + max(view.HiZInvSize, 1e-6.xx)));
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
     uint2 firstPixel;
     uint2 lastPixel;
