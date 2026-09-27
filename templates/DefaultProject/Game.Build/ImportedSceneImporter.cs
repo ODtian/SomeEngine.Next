@@ -6,43 +6,72 @@ using ImportedScenes;
 using SharpGLTF.Schema2;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
+using SomeEngine.ECS;
+using SomeEngine.Render.Components;
 using SomeEngine.Resources;
 using SomeEngine.Serialization.Containers;
 using GltfMaterial = SharpGLTF.Schema2.Material;
 using GltfTexture = SharpGLTF.Schema2.Texture;
 
-sealed class SceneMaterials : IGltfMaterialConversion
+namespace Game.Build;
+
+[AssetImporter("a91c86d1-551d-48e3-8e33-a25e30e2c2f4", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
+public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) : GltfSceneImporter
 {
+    public static readonly Guid ImporterId = new("a91c86d1-551d-48e3-8e33-a25e30e2c2f4");
     private readonly Dictionary<float, Guid> _shaders = [];
     private AssetId<TextureAsset> _white;
-    public IEnumerable<GltfTexture> Textures(GltfMaterial material)
-        => material.Channels.Where(x => x.Key is "BaseColor" or "Normal" or "MetallicRoughness" or "Occlusion" or "Emissive")
-            .Select(x => x.Texture).OfType<GltfTexture>();
-
-    public void Apply(MaterialAsset asset, GltfMaterial material, Func<GltfTexture?, AssetId<TextureAsset>> resolveTexture)
+    public override async ValueTask ImportMaterialAsync(GltfMaterial source, ImportContext context,
+        ImportOutput output, CancellationToken cancellationToken)
     {
+        var textures = new Dictionary<GltfTexture, AssetId<TextureAsset>>();
+        foreach (GltfTexture texture in source.Channels
+            .Where(channel => channel.Key is "BaseColor" or "Normal" or "MetallicRoughness" or "Occlusion" or "Emissive")
+            .Select(channel => channel.Texture).OfType<GltfTexture>())
+        {
+            if (textures.ContainsKey(texture)) continue;
+            TextureAsset imported = await context.GetAssetAsync<GltfTexture, TextureAsset>(
+                texture, cancellationToken).ConfigureAwait(false);
+            textures.Add(texture, imported.Reference);
+        }
+        string templatePath = Path.IsPathRooted(sourceSettings.LitMaterialTemplate)
+            ? Path.GetFullPath(sourceSettings.LitMaterialTemplate)
+            : Path.GetFullPath(Path.Combine(context.ProjectRoot, sourceSettings.LitMaterialTemplate));
+        await context.ReportInputAsync(templatePath, cancellationToken).ConfigureAwait(false);
+        await using MaterialAsset template = await MaterialAsset.OpenAsync(templatePath, cancellationToken).ConfigureAwait(false);
+        using MaterialAsset asset = template.CreateCopy();
         var content = asset.GetBlock<MaterialBlock>();
         var values = new StandardMaterialParameters(content);
-        var color = material.FindChannel("BaseColor");
-        var surface = material.FindChannel("MetallicRoughness");
-        var emissive = material.FindChannel("Emissive");
+        var color = source.FindChannel("BaseColor");
+        var surface = source.FindChannel("MetallicRoughness");
+        var emissive = source.FindChannel("Emissive");
         values.BaseColorTint = color?.Color ?? Vector4.One;
         values.MetallicFactor = surface?.GetFactor("MetallicFactor") ?? 1;
         values.Roughness = surface?.GetFactor("RoughnessFactor") ?? 1;
         Vector4 emission = emissive?.Color ?? Vector4.Zero;
         float strength = emissive?.GetFactor("EmissiveStrength") ?? 1;
         values.EmissiveFactor = new Vector3(emission.X, emission.Y, emission.Z) * strength;
-        values.AlbedoMap = TextureOrWhite(color?.Texture);
-        values.ARMMap = TextureOrWhite(surface?.Texture);
-        if (material.FindChannel("Normal")?.Texture is { } normal) values.NormalMap = resolveTexture(normal);
-        content.SetParameter(new("EmissiveMap", MaterialParameterKind.Texture) { Texture = TextureOrWhite(emissive?.Texture) });
-        var occlusion = material.FindChannel("Occlusion");
-        content.SetParameter(new("OcclusionMap", MaterialParameterKind.Texture) { Texture = TextureOrWhite(occlusion?.Texture) });
-        content.SetParameter(new("NormalScale", MaterialParameterKind.Float) { Float = material.FindChannel("Normal")?.GetFactor("NormalScale") ?? 1 });
+        values.AlbedoMap = color?.Texture is { } albedo && textures.TryGetValue(albedo, out AssetId<TextureAsset> albedoId)
+            ? albedoId : _white;
+        values.ARMMap = surface?.Texture is { } arm && textures.TryGetValue(arm, out AssetId<TextureAsset> armId)
+            ? armId : _white;
+        if (source.FindChannel("Normal")?.Texture is { } normal
+            && textures.TryGetValue(normal, out AssetId<TextureAsset> normalId)) values.NormalMap = normalId;
+        AssetId<TextureAsset> emissiveId = emissive?.Texture is { } emissiveTexture
+            && textures.TryGetValue(emissiveTexture, out AssetId<TextureAsset> mappedEmissive) ? mappedEmissive : _white;
+        content.SetParameter(new("EmissiveMap", MaterialParameterKind.Texture) { Texture = emissiveId });
+        var occlusion = source.FindChannel("Occlusion");
+        AssetId<TextureAsset> occlusionId = occlusion?.Texture is { } occlusionTexture
+            && textures.TryGetValue(occlusionTexture, out AssetId<TextureAsset> mappedOcclusion) ? mappedOcclusion : _white;
+        content.SetParameter(new("OcclusionMap", MaterialParameterKind.Texture) { Texture = occlusionId });
+        content.SetParameter(new("NormalScale", MaterialParameterKind.Float) { Float = source.FindChannel("Normal")?.GetFactor("NormalScale") ?? 1 });
         content.SetParameter(new("OcclusionStrength", MaterialParameterKind.Float) { Float = occlusion?.GetFactor("OcclusionStrength") ?? 1 });
-        content.Shader = new(_shaders[Cutoff(material)]);
-        AssetId<TextureAsset> TextureOrWhite(GltfTexture? texture) => texture is null ? _white : resolveTexture(texture);
+        content.Shader = new(_shaders[Cutoff(source)]);
+        MaterialBlock block = content.Duplicate();
+        try { output.SetBlock(block); }
+        catch { block.Dispose(); throw; }
     }
 
     public async Task BuildAsync(AssetProject project, ModelRoot model, string engine)
@@ -105,6 +134,22 @@ sealed class SceneMaterials : IGltfMaterialConversion
         }
     }
 
+    protected override ValueTask AddSceneContentAsync(World world, Scene scene, ImportContext context,
+        CancellationToken cancellationToken)
+    {
+        string name = Path.GetFileNameWithoutExtension(context.SourcePath);
+        bool sponza = name.Equals("Sponza", StringComparison.OrdinalIgnoreCase);
+        world.CreateEntity(new SceneCamera
+        {
+            Position = sponza ? new(-9, 2, 0) : new(-8, 3, 0),
+            Target = sponza ? new(5, 2, 0) : new(0, 2, 0),
+            Up = Vector3.UnitY, VerticalFieldOfView = MathF.PI / 3, NearPlane = 0.05f, FarPlane = 2000,
+        });
+        world.CreateEntity(new DirectionalLight(new(0.35f, -0.85f, 0.4f), new(1, 0.96f, 0.9f), 3));
+        if (sponza) world.CreateEntity(new PointLight(new(0, 4, 0), 30, new(1, 0.95f, 0.9f), 15));
+        return ValueTask.CompletedTask;
+    }
+
     private static float Cutoff(GltfMaterial material) => material.Alpha == AlphaMode.MASK
         ? material.AlphaCutoff / Math.Max(material.FindChannel("BaseColor")?.Color.W ?? 1, 1e-8f) : -1;
     private static string Replace(string source, string previous, string next) => source.Contains(previous)
@@ -138,4 +183,17 @@ struct SceneMask : IVisibilityEvaluate<StandardVertex>
     }
 };
 """;
+}
+
+[AssetCapabilities]
+public static partial class ImportedSceneCapabilities;
+
+// This project's material shader consumes UV0; the source file can retain other UV sets.
+internal sealed class SceneVertexEncoder : IClusterVertexEncoder
+{
+    public string Compatibility => StandardClusterVertexEncoder.EncodingCompatibility;
+    public EncodedClusterVertices Encode(ReadOnlySpan<Vector3> positions,
+        IReadOnlyList<RawAttribute> attributes, ReadOnlySpan<uint> clusterVertices)
+        => StandardClusterVertexEncoder.Instance.Encode(positions,
+            attributes.Where(value => !value.Name.StartsWith("TEXCOORD_") || value.Name == "TEXCOORD_0").ToArray(), clusterVertices);
 }

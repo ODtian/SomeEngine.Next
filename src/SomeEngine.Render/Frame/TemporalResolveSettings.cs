@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Numerics;
 
 namespace SomeEngine.Render.Frame;
 
@@ -8,7 +9,9 @@ public readonly record struct TemporalResolveUniforms(
     float NeighborhoodClampScale,
     float NeighborhoodClampMin,
     float MotionRejectionScale,
-    uint HistoryLayer = 0);
+    uint HistoryLayer = 0,
+    uint Padding = 0,
+    Vector2 JitterDifferenceUv = default);
 
 public readonly record struct TemporalResolveSettings(
     float HistoryWeight,
@@ -17,7 +20,7 @@ public readonly record struct TemporalResolveSettings(
     float MotionRejectionScale)
 {
     public const float MinHistoryWeight = 0.0f;
-    public const float MaxHistoryWeight = 0.95f;
+    public const float MaxHistoryWeight = 0.99f;
     public const float MinNeighborhoodClampScale = 0.0f;
     public const float MaxNeighborhoodClampScale = 2.0f;
     public const float MinNeighborhoodClampMin = 0.0f;
@@ -26,7 +29,7 @@ public readonly record struct TemporalResolveSettings(
     public const float MaxMotionRejectionScale = 4.0f;
 
     public static TemporalResolveSettings Default => new(
-        HistoryWeight: 0.94f,
+        HistoryWeight: 0.98f,
         NeighborhoodClampScale: 0.06f,
         NeighborhoodClampMin: 0.008f,
         MotionRejectionScale: 0.35f);

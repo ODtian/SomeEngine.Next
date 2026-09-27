@@ -6,6 +6,7 @@ using SomeEngine.Render.Assets;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Features.Motion;
 using SomeEngine.RenderGraph;
+using System.Numerics;
 
 namespace SomeEngine.Render.Features.Temporal;
 
@@ -36,6 +37,8 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
     private readonly TemporalResource[] _resourceOrder;
     private readonly GraphTextureId _history;
     private uint _historyLayer;
+    private Vector2 _previousJitterPixels;
+    private Vector2 _frameJitterPixels;
     private readonly GraphPassId _initializePass;
     private readonly GraphPassId _resolvePass;
     private readonly GraphBufferInput _uniforms;
@@ -192,7 +195,8 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         TemporalResolveSettings settings,
         bool enabled = true,
         bool cameraCut = false,
-        Entity view = default)
+        Entity view = default,
+        Vector2 jitterPixels = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_frameActive)
@@ -205,7 +209,14 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         TemporalResolveUniforms uniforms = useHistory
             ? settings.ToUniforms()
             : settings.ToUniforms() with { HistoryWeight = 0.0f };
-        uniforms = uniforms with { HistoryLayer = _historyLayer };
+        uniforms = uniforms with
+        {
+            HistoryLayer = _historyLayer,
+            JitterDifferenceUv = useHistory
+                ? (jitterPixels - _previousJitterPixels) /
+                  new Vector2(motion.Width, motion.Height)
+                : Vector2.Zero,
+        };
         GraphBufferSlice uniformBuffer = FeatureUploads.UploadConstant(
             ref graph,
             in uniforms,
@@ -219,6 +230,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         graph.SetPassEnabled(_resolvePass, true);
         graph.ObserveExecution(this);
         _frameView = view;
+        _frameJitterPixels = jitterPixels;
         _frameActive = true;
     }
 
@@ -232,6 +244,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
             _historyLayer ^= 1u;
             _historyView = _frameView;
             _historyValid = _frameView != Entity.Null;
+            _previousJitterPixels = _frameJitterPixels;
         }
         else if (result.TryGetPassCompletion(_initializePass, out _))
             _historyValid = false;

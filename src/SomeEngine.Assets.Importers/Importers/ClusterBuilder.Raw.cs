@@ -48,6 +48,14 @@ public static partial class ClusterBuilder
                 prepared,
                 meshletBuild,
                 vertexEncoder);
+            uint[] lowestDetailPageIndices = clusterInfos
+                .Where(static cluster => cluster.LODError >= (float)Half.MaxValue)
+                .Select(static cluster => cluster.PageIndex)
+                .Distinct()
+                .Order()
+                .ToArray();
+            if (lowestDetailPageIndices.Length == 0)
+                lowestDetailPageIndices = [clusterInfos.Max(static cluster => cluster.PageIndex)];
             long bvhOffset = WriteBvh(stream, clusterInfos);
             using PageBuffer content = payload.Slice(0, stream.Length);
             return CreateMeshAsset(
@@ -56,7 +64,8 @@ public static partial class ClusterBuilder
                 content,
                 meshletBuild.Bounds,
                 vertexEncoder.Compatibility,
-                bvhOffset);
+                bvhOffset,
+                lowestDetailPageIndices);
         }
         finally
         {
@@ -278,7 +287,8 @@ public static partial class ClusterBuilder
         PageBuffer payload,
         MeshBoundsInfo bounds,
         string vertexEncoding,
-        long bvhOffset)
+        long bvhOffset,
+        uint[] lowestDetailPageIndices)
     {
         using var geometry = new MeshBlock
         {
@@ -291,7 +301,11 @@ public static partial class ClusterBuilder
                 .Select(static slot => new AssetId<MaterialAsset>(slot.MaterialGuid))
                 .ToArray(),
         };
-        using var clusters = new ClusterMeshBlock { VertexEncoding = vertexEncoding };
+        using var clusters = new ClusterMeshBlock
+        {
+            VertexEncoding = vertexEncoding,
+            LowestDetailPageIndices = lowestDetailPageIndices,
+        };
         clusters.SetPayload(payload, checked((ulong)bvhOffset));
         var meshAsset = new MeshAsset { Name = name };
         try

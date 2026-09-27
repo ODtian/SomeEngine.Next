@@ -10,13 +10,15 @@ public sealed record VirtualShadowMapSettings
     public uint AtlasSize { get; init; } = 4_096;
     public uint PageSize { get; init; } = 128;
     public uint MaxShadowLights { get; init; } = 4;
-    public uint DirectionalClipmapLevels { get; init; } = 17;
-    public int DirectionalFirstClipmapLevel { get; init; } = 6;
+    // Meter-scale scenes need levels below zero near the camera. Keep the
+    // previous farthest level (22) while adding the nearby levels.
+    public uint DirectionalClipmapLevels { get; init; } = 27;
+    public int DirectionalFirstClipmapLevel { get; init; } = -4;
     public int DirectionalFirstCoarseClipmapLevel { get; init; } = 15;
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
     public float DirectionalResolutionLodBias { get; init; }
     public float LocalResolutionLodBias { get; init; }
-    public bool DynamicResolutionEnabled { get; init; } = true;
+    public bool DynamicResolutionEnabled { get; init; }
     public uint DynamicResolutionTargetRasterWork { get; init; } = 250_000;
     public float DynamicResolutionPagePoolLoadStart { get; init; } = 0.85f;
     public float DynamicResolutionMaxDirectionalLodBias { get; init; } = 2.0f;

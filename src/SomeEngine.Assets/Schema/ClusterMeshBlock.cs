@@ -9,7 +9,7 @@ namespace SomeEngine.Assets.Schema;
 /// <summary>Cluster geometry, its authenticated page descriptions and lazily acquired payload.</summary>
 [AssetBlock("SomeEngine.Assets.Schema.ClusterMeshBlock"), BinarySerializable]
 [BinaryFields(nameof(VertexEncoding), nameof(PayloadKey), nameof(PayloadLength), nameof(BvhOffset),
-    nameof(PageDigests), nameof(BvhLength), nameof(BvhSha256))]
+    nameof(PageDigests), nameof(LowestDetailPageIndices), nameof(BvhLength), nameof(BvhSha256))]
 public sealed partial class ClusterMeshBlock : AssetPageBlock
 {
     public static ulong PayloadChunkKey { get; } = BinaryFieldKey.FromName("SomeEngine.Assets.Schema.Mesh.Payload");
@@ -18,6 +18,7 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
     public partial ulong PayloadLength { get; set; }
     public partial ulong BvhOffset { get; set; }
     public partial IList<MeshPayloadPageDigest> PageDigests { get; set; }
+    public partial IList<uint> LowestDetailPageIndices { get; set; }
     public partial ulong BvhLength { get; set; }
     public partial ImmutableArray<byte> BvhSha256 { get; set; }
 
@@ -44,6 +45,8 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
             BvhLength = checked((ulong)bvh.Sequence.Length);
             BvhSha256 = digest;
             PageDigests = descriptions;
+            if (LowestDetailPageIndices.Count == 0)
+                LowestDetailPageIndices = [checked((uint)descriptions.Length - 1u)];
         }
     }
 
@@ -61,6 +64,15 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
         long offset = MeshIntegrity.Validate(PageDigests.ToImmutableArray(), checked((long)BvhLength), VertexEncoding);
         if (checked((ulong)offset) != BvhOffset)
             throw new InvalidDataException("Mesh page descriptions do not fill the region before the BVH.");
+        uint previous = uint.MaxValue;
+        foreach (uint pageIndex in LowestDetailPageIndices)
+        {
+            if (pageIndex >= PageDigests.Count || previous != uint.MaxValue && pageIndex <= previous)
+                throw new InvalidDataException("Lowest-detail mesh page indices must be unique, ordered, and in range.");
+            previous = pageIndex;
+        }
+        if (LowestDetailPageIndices.Count == 0)
+            throw new InvalidDataException("A cluster mesh requires at least one lowest-detail page.");
     }
 
     /// <summary>Retains future geometry page access independently of this block and its asset.</summary>
@@ -78,7 +90,7 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
         if (copy.Chunks.Contains(PayloadChunkKey))
         {
             PageBuffer bytes = copy.Chunks.DuplicateBuffer(PayloadChunkKey);
-            try { return new(bytes, checked((long)copy.BvhOffset), checked((int)copy.BvhLength), copy.BvhSha256.AsMemory(), descriptions); }
+            try { return new(bytes, checked((long)copy.BvhOffset), checked((int)copy.BvhLength), copy.BvhSha256.AsMemory(), descriptions, copy.LowestDetailPageIndices); }
             catch { bytes.Dispose(); throw; }
         }
         AssetBlockSource blockSource = copy.RetainSource() ?? throw new InvalidDataException("Cluster mesh block has no payload.");
@@ -88,7 +100,7 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
             source = await blockSource.OpenChunkRangeSourceAsync(PayloadChunkKey, cancellationToken).ConfigureAwait(false);
             if (checked((ulong)source.Length) != copy.PayloadLength)
                 throw new InvalidDataException("Mesh payload length differs from the block declaration.");
-            return new(blockSource, source, checked((long)copy.BvhOffset), checked((int)copy.BvhLength), copy.BvhSha256.AsMemory(), descriptions);
+            return new(blockSource, source, checked((long)copy.BvhOffset), checked((int)copy.BvhLength), copy.BvhSha256.AsMemory(), descriptions, copy.LowestDetailPageIndices);
         }
         catch
         {
@@ -108,6 +120,7 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
         using PageBuffer bvh = await source.AcquireBvhAsync(copy.Pages, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         return Mesh.Create(name, copy.VertexEncoding, copy.PageDigests.ToImmutableArray(), bvh,
+            lowestDetailPageIndices: copy.LowestDetailPageIndices.ToArray(),
             bounds: shape.Bounds, regions: shape.Regions.ToImmutableArray());
     }
 

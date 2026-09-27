@@ -158,11 +158,13 @@ public partial class MaterialAsset : Asset
 
     /// <summary>Creates material fields using direct references returned by the caller.
     /// Supplied shader and texture objects remain the caller's responsibility; disposing the material
-    /// does not dispose them. Omitted loaders create private dependencies as in the simple overload.</summary>
+    /// does not dispose them. Omitted loaders create private dependencies as in the simple overload.
+    /// Distinct texture loader calls may overlap when loadTexturesConcurrently is true.</summary>
     public async ValueTask<Material> CreateAsync(AssetLoader loader,
         Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>>? loadShader,
         Func<AssetId<TextureAsset>, CancellationToken, ValueTask<Texture>>? loadTexture,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool loadTexturesConcurrently = false)
     {
         ArgumentNullException.ThrowIfNull(loader);
         using MaterialAsset copy = Duplicate();
@@ -188,6 +190,18 @@ public partial class MaterialAsset : Asset
                     shader = await code.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
                 }
             }
+            var textureReads = new Dictionary<Guid, Task<Texture>>();
+            if (loadTexture is not null && loadTexturesConcurrently)
+            {
+                foreach (MaterialParameter value in resolved.Values.Values)
+                    if (value.Kind == MaterialParameterKind.Texture && !value.Texture.IsEmpty &&
+                        !textureReads.ContainsKey(value.Texture.Value))
+                    {
+                        textureReads.Add(value.Texture.Value,
+                            loadTexture(value.Texture, cancellationToken).AsTask());
+                    }
+                await Task.WhenAll(textureReads.Values).ConfigureAwait(false);
+            }
             foreach (MaterialParameter value in resolved.Values.Values)
             {
                 Texture? texture = null;
@@ -196,7 +210,9 @@ public partial class MaterialAsset : Asset
                     if (!textures.TryGetValue(value.Texture.Value, out texture))
                     {
                         if (loadTexture is not null)
-                            texture = await loadTexture(value.Texture, cancellationToken).ConfigureAwait(false);
+                            texture = loadTexturesConcurrently
+                                ? textureReads[value.Texture.Value].Result
+                                : await loadTexture(value.Texture, cancellationToken).ConfigureAwait(false);
                         else
                         {
                             await using TextureAsset file = await TextureAsset.OpenAsync(loader, value.Texture, cancellationToken).ConfigureAwait(false);

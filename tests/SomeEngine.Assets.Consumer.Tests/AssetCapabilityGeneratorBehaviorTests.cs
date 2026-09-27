@@ -186,7 +186,7 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
     }
 
     [Fact]
-    public void ExplicitConstructorSelectionIsUsedByTheDirectFactory()
+    public void ExplicitConstructorSelectionIsUsedByGeneratedServices()
     {
         string source = ExtensionSource.Replace("public Importer(Dependency dependency)",
             "public Importer() { Number = -1; } [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor] public Importer(Dependency dependency)", StringComparison.Ordinal)

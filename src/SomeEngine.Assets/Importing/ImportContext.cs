@@ -60,7 +60,7 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
         }
     }
 
-    public void EnableImporter<TSource, TAsset>(IConfiguredAssetImporter<TSource> importer)
+    public void EnableImporter<TSource, TAsset>(IAssetImporter<TSource> importer)
         where TSource : class where TAsset : Asset
     {
         ArgumentNullException.ThrowIfNull(importer);
@@ -72,6 +72,14 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
                 throw new InvalidOperationException($"Importer {importer.Id} is selected twice for {typeof(TAsset)}.");
             source.Importers.Add(importer);
         }
+    }
+
+    public void EnableImporter<TSource, TAsset>(Guid id, IReadOnlyList<Guid> producedBlocks,
+        Func<TSource, ImportContext, ImportOutput, CancellationToken, ValueTask> import)
+        where TSource : class where TAsset : Asset
+    {
+        ArgumentNullException.ThrowIfNull(import);
+        EnableImporter<TSource, TAsset>(new ImportFunction<TSource>(id, producedBlocks, import));
     }
 
     public bool HasImporters<TSource, TAsset>() where TSource : class where TAsset : Asset
@@ -225,7 +233,7 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
         SourceAssets<TSource, TAsset> definition) where TSource : class where TAsset : Asset
     {
         var result = new AssetResult(asset, key, path, (value, destination, token) => definition.Save((TAsset)value, destination, token));
-        foreach (IConfiguredAssetImporter<TSource> importer in definition.Importers)
+        foreach (IAssetImporter<TSource> importer in definition.Importers)
         {
             var output = new ImportOutput(asset, importer.ProducedBlocks);
             var work = new ImportWork($"importer {importer.Id}", async token =>
@@ -387,7 +395,7 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
         Func<TSource, Guid, TAsset> Create, Func<TSource, Guid, string> OutputPath,
         Func<TAsset, string, CancellationToken, ValueTask<AssetEntry>> Save) where TSource : class where TAsset : Asset
     {
-        public List<IConfiguredAssetImporter<TSource>> Importers { get; } = [];
+        public List<IAssetImporter<TSource>> Importers { get; } = [];
     }
 
     private sealed class AssetResult(Asset content, string elementKey, string path,
@@ -400,6 +408,29 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
         public Dictionary<Guid, ImportWork> Producers { get; } = [];
         public List<ImportWork> Conversions { get; } = [];
         public ImportWork Completion { get; set; } = null!;
+    }
+
+    private sealed class ImportFunction<TSource> : IAssetImporter<TSource> where TSource : class
+    {
+        private readonly Func<TSource, ImportContext, ImportOutput, CancellationToken, ValueTask> _import;
+        public Guid Id { get; }
+        public IReadOnlyList<Guid> ProducedBlocks { get; }
+
+        public ImportFunction(Guid id, IReadOnlyList<Guid> producedBlocks,
+            Func<TSource, ImportContext, ImportOutput, CancellationToken, ValueTask> import)
+        {
+            ArgumentNullException.ThrowIfNull(producedBlocks);
+            if (id == Guid.Empty || producedBlocks.Any(value => value == Guid.Empty)
+                || producedBlocks.Distinct().Count() != producedBlocks.Count)
+                throw new ArgumentException("Importer identities and produced block types must be nonempty and unique.");
+            Id = id;
+            ProducedBlocks = Array.AsReadOnly(producedBlocks.ToArray());
+            _import = import;
+        }
+
+        public ValueTask ImportAsync(TSource source, ImportContext context, ImportOutput output,
+            CancellationToken cancellationToken = default)
+            => _import(source, context, output, cancellationToken);
     }
 
     private sealed class ImportWork(string name, Func<CancellationToken, ValueTask> execute)

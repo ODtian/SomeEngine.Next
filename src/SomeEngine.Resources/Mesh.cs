@@ -33,6 +33,7 @@ public sealed class Mesh : IDisposable, IAsyncDisposable
     public Bounds? Bounds { get; private set; }
     public string VertexEncoding { get; private set; } = "";
     public ImmutableArray<MeshPayloadPageDigest> PageDigests { get; private set; } = [];
+    public ImmutableArray<uint> LowestDetailPageIndices { get; private set; } = [];
     public ImmutableArray<MeshRegion> Regions { get; private set; } = [];
     public ImmutableArray<byte> BvhSha256 { get; private set; } = [];
     public ulong BvhOffset { get; private set; }
@@ -53,6 +54,7 @@ public sealed class Mesh : IDisposable, IAsyncDisposable
             return new Mesh
             {
                 Name = Name, Bounds = Bounds, VertexEncoding = VertexEncoding, PageDigests = PageDigests,
+                LowestDetailPageIndices = LowestDetailPageIndices,
                 Regions = Regions, BvhSha256 = BvhSha256, BvhOffset = BvhOffset, BvhLength = BvhLength,
                 Revision = Revision, _buffers = _buffers!.Duplicate(),
             };
@@ -95,10 +97,22 @@ public sealed class Mesh : IDisposable, IAsyncDisposable
         return Create(name, vertexEncoding, descriptions, bvh, pages, bounds);
     }
     public static Mesh Create(string name, string vertexEncoding, IReadOnlyList<MeshPayloadPageDigest> descriptions,
-        PageBuffer bvh, PageBufferMap? readyPages = null, Bounds? bounds = null, IReadOnlyList<MeshRegion>? regions = null)
+        PageBuffer bvh, PageBufferMap? readyPages = null, Bounds? bounds = null,
+        IReadOnlyList<MeshRegion>? regions = null, IReadOnlyList<uint>? lowestDetailPageIndices = null)
     {
         ImmutableArray<MeshPayloadPageDigest> pages = descriptions.ToImmutableArray();
+        ImmutableArray<uint> lowestDetailPages = lowestDetailPageIndices?.ToImmutableArray()
+            ?? [checked((uint)pages.Length - 1u)];
         long offset = MeshIntegrity.Validate(pages, bvh.Length, vertexEncoding);
+        uint previous = uint.MaxValue;
+        foreach (uint pageIndex in lowestDetailPages)
+        {
+            if (pageIndex >= pages.Length || previous != uint.MaxValue && pageIndex <= previous)
+                throw new InvalidDataException("Lowest-detail mesh page indices must be unique, ordered, and in range.");
+            previous = pageIndex;
+        }
+        if (lowestDetailPages.IsEmpty)
+            throw new InvalidDataException("A mesh requires at least one lowest-detail page.");
         using PageRange<byte> bvhRead = bvh.Retain();
         var buffers = readyPages?.Duplicate() ?? new PageBufferMap(bvh.Arena);
         try
@@ -113,6 +127,7 @@ public sealed class Mesh : IDisposable, IAsyncDisposable
             return new Mesh
             {
                 Name = name, VertexEncoding = vertexEncoding, Bounds = bounds, PageDigests = pages,
+                LowestDetailPageIndices = lowestDetailPages,
                 Regions = regions?.ToImmutableArray() ?? [],
                 BvhOffset = checked((ulong)offset), BvhLength = checked((ulong)bvh.Length),
                 BvhSha256 = MeshIntegrity.Hash(bvhRead), _buffers = buffers,
@@ -184,12 +199,14 @@ public sealed class Mesh : IDisposable, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(replacement);
         if (ReferenceEquals(this, replacement)) throw new ArgumentException("A mesh cannot replace itself.", nameof(replacement));
         (string? Name, Bounds? Bounds, string Encoding, ImmutableArray<MeshPayloadPageDigest> Pages,
-            ImmutableArray<MeshRegion> Regions, ImmutableArray<byte> BvhHash, ulong BvhOffset, ulong BvhLength, PageBufferMap Buffers) content;
+            ImmutableArray<uint> LowestDetailPages, ImmutableArray<MeshRegion> Regions,
+            ImmutableArray<byte> BvhHash, ulong BvhOffset, ulong BvhLength, PageBufferMap Buffers) content;
         lock (replacement._gate)
         {
             replacement.RequireOpen();
             content = (replacement.Name, replacement.Bounds, replacement.VertexEncoding, replacement.PageDigests,
-                replacement.Regions, replacement.BvhSha256, replacement.BvhOffset, replacement.BvhLength, replacement._buffers!.Duplicate());
+                replacement.LowestDetailPageIndices, replacement.Regions, replacement.BvhSha256,
+                replacement.BvhOffset, replacement.BvhLength, replacement._buffers!.Duplicate());
         }
         PageBufferMap previous;
         try
@@ -201,6 +218,7 @@ public sealed class Mesh : IDisposable, IAsyncDisposable
                 previous = _buffers!;
                 Name = content.Name; Bounds = content.Bounds; VertexEncoding = content.Encoding;
                 PageDigests = content.Pages; BvhSha256 = content.BvhHash;
+                LowestDetailPageIndices = content.LowestDetailPages;
                 Regions = content.Regions;
                 BvhOffset = content.BvhOffset; BvhLength = content.BvhLength;
                 _buffers = content.Buffers;

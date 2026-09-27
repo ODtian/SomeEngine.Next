@@ -36,6 +36,7 @@ public sealed class AssetLoader : IAsyncDisposable
     }
 
     public PageArena Pages => _options.Pages;
+    public int MaxConcurrentReads => _options.MaxConcurrentReads;
 
     public async ValueTask<AssetFile> OpenFileAsync<T>(AssetId<T> id,
         string fileType, BinaryWireTypeDescriptor wireType, CancellationToken cancellationToken = default)
