@@ -12,9 +12,9 @@ internal static class ApplicationTrace
     internal static readonly TraceSite PrepareCommit = new("app", "PrepareCommit");
     internal static readonly TraceSite Reconcile = new("app", "ReconcileGraph");
     internal static readonly TraceSite Execute = new("app", "ExecuteFrame");
-    internal static readonly TraceSite RenderSystems = new("app", "RenderSystems", detail: true);
-    internal static readonly TraceSite TemporalRecording = new("app", "TemporalRecording", detail: true);
-    internal static readonly TraceSite FrameCompletion = new("app", "FrameCompletion", detail: true);
+    internal static readonly TraceSite RenderSystems = new("app", "RenderSystems");
+    internal static readonly TraceSite TemporalRecording = new("app", "TemporalRecording");
+    internal static readonly TraceSite FrameCompletion = new("app", "FrameCompletion");
     internal static readonly TraceSite GpuCompletion = new("wait", "GpuFrameCompletion");
     internal static readonly TraceSite TaskCompletion = new("wait", "TaskCompletion");
     internal static readonly TraceSite GameUpdate = new("app", "GameUpdate");

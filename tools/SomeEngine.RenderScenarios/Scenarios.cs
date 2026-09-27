@@ -196,18 +196,23 @@ struct MaskVisibility : IVisibilityEvaluate<StandardVertex>
         pixel + "\ntypedef MaskVisibility VisibilityEvaluate;");
 }
 File.WriteAllText(shaderPath, shader);
-AssetProject project = new AssetProject(destination, [Game.Importing.MaterialImport.CreateGltf()], sourceFormats: [new ShaderSourceFormat([engineShaders])]);
+AssetProject project = new AssetProject(destination, [Game.Importing.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat([engineShaders])]);
 await project.BuildAsync(Path.ChangeExtension(shaderPath, ".shader"));
 IAssetStorage storage = project.CreateStorage();
-Guid sceneId = project.Resolve("assets/Scenes/default.scene.asset")!.Value;
-if (!storage.TryFind(sceneId, out AssetEntry entry)) throw new InvalidOperationException();
 await using var loader = new AssetLoader(storage);
+Guid settingsId = project.Resolve("assets/Runtime/default.runtime.asset")!.Value;
+using ApplicationSettingsAsset application = await ApplicationSettingsAsset.OpenAsync(loader, new(settingsId));
+Guid sceneId = application.GetBlock<ApplicationSettingsBlock>().Scene.Value;
+if (!storage.TryFind(sceneId, out AssetEntry entry)) throw new InvalidOperationException();
 using var sceneFile = await WorldAsset.OpenAsync(loader, new AssetId<WorldAsset>(sceneId));
 var worldTypes = SceneSerialization.CreateRegistry();
 using World scene = await sceneFile.GetBlock<WorldBlock>().LoadAsync(worldTypes);
 sceneFile.Name = mode + " rendering scenario";
 Entity[] allInstances = Entities(scene, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());
 Entity[] instances = allInstances.Take(mode == "phong" ? 1 : mode == "wpo-alpha" ? 8 : mode == "sparse-motion" ? 128 : 4).ToArray();
+using MeshAsset sourceMesh = await MeshAsset.OpenAsync(loader, scene.Read<MeshSource>(instances[0]).Mesh);
+AssetId<MaterialAsset> baseMaterial = sourceMesh.GetBlock<MeshMaterialsBlock>().Materials[0];
+var materialIds = new AssetId<MaterialAsset>[instances.Length];
 foreach (Entity entity in allInstances.Skip(instances.Length)) scene.DestroyEntity(entity);
 for (int index = 0; index < instances.Length; index++)
 {
@@ -220,6 +225,33 @@ for (int index = 0; index < instances.Length; index++)
     mesh.BoundsExpansion = mode == "wpo-alpha" ? .31f : 1;
     scene.Replace(entity, mesh);
 }
+if (mode == "materials")
+{
+    using var template = await StandardMaterialAsset.OpenAsync(loader, baseMaterial);
+    for (int index = 0; index < instances.Length; index++)
+    {
+        byte[] pixels = new byte[8 * 8 * 4];
+        for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 8; x++)
+        {
+            byte value = (x + y + index) % (index + 2) == 0 ? (byte)0 : (byte)255;
+            for (int channel = 0; channel < 4; channel++) pixels[(y * 8 + x) * 4 + channel] = value;
+        }
+        using var maskPixels = new TextureBlock { Dimension = TextureDimension.Texture2D,
+            Width = 8, Height = 8, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
+            Format = Format.R8G8B8A8UNorm, SampledFormat = Format.R8G8B8A8UNorm, SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
+            MipTiles = [new TextureMipTile { Width = 8, Height = 8, RowPitch = 32, SlicePitch = 256, ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 256 }] };
+        maskPixels.Chunks.Set(maskPixels.MipTiles[0].ChunkKey, pixels);
+        using Texture mask = new() { Name = "mask " + index };
+        mask.SetBlock(maskPixels);
+        project.RegisterAsset(await mask.SaveAsync(Path.Combine(project.RootPath, $"assets/Textures/scenario-mask-{index}.texture.asset")));
+        using var material = template.CreateCopy();
+        material.Name = "Phong masked " + index;
+        new StandardMaterialParameters(material.GetBlock<MaterialBlock>()).AlbedoMap = mask.Reference;
+        project.RegisterAsset(await material.SaveAsync(Path.Combine(project.RootPath, $"assets/Materials/scenario-{index}.material.asset")));
+        materialIds[index] = material.Reference;
+    }
+}
 if (mode is not ("phong" or "sparse-motion" or "occlusion" or "lod-near" or "lod-far"))
 {
     for (int index = 0; index < instances.Length; index++)
@@ -227,7 +259,7 @@ if (mode is not ("phong" or "sparse-motion" or "occlusion" or "lod-near" or "lod
         Entity entity = instances[index];
         var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(mode == "factors" ? (index == 3 ? 4 : index) : 2);
         using MeshAsset mesh = ClusterBuilder.ProcessRaw(vertices, attributes, indices,
-            [new MeshMaterialSlot(Materials(scene, entity)[0].Value)], $"Tessellation factor geometry {index}");
+            [new MeshMaterialSlot((mode == "materials" ? materialIds[index] : baseMaterial).Value)], $"Tessellation factor geometry {index}");
         project.RegisterAsset(await mesh.SaveAsync(Path.Combine(project.RootPath, $"assets/Meshes/factor-{index}.mesh.asset")));
         MeshSource meshSource = scene.Read<MeshSource>(entity);
         meshSource.Mesh = mesh.Reference;
@@ -259,40 +291,11 @@ if (mode == "displacement")
     using Texture height = new() { Name = "heights" };
     height.SetBlock(heightPixels);
     project.RegisterAsset(await height.SaveAsync(Path.Combine(project.RootPath, "assets/Textures/scenario-height.texture.asset")));
-    using var material = await StandardMaterialAsset.OpenAsync(loader, Materials(scene, instances[0])[0]);
+    using var material = await StandardMaterialAsset.OpenAsync(loader, baseMaterial);
     var parameters = new StandardMaterialParameters(material.GetBlock<MaterialBlock>());
     parameters.AlbedoMap = height.Reference;
     parameters.NormalMap = bounds.Reference;
     project.RegisterAsset(await material.SaveAsync(Path.Combine(project.RootPath, project.Manifest.Assets[material.Id].Path)));
-}
-if (mode == "materials")
-{
-    using var template = await StandardMaterialAsset.OpenAsync(loader, Materials(scene, instances[0])[0]);
-    for (int index = 0; index < instances.Length; index++)
-    {
-        byte[] pixels = new byte[8 * 8 * 4];
-        for (int y = 0; y < 8; y++)
-        for (int x = 0; x < 8; x++)
-        {
-            byte value = (x + y + index) % (index + 2) == 0 ? (byte)0 : (byte)255;
-            for (int channel = 0; channel < 4; channel++) pixels[(y * 8 + x) * 4 + channel] = value;
-        }
-        using var maskPixels = new TextureBlock { Dimension = TextureDimension.Texture2D,
-            Width = 8, Height = 8, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
-            Format = Format.R8G8B8A8UNorm, SampledFormat = Format.R8G8B8A8UNorm, SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
-            MipTiles = [new TextureMipTile { Width = 8, Height = 8, RowPitch = 32, SlicePitch = 256, ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 256 }] };
-        maskPixels.Chunks.Set(maskPixels.MipTiles[0].ChunkKey, pixels);
-        using Texture mask = new() { Name = "mask " + index };
-        mask.SetBlock(maskPixels);
-        project.RegisterAsset(await mask.SaveAsync(Path.Combine(project.RootPath, $"assets/Textures/scenario-mask-{index}.texture.asset")));
-        using var material = template.CreateCopy();
-        material.Name = "Phong masked " + index;
-        new StandardMaterialParameters(material.GetBlock<MaterialBlock>()).AlbedoMap = mask.Reference;
-        project.RegisterAsset(await material.SaveAsync(Path.Combine(project.RootPath, $"assets/Materials/scenario-{index}.material.asset")));
-        AssetId<MaterialAsset> id = material.Reference;
-        scene.ExecuteBufferWrite<MaterialSource, AssetId<MaterialAsset>>(instances[index], ref id,
-            static (DynamicBuffer<MaterialSource> buffer, ref AssetId<MaterialAsset> value) => { buffer.Clear(); buffer.Add(new(value)); });
-    }
 }
 if (mode == "sparse-motion")
 {
@@ -326,16 +329,4 @@ static Entity[] Entities(World world, QueryDefinitionBuilder definition)
         return [.. entities];
     }
     finally { world.ReleaseQuery(query); }
-}
-
-static AssetId<MaterialAsset>[] Materials(World world, Entity entity)
-{
-    AssetId<MaterialAsset>[] ids = [];
-    world.ExecuteBufferRead<MaterialSource, AssetId<MaterialAsset>[]>(entity, ref ids,
-        static (BufferView<MaterialSource> buffer, ref AssetId<MaterialAsset>[] values) =>
-        {
-            values = new AssetId<MaterialAsset>[buffer.Count];
-            for (int index = 0; index < values.Length; index++) values[index] = buffer[index].Material;
-        });
-    return ids;
 }

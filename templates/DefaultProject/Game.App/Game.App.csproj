@@ -3,9 +3,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <ProjectContentRoot Condition="'$(ProjectContentRoot)' == ''">$(DefaultProjectDirectory)</ProjectContentRoot>
+    <!-- Short performance runs need optimized code from first use, without a tier transition during sampling. -->
+    <TieredCompilation Condition="'$(Configuration)' == 'Release'">false</TieredCompilation>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Game.Assets/Game.Assets.csproj" />
+    <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
     <Content Include="$(ProjectContentRoot)/assets/**/*.asset" Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(ProjectContentRoot)/Library/AssetManifest/**/*" Link="Library/AssetManifest/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
@@ -13,4 +16,11 @@
   <ItemGroup>
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="WriteTestScenes" AfterTargets="Build">
+    <PropertyGroup>
+      <_TestSceneDirectory>$([System.String]::Copy('$(SomeEnginePath)/samples/ImportedScenes/Apps').Replace('\', '/'))</_TestSceneDirectory>
+      <_TestScenes>[{&quot;Name&quot;:&quot;1024 spheres&quot;,&quot;ContentDirectory&quot;:&quot;.&quot;,&quot;Animate&quot;:true},{&quot;Name&quot;:&quot;Sponza&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Sponza&quot;},{&quot;Name&quot;:&quot;Amazon Bistro&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Bistro&quot;}]</_TestScenes>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(TargetDir)test-scenes.json" Lines="$(_TestScenes)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
 </Project>
