@@ -57,6 +57,9 @@ public static partial class SlangShaderImporter
     {
         cancellationToken.ThrowIfCancellationRequested();
         ShaderAsset asset = source.Duplicate();
+        ISession? session = null;
+        IModule[] sourceUnits = [];
+        var entries = new List<CookedEntryPoint>();
         try
         {
             ShaderSourceBlock definition = asset.GetBlock<ShaderSourceBlock>();
@@ -66,7 +69,6 @@ public static partial class SlangShaderImporter
             string directory = Path.GetDirectoryName(fullPath)!;
             projectRoot = Path.GetFullPath(projectRoot ?? directory);
             var context = new ShaderImportContext(fullPath, projectRoot);
-            using var lifetime = new SlangImportLifetime();
             TargetDesc[] targets = SlangShaderCookProfiles.CreateTargets(GlobalSession, definition.CookProfile);
             string[] paths = definition.SourceFiles.Select(path =>
             {
@@ -80,26 +82,48 @@ public static partial class SlangShaderImporter
             sessionDesc.SearchPaths = paths.Select(path => Path.GetDirectoryName(path)!)
                 .Concat(sessionDesc.SearchPaths ?? []).Concat((includeDirectories ?? []).Select(path => Path.GetFullPath(Path.Combine(directory, path))))
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            GlobalSession.CreateSession(sessionDesc, out ISession session);
-            lifetime.Track(session);
-            var modules = new IModule[paths.Length];
+            SlangResult sessionResult = GlobalSession.CreateSession(sessionDesc, out ISession createdSession);
+            if (sessionResult.Failed || createdSession is null)
+                throw new InvalidDataException($"Slang session creation failed with {sessionResult}.");
+            session = createdSession;
+            sourceUnits = new IModule[paths.Length];
             var texts = new string[paths.Length];
             var dependencies = new List<FileDependency>();
             for (int i = 0; i < paths.Length; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 texts[i] = File.ReadAllText(paths[i]);
-                ISlangBlob blob = lifetime.Track(Slang.CreateBlob(Encoding.UTF8.GetBytes(texts[i])))!;
-                IModule? module = session.LoadModuleFromSource(Path.GetFileNameWithoutExtension(paths[i]), paths[i], blob, out ISlangBlob? diagnostics);
-                lifetime.Track(module);
-                lifetime.Track(diagnostics);
-                modules[i] = module ?? throw new InvalidDataException($"Failed to load shader source '{paths[i]}': {GetString(diagnostics)}");
-                SlangResult serializeResult = modules[i].Serialize(out ISlangBlob serializedSource);
-                lifetime.Track(serializedSource);
-                if (serializeResult.Failed || serializedSource is null || serializedSource.GetBufferSize() == 0)
-                    throw new InvalidDataException($"Failed to serialize Slang source '{paths[i]}'.");
-                definition.SetSerializedSource(i, serializedSource.Buffer);
-                dependencies.AddRange(SlangDeps.Collect(module, paths[i], projectRoot));
+                ISlangBlob blob = Slang.CreateBlob(Encoding.UTF8.GetBytes(texts[i]));
+                IModule? sourceUnit;
+                ISlangBlob? diagnostics;
+                try
+                {
+                    sourceUnit = session.LoadModuleFromSource(
+                        Path.GetFileNameWithoutExtension(paths[i]),
+                        paths[i],
+                        blob,
+                        out diagnostics);
+                }
+                finally
+                {
+                    ReleaseSlang(blob);
+                }
+                string diagnosticText = GetString(diagnostics) ?? "no diagnostics";
+                ReleaseSlang(diagnostics);
+                sourceUnits[i] = sourceUnit ?? throw new InvalidDataException(
+                    $"Failed to load shader source '{paths[i]}': {diagnosticText}");
+                SlangResult serializeResult = sourceUnits[i].Serialize(out ISlangBlob serializedSource);
+                try
+                {
+                    if (serializeResult.Failed || serializedSource is null || serializedSource.GetBufferSize() == 0)
+                        throw new InvalidDataException($"Failed to serialize Slang source '{paths[i]}'.");
+                    definition.SetSerializedSource(i, serializedSource.Buffer);
+                }
+                finally
+                {
+                    ReleaseSlang(serializedSource);
+                }
+                dependencies.AddRange(SlangDeps.Collect(sourceUnit, paths[i], projectRoot));
             }
             if (File.Exists(fullPath)) dependencies.Add(new FileDependency
                 { RelativePath = SlangDeps.RelPath(projectRoot, fullPath), ContentHash = ImportHash.FileSha256(fullPath) });
@@ -119,22 +143,21 @@ public static partial class SlangShaderImporter
             code.EntryPointReflections = [];
             code.EntryPointMetadata = [];
             code.Metadata = CreateMetadata();
-            var state = new ShaderImportState(context, targets, lifetime, session, modules[0], inputs,
+            var state = new ShaderImportState(context, targets, session, sourceUnits[0], inputs,
                 asset, CreateBackendResourceMaps(targets), []);
-            for (int i = 0; i < modules.Length; i++) CollectModuleMaterialMetadata(state, texts[i], modules[i]);
-            var components = new List<IComponentType>(modules);
-            var entries = new List<CookedEntryPoint>();
+            for (int i = 0; i < sourceUnits.Length; i++)
+                CollectModuleMaterialMetadata(state, texts[i], sourceUnits[i]);
+            var components = new List<IComponentType>(sourceUnits);
             void AddEntry(IEntryPoint entry)
             {
-                lifetime.Track(entry);
                 entries.Add(new(entry, SlangEntryMeta.Read(entry.GetFunctionReflection())));
                 components.Add(entry);
             }
-            foreach (IModule module in modules)
+            foreach (IModule sourceUnit in sourceUnits)
             {
-                for (int i = 0; i < module.GetDefinedEntryPointCount(); i++)
+                for (int i = 0; i < sourceUnit.GetDefinedEntryPointCount(); i++)
                 {
-                    SlangResult result = module.GetDefinedEntryPoint(i, out IEntryPoint entry);
+                    SlangResult result = sourceUnit.GetDefinedEntryPoint(i, out IEntryPoint entry);
                     if (result.Failed || entry is null)
                         throw new InvalidDataException("Slang could not return a declared shader entry point.");
                     AddEntry(entry);
@@ -150,6 +173,17 @@ public static partial class SlangShaderImporter
             cancellationToken.ThrowIfCancellationRequested();
             return asset;
         }
-        catch { asset.Dispose(); throw; }
+        catch
+        {
+            asset.Dispose();
+            throw;
+        }
+        finally
+        {
+            for (int index = entries.Count - 1; index >= 0; index--)
+                ReleaseSlang(entries[index].EntryPoint);
+            ReleaseSlangReverse(sourceUnits);
+            ReleaseSlang(session);
+        }
     }
 }

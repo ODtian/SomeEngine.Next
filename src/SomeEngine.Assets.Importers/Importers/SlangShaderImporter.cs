@@ -36,6 +36,19 @@ public static partial class SlangShaderImporter
         }
     }
 
+    private static void ReleaseSlangReverse<T>(IReadOnlyList<T> values)
+        where T : class
+    {
+        for (int index = values.Count - 1; index >= 0; index--)
+            ReleaseSlang(values[index]);
+    }
+
+    private static void ReleaseSlang(object? value)
+    {
+        if (value is ComObject com)
+            com.FinalRelease();
+    }
+
     private static SessionDesc CreateSessionDesc(
         string filePath,
         TargetDesc[] targets)
@@ -172,39 +185,50 @@ public static partial class SlangShaderImporter
     private static void CompileEntries(ShaderImportState state, IComponentType[] components,
         CookedEntryPoint[] entries, IReadOnlyList<string> specializations)
     {
-        state.Session.CreateCompositeComponentType(
-            components,
-            out IComponentType? composedProgram,
-            out ISlangBlob? diagnostics);
-        state.Lifetime.Track(composedProgram);
-        state.Lifetime.Track(diagnostics);
-        if (composedProgram == null)
+        IComponentType? combinedCode = null;
+        IComponentType? specializedCode = null;
+        IComponentType? linkedCode = null;
+        try
         {
-            throw new InvalidDataException(
-                $"Failed to compose cooked shader program: {GetString(diagnostics)}");
-        }
+            SlangResult combineResult = state.Session.CreateCompositeComponentType(
+                components,
+                out combinedCode,
+                out ISlangBlob? combineDiagnostics);
+            string combineText = GetString(combineDiagnostics) ?? "no diagnostics";
+            ReleaseSlang(combineDiagnostics);
+            if (combineResult.Failed || combinedCode is null)
+                throw new InvalidDataException("Failed to compose cooked shader code: " + combineText);
 
-        if (specializations.Count != 0)
-        {
-            SpecializationArg[] arguments = specializations.Select(SpecializationArg.FromExpression).ToArray();
-            SlangResult specializationResult = composedProgram.Specialize(arguments, arguments.Length, out IComponentType specialized, out ISlangBlob? specializationDiagnostics);
-            state.Lifetime.Track(specialized);
-            state.Lifetime.Track(specializationDiagnostics);
-            if (specializationResult.Failed || specialized is null)
-                throw new InvalidDataException("Shader specialization failed: " + GetString(specializationDiagnostics));
-            composedProgram = specialized;
-        }
-        composedProgram.Link(out IComponentType? linkedProgram, out ISlangBlob? linkDiagnostics);
-        state.Lifetime.Track(linkedProgram);
-        state.Lifetime.Track(linkDiagnostics);
-        if (linkedProgram == null)
-        {
-            throw new InvalidDataException(
-                $"Failed to link cooked shader program: {GetString(linkDiagnostics)}");
-        }
+            IComponentType codeToLink = combinedCode;
+            if (specializations.Count != 0)
+            {
+                SpecializationArg[] arguments = specializations.Select(SpecializationArg.FromExpression).ToArray();
+                SlangResult specializationResult = combinedCode.Specialize(
+                    arguments,
+                    arguments.Length,
+                    out specializedCode,
+                    out ISlangBlob? specializationDiagnostics);
+                string specializationText = GetString(specializationDiagnostics) ?? "no diagnostics";
+                ReleaseSlang(specializationDiagnostics);
+                if (specializationResult.Failed || specializedCode is null)
+                    throw new InvalidDataException("Shader specialization failed: " + specializationText);
+                codeToLink = specializedCode;
+            }
+            SlangResult linkResult = codeToLink.Link(out linkedCode, out ISlangBlob? linkDiagnostics);
+            string linkText = GetString(linkDiagnostics) ?? "no diagnostics";
+            ReleaseSlang(linkDiagnostics);
+            if (linkResult.Failed || linkedCode is null)
+                throw new InvalidDataException("Failed to link cooked shader code: " + linkText);
 
-        AddMaterialScalarLayouts(state, linkedProgram);
-        AddCookedPrograms(state, linkedProgram, entries);
+            AddMaterialScalarLayouts(state, linkedCode);
+            AddCookedPrograms(state, linkedCode, entries);
+        }
+        finally
+        {
+            ReleaseSlang(linkedCode);
+            ReleaseSlang(specializedCode);
+            ReleaseSlang(combinedCode);
+        }
     }
 
     private static void AddCookedPrograms(
@@ -217,11 +241,12 @@ public static partial class SlangShaderImporter
             ShaderReflection reflection = linkedProgram.GetLayout(
                 (nint)targetIndex,
                 out ISlangBlob? diagnostics);
-            state.Lifetime.Track(diagnostics);
+            string diagnosticText = GetString(diagnostics) ?? "no diagnostics";
+            ReleaseSlang(diagnostics);
             if (reflection == ShaderReflection.Null)
                 throw new InvalidDataException(
                     $"Failed to obtain cooked shader layout for target {targetIndex}: " +
-                    GetString(diagnostics));
+                    diagnosticText);
 
             string backend = BackendName(state.Targets[targetIndex]);
             SlangProgram program = SlangProgram.Capture(linkedProgram, targetIndex, backend);
@@ -258,21 +283,28 @@ public static partial class SlangShaderImporter
                     targetIndex,
                     out IMetadata metadata,
                     out ISlangBlob? metadataDiagnostics);
-                state.Lifetime.Track(metadata);
-                state.Lifetime.Track(metadataDiagnostics);
-                if (metadataResult.Failed || metadata is null)
+                string metadataText = GetString(metadataDiagnostics) ?? "no diagnostics";
+                ReleaseSlang(metadataDiagnostics);
+                try
                 {
-                    throw new InvalidDataException(
-                        $"Failed to obtain compiled entry-point metadata for target {targetIndex}, " +
-                        $"entry {entryIndex}: {GetString(metadataDiagnostics)}");
-                }
+                    if (metadataResult.Failed || metadata is null)
+                    {
+                        throw new InvalidDataException(
+                            $"Failed to obtain compiled entry-point metadata for target {targetIndex}, " +
+                            $"entry {entryIndex}: {metadataText}");
+                    }
 
-                AddEntryPointReflection(
-                    state,
-                    backend,
-                    reflection,
-                    reflection.GetEntryPointByIndex(checked((nuint)entryIndex)),
-                    metadata);
+                    AddEntryPointReflection(
+                        state,
+                        backend,
+                        reflection,
+                        reflection.GetEntryPointByIndex(checked((nuint)entryIndex)),
+                        metadata);
+                }
+                finally
+                {
+                    ReleaseSlang(metadata);
+                }
                 AddEntryPointAttributes(
                     state.Code,
                     programIndex,
@@ -447,11 +479,11 @@ public static partial class SlangShaderImporter
         IComponentType linkedProgram)
     {
         ShaderReflection baseReflection = linkedProgram.GetLayout(0, out ISlangBlob? diagnostics);
-        state.Lifetime.Track(diagnostics);
+        ReleaseSlang(diagnostics);
         if (baseReflection == ShaderReflection.Null)
         {
             baseReflection = linkedProgram.GetLayout(1, out diagnostics);
-            state.Lifetime.Track(diagnostics);
+            ReleaseSlang(diagnostics);
         }
 
         ShaderMetadata metadata = state.Code.Metadata!;
@@ -528,7 +560,6 @@ public static partial class SlangShaderImporter
     private sealed record ShaderImportState(
         ShaderImportContext Context,
         TargetDesc[] Targets,
-        SlangImportLifetime Lifetime,
         ISession Session,
         IModule Module,
         FileDependency[] Dependencies,
