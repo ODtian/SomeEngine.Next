@@ -3,7 +3,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <ProjectContentRoot Condition="'$(ProjectContentRoot)' == ''">$(DefaultProjectDirectory)</ProjectContentRoot>
-    <!-- Short performance runs need optimized code from first use, without a tier transition during sampling. -->
     <TieredCompilation Condition="'$(Configuration)' == 'Release'">false</TieredCompilation>
   </PropertyGroup>
   <ItemGroup>

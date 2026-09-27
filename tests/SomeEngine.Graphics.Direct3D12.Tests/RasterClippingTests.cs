@@ -10,7 +10,6 @@ public sealed class RasterClippingTests
     {
         const int cases = 128;
         const string source = """
-            #include "visbuffer_encoding.slang"
             #include "cluster_raster_shared.slang"
             StructuredBuffer<float4> Input;
             RWStructuredBuffer<uint> Results;
@@ -24,10 +23,8 @@ public sealed class RasterClippingTests
                     ClusterRasterClipMask(triangle[2]);
                 float4 reduced[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
                 float4 full[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
-                float3 reducedBary[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
-                float3 fullBary[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
-                uint a = ClusterRasterClipTriangle(triangle, mask, reduced, reducedBary);
-                uint b = ClusterRasterClipTriangle(triangle, 127u, full, fullBary);
+                uint a = ClusterRasterClipTriangle(triangle, mask, reduced);
+                uint b = ClusterRasterClipTriangle(triangle, 127u, full);
                 uint base = item * 130u;
                 Results[base] = a;
                 Results[base + 65u] = b;

@@ -831,13 +831,23 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         {
             Current = null;
             List<Exception>? failures = null;
+            for (int group = 0; group < groupCount; group++)
+            {
+                RenderInstanceWriteHandle? handle = handles[group];
+                handles[group] = null;
+                try { handle?.Dispose(); }
+                catch (Exception cleanupFailure)
+                {
+                    (failures ??= [failure]).Add(cleanupFailure);
+                }
+            }
             try
             {
                 Retire(context, current);
             }
             catch (Exception cleanupFailure)
             {
-                failures = [failure, cleanupFailure];
+                (failures ??= [failure]).Add(cleanupFailure);
             }
             if (failures is not null)
                 throw new AggregateException(

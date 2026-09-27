@@ -1094,14 +1094,7 @@ public sealed partial class ClusterPipelineSystem
         uint materialSlot,
         string name)
     {
-        object? value = material.GetValue(materialSlot);
-        EngineTexture? asset = value switch
-        {
-            null => null,
-            EngineTexture assetTexture => assetTexture,
-            _ => throw new InvalidDataException(
-                $"Material '{material.Name}' slot '{name}' is not a Texture."),
-        };
+        EngineTexture? asset = material.GetTexture(materialSlot);
 
         TextureSrv textureView;
         if (asset is null)
@@ -1125,8 +1118,7 @@ public sealed partial class ClusterPipelineSystem
         uint materialSlot,
         string name)
     {
-        object? value = material.GetValue(materialSlot);
-        EngineTexture asset = value as EngineTexture ?? throw new InvalidDataException(
+        EngineTexture asset = material.GetTexture(materialSlot) ?? throw new InvalidDataException(
             $"Material '{material.Name}' slot '{name}' must contain a Texture for writable access.");
         RhiTexture textureResource = _renderDevice.PrepareTexture(ref graph, consumers, asset);
         TextureInfo info = textureResource.Info;
@@ -1185,7 +1177,7 @@ public sealed partial class ClusterPipelineSystem
     private static T RequireMaterialValue<T>(Material material, uint slot, string name)
         where T : class
     {
-        object? value = material.GetValue(slot);
+        object? value = material.GetDeviceResource(slot);
         DevelopmentCheck.Require(value is T,
             $"Material '{material.Name}' slot '{name}' must contain a {typeof(T).Name}.");
         return (T)value!;
@@ -1193,14 +1185,7 @@ public sealed partial class ClusterPipelineSystem
 
     private Sampler ResolveMaterialSampler(Material material, uint materialSlot, string name)
     {
-        object? value = material.GetValue(materialSlot);
-        SamplerDesc description = value switch
-        {
-            SamplerDesc sampler => sampler,
-            null => ClusterMaterialBindingDefaults.Sampler,
-            _ => throw new InvalidDataException(
-                $"Material '{material.Name}' slot '{name}' is not a SamplerDesc."),
-        };
+        SamplerDesc description = material.GetSampler(materialSlot);
         if (_materialSamplers.TryGetValue(description, out Sampler? samplerResource))
             return samplerResource;
         samplerResource = _backend.CreateSampler(_device, description);
