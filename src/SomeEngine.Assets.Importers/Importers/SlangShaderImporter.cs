@@ -18,7 +18,7 @@ namespace SomeEngine.Assets.Importers;
 
 public static partial class SlangShaderImporter
 {
-    public const uint ImporterVersion = 26;
+    public const uint ImporterVersion = 27;
 
     [ThreadStatic]
     private static IGlobalSession? t_globalSession;

@@ -44,6 +44,7 @@ public partial class Shader : IDisposable
             Metadata = replacement.Metadata;
             EntryPointMetadata = replacement.EntryPointMetadata;
             SchemaVersion = replacement.SchemaVersion;
+            ReplaceSlangData(replacement);
             Revision = revision;
         }
         List<Exception>? errors = null;
@@ -57,7 +58,13 @@ public partial class Shader : IDisposable
 
     public void Dispose()
     {
-        lock (_updateGate) _disposed = 1;
+        lock (_updateGate)
+        {
+            if (_disposed != 0)
+                return;
+            _disposed = 1;
+            DisposeSlangData();
+        }
     }
 
     public bool TryProgram(string backend, out ShaderProgram program)
@@ -170,6 +177,8 @@ public partial class Shader : IDisposable
 
     public static void Validate(Shader asset)
     {
+        if (asset._slangCode is not null)
+            return;
         if (asset.EntryPointReflections is not { Count: > 0 })
         {
             throw new InvalidDataException(

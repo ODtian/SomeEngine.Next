@@ -103,6 +103,11 @@ public static partial class SlangShaderImporter
                 lifetime.Track(module);
                 lifetime.Track(diagnostics);
                 modules[i] = module ?? throw new InvalidDataException($"Failed to load shader source '{paths[i]}': {GetString(diagnostics)}");
+                SlangResult serializeResult = modules[i].Serialize(out ISlangBlob serializedSource);
+                lifetime.Track(serializedSource);
+                if (serializeResult.Failed || serializedSource is null || serializedSource.GetBufferSize() == 0)
+                    throw new InvalidDataException($"Failed to serialize Slang source '{paths[i]}'.");
+                definition.SetSerializedSource(i, serializedSource.Buffer);
                 dependencies.AddRange(SlangDeps.Collect(module, paths[i], projectRoot));
             }
             if (File.Exists(fullPath)) dependencies.Add(new FileDependency
