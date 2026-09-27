@@ -79,7 +79,7 @@ internal sealed class ClusterComputePipeline : ClusterPipeline
         try
         {
             CookedShaderEntry cooked = shader.RequireEntry(
-                device.Capabilities.ShaderTarget,
+                device.Capabilities.CompileTarget,
                 entryPoint,
                 ShaderStage.Compute);
             pipeline = backend.CreateComputePipeline(
@@ -178,11 +178,11 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
         try
         {
             CookedShaderEntry vertex = shader.RequireEntry(
-                device.Capabilities.ShaderTarget,
+                device.Capabilities.CompileTarget,
                 vertexEntryPoint,
                 geometryStage);
             CookedShaderEntry pixel = shader.RequireEntry(
-                device.Capabilities.ShaderTarget,
+                device.Capabilities.CompileTarget,
                 pixelEntryPoint,
                 ShaderStage.Pixel);
             if (!ReferenceEquals(vertex.Program, pixel.Program))

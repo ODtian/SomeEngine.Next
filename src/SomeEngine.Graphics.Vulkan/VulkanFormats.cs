@@ -1,3 +1,5 @@
+using SlangShaderSharp;
+
 namespace SomeEngine.Graphics.Vulkan;
 
 internal static unsafe class VulkanFormats
@@ -215,7 +217,7 @@ internal static unsafe class VulkanFormats
             supportsDepthBounds: nativeFeatures.DepthBounds,
             dynamicStates,
             support,
-            ShaderTarget.Spirv,
+            SlangCompileTarget.Spirv,
             supportsBufferInt64Atomics:
                 nativeFeatures.ShaderInt64 && features12.ShaderBufferInt64Atomics,
             supportsImageInt64Atomics: supportsImageInt64Atomics);

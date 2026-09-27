@@ -1,4 +1,5 @@
 using System.Text;
+using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Vulkan;
 
@@ -182,7 +183,7 @@ internal sealed unsafe partial class VulkanBackend
             writer.Write(properties.ApiVersion);
             for (int index = 0; index < Vk.UuidSize; index++)
                 writer.Write(properties.PipelineCacheUuid[index]);
-            writer.Write((int)ShaderTarget.Spirv);
+            writer.Write((int)SlangCompileTarget.Spirv);
             writer.Write(SlangToolchainIdentity.Version);
         }
         var result = new byte[PipelineCacheEnvelope.HashByteCount];

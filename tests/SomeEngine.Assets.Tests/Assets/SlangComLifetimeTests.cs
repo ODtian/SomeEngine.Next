@@ -2,6 +2,7 @@ using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
+using SlangShaderSharp;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -13,9 +14,9 @@ public sealed class SlangComLifetimeTests : IDisposable
     public void Dispose() => Directory.Delete(_directory, recursive: true);
 
     [Theory]
-    [InlineData(ShaderTarget.Dxil, "dxil")]
-    [InlineData(ShaderTarget.Spirv, "spirv")]
-    public async Task CreatedShaderKeepsCompiledCodeAfterDefinitionsAndCompilerObjectsClose(ShaderTarget target, string backend)
+    [InlineData(SlangCompileTarget.Dxil, "dxil")]
+    [InlineData(SlangCompileTarget.Spirv, "spirv")]
+    public async Task CreatedShaderKeepsCompiledCodeAfterDefinitionsAndCompilerObjectsClose(SlangCompileTarget target, string backend)
     {
         string path = Path.Combine(_directory, "selected.slang");
         File.WriteAllText(path, ValidSource);

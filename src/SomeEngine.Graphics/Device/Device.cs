@@ -1,3 +1,5 @@
+using SlangShaderSharp;
+
 namespace SomeEngine.Graphics;
 
 /// <remarks>
@@ -258,19 +260,6 @@ public readonly record struct FormatSupport(
     }
 }
 
-/// <summary>Identifies the native shader binary format consumed by a Device.</summary>
-/// <remarks>
-/// <para><b>Thread safety:</b> Thread-safe. Enum values are immutable and may be shared.</para>
-/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
-/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
-/// </remarks>
-public enum ShaderTarget : byte
-{
-    Dxil,
-    Spirv,
-}
-
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Borrowed immutable metadata owned by its associated Device or resource; callers never Dispose it.</para>
@@ -289,7 +278,7 @@ public sealed class DeviceCapabilities
         bool supportsDepthBounds,
         DynamicStates supportedDynamicStates,
         ReadOnlySpan<FormatSupport> formats,
-        ShaderTarget shaderTarget = ShaderTarget.Dxil,
+        SlangCompileTarget compileTarget = SlangCompileTarget.Dxil,
         bool supportsBufferInt64Atomics = false,
         bool supportsImageInt64Atomics = false,
         bool supportsComputeForwardProgress = false,
@@ -312,7 +301,7 @@ public sealed class DeviceCapabilities
         if ((supportedDynamicStates & ~knownDynamicStates) != 0)
             throw new ArgumentOutOfRangeException(nameof(supportedDynamicStates));
         SupportedDynamicStates = supportedDynamicStates;
-        ShaderTarget = shaderTarget;
+        CompileTarget = compileTarget;
         SupportsBufferInt64Atomics = supportsBufferInt64Atomics;
         SupportsImageInt64Atomics = supportsImageInt64Atomics;
         SupportsComputeForwardProgress = supportsComputeForwardProgress;
@@ -339,7 +328,7 @@ public sealed class DeviceCapabilities
     public bool SupportsStreamOutputStatistics { get; }
     public bool SupportsDepthBounds { get; }
     public DynamicStates SupportedDynamicStates { get; }
-    public ShaderTarget ShaderTarget { get; }
+    public SlangCompileTarget CompileTarget { get; }
     /// <summary>64-bit integer atomics on raw or structured storage buffers.</summary>
     public bool SupportsBufferInt64Atomics { get; }
     /// <summary>64-bit integer atomics on typed storage images.</summary>

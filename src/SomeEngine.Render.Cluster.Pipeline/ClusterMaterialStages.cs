@@ -79,11 +79,11 @@ internal static class ClusterMaterialEntries
 
     internal static bool HasEntry(
         Shader shader,
-        ShaderTarget target,
+        SlangCompileTarget target,
         string entryPoint,
         ShaderStage stage)
     {
-        string backend = target == ShaderTarget.Spirv ? "spirv" : "dxil";
+        string backend = target == SlangCompileTarget.Spirv ? "spirv" : "dxil";
         return shader.TryEntry(backend, entryPoint, stage, out _, out _);
     }
 }
@@ -515,7 +515,7 @@ internal sealed class ClusterRasterStages : IDisposable
     private ClusterRasterInvocation ResolveInvocation(Material material, string vertexEncoding)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
-        ShaderTarget target = _device.Capabilities.ShaderTarget;
+        SlangCompileTarget target = _device.Capabilities.CompileTarget;
         ClusterComputePipeline? software;
         ClusterRasterPipeline hardware;
         ClusterConservativeBounds bounds = ClusterConservativeBounds.Finite;
@@ -846,7 +846,7 @@ internal sealed class ClusterRasterStages : IDisposable
         string pixelEntry = primaryHardware.UsesMesh
             ? ClusterMaterialEntries.HardwareMeshPixelTarget
             : ClusterMaterialEntries.HardwarePixelTarget;
-        ShaderTarget target = _device.Capabilities.ShaderTarget;
+        SlangCompileTarget target = _device.Capabilities.CompileTarget;
         ClusterComputePipeline? software = _visibilityMode != ClusterVisibilityMode.HardwareOnly &&
             ClusterMaterialEntries.HasEntry(shader, target, softwareEntry, ShaderStage.Compute)
                 ? ResolveSoftwarePipeline(material, shader, softwareEntry, vertexEncoding)
@@ -878,7 +878,7 @@ internal sealed class ClusterRasterStages : IDisposable
     {
         ClusterLinkedStageLayout resources = shader is null
             ? ClusterLinkedStageLayout.Create(parameterLayout)
-            : ClusterLinkedStageLayout.Create(shader, _device.Capabilities.ShaderTarget,
+            : ClusterLinkedStageLayout.Create(shader, _device.Capabilities.CompileTarget,
                 firstEntry ?? throw new InvalidDataException("A custom raster stage has no entry name."), secondEntry);
         Dictionary<string, byte> materialResources = shader is null
             ? new Dictionary<string, byte>(StringComparer.Ordinal)
@@ -979,7 +979,7 @@ internal sealed class ClusterRasterStages : IDisposable
             vertexEncoding,
             $"Material '{material.Name}' software raster");
         CookedShaderEntry cooked = shader.RequireEntry(
-            _device.Capabilities.ShaderTarget,
+            _device.Capabilities.CompileTarget,
             entryPoint,
             ShaderStage.Compute);
         var key = new ClusterRasterSoftwareKey(cooked.Program, cooked.EntryPoint);
@@ -1007,7 +1007,7 @@ internal sealed class ClusterRasterStages : IDisposable
             vertexEncoding,
             $"Material '{material.Name}' tessellation {phase}");
         CookedShaderEntry cooked = shader.RequireEntry(
-            _device.Capabilities.ShaderTarget,
+            _device.Capabilities.CompileTarget,
             entryPoint,
             ShaderStage.Compute);
         var key = new ClusterRasterSoftwareKey(cooked.Program, cooked.EntryPoint);
@@ -1038,11 +1038,11 @@ internal sealed class ClusterRasterStages : IDisposable
         ShaderStage geometryStage = vertexEntry is ClusterMaterialEntries.HardwareMesh or ClusterMaterialEntries.HardwareMeshlet or ClusterMaterialEntries.TessellationHardwareMesh
             ? ShaderStage.Mesh : ShaderStage.Vertex;
         CookedShaderEntry vertex = shader.RequireEntry(
-            _device.Capabilities.ShaderTarget,
+            _device.Capabilities.CompileTarget,
             vertexEntry,
             geometryStage);
         CookedShaderEntry pixel = shader.RequireEntry(
-            _device.Capabilities.ShaderTarget,
+            _device.Capabilities.CompileTarget,
             pixelEntry,
             ShaderStage.Pixel);
         if (!ReferenceEquals(vertex.Program, pixel.Program))
@@ -1338,7 +1338,7 @@ internal sealed class ClusterShadeStages : IDisposable
             vertexEncoding,
             $"Material '{material.Name}' shade");
         CookedShaderEntry cooked = shader.RequireEntry(
-            _device.Capabilities.ShaderTarget,
+            _device.Capabilities.CompileTarget,
             entryPoint,
             ShaderStage.Compute);
         var key = new ClusterShadeCompatibilityKey(cooked.Program, cooked.EntryPoint);
@@ -1356,7 +1356,7 @@ internal sealed class ClusterShadeStages : IDisposable
         ScalarLayout.ScalarMaterialLayout scalarMaterialLayout = scalars.Resolve(material);
         ClusterLinkedStageLayout resources = ClusterLinkedStageLayout.Create(
             shader,
-            _device.Capabilities.ShaderTarget,
+            _device.Capabilities.CompileTarget,
             entryPoint);
         ClusterShadeCoreResource[] coreResources = ResolveShadeCoreResources(resources);
         Dictionary<string, byte> materialResources = ResolveMaterialResources(shader, resources);
@@ -1655,9 +1655,9 @@ internal sealed class ClusterLinkedStageLayout
     }
 
     internal static ClusterLinkedStageLayout Create(
-        Shader shader, ShaderTarget target, string firstEntry, string? secondEntry = null)
+        Shader shader, SlangCompileTarget target, string firstEntry, string? secondEntry = null)
     {
-        string backend = target == ShaderTarget.Spirv ? "spirv" : "dxil";
+        string backend = target == SlangCompileTarget.Spirv ? "spirv" : "dxil";
         if (!shader.TryProgram(backend, out ShaderProgram program))
             throw new InvalidDataException($"Shader '{shader.Name}' has no {backend} shader data.");
         string[] names = secondEntry is null ? [firstEntry] : [firstEntry, secondEntry];

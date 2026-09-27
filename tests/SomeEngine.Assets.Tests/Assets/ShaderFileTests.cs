@@ -1,6 +1,7 @@
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
+using SlangShaderSharp;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -11,7 +12,7 @@ public sealed class ShaderFileTests
     {
         string source = SomeEngine.Tests.TestProjectPaths.BuiltShaderPath("hello_triangle.shader.asset");
         await using ShaderAsset file = await ShaderAsset.OpenAsync(source);
-        using Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(ShaderTarget.Spirv, file.Name);
+        using Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(SlangCompileTarget.Spirv, file.Name);
         shader.Dispose();
         Assert.Throws<ObjectDisposedException>(() => shader.TryProgram("dxil", out _));
         await Assert.ThrowsAsync<ObjectDisposedException>(() => file.GetBlock<ShaderBlock>().UpdateAsync(shader, file.Name).AsTask());
@@ -46,7 +47,7 @@ public sealed class ShaderFileTests
         Guid id = project.RegisterAsset(shaderFile.Describe());
         var loader = new AssetLoader(project.CreateStorage());
         ShaderAsset file = await ShaderAsset.OpenAsync(loader, new AssetId<ShaderAsset>(id));
-        using Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(ShaderTarget.Spirv, file.Name);
+        using Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(SlangCompileTarget.Spirv, file.Name);
         Assert.True(shader.TryProgram("spirv", out _));
         Assert.False(shader.TryProgram("dxil", out _));
         await file.DisposeAsync();

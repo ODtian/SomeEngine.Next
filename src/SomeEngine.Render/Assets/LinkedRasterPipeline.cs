@@ -45,11 +45,11 @@ public sealed class LinkedRasterPipeline : IDisposable
         try
         {
             CookedShaderEntry vertex = shader.RequireEntry(
-                device.Capabilities.ShaderTarget,
+                device.Capabilities.CompileTarget,
                 vertexEntryPoint,
                 ShaderStage.Vertex);
             CookedShaderEntry pixel = shader.RequireEntry(
-                device.Capabilities.ShaderTarget,
+                device.Capabilities.CompileTarget,
                 pixelEntryPoint,
                 ShaderStage.Pixel);
             if (!ReferenceEquals(vertex.Program, pixel.Program))

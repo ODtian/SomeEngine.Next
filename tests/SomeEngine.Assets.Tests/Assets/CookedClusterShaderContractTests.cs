@@ -66,7 +66,7 @@ public sealed class CookedClusterShaderContractTests
         foreach ((string entry, ShaderStage stage) in entries)
         {
             _ = shader.RequireEntry(
-                SomeEngine.Graphics.ShaderTarget.Spirv,
+                SlangShaderSharp.SlangCompileTarget.Spirv,
                 entry,
                 stage);
         }
@@ -85,7 +85,7 @@ public sealed class CookedClusterShaderContractTests
 
         foreach ((string entry, ShaderStage stage) in entries)
         {
-            _ = shader.RequireEntry(SomeEngine.Graphics.ShaderTarget.Spirv, entry, stage);
+            _ = shader.RequireEntry(SlangShaderSharp.SlangCompileTarget.Spirv, entry, stage);
             string[] resources = ResourceNames(shader, entry);
             Assert.Contains("TessellationRasterPatches", resources);
             Assert.DoesNotContain("GroupedPatches", resources);
@@ -160,7 +160,7 @@ public sealed class CookedClusterShaderContractTests
         foreach ((string entry, ShaderStage stage) in entries)
         {
             _ = shader.RequireEntry(
-                SomeEngine.Graphics.ShaderTarget.Spirv,
+                SlangShaderSharp.SlangCompileTarget.Spirv,
                 entry,
                 stage);
         }
@@ -185,15 +185,15 @@ public sealed class CookedClusterShaderContractTests
         ShaderStage stage)
     {
         Shader shader = await ReadTemplateShader("standard.shader.asset");
-        foreach (SomeEngine.Graphics.ShaderTarget target in new[]
+        foreach (SlangShaderSharp.SlangCompileTarget target in new[]
         {
-            SomeEngine.Graphics.ShaderTarget.Dxil,
-            SomeEngine.Graphics.ShaderTarget.Spirv,
+            SlangShaderSharp.SlangCompileTarget.Dxil,
+            SlangShaderSharp.SlangCompileTarget.Spirv,
         })
         {
             _ = shader.RequireEntry(target, entryPoint, stage);
             string[] resources = ResourceNames(shader, entryPoint,
-                target == SomeEngine.Graphics.ShaderTarget.Dxil ? "dxil" : "spirv");
+                target == SlangShaderSharp.SlangCompileTarget.Dxil ? "dxil" : "spirv");
             Assert.Contains("RasterTargetOutput", resources);
             Assert.DoesNotContain("VisibilityWinnerImage", resources);
             Assert.DoesNotContain("VisibilityWinnerBuffer", resources);

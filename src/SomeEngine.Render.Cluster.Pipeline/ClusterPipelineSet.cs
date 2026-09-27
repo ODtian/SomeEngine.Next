@@ -2,6 +2,7 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
+using SlangShaderSharp;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -297,7 +298,7 @@ internal sealed class ClusterPipelineSet : IDisposable
             string geometryEntry = vertexEntry ?? vertex.EntryPoint!;
             if (usesMesh)
                 geometryEntry = ClusterRasterPipeline.SupportsMeshlets(backend, device) &&
-                    ClusterMaterialEntries.HasEntry(shader, device.Capabilities.ShaderTarget, "MSVisBufferMeshlet", ShaderStage.Mesh)
+                    ClusterMaterialEntries.HasEntry(shader, device.Capabilities.CompileTarget, "MSVisBufferMeshlet", ShaderStage.Mesh)
                         ? "MSVisBufferMeshlet" : "MSVisBuffer";
             created = ClusterRasterPipeline.Create(
                 backend,

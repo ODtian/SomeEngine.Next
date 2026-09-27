@@ -465,11 +465,11 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         Format outputFormat)
     {
         CookedShaderEntry vertex = shader.RequireEntry(
-            _device.Capabilities.ShaderTarget,
+            _device.Capabilities.CompileTarget,
             vertexEntryPoint,
             ShaderStage.Vertex);
         CookedShaderEntry pixel = shader.RequireEntry(
-            _device.Capabilities.ShaderTarget,
+            _device.Capabilities.CompileTarget,
             pixelEntryPoint,
             ShaderStage.Pixel);
         if (!ReferenceEquals(vertex.Program, pixel.Program))

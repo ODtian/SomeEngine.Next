@@ -49,11 +49,11 @@ internal sealed class RuntimePresentationPipeline : IDisposable
             throw new ArgumentException("Presentation and RenderGraph must use the same Device.", nameof(graph));
 
         CookedShaderEntry vertex = shader.RequireEntry(
-            device.Capabilities.ShaderTarget,
+            device.Capabilities.CompileTarget,
             vertexEntryPoint,
             ShaderStage.Vertex);
         CookedShaderEntry pixel = shader.RequireEntry(
-            device.Capabilities.ShaderTarget,
+            device.Capabilities.CompileTarget,
             pixelEntryPoint,
             ShaderStage.Pixel);
         if (!ReferenceEquals(vertex.Program, pixel.Program))

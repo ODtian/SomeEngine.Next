@@ -33,8 +33,8 @@ public sealed partial class ShaderBlock : AssetPageBlock
 
     public ValueTask<Shader> CreateAsync(string name = "", CancellationToken cancellationToken = default)
         => CreateCoreAsync(name, null, cancellationToken);
-    public ValueTask<Shader> CreateAsync(ShaderTarget target, string name = "", CancellationToken cancellationToken = default)
-        => CreateCoreAsync(name, target == ShaderTarget.Spirv ? "spirv" : "dxil", cancellationToken);
+    public ValueTask<Shader> CreateAsync(SlangCompileTarget target, string name = "", CancellationToken cancellationToken = default)
+        => CreateCoreAsync(name, target == SlangCompileTarget.Spirv ? "spirv" : "dxil", cancellationToken);
 
     private async ValueTask<Shader> CreateCoreAsync(string name, string? backend, CancellationToken cancellationToken)
     {

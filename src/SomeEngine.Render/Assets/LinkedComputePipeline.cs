@@ -63,7 +63,7 @@ public sealed class LinkedComputePipeline : IDisposable
         try
         {
             CookedShaderEntry cooked = shader.RequireEntry(
-                device.Capabilities.ShaderTarget,
+                device.Capabilities.CompileTarget,
                 entryPoint,
                 ShaderStage.Compute);
             pipeline = backend.CreateComputePipeline(

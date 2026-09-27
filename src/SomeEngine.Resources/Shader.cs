@@ -116,12 +116,12 @@ public partial class Shader : IDisposable
     }
 
     public CookedShaderEntry RequireEntry(
-        ShaderTarget target,
+        SlangCompileTarget target,
         string entryPoint,
         ShaderStage stage)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(entryPoint);
-        string backend = target == ShaderTarget.Spirv ? "spirv" : "dxil";
+        string backend = target == SlangCompileTarget.Spirv ? "spirv" : "dxil";
         if (TryEntry(backend, entryPoint, stage, out ShaderProgram program, out ShaderEntryPoint entry))
             return new CookedShaderEntry(program, entry);
         throw new InvalidDataException(
