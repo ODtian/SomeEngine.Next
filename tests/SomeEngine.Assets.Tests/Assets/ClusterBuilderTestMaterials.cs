@@ -1,5 +1,6 @@
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests.Assets;
 

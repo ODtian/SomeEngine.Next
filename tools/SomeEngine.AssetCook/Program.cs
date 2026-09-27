@@ -1,102 +1,42 @@
-using System.Text.Json;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
-using SomeEngine.Serialization.Containers;
+using SomeEngine.Resources;
 
 return await RunAsync(args);
 
 static async Task<int> RunAsync(string[] args)
 {
-    if (!TryParse(args, out string sourceArgument, out string profileName))
+    if (args.Length < 2 || args[0] != "shader" || (args.Length - 2) % 2 != 0)
     {
-        PrintUsage();
+        Console.Error.WriteLine("Usage: SomeEngine.AssetCook shader <definition.shader> [--project <directory>] [--include <directory>]...");
         return 2;
     }
-
     try
     {
-        string projectRoot = ResolveProjectRoot(Directory.GetCurrentDirectory());
-        string sourcePath = Path.IsPathRooted(sourceArgument)
-            ? Path.GetFullPath(sourceArgument)
-            : Path.GetFullPath(Path.Combine(projectRoot, sourceArgument));
-        if (!File.Exists(sourcePath))
+        string projectRoot = Directory.GetCurrentDirectory();
+        var includes = new List<string>();
+        for (int i = 2; i < args.Length; i += 2)
         {
-            throw new FileNotFoundException($"Shader source '{sourcePath}' does not exist.", sourcePath);
+            switch (args[i])
+            {
+                case "--project": projectRoot = Path.GetFullPath(args[i + 1]); break;
+                case "--include": includes.Add(args[i + 1]); break;
+                default: throw new ArgumentException($"Unknown argument '{args[i]}'.");
+            }
         }
-
-        if (!sourcePath.EndsWith(".slang", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException($"Shader source '{sourcePath}' must have the .slang extension.");
-        }
-
-        SlangShaderCookProfile profile = SlangShaderCookProfiles.Resolve(profileName);
-        SourceMeta originalMeta = SourceMeta.GetOrCreate(
-            sourcePath,
-            nameof(SlangShaderImporter));
-        if (!string.Equals(
-                originalMeta.Importer,
-                nameof(SlangShaderImporter),
-                StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"Source '{sourcePath}' is owned by importer '{originalMeta.Importer}', not "
-                    + $"'{nameof(SlangShaderImporter)}'.");
-        }
-
-        SourceMeta updatedMeta = new()
-        {
-            SourceGuid = originalMeta.SourceGuid,
-            Importer = originalMeta.Importer,
-            ImporterSettings = JsonSerializer.SerializeToElement(
-                new SlangShaderImporterSettings { CookProfile = profile.Name },
-                new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-                }),
-        };
-        SourceMeta.Save(sourcePath, updatedMeta);
-
-        AssetProject project = new AssetProject(projectRoot, [new GltfSourceImporter(), new SlangSourceImporter()]);
-        IReadOnlyList<Guid> imported = await project.ImportAsync(sourcePath);
-        if (imported.Count != 1)
-        {
-            throw new InvalidOperationException(
-                $"Expected one shader asset from '{sourcePath}', but importer returned {imported.Count}.");
-        }
-
-        Guid assetGuid = imported[0];
-        IAssetStorage storage = project.CreateStorage();
-        if (!storage.TryFind(assetGuid, out AssetEntry entry))
-            throw new InvalidOperationException($"Cooked shader '{assetGuid}' was not published.");
-        await using var loader = new AssetLoader(storage);
-        await using Asset<Shader> file = await loader.OpenAsync(new AssetId<Shader>(assetGuid));
-        Shader asset = await Shader.CreateAsync(file);
-        string assetPath = Path.ChangeExtension(sourcePath, ".shader.asset");
-        SourceOutput assetMeta = SourceMeta.Load(sourcePath).FindOutput(assetPath)
-            ?? throw new InvalidOperationException($"Source metadata has no output '{assetPath}'.");
-
-        int dxilCount = asset.Programs?.Count(static program =>
-            string.Equals(program.Backend, "dxil", StringComparison.Ordinal)) ?? 0;
-        int spirvCount = asset.Programs?.Count(static program =>
-            string.Equals(program.Backend, "spirv", StringComparison.Ordinal)) ?? 0;
-        int reflectionCount = asset.EntryPointReflections?.Count ?? 0;
-        if (dxilCount == 0 || spirvCount == 0 || reflectionCount == 0)
-        {
-            throw new InvalidOperationException(
-                $"Cooked shader is incomplete: dxil={dxilCount}, spirv={spirvCount}, "
-                    + $"entry-reflections={reflectionCount}.");
-        }
-
+        string sourcePath = Path.GetFullPath(Path.Combine(projectRoot, args[1]));
+        var project = new AssetProject(projectRoot, [], sourceFormats: [new ShaderSourceFormat(includes)]);
+        Guid id = await project.BuildAsync(sourcePath);
+        await using var loader = new AssetLoader(project.CreateStorage());
+        using ShaderAsset file = await ShaderAsset.OpenAsync(loader, new AssetId<ShaderAsset>(id));
+        using Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(file.Name);
         Console.WriteLine($"source={Path.GetRelativePath(projectRoot, sourcePath).Replace('\\', '/')}");
-        Console.WriteLine($"source-guid={updatedMeta.SourceGuid}");
-        Console.WriteLine($"asset-guid={assetGuid}");
-        Console.WriteLine($"cook-profile={profile.Name}");
-        Console.WriteLine($"dxil-profile={profile.DxilProfile}");
-        Console.WriteLine($"spirv-profile={profile.SpirvProfile}");
-        Console.WriteLine($"content-fingerprint={assetMeta.InputHash}");
-        Console.WriteLine($"programs=dxil:{dxilCount},spirv:{spirvCount}");
-        Console.WriteLine($"entry-reflections={reflectionCount}");
+        Console.WriteLine($"asset-guid={id}");
+        Console.WriteLine($"cook-profile={file.GetBlock<ShaderSourceBlock>().CookProfile}");
+        Console.WriteLine($"content-hash={file.GetBlock<ShaderBlock>().ImportTrace?.ContentFingerprint}");
+        foreach (var target in shader.Programs!)
+            Console.WriteLine($"backend={target!.Backend} entries={target.EntryPoints.Count}");
         Console.WriteLine("storage-open=ok");
         return 0;
     }
@@ -105,46 +45,4 @@ static async Task<int> RunAsync(string[] args)
         Console.Error.WriteLine(exception.Message);
         return 1;
     }
-}
-
-static bool TryParse(string[] args, out string sourcePath, out string profileName)
-{
-    sourcePath = string.Empty;
-    profileName = string.Empty;
-    if (args.Length != 4 || !string.Equals(args[0], "shader", StringComparison.Ordinal))
-    {
-        return false;
-    }
-
-    sourcePath = args[1];
-    if (!string.Equals(args[2], "--profile", StringComparison.Ordinal))
-    {
-        return false;
-    }
-
-    profileName = args[3];
-    return !string.IsNullOrWhiteSpace(sourcePath) && !string.IsNullOrWhiteSpace(profileName);
-}
-
-static void PrintUsage()
-{
-    Console.Error.WriteLine(
-        "Usage: SomeEngine.AssetCook shader <source.slang> --profile <default|d3d12-sm6.2>");
-}
-
-static string ResolveProjectRoot(string startDirectory)
-{
-    string? current = Path.GetFullPath(startDirectory);
-    while (!string.IsNullOrEmpty(current))
-    {
-        if (File.Exists(Path.Combine(current, "SomeEngine.slnx")))
-        {
-            return current;
-        }
-
-        current = Path.GetDirectoryName(current);
-    }
-
-    throw new DirectoryNotFoundException(
-        $"Could not locate SomeEngine.slnx from '{startDirectory}'.");
 }

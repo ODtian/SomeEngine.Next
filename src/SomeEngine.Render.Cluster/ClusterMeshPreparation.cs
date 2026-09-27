@@ -1,5 +1,6 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Render.Components;
@@ -38,12 +39,12 @@ internal sealed class ClusterMeshCache
         => _residency.IsMeshRegistered(mesh);
 
     internal async ValueTask<bool> PrepareAsync(
-        Mesh mesh,
+        RenderMesh mesh,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(mesh.Mesh);
         ClusterMeshRegistrationResult result = await _residency
-            .RegisterMeshAsync(mesh, cancellationToken)
+            .RegisterMeshAsync(mesh.Mesh, cancellationToken, mesh.PageSource)
             .ConfigureAwait(false);
         return result.Added;
     }
@@ -154,7 +155,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
     private readonly ClusterMeshCache _cache;
     private readonly QueryHandle _meshQuery;
     private readonly HashSet<Mesh> _seen = [];
-    private readonly List<Mesh> _missing = [];
+    private readonly List<RenderMesh> _missing = [];
     private long _topologyRevision = -1;
     private int _referencedMeshCount;
     private int _preparing;
@@ -203,7 +204,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                         Mesh mesh = meshes[row].Mesh;
                         if (!_seen.Add(mesh) || _cache.IsRegistered(mesh))
                             continue;
-                        _missing.Add(mesh);
+                        _missing.Add(meshes[row] with { PageSource = meshes[row].PageSource?.Retain() });
                     }
                 }
             });
@@ -266,8 +267,16 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
 
     private void ClearScratch()
     {
+        List<Exception>? failures = null;
+        foreach (RenderMesh mesh in _missing)
+        {
+            try { mesh.PageSource?.Dispose(); }
+            catch (Exception failure) { (failures ??= []).Add(failure); }
+        }
         _missing.Clear();
         _seen.Clear();
+        Volatile.Write(ref _preparing, 0);
+        if (failures is not null) throw new AggregateException("Mesh page sources could not all be released.", failures);
     }
 
     public void Dispose()

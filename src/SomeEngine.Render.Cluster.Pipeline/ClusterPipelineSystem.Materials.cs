@@ -1,8 +1,9 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
-using EngineTexture = SomeEngine.Assets.Schema.Texture;
+using EngineTexture = SomeEngine.Resources.Texture;
 using RhiTexture = SomeEngine.Graphics.Texture;
 
 namespace SomeEngine.Render.Cluster.Pipeline;

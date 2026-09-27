@@ -12,10 +12,12 @@ namespace SomeEngine.ECS.Serialization;
 public ref struct DataWriter
 {
     private readonly BinaryWriter _writer;
+    private readonly ISet<ExternalReferenceKey>? _references;
 
-    internal DataWriter(BinaryWriter writer)
+    internal DataWriter(BinaryWriter writer, ISet<ExternalReferenceKey>? references = null)
     {
         _writer = writer;
+        _references = references;
     }
 
     public void WriteBoolean(bool value)
@@ -121,7 +123,11 @@ public ref struct DataWriter
         WriteInt32(value.Generation);
     }
 
-    public void WriteExternalReference(ExternalReferenceKey value) => WriteGuid(value.Value);
+    public void WriteExternalReference(ExternalReferenceKey value)
+    {
+        WriteGuid(value.Value);
+        if (value.Value != Guid.Empty) _references?.Add(value);
+    }
 
     internal void WriteRawBytes(ReadOnlySpan<byte> bytes) => _writer.Write(bytes);
 }

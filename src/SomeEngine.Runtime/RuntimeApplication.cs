@@ -4,6 +4,7 @@ using System.Diagnostics;
 using SomeEngine.Diagnostics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
@@ -34,27 +35,28 @@ internal static class RuntimeApplication
     private static readonly TimeSpan FrameTimeout = TimeSpan.FromSeconds(60);
     private const Format PresentationFormat = Format.R8G8B8A8UNorm;
 
-    internal static async Task RunAsync(RuntimeStartupOptions options, bool useWarp)
+    internal static async Task RunAsync(RuntimeStartupOptions options, bool useWarp, Func<Material, float, bool>? animateMaterial = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         string contentRoot = FindContentRoot();
         string manifestDirectory = Path.Combine(contentRoot, "Library", "AssetManifest");
         AssetManifest manifest = AssetManifest.Load(manifestDirectory);
         IReadOnlyList<AssetEntry> runtimeRecords =
-            manifest.List(Asset<ApplicationSettings>.FileType);
+            manifest.List(ApplicationSettingsAsset.FileType);
         if (runtimeRecords.Count != 1)
         {
             throw new InvalidDataException(
-                $"The runtime publication must contain exactly one {Asset<ApplicationSettings>.FileType} " +
+                $"The runtime publication must contain exactly one {ApplicationSettingsAsset.FileType} " +
                 $"asset; found {runtimeRecords.Count}.");
         }
 
         await using var assets = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
-        await using Asset<ApplicationSettings> settings = await assets.OpenAsync(
-            new AssetId<ApplicationSettings>(runtimeRecords[0].AssetGuid)).ConfigureAwait(false);
-        ApplicationSettings boot = ApplicationSettings.Create(settings);
+        await using ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(assets,
+            new AssetId<ApplicationSettingsAsset>(runtimeRecords[0].AssetGuid)).ConfigureAwait(false);
+        ApplicationSettingsBlock boot = await settings.GetBlockAsync<ApplicationSettingsBlock>().ConfigureAwait(false);
+        string title = settings.Name;
 
-        Task<Asset<World>> sceneTask = assets.OpenAsync(new AssetId<World>(boot.Scene)).AsTask();
+        Task<WorldAsset> sceneTask = WorldAsset.OpenAsync(assets, boot.Scene).AsTask();
         Task<ClusterShaders> pipelineTask = CreateClusterShadersAsync();
         Task<VirtualShadowMapShaders> virtualShadowTask = CreateShadowShadersAsync();
         Task<Shader> uiShaderTask = CreateShaderAsync(boot.UiShader);
@@ -64,20 +66,23 @@ internal static class RuntimeApplication
         Task<Shader> translucencyShaderTask = CreateShaderAsync(boot.TranslucencyShader);
         Task<Shader> debugShaderTask = CreateShaderAsync(boot.DebugShader);
 
-        async Task<Shader> CreateShaderAsync(Guid id)
+        async Task<Shader> CreateShaderAsync(AssetId<ShaderAsset> id)
         {
-            await using Asset<Shader> file = await assets.OpenAsync(new AssetId<Shader>(id)).ConfigureAwait(false);
-            return await Shader.CreateAsync(file).ConfigureAwait(false);
+            await using ShaderAsset file = await ShaderAsset.OpenAsync(assets, id).ConfigureAwait(false);
+            ShaderBlock code = await file.GetBlockAsync<ShaderBlock>().ConfigureAwait(false);
+            return await code.CreateAsync(file.Name).ConfigureAwait(false);
         }
         async Task<ClusterShaders> CreateClusterShadersAsync()
         {
-            await using Asset<ClusterShaders> file = await assets.OpenAsync(new AssetId<ClusterShaders>(boot.Pipeline)).ConfigureAwait(false);
-            return await ClusterShaders.CreateAsync(file, assets).ConfigureAwait(false);
+            await using ClusterShadersAsset file = await ClusterShadersAsset.OpenAsync(assets, boot.Pipeline).ConfigureAwait(false);
+            ClusterShadersBlock shaders = await file.GetBlockAsync<ClusterShadersBlock>().ConfigureAwait(false);
+            return await shaders.CreateAsync(file.Name, assets).ConfigureAwait(false);
         }
         async Task<VirtualShadowMapShaders> CreateShadowShadersAsync()
         {
-            await using Asset<VirtualShadowMapShaders> file = await assets.OpenAsync(new AssetId<VirtualShadowMapShaders>(boot.VirtualShadowMap)).ConfigureAwait(false);
-            return await VirtualShadowMapShaders.CreateAsync(file, assets).ConfigureAwait(false);
+            await using VirtualShadowMapShadersAsset file = await VirtualShadowMapShadersAsset.OpenAsync(assets, boot.VirtualShadowMap).ConfigureAwait(false);
+            VirtualShadowMapShadersBlock shaders = await file.GetBlockAsync<VirtualShadowMapShadersBlock>().ConfigureAwait(false);
+            return await shaders.CreateAsync(file.Name, assets).ConfigureAwait(false);
         }
         try
         {
@@ -125,9 +130,9 @@ internal static class RuntimeApplication
         using Shader temporalCode = temporalShaderTask.Result;
         using Shader translucencyCode = translucencyShaderTask.Result;
         using Shader debugCode = debugShaderTask.Result;
-        await using Asset<World> sceneFile = sceneTask.Result;
+        await using WorldAsset sceneFile = sceneTask.Result;
 
-        using var window = new NativeWindow(boot.Title, boot.Width, boot.Height, visible: !options.HideWindow);
+        using var window = new NativeWindow(title, boot.Width, boot.Height, visible: !options.HideWindow);
         if (useWarp && options.GraphicsBackend != RuntimeGraphicsBackend.Direct3D12)
             throw new ArgumentException("The WARP adapter is available only with the D3D12 backend.");
         using IGraphicsBackend backend = CreateBackend(
@@ -143,7 +148,7 @@ internal static class RuntimeApplication
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
             window.Handle,
-            Label: boot.Title));
+            Label: title));
         using Device device = backend.CreateDevice(new DeviceDesc(
             adapter.Id,
             queues,
@@ -159,7 +164,7 @@ internal static class RuntimeApplication
                 boot.Width,
                 boot.Height,
                 adapter.HardwareAccelerated),
-            boot.Title));
+            title));
 
         RunRenderer(
             options,
@@ -178,7 +183,8 @@ internal static class RuntimeApplication
             translucencyShaderTask.Result,
             debugShaderTask.Result,
             boot,
-            forceHardwareRaster: useWarp || options.ForceHardwareRaster);
+            title,
+            forceHardwareRaster: useWarp || options.ForceHardwareRaster, animateMaterial);
     }
 
     private static IGraphicsBackend CreateBackend(
@@ -303,7 +309,7 @@ internal static class RuntimeApplication
         Swapchain swapchain,
         NativeWindow window,
         AssetLoader assets,
-        Asset<World> sceneAsset,
+        WorldAsset sceneAsset,
         ClusterShaders pipelineConfiguration,
         VirtualShadowMapShaders virtualShadowConfiguration,
         Shader uiShader,
@@ -312,15 +318,17 @@ internal static class RuntimeApplication
         Shader temporalShader,
         Shader translucencyShader,
         Shader debugShader,
-        ApplicationSettings boot,
-        bool forceHardwareRaster)
+        ApplicationSettingsBlock boot,
+        string title,
+        bool forceHardwareRaster, Func<Material, float, bool>? animateMaterial)
     {
-        using var mainWorld = new World(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
+        using World mainWorld = RuntimeWait.Task(sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
+            new(Execution: new WorldJobs(JobSystem.Default))).AsTask(), window, FrameTimeout);
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld);
 
         RuntimeScene scene = RuntimeWait.Task(
-            RuntimeScene.CreateAsync(mainWorld, assets, sceneAsset).AsTask(),
+            RuntimeScene.CreateAsync(mainWorld, assets).AsTask(),
             window,
             FrameTimeout);
 
@@ -485,7 +493,7 @@ internal static class RuntimeApplication
                 boot.UiPixelEntry,
                 PresentationFormat);
             Console.WriteLine(
-                $"Runtime configuration '{boot.Title}' loaded from {contentRootLabel(FindContentRoot())}; " +
+                $"Runtime configuration '{title}' loaded from {contentRootLabel(FindContentRoot())}; " +
                 $"sceneInstances={scene.MeshInstanceCount}, " +
                 $"sceneBounds={scene.MeshPositionMin}..{scene.MeshPositionMax}, " +
                 $"clusterPipeline={boot.Pipeline}.");
@@ -610,7 +618,7 @@ internal static class RuntimeApplication
                     : (float)Stopwatch.GetElapsedTime(runtimeStarted).TotalSeconds;
                 previousFrameTimestamp = currentFrameTimestamp;
                 if (options.ScenePlayback is not null)
-                    scene.Play(sceneSeconds, options.ScenePlayback == "materials");
+                    scene.Play(sceneSeconds, options.ScenePlayback == "materials", animateMaterial);
                 ui.BeginFrame(deltaSeconds, width, height, window.DpiScale);
                 scene.Camera.Update(
                     input,
@@ -1195,24 +1203,11 @@ internal static class RuntimeApplication
 
     private static string FindContentRoot()
     {
-        var starts = new[] { AppContext.BaseDirectory, Environment.CurrentDirectory };
-        foreach (string start in starts.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            for (DirectoryInfo? directory = new(Path.GetFullPath(start));
-                 directory is not null;
-                 directory = directory.Parent)
-            {
-                string manifest = Path.Combine(
-                    directory.FullName,
-                    "Library",
-                    "AssetManifest",
-                    AssetManifest.AssetIndexFileName);
-                if (File.Exists(manifest))
-                    return directory.FullName;
-            }
-        }
+        string root = AppContext.BaseDirectory;
+        string manifest = Path.Combine(root, "Library", "AssetManifest", AssetManifest.CatalogFileName);
+        if (File.Exists(manifest)) return root;
         throw new DirectoryNotFoundException(
-            "Could not locate a runtime publication containing Library/AssetManifest/asset_index.json.");
+            "The application directory has no Library/AssetManifest/catalog.json. Build this project's content before starting the application.");
     }
 
     private static Guid ParseGuid(string? value, string field)
@@ -1243,8 +1238,10 @@ internal static class RuntimeApplication
                 throw new InvalidDataException($"Runtime field '{field}' requires one vertex and one pixel shader entry.");
         }
 
-        Guid vertexGuid = ParseGuid(vertex!.AssetGuid, $"{field}.Vertex.AssetGuid");
-        Guid pixelGuid = ParseGuid(pixel!.AssetGuid, $"{field}.Pixel.AssetGuid");
+        if (vertex!.Asset.IsEmpty || pixel!.Asset.IsEmpty)
+            throw new InvalidDataException($"Runtime field '{field}' shader asset is missing.");
+        Guid vertexGuid = vertex.Asset.Value;
+        Guid pixelGuid = pixel.Asset.Value;
         if (vertexGuid != pixelGuid)
             throw new InvalidDataException($"Runtime field '{field}' entries must use one shader asset.");
         if (string.IsNullOrWhiteSpace(vertex.EntryPoint) || string.IsNullOrWhiteSpace(pixel.EntryPoint))
@@ -1258,7 +1255,9 @@ internal static class RuntimeApplication
     {
         if (shader is null || shader.Stage != ShaderStage.Compute)
             throw new InvalidDataException($"Runtime field '{field}' must contain one compute shader.");
-        Guid guid = ParseGuid(shader.AssetGuid, $"{field}.AssetGuid");
+        if (shader.Asset.IsEmpty)
+            throw new InvalidDataException($"Runtime field '{field}' shader asset is missing.");
+        Guid guid = shader.Asset.Value;
         if (string.IsNullOrWhiteSpace(shader.EntryPoint))
             throw new InvalidDataException($"Runtime field '{field}' shader entry point is missing.");
         return (guid, shader.EntryPoint);

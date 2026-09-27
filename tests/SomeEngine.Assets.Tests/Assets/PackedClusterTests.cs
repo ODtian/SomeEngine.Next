@@ -1,4 +1,4 @@
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 
 namespace SomeEngine.Assets.Tests.Assets;
 

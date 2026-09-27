@@ -1,7 +1,8 @@
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Serialization.Streaming;
@@ -324,8 +325,7 @@ public sealed class ResidencyBudgetTests
         using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             Mesh(pageCount),
             PageBytes);
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(
-            controlled.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh, pageSource: controlled.PageSource);
         CompletePublication(manager);
         Assert.True(manager.TryGetPublishedRoot(registration.Mesh, out uint root));
         uint firstFaultNode = pageCount == 1 ? root : checked(root - 2);
@@ -426,14 +426,8 @@ public sealed class ResidencyBudgetTests
             page.CopyTo(payload, index * PageBytes);
         MemoryMarshal.AsBytes(nodes.AsSpan()).CopyTo(payload.AsSpan(pageRegionBytes));
 
-        return new Mesh
-        {
-            Name = "BudgetedMesh",
-            Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
-            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
-            Payload = payload,
-            BvhOffset = checked((ulong)pageRegionBytes),
-        };
+        return SomeEngine.Resources.Mesh.Create("BudgetedMesh", ClusterTestAssets.StandardVertexEncoding, payload.AsMemory(), checked((ulong)pageRegionBytes),
+            new Bounds { Center = new Vec3(), Radius = 1f });
     }
 
     private static byte[] PageData()

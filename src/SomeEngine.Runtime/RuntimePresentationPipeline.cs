@@ -1,5 +1,6 @@
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 using GraphicsPipeline = SomeEngine.Graphics.Pipeline;

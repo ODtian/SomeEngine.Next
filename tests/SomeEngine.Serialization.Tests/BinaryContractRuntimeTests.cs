@@ -34,7 +34,7 @@ public sealed class BinaryContractRuntimeTests
 
         Assert.True(expected.AsSpan().SequenceEqual(encoded.Span));
 
-        TestRoot decoded = BinaryContractSerializer.Deserialize<TestRoot>(encoded.Span);
+        TestRoot decoded = BinarySerializer.Deserialize<TestRoot>(encoded.Span);
         TestRoots.AssertEquivalent(value, decoded);
     }
 
@@ -44,7 +44,7 @@ public sealed class BinaryContractRuntimeTests
         TestRoot value = TestRoots.Canonical();
         byte[] destination = Enumerable.Repeat((byte)0xCC, 77).ToArray();
 
-        Assert.False(BinaryContractSerializer.TryWrite(destination, value, out int written));
+        Assert.False(BinarySerializer.TryWrite(destination, value, out int written));
 
         Assert.Equal(0, written);
         Assert.Contains(destination, value => value != 0xCC);
@@ -56,7 +56,7 @@ public sealed class BinaryContractRuntimeTests
         TestRoot value = TestRoots.Canonical(text: null);
 
         OwnedTestEncoding encoded = OwnedTestEncoding.Encode(value, 256);
-        TestRoot decoded = BinaryContractSerializer.Deserialize<TestRoot>(encoded.Span);
+        TestRoot decoded = BinarySerializer.Deserialize<TestRoot>(encoded.Span);
 
         TestRoots.AssertEquivalent(value, decoded);
         Assert.Null(decoded.Text);
@@ -69,7 +69,7 @@ public sealed class BinaryContractRuntimeTests
         encoded[0] = 2;
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
-            () => BinaryContractSerializer.Deserialize<TestRoot>(encoded.Span));
+            () => BinarySerializer.Deserialize<TestRoot>(encoded.Span));
 
         Assert.Contains("Invalid Boolean value 2", exception.Message, StringComparison.Ordinal);
     }
@@ -93,7 +93,7 @@ public sealed class BinaryContractRuntimeTests
         for (int length = 0; length < encoded.Length; length++)
         {
             Assert.Throws<InvalidDataException>(
-                () => BinaryContractSerializer.Deserialize<TestRoot>(encoded.Span[..length]));
+                () => BinarySerializer.Deserialize<TestRoot>(encoded.Span[..length]));
         }
     }
 
@@ -106,7 +106,7 @@ public sealed class BinaryContractRuntimeTests
         encoded[originalLength] = 0;
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
-            () => BinaryContractSerializer.Deserialize<TestRoot>(encoded.Span));
+            () => BinarySerializer.Deserialize<TestRoot>(encoded.Span));
 
         Assert.Contains("unexpected trailing bytes", exception.Message, StringComparison.Ordinal);
     }
@@ -118,19 +118,19 @@ public sealed class BinaryContractRuntimeTests
             TestRoots.Canonical(text: "limit", data: [1, 2, 3, 4]),
             256);
 
-        Assert.Throws<InvalidDataException>(() => BinaryContractSerializer.Deserialize<TestRoot>(
+        Assert.Throws<InvalidDataException>(() => BinarySerializer.Deserialize<TestRoot>(
             encoded.Span,
             new BinaryReadLimits { MaxObjectDepth = 0 }));
-        Assert.Throws<InvalidDataException>(() => BinaryContractSerializer.Deserialize<TestRoot>(
+        Assert.Throws<InvalidDataException>(() => BinarySerializer.Deserialize<TestRoot>(
             encoded.Span,
             new BinaryReadLimits { MaxStringBytes = 4 }));
-        Assert.Throws<InvalidDataException>(() => BinaryContractSerializer.Deserialize<TestRoot>(
+        Assert.Throws<InvalidDataException>(() => BinarySerializer.Deserialize<TestRoot>(
             encoded.Span,
             new BinaryReadLimits { MaxTotalStringBytes = 4 }));
-        Assert.Throws<InvalidDataException>(() => BinaryContractSerializer.Deserialize<TestRoot>(
+        Assert.Throws<InvalidDataException>(() => BinarySerializer.Deserialize<TestRoot>(
             encoded.Span,
             new BinaryReadLimits { MaxBytePayloadBytes = 3 }));
-        Assert.Throws<InvalidDataException>(() => BinaryContractSerializer.Deserialize<TestRoot>(
+        Assert.Throws<InvalidDataException>(() => BinarySerializer.Deserialize<TestRoot>(
             encoded.Span,
             new BinaryReadLimits { MaxAllocationBytes = 32 }));
     }

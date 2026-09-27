@@ -1,9 +1,11 @@
 namespace SomeEngine.Assets;
 
-/// <summary>Associates disk fields with their domain type at compile time.</summary>
+/// <summary>Generates identity, block directory and file operations. Content belongs to separately declared typed blocks.</summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-public sealed class AssetAttribute(Type type, string pathSuffix) : Attribute
+public sealed class AssetAttribute : Attribute
 {
-    public Type Type { get; } = type;
-    public string PathSuffix { get; } = pathSuffix;
+    public AssetAttribute(string pathSuffix) => PathSuffix = pathSuffix;
+    public string PathSuffix { get; }
+    public string? SchemaName { get; set; }
 }
+

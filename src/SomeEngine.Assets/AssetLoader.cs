@@ -1,5 +1,6 @@
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.IO;
+using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets;
 
@@ -25,6 +26,8 @@ public sealed class AssetLoader : IAsyncDisposable
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _options = options ?? new();
         ArgumentNullException.ThrowIfNull(_options.ReadLimits);
+        ArgumentNullException.ThrowIfNull(_options.Pages);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(_options.MaxDecodedBytes);
         ArgumentOutOfRangeException.ThrowIfNegative(_options.MaxCachedFiles);
         ArgumentOutOfRangeException.ThrowIfNegative(_options.MaxCachedRootBytes);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(_options.MaxConcurrentReads);
@@ -32,8 +35,11 @@ public sealed class AssetLoader : IAsyncDisposable
         _readConcurrency = new(_options.MaxConcurrentReads, _options.MaxConcurrentReads);
     }
 
-    public async ValueTask<Asset<T>> OpenAsync<T>(AssetId<T> id, CancellationToken cancellationToken = default)
-        where T : class
+    public PageArena Pages => _options.Pages;
+
+    public async ValueTask<AssetFile> OpenFileAsync<T>(AssetId<T> id,
+        string fileType, BinaryWireTypeDescriptor wireType, CancellationToken cancellationToken = default)
+        where T : Asset
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (id.IsEmpty)
@@ -42,12 +48,12 @@ public sealed class AssetLoader : IAsyncDisposable
             ObjectDisposedException.ThrowIf(_closed, this);
 
         // Storage may inspect a file header. Never hold the cache lock across external I/O.
-        AssetFormat<T> format = AssetFormat<T>.Current;
         if (!_storage.TryFind(id.Value, out AssetEntry entry))
             throw new KeyNotFoundException($"Asset {id} was not found in storage.");
         if (entry.AssetGuid != id.Value)
             throw new InvalidDataException("Storage returned a different asset number.");
-        format.Validate(entry);
+        if (!StringComparer.Ordinal.Equals(entry.AssetType, fileType) || entry.SchemaFingerprint != wireType.SchemaFingerprint)
+            throw new InvalidDataException($"Asset {id} has a different file format.");
 
         var key = (id.Value, entry.Version);
         FileRead read;
@@ -69,7 +75,7 @@ public sealed class AssetLoader : IAsyncDisposable
             read.LastAccess = ++_access;
         }
         if (start)
-            _ = ReadFileAsync(format, entry, key, read);
+            _ = ReadFileAsync(entry, wireType, key, read);
 
         try
         {
@@ -78,7 +84,7 @@ public sealed class AssetLoader : IAsyncDisposable
             {
                 ObjectDisposedException.ThrowIf(_closed, this);
                 cancellationToken.ThrowIfCancellationRequested();
-                return new Asset<T>(file.Duplicate());
+                return file.Retain();
             }
         }
         finally
@@ -93,28 +99,8 @@ public sealed class AssetLoader : IAsyncDisposable
         }
     }
 
-    /// <summary>Opens a file without a project or a loader-owned cache.</summary>
-    public static async ValueTask<Asset<T>> OpenFileAsync<T>(string path,
-        BinaryReadLimits? limits = null, CancellationToken cancellationToken = default) where T : class
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        AssetFormat<T> format = AssetFormat<T>.Current;
-        if (!format.MatchesPath(path))
-            throw new InvalidDataException($"Asset type '{format.AssetType}' does not accept path '{path}'.");
-        cancellationToken.ThrowIfCancellationRequested();
-        IRangeSource source = FileRangeSource.Open(path);
-        var entry = new AssetEntry
-        {
-            AssetType = format.AssetType,
-            SchemaFingerprint = format.WireType.SchemaFingerprint,
-            Path = Path.GetFullPath(path),
-        };
-        return new Asset<T>(await format.ReadAsync(source, entry, limits ?? BinaryReadLimits.Default,
-            cancellationToken).ConfigureAwait(false));
-    }
-
-    private async Task ReadFileAsync<T>(AssetFormat<T> format, AssetEntry entry,
-        (Guid Id, Guid Version) key, FileRead read) where T : class
+    private async Task ReadFileAsync(AssetEntry entry, BinaryWireTypeDescriptor wireType,
+        (Guid Id, Guid Version) key, FileRead read)
     {
         AssetFile? file = null;
         Exception? failure = null;
@@ -124,7 +110,23 @@ public sealed class AssetLoader : IAsyncDisposable
             await _readConcurrency.WaitAsync(_stop.Token).ConfigureAwait(false);
             entered = true;
             IRangeSource source = await _storage.OpenAsync(entry, _stop.Token).ConfigureAwait(false);
-            file = await format.ReadAsync(source, entry, _options.ReadLimits, _stop.Token).ConfigureAwait(false);
+            BinaryDocument document = await BinaryDocument.OpenAsync(source, wireType, ownsSource: true, _options.ReadLimits, _stop.Token).ConfigureAwait(false);
+            try
+            {
+                file = new AssetFile(document, entry.Path, _options.Pages, _options.MaxDecodedBytes);
+                AssetEntry actual = file.Describe();
+                // OpenAsync validates the storage-selected version. For a pack this is the pack
+                // generation, while the nested document has its own content generation.
+                if (actual.AssetGuid != entry.AssetGuid || actual.AssetType != entry.AssetType)
+                    throw new InvalidDataException("The selected asset file differs from its directory entry.");
+            }
+            catch
+            {
+                if (file is not null) await file.DisposeAsync().ConfigureAwait(false);
+                else await document.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+
         }
         catch (Exception error)
         {
@@ -143,6 +145,7 @@ public sealed class AssetLoader : IAsyncDisposable
             if (failure is null)
             {
                 read.File = file!;
+                read.RootByteLength = file!.RootByteLength;
                 if (!_closed)
                     _cachedRootBytes += file!.RootByteLength;
                 read.Completion.TrySetResult(file!);
@@ -189,7 +192,7 @@ public sealed class AssetLoader : IAsyncDisposable
             }
             _files.Remove(selected.Key);
             AssetFile file = selected.Value.File!;
-            _cachedRootBytes -= file.RootByteLength;
+            _cachedRootBytes -= selected.Value.RootByteLength;
             (removed ??= []).Add(file);
         }
         if (removed is not null)
@@ -250,6 +253,7 @@ public sealed class AssetLoader : IAsyncDisposable
     {
         internal TaskCompletionSource<AssetFile> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal AssetFile? File;
+        internal long RootByteLength;
         internal int Waiters;
         internal long LastAccess;
     }
@@ -257,6 +261,8 @@ public sealed class AssetLoader : IAsyncDisposable
 
 public sealed class AssetLoaderOptions
 {
+    public PageArena Pages { get; init; } = PageArena.Shared;
+    public long MaxDecodedBytes { get; init; } = 256L * 1024 * 1024;
     public BinaryReadLimits ReadLimits { get; init; } = BinaryReadLimits.Default;
     public int MaxConcurrentReads { get; init; } = 8;
     /// <summary>Maximum number of queued and executing file reads combined.</summary>

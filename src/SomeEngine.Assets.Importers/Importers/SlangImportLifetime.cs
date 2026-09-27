@@ -4,22 +4,16 @@ using SlangShaderSharp;
 namespace SomeEngine.Assets.Importers;
 
 /// <summary>
-/// Owns the source-generated COM wrappers and compiled metadata created by one Slang import. Slang
+/// Holds the source-generated COM wrappers and compiled metadata created by one Slang import. Slang
 /// child objects may depend on their session and module without independently keeping every parent
-/// alive, so GC finalizer order is not a valid lifetime policy. Owners are released once, in reverse
+/// alive, so GC finalizer order is not a valid lifetime policy. Objects are released once, in reverse
 /// creation order, before the import returns its managed asset.
 /// </summary>
 internal sealed class SlangImportLifetime : IDisposable
 {
     private readonly List<object> _objects = [];
     private readonly HashSet<object> _seen = new(ReferenceEqualityComparer.Instance);
-    private readonly Action<object>? _trackObserver;
     private bool _disposed;
-
-    internal SlangImportLifetime(Action<object>? trackObserver = null)
-    {
-        _trackObserver = trackObserver;
-    }
 
     internal T? Track<T>(T? value)
         where T : class
@@ -28,7 +22,6 @@ internal sealed class SlangImportLifetime : IDisposable
         if (value is ComObject && _seen.Add(value))
         {
             _objects.Add(value);
-            _trackObserver?.Invoke(value);
         }
         return value;
     }

@@ -1,8 +1,9 @@
-using SomeEngine.Assets.Schema;
+using System.Buffers;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
-using SomeEngine.Serialization.Streaming;
-using EngineTexture = SomeEngine.Assets.Schema.Texture;
+using SomeEngine.Serialization.Containers;
+using EngineTexture = SomeEngine.Resources.Texture;
 using RhiTexture = SomeEngine.Graphics.Texture;
 using TextureDimension = SomeEngine.Graphics.TextureDimension;
 using TextureViewDimension = SomeEngine.Graphics.TextureViewDimension;
@@ -197,7 +198,7 @@ public sealed partial class RenderDevice
                 realization.Resource,
                 realization.Shape,
                 tile,
-                new byte[] { 255, 0, 255, 255 });
+                new ReadOnlySequence<byte>(new byte[] { 255, 0, 255, 255 }));
             PreparedTile[] upload = [prepared];
             BeginUpload(ref frame, asset: null, realization, replaceContents: true);
             try
@@ -332,28 +333,13 @@ public sealed partial class RenderDevice
         {
             if (!includeUploaded && realization.ContainsUploadedChunk(tile.ChunkKey))
                 continue;
-            if (!asset.IsStreamed && tile.Payload is { } bytes)
-            {
-                result.Add(PrepareTile(realization.Resource, realization.Shape, tile, bytes.Span));
-                continue;
-            }
-            if (!asset.TryAcquireResidentMipTile(
-                    tile.MipLevel,
-                    tile.ArrayLayer,
-                    tile.Face,
-                    tile.DepthSlice,
-                    tile.TileX,
-                    tile.TileY,
-                    out ResidentChunkLease lease))
-            {
-                continue;
-            }
-            using (lease)
+            if (!asset.TryRetainTile(tile.ChunkKey, out PageRange<byte>? pixels)) continue;
+            using (pixels)
                 result.Add(PrepareTile(
                     realization.Resource,
                     realization.Shape,
                     tile,
-                    lease.Memory.Span));
+                    pixels.Sequence));
         }
         return [.. result];
     }
@@ -362,7 +348,7 @@ public sealed partial class RenderDevice
         RhiTexture destination,
         in TextureShape shape,
         TextureMipTile tile,
-        ReadOnlySpan<byte> source)
+        ReadOnlySequence<byte> source)
     {
         uint arrayLayer = shape.ResolveArrayLayer(tile.ArrayLayer, tile.Face);
         uint z = shape.Dimension == TextureDimension.Texture3D ? tile.DepthSlice : 0;
@@ -406,7 +392,7 @@ public sealed partial class RenderDevice
     }
 
     private static byte[] Repack(
-        ReadOnlySpan<byte> source,
+        ReadOnlySequence<byte> source,
         TextureMipTile tile,
         in TextureCopyFootprint footprint)
     {
@@ -424,13 +410,16 @@ public sealed partial class RenderDevice
             footprint.Offset +
             ((ulong)Math.Max(footprint.RowPitch, 1u) * Math.Max(tile.Height, 1u)));
         byte[] result = new byte[checked((int)Math.Max(footprint.TotalSize, graphValidatedSize))];
+        var reader = new SequenceReader<byte>(source);
         for (uint row = 0; row < footprint.RowCount; row++)
         {
-            int sourceOffset = checked((int)((ulong)row * sourceRowPitch));
+            long sourceOffset = checked((long)((ulong)row * sourceRowPitch));
             int destinationOffset = checked((int)(
                 footprint.Offset + ((ulong)row * footprint.RowPitch)));
-            source.Slice(sourceOffset, checked((int)footprint.RowSize)).CopyTo(
-                result.AsSpan(destinationOffset, checked((int)footprint.RowSize)));
+            reader.Advance(sourceOffset - reader.Consumed);
+            int rowBytes = checked((int)footprint.RowSize);
+            reader.UnreadSequence.Slice(0, rowBytes).CopyTo(result.AsSpan(destinationOffset, rowBytes));
+            reader.Advance(rowBytes);
         }
         return result;
     }

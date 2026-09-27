@@ -19,7 +19,7 @@ internal sealed record TestRoot(
     char Character,
     Guid Id,
     string? Text,
-    byte[] Data) : IBinaryContract<TestRoot>
+    byte[] Data) : IBinarySerializable<TestRoot>
 {
     internal const ulong Fingerprint = 0x9E21A4FC19D7B403UL;
     internal static readonly Guid StableTypeId = Guid.Parse("7b1dbb5d-6f37-4a13-9da0-30cb7642d66d");

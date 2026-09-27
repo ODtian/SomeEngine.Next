@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Game.Importing/Game.Importing.csproj" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Render/SomeEngine.Render.csproj" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Render.Cluster/SomeEngine.Render.Cluster.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(SomeEnginePath)/external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(SomeEnginePath)/external/dxc/bin/x64/dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

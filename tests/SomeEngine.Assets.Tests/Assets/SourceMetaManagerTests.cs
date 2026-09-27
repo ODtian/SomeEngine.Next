@@ -1,46 +1,60 @@
-using System.IO;
+using SomeEngine.Assets.Importers;
 using System.Text.Json;
+using Game.Importing;
 using SomeEngine.Assets;
 using static SomeEngine.Tests.TestProjectPaths;
 
 namespace SomeEngine.Tests.Assets;
 
-public class SourceMetaFilesTests
+public sealed class SourceMetaFilesTests
 {
     [Fact]
-    public void SaveLoad_Roundtrip_PreservesImporterSettings()
+    public void SavedSelectionsKeepTypedSettingsSeparateFromBuildResults()
     {
-        string dir = CreateTempDir();
-        string sourcePath = Path.Combine(dir, "assets", "Models", "character.gltf");
-        Directory.CreateDirectory(Path.GetDirectoryName(sourcePath)!);
-        File.WriteAllText(sourcePath, "{}");
-
-        var settings = JsonDocument.Parse(
-            """
-            {
-              "lit_material_template": "assets/Materials/Templates/PbrTemplate.material.asset",
-              "unlit_material_template": "assets/Materials/Templates/UnlitTemplate.material.asset"
-            }
-            """).RootElement.Clone();
-
-        SourceMeta.Save(sourcePath, new SourceMeta
+        string directory = CreateTempDir();
+        try
         {
-            SourceGuid = SourceGuid.New(),
-            Importer = "GltfSourceImporter",
-            ImporterSettings = settings,
-        });
+            string path = Path.Combine(directory, "character.gltf");
+            File.WriteAllText(path, "{}");
+            var settings = new GltfImporterSettings
+            {
+                LitMaterialTemplate = "assets/Materials/Templates/PbrTemplate.material.asset",
+                UnlitMaterialTemplate = "assets/Materials/Templates/UnlitTemplate.material.asset",
+            };
+            SourceGuid source = SourceGuid.New();
+            Guid element = Guid.NewGuid();
+            SourceMeta.Save(path, new SourceMeta
+            {
+                SourceGuid = source, Importers = [new(GltfSourceImporter.SourceImporterId,
+                    JsonSerializer.SerializeToElement(settings, GltfSettingsJson.Default.GltfImporterSettings))],
+                ElementIds = new() { ["mesh:index:0"] = element },
+                Build = new() { ImporterVersion = 41, InputHash = "derived data" },
+            });
+            SourceMeta loaded = SourceMeta.Load(path);
+            Assert.Equal(settings, loaded.GetSettings(GltfSourceImporter.SourceImporterId, new GltfImporterSettings(),
+                GltfSettingsJson.Default.GltfImporterSettings));
+            Assert.Equal((uint)41, loaded.Build.ImporterVersion);
+            using (var metadata = JsonDocument.Parse(File.ReadAllBytes(SourceMeta.GetMetaPath(path))))
+            {
+                Assert.False(metadata.RootElement.TryGetProperty("input_hash", out _));
+                Assert.False(metadata.RootElement.TryGetProperty("outputs", out _));
+                Assert.False(metadata.RootElement.TryGetProperty("importer_settings", out _));
+            }
+            File.Delete(SourceMeta.GetBuildPath(path));
+            CheckIdentity();
+            File.WriteAllText(SourceMeta.GetBuildPath(path), "invalid derived record");
+            CheckIdentity();
 
-        SourceMeta loaded = SourceMeta.Load(sourcePath);
-
-        Assert.True(loaded.ImporterSettings.HasValue);
-        Assert.Equal(
-            "assets/Materials/Templates/PbrTemplate.material.asset",
-            loaded.ImporterSettings.Value.GetProperty("lit_material_template").GetString());
-        Assert.Equal(
-            "assets/Materials/Templates/UnlitTemplate.material.asset",
-            loaded.ImporterSettings.Value.GetProperty("unlit_material_template").GetString());
-
-        Directory.Delete(dir, true);
+            void CheckIdentity()
+            {
+                SourceMeta value = SourceMeta.Load(path);
+                Assert.Equal(source, value.SourceGuid);
+                Assert.Equal(element, value.ElementIds["mesh:index:0"]);
+                Assert.Empty(value.Build.Outputs);
+                Assert.Equal(settings, value.GetSettings(GltfSourceImporter.SourceImporterId, new GltfImporterSettings(),
+                    GltfSettingsJson.Default.GltfImporterSettings));
+            }
+        }
+        finally { Directory.Delete(directory, recursive: true); }
     }
-
 }

@@ -20,37 +20,35 @@ internal static partial class SlangBindingMap
         uint Binding,
         uint Space,
         byte ResourceType,
-        Schema.DescriptorType Kind,
+        SomeEngine.Resources.DescriptorType Kind,
         uint DescriptorCount,
-        Schema.AccessEffect Effect,
-        Schema.ShaderQualifiers Qualifiers,
-        Schema.TextureViewDimension? TextureDimension,
-        Schema.TextureSampleType? TextureSampleType,
-        Schema.StorageFormat? StorageFormat,
+        SomeEngine.Resources.AccessEffect Effect,
+        SomeEngine.Resources.ShaderQualifiers Qualifiers,
+        SomeEngine.Resources.TextureViewDimension? TextureDimension,
+        SomeEngine.Resources.TextureSampleType? TextureSampleType,
+        SomeEngine.Resources.StorageFormat? StorageFormat,
         uint SlangResourceShape,
         uint SlangScalarType,
         uint SlangImageFormat);
 
     private readonly record struct ResourceFacts(
         byte ResourceType,
-        Schema.DescriptorType Kind,
+        SomeEngine.Resources.DescriptorType Kind,
         uint DescriptorCount,
-        Schema.AccessEffect Effect,
-        Schema.ShaderQualifiers Qualifiers,
-        Schema.TextureViewDimension? TextureDimension,
-        Schema.TextureSampleType? TextureSampleType,
-        Schema.StorageFormat? StorageFormat,
+        SomeEngine.Resources.AccessEffect Effect,
+        SomeEngine.Resources.ShaderQualifiers Qualifiers,
+        SomeEngine.Resources.TextureViewDimension? TextureDimension,
+        SomeEngine.Resources.TextureSampleType? TextureSampleType,
+        SomeEngine.Resources.StorageFormat? StorageFormat,
         uint SlangResourceShape,
         uint SlangScalarType,
         uint SlangImageFormat);
 
     public readonly record struct SpaceKey(SlangParameterCategory Category, uint Space);
 
-    public static void Fill(
-        Dictionary<ResourceKey, uint> resourceMap,
-        Schema.ShaderReflectionData dest)
+    public static SomeEngine.Resources.ShaderReflectionData Create(Dictionary<ResourceKey, uint> resourceMap)
     {
-        dest.Resources ??= [];
+        var resources = System.Collections.Immutable.ImmutableList.CreateBuilder<SomeEngine.Resources.ShaderResourceReflection>();
 
         foreach (var kvp in resourceMap
             .OrderBy(static kvp => kvp.Key.Space)
@@ -68,8 +66,8 @@ internal static partial class SlangBindingMap
             .ThenBy(static kvp => kvp.Key.SlangImageFormat)
             .ThenBy(static kvp => kvp.Key.Name, StringComparer.Ordinal))
         {
-            dest.Resources.Add(
-                new Schema.ShaderResourceReflection
+            resources.Add(
+                new SomeEngine.Resources.ShaderResourceReflection
                 {
                     Name = kvp.Key.Name,
                     Stages = kvp.Value,
@@ -87,13 +85,7 @@ internal static partial class SlangBindingMap
                     SlangImageFormat = kvp.Key.SlangImageFormat,
                 });
         }
-    }
-
-    public static Schema.ShaderReflectionData Create(Dictionary<ResourceKey, uint> resourceMap)
-    {
-        var reflectionData = new Schema.ShaderReflectionData { Resources = [] };
-        Fill(resourceMap, reflectionData);
-        return reflectionData;
+        return new() { Resources = resources.ToImmutable() };
     }
 
     public static void Merge(
@@ -126,7 +118,7 @@ internal static partial class SlangBindingMap
 
     public static void Collect(
         VariableLayoutReflection varLayout,
-        Schema.ShaderStage stage,
+        SomeEngine.Resources.ShaderStage stage,
         Dictionary<ResourceKey, uint> resources,
         string backend,
         IReadOnlyDictionary<SpaceKey, uint>? entryBases = null,
@@ -140,7 +132,7 @@ internal static partial class SlangBindingMap
         uint baseBinding,
         uint baseSpace,
         bool fieldBinding,
-        Schema.ShaderStage stage,
+        SomeEngine.Resources.ShaderStage stage,
         Dictionary<ResourceKey, uint> resources,
         string backend,
         IReadOnlyDictionary<SpaceKey, uint>? entryBases,
@@ -172,7 +164,7 @@ internal static partial class SlangBindingMap
         uint baseBinding,
         uint baseSpace,
         bool fieldBinding,
-        Schema.ShaderStage stage,
+        SomeEngine.Resources.ShaderStage stage,
         Dictionary<ResourceKey, uint> resources,
         string backend,
         IReadOnlyDictionary<SpaceKey, uint>? entryBases,
@@ -193,7 +185,7 @@ internal static partial class SlangBindingMap
         uint baseBinding,
         uint baseSpace,
         bool fieldBinding,
-        Schema.ShaderStage stage,
+        SomeEngine.Resources.ShaderStage stage,
         Dictionary<ResourceKey, uint> resources,
         string backend,
         IReadOnlyDictionary<SpaceKey, uint>? entryBases,
@@ -299,18 +291,18 @@ internal static partial class SlangBindingMap
         TypeReflection type = declaredType.UnwrapArray();
         SlangResourceShape shape = type.ResourceShape & SlangResourceShape.BaseShapeMask;
 
-        (byte ResourceType, Schema.DescriptorType Kind) reflectedResource = category switch
+        (byte ResourceType, SomeEngine.Resources.DescriptorType Kind) reflectedResource = category switch
         {
             SlangParameterCategory.ConstantBuffer
             or SlangParameterCategory.PushConstantBuffer =>
-                (ConstantBuffer, Schema.DescriptorType.ConstantBuffer),
+                (ConstantBuffer, SomeEngine.Resources.DescriptorType.ConstantBuffer),
             SlangParameterCategory.SamplerState =>
-                (Sampler, Schema.DescriptorType.Sampler),
+                (Sampler, SomeEngine.Resources.DescriptorType.Sampler),
             SlangParameterCategory.Subpass =>
-                (InputAttachment, Schema.DescriptorType.SampledTexture),
+                (InputAttachment, SomeEngine.Resources.DescriptorType.SampledTexture),
             SlangParameterCategory.ShaderResource => ReadOnly(shape),
             SlangParameterCategory.UnorderedAccess => ReadWrite(shape),
-            _ => (Unknown, Schema.DescriptorType.None),
+            _ => (Unknown, SomeEngine.Resources.DescriptorType.None),
         };
 
         if (reflectedResource.ResourceType == Unknown)
@@ -319,11 +311,11 @@ internal static partial class SlangBindingMap
             {
                 case SlangTypeKind.ConstantBuffer:
                     category = SlangParameterCategory.ConstantBuffer;
-                    reflectedResource = (ConstantBuffer, Schema.DescriptorType.ConstantBuffer);
+                    reflectedResource = (ConstantBuffer, SomeEngine.Resources.DescriptorType.ConstantBuffer);
                     break;
                 case SlangTypeKind.SamplerState:
                     category = SlangParameterCategory.SamplerState;
-                    reflectedResource = (Sampler, Schema.DescriptorType.Sampler);
+                    reflectedResource = (Sampler, SomeEngine.Resources.DescriptorType.Sampler);
                     break;
                 case SlangTypeKind.Resource:
                 case SlangTypeKind.TextureBuffer:
@@ -344,22 +336,22 @@ internal static partial class SlangBindingMap
         VariableLayoutReflection layout,
         TypeReflection declaredType,
         TypeReflection type,
-        (byte ResourceType, Schema.DescriptorType Kind) resource)
+        (byte ResourceType, SomeEngine.Resources.DescriptorType Kind) resource)
     {
         SlangResourceShape shape = type.ResourceShape;
         SlangResourceAccess access = type.ResourceAccess;
         SlangScalarType scalarType = ResourceScalarType(type);
         SlangImageFormat imageFormat = layout.ImageFormat;
-        Schema.AccessEffect reflectedEffect = ReflectedEffect(access, resource.Kind);
-        Schema.ShaderQualifiers reflectedQualifiers = ReflectedQualifiers(access);
-        (Schema.AccessEffect Effect, Schema.ShaderQualifiers Qualifiers) shaderSlot =
+        SomeEngine.Resources.AccessEffect reflectedEffect = ReflectedEffect(access, resource.Kind);
+        SomeEngine.Resources.ShaderQualifiers reflectedQualifiers = ReflectedQualifiers(access);
+        (SomeEngine.Resources.AccessEffect Effect, SomeEngine.Resources.ShaderQualifiers Qualifiers) shaderSlot =
             resource.ResourceType == Unknown
-                ? (Schema.AccessEffect.None, Schema.ShaderQualifiers.None)
+                ? (SomeEngine.Resources.AccessEffect.None, SomeEngine.Resources.ShaderQualifiers.None)
                 : ResolveEffect(layout.Variable, reflectedEffect, reflectedQualifiers, resource.Kind);
 
         bool texture = resource.Kind is
-            Schema.DescriptorType.SampledTexture or
-            Schema.DescriptorType.StorageTexture;
+            SomeEngine.Resources.DescriptorType.SampledTexture or
+            SomeEngine.Resources.DescriptorType.StorageTexture;
         return new ResourceFacts(
             resource.ResourceType,
             resource.Kind,
@@ -368,7 +360,7 @@ internal static partial class SlangBindingMap
             shaderSlot.Qualifiers,
             texture ? TextureDimension(shape) : null,
             texture ? TextureSampleType(shape, scalarType) : null,
-            resource.Kind == Schema.DescriptorType.StorageTexture
+            resource.Kind == SomeEngine.Resources.DescriptorType.StorageTexture
                 ? StorageFormat(imageFormat)
                 : null,
             checked((uint)shape),
@@ -395,38 +387,38 @@ internal static partial class SlangBindingMap
             : result.ElementType.ScalarType;
     }
 
-    private static Schema.AccessEffect ReflectedEffect(
+    private static SomeEngine.Resources.AccessEffect ReflectedEffect(
         SlangResourceAccess access,
-        Schema.DescriptorType kind) => access switch
+        SomeEngine.Resources.DescriptorType kind) => access switch
     {
-        SlangResourceAccess.Read => Schema.AccessEffect.Read,
-        SlangResourceAccess.Write => Schema.AccessEffect.Write,
+        SlangResourceAccess.Read => SomeEngine.Resources.AccessEffect.Read,
+        SlangResourceAccess.Write => SomeEngine.Resources.AccessEffect.Write,
         SlangResourceAccess.ReadWrite or SlangResourceAccess.RasterOrdered or
             SlangResourceAccess.Append or SlangResourceAccess.Consume or
-            SlangResourceAccess.Feedback => Schema.AccessEffect.ReadWrite,
-        _ when kind is Schema.DescriptorType.ConstantBuffer or
-                           Schema.DescriptorType.ReadOnlyBuffer or
-                           Schema.DescriptorType.SampledTexture or
-                           Schema.DescriptorType.Sampler or
-                           Schema.DescriptorType.AccelerationStructure => Schema.AccessEffect.Read,
-        _ when kind is Schema.DescriptorType.StorageBuffer or
-                           Schema.DescriptorType.StorageTexture => Schema.AccessEffect.ReadWrite,
-        _ => Schema.AccessEffect.None,
+            SlangResourceAccess.Feedback => SomeEngine.Resources.AccessEffect.ReadWrite,
+        _ when kind is SomeEngine.Resources.DescriptorType.ConstantBuffer or
+                           SomeEngine.Resources.DescriptorType.ReadOnlyBuffer or
+                           SomeEngine.Resources.DescriptorType.SampledTexture or
+                           SomeEngine.Resources.DescriptorType.Sampler or
+                           SomeEngine.Resources.DescriptorType.AccelerationStructure => SomeEngine.Resources.AccessEffect.Read,
+        _ when kind is SomeEngine.Resources.DescriptorType.StorageBuffer or
+                           SomeEngine.Resources.DescriptorType.StorageTexture => SomeEngine.Resources.AccessEffect.ReadWrite,
+        _ => SomeEngine.Resources.AccessEffect.None,
     };
 
-    private static Schema.ShaderQualifiers ReflectedQualifiers(
+    private static SomeEngine.Resources.ShaderQualifiers ReflectedQualifiers(
         SlangResourceAccess access) => access switch
     {
         SlangResourceAccess.Append =>
-            Schema.ShaderQualifiers.Atomic | Schema.ShaderQualifiers.Append,
+            SomeEngine.Resources.ShaderQualifiers.Atomic | SomeEngine.Resources.ShaderQualifiers.Append,
         SlangResourceAccess.Consume =>
-            Schema.ShaderQualifiers.Atomic | Schema.ShaderQualifiers.Consume,
-        SlangResourceAccess.RasterOrdered => Schema.ShaderQualifiers.RasterOrdered,
-        SlangResourceAccess.Feedback => Schema.ShaderQualifiers.Feedback,
-        _ => Schema.ShaderQualifiers.None,
+            SomeEngine.Resources.ShaderQualifiers.Atomic | SomeEngine.Resources.ShaderQualifiers.Consume,
+        SlangResourceAccess.RasterOrdered => SomeEngine.Resources.ShaderQualifiers.RasterOrdered,
+        SlangResourceAccess.Feedback => SomeEngine.Resources.ShaderQualifiers.Feedback,
+        _ => SomeEngine.Resources.ShaderQualifiers.None,
     };
 
-    private static Schema.TextureViewDimension? TextureDimension(SlangResourceShape shape)
+    private static SomeEngine.Resources.TextureViewDimension? TextureDimension(SlangResourceShape shape)
     {
         SlangResourceShape supportedFlags = SlangResourceShape.TextureShadowFlag |
             SlangResourceShape.TextureArrayFlag |
@@ -439,17 +431,17 @@ internal static partial class SlangBindingMap
         bool multisample = (shape & SlangResourceShape.TextureMultisampleFlag) != 0;
         return (baseShape, array, multisample) switch
         {
-            (SlangResourceShape.Texture1D, false, false) => Schema.TextureViewDimension.Texture1D,
-            (SlangResourceShape.Texture1D, true, false) => Schema.TextureViewDimension.Texture1DArray,
-            (SlangResourceShape.Texture2D, false, false) => Schema.TextureViewDimension.Texture2D,
-            (SlangResourceShape.Texture2D, true, false) => Schema.TextureViewDimension.Texture2DArray,
-            (SlangResourceShape.Texture2D, false, true) => Schema.TextureViewDimension.Texture2DMS,
-            (SlangResourceShape.Texture2D, true, true) => Schema.TextureViewDimension.Texture2DMSArray,
-            (SlangResourceShape.TextureCube, false, false) => Schema.TextureViewDimension.Cube,
-            (SlangResourceShape.TextureCube, true, false) => Schema.TextureViewDimension.CubeArray,
-            (SlangResourceShape.Texture3D, false, false) => Schema.TextureViewDimension.Texture3D,
-            (SlangResourceShape.TextureSubpass, false, false) => Schema.TextureViewDimension.Texture2D,
-            (SlangResourceShape.TextureSubpass, false, true) => Schema.TextureViewDimension.Texture2DMS,
+            (SlangResourceShape.Texture1D, false, false) => SomeEngine.Resources.TextureViewDimension.Texture1D,
+            (SlangResourceShape.Texture1D, true, false) => SomeEngine.Resources.TextureViewDimension.Texture1DArray,
+            (SlangResourceShape.Texture2D, false, false) => SomeEngine.Resources.TextureViewDimension.Texture2D,
+            (SlangResourceShape.Texture2D, true, false) => SomeEngine.Resources.TextureViewDimension.Texture2DArray,
+            (SlangResourceShape.Texture2D, false, true) => SomeEngine.Resources.TextureViewDimension.Texture2DMS,
+            (SlangResourceShape.Texture2D, true, true) => SomeEngine.Resources.TextureViewDimension.Texture2DMSArray,
+            (SlangResourceShape.TextureCube, false, false) => SomeEngine.Resources.TextureViewDimension.Cube,
+            (SlangResourceShape.TextureCube, true, false) => SomeEngine.Resources.TextureViewDimension.CubeArray,
+            (SlangResourceShape.Texture3D, false, false) => SomeEngine.Resources.TextureViewDimension.Texture3D,
+            (SlangResourceShape.TextureSubpass, false, false) => SomeEngine.Resources.TextureViewDimension.Texture2D,
+            (SlangResourceShape.TextureSubpass, false, true) => SomeEngine.Resources.TextureViewDimension.Texture2DMS,
             _ => null,
         };
     }
@@ -458,28 +450,28 @@ internal static partial class SlangBindingMap
 
 internal static partial class SlangBindingMap
 {
-    private static (Schema.AccessEffect Effect, Schema.ShaderQualifiers Qualifiers) ResolveEffect(
+    private static (SomeEngine.Resources.AccessEffect Effect, SomeEngine.Resources.ShaderQualifiers Qualifiers) ResolveEffect(
         VariableReflection variable,
-        Schema.AccessEffect reflectedEffect,
-        Schema.ShaderQualifiers reflectedQualifiers,
-        Schema.DescriptorType kind)
+        SomeEngine.Resources.AccessEffect reflectedEffect,
+        SomeEngine.Resources.ShaderQualifiers reflectedQualifiers,
+        SomeEngine.Resources.DescriptorType kind)
     {
-        if (reflectedEffect == Schema.AccessEffect.None)
+        if (reflectedEffect == SomeEngine.Resources.AccessEffect.None)
             throw new InvalidDataException(
                 $"ShaderData resource '{variable.Name}' has no reflected access effect.");
 
         AttributeReflection selected = FindResourceEffect(variable);
         if (selected == AttributeReflection.Null)
             return (reflectedEffect, reflectedQualifiers);
-        if (kind == Schema.DescriptorType.Sampler)
+        if (kind == SomeEngine.Resources.DescriptorType.Sampler)
             throw new InvalidDataException(
                 $"ShaderData sampler '{variable.Name}' cannot declare AccessEffect.");
         if (selected.ArgumentCount != 2)
             throw new InvalidDataException(
                 $"ShaderData resource '{variable.Name}' ResourceEffect must provide effects and qualifiers arguments.");
 
-        Schema.AccessEffect declaredEffect = ParseEffect(variable.Name, selected);
-        Schema.ShaderQualifiers declaredQualifiers = ParseQualifiers(variable.Name, selected);
+        SomeEngine.Resources.AccessEffect declaredEffect = ParseEffect(variable.Name, selected);
+        SomeEngine.Resources.ShaderQualifiers declaredQualifiers = ParseQualifiers(variable.Name, selected);
         if (((int)declaredEffect & ~(int)reflectedEffect) != 0)
             throw new InvalidDataException(
                 $"ShaderData resource '{variable.Name}' declares effect {declaredEffect} beyond its reflected effect {reflectedEffect}.");
@@ -514,40 +506,40 @@ internal static partial class SlangBindingMap
         return value;
     }
 
-    private static Schema.AccessEffect ParseEffect(
+    private static SomeEngine.Resources.AccessEffect ParseEffect(
         string resourceName,
         AttributeReflection attribute) => GetAttributeInt(attribute, 0) switch
     {
-        1 => Schema.AccessEffect.Read,
-        2 => Schema.AccessEffect.Write,
-        3 => Schema.AccessEffect.ReadWrite,
+        1 => SomeEngine.Resources.AccessEffect.Read,
+        2 => SomeEngine.Resources.AccessEffect.Write,
+        3 => SomeEngine.Resources.AccessEffect.ReadWrite,
         int value => throw new InvalidDataException(
             $"ShaderData resource '{resourceName}' declares invalid ResourceEffects value {value}."),
     };
 
-    private static Schema.ShaderQualifiers ParseQualifiers(
+    private static SomeEngine.Resources.ShaderQualifiers ParseQualifiers(
         string resourceName,
         AttributeReflection attribute)
     {
         int qualifierValue = GetAttributeInt(attribute, 1);
         const int allQualifiers = (int)(
-            Schema.ShaderQualifiers.Atomic |
-            Schema.ShaderQualifiers.Append |
-            Schema.ShaderQualifiers.Consume |
-            Schema.ShaderQualifiers.RasterOrdered |
-            Schema.ShaderQualifiers.Feedback);
+            SomeEngine.Resources.ShaderQualifiers.Atomic |
+            SomeEngine.Resources.ShaderQualifiers.Append |
+            SomeEngine.Resources.ShaderQualifiers.Consume |
+            SomeEngine.Resources.ShaderQualifiers.RasterOrdered |
+            SomeEngine.Resources.ShaderQualifiers.Feedback);
         if (qualifierValue < 0 || (qualifierValue & ~allQualifiers) != 0)
             throw new InvalidDataException(
                 $"ShaderData resource '{resourceName}' declares invalid ResourceQualifiers value {qualifierValue}.");
-        return (Schema.ShaderQualifiers)qualifierValue;
+        return (SomeEngine.Resources.ShaderQualifiers)qualifierValue;
     }
 
     private static void ValidateQualifiers(
         string resourceName,
-        Schema.AccessEffect effect,
-        Schema.ShaderQualifiers qualifiers,
-        Schema.DescriptorType kind,
-        Schema.AccessEffect reflectedEffect)
+        SomeEngine.Resources.AccessEffect effect,
+        SomeEngine.Resources.ShaderQualifiers qualifiers,
+        SomeEngine.Resources.DescriptorType kind,
+        SomeEngine.Resources.AccessEffect reflectedEffect)
     {
         ValidateStorageQualifiers(resourceName, qualifiers, kind);
         ValidateAtomicQualifier(resourceName, effect, qualifiers, reflectedEffect);
@@ -555,38 +547,38 @@ internal static partial class SlangBindingMap
             resourceName,
             effect,
             qualifiers,
-            Schema.ShaderQualifiers.Append,
+            SomeEngine.Resources.ShaderQualifiers.Append,
             "Append");
         ValidateReadQualifier(resourceName, effect, qualifiers);
         ValidateWriteQualifier(
             resourceName,
             effect,
             qualifiers,
-            Schema.ShaderQualifiers.RasterOrdered,
+            SomeEngine.Resources.ShaderQualifiers.RasterOrdered,
             "RasterOrdered");
         ValidateFeedbackQualifier(resourceName, effect, qualifiers);
     }
 
     private static void ValidateStorageQualifiers(
         string resourceName,
-        Schema.ShaderQualifiers qualifiers,
-        Schema.DescriptorType kind)
+        SomeEngine.Resources.ShaderQualifiers qualifiers,
+        SomeEngine.Resources.DescriptorType kind)
     {
-        bool storage = kind is Schema.DescriptorType.StorageBuffer or Schema.DescriptorType.StorageTexture;
-        if (qualifiers != Schema.ShaderQualifiers.None && !storage)
+        bool storage = kind is SomeEngine.Resources.DescriptorType.StorageBuffer or SomeEngine.Resources.DescriptorType.StorageTexture;
+        if (qualifiers != SomeEngine.Resources.ShaderQualifiers.None && !storage)
             throw new InvalidDataException(
                 $"ShaderData resource '{resourceName}' declares qualifiers on non-storage slot {kind}.");
     }
 
     private static void ValidateAtomicQualifier(
         string resourceName,
-        Schema.AccessEffect effect,
-        Schema.ShaderQualifiers qualifiers,
-        Schema.AccessEffect reflectedEffect)
+        SomeEngine.Resources.AccessEffect effect,
+        SomeEngine.Resources.ShaderQualifiers qualifiers,
+        SomeEngine.Resources.AccessEffect reflectedEffect)
     {
-        if ((qualifiers & Schema.ShaderQualifiers.Atomic) != 0 &&
-            (effect != Schema.AccessEffect.ReadWrite ||
-             reflectedEffect != Schema.AccessEffect.ReadWrite))
+        if ((qualifiers & SomeEngine.Resources.ShaderQualifiers.Atomic) != 0 &&
+            (effect != SomeEngine.Resources.AccessEffect.ReadWrite ||
+             reflectedEffect != SomeEngine.Resources.AccessEffect.ReadWrite))
         {
             throw new InvalidDataException(
                 $"ShaderData resource '{resourceName}' must declare ReadWrite and expose read-write access for Atomic qualifiers.");
@@ -595,35 +587,35 @@ internal static partial class SlangBindingMap
 
     private static void ValidateWriteQualifier(
         string resourceName,
-        Schema.AccessEffect effect,
-        Schema.ShaderQualifiers qualifiers,
-        Schema.ShaderQualifiers qualifier,
+        SomeEngine.Resources.AccessEffect effect,
+        SomeEngine.Resources.ShaderQualifiers qualifiers,
+        SomeEngine.Resources.ShaderQualifiers qualifier,
         string qualifierName)
     {
         if ((qualifiers & qualifier) != 0 &&
-            effect is not (Schema.AccessEffect.Write or Schema.AccessEffect.ReadWrite))
+            effect is not (SomeEngine.Resources.AccessEffect.Write or SomeEngine.Resources.AccessEffect.ReadWrite))
             throw new InvalidDataException(
                 $"ShaderData resource '{resourceName}' must include Write for {qualifierName} qualifiers.");
     }
 
     private static void ValidateReadQualifier(
         string resourceName,
-        Schema.AccessEffect effect,
-        Schema.ShaderQualifiers qualifiers)
+        SomeEngine.Resources.AccessEffect effect,
+        SomeEngine.Resources.ShaderQualifiers qualifiers)
     {
-        if ((qualifiers & Schema.ShaderQualifiers.Consume) != 0 &&
-            effect is not (Schema.AccessEffect.Read or Schema.AccessEffect.ReadWrite))
+        if ((qualifiers & SomeEngine.Resources.ShaderQualifiers.Consume) != 0 &&
+            effect is not (SomeEngine.Resources.AccessEffect.Read or SomeEngine.Resources.AccessEffect.ReadWrite))
             throw new InvalidDataException(
                 $"ShaderData resource '{resourceName}' must include Read for Consume qualifiers.");
     }
 
     private static void ValidateFeedbackQualifier(
         string resourceName,
-        Schema.AccessEffect effect,
-        Schema.ShaderQualifiers qualifiers)
+        SomeEngine.Resources.AccessEffect effect,
+        SomeEngine.Resources.ShaderQualifiers qualifiers)
     {
-        if ((qualifiers & Schema.ShaderQualifiers.Feedback) != 0 &&
-            effect != Schema.AccessEffect.ReadWrite)
+        if ((qualifiers & SomeEngine.Resources.ShaderQualifiers.Feedback) != 0 &&
+            effect != SomeEngine.Resources.AccessEffect.ReadWrite)
             throw new InvalidDataException(
                 $"ShaderData resource '{resourceName}' must declare ReadWrite for Feedback qualifiers.");
     }
@@ -655,37 +647,37 @@ internal static partial class SlangBindingMap
                 $"ShaderData variable '{variable.Name}' declares AccessEffect on a resource container instead of a resource-valued leaf.");
     }
 
-    private static Schema.TextureSampleType? TextureSampleType(
+    private static SomeEngine.Resources.TextureSampleType? TextureSampleType(
         SlangResourceShape shape,
         SlangScalarType scalarType)
     {
         if ((shape & SlangResourceShape.TextureShadowFlag) != 0)
-            return Schema.TextureSampleType.Depth;
+            return SomeEngine.Resources.TextureSampleType.Depth;
         return scalarType switch
         {
             SlangScalarType.Float16 or SlangScalarType.Float32 or SlangScalarType.Float64 =>
-                Schema.TextureSampleType.Float,
+                SomeEngine.Resources.TextureSampleType.Float,
             SlangScalarType.UInt8 or SlangScalarType.UInt16 or SlangScalarType.UInt32 or
-            SlangScalarType.UInt64 or SlangScalarType.UIntPtr => Schema.TextureSampleType.UInt,
+            SlangScalarType.UInt64 or SlangScalarType.UIntPtr => SomeEngine.Resources.TextureSampleType.UInt,
             SlangScalarType.Int8 or SlangScalarType.Int16 or SlangScalarType.Int32 or
-            SlangScalarType.Int64 or SlangScalarType.IntPtr => Schema.TextureSampleType.SInt,
+            SlangScalarType.Int64 or SlangScalarType.IntPtr => SomeEngine.Resources.TextureSampleType.SInt,
             _ => null,
         };
     }
 
-    private static Schema.StorageFormat? StorageFormat(SlangImageFormat format) => format switch
+    private static SomeEngine.Resources.StorageFormat? StorageFormat(SlangImageFormat format) => format switch
     {
-        SlangImageFormat.RGBA32f => Schema.StorageFormat.R32G32B32A32Float,
-        SlangImageFormat.RGBA16f => Schema.StorageFormat.R16G16B16A16Float,
-        SlangImageFormat.RG32f => Schema.StorageFormat.R32G32Float,
-        SlangImageFormat.RG16f => Schema.StorageFormat.R16G16Float,
-        SlangImageFormat.R32f => Schema.StorageFormat.R32Float,
-        SlangImageFormat.R16f => Schema.StorageFormat.R16Float,
-        SlangImageFormat.RGBA8 => Schema.StorageFormat.R8G8B8A8UNorm,
-        SlangImageFormat.RG8 => Schema.StorageFormat.R8G8UNorm,
-        SlangImageFormat.R8 => Schema.StorageFormat.R8UNorm,
-        SlangImageFormat.R32ui => Schema.StorageFormat.R32UInt,
-        SlangImageFormat.R16ui => Schema.StorageFormat.R16UInt,
+        SlangImageFormat.RGBA32f => SomeEngine.Resources.StorageFormat.R32G32B32A32Float,
+        SlangImageFormat.RGBA16f => SomeEngine.Resources.StorageFormat.R16G16B16A16Float,
+        SlangImageFormat.RG32f => SomeEngine.Resources.StorageFormat.R32G32Float,
+        SlangImageFormat.RG16f => SomeEngine.Resources.StorageFormat.R16G16Float,
+        SlangImageFormat.R32f => SomeEngine.Resources.StorageFormat.R32Float,
+        SlangImageFormat.R16f => SomeEngine.Resources.StorageFormat.R16Float,
+        SlangImageFormat.RGBA8 => SomeEngine.Resources.StorageFormat.R8G8B8A8UNorm,
+        SlangImageFormat.RG8 => SomeEngine.Resources.StorageFormat.R8G8UNorm,
+        SlangImageFormat.R8 => SomeEngine.Resources.StorageFormat.R8UNorm,
+        SlangImageFormat.R32ui => SomeEngine.Resources.StorageFormat.R32UInt,
+        SlangImageFormat.R16ui => SomeEngine.Resources.StorageFormat.R16UInt,
         _ => null,
     };
 
@@ -716,48 +708,48 @@ internal static partial class SlangBindingMap
             or SlangResourceAccess.Feedback
             or SlangResourceAccess.Write;
 
-    private static (byte ResourceType, Schema.DescriptorType Kind) ReadOnly(SlangResourceShape shape)
+    private static (byte ResourceType, SomeEngine.Resources.DescriptorType Kind) ReadOnly(SlangResourceShape shape)
         => shape switch
         {
             SlangResourceShape.ByteAddressBuffer =>
-                (BufferSrv, Schema.DescriptorType.ReadOnlyBuffer),
+                (BufferSrv, SomeEngine.Resources.DescriptorType.ReadOnlyBuffer),
             SlangResourceShape.StructuredBuffer or SlangResourceShape.TextureBuffer =>
-                (BufferSrv, Schema.DescriptorType.ReadOnlyBuffer),
+                (BufferSrv, SomeEngine.Resources.DescriptorType.ReadOnlyBuffer),
             SlangResourceShape.AccelerationStructure =>
-                (AccelStruct, Schema.DescriptorType.AccelerationStructure),
+                (AccelStruct, SomeEngine.Resources.DescriptorType.AccelerationStructure),
             SlangResourceShape.TextureSubpass =>
-                (InputAttachment, Schema.DescriptorType.SampledTexture),
-            _ => (TextureSrv, Schema.DescriptorType.SampledTexture),
+                (InputAttachment, SomeEngine.Resources.DescriptorType.SampledTexture),
+            _ => (TextureSrv, SomeEngine.Resources.DescriptorType.SampledTexture),
         };
 
-    private static (byte ResourceType, Schema.DescriptorType Kind) ReadWrite(SlangResourceShape shape)
+    private static (byte ResourceType, SomeEngine.Resources.DescriptorType Kind) ReadWrite(SlangResourceShape shape)
         => shape switch
         {
             SlangResourceShape.ByteAddressBuffer =>
-                (BufferUav, Schema.DescriptorType.StorageBuffer),
+                (BufferUav, SomeEngine.Resources.DescriptorType.StorageBuffer),
             SlangResourceShape.StructuredBuffer or SlangResourceShape.TextureBuffer =>
-                (BufferUav, Schema.DescriptorType.StorageBuffer),
-            _ => (TextureUav, Schema.DescriptorType.StorageTexture),
+                (BufferUav, SomeEngine.Resources.DescriptorType.StorageBuffer),
+            _ => (TextureUav, SomeEngine.Resources.DescriptorType.StorageTexture),
         };
 
-    private static uint StageFlags(Schema.ShaderStage stage)
+    private static uint StageFlags(SomeEngine.Resources.ShaderStage stage)
         => stage switch
         {
-            Schema.ShaderStage.Vertex => 0x01,
-            Schema.ShaderStage.Pixel => 0x02,
-            Schema.ShaderStage.Geometry => 0x04,
-            Schema.ShaderStage.Hull => 0x08,
-            Schema.ShaderStage.Domain => 0x10,
-            Schema.ShaderStage.Compute => 0x20,
-            Schema.ShaderStage.Amplification => 0x40,
-            Schema.ShaderStage.Mesh => 0x80,
-            Schema.ShaderStage.RayGen => 0x100,
-            Schema.ShaderStage.RayMiss => 0x200,
-            Schema.ShaderStage.RayClosestHit => 0x400,
-            Schema.ShaderStage.RayAnyHit => 0x800,
-            Schema.ShaderStage.RayIntersection => 0x1000,
-            Schema.ShaderStage.Callable => 0x2000,
-            Schema.ShaderStage.Node => 0x4000,
+            SomeEngine.Resources.ShaderStage.Vertex => 0x01,
+            SomeEngine.Resources.ShaderStage.Pixel => 0x02,
+            SomeEngine.Resources.ShaderStage.Geometry => 0x04,
+            SomeEngine.Resources.ShaderStage.Hull => 0x08,
+            SomeEngine.Resources.ShaderStage.Domain => 0x10,
+            SomeEngine.Resources.ShaderStage.Compute => 0x20,
+            SomeEngine.Resources.ShaderStage.Amplification => 0x40,
+            SomeEngine.Resources.ShaderStage.Mesh => 0x80,
+            SomeEngine.Resources.ShaderStage.RayGen => 0x100,
+            SomeEngine.Resources.ShaderStage.RayMiss => 0x200,
+            SomeEngine.Resources.ShaderStage.RayClosestHit => 0x400,
+            SomeEngine.Resources.ShaderStage.RayAnyHit => 0x800,
+            SomeEngine.Resources.ShaderStage.RayIntersection => 0x1000,
+            SomeEngine.Resources.ShaderStage.Callable => 0x2000,
+            SomeEngine.Resources.ShaderStage.Node => 0x4000,
             _ => 0,
         };
 }

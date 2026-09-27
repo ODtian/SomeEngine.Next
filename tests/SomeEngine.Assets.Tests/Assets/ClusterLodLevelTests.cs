@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Importers;
 
 namespace SomeEngine.Assets.Tests.Assets;
@@ -10,14 +10,15 @@ public sealed class ClusterLodLevelTests
     public void ProcessedIcoSphereContainsLowerLodLevels()
     {
         var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(5);
-        var meshAsset = ClusterBuilder.ProcessRaw(
+        using var meshAsset = ClusterBuilder.ProcessRaw(
             vertices,
             attributes,
             indices,
             ClusterBuilderTestMaterials.Slots(),
             "TestLOD");
 
-        (int[] levelCounts, int maxLevel, _) = ReadLevelCounts(meshAsset.Payload!.Value);
+        using var payload = meshAsset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        (int[] levelCounts, int maxLevel, _) = ReadLevelCounts(payload.ToArray());
 
         Assert.True(levelCounts[0] > 0, "Should have Level 0 clusters");
         Assert.True(

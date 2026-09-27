@@ -1,0 +1,52 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 26,
+  "input_hash": "9e9b6b2011ce01ebb84f58f34a4c1a6a519b72b7c42f01eafa60169af2580db4",
+  "inputs": [
+    {
+      "relative_path": "../../assets/Shaders/cluster_structures.slang",
+      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_tessellation_bin.slang",
+      "content_hash": "db813b349bc92fd44897a5653e76e7af51b069d35693d594666b99f091864e77"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_tessellation_types.slang",
+      "content_hash": "6bd34c6fefe33af1b2e4a651438193c519048a75e1a814cfac2f434b98f5e366"
+    },
+    {
+      "relative_path": "../../assets/Shaders/resource_effects.slang",
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    },
+    {
+      "relative_path": "../../assets/Shaders/wave_aggregation.slang",
+      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+    },
+    {
+      "relative_path": "assets/Shaders/Pipeline/build_cluster_tessellation_bin.slang",
+      "content_hash": "38c7f12b53c5334c1cacfabd46b38bd6cb34b3955cdf6fff4fafa3cce98a712e"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_tessellation_bin.shader",
+      "content_hash": "b74e1e0b99e4abc144a10b2cded49fd6c959bc739226a9ddef72d19e82542844"
+    },
+    {
+      "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "ab50e035-870d-5e6b-9ecc-0d7325cb6f49",
+      "sub_asset_key": "",
+      "input_hash": "9e9b6b2011ce01ebb84f58f34a4c1a6a519b72b7c42f01eafa60169af2580db4",
+      "dependencies": [],
+      "asset_path": "cluster_tessellation_bin.shader.asset",
+      "version": "7f480a41-a975-88c2-abee-8d5099bbd2b8",
+      "content_hash": "073579923D6C52063F89A063A1FD3FDF0B8187A1631445420081ED00A295C22C",
+      "asset_dependencies": []
+    }
+  ]
+}

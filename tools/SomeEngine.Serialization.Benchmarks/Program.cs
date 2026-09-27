@@ -68,6 +68,9 @@ Console.WriteLine(string.Create(
     CultureInfo.InvariantCulture,
     $"serialization-native-performance: payload={payload.Length} samples={sampleCount} direct={directGiBs:F3}GiB/s native={nativeGiBs:F3}GiB/s median-ratio={medianRatio:P2}"));
 
+ViewMeasurements.Run();
+PageMeasurements.Run();
+await PageWorkloads.RunAsync();
 return 0;
 
 static long MeasureDirect(ReadOnlySpan<byte> source, byte[] destination, int copies)
@@ -146,7 +149,7 @@ static int GetNativeBlockLength<T>(
     return checked(payloadOffset + checked(count * proof.Size));
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 [BinaryNativeLayout("SomeEngine.Serialization.Benchmarks.NativeValue.v1")]
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
 public partial struct NativeValue

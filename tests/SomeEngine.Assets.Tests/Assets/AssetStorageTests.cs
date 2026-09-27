@@ -2,6 +2,7 @@ using System.IO;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Serialization.Containers;
 using static SomeEngine.Tests.TestProjectPaths;
 
@@ -12,16 +13,17 @@ public class AssetStorageTests
     [Fact]
     public void CreateImporters_ExposesAuthoringPipelineTypes()
     {
-        IReadOnlyList<IAssetImporter> importers = [new GltfSourceImporter(), new SlangSourceImporter()];
+        IReadOnlyList<SomeEngine.Assets.Importing.IAssetSourceImporter> importers = [Game.Importing.MaterialImport.CreateGltf()];
+        IReadOnlyList<IAssetSourceFormat> formats = [new ShaderSourceFormat()];
 
-        Assert.Contains(importers, importer => importer.ImporterName == nameof(SomeEngine.Assets.Importers.SlangShaderImporter));
-        Assert.Contains(importers, importer => importer.ImporterName == nameof(SomeEngine.Assets.Importers.GltfSourceImporter));
+        Assert.Contains(formats, format => format.SourceExtension == ".shader");
+        Assert.Contains(importers, importer => importer.SourceExtensions.Contains(".gltf") && importer.SourceExtensions.Contains(".glb"));
     }
 
     [Fact]
     public void AssetRuntimeAssemblyDoesNotReferenceImporterToolchains()
     {
-        string[] references = typeof(TextureData).Assembly
+        string[] references = typeof(TextureAsset).Assembly
             .GetReferencedAssemblies()
             .Select(static assembly => assembly.Name ?? string.Empty)
             .ToArray();
@@ -42,21 +44,20 @@ public class AssetStorageTests
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "generated.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = materialGuid.ToString(),
+            using var generated = new StandardMaterialAsset(PageArena.Shared, materialGuid) {
                 Name = "GeneratedMaterial",
-            }).ToAsset(), materialPath);
+            };
+            await generated.SaveAsync(materialPath);
 
-            AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            await project.RegisterAssetAsync<Material>(
-                "assets/Materials/generated.material.asset");
+            AssetProject project = new AssetProject(dir, [Game.Importing.MaterialImport.CreateGltf()], sourceFormats: [new ShaderSourceFormat()]);
+            using var materialFile = await MaterialAsset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/generated.material.asset"));
+            project.RegisterAsset(materialFile.Describe());
             IAssetStorage storage = project.CreateStorage();
             Assert.True(storage.TryFind(materialGuid, out AssetEntry entry));
-            await using BinaryDocument<MaterialData> document =
-                await AssetTestFiles.OpenAsync<Material, MaterialData>(storage, entry);
+            await using var loader = new AssetLoader(storage);
+            using MaterialAsset file = await MaterialAsset.OpenAsync(loader, new(entry.AssetGuid));
 
-            Assert.Equal(materialGuid.ToString(), document.Root.AssetGuid);
+            Assert.Equal(materialGuid, file.Id);
             Assert.Equal(materialGuid, project.Resolve("assets/Materials/generated.material.asset"));
         }
         finally

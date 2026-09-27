@@ -1,9 +1,10 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Serialization.IO;
@@ -22,17 +23,17 @@ internal static class ClusterTestAssets
         this ClusterMeshes manager,
         Mesh asset)
     {
-        using Mesh mesh = await OpenRuntimeMeshAsync(asset);
-        return await manager.AddMeshAsync(mesh);
+        using var content = await OpenRuntimeMeshAsync(asset);
+        return await manager.AddMeshAsync(content.Mesh, pageSource: content.PageSource);
     }
 
-    internal static async ValueTask<Mesh> OpenRuntimeMeshAsync(Mesh asset)
+    internal static async ValueTask<MeshFileContent> OpenRuntimeMeshAsync(Mesh asset)
     {
         ArgumentNullException.ThrowIfNull(asset);
         string path = Path.Combine(
             Path.GetTempPath(),
             $"SomeEngine-Cluster-{Guid.NewGuid():N}.mesh.asset");
-        Mesh streamed;
+        MeshFileContent streamed;
         try
         {
             ClusterTestFiles.WriteMesh(asset, path);
@@ -59,7 +60,7 @@ internal static class ClusterTestAssets
         {
             ClusterTestFiles.WriteMesh(asset, path);
             controlled = new ControlledRangeSource(FileRangeSource.Open(path), targetReadLength);
-            Mesh streamed = await ClusterTestFiles.OpenMeshAsync(
+            MeshFileContent streamed = await ClusterTestFiles.OpenMeshAsync(
                 controlled,
                 ownsSource: true);
             controlled.Arm();
@@ -122,14 +123,8 @@ internal static class ClusterTestAssets
         leaf.SetLeafData(clusterStart: 0, clusterCount: 1);
         MemoryMarshal.Write(payload.AsSpan(PageBytes), in leaf);
 
-        return new Mesh
-        {
-            Name = name,
-            Bounds = new Bounds { Center = new Vec3(), Radius = 1 },
-            Payload = payload,
-            VertexEncoding = StandardVertexEncoding,
-            BvhOffset = PageBytes,
-        };
+        return Mesh.Create(name, StandardVertexEncoding, payload.AsMemory(), PageBytes,
+            new Bounds { Center = new Vec3(), Radius = 1 });
     }
 
     internal static byte[] CreatePageData(byte marker = 0)

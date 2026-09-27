@@ -32,7 +32,7 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\assets\Shaders\hello_triangle.shader.asset">
+    <Content Include="..\..\templates\DefaultProject\assets\Shaders\hello_triangle.shader.asset">
       <Link>Content\Shaders\hello_triangle.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -44,5 +44,11 @@
       <Link>dxil.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../templates/DefaultProject/Game.Importing/Game.Importing.csproj" />
+    <Using Include="Game.Content" />
+    <Using Include="Game.Assets" />
+    <Using Include="Game.Importing" />
   </ItemGroup>
 </Project>

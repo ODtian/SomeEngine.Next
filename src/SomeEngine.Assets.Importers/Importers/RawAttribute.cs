@@ -1,4 +1,4 @@
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -6,13 +6,13 @@ public class RawAttribute(
     string name,
     float[] data,
     int dimension,
-    SomeEngine.Assets.Data.ValueType targetType,
+    SomeEngine.Resources.Geometry.ValueType targetType,
     byte numComponents,
     bool normalized
 )
 {
     public string Name = name;
-    public SomeEngine.Assets.Data.ValueType TargetType = targetType;
+    public SomeEngine.Resources.Geometry.ValueType TargetType = targetType;
     public byte NumComponents = numComponents;
     public bool Normalized = normalized;
 

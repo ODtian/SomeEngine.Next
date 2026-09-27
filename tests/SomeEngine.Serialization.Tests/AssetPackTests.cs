@@ -304,7 +304,7 @@ public sealed class AssetPackTests
         Guid assetId,
         BinaryReadLimits? limits = null,
         CancellationToken cancellationToken = default)
-        where T : IBinaryContract<T>
+        where T : IBinarySerializable<T>
     {
         IRangeSource source = await pack.OpenAssetSourceAsync(assetId, cancellationToken);
         return await BinaryDocument<T>.OpenAsync(

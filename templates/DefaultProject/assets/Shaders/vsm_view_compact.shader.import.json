@@ -1,0 +1,52 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 26,
+  "input_hash": "3959652c5e2fdfd967a30b2c87bb491d17e58e7f3986208a81071aba341b9e84",
+  "inputs": [
+    {
+      "relative_path": "../../assets/Shaders/cluster_raster_target_invocation.slang",
+      "content_hash": "201330a784b91cde38cb9b16cf169e73d5352cdc251fec33d35cca4592cfa8ec"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_view.slang",
+      "content_hash": "4bae0a993c28e15d3fbc009ba3bc8f4b3c8291314d63cf70efddfd372c0c07c2"
+    },
+    {
+      "relative_path": "../../assets/Shaders/resource_effects.slang",
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_sampling.slang",
+      "content_hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_view_compact.slang",
+      "content_hash": "6e26b40096fe62cf81794bb243b190e4d00a5ca002917b074ba248811844af62"
+    },
+    {
+      "relative_path": "assets/Shaders/Pipeline/build_vsm_view_compact.slang",
+      "content_hash": "bf98c5937aacfa0fe07c0102af60888ec6cdda6112a862836830a6d2f3065669"
+    },
+    {
+      "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+    },
+    {
+      "relative_path": "assets/Shaders/vsm_view_compact.shader",
+      "content_hash": "5462282a3b3a3539e70f5507db68233a3f7ae0e35fb87b5f78b70b29c231e744"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "5610ce5e-dcec-5518-affa-7a9efe3ce939",
+      "sub_asset_key": "",
+      "input_hash": "3959652c5e2fdfd967a30b2c87bb491d17e58e7f3986208a81071aba341b9e84",
+      "dependencies": [],
+      "asset_path": "vsm_view_compact.shader.asset",
+      "version": "215d638b-f788-cb8a-37ba-ecd24758ef9f",
+      "content_hash": "6A1DC717ADE42873C5F4C0C21961967DFB9D4F1DE77C1C8C899F966167107987",
+      "asset_dependencies": []
+    }
+  ]
+}

@@ -14,7 +14,7 @@ public sealed class BinaryNativeLayoutGeneratorTests
             using System.Runtime.InteropServices;
             using SomeEngine.Serialization;
 
-            [BinaryContract]
+            [BinarySerializable]
             [BinaryNativeLayout("Tests.NativeVector2.v1")]
             [StructLayout(LayoutKind.Sequential, Pack = 4)]
             public partial struct NativeVector2
@@ -23,7 +23,7 @@ public sealed class BinaryNativeLayoutGeneratorTests
                 public float Y;
             }
 
-            [BinaryContract]
+            [BinarySerializable]
             [BinaryNativeLayout("Tests.NativeVertex.v1")]
             [StructLayout(LayoutKind.Sequential, Pack = 4)]
             public partial struct NativeVertex
@@ -55,7 +55,7 @@ public sealed class BinaryNativeLayoutGeneratorTests
             using System.Runtime.InteropServices;
             using SomeEngine.Serialization;
 
-            [BinaryContract]
+            [BinarySerializable]
             [BinaryNativeLayout("Tests.Padded.v1")]
             [StructLayout(LayoutKind.Sequential, Pack = 4)]
             public partial struct Padded
@@ -118,7 +118,7 @@ public sealed class BinaryNativeLayoutGeneratorTests
             .Split(Path.PathSeparator)
             .Select(static path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(BinaryContractAttribute).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(BinarySerializableAttribute).Assembly.Location));
         return references.ToArray();
     }
 

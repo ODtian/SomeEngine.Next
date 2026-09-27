@@ -18,6 +18,7 @@ public sealed class RenderExtractionSystems : IDisposable
     private readonly RenderWorld _renderWorld;
     private readonly List<IRenderExtractionSystem> _systems = [];
     private int[] _writtenComponents = [];
+    internal QueryDefinition DestinationAccess { get; private set; } = null!;
     private readonly RenderExtractionContext _context;
     private readonly object _gate = new();
     private QueryDefinition? _sourceQuery;
@@ -169,6 +170,7 @@ public sealed class RenderExtractionSystems : IDisposable
         for (int index = 0; index < _systems.Count; index++)
             _systems[index].DeclareReads(query);
         _writtenComponents = query.WrittenComponents.ToArray();
+        DestinationAccess = query.BuildDestinationAccess();
         return query.Build();
     }
 
@@ -385,10 +387,16 @@ public sealed class RenderExtractionQuery
 {
     private readonly QueryDefinitionBuilder _builder = new();
     internal HashSet<int> WrittenComponents { get; } = [];
+    private readonly QueryDefinitionBuilder _destination = new QueryDefinitionBuilder().Optional<RenderSource>(QueryAccess.Read);
 
     /// <summary>Declares a destination component changed by this extractor.</summary>
-    public void Write<T>() where T : struct, IComponent =>
-        WrittenComponents.Add(SomeEngine.ECS.Registry.ComponentMetadata<T>.Id);
+    public void Write<T>() where T : struct, IComponent
+    {
+        if (WrittenComponents.Add(SomeEngine.ECS.Registry.ComponentMetadata<T>.Id))
+            _destination.Optional<T>(QueryAccess.Write);
+    }
+
+    internal QueryDefinition BuildDestinationAccess() => _destination.Build();
 
     public void ReadOptional<T>() where T : struct
         => _builder.Optional<T>(QueryAccess.Read);

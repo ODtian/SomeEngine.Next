@@ -1,5 +1,6 @@
 using SomeEngine.Serialization;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -12,14 +13,17 @@ public sealed class AssetTypeExtensibilityTests
         using var directory = new AssetTestDirectory();
         Guid id = Guid.NewGuid();
         var project = new AssetProject(directory.Path, []);
-        using Asset<ReadingSample> written = new ReadingSampleData { AssetGuid = id.ToString(), Name = "third-party", Number = 42 }.ToAsset();
-        project.CreateAsset("new.reading.asset", written);
+        using ReadingSampleAsset written = new ReadingSampleAsset(SomeEngine.Serialization.Containers.PageArena.Shared, id) { Name = "third-party" };
+        using var content = new ReadingSampleBlock { Number = 42 };
+        written.SetBlock(content);
+        project.RegisterAsset(await written.SaveAsync(directory.File("new.reading.asset")));
         int created = ReadingSample.Created;
         await using var loader = new AssetLoader(project.CreateStorage());
-        await using Asset<ReadingSample> file = await loader.OpenAsync(new AssetId<ReadingSample>(id));
+        await using ReadingSampleAsset file = await ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id));
         Assert.Equal(created, ReadingSample.Created);
-        using ReadingSample first = ReadingSample.Create(file);
-        using ReadingSample second = ReadingSample.Create(file);
+        ReadingSampleBlock opened = await file.GetBlockAsync<ReadingSampleBlock>();
+        using ReadingSample first = opened.Create(file.Name);
+        using ReadingSample second = opened.Create(file.Name);
         Assert.NotSame(first, second);
         Assert.Equal(42, first.Number);
         first.Dispose();
@@ -35,7 +39,8 @@ public sealed class AssetTypeExtensibilityTests
         Guid id = Guid.NewGuid();
         string path = directory.WriteSample(id, 7);
         var project = new AssetProject(directory.Path, []);
-        Assert.Equal(id, await project.RegisterAssetAsync<ReadingSample>(path));
+        using var opened = await ReadingSampleAsset.OpenAsync(path);
+        Assert.Equal(id, project.RegisterAsset(opened.Describe()));
         Assert.Equal(id, project.Resolve(path));
         Assert.Single(project.Manifest.Assets);
         Assert.Empty(Directory.GetFiles(directory.Path, "*.asset.meta"));
@@ -49,8 +54,8 @@ public sealed class AssetTypeExtensibilityTests
         var storage = new ReadingStorage();
         storage.Publish(id, directory.WriteSample(id, 13));
         await using var loader = new AssetLoader(storage);
-        await using Asset<ReadingSample> file = await loader.OpenAsync(new AssetId<ReadingSample>(id));
-        using ReadingSample value = ReadingSample.Create(file);
+        await using ReadingSampleAsset file = await ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id));
+        using ReadingSample value = (await file.GetBlockAsync<ReadingSampleBlock>()).Create(file.Name);
         await loader.DisposeAsync();
         Assert.Equal(13, value.Number);
         Assert.False(value.IsDisposed);
@@ -65,14 +70,16 @@ public sealed class AssetTypeExtensibilityTests
     {
         using var directory = new AssetTestDirectory();
         Guid dependency = Guid.NewGuid();
-        using Asset<ReadingSample> written = new ReadingSampleData { Dependency = dependency }.ToAsset();
+        using ReadingSampleAsset written = new ReadingSampleAsset();
+        using var content = new ReadingSampleBlock { Dependency = new(dependency) };
+        written.SetBlock(content);
         var project = new AssetProject(directory.Path, []);
-        Guid id = project.CreateAsset("parent.reading.asset", written);
+        Guid id = project.RegisterAsset(await written.SaveAsync(directory.File("parent.reading.asset")));
         await using var loader = new AssetLoader(project.CreateStorage());
-        await using Asset<ReadingSample> file = await loader.OpenAsync(new AssetId<ReadingSample>(id));
-        Assert.Equal([dependency], file.Dependencies);
+        await using ReadingSampleAsset file = await ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id));
+        Assert.Equal([dependency], file.Describe().Dependencies);
         Assert.Equal([id], project.Manifest.GetReferencers(dependency));
-        Assert.Equal("sample", ReadingSample.Create(file).Name);
+        Assert.Equal("sample", (await file.GetBlockAsync<ReadingSampleBlock>()).Create(file.Name).Name);
     }
 
     [Fact]
@@ -82,12 +89,12 @@ public sealed class AssetTypeExtensibilityTests
         Guid id = Guid.NewGuid();
         var storage = new ReadingStorage();
         string path = directory.WriteSample(id, 1);
-        storage.Publish(id, path, type: Asset<Texture>.FileType);
+        storage.Publish(id, path, type: TextureAsset.FileType);
         await using var loader = new AssetLoader(storage);
-        await Assert.ThrowsAsync<InvalidDataException>(() => loader.OpenAsync(new AssetId<ReadingSample>(id)).AsTask());
+        await Assert.ThrowsAsync<InvalidDataException>(() => ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id)).AsTask());
         Assert.Equal(0, storage.Opens);
-        storage.Publish(id, path, schema: Asset<ReadingSample>.SchemaHash ^ 1UL);
-        await Assert.ThrowsAsync<BinarySchemaMismatchException>(() => loader.OpenAsync(new AssetId<ReadingSample>(id)).AsTask());
+        storage.Publish(id, path, schema: ReadingSampleAsset.SchemaHash ^ 1UL);
+        await Assert.ThrowsAsync<InvalidDataException>(() => ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id)).AsTask());
         Assert.Equal(0, storage.Opens);
     }
 
@@ -100,10 +107,10 @@ public sealed class AssetTypeExtensibilityTests
         var storage = new ReadingStorage();
         storage.Publish(id, path, corrupt: true);
         await using var loader = new AssetLoader(storage);
-        await Assert.ThrowsAnyAsync<InvalidDataException>(() => loader.OpenAsync(new AssetId<ReadingSample>(id)).AsTask());
+        await Assert.ThrowsAnyAsync<InvalidDataException>(() => ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id)).AsTask());
         Assert.Equal(1, storage.RangesClosed);
         storage.Publish(id, path);
-        await using Asset<ReadingSample> file = await loader.OpenAsync(new AssetId<ReadingSample>(id));
-        Assert.Equal(11, ReadingSample.Create(file).Number);
+        await using ReadingSampleAsset file = await ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id));
+        Assert.Equal(11, (await file.GetBlockAsync<ReadingSampleBlock>()).Create(file.Name).Number);
     }
 }

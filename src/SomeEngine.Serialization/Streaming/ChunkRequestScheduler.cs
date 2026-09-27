@@ -9,7 +9,11 @@ public readonly record struct ChunkRequestOptions(int Priority = 0, DateTimeOffs
 /// Trusted pre-I/O size declaration used to admit both the stored input and decoded output before
 /// the loader is allowed to allocate or decompress them.
 /// </summary>
-public readonly record struct ChunkLoadEstimate(long StoredBytes, long DecodedBytes);
+public readonly record struct ChunkLoadEstimate(long StoredBytes, long DecodedBytes)
+{
+    /// <summary>Final allocation capacity when alignment requires more storage than payload bytes.</summary>
+    public long? BufferBytes { get; init; }
+}
 
 /// <summary>
 /// Allocation-free pin over an already resident chunk. Copies carry the same scheduler token;
@@ -48,6 +52,20 @@ public struct ResidentChunkLease : IDisposable
             return;
         Interlocked.Exchange(ref _owner, null)?.Release(_key, _generation, _pinToken);
     }
+
+    /// <summary>Creates an independent content branch sharing the acquired pages.</summary>
+    public PageBuffer DuplicatePages() => GetScheduler().DuplicatePinnedPages(_key, _generation, _pinToken);
+
+    /// <summary>Retains selected pages independently of this pin, the cache and the document.</summary>
+    public PageRange<byte> RetainPages(long offset = 0, long? length = null)
+        => GetScheduler().RetainPinnedPages(_key, _generation, _pinToken, offset, length);
+
+    private ChunkRequestScheduler GetScheduler()
+    {
+        ChunkRequestScheduler? scheduler = Volatile.Read(ref _owner);
+        ObjectDisposedException.ThrowIf(scheduler is null || Volatile.Read(ref _disposed) != 0, this);
+        return scheduler;
+    }
 }
 
 /// <summary>
@@ -58,13 +76,16 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly Func<ulong, CancellationToken, ValueTask<ChunkLease>> _loader;
+    private readonly Func<ulong, ResidencyReservation, CancellationToken, ValueTask<ChunkLease>>? _pageLoader;
+    private readonly Func<ValueTask>? _disposeLoader;
     private readonly Func<ulong, CancellationToken, ValueTask<ChunkLoadEstimate>> _estimator;
     private readonly bool _loaderReportsStoredBytes;
     private readonly Dictionary<ulong, CacheEntry> _entries = [];
     private readonly PriorityQueue<QueuedLoad, (long Priority, long Sequence)> _queue = new();
     private readonly LinkedList<CacheEntry> _lru = [];
     private readonly SemaphoreSlim _queueSignal = new(0);
-    private readonly SemaphoreSlim _admissionSignal = new(0);
+    private readonly object _budgetSignalGate = new();
+    private TaskCompletionSource _budgetChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task[] _workers;
     private readonly int _maxQueuedRequests;
@@ -107,7 +128,9 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
         int maxQueuedRequests,
         ChunkStreamingMetrics? metrics,
         ResidencyBudgetLedger? residency,
-        bool loaderReportsStoredBytes)
+        bool loaderReportsStoredBytes,
+        Func<ulong, ResidencyReservation, CancellationToken, ValueTask<ChunkLease>>? pageLoader = null,
+        Func<ValueTask>? disposeLoader = null)
     {
         ArgumentNullException.ThrowIfNull(loader);
         ArgumentNullException.ThrowIfNull(estimator);
@@ -115,6 +138,8 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxConcurrency);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxQueuedRequests);
         _loader = loader;
+        _pageLoader = pageLoader;
+        _disposeLoader = disposeLoader;
         _estimator = estimator;
         _loaderReportsStoredBytes = loaderReportsStoredBytes;
         _residency = residency ?? new ResidencyBudgetLedger(new ResidencyBudgets
@@ -126,7 +151,8 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
             _residency.Budget(ResidencyClass.DecodedCpu));
         _maxQueuedRequests = maxQueuedRequests;
         Metrics = metrics ?? new ChunkStreamingMetrics();
-        _residency.AvailabilityReleased += OnResidencyReleased;
+        _residency.AvailabilityChanged += OnResidencyChanged;
+        _residency.ReclaimRequested += ReclaimDecodedContent;
         _workers = Enumerable.Range(0, maxConcurrency)
             .Select(_ => Task.Run(WorkerAsync))
             .ToArray();
@@ -140,14 +166,13 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
     /// </summary>
     public ResidencyBudgetLedger Residency => _residency;
 
-    public static ChunkRequestScheduler CreateForDocument<T>(
-        BinaryDocument<T> document,
+    public static ChunkRequestScheduler CreateForDocument(
+        BinaryDocument document,
         long decodedBudgetBytes,
         int maxConcurrency = 4,
         int maxQueuedRequests = 4096,
         ChunkStreamingMetrics? metrics = null,
         ResidencyBudgetLedger? residency = null)
-        where T : IBinaryContract<T>
     {
         ArgumentNullException.ThrowIfNull(document);
 
@@ -157,7 +182,7 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
                 DecodedCpuBytes = decodedBudgetBytes,
             });
         ChunkStreamingMetrics sharedMetrics = metrics ?? new ChunkStreamingMetrics();
-        var loader = new DocumentChunkLoader<T>(document, sharedMetrics);
+        var loader = new DocumentChunkLoader(document, sharedMetrics);
 
         return new ChunkRequestScheduler(
             loader.LoadAsync,
@@ -168,6 +193,28 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
             sharedMetrics,
             sharedResidency,
             loaderReportsStoredBytes: true);
+    }
+
+    /// <summary>
+    /// Uses the same queue, deduplication and eviction with final decoded pages. Capacity is
+    /// reserved once, then transferred to those pages so retained users outlive cache disposal.
+    /// The document is retained for queued work until this scheduler finishes shutting down.
+    /// </summary>
+    public static ChunkRequestScheduler CreateForDocument(BinaryDocument document, PageArena pages,
+        long decodedBudgetBytes, int maxConcurrency = 4, int maxQueuedRequests = 4096,
+        ChunkStreamingMetrics? metrics = null)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(pages);
+        ChunkStreamingMetrics sharedMetrics = metrics ?? new();
+        var loader = new DocumentChunkLoader(document, sharedMetrics, pages);
+        try
+        {
+            return new ChunkRequestScheduler(loader.LoadAsync, loader.EstimateAsync, decodedBudgetBytes,
+                maxConcurrency, maxQueuedRequests, sharedMetrics, pages.Residency,
+                loaderReportsStoredBytes: true, loader.LoadPagesAsync, loader.DisposeAsync);
+        }
+        catch { loader.DisposeAsync().AsTask().GetAwaiter().GetResult(); throw; }
     }
 
     public long ResidentBytes
@@ -283,6 +330,7 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
                 if (_entries.TryGetValue(key, out CacheEntry? current) && ReferenceEquals(current, entry))
                     entry.Waiters--;
             }
+            _residency.NotifyAvailabilityChanged();
             throw;
         }
         catch (TimeoutException)
@@ -293,6 +341,7 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
                 if (_entries.TryGetValue(key, out CacheEntry? current) && ReferenceEquals(current, entry))
                     entry.Waiters--;
             }
+            _residency.NotifyAvailabilityChanged();
             throw;
         }
         catch
@@ -302,6 +351,7 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
                 if (_entries.TryGetValue(key, out CacheEntry? current) && ReferenceEquals(current, entry))
                     entry.Waiters--;
             }
+            _residency.NotifyAvailabilityChanged();
             throw;
         }
 
@@ -335,20 +385,29 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
 
     internal ReadOnlyMemory<byte> GetPinnedMemory(ulong key, long generation, long pinToken)
     {
+        lock (_gate) return PinnedChunk(key, generation, pinToken).Memory;
+    }
+    internal PageBuffer DuplicatePinnedPages(ulong key, long generation, long pinToken)
+    {
+        lock (_gate) return PinnedChunk(key, generation, pinToken).DuplicatePages();
+    }
+
+    internal PageRange<byte> RetainPinnedPages(ulong key, long generation, long pinToken, long offset, long? length)
+    {
         lock (_gate)
         {
-            ThrowIfDisposed();
-            if (!_entries.TryGetValue(key, out CacheEntry? entry)
-                || entry.Generation != generation
-                || entry.SourceLease is null
-                || !entry.ActivePins.Contains(pinToken))
-            {
-                throw new ObjectDisposedException(
-                    nameof(ResidentChunkLease),
-                    $"Resident chunk lease for 0x{key:X16} is no longer valid.");
-            }
-            return entry.SourceLease.Memory;
+            ChunkLease chunk = PinnedChunk(key, generation, pinToken);
+            return chunk.RetainPages(offset, length ?? chunk.Length - offset);
         }
+    }
+
+    private ChunkLease PinnedChunk(ulong key, long generation, long pinToken)
+    {
+        ThrowIfDisposed();
+        if (!_entries.TryGetValue(key, out CacheEntry? entry) || entry.Generation != generation
+            || entry.SourceLease is null || !entry.ActivePins.Contains(pinToken))
+            throw new ObjectDisposedException(nameof(ResidentChunkLease), $"Resident chunk 0x{key:X16} is no longer valid.");
+        return entry.SourceLease;
     }
 
     internal void Release(ulong key, long generation, long pinToken)
@@ -366,8 +425,8 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
                 return;
             Metrics.Unpin(entry.Size);
             TouchLocked(entry);
-            SignalAdmission();
         }
+        _residency.NotifyAvailabilityChanged();
     }
 
     public async ValueTask DisposeAsync()
@@ -382,7 +441,8 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
         }
 
         _shutdown.Cancel();
-        _residency.AvailabilityReleased -= OnResidencyReleased;
+        _residency.AvailabilityChanged -= OnResidencyChanged;
+        _residency.ReclaimRequested -= ReclaimDecodedContent;
         _queueSignal.Release(_workers.Length);
         SignalAdmission(force: true);
         try
@@ -409,7 +469,7 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
             _residentBytes = 0;
         }
         _queueSignal.Dispose();
-        _admissionSignal.Dispose();
+        if (_disposeLoader is not null) await _disposeLoader().ConfigureAwait(false);
         _shutdown.Dispose();
     }
 
@@ -458,40 +518,46 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
         {
             ChunkLoadEstimate estimate = await _estimator(entry.Key, _shutdown.Token).ConfigureAwait(false);
             ValidateEstimate(entry.Key, estimate);
+            long decodedCapacity = estimate.BufferBytes ?? estimate.DecodedBytes;
 
             while (decodedReservation is null)
             {
                 Interlocked.Increment(ref _admissionWaiters);
                 try
                 {
+                    Task budgetChanged;
+                    lock (_budgetSignalGate)
+                        budgetChanged = _budgetChanged.Task;
                     lock (_gate)
                     {
                         ThrowIfDisposed();
-                        while (estimate.DecodedBytes
-                               > _decodedBudget - _residentBytes - _admittedDecodedBytes
+                        while ((decodedCapacity
+                                > _decodedBudget - _residentBytes - _admittedDecodedBytes
+                                || decodedCapacity > _residency.Available(ResidencyClass.DecodedCpu))
                                && TryEvictOneLocked(entry))
                         {
                         }
 
-                        if (estimate.DecodedBytes
+                        if (decodedCapacity
                                 <= _decodedBudget - _residentBytes - _admittedDecodedBytes
                             && _residency.TryReservePair(
                                 ResidencyClass.Compressed,
                                 estimate.StoredBytes,
                                 ResidencyClass.DecodedCpu,
-                                estimate.DecodedBytes,
+                                decodedCapacity,
                                 out compressedReservation,
                                 out decodedReservation))
                         {
                             _admittedDecodedBytes = checked(
-                                _admittedDecodedBytes + estimate.DecodedBytes);
-                            admittedDecodedBytes = estimate.DecodedBytes;
+                                _admittedDecodedBytes + decodedCapacity);
+                            admittedDecodedBytes = decodedCapacity;
                         }
                     }
 
                     if (decodedReservation is null)
                     {
-                        await _admissionSignal.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+                        _residency.RequestReclaim(ResidencyClass.DecodedCpu, decodedCapacity);
+                        await budgetChanged.WaitAsync(_shutdown.Token).ConfigureAwait(false);
                     }
                 }
                 finally
@@ -501,14 +567,16 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
             }
 
             long loadStart = Stopwatch.GetTimestamp();
-            sourceLease = await _loader(entry.Key, _shutdown.Token).ConfigureAwait(false);
+            sourceLease = _pageLoader is null
+                ? await _loader(entry.Key, _shutdown.Token).ConfigureAwait(false)
+                : await _pageLoader(entry.Key, decodedReservation, _shutdown.Token).ConfigureAwait(false);
             if (!_loaderReportsStoredBytes)
                 Metrics.StoredBytesRead(estimate.StoredBytes);
             long loadEnd = Stopwatch.GetTimestamp();
             int size;
             try
             {
-                size = sourceLease.Memory.Length;
+                size = checked((int)sourceLease.Length);
             }
             catch
             {
@@ -538,18 +606,19 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
                 sourceLease = null;
                 entry.DecodedReservation = decodedReservation;
                 decodedReservation = null;
-                entry.Size = size;
-                _residentBytes += size;
+                entry.Size = decodedCapacity;
+                _residentBytes += decodedCapacity;
                 _admittedDecodedBytes -= admittedDecodedBytes;
                 admittedDecodedBytes = 0;
                 TouchLocked(entry);
                 entry.Completion.TrySetResult();
-                Metrics.ResidentAdded(size);
+                Metrics.ResidentAdded(decodedCapacity);
                 Metrics.LoadCompleted(
                     size,
                     loadStart - queued.EnqueuedTimestamp,
                     loadEnd - loadStart);
             }
+            _residency.NotifyAvailabilityChanged();
         }
         catch (Exception exception)
         {
@@ -568,7 +637,7 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
                 entry.Completion.TrySetException(exception);
                 Metrics.LoadFailed();
             }
-            SignalAdmission();
+            _residency.NotifyAvailabilityChanged();
         }
     }
 
@@ -612,7 +681,9 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
                 $"Chunk 0x{key:X16} stored payload ({estimate.StoredBytes} bytes) exceeds compressed budget " +
                 $"{_residency.Budget(ResidencyClass.Compressed)} before I/O admission.");
         }
-        if (estimate.DecodedBytes > _decodedBudget)
+        if (estimate.BufferBytes is { } capacity && capacity < estimate.DecodedBytes)
+            throw new InvalidDataException("The declared buffer capacity is smaller than its decoded content.");
+        if ((estimate.BufferBytes ?? estimate.DecodedBytes) > _decodedBudget)
         {
             throw new InvalidOperationException(
                 $"Chunk 0x{key:X16} decoded payload ({estimate.DecodedBytes} bytes) exceeds decoded budget " +
@@ -620,23 +691,31 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
         }
     }
 
-    private void OnResidencyReleased() => SignalAdmission();
+    private void OnResidencyChanged() => SignalAdmission();
+
+    private void ReclaimDecodedContent(ResidencyClass residencyClass, long requiredBytes)
+    {
+        if (residencyClass != ResidencyClass.DecodedCpu) return;
+        lock (_gate)
+        {
+            if (_disposed) return;
+            while (_residency.Available(residencyClass) < requiredBytes && TryEvictOneLocked())
+            {
+            }
+        }
+    }
 
     private void SignalAdmission(bool force = false)
     {
         if (!force && Volatile.Read(ref _admissionWaiters) == 0)
             return;
-        try
+        TaskCompletionSource changed;
+        lock (_budgetSignalGate)
         {
-            _admissionSignal.Release();
+            changed = _budgetChanged;
+            _budgetChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
-        catch (ObjectDisposedException) when (_disposed)
-        {
-        }
-        catch (SemaphoreFullException)
-        {
-            // A pending signal is already sufficient to force every waiter to re-check admission.
-        }
+        changed.TrySetResult();
     }
 
     private long PinLocked(CacheEntry entry)
@@ -706,7 +785,7 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
         internal ChunkLease? SourceLease { get; set; }
         internal ResidencyReservation? DecodedReservation { get; set; }
         internal LinkedListNode<CacheEntry>? LruNode { get; set; }
-        internal int Size { get; set; }
+        internal long Size { get; set; }
         internal int Waiters { get; set; }
         internal HashSet<long> ActivePins { get; } = [];
         internal int Priority { get; set; }

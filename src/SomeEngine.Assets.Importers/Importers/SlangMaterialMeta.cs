@@ -15,7 +15,7 @@ internal static partial class SlangMaterialMeta
 
     public static void BindEntry(
         VariableLayoutReflection parameter,
-        Schema.ShaderMetadata metadata,
+        ref SomeEngine.Resources.ShaderMetadata metadata,
         HashSet<string>? resourceNames = null)
     {
         if (parameter == VariableLayoutReflection.Null)
@@ -29,11 +29,11 @@ internal static partial class SlangMaterialMeta
             return;
         }
 
-        BindType(typeLayout, metadata, resourceNames);
+        BindType(typeLayout, ref metadata, resourceNames);
     }
 
     public static void AddBinding(
-        Schema.ShaderMetadata metadata,
+        ref SomeEngine.Resources.ShaderMetadata metadata,
         string? name,
         byte resourceType)
     {
@@ -42,8 +42,8 @@ internal static partial class SlangMaterialMeta
             return;
         }
 
-        metadata.MaterialBindings ??= [];
-        foreach (Schema.ShaderMaterialBinding existing in metadata.MaterialBindings)
+        var bindings = metadata.MaterialBindings ?? [];
+        foreach (SomeEngine.Resources.ShaderMaterialBinding existing in bindings)
         {
             if (!string.Equals(existing.Name, name, StringComparison.Ordinal))
             {
@@ -59,12 +59,12 @@ internal static partial class SlangMaterialMeta
             return;
         }
 
-        metadata.MaterialBindings.Add(
-            new Schema.ShaderMaterialBinding
+        metadata = metadata with { MaterialBindings = bindings.Add(
+            new SomeEngine.Resources.ShaderMaterialBinding
             {
                 Name = name,
                 ResourceType = resourceType,
-            });
+            }) };
     }
 
     public static List<string> ScalarTypes(
@@ -123,7 +123,7 @@ internal static partial class SlangMaterialMeta
     public static void ScalarLayouts(
         ShaderReflection reflection,
         IReadOnlyList<string> materialScalarTypes,
-        Schema.ShaderMetadata metadata)
+        ref SomeEngine.Resources.ShaderMetadata metadata)
     {
         if (reflection == ShaderReflection.Null || materialScalarTypes.Count == 0)
         {
@@ -135,7 +135,7 @@ internal static partial class SlangMaterialMeta
                 ?? [],
             StringComparer.Ordinal);
 
-        metadata.MaterialScalarLayouts ??= [];
+
 
         foreach (string typeName in materialScalarTypes)
         {
@@ -158,21 +158,21 @@ internal static partial class SlangMaterialMeta
                 continue;
             }
 
-            AddScalarLayout(metadata, typeName, maybeLayout.Value);
+            AddScalarLayout(ref metadata, typeName, maybeLayout.Value);
         }
     }
 
-    public static void SortInstanceProperties(Schema.ShaderMetadata metadata)
+    public static void SortInstanceProperties(ref SomeEngine.Resources.ShaderMetadata metadata)
     {
         if (metadata.InstanceProperties is not { Count: > 1 } properties)
         {
             return;
         }
 
-        metadata.InstanceProperties = properties
+        metadata = metadata with { InstanceProperties = properties
             .OrderBy(static property => property.MaterialScalarLayoutName, StringComparer.Ordinal)
             .ThenBy(static property => property.CanonicalId, StringComparer.Ordinal)
-            .ToList();
+            .ToImmutableList() };
     }
 
     public static byte ResourceType(TypeReflection type)
@@ -206,7 +206,7 @@ internal static partial class SlangMaterialMeta
 
     private static void BindType(
         TypeLayoutReflection typeLayout,
-        Schema.ShaderMetadata metadata,
+        ref SomeEngine.Resources.ShaderMetadata metadata,
         HashSet<string>? resourceNames)
     {
         if (typeLayout == TypeLayoutReflection.Null)
@@ -225,47 +225,47 @@ internal static partial class SlangMaterialMeta
             byte resourceType = ResourceType(field.Type);
             if (resourceType != Unknown)
             {
-                AddBinding(metadata, field.Name, resourceType);
+                AddBinding(ref metadata, field.Name, resourceType);
                 resourceNames?.Add(field.Name);
                 continue;
             }
 
-            BindType(field.TypeLayout.UnwrapArray(), metadata, resourceNames);
+            BindType(field.TypeLayout.UnwrapArray(), ref metadata, resourceNames);
         }
     }
 
     private static void AddScalarLayout(
-        Schema.ShaderMetadata metadata,
+        ref SomeEngine.Resources.ShaderMetadata metadata,
         string typeName,
         TypeLayoutReflection typeLayout)
     {
-        Schema.ShaderMaterialScalarLayout layout = CreateScalarLayout(metadata, typeName, typeLayout);
-        metadata.MaterialScalarLayouts ??= [];
-        metadata.MaterialScalarLayouts.Add(layout);
+        SomeEngine.Resources.ShaderMaterialScalarLayout layout = CreateScalarLayout(ref metadata, typeName, typeLayout);
+
+        metadata = metadata with { MaterialScalarLayouts = (metadata.MaterialScalarLayouts ?? []).Add(layout) };
     }
 
-    private static Schema.ShaderMaterialScalarLayout CreateScalarLayout(
-        Schema.ShaderMetadata metadata,
+    private static SomeEngine.Resources.ShaderMaterialScalarLayout CreateScalarLayout(
+        ref SomeEngine.Resources.ShaderMetadata metadata,
         string typeName,
         TypeLayoutReflection typeLayout)
     {
         uint payloadSize = checked((uint)typeLayout.GetSize(SlangParameterCategory.Uniform));
-        var fields = new List<Schema.ShaderMaterialScalarField>((int)typeLayout.FieldCount);
-        ScalarOffsetRange offsetRange = AddScalarFields(metadata, typeName, typeLayout, fields);
+        var fields = new List<SomeEngine.Resources.ShaderMaterialScalarField>((int)typeLayout.FieldCount);
+        ScalarOffsetRange offsetRange = AddScalarFields(ref metadata, typeName, typeLayout, fields);
         payloadSize = NormalizeScalarPayload(payloadSize, offsetRange, fields);
-        return new Schema.ShaderMaterialScalarLayout
+        return new SomeEngine.Resources.ShaderMaterialScalarLayout
         {
             Name = typeName,
             Size = payloadSize,
-            Fields = fields,
+            Fields = fields.ToImmutableList(),
         };
     }
 
     private static ScalarOffsetRange AddScalarFields(
-        Schema.ShaderMetadata metadata,
+        ref SomeEngine.Resources.ShaderMetadata metadata,
         string materialScalarLayoutName,
         TypeLayoutReflection typeLayout,
-        List<Schema.ShaderMaterialScalarField> fields)
+        List<SomeEngine.Resources.ShaderMaterialScalarField> fields)
     {
         uint baseOffset = uint.MaxValue;
         uint maxFieldEnd = 0;
@@ -290,7 +290,7 @@ internal static partial class SlangMaterialMeta
             maxFieldEnd = Math.Max(maxFieldEnd, fieldEnd);
             fields.Add(CreateScalarField(fieldLayout, fieldTypeLayout, fieldOffset, fieldSize));
             AddInstanceProperty(
-                metadata,
+                ref metadata,
                 materialScalarLayoutName,
                 fieldLayout,
                 fieldTypeLayout,
@@ -300,13 +300,13 @@ internal static partial class SlangMaterialMeta
         return new ScalarOffsetRange(baseOffset, maxFieldEnd);
     }
 
-    private static Schema.ShaderMaterialScalarField CreateScalarField(
+    private static SomeEngine.Resources.ShaderMaterialScalarField CreateScalarField(
         VariableLayoutReflection fieldLayout,
         TypeLayoutReflection fieldTypeLayout,
         uint fieldOffset,
         uint fieldSize)
     {
-        return new Schema.ShaderMaterialScalarField
+        return new SomeEngine.Resources.ShaderMaterialScalarField
         {
             Name = fieldLayout.Name,
             Offset = fieldOffset,
@@ -318,7 +318,7 @@ internal static partial class SlangMaterialMeta
     }
 
     private static void AddInstanceProperty(
-        Schema.ShaderMetadata metadata,
+        ref SomeEngine.Resources.ShaderMetadata metadata,
         string materialScalarLayoutName,
         VariableLayoutReflection fieldLayout,
         TypeLayoutReflection fieldTypeLayout,
@@ -355,7 +355,7 @@ internal static partial class SlangMaterialMeta
                 $"MaterialData instance property '{canonicalId}' has invalid reflected alignment {reflectedAlignment}.");
         }
 
-        var property = new Schema.ShaderInstanceProperty
+        var property = new SomeEngine.Resources.ShaderInstanceProperty
         {
             CanonicalId = canonicalId,
             MaterialScalarLayoutName = materialScalarLayoutName,
@@ -366,11 +366,11 @@ internal static partial class SlangMaterialMeta
             RowCount = fieldTypeLayout.RowCount,
             ColumnCount = fieldTypeLayout.ColumnCount,
             ScalarType = scalarType,
-            DefaultValue = new byte[checked((int)fieldSize)],
+            DefaultValue = System.Collections.Immutable.ImmutableArray.Create(new byte[checked((int)fieldSize)]),
         };
 
-        metadata.InstanceProperties ??= [];
-        foreach (Schema.ShaderInstanceProperty existing in metadata.InstanceProperties)
+        var properties = metadata.InstanceProperties ?? [];
+        foreach (SomeEngine.Resources.ShaderInstanceProperty existing in properties)
         {
             bool sameLayout = string.Equals(
                 existing.MaterialScalarLayoutName,
@@ -402,7 +402,7 @@ internal static partial class SlangMaterialMeta
             }
         }
 
-        metadata.InstanceProperties.Add(property);
+        metadata = metadata with { InstanceProperties = properties.Add(property) };
     }
 
     private static AttributeReflection FindAttribute(VariableReflection variable, string name)
@@ -506,8 +506,8 @@ internal static partial class SlangMaterialMeta
     }
 
     private static bool SameInstanceProperty(
-        Schema.ShaderInstanceProperty left,
-        Schema.ShaderInstanceProperty right)
+        SomeEngine.Resources.ShaderInstanceProperty left,
+        SomeEngine.Resources.ShaderInstanceProperty right)
     {
         if (!string.Equals(left.CanonicalId, right.CanonicalId, StringComparison.Ordinal)
             || !string.Equals(
@@ -527,12 +527,12 @@ internal static partial class SlangMaterialMeta
             return false;
         }
 
-        return leftDefault.Span.SequenceEqual(rightDefault.Span);
+        return leftDefault.AsSpan().SequenceEqual(rightDefault.AsSpan());
     }
 
     private static bool SameInstanceEncoding(
-        Schema.ShaderInstanceProperty left,
-        Schema.ShaderInstanceProperty right)
+        SomeEngine.Resources.ShaderInstanceProperty left,
+        SomeEngine.Resources.ShaderInstanceProperty right)
     {
         if (!string.Equals(left.CanonicalId, right.CanonicalId, StringComparison.Ordinal)
             || left.Size != right.Size
@@ -550,7 +550,7 @@ internal static partial class SlangMaterialMeta
     private static uint NormalizeScalarPayload(
         uint payloadSize,
         ScalarOffsetRange offsetRange,
-        List<Schema.ShaderMaterialScalarField> fields)
+        List<SomeEngine.Resources.ShaderMaterialScalarField> fields)
     {
         if (payloadSize == 0)
         {
@@ -572,13 +572,13 @@ internal static partial class SlangMaterialMeta
     }
 
     private static void NormalizeScalarFieldOffsets(
-        List<Schema.ShaderMaterialScalarField> fields,
+        List<SomeEngine.Resources.ShaderMaterialScalarField> fields,
         uint baseOffset)
     {
         for (int fieldIndex = 0; fieldIndex < fields.Count; fieldIndex++)
         {
-            Schema.ShaderMaterialScalarField field = fields[fieldIndex];
-            field.Offset -= baseOffset;
+            SomeEngine.Resources.ShaderMaterialScalarField field = fields[fieldIndex];
+            field = field with { Offset = checked(field.Offset - baseOffset) };
             fields[fieldIndex] = field;
         }
     }

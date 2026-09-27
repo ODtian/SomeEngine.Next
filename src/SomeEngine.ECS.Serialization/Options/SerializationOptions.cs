@@ -64,7 +64,8 @@ public readonly record struct SerializeOptions(
     SerializationContract Contract = SerializationContract.RawCheckpoint,
     int MaximumSparseMemberships = 0,
     long MaximumTopologyRecords = 0,
-    long MaximumTopologyPayloadBytes = 0);
+    long MaximumTopologyPayloadBytes = 0,
+    ISet<ExternalReferenceKey>? ExternalReferences = null);
 
 public readonly record struct WorldLoadOptions(
     EntityIdentityMode IdentityMode = EntityIdentityMode.Preserve,
