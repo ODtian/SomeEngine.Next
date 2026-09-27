@@ -9,7 +9,9 @@ public sealed partial class VirtualShadowMapShadersBlock
         string subject = $"Virtual shadow map shader asset '{path}'";
         ShaderRef?[] entries =
         [
-            ResetFrame, ResetReceiverMasks, DynamicResolution, MarkPages,
+            ResetReceiverMasks,
+            ResetFrame,
+            MarkPages,
             MarkCoarsePages,
             AllocatePages,
             ClearPages,
@@ -19,10 +21,13 @@ public sealed partial class VirtualShadowMapShadersBlock
             CompactViews,
             InitializePageHiZ,
             ReducePageHiZ,
+            DynamicResolution,
         ];
         string[] names =
         [
-            nameof(ResetFrame), nameof(ResetReceiverMasks), nameof(DynamicResolution), nameof(MarkPages),
+            nameof(ResetReceiverMasks),
+            nameof(ResetFrame),
+            nameof(MarkPages),
             nameof(MarkCoarsePages),
             nameof(AllocatePages),
             nameof(ClearPages),
@@ -32,6 +37,7 @@ public sealed partial class VirtualShadowMapShadersBlock
             nameof(CompactViews),
             nameof(InitializePageHiZ),
             nameof(ReducePageHiZ),
+            nameof(DynamicResolution),
         ];
         for (int index = 0; index < entries.Length; index++)
         {

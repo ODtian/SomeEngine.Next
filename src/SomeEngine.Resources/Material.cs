@@ -24,8 +24,6 @@ public abstract partial class Material : IDisposable
     private readonly long _materialId = Interlocked.Increment(ref _nextMaterialId);
     public long MaterialId => _materialId;
 
-    public virtual object? GetValue(uint index) => throw new ArgumentOutOfRangeException(nameof(index));
-
     public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
     public string? Name { get; set; }
     public Shader? Shader

@@ -1,27 +1,27 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "f742f201d3242369cfa9fb46ca7e86f8a9c6a9d726d29a1342aae1eca1531140",
+  "input_hash": "cb2c64bc88da2b75815bbe64aaec02434cfde94f1df5491b5ad25d8ad12301df",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bin_common.slang",
-      "content_hash": "ad55c1187ad217af460809a3277e407ddf6932272eb091cb2dd4592cceef53e8"
+      "content_hash": "f7faa6ba1b5b8d3fec56ec5bbe69b4d7593c600543e037e04bf5449113645009"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_bin_io.slang",
-      "content_hash": "9bdcb1cbe3238c73e5afa78b11ce6c0883b59f684336d1382e7b5460a4c66284"
+      "content_hash": "8990864044d4b7351e58696a6e1157735d5abd8e609b52d2cf381adfc74a4f7d"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_bin_reset.slang",
-      "content_hash": "ef99204db0131d9f5c40ec624910badb7bf8e65e88bc090c461689cdc8b11298"
+      "content_hash": "697c2e0107dceb2c6d20f2a46695e291afce9b90a44a65acf1231604f59b18da"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "8b0a185ac68ba4914c404c61e292df4f0ea7a705a6cccdccd220a85a3069d2b0"
+      "content_hash": "994085152e0eea36c13e0ffee1714a1eb43d22a70b80646da26c108088fef1cc"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -45,11 +45,11 @@
     {
       "asset_guid": "6c6e4f69-98e7-5b37-b30d-7c13f7b9e043",
       "sub_asset_key": "",
-      "input_hash": "f742f201d3242369cfa9fb46ca7e86f8a9c6a9d726d29a1342aae1eca1531140",
+      "input_hash": "cb2c64bc88da2b75815bbe64aaec02434cfde94f1df5491b5ad25d8ad12301df",
       "dependencies": [],
       "asset_path": "cluster_bin_reset.shader.asset",
-      "version": "f7899676-5b2f-dd45-394a-956a131ae9a4",
-      "content_hash": "446370C34B6B1D8AACD2A3BF530C536709177EDEA437A432EEF2B8B773DFD641",
+      "version": "ff0b8641-8def-5b7e-35e8-c63390d84251",
+      "content_hash": "BD9BC23155A4668CC28C74C9BE51EE74A966202004BF13E9E773757098E68C07",
       "asset_dependencies": []
     }
   ]

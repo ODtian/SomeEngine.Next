@@ -16,10 +16,6 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     private PageBufferMap? _pixels;
     private int _disposed;
     private Texture() { }
-    private static long _nextTextureId;
-    private readonly long _textureId = Interlocked.Increment(ref _nextTextureId);
-    public long TextureId => _textureId;
-    public event Action<Texture>? Changed;
 
     public string? Name { get; private set; }
     public TextureDimension Dimension { get; private set; }
@@ -33,6 +29,7 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     public GraphicsViewDimension SampledDimension { get; private set; }
     public ImmutableList<TextureMipTile> MipTiles { get; private set; } = [];
     public ulong Revision { get; private set; } = 1;
+    public event Action<Texture>? Changed;
     public uint BootstrapMipLevel => MipLevelCount - 1;
     public PageArena Pages => (_pixels ?? throw new ObjectDisposedException(nameof(Texture))).Arena;
     public bool HasBootstrap
@@ -118,7 +115,6 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
                 throw new InvalidOperationException("The texture changed while its additional pixels were being acquired.");
             ValidatePixels(input);
             PageBufferMap replacement = _pixels!.Duplicate();
-            bool added = false;
             try
             {
                 foreach (ulong key in input.Keys)
@@ -126,19 +122,11 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
                     if (replacement.Contains(key)) continue;
                     using PageBuffer bytes = input.DuplicateBuffer(key);
                     replacement.Set(key, bytes);
-                    added = true;
                 }
             }
             catch { replacement.Dispose(); throw; }
-            if (!added)
-            {
-                replacement.Dispose();
-                return;
-            }
             PageBufferMap previous = _pixels;
             _pixels = replacement;
-            // Existing tile readers retain their pages; future uploads read the added tiles
-            // from this same resource without replacing material or entity references.
             previous.Dispose();
         }
         RaiseChanged();
@@ -220,10 +208,7 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         try { ReleaseDevices(); }
         finally
         {
-            lock (_deviceGate)
-            {
-                Interlocked.Exchange(ref _pixels, null)?.Dispose();
-            }
+            lock (_deviceGate) Interlocked.Exchange(ref _pixels, null)?.Dispose();
         }
     }
     public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }

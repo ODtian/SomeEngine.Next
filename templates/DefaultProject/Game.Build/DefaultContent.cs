@@ -341,10 +341,8 @@ public static class DefaultContent
                     "ResetVirtualShadowReceiverMasks", ShaderStage.Compute),
                 ResetFrame = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_frame_reset.shader"),
-                    "ResetVirtualShadowFrame", ShaderStage.Compute),
-                DynamicResolution = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_dynamic_resolution.shader"),
-                    "UpdateVirtualShadowDynamicResolution", ShaderStage.Compute),
+                    "ResetVirtualShadowFrame",
+                    ShaderStage.Compute),
                 MarkPages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_mark_pages.shader"),
                     "MarkVirtualShadowPages",
@@ -384,6 +382,10 @@ public static class DefaultContent
                 ReducePageHiZ = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_page_hiz_reduce.shader"),
                     "ReduceVirtualShadowPageHiZ",
+                    ShaderStage.Compute),
+                DynamicResolution = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_dynamic_resolution.shader"),
+                    "UpdateVirtualShadowDynamicResolution",
                     ShaderStage.Compute),
             };
         using var asset = new VirtualShadowMapShadersAsset(PageArena.Shared, DefaultContentIds.ShadowShaders) { Name = "Default Virtual Shadow" };

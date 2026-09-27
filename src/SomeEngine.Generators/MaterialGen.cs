@@ -64,7 +64,23 @@ public sealed class MaterialGen : IIncrementalGenerator
     {
         if (IsMaterial(type, materialBase))
         {
-            ImmutableArray<PropertyInfo> properties = MaterialProperties(type, materialBase)
+            var hierarchy = new List<INamedTypeSymbol>();
+            for (INamedTypeSymbol? current = type;
+                 current is not null && !SymbolEqualityComparer.Default.Equals(current, materialBase);
+                 current = current.BaseType)
+                hierarchy.Add(current);
+            hierarchy.Reverse();
+            IPropertySymbol[] propertySymbols = hierarchy
+                .SelectMany(static current => current.GetMembers()
+                    .OfType<IPropertySymbol>()
+                    .Where(static property => !property.IsStatic && IsPartialProperty(property))
+                    .OrderBy(static property => SourcePath(property), StringComparer.Ordinal)
+                    .ThenBy(static property => SourceStart(property))
+                    .ThenBy(static property => property.Name, StringComparer.Ordinal))
+                .ToArray();
+            int ownPropertyCount = propertySymbols.Count(property =>
+                SymbolEqualityComparer.Default.Equals(property.ContainingType, type));
+            ImmutableArray<PropertyInfo> properties = propertySymbols
                 .Select((property, slot) => new PropertyInfo(
                     property.Name,
                     property.Type.ToDisplayString(QualifiedTypeFormat),
@@ -72,8 +88,7 @@ public sealed class MaterialGen : IIncrementalGenerator
                         .ToDisplayString(QualifiedTypeFormat),
                     AccessibilityText(property.DeclaredAccessibility),
                     property.SetMethod?.IsInitOnly == true,
-                    checked((uint)slot), DefaultExpression(property, compilation),
-                    SymbolEqualityComparer.Default.Equals(property.ContainingType, type)))
+                    checked((uint)slot), DefaultExpression(property, compilation)))
                 .ToImmutableArray();
             if (!properties.IsDefaultOrEmpty)
             {
@@ -87,24 +102,13 @@ public sealed class MaterialGen : IIncrementalGenerator
                     type.Name,
                     type.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Resources.MaterialTypeAttribute")?.ConstructorArguments.FirstOrDefault().Value as string ?? type.ToDisplayString(),
                     Sanitize(type.ToDisplayString()) + ".Material.g.cs",
+                    ownPropertyCount,
                     properties));
             }
         }
 
         foreach (INamedTypeSymbol nested in type.GetTypeMembers())
             Collect(nested, materialBase, materials, compilation);
-    }
-
-    private static IEnumerable<IPropertySymbol> MaterialProperties(INamedTypeSymbol type, INamedTypeSymbol materialBase)
-    {
-        if (type.BaseType is { } parent && !SymbolEqualityComparer.Default.Equals(parent, materialBase))
-            foreach (IPropertySymbol property in MaterialProperties(parent, materialBase)) yield return property;
-        foreach (IPropertySymbol property in type.GetMembers().OfType<IPropertySymbol>()
-            .Where(static property => !property.IsStatic && IsPartialProperty(property))
-            .OrderBy(static property => SourcePath(property), StringComparer.Ordinal)
-            .ThenBy(static property => SourceStart(property))
-            .ThenBy(static property => property.Name, StringComparer.Ordinal))
-            yield return property;
     }
 
     private static bool IsMaterial(INamedTypeSymbol type, INamedTypeSymbol materialBase)
@@ -127,15 +131,14 @@ public sealed class MaterialGen : IIncrementalGenerator
         source.AppendLine("#nullable enable");
         if (material.Namespace.Length != 0) source.Append("namespace ").Append(material.Namespace).AppendLine(";");
         source.Append(material.Accessibility).Append(" partial class ").Append(material.Name).AppendLine(" {");
-        foreach (PropertyInfo p in material.Properties)
+        foreach (PropertyInfo p in material.Properties.Skip(material.Properties.Length - material.OwnPropertyCount))
         {
-            if (!p.DeclaredHere) continue;
             source.Append(p.Accessibility).Append(" partial ").Append(p.Type).Append(' ').Append(p.Name)
                 .Append(" { get => field; ").Append(p.IsInitOnly ? "init" : "set")
                 .Append(" => SetProperty(ref field, value, ").Append(p.Slot).AppendLine("u); }");
         }
         string name = material.Namespace.Length == 0 ? material.Name : material.Namespace + "." + material.Name;
-        source.Append(material.Properties.Any(p => !p.DeclaredHere) ? "public new static " : "public static ")
+        source.Append(material.Properties.Length > material.OwnPropertyCount ? "public new static " : "public static ")
             .Append("global::System.Guid TypeId { get; } = global::SomeEngine.Serialization.BinaryTypeId.FromLogicalName(\"")
             .Append(material.TypeName).AppendLine("\");");
         source.AppendLine("public override global::System.Guid MaterialTypeId => TypeId;");
@@ -144,10 +147,6 @@ public sealed class MaterialGen : IIncrementalGenerator
             source.Append("new(").Append(p.Slot).Append("u, \"").Append(Escape(p.Name)).Append("\", typeof(").Append(p.TypeOf).AppendLine(")),");
         source.AppendLine("];");
         source.AppendLine("public override global::System.Collections.Generic.IReadOnlyList<global::SomeEngine.Resources.MaterialPropertyDefinition> Properties => Definitions;");
-        source.AppendLine("public override object? GetValue(uint index) => index switch {");
-        foreach (PropertyInfo p in material.Properties)
-            source.Append(p.Slot).Append("u => ").Append(p.Name).AppendLine(",");
-        source.AppendLine("_ => throw new global::System.ArgumentOutOfRangeException(nameof(index)), };");
         source.AppendLine("public override global::SomeEngine.Graphics.DeviceResource? GetDeviceResource(uint index) => index switch {");
         foreach (PropertyInfo p in material.Properties)
             if (p.TypeOf.EndsWith(".BufferSrv", StringComparison.Ordinal) || p.TypeOf.EndsWith(".BufferUav", StringComparison.Ordinal) ||
@@ -287,6 +286,7 @@ public sealed class MaterialGen : IIncrementalGenerator
             string name,
             string typeName,
             string hintName,
+            int ownPropertyCount,
             ImmutableArray<PropertyInfo> properties)
         {
             Namespace = ns;
@@ -296,6 +296,7 @@ public sealed class MaterialGen : IIncrementalGenerator
             Name = name;
             TypeName = typeName;
             HintName = hintName;
+            OwnPropertyCount = ownPropertyCount;
             Properties = properties;
         }
 
@@ -306,6 +307,7 @@ public sealed class MaterialGen : IIncrementalGenerator
         internal string Name { get; }
         internal string TypeName { get; }
         internal string HintName { get; }
+        internal int OwnPropertyCount { get; }
         internal ImmutableArray<PropertyInfo> Properties { get; }
     }
 
@@ -317,7 +319,7 @@ public sealed class MaterialGen : IIncrementalGenerator
             string typeOf,
             string accessibility,
             bool isInitOnly,
-            uint slot, string defaultValue, bool declaredHere)
+            uint slot, string defaultValue)
         {
             Name = name;
             Type = type;
@@ -326,7 +328,6 @@ public sealed class MaterialGen : IIncrementalGenerator
             IsInitOnly = isInitOnly;
             Slot = slot;
             DefaultValue = defaultValue;
-            DeclaredHere = declaredHere;
         }
 
         internal string Name { get; }
@@ -336,6 +337,5 @@ public sealed class MaterialGen : IIncrementalGenerator
         internal bool IsInitOnly { get; }
         internal uint Slot { get; }
         internal string DefaultValue { get; }
-        internal bool DeclaredHere { get; }
     }
 }
