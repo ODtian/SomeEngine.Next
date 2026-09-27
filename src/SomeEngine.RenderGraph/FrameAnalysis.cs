@@ -1,7 +1,11 @@
-﻿namespace SomeEngine.RenderGraph;
+namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
 {
+    private static readonly global::SomeEngine.Diagnostics.TraceSite ResourceValuesTrace = new("rg", "ResourceValues");
+    private static readonly global::SomeEngine.Diagnostics.TraceSite ResourceHazardsTrace = new("rg", "ResourceHazards");
+    private static readonly global::SomeEngine.Diagnostics.TraceSite LivenessTrace = new("rg", "Liveness");
+    private static readonly global::SomeEngine.Diagnostics.TraceSite ResourceOrderTrace = new("rg", "ResourceOrder");
     private void ResolveBufferValues(int bufferIndex)
     {
         List<int> accesses = CollectResourceAccesses(GraphAccessTargetKind.Buffer, bufferIndex, enabledOnly: true);
@@ -31,65 +35,68 @@ internal sealed partial class FrameExecutor
         foreach (int accessIndex in accesses)
         {
             FrameResourceAccess access = _accesses[accessIndex];
-            int first = BinarySearch(
-                _bufferCoordinateScratch.AsSpan(0, coordinateCount),
-                access.BufferRange.Offset);
-            int last = BinarySearch(
-                _bufferCoordinateScratch.AsSpan(0, coordinateCount),
-                checked(access.BufferRange.Offset + access.BufferRange.Size));
-            if (first < 0 || last < 0)
-                throw new InvalidOperationException("RG9001: Buffer coordinate compression is incomplete.");
-            for (int segment = first; segment < last; segment++)
+            foreach (BufferRange range in access.BufferRanges)
             {
-                bool reads = access.Mode is GraphAccessMode.Read or GraphAccessMode.ReadWrite ||
-                    access.Mode == GraphAccessMode.Write && access.Coverage == WriteCoverage.Partial;
-                if (access.Mode is GraphAccessMode.Read or GraphAccessMode.ReadWrite &&
-                    !HasRequiredBufferContents(
-                        _contentsScratch[segment],
-                        _bufferContentScopeScratch[segment],
-                        access.BufferContentScope))
+                int first = BinarySearch(
+                    _bufferCoordinateScratch.AsSpan(0, coordinateCount),
+                    range.Offset);
+                int last = BinarySearch(
+                    _bufferCoordinateScratch.AsSpan(0, coordinateCount),
+                    checked(range.Offset + range.Size));
+                if (first < 0 || last < 0)
+                    throw new InvalidOperationException("RG9001: Buffer coordinate compression is incomplete.");
+                for (int segment = first; segment < last; segment++)
                 {
-                    throw new InvalidOperationException(
-                        $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads undefined Buffer " +
-                        $"'{buffer.Description.Label ?? $"Buffer[{bufferIndex}]"}'. " +
-                        string.Join("; ", accesses.Select(i => $"{_passes[_accesses[i].PassIndex].Label}: {_accesses[i].Mode}/{_accesses[i].Coverage} at declaration {_passes[_accesses[i].PassIndex].DeclarationOrdinal}")));
-                }
-                if (reads && _writerScratch[segment] >= 0)
-                    AddValueDependency(access.PassIndex, _writerScratch[segment]);
-                if (reads && access.UnorderedAccessHazards !=
-                    UnorderedAccessHazardMode.AtomicMergeable)
-                    foreach (int writer in _atomicWriterScratch[segment])
-                        AddValueDependency(access.PassIndex, writer);
-
-                if (access.Mode != GraphAccessMode.Read)
-                {
-                    if (access.UnorderedAccessHazards ==
+                    bool reads = access.Mode is GraphAccessMode.Read or GraphAccessMode.ReadWrite ||
+                        access.Mode == GraphAccessMode.Write && access.Coverage == WriteCoverage.Partial;
+                    if (access.Mode is GraphAccessMode.Read or GraphAccessMode.ReadWrite &&
+                        !HasRequiredBufferContents(
+                            _contentsScratch[segment],
+                            _bufferContentScopeScratch[segment],
+                            access.BufferContentScope))
+                    {
+                        throw new InvalidOperationException(
+                            $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads undefined Buffer " +
+                            $"'{buffer.Description.Label ?? $"Buffer[{bufferIndex}]"}'. " +
+                            string.Join("; ", accesses.Select(i => $"{_passes[_accesses[i].PassIndex].Label}: {_accesses[i].Mode}/{_accesses[i].Coverage} at declaration {_passes[_accesses[i].PassIndex].DeclarationOrdinal}")));
+                    }
+                    if (reads && _writerScratch[segment] >= 0)
+                        AddValueDependency(access.PassIndex, _writerScratch[segment]);
+                    if (reads && access.UnorderedAccessHazards !=
                         UnorderedAccessHazardMode.AtomicMergeable)
+                        foreach (int writer in _atomicWriterScratch[segment])
+                            AddValueDependency(access.PassIndex, writer);
+
+                    if (access.Mode != GraphAccessMode.Read)
                     {
-                        AddUnique(_atomicWriterScratch[segment], access.PassIndex);
-                        _contentsScratch[segment] = ResourceContentState.Defined;
-                        _bufferContentScopeScratch[segment] = access.BufferContentScope;
-                        continue;
-                    }
-                    _atomicWriterScratch[segment].Clear();
-                    _writerScratch[segment] = access.PassIndex;
-                    if (access.ResultContents.HasValue)
-                    {
-                        _contentsScratch[segment] = access.ResultContents.Value;
-                        _bufferContentScopeScratch[segment] =
-                            access.ResultContents.Value == ResourceContentState.Defined
-                                ? access.BufferContentScope
-                                : BufferContentScope.FullRange;
-                    }
-                    else if (access.Mode == GraphAccessMode.ReadWrite)
-                    {
-                        _contentsScratch[segment] = ResourceContentState.Defined;
-                        _bufferContentScopeScratch[segment] = access.BufferContentScope;
-                    }
-                    else if (access.Coverage == WriteCoverage.Complete)
-                    {
-                        _contentsScratch[segment] = ResourceContentState.Defined;
-                        _bufferContentScopeScratch[segment] = BufferContentScope.FullRange;
+                        if (access.UnorderedAccessHazards ==
+                            UnorderedAccessHazardMode.AtomicMergeable)
+                        {
+                            AddUnique(_atomicWriterScratch[segment], access.PassIndex);
+                            _contentsScratch[segment] = ResourceContentState.Defined;
+                            _bufferContentScopeScratch[segment] = access.BufferContentScope;
+                            continue;
+                        }
+                        _atomicWriterScratch[segment].Clear();
+                        _writerScratch[segment] = access.PassIndex;
+                        if (access.ResultContents.HasValue)
+                        {
+                            _contentsScratch[segment] = access.ResultContents.Value;
+                            _bufferContentScopeScratch[segment] =
+                                access.ResultContents.Value == ResourceContentState.Defined
+                                    ? access.BufferContentScope
+                                    : BufferContentScope.FullRange;
+                        }
+                        else if (access.Mode == GraphAccessMode.ReadWrite)
+                        {
+                            _contentsScratch[segment] = ResourceContentState.Defined;
+                            _bufferContentScopeScratch[segment] = access.BufferContentScope;
+                        }
+                        else if (access.Coverage == WriteCoverage.Complete)
+                        {
+                            _contentsScratch[segment] = ResourceContentState.Defined;
+                            _bufferContentScopeScratch[segment] = BufferContentScope.FullRange;
+                        }
                     }
                 }
             }
@@ -294,40 +301,43 @@ internal sealed partial class FrameExecutor
         foreach (int accessIndex in accesses)
         {
             FrameResourceAccess access = _accesses[accessIndex];
-            ReadOnlySpan<ulong> coordinates = _bufferCoordinateScratch.AsSpan(0, coordinateCount);
-            int first = BinarySearch(coordinates, access.BufferRange.Offset);
-            int last = BinarySearch(
-                coordinates,
-                checked(access.BufferRange.Offset + access.BufferRange.Size));
-            for (int segment = first; segment < last; segment++)
+            foreach (BufferRange range in access.BufferRanges)
             {
-                if (access.Mode == GraphAccessMode.Read)
+                ReadOnlySpan<ulong> coordinates = _bufferCoordinateScratch.AsSpan(0, coordinateCount);
+                int first = BinarySearch(coordinates, range.Offset);
+                int last = BinarySearch(
+                    coordinates,
+                    checked(range.Offset + range.Size));
+                for (int segment = first; segment < last; segment++)
                 {
+                    if (access.Mode == GraphAccessMode.Read)
+                    {
+                        if (_writerScratch[segment] >= 0)
+                            AddEdge(_writerScratch[segment], access.PassIndex);
+                        foreach (int writer in _atomicWriterScratch[segment])
+                            AddEdge(writer, access.PassIndex);
+                        AddUnique(_readerScratch[segment], access.PassIndex);
+                        continue;
+                    }
+
                     if (_writerScratch[segment] >= 0)
                         AddEdge(_writerScratch[segment], access.PassIndex);
+                    foreach (int reader in _readerScratch[segment]) AddEdge(reader, access.PassIndex);
+                    _readerScratch[segment].Clear();
+                    if (access.UnorderedAccessHazards ==
+                        UnorderedAccessHazardMode.AtomicMergeable)
+                    {
+                        foreach (int writer in _atomicWriterScratch[segment])
+                            if (!CanMergeAtomicAccesses(writer, access.PassIndex))
+                                AddEdge(writer, access.PassIndex);
+                        AddUnique(_atomicWriterScratch[segment], access.PassIndex);
+                        continue;
+                    }
                     foreach (int writer in _atomicWriterScratch[segment])
                         AddEdge(writer, access.PassIndex);
-                    AddUnique(_readerScratch[segment], access.PassIndex);
-                    continue;
+                    _atomicWriterScratch[segment].Clear();
+                    _writerScratch[segment] = access.PassIndex;
                 }
-
-                if (_writerScratch[segment] >= 0)
-                    AddEdge(_writerScratch[segment], access.PassIndex);
-                foreach (int reader in _readerScratch[segment]) AddEdge(reader, access.PassIndex);
-                _readerScratch[segment].Clear();
-                if (access.UnorderedAccessHazards ==
-                    UnorderedAccessHazardMode.AtomicMergeable)
-                {
-                    foreach (int writer in _atomicWriterScratch[segment])
-                        if (!CanMergeAtomicAccesses(writer, access.PassIndex))
-                            AddEdge(writer, access.PassIndex);
-                    AddUnique(_atomicWriterScratch[segment], access.PassIndex);
-                    continue;
-                }
-                foreach (int writer in _atomicWriterScratch[segment])
-                    AddEdge(writer, access.PassIndex);
-                _atomicWriterScratch[segment].Clear();
-                _writerScratch[segment] = access.PassIndex;
             }
         }
     }
@@ -494,6 +504,7 @@ internal sealed partial class FrameExecutor
     // next call. No per-resource graph or second set of ordering facts is retained.
     private IReadOnlyDictionary<int, int> OrderResourceUsers(IEnumerable<int> nodes)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(ResourceOrderTrace);
         _resourceOrderNodes.Clear();
         _resourceOrderRanks.Clear();
         _resourceOrderReady.Clear();
@@ -547,6 +558,16 @@ internal sealed partial class FrameExecutor
     private void SortAccessesByValueOrder(List<int> accesses)
     {
         if (accesses.Count < 2) return;
+        // Reading one version in one texture layout creates no order between users.
+        // Do not project the entire pass graph onto shared read-only scene resources.
+        FrameResourceAccess first = _accesses[accesses[0]];
+        bool readOnly = first.Mode == GraphAccessMode.Read;
+        for (int index = 1; readOnly && index < accesses.Count; index++)
+        {
+            FrameResourceAccess access = _accesses[accesses[index]];
+            readOnly = access.Mode == GraphAccessMode.Read && access.TextureLayout == first.TextureLayout;
+        }
+        if (readOnly) return;
         // A resource's version order includes actual ordering paths between its
         // users, not the incidental positions of unrelated prerequisites in the
         // global topological order. Ready users otherwise keep declaration order.
@@ -559,8 +580,17 @@ internal sealed partial class FrameExecutor
         });
     }
 
+    private Comparison<int>? _accessScheduleComparison;
+
     private void SortAccessesBySchedule(List<int> accesses)
     {
+        // Insertion sort remains cheap for a handful of accesses, but imported
+        // scenes can put thousands of users on a shared geometry buffer.
+        if (accesses.Count > 32)
+        {
+            accesses.Sort(_accessScheduleComparison ??= CompareAccessSchedule);
+            return;
+        }
         for (int index = 1; index < accesses.Count; index++)
         {
             int value = accesses[index];
@@ -574,6 +604,13 @@ internal sealed partial class FrameExecutor
             }
             accesses[insertion] = value;
         }
+    }
+
+    private int CompareAccessSchedule(int left, int right)
+    {
+        FrameResourceAccess a = _accesses[left], b = _accesses[right];
+        int order = _executionOrder.Position(a.PassIndex).CompareTo(_executionOrder.Position(b.PassIndex));
+        return order != 0 ? order : a.PassAdjacencyIndex.CompareTo(b.PassAdjacencyIndex);
     }
 
     private void FilterLiveAccesses(List<int> accesses)
@@ -628,10 +665,20 @@ internal sealed partial class FrameExecutor
         return unique;
     }
 
+    private readonly HashSet<BufferRangeSet> _coordinateRangeSets = [];
+
     private int BuildBufferCoordinates(in FrameBuffer buffer, List<int> accesses)
     {
         int endpointCount = buffer.EntryBoundaryStates?.Length ?? 0;
-        int required = checked((accesses.Count + endpointCount) * 2 + 2);
+        _coordinateRangeSets.Clear();
+        int rangeCount = 0;
+        foreach (int accessIndex in accesses)
+        {
+            FrameResourceAccess access = _accesses[accessIndex];
+            if (access.SharedBufferRanges is null || _coordinateRangeSets.Add(access.SharedBufferRanges))
+                rangeCount = checked(rangeCount + access.BufferRanges.Count);
+        }
+        int required = checked((rangeCount + endpointCount) * 2 + 2);
         EnsureCapacity(ref _bufferCoordinateScratch, required);
         int count = 0;
         _bufferCoordinateScratch[count++] = 0;
@@ -648,11 +695,16 @@ internal sealed partial class FrameExecutor
                 _bufferCoordinateScratch[count++] = checked(range.Offset + range.Size);
             }
         }
+        _coordinateRangeSets.Clear();
         foreach (int accessIndex in accesses)
         {
-            BufferRange range = _accesses[accessIndex].BufferRange;
-            _bufferCoordinateScratch[count++] = range.Offset;
-            _bufferCoordinateScratch[count++] = checked(range.Offset + range.Size);
+            FrameResourceAccess access = _accesses[accessIndex];
+            if (access.SharedBufferRanges is not null && !_coordinateRangeSets.Add(access.SharedBufferRanges)) continue;
+            foreach (BufferRange range in access.BufferRanges)
+            {
+                _bufferCoordinateScratch[count++] = range.Offset;
+                _bufferCoordinateScratch[count++] = checked(range.Offset + range.Size);
+            }
         }
         Array.Sort(_bufferCoordinateScratch, 0, count);
         int unique = 0;
@@ -711,7 +763,8 @@ internal sealed partial class FrameExecutor
         BufferContentScope requiredScope) =>
         contents == ResourceContentState.Defined &&
         (availableScope == BufferContentScope.FullRange ||
-         requiredScope == BufferContentScope.CountBoundedPrefix);
+         availableScope == requiredScope ||
+         requiredScope == BufferContentScope.CountBoundedRanges);
 
     private void InitializeTextureContents(
         in FrameTexture texture,
@@ -938,15 +991,19 @@ internal sealed partial class FrameExecutor
             : buffer.Ownership == RenderGraphResourceOwnership.GraphOwned
                 ? default : buffer.EntryBoundaryStates;
         BufferContents[] contents = previous.Contents ?? [];
-        if (contents.Length != states.Length)
+        // Upload storage is initialized by the CPU and only read by the GPU.
+        // Read barriers may split its state ranges without changing its contents.
+        int contentCount = buffer.UploadData is null ? states.Length : 1;
+        if (contents.Length != contentCount)
         {
-            contents = states.Length == 0 ? [] : new BufferContents[states.Length];
+            contents = contentCount == 0 ? [] : new BufferContents[contentCount];
             changed = true;
         }
-        for (int item = 0; item < states.Length; item++)
+        for (int item = 0; item < contentCount; item++)
         {
-            BufferBoundaryState state = states[item];
-            BufferContents value = new(state.Range, state.Contents, state.ContentScope);
+            BufferContents value = buffer.UploadData is null
+                ? new(states[item].Range, states[item].Contents, states[item].ContentScope)
+                : new(new BufferRange(0, buffer.Description.Size), ResourceContentState.Defined, BufferContentScope.FullRange);
             changed |= contents[item] != value;
             contents[item] = value;
         }
@@ -1001,6 +1058,7 @@ internal sealed partial class FrameExecutor
         bool changed = !previous.Connected || previous.PassIndex != current.PassIndex || previous.ResourceIndex != current.ResourceIndex ||
             previous.TargetKind != current.TargetKind || previous.Mode != current.Mode || previous.Coverage != current.Coverage ||
             previous.Sync != current.Sync || previous.Access != current.Access || previous.BufferRange != current.BufferRange ||
+            !ReferenceEquals(previous.SharedBufferRanges, current.SharedBufferRanges) ||
             previous.TextureRange != current.TextureRange || previous.QueryRange != current.QueryRange ||
             previous.TextureLayout != current.TextureLayout || previous.ResultContents != current.ResultContents ||
             previous.BufferContentScope != current.BufferContentScope || previous.UnorderedAccessHazards != current.UnorderedAccessHazards;
@@ -1141,6 +1199,7 @@ internal sealed partial class FrameExecutor
 
     private void ResolveResourceValues((GraphAccessTargetKind Kind, int Index) resource)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(ResourceValuesTrace);
         switch (resource.Kind)
         {
             case GraphAccessTargetKind.Buffer: ResolveBufferValues(resource.Index); break;
@@ -1152,6 +1211,7 @@ internal sealed partial class FrameExecutor
 
     private void ResolveResourceHazards((GraphAccessTargetKind Kind, int Index) resource)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(ResourceHazardsTrace);
         switch (resource.Kind)
         {
             case GraphAccessTargetKind.Buffer: ResolveBufferHazards(resource.Index); break;
@@ -1217,6 +1277,7 @@ internal sealed partial class FrameExecutor
 
     private void UpdateLiveness()
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(LivenessTrace);
         int previousCapacity = _liveSupport.Length;
         EnsureCapacity(ref _liveSupport, _live.Length);
         Array.Fill(_liveSupport, -1, previousCapacity, _liveSupport.Length - previousCapacity);
@@ -1370,4 +1431,3 @@ internal sealed partial class FrameExecutor
         }
     }
 }
-

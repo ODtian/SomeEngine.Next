@@ -71,7 +71,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         _rayTracingTables = new IdentityRegistry<RayTracingShaderTable, RayTracingTableValidationState>(_gate);
         _contexts = new IdentityRegistry<CommandContext, ContextValidationState>(_gate);
 
-        if (backend is INativeValidationControl validationControl)
+        if (!options.NativeValidationDisabled && backend is INativeValidationControl validationControl)
             validationControl.EnableNativeValidation();
     }
 

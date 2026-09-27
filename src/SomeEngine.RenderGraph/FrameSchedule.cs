@@ -1,4 +1,4 @@
-﻿namespace SomeEngine.RenderGraph;
+namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
 {
@@ -6,19 +6,14 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<int> _scheduleSeeds = [];
     private readonly HashSet<int> _frontierSeeds = [];
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _changedLifetimeResources = [];
-    private readonly HashSet<int> _scheduleVisited = [];
     private readonly HashSet<int> _scheduleComponent = [];
-    private readonly HashSet<int> _schedulePredecessors = [];
     private readonly List<int> _componentSchedule = [];
-    private readonly Stack<int> _scheduleWork = [];
     private readonly PriorityQueue<int, long> _frontierWork = new();
     private readonly Dictionary<Queue, SortedSet<(long Position, int Pass)>> _queuePasses = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<int, (Queue Queue, long Position)> _passQueuePositions = [];
     private readonly HashSet<int> _queueNeighborChanges = [];
     private int[] _componentFinish = [], _sameQueueSuccessor = [];
     private bool _scheduleInitialized;
-    private readonly Queue<PassEdge> _scheduleEdgeWork = [];
-    private readonly HashSet<PassEdge> _scheduleEdgesQueued = [];
 
     private void ResolveSchedule()
     {
@@ -50,34 +45,26 @@ internal sealed partial class FrameExecutor
         }
         else
         {
-            _scheduleEdgeWork.Clear();
-            _scheduleEdgesQueued.Clear();
+            long first = long.MaxValue;
+            long last = long.MinValue;
             foreach (int seed in _scheduleSeeds)
             {
                 if (!IsLive(seed)) continue;
                 RetainQueue(seed);
-                EnqueueEdges(seed);
+                foreach (int predecessor in _predecessors[seed])
+                    if (IsLive(predecessor)) IncludeConflict(predecessor, seed);
+                foreach (int successor in _successors[seed])
+                    if (IsLive(successor)) IncludeConflict(seed, successor);
             }
-            while (_scheduleEdgeWork.TryDequeue(out PassEdge edge))
-            {
-                _scheduleEdgesQueued.Remove(edge);
-                if (_executionOrder.Position(edge.Predecessor) < _executionOrder.Position(edge.Consumer)) continue;
-                RepairOrder(edge.Predecessor, edge.Consumer);
-                foreach (int pass in _schedulePredecessors) EnqueueEdges(pass);
-                foreach (int pass in _scheduleVisited) EnqueueEdges(pass);
-            }
+            if (first <= last) RepairOrder(first, last);
 
-            void EnqueueEdges(int pass)
+            void IncludeConflict(int predecessor, int consumer)
             {
-                foreach (int predecessor in _predecessors[pass])
-                    if (IsLive(predecessor)) Enqueue(new(predecessor, pass));
-                foreach (int successor in _successors[pass])
-                    if (IsLive(successor)) Enqueue(new(pass, successor));
-            }
-            void Enqueue(PassEdge edge)
-            {
-                if (_executionOrder.Position(edge.Predecessor) >= _executionOrder.Position(edge.Consumer) &&
-                    _scheduleEdgesQueued.Add(edge)) _scheduleEdgeWork.Enqueue(edge);
+                long before = _executionOrder.Position(predecessor);
+                long after = _executionOrder.Position(consumer);
+                if (before < after) return;
+                first = Math.Min(first, after);
+                last = Math.Max(last, before);
             }
         }
         _scheduleInitialized = true;
@@ -149,59 +136,38 @@ internal sealed partial class FrameExecutor
         _executionOrder.Changed.Add(pass);
     }
 
-    private void RepairOrder(int predecessor, int consumer)
+    private void RepairOrder(long first, long last)
     {
-        long first = _executionOrder.Position(consumer);
-        long last = _executionOrder.Position(predecessor);
-        if (last < first) return;
-
-        _scheduleVisited.Clear();
-        _schedulePredecessors.Clear();
-        _scheduleWork.Clear();
-        _scheduleWork.Push(consumer);
-        while (_scheduleWork.TryPop(out int pass))
+        // A streaming update can reverse many edges in the same region. Sort the
+        // affected interval once; unchanged positions outside it remain untouched.
+        _scheduleComponent.Clear();
+        foreach (int pass in _executionOrder.Nodes)
         {
-            if (!IsLive(pass) || _executionOrder.Position(pass) > last || !_scheduleVisited.Add(pass)) continue;
-            if (pass == predecessor)
-                throw new InvalidOperationException("RG5001: The live render graph contains a dependency cycle.");
-            foreach (int successor in _successors[pass]) _scheduleWork.Push(successor);
+            long position = _executionOrder.Position(pass);
+            if (position > last) break;
+            if (position >= first) _scheduleComponent.Add(pass);
         }
-        _scheduleWork.Push(predecessor);
-        while (_scheduleWork.TryPop(out int pass))
+        EnsureCapacity(ref _scheduleIndegrees, _passes.Count);
+        _criticalReady.Clear();
+        foreach (int pass in _scheduleComponent)
         {
-            if (!IsLive(pass) || _executionOrder.Position(pass) < first || !_schedulePredecessors.Add(pass)) continue;
-            if (_scheduleVisited.Contains(pass))
-                throw new InvalidOperationException("RG5001: The live render graph contains a dependency cycle.");
-            foreach (int source in _predecessors[pass]) _scheduleWork.Push(source);
+            int count = 0;
+            foreach (int source in _predecessors[pass])
+                if (_scheduleComponent.Contains(source)) count++;
+            _scheduleIndegrees[pass] = count;
+            if (count == 0) _criticalReady.Enqueue(pass, _executionOrder.Position(pass));
         }
         _componentSchedule.Clear();
-        AppendOrdered(_schedulePredecessors);
-        AppendOrdered(_scheduleVisited);
-        _executionOrder.SetOrder(_componentSchedule);
-
-        void AppendOrdered(HashSet<int> affected)
+        while (_criticalReady.TryDequeue(out int pass, out _))
         {
-            EnsureCapacity(ref _scheduleIndegrees, _passes.Count);
-            _criticalReady.Clear();
-            foreach (int pass in affected)
-            {
-                int count = 0;
-                foreach (int source in _predecessors[pass])
-                    if (affected.Contains(source)) count++;
-                _scheduleIndegrees[pass] = count;
-                if (count == 0) _criticalReady.Enqueue(pass, _executionOrder.Position(pass));
-            }
-            int start = _componentSchedule.Count;
-            while (_criticalReady.TryDequeue(out int pass, out _))
-            {
-                _componentSchedule.Add(pass);
-                foreach (int successor in _successors[pass])
-                    if (affected.Contains(successor) && --_scheduleIndegrees[successor] == 0)
-                        _criticalReady.Enqueue(successor, _executionOrder.Position(successor));
-            }
-            if (_componentSchedule.Count - start != affected.Count)
-                throw new InvalidOperationException("RG5001: The live render graph contains a dependency cycle.");
+            _componentSchedule.Add(pass);
+            foreach (int successor in _successors[pass])
+                if (_scheduleComponent.Contains(successor) && --_scheduleIndegrees[successor] == 0)
+                    _criticalReady.Enqueue(successor, _executionOrder.Position(successor));
         }
+        if (_componentSchedule.Count != _scheduleComponent.Count)
+            throw new InvalidOperationException("RG5001: The live render graph contains a dependency cycle.");
+        _executionOrder.SetOrder(_componentSchedule);
     }
 
     private void AddNeighbors(SortedSet<(long Position, int Pass)> passes, long position, int pass)
@@ -695,34 +661,31 @@ internal sealed partial class FrameExecutor
         foreach (var change in _orderDependencyChanges)
         {
             if (_orderEdgeSources.ContainsKey(change.Key) == change.Value) continue;
-            PassEdge edge = change.Key;
-            _scheduleSeeds.Add(edge.Predecessor);
-            _scheduleSeeds.Add(edge.Consumer);
-            Collect(edge.Predecessor, before: true, _orderPredecessorResources);
-            Collect(edge.Consumer, before: false, _orderConsumerResources);
-            InvalidateIntersection();
+            _scheduleSeeds.Add(change.Key.Predecessor);
+            _scheduleSeeds.Add(change.Key.Consumer);
         }
         foreach (int pass in _changedValuePasses)
-        {
             MarkPassResources(pass, _changedAnalysisResources);
-            Collect(pass, before: true, _orderPredecessorResources);
-            Collect(pass, before: false, _orderConsumerResources);
-            InvalidateIntersection();
-        }
+
+        // Traverse each side of the entire edit once. Repeating both transitive walks
+        // for every changed edge made streaming updates multiply graph size by edit size.
+        // The intersection may include a resource spanning separate edits; reanalyzing
+        // that resource is safe and keeps the affected-region discovery linear.
+        Collect(before: true, _orderPredecessorResources);
+        Collect(before: false, _orderConsumerResources);
+        foreach (var resource in _orderPredecessorResources)
+            if (_orderConsumerResources.Contains(resource)) _changedAnalysisResources.Add(resource);
         _orderDependencyChanges.Clear();
 
-        void InvalidateIntersection()
-        {
-            foreach (var resource in _orderPredecessorResources)
-                if (_orderConsumerResources.Contains(resource)) _changedAnalysisResources.Add(resource);
-        }
-
-        void Collect(int seed, bool before, HashSet<(GraphAccessTargetKind Kind, int Index)> resources)
+        void Collect(bool before, HashSet<(GraphAccessTargetKind Kind, int Index)> resources)
         {
             resources.Clear();
             _orderSearchVisited.Clear();
             _orderSearchWork.Clear();
-            _orderSearchWork.Push(seed);
+            foreach (var change in _orderDependencyChanges)
+                if (_orderEdgeSources.ContainsKey(change.Key) != change.Value)
+                    _orderSearchWork.Push(before ? change.Key.Predecessor : change.Key.Consumer);
+            foreach (int pass in _changedValuePasses) _orderSearchWork.Push(pass);
             while (_orderSearchWork.TryPop(out int pass))
             {
                 if ((uint)pass >= (uint)_passes.Count || !_orderSearchVisited.Add(pass)) continue;

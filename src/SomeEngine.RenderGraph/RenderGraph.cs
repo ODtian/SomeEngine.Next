@@ -93,6 +93,13 @@ public sealed partial class RenderGraph : IDisposable
         id = found ? new GraphBufferId(identity) : default;
         return found;
     }
+
+    public bool TryGetTextureId(Texture texture, out GraphTextureId id)
+    {
+        bool found = _structureIndex.ResourceIdentities.TryGetValue(texture, out GraphIdentity identity);
+        id = found ? new GraphTextureId(identity) : default;
+        return found;
+    }
     internal ReadOnlySpan<Queue> Queues => _queues;
     internal CommandContextPool CommandContexts => _commandContexts;
     internal PersistentResourceAllocator PersistentResources => _persistentResources;
@@ -458,13 +465,18 @@ public sealed partial class RenderGraph : IDisposable
     public void RetireAfterSubmittedFrames(IDisposable value)
     {
         ArgumentNullException.ThrowIfNull(value);
+        RetireAfterSubmittedFrames([value]);
+    }
+
+    internal void RetireAfterSubmittedFrames(ReadOnlySpan<IDisposable> values)
+    {
         var completions = new List<QueueCompletion>();
         lock (_structureGate)
         {
             foreach (FrameSlot slot in _frameSlots)
                 foreach (QueueCompletion completion in slot.Completions)
                     AddCompletion(completions, completion);
-            _persistentResources.Retire(value, completions.ToArray());
+            _persistentResources.Retire(values, CollectionsMarshal.AsSpan(completions));
         }
     }
 

@@ -3,6 +3,13 @@ namespace SomeEngine.RenderGraph;
 internal sealed partial class FrameExecutor
 {
     private readonly HashSet<GraphTextureInput> _changedTextureInputs = [];
+    private readonly ConditionalWeakTable<GraphBufferInput, BufferInputLocation> _bufferInputLocations = new();
+
+    private sealed class BufferInputLocation
+    {
+        internal int BufferIndex = -1;
+        internal BufferRange Range;
+    }
 
     internal void ChangeTextureInput(GraphTextureInput input) => _changedTextureInputs.Add(input);
 
@@ -16,6 +23,13 @@ internal sealed partial class FrameExecutor
         {
             GraphBufferSlice value = _frame.ResolveBufferInput(input);
             int buffer = ResolveBuffer(value.Buffer.Value);
+            BufferInputLocation location = _bufferInputLocations.GetValue(input, static _ => new());
+            // A frame-local ID changes every frame even when the connection still
+            // selects the same resource row and byte range. Resource replacement
+            // already refreshes its views and parameters through that row.
+            if (location.BufferIndex == buffer && location.Range == value.Range) continue;
+            location.BufferIndex = buffer;
+            location.Range = value.Range;
             foreach (GraphIdentity identity in index.BufferInputViews.GetValueOrDefault(input, []))
             {
                 GraphView source = index.Structure.Views.Get(identity);
@@ -24,10 +38,7 @@ internal sealed partial class FrameExecutor
                 {
                     ref FrameView view = ref CollectionsMarshal.AsSpan(_views)[viewIndex];
                     if (ReferenceEquals(view.Definition, source) && view.BufferIndex == buffer && view.BufferRange == range)
-                    {
-                        view.Buffer = value.Buffer.Value;
                         continue;
-                    }
                 }
                 _rowChanges.Views.Add(identity);
             }
@@ -38,10 +49,7 @@ internal sealed partial class FrameExecutor
                 {
                     ref FrameResourceAccess access = ref CollectionsMarshal.AsSpan(_accesses)[accessIndex];
                     if (access.ResourceIndex == buffer && access.BufferRange == value.ResolveRange(source.BufferRange))
-                    {
-                        access.Target = value.Buffer.Value;
                         continue;
-                    }
                 }
                 _rowChanges.Accesses.Add(identity);
             }

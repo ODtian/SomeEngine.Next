@@ -6,6 +6,7 @@ internal sealed partial class FrameExecutor
     private readonly List<TextureStateValue> _textureBoundaryScratch = [];
     private readonly List<BufferStateValue> _bufferContentScratch = [];
     private readonly List<TextureStateValue> _textureContentScratch = [];
+    private readonly List<TextureStateValue> _textureWriteScratch = [];
     private List<BufferStateUpdate>[] _submissionBufferUpdates = [];
     private List<TextureStateUpdate>[] _submissionTextureUpdates = [];
     private List<QueryStateUpdate>[] _submissionQueryUpdates = [];
@@ -25,7 +26,8 @@ internal sealed partial class FrameExecutor
     private List<QueryStateUpdate>?[] _queryUpdatesByResource = [];
     private List<ShaderTableStateUpdate>?[] _shaderTableUpdatesByResource = [];
 
-    private readonly record struct TextureStateValue(TextureBoundaryState State, int CompletionSource);
+    private readonly record struct TextureStateValue(TextureBoundaryState State, int CompletionSource,
+        int LastPass = -1, bool AtomicMergeable = false);
     private sealed class TextureStateUpdate
     {
         internal int Submission;
@@ -42,7 +44,7 @@ internal sealed partial class FrameExecutor
 
     private readonly record struct BufferStateValue(BufferBoundaryState State, int CompletionSource);
     private readonly record struct BufferStateStep(int Pass, int[] Accesses,
-        PipelineSync Sync, ResourceAccess Access, bool Writes, bool Acquired);
+        PipelineSync Sync, ResourceAccess Access, bool Writes, bool Acquired, bool AtomicMergeable);
 
     private sealed class BufferStateUpdate
     {
@@ -141,15 +143,17 @@ internal sealed partial class FrameExecutor
                     PipelineSync sync = default;
                     ResourceAccess access = default;
                     bool writes = false;
+                    bool atomicMergeable = true;
                     while (end < indices.Count && _accesses[indices[end]].PassIndex == pass)
                     {
                         FrameResourceAccess value = _accesses[indices[end++]];
                         sync |= value.Sync;
                         access = MergeBufferAccess(access, value.Access);
                         writes |= value.Mode != GraphAccessMode.Read;
+                        atomicMergeable &= value.UnorderedAccessHazards == UnorderedAccessHazardMode.AtomicMergeable;
                     }
                     steps.Add(new(pass, CollectionsMarshal.AsSpan(indices).Slice(first, end - first).ToArray(), sync, access, writes,
-                        HasIncomingBufferAcquire(pass, _buffers[key.Index].Resource)));
+                        HasIncomingBufferAcquire(pass, _buffers[key.Index].Resource), atomicMergeable));
                     first = end;
                 }
                 var update = new BufferStateUpdate { Submission = submission, ResourceIndex = key.Index,
@@ -417,6 +421,15 @@ internal sealed partial class FrameExecutor
     private void StoreBufferStates(int resourceIndex, BufferBoundaryState[] boundaryStates)
     {
         ref FrameBuffer frameBuffer = ref CollectionsMarshal.AsSpan(_buffers)[resourceIndex];
+        // Upload storage is reused independently for each frame in flight. Its
+        // last submitted state belongs to that buffer, not the graph declaration.
+        if (frameBuffer.UploadData is { } upload)
+        {
+            upload.BoundaryStates = boundaryStates;
+            frameBuffer.EntryBoundaryStates = boundaryStates;
+            _changedBoundaryResources.Add((GraphAccessTargetKind.Buffer, resourceIndex));
+            return;
+        }
         if (frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent && frameBuffer.Definition is { } resource)
             resource.BoundaryStates = boundaryStates;
         else
@@ -446,59 +459,83 @@ internal sealed partial class FrameExecutor
                 _buffers[update.ResourceIndex].Description.Size) };
             _bufferBoundaryScratch.Add(new(state, item));
         }
+        PipelineSync previousSync = default;
+        ResourceAccess previousAccess = default;
+        Queue? previousQueue = null;
+        bool previousAtomicMergeable = false;
+        BufferStateStep? previousRead = null;
         foreach (BufferStateStep step in update.Steps)
         {
+            // All steps in this result share one submission completion. Consecutive
+            // reads with identical ranges and state leave the same boundary result;
+            // do not split and rewrite every resident geometry range for each reader.
+            if (!step.Writes && !step.Acquired && previousRead is { } read &&
+                read.Sync == step.Sync && read.Access == step.Access && SameBufferReads(read.Accesses, step.Accesses))
+                continue;
+            previousRead = !step.Writes && !step.Acquired ? step : null;
+            Queue? queue = _passes[step.Pass].Queue;
+            PipelineSync sync = step.Sync;
+            if (previousAtomicMergeable && step.AtomicMergeable && !step.Acquired &&
+                ReferenceEquals(previousQueue, queue) && previousAccess == step.Access)
+                sync |= previousSync;
+            previousSync = sync;
+            previousAccess = step.Access;
+            previousQueue = queue;
+            previousAtomicMergeable = step.AtomicMergeable;
             bool retainDistinctQueueReaders = !step.Writes && !step.Acquired;
             BufferBoundaryState endpoint = default;
             foreach (int index in step.Accesses)
             {
                 FrameResourceAccess access = _accesses[index];
-                ReadOnlySpan<BufferStateValue> states = CollectionsMarshal.AsSpan(_bufferBoundaryScratch);
-                ResourceContentState contents = access.ResultContents ?? access.Mode switch
+                foreach (BufferRange range in access.BufferRanges)
                 {
-                    GraphAccessMode.Read or GraphAccessMode.ReadWrite => ResourceContentState.Defined,
-                    GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
-                    _ => ResourceContentState.Undefined,
-                };
-                BufferContentScope contentScope = contents == ResourceContentState.Defined
-                    ? access.ResultContents.HasValue
-                        ? access.BufferContentScope
-                        : access.Mode switch
-                        {
-                            GraphAccessMode.Read => FindBufferContentScope(states, access.BufferRange),
-                            GraphAccessMode.ReadWrite => access.BufferContentScope,
-                            GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => BufferContentScope.FullRange,
-                            _ => FindBufferContentScope(states, access.BufferRange),
-                        }
-                    : BufferContentScope.FullRange;
-                endpoint = new BufferBoundaryState(access.BufferRange, step.Sync, step.Access,
-                    contents, _passes[step.Pass].Queue, null, contentScope);
-                bool preserveContents = access.Mode == GraphAccessMode.Write &&
-                    access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
-                if (preserveContents)
-                {
-                    _bufferContentScratch.Clear();
-                    _bufferContentScratch.AddRange(_bufferBoundaryScratch);
-                }
-                UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint, -1), retainDistinctQueueReaders);
-                if (preserveContents)
-                {
-                    // A partial write changes synchronization for its declared range,
-                    // but preserves the contents of each previously defined subrange.
-                    foreach (BufferStateValue previous in _bufferContentScratch)
+                    ReadOnlySpan<BufferStateValue> states = CollectionsMarshal.AsSpan(_bufferBoundaryScratch);
+                    ResourceContentState contents = access.ResultContents ?? access.Mode switch
                     {
-                        if (previous.State.Contents != ResourceContentState.Defined) continue;
-                        ulong start = Math.Max(previous.State.Range.Offset, access.BufferRange.Offset);
-                        ulong end = Math.Min(previous.State.Range.Offset + previous.State.Range.Size,
-                            access.BufferRange.Offset + access.BufferRange.Size);
-                        if (start >= end) continue;
-                        UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint with
-                        {
-                            Range = new(start, end - start), Contents = previous.State.Contents,
-                            ContentScope = previous.State.ContentScope,
-                        }, -1), reader: false);
+                        GraphAccessMode.Read or GraphAccessMode.ReadWrite => ResourceContentState.Defined,
+                        GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
+                        _ => ResourceContentState.Undefined,
+                    };
+                    BufferContentScope contentScope = contents == ResourceContentState.Defined
+                        ? access.ResultContents.HasValue
+                            ? access.BufferContentScope
+                            : access.Mode switch
+                            {
+                                GraphAccessMode.Read => FindBufferContentScope(states, range),
+                                GraphAccessMode.ReadWrite => access.BufferContentScope,
+                                GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => BufferContentScope.FullRange,
+                                _ => FindBufferContentScope(states, range),
+                            }
+                        : BufferContentScope.FullRange;
+                    endpoint = new BufferBoundaryState(range, sync, step.Access,
+                        contents, _passes[step.Pass].Queue, null, contentScope);
+                    bool preserveContents = access.Mode == GraphAccessMode.Write &&
+                        access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
+                    if (preserveContents)
+                    {
+                        _bufferContentScratch.Clear();
+                        _bufferContentScratch.AddRange(_bufferBoundaryScratch);
                     }
-                    _bufferContentScratch.Clear();
+                    UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint, -1), retainDistinctQueueReaders);
+                    if (preserveContents)
+                    {
+                        // A partial write changes synchronization for its declared range,
+                        // but preserves the contents of each previously defined subrange.
+                        foreach (BufferStateValue previous in _bufferContentScratch)
+                        {
+                            if (previous.State.Contents != ResourceContentState.Defined) continue;
+                            ulong start = Math.Max(previous.State.Range.Offset, range.Offset);
+                            ulong end = Math.Min(previous.State.Range.Offset + previous.State.Range.Size,
+                                range.Offset + range.Size);
+                            if (start >= end) continue;
+                            UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint with
+                            {
+                                Range = new(start, end - start), Contents = previous.State.Contents,
+                                ContentScope = previous.State.ContentScope,
+                            }, -1), reader: false);
+                        }
+                        _bufferContentScratch.Clear();
+                    }
                 }
             }
             if (endpoint.Queue?.Device.Capabilities.SupportsConcurrentBufferReads != true)
@@ -515,6 +552,19 @@ internal sealed partial class FrameExecutor
         update.Values = new BufferBoundaryState[update.After.Length];
         PrepareArray(ref update.Completions, update.After.Length);
         update.Initialized = true;
+    }
+
+    private bool SameBufferReads(ReadOnlySpan<int> left, ReadOnlySpan<int> right)
+    {
+        if (left.Length != right.Length) return false;
+        for (int index = 0; index < left.Length; index++)
+        {
+            FrameResourceAccess a = _accesses[left[index]], b = _accesses[right[index]];
+            if (a.BufferRange != b.BufferRange || !ReferenceEquals(a.SharedBufferRanges, b.SharedBufferRanges) ||
+                a.BufferContentScope != b.BufferContentScope ||
+                a.ResultContents != b.ResultContents) return false;
+        }
+        return true;
     }
 
     private void CommitTexture(TextureStateUpdate update, QueueCompletion completion)
@@ -582,7 +632,9 @@ internal sealed partial class FrameExecutor
                 _textureContentScratch.Clear();
                 _textureContentScratch.AddRange(_textureBoundaryScratch);
             }
-            UpdateTextureBoundaryStates(_textureBoundaryScratch, new(endpoint, -1),
+            var value = new TextureStateValue(endpoint, -1, access.PassIndex,
+                access.UnorderedAccessHazards == UnorderedAccessHazardMode.AtomicMergeable);
+            UpdateTextureBoundaryStates(_textureBoundaryScratch, value,
                 access.Mode == GraphAccessMode.Read && !update.Acquired[item]);
             if (preserveContents)
             {
@@ -600,7 +652,7 @@ internal sealed partial class FrameExecutor
                             access.TextureRange.FirstArrayLayer + access.TextureRange.ArrayLayerCount) - layer,
                         range.Aspects & access.TextureRange.Aspects);
                     UpdateTextureBoundaryStates(_textureBoundaryScratch,
-                        new(endpoint with { Range = overlap, Contents = previous.State.Contents }, -1), reader: false);
+                        value with { State = endpoint with { Range = overlap, Contents = previous.State.Contents } }, reader: false);
                 }
                 _textureContentScratch.Clear();
             }
@@ -938,9 +990,11 @@ internal sealed partial class FrameExecutor
         current.Sort(static (left, right) => left.State.Range.FirstQuery.CompareTo(right.State.Range.FirstQuery));
     }
 
-    private static void UpdateTextureBoundaryStates(
+    private void UpdateTextureBoundaryStates(
         List<TextureStateValue> current, in TextureStateValue update, bool reader)
     {
+        _textureWriteScratch.Clear();
+        _textureWriteScratch.Add(update);
         int count = current.Count;
         for (int index = count - 1; index >= 0; index--)
         {
@@ -950,8 +1004,45 @@ internal sealed partial class FrameExecutor
                 !ReferenceEquals(existing.State.Queue, update.State.Queue)) continue;
             current.RemoveAt(index);
             Subtract(existing, update.State.Range, current);
+            bool samePass = update.LastPass >= 0 && existing.LastPass == update.LastPass;
+            bool atomicChain = existing.AtomicMergeable && update.AtomicMergeable &&
+                existing.State.Access == update.State.Access;
+            if ((!samePass && !atomicChain) || existing.State.Layout != update.State.Layout ||
+                !ReferenceEquals(existing.State.Queue, update.State.Queue)) continue;
+
+            // No barrier separates these uses. Preserve every shader stage that can
+            // still write, including when only part of the texture overlaps.
+            for (int part = _textureWriteScratch.Count - 1; part >= 0; part--)
+            {
+                TextureStateValue value = _textureWriteScratch[part];
+                TextureSubresourceRange range = value.State.Range;
+                TextureSubresourceRange previous = existing.State.Range;
+                if (!Overlaps(range, previous)) continue;
+                _textureWriteScratch.RemoveAt(part);
+                Subtract(value, previous, _textureWriteScratch);
+                uint firstMip = Math.Max(range.FirstMipLevel, previous.FirstMipLevel);
+                uint firstLayer = Math.Max(range.FirstArrayLayer, previous.FirstArrayLayer);
+                var overlap = new TextureSubresourceRange(firstMip,
+                    Math.Min(range.FirstMipLevel + range.MipLevelCount,
+                        previous.FirstMipLevel + previous.MipLevelCount) - firstMip,
+                    firstLayer,
+                    Math.Min(range.FirstArrayLayer + range.ArrayLayerCount,
+                        previous.FirstArrayLayer + previous.ArrayLayerCount) - firstLayer,
+                    range.Aspects & previous.Aspects);
+                _textureWriteScratch.Add(value with
+                {
+                    State = value.State with
+                    {
+                        Range = overlap,
+                        Sync = value.State.Sync | existing.State.Sync,
+                        Access = value.State.Access | existing.State.Access,
+                    },
+                    AtomicMergeable = value.AtomicMergeable && existing.AtomicMergeable,
+                });
+            }
         }
-        current.Add(update);
+        current.AddRange(_textureWriteScratch);
+        _textureWriteScratch.Clear();
         current.Sort(static (left, right) =>
         {
             int aspect = ((uint)left.State.Range.Aspects).CompareTo((uint)right.State.Range.Aspects);

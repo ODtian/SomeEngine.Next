@@ -124,11 +124,11 @@ internal sealed partial class FrameExecutor
         DevelopmentCheck.Require(
             view.Kind == kind && view.View is T,
             "The View identity has the wrong type.");
-        if (view.Buffer.IsValid)
-            ValidateBuffer(pass, _buffers[ResolveBuffer(view.Buffer)].Resource!, view.BufferRange,
+        if (view.BufferIndex >= 0)
+            ValidateBuffer(pass, _buffers[view.BufferIndex].Resource!, view.BufferRange,
                 kind is GraphViewKind.BufferUav);
-        if (view.Texture.IsValid)
-            ValidateTexture(pass, _textures[ResolveTexture(view.Texture)].Resource!, view.TextureRange,
+        if (view.TextureIndex >= 0)
+            ValidateTexture(pass, _textures[view.TextureIndex].Resource!, view.TextureRange,
                 kind is GraphViewKind.TextureUav or GraphViewKind.ColorAttachment or GraphViewKind.DepthStencil);
         return (T)view.View!;
     }
@@ -156,7 +156,10 @@ internal sealed partial class FrameExecutor
             FrameResourceAccess access = _accesses[accessIndex];
             if (access.TargetKind != GraphAccessTargetKind.Buffer || access.ResourceIndex != resource)
                 continue;
-            if (!Contains(access.BufferRange, normalized)) continue;
+            bool covered = false;
+            foreach (BufferRange declared in access.BufferRanges)
+                if (Contains(declared, normalized)) { covered = true; break; }
+            if (!covered) continue;
             if (write
                     ? access.Mode == GraphAccessMode.Read
                     : access.Mode == GraphAccessMode.Write)

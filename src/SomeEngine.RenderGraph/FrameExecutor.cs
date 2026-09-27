@@ -65,7 +65,11 @@ internal sealed partial class FrameExecutor
 
     internal void ApplyEdit(GraphEditChanges changes)
     {
-        if (!changes.IsEmpty && !changes.LabelsOnly) _analysisChanged = true;
+        if (!changes.IsEmpty && !changes.LabelsOnly)
+        {
+            _analysisChanged = true;
+            _bufferInputLocations.Clear();
+        }
         _rowChanges.Buffers.UnionWith(changes.Buffers);
         _rowChanges.Textures.UnionWith(changes.Textures);
         _rowChanges.QueryPools.UnionWith(changes.QueryPools);
@@ -178,6 +182,7 @@ internal sealed partial class FrameExecutor
                 Requirements = source.Requirements,
                 Resource = resource,
                 EntryBoundaryStates = boundaryStates,
+                UploadData = data,
                 FirstPass = -1,
                 LastPass = -1,
             });
@@ -920,10 +925,11 @@ internal sealed partial class FrameExecutor
         accessCount = firstAccess;
         foreach (BufferRangeRead read in _frame.BufferRangeReads)
         {
+            if (read.Ranges.Count == 0) continue;
             int resource = ResolveBuffer(read.Buffer);
             _bufferReads.Add(new ResolvedBufferRead(read, ResolvePass(read.Pass), resource,
                 _buffers[resource].Description.Size));
-            accessCount = checked(accessCount + read.Ranges.Count);
+            accessCount = checked(accessCount + 1);
         }
         bool changed = _rangeReadStart != firstAccess || _accesses.Count != accessCount ||
             !CollectionsMarshal.AsSpan(_bufferReads).SequenceEqual(
@@ -941,26 +947,24 @@ internal sealed partial class FrameExecutor
         {
             if (changed)
             {
-                foreach (ref readonly BufferRange range in resolved.Read.Ranges.Ranges)
+                foreach (BufferRange range in resolved.Read.Ranges.Ranges)
+                    _ = GraphStructureIndex.ResolveRange(range, resolved.BufferSize);
+                SetAccessRow(index, new FrameResourceAccess
                 {
-                    SetAccessRow(index++, new FrameResourceAccess
-                    {
-                        Pass = resolved.Read.Pass,
-                        Target = resolved.Read.Buffer,
-                        TargetKind = GraphAccessTargetKind.Buffer,
-                        Mode = GraphAccessMode.Read,
-                        Coverage = WriteCoverage.Partial,
-                        Sync = resolved.Read.Sync,
-                        Access = resolved.Read.Access,
-                        BufferRange = GraphStructureIndex.ResolveRange(range, resolved.BufferSize),
-                        SharedBufferRanges = resolved.Read.Ranges,
-                        PassIndex = resolved.PassIndex,
-                        ResourceIndex = resolved.ResourceIndex,
-                    });
-                }
+                    Pass = resolved.Read.Pass,
+                    Target = resolved.Read.Buffer,
+                    TargetKind = GraphAccessTargetKind.Buffer,
+                    Mode = GraphAccessMode.Read,
+                    Coverage = WriteCoverage.Partial,
+                    Sync = resolved.Read.Sync,
+                    Access = resolved.Read.Access,
+                    BufferRange = new(0, resolved.BufferSize),
+                    SharedBufferRanges = resolved.Read.Ranges,
+                    PassIndex = resolved.PassIndex,
+                    ResourceIndex = resolved.ResourceIndex,
+                });
             }
-            else
-                index += resolved.Read.Ranges.Count;
+            index++;
         }
         (_bufferReads, _previousBufferReads) = (_previousBufferReads, _bufferReads);
     }

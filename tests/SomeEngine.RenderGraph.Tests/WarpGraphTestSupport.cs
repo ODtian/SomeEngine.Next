@@ -27,7 +27,8 @@ internal sealed class WarpGraphTestSupport : IDisposable
     internal Queue ComputeQueue { get; }
     internal Queue CopyQueue { get; }
 
-    internal static WarpGraphTestSupport Create(bool enableValidation = false)
+    internal static WarpGraphTestSupport Create(bool enableValidation = false,
+        DeviceFeatures requiredFeatures = DeviceFeatures.None)
     {
         if (!OperatingSystem.IsWindows())
             throw SkipException.ForSkip("D3D12 WARP requires Windows.");
@@ -58,6 +59,7 @@ internal sealed class WarpGraphTestSupport : IDisposable
             Device device = backend.CreateDevice(new DeviceDesc(
                 warp.Id,
                 queues,
+                requiredFeatures: requiredFeatures,
                 label: "RenderGraph WARP test"));
             return new WarpGraphTestSupport(
                 backend,

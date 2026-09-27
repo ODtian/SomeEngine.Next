@@ -190,6 +190,7 @@ internal struct FrameBuffer
     internal MemoryRequirements Requirements;
     internal Buffer? Resource;
     internal BufferBoundaryState[]? EntryBoundaryStates;
+    internal FrameTransientResourceAllocator.UploadPage? UploadData;
     internal BufferContents[]? Contents;
     internal BufferSyncInput Synchronization;
     internal int FirstPass;
@@ -333,6 +334,7 @@ internal struct FrameResourceAccess
     internal ResourceAccess Access;
     internal BufferRange BufferRange;
     internal BufferRangeSet? SharedBufferRanges;
+    internal BufferAccessRanges BufferRanges => new(BufferRange, SharedBufferRanges);
     internal TextureSubresourceRange TextureRange;
     internal QueryRange QueryRange;
     internal TextureLayout TextureLayout;
@@ -344,6 +346,20 @@ internal struct FrameResourceAccess
     internal int PassAdjacencyIndex;
     internal int ResourceAdjacencyIndex;
     internal bool Connected;
+}
+
+internal readonly struct BufferAccessRanges(BufferRange range, BufferRangeSet? ranges)
+{
+    internal int Count => ranges?.Count ?? 1;
+    public Enumerator GetEnumerator() => new(range, ranges);
+
+    internal struct Enumerator(BufferRange range, BufferRangeSet? ranges)
+    {
+        private int _index = -1;
+        public bool MoveNext() => ++_index < (ranges?.Count ?? 1);
+        public BufferRange Current => ranges is null ? range :
+            ranges.Ranges[_index].IsWhole ? range : ranges.Ranges[_index];
+    }
 }
 
 internal readonly record struct ParameterInputValue(
