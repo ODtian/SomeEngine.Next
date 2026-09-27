@@ -7,6 +7,10 @@ using SomeEngine.Serialization;
 namespace SomeEngine.Resources;
 
 /// <summary>A material has concrete properties and actual shader and texture references.</summary>
+/// <remarks>
+/// Shared by game and rendering worlds. Change its fields after CPU frame recording completes
+/// and before the next render preparation. Extraction transfers references, not property copies.
+/// </remarks>
 [SomeEngine.Serialization.AssetUse]
 public abstract partial class Material : IDisposable
 {
@@ -114,11 +118,11 @@ public abstract partial class Material : IDisposable
 
     // Called on a newly created, unpublished material. The dependencies transfer before setters run,
     // so a failed initialization is cleaned up by disposing that material.
-    internal void InitializeContent(string? name, Shader? shader, Texture[] textures,
-        IEnumerable<(MaterialValue Value, Texture? Texture)> values)
+    internal void InitializeContent(string? name, Shader? shader,
+        IEnumerable<(MaterialValue Value, Texture? Texture)> values, Shader? createdShader, Texture[] createdTextures)
     {
-        _createdShader = shader;
-        _createdTextures = textures;
+        _createdShader = createdShader;
+        _createdTextures = createdTextures;
         _changingProperties = true;
         try
         {
