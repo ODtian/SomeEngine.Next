@@ -36,19 +36,6 @@ public static partial class SlangShaderImporter
         }
     }
 
-    private static TargetDesc[] CreateTargets(
-        IGlobalSession globalSession,
-        SlangShaderCookProfile profile)
-    {
-        SlangProfileID dxilProfile = globalSession.FindProfile(profile.DxilProfile);
-        SlangProfileID spirvProfile = globalSession.FindProfile(profile.SpirvProfile);
-        return
-        [
-            new() { Format = SlangCompileTarget.Dxil, Profile = dxilProfile },
-            new() { Format = SlangCompileTarget.Spirv, Profile = spirvProfile },
-        ];
-    }
-
     private static SessionDesc CreateSessionDesc(
         string filePath,
         TargetDesc[] targets)

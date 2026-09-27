@@ -3,6 +3,7 @@ using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Serialization.Containers;
+using SlangShaderSharp;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -87,11 +88,14 @@ public sealed class SlangShaderCookProfileTests
         string expectedDxil,
         string expectedSpirv)
     {
-        SlangShaderCookProfile profile = SlangShaderCookProfiles.Resolve(name);
+        IGlobalSession slang = SlangShaderImporter.GlobalSession;
+        TargetDesc[] targets = SlangShaderCookProfiles.CreateTargets(slang, name);
 
-        Assert.Equal(name, profile.Name);
-        Assert.Equal(expectedDxil, profile.DxilProfile);
-        Assert.Equal(expectedSpirv, profile.SpirvProfile);
+        Assert.Equal(2, targets.Length);
+        Assert.Equal(SlangCompileTarget.Dxil, targets[0].Format);
+        Assert.Equal(slang.FindProfile(expectedDxil), targets[0].Profile);
+        Assert.Equal(SlangCompileTarget.Spirv, targets[1].Format);
+        Assert.Equal(slang.FindProfile(expectedSpirv), targets[1].Profile);
     }
 
     private static int CountBackend(ShaderAsset asset, string backend)

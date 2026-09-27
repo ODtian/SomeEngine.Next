@@ -15,7 +15,7 @@ public static partial class SlangShaderImporter
         string fullPath = Path.GetFullPath(definitionPath);
         projectRoot = Path.GetFullPath(projectRoot ?? Path.GetDirectoryName(fullPath)!);
         return SlangDeps.Refresh(previousInputs, projectRoot, ImporterVersion,
-            SlangShaderCookProfiles.Resolve(copy.GetBlock<ShaderSourceBlock>().CookProfile).FingerprintPart,
+            SlangShaderCookProfiles.BuildSetting(copy.GetBlock<ShaderSourceBlock>().CookProfile),
             DefinitionSettings(copy.GetBlock<ShaderSourceBlock>(), fullPath, projectRoot, includeDirectories));
     }
 
@@ -65,10 +65,9 @@ public static partial class SlangShaderImporter
             string fullPath = Path.GetFullPath(definitionPath);
             string directory = Path.GetDirectoryName(fullPath)!;
             projectRoot = Path.GetFullPath(projectRoot ?? directory);
-            SlangShaderCookProfile profile = SlangShaderCookProfiles.Resolve(definition.CookProfile);
             var context = new ShaderImportContext(fullPath, projectRoot);
             using var lifetime = new SlangImportLifetime();
-            TargetDesc[] targets = CreateTargets(GlobalSession, profile);
+            TargetDesc[] targets = SlangShaderCookProfiles.CreateTargets(GlobalSession, definition.CookProfile);
             string[] paths = definition.SourceFiles.Select(path =>
             {
                 if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
@@ -107,7 +106,11 @@ public static partial class SlangShaderImporter
             FileDependency[] inputs = dependencies.DistinctBy(value => value.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .OrderBy(value => value.RelativePath, StringComparer.Ordinal).ToArray();
             string settings = DefinitionSettings(definition, fullPath, projectRoot, includeDirectories);
-            string hash = ImportHash.ComputeInputHash(inputs, ImporterVersion, profile.FingerprintPart, settings);
+            string hash = ImportHash.ComputeInputHash(
+                inputs,
+                ImporterVersion,
+                SlangShaderCookProfiles.BuildSetting(definition.CookProfile),
+                settings);
             code.ImportTrace = CreateImportTrace(context, hash, inputs);
             foreach (ulong key in code.Chunks.Keys.ToArray()) code.Chunks.Remove(key);
             code.Programs.Clear();

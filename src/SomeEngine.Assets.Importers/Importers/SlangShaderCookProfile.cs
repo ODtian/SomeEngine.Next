@@ -1,21 +1,6 @@
+using SlangShaderSharp;
+
 namespace SomeEngine.Assets.Importers;
-
-public readonly record struct SlangShaderCookProfile
-{
-    internal SlangShaderCookProfile(string name, string dxilProfile, string spirvProfile)
-    {
-        Name = name;
-        DxilProfile = dxilProfile;
-        SpirvProfile = spirvProfile;
-    }
-
-    public string Name { get; }
-    public string DxilProfile { get; }
-    public string SpirvProfile { get; }
-
-    internal string FingerprintPart
-        => $"slang-cook-profile:{Name}|dxil:{DxilProfile}|spirv:{SpirvProfile}";
-}
 
 public static class SlangShaderCookProfiles
 {
@@ -23,21 +8,34 @@ public static class SlangShaderCookProfiles
     public const string D3D12ShaderModel62Name = "d3d12-sm6.2";
     public const string D3D12ShaderModel66Name = "d3d12-sm6.6-bindless";
 
-    public static SlangShaderCookProfile Default { get; } =
-        new(DefaultName, "sm_6_5", "glsl_460");
+    public static TargetDesc[] CreateTargets(IGlobalSession slang, string name)
+    {
+        ArgumentNullException.ThrowIfNull(slang);
+        string dxilProfile = DxilProfileName(name);
+        return
+        [
+            new TargetDesc
+            {
+                Format = SlangCompileTarget.Dxil,
+                Profile = slang.FindProfile(dxilProfile),
+            },
+            new TargetDesc
+            {
+                Format = SlangCompileTarget.Spirv,
+                Profile = slang.FindProfile("glsl_460"),
+            },
+        ];
+    }
 
-    public static SlangShaderCookProfile D3D12ShaderModel62 { get; } =
-        new(D3D12ShaderModel62Name, "sm_6_2", "glsl_460");
+    public static string BuildSetting(string name)
+        => $"slang-cook-profile:{name}|dxil:{DxilProfileName(name)}|spirv:glsl_460";
 
-    public static SlangShaderCookProfile D3D12ShaderModel66 { get; } =
-        new(D3D12ShaderModel66Name, "sm_6_6", "glsl_460");
-
-    public static SlangShaderCookProfile Resolve(string name)
+    private static string DxilProfileName(string name)
         => name switch
         {
-            DefaultName => Default,
-            D3D12ShaderModel62Name => D3D12ShaderModel62,
-            D3D12ShaderModel66Name => D3D12ShaderModel66,
+            DefaultName => "sm_6_5",
+            D3D12ShaderModel62Name => "sm_6_2",
+            D3D12ShaderModel66Name => "sm_6_6",
             _ => throw new ArgumentException(
                 $"Unknown Slang shader cook profile '{name}'. Supported profiles are "
                     + $"'{DefaultName}', '{D3D12ShaderModel62Name}', and '{D3D12ShaderModel66Name}'.",
