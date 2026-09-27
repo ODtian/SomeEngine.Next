@@ -234,7 +234,7 @@ public sealed class RenderPrepareSystems : IDisposable
     {
         ArgumentNullException.ThrowIfNull(scope);
         ObjectDisposedException.ThrowIf(_shutdown, this);
-        _driver.Enter(scope);
+        _driver.Enter(scope, writeInstances: false);
         try
         {
             return _extraction.ApplyPendingCandidate();
@@ -324,7 +324,7 @@ public sealed class RenderPrepareSystems : IDisposable
             slot.LastSystemVersion,
             slot.CurrentSystemVersion);
 
-        internal void Enter(RenderPrepareScope scope)
+        internal void Enter(RenderPrepareScope scope, bool writeInstances = true)
         {
             if (Interlocked.CompareExchange(ref _scope, scope, null) is not null)
                 throw new InvalidOperationException("Render prepare systems are already updating.");
@@ -333,7 +333,9 @@ public sealed class RenderPrepareSystems : IDisposable
             {
                 scope.EnterOperation();
                 entered = true;
-                _write = instances?.OpenWrite(scope);
+                // Applying extracted components does not write GPU instance data. Keep that
+                // phase independent of writable buffer availability and buffer rotation.
+                _write = writeInstances ? instances?.OpenWrite(scope) : null;
             }
             catch
             {

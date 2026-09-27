@@ -104,8 +104,10 @@ public static partial class ClusterBuilder
         public byte Mat2;
         public byte Range0End;
         public byte Range1End;
-        // VRB batch info (packed uint, see BuildVrb)
-        public uint VRBBatchInfo;
+        public uint VertReuseBatchWord0;
+        public uint VertReuseBatchWord1;
+        public uint VertReuseBatchWord2;
+        public uint VertReuseBatchWord3;
     }
 
     private struct ClusterLodBounds
@@ -1301,14 +1303,19 @@ public static partial class ClusterBuilder
         public byte mat;
     }
 
+    private readonly record struct VertReuseBatchData(
+        uint Word0,
+        uint Word1,
+        uint Word2,
+        uint Word3);
+
     private static void EmitSplitMeshlet(
         ReadOnlySpan<TempTri> tris,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices
     )
     {
-        // Build VRB batch info (linear scan, no reorder)
-        uint vrbBatchInfo = BuildVrb(tris);
+        VertReuseBatchData vertReuseBatches = BuildVertReuseBatchInfo(tris);
 
         int startIndex = globalIndices.Count;
         var uniqueMats = new List<byte>();
@@ -1349,7 +1356,10 @@ public static partial class ClusterBuilder
                 Mat2 = uniqueMats.Count > 2 ? uniqueMats[2] : (byte)0,
                 Range0End = (byte)range0End,
                 Range1End = (byte)range1End,
-                VRBBatchInfo = vrbBatchInfo,
+                VertReuseBatchWord0 = vertReuseBatches.Word0,
+                VertReuseBatchWord1 = vertReuseBatches.Word1,
+                VertReuseBatchWord2 = vertReuseBatches.Word2,
+                VertReuseBatchWord3 = vertReuseBatches.Word3,
             }
         );
     }
@@ -1360,127 +1370,116 @@ public static partial class ClusterBuilder
 
 
 
-    /// <summary>
-    /// Build VRB batch info by linearly scanning triangles and closing batches
-    /// when unique vertex count exceeds 32. Preserves meshopt ordering (no reorder).
-    /// Returns a packed uint encoding up to 5 batch tri-counts.
-    /// Triangles beyond the 5th batch are implicitly a "slow residual" at runtime.
-    /// </summary>
-    private static uint BuildVrb(ReadOnlySpan<TempTri> tris)
+    private static VertReuseBatchData BuildVertReuseBatchInfo(ReadOnlySpan<TempTri> triangles)
     {
-        const int MaxBatchesEncoded = 5;
-        Span<int> batchTriCounts = stackalloc int[MaxBatchesEncoded + 16];
-        var batchVerts = new HashSet<uint>();
-        int batchIndex = 0;
-        int currentBatchTriCount = 0;
-        byte currentMat = tris[0].mat;
+        Span<uint> words = stackalloc uint[4];
+        words.Clear();
+        int triangleBitOffset = 12;
+        int rangeIndex = 0;
+        int rangeStart = 0;
 
-        for (int index = 0; index < tris.Length; index++)
+        while (rangeStart < triangles.Length)
         {
-            ref readonly TempTri tri = ref tris[index];
-            CloseVrbBatchAtMaterialBoundary(
-                tri,
-                ref currentMat,
-                batchTriCounts,
-                ref batchIndex,
-                ref currentBatchTriCount,
-                batchVerts);
-            AddVrbTriangleToBatch(tri, batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
-            CloseFullVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
+            byte material = triangles[rangeStart].mat;
+            int rangeEnd = rangeStart + 1;
+            while (rangeEnd < triangles.Length && triangles[rangeEnd].mat == material)
+                rangeEnd++;
+
+            if (rangeIndex >= 3)
+                throw new InvalidDataException("A cluster material chunk contains more than three ranges.");
+
+            List<byte> batchTriangleCounts = BuildVertReuseBatches(
+                triangles.Slice(rangeStart, rangeEnd - rangeStart));
+            if (batchTriangleCounts.Count == 0 || batchTriangleCounts.Count >= 16)
+                throw new InvalidDataException("A cluster material range has an invalid vertex-reuse batch count.");
+
+            WriteVertReuseBits(words, rangeIndex * 4, (uint)batchTriangleCounts.Count, 4);
+            foreach (byte triangleCount in batchTriangleCounts)
+            {
+                WriteVertReuseBits(words, triangleBitOffset, (uint)(triangleCount - 1), 5);
+                triangleBitOffset += 5;
+            }
+
+            rangeIndex++;
+            rangeStart = rangeEnd;
         }
 
-        CloseVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
-        return PackVrbBatchCounts(batchTriCounts, batchIndex, MaxBatchesEncoded);
+        return new VertReuseBatchData(words[0], words[1], words[2], words[3]);
     }
 
-    private static void CloseVrbBatchAtMaterialBoundary(
-        TempTri tri,
-        ref byte currentMat,
-        Span<int> batchTriCounts,
-        ref int batchIndex,
-        ref int currentBatchTriCount,
-        HashSet<uint> batchVerts)
+    private static List<byte> BuildVertReuseBatches(ReadOnlySpan<TempTri> triangles)
     {
-        if (tri.mat != currentMat && currentBatchTriCount > 0)
-        {
-            CloseVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
-            currentMat = tri.mat;
-        }
-    }
+        var batchTriangleCounts = new List<byte>();
+        var usedVertices = new HashSet<uint>();
+        int triangleCount = 0;
 
-    private static void AddVrbTriangleToBatch(
-        TempTri tri,
-        Span<int> batchTriCounts,
-        ref int batchIndex,
-        ref int currentBatchTriCount,
-        HashSet<uint> batchVerts)
-    {
-        if (VrbVertexCountAfterAdd(batchVerts, tri) > 32 && currentBatchTriCount > 0)
+        for (int index = 0; index < triangles.Length; index++)
         {
-            CloseVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
+            ref readonly TempTri triangle = ref triangles[index];
+            int newVertexCount = VertReuseVertexCountAfterAdd(usedVertices, triangle);
+            if (newVertexCount > 32)
+            {
+                if (triangleCount == 0)
+                    throw new InvalidDataException("A triangle exceeds the 32-vertex reuse-batch limit.");
+                CloseVertReuseBatch(batchTriangleCounts, usedVertices, ref triangleCount);
+                index--;
+                continue;
+            }
+
+            AddVertReuseTriangleVertices(usedVertices, triangle);
+            triangleCount++;
+            if (triangleCount == 32)
+                CloseVertReuseBatch(batchTriangleCounts, usedVertices, ref triangleCount);
         }
 
-        AddVrbTriangleVertices(batchVerts, tri);
-        currentBatchTriCount++;
+        CloseVertReuseBatch(batchTriangleCounts, usedVertices, ref triangleCount);
+        return batchTriangleCounts;
     }
 
-    private static int VrbVertexCountAfterAdd(HashSet<uint> batchVerts, TempTri tri)
+    private static int VertReuseVertexCountAfterAdd(HashSet<uint> usedVertices, TempTri triangle)
     {
-        int count = batchVerts.Count;
-        if (!batchVerts.Contains(tri.v0)) count++;
-        if (!batchVerts.Contains(tri.v1)) count++;
-        if (!batchVerts.Contains(tri.v2)) count++;
+        int count = usedVertices.Count;
+        if (!usedVertices.Contains(triangle.v0)) count++;
+        if (!usedVertices.Contains(triangle.v1)) count++;
+        if (!usedVertices.Contains(triangle.v2)) count++;
         return count;
     }
 
-    private static void AddVrbTriangleVertices(HashSet<uint> batchVerts, TempTri tri)
+    private static void AddVertReuseTriangleVertices(HashSet<uint> usedVertices, TempTri triangle)
     {
-        batchVerts.Add(tri.v0);
-        batchVerts.Add(tri.v1);
-        batchVerts.Add(tri.v2);
+        usedVertices.Add(triangle.v0);
+        usedVertices.Add(triangle.v1);
+        usedVertices.Add(triangle.v2);
     }
 
-    private static void CloseFullVrbBatch(
-        Span<int> batchTriCounts,
-        ref int batchIndex,
-        ref int currentBatchTriCount,
-        HashSet<uint> batchVerts)
+    private static void CloseVertReuseBatch(
+        List<byte> batchTriangleCounts,
+        HashSet<uint> usedVertices,
+        ref int triangleCount)
     {
-        if (currentBatchTriCount == 32)
-        {
-            CloseVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
-        }
-    }
-
-    private static void CloseVrbBatch(
-        Span<int> batchTriCounts,
-        ref int batchIndex,
-        ref int currentBatchTriCount,
-        HashSet<uint> batchVerts)
-    {
-        if (currentBatchTriCount <= 0)
-        {
+        if (triangleCount == 0)
             return;
-        }
 
-        batchTriCounts[batchIndex++] = currentBatchTriCount;
-        currentBatchTriCount = 0;
-        batchVerts.Clear();
+        batchTriangleCounts.Add(checked((byte)triangleCount));
+        triangleCount = 0;
+        usedVertices.Clear();
     }
 
-    private static uint PackVrbBatchCounts(
-        Span<int> batchTriCounts,
-        int batchIndex,
-        int maxBatchesEncoded)
+    private static void WriteVertReuseBits(Span<uint> words, int bitOffset, uint value, int bitCount)
     {
-        int encodedCount = Math.Min(batchIndex, maxBatchesEncoded);
-        uint packed = 0;
-        for (int index = 0; index < encodedCount; index++)
-        {
-            packed |= (uint)(batchTriCounts[index] - 1) << (index * 5);
-        }
+        if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 || bitOffset + bitCount > 128)
+            throw new InvalidDataException("Vertex-reuse batch metadata exceeds its inline encoding.");
 
-        return packed | ((uint)(encodedCount - 1) << 25);
+        uint mask = (1u << bitCount) - 1u;
+        if ((value & ~mask) != 0)
+            throw new InvalidDataException("Vertex-reuse batch metadata value exceeds its bit field.");
+
+        int wordIndex = bitOffset >> 5;
+        int wordBit = bitOffset & 31;
+        words[wordIndex] |= value << wordBit;
+        int lowBits = Math.Min(bitCount, 32 - wordBit);
+        if (lowBits < bitCount)
+            words[wordIndex + 1] |= value >> lowBits;
     }
 
 

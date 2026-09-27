@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
@@ -149,9 +149,9 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable
                 var clearData = new LightingBuildPassData(default);
                 _clearPass = edit.AddComputeFramePass(
                     "Clear lighting assignment",
-                    PassQueueSelection.AnyOfType(QueueType.Compute),
+                    PassQueueSelection.AnyCompatible(),
                     clearData,
-                    new PassOptions(Culling: PassCullingMode.NeverCull),
+                    new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     clearPipeline.Pipeline,
                     clearPipeline.ParameterLayout,
                     default,
@@ -160,9 +160,9 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable
                 var build = new LightingBuildPassData(default);
                 _buildPass = edit.AddComputeFramePass(
                     "Build lighting assignment",
-                    PassQueueSelection.AnyOfType(QueueType.Compute),
+                    PassQueueSelection.AnyCompatible(),
                     build,
-                    new PassOptions(Culling: PassCullingMode.NeverCull),
+                    new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     pipeline.Pipeline,
                     pipeline.ParameterLayout,
                     default,
@@ -308,7 +308,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable
             new LightingBuildPassData(new DispatchArguments(
                 nonDirectionalCount,
                 checked((uint)views.Length),
-                1)));
+                parameters[0].GroupsPerLight)));
         graph.SetPassEnabled(_clearPass, true);
         graph.SetPassEnabled(_cookieInitializePass, true);
         graph.SetPassEnabled(_buildPass, enabled && nonDirectionalCount != 0);
@@ -509,7 +509,7 @@ internal struct ClusteredLightGridParameters
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint CellCountPerView;
-    internal uint Pad0;
+    internal uint GroupsPerLight;
 
     internal static ClusteredLightGridParameters Create(
         in RenderView view,
@@ -538,6 +538,8 @@ internal struct ClusteredLightGridParameters
             MaxLightsPerCluster = settings.MaxLightsPerCell,
             DirectionalCount = directionalCount,
             NonDirectionalCount = nonDirectionalCount,
+            // Share the grid's slice parallelism between lights without expanding every light by every slice.
+            GroupsPerLight = DivideRoundUp(settings.DepthSliceCount, Math.Max(nonDirectionalCount, 1u)),
             Projection = view.Projection,
             ScreenWidth = view.ViewportWidth,
             ScreenHeight = view.ViewportHeight,

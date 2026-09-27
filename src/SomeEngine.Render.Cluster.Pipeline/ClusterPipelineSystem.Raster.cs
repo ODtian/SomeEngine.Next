@@ -1,4 +1,4 @@
-﻿using System.Collections.Immutable;
+using System.Collections.Immutable;
 using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
@@ -16,8 +16,9 @@ public sealed partial class ClusterPipelineSystem
     {
         internal readonly List<GraphPassId> Passes = [];
         internal readonly List<GraphBufferId> Uploads = [];
-        internal readonly List<GraphBufferId> SplitUniforms = [];
-        internal GraphBufferId SoftwareUniforms;
+        internal readonly List<GraphBufferInput> Uniforms = [];
+        internal readonly List<GraphBufferInput> SplitUniforms = [];
+        internal GraphBufferInput? SoftwareUniforms;
         internal RasterBinning? PatchBinning;
         internal GraphPassId First => Passes[0];
         internal GraphPassId Last => Passes[^1];
@@ -58,6 +59,8 @@ public sealed partial class ClusterPipelineSystem
         }
         foreach (GraphBufferId buffer in group.Uploads)
             _uploads!.Remove(ref graph, buffer);
+        foreach (GraphBufferInput uniform in group.Uniforms)
+            _uploads!.RemoveUniform(uniform);
     }
 
     private static void OrderRasterPasses(ref RenderGraphEdit graph, RasterPassGroup group, GraphPassId predecessor)
@@ -255,7 +258,7 @@ public sealed partial class ClusterPipelineSystem
         {
             value[0] = CreateTessellationUniforms(_frameResources,
                 group.Seeds.Count > 1 ? uint.MaxValue : bin, data.PhaseOne, (uint)level);
-            _uploads!.SetValue(ref graph, group.Split.SplitUniforms[level], MemoryMarshal.AsBytes(value));
+            _uploads!.SetUniformValue(ref graph, group.Split.SplitUniforms[level], MemoryMarshal.AsBytes(value));
         }
         var resources = stage.Tessellation!.SplitResources;
         foreach (GraphPassId pass in group.Split.Passes)
@@ -276,22 +279,25 @@ public sealed partial class ClusterPipelineSystem
     private readonly RasterBinning?[] _rasterBinning = new RasterBinning?[RasterEpochCount];
 
     private sealed record RasterBinning(
-        GraphBufferId Uniforms, GraphPassId Reset, GraphPassId Reserve,
+        GraphBufferInput Uniforms, GraphPassId Reset, GraphPassId Reserve, bool PolicyTarget,
         GraphPassId Count = default, GraphPassId Scatter = default);
 
     private void UpdateRasterBinning(ref RenderGraphEdit graph)
     {
         Span<ClusterRasterBinningUniforms> uniforms = stackalloc ClusterRasterBinningUniforms[1];
-        uniforms[0] = new ClusterRasterBinningUniforms
-        {
-            RasterMaxBins = _frameResources.RasterBinCount,
-            SlotCapacity = _frameResources.SlotCapacity,
-            MaxVisibleClusters = _options.MaxCandidates,
-            CollectMetrics = _options.EnableFrameMetricsReadback ? 1u : 0u,
-        };
         foreach (RasterBinning? binning in _rasterBinning)
             if (binning is not null)
-                _uploads!.SetValue(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(uniforms));
+            {
+                uniforms[0] = new ClusterRasterBinningUniforms
+                {
+                    RasterMaxBins = _frameResources.RasterBinCount,
+                    SlotCapacity = _frameResources.SlotCapacity,
+                    MaxVisibleClusters = _options.MaxCandidates,
+                    CollectMetrics = _options.EnableFrameMetricsReadback ? 1u : 0u,
+                    PolicyTarget = binning.PolicyTarget ? 1u : 0u,
+                };
+                _uploads!.SetUniformValue(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(uniforms));
+            }
         Span<ClusterTessellationBinUniforms> patches = stackalloc ClusterTessellationBinUniforms[1];
         patches[0] = new ClusterTessellationBinUniforms
         {
@@ -301,7 +307,7 @@ public sealed partial class ClusterPipelineSystem
         };
         foreach (RasterEpoch epoch in _rasterEpochs.Values)
             if (epoch.Patches.PatchBinning is { } binning)
-                _uploads!.SetValue(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(patches));
+                _uploads!.SetUniformValue(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(patches));
     }
 
     private ulong MeshRasterOffset(uint bin) => checked((ulong)_frameResources.RasterBinCount * 8u *
@@ -324,7 +330,7 @@ public sealed partial class ClusterPipelineSystem
                     DebugDump = _options.EnableFrameMetricsReadback ? 1u : 0u,
                     CurrentBin = bin.Stage.BinIndex,
                 };
-                _uploads!.SetValue(ref graph, bin.Passes.SoftwareUniforms, MemoryMarshal.AsBytes(software));
+                _uploads!.SetUniformValue(ref graph, bin.Passes.SoftwareUniforms, MemoryMarshal.AsBytes(software));
             }
         }
         foreach (MeshRaster mesh in _meshRasterPasses.Values)
@@ -336,7 +342,7 @@ public sealed partial class ClusterPipelineSystem
     private void UpdateRasterDispatches(ref RenderGraphFrame graph)
     {
         foreach ((GraphPassId pass, MeshRaster mesh) in _meshRasterPasses)
-            graph.SetPassData(pass, mesh.Data with { IndirectOffset = MeshRasterOffset(mesh.Bin) });
+            graph.SetPassDataIfChanged(pass, mesh.Data with { IndirectOffset = MeshRasterOffset(mesh.Bin) });
         var reset = new ClusterDispatchParameters(new DispatchArguments(
             Math.Max(1u, (_frameResources.RasterBinCount + 63u) / 64u), 1u, 1u));
         var reserve = new ClusterDispatchParameters(new DispatchArguments(
@@ -344,8 +350,8 @@ public sealed partial class ClusterPipelineSystem
         foreach (RasterBinning? binning in _rasterBinning)
         {
             if (binning is null) continue;
-            graph.SetPassData(binning.Reset, reset);
-            graph.SetPassData(binning.Reserve, reserve);
+            graph.SetPassDataIfChanged(binning.Reset, reset);
+            graph.SetPassDataIfChanged(binning.Reserve, reserve);
         }
         uint patchBinCount = checked(_frameResources.RasterBinCount * 8u);
         reset = new ClusterDispatchParameters(new DispatchArguments(Math.Max(1u, (patchBinCount + 63u) / 64u), 1u, 1u));
@@ -353,8 +359,8 @@ public sealed partial class ClusterPipelineSystem
         foreach (RasterEpoch epoch in _rasterEpochs.Values)
         {
             if (epoch.Patches.PatchBinning is not { } binning) continue;
-            graph.SetPassData(binning.Reset, reset);
-            graph.SetPassData(binning.Reserve, reserve);
+            graph.SetPassDataIfChanged(binning.Reset, reset);
+            graph.SetPassDataIfChanged(binning.Reserve, reserve);
         }
     }
 }

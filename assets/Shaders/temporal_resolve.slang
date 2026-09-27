@@ -199,9 +199,9 @@ float2 LoadPreviousMotionBilinear(float2 uv, float2 size, int2 maxPixel)
     return lerp(lerp(m00, m10, f.x), lerp(m01, m11, f.x), f.y);
 }
 
-float2 LoadDilatedMotionByClosestDepth(int2 pixel, int2 maxPixel)
+float2 LoadDilatedMotionByClosestDepth(int2 pixel, int2 maxPixel, out float closestDepth)
 {
-    float closestDepth = LoadCurrentDepthClamped(pixel, maxPixel);
+    closestDepth = LoadCurrentDepthClamped(pixel, maxPixel);
     float2 closestMotion = MotionVectors.Load(int4(clamp(pixel, int2(0, 0), maxPixel), 0, 0));
 
     for (int y = -1; y <= 1; y++)
@@ -240,6 +240,8 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
 {
     int2 pixel = int2(input.Position.xy);
     float4 current = SceneColor.Load(int4(pixel, 0, 0));
+    if (TemporalResolveUniforms.HistoryWeight <= 0.0)
+        return current;
 
     uint width;
     uint height;
@@ -254,8 +256,12 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
     // MotionVectors store current output UV minus previous history UV.
     // Jitter is applied by the projection that produced SceneColor; history reprojection
     // is owned by motion vectors and must not apply current jitter again.
-    // No-history frames bypass this shader and copy current SceneColor.
-    float2 motion = LoadDilatedMotionByClosestDepth(pixel, maxPixel);
+    // No-history frames return the current color before sampling history.
+    float closestDepth;
+    float2 motion = LoadDilatedMotionByClosestDepth(pixel, maxPixel, closestDepth);
+    // Retain subpixel silhouette coverage, but do not accumulate an old surface in empty background.
+    if (closestDepth >= 1.0)
+        return current;
     float2 previousUv = uv - motion;
     if (any(previousUv < float2(0.0, 0.0)) || any(previousUv > float2(1.0, 1.0)))
         return current;

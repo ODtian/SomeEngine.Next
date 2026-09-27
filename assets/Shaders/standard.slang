@@ -35,6 +35,7 @@ StructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;
 StructuredBuffer<uint4> VirtualShadowPageTable;
 Texture2D<uint> VirtualShadowAtlas;
 ConstantBuffer<VirtualShadowSamplingUniforms> VirtualShadowSampling;
+StructuredBuffer<float2> VirtualShadowDynamicResolutionBias;
 
 float EvaluateLightingCookie(GPULight light, float3 worldPosition)
 {
@@ -89,7 +90,25 @@ StandardPixelContext BuildStandardPixelContext(
     return ctx;
 }
 
-struct StandardMaterial : ISurfaceEvaluate
+float3 ReconstructStandardPixelNeighbor(
+    ClusterViewUniforms view,
+    uint2 pixel,
+    float deviceDepth,
+    int2 offset)
+{
+    uint2 screen = max(uint2(view.ScreenWidth, view.ScreenHeight), 1u.xx);
+    int2 neighbor = clamp(
+        int2(pixel) + offset,
+        int2(0, 0),
+        int2(screen) - 1);
+    float2 uv = (float2(neighbor) + 0.5) / float2(screen);
+    float4 world = mul(
+        float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, deviceDepth, 1.0),
+        view.ClipToWorld);
+    return world.xyz / max(abs(world.w), 1e-8);
+}
+
+struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
     // Textures
     Texture2D AlbedoMap;
@@ -133,9 +152,17 @@ struct StandardMaterial : ISurfaceEvaluate
         float3 V = normalize(Views[ctx.pixelCoord.z].CameraPos - ctx.surfacePosition);
         float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
 
+        if (dot(mappedNormal, V) <= 0.0)
+        {
+            outputColor[ctx.pixelCoord] = float4(finalColor, 1.0);
+            return;
+        }
+
         for (uint lightIndex = 0u; lightIndex < lighting.DirectionalCount; lightIndex++)
         {
             GPULight light = LightBuffer[lightIndex];
+            if (dot(mappedNormal, -light.Direction) <= 0.0)
+                continue;
             float3 shadowPosition = ctx.surfacePosition +
                 mappedNormal * VirtualShadowSampling.NormalBias;
             float shadow = 1.0;
@@ -154,6 +181,7 @@ struct StandardMaterial : ISurfaceEvaluate
                         min(
                             VirtualShadowSampling.DirectionalClipmapLevels,
                             VirtualShadowSampling.ViewCount - firstShadowView),
+                        VirtualShadowDynamicResolutionBias[0].x,
                         shadowPosition,
                         VirtualShadowSampling.BlockerSampleCount,
                         VirtualShadowSampling.FilterSampleCount,
@@ -177,6 +205,13 @@ struct StandardMaterial : ISurfaceEvaluate
             ctx.pixelCoord.z,
             ctx.pixelCoord.xy,
             viewDepth);
+        ClusterViewUniforms receiverView = Views[ctx.pixelCoord.z];
+        float4 receiverClip = mul(float4(ctx.surfacePosition, 1.0), receiverView.ViewProj);
+        float receiverDepth = receiverClip.z / max(abs(receiverClip.w), 1e-8);
+        float3 receiverPositionDx = ReconstructStandardPixelNeighbor(
+            receiverView, ctx.pixelCoord.xy, receiverDepth, int2(1, 0));
+        float3 receiverPositionDy = ReconstructStandardPixelNeighbor(
+            receiverView, ctx.pixelCoord.xy, receiverDepth, int2(0, 1));
         uint localCount = min(
             ClusteredLightGrid[cell].y,
             lighting.MaxLightsPerCluster);
@@ -185,6 +220,14 @@ struct StandardMaterial : ISurfaceEvaluate
         {
             uint lightIndex = LightIndexList[firstIndex + localIndex];
             GPULight light = LightBuffer[lightIndex];
+            float3 toLight = light.Position - ctx.surfacePosition;
+            float distanceSq = dot(toLight, toLight);
+            if (light.Range <= 0.0 || distanceSq >= light.Range * light.Range || dot(mappedNormal, toLight) <= 0.0)
+                continue;
+            bool spotLight = dot(light.Direction, light.Direction) > 1e-8 && light.OuterConeCos > 0.0;
+            if (spotLight && EvaluateSpotCone(toLight * rsqrt(max(distanceSq, MIN_DISTANCE_SQ)),
+                    light.Direction, light.InnerConeCos, light.OuterConeCos) <= 0.0)
+                continue;
             float3 shadowPosition = ctx.surfacePosition +
                 mappedNormal * VirtualShadowSampling.NormalBias;
             float shadow = 1.0;
@@ -203,7 +246,10 @@ struct StandardMaterial : ISurfaceEvaluate
                         VirtualShadowPageTable,
                         VirtualShadowAtlas,
                         firstShadowView,
+                        VirtualShadowDynamicResolutionBias[0].y,
                         shadowPosition,
+                        receiverPositionDx + mappedNormal * VirtualShadowSampling.NormalBias,
+                        receiverPositionDy + mappedNormal * VirtualShadowSampling.NormalBias,
                         VirtualShadowSampling.BlockerSampleCount,
                         VirtualShadowSampling.FilterSampleCount,
                         VirtualShadowSampling.BlockerSearchRadiusTexels,
@@ -224,7 +270,10 @@ struct StandardMaterial : ISurfaceEvaluate
                         VirtualShadowPageTable,
                         VirtualShadowAtlas,
                         shadowView,
+                        VirtualShadowDynamicResolutionBias[0].y,
                         shadowPosition,
+                        receiverPositionDx + mappedNormal * VirtualShadowSampling.NormalBias,
+                        receiverPositionDy + mappedNormal * VirtualShadowSampling.NormalBias,
                         VirtualShadowSampling.BlockerSampleCount,
                         VirtualShadowSampling.FilterSampleCount,
                         VirtualShadowSampling.BlockerSearchRadiusTexels,
@@ -232,7 +281,7 @@ struct StandardMaterial : ISurfaceEvaluate
                 }
             }
             float3 radiance = light.Color * (light.Intensity * shadow);
-            if (dot(light.Direction, light.Direction) > 1e-8 && light.OuterConeCos > 0.0)
+            if (spotLight)
             {
                 finalColor += EvaluateSpotLight(
                     baseColor,

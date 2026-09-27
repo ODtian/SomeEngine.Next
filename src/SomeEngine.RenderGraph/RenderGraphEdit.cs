@@ -1,23 +1,15 @@
-﻿namespace SomeEngine.RenderGraph;
+namespace SomeEngine.RenderGraph;
 
 public ref partial struct RenderGraphEdit
 {
     private RenderGraph? _graph;
     private readonly long _token;
-    private GraphStructure? _staging;
-    private GraphEditChanges? _changes;
     private bool _committed;
 
-    internal RenderGraphEdit(
-        RenderGraph graph,
-        long token,
-        GraphStructure staging,
-        GraphEditChanges changes)
+    internal RenderGraphEdit(RenderGraph graph, long token)
     {
         _graph = graph;
         _token = token;
-        _staging = staging;
-        _changes = changes;
     }
 
     private RenderGraph Graph
@@ -30,16 +22,9 @@ public ref partial struct RenderGraphEdit
         }
     }
 
-    private GraphStructure Staging
-    {
-        get
-        {
-            _ = Graph;
-            return _staging!;
-        }
-    }
-
-    private GraphEditChanges Changes => _changes!;
+    private GraphStructure Structure => Graph.ReadEditStructure;
+    private GraphStructure Staging => Graph.EditStructure;
+    private GraphEditChanges Changes => Graph.EditChanges;
 
     public GraphBufferId CreatePersistentBuffer(in BufferDesc description, MemoryType memoryType = MemoryType.DeviceLocal) =>
         AddBuffer(description, memoryType, RenderGraphResourceOwnership.GraphOwned,
@@ -62,10 +47,10 @@ public ref partial struct RenderGraphEdit
         ArgumentNullException.ThrowIfNull(buffer);
         if (!ReferenceEquals(buffer.Device, Graph.Device))
             throw new ArgumentException("The Buffer belongs to another Device.", nameof(buffer));
-        if (Graph.TryGetBufferId(buffer, out GraphBufferId registered) && Staging.Buffers.Contains(registered.Value))
+        if (Graph.TryGetBufferId(buffer, out GraphBufferId registered) && Structure.Buffers.Contains(registered.Value))
             return registered;
         foreach (GraphIdentity changed in Changes.Buffers)
-            if (Staging.Buffers.Contains(changed) && ReferenceEquals(Staging.Buffers.Get(changed).RegisteredResource, buffer))
+            if (Structure.Buffers.Contains(changed) && ReferenceEquals(Structure.Buffers.Get(changed).RegisteredResource, buffer))
                 return new GraphBufferId(changed);
         GraphIdentity identity = Staging.Buffers.Add(Graph.Identity, new GraphBuffer
         {
@@ -100,10 +85,10 @@ public ref partial struct RenderGraphEdit
         ArgumentNullException.ThrowIfNull(texture);
         if (!ReferenceEquals(texture.Device, Graph.Device))
             throw new ArgumentException("The Texture belongs to another Device.", nameof(texture));
-        if (Graph.StructureIndex.ResourceIdentities.TryGetValue(texture, out GraphIdentity registered) && Staging.Textures.Contains(registered))
+        if (Graph.StructureIndex.ResourceIdentities.TryGetValue(texture, out GraphIdentity registered) && Structure.Textures.Contains(registered))
             return new GraphTextureId(registered);
         foreach (GraphIdentity changed in Changes.Textures)
-            if (Staging.Textures.Contains(changed) && ReferenceEquals(Staging.Textures.Get(changed).RegisteredResource, texture))
+            if (Structure.Textures.Contains(changed) && ReferenceEquals(Structure.Textures.Get(changed).RegisteredResource, texture))
                 return new GraphTextureId(changed);
         TextureInfo info = texture.Info;
         GraphIdentity identity = Staging.Textures.Add(Graph.Identity, new GraphTexture
@@ -254,8 +239,8 @@ public ref partial struct RenderGraphEdit
         }
         foreach (GraphIdentity access in removed.Accesses)
         {
-            if (!Staging.Accesses.Contains(access)) continue;
-            PassResourceAccess row = Staging.Accesses.Get(access);
+            if (!Structure.Accesses.Contains(access)) continue;
+            PassResourceAccess row = Structure.Accesses.Get(access);
             Changes.TouchAccess(access, row.Pass, row.Target, membership: true);
             _ = Staging.Accesses.Remove(access);
         }
@@ -295,7 +280,7 @@ public ref partial struct RenderGraphEdit
         ValidatePass(predecessor);
         if (pass == predecessor) throw new ArgumentException("A pass cannot depend on itself.");
         ExplicitPassOrder order = new(predecessor.Value, pass.Value);
-        if (!Staging.Orders.Contains(order))
+        if (!Structure.Orders.Contains(order))
         {
             Staging.Orders.Add(order);
             Changes.TouchOrder(order.Predecessor, order.Consumer);
@@ -317,7 +302,7 @@ public ref partial struct RenderGraphEdit
         MemoryType memoryType = MemoryType.DeviceLocal)
     {
         ValidateBuffer(buffer);
-        GraphBuffer row = Staging.Buffers.Get(buffer.Value);
+        GraphBuffer row = Structure.Buffers.Get(buffer.Value);
         if (row.RegisteredResource is not null)
             throw new InvalidOperationException("A registered Buffer description cannot be replaced.");
         if (row.Description == description && row.MemoryType == memoryType) return;
@@ -333,7 +318,7 @@ public ref partial struct RenderGraphEdit
     public void SetTextureDescription(GraphTextureId texture, in TextureDesc description)
     {
         ValidateTexture(texture);
-        GraphTexture row = Staging.Textures.Get(texture.Value);
+        GraphTexture row = Structure.Textures.Get(texture.Value);
         if (row.RegisteredResource is not null)
             throw new InvalidOperationException("A registered Texture description cannot be replaced.");
         if (row.Dimension == description.Dimension && row.Width == description.Width &&
@@ -365,7 +350,7 @@ public ref partial struct RenderGraphEdit
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         ValidatePass(pass);
-        if (Staging.Passes.Get(pass.Value).Label == label) return;
+        if (Structure.Passes.Get(pass.Value).Label == label) return;
         Staging.Passes.GetMutable(pass.Value).Label = label;
         Changes.Labels.Add(pass.Value);
     }
@@ -373,7 +358,7 @@ public ref partial struct RenderGraphEdit
     public void SetPassOptions(GraphPassId pass, in PassOptions options)
     {
         ValidatePass(pass);
-        if (Staging.Passes.Get(pass.Value).Options == options) return;
+        if (Structure.Passes.Get(pass.Value).Options == options) return;
         Staging.Passes.GetMutable(pass.Value).Options = options;
         Changes.TouchPass(pass.Value);
     }
@@ -381,8 +366,8 @@ public ref partial struct RenderGraphEdit
     public void SetPassQueue(GraphPassId pass, in PassQueueSelection queue)
     {
         ValidatePass(pass);
-        PassQueueSelection current = Staging.Passes.Get(pass.Value).Queue;
-        if (current.Type == queue.Type && current.IsExact == queue.IsExact && ReferenceEquals(current.Queue, queue.Queue)) return;
+        PassQueueSelection current = Structure.Passes.Get(pass.Value).Queue;
+        if (current == queue) return;
         Staging.Passes.GetMutable(pass.Value).Queue = queue;
         Changes.TouchPass(pass.Value);
     }
@@ -399,7 +384,7 @@ public ref partial struct RenderGraphEdit
         BufferContentScope contentScope = BufferContentScope.FullRange)
     {
         ValidateOwner(access.Value);
-        PassResourceAccess row = Staging.Accesses.Get(access.Value);
+        PassResourceAccess row = Structure.Accesses.Get(access.Value);
         if (row.TargetKind != GraphAccessTargetKind.Buffer)
             throw new ArgumentException("The access is not a Buffer access.", nameof(access));
         if (row.Mode == mode && row.Coverage == coverage && row.Sync == sync && row.Access == resourceAccess &&
@@ -429,7 +414,7 @@ public ref partial struct RenderGraphEdit
         ResourceContentState? resultContents = null)
     {
         ValidateOwner(access.Value);
-        PassResourceAccess row = Staging.Accesses.Get(access.Value);
+        PassResourceAccess row = Structure.Accesses.Get(access.Value);
         if (row.TargetKind != GraphAccessTargetKind.Texture)
             throw new ArgumentException("The access is not a Texture access.", nameof(access));
         if (row.Mode == mode && row.Coverage == coverage && row.Sync == sync && row.Access == resourceAccess &&
@@ -579,13 +564,9 @@ public ref partial struct RenderGraphEdit
     public void Commit()
     {
         RenderGraph graph = Graph;
-        GraphStructure staging = Staging;
-        GraphEditChanges changes = Changes;
-        graph.CommitEdit(_token, staging, changes);
+        graph.CommitEdit(_token);
         _committed = true;
         _graph = null;
-        _staging = null;
-        _changes = null;
     }
 
     public void Dispose()
@@ -593,8 +574,6 @@ public ref partial struct RenderGraphEdit
         if (_graph is null) return;
         if (!_committed) _graph.AbandonEdit(_token);
         _graph = null;
-        _staging = null;
-        _changes = null;
     }
 
     private GraphBufferId AddBuffer(
@@ -673,7 +652,7 @@ public ref partial struct RenderGraphEdit
         catch
         {
             foreach (GraphIdentity access in pass.Accesses)
-                if (Staging.Accesses.Contains(access)) _ = Staging.Accesses.Remove(access);
+                if (Structure.Accesses.Contains(access)) _ = Staging.Accesses.Remove(access);
             _ = Staging.Passes.Remove(identity);
             throw;
         }
@@ -809,7 +788,7 @@ public ref partial struct RenderGraphEdit
         ResourceContentState? resultContents)
     {
         ValidateOwner(pool.Value);
-        GraphQueryPool queryPool = Staging.QueryPools.Get(pool.Value);
+        GraphQueryPool queryPool = Structure.QueryPools.Get(pool.Value);
         ValidateQueryRange(queryPool.Resource, range);
         GraphIdentity identity = Staging.Accesses.Add(Graph.Identity, new PassResourceAccess
         {
@@ -835,7 +814,7 @@ public ref partial struct RenderGraphEdit
         ResourceContentState? resultContents)
     {
         ValidateOwner(table.Value);
-        _ = Staging.ShaderTables.Get(table.Value);
+        _ = Structure.ShaderTables.Get(table.Value);
         GraphIdentity identity = Staging.Accesses.Add(Graph.Identity, new PassResourceAccess
         {
             Pass = pass,
@@ -874,7 +853,7 @@ public ref partial struct RenderGraphEdit
     public PassDefinition GetPass(GraphPassId pass)
     {
         ValidatePass(pass);
-        return new PassDefinition(this, pass.Value, Staging.Passes.Get(pass.Value).Kind);
+        return new PassDefinition(this, pass.Value, Structure.Passes.Get(pass.Value).Kind);
     }
 
     /// <summary>
@@ -895,7 +874,7 @@ public ref partial struct RenderGraphEdit
     {
         if (!ReferenceEquals(pipeline.Device, Graph.Device))
             throw new ArgumentException("The Pipeline belongs to another Device.", nameof(pipeline));
-        Pipeline? previous = Staging.Passes.Get(pass).Pipeline;
+        Pipeline? previous = Structure.Passes.Get(pass).Pipeline;
         if (ReferenceEquals(previous, pipeline)) return;
         GraphPass row = Staging.Passes.GetMutable(pass);
         row.Pipeline = pipeline;
@@ -907,7 +886,7 @@ public ref partial struct RenderGraphEdit
         ShaderVariableLayout layout,
         ReadOnlySpan<byte> ordinaryData)
     {
-        GraphPass previous = Staging.Passes.Get(pass);
+        GraphPass previous = Structure.Passes.Get(pass);
         if (previous.ParameterLayout == layout && ordinaryData.SequenceEqual(previous.ParameterOrdinaryData)) return;
         GraphPass row = Staging.Passes.GetMutable(pass);
         row.ParameterLayout = layout;
@@ -929,7 +908,7 @@ public ref partial struct RenderGraphEdit
         GraphPersistentParameterBindingsId bindings)
     {
         ValidateOwner(bindings.Value);
-        GraphPersistentParameterBindings row = Staging.PersistentBindings.Get(bindings.Value);
+        GraphPersistentParameterBindings row = Structure.PersistentBindings.Get(bindings.Value);
         GraphPass graphPass = Staging.Passes.GetMutable(pass);
         if (!graphPass.PersistentBindings.Contains(bindings.Value))
             graphPass.PersistentBindings.Add(bindings.Value);
@@ -962,38 +941,38 @@ public ref partial struct RenderGraphEdit
     internal GraphView ResolveView(in GraphIdentity identity)
     {
         ValidateOwner(identity);
-        return Staging.Views.Get(identity);
+        return Structure.Views.Get(identity);
     }
 
     internal GraphRayTracingShaderTable ResolveShaderTable(
         GraphRayTracingShaderTableId table)
     {
         ValidateOwner(table.Value);
-        return Staging.ShaderTables.Get(table.Value);
+        return Structure.ShaderTables.Get(table.Value);
     }
 
     internal void ValidateBuffer(GraphBufferId buffer)
     {
         ValidateOwner(buffer.Value);
-        _ = Staging.Buffers.Get(buffer.Value);
+        _ = Structure.Buffers.Get(buffer.Value);
     }
 
     internal void ValidateTexture(GraphTextureId texture)
     {
         ValidateOwner(texture.Value);
-        _ = Staging.Textures.Get(texture.Value);
+        _ = Structure.Textures.Get(texture.Value);
     }
 
     private void ValidatePass(GraphPassId pass)
     {
         ValidateOwner(pass.Value);
-        _ = Staging.Passes.Get(pass.Value);
+        _ = Structure.Passes.Get(pass.Value);
     }
 
     private void RemoveAccess(in GraphIdentity access)
     {
         ValidateOwner(access);
-        PassResourceAccess row = Staging.Accesses.Get(access);
+        PassResourceAccess row = Structure.Accesses.Get(access);
         Changes.TouchAccess(access, row.Pass, row.Target, membership: true);
         GraphPass pass = Staging.Passes.GetMutable(row.Pass);
         if (!pass.Accesses.Remove(access))
@@ -1114,7 +1093,7 @@ public ref partial struct RenderGraphEdit
     private TextureSubresourceRange WholeTextureRange(GraphTextureId texture)
     {
         ValidateTexture(texture);
-        GraphTexture value = Staging.Textures.Get(texture.Value);
+        GraphTexture value = Structure.Textures.Get(texture.Value);
         return new TextureSubresourceRange(0, value.MipLevelCount, 0, value.ArrayLayerCount,
             TextureFormatRules.Aspects(value.Format));
     }

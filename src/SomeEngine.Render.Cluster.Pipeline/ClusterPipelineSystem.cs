@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
@@ -20,6 +20,8 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 /// </summary>
 public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemContext>, IRenderGraphFrameExecutionObserver
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "Cluster.Update", detail: true);
+
     private const int ReadbackGenerationCount = 2;
     private const int RasterEpochCount = 4;
     private static readonly TimeSpan ReadbackRetirementTimeout = TimeSpan.FromSeconds(30);
@@ -102,7 +104,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private IndirectCommandLayout? _drawIndirectLayout;
     private IndirectCommandLayout? _drawIndexedIndirectLayout;
     private readonly Buffer?[] _pageFaultReadbacks = new Buffer?[ReadbackGenerationCount];
-    private byte[] _pageFaultReadbackBytes = [];
     private readonly ClusterReadbackTicket[] _pageFaultReadbackTickets =
         new ClusterReadbackTicket[ReadbackGenerationCount];
     private readonly bool[] _pageFaultReadbackPending = new bool[ReadbackGenerationCount];
@@ -674,6 +675,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         if (!_created)
             throw new InvalidOperationException("The Cluster pipeline was not created.");
         if (!_graphInstalled)
@@ -785,7 +787,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             for (int viewIndex = 0; viewIndex < views.Length; viewIndex++)
             {
                 bool isTargetView = viewIndex >= primaryViewCount;
-                ClusterViewRasterMode rasterMode = _visibilityMode == ClusterVisibilityMode.HardwareOnly
+                ClusterViewRasterMode rasterMode = _visibilityMode == ClusterVisibilityMode.HardwareOnly ||
+                    (isTargetView && _renderContext.HardwareRasterOnly)
                     ? ClusterViewRasterMode.Hardware
                     : ClusterViewRasterMode.Adaptive;
                 packedViews[viewIndex] = ClusterViewUniforms.Create(
@@ -854,7 +857,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 ref graph,
                 in binding,
                 history);
-            BindSceneBounds(ref graph, batch);
+            BindSceneBounds(ref graph, batch, policyViewCount != 0);
             RecordResidencyUploads(ref graph, in binding);
             DeclareResidencyReads(ref graph, in binding);
             WriteFrameUploads(
@@ -942,6 +945,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _frameResources.NeutralPolicyValue,
+                range: new BufferRange(2u * sizeof(uint), sizeof(uint)),
                 structureStride: sizeof(uint),
                 label: "Cluster neutral raster-invocation count"),
             PipelineSync.ComputeShading);
@@ -1034,8 +1038,26 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _frameResources.NeutralPolicyView,
-                structureStride: 48,
-                label: "Cluster neutral raster-target invocation"),
+                structureStride: 72,
+                label: "Cluster neutral raster target view"),
+            PipelineSync.ComputeShading);
+        _ = pass.Bind(
+            graph.CreateBufferSrv(
+                _frameResources.NeutralPolicyView,
+                structureStride: sizeof(uint),
+                label: "Cluster neutral raster page masks"),
+            PipelineSync.ComputeShading);
+        _ = pass.Bind(
+            graph.CreateBufferSrv(
+                _frameResources.NeutralPolicyView,
+                structureStride: 4 * sizeof(uint),
+                label: "Cluster neutral raster page table"),
+            PipelineSync.ComputeShading);
+        _ = pass.Bind(
+            graph.CreateBufferSrv(
+                _frameResources.NeutralPolicyView,
+                structureStride: 2 * sizeof(uint),
+                label: "Cluster neutral raster receiver masks"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateTextureSrv(
@@ -1051,8 +1073,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Cluster neutral previous target HiZ"),
             PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(_frameResources.NeutralPolicyValue,
-            structureStride: sizeof(uint), label: "Cluster neutral region grid"), PipelineSync.ComputeShading);
     }
 
     void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
@@ -1179,7 +1199,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _readbackSequences[generation] = 0;
 
         }
-        _pageFaultReadbackBytes = [];
         _frameMetricReadbackBytes = [];
         _frameMetricsSubmittedFrame = 0;
         _nextReadbackSequence = 0;
@@ -1297,7 +1316,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         int byteCount = checked(sizeof(uint) + capacity * sizeof(uint));
         if (_pageFaultReadbacks[0] is not null)
         {
-            if (_pageFaultReadbackBytes.Length != byteCount)
+            if (_pageFaultReadbacks[0]!.Info.Size != (ulong)byteCount)
             {
                 throw new InvalidOperationException(
                     "The Cluster page-fault capacity changed inside a live renderer epoch.");
@@ -1305,7 +1324,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             return;
         }
 
-        _pageFaultReadbackBytes = CreateReadbackBuffers(
+        CreateReadbackBuffers(
             _pageFaultReadbacks,
             byteCount,
             "Cluster page-fault readback");
@@ -1407,8 +1426,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ClusterReadbackTicket ticket = _pageFaultReadbackTickets[generation];
             if (!ticket.IsValid)
                 throw new InvalidOperationException("Cluster page-fault readback ticket was lost.");
-            ReadMappedBuffer(pageFaultReadback, _pageFaultReadbackBytes);
-            _streamingFeedback.Publish(ticket, _pageFaultReadbackBytes);
+            using (MappedBuffer mapping = _backend.Map(pageFaultReadback, MapType.Read, BufferRange.Whole))
+            {
+                mapping.Invalidate(mapping.Range);
+                _streamingFeedback.Publish(ticket, mapping.Bytes);
+            }
             _pageFaultReadbackTickets[generation] = default;
             _pageFaultReadbackPending[generation] = false;
 
@@ -1455,13 +1477,14 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (!_options.EnableFrameMetricsReadback
             || _frameMetricReadbacks[0] is not null)
             return;
-        _frameMetricReadbackBytes = CreateReadbackBuffers(
+        _frameMetricReadbackBytes = new byte[FrameMetricsReadbackByteSize];
+        CreateReadbackBuffers(
             _frameMetricReadbacks,
             FrameMetricsReadbackByteSize,
             "Cluster frame metrics readback");
     }
 
-    private byte[] CreateReadbackBuffers(
+    private void CreateReadbackBuffers(
         Buffer?[] slots,
         int byteCount,
         string label)
@@ -1471,7 +1494,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteCount);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
 
-        var bytes = new byte[byteCount];
         Buffer? first = null;
         Buffer? second = null;
         try
@@ -1508,7 +1530,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
         slots[0] = first;
         slots[1] = second;
-        return bytes;
     }
 
     private void DrainFrameMetricsReadback(int generation)

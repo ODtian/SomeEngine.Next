@@ -5,39 +5,47 @@ internal sealed class GraphRows<T>
     private readonly record struct Entry(uint Generation, int DenseIndex, int NextFree, bool Retired = false);
     private readonly Func<T, T>? _clone;
     private readonly GraphIdentityDomain _domain;
-    private ImmutableList<Entry> _entries = ImmutableList<Entry>.Empty;
-    private ImmutableList<T> _rows = ImmutableList<T>.Empty;
-    private ImmutableList<GraphIdentity> _identities = ImmutableList<GraphIdentity>.Empty;
+    private GraphTable<Entry> _entries;
+    private GraphTable<T> _rows;
+    private GraphTable<GraphIdentity> _identities;
     private HashSet<int> _writableRows = [];
     private int _firstFree = -1;
-    // Issued identities survive a discarded edit. Row data still shares immutable
-    // paths, but no later edit can revive an identity returned by an earlier one.
-    private List<uint> _issuedGenerations = [];
+    // Issued identities survive a discarded edit. No later edit can revive an
+    // identity returned by an earlier one.
+    private List<uint> _issuedGenerations;
 
     internal GraphRows(GraphIdentityDomain domain, Func<T, T>? clone = null)
     {
         _domain = domain;
         _clone = clone;
+        _entries = new();
+        _rows = new();
+        _identities = new();
+        _issuedGenerations = [];
+    }
+
+    private GraphRows(GraphRows<T> source)
+    {
+        _domain = source._domain;
+        _clone = source._clone;
+        _entries = source._entries.Fork();
+        _rows = source._rows.Fork();
+        _identities = source._identities.Fork();
+        _firstFree = source._firstFree;
+        _issuedGenerations = source._issuedGenerations;
     }
 
     internal int Count => _rows.Count;
-    internal ImmutableList<T> Rows => _rows;
-    internal ImmutableList<GraphIdentity> Identities => _identities;
-    internal object BlockIdentity => _rows;
+    internal GraphTable<T> Rows => _rows;
+    internal GraphTable<GraphIdentity> Identities => _identities;
+    internal object BlockIdentity => _rows.BlockIdentity;
 
     internal GraphRows<T> Fork()
     {
-        // Immutable collection paths are shared; mutable row values are copied only
-        // when that particular row is edited. Submitted frames keep their old roots.
+        // Pages are shared; mutable row values are copied only when that particular
+        // row is edited. Submitted frames keep their earlier data.
         _writableRows = [];
-        return new GraphRows<T>(_domain, _clone)
-        {
-            _entries = _entries,
-            _rows = _rows,
-            _identities = _identities,
-            _firstFree = _firstFree,
-            _issuedGenerations = _issuedGenerations,
-        };
+        return new GraphRows<T>(this);
     }
 
     internal GraphIdentity Add(ulong owner, T value)
@@ -58,13 +66,13 @@ internal sealed class GraphRows<T>
         {
             Entry entry = _entries[index];
             _firstFree = entry.NextFree;
-            _entries = _entries.SetItem(index, new Entry(generation, Count, -1));
+            _entries.Set(index, new Entry(generation, Count, -1));
         }
         else
-            _entries = _entries.Add(new Entry(generation, Count, -1));
+            _entries.Add(new Entry(generation, Count, -1));
         GraphIdentity identity = new(owner, index, generation, _domain);
-        _rows = _rows.Add(value);
-        _identities = _identities.Add(identity);
+        _rows.Add(value);
+        _identities.Add(identity);
         _writableRows.Add(index);
         return identity;
     }
@@ -91,13 +99,13 @@ internal sealed class GraphRows<T>
     {
         int index = DenseIndex(id);
         if (_clone is not null && _writableRows.Add(id.Slot))
-            _rows = _rows.SetItem(index, _clone(_rows[index]));
+            _rows.Set(index, _clone(_rows[index]));
         return _rows[index];
     }
 
     internal void Set(in GraphIdentity id, T value)
     {
-        _rows = _rows.SetItem(DenseIndex(id), value);
+        _rows.Set(DenseIndex(id), value);
         _writableRows.Add(id.Slot);
     }
 
@@ -111,15 +119,15 @@ internal sealed class GraphRows<T>
         if (dense != last)
         {
             GraphIdentity moved = _identities[last];
-            _rows = _rows.SetItem(dense, _rows[last]);
-            _identities = _identities.SetItem(dense, moved);
-            _entries = _entries.SetItem(moved.Slot, _entries[moved.Slot] with { DenseIndex = dense });
+            _rows.Set(dense, _rows[last]);
+            _identities.Set(dense, moved);
+            _entries.Set(moved.Slot, _entries[moved.Slot] with { DenseIndex = dense });
         }
-        _rows = _rows.RemoveAt(last);
-        _identities = _identities.RemoveAt(last);
+        _rows.RemoveLast();
+        _identities.RemoveLast();
         Entry entry = _entries[id.Slot];
         bool retired = entry.Generation == uint.MaxValue;
-        _entries = _entries.SetItem(id.Slot, new Entry(
+        _entries.Set(id.Slot, new Entry(
             retired ? entry.Generation : entry.Generation + 1, -1, retired ? -1 : _firstFree, retired));
         if (!retired) _firstFree = id.Slot;
         _writableRows.Remove(id.Slot);

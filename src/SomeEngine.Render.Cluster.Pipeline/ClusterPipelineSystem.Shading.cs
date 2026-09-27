@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
@@ -10,7 +10,7 @@ public sealed partial class ClusterPipelineSystem
     private System.Collections.Immutable.ImmutableDictionary<uint, ShadeGroup> _shadeGroups =
         System.Collections.Immutable.ImmutableDictionary<uint, ShadeGroup>.Empty;
     private readonly SortedSet<uint> _shadeGroupOrder = [];
-    private GraphBufferId _shadeBinUniforms;
+    private GraphBufferInput _shadeBinUniforms = null!;
     private GraphPassId _shadeCountPass;
     private GraphPassId _shadeScatterPass;
     private GraphPassId _shadeClearPass;
@@ -69,6 +69,7 @@ public sealed partial class ClusterPipelineSystem
             GraphPassId before = ShadePredecessor(bin);
             GraphPassId after = ShadeSuccessor(bin);
             graph.Remove(group.Pass);
+            _uploads!.RemoveUniform(group.Uniforms);
             if (after != default) graph.OrderAfter(after, before);
             _shadeGroups = _shadeGroups.Remove(bin);
             _shadeGroupOrder.Remove(bin);
@@ -84,13 +85,13 @@ public sealed partial class ClusterPipelineSystem
                 checked((ulong)bin * ClusterIndirectAbi.DispatchBytes));
             GraphPassId pass = graph.AddComputeFramePass(
                 $"Shade Cluster bin {bin}", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                dispatch, default, stage.Pipeline.Pipeline, ShaderVariableLayout.Null, default,
+                dispatch, new PassOptions(RepeatCommands: true), stage.Pipeline.Pipeline, ShaderVariableLayout.Null, default,
                 static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
                     _ = access.Read(data.Arguments,
                         new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                         PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
                 ClusterIndirectDispatchParameters.Record);
-            GraphBufferInput uniforms = BindShadeResources(ref graph, pass, stage);
+            GraphBufferInput uniforms = BindShadeResources(ref graph, pass, stage, stages);
             _shadeGroups = _shadeGroups.Add(bin, new ShadeGroup(pass, uniforms, stage));
             _shadeGroupOrder.Add(bin);
             GraphPassId before = ShadePredecessor(bin);
@@ -102,7 +103,30 @@ public sealed partial class ClusterPipelineSystem
                 graph.OrderAfter(after, pass);
             }
         }
+
+        // These counts are read by every surviving shade group, not just changed bins.
+        // The output dimensions are fixed for this pipeline. A count change therefore
+        // expands the affected set to all groups; otherwise their stored values remain valid.
+        if (_installedShadeStages is { } previous &&
+            (previous.BinCount != stages.BinCount || previous.BinIndices.Length != stages.BinIndices.Length))
+        {
+            Span<ClusterShadeUniforms> value = stackalloc ClusterShadeUniforms[1];
+            foreach ((uint bin, ShadeGroup group) in _shadeGroups)
+            {
+                value[0] = ShadeUniforms(bin, stages);
+                _uploads!.SetUniformValue(ref graph, group.Uniforms, MemoryMarshal.AsBytes(value));
+            }
+        }
     }
+
+    private ClusterShadeUniforms ShadeUniforms(uint bin, ClusterShadeStageSet stages) => new()
+    {
+        ScreenWidth = checked((uint)_frameResources.Width),
+        ScreenHeight = checked((uint)_frameResources.Height),
+        ShadingBin = bin,
+        ShadeBinCount = stages.BinCount,
+        MaterialSlotCapacity = checked((uint)(stages.BinIndices.Length / sizeof(uint))),
+    };
 
     private GraphPassId ShadePredecessor(uint bin)
     {
@@ -128,6 +152,6 @@ public sealed partial class ClusterPipelineSystem
             ShadeBinCount = _frameResources.ShadeBinCount,
             SlotCapacity = _frameResources.SlotCapacity,
         };
-        _uploads!.SetValue(ref graph, _shadeBinUniforms, MemoryMarshal.AsBytes(value));
+        _uploads!.SetUniformValue(ref graph, _shadeBinUniforms, MemoryMarshal.AsBytes(value));
     }
 }

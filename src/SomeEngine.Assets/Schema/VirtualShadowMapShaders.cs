@@ -10,6 +10,8 @@ public sealed partial class VirtualShadowMapShaders
 
     public string? Name { get; set; }
 
+    public ShaderRef? ResetFrame { get; set; }
+
     public ShaderRef? MarkPages { get; set; }
 
     public ShaderRef? MarkCoarsePages { get; set; }
@@ -30,11 +32,14 @@ public sealed partial class VirtualShadowMapShaders
 
     public ShaderRef? ReducePageHiZ { get; set; }
 
+    public ShaderRef? DynamicResolution { get; set; }
+
     internal IReadOnlyList<AssetGuid> GetDependencies(string path)
     {
         string subject = $"Virtual shadow map shader asset '{path}'";
         ShaderRef?[] entries =
         [
+            ResetFrame,
             MarkPages,
             MarkCoarsePages,
             AllocatePages,
@@ -45,9 +50,11 @@ public sealed partial class VirtualShadowMapShaders
             CompactViews,
             InitializePageHiZ,
             ReducePageHiZ,
+            DynamicResolution,
         ];
         string[] names =
         [
+            nameof(ResetFrame),
             nameof(MarkPages),
             nameof(MarkCoarsePages),
             nameof(AllocatePages),
@@ -58,6 +65,7 @@ public sealed partial class VirtualShadowMapShaders
             nameof(CompactViews),
             nameof(InitializePageHiZ),
             nameof(ReducePageHiZ),
+            nameof(DynamicResolution),
         ];
         var result = new List<AssetGuid>(entries.Length);
         for (int index = 0; index < entries.Length; index++)

@@ -6,6 +6,7 @@
 struct ClusterMeshVertexMask
 {
     uint Words[8];
+    uint2 PrefixBytes;
 };
 
 groupshared uint HardwareRasterVertexWords[8];
@@ -13,6 +14,7 @@ groupshared uint HardwareRasterVertexWords[8];
 ClusterMeshVertexMask BuildClusterMeshVertexMask(uint3 triangle, bool active, uint lane)
 {
     ClusterMeshVertexMask result;
+    uint lastWord = WaveActiveMax(active ? max(triangle.x, max(triangle.y, triangle.z)) : 0u) / 32u;
     [unroll]
     for (uint word = 0u; word < 8u; word++)
     {
@@ -21,7 +23,7 @@ ClusterMeshVertexMask BuildClusterMeshVertexMask(uint3 triangle, bool active, ui
         for (uint corner = 0u; corner < 3u; corner++)
             if (active && triangle[corner] / 32u == word)
                 mask |= 1u << (triangle[corner] & 31u);
-        result.Words[word] = WaveActiveBitOr(mask);
+        result.Words[word] = word <= lastWord ? WaveActiveBitOr(mask) : 0u;
     }
     if (WaveGetLaneCount() < 32u)
     {
@@ -38,25 +40,30 @@ ClusterMeshVertexMask BuildClusterMeshVertexMask(uint3 triangle, bool active, ui
         for (uint word = 0u; word < 8u; word++)
             result.Words[word] = HardwareRasterVertexWords[word];
     }
+    // Every prefix counts at most 224 bits and therefore fits in one byte.
+    // Compute it once per group rather than scanning all words for every index.
+    result.PrefixBytes = 0u.xx;
+    uint prefix = 0u;
+    [unroll]
+    for (uint word = 0u; word < 8u; word++)
+    {
+        result.PrefixBytes[word / 4u] |= prefix << ((word & 3u) * 8u);
+        prefix += countbits(result.Words[word]);
+    }
     return result;
 }
 
 uint ClusterMeshVertexCount(ClusterMeshVertexMask mask)
 {
-    uint result = 0u;
-    [unroll]
-    for (uint word = 0u; word < 8u; word++) result += countbits(mask.Words[word]);
-    return result;
+    return (mask.PrefixBytes.y >> 24u) + countbits(mask.Words[7]);
 }
 
 uint ClusterMeshVertexRank(ClusterMeshVertexMask mask, uint index)
 {
-    uint result = 0u;
-    [unroll]
-    for (uint word = 0u; word < 8u; word++)
-        if (word < index / 32u) result += countbits(mask.Words[word]);
+    uint word = index / 32u;
+    uint prefix = (mask.PrefixBytes[word / 4u] >> ((word & 3u) * 8u)) & 255u;
     uint bit = index & 31u;
-    return result + countbits(mask.Words[index / 32u] & ((1u << bit) - 1u));
+    return prefix + countbits(mask.Words[word] & ((1u << bit) - 1u));
 }
 
 #endif

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
@@ -795,7 +796,7 @@ internal sealed class RenderInstanceResources : IDisposable
         ulong revision = NextContentRevision();
         _batchGenerations[batchSlot] = generation;
         _batchReady[batchSlot] = true;
-        _batchOriginalBytes.Remove(batchSlot);
+        ReleaseBatchBytes(batchSlot);
         return revision;
     }
 
@@ -807,35 +808,63 @@ internal sealed class RenderInstanceResources : IDisposable
             foreach (BufferBytes value in original)
             {
                 Span<byte> mapping = GetWriteBytes(value.Resource, value.Range);
-                value.Data.CopyTo(mapping);
+                value.Data.AsSpan(0, checked((int)value.Range.Size)).CopyTo(mapping);
             }
-            _batchOriginalBytes.Remove(batchSlot);
+            ReleaseBatchBytes(batchSlot);
         }
         _batchReady[batchSlot] = true;
+    }
+
+    private void ReleaseBatchBytes(int batchIndex)
+    {
+        if (!_batchOriginalBytes.Remove(batchIndex, out BufferBytes[]? bytes)) return;
+        foreach (BufferBytes value in bytes)
+            ArrayPool<byte>.Shared.Return(value.Data);
     }
 
     private BufferBytes[] CaptureBatchBytes(int batchIndex, RenderInstancePropertyLayout properties, int generation)
     {
         var bytes = new List<BufferBytes>();
-        Capture(_batchMetadata[generation].Handle, BatchMetadataRange(batchIndex));
-        if (_propertyData[generation] is { } data)
+        try
         {
-            PackedRange rows = _batchRows[batchIndex];
-            foreach (PropertyStorage storage in _properties)
+            Capture(_batchMetadata[generation].Handle, BatchMetadataRange(batchIndex));
+            if (_propertyData[generation] is { } data)
             {
-                RenderInstancePropertyEncoding encoding = storage.Descriptor.Encoding;
-                if (!encoding.HasManagedStorage || !properties.Contains(storage.Descriptor.Key)) continue;
-                Capture(data.Handle, SharedElementRange(storage, batchIndex));
-                Capture(data.Handle, new BufferRange(
-                    checked((ulong)(storage.InstanceBase + rows.Start * encoding.StorageStride)),
-                    checked((ulong)(rows.Count * encoding.StorageStride))));
+                PackedRange rows = _batchRows[batchIndex];
+                foreach (PropertyStorage storage in _properties)
+                {
+                    RenderInstancePropertyEncoding encoding = storage.Descriptor.Encoding;
+                    if (!encoding.HasManagedStorage || !properties.Contains(storage.Descriptor.Key)) continue;
+                    Capture(data.Handle, SharedElementRange(storage, batchIndex));
+                    Capture(data.Handle, new BufferRange(
+                        checked((ulong)(storage.InstanceBase + rows.Start * encoding.StorageStride)),
+                        checked((ulong)(rows.Count * encoding.StorageStride))));
+                }
             }
+            return bytes.ToArray();
         }
-        return bytes.ToArray();
+        catch
+        {
+            foreach (BufferBytes value in bytes)
+                ArrayPool<byte>.Shared.Return(value.Data);
+            throw;
+        }
 
         void Capture(Buffer resource, BufferRange range)
         {
-            bytes.Add(new BufferBytes(resource, range, GetWriteBytes(resource, range).ToArray()));
+            if (range.Size == 0) return;
+            int size = checked((int)range.Size);
+            byte[] data = ArrayPool<byte>.Shared.Rent(size);
+            try
+            {
+                GetWriteMapping(resource).Read(data.AsSpan(0, size), checked((int)range.Offset));
+                bytes.Add(new BufferBytes(resource, range, data));
+            }
+            catch
+            {
+                ArrayPool<byte>.Shared.Return(data);
+                throw;
+            }
         }
     }
 
@@ -860,7 +889,7 @@ internal sealed class RenderInstanceResources : IDisposable
                    MapType.Read,
                    metadataRange))
         {
-            sourceMetadata.Bytes.CopyTo(GetWriteBytes(_batchMetadata[destinationGeneration].Handle, metadataRange));
+            sourceMetadata.Read(GetWriteBytes(_batchMetadata[destinationGeneration].Handle, metadataRange));
         }
 
         UploadBuffer? sourceData = _propertyData[sourceGeneration];
@@ -882,17 +911,13 @@ internal sealed class RenderInstanceResources : IDisposable
                 continue;
 
             BufferRange shared = SharedElementRange(storage, batchSlot);
-            sourceMapping.Bytes
-                .Slice(checked((int)shared.Offset), checked((int)shared.Size))
-                .CopyTo(destinationMapping.Slice(
-                    checked((int)shared.Offset),
-                    checked((int)shared.Size)));
+            sourceMapping.Read(destinationMapping.Slice(
+                checked((int)shared.Offset), checked((int)shared.Size)), checked((int)shared.Offset));
 
             int instanceOffset = checked(
                 storage.InstanceBase + rows.Start * encoding.StorageStride);
             int instanceBytes = checked(rows.Count * encoding.StorageStride);
-            sourceMapping.Bytes.Slice(instanceOffset, instanceBytes)
-                .CopyTo(destinationMapping.Slice(instanceOffset, instanceBytes));
+            sourceMapping.Read(destinationMapping.Slice(instanceOffset, instanceBytes), instanceOffset);
         }
     }
 
@@ -938,6 +963,12 @@ internal sealed class RenderInstanceResources : IDisposable
         BufferRange range = new(offset, bytes);
         bool writing = generation == _writeGeneration && _propertyWrite.HasValue;
         using MappedBuffer mapping = writing ? default : _backend.Map(resource, MapType.Read, range);
+        if (perInstance && stride == Unsafe.SizeOf<T>())
+        {
+            MappedBuffer sourceMapping = writing ? GetWriteMapping(resource) : mapping;
+            sourceMapping.Read(MemoryMarshal.AsBytes(destination), writing ? checked((int)range.Offset) : 0);
+            return;
+        }
         ReadOnlySpan<byte> source = writing ? GetWriteBytes(resource, range) : mapping.Bytes;
         for (int index = 0; index < destination.Length; index++)
             destination[index] = RenderInstancePropertyValue<T>.Read(source.Slice(perInstance ? index * stride : 0, stride));
@@ -1008,7 +1039,9 @@ internal sealed class RenderInstanceResources : IDisposable
         }
         finally
         {
-            if (_writeGeneration >= 0) _preferredGeneration = 1 - _writeGeneration;
+            // Reuse the current buffer when its readers have finished; the selection
+            // path still moves to the other buffer whenever that one is busy.
+            if (_writeGeneration >= 0) _preferredGeneration = _writeGeneration;
             _writeGeneration = -1;
             ExitOperation();
         }
@@ -1032,13 +1065,15 @@ internal sealed class RenderInstanceResources : IDisposable
         }
     }
 
-    private Span<byte> GetWriteBytes(Buffer resource, BufferRange range)
+    private MappedBuffer GetWriteMapping(Buffer resource)
     {
         int generation = RequireWriteGeneration();
-        Span<byte> bytes = ReferenceEquals(resource, _batchMetadata[generation].Handle)
-            ? _metadataWrite.GetValueOrDefault().Bytes : _propertyWrite.GetValueOrDefault().Bytes;
-        return bytes.Slice(checked((int)range.Offset), checked((int)range.Size));
+        return ReferenceEquals(resource, _batchMetadata[generation].Handle)
+            ? _metadataWrite.GetValueOrDefault() : _propertyWrite.GetValueOrDefault();
     }
+
+    private Span<byte> GetWriteBytes(Buffer resource, BufferRange range) =>
+        GetWriteMapping(resource).Bytes.Slice(checked((int)range.Offset), checked((int)range.Size));
 
     private int AllocateBatchSlot()
     {
@@ -1107,7 +1142,7 @@ internal sealed class RenderInstanceResources : IDisposable
     {
         ValidateBatch(batchSlot, allocation);
         PackedRange rows = _batchRows[batchSlot];
-        _batchOriginalBytes.Remove(batchSlot);
+        ReleaseBatchBytes(batchSlot);
         _batchAllocations[batchSlot] = null;
         _batchReady[batchSlot] = false;
         _batchRows[batchSlot] = default;

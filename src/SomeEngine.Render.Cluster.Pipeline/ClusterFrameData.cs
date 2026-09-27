@@ -52,7 +52,7 @@ internal struct ClusterRasterBinningUniforms
     internal uint SlotCapacity;
     internal uint MaxVisibleClusters;
     internal uint CollectMetrics;
-    internal uint Pad1;
+    internal uint PolicyTarget;
     internal uint Pad2;
 }
 

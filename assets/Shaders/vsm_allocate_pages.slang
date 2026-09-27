@@ -1,20 +1,23 @@
 #include "vsm_sampling.slang"
+#include "resource_effects.slang"
 
 struct VirtualShadowPageAllocationUniforms
 {
     uint PageTableEntryCount;
+    uint PageTableEntriesPerView;
     uint MaxPhysicalPages;
-    uint FinePageTableEntryCount;
-    uint VirtualPagesPerView;
-    uint CoarsePagesPerView;
     uint ViewCount;
     uint FrameIndex;
     uint EvictionBucketCount;
+    uint HierarchyWordsPerView;
+    uint MipLevelCount;
 };
 
 ConstantBuffer<VirtualShadowPageAllocationUniforms> PageAllocation;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
-StructuredBuffer<uint> RequestedShadowPages;
+StructuredBuffer<uint> RequestedPageIndices;
+StructuredBuffer<uint> RequestedPageCount;
+StructuredBuffer<uint> RequestedPageFlags;
 RWStructuredBuffer<uint4> ShadowPageTable;
 RWStructuredBuffer<uint> PhysicalPageOwners;
 RWStructuredBuffer<uint4> PageMetadata;
@@ -22,13 +25,14 @@ RWStructuredBuffer<uint> FreePages;
 RWStructuredBuffer<uint> FreePageCount;
 RWStructuredBuffer<uint> EvictionPages;
 RWStructuredBuffer<uint> EvictionBucketCounts;
-RWStructuredBuffer<uint2> ActivePhysicalPages;
+RWStructuredBuffer<uint4> ActivePhysicalPages;
 RWStructuredBuffer<uint> ActivePhysicalPageCount;
+RWStructuredBuffer<uint4> UncachedPageRectBounds;
+RWStructuredBuffer<uint> RasterTargetPageHierarchy;
 RWStructuredBuffer<uint> ShadowAllocationFailures;
 
 static const uint VSM_UNOWNED_PAGE = 0xFFFFFFFFu;
-// One bounded counter reservation per active wave. Each lane receives a distinct
-// stack index; a partly depleted stack serves its prefix before trying eviction.
+
 bool ReservePages(RWStructuredBuffer<uint> counts, uint counterIndex, out uint index)
 {
     uint requested = WaveActiveCountBits(true);
@@ -104,55 +108,13 @@ bool AcquireAtlasPage(uint newTableIndex, out uint atlasPage)
     return true;
 }
 
-uint ResolveViewIndex(uint tableIndex)
-{
-    if (tableIndex < PageAllocation.FinePageTableEntryCount)
-        return tableIndex / PageAllocation.VirtualPagesPerView;
-    uint coarseIndex = tableIndex - PageAllocation.FinePageTableEntryCount;
-    return coarseIndex / PageAllocation.CoarsePagesPerView;
-}
-
-bool IsCoarseTableIndex(uint tableIndex)
-{
-    return tableIndex >= PageAllocation.FinePageTableEntryCount;
-}
-
-int2 ResolveExpectedFineWorldPage(
-    uint tableIndex,
-    VirtualShadowMapParameters view)
-{
-    uint dimension = VirtualShadowPagesPerRow(view);
-    uint mask = dimension - 1u;
-    uint localIndex = tableIndex - view.PageTableOffset;
-    uint2 slot = uint2(localIndex % dimension, localIndex / dimension);
-    uint2 originSlot = uint2(
-        asuint(view.VirtualPageOriginX) & mask,
-        asuint(view.VirtualPageOriginY) & mask);
-    uint2 localPage = (slot - originSlot) & mask;
-    return int2(view.VirtualPageOriginX, view.VirtualPageOriginY) + int2(localPage);
-}
-
-int2 ResolveExpectedCoarseWorldPage(
-    uint tableIndex,
-    VirtualShadowMapParameters view)
-{
-    uint dimension = VirtualShadowCoarsePagesPerRow(view);
-    uint mask = dimension - 1u;
-    uint localIndex = tableIndex - view.CoarsePageTableOffset;
-    uint2 slot = uint2(localIndex % dimension, localIndex / dimension);
-    int scale = int(1u << view.CoarsePageShift);
-    int2 origin = int2(
-        VirtualShadowFloorDiv(view.VirtualPageOriginX, scale),
-        VirtualShadowFloorDiv(view.VirtualPageOriginY, scale));
-    uint2 originSlot = uint2(asuint(origin.x) & mask, asuint(origin.y) & mask);
-    uint2 localPage = (slot - originSlot) & mask;
-    return origin + int2(localPage);
-}
-
 void PublishDirtyPage(
     uint tableIndex,
     uint viewIndex,
-    uint atlasPage)
+    uint mipLevel,
+    uint2 localPage,
+    uint atlasPage,
+    uint previousLayer)
 {
     uint activeIndex = 0u;
     uint waveCount = WaveActiveCountBits(true);
@@ -160,9 +122,52 @@ void PublishDirtyPage(
         InterlockedAdd(ActivePhysicalPageCount[0], waveCount, activeIndex);
     activeIndex = WaveReadLaneFirst(activeIndex) + WavePrefixCountBits(true);
     if (activeIndex < PageAllocation.MaxPhysicalPages)
+        ActivePhysicalPages[activeIndex] = uint4(
+            atlasPage,
+            tableIndex,
+            previousLayer,
+            0u);
+    uint ignored;
+    uint rectIndex = viewIndex * PageAllocation.MipLevelCount + mipLevel;
+    InterlockedMin(
+        UncachedPageRectBounds[rectIndex].x,
+        localPage.x,
+        ignored);
+    InterlockedMin(
+        UncachedPageRectBounds[rectIndex].y,
+        localPage.y,
+        ignored);
+    InterlockedMax(
+        UncachedPageRectBounds[rectIndex].z,
+        localPage.x,
+        ignored);
+    InterlockedMax(
+        UncachedPageRectBounds[rectIndex].w,
+        localPage.y,
+        ignored);
+    VirtualShadowMapParameters view = ShadowViews[viewIndex];
+    uint hierarchyOffset =
+        viewIndex * PageAllocation.HierarchyWordsPerView +
+        VirtualShadowPageHierarchyMipOffset(view, mipLevel);
+    uint dimension = VirtualShadowMipPagesPerRow(view, mipLevel);
+    uint2 hierarchyPage = localPage;
+    [loop]
+    while (true)
     {
-        ActivePhysicalPages[activeIndex] = uint2(atlasPage, tableIndex);
-
+        uint wordsPerRow = (dimension + 31u) / 32u;
+        uint wordIndex =
+            hierarchyOffset +
+            hierarchyPage.y * wordsPerRow +
+            hierarchyPage.x / 32u;
+        InterlockedOr(
+            RasterTargetPageHierarchy[wordIndex],
+            1u << (hierarchyPage.x & 31u),
+            ignored);
+        hierarchyOffset += dimension * wordsPerRow;
+        if (dimension == 1u)
+            break;
+        dimension >>= 1u;
+        hierarchyPage >>= 1u;
     }
 }
 
@@ -170,19 +175,24 @@ void PublishDirtyPage(
 [numthreads(64, 1, 1)]
 void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
 {
-    uint tableIndex = threadId.x;
-    if (tableIndex >= PageAllocation.PageTableEntryCount ||
-        RequestedShadowPages[tableIndex] != PageAllocation.FrameIndex)
+    uint requestIndex = threadId.x;
+    uint requestCount = min(RequestedPageCount[0], PageAllocation.PageTableEntryCount);
+    if (requestIndex >= requestCount)
         return;
+    uint tableIndex = RequestedPageIndices[requestIndex];
+    if (tableIndex >= PageAllocation.PageTableEntryCount)
+        return;
+    uint requestFlags = RequestedPageFlags[tableIndex];
 
-    uint viewIndex = ResolveViewIndex(tableIndex);
+    uint viewIndex = tableIndex / PageAllocation.PageTableEntriesPerView;
     if (viewIndex >= PageAllocation.ViewCount)
         return;
     VirtualShadowMapParameters view = ShadowViews[viewIndex];
-    bool coarse = IsCoarseTableIndex(tableIndex);
-    int2 expectedWorldPage = coarse
-        ? ResolveExpectedCoarseWorldPage(tableIndex, view)
-        : ResolveExpectedFineWorldPage(tableIndex, view);
+    uint mipLevel;
+    uint2 localPage;
+    if (!VirtualShadowDecodePageTableIndex(view, tableIndex, mipLevel, localPage))
+        return;
+    int2 expectedWorldPage = VirtualShadowWorldPage(view, mipLevel, localPage);
 
     uint4 entry = ShadowPageTable[tableIndex];
     bool sameTag = entry.x != VSM_PAGE_UNMAPPED &&
@@ -190,13 +200,20 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         IsVirtualShadowPageTag(entry, expectedWorldPage);
     uint atlasPage = 0u;
     uint packedPage = VSM_PAGE_UNMAPPED;
+    uint previousLayer = 0xFFFFFFFFu;
     if (sameTag)
     {
         if (!DecodeVirtualShadowPage(entry.x, atlasPage))
             return;
+        previousLayer = atlasPage;
         packedPage = entry.x;
+        uint previousFlags = PageMetadata[atlasPage].z;
         PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
-        if (entry.w == view.CacheGeneration)
+        PageMetadata[atlasPage].z = requestFlags;
+        bool detailUpgrade =
+            (requestFlags & VSM_PAGE_REQUEST_DETAIL) != 0u &&
+            (previousFlags & VSM_PAGE_REQUEST_DETAIL) == 0u;
+        if (entry.w == view.CacheGeneration && !detailUpgrade)
             return;
     }
     else if (entry.x != VSM_PAGE_UNMAPPED && entry.x != VSM_PAGE_LOCKED)
@@ -210,9 +227,8 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     {
         if (!AcquireAtlasPage(tableIndex, atlasPage))
         {
-            uint failureIndex = coarse ? 0u : 1u;
             uint ignored;
-            InterlockedAdd(ShadowAllocationFailures[failureIndex], 1u, ignored);
+            InterlockedAdd(ShadowAllocationFailures[0], 1u, ignored);
             return;
         }
         packedPage = PackVirtualShadowPage(atlasPage + 1u);
@@ -225,8 +241,13 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         view.CacheGeneration);
     PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
     PageMetadata[atlasPage].y = view.CacheGeneration;
+    PageMetadata[atlasPage].z = requestFlags;
+    PageMetadata[atlasPage].w = 0u;
     PublishDirtyPage(
         tableIndex,
         viewIndex,
-        atlasPage);
+        mipLevel,
+        localPage,
+        atlasPage,
+        previousLayer);
 }

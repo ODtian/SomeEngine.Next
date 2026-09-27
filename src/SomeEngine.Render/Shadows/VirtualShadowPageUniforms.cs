@@ -40,31 +40,37 @@ public struct VirtualShadowCoarsePageDemandUniforms
 public struct VirtualShadowPageAllocationUniforms
 {
     public uint PageTableEntryCount;
+    public uint PageTableEntriesPerView;
     public uint MaxPhysicalPages;
-    public uint FinePageTableEntryCount;
-    public uint VirtualPagesPerView;
-    public uint CoarsePagesPerView;
     public uint ViewCount;
     public uint FrameIndex;
     public uint EvictionBucketCount;
+    public uint HierarchyWordsPerView;
+    public uint MipLevelCount;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 24)]
 public struct VirtualShadowStateInitUniforms
 {
     public uint PageTableEntryCount;
     public uint MaxPhysicalPages;
+    public uint RequestEpochEntryCount;
     public uint Pad0;
     public uint Pad1;
+    public uint Pad2;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 public struct VirtualShadowInvalidationUniforms
 {
     public uint ChangedInstanceCount;
     public uint ViewCount;
     public uint PageTableEntryCount;
     public uint PageDilation;
+    public uint FrameIndex;
+    public uint HierarchyWordsPerView;
+    public uint Pad1;
+    public uint Pad2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -72,18 +78,21 @@ public struct VirtualShadowPagePoolUniforms
 {
     public uint MaxPhysicalPages;
     public uint PageTableEntryCount;
-    public uint FinePageTableEntryCount;
     public uint FrameIndex;
     public uint EvictionBucketCount;
-    public uint Pad0;
-    public uint Pad1;
-    public uint Pad2;
+    public uint PageTableEntriesPerView;
+    public uint HierarchyWordsPerView;
+    public uint MipLevelCount;
+    public uint ViewCount;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
-public struct VirtualShadowViewCompactUniforms
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 48)]
+public struct VirtualShadowRasterWorkUniforms
 {
     public uint ViewCount;
+    public uint MipLevelCount;
+    public uint PageTableEntriesPerView;
+    public uint HierarchyWordsPerView;
     public uint ActivePageCapacity;
     public uint PageSize;
     public uint PageHiZMipCount;
@@ -91,6 +100,7 @@ public struct VirtualShadowViewCompactUniforms
     public uint InstanceGroupCount;
     public uint HasPreviousHistory;
     public uint Pad0;
+    public uint Pad1;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -128,4 +138,17 @@ public struct VirtualShadowPageHiZUniforms
     public uint PhysicalPagesPerRow;
     public uint SourceMip;
     public uint DestinationMip;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+public struct VirtualShadowDynamicResolutionUniforms
+{
+    public uint MaxPhysicalPages;
+    public uint TargetRasterWork;
+    public float PagePoolLoadStart;
+    public float MaxDirectionalLodBias;
+    public float MaxLocalLodBias;
+    public uint Enabled;
+    public uint Pad0;
+    public uint Pad1;
 }

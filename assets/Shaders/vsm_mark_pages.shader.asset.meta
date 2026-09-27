@@ -2,19 +2,27 @@
   "asset_guid": "6c441d68-a857-5643-9923-2d03131e0a37",
   "source_guid": "faa10ec4-92b9-4643-a111-59d9b976cd00",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "92b42d74efadd907571968b3f70fef67b5cd2309daf6d706947a78aa7ed4b13d",
+  "content_fingerprint": "81356ba42c40e24864464ab50f187e6c1705b94e04dedf51acc5c5b13d909395",
   "dependencies": [
     {
       "path": "assets/Shaders/render_lighting.slang",
-      "hash": "641bd1ab8818b5a6d7e1ec16f64d83ace1add9f8671b40aec77a40e7fa67b690"
+      "hash": "2fd33e5b67b0655f9e8479da4e8e7c19b29ed357b812b5925ad1232fa26f3b3d"
+    },
+    {
+      "path": "assets/Shaders/resource_effects.slang",
+      "hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
       "path": "assets/Shaders/vsm_mark_pages.slang",
-      "hash": "d208672073b5033ac647081a7936d2b977538798ac95cbecee467abf07ea6270"
+      "hash": "48a182f1c7f977a4564e39d918901680eb646a54bec999db92ff77247693e91c"
+    },
+    {
+      "path": "assets/Shaders/vsm_page_request_common.slang",
+      "hash": "922a7c3309386b14790eb4b99f38f9ef094acde2133fb464301a97427c47f544"
     },
     {
       "path": "assets/Shaders/vsm_sampling.slang",
-      "hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
+      "hash": "392fd680e12af9b29d59961bd85e88ec2024152434f79a6e2d2bca62824e622e"
     }
   ],
   "importer_version": 26

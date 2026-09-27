@@ -30,10 +30,23 @@ internal interface IStaticPassDataStorage<T>
 internal interface IFramePassDataStorage<T>
 {
     void SetFrameData(in T value);
+    bool FrameDataEquals(in T value) => false;
+    bool FrameValueEquals(in T value) => false;
 }
 
 internal abstract class PassCallbackStorage
 {
+    internal static bool DataEquals<T>(in T left, in T right)
+    {
+        // Referenced objects may have changed in place. Only plain value data can
+        // leave recorded commands unchanged when a setter repeats the same bytes.
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) return false;
+        ReadOnlySpan<byte> first = MemoryMarshal.CreateReadOnlySpan(
+            ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in left)), Unsafe.SizeOf<T>());
+        ReadOnlySpan<byte> second = MemoryMarshal.CreateReadOnlySpan(
+            ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in right)), Unsafe.SizeOf<T>());
+        return first.SequenceEqual(second);
+    }
     internal abstract Type FrameDataType { get; }
     internal abstract void ClearData();
     internal abstract void Record(RenderGraphFrameState frame, int passIndex, CommandContext context);

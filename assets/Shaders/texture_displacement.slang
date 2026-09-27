@@ -3,8 +3,11 @@
 
 #include "triangle_surface_inverse.slang"
 
-struct TextureDisplacement : IDomainEvaluate
+struct TextureDisplacement : IDomainEvaluate<StandardVertex>
 {
+    typealias TriangleData = Triangle;
+    typealias Surface = SurfaceEval;
+
     Texture2D<float> Map;
     // Each texel stores the exact min/max source-map value for its footprint.
     // Mips form a conservative min/max hierarchy for domain-range queries.
@@ -15,6 +18,21 @@ struct TextureDisplacement : IDomainEvaluate
     float2 SourceRange;
     float Scale;
     float Bias;
+
+    Triangle makeTriangle(
+        StandardVertex first,
+        StandardVertex second,
+        StandardVertex third)
+    {
+        return MakeStandardTriangle(first, second, third);
+    }
+
+    float3 cornerPosition(Triangle triangle, uint corner)
+    {
+        if (corner == 0u) return triangle.Position0;
+        if (corner == 1u) return triangle.Position1;
+        return triangle.Position2;
+    }
 
     float2 uv(Triangle triangle, float3 barycentric)
     {
@@ -105,8 +123,13 @@ struct TextureDisplacement : IDomainEvaluate
         float2 location = frac(texCoord) * dimensions - 0.5;
         int2 first = int2(floor(location));
         fraction = frac(location);
-        int2 p0 = (first + size) % size;
-        int2 p1 = (p0 + 1) % size;
+        // frac has already reduced the coordinate to one repeat. Each first
+        // index is in [-1, size-1], so wrapping needs one boundary selection,
+        // not integer division. This also covers size one and non-power-of-two maps.
+        int2 p0 = int2(first.x < 0 ? first.x + size.x : first.x,
+            first.y < 0 ? first.y + size.y : first.y);
+        int2 p1 = int2(p0.x + 1 == size.x ? 0 : p0.x + 1,
+            p0.y + 1 == size.y ? 0 : p0.y + 1);
         return float4(Map.Load(int3(p0, 0)), Map.Load(int3(p1.x, p0.y, 0)),
             Map.Load(int3(p0.x, p1.y, 0)), Map.Load(int3(p1, 0)));
     }

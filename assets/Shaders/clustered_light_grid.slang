@@ -173,6 +173,20 @@ bool GetClusteredLightCellBounds(
 groupshared uint3 LightCellMinimum;
 groupshared uint3 LightCellExtent;
 
+void AssignClusteredLightCell(ClusteredLightGridParameters parameters, uint viewOffset, uint lightIndex, uint index)
+{
+    uint x = index % LightCellExtent.x;
+    uint yz = index / LightCellExtent.x;
+    uint y = yz % LightCellExtent.y;
+    uint z = yz / LightCellExtent.y;
+    uint3 coordinate = LightCellMinimum + uint3(x, y, z);
+    uint cell = viewOffset + (coordinate.z * parameters.TileCountY + coordinate.y) * parameters.TileCountX + coordinate.x;
+    uint destination;
+    InterlockedAdd(ClusteredLightGrid[cell].y, 1u, destination);
+    if (destination < parameters.MaxLightsPerCluster)
+        LightIndexList[cell * parameters.MaxLightsPerCluster + destination] = lightIndex;
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void BuildClusteredLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_GroupIndex)
@@ -192,21 +206,16 @@ void BuildClusteredLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_G
         LightCellExtent = extent;
     }
     GroupMemoryBarrierWithGroupSync();
+    // Share cell work between groups when there are few lights. With many
+    // lights, keep the parallelism across lights instead of multiplying empty work.
     uint count = LightCellExtent.x * LightCellExtent.y * LightCellExtent.z;
-    uint cellsPerSlice = parameters.TileCountX * parameters.TileCountY;
     uint viewOffset = viewIndex * parameters.CellCountPerView;
-    for (uint index = threadIndex; index < count; index += 64u)
+    if (parameters.GroupsPerLight == 1u)
     {
-        uint x = index % LightCellExtent.x;
-        uint yz = index / LightCellExtent.x;
-        uint y = yz % LightCellExtent.y;
-        uint z = yz / LightCellExtent.y;
-        uint3 coordinate = LightCellMinimum + uint3(x, y, z);
-        uint cell = viewOffset + coordinate.z * cellsPerSlice +
-            coordinate.y * parameters.TileCountX + coordinate.x;
-        uint destination;
-        InterlockedAdd(ClusteredLightGrid[cell].y, 1u, destination);
-        if (destination < parameters.MaxLightsPerCluster)
-            LightIndexList[cell * parameters.MaxLightsPerCluster + destination] = lightIndex;
+        for (uint index = threadIndex; index < count; index += 64u)
+            AssignClusteredLightCell(parameters, viewOffset, lightIndex, index);
     }
+    else
+        for (uint index = groupId.z * 64u + threadIndex; index < count; index += 64u * parameters.GroupsPerLight)
+            AssignClusteredLightCell(parameters, viewOffset, lightIndex, index);
 }

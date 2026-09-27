@@ -66,6 +66,7 @@ public readonly record struct ClusterRenderContext(
     ClusterInvocationSourceBinder InvocationSourceBinder,
     GraphResourceBinder InvocationCountBinder,
     GraphBufferId InvocationDispatchArguments,
+    GraphBufferId PolicyRasterWorkCounter,
     uint MaximumInvocationCount,
     uint RasterWidth,
     uint RasterHeight,
@@ -76,7 +77,8 @@ public readonly record struct ClusterRenderContext(
     GraphPassId FinalOcclusionReady,
     uint OcclusionMipCount,
     uint OcclusionTexelSize,
-    GraphPassId FinishBefore = default)
+    GraphPassId FinishBefore = default,
+    bool HardwareRasterOnly = false)
 {
     public bool IsValid =>
         PolicyId != 0u &&
@@ -85,6 +87,7 @@ public readonly record struct ClusterRenderContext(
         InvocationSourceBinder is not null &&
         InvocationCountBinder is not null &&
         InvocationDispatchArguments != default &&
+        PolicyRasterWorkCounter != default &&
         MaximumInvocationCount != 0 &&
         RasterWidth != 0 &&
         RasterHeight != 0 &&

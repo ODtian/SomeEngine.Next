@@ -1,3 +1,4 @@
+#include "vsm_sampling.slang"
 #include "resource_effects.slang"
 #include "wave_aggregation.slang"
 
@@ -5,16 +6,21 @@ struct VirtualShadowPagePoolUniforms
 {
     uint MaxPhysicalPages;
     uint PageTableEntryCount;
-    uint FinePageTableEntryCount;
     uint FrameIndex;
     uint EvictionBucketCount;
-    uint Pad0;
-    uint Pad1;
-    uint Pad2;
+    uint PageTableEntriesPerView;
+    uint HierarchyWordsPerView;
+    uint MipLevelCount;
+    uint ViewCount;
 };
 
 ConstantBuffer<VirtualShadowPagePoolUniforms> PagePool;
+StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
+StructuredBuffer<uint4> ShadowPageTable;
 StructuredBuffer<uint> RequestedShadowPages;
+StructuredBuffer<uint> RequestedPageCount;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWByteAddressBuffer PageRequestDispatchArgs;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> PhysicalPageOwners;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -27,14 +33,82 @@ RWStructuredBuffer<uint> FreePageCount;
 RWStructuredBuffer<uint> EvictionPages;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> EvictionBucketCounts;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> AllocatedPageHierarchy;
 
 static const uint VSM_UNOWNED_PAGE = 0xFFFFFFFFu;
+
+void PublishAllocatedPage(
+    uint viewIndex,
+    VirtualShadowMapParameters view,
+    uint mipLevel,
+    uint2 localPage)
+{
+    uint offset =
+        viewIndex * PagePool.HierarchyWordsPerView +
+        VirtualShadowPageHierarchyMipOffset(view, mipLevel);
+    uint dimension = VirtualShadowMipPagesPerRow(view, mipLevel);
+    uint2 page = localPage;
+    uint ignored;
+    [loop]
+    while (true)
+    {
+        uint wordsPerRow = (dimension + 31u) / 32u;
+        uint index =
+            offset +
+            page.y * wordsPerRow +
+            page.x / 32u;
+        InterlockedOr(
+            AllocatedPageHierarchy[index],
+            1u << (page.x & 31u),
+            ignored);
+        offset += dimension * wordsPerRow;
+        if (dimension == 1u)
+            break;
+        dimension >>= 1u;
+        page >>= 1u;
+    }
+}
+
+void PublishOwnedPage(uint atlasPage, uint owner)
+{
+    if (owner >= PagePool.PageTableEntryCount)
+        return;
+    uint viewIndex = owner / PagePool.PageTableEntriesPerView;
+    if (viewIndex >= PagePool.ViewCount)
+        return;
+    VirtualShadowMapParameters view = ShadowViews[viewIndex];
+    uint mipLevel;
+    uint2 localPage;
+    if (!VirtualShadowDecodePageTableIndex(view, owner, mipLevel, localPage) ||
+        mipLevel >= PagePool.MipLevelCount)
+    {
+        return;
+    }
+    uint4 entry = ShadowPageTable[owner];
+    int2 worldPage = VirtualShadowWorldPage(view, mipLevel, localPage);
+    if (entry.x != PackVirtualShadowPage(atlasPage + 1u) ||
+        entry.w != view.CacheGeneration ||
+        !IsVirtualShadowPageTag(entry, worldPage))
+    {
+        return;
+    }
+    PublishAllocatedPage(viewIndex, view, mipLevel, localPage);
+}
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void BuildVirtualShadowPagePool(uint3 threadId : SV_DispatchThreadID)
 {
     uint atlasPage = threadId.x;
+    if (atlasPage == 0u)
+    {
+        uint requestCount = min(RequestedPageCount[0], PagePool.PageTableEntryCount);
+        PageRequestDispatchArgs.Store(0u, (requestCount + 63u) / 64u);
+        PageRequestDispatchArgs.Store(4u, 1u);
+        PageRequestDispatchArgs.Store(8u, 1u);
+        PageRequestDispatchArgs.Store(12u, requestCount);
+    }
     if (atlasPage >= PagePool.MaxPhysicalPages)
         return;
     uint owner = PhysicalPageOwners[atlasPage];
@@ -49,6 +123,8 @@ void BuildVirtualShadowPagePool(uint3 threadId : SV_DispatchThreadID)
             FreePages[index] = atlasPage;
         return;
     }
+
+    PublishOwnedPage(atlasPage, owner);
 
     bool requested = RequestedShadowPages[owner] == PagePool.FrameIndex;
     if (requested)

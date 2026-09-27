@@ -5,8 +5,40 @@
 #include "cluster_visibility_raster_output.slang"
 #include "cluster_raster_target_output.slang"
 
+StructuredBuffer<uint2> VisibleClusterRasterWindows;
+
+bool ClusterRasterTargetWindowContainsPixel(
+    uint visibleClusterIndex,
+    uint targetViewIndex,
+    int2 pixel)
+{
+    if (any(pixel < 0))
+        return false;
+    ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
+    uint4 pageWindow = ClusterUnpackRasterTargetPageWindow(
+        VisibleClusterRasterWindows[visibleClusterIndex]);
+    uint2 localPage = uint2(pixel) / target.PageSize;
+    return all(localPage >= pageWindow.xy) && all(localPage <= pageWindow.zw);
+}
+
 struct ClusterRasterOutputImageAtomic64 : IClusterRasterOutput
 {
+    int4 scissor(
+        uint visibleClusterIndex,
+        uint targetPolicy,
+        uint targetViewIndex,
+        uint screenWidth,
+        uint screenHeight)
+    {
+        if (targetPolicy == 0u)
+            return int4(0, 0, int(screenWidth), int(screenHeight));
+        return PrepareRasterTargetScissor(
+            visibleClusterIndex,
+            targetViewIndex,
+            screenWidth,
+            screenHeight);
+    }
+
     void write(
         int2 pixel,
         uint viewIndex,
@@ -20,6 +52,8 @@ struct ClusterRasterOutputImageAtomic64 : IClusterRasterOutput
             WriteVisibilityWinnerImage(pixel, targetViewIndex, depth, visibilityValue);
             return;
         }
+        if (WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
+            return;
         WriteRasterTargetDepth(pixel, targetViewIndex, depth);
     }
 };
@@ -28,6 +62,22 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
 {
     uint Width;
     uint Height;
+
+    int4 scissor(
+        uint visibleClusterIndex,
+        uint targetPolicy,
+        uint targetViewIndex,
+        uint screenWidth,
+        uint screenHeight)
+    {
+        if (targetPolicy == 0u)
+            return int4(0, 0, int(screenWidth), int(screenHeight));
+        return PrepareRasterTargetScissor(
+            visibleClusterIndex,
+            targetViewIndex,
+            screenWidth,
+            screenHeight);
+    }
 
     void write(
         int2 pixel,
@@ -48,6 +98,8 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
                 visibilityValue);
             return;
         }
+        if (WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
+            return;
         WriteRasterTargetDepth(pixel, targetViewIndex, depth);
     }
 };

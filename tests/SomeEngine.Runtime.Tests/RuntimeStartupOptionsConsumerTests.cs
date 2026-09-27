@@ -5,6 +5,20 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class RuntimeStartupOptionsConsumerTests
 {
     [Fact]
+    public void ImageExportAndFeatureComparisonsKeepVerificationOptional()
+    {
+        var options = RuntimeStartupOptions.Parse(["--frame-output", "scene.bmp", "--no-debug-ui", "--no-taa", "--no-vsm"]);
+        Assert.Equal("scene.bmp", options.FrameOutputPath);
+        Assert.True(options.HideDebugUi);
+        Assert.False(options.VerifyFrameOutput);
+        Assert.False(options.TemporalAntialiasing);
+        Assert.False(options.VirtualShadows);
+        Assert.True(RuntimeStartupOptions.Parse([]).TemporalAntialiasing);
+        Assert.True(RuntimeStartupOptions.Parse([]).VirtualShadows);
+        Assert.Throws<ArgumentException>(() => RuntimeStartupOptions.Parse(["--frame-output", "scene.png"]));
+    }
+
+    [Fact]
     public void TracePlaybackControlsKeepCaptureAndSceneBehaviorSeparate()
     {
         var options = RuntimeStartupOptions.Parse([

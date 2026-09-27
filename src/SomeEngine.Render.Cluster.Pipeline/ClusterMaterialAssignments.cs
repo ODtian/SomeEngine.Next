@@ -242,6 +242,8 @@ internal sealed class ClusterMaterialSequence : IEquatable<ClusterMaterialSequen
 /// <summary>Applies changed render-world rows before instance producers consume their offsets.</summary>
 public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSystemContext>
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace =
+        new("render", "Prepare.ClusterMaterials");
     private readonly ClusterMaterialAssignments _assignments;
     private QueryHandle _query;
     private EntityTableChanges? _tableChanges;
@@ -261,6 +263,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
     }
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         if (!_created) throw new InvalidOperationException("The material assignment system was not created.");
         EntityTableChangeBatch membership = _tableChanges!.Read();
         var update = new AssignmentChanges(_assignments.Current);

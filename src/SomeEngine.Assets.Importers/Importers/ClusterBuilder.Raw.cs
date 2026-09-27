@@ -438,7 +438,7 @@ public static partial class ClusterBuilder
             ResetLocalBuffers();
             ReadOnlySpan<uint> meshletIndices = globalIndices.Slice(meshlet.IndicesOffset, meshlet.IndicesCount);
             EncodedCluster encoded = EncodeLocalCluster(meshletIndices);
-            ValidateVrbBatches(meshlet, encoded.VertexCount);
+            ValidateVertReuseBatches(meshlet, encoded.VertexCount);
             EnsurePageSpace(ClusterPayloadSize(encoded));
             PageStarts starts = CurrentPageStarts();
             AppendLocalPayload(encoded);
@@ -498,100 +498,121 @@ public static partial class ClusterBuilder
     {
 
 
-        private void ValidateVrbBatches(BuilderMeshlet meshlet, int vertexCount)
+        private void ValidateVertReuseBatches(BuilderMeshlet meshlet, int vertexCount)
         {
             int triangleCount = LocalIndices.Count / 3;
-            Span<byte> indexSpan = CollectionsMarshal.AsSpan(LocalIndices);
-            int encodedBatchCount = (int)((meshlet.VRBBatchInfo >> 25) & 0x7) + 1;
-            int batchStart = 0;
-            for (int batchIndex = 0; batchIndex < encodedBatchCount; batchIndex++)
+            Span<byte> indices = CollectionsMarshal.AsSpan(LocalIndices);
+            Span<int> rangeEnds = stackalloc int[3]
             {
-                int batchEnd = Math.Min(batchStart + BatchTriangleCount(meshlet.VRBBatchInfo, batchIndex), triangleCount);
-                ValidateVrbBatch(indexSpan, batchStart, batchEnd, batchIndex, triangleCount, vertexCount);
-                batchStart = batchEnd;
-            }
-        }
+                meshlet.Range0End,
+                meshlet.Range1End,
+                triangleCount,
+            };
+            int rangeCount = meshlet.Range0End == triangleCount
+                ? 1
+                : (meshlet.Range1End == triangleCount ? 2 : 3);
 
-        private static int BatchTriangleCount(uint vrb, int batchIndex)
-            => (int)((vrb >> (batchIndex * 5)) & 0x1F) + 1;
-
-        private static void ValidateVrbBatch(
-            Span<byte> indices,
-            int batchStart,
-            int batchEnd,
-            int batchIndex,
-            int triangleCount,
-            int vertexCount)
-        {
-            uint baseVertex = VrbBaseVertex(indices, batchStart, batchEnd);
-            ulong usedMask = VrbUsedMask(indices, batchStart, batchEnd, baseVertex, batchIndex, triangleCount, vertexCount);
-            int uniqueVertexCount = BitOperations.PopCount(usedMask);
-            if (uniqueVertexCount > 32)
+            int triangleStart = 0;
+            int flatBatchIndex = 0;
+            for (int rangeIndex = 0; rangeIndex < rangeCount; rangeIndex++)
             {
-                throw new Exception(
-                    $"[VRB] UNIQUE VERT OVERFLOW: batch {batchIndex} [{batchStart}..{batchEnd}) " +
-                    $"has {uniqueVertexCount} unique local verts (max 32). cluster tris={triangleCount} verts={vertexCount}.");
-            }
-        }
+                int batchCount = checked((int)ReadVertReuseBits(meshlet, rangeIndex * 4, 4));
+                if (batchCount <= 0)
+                    throw new InvalidDataException("A material range has no vertex-reuse batch.");
 
-        private static uint VrbBaseVertex(Span<byte> indices, int batchStart, int batchEnd)
-        {
-            uint baseVertex = 255;
-            for (int triangle = batchStart; triangle < batchEnd; triangle++)
-            {
-                baseVertex = Math.Min(baseVertex, indices[triangle * 3 + 0]);
-                baseVertex = Math.Min(baseVertex, indices[triangle * 3 + 1]);
-                baseVertex = Math.Min(baseVertex, indices[triangle * 3 + 2]);
-            }
-
-            return baseVertex;
-        }
-
-        private static ulong VrbUsedMask(
-            Span<byte> indices,
-            int batchStart,
-            int batchEnd,
-            uint baseVertex,
-            int batchIndex,
-            int triangleCount,
-            int vertexCount)
-        {
-            ulong usedMask = 0;
-            for (int triangle = batchStart; triangle < batchEnd; triangle++)
-            {
-                AddVrbTriangle(indices, triangle, baseVertex, batchIndex, triangleCount, vertexCount, ref usedMask);
-            }
-
-            return usedMask;
-        }
-    }
-
-    private sealed partial class MeshPageWriter
-    {
-
-
-        private static void AddVrbTriangle(
-            Span<byte> indices,
-            int triangle,
-            uint baseVertex,
-            int batchIndex,
-            int triangleCount,
-            int vertexCount,
-            ref ulong usedMask)
-        {
-            for (int component = 0; component < 3; component++)
-            {
-                uint rebased = (uint)indices[triangle * 3 + component] - baseVertex;
-                if (rebased >= 64)
+                int rangeEnd = rangeEnds[rangeIndex];
+                for (int batchIndex = 0; batchIndex < batchCount; batchIndex++)
                 {
-                    throw new Exception(
-                        $"[VRB] SPAN: rebased={rebased} (>=64) batch {batchIndex}, cluster tris={triangleCount} verts={vertexCount}");
+                    int batchTriangleCount = checked((int)ReadVertReuseBits(
+                        meshlet,
+                        12 + flatBatchIndex * 5,
+                        5)) + 1;
+                    int batchEnd = checked(triangleStart + batchTriangleCount);
+                    if (batchTriangleCount > 32 || batchEnd > rangeEnd)
+                        throw new InvalidDataException("A vertex-reuse batch exceeds its material range.");
+
+                    ValidateVertReuseBatch(
+                        indices,
+                        triangleStart,
+                        batchEnd,
+                        flatBatchIndex,
+                        triangleCount,
+                        vertexCount);
+                    triangleStart = batchEnd;
+                    flatBatchIndex++;
                 }
 
-                usedMask |= 1UL << (int)rebased;
+                if (triangleStart != rangeEnd)
+                    throw new InvalidDataException("Vertex-reuse batches do not exactly cover their material range.");
+            }
+
+            for (int rangeIndex = rangeCount; rangeIndex < 3; rangeIndex++)
+            {
+                if (ReadVertReuseBits(meshlet, rangeIndex * 4, 4) != 0)
+                    throw new InvalidDataException("Unused material ranges contain vertex-reuse batch metadata.");
             }
         }
 
+        private static uint ReadVertReuseBits(
+            in BuilderMeshlet meshlet,
+            int bitOffset,
+            int bitCount)
+        {
+            if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 || bitOffset + bitCount > 128)
+                throw new InvalidDataException("Vertex-reuse batch metadata exceeds its inline encoding.");
+
+            int wordIndex = bitOffset >> 5;
+            int wordBit = bitOffset & 31;
+            uint first = VertReuseWord(meshlet, wordIndex) >> wordBit;
+            int lowBits = Math.Min(bitCount, 32 - wordBit);
+            uint value = first;
+            if (lowBits < bitCount)
+                value |= VertReuseWord(meshlet, wordIndex + 1) << lowBits;
+            return value & ((1u << bitCount) - 1u);
+        }
+
+        private static uint VertReuseWord(in BuilderMeshlet meshlet, int index)
+            => index switch
+            {
+                0 => meshlet.VertReuseBatchWord0,
+                1 => meshlet.VertReuseBatchWord1,
+                2 => meshlet.VertReuseBatchWord2,
+                3 => meshlet.VertReuseBatchWord3,
+                _ => throw new ArgumentOutOfRangeException(nameof(index)),
+            };
+
+        private static void ValidateVertReuseBatch(
+            Span<byte> indices,
+            int batchStart,
+            int batchEnd,
+            int batchIndex,
+            int triangleCount,
+            int vertexCount)
+        {
+            ulong usedVertices = 0;
+            for (int triangle = batchStart; triangle < batchEnd; triangle++)
+            {
+                for (int component = 0; component < 3; component++)
+                {
+                    byte vertex = indices[triangle * 3 + component];
+                    if (vertex >= vertexCount)
+                    {
+                        throw new InvalidDataException(
+                            $"Vertex-reuse batch {batchIndex} references local vertex {vertex}, " +
+                            $"but the cluster has {vertexCount} vertices.");
+                    }
+                    usedVertices |= 1UL << vertex;
+                }
+            }
+
+            int uniqueVertexCount = BitOperations.PopCount(usedVertices);
+            if (uniqueVertexCount > 32)
+            {
+                throw new InvalidDataException(
+                    $"Vertex-reuse batch {batchIndex} has {uniqueVertexCount} unique vertices " +
+                    $"(max 32), cluster triangles={triangleCount}, vertices={vertexCount}.");
+            }
+        }
         private int ClusterPayloadSize(EncodedCluster encoded)
         {
             return checked(PackedCluster.SizeInBytes + encoded.Blob.Length + LocalIndices.Count);
@@ -668,10 +689,12 @@ public static partial class ClusterBuilder
                 PackedMaterials = PackedMaterials(meshlet),
                 PackedRanges = PackedRanges(meshlet),
                 MaterialTableOffset = 0xFFFFFFFF,
-                VRBBatchInfo = meshlet.VRBBatchInfo,
+                VertReuseBatchWord0 = meshlet.VertReuseBatchWord0,
+                VertReuseBatchWord1 = meshlet.VertReuseBatchWord1,
+                VertReuseBatchWord2 = meshlet.VertReuseBatchWord2,
+                VertReuseBatchWord3 = meshlet.VertReuseBatchWord3,
                 BoundMin = encoded.BoundMin,
                 BoundMax = encoded.BoundMax,
-                Reserved = 0,
             };
         }
     }

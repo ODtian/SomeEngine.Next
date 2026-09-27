@@ -66,6 +66,7 @@ public sealed class VirtualShadowMap : IDisposable
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         settings.Validate();
         LinkedComputePipeline? markPages = null;
+        LinkedComputePipeline? resetFrame = null;
         LinkedComputePipeline? markCoarsePages = null;
         LinkedComputePipeline? allocatePages = null;
         LinkedComputePipeline? clearPages = null;
@@ -75,10 +76,13 @@ public sealed class VirtualShadowMap : IDisposable
         LinkedComputePipeline? compactViews = null;
         LinkedComputePipeline? initializePageHiZ = null;
         LinkedComputePipeline? reducePageHiZ = null;
+        LinkedComputePipeline? dynamicResolution = null;
         Buffer? physicalPageOwners = null;
         Texture? atlas = null;
         try
         {
+            resetFrame = LinkedComputePipeline.Create(
+                _backend, _device, assets, shaders.ResetFrame, "Virtual shadow frame reset");
             markPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
@@ -139,6 +143,12 @@ public sealed class VirtualShadowMap : IDisposable
                 assets,
                 shaders.ReducePageHiZ,
                 "Virtual shadow physical-page HiZ reduction");
+            dynamicResolution = LinkedComputePipeline.Create(
+                _backend,
+                _device,
+                assets,
+                shaders.DynamicResolution,
+                "Virtual shadow dynamic resolution feedback");
             physicalPageOwners = _backend.CreateBuffer(
                 _device,
                 new BufferDesc(
@@ -170,6 +180,7 @@ public sealed class VirtualShadowMap : IDisposable
             if (clearPages is not null) TryDispose(clearPages, ref cleanupFailures);
             if (compactViews is not null) TryDispose(compactViews, ref cleanupFailures);
             if (reducePageHiZ is not null) TryDispose(reducePageHiZ, ref cleanupFailures);
+            if (dynamicResolution is not null) TryDispose(dynamicResolution, ref cleanupFailures);
             if (initializePageHiZ is not null) TryDispose(initializePageHiZ, ref cleanupFailures);
             if (buildPagePool is not null) TryDispose(buildPagePool, ref cleanupFailures);
             if (invalidateCasters is not null) TryDispose(invalidateCasters, ref cleanupFailures);
@@ -177,6 +188,7 @@ public sealed class VirtualShadowMap : IDisposable
             if (allocatePages is not null) TryDispose(allocatePages, ref cleanupFailures);
             if (markCoarsePages is not null) TryDispose(markCoarsePages, ref cleanupFailures);
             if (markPages is not null) TryDispose(markPages, ref cleanupFailures);
+            if (resetFrame is not null) TryDispose(resetFrame, ref cleanupFailures);
             if (cleanupFailures is not null)
             {
                 cleanupFailures.Insert(0, primary);
@@ -188,6 +200,7 @@ public sealed class VirtualShadowMap : IDisposable
         }
 
         PageMarkPipeline = markPages;
+        FrameResetPipeline = resetFrame;
         CoarsePageMarkPipeline = markCoarsePages;
         PageAllocatePipeline = allocatePages;
         PageClearPipeline = clearPages;
@@ -197,6 +210,7 @@ public sealed class VirtualShadowMap : IDisposable
         ViewCompactPipeline = compactViews;
         PageHiZInitializePipeline = initializePageHiZ;
         PageHiZReducePipeline = reducePageHiZ;
+        DynamicResolutionPipeline = dynamicResolution;
         _physicalPageOwners = physicalPageOwners;
         _atlas = atlas;
 
@@ -217,6 +231,7 @@ public sealed class VirtualShadowMap : IDisposable
     }
 
     public VirtualShadowMapSettings Settings { get; }
+    public LinkedComputePipeline FrameResetPipeline { get; }
     public LinkedComputePipeline PageMarkPipeline { get; }
     public LinkedComputePipeline CoarsePageMarkPipeline { get; }
     public LinkedComputePipeline PageAllocatePipeline { get; }
@@ -227,6 +242,7 @@ public sealed class VirtualShadowMap : IDisposable
     public LinkedComputePipeline ViewCompactPipeline { get; }
     public LinkedComputePipeline PageHiZInitializePipeline { get; }
     public LinkedComputePipeline PageHiZReducePipeline { get; }
+    public LinkedComputePipeline DynamicResolutionPipeline { get; }
     public bool RequiresInitialization => !_pageTableInitialized;
     public bool RequiresCacheReset => _pendingCacheReset;
     public bool UsesPageGranularTransformInvalidation =>
@@ -252,7 +268,7 @@ public sealed class VirtualShadowMap : IDisposable
         if (!_pending)
             throw new InvalidOperationException(
                 "Import the virtual-shadow resources before preparing frame views.");
-        int remainingLights = checked((int)Settings.MaxShadowLights);
+        int remainingLights = Settings.Enabled ? checked((int)Settings.MaxShadowLights) : 0;
         int directionalLightCount = Math.Min(lights.Directional.Count, remainingLights);
         remainingLights -= directionalLightCount;
         int pointLightCount = Math.Min(lights.Points.Count, remainingLights);
@@ -276,14 +292,8 @@ public sealed class VirtualShadowMap : IDisposable
         _pendingInstanceCount = instanceCount;
         if (viewCount == 0)
         {
-            VirtualShadowCacheDecision decision = ResolveCacheDecision(
-                _initialized,
-                viewChanged: _committedViewCount != 0,
-                structuralContentChanged: false,
-                viewCount,
-                _committedCacheGeneration);
-            _pendingCacheReset = decision.ResetCache;
-            _pendingCacheGeneration = decision.CacheGeneration;
+            _pendingCacheReset = !_initialized;
+            _pendingCacheGeneration = _committedCacheGeneration;
             return [];
         }
         if (!Matrix4x4.Invert(receiverView.View, out Matrix4x4 worldFromView))
@@ -303,8 +313,7 @@ public sealed class VirtualShadowMap : IDisposable
             Settings.DirectionalResolutionLodBias + MathF.Log2(lodScale));
         uint physicalPagesPerRow = Settings.AtlasSize / Settings.PageSize;
         uint virtualPagesPerRow = Settings.VirtualResolution / Settings.PageSize;
-        uint virtualPageCount = checked(virtualPagesPerRow * virtualPagesPerRow);
-        uint coarseBaseOffset = checked((uint)viewCount * virtualPageCount);
+        uint pageTableEntriesPerView = Settings.PageTableEntriesPerView;
         for (int lightIndex = 0; lightIndex < directionalLightCount; lightIndex++)
         {
             Vector3 direction = NormalizeOrZero(lights.Directional[lightIndex].Direction);
@@ -319,16 +328,22 @@ public sealed class VirtualShadowMap : IDisposable
             float cameraVertical = Vector3.Dot(camera, vertical);
             for (int clipmapLevel = 0; clipmapLevel < clipmapLevels; clipmapLevel++)
             {
-                float worldExtent = Settings.DirectionalWorldExtent *
-                    MathF.Pow(2.0f, clipmapLevel);
-                float pageWorldSize = worldExtent / virtualPagesPerRow;
-                int centerPageX = checked((int)MathF.Round(cameraRight / pageWorldSize));
-                int centerPageY = checked((int)MathF.Round(cameraVertical / pageWorldSize));
+                int absoluteClipmapLevel = checked(
+                    Settings.DirectionalFirstClipmapLevel + clipmapLevel);
+                // UE clipmaps snap by one virtual radius, i.e. one quarter of the
+                // level-0 page table. Snapping every page destroys cache locality.
+                float levelRadius = MathF.Pow(2.0f, absoluteClipmapLevel + 1.0f);
+                float worldExtent = 4.0f * levelRadius;
+                int centerSnapX = checked((int)MathF.Round(cameraRight / levelRadius));
+                int centerSnapY = checked((int)MathF.Round(cameraVertical / levelRadius));
+                int pagesPerSnap = checked((int)virtualPagesPerRow / 4);
+                int centerPageX = checked(centerSnapX * pagesPerSnap);
+                int centerPageY = checked(centerSnapY * pagesPerSnap);
                 int pageOriginX = checked(centerPageX - (int)virtualPagesPerRow / 2);
                 int pageOriginY = checked(centerPageY - (int)virtualPagesPerRow / 2);
                 Vector3 snappedCenter =
-                    right * (centerPageX * pageWorldSize) +
-                    vertical * (centerPageY * pageWorldSize);
+                    right * (centerSnapX * levelRadius) +
+                    vertical * (centerSnapY * levelRadius);
                 Matrix4x4 lightView = Matrix4x4.CreateLookAt(
                     snappedCenter - direction * Settings.DirectionalLightDistance,
                     snappedCenter,
@@ -339,6 +354,10 @@ public sealed class VirtualShadowMap : IDisposable
                     Settings.DirectionalNearPlane,
                     Settings.DirectionalFarPlane);
                 int viewIndex = checked(lightIndex * clipmapLevels + clipmapLevel);
+                bool coarseFallback =
+                    absoluteClipmapLevel >= Settings.DirectionalFirstCoarseClipmapLevel &&
+                    absoluteClipmapLevel <= Settings.DirectionalLastCoarseClipmapLevel ||
+                    clipmapLevel == clipmapLevels - 1;
                 _views[viewIndex] = new VirtualShadowView
                 {
                     LightViewProjection = lightView * lightProjection,
@@ -349,18 +368,24 @@ public sealed class VirtualShadowMap : IDisposable
                     MaxPhysicalPages = checked(physicalPagesPerRow * physicalPagesPerRow),
                     VirtualPageOriginX = pageOriginX,
                     DepthBias = Settings.DepthBias,
-                    PageTableOffset = checked((uint)viewIndex * virtualPageCount),
+                    PageTableOffset = checked((uint)viewIndex * pageTableEntriesPerView),
                     VirtualPageOriginY = pageOriginY,
-                    ClipmapLevel = checked(
-                        Settings.DirectionalFirstClipmapLevel + clipmapLevel),
+                    ClipmapLevel = absoluteClipmapLevel,
                     LightIndex = checked((uint)lightIndex),
                     ClipmapWorldOrigin = camera,
                     ResolutionLodBias = resolutionLodBias,
                     FirstClipmapLevel = Settings.DirectionalFirstClipmapLevel,
                     ClipmapLevelCount = Settings.DirectionalClipmapLevels,
-                    CoarsePageShift = Settings.CoarsePageShift,
-                    CoarsePageTableOffset = checked(
-                        coarseBaseOffset + (uint)viewIndex * Settings.CoarsePagesPerView),
+                    MipLevelCount = Settings.MipLevelCount,
+                    MinMipLevel = 0u,
+                    Flags =
+                        (coarseFallback
+                            ? VirtualShadowViewFlags.CoarseClipLevel |
+                              VirtualShadowViewFlags.ForceCacheDynamicCoarse
+                            : 0u) |
+                        (Settings.DirectionalReceiverMask
+                            ? VirtualShadowViewFlags.UseReceiverMask
+                            : 0u),
                     LightKind = VirtualShadowLightKind.Directional,
                     FaceIndex = checked((uint)clipmapLevel),
                 };
@@ -396,8 +421,7 @@ public sealed class VirtualShadowMap : IDisposable
                     light.Position,
                     light.Range,
                     physicalPagesPerRow,
-                    virtualPageCount,
-                    coarseBaseOffset);
+                    pageTableEntriesPerView);
                 _preparedLightViews[viewIndex] = lightView;
                 _preparedLightProjections[viewIndex] = projection;
             }
@@ -436,39 +460,54 @@ public sealed class VirtualShadowMap : IDisposable
                 light.Position,
                 light.Range,
                 physicalPagesPerRow,
-                virtualPageCount,
-                coarseBaseOffset);
+                pageTableEntriesPerView);
             _preparedLightViews[viewIndex] = lightView;
             _preparedLightProjections[viewIndex] = projection;
         }
 
-        bool viewChanged = !_initialized || viewCount != _committedViewCount;
-        if (!viewChanged)
+        bool viewLayoutChanged = !_initialized || viewCount != _committedViewCount;
+        bool structuralContentChanged =
+            _initialized &&
+            (geometryRevision != _committedGeometryRevision ||
+             rasterRevision != _committedRasterRevision ||
+             instanceCount != _committedInstanceCount);
+        _pendingCacheReset = !_initialized || viewLayoutChanged;
+
+        uint generation = _committedCacheGeneration;
+        if (_pendingCacheReset || structuralContentChanged)
+        {
+            generation = NextCacheGeneration(generation);
+            for (int index = 0; index < viewCount; index++)
+                _views[index].CacheGeneration = generation;
+        }
+        else
         {
             for (int index = 0; index < viewCount; index++)
             {
                 if (HasSameClipmapConfiguration(_views[index], _committedViews[index]))
+                {
+                    _views[index].CacheGeneration = _committedViews[index].CacheGeneration;
                     continue;
-                viewChanged = true;
-                break;
+                }
+
+                // Moving or reconfigured lights invalidate only their own virtual address
+                // space. A global generation bump would destroy every unrelated cached VSM.
+                generation = NextCacheGeneration(generation);
+                _views[index].CacheGeneration = generation;
             }
         }
-        bool structuralContentChanged =
-            _initialized &&
-            !viewChanged &&
-            (geometryRevision != _committedGeometryRevision ||
-             rasterRevision != _committedRasterRevision ||
-             instanceCount != _committedInstanceCount);
-        VirtualShadowCacheDecision cacheDecision = ResolveCacheDecision(
-            _initialized,
-            viewChanged,
-            structuralContentChanged,
-            viewCount,
-            _committedCacheGeneration);
-        _pendingCacheReset = cacheDecision.ResetCache;
-        _pendingCacheGeneration = cacheDecision.CacheGeneration;
-        for (int index = 0; index < viewCount; index++)
-            _views[index].CacheGeneration = _pendingCacheGeneration;
+        if (_initialized && viewCount == _committedViewCount)
+        {
+            for (int index = 0; index < viewCount; index++)
+            {
+                if (_views[index].LightViewProjection.Equals(
+                        _committedViews[index].LightViewProjection))
+                {
+                    _views[index].Flags |= VirtualShadowViewFlags.PreviousProjectionValid;
+                }
+            }
+        }
+        _pendingCacheGeneration = generation;
         return _views.AsSpan(0, viewCount);
     }
 
@@ -547,7 +586,7 @@ public sealed class VirtualShadowMap : IDisposable
 
         ulong requiredSize = checked(
             Math.Max(1ul, (ulong)_pendingViewCount *
-            (Settings.VirtualPagesPerView + Settings.CoarsePagesPerView)) *
+            Settings.PageTableEntriesPerView) *
             VirtualShadowView.PageTableEntrySizeInBytes);
         if (_frameResourcesAcquired)
             throw new InvalidOperationException("Virtual-shadow frame resources were already acquired.");
@@ -701,8 +740,7 @@ public sealed class VirtualShadowMap : IDisposable
         Vector3 lightPosition,
         float lightRange,
         uint physicalPagesPerRow,
-        uint virtualPageCount,
-        uint coarseBaseOffset) => new()
+        uint pageTableEntriesPerView) => new()
     {
         LightViewProjection = lightView * lightProjection,
         VirtualResolution = Settings.VirtualResolution,
@@ -711,14 +749,17 @@ public sealed class VirtualShadowMap : IDisposable
         PhysicalPagesPerRow = physicalPagesPerRow,
         MaxPhysicalPages = Settings.MaxPhysicalPages,
         DepthBias = Settings.DepthBias,
-        PageTableOffset = checked((uint)viewIndex * virtualPageCount),
+        PageTableOffset = checked((uint)viewIndex * pageTableEntriesPerView),
         ClipmapLevel = -1,
         LightIndex = lightIndex,
+        ResolutionLodBias = Settings.LocalResolutionLodBias,
         FirstClipmapLevel = -1,
         ClipmapLevelCount = 1u,
-        CoarsePageShift = Settings.CoarsePageShift,
-        CoarsePageTableOffset = checked(
-            coarseBaseOffset + (uint)viewIndex * Settings.CoarsePagesPerView),
+        MipLevelCount = Settings.MipLevelCount,
+        MinMipLevel = 0u,
+        Flags = VirtualShadowViewFlags.CoarseClipLevel |
+            VirtualShadowViewFlags.ForceCacheDynamicCoarse |
+            (Settings.LocalReceiverMask ? VirtualShadowViewFlags.UseReceiverMask : 0u),
         LightKind = lightKind,
         FaceIndex = faceIndex,
         LightPosition = lightPosition,
@@ -759,24 +800,6 @@ public sealed class VirtualShadowMap : IDisposable
         return next == 0u ? 1u : next;
     }
 
-    internal static VirtualShadowCacheDecision ResolveCacheDecision(
-        bool initialized,
-        bool viewChanged,
-        bool structuralContentChanged,
-        int viewCount,
-        uint committedCacheGeneration)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(viewCount);
-        bool reset = !initialized;
-        bool advanceGeneration = reset || viewChanged || structuralContentChanged;
-        return new VirtualShadowCacheDecision(
-            reset,
-            initialized && viewCount != 0,
-            advanceGeneration
-                ? NextCacheGeneration(committedCacheGeneration)
-                : committedCacheGeneration);
-    }
-
     private static bool HasSameClipmapConfiguration(
         in VirtualShadowView left,
         in VirtualShadowView right) =>
@@ -794,8 +817,9 @@ public sealed class VirtualShadowMap : IDisposable
         left.LightIndex == right.LightIndex &&
         left.FirstClipmapLevel == right.FirstClipmapLevel &&
         left.ClipmapLevelCount == right.ClipmapLevelCount &&
-        left.CoarsePageShift == right.CoarsePageShift &&
-        left.CoarsePageTableOffset == right.CoarsePageTableOffset &&
+        left.MipLevelCount == right.MipLevelCount &&
+        left.MinMipLevel == right.MinMipLevel &&
+        left.Flags == right.Flags &&
         left.LightKind == right.LightKind &&
         left.FaceIndex == right.FaceIndex &&
         left.LightPosition == right.LightPosition &&
@@ -827,6 +851,7 @@ public sealed class VirtualShadowMap : IDisposable
         _pageTable = null;
         TryDispose(PageClearPipeline, ref failures);
         TryDispose(PageHiZReducePipeline, ref failures);
+        TryDispose(DynamicResolutionPipeline, ref failures);
         TryDispose(PageHiZInitializePipeline, ref failures);
         TryDispose(ViewCompactPipeline, ref failures);
         TryDispose(PagePoolPipeline, ref failures);
@@ -835,6 +860,7 @@ public sealed class VirtualShadowMap : IDisposable
         TryDispose(PageAllocatePipeline, ref failures);
         TryDispose(CoarsePageMarkPipeline, ref failures);
         TryDispose(PageMarkPipeline, ref failures);
+        TryDispose(FrameResetPipeline, ref failures);
         Array.Clear(_pageTableEndpoint);
         Array.Clear(_physicalPageOwnersEndpoint);
         Array.Clear(_atlasEndpoint);
@@ -868,10 +894,6 @@ public sealed class VirtualShadowMap : IDisposable
     }
 }
 
-internal readonly record struct VirtualShadowCacheDecision(
-    bool ResetCache,
-    bool PageGranularTransformInvalidation,
-    uint CacheGeneration);
 
 public readonly record struct VirtualShadowBufferResource(
     Buffer Resource,

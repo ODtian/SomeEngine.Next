@@ -5,6 +5,7 @@
 #include "cluster_target_policy_contract.slang"
 #include "resource_effects.slang"
 #include "wave_aggregation.slang"
+#include "wave_queue.slang"
 
 StructuredBuffer<ClusterViewUniforms> Views;
 
@@ -20,6 +21,8 @@ ByteAddressBuffer BaseDrawArgs0;
 ByteAddressBuffer BaseDrawArgs1;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<DrawRequest> VisibleClusters;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<uint2> VisibleClusterRasterWindows;
 Texture2DArray<float> HiZTexture;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<DrawRequest> NextCandidates;
@@ -33,6 +36,8 @@ ByteAddressBuffer BaseDrawArgs1;
 ByteAddressBuffer BaseDrawArgs2;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<DrawRequest> VisibleClusters;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<uint2> VisibleClusterRasterWindows;
 Texture2DArray<float> HiZTexture;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer PhaseDrawArgs;
@@ -75,8 +80,10 @@ PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
     c.PackedMaterials = PageHeap.Load(offset + 68);
     c.PackedRanges = PageHeap.Load(offset + 72);
     c.MaterialTableOffset = PageHeap.Load(offset + 76);
-    c.VRBBatchInfo = PageHeap.Load(offset + 80);
-    c.Reserved = PageHeap.Load(offset + 84);
+    c.VertReuseBatchWord0 = PageHeap.Load(offset + 80);
+    c.VertReuseBatchWord1 = PageHeap.Load(offset + 84);
+    c.VertReuseBatchWord2 = PageHeap.Load(offset + 88);
+    c.VertReuseBatchWord3 = PageHeap.Load(offset + 92);
 
     return c;
 }
@@ -221,6 +228,7 @@ void AppendVisible(
     uint clusterID,
     uint instanceID,
     uint viewIndex,
+    uint2 rasterWindow,
     bool isSW,
     uint maxCandidates)
 {
@@ -260,13 +268,19 @@ void AppendVisible(
     {
         uint globalIdx = baseSWCount + outIdx;
         if (globalIdx < maxCandidates)
+        {
             VisibleClusters[globalIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
+            VisibleClusterRasterWindows[globalIdx] = rasterWindow;
+        }
     }
     else
     {
         uint hwIdx = maxCandidates - 1 - baseHWCount - outIdx;
         if (baseHWCount + outIdx < maxCandidates)
+        {
             VisibleClusters[hwIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
+            VisibleClusterRasterWindows[hwIdx] = rasterWindow;
+        }
     }
 }
 
@@ -308,7 +322,8 @@ bool LoadAndFilterCandidate(
     out ClusterViewUniforms view,
     out PackedCluster cluster,
     out RenderInstanceTransform t,
-    out float boundsExpansion)
+    out float boundsExpansion,
+    out uint2 rasterWindow)
 {
     pageOffset = 0;
     clusterID = 0;
@@ -318,6 +333,7 @@ bool LoadAndFilterCandidate(
     cluster = (PackedCluster)0;
     t = (RenderInstanceTransform)0;
     boundsExpansion = 0.0;
+    rasterWindow = 0u.xx;
 
     uint count = CandidateCount[0];
     uint capacity;
@@ -331,10 +347,7 @@ bool LoadAndFilterCandidate(
     clusterID = DrawRequestClusterID(candidate);
     instanceID = candidate.InstanceID;
     viewIndex = DrawRequestViewIndex(candidate);
-    bool rasterRegion = (viewIndex & CLUSTER_RASTER_REGION_BIT) != 0u;
-    view = rasterRegion
-        ? LoadClusterView(Views, PolicyClusterViews, viewIndex)
-        : LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
+    view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
     if (threadId >= view.MaxCandidates)
         return false;
 
@@ -350,62 +363,36 @@ bool LoadAndFilterCandidate(
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
             instanceID));
 
-    return rasterRegion || PassesLODFilter(cluster, t, view);
+    if (!PassesLODFilter(cluster, t, view))
+        return false;
+
+    if (view.TargetPolicy != 0u)
+    {
+        float2 minUv;
+        float2 maxUv;
+        float nearDepth;
+        uint unusedMip;
+        BuildClusterAabbScreenBoundsAndNearDepth(
+            cluster,
+            t,
+            false,
+            boundsExpansion,
+            view,
+            minUv,
+            maxUv,
+            nearDepth,
+            unusedMip);
+        if (!ClusterTargetPolicyRasterBoundsWindow(
+                minUv, maxUv, view, rasterWindow))
+            return false;
+    }
+    return true;
 }
 
 #if CLUSTER_CULL_PHASE == 2
 void AppendVisiblePhase2(uint pageOffset, uint clusterID, uint instanceID,
-    uint viewIndex, bool isSW, uint maxCandidates);
+    uint viewIndex, uint2 rasterWindow, bool isSW, uint maxCandidates);
 #endif
-
-void CullRasterRegions(
-    uint pageOffset, uint clusterID, uint instanceID,
-    PackedCluster cluster, RenderInstanceTransform transform,
-    float boundsExpansion, ClusterViewUniforms sourceView)
-{
-    float2 minUv = 0.0.xx;
-    float2 maxUv = 1.0.xx;
-    float nearDepth = 0.0;
-    uint unusedMip;
-    if (sourceView.CullingEnabled != 0u)
-        BuildClusterAabbScreenBoundsAndNearDepth(
-            cluster, transform, false, boundsExpansion, sourceView,
-            minUv, maxUv, nearDepth, unusedMip);
-    uint4 bounds = ClusterRasterGridBounds(minUv, maxUv, sourceView);
-    for (uint row = bounds.y; row <= bounds.w; row++)
-    {
-        for (uint word = bounds.x / 32u; word <= bounds.z / 32u; word++)
-        {
-            uint mask = ClusterRasterGridMask(row, word, bounds, sourceView);
-            while (mask != 0u)
-            {
-                uint column = word * 32u + firstbitlow(mask);
-                mask &= mask - 1u;
-                uint regionIndex = ClusterRasterGridRegion(row, column, sourceView);
-                uint viewIndex = ClusterEncodePolicyViewIndex(regionIndex);
-                ClusterViewUniforms view = ClusterApplyRasterRegion(
-                    sourceView, RasterTargetInvocations[regionIndex], regionIndex);
-                float2 regionMin, regionMax;
-#if CLUSTER_CULL_PHASE == 1
-                bool occluded = IsOccludedByHiZ(cluster, transform, boundsExpansion,
-                    true, viewIndex, view, regionMin, regionMax);
-                if (view.HasPrevHistory != 0u && occluded)
-                    AppendCandidate(pageOffset, clusterID, instanceID,
-                        viewIndex | CLUSTER_RASTER_REGION_BIT, view.MaxCandidates);
-                else
-                    AppendVisible(pageOffset, clusterID, instanceID, viewIndex,
-                        ShouldUseSWRaster(regionMin, regionMax, view), view.MaxCandidates);
-#else
-                bool occluded = IsOccludedByHiZ(cluster, transform, boundsExpansion,
-                    false, viewIndex, view, regionMin, regionMax);
-                if (!occluded)
-                    AppendVisiblePhase2(pageOffset, clusterID, instanceID, viewIndex,
-                        ShouldUseSWRaster(regionMin, regionMax, view), view.MaxCandidates);
-#endif
-            }
-        }
-    }
-}
 
 #if CLUSTER_CULL_PHASE == 1
 [shader("compute")]
@@ -420,7 +407,8 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     PackedCluster cluster;
     RenderInstanceTransform t;
     float boundsExpansion;
-    if (!LoadAndFilterCandidate(
+    uint2 rasterWindow;
+    bool valid = LoadAndFilterCandidate(
             dispatchThreadID.x,
             pageOffset,
             clusterID,
@@ -429,14 +417,10 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
             view,
             cluster,
             t,
-            boundsExpansion))
+            boundsExpansion,
+            rasterWindow);
+    if (!valid)
         return;
-
-    if (view.TargetPolicy != 0u)
-    {
-        CullRasterRegions(pageOffset, clusterID, instanceID, cluster, t, boundsExpansion, view);
-        return;
-    }
 
     if (view.HasPrevHistory == 0)
     {
@@ -466,6 +450,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
             clusterID,
             instanceID,
             viewIndex,
+            rasterWindow,
             isSW,
             view.MaxCandidates);
     }
@@ -477,6 +462,7 @@ void AppendVisiblePhase2(
     uint clusterID,
     uint instanceID,
     uint viewIndex,
+    uint2 rasterWindow,
     bool isSW,
     uint maxCandidates)
 {
@@ -519,13 +505,19 @@ void AppendVisiblePhase2(
     {
         uint globalIdx = baseSWCount + localIdx;
         if (globalIdx < maxCandidates)
+        {
             VisibleClusters[globalIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
+            VisibleClusterRasterWindows[globalIdx] = rasterWindow;
+        }
     }
     else
     {
         uint hwIdx = maxCandidates - 1 - baseHWCount - localIdx;
         if (localIdx < maxCandidates)
+        {
             VisibleClusters[hwIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
+            VisibleClusterRasterWindows[hwIdx] = rasterWindow;
+        }
     }
 }
 
@@ -541,7 +533,8 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     PackedCluster cluster;
     RenderInstanceTransform t;
     float boundsExpansion;
-    if (!LoadAndFilterCandidate(
+    uint2 rasterWindow;
+    bool valid = LoadAndFilterCandidate(
             dispatchThreadID.x,
             pageOffset,
             clusterID,
@@ -550,15 +543,10 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
             view,
             cluster,
             t,
-            boundsExpansion))
+            boundsExpansion,
+            rasterWindow);
+    if (!valid)
         return;
-
-    if (view.TargetPolicy != 0u && view.ViewPadding == 0u)
-    {
-        CullRasterRegions(pageOffset, clusterID, instanceID, cluster, t, boundsExpansion, view);
-        return;
-    }
-    viewIndex &= ~CLUSTER_RASTER_REGION_BIT;
 
     float2 minUv, maxUv;
     bool occluded = IsOccludedByHiZ(
@@ -578,6 +566,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
             clusterID,
             instanceID,
             viewIndex,
+            rasterWindow,
             isSW,
             view.MaxCandidates);
     }

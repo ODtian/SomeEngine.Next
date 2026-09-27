@@ -63,6 +63,13 @@ public ref partial struct RenderGraphFrame
 
     public void SetPassData<T>(GraphPassId pass, in T value) => State.SetPassData(pass, value);
 
+    /// <summary>
+    /// Updates immutable command data, leaving reusable commands unchanged when the value
+    /// compares equal. Referenced data must also be immutable or declared through graph inputs.
+    /// </summary>
+    public void SetPassDataIfChanged<T>(GraphPassId pass, in T value) where T : struct, IEquatable<T> =>
+        State.SetPassData(pass, value, compareValue: true);
+
     public void SetBufferRange(GraphBufferAccessId access, in BufferRange range) =>
         State.SetBufferRange(access, range);
 
@@ -107,6 +114,14 @@ public ref partial struct RenderGraphFrame
         BufferUsages usages,
         string? label = null) =>
         State.Upload(data, usages, label, 4);
+
+    /// <summary>
+    /// Writes a declared upload buffer for this frame. Each in-flight frame keeps its own
+    /// mapped buffer, so updating bytes does not replace the buffer used by its commands.
+    /// Data must cover the declaration; the GPU may only read this buffer.
+    /// </summary>
+    public void SetBufferData(GraphBufferId buffer, scoped ReadOnlySpan<byte> data) =>
+        State.SetBufferData(buffer, data);
 
     public GraphBufferSlice Upload<T>(
         scoped ReadOnlySpan<T> data,
