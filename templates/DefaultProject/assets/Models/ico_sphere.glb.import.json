@@ -1,27 +1,28 @@
 {
   "importer_id": "b0c10195-d8d1-46ab-81b8-f8c54db7d0aa",
-  "importer_version": 7,
-  "input_hash": "FE3CA369E22DA751739C1842EC0554AFB8A1E0B3B3C3C9B5C7ED4E1F16F5A96C",
+  "importer_version": 12,
+  "input_hash": "EFDBF5635CEF6487C78D94E8222F8C8133CCEF003C69C6B0259723DC6D1B96C4",
   "inputs": [
     {
       "relative_path": "assets/Materials/Standard.material.asset",
-      "content_hash": "42ebbe01ecba1bc79cd2e59dff0681b408eb80e3d3613485ef34f134f0851ebb"
-    },
-    {
-      "relative_path": "assets/Materials/TestUnlit_1.material.asset",
-      "content_hash": "103742b5304587805d36cbfee1740582757fee3ecad3fe0d1d88a3a7c7beb212"
+      "content_hash": "42EBBE01ECBA1BC79CD2E59DFF0681B408EB80E3D3613485EF34F134F0851EBB"
     },
     {
       "relative_path": "assets/Models/ico_sphere.glb",
       "content_hash": "40523d69e4e2c6fc1316114008b3de26100108a3a5ed2a5601ff1b9ff6c89a83"
     }
   ],
-  "reported_inputs": [],
+  "reported_inputs": [
+    {
+      "relative_path": "assets/Materials/Standard.material.asset",
+      "content_hash": "42EBBE01ECBA1BC79CD2E59DFF0681B408EB80E3D3613485EF34F134F0851EBB"
+    }
+  ],
   "outputs": [
     {
       "asset_guid": "18f67d63-e2a1-4319-ad3f-411ba7b05b94",
       "sub_asset_key": "material:index:0",
-      "input_hash": "FE3CA369E22DA751739C1842EC0554AFB8A1E0B3B3C3C9B5C7ED4E1F16F5A96C",
+      "input_hash": "EFDBF5635CEF6487C78D94E8222F8C8133CCEF003C69C6B0259723DC6D1B96C4",
       "dependencies": [],
       "asset_path": "ico_sphere.18f67d63e2a14319ad3f411ba7b05b94.material.asset",
       "version": "75817e14-79c4-2c31-0ca6-2da059bd1ba6",
@@ -36,13 +37,25 @@
     {
       "asset_guid": "9cc63de3-c663-4f55-8656-bd4587b0fde5",
       "sub_asset_key": "mesh:index:0",
-      "input_hash": "FE3CA369E22DA751739C1842EC0554AFB8A1E0B3B3C3C9B5C7ED4E1F16F5A96C",
+      "input_hash": "EFDBF5635CEF6487C78D94E8222F8C8133CCEF003C69C6B0259723DC6D1B96C4",
       "dependencies": [],
       "asset_path": "ico_sphere.9cc63de3c6634f558656bd4587b0fde5.mesh.asset",
-      "version": "c10bbeae-4f8d-a094-7cc9-71e0b996448f",
-      "content_hash": "D86E32801B0DB95E10B970DBFDD803E195FA053245C046E35D7426DD99D95CD1",
+      "version": "c95c5155-4aed-9149-b805-8d7b80bcd1f1",
+      "content_hash": "A4810CBC3D37A0970933722AEBA0A2B9834BFF8F25632C6167C4781BA99B7D4F",
       "asset_dependencies": [
         "18f67d63-e2a1-4319-ad3f-411ba7b05b94"
+      ]
+    },
+    {
+      "asset_guid": "a6099bdc-aa52-4f50-a693-b922c43e5d39",
+      "sub_asset_key": "scene:index:0",
+      "input_hash": "EFDBF5635CEF6487C78D94E8222F8C8133CCEF003C69C6B0259723DC6D1B96C4",
+      "dependencies": [],
+      "asset_path": "ico_sphere.a6099bdcaa524f50a693b922c43e5d39.scene.asset",
+      "version": "d1b0f6fd-a1a9-8b6a-3400-3271c2abb9d7",
+      "content_hash": "847DBD76C6D2F19EA1BA6B72C8B0F962FD215116BACA2F27C50BB6FC7C0DD681",
+      "asset_dependencies": [
+        "9cc63de3-c663-4f55-8656-bd4587b0fde5"
       ]
     }
   ]

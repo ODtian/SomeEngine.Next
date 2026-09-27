@@ -52,9 +52,9 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 ## 当前 glTF 项目集成
 
-通用 `GltfMeshImporter` 只生产 MeshBlock；`ClusterGltfMeshImporter` 只生产 ClusterMeshBlock。库中的 `GltfMeshMaterialsImporter` 生产 MeshMaterialsBlock，`GltfMaterialImporter` 与 `GltfTextureImporter` 分别生产 MaterialBlock、TextureBlock。无材质几何可以仅启用前两个生产者，不依赖某个固定材质系统。
+通用 `GltfMeshImporter` 只生产 `MeshBlock`，`ClusterGltfMeshImporter` 只生产 `ClusterMeshBlock`，`GltfTextureImporter` 生产 `TextureBlock`。选中的项目 `GltfSceneImporter` 遍历 primitive，直接请求纹理、生成或复用材质，并按 primitive 顺序组成 `MeshMaterialsBlock`。三个 Mesh 分支在 `MeshAsset` 汇合；节点结构、变换和 Mesh 引用在 `WorldAsset` 汇合。
 
-库中完整的 `GltfSourceImporter` 使用原生 glTF ModelRoot 做来源读取与元素遍历，通过 Context 维护语义资产草稿和直接引用。项目 SG 只提供 DI 注册与静态选项，项目不再复制 glTF 遍历或补全库中的 partial 类。材质参数解释通过项目实现的 `IGltfMaterialConversion` 注入；模板 `MaterialImport.CreateGltf` 负责组合生成的注册入口、该材质映射和项目选择的顶点编码。Scene 最终引用 MeshAsset；增加其他几何表示不改写 Scene 引用。其他来源格式可按相同公开接口提供自己的读取与遍历，不要求伪装成 glTF。
+`GltfSourceImporter` 只读取原生 glTF `ModelRoot`、建立来源元素身份并选择一个 `IAssetImporter<Scene, GltfSceneSettings>`。同一来源 Mesh、材质和纹理由 `ImportContext` 按各自的来源元素身份复用。`GltfSceneImporter` 给出节点遍历、层级、变换、Mesh 请求以及默认相机和灯光的公共组装；项目的具体场景 importer 只实现项目材质资产及必要的场景内容替换。不存在独立的材质选择器、材质转换接口或 importer 工厂。Scene 最终引用 `MeshAsset`；增加其他几何表示不改写 Scene 引用。图中的分支表达数据依赖，不承诺同时执行。
 
 ## 保存、目录和读取
 

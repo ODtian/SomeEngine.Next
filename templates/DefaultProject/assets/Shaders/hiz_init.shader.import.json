@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "937a7c14821e0875aca3f553b39afba4488e30fc961d91e9f04144f298de39c9",
+  "input_hash": "11dc81d980e66330f93b993d0388d5c9b272db24ef2cf28a653cd1b2edada016",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/hiz_common.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_hiz_init.slang",
@@ -33,11 +33,11 @@
     {
       "asset_guid": "ad727890-e164-5627-ba6a-17b99e9a9f62",
       "sub_asset_key": "",
-      "input_hash": "937a7c14821e0875aca3f553b39afba4488e30fc961d91e9f04144f298de39c9",
+      "input_hash": "11dc81d980e66330f93b993d0388d5c9b272db24ef2cf28a653cd1b2edada016",
       "dependencies": [],
       "asset_path": "hiz_init.shader.asset",
-      "version": "3b992d86-d2f2-c4d4-0316-bbaaa466bd13",
-      "content_hash": "C75C528F2B465558E47DEB5804E9B51B3394988244B9F61BA27690CCD7B0793E",
+      "version": "fa3cf0c7-86dc-ed4a-d3ca-904dc7420fa1",
+      "content_hash": "E5DD970C3727AC6CF66577DEA464EC59F31C590BB7FE777412C93EC3E65B2C21",
       "asset_dependencies": []
     }
   ]

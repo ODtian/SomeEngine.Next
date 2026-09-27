@@ -2,11 +2,20 @@ using System.Buffers.Binary;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using SomeEngine.Serialization.Containers;
+using SomeEngine.Serialization.Streaming;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Queries;
+using SomeEngine.Render;
+using SomeEngine.Render.Components;
 using SomeEngine.Resources;
 using static SomeEngine.Tests.TestProjectPaths;
 
@@ -14,6 +23,62 @@ namespace SomeEngine.Tests.Assets;
 
 public class GltfSourceImporterTests
 {
+    [Fact]
+    public async Task RepeatedMeshNodesShareOneAssetAndKeepTheirParentInTheWorld()
+    {
+        string directory = CreateTempDir();
+        try
+        {
+            string source = WriteTestProject(directory, writeImporterSettings: false);
+            string json = File.ReadAllText(source)
+                .Replace("{ \"mesh\": 0 },", "{ \"mesh\": 0, \"children\": [2] },", StringComparison.Ordinal)
+                .Replace("{ \"mesh\": 1 }", "{ \"mesh\": 1 }, { \"mesh\": 0 }", StringComparison.Ordinal);
+            File.WriteAllText(source, json);
+            IReadOnlyList<ImportedAsset> imported = await ImportAsync(Game.Importing.StandardGltfSceneImporter.CreateSourceImporter(), directory, source);
+            Assert.Equal(2, imported.Count(value => value.SubAssetKey.StartsWith("mesh:")));
+            ImportedAsset scene = Assert.Single(imported, value => value.SubAssetKey.StartsWith("scene:"));
+            using WorldAsset asset = await WorldAsset.OpenAsync(scene.OutputPath);
+            Assert.Equal(2, asset.ExternalReferences.Length);
+            using World world = await asset.LoadAsync(SceneSerialization.CreateRegistry());
+            var entities = new List<Entity>();
+            QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshSource>());
+            try
+            {
+                world.ExecuteQuery(query, ref entities, static (QueryCursor rows, ref List<Entity> values) =>
+                {
+                    foreach (var row in rows.Rows) values.Add(row.Entity);
+                });
+            }
+            finally { world.ReleaseQuery(query); }
+            Assert.Equal(3, entities.Count);
+            Guid sharedMesh = Assert.Single(imported, value => value.SubAssetKey == "mesh:index:0").AssetGuid;
+            Entity[] matching = entities.Where(entity => world.Read<MeshSource>(entity).Mesh.Value == sharedMesh).ToArray();
+            Assert.Equal(2, matching.Length);
+            Assert.Single(matching, entity => matching.Contains(Hierarchy.GetParent(world, entity)));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ImportUsesCallerStorageAndReleasesItAfterCommit()
+    {
+        string directory = CreateTempDir();
+        try
+        {
+            string path = WriteTestProject(directory, writeImporterSettings: false);
+            using var pages = new PageArena(new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 16 * 1024 * 1024 }));
+            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter(pages: pages);
+            var assets = await ImportAsync(importer, directory, path);
+            Assert.Contains(assets, value => value.SubAssetKey.StartsWith("texture:"));
+            Assert.True(pages.Statistics.RequestedBytes > 0);
+            Assert.Equal(0, pages.Residency.Used(ResidencyClass.DecodedCpu));
+            // Successful reimport also proves the importer did not dispose the borrowed pool.
+            await ImportAsync(importer, directory, path);
+            Assert.Equal(0, pages.Residency.Used(ResidencyClass.DecodedCpu));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [Fact]
     public async Task GeometryImportPreservesUnboundRegionsAndSourceCorrespondence()
     {
@@ -31,9 +96,9 @@ public class GltfSourceImporterTests
             var geometry = new GltfMeshImporter();
             var clusters = new ClusterGltfMeshImporter(StandardClusterVertexEncoder.Instance);
             var settings = new GltfMeshSettings();
-            context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new ConfiguredAssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
+            context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
                 new Guid("548d394b-5600-49e0-b04a-9c9d0d53b4b0"), [ClusterMeshBlock.BlockTypeId], clusters, settings));
-            context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new ConfiguredAssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
+            context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
                 new Guid("334ba003-337f-4298-ae72-1a5ce4861591"), [MeshBlock.BlockTypeId], geometry, settings));
             MeshAsset mesh = await context.GetAssetAsync<SharpGLTF.Schema2.Mesh, MeshAsset>(source);
             Assert.Single(mesh.GetBlock<MeshBlock>().Regions);
@@ -62,7 +127,7 @@ public class GltfSourceImporterTests
         try
         {
             string gltfPath = WriteTestProject(dir, writeImporterSettings: false);
-            var importer = Game.Importing.MaterialImport.CreateGltf();
+            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
 
             IReadOnlyList<ImportedAsset> imported = await ImportAsync(importer, dir, gltfPath);
 
@@ -82,12 +147,12 @@ public class GltfSourceImporterTests
         try
         {
             string gltfPath = WriteTestProject(dir, writeImporterSettings: true);
-            var importer = Game.Importing.MaterialImport.CreateGltf();
+            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
 
             IReadOnlyList<ImportedAsset> first = await ImportAsync(importer, dir, gltfPath);
             IReadOnlyList<ImportedAsset> second = await ImportAsync(importer, dir, gltfPath);
 
-            Assert.Equal(7, first.Count); // 3 unique textures + 2 materials + 2 meshes
+            Assert.Equal(8, first.Count); // 3 textures, 2 materials, 2 meshes, 1 scene
             Assert.Equal(first.Count, first.Select(asset => asset.AssetGuid).Distinct().Count());
             Assert.Equal(first.Count, first.Select(asset => asset.SubAssetKey).Distinct().Count());
             Assert.Equal(
@@ -101,6 +166,10 @@ public class GltfSourceImporterTests
             ImportedAsset transparentMaterial = Assert.Single(first, asset => asset.SubAssetKey == "material:index:1");
             ImportedAsset bodyMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:index:0");
             ImportedAsset eyesMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:index:1");
+            ImportedAsset scene = Assert.Single(first, asset => asset.SubAssetKey == "scene:index:0");
+            Assert.Equal(new[] { bodyMesh.AssetGuid, eyesMesh.AssetGuid }.Order(), scene.Dependencies.Order());
+            using WorldAsset worldAsset = await WorldAsset.OpenAsync(scene.OutputPath);
+            Assert.True(worldAsset.ContentLength > 0);
 
             using StandardMaterialAsset maskedAsset = await StandardMaterialAsset.OpenAsync(maskedMaterial.OutputPath);
             using UnlitMaterialAsset transparentAsset = await UnlitMaterialAsset.OpenAsync(transparentMaterial.OutputPath);
@@ -109,6 +178,11 @@ public class GltfSourceImporterTests
             using MeshAsset bodyAsset = await MeshAsset.OpenAsync(bodyMesh.OutputPath);
             using MeshAsset eyesAsset = await MeshAsset.OpenAsync(eyesMesh.OutputPath);
             SourceMeta sourceMeta = SourceMeta.Load(gltfPath);
+            Assert.Equal(new[]
+            {
+                "assets/Materials/Templates/PbrTemplate.material.asset",
+                "assets/Materials/Templates/UnlitTemplate.material.asset",
+            }, sourceMeta.Build.ReportedInputs.Select(value => value.RelativePath.Replace('\\', '/')).Order(StringComparer.Ordinal));
             SourceOutput? bodyMeshMeta = sourceMeta.FindOutput(bodyMesh.OutputPath);
             Assert.Equal("MaskedLit", maskedAsset.Name);
             Assert.Equal("TransparentUnlit", transparentAsset.Name);
@@ -184,7 +258,7 @@ public class GltfSourceImporterTests
             }
             Assert.Equal(2, SharpGLTF.Schema2.ModelRoot.Load(gltfPath).LogicalMeshes.Count);
             SourceMeta sourceMeta = SourceMeta.Load(gltfPath);
-            var importer = Game.Importing.MaterialImport.CreateGltf();
+            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
 
             ImportInputs? first = await importer.GetInputsAsync(dir, gltfPath, sourceMeta, null, default);
             Assert.NotNull(first);
@@ -236,7 +310,7 @@ public class GltfSourceImporterTests
         try
         {
             string path = WriteTestProject(dir, writeImporterSettings: false);
-            var importer = Game.Importing.MaterialImport.CreateGltf();
+            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
             IReadOnlyList<ImportedAsset> original = await ImportAsync(importer, dir, path);
             ImportedAsset first = Assert.Single(original, asset => asset.SubAssetKey == "mesh:index:0");
             string source = await File.ReadAllTextAsync(path);
@@ -268,8 +342,8 @@ public class GltfSourceImporterTests
         Directory.CreateDirectory(templateDir);
         WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", unlit: false);
         WriteTemplate(Path.Combine(templateDir, "UnlitTemplate.material.asset"), "UnlitTemplate", unlit: true);
-        WriteTemplate(Path.Combine(dir, Game.Importing.MaterialImport.LitTemplate), "Standard", unlit: false);
-        WriteTemplate(Path.Combine(dir, Game.Importing.MaterialImport.UnlitTemplate), "TestUnlit_1", unlit: true);
+        WriteTemplate(Path.Combine(dir, Game.Importing.StandardGltfSceneImporter.LitTemplate), "Standard", unlit: false);
+        WriteTemplate(Path.Combine(dir, Game.Importing.StandardGltfSceneImporter.UnlitTemplate), "TestUnlit_1", unlit: true);
 
         string modelDir = Path.Combine(dir, "assets", "Models");
         string textureDir = Path.Combine(modelDir, "textures");

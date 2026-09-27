@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Serialization;
+using SomeEngine.ECS.Hierarchy;
 using SomeEngine.Render.Components;
 using SomeEngine.Serialization;
 
@@ -12,8 +13,8 @@ public static class SceneSerialization
 {
     public static SerializationRegistry CreateRegistry() => new SerializationRegistry()
         .Register<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"))
+        .RegisterHierarchyDomain<DefaultHierarchyDomain>()
         .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f"))
-        .RegisterBuffer<MaterialSource, MaterialSourceCodec>(Key(nameof(MaterialSource), "material:external"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
         .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f"))
         .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32"))
@@ -50,11 +51,6 @@ public static class SceneSerialization
         }
         public void Read(ref DataReader reader, out MeshSource value)
             => value = new() { Mesh = new(reader.ReadExternalReference().Value), BoundsExpansion = reader.ReadSingle() };
-    }
-    private struct MaterialSourceCodec : ICanonicalComponentCodec<MaterialSource>
-    {
-        public void Write(ref DataWriter writer, in MaterialSource value) => writer.WriteExternalReference(new(value.Material.Value));
-        public void Read(ref DataReader reader, out MaterialSource value) => value = new(new(reader.ReadExternalReference().Value));
     }
     private struct MotionCodec : ICanonicalComponentCodec<MeshMotion>
     {

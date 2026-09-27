@@ -347,7 +347,7 @@ public sealed class AssetImportTests
         {
             context.ConfigureAssets<ShaderPart, ShaderAsset>(part => "outside", (_, id) => new ShaderAsset(PageArena.Shared, id),
                 (_, _) => outputPath, static (asset, path, cancellation) => asset.SaveAsync(path, cancellation));
-            context.EnableImporter<ShaderPart, ShaderAsset>(new ConfiguredAssetImporter<ShaderPart, int>(Id,
+            context.EnableImporter<ShaderPart, ShaderAsset>(new AssetImporter<ShaderPart, int>(Id,
                 [ShaderBlock.BlockTypeId, ShaderSourceBlock.BlockTypeId], new ShaderConversion(), 0));
             await context.GetAssetAsync<ShaderPart, ShaderAsset>(new(0, source), token);
         }
@@ -383,13 +383,13 @@ public sealed class AssetImportTests
                     CancelAfterSave?.Cancel();
                     return entry;
                 });
-            context.EnableImporter<ShaderPart, ShaderAsset>(new ConfiguredAssetImporter<ShaderPart, int>(Id,
+            context.EnableImporter<ShaderPart, ShaderAsset>(new AssetImporter<ShaderPart, int>(Id,
                 [ShaderBlock.BlockTypeId, ShaderSourceBlock.BlockTypeId], new ShaderConversion(), settings));
             if (IncludeMesh)
             {
                 context.ConfigureAssets<string, MeshAsset>(_ => "mesh/0", (_, id) => new MeshAsset(PageArena.Shared, id),
                     (_, _) => "mesh.mesh.asset", static (asset, path, cancellation) => asset.SaveAsync(path, cancellation));
-                context.EnableImporter<string, MeshAsset>(new ConfiguredAssetImporter<string, int>(
+                context.EnableImporter<string, MeshAsset>(new AssetImporter<string, int>(
                     new Guid("c698a681-8c3a-4e20-965e-f8d321f6bda9"),
                     [MeshBlock.BlockTypeId, ClusterMeshBlock.BlockTypeId, MeshMaterialsBlock.BlockTypeId], new MeshConversion(), 0));
             }

@@ -1,19 +1,19 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "bddd9d9918d6907d1d075e09b2feabdc941b6241ad0a614fb74ef12bd0f2af33",
+  "input_hash": "7cf465d2f98c8e66f1f6f2037dbc8edff1cd29c39faed772b9a72f359529dc71",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_allocate_pages.slang",
-      "content_hash": "846bd3c775bbcb2fabdfc3ef9de181c79930f0d51257b5cc953a6a331e31ad28"
+      "content_hash": "63fe402484a604d604c2f0572d0d6586c95bbf7f3b9bbc1d345ec98417c81c25"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "392fd680e12af9b29d59961bd85e88ec2024152434f79a6e2d2bca62824e622e"
+      "content_hash": "3436134d8cc5fdaad6fbb862f1e15ca6c7bec3e15fbaff54a4937e7ab0250c46"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_allocate_pages.slang",
@@ -33,11 +33,11 @@
     {
       "asset_guid": "cdb38623-09dd-5e2f-a3fb-cf0b111eddd5",
       "sub_asset_key": "",
-      "input_hash": "bddd9d9918d6907d1d075e09b2feabdc941b6241ad0a614fb74ef12bd0f2af33",
+      "input_hash": "7cf465d2f98c8e66f1f6f2037dbc8edff1cd29c39faed772b9a72f359529dc71",
       "dependencies": [],
       "asset_path": "vsm_allocate_pages.shader.asset",
-      "version": "638e5890-73b7-26aa-6616-43584b971a9e",
-      "content_hash": "4055301A43D4478D2B93B2EDFBE0103CFA8629C5D90329702F7A3C754EE82825",
+      "version": "58cf6964-2897-91c3-5b59-3a05776ef2e8",
+      "content_hash": "E528DCFC4936DACDF7130BE08C85E2A6BE59A92AE34E41513A34114DE3E17F7E",
       "asset_dependencies": []
     }
   ]

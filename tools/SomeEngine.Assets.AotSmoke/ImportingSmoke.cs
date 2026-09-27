@@ -53,12 +53,12 @@ internal static class ImportingSmoke
                 Guid alternativeId = capabilities.Single(value => value.ImporterType == typeof(SmokeAlternativeImporter)).Id;
                 var source = new SmokeImportSource(7, "native");
                 JsonElement settings = JsonSerializer.SerializeToElement(new SmokeImportSettings(3, ":v1"), ImportingJson.Default.SmokeImportSettings);
-                var factories = scope.ServiceProvider.GetServices<IAssetImporterFactory<SmokeImportSource>>().ToDictionary(value => value.Id);
+                var imports = capabilities.ToDictionary(value => value.Id);
                 await using (var context = CreateContext())
                 {
                     // The dependent conversion is deliberately selected first.
-                    context.EnableImporter<SmokeImportSource, MeshAsset>(factories[labelId].Configure(settings));
-                    context.EnableImporter<SmokeImportSource, MeshAsset>(factories[numberId].Configure(settings));
+                    context.EnableImporter<SmokeImportSource, MeshAsset>(imports[labelId].Bind<SmokeImportSource>(scope.ServiceProvider, settings));
+                    context.EnableImporter<SmokeImportSource, MeshAsset>(imports[numberId].Bind<SmokeImportSource>(scope.ServiceProvider, settings));
                     Task<MeshAsset>[] requests = Enumerable.Range(0, 24)
                         .Select(_ => context.GetAssetAsync<SmokeImportSource, MeshAsset>(source).AsTask()).ToArray();
                     MeshAsset[] results = await Task.WhenAll(requests).ConfigureAwait(false);
@@ -78,8 +78,8 @@ internal static class ImportingSmoke
                 }
                 await using (var conflict = CreateContext())
                 {
-                    conflict.EnableImporter<SmokeImportSource, MeshAsset>(factories[numberId].Configure(settings));
-                    conflict.EnableImporter<SmokeImportSource, MeshAsset>(factories[alternativeId].Configure(settings));
+                    conflict.EnableImporter<SmokeImportSource, MeshAsset>(imports[numberId].Bind<SmokeImportSource>(scope.ServiceProvider, settings));
+                    conflict.EnableImporter<SmokeImportSource, MeshAsset>(imports[alternativeId].Bind<SmokeImportSource>(scope.ServiceProvider, settings));
                     bool rejected = false;
                     try { await conflict.GetAssetAsync<SmokeImportSource, MeshAsset>(source); }
                     catch (InvalidOperationException) { rejected = true; }

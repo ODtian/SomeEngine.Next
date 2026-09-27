@@ -17,26 +17,9 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     private int _disposed;
     private Texture() { }
     private static long _nextTextureId;
-    private long _textureId = Interlocked.Increment(ref _nextTextureId);
-    private readonly List<Texture> _capturedContents = [];
-    private Texture? _capturedContent;
+    private readonly long _textureId = Interlocked.Increment(ref _nextTextureId);
     public long TextureId => _textureId;
     public event Action<Texture>? Changed;
-
-    /// <summary>Retains this version's ready pixels for extraction into the rendering world.</summary>
-    public Texture CaptureData()
-    {
-        lock (_deviceGate)
-        {
-            ObjectDisposedException.ThrowIf(IsDisposed, this);
-            if (_capturedContent is not null && _capturedContent.Revision == Revision) return _capturedContent;
-            Texture content = Create(GetDescription(), MipTiles, _pixels!, SampledDimension, SampledFormat);
-            content.Revision = Revision;
-            content._textureId = _textureId;
-            _capturedContents.Add(content);
-            return _capturedContent = content;
-        }
-    }
 
     public string? Name { get; private set; }
     public TextureDimension Dimension { get; private set; }
@@ -135,6 +118,7 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
                 throw new InvalidOperationException("The texture changed while its additional pixels were being acquired.");
             ValidatePixels(input);
             PageBufferMap replacement = _pixels!.Duplicate();
+            bool added = false;
             try
             {
                 foreach (ulong key in input.Keys)
@@ -142,13 +126,22 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
                     if (replacement.Contains(key)) continue;
                     using PageBuffer bytes = input.DuplicateBuffer(key);
                     replacement.Set(key, bytes);
+                    added = true;
                 }
             }
             catch { replacement.Dispose(); throw; }
+            if (!added)
+            {
+                replacement.Dispose();
+                return;
+            }
             PageBufferMap previous = _pixels;
             _pixels = replacement;
+            // Existing tile readers retain their pages; future uploads read the added tiles
+            // from this same resource without replacing material or entity references.
             previous.Dispose();
         }
+        RaiseChanged();
     }
 
     private void ValidatePixels(PageBufferMap pixels)
@@ -206,8 +199,19 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         current._pixels = Interlocked.Exchange(ref replacement._pixels, null);
         current.Revision = revision;
         previous?.Dispose();
-        current.Changed?.Invoke(current);
+        current.RaiseChanged();
         return ValueTask.CompletedTask;
+    }
+
+    private void RaiseChanged()
+    {
+        if (Changed is not { } changed) return;
+        List<Exception>? errors = null;
+        foreach (Action<Texture> notify in changed.GetInvocationList())
+            try { notify(this); }
+            catch (Exception error) { (errors ??= []).Add(error); }
+        if (errors is not null)
+            throw new AggregateException("Texture contents changed, but one or more observers failed.", errors);
     }
 
     public void Dispose()
@@ -219,9 +223,6 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
             lock (_deviceGate)
             {
                 Interlocked.Exchange(ref _pixels, null)?.Dispose();
-                foreach (Texture content in _capturedContents) content.Dispose();
-                _capturedContents.Clear();
-                _capturedContent = null;
             }
         }
     }

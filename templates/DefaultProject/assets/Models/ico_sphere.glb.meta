@@ -16,19 +16,7 @@
       "enabled": true
     },
     {
-      "importer_id": "ab43bf52-332c-4439-b3a7-e214c7cf63ad",
-      "settings": {},
-      "enabled": true
-    },
-    {
-      "importer_id": "460b170b-0d65-4d55-89ed-4a2165935a27",
-      "settings": {
-        "import_textures": true
-      },
-      "enabled": true
-    },
-    {
-      "importer_id": "451b3ab1-e318-4ed8-aebf-9b9e11219120",
+      "importer_id": "9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b",
       "settings": {},
       "enabled": true
     }
@@ -36,6 +24,7 @@
   "use_default_importers": true,
   "element_ids": {
     "mesh:index:0": "9cc63de3-c663-4f55-8656-bd4587b0fde5",
-    "material:index:0": "18f67d63-e2a1-4319-ad3f-411ba7b05b94"
+    "material:index:0": "18f67d63-e2a1-4319-ad3f-411ba7b05b94",
+    "scene:index:0": "a6099bdc-aa52-4f50-a693-b922c43e5d39"
   }
 }

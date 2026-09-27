@@ -17,20 +17,8 @@ public sealed record GltfImporterSettings
 }
 
 public sealed record GltfImportOverrides(GltfImporterSettings? Settings = null, IReadOnlyList<SourceImporterSettings>? Importers = null);
-public sealed record GltfMaterialSettings(bool ImportTextures = true);
-public sealed record GltfMeshMaterialSettings;
 public sealed record GltfTextureSettings;
 
-public sealed class GltfMaterialSettingsProvider : IAssetImporterSettings<GltfMaterialSettings>
-{
-    public GltfMaterialSettings DefaultSettings => new();
-    public JsonTypeInfo<GltfMaterialSettings> TypeInfo => GltfSettingsJson.Default.GltfMaterialSettings;
-}
-public sealed class GltfMeshMaterialSettingsProvider : IAssetImporterSettings<GltfMeshMaterialSettings>
-{
-    public GltfMeshMaterialSettings DefaultSettings => new();
-    public JsonTypeInfo<GltfMeshMaterialSettings> TypeInfo => GltfSettingsJson.Default.GltfMeshMaterialSettings;
-}
 public sealed class GltfTextureSettingsProvider : IAssetImporterSettings<GltfTextureSettings>
 {
     public GltfTextureSettings DefaultSettings => new();
@@ -40,8 +28,6 @@ public sealed class GltfTextureSettingsProvider : IAssetImporterSettings<GltfTex
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 [JsonSerializable(typeof(GltfImporterSettings))]
 [JsonSerializable(typeof(GltfImportOverrides))]
-[JsonSerializable(typeof(GltfMaterialSettings))]
-[JsonSerializable(typeof(GltfMeshMaterialSettings))]
 [JsonSerializable(typeof(GltfTextureSettings))]
 public sealed partial class GltfSettingsJson : JsonSerializerContext;
 

@@ -1,11 +1,11 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "f3b3c7afbf561e9d47748a8f6209cb1cdb9f2313b0f0e2fc797f18e2d5e7f496",
+  "input_hash": "25f68463bf70d5ce2a859f08cb7f652fa1db110ad77ff7a9d8b9a8af8a64f010",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_mark_coarse_pages.slang",
@@ -13,11 +13,15 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_request_common.slang",
-      "content_hash": "922a7c3309386b14790eb4b99f38f9ef094acde2133fb464301a97427c47f544"
+      "content_hash": "bed989bcd20d3a5e02285d1956a51a384a8a7900fc9e8d9214f078fa6e95e14a"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "392fd680e12af9b29d59961bd85e88ec2024152434f79a6e2d2bca62824e622e"
+      "content_hash": "3436134d8cc5fdaad6fbb862f1e15ca6c7bec3e15fbaff54a4937e7ab0250c46"
+    },
+    {
+      "relative_path": "../../assets/Shaders/wave_aggregation.slang",
+      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_mark_coarse_pages.slang",
@@ -37,11 +41,11 @@
     {
       "asset_guid": "72823443-a8cb-5b69-998b-497eef6660ae",
       "sub_asset_key": "",
-      "input_hash": "f3b3c7afbf561e9d47748a8f6209cb1cdb9f2313b0f0e2fc797f18e2d5e7f496",
+      "input_hash": "25f68463bf70d5ce2a859f08cb7f652fa1db110ad77ff7a9d8b9a8af8a64f010",
       "dependencies": [],
       "asset_path": "vsm_mark_coarse_pages.shader.asset",
-      "version": "bfd79ac7-dd2f-108f-fe31-e86d0401a093",
-      "content_hash": "5B1D717F85A25A7B921E2329DBFCEED8B84F97E598E038D3427789391BDD0DB3",
+      "version": "7109f844-6dc6-021d-71a6-f5883b8757c2",
+      "content_hash": "CD2FF203BAD2918DA67F7534DB847A86D884F0BE84376B045DC6A5D5E4F53B6F",
       "asset_dependencies": []
     }
   ]

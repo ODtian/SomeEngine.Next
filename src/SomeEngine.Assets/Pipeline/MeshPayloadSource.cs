@@ -21,14 +21,18 @@ public sealed class MeshPayloadSource : IDisposable
         long bvhOffset,
         int bvhLength,
         ReadOnlyMemory<byte> bvhSha256,
-        IList<MeshPayloadPageDigest> pageDigests)
-        : this(new SharedState(source, payload, bvhOffset, bvhLength, bvhSha256, pageDigests))
+        IList<MeshPayloadPageDigest> pageDigests,
+        IList<uint> lowestDetailPageIndices)
+        : this(new SharedState(source, payload, bvhOffset, bvhLength, bvhSha256,
+            pageDigests, lowestDetailPageIndices))
     {
     }
 
     internal MeshPayloadSource(PageBuffer payload, long bvhOffset, int bvhLength,
-        ReadOnlyMemory<byte> bvhSha256, IList<MeshPayloadPageDigest> pageDigests)
-        : this(new SharedState(payload, bvhOffset, bvhLength, bvhSha256, pageDigests)) { }
+        ReadOnlyMemory<byte> bvhSha256, IList<MeshPayloadPageDigest> pageDigests,
+        IList<uint> lowestDetailPageIndices)
+        : this(new SharedState(payload, bvhOffset, bvhLength, bvhSha256,
+            pageDigests, lowestDetailPageIndices)) { }
 
     private MeshPayloadSource(SharedState state)
     {
@@ -58,11 +62,14 @@ public sealed class MeshPayloadSource : IDisposable
         using MeshPayloadSource access = Retain();
         using Mesh content = mesh.Duplicate();
         return MeshIntegrity.SamePages(content.PageDigests, access.State.Digests)
+            && content.LowestDetailPageIndices.AsSpan().SequenceEqual(access.LowestDetailPageIndices.Span)
             && content.BvhLength == (ulong)access.BvhLength
             && content.BvhSha256.AsSpan().SequenceEqual(access.State.BvhSha256);
     }
 
     public IReadOnlyList<MeshPayloadPage> Pages => State.Pages;
+
+    public ReadOnlyMemory<uint> LowestDetailPageIndices => State.LowestDetailPageIndices;
 
     public int BvhLength => State.BvhLength;
 
@@ -195,7 +202,8 @@ public sealed class MeshPayloadSource : IDisposable
             long bvhOffset,
             int bvhLength,
             ReadOnlyMemory<byte> bvhSha256,
-            IList<MeshPayloadPageDigest> pageDigests)
+            IList<MeshPayloadPageDigest> pageDigests,
+            IList<uint> lowestDetailPageIndices)
         {
             _source = source;
             Payload = payload;
@@ -203,16 +211,19 @@ public sealed class MeshPayloadSource : IDisposable
             BvhLength = bvhLength;
             _bvhSha256 = bvhSha256;
             Pages = new AuthenticatedPageList(pageDigests.ToImmutableArray());
+            LowestDetailPageIndices = lowestDetailPageIndices.ToArray();
         }
 
         internal SharedState(PageBuffer payload, long bvhOffset, int bvhLength,
-            ReadOnlyMemory<byte> bvhSha256, IList<MeshPayloadPageDigest> pageDigests)
+            ReadOnlyMemory<byte> bvhSha256, IList<MeshPayloadPageDigest> pageDigests,
+            IList<uint> lowestDetailPageIndices)
         {
             _bytes = payload;
             BvhOffset = bvhOffset;
             BvhLength = bvhLength;
             _bvhSha256 = bvhSha256;
             Pages = new AuthenticatedPageList(pageDigests.ToImmutableArray());
+            LowestDetailPageIndices = lowestDetailPageIndices.ToArray();
         }
 
         internal SharedState(Mesh mesh)
@@ -222,6 +233,7 @@ public sealed class MeshPayloadSource : IDisposable
             BvhLength = mesh.BvhByteLength;
             _bvhSha256 = mesh.BvhSha256.AsMemory();
             Pages = new AuthenticatedPageList(mesh.PageDigests);
+            LowestDetailPageIndices = mesh.LowestDetailPageIndices.ToArray();
         }
 
         internal IRangeSource? Payload { get; }
@@ -242,6 +254,7 @@ public sealed class MeshPayloadSource : IDisposable
                 : ValueTask.FromResult(_bytes.Slice(offset, length));
         }
         internal IReadOnlyList<MeshPayloadPage> Pages { get; }
+        internal ReadOnlyMemory<uint> LowestDetailPageIndices { get; }
 
         internal long BvhOffset { get; }
         internal int BvhLength { get; }

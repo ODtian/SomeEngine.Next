@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "478dd881e9fc0596a65a939ec4575e3664dc9b7fd640c71645486d7d4453205c",
+  "input_hash": "a5b1475431e09d94fac0bfbce99c5016792ec62c894a5fb27b41a0d24d6a4229",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_deferred_resume.slang",
@@ -9,11 +9,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "f1a84f05d2ea458f8bb68e4ef7ef811023e23136c4debd13bfc3eb31bc5d27fe"
+      "content_hash": "8b0a185ac68ba4914c404c61e292df4f0ea7a705a6cccdccd220a85a3069d2b0"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -37,11 +37,11 @@
     {
       "asset_guid": "1c40ffb4-67dc-523b-bc03-c033d51f1c86",
       "sub_asset_key": "",
-      "input_hash": "478dd881e9fc0596a65a939ec4575e3664dc9b7fd640c71645486d7d4453205c",
+      "input_hash": "a5b1475431e09d94fac0bfbce99c5016792ec62c894a5fb27b41a0d24d6a4229",
       "dependencies": [],
       "asset_path": "cluster_deferred_resume.shader.asset",
-      "version": "2bfd33a0-a621-3572-3b8e-997537d7eb07",
-      "content_hash": "CF3EB81BFC694A971AAAA1219640E7E6D8524C3FB54080E3313CCC2A9D2580B0",
+      "version": "0866da1e-c8ae-8552-b023-955d47bd0b31",
+      "content_hash": "9F05B00FABB3E37BB6C079BFE12ED1DA8BF624C3C02906D846F9C9086AF609C6",
       "asset_dependencies": []
     }
   ]

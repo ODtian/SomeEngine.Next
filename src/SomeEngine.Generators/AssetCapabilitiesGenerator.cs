@@ -202,7 +202,19 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
                 .Append("), global::System.Array.AsReadOnly(new global::SomeEngine.Assets.AssetBlockCapability[] {");
             foreach (INamedTypeSymbol block in importer.Blocks)
                 code.Append("new(GetAssetBlockIdentity<").Append(Type(block)).Append(">(), typeof(").Append(Type(block)).Append(")),");
-            code.Append("}), ").Append(Literal(importer.ImplementationVersion)).AppendLine("),");
+            code.Append("}), ").Append(Literal(importer.ImplementationVersion));
+            if (importer.SettingsProvider is { } provider)
+            {
+                code.Append(", static (services, settings) => global::SomeEngine.Assets.Importing.AssetImporter.Bind<")
+                    .Append(Type(importer.Service.TypeArguments[0])).Append(", ").Append(Type(importer.Service.TypeArguments[1]))
+                    .Append(">(new global::System.Guid(").Append(Literal(importer.Id.ToString()))
+                    .Append("), global::System.Array.AsReadOnly(new global::System.Guid[] {");
+                foreach (INamedTypeSymbol block in importer.Blocks)
+                    code.Append("GetAssetBlockIdentity<").Append(Type(block)).Append(">(),");
+                code.Append("}), global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<")
+                    .Append(Type(importer.Type)).Append(">(services), new ").Append(Type(provider)).Append("(), settings)");
+            }
+            code.AppendLine("),");
         }
         code.AppendLine("});");
         code.AppendLine("public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddAssetCapabilities(global::Microsoft.Extensions.DependencyInjection.IServiceCollection services) {");
@@ -237,17 +249,6 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
             code.Append("services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Scoped<").Append(Type(importer.Service))
                 .Append(">(static services => global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<")
                 .Append(Type(importer.Type)).AppendLine(">(services)));");
-            if (importer.SettingsProvider is { } provider)
-            {
-                code.Append("services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Scoped<global::SomeEngine.Assets.Importing.IAssetImporterFactory<")
-                    .Append(Type(importer.Service.TypeArguments[0])).Append(">>(static services => new global::SomeEngine.Assets.Importing.AssetImporterFactory<")
-                    .Append(Type(importer.Service.TypeArguments[0])).Append(", ").Append(Type(importer.Service.TypeArguments[1]))
-                    .Append(">(new global::System.Guid(").Append(Literal(importer.Id.ToString())).Append("), global::System.Array.AsReadOnly(new global::System.Guid[] {");
-                foreach (INamedTypeSymbol block in importer.Blocks)
-                    code.Append("GetAssetBlockIdentity<").Append(Type(block)).Append(">(),");
-                code.Append("}), () => global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<")
-                    .Append(Type(importer.Type)).Append(">(services), new ").Append(Type(provider)).AppendLine("())));");
-            }
             code.AppendLine("}");
         }
         code.AppendLine("foreach (var block in BlockCapabilities) if (!installedBlocks.Contains(block.Id)) services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton(block));");
