@@ -312,7 +312,7 @@ public sealed class ImportContextTests
 
     private static void Select(ImportContext context, Guid[] blocks,
         Func<Source, ImportContext, ImportOutput, CancellationToken, ValueTask> convert)
-        => context.EnableImporter<Source, TestAsset>(new ConfiguredAssetImporter<Source, int>(
+        => context.EnableImporter<Source, TestAsset>(new AssetImporter<Source, int>(
             Guid.NewGuid(), blocks, new Importer(convert), 0));
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);

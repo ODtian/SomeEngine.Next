@@ -23,10 +23,10 @@ public sealed class GltfExtensionBehaviorTests
         using var files = new GltfFiles();
         files.WriteSelections(new SourceImporterSettings(ImporterId<ExtensionGltfImporter>(),
             JsonSerializer.SerializeToElement(new ExtensionGltfSettings(29, "library source"), ExtensionGltfSettingsJson.Default.ExtensionGltfSettings)));
-        var importer = new GltfSourceImporter(services => ConsumerAssetCapabilities.AddAssetCapabilities(services),
-            ConsumerAssetCapabilities.BuildVersion);
+        var importer = StandardGltfSceneImporter.CreateSourceImporter(
+            services => ConsumerAssetCapabilities.AddAssetCapabilities(services), ConsumerAssetCapabilities.BuildVersion);
         var project = new AssetProject(files.Directory, []);
-        Guid id = Assert.Single(await project.ImportAsync(files.Source, importer));
+        Guid id = MeshId(project, await project.ImportAsync(files.Source, importer));
         using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
         ExtensionGltfBlock block = await mesh.GetBlockAsync<ExtensionGltfBlock>();
         Assert.Equal("library source", block.Label);
@@ -39,15 +39,14 @@ public sealed class GltfExtensionBehaviorTests
         using var files = new GltfFiles();
         await files.WriteDefaultTemplatesAsync();
         var project = new AssetProject(files.Directory, []);
-        var original = MaterialImport.CreateGltf(_ => { }, "project-services-1");
-        Guid id = Assert.Single(await project.ImportAsync(files.Source, original));
+        var original = StandardGltfSceneImporter.CreateSourceImporter(_ => { }, "project-services-1");
+        Guid id = MeshId(project, await project.ImportAsync(files.Source, original));
         Guid version = project.Manifest.Assets[id].Version;
         SourceMeta metadata = SourceMeta.Load(files.Source);
-        Assert.Equal(new[] { ImporterId<GltfMeshImporter>(), ImporterId<ClusterGltfMeshImporter>(), ImporterId<GltfMeshMaterialsImporter>(),
-                ImporterId<GltfMaterialImporter>(), ImporterId<GltfTextureImporter>() }.Order(),
+        Assert.Equal(new[] { ImporterId<GltfMeshImporter>(), ImporterId<ClusterGltfMeshImporter>(), StandardGltfSceneImporter.ImporterId }.Order(),
             metadata.Importers.Select(value => value.ImporterId).Order());
-        var extended = MaterialImport.CreateGltf(services => ConsumerAssetCapabilities.AddAssetCapabilities(services), "project-services-1");
-        Assert.Equal(id, Assert.Single(await project.ImportAsync(files.Source, extended)));
+        var extended = StandardGltfSceneImporter.CreateSourceImporter(services => ConsumerAssetCapabilities.AddAssetCapabilities(services), "project-services-1");
+        Assert.Equal(id, MeshId(project, await project.ImportAsync(files.Source, extended)));
         Assert.Equal(version, project.Manifest.Assets[id].Version);
         using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
         Assert.True(mesh.ContainsBlock<ClusterMeshBlock>());
@@ -64,13 +63,13 @@ public sealed class GltfExtensionBehaviorTests
             JsonSerializer.SerializeToElement(new ExtensionGltfSettings(13, "", input), ExtensionGltfSettingsJson.Default.ExtensionGltfSettings)));
         var project = new AssetProject(files.Directory, []);
         var importer = CreateImporter();
-        Guid id = Assert.Single(await project.ImportAsync(files.Source, importer));
+        Guid id = MeshId(project, await project.ImportAsync(files.Source, importer));
         Guid version = project.Manifest.Assets[id].Version;
         await File.WriteAllTextAsync(Path.Combine(files.Directory, "unrelated.txt"), "does not affect conversion");
-        Assert.Equal(id, Assert.Single(await project.ImportAsync(files.Source, importer)));
+        Assert.Equal(id, MeshId(project, await project.ImportAsync(files.Source, importer)));
         Assert.Equal(version, project.Manifest.Assets[id].Version);
         await File.WriteAllTextAsync(input, "second data");
-        Assert.Equal(id, Assert.Single(await project.ImportAsync(files.Source, importer)));
+        Assert.Equal(id, MeshId(project, await project.ImportAsync(files.Source, importer)));
         Assert.NotEqual(version, project.Manifest.Assets[id].Version);
         using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
         Assert.Equal("second data", (await mesh.GetBlockAsync<ExtensionGltfBlock>()).Label);
@@ -83,13 +82,13 @@ public sealed class GltfExtensionBehaviorTests
         files.WriteSelections(new SourceImporterSettings(ImporterId<ServiceEncodedGltfImporter>(),
             JsonSerializer.SerializeToElement(new ExtensionGltfSettings(1, "saved using scoped codec"), ExtensionGltfSettingsJson.Default.ExtensionGltfSettings)));
         var encoding = new ExtensionEncodingService();
-        var importer = MaterialImport.CreateGltf(services =>
+        var importer = StandardGltfSceneImporter.CreateSourceImporter(services =>
         {
             services.AddScoped(_ => encoding);
             ConsumerAssetCapabilities.AddAssetCapabilities(services);
         }, "scoped-codec-test-1");
         var project = new AssetProject(files.Directory, []);
-        Guid id = Assert.Single(await project.ImportAsync(files.Source, importer));
+        Guid id = MeshId(project, await project.ImportAsync(files.Source, importer));
         Assert.True(encoding.WriteCount > 0);
         Assert.True(encoding.Disposed);
         using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
@@ -104,12 +103,10 @@ public sealed class GltfExtensionBehaviorTests
         files.AddTexturedMaterial();
         files.WriteSelections(
             new SourceImporterSettings(ImporterId<GltfMeshImporter>(), JsonSerializer.SerializeToElement(new GltfMeshSettings(), GltfMeshSettingsJson.Default.GltfMeshSettings)),
-            new SourceImporterSettings(ImporterId<GltfMeshMaterialsImporter>(), JsonSerializer.SerializeToElement(new GltfMeshMaterialSettings(), GltfSettingsJson.Default.GltfMeshMaterialSettings)),
-            new SourceImporterSettings(ImporterId<GltfMaterialImporter>(), JsonSerializer.SerializeToElement(new GltfMaterialSettings(), GltfSettingsJson.Default.GltfMaterialSettings)),
             new SourceImporterSettings(ImporterId<PaintGltfTextureImporter>(), JsonSerializer.SerializeToElement(new PaintGltfTextureSettings(69), ExtensionGltfSettingsJson.Default.PaintGltfTextureSettings)));
         var project = new AssetProject(files.Directory, []);
         IReadOnlyList<Guid> ids = await project.ImportAsync(files.Source, CreateImporter());
-        Assert.Equal(3, ids.Count);
+        Assert.Equal(4, ids.Count);
         AssetEntry meshEntry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == MeshAsset.FileType);
         AssetEntry materialEntry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == MaterialAsset.FileType);
         AssetEntry textureEntry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == TextureAsset.FileType);
@@ -132,13 +129,13 @@ public sealed class GltfExtensionBehaviorTests
             new SourceImporterSettings(ImporterId<ExtensionGltfImporter>(), JsonSerializer.SerializeToElement(new ExtensionGltfSettings(31, "persistent"), ExtensionGltfSettingsJson.Default.ExtensionGltfSettings)));
         var importer = CreateImporter();
         var project = new AssetProject(files.Directory, []);
-        Guid id = Assert.Single(await project.ImportAsync(files.Source, importer));
+        Guid id = MeshId(project, await project.ImportAsync(files.Source, importer));
         string output = Path.Combine(files.Directory, project.Manifest.Assets[id].Path);
         using (MeshAsset mesh = await MeshAsset.OpenAsync(output))
         {
             Assert.True(mesh.ContainsBlock<MeshBlock>());
             Assert.False(mesh.ContainsBlock<ClusterMeshBlock>());
-            Assert.False(mesh.ContainsBlock<MeshMaterialsBlock>());
+            Assert.Single(mesh.GetBlock<MeshMaterialsBlock>().Materials);
             Assert.Single(mesh.GetBlock<MeshBlock>().Regions);
             ExtensionGltfBlock extension = await mesh.GetBlockAsync<ExtensionGltfBlock>();
             Assert.Equal(31, extension.Number);
@@ -146,7 +143,7 @@ public sealed class GltfExtensionBehaviorTests
         }
         string input = await File.ReadAllTextAsync(files.Source);
         await File.WriteAllTextAsync(files.Source, input.Replace("Triangle", "Renamed", StringComparison.Ordinal));
-        Assert.Equal(id, Assert.Single(await project.ImportAsync(files.Source, importer)));
+        Assert.Equal(id, MeshId(project, await project.ImportAsync(files.Source, importer)));
         using MeshAsset renamed = await MeshAsset.OpenAsync(output);
         Assert.Equal("Renamed", renamed.Name);
         Assert.Equal(31, (await renamed.GetBlockAsync<ExtensionGltfBlock>()).Number);
@@ -164,7 +161,7 @@ public sealed class GltfExtensionBehaviorTests
         [new SourceImporterSettings(ImporterId<AlternativeGltfImporter>(),
             JsonSerializer.SerializeToElement(new AlternativeGltfSettings("chosen", 72), ExtensionGltfSettingsJson.Default.AlternativeGltfSettings)),
          new SourceImporterSettings(ImporterId<ExtensionGltfImporter>(), default, Enabled: false)]));
-        Guid id = Assert.Single(await project.ImportAsync(files.Source, importer, overrides));
+        Guid id = MeshId(project, await project.ImportAsync(files.Source, importer, overrides));
         string output = Path.Combine(files.Directory, project.Manifest.Assets[id].Path);
         using (MeshAsset mesh = await MeshAsset.OpenAsync(output))
         {
@@ -178,7 +175,7 @@ public sealed class GltfExtensionBehaviorTests
         Assert.DoesNotContain(persistent.Importers, value => value.ImporterId == ImporterId<AlternativeGltfImporter>());
         Assert.Equal(new ExtensionGltfSettings(31, "persistent"), persistent.GetSettings(ImporterId<ExtensionGltfImporter>(),
             new ExtensionGltfSettings(0, ""), ExtensionGltfSettingsJson.Default.ExtensionGltfSettings));
-        Assert.Equal(id, Assert.Single(await project.ImportAsync(files.Source, importer)));
+        Assert.Equal(id, MeshId(project, await project.ImportAsync(files.Source, importer)));
         using MeshAsset restored = await MeshAsset.OpenAsync(output);
         Assert.True(restored.ContainsBlock<MeshBlock>());
         Assert.Equal(31, (await restored.GetBlockAsync<ExtensionGltfBlock>()).Number);
@@ -192,7 +189,7 @@ public sealed class GltfExtensionBehaviorTests
             JsonSerializer.SerializeToElement(new ExtensionGltfSettings(31, "first"), ExtensionGltfSettingsJson.Default.ExtensionGltfSettings)));
         var importer = CreateImporter();
         var project = new AssetProject(files.Directory, []);
-        Guid id = Assert.Single(await project.ImportAsync(files.Source, importer));
+        Guid id = MeshId(project, await project.ImportAsync(files.Source, importer));
         string output = Path.Combine(files.Directory, project.Manifest.Assets[id].Path);
         byte[] successful = await File.ReadAllBytesAsync(output);
         var conflicting = new AssetImportSettings<GltfImportOverrides>(new(Importers:
@@ -200,12 +197,15 @@ public sealed class GltfExtensionBehaviorTests
          new SourceImporterSettings(ImporterId<AlternativeGltfImporter>(), JsonSerializer.SerializeToElement(new AlternativeGltfSettings("second", 72), ExtensionGltfSettingsJson.Default.AlternativeGltfSettings))]));
         await Assert.ThrowsAsync<InvalidOperationException>(() => project.ImportAsync(files.Source, importer, conflicting).AsTask());
         Assert.Equal(successful, await File.ReadAllBytesAsync(output));
-        Assert.Equal(id, Assert.Single(project.Manifest.Assets.Keys));
+        Assert.Contains(id, project.Manifest.Assets.Keys);
     }
 
     private static Guid ImporterId<T>() => ConsumerAssetCapabilities.ImporterCapabilities.Single(value => value.ImporterType == typeof(T)).Id;
 
-    private static GltfSourceImporter CreateImporter() => MaterialImport.CreateGltf(services => ConsumerAssetCapabilities.AddAssetCapabilities(services), "external-glTF-behavior-1");
+    private static Guid MeshId(AssetProject project, IReadOnlyList<Guid> ids)
+        => Assert.Single(ids, id => project.Manifest.Assets[id].AssetType == MeshAsset.FileType);
+
+    private static GltfSourceImporter CreateImporter() => StandardGltfSceneImporter.CreateSourceImporter(services => ConsumerAssetCapabilities.AddAssetCapabilities(services), "external-glTF-behavior-1");
 
     private sealed class GltfFiles : IDisposable
     {
@@ -231,7 +231,7 @@ public sealed class GltfExtensionBehaviorTests
         public async Task WriteDefaultTemplatesAsync()
         {
             Game.Assets.MaterialTypes.Register();
-            string lit = Path.Combine(Directory, MaterialImport.LitTemplate), unlit = Path.Combine(Directory, MaterialImport.UnlitTemplate);
+            string lit = Path.Combine(Directory, StandardGltfSceneImporter.LitTemplate), unlit = Path.Combine(Directory, StandardGltfSceneImporter.UnlitTemplate);
             System.IO.Directory.CreateDirectory(Path.GetDirectoryName(lit)!);
             System.IO.Directory.CreateDirectory(Path.GetDirectoryName(unlit)!);
             using var standard = new Game.Assets.StandardMaterialAsset { Name = "default" };

@@ -230,7 +230,7 @@ public sealed class AssetBlockBehaviorTests
             target.GetBlock<BlockTestText>().ThrowOnRelease = true;
             return target;
         }, (_, _) => "group.block-test.asset", static (asset, path, token) => asset.SaveAsync(path, token));
-        context.EnableImporter<object, BlockTestAsset>(new ConfiguredAssetImporter<object, int>(
+        context.EnableImporter<object, BlockTestAsset>(new AssetImporter<object, int>(
             new Guid("eef1c633-39c2-4556-8f6a-4e31f98e526c"),
             [BlockTestNumbers.BlockTypeId, BlockTestText.BlockTypeId], new GroupImporter(), 72));
         AggregateException error = await Assert.ThrowsAsync<AggregateException>(() => context.GetAssetAsync<object, BlockTestAsset>(new()).AsTask());

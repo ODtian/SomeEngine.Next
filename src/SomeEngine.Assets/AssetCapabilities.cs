@@ -1,3 +1,6 @@
+using System.Text.Json;
+using SomeEngine.Assets.Importing;
+
 namespace SomeEngine.Assets;
 
 /// <summary>Generates registrations for the public asset extensions referenced by this project.</summary>
@@ -26,7 +29,27 @@ public sealed record AssetImporterCapability(
     Type SourceType,
     Type SettingsType,
     IReadOnlyList<AssetBlockCapability> ProducedBlocks,
-    string ImplementationVersion = "");
+    string ImplementationVersion = "")
+{
+    private Func<IServiceProvider, JsonElement?, object>? BindImporter { get; init; }
+
+    public AssetImporterCapability(Guid id, Type importerType, Type sourceType, Type settingsType,
+        IReadOnlyList<AssetBlockCapability> producedBlocks, string implementationVersion,
+        Func<IServiceProvider, JsonElement?, object> bindImporter)
+        : this(id, importerType, sourceType, settingsType, producedBlocks, implementationVersion)
+        => BindImporter = bindImporter;
+
+    public IAssetImporter<TSource> Bind<TSource>(IServiceProvider services, JsonElement? settings = null)
+        where TSource : class
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        if (SourceType != typeof(TSource))
+            throw new InvalidOperationException($"Importer {Id} consumes {SourceType}, not {typeof(TSource)}.");
+        if (BindImporter is null)
+            throw new InvalidOperationException($"Importer {Id} has no settings codec.");
+        return (IAssetImporter<TSource>)BindImporter(services, settings);
+    }
+}
 
 /// <summary>A generated editor choice. Persist Id; Value is local to the compiled project.</summary>
 public sealed record AssetChoice<T>(T Value, string Label, Guid Id) where T : struct, Enum;

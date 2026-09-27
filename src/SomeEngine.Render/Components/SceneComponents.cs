@@ -14,8 +14,6 @@ public struct MeshSource : IComponent
     public float BoundsExpansion;
 }
 
-public readonly record struct MaterialSource(AssetId<MaterialAsset> Material) : IBufferElement;
-
 public struct MeshMotion : IComponent
 {
     public Vector3 Amplitude;

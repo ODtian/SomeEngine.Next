@@ -37,16 +37,19 @@ internal sealed class ClusterMeshCache
     internal bool IsRegistered(Mesh mesh)
         => _residency.IsMeshRegistered(mesh);
 
-    internal async ValueTask<bool> PrepareAsync(
+    internal ValueTask<ClusterMeshRegistrationResult> PrepareAsync(
         RenderMesh mesh,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(mesh.Mesh);
-        ClusterMeshRegistrationResult result = await _residency
-            .RegisterMeshAsync(mesh.Mesh, cancellationToken, mesh.PageSource)
-            .ConfigureAwait(false);
-        return result.Added;
+        return _residency.RegisterMeshAsync(mesh.Mesh, cancellationToken, mesh.PageSource);
     }
+
+    internal ValueTask LoadOpeningPagesAsync(
+        IReadOnlyCollection<uint> lowestDetailPageIds,
+        IReadOnlyCollection<uint> allPageIds,
+        CancellationToken cancellationToken = default) =>
+        _residency.LoadOpeningPagesAsync(lowestDetailPageIds, allPageIds, cancellationToken);
 
     internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
@@ -243,14 +246,27 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
         int registered = 0;
         try
         {
-            while (_missing.Count != 0)
+            RenderMesh[] missingMeshes = [.. _missing.Values];
+            var lowestDetailPageIds = new HashSet<uint>();
+            var allPageIds = new HashSet<uint>();
+            foreach (RenderMesh mesh in missingMeshes)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                RenderMesh mesh = _missing.First().Value;
-                if (await _cache.PrepareAsync(mesh, cancellationToken).ConfigureAwait(false))
+                ClusterMeshRegistrationResult result =
+                    await _cache.PrepareAsync(mesh, cancellationToken).ConfigureAwait(false);
+                if (result.Added)
                     registered++;
-                _missing.Remove(mesh.Mesh);
+                lowestDetailPageIds.UnionWith(result.Registration.LowestDetailPageIds);
+                uint end = checked(result.Registration.FirstPageId + result.Registration.PageCount);
+                for (uint pageId = result.Registration.FirstPageId; pageId < end; pageId++)
+                    allPageIds.Add(pageId);
             }
+            await _cache.LoadOpeningPagesAsync(
+                lowestDetailPageIds,
+                allPageIds,
+                cancellationToken).ConfigureAwait(false);
+            foreach (RenderMesh mesh in missingMeshes)
+                _missing.Remove(mesh.Mesh);
             return new ClusterMeshPrepareResult(_meshReferences.Count, registered, 0);
         }
         finally

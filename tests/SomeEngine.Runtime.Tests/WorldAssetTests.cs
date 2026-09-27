@@ -12,7 +12,7 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class WorldAssetTests
 {
     [Fact]
-    public async Task SavedScenePreservesEntitiesComponentsBuffersAndReferencesAfterClosingItsSource()
+    public async Task SavedScenePreservesEntitiesComponentsAndMeshReferencesAfterClosingItsSource()
     {
         string directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-World-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -20,20 +20,12 @@ public sealed class WorldAssetTests
         {
             var registry = SceneSerialization.CreateRegistry();
             using var world = new World();
-            Guid meshId = Guid.NewGuid(), materialId = Guid.NewGuid();
+            Guid meshId = Guid.NewGuid();
             var transform = new TransformQvvs(new(2, 3, 4), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f))
             { Stretch = new(2, 3, 4), Scale = 0.75f };
             var entity = world.CreateEntity(new WorldTransform { Qvvs = transform });
             world.Add(entity, new MeshSource { Mesh = new(meshId), BoundsExpansion = 0.4f });
             world.Add(entity, new MeshMotion { Amplitude = new(1, 2, 3), Seed = 73 });
-            world.AddBuffer<MaterialSource>(entity);
-            world.ExecuteBufferWrite<MaterialSource, Guid>(entity, ref materialId,
-                static (DynamicBuffer<MaterialSource> buffer, ref Guid id) =>
-                {
-                    buffer.Add(new(new(id)));
-                    buffer.Add(new(new(id)));
-                    buffer.Add(default);
-                });
             var cameraValue = new SceneCamera
             {
                 Position = new(1, 2, -3), Target = new(1, 2, 3), Up = Vector3.UnitY,
@@ -52,7 +44,7 @@ public sealed class WorldAssetTests
             world.Replace(entity, new MeshMotion { Seed = 99 });
             changed.WriteWorld(world, registry);
             AssetEntry entry = await asset.SaveAsync(Path.Combine(directory, "scene.scene.asset"));
-            Assert.Equal(new[] { meshId, materialId }.Order(), entry.Dependencies);
+            Assert.Equal([meshId], entry.Dependencies);
             using WorldAsset opened = await WorldAsset.OpenAsync(entry.Path);
             Assert.Equal(asset.Id, opened.Id);
             Assert.Equal("saved scene", opened.Name);
@@ -70,13 +62,6 @@ public sealed class WorldAssetTests
             Assert.Equal(0.4f, loaded.Read<MeshSource>(entity).BoundsExpansion);
             Assert.Equal(73u, loaded.Read<MeshMotion>(entity).Seed);
             Assert.Equal(new Vector3(1, 2, 3), loaded.Read<MeshMotion>(entity).Amplitude);
-            MaterialSource[] materials = [];
-            loaded.ExecuteBufferRead<MaterialSource, MaterialSource[]>(entity, ref materials,
-                static (BufferView<MaterialSource> buffer, ref MaterialSource[] values) => values = buffer.AsSpan().ToArray());
-            Assert.Equal(3, materials.Length);
-            Assert.Equal(materialId, materials[0].Material.Value);
-            Assert.Equal(materialId, materials[1].Material.Value);
-            Assert.True(materials[2].Material.IsEmpty);
             Assert.Equal(cameraValue.Position, loaded.Read<SceneCamera>(camera).Position);
             Assert.Equal(cameraValue.Target, loaded.Read<SceneCamera>(camera).Target);
             Assert.Equal(cameraValue.Up, loaded.Read<SceneCamera>(camera).Up);

@@ -11,7 +11,7 @@ namespace SomeEngine.Render.Cluster;
 /// </summary>
 internal sealed class PageStream : IDisposable, IAsyncDisposable
 {
-    internal const int DefaultMaxInFlightLoads = 64;
+    internal const int DefaultMaxInFlightLoads = 256;
     internal const long DefaultMaxRetainedBytes = 16L * 1024 * 1024;
     internal const int DefaultMaxPendingFaultWords = 16 * 1024;
     internal const int DefaultMaxQueuedPages = 16 * 1024;

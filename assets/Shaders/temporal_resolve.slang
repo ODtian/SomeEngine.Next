@@ -13,6 +13,8 @@ struct TemporalResolveUniformData
     float NeighborhoodClampMin;
     float MotionRejectionScale;
     uint HistoryLayer;
+    uint Pad0;
+    float2 JitterDifferenceUv;
 };
 
 ConstantBuffer<TemporalResolveUniformData> TemporalResolveUniforms;
@@ -56,7 +58,8 @@ uint PackHistoryPair(float2 value)
 
 float4 StoreTemporalHistory(int2 pixel, float4 color)
 {
-    float2 motion = MotionVectors.Load(int4(pixel, 0, 0));
+    float2 motion = MotionVectors.Load(int4(pixel, 0, 0)) -
+        TemporalResolveUniforms.JitterDifferenceUv;
     float depth = SceneDepth.Load(int4(pixel, 0, 0));
     TemporalHistory[uint3(pixel, TemporalResolveUniforms.HistoryLayer)] = uint4(
         PackHistoryPair(color.xy), PackHistoryPair(color.zw), PackHistoryPair(motion), asuint(depth));
@@ -141,36 +144,12 @@ float MotionRejection(float2 motion, float2 size)
     return saturate((motionPixels - 0.25) * TemporalResolveUniforms.MotionRejectionScale);
 }
 
-float HistoryColorRejection(float3 currentColor, float3 previousColor, float3 boundedPreviousColor)
-{
-    float3 currentYCoCg = RgbToYCoCg(currentColor);
-    float3 previousYCoCg = RgbToYCoCg(previousColor);
-    float3 boundedYCoCg = RgbToYCoCg(boundedPreviousColor);
-    float currentMagnitude = max(abs(currentYCoCg.x), 1e-3);
-    float tolerance = max(
-        currentMagnitude * TemporalResolveUniforms.NeighborhoodClampScale,
-        TemporalResolveUniforms.NeighborhoodClampMin) * 2.0;
-
-    float clampDelta = Max3(abs(previousYCoCg - boundedYCoCg));
-    float currentDelta = abs(currentYCoCg.x - boundedYCoCg.x);
-    float clampRejection = saturate((clampDelta - tolerance) / max(tolerance, 1e-4));
-    float colorRejection = saturate((currentDelta - tolerance * 2.0) / max(tolerance * 4.0, 1e-4));
-
-    return max(clampRejection, colorRejection * 0.75);
-}
-
 float ResolveHistoryWeight(
     float baseWeight,
     float2 motion,
-    float2 size,
-    float3 currentColor,
-    float3 previousColor,
-    float3 boundedPreviousColor)
+    float2 size)
 {
-    float rejection = max(
-        MotionRejection(motion, size),
-        HistoryColorRejection(currentColor, previousColor, boundedPreviousColor) * 0.20);
-    return saturate(baseWeight) * (1.0 - rejection);
+    return saturate(baseWeight) * (1.0 - MotionRejection(motion, size));
 }
 
 struct TemporalHistorySample
@@ -265,12 +244,12 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
     float2 size = float2((float)width, (float)height);
     float2 uv = (float2(pixel) + 0.5) / size;
 
-    // MotionVectors store current output UV minus previous history UV.
-    // Jitter is applied by the projection that produced SceneColor; history reprojection
-    // is owned by motion vectors and must not apply current jitter again.
+    // History is stored at fixed output pixels. Remove projection jitter from
+    // motion before looking up that history.
     // No-history frames return the current color before sampling history.
     float closestDepth;
-    float2 motion = LoadDilatedMotionByClosestDepth(pixel, maxPixel, closestDepth);
+    float2 motion = LoadDilatedMotionByClosestDepth(pixel, maxPixel, closestDepth) -
+        TemporalResolveUniforms.JitterDifferenceUv;
     // Retain subpixel silhouette coverage, but do not accumulate an old surface in empty background.
     if (closestDepth >= 1.0)
         return StoreTemporalHistory(pixel, current);
@@ -283,15 +262,14 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
     float3 boundedPrevious = ClipHistoryToCurrentNeighborhood(pixel, maxPixel, current.rgb, previous.rgb);
     float currentDepth = LoadCurrentDepthClamped(pixel, maxPixel);
     float previousDepth = history.Depth;
-    float depthRejection = DepthDisocclusionRejection(currentDepth, previousDepth);
+    // The motion vector comes from the closest foreground sample. Use that
+    // surface's depth when this output pixel has background depth.
+    float depthRejection = DepthDisocclusionRejection(min(currentDepth, closestDepth), previousDepth);
     float velocityRejection = VelocityDisocclusionRejection(history.Motion, motion, size);
     float weight = ResolveHistoryWeight(
         TemporalResolveUniforms.HistoryWeight,
         motion,
-        size,
-        current.rgb,
-        previous.rgb,
-        boundedPrevious);
+        size);
     weight *= 1.0 - max(depthRejection, velocityRejection);
     float3 resolved = lerp(current.rgb, boundedPrevious, weight);
 

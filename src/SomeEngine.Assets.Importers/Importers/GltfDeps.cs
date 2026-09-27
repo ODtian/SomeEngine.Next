@@ -10,17 +10,11 @@ internal static class GltfDeps
     public static ImportInputs? ReadInputs(
         string projectRoot,
         string fullSourcePath,
-        GltfImporterSettings settings, string implementationVersion, string overrides, bool includeMaterialTemplates)
+        GltfImporterSettings settings, string implementationVersion, string overrides)
     {
         List<FileDependency> dependencies = [];
         var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         if (!Add(projectRoot, fullSourcePath, dependencies, seen))
-        {
-            return null;
-        }
-
-        if (includeMaterialTemplates && (!AddProject(projectRoot, settings.LitMaterialTemplate, dependencies, seen)
-            || !AddProject(projectRoot, settings.UnlitMaterialTemplate, dependencies, seen)))
         {
             return null;
         }
@@ -38,20 +32,6 @@ internal static class GltfDeps
         => Path.IsPathRooted(path)
             ? Path.GetFullPath(path)
             : Path.GetFullPath(Path.Combine(projectRoot, path));
-
-    private static bool AddProject(
-        string projectRoot,
-        string projectRelativePath,
-        List<FileDependency> dependencies,
-        HashSet<string> seen)
-    {
-        if (string.IsNullOrWhiteSpace(projectRelativePath))
-        {
-            return false;
-        }
-
-        return Add(projectRoot, FullPath(projectRoot, projectRelativePath), dependencies, seen);
-    }
 
     private static bool Add(
         string projectRoot,

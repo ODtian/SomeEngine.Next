@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Numerics;
 using SomeEngine.Diagnostics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
@@ -104,20 +105,27 @@ internal static class RuntimeApplication
                 VirtualShadowMapShadersBlock shaders = await file.GetBlockAsync<VirtualShadowMapShadersBlock>().ConfigureAwait(false);
                 return await shaders.CreateAsync(file.Name, assets).ConfigureAwait(false);
             }
+            Task contentReads = Task.WhenAll(
+                sceneTask,
+                pipelineTask,
+                virtualShadowTask,
+                uiShaderTask,
+                presentationShaderTask,
+                lightingShaderTask,
+                temporalShaderTask);
             try
             {
-                display.Wait(Task.WhenAll(
-                    sceneTask,
-                    pipelineTask,
-                    virtualShadowTask,
-                    uiShaderTask,
-                    presentationShaderTask,
-                    lightingShaderTask,
-                    temporalShaderTask));
+                display.Initialize(options, useWarp, title, boot);
+                display.Wait(contentReads);
             }
             catch (Exception failure)
             {
                 var errors = new List<Exception> { failure };
+                try { contentReads.GetAwaiter().GetResult(); }
+                catch (Exception readFailure)
+                {
+                    if (!ReferenceEquals(readFailure, failure)) errors.Add(readFailure);
+                }
                 CloseCompleted(sceneTask, errors);
                 CloseCompleted(pipelineTask, errors);
                 CloseCompleted(virtualShadowTask, errors);
@@ -146,7 +154,6 @@ internal static class RuntimeApplication
             using WorldAsset sceneFile = sceneTask.Result;
 
             if (display.Window is not null && !display.Window.PumpMessages()) return;
-            display.Initialize(options, useWarp, title, boot);
             platform?.SetRenderingInfo(boot.Width, boot.Height, display.Device.Adapter.Name, display.Device.Adapter.DriverVersion);
             RunRenderer(
                 options,
@@ -843,7 +850,8 @@ internal static class RuntimeApplication
                     outputVerifier,
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
                     options.SynchronousFrames,
-                    options.TemporalAntialiasing);
+                    options.TemporalAntialiasing,
+                    viewFrame.JitterPixels);
                 double executeMs = Stopwatch.GetElapsedTime(executeStarted).TotalMilliseconds;
                 if (frameOutput is FrameOutputMetrics output)
                     verifiedOutput = output;
@@ -1091,7 +1099,8 @@ internal static class RuntimeApplication
         FrameOutputVerifier? outputVerifier,
         RenderGraphDiagnosticsHandler? graphDiagnostics,
         bool synchronousFrames,
-        bool temporalAntialiasing)
+        bool temporalAntialiasing,
+        Vector2 jitterPixels)
     {
         using var trace = EngineTrace.Begin(ApplicationTrace.Execute);
         if (!coordinator.TryBeginFrame(out RenderFrame? frame))
@@ -1136,7 +1145,8 @@ internal static class RuntimeApplication
                             TemporalResolveSettings.Default,
                             enabled: temporalAntialiasing,
                             cameraCut: cameraCut,
-                            view: viewEntity);
+                            view: viewEntity,
+                            jitterPixels: jitterPixels);
                     ui.Record(ref graphFrame, width, height);
                     outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue);
                     if (reportMilestones)

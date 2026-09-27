@@ -60,6 +60,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     private readonly PageStream _stream;
     private readonly PageFaults _faults;
     private readonly int _pageFaultCapacity;
+    private readonly ulong _pageHeapCapacityBytes;
     private readonly TimeSpan _disposeTimeout;
     private readonly object _disposeGate = new();
     private Task? _streamDisposal;
@@ -133,6 +134,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             _stream = stream;
             _faults = new PageFaults(meshes.EpochId, selected.PageFaultCapacity);
             _pageFaultCapacity = selected.PageFaultCapacity;
+            _pageHeapCapacityBytes = selected.PageHeapCapacityBytes;
             _disposeTimeout = selected.DisposeTimeout;
             Timeline = timeline;
         }
@@ -205,6 +207,34 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         return _meshes.RegisterMeshAsync(mesh, cancellationToken, pageSource);
     }
 
+    internal async ValueTask LoadOpeningPagesAsync(
+        IReadOnlyCollection<uint> lowestDetailPageIds,
+        IReadOnlyCollection<uint> allPageIds,
+        CancellationToken cancellationToken = default)
+    {
+        ulong allPageBytes = 0;
+        foreach (uint pageId in allPageIds)
+        {
+            PageFaultResolution page = _meshes.ResolvePage(pageId);
+            if (page.Kind == PageFaultResolutionKind.Unknown)
+                throw new InvalidOperationException($"Cluster page {pageId} is not registered.");
+            allPageBytes = checked(allPageBytes + PageHeap.AllocationSize(page.Size));
+        }
+        IReadOnlyCollection<uint> pageIds = allPageBytes <= _pageHeapCapacityBytes
+            ? allPageIds
+            : lowestDetailPageIds;
+        await Parallel.ForEachAsync(
+            pageIds,
+            new ParallelOptions { MaxDegreeOfParallelism = 32, CancellationToken = cancellationToken },
+            async (pageId, token) =>
+            {
+                PageLoadResult result = await _meshes.LoadPageIntoStagingAsync(pageId, token).ConfigureAwait(false);
+                if (result is not (PageLoadResult.Staged or PageLoadResult.AlreadyTracked))
+                    throw new InvalidOperationException(
+                        $"Lowest-detail Cluster page {pageId} could not be loaded before mesh publication ({result}).");
+            }).ConfigureAwait(false);
+    }
+
     internal bool IsMeshRegistered(Mesh mesh)
     {
         ThrowIfNotActive();
@@ -258,7 +288,13 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
         ThrowIfNotActive();
-        return _meshes.TryGetPublishedRoot(mesh, out root);
+        if (_meshes.TryGetPublishedRoot(mesh, out root))
+            return true;
+        if (_activePublication is { } publication &&
+            publication.Meshes.Bvh.RootMeshes.Any(candidate => ReferenceEquals(candidate, mesh)))
+            return _meshes.TryGetRegisteredRoot(mesh, out root);
+        root = 0;
+        return false;
     }
 
     internal int PublishedMeshCount

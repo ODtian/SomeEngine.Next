@@ -1,8 +1,9 @@
 # Sponza and Bistro import samples
 
-These samples download glTF/GLB sources, run `AssetProject.ImportAsync` with the
-engine's glTF importer, create ordinary ECS `WorldAsset` scenes, and load them in
-DefaultGame's in-game scene selector. Each scene has its own content directory,
+These samples download glTF/GLB sources and use `Game.Build --import-scene` to run
+`AssetProject.ImportAsync`. The selected scene importer assembles each ECS `WorldAsset`
+in the same import as its mesh, material, and texture assets. DefaultGame loads them
+through its in-game scene selector. Each scene has its own content directory,
 asset manifest, material definitions and imported files.
 
 From the repository root on Windows:
@@ -13,13 +14,14 @@ From the repository root on Windows:
 ./tools/Measure-Scenes.ps1
 ```
 
-The build script uses the existing, built DefaultProject application as its base.
+The build script uses the existing, built DefaultProject application as its base and
+builds the scene path in `Game.Build`; there is no separate scene import project.
 Build that project and its content first if its Release output does not exist.
-The script builds the importer into `samples/ImportedScenes/Build`;
+The script builds `Game.Build` into `samples/ImportedScenes/Build`;
 it does not rebuild or replace DefaultProject's scene or its output directory.
-Downloads and generated applications are excluded from Git. Source checksums,
-import counts, node correspondence and repeat-import results are retained next
-to the downloaded files and in `Apps/<scene>/scene-import.json`.
+Downloads and generated applications are excluded from Git. Source checksums
+remain beside the downloaded files; import counts and repeat-import results are
+written to `Apps/<scene>/scene-import.json`.
 
 DefaultGame uses WASD to move, right mouse button to look, Space/Ctrl vertically,
 and Shift for faster movement. It does not animate imported material roughness.
@@ -79,10 +81,9 @@ the transaction. Engine defaults and runtime memory budgets are unchanged.
 This does not solve the broader issue that import peak memory grows with the
 whole source file's decoded resources.
 
-Static node world transforms are written to ECS entities, with material bindings
-from the imported `MeshMaterialsBlock`. Original node/parent correspondence is
-retained in the JSON record. Editable parent-child relationships and animations
-are not represented in this static sample WorldAsset.
+Static node world transforms and parent-child relationships are written to ECS
+entities. At load time, `MeshMaterialsBlock` supplies each mesh's ordered material
+bindings. glTF animation is not represented in this static sample WorldAsset.
 
 ## Material coverage and current limits
 

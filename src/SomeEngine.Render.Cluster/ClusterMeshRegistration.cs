@@ -99,12 +99,17 @@ internal sealed partial class ClusterMeshes
                 }
                 if (pagesRegistered)
                 {
+                    uint[] lowestDetailPageIds = source?.LowestDetailPageIndices.Span
+                        .ToArray()
+                        .Select(localPage => checked(existingFirstPage + localPage))
+                        .ToArray() ?? [];
                     return new ClusterMeshRegistrationResult(
                         new ClusterMeshRegistration(
                             mesh,
                             existingFirstPage,
                             existingPageCount,
-                            existingRoot),
+                            existingRoot,
+                            lowestDetailPageIds),
                         Added: false);
                 }
 
@@ -155,7 +160,8 @@ internal sealed partial class ClusterMeshes
                         mesh,
                         pageRegistration.FirstPageId,
                         checked((uint)pageRegistration.PageCount),
-                        rootNode),
+                        rootNode,
+                        pageRegistration.LowestDetailPageIds),
                     Added: true);
             }
         }

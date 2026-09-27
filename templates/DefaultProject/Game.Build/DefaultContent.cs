@@ -32,7 +32,7 @@ public static class DefaultContent
         MaterialTypes.Register();
         WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
             BuildRenderInstanceLayoutSource(ClusterRenderFeature.InstanceLayout));
-        var project = new AssetProject(projectRoot, [MaterialImport.CreateGltf()],
+        var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
             sourceFormats: [new ShaderSourceFormat([engineShaders])]);
         foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
         {
@@ -46,7 +46,7 @@ public static class DefaultContent
         Guid shadows = BuildShadowShaders(project);
         IReadOnlyList<Guid> imported = await project.ImportAsync("assets/Models/ico_sphere.glb", cancellationToken).ConfigureAwait(false);
         Guid mesh = imported.Single(id => project.Manifest.Assets[id].AssetType == MeshAsset.FileType);
-        Guid scene = BuildScene(project, mesh, DefaultContentIds.StandardMaterial);
+        Guid scene = await BuildSceneAsync(project, mesh, cancellationToken).ConfigureAwait(false);
         BuildApplicationSettings(project, scene, pipeline, shadows);
         AssetDiagnostic[] errors = project.Validate().Where(static item => item.Severity == AssetDiagnosticSeverity.Error).ToArray();
         if (errors.Length != 0) throw new InvalidDataException(string.Join(Environment.NewLine, errors.Select(static error => error.Message)));
@@ -262,7 +262,7 @@ public static class DefaultContent
         return guid;
     }
 
-    private static Guid BuildScene(AssetProject project, Guid meshGuid, Guid materialGuid)
+    private static async Task<Guid> BuildSceneAsync(AssetProject project, Guid meshGuid, CancellationToken cancellationToken)
     {
         const string outputPath = "assets/Scenes/default.scene.asset";
         const int instanceCount = 1024;
@@ -281,11 +281,10 @@ public static class DefaultContent
             world.Add(entity, new MeshMotion
             {
                 Seed = unchecked((uint)index * 0x9E3779B9u),
-                Amplitude = new(0.25f + (index & 3) * 0.035f, 0.12f + ((index >> 2) & 3) * 0.025f, 0.32f + ((index >> 4) & 3) * 0.04f),
+                Amplitude = new(0.25f + (index & 3) * 0.035f,
+                    0.12f + ((index >> 2) & 3) * 0.025f,
+                    0.32f + ((index >> 4) & 3) * 0.04f),
             });
-            world.AddBuffer<MaterialSource>(entity);
-            world.ExecuteBufferWrite<MaterialSource, Guid>(entity, ref materialGuid,
-                static (DynamicBuffer<MaterialSource> buffer, ref Guid id) => buffer.Add(new(new(id))));
         }
         world.CreateEntity(new SceneCamera
         {
@@ -296,11 +295,12 @@ public static class DefaultContent
         world.CreateEntity(new PointLight(new(0, 6, 52), 28, new(0.55f, 0.75f, 1), 10));
         world.CreateEntity(new PointLight(new(-18, 4, 58), 22, new(1, 0.55f, 0.45f), 7));
         world.CreateEntity(new PointLight(new(18, 8, 60), 24, new(0.45f, 1, 0.65f), 8));
-        using var asset = new WorldAsset(SomeEngine.Serialization.Containers.PageArena.Shared, DefaultContentIds.Scene) { Name = "Default" };
-        asset.GetBlock<WorldBlock>().WriteWorld(world, SceneSerialization.CreateRegistry());
-        Guid guid = project.RegisterAsset(asset.SaveAsync(Path.Combine(project.RootPath, outputPath)).AsTask().GetAwaiter().GetResult());
+        using var asset = new WorldAsset(PageArena.Shared, DefaultContentIds.Scene) { Name = "Default" };
+        asset.WriteWorld(world, SceneSerialization.CreateRegistry());
+        AssetEntry entry = await asset.SaveAsync(Path.Combine(project.RootPath, outputPath), cancellationToken).ConfigureAwait(false);
+        Guid id = project.RegisterAsset(entry);
         Console.WriteLine($"  Scene: {outputPath}");
-        return guid;
+        return id;
     }
 
     private static void BuildApplicationSettings(AssetProject project, Guid sceneGuid, Guid clusterPipelineGuid, Guid virtualShadowMapGuid)

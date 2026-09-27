@@ -1,5 +1,11 @@
 using Game.Build;
 
+if (args is ["--import-scene", var application, var source, var output, var engineDirectory])
+{
+    await ImportedSceneBuild.BuildAsync(application, source, output, engineDirectory);
+    return;
+}
+
 string? project = null, engine = null;
 for (int index = 0; index < args.Length; index++)
 {
