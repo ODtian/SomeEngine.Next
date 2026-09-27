@@ -290,6 +290,7 @@ internal sealed partial class FrameExecutor
         List<int> accesses = CollectResourceAccesses(GraphAccessTargetKind.Buffer, bufferIndex, enabledOnly: false);
         FilterLiveAccesses(accesses);
         if (accesses.Count == 0) return;
+        if (OnlyReads(accesses)) return;
         int coordinateCount = BuildBufferCoordinates(_buffers[bufferIndex], accesses);
         int segmentCount = coordinateCount - 1;
         EnsureCapacity(ref _writerScratch, segmentCount);
@@ -352,6 +353,15 @@ internal sealed partial class FrameExecutor
             texture.EntryBoundaryStates = texture.Definition.BoundaryStates;
         else if (texture.Ownership == RenderGraphResourceOwnership.GraphOwned)
             texture.EntryBoundaryStates = null;
+        FrameResourceAccess firstAccess = _accesses[accesses[0]];
+        bool sameReadLayout = firstAccess.Mode == GraphAccessMode.Read;
+        for (int index = 1; sameReadLayout && index < accesses.Count; index++)
+        {
+            FrameResourceAccess access = _accesses[accesses[index]];
+            sameReadLayout = access.Mode == GraphAccessMode.Read &&
+                access.TextureLayout == firstAccess.TextureLayout;
+        }
+        if (sameReadLayout) return;
         int cellCount = BuildTextureCoordinates(texture, accesses);
         EnsureCapacity(ref _writerScratch, cellCount);
         Array.Fill(_writerScratch, -1, 0, cellCount);
@@ -409,6 +419,7 @@ internal sealed partial class FrameExecutor
             enabledOnly: false);
         FilterLiveAccesses(accesses);
         if (accesses.Count == 0) return;
+        if (OnlyReads(accesses)) return;
 
         int coordinateCount = BuildQueryCoordinates(_queryPools[poolIndex], accesses);
         int segmentCount = coordinateCount - 1;
@@ -452,6 +463,7 @@ internal sealed partial class FrameExecutor
             tableIndex,
             enabledOnly: false);
         FilterLiveAccesses(accesses);
+        if (OnlyReads(accesses)) return;
         SortAccessesByValueOrder(accesses);
 
         int writer = -1;
@@ -924,7 +936,16 @@ internal sealed partial class FrameExecutor
 
     private static void AddUnique(List<int> values, int value)
     {
-        if (!values.Contains(value)) values.Add(value);
+        // Accesses are grouped by pass after value-order sorting. Repeated
+        // accesses by one pass are adjacent for each affected range.
+        if (values.Count == 0 || values[^1] != value) values.Add(value);
+    }
+
+    private bool OnlyReads(List<int> accesses)
+    {
+        foreach (int index in accesses)
+            if (_accesses[index].Mode != GraphAccessMode.Read) return false;
+        return true;
     }
 
     private static void EnsureCapacity<T>(ref T[] values, int count)
