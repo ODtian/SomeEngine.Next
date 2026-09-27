@@ -1,0 +1,40 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 27,
+  "input_hash": "83431baf38da1f9a84b34ed1b8e80daaf01b3da7c882db81c6ccc1998c3ffa6a",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/resource_effects.slang",
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+    },
+    {
+      "relative_path": "assets/Shaders/vsm_page_pool.shader",
+      "content_hash": "af026478a57c0981650e66266057f57109747913092b51d0f53b0f7a2ff77753"
+    },
+    {
+      "relative_path": "assets/Shaders/vsm_page_pool.slang",
+      "content_hash": "60e82f776c69e9e185a16a709876de2cc0e3727a265b4c3839c4bd41f664b007"
+    },
+    {
+      "relative_path": "assets/Shaders/vsm_sampling.slang",
+      "content_hash": "3436134d8cc5fdaad6fbb862f1e15ca6c7bec3e15fbaff54a4937e7ab0250c46"
+    },
+    {
+      "relative_path": "assets/Shaders/wave_aggregation.slang",
+      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "8dc4f300-2445-575b-acbf-df0f4b9e073a",
+      "sub_asset_key": "",
+      "input_hash": "83431baf38da1f9a84b34ed1b8e80daaf01b3da7c882db81c6ccc1998c3ffa6a",
+      "dependencies": [],
+      "asset_path": "vsm_page_pool.shader.asset",
+      "version": "5ad491f7-c3ea-ef08-9a8b-46fe7c768b2d",
+      "content_hash": "59491B8D996EB5C2897F6CC0C9FA615FE445124AADB32DCB8D93B5BFEAD34CE2",
+      "asset_dependencies": []
+    }
+  ]
+}

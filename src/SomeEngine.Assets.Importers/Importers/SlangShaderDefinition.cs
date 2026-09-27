@@ -1,7 +1,6 @@
 using System.Text;
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
-using SomeEngine.Graphics;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Importers;
@@ -69,14 +68,7 @@ public static partial class SlangShaderImporter
             SlangShaderCookProfile profile = SlangShaderCookProfiles.Resolve(definition.CookProfile);
             var context = new ShaderImportContext(fullPath, projectRoot);
             using var lifetime = new SlangImportLifetime();
-            TargetDesc[] availableTargets = CreateTargets(GlobalSession, profile);
-            TargetDesc[] targets = definition.Targets.Count == 0 ? availableTargets : definition.Targets.Select(target => target switch
-            {
-                ShaderTarget.Dxil => availableTargets[0], ShaderTarget.Spirv => availableTargets[1],
-                _ => throw new InvalidDataException("Unknown shader target."),
-            }).ToArray();
-            if (targets.Select(target => target.Format).Distinct().Count() != targets.Length)
-                throw new InvalidDataException("Shader targets must be distinct.");
+            TargetDesc[] targets = CreateTargets(GlobalSession, profile);
             string[] paths = definition.SourceFiles.Select(path =>
             {
                 if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
@@ -135,21 +127,13 @@ public static partial class SlangShaderImporter
                 entries.Add(new(entry, SlangEntryMeta.Read(entry.GetFunctionReflection())));
                 components.Add(entry);
             }
-            if (definition.SelectedEntries.Count == 0)
+            foreach (IModule module in modules)
             {
-                foreach (IModule module in modules)
-                    for (int i = 0; i < module.GetDefinedEntryPointCount(); i++)
-                    { module.GetDefinedEntryPoint(i, out IEntryPoint entry); AddEntry(entry); }
-            }
-            else
-            {
-                var selected = new HashSet<ShaderEntrySelection>();
-                foreach (ShaderEntrySelection selection in definition.SelectedEntries)
+                for (int i = 0; i < module.GetDefinedEntryPointCount(); i++)
                 {
-                    if (selection.SourceIndex >= modules.Length || string.IsNullOrWhiteSpace(selection.Name) || !selected.Add(selection))
-                        throw new InvalidDataException("Shader entry selection contains an invalid source, name or duplicate.");
-                    SlangResult found = modules[selection.SourceIndex].FindEntryPointByName(selection.Name, out IEntryPoint entry);
-                    if (found.Failed || entry is null) throw new InvalidDataException($"Entry '{selection.Name}' was not found in '{paths[selection.SourceIndex]}'.");
+                    SlangResult result = module.GetDefinedEntryPoint(i, out IEntryPoint entry);
+                    if (result.Failed || entry is null)
+                        throw new InvalidDataException("Slang could not return a declared shader entry point.");
                     AddEntry(entry);
                 }
             }

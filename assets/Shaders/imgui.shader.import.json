@@ -1,0 +1,28 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 27,
+  "input_hash": "67641c8c415ad77698ccf3266e5f9eba962e57829ee934a9202426b898044694",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/imgui.shader",
+      "content_hash": "5adc5345e6aaae252944c93d9687b37ad3970cb48fc1d4acd916e7060a70a651"
+    },
+    {
+      "relative_path": "assets/Shaders/imgui.slang",
+      "content_hash": "9f88076a92e2decb72231a909378b9e7d45e07230c5946d95b6cf5912447b455"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "3dc64d6f-9f36-5c94-b823-7a249deea078",
+      "sub_asset_key": "",
+      "input_hash": "67641c8c415ad77698ccf3266e5f9eba962e57829ee934a9202426b898044694",
+      "dependencies": [],
+      "asset_path": "imgui.shader.asset",
+      "version": "e1a8fe0c-aa9f-dd74-511f-b94b488992d8",
+      "content_hash": "5B1BED7ADC6596FA801A9506D1BD4E90A1379438733799B8DB805ACD0D77EB82",
+      "asset_dependencies": []
+    }
+  ]
+}

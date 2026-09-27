@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 26,
-  "input_hash": "01676803bd610c9c85f6974e1e1ada55ec9e51dabe9e2068127a6bbce81e330b",
+  "importer_version": 27,
+  "input_hash": "bcb10f541e83cef899b5868495640ea57422edb8f30be40f4ad31a573107bee9",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -21,7 +21,7 @@
     },
     {
       "relative_path": "assets/Shaders/shader_contract_probe.shader",
-      "content_hash": "5c42febe31642df17e77cec552d5037e82992945362f3c19ba750ecdf59c65bb"
+      "content_hash": "43ee9ab1c1557809b2d1e036d37014b503cfc720711c148c0c38945c536c4a49"
     }
   ],
   "reported_inputs": [],
@@ -29,11 +29,11 @@
     {
       "asset_guid": "3759b8d6-bea5-5538-8821-f47d6b0c0602",
       "sub_asset_key": "",
-      "input_hash": "01676803bd610c9c85f6974e1e1ada55ec9e51dabe9e2068127a6bbce81e330b",
+      "input_hash": "bcb10f541e83cef899b5868495640ea57422edb8f30be40f4ad31a573107bee9",
       "dependencies": [],
       "asset_path": "shader_contract_probe.shader.asset",
-      "version": "7649954d-299e-c463-02aa-67a4d7330cfb",
-      "content_hash": "FDE4821FD355DDFE176E6DDA337D49C58400C0D51B77EDBECA66B78987B9EE9D",
+      "version": "ad080d2e-3890-7b42-db3f-fd07bf6539ca",
+      "content_hash": "805D99708296211129A66BBED73D362FBC15AB542DF2317823F1F15C1CE2FF53",
       "asset_dependencies": []
     }
   ]

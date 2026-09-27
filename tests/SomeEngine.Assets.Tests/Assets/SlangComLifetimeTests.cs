@@ -22,9 +22,8 @@ public sealed class SlangComLifetimeTests : IDisposable
         Shader shader;
         using (var definition = ShaderTestCompilation.Define(path))
         {
-            definition.GetBlock<ShaderSourceBlock>().Targets = [target];
             using var result = ShaderTestCompilation.Compile(definition, path);
-            shader = await result.GetBlock<ShaderBlock>().CreateAsync(result.Name);
+            shader = await result.GetBlock<ShaderBlock>().CreateAsync(target, result.Name);
         }
         File.Delete(path);
         GC.Collect();

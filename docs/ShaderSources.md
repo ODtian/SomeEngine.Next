@@ -2,19 +2,17 @@
 
 2026-09-16。`.shader` 使用 [AssetText 源格式](AssetSources.md)，在 ShaderAsset 内保存 ShaderSourceBlock；编译输出保存在 ShaderBlock。定义拥有自己的 ID，不从同名 Slang 文件推导，不生成重复的 `.shader.meta` 或 `.slang.meta`。
 
-## 强类型来源选择
+## Slang 来源
 
-ShaderSourceBlock 保存 SourceFiles、SelectedEntries、Specializations、CookProfile、Targets。SourceFiles 相对于定义文件，可选择多份源码。Slang 的 import、include、阶段声明和原生语言规则保持不变。
+ShaderSourceBlock 保存 SourceFiles、Specializations、CookProfile，以及构建时写入 Block chunk 的 Slang 序列化单元。SourceFiles 相对于定义文件，可包含多份源码。Slang 的 import、include、入口和阶段声明是唯一权威。
 
-SelectedEntries 通过 SourceIndex 与 Name 选择原生入口；空列表选择所列来源中已声明的入口。Specializations 按 Slang 参数顺序提供原生特化表达式，不创建另一种组合语言。Targets 可选择 Dxil、Spirv 或两者，空列表使用两者。CookProfile 选择现有具名编译配置。
+所有由 Slang 声明的入口都会进入组合；引擎不再保存入口选择 record。Specializations 按 Slang 参数顺序提供原生特化表达式，不创建另一种组合语言。CookProfile 只选择内容构建使用的 Slang 配置。用户机器编译所需目标由调用方直接通过 Slang `SessionDesc.Targets` 提供，不写入引擎目标枚举。
 
 ```csharp
 using var definition = new ShaderAsset { Name = "Surface" };
 ShaderSourceBlock inputs = definition.GetBlock<ShaderSourceBlock>();
 inputs.SourceFiles = ["Geometry.slang", "Lighting.slang"];
-inputs.SelectedEntries = [new(0, "Vertex"), new(1, "Pixel")];
 inputs.CookProfile = "d3d12-sm6.6-bindless";
-inputs.Targets = [ShaderTarget.Dxil, ShaderTarget.Spirv];
 await definition.SaveSourceAsync(Path.Combine(projectDirectory, "Surface.shader"));
 
 var project = new AssetProject(projectDirectory, [],
@@ -28,9 +26,9 @@ Guid id = await project.BuildAsync("Surface.shader");
 
 AssetProject.BuildAsync 通过 ShaderSourceFormat 核验定义、实际传递依赖、编译选项、目标、编译器版本、Block 编码版本及已有输出文件。只相信缓存记录不足以复用：还要检查实际输出摘要和文档内容版本。
 
-不变输入与未被读取的其他源码不会触发重新编译。定义名称、实际 include、入口、特化或后端目标变化会重新构建同一 ID。缺失或损坏产物仅在已登记身份和路径相符时允许修复，不能覆盖另一份有效资产。相同内容恢复可以保持原内容版本，不把版本当每次构建递增的计数。
+不变输入与未被读取的其他源码不会触发重新编译。定义名称、实际 include、Slang 入口、特化或 CookProfile 变化会重新构建同一 ID。缺失或损坏产物仅在已登记身份和路径相符时允许修复，不能覆盖另一份有效资产。相同内容恢复可以保持原内容版本，不把版本当每次构建递增的计数。
 
-构建记录保存在完整来源名追加 `.import.json`，是可丢弃的派生数据；人工 ID 与选择仍在 `.shader`。输出和记录保存完成后才切换目录；编译失败、输入中途变化或文件保存失败会保留旧的有效产物与目录。多个独立文件的进程内回退不承诺断电时整体原子性。
+构建记录保存在完整来源名追加 `.import.json`，是可丢弃的派生数据；人工 ID 与来源仍在 `.shader`。输出和记录保存完成后才切换目录；编译失败、输入中途变化或文件保存失败会保留旧的有效产物与目录。多个独立文件的进程内回退不承诺断电时整体原子性。
 
 需要直接编译而不登记文件的代码使用 SlangShaderImporter.CompileDefinition。旧的单个 Slang 文件隐式导入与独立缓存入口已删除。
 

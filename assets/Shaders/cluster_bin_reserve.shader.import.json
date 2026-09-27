@@ -1,0 +1,52 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 27,
+  "input_hash": "bbfa82f63dd579a675829cb6541b9e54a9f40d56f47589ebf3d3c2a9fcc2607f",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/cluster_bin_common.slang",
+      "content_hash": "ad55c1187ad217af460809a3277e407ddf6932272eb091cb2dd4592cceef53e8"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_bin_io.slang",
+      "content_hash": "9bdcb1cbe3238c73e5afa78b11ce6c0883b59f684336d1382e7b5460a4c66284"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_bin_reserve.shader",
+      "content_hash": "3d33cc62aa653658b755f8d68aba4235d85082c83797c90f69a71e1c79fe93ef"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_bin_reserve.slang",
+      "content_hash": "3039024ae4275dd033ec5e2c2b9d5be6fd56ffd6a4fb3794671bed9d3ab0198c"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_structures.slang",
+      "content_hash": "8b0a185ac68ba4914c404c61e292df4f0ea7a705a6cccdccd220a85a3069d2b0"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_tessellation_types.slang",
+      "content_hash": "6bd34c6fefe33af1b2e4a651438193c519048a75e1a814cfac2f434b98f5e366"
+    },
+    {
+      "relative_path": "assets/Shaders/resource_effects.slang",
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+    },
+    {
+      "relative_path": "assets/Shaders/wave_aggregation.slang",
+      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "be364c6a-306d-5f51-94ed-4c92e0b3d3db",
+      "sub_asset_key": "",
+      "input_hash": "bbfa82f63dd579a675829cb6541b9e54a9f40d56f47589ebf3d3c2a9fcc2607f",
+      "dependencies": [],
+      "asset_path": "cluster_bin_reserve.shader.asset",
+      "version": "1879445f-889c-b658-1da4-a7ba2476a970",
+      "content_hash": "798DEAEA04E64CFD5EF6DCB2F54ABB4C5629CDAC756AC02BAFAF3BF6A45718B6",
+      "asset_dependencies": []
+    }
+  ]
+}

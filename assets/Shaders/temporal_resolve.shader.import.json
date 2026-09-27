@@ -1,0 +1,32 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 27,
+  "input_hash": "1aa6dbb7b3f85780b583a7534806f4f55d3a4ebf9b5b72c368c03ce822e7b5a9",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/fullscreen_triangle.slang",
+      "content_hash": "a379eb11e577feb64d5fa47621d9ecad73fc1708619af7c527677c7f53055e1c"
+    },
+    {
+      "relative_path": "assets/Shaders/temporal_resolve.shader",
+      "content_hash": "070cf2505c39aed65888f9d1ae797496824a0927377a347c186cda674db534c7"
+    },
+    {
+      "relative_path": "assets/Shaders/temporal_resolve.slang",
+      "content_hash": "fd7d027ac98cacf268736f370e854e3b78366b07018f1674a7a81876de2e2c49"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "cca9261e-f108-5127-9b2a-a7a2dfe367a7",
+      "sub_asset_key": "",
+      "input_hash": "1aa6dbb7b3f85780b583a7534806f4f55d3a4ebf9b5b72c368c03ce822e7b5a9",
+      "dependencies": [],
+      "asset_path": "temporal_resolve.shader.asset",
+      "version": "750f0e04-e5f4-3d18-6dec-3dfe140197fd",
+      "content_hash": "9BDFCBA795C35D61390ED98E5EF0D0819B848394241C95CDFA804E5E10457EAA",
+      "asset_dependencies": []
+    }
+  ]
+}

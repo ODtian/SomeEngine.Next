@@ -10,15 +10,13 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "CA6A78E0215D55CD",
+      "Schema": "A7AF37A540C30A9B",
       "Fields": {
         "SourceFiles": [
           "Pipeline/build_vsm_receiver_mask_reset.slang"
         ],
-        "SelectedEntries": [],
         "Specializations": [],
-        "CookProfile": "d3d12-sm6.2",
-        "Targets": []
+        "CookProfile": "d3d12-sm6.2"
       },
       "Chunks": {}
     }

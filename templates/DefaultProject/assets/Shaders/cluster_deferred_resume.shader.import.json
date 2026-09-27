@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 26,
-  "input_hash": "a5b1475431e09d94fac0bfbce99c5016792ec62c894a5fb27b41a0d24d6a4229",
+  "importer_version": 27,
+  "input_hash": "96621423a7e9b21517899eb3d45cfa0856ab7ac9805b4f0df9dcebde07c4e841",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_deferred_resume.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/cluster_deferred_resume.shader",
-      "content_hash": "370618a35ef65a91dfc8adb6ebbfd8b395fe7e776d981f288488b991368b5014"
+      "content_hash": "9cb51beb3e7a84247a519a3901b70e85d86ee065e1603d2f21cec32ac7c41299"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -37,11 +37,11 @@
     {
       "asset_guid": "1c40ffb4-67dc-523b-bc03-c033d51f1c86",
       "sub_asset_key": "",
-      "input_hash": "a5b1475431e09d94fac0bfbce99c5016792ec62c894a5fb27b41a0d24d6a4229",
+      "input_hash": "96621423a7e9b21517899eb3d45cfa0856ab7ac9805b4f0df9dcebde07c4e841",
       "dependencies": [],
       "asset_path": "cluster_deferred_resume.shader.asset",
-      "version": "0866da1e-c8ae-8552-b023-955d47bd0b31",
-      "content_hash": "9F05B00FABB3E37BB6C079BFE12ED1DA8BF624C3C02906D846F9C9086AF609C6",
+      "version": "17917284-4ce0-5cc0-fb06-a97329825f8f",
+      "content_hash": "D11C2DD9B6E512C6C5689C7DB6481B78A8B6CA026FF725019A20796BF9B3CB59",
       "asset_dependencies": []
     }
   ]

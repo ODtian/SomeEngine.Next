@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 26,
-  "input_hash": "49b2684f4d4395c8cd3698e8dc7dc9d09d0af5f27ed2a4c540329036390fdca1",
+  "importer_version": 27,
+  "input_hash": "408186377bae54d458f0678a59b66d9ddfd34c64f577068707479183b91ada01",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/fullscreen_triangle.slang",
@@ -21,7 +21,7 @@
     },
     {
       "relative_path": "assets/Shaders/post_tonemap.shader",
-      "content_hash": "d9101d52f63f7f8a7c14a0e2e9c7198a56c07a8283735c703410e148c5986019"
+      "content_hash": "ef0b20a15569f15bfe4423faeee4fc398b69a7cddd348e51f2258e7bea6f2d20"
     }
   ],
   "reported_inputs": [],
@@ -29,11 +29,11 @@
     {
       "asset_guid": "0e40395d-eb59-5677-9475-c565bdeef4fe",
       "sub_asset_key": "",
-      "input_hash": "49b2684f4d4395c8cd3698e8dc7dc9d09d0af5f27ed2a4c540329036390fdca1",
+      "input_hash": "408186377bae54d458f0678a59b66d9ddfd34c64f577068707479183b91ada01",
       "dependencies": [],
       "asset_path": "post_tonemap.shader.asset",
-      "version": "3a384d70-6473-70c6-0847-4876d8322667",
-      "content_hash": "443EE869315DFBD082C5E6BDF790A72DD01AA7726023590BBDC841AB22304D93",
+      "version": "b7d823e2-55ab-e4b8-1da6-4bf54a2fa970",
+      "content_hash": "28B2AD85A186BA8AD6C4668C5AA0AA72D44FDFBF5D570B532376B7C0045DF49B",
       "asset_dependencies": []
     }
   ]

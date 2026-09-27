@@ -133,34 +133,13 @@ public sealed partial class ShaderSourceBlock
                 }
             }
 
-            if (copy.SelectedEntries.Count == 0)
+            foreach (IModule sourceUnit in sourceUnits)
             {
-                foreach (IModule sourceUnit in sourceUnits)
+                for (int entryIndex = 0; entryIndex < sourceUnit.GetDefinedEntryPointCount(); entryIndex++)
                 {
-                    for (int entryIndex = 0; entryIndex < sourceUnit.GetDefinedEntryPointCount(); entryIndex++)
-                    {
-                        SlangResult entryResult = sourceUnit.GetDefinedEntryPoint(entryIndex, out IEntryPoint entry);
-                        if (entryResult.Failed || entry is null)
-                            throw new InvalidDataException("Slang could not return a declared shader entry point.");
-                        entries.Add(entry);
-                    }
-                }
-            }
-            else
-            {
-                var selected = new HashSet<ShaderEntrySelection>();
-                foreach (ShaderEntrySelection selection in copy.SelectedEntries)
-                {
-                    if (selection.SourceIndex >= sourceUnits.Count ||
-                        string.IsNullOrWhiteSpace(selection.Name) ||
-                        !selected.Add(selection))
-                    {
-                        throw new InvalidDataException("The shader source block contains an invalid entry selection.");
-                    }
-                    SlangResult entryResult = sourceUnits[checked((int)selection.SourceIndex)]
-                        .FindEntryPointByName(selection.Name, out IEntryPoint entry);
+                    SlangResult entryResult = sourceUnit.GetDefinedEntryPoint(entryIndex, out IEntryPoint entry);
                     if (entryResult.Failed || entry is null)
-                        throw new InvalidDataException($"Slang could not find shader entry '{selection.Name}'.");
+                        throw new InvalidDataException("Slang could not return a declared shader entry point.");
                     entries.Add(entry);
                 }
             }

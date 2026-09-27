@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 26,
-  "input_hash": "b1e5cf5cffc8a9d5709b249270c614994d1947a7bb5e766b24afa64a2b70be52",
+  "importer_version": 27,
+  "input_hash": "16505e021774b121c17258a0eb88012959317c33093d03b868cc22f59f99db7d",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/clustered_light_grid.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/clustered_light_grid.shader",
-      "content_hash": "34e349ce0b49ef1e0b772bedcf7be6cbcf12aedb2d18da1d5f3ba2d44865bec0"
+      "content_hash": "b2ccd2f8abb71fb4c676cbd23b5c7c4d60b8954e75abccd326f6a089c69b0c62"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -37,11 +37,11 @@
     {
       "asset_guid": "f6e9d4ed-6534-5cda-be15-c733ae158d48",
       "sub_asset_key": "",
-      "input_hash": "b1e5cf5cffc8a9d5709b249270c614994d1947a7bb5e766b24afa64a2b70be52",
+      "input_hash": "16505e021774b121c17258a0eb88012959317c33093d03b868cc22f59f99db7d",
       "dependencies": [],
       "asset_path": "clustered_light_grid.shader.asset",
-      "version": "2003f76a-697b-73a3-fee1-1bf6e8e43e0a",
-      "content_hash": "5C44940E5A91E5D38681676B77118D3DADB306802BBD80F1D3D9B9197743E78E",
+      "version": "ba524370-9c57-1e34-6991-a865b25352df",
+      "content_hash": "64DE7B94441F8438BDD02279C59BFA6F4B179CCA06157E3E51B45A4F11516444",
       "asset_dependencies": []
     }
   ]

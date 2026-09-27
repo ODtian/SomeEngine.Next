@@ -1,0 +1,32 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 27,
+  "input_hash": "4377a594e75fc1557d757cbb7e15b73397a0e2bc3bacf2ed8a3ae8a485ee2115",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/fullscreen_triangle.slang",
+      "content_hash": "a379eb11e577feb64d5fa47621d9ecad73fc1708619af7c527677c7f53055e1c"
+    },
+    {
+      "relative_path": "assets/Shaders/post_tonemap.shader",
+      "content_hash": "a9e93fec600dcf89bb2f92215add40dbfc596de3157df8288416fc613b30b03b"
+    },
+    {
+      "relative_path": "assets/Shaders/post_tonemap.slang",
+      "content_hash": "d8e3041025ed13fa43029870a0b36ce537bc12e0d3e0ab534b8538b0830c4555"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "0e40395d-eb59-5677-9475-c565bdeef4fe",
+      "sub_asset_key": "",
+      "input_hash": "4377a594e75fc1557d757cbb7e15b73397a0e2bc3bacf2ed8a3ae8a485ee2115",
+      "dependencies": [],
+      "asset_path": "post_tonemap.shader.asset",
+      "version": "c2ca97a4-4a2e-4907-89d0-8afa47aec34f",
+      "content_hash": "D1CBB2826C3A5D0413AED096280EB2A7AB95E3924EBBED49977E7563FE4215D9",
+      "asset_dependencies": []
+    }
+  ]
+}
