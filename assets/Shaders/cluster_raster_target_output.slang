@@ -92,7 +92,9 @@ int4 PrepareRasterTargetScissor(
     uint visibleClusterIndex,
     uint targetViewIndex,
     uint screenWidth,
-    uint screenHeight)
+    uint screenHeight,
+    uint threadIndex,
+    uint threadCount)
 {
     ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
     uint4 pageWindow = ClusterUnpackRasterTargetPageWindow(
@@ -100,8 +102,7 @@ int4 PrepareRasterTargetScissor(
     uint2 extent = pageWindow.zw - pageWindow.xy + 1u;
     bool cacheEnabled = all(extent <= CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM.xx);
 
-    uint lane = WaveGetLaneIndex();
-    if (lane == 0u)
+    if (threadIndex == 0u)
     {
         ClusterRasterTargetCachedOrigin = pageWindow.xy;
         ClusterRasterTargetCachedExtent = extent;
@@ -110,31 +111,28 @@ int4 PrepareRasterTargetScissor(
 
     if (cacheEnabled)
     {
-        uint laneCount = WaveGetLaneCount();
-        for (uint index = lane; index < CLUSTER_RASTER_TARGET_PAGE_CACHE_COUNT; index += laneCount)
+        uint pageCount = extent.x * extent.y;
+        for (uint pageIndex = threadIndex; pageIndex < pageCount; pageIndex += threadCount)
         {
             uint2 cacheCoord = uint2(
-                index & (CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM - 1u),
-                index / CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM);
-            bool inWindow = all(cacheCoord < extent);
+                pageIndex % extent.x,
+                pageIndex / extent.x);
+            uint cacheIndex = cacheCoord.y * CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM + cacheCoord.x;
             uint page = CLUSTER_RASTER_TARGET_INVALID_PAGE;
             uint2 receiverMask = 0u.xx;
-            if (inWindow)
+            uint2 localPage = pageWindow.xy + cacheCoord;
+            if (ClusterRasterTargetPageRequested(target, localPage))
             {
-                uint2 localPage = pageWindow.xy + cacheCoord;
-                if (ClusterRasterTargetPageRequested(target, localPage))
+                uint tableIndex;
+                if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, page))
                 {
-                    uint tableIndex;
-                    if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, page))
-                    {
-                        receiverMask = target.ReceiverMaskEnabled != 0u
-                            ? RasterTargetReceiverMasks[tableIndex]
-                            : 0xFFFFFFFFu.xx;
-                    }
+                    receiverMask = target.ReceiverMaskEnabled != 0u
+                        ? RasterTargetReceiverMasks[tableIndex]
+                        : 0xFFFFFFFFu.xx;
                 }
             }
-            ClusterRasterTargetCachedPages[index] = page;
-            ClusterRasterTargetCachedReceiverMasks[index] = receiverMask;
+            ClusterRasterTargetCachedPages[cacheIndex] = page;
+            ClusterRasterTargetCachedReceiverMasks[cacheIndex] = receiverMask;
         }
     }
     GroupMemoryBarrierWithGroupSync();
@@ -144,6 +142,47 @@ int4 PrepareRasterTargetScissor(
         (pageWindow.zw + 1u) * target.PageSize,
         max(target.MipResolution, 1u).xx);
     return int4(firstPixel, lastPixelExclusive);
+}
+
+int4 PrepareRasterTargetScissor(
+    uint visibleClusterIndex,
+    uint targetViewIndex,
+    uint screenWidth,
+    uint screenHeight)
+{
+    return PrepareRasterTargetScissor(visibleClusterIndex, targetViewIndex,
+        screenWidth, screenHeight, WaveGetLaneIndex(), WaveGetLaneCount());
+}
+
+bool ClusterRasterTargetCachedBoundsAccepts(
+    float2 minimumPixel,
+    float2 maximumPixel,
+    uint targetViewIndex,
+    float2 windowSize)
+{
+    if (ClusterRasterTargetPageCacheEnabled == 0u) return true;
+    ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
+    // Include neighboring pixels at quantized raster edges. Pixel evaluation
+    // still performs the final request and receiver tests before writing depth.
+    uint2 firstPixel = uint2(clamp(floor(minimumPixel) - 1.0, 0.0.xx, windowSize - 1.0));
+    uint2 lastPixel = uint2(clamp(ceil(maximumPixel) + 1.0, 0.0.xx, windowSize - 1.0));
+    uint2 firstPage = firstPixel / target.PageSize;
+    uint2 lastPage = lastPixel / target.PageSize;
+    for (uint row = firstPage.y; row <= lastPage.y; row++)
+    for (uint column = firstPage.x; column <= lastPage.x; column++)
+    {
+        uint index = row * CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM + column;
+        if (ClusterRasterTargetCachedPages[index] == CLUSTER_RASTER_TARGET_INVALID_PAGE) continue;
+        if (target.ReceiverMaskEnabled == 0u) return true;
+        uint2 pageOrigin = uint2(column, row) * target.PageSize;
+        uint2 pageFirst = firstPixel - min(firstPixel, pageOrigin);
+        uint2 pageLast = min(lastPixel - pageOrigin, target.PageSize - 1u);
+        uint2 firstCell = min(pageFirst * 8u / target.PageSize, 7u.xx);
+        uint2 lastCell = min(pageLast * 8u / target.PageSize, 7u.xx);
+        if (ClusterRasterReceiverRectangleAccepts(
+                ClusterRasterTargetCachedReceiverMasks[index], firstCell, lastCell)) return true;
+    }
+    return false;
 }
 
 bool WriteCachedRasterTargetDepth(
@@ -185,37 +224,49 @@ bool WriteCachedRasterTargetDepth(
     return true;
 }
 
-void WriteRasterTargetDepth(int2 pixel, uint targetViewIndex, float depth)
+bool ResolveRasterTargetPixel(int2 pixel, uint targetViewIndex, out uint2 targetPixel)
 {
+    targetPixel = 0u.xx;
     ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
     if (any(pixel < 0) ||
         any(uint2(pixel) >= max(target.MipResolution, 1u).xx))
     {
-        return;
+        return false;
     }
 
     uint2 virtualPixel = uint2(pixel);
     uint2 localPage = virtualPixel / target.PageSize;
     if (!ClusterRasterTargetPageRequested(target, localPage))
-        return;
+        return false;
 
     uint tableIndex;
     uint page;
     if (!ClusterRasterTargetResolvePage(target, localPage, tableIndex, page))
-        return;
+        return false;
 
     uint2 pagePixel = virtualPixel & (target.PageSize - 1u);
     if (!ClusterRasterTargetReceiverAccepts(target, tableIndex, pagePixel))
-        return;
+        return false;
 
     uint2 pageCoord = uint2(
         page % target.PhysicalPagesPerRow,
         page / target.PhysicalPagesPerRow);
-    uint2 targetPixel = pageCoord * target.PageSize + pagePixel;
+    targetPixel = pageCoord * target.PageSize + pagePixel;
+    return true;
+}
 
+void WriteRasterTargetPixelDepth(uint2 targetPixel, float depth)
+{
     uint encodedDepth = asuint(1.0 - saturate(depth));
     uint ignored;
     InterlockedMax(RasterTargetOutput[targetPixel], encodedDepth, ignored);
+}
+
+void WriteRasterTargetDepth(int2 pixel, uint targetViewIndex, float depth)
+{
+    uint2 targetPixel;
+    if (ResolveRasterTargetPixel(pixel, targetViewIndex, targetPixel))
+        WriteRasterTargetPixelDepth(targetPixel, depth);
 }
 
 #endif

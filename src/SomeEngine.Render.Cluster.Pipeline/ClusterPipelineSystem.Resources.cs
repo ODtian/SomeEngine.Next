@@ -33,7 +33,7 @@ public sealed partial class ClusterPipelineSystem
     private const int RasterBinStride = 32;
     private const int VisibleClusterStride = 12;
     private const int VisibleClusterRasterWindowStride = 2 * sizeof(uint);
-    private const int CandidateStride = 12;
+    private const int CandidateStride = 16;
     private const int BinnedClusterStride = 4;
     private const int TraversalNodeStride = 16;
     private const int TraversalArgumentStride = 32;
@@ -201,7 +201,8 @@ public sealed partial class ClusterPipelineSystem
         frame.DrawArgs = frame.AddBuffer(ref graph, 16, BufferUsages.CopySource, "Cluster phase-one counts");
         frame.PageFaults = frame.AddBuffer(
             ref graph,
-            checked(sizeof(uint) + (ulong)pageFaultCapacity * sizeof(uint)),
+            checked(sizeof(uint) + (ulong)pageFaultCapacity * sizeof(uint) +
+                ((residency.Bvh.Info.Size / 64u + 31u) / 32u) * sizeof(uint)),
             BufferUsages.CopySource,
             "Cluster page faults");
         frame.Phase2CandidateArgs = frame.AddBuffer(
@@ -740,14 +741,28 @@ public sealed partial class ClusterPipelineSystem
             string label)
         {
             if (uploads.IsEmpty) return default;
+            const ulong copyBatchBytes = 4UL * 1024 * 1024;
             var copies = new ClusterBufferCopyParameters[uploads.Length];
-            for (int index = 0; index < uploads.Length; index++)
+            var segments = new ReadOnlyMemory<byte>[uploads.Length];
+            int copyCount = 0;
+            for (int first = 0; first < uploads.Length;)
             {
-                ClusterStagedUpload upload = uploads[index];
-                GraphBufferSlice source = activeGraph.Upload(upload.Bytes.Span, BufferUsages.CopySource, label);
-                copies[index] = new(source.Buffer, source.Range.Offset, destination, upload.Offset,
-                    checked((ulong)upload.Bytes.Length));
+                ulong offset = uploads[first].Offset;
+                ulong byteCount = 0;
+                int end = first;
+                do
+                {
+                    ClusterStagedUpload upload = uploads[end];
+                    segments[end - first] = upload.Bytes;
+                    byteCount = checked(byteCount + (ulong)upload.Bytes.Length);
+                    end++;
+                } while (end < uploads.Length && uploads[end].Offset == offset + byteCount &&
+                    byteCount + (ulong)uploads[end].Bytes.Length <= copyBatchBytes);
+                GraphBufferSlice source = activeGraph.Upload(segments.AsSpan(0, end - first), BufferUsages.CopySource, label);
+                copies[copyCount++] = new(source.Buffer, source.Range.Offset, destination, offset, byteCount);
+                first = end;
             }
+            Array.Resize(ref copies, copyCount);
             return activeGraph.AddCopyPass(
                 label,
                 PassQueueSelection.AnyOfType(QueueType.Copy),
@@ -952,9 +967,7 @@ public sealed partial class ClusterPipelineSystem
         AddSmallClear(
             ref graph,
             frame.PageFaults,
-            new BufferRange(
-                0,
-                checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * sizeof(uint))),
+            BufferRange.Whole,
             "Initialize Cluster page-fault count");
         AddSmallClear(ref graph, frame.SoftwareDebug, new BufferRange(0, sizeof(uint)),
             "Initialize Cluster software debug count");

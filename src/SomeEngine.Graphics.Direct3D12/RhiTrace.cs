@@ -21,5 +21,6 @@ internal static unsafe class RhiTrace
     internal static readonly global::SomeEngine.Diagnostics.TraceSite RhiSubmitExecuteSubmissionUnderGate = new("rhi", nameof(RhiSubmitExecuteSubmissionUnderGate), detail: true);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite RhiWaitAndCollect = new("rhi", nameof(RhiWaitAndCollect), detail: true);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite RhiResourceCreation = new("rhi", nameof(RhiResourceCreation), detail: true);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite CreatePipeline = new("rhi", nameof(CreatePipeline));
     internal static readonly global::SomeEngine.Diagnostics.TraceSite RhiPresentation = new("rhi", nameof(RhiPresentation), detail: true);
 }

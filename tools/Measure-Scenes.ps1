@@ -1,6 +1,7 @@
-param([switch]$Trace)
+param([switch]$Trace, [string]$ApplicationPath)
 $ErrorActionPreference = 'Stop'
-$application = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe'))
+$application = if ($ApplicationPath) { [IO.Path]::GetFullPath($ApplicationPath) }
+    else { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe')) }
 if (!(Test-Path -LiteralPath $application)) { throw 'Build DefaultProject/Game.App in Release first.' }
 Add-Type -TypeDefinition @'
 using System;
@@ -59,7 +60,9 @@ if (!$report -or $applicationExitCode -ne 0) {
 $result = Get-Content -LiteralPath $report.FullName -Raw | ConvertFrom-Json
 $result.Scenes | Format-Table Scene, Status, Frames, MeanMs, MedianMs, P95Ms, PrepareMs, ExecuteMs
 Write-Host "Report: $($report.FullName) ($([Math]::Round($timer.Elapsed.TotalSeconds, 2)) seconds including application startup)"
-if (!$result.Complete -or $result.Scenes.Count -ne $result.ExpectedScenes.Count -or
+$requiredScenes = @('1024 spheres', 'Sponza', 'Amazon Bistro')
+if (!$result.Complete -or $result.Scenes.Count -ne $requiredScenes.Count -or
+    @(Compare-Object $requiredScenes @($result.Scenes.Scene)).Count -ne 0 -or
     @($result.Scenes | Where-Object Status -ne 'Measured').Count -ne 0) {
     throw 'The multi-scene run is incomplete; do not use it as a passing performance comparison.'
 }

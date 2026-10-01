@@ -962,8 +962,51 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
 
     internal (UploadPage UploadPage, BufferRange Range) WriteUpload(ReadOnlySpan<byte> data, BufferUsages usages, uint elementAlignment)
     {
+        var upload = ReserveUpload(checked((ulong)data.Length), usages, elementAlignment);
+        Span<byte> destination = upload.UploadPage.Mapping.Bytes.Slice(
+            checked((int)upload.Range.Offset), checked((int)upload.Range.Size));
+        data.CopyTo(destination);
+        destination[data.Length..].Clear();
+        return upload;
+    }
+
+    internal (UploadPage UploadPage, BufferRange Range) WriteUpload(
+        ReadOnlySpan<ReadOnlyMemory<byte>> segments, BufferUsages usages)
+    {
+        ulong length = 0;
+        foreach (ReadOnlyMemory<byte> segment in segments)
+            length = checked(length + (ulong)segment.Length);
+        var upload = ReserveUpload(length, usages, 4);
+        Span<byte> destination = upload.UploadPage.Mapping.Bytes.Slice(
+            checked((int)upload.Range.Offset), checked((int)upload.Range.Size));
+        int written = 0;
+        foreach (ReadOnlyMemory<byte> segment in segments)
+        {
+            segment.Span.CopyTo(destination[written..]);
+            written = checked(written + segment.Length);
+        }
+        destination[written..].Clear();
+        return upload;
+    }
+
+    internal (UploadPage UploadPage, BufferRange Range) WriteUpload<TData>(
+        int byteCount,
+        BufferUsages usages,
+        TData data,
+        System.Buffers.SpanAction<byte, TData> write)
+    {
+        var upload = ReserveUpload(checked((ulong)byteCount), usages, 4);
+        Span<byte> destination = upload.UploadPage.Mapping.Bytes.Slice(
+            checked((int)upload.Range.Offset), checked((int)upload.Range.Size));
+        write(destination[..byteCount], data);
+        destination[byteCount..].Clear();
+        return upload;
+    }
+
+    private (UploadPage UploadPage, BufferRange Range) ReserveUpload(ulong dataLength, BufferUsages usages, uint elementAlignment)
+    {
         if (_cleanupRequired) throw new InvalidOperationException("Transient storage cleanup must finish before another upload.");
-        DevelopmentCheck.Require(!data.IsEmpty, "Upload data cannot be empty.");
+        DevelopmentCheck.Require(dataLength != 0, "Upload data cannot be empty.");
         DevelopmentCheck.Require(usages != 0 && (usages & ~(UploadReadUsages | BufferUsages.CopySource)) == 0,
             "Upload pages support GPU reads only.");
 
@@ -977,7 +1020,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             alignment = LeastCommonMultiple(alignment, Math.Max(1u, limits.TextureDataPlacementAlignment));
         if ((usages & BufferUsages.Constant) != 0)
             alignment = LeastCommonMultiple(alignment, Math.Max(1u, limits.ConstantBufferAlignment));
-        ulong size = checked((ulong)data.Length);
+        ulong size = dataLength;
         if ((usages & BufferUsages.Constant) != 0)
             size = AlignUp(size, Math.Max(1u, limits.ConstantBufferAlignment));
 
@@ -1016,7 +1059,10 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             try
             {
                 target.Mapping = _backend.Map(buffer, MapType.Write, new BufferRange(0, capacity));
-                target.Mapping.Bytes.Clear();
+                // The caller writes the reserved range immediately. Initialize
+                // only its unused tail instead of zeroing and copying the same
+                // large streaming payload through mapped upload memory twice.
+                target.Mapping.Bytes[checked((int)size)..].Clear();
             }
             catch (Exception failure)
             {
@@ -1030,9 +1076,6 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             }
             offset = 0;
         }
-        Span<byte> destination = target.Mapping.Bytes.Slice(checked((int)offset), checked((int)size));
-        data.CopyTo(destination);
-        destination[data.Length..].Clear();
         target.Used = checked(offset + size);
         return (target, new BufferRange(offset, size));
     }

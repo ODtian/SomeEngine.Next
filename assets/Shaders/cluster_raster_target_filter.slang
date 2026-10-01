@@ -87,19 +87,7 @@ bool ClusterTargetReceiverAccepts(
     uint2 lastCell = min(
         localLast * 8u / max(target.PageSize, 1u),
         7u.xx);
-    uint columnMask =
-        (0xFFu << firstCell.x) &
-        (0xFFu >> (7u - lastCell.x));
-
-    for (uint row = firstCell.y; row <= lastCell.y; row++)
-    {
-        uint rowMask = row < 4u
-            ? (receiverMask.x >> (row * 8u)) & 0xFFu
-            : (receiverMask.y >> ((row - 4u) * 8u)) & 0xFFu;
-        if ((rowMask & columnMask) != 0u)
-            return true;
-    }
-    return false;
+    return ClusterRasterReceiverRectangleAccepts(receiverMask, firstCell, lastCell);
 }
 
 bool ClusterTargetPageRequested(

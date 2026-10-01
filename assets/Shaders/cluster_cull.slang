@@ -12,7 +12,7 @@ StructuredBuffer<ClusterViewUniforms> Views;
 ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer PageHeap;
-StructuredBuffer<DrawRequest> CandidateClusters;
+StructuredBuffer<ClusterCandidate> CandidateClusters;
 StructuredBuffer<uint> CandidateCount;
 #if CLUSTER_CULL_PHASE == 1
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -25,7 +25,7 @@ RWStructuredBuffer<DrawRequest> VisibleClusters;
 RWStructuredBuffer<uint2> VisibleClusterRasterWindows;
 Texture2DArray<float> HiZTexture;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<DrawRequest> NextCandidates;
+RWStructuredBuffer<ClusterCandidate> NextCandidates;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> NextCandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -277,7 +277,8 @@ void AppendCandidate(
     uint clusterID,
     uint instanceID,
     uint viewIndex,
-    uint maxCandidates)
+    uint maxCandidates,
+    uint keepCoarseGeometry)
 {
     uint4 activeMask = WaveActiveBallot(true);
     uint lane = WaveGetLaneIndex();
@@ -297,7 +298,8 @@ void AppendCandidate(
         uint unused;
         NextCandidateArgs.InterlockedMax(0, groups, unused);
     }
-    NextCandidates[outIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
+    NextCandidates[outIdx] = MakeClusterCandidate(
+        MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), keepCoarseGeometry);
 }
 #endif
 
@@ -333,7 +335,8 @@ bool LoadAndFilterCandidate(
     if (threadId >= min(count, capacity))
         return false;
 
-    DrawRequest candidate = CandidateClusters[threadId];
+    ClusterCandidate work = CandidateClusters[threadId];
+    DrawRequest candidate = work.Request;
     pageOffset = candidate.PageOffset;
     clusterID = DrawRequestClusterID(candidate);
     instanceID = candidate.InstanceID;
@@ -354,7 +357,8 @@ bool LoadAndFilterCandidate(
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
             instanceID));
 
-    if (!PassesLODFilter(cluster, t, view))
+    if (!(work.KeepCoarseGeometry != 0u && view.CullingEnabled != 0u) &&
+        !PassesLODFilter(cluster, t, view))
         return false;
 
 #if CLUSTER_CULL_PHASE == 2
@@ -474,7 +478,8 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     // occlusion belongs in the second-pass candidate list.
     if (occluded)
     {
-        AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates);
+        AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates,
+            CandidateClusters[dispatchThreadID.x].KeepCoarseGeometry);
     }
     else
     {

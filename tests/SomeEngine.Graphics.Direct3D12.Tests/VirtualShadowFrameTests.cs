@@ -25,7 +25,8 @@ public sealed class VirtualShadowFrameTests
         };
         uint[][] result = Execute("vsm_frame_reset.slang", "ResetVirtualShadowFrame",
             new DispatchArguments((uint)(gridWords + 255) / 256, 1, 1), inputs);
-        foreach (int index in new[] { 0, 3, 4, 5, 6, 7, 8, 9 })
-            Assert.All(result[index], word => Assert.Equal(0u, word));
+        for (int buffer = 0; buffer < result.Length; buffer++)
+            for (int word = 0; word < result[buffer].Length; word++)
+                Assert.Equal(buffer is 1 or 2 && word % 4 < 2 ? uint.MaxValue : 0u, result[buffer][word]);
     }
 }

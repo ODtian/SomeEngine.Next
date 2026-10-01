@@ -10,8 +10,10 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 public sealed class WarpDescriptorTests
 {
-    [Fact]
-    public void Recorded_commands_retain_persistent_data_after_wrapper_disposal()
+    [Theory]
+    [InlineData(17)]
+    [InlineData(5000)]
+    public void Recorded_commands_retain_persistent_data_after_wrapper_disposal(int replacementCount)
     {
         const string source = """
             RWStructuredBuffer<uint> output;
@@ -83,6 +85,23 @@ public sealed class WarpDescriptorTests
 
         using RecordedCommands recorded = backend.End(context);
         persistent.Dispose();
+        var replacements = new List<PersistentParameterBindings>(replacementCount);
+        try
+        {
+            for (int index = 0; index < replacementCount; index++)
+                replacements.Add(backend.CreatePersistentParameterBindings(device, pipeline,
+                    new ParameterBlockBindings(layout, resources, CreateOrdinaryData(ordinarySize, (uint)index + 100))));
+            for (int index = 0; index < replacements.Count; index += 2) replacements[index].Dispose();
+            for (int index = 0; index < replacementCount; index++)
+            {
+                using PersistentParameterBindings replacement = backend.CreatePersistentParameterBindings(device, pipeline,
+                    new ParameterBlockBindings(layout, resources, CreateOrdinaryData(ordinarySize, 9001)));
+            }
+        }
+        finally
+        {
+            foreach (PersistentParameterBindings replacement in replacements) replacement.Dispose();
+        }
         QueueCompletion completion = backend.Submit(
             backend.GetQueue(device, QueueType.Compute),
             new QueueSubmitDesc([], [], [recorded], [], []));

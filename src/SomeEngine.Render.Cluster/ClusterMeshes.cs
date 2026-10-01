@@ -187,6 +187,15 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
+    internal void CollectPageDependencies(HashSet<uint> pages)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            _bvh.CollectPageDependencies(pages);
+        }
+    }
+
     private PageFaultResolution ResolvePageCore(uint pageID)
     {
         if (!_pages.TrySource(pageID, out uint size, out _))
@@ -290,14 +299,20 @@ internal sealed partial class ClusterMeshes : IDisposable
                 bool storageAllocated = false;
                 try
                 {
-                    Memory<byte> destination = _pageStorage.Allocate(offset, checked((int)expectedSize));
+                    uint allocationSize = PageHeap.AllocationSize(expectedSize);
+                    Memory<byte> destination = _pageStorage.Allocate(offset, checked((int)allocationSize));
                     storageAllocated = true;
-                    if (destination.Length != checked((int)expectedSize))
+                    if (destination.Length != checked((int)allocationSize))
                     {
                         throw new InvalidOperationException(
-                            $"Cluster page staging storage returned {destination.Length} bytes for a {expectedSize}-byte allocation.");
+                            $"Cluster page staging storage returned {destination.Length} bytes for a {allocationSize}-byte allocation.");
                     }
-                    load = new StagedPageLoad(offset, expectedSize, destination, reservation!, source);
+                    // Define the allocation's alignment bytes in the same copy as
+                    // the payload. Contiguous resident allocations can then share
+                    // one resource range instead of leaving thousands of tiny gaps.
+                    destination.Span[checked((int)expectedSize)..].Clear();
+                    load = new StagedPageLoad(offset, expectedSize,
+                        destination[..checked((int)expectedSize)], reservation!, source);
                     _stagingLoads.Add(pageID, load);
                     storageAllocated = false;
                     reservation = null;
@@ -310,7 +325,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                     {
                         try
                         {
-                            _pageStorage.Release(offset, checked((int)expectedSize));
+                            _pageStorage.Release(offset, checked((int)PageHeap.AllocationSize(expectedSize)));
                         }
                         catch (Exception error)
                         {
@@ -404,7 +419,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                 {
                     _pages.StageResident(pageID, load.Offset, gpuReservation);
                     staged = true;
-                    _pageStorage.Stage(load.Offset, checked((int)load.Size));
+                    _pageStorage.Stage(load.Offset, checked((int)PageHeap.AllocationSize(load.Size)));
                     _pageAllocations.Add(pageID, new PageAllocation(load.Offset, load.Size));
                     backingTracked = true;
                     _bvh.PatchPage(pageID, load.Offset);
@@ -442,7 +457,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                 _stagingLoads.Remove(pageID);
                 try
                 {
-                    _pageStorage.Release(expected.Offset, checked((int)expected.Size));
+                    _pageStorage.Release(expected.Offset, checked((int)PageHeap.AllocationSize(expected.Size)));
                     _heap.Free(expected.Offset, expected.Size);
                 }
                 catch (Exception error)
@@ -1005,7 +1020,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             }
             if ((!_pages.IsResident(pageId) && !loading) || evicting)
                 continue;
-            ranges.Add(new BufferRange(backing.Offset, backing.Size));
+            ranges.Add(new BufferRange(backing.Offset, PageHeap.AllocationSize(backing.Size)));
         }
         if (ranges.Count == 0)
             return [];
@@ -1226,7 +1241,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         {
             try
             {
-                _pageStorage.Release(block.Offset, checked((int)block.Size));
+                _pageStorage.Release(block.Offset, checked((int)PageHeap.AllocationSize(block.Size)));
             }
             catch (Exception error)
             {

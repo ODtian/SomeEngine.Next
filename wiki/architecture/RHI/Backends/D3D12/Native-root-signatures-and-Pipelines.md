@@ -7,4 +7,7 @@ pipeline 保留 Slang COM 身份，使 `VariableLayoutReflection` 等非拥有�
 Serialized root signatures 可以按 bytes 去重。Graphics/Compute/Mesh 建立 native PSO；DXR/Work Graph 建立相应 native state object。完成的对象只公开 RHI 行为，不公开另一棵 Shader 反射树。
 
 参见 [[architecture/shader/Shader-Block-Residency-Refactor]]。
+
+Direct3D12 管线共享原始 Slang code blob 的 bytecode 与内容哈希，缓存通过弱引用关联该 blob。
+首次读取受同一数据锁保护，管线 key 保持 entry bytecode、Slang 布局与固定状态的组合。
 ^rhi-d3d12-003

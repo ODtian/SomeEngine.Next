@@ -11,14 +11,14 @@ struct ClusterDeferredResumeUniforms
 };
 
 ConstantBuffer<ClusterDeferredResumeUniforms> ResumeUniforms;
-StructuredBuffer<DrawRequest> DeferredWork;
+StructuredBuffer<ClusterCandidate> DeferredWork;
 StructuredBuffer<uint> DeferredWorkCount;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<ClusterTraversalNode> TraversalNodes;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer TraversalArguments;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<DrawRequest> CandidateClusters;
+RWStructuredBuffer<ClusterCandidate> CandidateClusters;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> CandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -42,7 +42,8 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
 {
     uint count = min(DeferredWorkCount[0], ResumeUniforms.MaxWorkItems);
     bool valid = threadId.x < count;
-    DrawRequest work = valid ? DeferredWork[threadId.x] : (DrawRequest)0;
+    ClusterCandidate candidate = valid ? DeferredWork[threadId.x] : (ClusterCandidate)0;
+    DrawRequest work = candidate.Request;
     bool isNode = valid && IsDeferredTraversalNode(work);
     bool isCluster = valid && !isNode;
 
@@ -84,6 +85,6 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
         waveBase = WaveReadLaneAt(waveBase, leader);
         uint output = waveBase + WaveMaskPrefix(clusterMask, lane);
         if (output < ResumeUniforms.MaxWorkItems)
-            CandidateClusters[output] = work;
+            CandidateClusters[output] = candidate;
     }
 }

@@ -36,7 +36,7 @@ public sealed partial class RenderGraph : IDisposable
     private long _editToken;
     private long _nextEditIdentity;
     private long _frameToken;
-    private int _nextFrameSlot;
+    private int _preferredFrameIndex;
     private bool _disposed;
     private bool _closing;
     private bool _lost;
@@ -161,11 +161,13 @@ public sealed partial class RenderGraph : IDisposable
                 throw new InvalidOperationException("A CPU frame is already active.");
             for (int probe = 0; probe < _frameSlots.Length; probe++)
             {
-                int index = (_nextFrameSlot + probe) % _frameSlots.Length;
+                int index = (_preferredFrameIndex + probe) % _frameSlots.Length;
                 FrameSlot slot = _frameSlots[index];
                 if (!slot.IsReady(_backend)) continue;
                 slot.Reset(_backend);
-                _nextFrameSlot = (index + 1) % _frameSlots.Length;
+                // Reuse completed execution storage before initializing another
+                // copy of its graph cache, heaps and recorded commands.
+                _preferredFrameIndex = index;
                 ulong identity = AllocateOwnerIdentity();
                 _frameToken = checked((long)identity);
                 try

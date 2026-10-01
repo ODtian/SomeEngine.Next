@@ -12,3 +12,8 @@
 
 ## Relations
 [[architecture/rendering/RenderDevice]] · [[Texture-View-Cache]] · [[architecture/render-graph/Range-Completions]]
+
+纹理 tile 的就绪像素页在重排期间保持引用，按后端复制布局直接写入 RenderGraph
+当帧映射上传区。每个 tile 写入完成后释放 CPU 像素页引用，帧持有上传区至 GPU
+完成。行间填充和末尾填充在写入时清零；tile 复制和提交后的纹理状态继续由
+原上传批次及设备资源状态维护。

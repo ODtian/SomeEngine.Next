@@ -27,4 +27,9 @@
     </PropertyGroup>
     <WriteLinesToFile File="$(TargetDir)test-scenes.json" Lines="$(_TestScenes)" Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>
+  <Target Name="PublishTestScenes" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(TargetDir)test-scenes.json" RelativePath="test-scenes.json" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

@@ -33,6 +33,11 @@ public sealed class SceneTestPlatform
     private long _sampleStarted;
     private long _renderingStarted;
     private int _renderedFrames;
+    private int _streamingFrames;
+    private double _streamingMs;
+    private double _streamingMaxFrameMs;
+    private bool _wasStreaming;
+    private double _firstFrameMs;
     private double _sceneTimeLimit;
     private int _readyFrames;
     private TraceCapture? _trace;
@@ -103,6 +108,11 @@ public sealed class SceneTestPlatform
         _sampleStarted = 0;
         _renderingStarted = 0;
         _renderedFrames = 0;
+        _streamingFrames = 0;
+        _streamingMs = 0;
+        _streamingMaxFrameMs = 0;
+        _wasStreaming = false;
+        _firstFrameMs = 0;
         _readyFrames = 0;
         _frames.Clear();
         if (_recordTrace)
@@ -117,11 +127,27 @@ public sealed class SceneTestPlatform
     internal void RecordFrame(FrameTiming frame, ClusterRenderDiagnostics diagnostics)
     {
         if (!IsMeasuring) return;
-        if (_renderingStarted == 0) _renderingStarted = Stopwatch.GetTimestamp();
+        if (_renderingStarted == 0)
+        {
+            _renderingStarted = Stopwatch.GetTimestamp();
+            _firstFrameMs = Stopwatch.GetElapsedTime(_sceneStarted).TotalMilliseconds;
+        }
         _renderedFrames++;
         var residency = diagnostics.Residency;
         bool ready = diagnostics.Meshes.PublishedMeshes == diagnostics.Meshes.RegisteredMeshes &&
-            residency.QueuedPageLoads == 0 && residency.ActivePageLoads == 0 && residency.PageLoadFailures == 0;
+            residency.QueuedPageLoads == 0 && residency.ActivePageLoads == 0 && residency.PageLoadFailures == 0 &&
+            !residency.HasPendingPublication && residency.PendingPageLoads == 0;
+        // Include the frame that submits the final uploads. Its completed CPU
+        // diagnostics can already report ready, while the frame still paid for
+        // those uploads and the resulting graph and command work.
+        if (!ready || _wasStreaming)
+        {
+            _streamingFrames = _renderedFrames;
+            _streamingMs = Stopwatch.GetElapsedTime(_renderingStarted).TotalMilliseconds;
+            if (_renderedFrames > 1)
+                _streamingMaxFrameMs = Math.Max(_streamingMaxFrameMs, frame.ElapsedMs);
+        }
+        _wasStreaming = !ready;
         _readyFrames = ready ? _readyFrames + 1 : 0;
         double elapsed = Stopwatch.GetElapsedTime(_sceneStarted).TotalSeconds;
         if (_readyFrames >= 32 && _renderedFrames >= 128 && Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= 3)
@@ -147,7 +173,8 @@ public sealed class SceneTestPlatform
             _frames.Count == 0 ? null : _frames.Average(f => f.ExecuteMs),
             residency.ResidentPages, residency.RegisteredPages, residency.QueuedPageLoads, residency.ActivePageLoads,
             residency.PageHeapUsedBytes, residency.PageHeapFreeBytes, residency.BackpressuredPages,
-            _renderWidth, _renderHeight, Options.DynamicScene));
+            _renderWidth, _renderHeight, Options.DynamicScene,
+            _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults));
         ReloadRequested = true;
     }
 
@@ -268,6 +295,7 @@ public sealed class SceneTestPlatform
         double? P95Ms, double? PrepareMs, double? ReconcileMs, double? ExecuteMs,
         uint ResidentPages, uint RegisteredPages, int QueuedLoads, int ActiveLoads,
         uint GeometryUsedBytes, uint GeometryFreeBytes, ulong BackpressuredPages,
-        int RenderWidth, int RenderHeight, bool AnimateScene);
+        int RenderWidth, int RenderHeight, bool AnimateScene,
+        double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults);
 }
 

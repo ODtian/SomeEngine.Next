@@ -175,6 +175,10 @@ nativeDevice.Native, visibleNodeMask,
                 desc.VisibleNodeMask),
             Flags = ToNativeHeapFlags(desc.Flags),
         };
+        // Resource contents are undefined until the caller initializes them.
+        // Avoid duplicating that work when allocating private heap storage.
+        if ((desc.Flags & SomeEngine.Graphics.HeapFlags.Shareable) == 0)
+            nativeDescription.Flags |= NativeHeapFlags.CreateNotZeroed;
 
         ID3D12Heap* native = null;
         Guid iid = ID3D12Heap.Guid;
@@ -548,7 +552,7 @@ nativeDevice.Native, nativeHeap.Info.VisibleNodeMask,
             memoryType,
             creationNodeMask,
             visibleNodeMask);
-        NativeHeapFlags heapFlags = shareable ? NativeHeapFlags.Shared : NativeHeapFlags.None;
+        NativeHeapFlags heapFlags = shareable ? NativeHeapFlags.Shared : NativeHeapFlags.CreateNotZeroed;
         NativeResource* resource = null;
         Guid iid = NativeResource.Guid;
 

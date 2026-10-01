@@ -16,7 +16,7 @@ internal sealed class CommandContextPool : IDisposable
         _device = device;
     }
 
-    internal CommandContextLease Acquire(Queue queue, bool bundle, string? label = null)
+    internal CommandContextLease Acquire(Queue queue, bool bundle, string? label = null, uint initialSlotCount = 4)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var key = new CommandContextPoolKey(queue.Type, queue.Index, bundle);
@@ -29,7 +29,7 @@ internal sealed class CommandContextPool : IDisposable
                 new CommandContextDesc(
                     queue.Type,
                     queue.Index,
-                    InitialSlotCount: 4,
+                    InitialSlotCount: initialSlotCount,
                     Bundle: bundle,
                     Label: label)));
             _all.Add(entry);

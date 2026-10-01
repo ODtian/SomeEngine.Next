@@ -3,6 +3,7 @@ using Game.Content;
 ﻿using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
+using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
@@ -25,6 +26,13 @@ namespace SomeEngine.Render.Cluster.Tests;
 
 public sealed class ClusterRenderingTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task StreamedGeometryKeepsVisibleCoverageWhenTheDetailDoesNotFit(bool softwareRaster) =>
+        RenderGeometryChanges(32, 32, true, true, false, true, softwareRaster, false,
+            streamedGeometry: true);
+
     [Theory]
     [InlineData(1, 1, false, false, false, false, false)]
     [InlineData(3, 2, true, false, false, false, false)]
@@ -59,6 +67,12 @@ public sealed class ClusterRenderingTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public Task ShaderContentReplacementPreservesMaterialAndTextureOutput(bool vulkan) =>
+        RenderGeometryChanges(31, 29, true, true, vulkan, true, false, true, replaceShader: true);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task CameraMovementRecoversHiddenGeometryWithoutChangingTheScene(bool vulkan)
     {
         List<byte[]> withHistory = [], withoutHistory = [];
@@ -76,7 +90,8 @@ public sealed class ClusterRenderingTests
         int width, int height, bool asyncCompute, bool changeGeometry, bool vulkan, bool shadeColor,
         bool softwareRaster, bool addMaterialVariants, bool cameraMovement = false,
         bool discardCameraHistory = false, List<byte[]>? cameraImages = null,
-        uint? candidateCapacity = null, int extraMaterialCount = 6, bool separateShaders = false)
+        uint? candidateCapacity = null, int extraMaterialCount = 6, bool separateShaders = false,
+        bool streamedGeometry = false, bool replaceShader = false)
     {
         string root = FindRoot();
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library", "AssetManifest"));
@@ -112,7 +127,9 @@ public sealed class ClusterRenderingTests
         using var mainWorld = new World();
         Entity source = Entity.Null;
         var sharedMaterialShaders = new Dictionary<Guid, Shader>();
+        MeshPayloadSource? streamedPages = null;
         Mesh? mesh = changeGeometry ? await ReadMesh() : null;
+        using MeshPayloadSource? pageSource = streamedPages;
         using Material? material = changeGeometry ? await ReadMaterial() : null;
         using Material? secondMaterial = shadeColor ? await ReadMaterial() : null;
 
@@ -130,7 +147,8 @@ public sealed class ClusterRenderingTests
             using MeshAsset value = await MeshAsset.OpenAsync(assets, new(manifest.List(MeshAsset.FileType).First().AssetGuid));
             ClusterMeshBlock geometry = value.GetBlock<ClusterMeshBlock>();
             Mesh result = await geometry.CreateAsync(value.GetBlock<MeshBlock>(), value.Name);
-            await geometry.LoadPagesAsync(result, Enumerable.Range(0, result.PageCount));
+            if (streamedGeometry) streamedPages = await geometry.OpenPayloadSourceAsync();
+            else await geometry.LoadPagesAsync(result, Enumerable.Range(0, result.PageCount));
             return result;
         }
         async Task<Material> ReadMaterial()
@@ -156,7 +174,7 @@ public sealed class ClusterRenderingTests
         }
         Entity AddCameraMesh(Vector3 position, float scale, Material value)
         {
-            Entity entity = mainWorld.CreateEntity(new MeshInstance { Mesh = mesh! });
+            Entity entity = mainWorld.CreateEntity(new MeshInstance { Mesh = mesh!, PageSource = pageSource });
             mainWorld.Add(entity, new WorldTransform { Qvvs = new TransformQvvs(position, Quaternion.Identity, scale) });
             mainWorld.AddBuffer<MeshMaterialBinding>(entity);
             mainWorld.ExecuteBufferWrite<MeshMaterialBinding, Material>(entity, ref value,
@@ -188,7 +206,8 @@ public sealed class ClusterRenderingTests
                 BatchCapacity = shadeColor ? 16 : 2 });
         var cluster = new ClusterRenderResources(backend, device, coordinator, world, instances,
             new ClusterRenderOptions { Residency = new ClusterResidencyOptions
-            { PageHeapCapacityBytes = 1048576, BvhCapacityBytes = 65536, PageFaultCapacity = 16 } });
+            { PageHeapCapacityBytes = streamedGeometry ? 262144u : 1048576u,
+                BvhCapacityBytes = 65536, PageFaultCapacity = 16 } });
         var assignments = new ClusterMaterialAssignments();
         var instanceSystem = new ClusterInstanceSystem<ClusterMaterialOffsetProducer>(cluster,
             ClusterMaterialAssignmentSystem.EntityQuery(), ClusterRenderFeature.InstanceLayout, assignments.CreateProducer());
@@ -284,7 +303,7 @@ public sealed class ClusterRenderingTests
                         world.Replace(viewEntity, world.Read<RenderView>(viewEntity) with { CameraCut = renderIndex == 42 });
                     if (applyChanges && changeGeometry && iteration == 1)
                     {
-                        source = mainWorld.CreateEntity(new MeshInstance { Mesh = mesh! });
+                        source = mainWorld.CreateEntity(new MeshInstance { Mesh = mesh!, PageSource = pageSource });
                         mainWorld.Add(source, new WorldTransform
                         { Qvvs = new TransformQvvs(new Vector3(0, 0, -3), Quaternion.Identity) });
                         mainWorld.AddBuffer<MeshMaterialBinding>(source);
@@ -325,6 +344,17 @@ public sealed class ClusterRenderingTests
                         textureUpdate = sharedTexture!.UpdateAsync(CreateColorTexture(128)).AsTask();
                     if (applyChanges && changeGeometry && iteration == 8)
                         Assert.IsType<UnlitMaterial>(material).BaseColorTint = new Vector4(0.1f, 0.8f, 0.2f, 1);
+                    if (applyChanges && replaceShader && iteration is 9 or 13)
+                    {
+                        Shader current = material!.Shader!;
+                        Guid shaderId = manifest.List(ShaderAsset.FileType)
+                            .First(item => item.Name == current.Name).AssetGuid;
+                        using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(assets, new(shaderId));
+                        Shader replacement = await TestShaderLoading.CreateAsync(shaderFile, shaderTarget);
+                        foreach (Material? item in new[] { material, secondMaterial }.Concat(extraMaterials))
+                            if (item is not null && ReferenceEquals(item.Shader, current))
+                                item.Shader = replacement;
+                    }
                     // The center crosses the side plane while part of the rotated, stretched mesh
                     // remains visible. A conservative box test must keep those pixels.
                     if (applyChanges && shadeColor && iteration is 11 or 14)
@@ -341,7 +371,7 @@ public sealed class ClusterRenderingTests
                                 AddressType.Repeat, AddressType.Repeat, AddressType.Repeat);
                     if (applyChanges && shadeColor && iteration is 2 or 6 or 12)
                     {
-                        secondSource = mainWorld.CreateEntity(new MeshInstance { Mesh = mesh! });
+                        secondSource = mainWorld.CreateEntity(new MeshInstance { Mesh = mesh!, PageSource = pageSource });
                         mainWorld.Add(secondSource, new WorldTransform
                         { Qvvs = iteration == 2
                             ? new TransformQvvs(new Vector3(0, 0, -2), Quaternion.Identity, 1.9f)
@@ -388,6 +418,7 @@ public sealed class ClusterRenderingTests
                 using (RenderGraphFrame commands = graph.BeginFrame())
                 {
                     frameSystems.Update(frame, commands);
+                    commands.ObserveExecution(streaming);
                     commands.SetTextureInput(outputInput, shadeColor ? outputs.MaterialColor : outputs.Visibility);
                     int submitted = commands.Execute(completions);
                     QueueCompletion[] accepted = completions.Where(value => value != default).ToArray();
@@ -411,6 +442,16 @@ public sealed class ClusterRenderingTests
                 }
                 using MappedBuffer mapping = backend.Map(readback, MapType.Read, BufferRange.Whole);
                 mapping.Invalidate(mapping.Range);
+                if (streamedGeometry && renderIndex is >= 6 and < 18)
+                {
+                    bool visible = false;
+                    for (int y = 0; y < height; y++)
+                    {
+                        ReadOnlySpan<Half> row = MemoryMarshal.Cast<byte, Half>(mapping.Bytes.Slice(y * 256, width * 8));
+                        for (int x = 0; x < width; x++) visible |= (float)row[x * 4] > .01f;
+                    }
+                    Assert.True(visible, "The first rendered mesh frame must keep coarse coverage while detail is missing.");
+                }
                 if (cameraMovement)
                 {
                     cameraImages!.Add(mapping.Bytes.ToArray());

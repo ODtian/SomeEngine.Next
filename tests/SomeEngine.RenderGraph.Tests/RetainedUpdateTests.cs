@@ -131,8 +131,10 @@ public sealed class RetainedUpdateTests
         Assert.Equal(new[] { 17, 17, 17, 17, 29, 29, 29 }, observed);
     }
 
-    [Fact]
-    public void LatePrerequisitePreservesInitializationOrderForSharedResource()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LatePrerequisitePreservesInitializationOrderForSharedResource(bool culledCycle)
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
         using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
@@ -165,9 +167,18 @@ public sealed class RetainedUpdateTests
             using (RenderGraphFrame frame = graph.BeginFrame())
             {
                 GraphPassId prerequisite = frame.AddCopyPass("late prerequisite", PassQueueSelection.Exact(support.GraphicsQueue),
-                    (byte)0, new PassOptions(Culling: PassCullingMode.NeverCull),
+                    (byte)0, new PassOptions(Culling: culledCycle ? PassCullingMode.Cullable : PassCullingMode.NeverCull),
                     static (ref PassDefinition _, ref byte _) => { },
                     static (ref CopyPassCommandScope _, in byte _) => { });
+                if (culledCycle)
+                {
+                    GraphPassId second = frame.AddCopyPass("culled prerequisite", PassQueueSelection.Exact(support.GraphicsQueue),
+                        (byte)0, default,
+                        static (ref PassDefinition _, ref byte _) => { },
+                        static (ref CopyPassCommandScope _, in byte _) => { });
+                    frame.OrderAfter(prerequisite, second);
+                    frame.OrderAfter(second, prerequisite);
+                }
                 frame.OrderAfter(initialize, prerequisite);
                 frame.Execute(completions);
             }

@@ -50,6 +50,10 @@ void ResetVirtualShadowFrame(uint3 groupId : SV_GroupID, uint threadIndex : SV_G
     if (index < rectCount)
     {
         UncachedPageRectBounds[index] = uint4(0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u);
+    }
+    AllocatedPageRectBounds.GetDimensions(rectCount, rectStride);
+    if (index < rectCount)
+    {
         AllocatedPageRectBounds[index] = uint4(0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u);
     }
 }

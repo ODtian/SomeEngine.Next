@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Security.Cryptography;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using SlangShaderSharp;
@@ -29,7 +30,7 @@ internal sealed unsafe partial class D3D12Backend
         PipelineCache? cache,
         IComponentType? capturedSlangCode)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreatePipeline);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -347,7 +348,7 @@ internal sealed unsafe partial class D3D12Backend
         PipelineCache? cache,
         IComponentType? capturedSlangCode)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreatePipeline);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -472,7 +473,7 @@ nativeDevice.Native, &native,
         PipelineCache? cache,
         IComponentType? capturedSlangCode)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreatePipeline);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         MeshShaders meshCapability =
             nativeDevice.RequireCapability<MeshShaders>(nameof(CreateMeshPipeline));
@@ -792,6 +793,19 @@ nativeDevice.Native, &native,
                 nameof(entryPoint));
         }
 
+        if (codeBlob is not null)
+        {
+            ShaderCodeData data = ShaderCodeBytes.GetValue(codeBlob, static _ => new());
+            lock (data)
+            {
+                data.Bytes ??= CopyCode(code, codeBlob);
+                data.ContentHash ??= SHA256.HashData(data.Bytes);
+                if (data.Bytes.Length == 0)
+                    throw new GraphicsException(GraphicsError.ShaderCompilation,
+                        $"The cooked {role} entry point contains no DXIL.");
+                return new CompiledShader(entryPoint, data.Bytes, data.ContentHash);
+            }
+        }
         byte[] bytes = CopyCode(code, codeBlob);
         if (bytes.Length == 0)
         {
@@ -803,6 +817,14 @@ nativeDevice.Native, &native,
             entryPoint,
             bytes,
             SHA256.HashData(bytes));
+    }
+
+    private static readonly ConditionalWeakTable<ISlangBlob, ShaderCodeData> ShaderCodeBytes = new();
+
+    private sealed class ShaderCodeData
+    {
+        internal byte[]? Bytes;
+        internal byte[]? ContentHash;
     }
 
     private static byte[] CopyCode(

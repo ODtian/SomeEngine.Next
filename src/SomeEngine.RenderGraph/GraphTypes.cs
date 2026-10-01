@@ -82,7 +82,11 @@ public readonly record struct PassOptions(
     uint EstimatedRecordingCost = 1,
     uint RasterWidth = 0,
     uint RasterHeight = 0,
-    bool RepeatCommands = false);
+    bool RepeatCommands = false)
+{
+    /// <summary>Ends this queue's submission after the pass so its result can be observed earlier.</summary>
+    public bool SubmitAfter { get; init; }
+}
 
 public readonly record struct RenderGraphFrameOptions(
     FrameSubmissionMode SubmissionMode = FrameSubmissionMode.Pipelined,

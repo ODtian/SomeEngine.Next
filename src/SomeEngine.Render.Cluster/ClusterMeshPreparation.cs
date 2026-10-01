@@ -47,9 +47,8 @@ internal sealed class ClusterMeshCache
 
     internal ValueTask LoadOpeningPagesAsync(
         IReadOnlyCollection<uint> lowestDetailPageIds,
-        IReadOnlyCollection<uint> allPageIds,
         CancellationToken cancellationToken = default) =>
-        _residency.LoadOpeningPagesAsync(lowestDetailPageIds, allPageIds, cancellationToken);
+        _residency.LoadOpeningPagesAsync(lowestDetailPageIds, cancellationToken);
 
     internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
@@ -248,7 +247,6 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
         {
             RenderMesh[] missingMeshes = [.. _missing.Values];
             var lowestDetailPageIds = new HashSet<uint>();
-            var allPageIds = new HashSet<uint>();
             foreach (RenderMesh mesh in missingMeshes)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -257,13 +255,9 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                 if (result.Added)
                     registered++;
                 lowestDetailPageIds.UnionWith(result.Registration.LowestDetailPageIds);
-                uint end = checked(result.Registration.FirstPageId + result.Registration.PageCount);
-                for (uint pageId = result.Registration.FirstPageId; pageId < end; pageId++)
-                    allPageIds.Add(pageId);
             }
             await _cache.LoadOpeningPagesAsync(
                 lowestDetailPageIds,
-                allPageIds,
                 cancellationToken).ConfigureAwait(false);
             foreach (RenderMesh mesh in missingMeshes)
                 _missing.Remove(mesh.Mesh);
