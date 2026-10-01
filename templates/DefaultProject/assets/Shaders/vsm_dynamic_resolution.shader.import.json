@@ -1,11 +1,11 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 27,
-  "input_hash": "f336659913e57502cfd6dd18e58e236b085396dece437affbd0e87bcc7dde15a",
+  "input_hash": "fd5260ea08aec5416914041096c14963ea030f055557a684c14057de82b978b7",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_dynamic_resolution.slang",
@@ -29,11 +29,11 @@
     {
       "asset_guid": "562d6bdf-3c5f-5b24-bb13-4ffc24de67cf",
       "sub_asset_key": "",
-      "input_hash": "f336659913e57502cfd6dd18e58e236b085396dece437affbd0e87bcc7dde15a",
+      "input_hash": "fd5260ea08aec5416914041096c14963ea030f055557a684c14057de82b978b7",
       "dependencies": [],
       "asset_path": "vsm_dynamic_resolution.shader.asset",
-      "version": "bdd09b1e-9044-6079-abeb-be20dd9ddbda",
-      "content_hash": "DBD629E2AD561A8D8BD5FBEF556245BF41F7A1881B2C2D655A13867E9F3460C4",
+      "version": "82fb149d-ab22-ce51-db29-da907fd4d97e",
+      "content_hash": "35E3FC40D2B47D02DEF73371D1F77605EBBB6AF6F1B4DB1A66B9EBB881B1ED67",
       "asset_dependencies": []
     }
   ]

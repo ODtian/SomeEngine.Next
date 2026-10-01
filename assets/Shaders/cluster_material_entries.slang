@@ -332,12 +332,16 @@ void EvaluateClusterRasterPixelTarget(
     ClusterViewUniforms view = LoadClusterView(
         HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
     input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
+    uint2 targetPixel;
+    if (!ClusterRasterTargetWindowContainsPixel(
+            input.VisibleClusterIndex, view.TargetViewIndex, int2(input.Pos.xy)) ||
+        !ResolveRasterTargetPixel(int2(input.Pos.xy), view.TargetViewIndex, targetPixel))
+        discard;
     VisibilityPixelResult result =
         EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input);
-    if (result.Visible == 0u || !ClusterRasterTargetWindowContainsPixel(
-            input.VisibleClusterIndex, view.TargetViewIndex, int2(input.Pos.xy)))
+    if (result.Visible == 0u)
         discard;
-    WriteRasterTargetDepth(int2(input.Pos.xy), view.TargetViewIndex, saturate(result.Depth));
+    WriteRasterTargetPixelDepth(targetPixel, result.Depth);
 }
 
 [shader("pixel")]

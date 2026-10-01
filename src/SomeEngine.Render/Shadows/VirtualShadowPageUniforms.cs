@@ -22,7 +22,7 @@ public struct VirtualShadowPageDemandUniforms
     public uint ReceiverViewIndex;
     public uint FrameIndex;
     public float PageDilationBorderPages;
-    public uint Pad0;
+    public float NormalBias;
     public uint Pad1;
     public uint Pad2;
 }

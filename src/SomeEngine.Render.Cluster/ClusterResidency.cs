@@ -10,7 +10,7 @@ namespace SomeEngine.Render.Cluster;
 /// <summary>Physical bounds and shutdown policy for Cluster geometry residency.</summary>
 public sealed record ClusterResidencyOptions
 {
-    public uint PageHeapCapacityBytes { get; init; } = 64u * 1024 * 1024;
+    public uint PageHeapCapacityBytes { get; init; } = 256u * 1024 * 1024;
 
     public ulong BvhCapacityBytes { get; init; } = 64ul * 1024 * 1024;
 
@@ -60,7 +60,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     private readonly PageStream _stream;
     private readonly PageFaults _faults;
     private readonly int _pageFaultCapacity;
-    private readonly ulong _pageHeapCapacityBytes;
     private readonly TimeSpan _disposeTimeout;
     private readonly object _disposeGate = new();
     private Task? _streamDisposal;
@@ -134,7 +133,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             _stream = stream;
             _faults = new PageFaults(meshes.EpochId, selected.PageFaultCapacity);
             _pageFaultCapacity = selected.PageFaultCapacity;
-            _pageHeapCapacityBytes = selected.PageHeapCapacityBytes;
             _disposeTimeout = selected.DisposeTimeout;
             Timeline = timeline;
         }
@@ -209,22 +207,10 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 
     internal async ValueTask LoadOpeningPagesAsync(
         IReadOnlyCollection<uint> lowestDetailPageIds,
-        IReadOnlyCollection<uint> allPageIds,
         CancellationToken cancellationToken = default)
     {
-        ulong allPageBytes = 0;
-        foreach (uint pageId in allPageIds)
-        {
-            PageFaultResolution page = _meshes.ResolvePage(pageId);
-            if (page.Kind == PageFaultResolutionKind.Unknown)
-                throw new InvalidOperationException($"Cluster page {pageId} is not registered.");
-            allPageBytes = checked(allPageBytes + PageHeap.AllocationSize(page.Size));
-        }
-        IReadOnlyCollection<uint> pageIds = allPageBytes <= _pageHeapCapacityBytes
-            ? allPageIds
-            : lowestDetailPageIds;
         await Parallel.ForEachAsync(
-            pageIds,
+            lowestDetailPageIds,
             new ParallelOptions { MaxDegreeOfParallelism = 32, CancellationToken = cancellationToken },
             async (pageId, token) =>
             {
@@ -233,6 +219,8 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                     throw new InvalidOperationException(
                         $"Lowest-detail Cluster page {pageId} could not be loaded before mesh publication ({result}).");
             }).ConfigureAwait(false);
+        // Coarse pages establish complete opening coverage. GPU visibility and
+        // LOD selection request the required detail and its reduction groups.
     }
 
     internal bool IsMeshRegistered(Mesh mesh)

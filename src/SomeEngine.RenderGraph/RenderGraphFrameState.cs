@@ -156,10 +156,18 @@ internal sealed partial class RenderGraphFrameState
     internal PassDefinition GetPass(GraphPassId pass)
     {
         EnsureAuthoring();
-        ValidateStatic(pass.Value, StructureIndex.Structure.Passes);
-        GraphPass definition = StructureIndex.Structure.Passes.Get(pass.Value);
         GraphIdentity identity = pass.Value;
-        return new PassDefinition(this, identity, definition.Kind);
+        GraphPassKind kind;
+        if (identity.Owner == Graph.Identity)
+        {
+            ValidateStatic(identity, StructureIndex.Structure.Passes);
+            kind = StructureIndex.Structure.Passes.Get(identity).Kind;
+        }
+        else
+        {
+            kind = _dynamicPasses[ResolveDynamicPass(identity)].Kind;
+        }
+        return new PassDefinition(this, identity, kind);
     }
 
     internal void SetPassData<T>(GraphPassId pass, in T value, bool compareValue = false)
@@ -364,6 +372,31 @@ internal sealed partial class RenderGraphFrameState
     {
         EnsureAuthoring();
         (FrameTransientResourceAllocator.UploadPage page, BufferRange range) = Slot.TransientResources!.WriteUpload(data, usages, elementAlignment);
+        return RegisterUpload(page, range);
+    }
+
+    internal void SetPassOptions(GraphPassId pass, in PassOptions options)
+    {
+        EnsureAuthoring();
+        ValidateStatic(pass.Value, StructureIndex.Structure.Passes);
+        GraphPass definition = StructureIndex.Structure.Passes.Get(pass.Value);
+        if (definition.Options == options) return;
+        definition.Options = options;
+        Graph.PropertyChanged(pass.Value, GraphStoreKind.Passes);
+    }
+
+    internal GraphBufferSlice Upload(
+        scoped ReadOnlySpan<ReadOnlyMemory<byte>> segments,
+        BufferUsages usages,
+        string? label)
+    {
+        EnsureAuthoring();
+        (FrameTransientResourceAllocator.UploadPage page, BufferRange range) = Slot.TransientResources!.WriteUpload(segments, usages);
+        return RegisterUpload(page, range);
+    }
+
+    private GraphBufferSlice RegisterUpload(FrameTransientResourceAllocator.UploadPage page, BufferRange range)
+    {
         if (page.GraphBuffer == default)
         {
             Buffer resource = page.Buffer;
@@ -377,6 +410,21 @@ internal sealed partial class RenderGraphFrameState
             _importedBuffers.Add(resource, page.GraphBuffer);
         }
         return new GraphBufferSlice(page.GraphBuffer, range);
+    }
+
+    internal GraphBufferSlice Upload<TData>(
+        int byteCount,
+        BufferUsages usages,
+        TData data,
+        System.Buffers.SpanAction<byte, TData> write,
+        string? label)
+    {
+        EnsureAuthoring();
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteCount);
+        ArgumentNullException.ThrowIfNull(write);
+        (FrameTransientResourceAllocator.UploadPage page, BufferRange range) =
+            Slot.TransientResources!.WriteUpload(byteCount, usages, data, write);
+        return RegisterUpload(page, range);
     }
 
     internal void SetBufferData(GraphBufferId buffer, scoped ReadOnlySpan<byte> data)
@@ -1451,6 +1499,18 @@ internal sealed partial class RenderGraphFrameState
         }
         if (errors is not null)
             throw new AggregateException("Render graph completion callbacks failed.", errors);
+    }
+
+    internal void NotifySubmitted()
+    {
+        List<Exception>? errors = null;
+        foreach (IRenderGraphFrameExecutionObserver observer in _executionObservers)
+        {
+            try { observer.OnRenderGraphSubmitted(new RenderGraphFrameResult(this)); }
+            catch (Exception exception) { (errors ??= []).Add(exception); }
+        }
+        if (errors is not null)
+            throw new AggregateException("Render graph submission callbacks failed.", errors);
     }
 
     private sealed class InputData<T>

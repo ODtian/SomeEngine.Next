@@ -32,6 +32,7 @@ ConstantBuffer<DrawDispatchUniforms> HardwareRasterDispatchUniformData;
 StructuredBuffer<uint> HardwareRasterBinnedClusterIndexBuffer;
 StructuredBuffer<DrawRequest> HardwareRasterVisibleClusters;
 ByteAddressBuffer HardwareRasterVisibleClusterMeta;
+groupshared float4 HardwareRasterClipPositions[64];
 
 struct PSVisBufferOutput
 {
@@ -285,6 +286,13 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
     uint viewIndex = DrawRequestViewIndex(request);
     ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, viewIndex);
     RenderInstanceTransform transform = GetCurrentInstanceTransform(request.InstanceID);
+    float2 targetWindowSize = 0.0.xx;
+    if (view.TargetPolicy != 0u)
+    {
+        int4 scissor = PrepareRasterTargetScissor(visible, view.TargetViewIndex,
+            view.ScreenWidth, view.ScreenHeight, lane, 32u);
+        targetWindowSize = float2(scissor.zw - scissor.xy);
+    }
     for (uint localVertex = lane; localVertex < (counts & 0xFFu); localVertex += 32u)
     {
         uint mask = used.Words[localVertex / 32u];
@@ -302,8 +310,11 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         visibilityInput.ViewIndex = viewIndex;
         visibilityInput.LocalVertexIndex = localVertex;
         output.Varying = visibility.makeVarying(value, visibilityInput);
-        vertices[fullRange ? localVertex : ClusterMeshVertexRank(used, localVertex)] = output;
+        uint outputVertex = fullRange ? localVertex : ClusterMeshVertexRank(used, localVertex);
+        vertices[outputVertex] = output;
+        if (view.TargetPolicy != 0u) HardwareRasterClipPositions[outputVertex] = output.Pos;
     }
+    if (view.TargetPolicy != 0u) GroupMemoryBarrierWithGroupSync();
     [unroll]
     for (uint part = 0u; part < uint(TriangleCapacity) / 32u; part++)
     {
@@ -311,8 +322,30 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         if (triangleIndex >= triangleCount) continue;
         uint3 outputTriangle = LoadLocalTriangleIndices(
             request.PageOffset, indexOffset, triangleStart, first + triangleIndex);
-        indices[triangleIndex] = fullRange ? outputTriangle : uint3(ClusterMeshVertexRank(used, outputTriangle.x),
+        uint3 outputIndices = fullRange ? outputTriangle : uint3(ClusterMeshVertexRank(used, outputTriangle.x),
             ClusterMeshVertexRank(used, outputTriangle.y), ClusterMeshVertexRank(used, outputTriangle.z));
+        if (view.TargetPolicy != 0u)
+        {
+            float4 firstClip = HardwareRasterClipPositions[outputIndices.x];
+            float4 secondClip = HardwareRasterClipPositions[outputIndices.y];
+            float4 thirdClip = HardwareRasterClipPositions[outputIndices.z];
+            if (firstClip.w > 0.0 && secondClip.w > 0.0 && thirdClip.w > 0.0)
+            {
+                float2 rasterSize = float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight);
+                float2 firstPixel = (firstClip.xy / firstClip.w * float2(.5, -.5) + .5) * rasterSize;
+                float2 secondPixel = (secondClip.xy / secondClip.w * float2(.5, -.5) + .5) * rasterSize;
+                float2 thirdPixel = (thirdClip.xy / thirdClip.w * float2(.5, -.5) + .5) * rasterSize;
+                float2 minimumPixel = min(firstPixel, min(secondPixel, thirdPixel));
+                float2 maximumPixel = max(firstPixel, max(secondPixel, thirdPixel));
+                // The output viewport covers a fixed maximum window. The current
+                // cluster can address a smaller rectangle of requested pages.
+                if (any(maximumPixel < 0.0.xx) || any(minimumPixel > targetWindowSize) ||
+                    !ClusterRasterTargetCachedBoundsAccepts(
+                        minimumPixel, maximumPixel, view.TargetViewIndex, targetWindowSize))
+                    outputIndices = 0u.xxx;
+            }
+        }
+        indices[triangleIndex] = outputIndices;
         ClusterMeshPrimitive output;
         output.VisibleClusterIndex = visible;
         output.TriangleID = first + triangleIndex;

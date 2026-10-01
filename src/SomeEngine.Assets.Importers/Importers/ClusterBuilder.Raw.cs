@@ -737,6 +737,7 @@ public static partial class ClusterBuilder
                 LODError = EncodeFiniteLodError(meshlet.ParentError),
                 PageIndex = checked((uint)PageCount),
                 ClusterStart = (uint)(CurrentClusters.Count - 1),
+                GroupId = meshlet.Level == 0 ? -1 : meshlet.GroupId,
                 ParentGroupId = meshlet.ParentGroupId,
             };
         }
@@ -749,7 +750,10 @@ public static partial class ClusterBuilder
             // The hierarchy uses float.MaxValue to mark a terminal/root LOD. Both the page
             // cluster ABI and the BVH need a finite value, while the largest finite half already
             // keeps that terminal LOD selected throughout the supported projection range.
-            return MathF.Min(value, (float)Half.MaxValue);
+            // The BVH rejects the finer group with the same error that the
+            // packed coarse clusters accept. Different rounding opens a gap
+            // or draws both groups at the LOD transition.
+            return (float)(Half)MathF.Min(value, (float)Half.MaxValue);
         }
 
         private void FlushPage()

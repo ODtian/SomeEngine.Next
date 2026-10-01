@@ -1,4 +1,5 @@
 using SomeEngine.Render.Cluster;
+using SomeEngine.RenderGraph;
 using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
@@ -64,10 +65,9 @@ public sealed class ClusterStreamingFeedbackChannel
 }
 
 /// <summary>
-/// Independently consumes authenticated geometry-fault publications and owns streaming progress.
-/// Disabling or replacing this consumer does not alter the Cluster geometry or overflow ABI.
+/// Consumes geometry page faults and advances reads through the shared feedback channel.
 /// </summary>
-public sealed class ClusterStreamingFeedbackConsumer
+public sealed class ClusterStreamingFeedbackConsumer : IRenderGraphFrameExecutionObserver
 {
     private readonly ClusterRenderResources _resources;
     private readonly ClusterStreamingFeedbackChannel _channel;
@@ -82,9 +82,28 @@ public sealed class ClusterStreamingFeedbackConsumer
 
     public void Pump()
     {
-        while (_channel.TryTake(out ClusterStreamingFeedbackPacket packet))
-            _resources.IngestPageFaultReadbackBatch(packet.Ticket, packet.Payloads);
+        _ = ConsumeFaults();
         _resources.PumpStreaming();
+    }
+
+    private bool ConsumeFaults()
+    {
+        bool hasFaults = false;
+        while (_channel.TryTake(out ClusterStreamingFeedbackPacket packet))
+        {
+            _resources.IngestPageFaultReadbackBatch(packet.Ticket, packet.Payloads);
+            foreach (byte[] payload in packet.Payloads) hasFaults |= payload.Length != 0;
+        }
+        return hasFaults;
+    }
+
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphSubmitted(RenderGraphFrameResult result)
+    {
+        if (ConsumeFaults()) _resources.PumpStreaming();
+    }
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    {
+        if (ConsumeFaults()) _resources.PumpStreaming();
     }
 }
 

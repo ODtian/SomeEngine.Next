@@ -399,6 +399,20 @@ bool TryReadVirtualShadowDepthAtOrCoarser(
     return false;
 }
 
+float GetVirtualShadowPixelWidth(float2 pixelDx, float2 pixelDy)
+{
+    float squareX = dot(pixelDx, pixelDx);
+    float squareY = dot(pixelDy, pixelDy);
+    float crossTerm = dot(pixelDx, pixelDy);
+    float difference = squareX - squareY;
+    float largestSquare = 0.5 * (squareX + squareY +
+        sqrt(max(difference * difference + 4.0 * crossTerm * crossTerm, 0.0)));
+    // The determinant is the product of the two principal widths. Dividing
+    // by the larger width preserves the smaller one under a skewed projection.
+    float area = abs(pixelDx.x * pixelDy.y - pixelDx.y * pixelDy.x);
+    return area * rsqrt(max(largestSquare, 1e-30));
+}
+
 uint VirtualShadowLocalMipFromReceiverFootprint(
     VirtualShadowMapParameters parameters,
     float3 worldPosition,
@@ -416,7 +430,7 @@ uint VirtualShadowLocalMipFromReceiverFootprint(
     {
         return parameters.MinMipLevel;
     }
-    float footprint = max(length(uvDx - uv), length(uvDy - uv)) *
+    float footprint = GetVirtualShadowPixelWidth(uvDx - uv, uvDy - uv) *
         float(parameters.VirtualResolution);
     float mipFloat = log2(max(footprint, 1.0)) +
         parameters.ResolutionLodBias + dynamicResolutionLodBias;
@@ -425,6 +439,27 @@ uint VirtualShadowLocalMipFromReceiverFootprint(
         mip,
         parameters.MinMipLevel,
         max(parameters.MipLevelCount, 1u) - 1u);
+}
+
+uint VirtualShadowDirectionalLevelFromReceiverFootprint(
+    VirtualShadowMapParameters parameters,
+    float3 worldPosition,
+    float3 worldPositionDx,
+    float3 worldPositionDy,
+    float dynamicResolutionLodBias)
+{
+    // Orthographic projection has constant w. Project pixel offsets directly
+    // so a distant receiver outside this smallest clipmap loses no precision
+    // by subtracting two large UV coordinates.
+    float2 pixelDx = mul(float4(worldPositionDx - worldPosition, 0.0),
+        parameters.LightViewProjection).xy * 0.5;
+    float2 pixelDy = mul(float4(worldPositionDy - worldPosition, 0.0),
+        parameters.LightViewProjection).xy * 0.5;
+    float footprint = GetVirtualShadowPixelWidth(pixelDx, pixelDy) *
+        float(parameters.VirtualResolution);
+    float level = floor(log2(max(footprint, 1e-6)) +
+        parameters.ResolutionLodBias + dynamicResolutionLodBias);
+    return (uint)max(level, 0.0);
 }
 
 struct VirtualShadowFilterContext
@@ -665,6 +700,8 @@ float SampleDirectionalVirtualShadowMap(
     uint clipmapLevelCount,
     float dynamicResolutionLodBias,
     float3 worldPosition,
+    float3 worldPositionDx,
+    float3 worldPositionDy,
     uint blockerSampleCount,
     uint filterSampleCount,
     float blockerSearchRadiusTexels,
@@ -673,11 +710,8 @@ float SampleDirectionalVirtualShadowMap(
     if (clipmapLevelCount == 0u)
         return 1.0;
     VirtualShadowMapParameters baseView = views[firstView];
-    float distanceToClipmapOrigin = length(worldPosition - baseView.ClipmapWorldOrigin);
-    int absoluteLevel = (int)floor(
-        log2(max(distanceToClipmapOrigin, 1e-6)) +
-        baseView.ResolutionLodBias + dynamicResolutionLodBias);
-    uint firstLevel = (uint)max(0, absoluteLevel - baseView.FirstClipmapLevel);
+    uint firstLevel = VirtualShadowDirectionalLevelFromReceiverFootprint(
+        baseView, worldPosition, worldPositionDx, worldPositionDy, dynamicResolutionLodBias);
     if (firstLevel >= clipmapLevelCount)
         return 1.0;
 

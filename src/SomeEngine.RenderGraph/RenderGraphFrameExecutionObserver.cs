@@ -1,12 +1,15 @@
 namespace SomeEngine.RenderGraph;
 
-/// <summary>Receives the accepted GPU submissions when a frame finishes or is canceled.</summary>
+/// <summary>Receives accepted GPU submissions and frame completion results.</summary>
 public interface IRenderGraphFrameExecutionObserver
 {
+    /// <summary>Receives accepted submissions while later frame work can still be recorded and submitted.</summary>
+    void OnRenderGraphSubmitted(RenderGraphFrameResult result) { }
+
     void OnRenderGraphFrameFinished(RenderGraphFrameResult result);
 }
 
-/// <summary>Pass submission results, available only during the frame completion callback.</summary>
+/// <summary>Pass submission results available during the execution callbacks.</summary>
 public readonly ref struct RenderGraphFrameResult
 {
     private readonly RenderGraphFrameState? _frame;

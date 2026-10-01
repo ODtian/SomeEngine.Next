@@ -28,18 +28,51 @@ namespace SomeEngine.Render.Cluster.Tests;
 
 public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
 {
-    [Theory]
-    [InlineData(false, false, false)]
-    [InlineData(true, false, false)]
-    [InlineData(false, true, false)]
-    [InlineData(true, true, false)]
-    [InlineData(false, false, true)]
-    [InlineData(false, true, true)]
-    public async Task MovingLightUsesCurrentReceiverPagesInItsFirstFrame(
-        bool receiverMask, bool vulkan, bool softwareRaster)
+    [Fact]
+    public async Task DirectionalShadowsAfterCameraScrollMatchRefreshedShadows()
     {
-        var shadowed = await RenderLightMovement(true, receiverMask, vulkan, softwareRaster);
-        var unshadowed = await RenderLightMovement(false, receiverMask, vulkan, softwareRaster);
+        var cached = await RenderLightMovement(true, true, false, false, cameraScroll: true);
+        var refreshed = await RenderLightMovement(true, true, false, false,
+            cameraScroll: true, refreshShadows: true);
+        var unshadowed = await RenderLightMovement(false, true, false, false, cameraScroll: true);
+        Assert.True(MaximumRelativeDifference(cached.First, unshadowed.First) > .01f,
+            "The directional light must cast a visible shadow after the camera scroll.");
+        Assert.True(MaximumRelativeDifference(cached.First, refreshed.First) < .01f,
+            "Scrolling the camera must preserve the current directional shadow in its first frame.");
+        Assert.True(MaximumRelativeDifference(cached.Settled, refreshed.Settled) < .01f,
+            "Retained directional pages must match regenerated shadows after the scroll.");
+    }
+
+    [Theory]
+    [InlineData(.01f, false)]
+    [InlineData(.1f, false)]
+    [InlineData(.01f, true)]
+    [InlineData(.1f, true)]
+    public async Task NormalOffsetsPreserveCurrentShadowsWithReceiverMasks(float normalBias, bool meshShaders)
+    {
+        var complete = await RenderLightMovement(true, false, false, false, normalBias, meshShaders: meshShaders);
+        var masked = await RenderLightMovement(true, true, false, false, normalBias, meshShaders: meshShaders);
+        Assert.True(MaximumRelativeDifference(masked.First, complete.First) < .01f,
+            "Receiver masks must preserve normal-offset shadow samples in the light's first frame.");
+        Assert.True(MaximumRelativeDifference(masked.Settled, complete.Settled) < .01f,
+            "Receiver masks must preserve the settled normal-offset shadow samples.");
+    }
+
+    [Theory]
+    [InlineData(false, false, false, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, false, false)]
+    [InlineData(true, true, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(false, true, true, false)]
+    [InlineData(false, false, false, true)]
+    [InlineData(true, false, false, true)]
+    [InlineData(true, true, false, true)]
+    public async Task MovingLightUsesCurrentReceiverPagesInItsFirstFrame(
+        bool receiverMask, bool vulkan, bool softwareRaster, bool meshShaders)
+    {
+        var shadowed = await RenderLightMovement(true, receiverMask, vulkan, softwareRaster, meshShaders: meshShaders);
+        var unshadowed = await RenderLightMovement(false, receiverMask, vulkan, softwareRaster, meshShaders: meshShaders);
         Assert.True(MaximumRelativeDifference(shadowed.Settled, unshadowed.Settled) > .05f,
             "The occluder must cast a visible shadow on the receiver.");
         float firstFrameError = MaximumRelativeDifference(shadowed.First, shadowed.Settled);
@@ -57,7 +90,8 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
     }
 
     private static async Task<(float[] First, float[] Settled)> RenderLightMovement(
-        bool shadows, bool receiverMask, bool vulkan, bool softwareRaster)
+        bool shadows, bool receiverMask, bool vulkan, bool softwareRaster, float normalBias = .01f,
+        bool cameraScroll = false, bool refreshShadows = false, bool meshShaders = false)
     {
         const int width = 256, height = 256, rowPitch = width * 8;
         string root = FindContentRoot();
@@ -82,7 +116,9 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
         backend.TryEnumerateAdapters(enumeration, adapters, out _);
         using Device device = backend.CreateDevice(new DeviceDesc(adapters.First(item => item.HardwareAccelerated).Id,
             [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)],
-            requiredFeatures: DeviceFeatures.IndirectCommands));
+            requiredFeatures: DeviceFeatures.IndirectCommands,
+            optionalFeatures: meshShaders ? DeviceFeatures.MeshShaders : DeviceFeatures.None));
+        if (meshShaders) Assert.True(backend.TryGetCapability(device, out MeshShaders? meshCapabilities) && meshCapabilities is not null);
         using MeshAsset meshFile = await MeshAsset.OpenAsync(assets, new(manifest.List(MeshAsset.FileType).First().AssetGuid));
         ClusterMeshBlock geometry = meshFile.GetBlock<ClusterMeshBlock>();
         using Mesh mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
@@ -92,10 +128,13 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
         using Material material = await materialFile.CreateAsync(assets);
         using var gameWorld = new World();
         using var world = new RenderWorld();
-        AddMesh(new TransformQvvs(new Vector3(0, 0, -8), Quaternion.Identity) { Stretch = new Vector3(4, 4, .1f) });
-        AddMesh(new TransformQvvs(new Vector3(0, 0, -6), Quaternion.Identity, .6f));
-        Entity light = gameWorld.CreateEntity(new PointLight(new Vector3(4, 2, -3), 20, Vector3.One, 30));
-        world.CreateEntity(new RenderView(Matrix4x4.Identity,
+        Vector3 sceneOffset = cameraScroll ? new Vector3(8, 0, 0) : Vector3.Zero;
+        AddMesh(new TransformQvvs(sceneOffset + new Vector3(0, 0, -8), Quaternion.Identity) { Stretch = new Vector3(4, 4, .1f) });
+        AddMesh(new TransformQvvs(sceneOffset + new Vector3(0, 0, -6), Quaternion.Identity, .6f));
+        Entity light = cameraScroll
+            ? gameWorld.CreateEntity(new DirectionalLight(Vector3.Normalize(new Vector3(0, -.2f, -1)), Vector3.One, 3))
+            : gameWorld.CreateEntity(new PointLight(new Vector3(4, 2, -3), 20, Vector3.One, 30));
+        Entity receiver = world.CreateEntity(new RenderView(Matrix4x4.CreateTranslation(-sceneOffset),
             Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), width, height));
         using var extraction = new RenderExtractionSystems(world, new MeshRenderExtractor(), new LightRenderExtractor());
         using var renderDevice = new RenderDevice(backend, device);
@@ -132,8 +171,9 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
             new VirtualShadowMapSettings
             {
                 Enabled = shadows, VirtualResolution = 4096, AtlasSize = 2048,
-                MaxShadowLights = 1, DirectionalClipmapLevels = 1,
+                MaxShadowLights = 1, DirectionalClipmapLevels = cameraScroll ? 16u : 1u,
                 DynamicResolutionEnabled = false, LocalReceiverMask = receiverMask,
+                NormalBias = normalBias,
             }, graph, pipeline, lighting);
         resources.Add(shadow);
         var lightSystem = new RenderLightSetSystem();
@@ -153,7 +193,15 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
             for (int iteration = 0; iteration < 24; iteration++)
             {
                 if (iteration == 16)
-                    gameWorld.Replace(light, new PointLight(new Vector3(-4, 2, -3), 20, Vector3.One, 30));
+                {
+                    if (cameraScroll)
+                        world.Replace(receiver, world.Read<RenderView>(receiver) with
+                        {
+                            View = Matrix4x4.CreateLookAt(new Vector3(9, 0, 0), new Vector3(8, 0, -8), Vector3.UnitY),
+                        });
+                    else gameWorld.Replace(light, new PointLight(new Vector3(-4, 2, -3), 20, Vector3.One, 30));
+                }
+                if (refreshShadows && iteration >= 16) shadow.InvalidateAllCasters();
                 extraction.Extract(gameWorld);
                 Assert.True(coordinator.TryBeginPrepare(out var update));
                 using (update)
@@ -190,6 +238,7 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
                 using (RenderGraphFrame commands = graph.BeginFrame())
                 {
                     frames.Update(frame, commands);
+                    commands.ObserveExecution(streaming);
                     commands.SetTextureInput(colorInput, outputs.MaterialColor);
                     commands.Execute(completions);
                     QueueCompletion[] accepted = completions.Where(value => value != default).ToArray();

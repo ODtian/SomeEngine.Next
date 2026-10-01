@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using Silk.NET.Core;
@@ -20,7 +21,7 @@ internal sealed unsafe partial class D3D12Backend
         in GraphicsPipelineDesc desc,
         PipelineCache? cache = null)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreatePipeline);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -330,7 +331,7 @@ internal sealed unsafe partial class D3D12Backend
         in ComputePipelineDesc desc,
         PipelineCache? cache = null)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreatePipeline);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -448,7 +449,7 @@ nativeDevice.Native, &native,
         in MeshPipelineDesc desc,
         PipelineCache? cache = null)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreatePipeline);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         MeshShaders meshCapability =
             nativeDevice.RequireCapability<MeshShaders>(nameof(CreateMeshPipeline));
@@ -761,6 +762,31 @@ nativeDevice.Native, &native,
                 nameof(entryPoint));
         }
 
+        ShaderCodeData bytecode = ShaderCodeBytes.GetValue(program, static _ => new());
+        lock (bytecode)
+        {
+            if (bytecode.Entries.TryGetValue(entryPoint, out CompiledShader? shader)) return shader;
+            bytecode.ContentHash ??= SHA256.HashData(program.ToArray());
+            shader = ReadShaderBytecode(reflection, entryPoint, role, bytecode.ContentHash);
+            bytecode.Entries.Add(entryPoint, shader);
+            return shader;
+        }
+    }
+
+    private static readonly ConditionalWeakTable<ShaderProgram, ShaderCodeData> ShaderCodeBytes = new();
+
+    private sealed class ShaderCodeData
+    {
+        internal byte[]? ContentHash;
+        internal readonly Dictionary<ShaderEntryPoint, CompiledShader> Entries = [];
+    }
+
+    private static CompiledShader ReadShaderBytecode(
+        ShaderProgramLayout reflection,
+        ShaderEntryPoint entryPoint,
+        string role,
+        byte[] contentHash)
+    {
         bool belongsToProgram = false;
         for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
@@ -788,7 +814,7 @@ nativeDevice.Native, &native,
             entryPoint,
             bytes,
             SHA256.HashData(bytes),
-            SHA256.HashData(program.ToArray()));
+            contentHash);
     }
 
     private static void ValidateGraphicsDescription(in GraphicsPipelineDesc desc)

@@ -1,4 +1,5 @@
 #include "vsm_sampling.slang"
+#include "vsm_receiver_pixel.slang"
 #include "render_lighting.slang"
 
 struct VirtualShadowPageDemandUniforms
@@ -19,7 +20,7 @@ struct VirtualShadowPageDemandUniforms
     uint ReceiverViewIndex;
     uint FrameIndex;
     float PageDilationBorderPages;
-    uint Pad0;
+    float NormalBias;
     uint Pad1;
     uint Pad2;
 };
@@ -51,85 +52,61 @@ uint PublishVirtualShadowPage(
     return tableIndex;
 }
 
-bool ProjectShadowPage(
-    VirtualShadowMapParameters shadowView,
-    uint mipLevel,
-    float3 worldPosition,
-    out float2 shadowUv,
-    out float2 pageAddress)
-{
-    float3 shadowNdc;
-    if (!ProjectVirtualShadowPosition(shadowView, worldPosition, shadowNdc, shadowUv))
-    {
-        shadowUv = 0.0.xx;
-        pageAddress = 0.0.xx;
-        return false;
-    }
-    pageAddress = shadowUv * float(VirtualShadowMipPagesPerRow(shadowView, mipLevel));
-    return true;
-}
-
 void PublishProjectedShadowView(
     uint viewIndex,
     uint mipLevel,
-    float3 worldPosition,
-    float2 pageDilationDither)
+    float3 worldPosition)
 {
     if (viewIndex >= PageDemand.ViewCount)
         return;
     VirtualShadowMapParameters shadowView = ShadowViews[viewIndex];
+    float3 shadowNdc;
     float2 shadowUv;
-    float2 pageAddress;
-    if (!ProjectShadowPage(
-            shadowView,
-            mipLevel,
-            worldPosition,
-            shadowUv,
-            pageAddress))
+    if (!ProjectVirtualShadowPosition(shadowView, worldPosition, shadowNdc, shadowUv))
         return;
 
-    int2 centerPage = int2(floor(pageAddress));
-    uint centerTableIndex =
-        PublishVirtualShadowPage(shadowView, mipLevel, centerPage);
-    if (centerTableIndex != 0xFFFFFFFFu &&
-        (shadowView.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
+    uint mipResolution = VirtualShadowMipResolution(shadowView, mipLevel);
+    float2 borderPixels = PageDemand.PageDilationBorderPages * float(shadowView.PageSize);
+    if (PageDemand.NormalBias > 0.0)
     {
-        uint mipResolution = VirtualShadowMipResolution(shadowView, mipLevel);
-        uint2 virtualPixel = min(
-            (uint2)(shadowUv * float(mipResolution)),
-            mipResolution - 1u);
-        MarkVirtualShadowReceiverMask(
-            centerTableIndex,
-            virtualPixel,
-            shadowView.PageSize);
+        float4 clip = mul(float4(worldPosition, 1.0), shadowView.LightViewProjection);
+        float3 x = float3(shadowView.LightViewProjection[0][0],
+            shadowView.LightViewProjection[1][0], shadowView.LightViewProjection[2][0]);
+        float3 y = float3(shadowView.LightViewProjection[0][1],
+            shadowView.LightViewProjection[1][1], shadowView.LightViewProjection[2][1]);
+        float3 w = float3(shadowView.LightViewProjection[0][3],
+            shadowView.LightViewProjection[1][3], shadowView.LightViewProjection[2][3]);
+        float2 xyChange = float2(length(x), length(y)) * PageDemand.NormalBias;
+        float wChange = length(w) * PageDemand.NormalBias;
+        float minimumW = clip.w - wChange;
+        float2 uvBorder = minimumW > 1e-6
+            ? 0.5 * (xyChange * clip.w + abs(clip.xy) * wChange) / (clip.w * minimumW)
+            : 1.0.xx;
+        borderPixels += uvBorder * float(mipResolution);
     }
-    if (PageDemand.PageDilationBorderPages <= 0.0)
-        return;
-
-    float2 dilation = PageDemand.PageDilationBorderPages * pageDilationDither;
-    int2 positivePage = int2(floor(pageAddress + dilation));
-    int2 negativePage = int2(floor(pageAddress - dilation));
-    if (any(positivePage != centerPage))
-        PublishVirtualShadowPage(shadowView, mipLevel, positivePage);
-    if (any(negativePage != centerPage) && any(negativePage != positivePage))
-        PublishVirtualShadowPage(shadowView, mipLevel, negativePage);
-}
-
-float3 ReconstructReceiverPosition(uint2 pixel, float depth)
-{
-    float2 uv = (float2(pixel) + 0.5) /
-        float2(PageDemand.ReceiverWidth, PageDemand.ReceiverHeight);
-    float4 world = mul(
-        float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0),
-        PageDemand.ClipToWorld);
-    return world.xyz / max(abs(world.w), 1e-8);
+    // Material normal offsets and filtering can sample across both page and
+    // receiver-cell boundaries. Mark the complete footprint, independent of
+    // a material's vertex layout or its choice of shading normal.
+    uint2 firstPixel = (uint2)clamp(floor(shadowUv * float(mipResolution) - borderPixels),
+        0.0.xx, float(mipResolution - 1u).xx);
+    uint2 lastPixel = (uint2)clamp(floor(shadowUv * float(mipResolution) + borderPixels),
+        0.0.xx, float(mipResolution - 1u).xx);
+    uint2 firstPage = firstPixel / shadowView.PageSize;
+    uint2 lastPage = lastPixel / shadowView.PageSize;
+    for (uint y = firstPage.y; y <= lastPage.y; y++)
+    for (uint x = firstPage.x; x <= lastPage.x; x++)
+    {
+        uint2 page = uint2(x, y);
+        uint tableIndex = PublishVirtualShadowPage(shadowView, mipLevel, int2(page));
+        if (tableIndex != 0xFFFFFFFFu && (shadowView.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
+            MarkVirtualShadowReceiverRectangle(tableIndex, page, firstPixel, lastPixel, shadowView.PageSize);
+    }
 }
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void MarkVirtualShadowPages(
-    uint3 dispatchThreadId : SV_DispatchThreadID,
-    uint groupIndex : SV_GroupIndex)
+    uint3 dispatchThreadId : SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     if (pixel.x >= PageDemand.ReceiverWidth || pixel.y >= PageDemand.ReceiverHeight)
@@ -138,14 +115,12 @@ void MarkVirtualShadowPages(
     if (depth >= 1.0)
         return;
 
-    float3 worldPosition = ReconstructReceiverPosition(pixel, depth);
-    uint2 pixelX = uint2(min(pixel.x + 1u, PageDemand.ReceiverWidth - 1u), pixel.y);
-    uint2 pixelY = uint2(pixel.x, min(pixel.y + 1u, PageDemand.ReceiverHeight - 1u));
-    float3 worldPositionDx = ReconstructReceiverPosition(pixelX, depth);
-    float3 worldPositionDy = ReconstructReceiverPosition(pixelY, depth);
-    float2 pageDilationDither = float2(
-        (groupIndex & 1u) != 0u ? 1.0 : -1.0,
-        (groupIndex & 2u) != 0u ? 1.0 : -1.0);
+    VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
+        ReceiverDepth, uint3(pixel, 0u), uint2(PageDemand.ReceiverWidth, PageDemand.ReceiverHeight),
+        depth, PageDemand.ClipToWorld);
+    float3 worldPosition = receiver.Position;
+    float3 worldPositionDx = receiver.PositionDx;
+    float3 worldPositionDy = receiver.PositionDy;
     float2 dynamicResolutionBias = DynamicResolutionBias[0];
 
     uint clipmapLevels = max(PageDemand.DirectionalClipmapLevels, 1u);
@@ -156,19 +131,15 @@ void MarkVirtualShadowPages(
     {
         uint baseViewIndex = lightIndex * clipmapLevels;
         VirtualShadowMapParameters baseView = ShadowViews[baseViewIndex];
-        float distanceToClipmapOrigin = length(worldPosition - baseView.ClipmapWorldOrigin);
-        int absoluteLevel = (int)floor(
-            log2(max(distanceToClipmapOrigin, 1e-6)) +
-            baseView.ResolutionLodBias + dynamicResolutionBias.x);
-        uint relativeLevel = (uint)max(0, absoluteLevel - baseView.FirstClipmapLevel);
+        uint relativeLevel = VirtualShadowDirectionalLevelFromReceiverFootprint(
+            baseView, worldPosition, worldPositionDx, worldPositionDy, dynamicResolutionBias.x);
         if (relativeLevel < baseView.ClipmapLevelCount &&
             baseViewIndex + relativeLevel < PageDemand.ViewCount)
         {
             PublishProjectedShadowView(
                 baseViewIndex + relativeLevel,
                 0u,
-                worldPosition,
-                pageDilationDither);
+                worldPosition);
         }
     }
 
@@ -228,7 +199,6 @@ void MarkVirtualShadowPages(
         PublishProjectedShadowView(
             shadowViewIndex,
             mipLevel,
-            worldPosition,
-            pageDilationDither);
+            worldPosition);
     }
 }

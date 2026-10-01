@@ -19,6 +19,148 @@ namespace SomeEngine.Render.Tests;
 public sealed class RenderDeviceTextureTests
 {
     [Fact]
+    public void PaddedTextureRowsReachGpuAcrossCanceledAndSubmittedFrames()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "Padded texture rows");
+        using var renderDevice = new RenderDevice(backend, device);
+        using var graph = CreateGraph(backend, device);
+        var description = new TextureDesc(GraphicsTextureDimension.Texture2D,
+            3, 2, 1, 1, 1, 1, Format.R8UNorm,
+            TextureUsages.Sampled | TextureUsages.CopyDestination | TextureUsages.CopySource);
+        var tile = new TextureMipTile
+        {
+            Width = 3, Height = 2, RowPitch = 5, SlicePitch = 10,
+            ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 10,
+        };
+        using EngineTexture texture = EngineTexture.Create(description,
+            [new(tile, new byte[] { 10, 11, 12, 203, 204, 20, 21, 22, 205, 206 })],
+            GraphicsTextureViewDimension.Texture2D);
+        using SomeEngine.Graphics.Buffer result = backend.CreateBuffer(device,
+            new BufferDesc(512, BufferUsages.CopyDestination), MemoryType.Readback);
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int frameIndex = 0; frameIndex < 3; frameIndex++)
+        {
+            RenderGraphFrame frame = graph.BeginFrame();
+            try
+            {
+                GraphBufferId destination = frame.Import(result,
+                    [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+                var sources = new GraphTextureId[1];
+                GraphPassId readback = frame.AddCopyPass("read padded texture rows",
+                    PassQueueSelection.AnyOfType(QueueType.Graphics), (Textures: sources, Buffer: destination),
+                    new PassOptions(Culling: PassCullingMode.NeverCull),
+                    static (ref PassDefinition access, ref (GraphTextureId[] Textures, GraphBufferId Buffer) data) =>
+                        access.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
+                            ResourceAccess.CopyDestination, WriteCoverage.Partial),
+                    static (ref CopyPassCommandScope commands, in (GraphTextureId[] Textures, GraphBufferId Buffer) data) =>
+                        commands.CopyTextureToBuffer(new(commands.GetBuffer(data.Buffer), 0,
+                            256, 2, commands.GetTexture(data.Textures[0]),
+                            0, 0, TextureAspects.Color, 0, 0, 0, 3, 2, 1)));
+                RhiTexture allocation = renderDevice.PrepareTexture(ref frame, readback, texture);
+                sources[0] = frame.GetImported(allocation);
+                PassDefinition access = frame.GetPass(readback);
+                access.Read(sources[0], new(0, 1, 0, 1, TextureAspects.Color),
+                    PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                if (frameIndex == 0) continue;
+                int count = frame.Execute(completions);
+                renderDevice.TrackSubmission(completions.AsSpan(0, count));
+            }
+            finally { frame.Dispose(); }
+            renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+            using MappedBuffer mapping = backend.Map(result, MapType.Read, BufferRange.Whole);
+            mapping.Invalidate(mapping.Range);
+            Assert.Equal(new byte[] { 10, 11, 12 }, mapping.Bytes[..3].ToArray());
+            Assert.Equal(new byte[] { 20, 21, 22 }, mapping.Bytes.Slice(256, 3).ToArray());
+        }
+    }
+
+    [Fact]
+    public void MultipleTexturesPreserveContentAcrossCanceledAndSubmittedFrames()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "Multiple texture transfers");
+        using var renderDevice = new RenderDevice(backend, device);
+        using var graph = CreateGraph(backend, device);
+        var description = new TextureDesc(GraphicsTextureDimension.Texture2D,
+            2, 1, 1, 1, 1, 1, Format.R8UNorm,
+            TextureUsages.Sampled | TextureUsages.CopyDestination | TextureUsages.CopySource);
+        var textures = new EngineTexture[8];
+        for (int index = 0; index < textures.Length; index++)
+            textures[index] = EngineTexture.Create(description,
+                [Tile(0, 0, 2, 1, [(byte)(index * 7), (byte)(index * 7 + 1)])],
+                GraphicsTextureViewDimension.Texture2D);
+        using SomeEngine.Graphics.Buffer result = backend.CreateBuffer(device,
+            new BufferDesc((ulong)textures.Length * 512, BufferUsages.CopyDestination), MemoryType.Readback);
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        try
+        {
+            for (int frameIndex = 0; frameIndex < 3; frameIndex++)
+            {
+                RenderGraphFrame frame = graph.BeginFrame();
+                try
+                {
+                    GraphBufferId destination = frame.Import(result,
+                        [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+                    var sources = new GraphTextureId[textures.Length];
+                    GraphPassId readback = frame.AddCopyPass("read multiple textures",
+                        PassQueueSelection.AnyOfType(QueueType.Graphics), (Textures: sources, Buffer: destination),
+                        new PassOptions(Culling: PassCullingMode.NeverCull),
+                        static (ref PassDefinition access, ref (GraphTextureId[] Textures, GraphBufferId Buffer) data) =>
+                            access.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
+                                ResourceAccess.CopyDestination, WriteCoverage.Partial),
+                        static (ref CopyPassCommandScope commands, in (GraphTextureId[] Textures, GraphBufferId Buffer) data) =>
+                        {
+                            for (int index = 0; index < data.Textures.Length; index++)
+                                commands.CopyTextureToBuffer(new(commands.GetBuffer(data.Buffer), (ulong)index * 512,
+                                    256, 1, commands.GetTexture(data.Textures[index]),
+                                    0, 0, TextureAspects.Color, 0, 0, 0, 2, 1, 1));
+                        });
+                    for (int index = 0; index < textures.Length; index++)
+                    {
+                        RhiTexture texture = renderDevice.PrepareTexture(ref frame, readback, textures[index]);
+                        sources[index] = frame.GetImported(texture);
+                        PassDefinition access = frame.GetPass(readback);
+                        access.Read(sources[index], new(0, 1, 0, 1, TextureAspects.Color),
+                            PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                        Assert.Same(texture, renderDevice.PrepareTexture(ref frame, readback, textures[index]));
+                    }
+                    if (frameIndex != 0)
+                    {
+                        int count = frame.Execute(completions);
+                        renderDevice.TrackSubmission(completions.AsSpan(0, count));
+                    }
+                }
+                finally
+                {
+                    frame.Dispose();
+                }
+                if (frameIndex == 0)
+                {
+                    foreach (EngineTexture texture in textures)
+                        Assert.Throws<InvalidOperationException>(() => renderDevice.GetTextureSrv(texture));
+                    continue;
+                }
+                renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+                using MappedBuffer mapping = backend.Map(result, MapType.Read, BufferRange.Whole);
+                mapping.Invalidate(mapping.Range);
+                for (int index = 0; index < textures.Length; index++)
+                {
+                    Assert.Equal(new byte[] { (byte)(index * 7), (byte)(index * 7 + 1) },
+                        mapping.Bytes.Slice(index * 512, 2).ToArray());
+                    _ = renderDevice.GetTextureSrv(textures[index]);
+                }
+            }
+        }
+        finally
+        {
+            foreach (EngineTexture texture in textures) texture.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task CanceledFirstPreparationDoesNotCommitUploadState()
     {
         if (!OperatingSystem.IsWindows())

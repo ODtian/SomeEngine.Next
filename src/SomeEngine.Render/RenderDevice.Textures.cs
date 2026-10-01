@@ -14,6 +14,7 @@ public sealed partial class RenderDevice
 {
     private readonly HashSet<EngineTexture> _textures =
         new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<(RenderGraph.RenderGraph Graph, ulong Frame), TextureTransfers> _textureTransfers = [];
     private TextureRealization? _missingTexture;
 
     public RhiTexture MissingTexture
@@ -201,16 +202,11 @@ public sealed partial class RenderDevice
         if (!realization.Initialized)
         {
             TextureMipTile tile = MissingTile();
-            PreparedTile prepared = PrepareTile(
-                realization.Resource,
-                realization.Shape,
-                tile,
-                new ReadOnlySequence<byte>(new byte[] { 255, 0, 255, 255 }));
-            PreparedTile[] upload = [prepared];
             BeginUpload(ref frame, asset: null, realization, replaceContents: true);
             try
             {
-                ScheduleUpload(ref frame, realization, upload);
+                ScheduleUpload(ref frame, realization, tile,
+                    new ReadOnlySequence<byte>(new byte[] { 255, 0, 255, 255 }));
             }
             catch
             {
@@ -224,7 +220,7 @@ public sealed partial class RenderDevice
         return realization.Resource;
     }
 
-    private static void OrderTextureConsumers(ref RenderGraphFrame frame,
+    private void OrderTextureConsumers(ref RenderGraphFrame frame,
         TextureRealization realization, scoped ReadOnlySpan<GraphPassId> consumers)
     {
         if (realization.UploadPasses.Count == 0) return;
@@ -321,53 +317,40 @@ public sealed partial class RenderDevice
         // revision. Keep frame synchronization, but skip repeated pixel discovery.
         if (!replaceContents && realization.UploadedChunks.Count == asset.MipTiles.Count)
             return;
-        PreparedTile[] tiles = PrepareResidentTiles(asset, realization, replaceContents);
-        if (replaceContents && tiles.Length == 0)
-            throw new InvalidOperationException("A replacement Texture has no resident Bootstrap payload.");
-        if (tiles.Length != 0)
+        bool started = false;
+        try
         {
-            BeginUpload(ref frame, asset, realization, replaceContents);
-            try
+            foreach (TextureMipTile tile in asset.MipTiles ?? [])
             {
-                ScheduleUpload(ref frame, realization, tiles);
-            }
-            catch
-            {
-                AbortPendingUpload(realization);
-                throw;
+                if (!replaceContents && realization.ContainsUploadedChunk(tile.ChunkKey)) continue;
+                if (!asset.TryRetainTile(tile.ChunkKey, out PageRange<byte>? pixels)) continue;
+                using (pixels)
+                {
+                    if (!started)
+                    {
+                        BeginUpload(ref frame, asset, realization, replaceContents);
+                        started = true;
+                    }
+                    ScheduleUpload(ref frame, realization, tile, pixels.Sequence);
+                }
             }
         }
+        catch
+        {
+            if (started) AbortPendingUpload(realization);
+            throw;
+        }
+        if (replaceContents && !started)
+            throw new InvalidOperationException("A replacement Texture has no resident Bootstrap payload.");
         UpdateResidentMip(asset, realization);
         if (realization.FirstResidentMip > asset.BootstrapMipLevel)
             throw new InvalidOperationException("The resident Texture payload does not contain its Bootstrap mip.");
     }
 
-    private PreparedTile[] PrepareResidentTiles(
-        EngineTexture asset,
-        TextureRealization realization,
-        bool includeUploaded)
-    {
-        var result = new List<PreparedTile>();
-        foreach (TextureMipTile tile in asset.MipTiles ?? [])
-        {
-            if (!includeUploaded && realization.ContainsUploadedChunk(tile.ChunkKey))
-                continue;
-            if (!asset.TryRetainTile(tile.ChunkKey, out PageRange<byte>? pixels)) continue;
-            using (pixels)
-                result.Add(PrepareTile(
-                    realization.Resource,
-                    realization.Shape,
-                    tile,
-                    pixels.Sequence));
-        }
-        return [.. result];
-    }
-
-    private PreparedTile PrepareTile(
+    private TextureTileCopy DescribeTextureTileCopy(
         RhiTexture destination,
         in TextureShape shape,
-        TextureMipTile tile,
-        ReadOnlySequence<byte> source)
+        TextureMipTile tile)
     {
         uint arrayLayer = shape.ResolveArrayLayer(tile.ArrayLayer, tile.Face);
         uint z = shape.Dimension == TextureDimension.Texture3D ? tile.DepthSlice : 0;
@@ -396,8 +379,7 @@ public sealed partial class RenderDevice
             description,
             copy,
             0);
-        return new PreparedTile(
-            Repack(source, tile, footprint),
+        return new TextureTileCopy(
             footprint,
             tile.ChunkKey,
             tile.MipLevel,
@@ -410,11 +392,13 @@ public sealed partial class RenderDevice
             tile.Height);
     }
 
-    private static byte[] Repack(
-        ReadOnlySequence<byte> source,
-        TextureMipTile tile,
-        in TextureCopyFootprint footprint)
+    private static void CopyTextureTile(
+        Span<byte> destination,
+        (ReadOnlySequence<byte> Pixels, TextureMipTile Tile, TextureCopyFootprint Footprint) data)
     {
+        ReadOnlySequence<byte> source = data.Pixels;
+        TextureMipTile tile = data.Tile;
+        TextureCopyFootprint footprint = data.Footprint;
         ulong sourceRowPitch = tile.RowPitch == 0 ? footprint.RowSize : tile.RowPitch;
         if (sourceRowPitch < footprint.RowSize)
             throw new InvalidDataException("A Texture tile row pitch is smaller than its RHI copy row size.");
@@ -425,11 +409,8 @@ public sealed partial class RenderDevice
         if (requiredSource > checked((ulong)source.Length))
             throw new InvalidDataException("A Texture tile payload is shorter than its storage layout.");
 
-        ulong graphValidatedSize = checked(
-            footprint.Offset +
-            ((ulong)Math.Max(footprint.RowPitch, 1u) * Math.Max(tile.Height, 1u)));
-        byte[] result = new byte[checked((int)Math.Max(footprint.TotalSize, graphValidatedSize))];
         var reader = new SequenceReader<byte>(source);
+        int written = 0;
         for (uint row = 0; row < footprint.RowCount; row++)
         {
             long sourceOffset = checked((long)((ulong)row * sourceRowPitch));
@@ -437,10 +418,12 @@ public sealed partial class RenderDevice
                 footprint.Offset + ((ulong)row * footprint.RowPitch)));
             reader.Advance(sourceOffset - reader.Consumed);
             int rowBytes = checked((int)footprint.RowSize);
-            reader.UnreadSequence.Slice(0, rowBytes).CopyTo(result.AsSpan(destinationOffset, rowBytes));
+            destination[written..destinationOffset].Clear();
+            reader.UnreadSequence.Slice(0, rowBytes).CopyTo(destination.Slice(destinationOffset, rowBytes));
             reader.Advance(rowBytes);
+            written = checked(destinationOffset + rowBytes);
         }
-        return result;
+        destination[written..].Clear();
     }
 
     private static TextureAspects SelectCopyAspect(TextureAspects aspects)
@@ -471,7 +454,7 @@ public sealed partial class RenderDevice
         frame.ObserveExecution(realization);
     }
 
-    private static void EnsureFinalizationPass(
+    private void EnsureFinalizationPass(
         ref RenderGraphFrame frame,
         TextureRealization realization)
     {
@@ -483,26 +466,12 @@ public sealed partial class RenderDevice
                 "A RenderDevice Texture cannot be finalized before resident contents exist.");
         }
 
-        var finalization = new TextureFinalizationPass(
-            realization.GraphResource,
-            realization.Shape.ResidentRange(realization.FirstResidentMip));
-        realization.FinalizationPass = frame.AddGeneralPass(
-            $"Finalize RenderDevice Texture '{realization.Resource.Label}'",
-            PassQueueSelection.AnyOfType(QueueType.Graphics),
-            finalization,
-            new PassOptions(Culling: PassCullingMode.NeverCull),
-            static (ref PassDefinition access, ref TextureFinalizationPass data) =>
-                _ = access.Read(
-                    data.Texture,
-                    data.Range,
-                    PipelineSync.AllShading,
-                    ResourceAccess.ShaderResource,
-                    TextureLayout.ShaderResource),
-            static (ref GeneralPassCommandScope commands, in TextureFinalizationPass data) =>
-            {
-                _ = commands;
-                _ = data;
-            });
+        GraphPassId completion = GetTextureTransfers(ref frame).CompletionPass;
+        PassDefinition access = frame.GetPass(completion);
+        _ = access.Read(realization.GraphResource,
+            realization.Shape.ResidentRange(realization.FirstResidentMip),
+            PipelineSync.AllShading, ResourceAccess.ShaderResource, TextureLayout.ShaderResource);
+        realization.FinalizationPass = completion;
         realization.FinalizationScheduled = true;
     }
 
@@ -545,78 +514,74 @@ public sealed partial class RenderDevice
         ];
     }
 
-    private static void ScheduleUpload(
+    private TextureTransfers GetTextureTransfers(ref RenderGraphFrame frame)
+    {
+        var frameKey = (frame.Owner, frame.FrameIdentity);
+        if (_textureTransfers.TryGetValue(frameKey, out TextureTransfers? transfers)) return transfers;
+        transfers = new TextureTransfers();
+        transfers.CopyPass = frame.AddCopyPass(
+            "Upload RenderDevice textures",
+            PassQueueSelection.AnyOfType(QueueType.Graphics),
+            transfers.Tiles,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition _, ref List<TextureUploadPass> _) => { },
+            static (ref CopyPassCommandScope commands, in List<TextureUploadPass> tiles) =>
+            {
+                foreach (TextureUploadPass tile in tiles)
+                    commands.CopyBufferToTexture(new BufferTextureCopy(
+                        commands.GetBuffer(tile.Upload.Buffer), tile.BufferOffset,
+                        tile.BufferRowPitch, tile.BufferImageHeight,
+                        commands.GetTexture(tile.Destination), tile.MipLevel, tile.ArrayLayer,
+                        tile.Aspect, tile.X, tile.Y, tile.Z, tile.Width, tile.Height, 1));
+            });
+        transfers.CompletionPass = frame.AddGeneralPass(
+            "Complete RenderDevice texture uploads",
+            PassQueueSelection.AnyOfType(QueueType.Graphics),
+            0,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition _, ref int _) => { },
+            static (ref GeneralPassCommandScope _, in int _) => { });
+        _textureTransfers.Add(frameKey, transfers);
+        return transfers;
+    }
+
+    private void ScheduleUpload(
         ref RenderGraphFrame frame,
         TextureRealization realization,
-        ReadOnlySpan<PreparedTile> tiles)
+        TextureMipTile tile,
+        ReadOnlySequence<byte> pixels)
     {
-        foreach (ref readonly PreparedTile tile in tiles)
-        {
-            GraphBufferSlice upload = frame.Upload(
-                tile.Bytes,
-                BufferUsages.CopySource,
-                "Texture mip tile upload");
-            var state = new TextureUploadPass(
-                upload,
-                realization.GraphResource,
-                checked(upload.Range.Offset + tile.Footprint.Offset),
-                tile.Footprint.RowPitch,
-                tile.Height,
-                tile.MipLevel,
-                tile.ArrayLayer,
-                tile.Aspect,
-                tile.X,
-                tile.Y,
-                tile.Z,
-                tile.Width,
-                tile.Height);
-            GraphPassId copy = frame.AddCopyPass(
-                "Upload RenderDevice Texture mip tile",
-                PassQueueSelection.AnyOfType(QueueType.Graphics),
-                state,
-                new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition definition, ref TextureUploadPass value) =>
-                {
-                    _ = definition.Read(
-                        value.Upload.Buffer,
-                        value.Upload.Range,
-                        PipelineSync.Copy,
-                        ResourceAccess.CopySource);
-                    _ = definition.Write(
-                        value.Destination,
-                        new TextureSubresourceRange(
-                            value.MipLevel,
-                            1,
-                            value.ArrayLayer,
-                            1,
-                            value.Aspect),
-                        PipelineSync.Copy,
-                        ResourceAccess.CopyDestination,
-                        TextureLayout.CopyDestination,
-                        WriteCoverage.Partial,
-                        ResourceContentState.Defined);
-                },
-                static (ref CopyPassCommandScope commands, in TextureUploadPass value) =>
-                {
-                    commands.CopyBufferToTexture(new BufferTextureCopy(
-                        commands.GetBuffer(value.Upload.Buffer),
-                        value.BufferOffset,
-                        value.BufferRowPitch,
-                        value.BufferImageHeight,
-                        commands.GetTexture(value.Destination),
-                        value.MipLevel,
-                        value.ArrayLayer,
-                        value.Aspect,
-                        value.X,
-                        value.Y,
-                        value.Z,
-                        value.Width,
-                        value.Height,
-                        1));
-                });
-            realization.UploadPasses.Add(copy);
-            realization.PendingUploadedChunks.Add(tile.ChunkKey);
-        }
+        TextureTileCopy copy = DescribeTextureTileCopy(realization.Resource, realization.Shape, tile);
+        ulong graphValidatedSize = checked(copy.Footprint.Offset +
+            ((ulong)Math.Max(copy.Footprint.RowPitch, 1u) * Math.Max(copy.Height, 1u)));
+        int byteCount = checked((int)Math.Max(copy.Footprint.TotalSize, graphValidatedSize));
+        GraphBufferSlice upload = frame.Upload(byteCount, BufferUsages.CopySource,
+            (pixels, tile, copy.Footprint), CopyTextureTile, "Texture mip tile upload");
+        TextureTransfers transfers = GetTextureTransfers(ref frame);
+        PassDefinition access = frame.GetPass(transfers.CopyPass);
+        var state = new TextureUploadPass(
+            upload,
+            realization.GraphResource,
+            checked(upload.Range.Offset + copy.Footprint.Offset),
+            copy.Footprint.RowPitch,
+            copy.Height,
+            copy.MipLevel,
+            copy.ArrayLayer,
+            copy.Aspect,
+            copy.X,
+            copy.Y,
+            copy.Z,
+            copy.Width,
+            copy.Height);
+        transfers.Tiles.Add(state);
+        access.Read(upload.Buffer, upload.Range, PipelineSync.Copy, ResourceAccess.CopySource);
+        access.Write(realization.GraphResource,
+            new TextureSubresourceRange(copy.MipLevel, 1, copy.ArrayLayer, 1, copy.Aspect),
+            PipelineSync.Copy, ResourceAccess.CopyDestination, TextureLayout.CopyDestination,
+            WriteCoverage.Partial, ResourceContentState.Defined);
+        realization.PendingUploadedChunks.Add(copy.ChunkKey);
+        if (!realization.UploadPasses.Contains(transfers.CopyPass))
+            realization.UploadPasses.Add(transfers.CopyPass);
     }
 
     private static void UpdateResidentMip(EngineTexture asset, TextureRealization realization)
@@ -709,6 +674,7 @@ public sealed partial class RenderDevice
                 data.Dispose();
             }
         _textures.Clear();
+        _textureTransfers.Clear();
         _missingTexture?.Dispose();
         _missingTexture = null;
     }
@@ -852,6 +818,8 @@ public sealed partial class RenderDevice
         }
         finally
         {
+            if (realization.FrameGraph is not null)
+                _textureTransfers.Remove((realization.FrameGraph, realization.FrameIdentity));
             realization.FrameGraph = null;
             realization.FrameIdentity = 0;
             realization.GraphResource = default;
@@ -883,6 +851,13 @@ public sealed partial class RenderDevice
     {
         private TextureRealization? _texture = texture;
         public void Dispose() => Interlocked.Exchange(ref _texture, null)?.CompleteFrame();
+    }
+
+    private sealed class TextureTransfers
+    {
+        internal readonly List<TextureUploadPass> Tiles = [];
+        internal GraphPassId CopyPass;
+        internal GraphPassId CompletionPass;
     }
 
     private enum TextureViewKind : byte
@@ -1000,8 +975,7 @@ public sealed partial class RenderDevice
         }
     }
 
-    private readonly record struct PreparedTile(
-        byte[] Bytes,
+    private readonly record struct TextureTileCopy(
         TextureCopyFootprint Footprint,
         ulong ChunkKey,
         uint MipLevel,
@@ -1086,8 +1060,4 @@ public sealed partial class RenderDevice
                 usages);
         }
     }
-
-    private readonly record struct TextureFinalizationPass(
-        GraphTextureId Texture,
-        TextureSubresourceRange Range);
 }

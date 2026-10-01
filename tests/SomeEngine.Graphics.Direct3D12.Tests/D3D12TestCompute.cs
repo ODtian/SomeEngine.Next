@@ -7,13 +7,15 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 internal static class D3D12TestCompute
 {
-    internal sealed record SampledImage(uint Width, uint Height, uint[] Pixels, int BindingIndex);
+    internal sealed record SampledImage(uint Width, uint Height, uint[] Pixels, int BindingIndex,
+        Format PixelFormat = Format.R32UInt, TextureViewDimension ViewDimension = TextureViewDimension.Texture2D);
     internal static uint[][] Execute(string file, string entry, DispatchArguments dispatch,
         (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs)
         => ExecuteSource($"#include \"{file}\"", entry, dispatch, inputs);
 
     internal static uint[][] ExecuteSource(string source, string entry, DispatchArguments dispatch,
-        (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs, SampledImage? image = null)
+        (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs, SampledImage? image = null,
+        SampledImage[]? images = null)
     {
         string? directory = null;
         for (DirectoryInfo? current = new(AppContext.BaseDirectory); current is not null; current = current.Parent)
@@ -54,29 +56,30 @@ internal static class D3D12TestCompute
                     writable ? ResourceBinding.WritableBuffer(Keep(backend.CreateBufferUav(device, new(buffer, BufferRange.Whole, StructureStride: input.Stride)))) :
                     ResourceBinding.ReadOnlyBuffer(Keep(backend.CreateBufferSrv(device, new(buffer, BufferRange.Whole, StructureStride: input.Stride)))));
             }
-            if (image is not null)
+            IEnumerable<SampledImage> sourceImages = image is null ? images ?? [] : images is null ? [image] : [image, .. images];
+            foreach (SampledImage sourceImage in sourceImages.OrderBy(value => value.BindingIndex))
             {
-                uint pitch = (image.Width * 4 + 255u) & ~255u;
-                Buffer upload = Keep(backend.CreateBuffer(device, new((ulong)pitch * image.Height, BufferUsages.CopySource), MemoryType.Upload));
+                uint pitch = (sourceImage.Width * 4 + 255u) & ~255u;
+                Buffer upload = Keep(backend.CreateBuffer(device, new((ulong)pitch * sourceImage.Height, BufferUsages.CopySource), MemoryType.Upload));
                 using (MappedBuffer map = backend.Map(upload, MapType.Write, BufferRange.Whole))
                 {
                     map.Bytes.Clear();
-                    for (int row = 0; row < image.Height; row++)
-                        MemoryMarshal.AsBytes(image.Pixels.AsSpan(row * (int)image.Width, (int)image.Width))
+                    for (int row = 0; row < sourceImage.Height; row++)
+                        MemoryMarshal.AsBytes(sourceImage.Pixels.AsSpan(row * (int)sourceImage.Width, (int)sourceImage.Width))
                             .CopyTo(map.Bytes.Slice(row * (int)pitch));
                     map.Flush(map.Range);
                 }
                 Texture texture = Keep(backend.CreateTexture(device, new(TextureDimension.Texture2D,
-                    image.Width, image.Height, 1, 1, 1, 1, Format.R32UInt, TextureUsages.Sampled | TextureUsages.CopyDestination)));
+                    sourceImage.Width, sourceImage.Height, 1, 1, 1, 1, sourceImage.PixelFormat, TextureUsages.Sampled | TextureUsages.CopyDestination)));
                 TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
                 backend.Barrier(context, new TextureBarrier(texture, range, PipelineSync.None, PipelineSync.Copy,
                     ResourceAccess.NoAccess, ResourceAccess.CopyDestination, TextureLayout.Undefined, TextureLayout.CopyDestination));
-                backend.CopyBufferToTexture(context, new(upload, 0, pitch, image.Height, texture, 0, 0, TextureAspects.Color,
-                    0, 0, 0, image.Width, image.Height, 1));
+                backend.CopyBufferToTexture(context, new(upload, 0, pitch, sourceImage.Height, texture, 0, 0, TextureAspects.Color,
+                    0, 0, 0, sourceImage.Width, sourceImage.Height, 1));
                 backend.Barrier(context, new TextureBarrier(texture, range, PipelineSync.Copy, PipelineSync.ComputeShading,
                     ResourceAccess.CopyDestination, ResourceAccess.ShaderResource, TextureLayout.CopyDestination, TextureLayout.ShaderResource));
-                TextureSrv view = Keep(backend.CreateTextureSrv(device, new(texture, range, Format.R32UInt, TextureViewDimension.Texture2D)));
-                bindings.Insert(image.BindingIndex, ResourceBinding.SampledTexture(view));
+                TextureSrv view = Keep(backend.CreateTextureSrv(device, new(texture, range, sourceImage.PixelFormat, sourceImage.ViewDimension)));
+                bindings.Insert(sourceImage.BindingIndex, ResourceBinding.SampledTexture(view));
             }
             Pipeline pipeline = Keep(backend.CreateComputePipeline(device, new(shader.Program, shader.GetEntryPoint(0))));
             backend.SetPipeline(context, pipeline);

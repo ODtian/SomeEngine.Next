@@ -1,3 +1,6 @@
+using System.Buffers;
+using System.Runtime.InteropServices;
+
 namespace SomeEngine.Render.Cluster;
 
 /// <summary>
@@ -17,11 +20,11 @@ internal interface IClusterPageStorage : IDisposable
     void Release(uint offset, int length);
 }
 
-/// <summary>Each in-flight page upload owns one sparse CPU staging array until publication.</summary>
+/// <summary>Holds CPU page bytes until their upload has been submitted.</summary>
 internal sealed class SparseClusterPageStorage : IClusterPageStorage
 {
     private readonly uint _capacity;
-    private readonly Dictionary<uint, byte[]> _pages = [];
+    private readonly Dictionary<uint, ClusterPageBytes> _pages = [];
     private readonly HashSet<uint> _stagedOffsets = [];
     private int _disposed;
 
@@ -34,16 +37,24 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
         if (checked((ulong)offset + (uint)length) > _capacity)
             throw new ArgumentOutOfRangeException(nameof(length));
-        byte[] bytes = GC.AllocateUninitializedArray<byte>(length);
-        if (!_pages.TryAdd(offset, bytes))
-            throw new InvalidOperationException($"Page-heap offset {offset} already owns staging storage.");
-        return bytes;
+        var bytes = new ClusterPageBytes(length);
+        try
+        {
+            if (!_pages.TryAdd(offset, bytes))
+                throw new InvalidOperationException($"Page-heap offset {offset} already owns staging storage.");
+            return bytes.Memory;
+        }
+        catch
+        {
+            bytes.Release();
+            throw;
+        }
     }
 
     public void Stage(uint offset, int length)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (!_pages.TryGetValue(offset, out byte[]? bytes) || bytes.Length != length)
+        if (!_pages.TryGetValue(offset, out ClusterPageBytes? bytes) || bytes.Length != length)
             throw new InvalidOperationException($"Page-heap range at {offset} is not allocated.");
         _stagedOffsets.Add(offset);
     }
@@ -59,7 +70,7 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
         for (int index = 0; index < offsets.Length; index++)
         {
             uint offset = offsets[index];
-            uploads[index] = new ClusterStagedUpload(offset, _pages[offset]);
+            uploads[index] = new ClusterStagedUpload(offset, _pages[offset].Memory);
         }
         return uploads;
     }
@@ -70,7 +81,7 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
         foreach (ref readonly ClusterStagedUpload upload in uploads)
         {
             uint offset = checked((uint)upload.Offset);
-            if (!_pages.TryGetValue(offset, out byte[]? bytes) ||
+            if (!_pages.TryGetValue(offset, out ClusterPageBytes? bytes) ||
                 bytes.Length != upload.Bytes.Length ||
                 !_stagedOffsets.Contains(offset))
             {
@@ -82,22 +93,26 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
         {
             uint offset = checked((uint)upload.Offset);
             _stagedOffsets.Remove(offset);
-            _pages.Remove(offset);
+            _pages.Remove(offset, out ClusterPageBytes? bytes);
+            bytes!.Release();
         }
     }
 
     public void Release(uint offset, int length)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (!_pages.Remove(offset, out byte[]? bytes) || bytes.Length != length)
+        if (!_pages.TryGetValue(offset, out ClusterPageBytes? bytes) || bytes.Length != length)
             throw new InvalidOperationException($"Page-heap range [{offset}, {checked(offset + (uint)length)}) is not owned by this storage.");
+        _pages.Remove(offset);
         _stagedOffsets.Remove(offset);
+        bytes.Release();
     }
 
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
+            foreach (ClusterPageBytes bytes in _pages.Values) bytes.Release();
             _pages.Clear();
             _stagedOffsets.Clear();
         }
@@ -117,7 +132,7 @@ internal interface IClusterBvhStorage : IDisposable
 internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
 {
     private readonly ulong _capacity;
-    private readonly SortedDictionary<ulong, byte[]> _blocks = [];
+    private readonly SortedDictionary<ulong, ClusterPageBytes> _blocks = [];
     private readonly List<(ulong Offset, int Length)> _stagedRanges = [];
     private int _disposed;
 
@@ -129,20 +144,28 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
         if (checked(offset + (uint)length) > _capacity)
             throw new InvalidOperationException("Global Cluster BVH storage capacity is exhausted.");
-        byte[] bytes = GC.AllocateUninitializedArray<byte>(length);
-        if (!_blocks.TryAdd(offset, bytes))
-            throw new InvalidOperationException($"Global BVH offset {offset} is already allocated.");
-        return bytes;
+        var bytes = new ClusterPageBytes(length);
+        try
+        {
+            if (!_blocks.TryAdd(offset, bytes))
+                throw new InvalidOperationException($"Global BVH offset {offset} is already allocated.");
+            return bytes.Memory;
+        }
+        catch
+        {
+            bytes.Release();
+            throw;
+        }
     }
 
     public Memory<byte> GetRange(ulong offset, int length)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        foreach ((ulong start, byte[] bytes) in _blocks)
+        foreach ((ulong start, ClusterPageBytes bytes) in _blocks)
         {
             ulong end = checked(start + (uint)bytes.Length);
             if (offset >= start && checked(offset + (uint)length) <= end)
-                return bytes.AsMemory(checked((int)(offset - start)), length);
+                return bytes.Memory.Slice(checked((int)(offset - start)), length);
         }
         throw new InvalidOperationException($"Global BVH range [{offset}, {checked(offset + (uint)length)}) is not allocated.");
     }
@@ -150,6 +173,11 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
     public void Stage(ulong offset, int length)
     {
         _ = GetRange(offset, length);
+        // Registration and page changes can touch the same mesh before one
+        // upload. A containing range already carries its updated bytes.
+        foreach ((ulong start, int byteCount) in _stagedRanges)
+            if (offset >= start && offset + (uint)length <= start + (uint)byteCount)
+                return;
         _stagedRanges.Add((offset, length));
     }
 
@@ -182,19 +210,56 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
     public void Release(ulong offset, int length)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (!_blocks.Remove(offset, out byte[]? bytes) || bytes.Length != length)
+        if (!_blocks.TryGetValue(offset, out ClusterPageBytes? bytes) || bytes.Length != length)
             throw new InvalidOperationException($"Global BVH range at {offset} is not owned by this storage.");
+        _blocks.Remove(offset);
         _stagedRanges.RemoveAll(range =>
             range.Offset >= offset &&
             checked(range.Offset + (uint)range.Length) <= checked(offset + (uint)length));
+        bytes.Release();
     }
 
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
+            foreach (ClusterPageBytes bytes in _blocks.Values) bytes.Release();
             _blocks.Clear();
             _stagedRanges.Clear();
         }
     }
+}
+
+/// <summary>Page bytes whose address remains valid through asynchronous reads and CPU uploads.</summary>
+internal sealed unsafe class ClusterPageBytes : MemoryManager<byte>
+{
+    private nint _address;
+    internal int Length { get; }
+
+    internal ClusterPageBytes(int length)
+    {
+        Length = length;
+        _address = (nint)NativeMemory.Alloc(checked((nuint)length));
+        if (_address == 0) throw new OutOfMemoryException();
+    }
+
+    public override Span<byte> GetSpan()
+    {
+        ObjectDisposedException.ThrowIf(_address == 0, this);
+        return new Span<byte>((void*)_address, Length);
+    }
+
+    public override MemoryHandle Pin(int elementIndex = 0)
+    {
+        ObjectDisposedException.ThrowIf(_address == 0, this);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)elementIndex, (uint)Length);
+        return new MemoryHandle((byte*)_address + elementIndex);
+    }
+
+    public override void Unpin() { }
+
+    internal void Release() => ((IDisposable)this).Dispose();
+
+    protected override void Dispose(bool disposing)
+        => NativeMemory.Free((void*)Interlocked.Exchange(ref _address, 0));
 }

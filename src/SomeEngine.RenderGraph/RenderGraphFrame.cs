@@ -61,6 +61,8 @@ public ref partial struct RenderGraphFrame
 
     public void SetPassEnabled(GraphPassId pass, bool enabled) => State.SetPassEnabled(pass, enabled);
 
+    public void SetPassOptions(GraphPassId pass, in PassOptions options) => State.SetPassOptions(pass, options);
+
     public void SetPassData<T>(GraphPassId pass, in T value) => State.SetPassData(pass, value);
 
     /// <summary>
@@ -114,6 +116,25 @@ public ref partial struct RenderGraphFrame
         BufferUsages usages,
         string? label = null) =>
         State.Upload(data, usages, label, 4);
+
+    /// <summary>Copies multiple byte segments into one contiguous upload range for this frame.</summary>
+    public GraphBufferSlice Upload(
+        scoped ReadOnlySpan<ReadOnlyMemory<byte>> segments,
+        BufferUsages usages,
+        string? label = null) =>
+        State.Upload(segments, usages, label);
+
+    /// <summary>
+    /// Writes bytes directly into this frame's mapped upload range. The writer runs before
+    /// this method returns and must fill the supplied byteCount bytes. Alignment padding is cleared.
+    /// </summary>
+    public GraphBufferSlice Upload<TData>(
+        int byteCount,
+        BufferUsages usages,
+        TData data,
+        System.Buffers.SpanAction<byte, TData> write,
+        string? label = null) =>
+        State.Upload(byteCount, usages, data, write, label);
 
     /// <summary>
     /// Writes a declared upload buffer for this frame. Each in-flight frame keeps its own

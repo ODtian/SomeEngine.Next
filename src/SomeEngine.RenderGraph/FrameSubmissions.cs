@@ -58,7 +58,8 @@ internal sealed partial class FrameExecutor
             if (_submissionByPass[pass] >= 0) continue;
             int predecessor = _sameQueuePredecessor[pass];
             int submission = predecessor >= 0 ? _submissionByPass[predecessor] : -1;
-            if (submission < 0 || !ReferenceEquals(_submissionQueues[submission], _passes[pass].Queue))
+            if (submission < 0 || _passes[predecessor].Options.SubmitAfter ||
+                !ReferenceEquals(_submissionQueues[submission], _passes[pass].Queue))
                 submission = NewSubmission(_passes[pass].Queue!);
             ChangeSubmissionMembers(submission);
             _submissionPasses[submission].Add(pass);
@@ -166,6 +167,23 @@ internal sealed partial class FrameExecutor
             passes.Sort((left, right) => _executionOrder.Position(left).CompareTo(_executionOrder.Position(right)));
             break;
         }
+        for (int index = 0; index + 1 < passes.Count; index++)
+        {
+            if (!_passes[passes[index]].Options.SubmitAfter) continue;
+            int suffix = NewSubmission(_submissionQueues[submission]!);
+            ChangeSubmissionMembers(submission);
+            QueueSubmissionConsumers(submission);
+            for (int item = index + 1; item < passes.Count; item++)
+            {
+                int pass = passes[item];
+                _submissionPasses[suffix].Add(pass);
+                _submissionByPass[pass] = suffix;
+                foreach (int next in _successors[pass]) QueuePassSubmission(next);
+                QueuePassSubmission(_sameQueueSuccessor[pass]);
+            }
+            passes.RemoveRange(index + 1, passes.Count - index - 1);
+            return;
+        }
         _submissionMergeCandidates.Add(submission);
         int nextPass = _sameQueueSuccessor[passes[^1]];
         if (nextPass >= 0 && _submissionByPass[nextPass] >= 0)
@@ -214,7 +232,7 @@ internal sealed partial class FrameExecutor
             List<int> laterPasses = _submissionPasses[later];
             if (laterPasses.Count == 0) continue;
             int previousPass = _sameQueuePredecessor[laterPasses[0]];
-            if (previousPass < 0) continue;
+            if (previousPass < 0 || _passes[previousPass].Options.SubmitAfter) continue;
             int earlier = _submissionByPass[previousPass];
             if (earlier < 0 || earlier == later ||
                 !ReferenceEquals(_submissionQueues[earlier], _submissionQueues[later])) continue;

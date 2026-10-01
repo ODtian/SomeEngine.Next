@@ -513,7 +513,7 @@ public sealed partial class ClusterPipelineSystem
             "Read back Cluster page faults",
             PassQueueSelection.AnyCompatible(),
             passData,
-            new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true) { SubmitAfter = true },
             static (ref PassDefinition access, ref ClusterBufferCopyParameters data) =>
             {
                 _ = access.Read(data.Source, new BufferRange(0, data.ByteCount),

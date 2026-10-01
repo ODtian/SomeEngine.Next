@@ -835,6 +835,7 @@ internal static class RuntimeApplication
                     coordinator,
                     frameSystems,
                     pipeline,
+                    streamingConsumer,
                     virtualShadows,
                     clusterOutputs,
                     temporal,
@@ -1084,6 +1085,7 @@ internal static class RuntimeApplication
         RenderFrameCoordinator coordinator,
         RenderFrameSystems systems,
         ClusterPipelineSystem pipeline,
+        ClusterStreamingFeedbackConsumer streamingConsumer,
         VirtualShadowFeature virtualShadows,
         in ClusterPipelineOutputs clusterOutputs,
         TemporalFeature temporal,
@@ -1131,6 +1133,7 @@ internal static class RuntimeApplication
                     presentation.Bind(ref graphFrame, image, graphicsQueue);
                     using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
                         systems.Update(frame, graphFrame);
+                    graphFrame.ObserveExecution(streamingConsumer);
                     var motion = new MotionFeatureOutput(
                         clusterOutputs.MotionVectors,
                         clusterOutputs.Width,

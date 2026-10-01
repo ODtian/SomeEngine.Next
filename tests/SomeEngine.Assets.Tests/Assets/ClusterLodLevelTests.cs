@@ -1,11 +1,46 @@
 using System.Runtime.InteropServices;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Schema;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class ClusterLodLevelTests
 {
+    [Fact]
+    public async Task CoarseAndFineGeometryMeetAtTheSameLodError()
+    {
+        var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(5);
+        using var asset = ClusterBuilder.ProcessRaw(vertices, attributes, indices,
+            ClusterBuilderTestMaterials.Slots(), "LOD transitions");
+        ClusterMeshBlock geometry = asset.GetBlock<ClusterMeshBlock>();
+        using var mesh = await geometry.CreateAsync(asset.GetBlock<MeshBlock>(), asset.Name);
+        await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
+        var coarseErrors = new Dictionary<int, float>();
+        for (int page = 0; page < mesh.PageCount; page++)
+        {
+            byte[] bytes = new byte[checked((int)mesh.PageDigests[page].Length)];
+            mesh.ReadPage(page, bytes);
+            MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(bytes);
+            ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(
+                bytes.AsSpan(checked((int)header.ClustersOffset), checked((int)header.ClusterCount * PackedCluster.SizeInBytes)));
+            foreach (PackedCluster cluster in clusters)
+                if (((cluster.PackedCounts >> 16) & 0xff) != 0)
+                    coarseErrors[cluster.GroupId] = (float)BitConverter.UInt16BitsToHalf(cluster.LODErrorHalf);
+        }
+        using var bvh = mesh.RetainBvh();
+        ReadOnlySpan<ClusterBVHNode> nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(bvh.ToArray());
+        int transitions = 0;
+        foreach (ClusterBVHNode node in nodes)
+        {
+            if (node.NodeType != 1 || node.BoundMax.W == 0) continue;
+            int parent = (int)node.BoundMax.W - 1;
+            Assert.Equal(coarseErrors[parent], node.LODError);
+            transitions++;
+        }
+        Assert.True(transitions > 0, "The generated mesh must exercise coarse-to-fine LOD transitions.");
+    }
+
     [Fact]
     public void ProcessedIcoSphereContainsLowerLodLevels()
     {

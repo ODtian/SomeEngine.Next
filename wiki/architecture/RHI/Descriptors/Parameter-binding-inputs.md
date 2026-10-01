@@ -6,5 +6,10 @@
 
 长期 parameter bindings 绑定到一个 Pipeline 与一个 reflected parameter object。更新先构造完整新值，再让后续 bind 使用新值；并发 recording 各自保留自己实际使用的那一版数据直到 submission 结束。Transient 与长期 binding 使用同一 Slang# layout 与 backend placement。
 
+Direct3D12 的长期 ordinary-data bytes 由设备原有资源分配器集中存入映射上传页，
+每份数据范围按 256 字节对齐。上传页从 1 MiB 起按实际请求分配，字节内容仍由用户 shader 的布局解释。
+每版参数数据保留自己的范围，已录制命令通过原有引用保留该版数据；最后一个引用释放时归还范围。
+分配器复用空闲范围、合并相邻范围，并在多个上传页空闲时回收多余页。
+
 Static sampler 的 register、space、array shape 和 stage visibility 只来自 Slang# reflection；其状态进入 Pipeline compatibility/cache identity。
 ^rhi-dsc-007

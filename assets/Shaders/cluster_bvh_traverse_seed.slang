@@ -26,7 +26,7 @@ ConstantBuffer<ClusterTraversalSeedUniforms> TraversalSeed;
 StructuredBuffer<uint> PolicyActiveViewCount;
 Texture2DArray<float> HierarchyHiZ;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<DrawRequest> DeferredWork;
+RWStructuredBuffer<ClusterCandidate> DeferredWork;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> DeferredWorkCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -309,11 +309,11 @@ void SeedHierarchyRoots(
         if (outputIndex >= TraversalSeed.MaxNodes)
             continue;
         uint viewSlot = viewSlotBase + bit;
-        DeferredWork[outputIndex] = MakeDeferredTraversalNode(
+        DeferredWork[outputIndex] = MakeClusterCandidate(MakeDeferredTraversalNode(
             MakeClusterTraversalNode(
                 rootIndex,
                 instanceID,
                 ClusterSeedViewIndex(viewSlot),
-                1u));
+                1u)), 0u);
     }
 }

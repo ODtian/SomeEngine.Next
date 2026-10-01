@@ -1,11 +1,11 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 27,
-  "input_hash": "dd2cd231dccfe84ddca9fc0effca77461928f9eb04b36b0dace841c42fd905af",
+  "input_hash": "801accc2141b47618c86935e5cf80e1592e55d7c3fc715025847135ec750b3af",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/fullscreen_triangle.slang",
-      "content_hash": "a379eb11e577feb64d5fa47621d9ecad73fc1708619af7c527677c7f53055e1c"
+      "content_hash": "e169a7c879d8de35ba80401c35c223b8371bf9f428b3050ad488b2545891e202"
     },
     {
       "relative_path": "../../assets/Shaders/translucency_composite.slang",
@@ -29,11 +29,11 @@
     {
       "asset_guid": "d1a4dd79-a52d-5819-b62c-65200b625726",
       "sub_asset_key": "",
-      "input_hash": "dd2cd231dccfe84ddca9fc0effca77461928f9eb04b36b0dace841c42fd905af",
+      "input_hash": "801accc2141b47618c86935e5cf80e1592e55d7c3fc715025847135ec750b3af",
       "dependencies": [],
       "asset_path": "translucency_composite.shader.asset",
-      "version": "9d3875ee-24fb-2dcf-b731-acdae08c1e26",
-      "content_hash": "FED6D52D63E592225E7E91C215F243752467A6734433DE11E612D578118B0E0C",
+      "version": "b04ed99a-779d-669a-a136-00f1cdfab724",
+      "content_hash": "9AA635039134ACB87E5D5E7C3E646018E44234C398AB03A36ACB85C2BE1890C8",
       "asset_dependencies": []
     }
   ]

@@ -505,6 +505,62 @@ internal sealed partial class FrameExecutor
 
     private readonly HashSet<int> _orderSearchVisited = [];
     private readonly Stack<int> _orderSearchWork = new();
+    private ulong[][] _passOrderAncestors = [];
+    private enum PassOrderSearchState : byte { Unvisited, Searching, Complete }
+    private PassOrderSearchState[] _passOrderSearchStates = [];
+    private ulong[] _resourceOrderPassWords = [];
+    private int _passOrderWordCount;
+    private bool _hasPassOrderCycle;
+
+    private ReadOnlySpan<ulong> CollectPassOrderAncestors(int pass)
+    {
+        if (_passOrderSearchStates[pass] == PassOrderSearchState.Complete) return _passOrderAncestors[pass];
+        _orderSearchWork.Clear();
+        _orderSearchWork.Push(pass);
+        while (_orderSearchWork.TryPeek(out int current))
+        {
+            if (_passOrderSearchStates[current] == PassOrderSearchState.Complete)
+            {
+                _orderSearchWork.Pop();
+                continue;
+            }
+            if (_passOrderSearchStates[current] == PassOrderSearchState.Unvisited)
+            {
+                _passOrderSearchStates[current] = PassOrderSearchState.Searching;
+                ref ulong[] words = ref _passOrderAncestors[current];
+                if (words is null || words.Length < _passOrderWordCount)
+                    words = new ulong[_passOrderWordCount];
+                else Array.Clear(words, 0, _passOrderWordCount);
+                if (_passes[current].Enabled && _orderEdgesByPass.TryGetValue(current, out var edges))
+                    foreach (PassEdge edge in edges)
+                    {
+                        if (edge.Consumer != current || !_passes[edge.Predecessor].Enabled) continue;
+                        if (_passOrderSearchStates[edge.Predecessor] == PassOrderSearchState.Searching)
+                        {
+                            // Resource projection and live-pass scheduling retain cycle validation.
+                            _hasPassOrderCycle = true;
+                            return [];
+                        }
+                        if (_passOrderSearchStates[edge.Predecessor] == PassOrderSearchState.Unvisited)
+                            _orderSearchWork.Push(edge.Predecessor);
+                    }
+                if (_orderSearchWork.Peek() != current) continue;
+            }
+            ulong[] ancestors = _passOrderAncestors[current];
+            if (_passes[current].Enabled && _orderEdgesByPass.TryGetValue(current, out var predecessors))
+                foreach (PassEdge edge in predecessors)
+                {
+                    if (edge.Consumer != current || !_passes[edge.Predecessor].Enabled) continue;
+                    ulong[] previous = _passOrderAncestors[edge.Predecessor];
+                    for (int word = 0; word < _passOrderWordCount; word++)
+                        ancestors[word] |= previous[word];
+                    ancestors[edge.Predecessor / 64] |= 1UL << (edge.Predecessor & 63);
+                }
+            _passOrderSearchStates[current] = PassOrderSearchState.Complete;
+            _orderSearchWork.Pop();
+        }
+        return _passOrderAncestors[pass];
+    }
 
     private readonly List<int> _resourceOrderNodes = [];
     private readonly Dictionary<int, int> _resourceOrderRanks = [];
@@ -512,8 +568,8 @@ internal sealed partial class FrameExecutor
     private int[] _resourceOrderIndegrees = [];
     private List<int>[] _resourceOrderSuccessors = [];
 
-    // The returned ranks borrow this sort workspace and are consumed before the
-    // next call. No per-resource graph or second set of ordering facts is retained.
+    // Each dependency analysis shares one explicit-order traversal across resources.
+    // The returned ranks borrow the sort workspace until the next resource.
     private IReadOnlyDictionary<int, int> OrderResourceUsers(IEnumerable<int> nodes)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(ResourceOrderTrace);
@@ -523,26 +579,34 @@ internal sealed partial class FrameExecutor
         foreach (int node in nodes)
             if (_resourceOrderRanks.TryAdd(node, _resourceOrderNodes.Count)) _resourceOrderNodes.Add(node);
         int count = _resourceOrderNodes.Count;
+        EnsureCapacity(ref _resourceOrderPassWords, _passOrderWordCount);
+        Array.Clear(_resourceOrderPassWords, 0, _passOrderWordCount);
+        foreach (int node in _resourceOrderNodes)
+            _resourceOrderPassWords[node / 64] |= 1UL << (node & 63);
         if (_resourceOrderIndegrees.Length < count) Array.Resize(ref _resourceOrderIndegrees, count);
         if (_resourceOrderSuccessors.Length < count) Array.Resize(ref _resourceOrderSuccessors, count);
         Array.Clear(_resourceOrderIndegrees, 0, count);
         for (int index = 0; index < count; index++) (_resourceOrderSuccessors[index] ??= []).Clear();
         for (int consumer = 0; consumer < count; consumer++)
         {
-            _orderSearchVisited.Clear();
-            _orderSearchWork.Clear();
-            PushPredecessors(_resourceOrderNodes[consumer]);
-            while (_orderSearchWork.TryPop(out int node))
+            ReadOnlySpan<ulong> ancestors = _hasPassOrderCycle
+                ? default : CollectPassOrderAncestors(_resourceOrderNodes[consumer]);
+            if (_hasPassOrderCycle)
+                AddResourceOrderPredecessors(consumer);
+            else
             {
-                if (!_orderSearchVisited.Add(node)) continue;
-                if (_resourceOrderRanks.TryGetValue(node, out int predecessor))
+                for (int word = 0; word < _passOrderWordCount; word++)
                 {
-                    _resourceOrderSuccessors[predecessor].Add(consumer);
-                    _resourceOrderIndegrees[consumer]++;
-                    // This user's own projected predecessors carry the remaining path.
-                    continue;
+                    ulong users = ancestors[word] & _resourceOrderPassWords[word];
+                    while (users != 0)
+                    {
+                        int node = word * 64 + System.Numerics.BitOperations.TrailingZeroCount(users);
+                        users &= users - 1;
+                        int predecessor = _resourceOrderRanks[node];
+                        _resourceOrderSuccessors[predecessor].Add(consumer);
+                        _resourceOrderIndegrees[consumer]++;
+                    }
                 }
-                PushPredecessors(node);
             }
             if (_resourceOrderIndegrees[consumer] == 0)
                 _resourceOrderReady.Enqueue(consumer, _passes[_resourceOrderNodes[consumer]].DeclarationOrdinal);
@@ -558,9 +622,26 @@ internal sealed partial class FrameExecutor
         if (rank != count) throw new InvalidOperationException("The pass dependency introduces a cycle.");
         return _resourceOrderRanks;
 
+        void AddResourceOrderPredecessors(int consumer)
+        {
+            _orderSearchVisited.Clear();
+            _orderSearchWork.Clear();
+            PushPredecessors(_resourceOrderNodes[consumer]);
+            while (_orderSearchWork.TryPop(out int node))
+            {
+                if (!_orderSearchVisited.Add(node)) continue;
+                if (_resourceOrderRanks.TryGetValue(node, out int predecessor))
+                {
+                    _resourceOrderSuccessors[predecessor].Add(consumer);
+                    _resourceOrderIndegrees[consumer]++;
+                }
+                else PushPredecessors(node);
+            }
+        }
+
         void PushPredecessors(int pass)
         {
-            if (!_passes[pass].Enabled || !_orderEdgesByPass.TryGetValue(pass, out HashSet<PassEdge>? edges)) return;
+            if (!_passes[pass].Enabled || !_orderEdgesByPass.TryGetValue(pass, out var edges)) return;
             foreach (PassEdge edge in edges)
                 if (edge.Consumer == pass && _passes[edge.Predecessor].Enabled)
                     _orderSearchWork.Push(edge.Predecessor);
@@ -1144,6 +1225,11 @@ internal sealed partial class FrameExecutor
         _dependencyPassCount = _passes.Count;
 
         UpdateOrderEdges();
+        _passOrderWordCount = (_passes.Count + 63) / 64;
+        EnsureCapacity(ref _passOrderAncestors, _passes.Count);
+        EnsureCapacity(ref _passOrderSearchStates, _passes.Count);
+        Array.Clear(_passOrderSearchStates, 0, _passes.Count);
+        _hasPassOrderCycle = false;
         foreach (int pass in _changedAnalysisPasses)
         {
             _livenessSeeds.Add(pass);

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using SomeEngine.RenderGraph;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
@@ -1637,6 +1638,15 @@ internal enum ClusterShadeCoreResource : byte
 /// <summary>Bounded resource order captured from the final linked Slang program.</summary>
 internal sealed class ClusterLinkedStageLayout
 {
+    private static readonly ConditionalWeakTable<Shader, ShaderResourceLists> ResourceLists = new();
+
+    private sealed class ShaderResourceLists
+    {
+        internal ulong Revision;
+        internal readonly Dictionary<(SlangCompileTarget Target, string FirstEntry, string? SecondEntry),
+            ClusterLinkedStageLayout> Stages = [];
+    }
+
     private readonly ClusterLinkedStageResource[] _resources;
 
     private ClusterLinkedStageLayout(ClusterLinkedStageResource[] resources)
@@ -1656,6 +1666,25 @@ internal sealed class ClusterLinkedStageLayout
 
     internal static ClusterLinkedStageLayout Create(
         Shader shader, SlangCompileTarget target, string firstEntry, string? secondEntry = null)
+    {
+        ShaderResourceLists lists = ResourceLists.GetValue(shader, static _ => new());
+        lock (lists)
+        {
+            if (lists.Revision != shader.Revision)
+            {
+                lists.Stages.Clear();
+                lists.Revision = shader.Revision;
+            }
+            var key = (target, firstEntry, secondEntry);
+            if (lists.Stages.TryGetValue(key, out ClusterLinkedStageLayout? stage)) return stage;
+            stage = ReadShaderResources(shader, target, firstEntry, secondEntry);
+            lists.Stages.Add(key, stage);
+            return stage;
+        }
+    }
+
+    private static ClusterLinkedStageLayout ReadShaderResources(
+        Shader shader, SlangCompileTarget target, string firstEntry, string? secondEntry)
     {
         string backend = target == SlangCompileTarget.Spirv ? "spirv" : "dxil";
         if (!shader.TryProgram(backend, out ShaderProgram program))

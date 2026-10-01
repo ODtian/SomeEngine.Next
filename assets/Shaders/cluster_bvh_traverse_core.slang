@@ -17,7 +17,7 @@ ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer CandidateArgs;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<DrawRequest> CandidateClusters;
+RWStructuredBuffer<ClusterCandidate> CandidateClusters;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> CandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -51,7 +51,7 @@ ByteAddressBuffer CurrentNodeIndirectArgs;
 RWByteAddressBuffer NextNodeIndirectArgs;
 Texture2DArray<float> HierarchyHiZ;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<DrawRequest> DeferredWork;
+RWStructuredBuffer<ClusterCandidate> DeferredWork;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> DeferredWorkCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -133,7 +133,7 @@ void AppendDeferredTraversalNode(ClusterTraversalNode node, uint maxNodes)
     waveBase = WaveReadLaneAt(waveBase, leader);
     uint output = waveBase + WaveMaskPrefix(activeMask, lane);
     if (output < maxNodes)
-        DeferredWork[output] = MakeDeferredTraversalNode(node);
+        DeferredWork[output] = MakeClusterCandidate(MakeDeferredTraversalNode(node), 0u);
 }
 
 void ProcessTraversalLevel(
@@ -210,9 +210,25 @@ void ProcessTraversalLevel(
             activeViews |= 1u << bit;
     }
 
+    uint leafFlags = uint(node.BoundMin.w);
     bool pageFault = activeViews != 0u && node.NodeType == 1u && node.ChildPointer == 0xFFFFFFFFu;
-    uint4 faultMask = WaveActiveBallot(pageFault);
-    if (pageFault)
+    bool pageRequest = pageFault || (activeViews != 0u && node.NodeType == 1u &&
+        (leafFlags & 1u) != 0u && firstView.CullingEnabled != 0u);
+    bool firstFault = false;
+    if (pageRequest)
+    {
+        // Several leaf ranges, instances, shadow views and cull phases may
+        // need the same geometry page. Publish one representative leaf for
+        // that page so repeated demand cannot consume the feedback capacity.
+        uint pageIndex = asuint(node.BoundMax.w);
+        uint wordOffset = 4u + firstView.MaxPageFaults * 4u + (pageIndex >> 5u) * 4u;
+        uint bit = 1u << (pageIndex & 31u);
+        uint previous;
+        PageFaultBuffer.InterlockedOr(wordOffset, bit, previous);
+        firstFault = (previous & bit) == 0u;
+    }
+    uint4 faultMask = WaveActiveBallot(firstFault);
+    if (firstFault)
     {
         uint lane = WaveGetLaneIndex();
         uint leader = WaveMaskFirstLane(faultMask);
@@ -265,6 +281,17 @@ void ProcessTraversalLevel(
         }
     }
 
+    if ((leafFlags & 1u) != 0u && node.NodeType == 1u)
+    {
+        uint remaining = activeViews;
+        while (remaining != 0u)
+        {
+            uint bit = firstbitlow(remaining);
+            remaining &= remaining - 1u;
+            if (LoadClusterCullView(Views, PolicyClusterViews, viewBase + bit).CullingEnabled != 0u)
+                activeViews &= ~(1u << bit);
+        }
+    }
     bool outputLeaf = activeViews != 0u && !pageFault && node.NodeType != 0u;
     uint clusterCount = outputLeaf ? node.ChildCount >> 12u : 0u;
     uint leafCount = clusterCount * countbits(activeViews);
@@ -286,8 +313,9 @@ void ProcessTraversalLevel(
         for (uint cluster = 0u; cluster < clusterCount; cluster++)
         {
             if (output < TraversalLevel.MaxNodes)
-                CandidateClusters[output] = MakeDrawRequest(
-                    node.ChildPointer, firstCluster + cluster, instanceID, viewBase + bit);
+                CandidateClusters[output] = MakeClusterCandidate(MakeDrawRequest(
+                    node.ChildPointer, firstCluster + cluster, instanceID, viewBase + bit),
+                    (leafFlags & 2u) != 0u ? 1u : 0u);
             output++;
         }
     }

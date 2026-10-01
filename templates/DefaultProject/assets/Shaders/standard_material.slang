@@ -5,6 +5,7 @@
 #include "render_lighting.slang"
 #include "brdf.slang"
 #include "vsm_sampling.slang"
+#include "vsm_receiver_pixel.slang"
 
 StructuredBuffer<ClusteredLightGridParameters> LightingViews;
 StructuredBuffer<GPULight> LightBuffer;
@@ -89,24 +90,6 @@ StandardPixelContext BuildStandardPixelContext(
     return ctx;
 }
 
-float3 ReconstructStandardPixelNeighbor(
-    ClusterViewUniforms view,
-    uint2 pixel,
-    float deviceDepth,
-    int2 offset)
-{
-    uint2 screen = max(uint2(view.ScreenWidth, view.ScreenHeight), 1u.xx);
-    int2 neighbor = clamp(
-        int2(pixel) + offset,
-        int2(0, 0),
-        int2(screen) - 1);
-    float2 uv = (float2(neighbor) + 0.5) / float2(screen);
-    float4 world = mul(
-        float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, deviceDepth, 1.0),
-        view.ClipToWorld);
-    return world.xyz / max(abs(world.w), 1e-8);
-}
-
 struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
     // Textures
@@ -148,6 +131,12 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         ClusteredLightGridParameters lighting = LightingViews[ctx.pixelCoord.z];
         float3 viewPosition = mul(float4(ctx.surfacePosition, 1.0), lighting.View).xyz;
         float viewDepth = max(-viewPosition.z, lighting.ZParams.x);
+        ClusterViewUniforms receiverView = Views[ctx.pixelCoord.z];
+        VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
+            DepthBuffer, ctx.pixelCoord, uint2(receiverView.ScreenWidth, receiverView.ScreenHeight),
+            DepthBuffer.Load(int4(ctx.pixelCoord, 0)), receiverView.ClipToWorld);
+        float3 receiverPositionDx = ctx.surfacePosition + (receiver.PositionDx - receiver.Position);
+        float3 receiverPositionDy = ctx.surfacePosition + (receiver.PositionDy - receiver.Position);
         float3 V = normalize(MaterialCameraPosition(ctx.pixelCoord.z) - ctx.surfacePosition);
         float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
 
@@ -182,6 +171,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                             VirtualShadowSampling.ViewCount - firstShadowView),
                         VirtualShadowDynamicResolutionBias[0].x,
                         shadowPosition,
+                        receiverPositionDx + mappedNormal * VirtualShadowSampling.NormalBias,
+                        receiverPositionDy + mappedNormal * VirtualShadowSampling.NormalBias,
                         VirtualShadowSampling.BlockerSampleCount,
                         VirtualShadowSampling.FilterSampleCount,
                         VirtualShadowSampling.BlockerSearchRadiusTexels,
@@ -204,13 +195,6 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             ctx.pixelCoord.z,
             ctx.pixelCoord.xy,
             viewDepth);
-        ClusterViewUniforms receiverView = Views[ctx.pixelCoord.z];
-        float4 receiverClip = mul(float4(ctx.surfacePosition, 1.0), receiverView.ViewProj);
-        float receiverDepth = receiverClip.z / max(abs(receiverClip.w), 1e-8);
-        float3 receiverPositionDx = ReconstructStandardPixelNeighbor(
-            receiverView, ctx.pixelCoord.xy, receiverDepth, int2(1, 0));
-        float3 receiverPositionDy = ReconstructStandardPixelNeighbor(
-            receiverView, ctx.pixelCoord.xy, receiverDepth, int2(0, 1));
         uint localCount = min(
             ClusteredLightGrid[cell].y,
             lighting.MaxLightsPerCluster);

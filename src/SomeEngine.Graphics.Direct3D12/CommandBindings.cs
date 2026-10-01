@@ -1,5 +1,6 @@
 using Silk.NET.Core.Native;
 using System.Buffers;
+using System.Numerics;
 using Silk.NET.Direct3D12;
 using SlangShaderSharp;
 using System.Runtime.CompilerServices;
@@ -308,7 +309,7 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed class D3D12PersistentParameterData
     {
-        private NativeLease? _ordinary;
+        private D3D12ParameterBytes? _ordinaryBytes;
         private int _references = 1;
 
         private D3D12PersistentParameterData(
@@ -317,7 +318,7 @@ internal sealed unsafe partial class D3D12Backend
             DescriptorRecord[] descriptors,
             D3D12SwapchainImageLease[] swapchainImages,
             byte[] ordinaryData,
-            NativeLease? ordinary,
+            D3D12ParameterBytes? ordinary,
             ulong ordinaryAddress,
             uint visibleNodeMask)
         {
@@ -326,7 +327,7 @@ internal sealed unsafe partial class D3D12Backend
             Descriptors = descriptors;
             SwapchainImages = swapchainImages;
             OrdinaryData = ordinaryData;
-            _ordinary = ordinary;
+            _ordinaryBytes = ordinary;
             OrdinaryAddress = ordinaryAddress;
             VisibleNodeMask = visibleNodeMask;
         }
@@ -373,7 +374,7 @@ internal sealed unsafe partial class D3D12Backend
             DescriptorRecord[] descriptorRecords = CreateDescriptorRecords(
                 resourcesCopy,
                 slots);
-            NativeLease? lifetime = null;
+            D3D12ParameterBytes? lifetime = null;
             try
             {
                 uint visibleNodeMask = uint.MaxValue;
@@ -385,19 +386,8 @@ internal sealed unsafe partial class D3D12Backend
                 ulong address = 0;
                 if (createOrdinaryBuffer && ordinaryDataCopy.Length != 0)
                 {
-                    NativeResource* native = CreateOrdinaryDataResource(
-                        device,
-                        ordinaryDataCopy,
-                        out address);
-                    try
-                    {
-                        lifetime = new NativeLease((IUnknown*)native, ownsReference: true);
-                    }
-                    catch
-                    {
-                        _ = ResourceTrace.Release(native);
-                        throw;
-                    }
+                    lifetime = device.ResourceAllocator.AllocateParameterBytes(ordinaryDataCopy);
+                    address = lifetime.Address;
                 }
                 D3D12PersistentParameterData result =
                     new(
@@ -504,51 +494,7 @@ internal sealed unsafe partial class D3D12Backend
                 return;
             foreach (DescriptorRecord descriptor in Descriptors)
                 descriptor.Release();
-            Interlocked.Exchange(ref _ordinary, null)?.Release();
-        }
-    }
-
-    private static NativeResource* CreateOrdinaryDataResource(
-        D3D12Device device,
-        ReadOnlySpan<byte> data,
-        out ulong gpuAddress)
-    {
-        if (data.IsEmpty)
-            throw new ArgumentException("Ordinary-data storage cannot be empty.", nameof(data));
-        ulong size = checked(((ulong)data.Length + 255UL) & ~255UL);
-        Silk.NET.Direct3D12.ResourceDesc description = CreateBufferDescription(
-            new BufferDesc(size, BufferUsages.Constant));
-        NativeResource* resource = CreateCommittedResource(
-            device,
-            MemoryType.Upload,
-            shareable: false,
-            device.PrimaryNodeMask,
-            device.EnabledNodeMask,
-            description,
-            ReadOnlySpan<Silk.NET.DXGI.Format>.Empty);
-        try
-        {
-            void* mapped = null;
-            NativeRange readRange = default;
-            ThrowIfFailed(
-                device,
-                    ResourceTrace.Map(resource, 0, &readRange, &mapped),
-                NativeOperationType.Ordinary,
-                "ID3D12Resource::Map(parameter data)");
-            data.CopyTo(new Span<byte>(mapped, data.Length));
-            NativeRange written = new()
-            {
-                Begin = 0,
-                End = checked((nuint)data.Length),
-            };
-            ResourceTrace.Unmap(resource, 0, &written);
-            gpuAddress = ResourceTrace.GetGPUVirtualAddress(resource);
-            return resource;
-        }
-        catch
-        {
-            _ = ResourceTrace.Release(resource);
-            throw;
+            Interlocked.Exchange(ref _ordinaryBytes, null)?.Release();
         }
     }
 
@@ -577,14 +523,15 @@ internal sealed unsafe partial class D3D12Backend
         internal static D3D12OrdinaryDataChunk Create(
             D3D12Device device,
             uint nodeMask,
-            ulong capacity)
+            ulong capacity,
+            uint? visibleNodeMask = null)
         {
             NativeResource* resource = CreateCommittedResource(
                 device,
                 MemoryType.Upload,
                 shareable: false,
                 nodeMask,
-                nodeMask,
+                visibleNodeMask ?? nodeMask,
                 CreateBufferDescription(new BufferDesc(
                     capacity,
                     BufferUsages.Constant)),
@@ -727,6 +674,9 @@ internal sealed unsafe partial class D3D12Backend
             return result;
         }
 
+        internal void WriteBytes(ulong offset, ReadOnlySpan<byte> data) =>
+            data.CopyTo(new Span<byte>(_mapped + checked((nint)offset), data.Length));
+
         internal void Reset() => _used = 0;
 
         internal void Release()
@@ -795,6 +745,17 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed partial class D3D12CommandContext
     {
+        internal void GetDescriptorArenaCapacities(out uint resources, out uint samplers)
+        {
+            resources = 0;
+            samplers = 0;
+            foreach (D3D12CommandSlot storage in _slots)
+            {
+                resources = Math.Max(resources, storage.ResourceDescriptorCapacity);
+                samplers = Math.Max(samplers, storage.SamplerDescriptorCapacity);
+            }
+        }
+
         private readonly RootTableState[] _rootTables = new RootTableState[64];
         private readonly bool[] _rootTableSet = new bool[64];
         private readonly ulong[] _rootConstantBuffers = new ulong[64];
@@ -1479,6 +1440,8 @@ internal sealed unsafe partial class D3D12Backend
         private bool _samplerArenaContainsGeneration;
 
         internal ulong DescriptorArenaVersion => _descriptorArenaVersion;
+        internal uint ResourceDescriptorCapacity => _resourceCapacity;
+        internal uint SamplerDescriptorCapacity => _samplerCapacity;
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal D3D12OrdinaryDataReservation ReserveOrdinaryData(ulong size)
@@ -1792,7 +1755,7 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        private void EnsureDescriptorArenaReady()
+        private void EnsureDescriptorArenaReady(uint resourceCount, uint samplerCount)
         {
             if (_descriptorArenaReady)
                 return;
@@ -1808,13 +1771,19 @@ internal sealed unsafe partial class D3D12Backend
             uint samplerPrefix = _samplerArenaContainsGeneration
                 ? descriptors!.SamplerCount
                 : 0;
-            uint resourceRequired = checked(
-                resourcePrefix + _initialResourceDescriptorCapacity);
-            uint samplerRequired = checked(
-                samplerPrefix + _initialSamplerDescriptorCapacity);
+            DeviceLimits limits = _context.NativeDevice.Capabilities.Limits;
+            uint resourceEstimate = Math.Min(_initialResourceDescriptorCapacity,
+                limits.ResourceDescriptorCapacity - resourcePrefix);
+            uint samplerEstimate = Math.Min(_initialSamplerDescriptorCapacity,
+                limits.SamplerDescriptorCapacity - samplerPrefix);
+            uint resourceRequired = checked(resourcePrefix + Math.Max(resourceEstimate, resourceCount));
+            uint samplerRequired = checked(samplerPrefix + Math.Max(samplerEstimate, samplerCount));
+            // Other recordings of this context already established the required
+            // capacity. New in-flight storage starts at that size in one allocation.
+            _context.GetDescriptorArenaCapacities(out uint resourceCapacity, out uint samplerCapacity);
             EnsureResetHeaps(
-                Math.Max(1u, resourceRequired),
-                Math.Max(1u, samplerRequired));
+                Math.Max(resourceCapacity, GrowCapacity(ParameterHeap.Resource, 0, Math.Max(1u, resourceRequired))),
+                Math.Max(samplerCapacity, GrowCapacity(ParameterHeap.Sampler, 0, Math.Max(1u, samplerRequired))));
             if (_resourceArenaContainsGeneration)
             {
                 descriptors!.CopyResourceTo(_context.NativeDevice, _resourceArena);
@@ -2213,7 +2182,8 @@ internal sealed unsafe partial class D3D12Backend
         private uint GrowCapacity(ParameterHeap heap, uint current, uint required)
         {
             uint maximum = MaximumCapacity(heap);
-            return Math.Min(maximum, Math.Max(required, checked(current * 2)));
+            uint capacity = Math.Max(required, checked(current * 2));
+            return Math.Min(maximum, BitOperations.RoundUpToPowerOf2(capacity));
         }
 
         private void CopyRecordingDescriptors(

@@ -126,6 +126,7 @@ public static partial class ClusterBuilder
         public float LODError;
         public uint PageIndex;
         public uint ClusterStart;
+        public int GroupId;
         public int ParentGroupId;
     }
 
@@ -222,10 +223,12 @@ public static partial class ClusterBuilder
     {
         uint currentPage = clusters[start].PageIndex;
         int currentParent = clusters[start].ParentGroupId;
+        int currentGroup = clusters[start].GroupId;
         int count = 0;
         while (start + count < clusters.Count
             && clusters[start + count].PageIndex == currentPage
             && clusters[start + count].ParentGroupId == currentParent
+            && clusters[start + count].GroupId == currentGroup
             && count < 128)
         {
             count++;
@@ -243,8 +246,8 @@ public static partial class ClusterBuilder
         ClusterInfo first = clusters[start];
         var node = new ClusterBVHNode
         {
-            BoundMin = new Vector4(bounds.Min, 0),
-            BoundMax = new Vector4(bounds.Max, 0),
+            BoundMin = new Vector4(bounds.Min, first.GroupId + 1),
+            BoundMax = new Vector4(bounds.Max, first.ParentGroupId + 1),
             LODSphere = first.LODSphere,
             LODError = first.LODError,
             ChildPointer = first.PageIndex,

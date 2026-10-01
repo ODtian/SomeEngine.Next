@@ -24,11 +24,15 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "Cluster.Update");
     private static readonly SomeEngine.Diagnostics.TraceSite MaterialInputsTrace = new("render", "Cluster.MaterialInputs");
     private static readonly SomeEngine.Diagnostics.TraceSite ResidencyReadsTrace = new("render", "Cluster.ResidencyReads");
+    private static readonly SomeEngine.Diagnostics.TraceSite ResidencyUploadsTrace = new("render", "Cluster.ResidencyUploads");
     private static readonly SomeEngine.Diagnostics.TraceSite FrameResourcesTrace = new("render", "Cluster.FrameResources");
     private static readonly SomeEngine.Diagnostics.TraceSite FrameUploadsTrace = new("render", "Cluster.FrameUploads");
     private static readonly SomeEngine.Diagnostics.TraceSite InstanceTransferTrace = new("render", "Cluster.InstanceTransfer");
     private static readonly SomeEngine.Diagnostics.TraceSite SceneBoundsTrace = new("render", "Cluster.SceneBounds");
     private static readonly SomeEngine.Diagnostics.TraceSite RasterInputsTrace = new("render", "Cluster.RasterInputs");
+    private static readonly SomeEngine.Diagnostics.TraceSite RasterStagesTrace = new("render", "Cluster.ResolveRasterStages");
+    private static readonly SomeEngine.Diagnostics.TraceSite ShadeStagesTrace = new("render", "Cluster.ResolveShadeStages");
+    private static readonly SomeEngine.Diagnostics.TraceSite GraphInstallTrace = new("render", "Cluster.InstallGraph");
 
     private const int ReadbackGenerationCount = 2;
     private const int RasterEpochCount = 4;
@@ -116,6 +120,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterReadbackTicket[] _pageFaultReadbackTickets =
         new ClusterReadbackTicket[ReadbackGenerationCount];
     private readonly bool[] _pageFaultReadbackPending = new bool[ReadbackGenerationCount];
+    private readonly QueueCompletion[] _pageFaultReadbackCompletions = new QueueCompletion[ReadbackGenerationCount];
     private readonly Buffer?[] _frameMetricReadbacks = new Buffer?[ReadbackGenerationCount];
     private byte[] _frameMetricReadbackBytes = [];
     private readonly ulong[] _frameMetricReadbackFrames = new ulong[ReadbackGenerationCount];
@@ -131,6 +136,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private int _preferredReadbackGeneration;
     private ClusterFrameMetrics? _latestFrameMetrics;
     private ClusterEpochId _pendingReadbackEpoch;
+    private QueueCompletion? _pageFaultSubmission;
     private int _pendingInstanceGeneration = -1;
     private ClusterResidencyPublication? _pendingResidencyPublication;
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
@@ -424,10 +430,14 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             AcceptMaterialChanges(assignments);
             return _outputs;
         }
-        ClusterRasterStageSet rasterStages = (_rasterStages ?? throw new InvalidOperationException(
-            "The Cluster raster stages were not created.")).Resolve(assignments);
-        ClusterShadeStageSet shadeStages = (_shadeStages ?? throw new InvalidOperationException(
-            "The Cluster shade stages were not created.")).Resolve(assignments);
+        ClusterRasterStageSet rasterStages;
+        using (SomeEngine.Diagnostics.EngineTrace.Begin(RasterStagesTrace))
+            rasterStages = (_rasterStages ?? throw new InvalidOperationException(
+                "The Cluster raster stages were not created.")).Resolve(assignments);
+        ClusterShadeStageSet shadeStages;
+        using (SomeEngine.Diagnostics.EngineTrace.Begin(ShadeStagesTrace))
+            shadeStages = (_shadeStages ?? throw new InvalidOperationException(
+                "The Cluster shade stages were not created.")).Resolve(assignments);
         ClusterMaterialScalars scalars = _materialScalars.Update(shadeStages, assignments);
         bool cullingEnabled = (_pipelines ?? throw new InvalidOperationException(
             "The Cluster pipelines were not created.")).DefaultRasterCullingEnabled &&
@@ -489,12 +499,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     BufferUsages.ShaderRead, "Cluster material scalar offsets");
                 _shadeScalarsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _shadeScalarOffsetsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
-                InstallGraph(
-                    ref edit,
-                    in _outputDescription,
-                    assignments,
-                    rasterStages,
-                    shadeStages);
+                using (SomeEngine.Diagnostics.EngineTrace.Begin(GraphInstallTrace))
+                    InstallGraph(
+                        ref edit,
+                        in _outputDescription,
+                        assignments,
+                        rasterStages,
+                        shadeStages);
                 var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
                 edit.Commit();
                 _materialBuffers = materialResources.Buffers;
@@ -860,6 +871,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
             RenderGraphFrame graph = context.Graph;
             graph.ObserveExecution(this);
+            ClusterRenderDiagnostics diagnostics = _resources.CaptureDiagnostics();
+            bool streamWork = diagnostics.Meshes.PublishedMeshes != diagnostics.Meshes.RegisteredMeshes ||
+                diagnostics.Residency.HasPendingPublication || diagnostics.Residency.QueuedPageLoads != 0 ||
+                diagnostics.Residency.ActivePageLoads != 0 || diagnostics.Residency.PendingPageLoads != 0;
+            graph.SetPassOptions(_pageFaultReadbackPass,
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true) { SubmitAfter = streamWork });
             int policyViewCount = views.Length - primaryViewCount;
             _framePolicyViews = policyViewCount == 0
                 ? new GraphBufferSlice(_frameResources.PackedViews, BufferRange.Whole)
@@ -878,7 +895,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _instanceDataTransfer?.Stage(ref graph, batch, binding.InstanceData);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(SceneBoundsTrace))
                 BindSceneBounds(ref graph, batch, policyViewCount != 0);
-            RecordResidencyUploads(ref graph, in binding);
+            using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyUploadsTrace))
+                RecordResidencyUploads(ref graph, in binding);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyReadsTrace))
                 DeclareResidencyReads(ref graph, in binding);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(FrameUploadsTrace))
@@ -991,7 +1009,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _ = pass.Bind(
             graph.CreateBufferUav(
                 _frameResources.Phase2CandidateClusters,
-                structureStride: 12,
+                structureStride: CandidateStride,
                 label: "Cluster deferred hierarchy work"),
             PipelineSync.ComputeShading,
             GraphAccessMode.Write,
@@ -1102,6 +1120,26 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             PipelineSync.ComputeShading);
     }
 
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphSubmitted(RenderGraphFrameResult result)
+    {
+        if (!_hasPendingFrame) return;
+        RegisterPageFaultReadback(result);
+        DrainCompletedReadbacks();
+    }
+
+    private void RegisterPageFaultReadback(RenderGraphFrameResult result)
+    {
+        if (_pageFaultSubmission is not null ||
+            !result.TryGetPassCompletion(_pageFaultReadbackPass, out QueueCompletion completion)) return;
+        int generation = RequireReadbackWriteGeneration();
+        ulong sequence = checked(++_nextReadbackSequence);
+        _readbackSequences[generation] = sequence;
+        _pageFaultReadbackTickets[generation] = new ClusterReadbackTicket(_pendingReadbackEpoch, sequence);
+        _pageFaultReadbackCompletions[generation] = completion;
+        _pageFaultReadbackPending[generation] = true;
+        _pageFaultSubmission = completion;
+    }
+
     void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
     {
         if (!_hasPendingFrame) return;
@@ -1117,7 +1155,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _pageFaultReadbackStates[generation] = result.GetBufferStates(_frameResources.PageFaultReadback).ToArray();
         if (_options.EnableFrameMetricsReadback)
             _frameMetricReadbackStates[generation] = result.GetBufferStates(_frameResources.FrameMetricsReadback).ToArray();
-        _preferredReadbackGeneration = 1 - generation;
+        _preferredReadbackGeneration = generation;
         try
         {
             _history!.FinishFrame(result, _frameResources.PreviousHiZ, _frameResources.CurrentHiZ,
@@ -1130,13 +1168,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             else
                 _resources.InstanceResources.StoreMetadataReadStates(_pendingInstanceGeneration,
                     result.GetBufferStates(_frameResources.InstanceProperties));
-            if (result.TryGetPassCompletion(_pageFaultReadbackPass, out _))
-            {
-                ulong sequence = checked(++_nextReadbackSequence);
-                _readbackSequences[generation] = sequence;
-                _pageFaultReadbackTickets[generation] = new ClusterReadbackTicket(_pendingReadbackEpoch, sequence);
-                _pageFaultReadbackPending[generation] = true;
-            }
+            RegisterPageFaultReadback(result);
+            DrainCompletedReadbacks();
             if (_options.EnableFrameMetricsReadback &&
                 result.TryGetPassCompletion(_candidateMetricsReadbackPass, out _) &&
                 result.TryGetPassCompletion(_frameMetricsReadbackPass, out _))
@@ -1180,6 +1213,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (_outputs.IsValid)
             _outputs.Geometry.ClearFrame();
         _pendingReadbackEpoch = default;
+        _pageFaultSubmission = null;
         _pendingInstanceGeneration = -1;
         _pendingResidencyPublication = null;
         _residencyUploadPasses.Clear();
@@ -1217,6 +1251,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _frameMetricReadbackStates[generation] = [];
             _pageFaultReadbackTickets[generation] = default;
             _pageFaultReadbackPending[generation] = false;
+            _pageFaultReadbackCompletions[generation] = default;
 
             if (_frameMetricReadbacks[generation] is { } frameMetricReadback)
             {
@@ -1394,8 +1429,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (_pageFaultReadbackPending[oldest])
             throw new InvalidOperationException("A completed Cluster readback generation was not reclaimed.");
         availableGenerationCount =
-            (_pageFaultReadbackPending[0] ? 0 : 1) +
-            (_pageFaultReadbackPending[1] ? 0 : 1);
+            (CanUseReadbackStorage(0) ? 1 : 0) +
+            (CanUseReadbackStorage(1) ? 1 : 0);
         return oldest;
     }
 
@@ -1407,8 +1442,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         DrainCompletedReadbacks();
         int preferred = _preferredReadbackGeneration;
         int alternate = 1 - preferred;
-        bool preferredAvailable = !_pageFaultReadbackPending[preferred];
-        bool alternateAvailable = !_pageFaultReadbackPending[alternate];
+        bool preferredAvailable = CanUseReadbackStorage(preferred);
+        bool alternateAvailable = CanUseReadbackStorage(alternate);
         availableGenerationCount =
             (preferredAvailable ? 1 : 0) + (alternateAvailable ? 1 : 0);
         if (preferredAvailable)
@@ -1451,9 +1486,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         while (TryGetOldestPendingReadback(out int generation))
         {
-            QueueCompletion[] readiness = _readbackFences[generation];
-            if (readiness.Length != 0 && !WaitForAll(readiness, TimeSpan.Zero))
-                return;
+            if (!_backend.IsComplete(_pageFaultReadbackCompletions[generation]))
+                break;
 
             Buffer pageFaultReadback =
                 _pageFaultReadbacks[generation] is { } value
@@ -1470,11 +1504,16 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             }
             _pageFaultReadbackTickets[generation] = default;
             _pageFaultReadbackPending[generation] = false;
-
-            if (_frameMetricReadbackPending[generation])
-                DrainFrameMetricsReadback(generation);
+            _pageFaultReadbackCompletions[generation] = default;
         }
+        for (int generation = 0; generation < ReadbackGenerationCount; generation++)
+            if (_frameMetricReadbackPending[generation] && WaitForAll(_readbackFences[generation], TimeSpan.Zero))
+                DrainFrameMetricsReadback(generation);
     }
+
+    private bool CanUseReadbackStorage(int generation) =>
+        !_pageFaultReadbackPending[generation] && !_frameMetricReadbackPending[generation] &&
+        WaitForAll(_readbackFences[generation], TimeSpan.Zero);
 
     private bool TryGetOldestPendingReadback(out int generation)
     {
@@ -1602,7 +1641,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         uint phaseTwoQualityLimited = ReadUInt32(
             bytes,
             PhaseTwoTessellationCountersReadbackOffset + 5 * sizeof(uint));
-        _latestFrameMetrics = new ClusterFrameMetrics(
+        var metrics = new ClusterFrameMetrics(
             _frameMetricReadbackFrames[generation],
             ReadUInt32(bytes, CandidateCountReadbackOffset),
             ReadUInt32(bytes, CandidateArgsReadbackOffset),
@@ -1624,6 +1663,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             SaturatingAdd(phaseOneQualityLimited, phaseTwoQualityLimited),
             ReadUInt32(bytes, SoftwareDebugReadbackOffset),
             CountNonZeroVisibilityProbe(bytes));
+        if (_latestFrameMetrics is not { } latest || metrics.FrameIndex > latest.FrameIndex)
+            _latestFrameMetrics = metrics;
         _frameMetricReadbackFrames[generation] = 0;
         _frameMetricReadbackPending[generation] = false;
     }

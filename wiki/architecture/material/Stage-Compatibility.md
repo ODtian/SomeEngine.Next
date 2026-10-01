@@ -18,3 +18,8 @@ Stage 的最终 bin 表示可以在不改变 device command 上 shader/pipeline 
 
 ## Relations
 [[Deform-Compatibility]] · [[Raster-Compatibility]] · [[Shade-Compatibility]] · [[architecture/cluster/Material-Ranges]]
+
+同一 shader 修订版本的固定资源声明按编译目标和最终 entry 组合共享。
+资源顺序从链接参数布局解析一次，材质值仍由各 Material 分别解释及绑定。
+Shader 更新后按修订版本重新解析声明，旧阶段随原图和管线生命周期处理。
+派生声明通过弱引用关联 shader，使其生命周期跟随原 shader 数据。

@@ -5,6 +5,83 @@ namespace SomeEngine.RenderGraph.Tests;
 public sealed class FrameAnalysisReuseTests
 {
     [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void UploadedBytesRemainIndependentWhileAllFramesAreInFlight(int frameCount)
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true,
+            requiredFeatures: DeviceFeatures.ExternalTimelines);
+        using var gate = support.Backend.CreateExternalTimeline(support.Device, 0);
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: (uint)frameCount));
+        using Buffer output = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc((ulong)frameCount * 16, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphBufferInput input;
+        GraphPassId copy;
+        GraphBufferId destination;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            input = edit.CreateBufferInput(BufferUsages.CopySource);
+            destination = edit.RegisterExternalBuffer(output,
+                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            copy = edit.AddCopyFramePass("copy in-flight bytes", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                new BufferedCopyData(input, destination, 0),
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                static (ref PassDefinition pass, ref BufferedCopyData data) =>
+                {
+                    pass.Read(data.Source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+                    pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Partial);
+                },
+                static (ref CopyPassCommandScope commands, in BufferedCopyData data) =>
+                {
+                    BufferRegion source = commands.GetBufferRegion(data.Source);
+                    commands.CopyBuffer(new(source.Buffer, source.Range.Offset,
+                        commands.GetBuffer(data.Destination), data.DestinationOffset, 16));
+                });
+            edit.Commit();
+        }
+        byte[] expected = Enumerable.Range(0, frameCount * 16).Select(value => (byte)(value + 17)).ToArray();
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        _ = support.Backend.Submit(support.GraphicsQueue, new([], [new(gate, 1)], [], [], []));
+        try
+        {
+            for (int index = 0; index < frameCount; index++)
+            {
+                using RenderGraphFrame frame = graph.BeginFrame();
+                frame.SetPassData(copy, new BufferedCopyData(input, destination, (ulong)index * 16));
+                frame.SetBufferInput(input, frame.Upload(expected.AsSpan(index * 16, 16), BufferUsages.CopySource));
+                frame.Execute(completions);
+            }
+            bool available = graph.TryBeginFrame(out RenderGraphFrame extra);
+            extra.Dispose();
+            Assert.False(available);
+        }
+        finally
+        {
+            _ = support.Backend.Submit(support.ComputeQueue, new([], [], [], [], [new(gate, 1)]));
+            support.Wait(completions);
+        }
+        using (MappedBuffer mapping = support.Backend.Map(output, MapType.Read, BufferRange.Whole))
+        {
+            mapping.Invalidate(mapping.Range);
+            Assert.Equal(expected, mapping.Bytes.ToArray());
+        }
+        for (int index = 0; index < 16; index++) expected[index] ^= 0xC3;
+        using RenderGraphFrame reused = graph.BeginFrame();
+        reused.SetPassData(copy, new BufferedCopyData(input, destination, 0));
+        reused.SetBufferInput(input, reused.Upload(expected.AsSpan(0, 16), BufferUsages.CopySource));
+        reused.Execute(completions);
+        support.Wait(completions);
+        using MappedBuffer updated = support.Backend.Map(output, MapType.Read, BufferRange.Whole);
+        updated.Invalidate(updated.Range);
+        Assert.Equal(expected, updated.Bytes.ToArray());
+    }
+
+    private readonly record struct BufferedCopyData(
+        GraphBufferInput Source, GraphBufferId Destination, ulong DestinationOffset);
+
+    [Theory]
     [InlineData(1)]
     [InlineData(3)]
     public void RetainedInputViewsFollowUploadsAndReboundBuffers(int framesInFlight)

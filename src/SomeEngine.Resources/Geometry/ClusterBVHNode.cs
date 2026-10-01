@@ -6,8 +6,11 @@ namespace SomeEngine.Resources.Geometry;
 [StructLayout(LayoutKind.Sequential, Pack = 16)]
 public struct ClusterBVHNode
 {
-    public Vector4 BoundMin; // w is padding
-    public Vector4 BoundMax; // w is padding
+    // Leaf w values contain reduction group + 1 and parent group + 1 in
+    // cooked data. Cluster registration replaces them with draw flags and
+    // the geometry page index; XYZ always contains the mesh bounds.
+    public Vector4 BoundMin;
+    public Vector4 BoundMax;
     public Vector4 LODSphere;
     public float LODError;
     public uint ChildPointer;

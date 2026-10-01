@@ -309,6 +309,22 @@ uint DrawRequestViewIndex(DrawRequest request)
     return request.ClusterAndView >> 12u;
 }
 
+// Candidate-only data survives deferred culling. Visible raster work keeps
+// the compact DrawRequest and has already made its LOD decision.
+struct ClusterCandidate
+{
+    DrawRequest Request;
+    uint KeepCoarseGeometry;
+};
+
+ClusterCandidate MakeClusterCandidate(DrawRequest request, uint keepCoarseGeometry)
+{
+    ClusterCandidate result;
+    result.Request = request;
+    result.KeepCoarseGeometry = keepCoarseGeometry;
+    return result;
+}
+
 // One node carries up to 32 views through the hierarchy. Geometry and instance
 // data are fetched once; projection, LOD and occlusion remain specific to each view.
 struct ClusterTraversalNode

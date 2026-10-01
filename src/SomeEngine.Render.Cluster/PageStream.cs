@@ -11,12 +11,12 @@ namespace SomeEngine.Render.Cluster;
 /// </summary>
 internal sealed class PageStream : IDisposable, IAsyncDisposable
 {
-    internal const int DefaultMaxInFlightLoads = 256;
-    internal const long DefaultMaxRetainedBytes = 16L * 1024 * 1024;
+    internal const int DefaultMaxInFlightLoads = 1024;
+    internal const long DefaultMaxRetainedBytes = 64L * 1024 * 1024;
     internal const int DefaultMaxPendingFaultWords = 16 * 1024;
     internal const int DefaultMaxQueuedPages = 16 * 1024;
+    private const int ConcurrentPageReads = 8;
 
-    private readonly record struct LoadOperation(uint Size, Task Completion);
     private readonly record struct CompletedStagedPage(
         uint PageID,
         PageLoadResult Result,
@@ -24,9 +24,10 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 
     private readonly uint[] _faultInbox;
     private readonly HashSet<uint> _pendingLeafNodeIndices = new();
+    private readonly HashSet<uint> _requestedPages = [];
     private readonly Queue<uint> _queuedPages = new();
     private readonly HashSet<uint> _queuedPageSet = new();
-    private readonly Dictionary<uint, LoadOperation> _loadingPages = new();
+    private readonly Dictionary<uint, uint> _loadingPages = new();
     private readonly HashSet<uint> _permanentlyFailedPages = new();
     private readonly Queue<CompletedStagedPage> _completedStagedPages = new();
     private readonly object _coordinatorGate = new();
@@ -171,7 +172,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             DrainFaultInbox();
             DrainCompleted(out uint stagedPages, out uint failedPages);
             QueueRequestedPages();
-            failedPages = checked(failedPages + StartQueuedPageLoads());
+            StartQueuedPageLoads();
             _stagedPageCount = stagedPages;
             _failedPageCount = failedPages;
             _totalLoadFailureCount = SaturatingAdd(_totalLoadFailureCount, failedPages);
@@ -222,10 +223,17 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             if (resolution.Kind == PageFaultResolutionKind.Unknown)
                 continue;
             _knownFaultLeafCount++;
-            QueuePageIfNeeded(resolution.PageId, resolution);
+            _requestedPages.Add(resolution.PageId);
         }
-
+        // Include siblings outside the frustum, which cannot fault themselves.
+        // Expand the complete feedback batch once. Sibling pages often share
+        // the same group and ancestors; repeated per-page expansion multiplies
+        // CPU work without producing any additional demand.
+        _resources.CollectPageDependencies(_requestedPages);
+        foreach (uint page in _requestedPages)
+            QueuePageIfNeeded(page, _resources.ResolvePage(page));
         _pendingLeafNodeIndices.Clear();
+        _requestedPages.Clear();
     }
 
     private void QueuePageIfNeeded(uint pageID, in PageFaultResolution resolution)
@@ -256,9 +264,9 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         _totalBackpressuredPageCount = SaturatingAdd(_totalBackpressuredPageCount, 1);
     }
 
-    private uint StartQueuedPageLoads()
+    private void StartQueuedPageLoads()
     {
-        uint failedPages = 0;
+        List<uint>? pageReads = null;
         int queuedCount = _queuedPages.Count;
         for (int i = 0; i < queuedCount; i++)
         {
@@ -283,25 +291,19 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                 continue;
             }
 
-            StartStagedPageLoad(pageID, size);
+            _loadingBytes = checked(_loadingBytes + size);
+            _loadingPages.Add(pageID, size);
+            (pageReads ??= []).Add(pageID);
         }
-
-        return failedPages;
-    }
-
-    private void StartStagedPageLoad(uint pageID, uint size)
-    {
-        _loadingBytes = checked(_loadingBytes + size);
-        _loadingPages[pageID] = new LoadOperation(size, Task.CompletedTask);
-        try
-        {
-            Task completion = CompleteStagedLoadAsync(pageID, _shutdown.Token);
-            _loadingPages[pageID] = new LoadOperation(size, completion);
-        }
-        catch (Exception ex)
-        {
-            PublishStagedCompleted(new CompletedStagedPage(pageID, default, ex));
-        }
+        if (pageReads is null) return;
+        CancellationToken cancellationToken = _shutdown.Token;
+        // The coordinator holds request state; workers load through the
+        // existing mesh staging storage and report through the completion inbox.
+        // Cancellation is handled by every page so shutdown also receives a
+        // completion for pages that have not reached a worker yet.
+        _ = Parallel.ForEachAsync(pageReads,
+            new ParallelOptions { MaxDegreeOfParallelism = ConcurrentPageReads },
+            async (pageID, _) => await CompleteStagedLoadAsync(pageID, cancellationToken).ConfigureAwait(false));
     }
 
     private async Task CompleteStagedLoadAsync(uint pageID, CancellationToken cancellationToken)
@@ -309,6 +311,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         CompletedStagedPage completed;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             PageLoadResult result = await _resources
                 .LoadPageIntoStagingAsync(pageID, cancellationToken)
                 .ConfigureAwait(false);
@@ -345,8 +348,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         failedPages = 0;
         while (TryTakeStagedCompleted(out CompletedStagedPage completed))
         {
-            if (_loadingPages.Remove(completed.PageID, out LoadOperation operation))
-                _loadingBytes = checked(_loadingBytes - operation.Size);
+            if (_loadingPages.Remove(completed.PageID, out uint size))
+                _loadingBytes = checked(_loadingBytes - size);
 
             if (completed.Error is not null)
             {
@@ -530,6 +533,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                     _pendingStoredFaults = 0;
                     _pendingDroppedFaults = 0;
                     _pendingLeafNodeIndices.Clear();
+                    _requestedPages.Clear();
                     _queuedPages.Clear();
                     _queuedPageSet.Clear();
                     _completedStagedPages.Clear();

@@ -293,19 +293,10 @@ public sealed class VirtualShadowMap : IDisposable
         if (!Matrix4x4.Invert(receiverView.View, out Matrix4x4 worldFromView))
             throw new ArgumentException("The receiver view must be invertible.", nameof(receiverView));
         Vector3 camera = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
-        float projectionScale = MathF.Abs(receiverView.Projection.M11);
-        if (projectionScale <= 1e-6f || receiverView.ViewportWidth == 0u)
-        {
-            throw new ArgumentException(
-                "The receiver projection must have a finite non-zero horizontal scale and viewport.",
-                nameof(receiverView));
-        }
-        // A level spans 8 * 2^level world units. Match its texel size to
-        // one receiver pixel at the distance used by the clipmap selection.
-        float lodScale = 0.25f / projectionScale *
-            Settings.VirtualResolution / receiverView.ViewportWidth;
-        float resolutionLodBias =
-            Settings.DirectionalResolutionLodBias + MathF.Log2(lodScale);
+        // Receiver demand and material sampling project the same screen-pixel
+        // footprint into the light view. Only the user's quality bias belongs
+        // in the view data; camera distance cannot describe that footprint.
+        float resolutionLodBias = Settings.DirectionalResolutionLodBias;
         uint physicalPagesPerRow = Settings.AtlasSize / Settings.PageSize;
         uint virtualPagesPerRow = Settings.VirtualResolution / Settings.PageSize;
         uint pageTableEntriesPerView = Settings.PageTableEntriesPerView;
@@ -334,8 +325,11 @@ public sealed class VirtualShadowMap : IDisposable
                 int pagesPerSnap = checked((int)virtualPagesPerRow / 4);
                 int centerPageX = checked(centerSnapX * pagesPerSnap);
                 int centerPageY = checked(centerSnapY * pagesPerSnap);
-                int pageOriginX = checked(centerPageX - (int)virtualPagesPerRow / 2);
-                int pageOriginY = checked(centerPageY - (int)virtualPagesPerRow / 2);
+                // LookAt's horizontal axis is -right; UV's vertical flip is
+                // -vertical. The world-page origin follows those same axes,
+                // so scrolling preserves the address of fixed world geometry.
+                int pageOriginX = checked(-centerPageX - (int)virtualPagesPerRow / 2);
+                int pageOriginY = checked(-centerPageY - (int)virtualPagesPerRow / 2);
                 Vector3 snappedCenter =
                     right * (centerSnapX * levelRadius) +
                     vertical * (centerSnapY * levelRadius);

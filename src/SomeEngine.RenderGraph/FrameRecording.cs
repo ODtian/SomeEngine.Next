@@ -36,7 +36,7 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<int> _recordingConfigurationPasses = [];
     private RenderGraphDebugOptions _recordingDebug;
     private bool[] _recordingParallel = [];
-    private readonly HashSet<CommandContext> _recordingContexts = [];
+    private readonly Dictionary<CommandContext, CommandContextPool.CommandContextLease> _recordingContexts = [];
     private RecordingBatch[] _parallelBatches = [];
     private RecordingBatch[] _encodingBatches = [];
     private RecordingBatch[] _allCallingBatches = [];
@@ -212,7 +212,7 @@ internal sealed partial class FrameExecutor
             int predecessor = _sameQueuePredecessor[pass];
             int previous = predecessor >= 0 ? _submissionByPass[predecessor] : -1;
             int current = previous;
-            bool split = current < 0;
+            bool split = current < 0 || _passes[predecessor].Options.SubmitAfter;
             if (!split)
             {
                 foreach (int dependency in _incomingSubmissions)
@@ -328,8 +328,8 @@ internal sealed partial class FrameExecutor
 
     internal void ReleaseRecordingContexts()
     {
-        foreach (CommandContext context in _recordingContexts)
-            context.Dispose();
+        foreach (var storage in _recordingContexts.Values)
+            storage.Dispose();
         _recordingContexts.Clear();
         foreach (PassParameters pass in _passParameters)
             foreach (ParameterBlock block in pass.Blocks)
@@ -482,10 +482,28 @@ internal sealed partial class FrameExecutor
         bool begun = false;
         try
         {
-            // Graph accesses describe synchronization ranges, not descriptor
-            // allocations. The backend grows and retains its arenas from actual
-            // bindings; repeated accesses must not request enormous native heaps.
+            ulong resourceDescriptors = 0, samplerDescriptors = 0;
+            if (context.QueueType != QueueType.Copy)
+            {
+                for (int item = start; item < end; item++)
+                {
+                    foreach (ParameterBlock block in _passParameters[passes[item]].Blocks)
+                    {
+                        // The resolved binding list comes from the user's shader.
+                        // Ordinary data may also need a constant-buffer descriptor.
+                        if (block.Data is { Length: > 0 }) resourceDescriptors++;
+                        for (int binding = 0; binding < block.Count; binding++)
+                        {
+                            if (block.Resources[binding].Type == ResourceBindingType.Sampler) samplerDescriptors++;
+                            else resourceDescriptors++;
+                        }
+                    }
+                }
+            }
+            DeviceLimits limits = _frame.Graph.Device.Capabilities.Limits;
             _frame.Backend.Begin(context, new CommandRecordingDesc(
+                InitialResourceDescriptorCapacity: (uint)Math.Min(resourceDescriptors, limits.ResourceDescriptorCapacity),
+                InitialSamplerDescriptorCapacity: (uint)Math.Min(samplerDescriptors, limits.SamplerDescriptorCapacity),
                 Label: _passes[passes[start]].Label));
             begun = true;
             for (int item = start; item < end; item++)
@@ -662,17 +680,19 @@ internal sealed partial class FrameExecutor
         {
             foreach (RecordingBatch unit in units)
                 if (unit.Context is { } context && !previous.Any(old => ReferenceEquals(old.Context, context)))
-                    Release(context);
+                    ReturnContext(context);
             throw;
         }
         _submissionRecordingUnits[submission] = units.ToArray();
         _submissionWorkerEligible[submission] = workerEligible;
         foreach (RecordingBatch old in previous)
-            if (!units.Any(unit => ReferenceEquals(unit.Context, old.Context))) Release(old.Context);
+            if (!units.Any(unit => ReferenceEquals(unit.Context, old.Context))) ReturnContext(old.Context);
 
-        void Release(CommandContext context)
+        void ReturnContext(CommandContext context)
         {
-            if (_recordingContexts.Remove(context)) context.Dispose();
+            // Batch membership borrows command storage. The graph's existing
+            // pool remains its only holder when an immediate batch disappears.
+            if (_recordingContexts.Remove(context, out var storage)) storage.Dispose();
         }
     }
 
@@ -681,18 +701,16 @@ internal sealed partial class FrameExecutor
     {
         if (reusable is not null) return new RecordingBatch(passes, start, count, accessCount, reusable);
         Queue queue = _passes[passes[start]].Queue!;
-        CommandContext context = _frame.Backend.CreateCommandContext(
-            _frame.Graph.Device,
-            new CommandContextDesc(queue.Type, queue.Index, InitialSlotCount: 1,
-                Label: _passes[passes[start]].Label));
+        var storage = _frame.Graph.CommandContexts.Acquire(queue, false, _passes[passes[start]].Label, initialSlotCount: 1);
+        CommandContext context = storage.Context;
         try
         {
-            _recordingContexts.Add(context);
+            _recordingContexts.Add(context, storage);
             return new RecordingBatch(passes, start, count, accessCount, context);
         }
         catch
         {
-            context.Dispose();
+            storage.Dispose();
             throw;
         }
     }
@@ -1018,6 +1036,7 @@ internal sealed partial class FrameExecutor
                 _passSubmissionFrames[pass] = _frame.Identity;
             }
             CommitSubmissionState(submission, completion);
+            _frame.NotifySubmitted();
         }
         finally
         {

@@ -1069,6 +1069,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     _shadowMap.Settings.BlockerSearchRadiusTexels,
                     _shadowMap.Settings.MaxFilterRadiusTexels) /
                 _shadowMap.Settings.PageSize),
+            NormalBias = _shadowMap.Settings.NormalBias,
         };
         _uniformData.Write(ref graph, _demandUniforms, in demand);
         graph.SetPassDataIfChanged(

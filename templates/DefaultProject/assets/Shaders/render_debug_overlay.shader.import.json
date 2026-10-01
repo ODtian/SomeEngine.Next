@@ -1,11 +1,11 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 27,
-  "input_hash": "3615dac62976ef1862950ebfa70f2010bfa355c996039d1be07b52d3eb387af2",
+  "input_hash": "9037c7e4187e4d5ecb173b9ef0ba13b0a089935aa911677dedfe4b938b497255",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/fullscreen_triangle.slang",
-      "content_hash": "a379eb11e577feb64d5fa47621d9ecad73fc1708619af7c527677c7f53055e1c"
+      "content_hash": "e169a7c879d8de35ba80401c35c223b8371bf9f428b3050ad488b2545891e202"
     },
     {
       "relative_path": "../../assets/Shaders/render_debug_overlay.slang",
@@ -29,11 +29,11 @@
     {
       "asset_guid": "451577f6-27d5-553a-a428-ec2d950deca0",
       "sub_asset_key": "",
-      "input_hash": "3615dac62976ef1862950ebfa70f2010bfa355c996039d1be07b52d3eb387af2",
+      "input_hash": "9037c7e4187e4d5ecb173b9ef0ba13b0a089935aa911677dedfe4b938b497255",
       "dependencies": [],
       "asset_path": "render_debug_overlay.shader.asset",
-      "version": "44097327-9645-21ae-2094-093b2fe353d7",
-      "content_hash": "A7BA334283036FBB6A66B8228DD8B31A8314B0479155BF64A7F93682A88B2491",
+      "version": "4a853cb5-eca1-068b-c94b-bf27666715c1",
+      "content_hash": "EC3725A972F0359B8B5797B63E147B25CA1481A1ED8C796B08F04DBEA94AABD5",
       "asset_dependencies": []
     }
   ]
