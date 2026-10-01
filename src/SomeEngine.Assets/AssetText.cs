@@ -99,7 +99,7 @@ public static class AssetText
         }
 
         public void WriteBlock<TBlock>(TBlock block, IReadOnlyDictionary<ulong, string>? chunkFiles = null)
-            where TBlock : AssetPageBlock, IAssetBlock<TBlock>, IBinarySerializable<TBlock>, ITextSerializable<TBlock>
+            where TBlock : AssetBlock, IAssetBlock<TBlock>, IBinarySerializable<TBlock>, ITextSerializable<TBlock>
         {
             if (block.BlockId != TBlock.BlockTypeId || !_types.Add(TBlock.BlockTypeId))
                 throw new InvalidDataException("The source repeats a block type or the block has a different persistent identity.");
@@ -134,7 +134,7 @@ public static class AssetText
         }
     }
 
-    internal sealed record BlockFiles(AssetPageBlock Content, KeyValuePair<ulong, string>[] Files);
+    internal sealed record BlockFiles(AssetBlock Content, KeyValuePair<ulong, string>[] Files);
 
     private static void ReleaseFiles(List<BlockFiles> files, Exception? failure)
     {
@@ -161,17 +161,11 @@ public static class AssetText
                 await using var external = FileRangeSource.Open(Path.Combine(directory, file.Value));
                 long length;
                 Digest256 expected;
-                if (files.Content.Chunks.Contains(file.Key))
+                if (files.Content.Chunks.ContainsKey(file.Key))
                 {
-                    using PageRange<byte> bytes = files.Content.Chunks.Retain(file.Key);
-                    length = bytes.Sequence.Length;
-                    using var contentHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-                    foreach (ReadOnlyMemory<byte> segment in bytes.Sequence)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        contentHash.AppendData(segment.Span);
-                    }
-                    expected = Digest256.Finish(contentHash);
+                    ReadOnlyMemory<byte> bytes = files.Content.Chunks[file.Key];
+                    length = bytes.Length;
+                    expected = Digest256.ComputeSha256(bytes.Span);
                 }
                 else if (source is not null && source.Description.ChunkKeys.Contains(file.Key))
                 {
@@ -235,7 +229,7 @@ public static class AssetText
             => _blocks.ContainsKey(TBlock.BlockTypeId);
 
         public async ValueTask ReadBlockIntoAsync<TBlock>(TBlock target, CancellationToken cancellationToken = default)
-            where TBlock : AssetPageBlock, IAssetBlock<TBlock>, IBinarySerializable<TBlock>, ITextSerializable<TBlock>, ITextObjectReader<TBlock>
+            where TBlock : AssetBlock, IAssetBlock<TBlock>, IBinarySerializable<TBlock>, ITextSerializable<TBlock>, ITextObjectReader<TBlock>
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!_blocks.TryGetValue(TBlock.BlockTypeId, out JsonElement block))
@@ -243,42 +237,21 @@ public static class AssetText
             if (target.BlockId != TBlock.BlockTypeId || ParseKey(block.GetProperty("Schema").GetString()!) != TBlock.SchemaFingerprint)
                 throw new InvalidDataException("The source block schema differs from the requested codec.");
             TBlock.ReadTextInto(block.GetProperty("Fields"), target);
-            foreach (ulong key in target.Chunks.Keys.ToArray()) target.Chunks.Remove(key);
-            await ReadChunkFilesAsync(block.GetProperty("Chunks"), _directory, target.Chunks, target.Pages, cancellationToken).ConfigureAwait(false);
+            foreach (ulong key in target.Chunks.Keys.ToArray()) target.RemoveBytes(key);
+            await ReadChunkFilesAsync(block.GetProperty("Chunks"), _directory, target, cancellationToken).ConfigureAwait(false);
         }
 
         public void Dispose() => _document.Dispose();
     }
 
-    private static async ValueTask ReadChunkFilesAsync(JsonElement chunks, string directory, PageBufferMap destination,
-        PageArena pages, CancellationToken cancellationToken)
+    private static async ValueTask ReadChunkFilesAsync(JsonElement chunks, string directory,
+        AssetBlock destination, CancellationToken cancellationToken)
     {
-        var sources = new List<(ulong Key, FileRangeSource Source)>();
-        try
+        foreach (JsonProperty chunk in chunks.EnumerateObject())
         {
-            long required = 0;
-            foreach (JsonProperty chunk in chunks.EnumerateObject())
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                ulong key = ParseKey(chunk.Name);
-                var source = FileRangeSource.Open(Path.Combine(directory, ReadRelativePath(chunk.Value)));
-                sources.Add((key, source));
-                required = checked(required + pages.GetBufferCapacity(source.Length));
-            }
-            if (required > pages.Residency.Budget(ResidencyClass.DecodedCpu))
-                throw new InvalidDataException("The source payloads exceed the decoded memory budget.");
-            pages.Residency.RequestReclaim(ResidencyClass.DecodedCpu, required);
-            if (required > pages.Residency.Available(ResidencyClass.DecodedCpu))
-                throw new InvalidDataException("The source payloads and current page usage exceed the decoded memory budget.");
-            foreach (var item in sources)
-            {
-                using PageBuffer bytes = await PageBuffer.ReadAsync(item.Source, 0, item.Source.Length, pages, cancellationToken).ConfigureAwait(false);
-                destination.Set(item.Key, bytes);
-            }
-        }
-        finally
-        {
-            foreach (var item in sources) await item.Source.DisposeAsync().ConfigureAwait(false);
+            ulong key = ParseKey(chunk.Name);
+            byte[] bytes = await File.ReadAllBytesAsync(Path.Combine(directory, ReadRelativePath(chunk.Value)), cancellationToken).ConfigureAwait(false);
+            destination.SetBytes(key, bytes);
         }
     }
 

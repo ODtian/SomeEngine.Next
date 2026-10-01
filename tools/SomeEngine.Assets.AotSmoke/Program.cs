@@ -1,3 +1,4 @@
+using SlangShaderSharp;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Serialization;
 using SomeEngine.Assets;
@@ -36,10 +37,10 @@ try
     await first.DisposeAsync();
     await second.DisposeAsync();
     await loader.DisposeAsync();
-    if (!original.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out var mip))
+    if (!original.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var mip))
         throw new InvalidOperationException("Explicitly acquired texture pixels are missing.");
-    using var mipRead = mip;
-    if (mipRead.Sequence.Length != 16 || mipRead.Sequence.FirstSpan[0] != 255)
+    var mipRead = mip;
+    if (mipRead.Length != 16 || mipRead.Span[0] != 255)
         throw new InvalidOperationException("Texture streaming must survive asset and loader closure.");
     await using TextureAsset replacement = await TextureAsset.OpenAsync(path);
     await replacement.GetBlock<TextureBlock>().UpdateAsync(original, replacement.Name);
@@ -59,21 +60,20 @@ try
         throw new InvalidOperationException("Downstream generated asset format did not run under NativeAOT.");
     using var mesh = CreateMesh();
     using var meshCopy = mesh.Duplicate();
-    using var meshRead = mesh.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+    var meshRead = mesh.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
     long marker = MeshPageHeader.Size + PackedCluster.SizeInBytes;
-    meshCopy.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Write(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey, marker, new byte[] { 9 });
-    using var originalBytes = mesh.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.DuplicateBuffer(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
-    using var copiedBytes = meshCopy.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.DuplicateBuffer(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
-    if (meshRead.Sequence.Slice(marker, 1).FirstSpan[0] != 1 || originalBytes[marker] != 1 || copiedBytes[marker] != 9)
+    byte[] editedMesh = meshRead.ToArray();
+    editedMesh[marker] = 9;
+    meshCopy.GetBlock<ClusterMeshBlock>().SetPayload(editedMesh, meshCopy.GetBlock<ClusterMeshBlock>().BvhOffset);
+    var originalBytes = mesh.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
+    var copiedBytes = meshCopy.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
+    if (meshRead.Span[checked((int)marker)] != 1 || originalBytes.Span[checked((int)marker)] != 1 || copiedBytes.Span[checked((int)marker)] != 9)
         throw new InvalidOperationException("A mesh byte edit changed another branch or reader.");
     AssetEntry meshEntry = await meshCopy.SaveAsync(Path.Combine(directory, "mesh.mesh.asset"));
     using var meshFile = await MeshAsset.OpenAsync(meshEntry.Path);
-    using Mesh readyMesh = await meshFile.GetBlock<ClusterMeshBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
-    if (readyMesh.TryRetainPage(0, out var unexpected))
-    {
-        unexpected.Dispose();
-        throw new InvalidOperationException("Mesh creation implicitly acquired future geometry pages.");
-    }
+    var readyMesh = await meshFile.GetBlock<ClusterMeshBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
+    if (!readyMesh.TryGetPage(0, out _))
+        throw new InvalidOperationException("Mesh creation did not acquire minimum drawable geometry.");
     await meshFile.GetBlock<ClusterMeshBlock>().LoadPagesAsync(readyMesh, [0]);
     meshFile.Dispose();
     byte[] page = new byte[readyMesh.GetPageByteLength(0)];
@@ -115,11 +115,11 @@ try
         throw new InvalidOperationException("World asset persistence lost ECS identity, independent content, or dependencies.");
     string curvePath = Path.Combine(directory, "curve.source");
     using var curveAsset = new SomeEngine.Examples.Curves.CurveAsset
-        { Name = "speed" };
+    { Name = "speed" };
     curveAsset.GetBlock<SomeEngine.Examples.Curves.CurveBlock>().Points = [new(0, 1), new(1, 5)];
     await curveAsset.SaveSourceAsync(curvePath);
     using var curveSource = await SomeEngine.Examples.Curves.CurveAsset.OpenSourceAsync(curvePath);
-    using var curve = curveSource.GetBlock<SomeEngine.Examples.Curves.CurveBlock>().CreateCurve();
+    var curve = curveSource.GetBlock<SomeEngine.Examples.Curves.CurveBlock>().CreateCurve();
     curveSource.GetBlock<SomeEngine.Examples.Curves.CurveBlock>().Points[1] = new(1, 9);
     if (curve.Evaluate(0.5f) != 3 || curveSource.Id != curveAsset.Id)
         throw new InvalidOperationException("External text decoding lost identity or shared points.");
@@ -128,16 +128,51 @@ try
     curveAsset.Dispose();
     if (curve.Evaluate(0.5f) != 5)
         throw new InvalidOperationException("The curve lost its data when its source closed.");
-    var textShapes = new SmokeTextChoices { Values = new Dictionary<SmokeTextMode, ISmokeTextChoice?>
-        { [SmokeTextMode.Linear] = new SmokeTextNumber { Number = 3 }, [SmokeTextMode.Constant] = null } };
+    var textShapes = new SmokeTextChoices
+    {
+        Values = new Dictionary<SmokeTextMode, ISmokeTextChoice?>
+        { [SmokeTextMode.Linear] = new SmokeTextNumber { Number = 3 }, [SmokeTextMode.Constant] = null }
+    };
     var textDecoded = TextSerializer.Deserialize<SmokeTextChoices>(TextSerializer.Serialize(textShapes));
     if (textDecoded.Values[SmokeTextMode.Linear] is not SmokeTextNumber { Number: 3 }
         || textDecoded.Values[SmokeTextMode.Constant] is not null)
         throw new InvalidOperationException("Static text dictionary, enum or union encoding failed.");
     using var shaderFile = await ShaderAsset.OpenAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "triangle.shader.asset"));
-    using var shader = await shaderFile.GetBlock<ShaderBlock>().CreateAsync(shaderFile.Name);
+    SlangResult slangResult = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession slang);
+    if (slangResult.Failed || slang is null)
+        throw new InvalidOperationException($"Slang global-session creation failed with {slangResult}.");
+    TargetDesc[] targets =
+    [
+        new TargetDesc
+        {
+            Format = SlangCompileTarget.Dxil,
+            Profile = slang.FindProfile("sm_6_6"),
+        },
+        new TargetDesc
+        {
+            Format = SlangCompileTarget.Spirv,
+            Profile = slang.FindProfile("glsl_460"),
+        },
+    ];
+    SessionDesc sessionDescription = new()
+    {
+        Targets = targets,
+        DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
+        CompilerOptionEntries =
+        [
+            new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1, 0)),
+            new(CompilerOptionName.VulkanEmitReflection, CompilerOptionValue.FromInt(1, 0)),
+            new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
+            new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0)),
+        ],
+    };
+    Shader shader = await shaderFile.GetBlock<ShaderBlock>().CreateAsync(
+        shaderFile.GetBlock<ShaderSourceBlock>(),
+        slang,
+        sessionDescription,
+        shaderFile.Name);
     shaderFile.Dispose();
-    if (shader.Programs is not { Count: 2 } || shader.Programs.Any(value => value is null || value.EntryPoints.Count == 0))
+    if (shader.SlangTargetCount != 2 || shader.SlangEntryCount == 0)
         throw new InvalidOperationException("Built shader code did not survive its file closing.");
     Console.WriteLine($"assets-nativeaot-smoke:ok schema={TextureAsset.SchemaHash:X16} instances=2 independent-open=ok ready-after-close=ok update=ok extension=ok mesh-file=ok material-inheritance=ok world=ok curve-source=ok text-shapes=ok shader-file=ok");
 }
@@ -158,17 +193,17 @@ static async ValueTask<Guid> WriteTextureAsync(AssetProject project, string path
     ];
     byte[] mipOne = [127, 127, 127, 255];
     using var pixels = new TextureBlock
-        {
-            Width = 2,
-            Height = 2,
-            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
-            Depth = 1,
-            MipLevelCount = 2,
-            ArrayLayerCount = 1,
-            Format = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
-            SampledFormat = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
-            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
-            MipTiles =
+    {
+        Width = 2,
+        Height = 2,
+        Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+        Depth = 1,
+        MipLevelCount = 2,
+        ArrayLayerCount = 1,
+        Format = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+        SampledFormat = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+        SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
+        MipTiles =
             [
                 new TextureMipTile
                 {
@@ -192,9 +227,9 @@ static async ValueTask<Guid> WriteTextureAsync(AssetProject project, string path
                     ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = checked((ulong)mipZero.Length),
                 },
             ],
-        };
-    pixels.Chunks.Set(TextureTiles.ChunkKey(0, 0, 0), mipZero);
-    pixels.Chunks.Set(TextureTiles.ChunkKey(1, 0, 0), mipOne);
+    };
+    pixels.SetBytes(TextureTiles.ChunkKey(0, 0, 0), mipZero);
+    pixels.SetBytes(TextureTiles.ChunkKey(1, 0, 0), mipOne);
     using var texture = new TextureAsset { Name = "native-aot" };
     texture.SetBlock(pixels);
     return project.RegisterAsset(await texture.SaveAsync(path));
@@ -206,21 +241,32 @@ static MeshAsset CreateMesh()
     const string encoding = "aot-smoke.opaque-vertex";
     int vertices = MeshPageHeader.Size + PackedCluster.SizeInBytes;
     int bvhOffset = vertices + 1 + 3;
-    using var bytes = new PageBuffer(PageArena.Shared, bvhOffset + Unsafe.SizeOf<ClusterBVHNode>());
+    byte[] bytes = new byte[bvhOffset + Unsafe.SizeOf<ClusterBVHNode>()];
     var header = new MeshPageHeader
     {
-        ClusterCount = 1, TotalVertexCount = 1, TotalTriangleCount = 1, VertexBlobBytes = 1,
-        ClustersOffset = MeshPageHeader.Size, VertexBlobsOffset = (uint)vertices,
-        IndicesOffset = (uint)(vertices + 1), ExtensionDataOffset = (uint)bvhOffset,
+        ClusterCount = 1,
+        TotalVertexCount = 1,
+        TotalTriangleCount = 1,
+        VertexBlobBytes = 1,
+        ClustersOffset = MeshPageHeader.Size,
+        VertexBlobsOffset = (uint)vertices,
+        IndicesOffset = (uint)(vertices + 1),
+        ExtensionDataOffset = (uint)bvhOffset,
         VertexEncodingHash = VertexEncodingCompatibility.Hash(encoding),
     };
-    bytes.Write(0, header);
-    bytes.Write(MeshPageHeader.Size, new PackedCluster { VertexBlobSize = 1, PackedCounts = 1 | (1u << 8),
-        ExtensionOffset = uint.MaxValue, MaterialTableOffset = uint.MaxValue });
+    MemoryMarshal.Write(bytes, in header);
+    var cluster = new PackedCluster
+    {
+        VertexBlobSize = 1,
+        PackedCounts = 1 | (1u << 8),
+        ExtensionOffset = uint.MaxValue,
+        MaterialTableOffset = uint.MaxValue
+    };
+    MemoryMarshal.Write(bytes.AsSpan(MeshPageHeader.Size), in cluster);
     bytes[vertices] = 1;
     var bvh = new ClusterBVHNode { NodeType = 1 };
     bvh.SetLeafData(0, 1);
-    bytes.Write(bvhOffset, bvh);
+    MemoryMarshal.Write(bytes.AsSpan(bvhOffset), in bvh);
     var result = new MeshAsset { Name = "mesh" };
     using var geometry = new MeshBlock();
     using var clusters = new ClusterMeshBlock { VertexEncoding = encoding };
@@ -234,15 +280,15 @@ static MeshAsset CreateMesh()
     catch { result.Dispose(); throw; }
 }
 
-[Asset(".palette.asset"), BinarySerializable]
+[Asset(".palette.asset", SchemaName = "SmokePaletteAsset"), BinarySerializable]
 [BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
 public sealed partial class SmokePaletteAsset : Asset
 {
     public new System.Collections.Immutable.ImmutableArray<AssetBlockDescription> BlockDescriptions
     { get => base.BlockDescriptions; private set => base.BlockDescriptions = value; }
 }
-[AssetBlock, BinarySerializable, BinaryFields(nameof(Colors))]
-public sealed partial class SmokePaletteBlock : AssetPageBlock
+[AssetBlock("SmokePaletteBlock"), BinarySerializable, BinaryFields(nameof(Colors))]
+public sealed partial class SmokePaletteBlock : AssetBlock
 {
     public partial IList<uint> Colors { get; set; }
     public SmokePalette Create(string name)

@@ -76,7 +76,7 @@ public sealed class VulkanAdvancedStateTests
             [shader("fragment")]
             float4 pixelMain() : SV_Target0 { return float4(0.25, 0.5, 0.75, 1); }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("meshMain", SlangStage.Mesh),
             ("pixelMain", SlangStage.Fragment));
@@ -91,10 +91,11 @@ public sealed class VulkanAdvancedStateTests
         using Pipeline pipeline = backend.CreateMeshPipeline(
             device,
             new MeshPipelineDesc(
-                shader.Program,
-                shader.Entries[0],
-                ShaderEntryPoint.Null,
+                shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0),
+                EntryPointReflection.Null,
+                default,
                 shader.Entries[1],
+                shader.GetEntryCode(1),
                 new RasterizerState(Cull: CullType.None),
                 new MultisampleState(),
                 new DepthStencilState(),
@@ -287,12 +288,12 @@ public sealed class VulkanAdvancedStateTests
             [shader("raygeneration")]
             void rayGenerationMain() { outputValues[0] = 11; }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("rayGenerationMain", SlangStage.RayGeneration));
-        ShaderEntryPoint rayGeneration = shader.Entries[0];
-        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        EntryPointReflection rayGeneration = shader.Entries[0];
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(
@@ -302,7 +303,9 @@ public sealed class VulkanAdvancedStateTests
         using Pipeline pipeline = backend.CreateRayTracingPipeline(
             device,
             new RayTracingPipelineDesc(
-                shader.Program,
+                shader.SlangCode,
+                shader.Reflection,
+                shader.TargetCode,
                 [rayGeneration],
                 [],
                 [],
@@ -390,14 +393,14 @@ public sealed class VulkanAdvancedStateTests
                 outputValues[0] = recordValue;
             }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("rayGenerationMain", SlangStage.RayGeneration),
             ("callableMain", SlangStage.Callable));
-        ShaderEntryPoint rayGeneration = shader.Entries[0];
-        ShaderEntryPoint callable = shader.Entries[1];
-        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        EntryPointReflection rayGeneration = shader.Entries[0];
+        EntryPointReflection callable = shader.Entries[1];
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(
@@ -407,7 +410,9 @@ public sealed class VulkanAdvancedStateTests
         using Pipeline pipeline = backend.CreateRayTracingPipeline(
             device,
             new RayTracingPipelineDesc(
-                shader.Program,
+                shader.SlangCode,
+                shader.Reflection,
+                shader.TargetCode,
                 [rayGeneration],
                 [],
                 [callable],

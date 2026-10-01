@@ -1,3 +1,4 @@
+using SlangShaderSharp;
 using SomeEngine.Serialization;
 
 namespace SomeEngine.Assets.Schema;
@@ -5,43 +6,62 @@ namespace SomeEngine.Assets.Schema;
 [AssetBlock("SomeEngine.Assets.Schema.ClusterShadersBlock")]
 [BinarySerializable, TextSerializable]
 [BinaryFields(nameof(Operations))]
-public sealed partial class ClusterShadersBlock : AssetPageBlock
+public sealed partial class ClusterShadersBlock : AssetBlock
 {
     public partial IList<ClusterShaderOperation> Operations { get; set; }
 
     protected override void ValidateContent() => Validate("shader settings");
 
-    public async ValueTask<ClusterShaders> CreateAsync(string name, AssetLoader loader, CancellationToken cancellationToken = default)
+    public async ValueTask<ClusterShaders> CreateAsync(
+        string name,
+        AssetLoader loader,
+        IGlobalSession slang,
+        SessionDesc sessionDescription,
+        ReadOnlyMemory<SpecializationArg> specializations = default,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(loader);
         using ClusterShadersBlock copy = Duplicate();
         cancellationToken.ThrowIfCancellationRequested();
         copy.Validate(name);
-        Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(copy.References(), loader, cancellationToken).ConfigureAwait(false);
-        try
+        Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(
+            copy.References(),
+            loader,
+            slang,
+            sessionDescription,
+            specializations,
+            cancellationToken).ConfigureAwait(false);
+        var result = new ClusterShaders
         {
-            var result = new ClusterShaders
+            Name = name,
+            Operations = copy.Operations.Select(operation => new ShaderOperation
             {
-                Name = name,
-                Operations = copy.Operations.Select(operation => new ShaderOperation
-                {
-                    Role = operation.Role,
-                    Shaders = operation.Shaders!.Select(reference => reference.Resolve(shaders)).ToImmutableList(),
-                }).ToImmutableList(),
-            };
-            cancellationToken.ThrowIfCancellationRequested();
-            return result;
-        }
-        catch (Exception error)
+                Role = operation.Role,
+                Shaders = operation.Shaders!
+                    .Select(reference => shaders[reference.Asset.Value])
+                    .ToImmutableList(),
+                Entries = operation.Shaders!
+                    .Select(reference => reference.ResolveEntry(shaders))
+                    .ToImmutableList(),
+            }).ToImmutableList(),
+        };
+        foreach (ShaderOperation operation in result.Operations)
+            ValidateEntryStages(operation);
+        cancellationToken.ThrowIfCancellationRequested();
+        return result;
+    }
+
+    private static void ValidateEntryStages(ShaderOperation operation)
+    {
+        bool isCompute = operation.Entries is [{ Stage: SlangStage.Compute }];
+        bool isRaster = operation.Entries.Count == 2 &&
+            operation.Entries.Count(static entry => entry.Stage == SlangStage.Vertex) == 1 &&
+            operation.Entries.Count(static entry => entry.Stage == SlangStage.Fragment) == 1;
+        if (!isCompute && !isRaster)
         {
-            var errors = new List<Exception> { error };
-            foreach (Shader shader in shaders.Values)
-            {
-                try { shader.Dispose(); }
-                catch (Exception cleanup) { errors.Add(cleanup); }
-            }
-            if (errors.Count > 1) throw new AggregateException("Creating cluster shaders and releasing resources failed.", errors);
-            throw;
+            throw new InvalidDataException(
+                $"Cluster shader role '{operation.Role}' must resolve to one compute entry " +
+                "or one vertex/fragment pair.");
         }
     }
 }

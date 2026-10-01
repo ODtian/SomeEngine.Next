@@ -56,15 +56,8 @@ public sealed class DocumentSourceTests
             Assert.Equal(destination.AsMemory(), result);
             Assert.Equal(payload, destination);
 
-            var budget = new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = payload.Length });
-            await using var scheduler = ChunkRequestScheduler.CreateForDocument(document, payload.Length, residency: budget);
-            using ResidentChunkLease acquired = await scheduler.AcquireAsync(1);
-            Assert.Equal(payload, acquired.Memory.ToArray());
-            Assert.Equal(payload.Length, budget.Used(ResidencyClass.DecodedCpu));
-            Assert.Equal(0, budget.Used(ResidencyClass.Compressed));
-            acquired.Dispose();
-            await scheduler.DisposeAsync();
-            Assert.Equal(0, budget.Used(ResidencyClass.DecodedCpu));
+            await document.DisposeAsync();
+            Assert.Equal(payload, destination);
         }
         finally { if (sourcePath is not null) File.Delete(sourcePath); }
     }

@@ -255,7 +255,7 @@ public static class DefaultContent
             ],
         };
 
-        using var asset = new ClusterShadersAsset(PageArena.Shared, DefaultContentIds.ClusterShaders) { Name = "Default Cluster" };
+        using var asset = new ClusterShadersAsset(DefaultContentIds.ClusterShaders) { Name = "Default Cluster" };
         asset.SetBlock(settings);
         Guid guid = project.RegisterAsset(asset.SaveAsync(global::System.IO.Path.Combine(project.RootPath, outputPath)).AsTask().GetAwaiter().GetResult());
         Console.WriteLine($"  ClusterPipeline: {outputPath}");
@@ -295,7 +295,7 @@ public static class DefaultContent
         world.CreateEntity(new PointLight(new(0, 6, 52), 28, new(0.55f, 0.75f, 1), 10));
         world.CreateEntity(new PointLight(new(-18, 4, 58), 22, new(1, 0.55f, 0.45f), 7));
         world.CreateEntity(new PointLight(new(18, 8, 60), 24, new(0.45f, 1, 0.65f), 8));
-        using var asset = new WorldAsset(PageArena.Shared, DefaultContentIds.Scene) { Name = "Default" };
+        using var asset = new WorldAsset(DefaultContentIds.Scene) { Name = "Default" };
         asset.WriteWorld(world, SceneSerialization.CreateRegistry());
         AssetEntry entry = await asset.SaveAsync(Path.Combine(project.RootPath, outputPath), cancellationToken).ConfigureAwait(false);
         Guid id = project.RegisterAsset(entry);
@@ -317,18 +317,17 @@ public static class DefaultContent
             DebugShader = new(ResolveRequired(project, "assets/Shaders/render_debug_overlay.shader")), DebugVertexEntry = "VSMain", DebugPixelEntry = "PSMain",
             Width = 1280, Height = 720,
         };
-        using var asset = new ApplicationSettingsAsset(PageArena.Shared, DefaultContentIds.ApplicationSettings) { Name = "Default Game" };
+        using var asset = new ApplicationSettingsAsset(DefaultContentIds.ApplicationSettings) { Name = "Default Game" };
         asset.SetBlock(settings);
         project.RegisterAsset(asset.SaveAsync(Path.Combine(project.RootPath, outputPath)).AsTask().GetAwaiter().GetResult());
         Console.WriteLine($"  Application: {outputPath}");
     }
 
-    private static ShaderRef ShaderReference(Guid shaderGuid, string entryPoint, ShaderStage stage)
+    private static ShaderRef ShaderReference(Guid shaderGuid, string entryPoint)
         => new()
         {
             Asset = new(shaderGuid),
             EntryPoint = entryPoint,
-            Stage = stage,
         };
 
     private static Guid BuildShadowShaders(AssetProject project)
@@ -338,57 +337,45 @@ public static class DefaultContent
             {
                 ResetReceiverMasks = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_receiver_mask_reset.shader"),
-                    "ResetVirtualShadowReceiverMasks", ShaderStage.Compute),
+                    "ResetVirtualShadowReceiverMasks"),
                 ResetFrame = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_frame_reset.shader"),
-                    "ResetVirtualShadowFrame",
-                    ShaderStage.Compute),
+                    "ResetVirtualShadowFrame"),
                 MarkPages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_mark_pages.shader"),
-                    "MarkVirtualShadowPages",
-                    ShaderStage.Compute),
+                    "MarkVirtualShadowPages"),
                 MarkCoarsePages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_mark_coarse_pages.shader"),
-                    "MarkVirtualShadowCoarsePages",
-                    ShaderStage.Compute),
+                    "MarkVirtualShadowCoarsePages"),
                 AllocatePages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_allocate_pages.shader"),
-                    "AllocateVirtualShadowPages",
-                    ShaderStage.Compute),
+                    "AllocateVirtualShadowPages"),
                 ClearPages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_clear_pages.shader"),
-                    "ClearVirtualShadowPages",
-                    ShaderStage.Compute),
+                    "ClearVirtualShadowPages"),
                 InitializeState = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_state_init.shader"),
-                    "InitializeVirtualShadowState",
-                    ShaderStage.Compute),
+                    "InitializeVirtualShadowState"),
                 InvalidateCasters = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_caster_invalidation.shader"),
-                    "InvalidateMovedVirtualShadowCasters",
-                    ShaderStage.Compute),
+                    "InvalidateMovedVirtualShadowCasters"),
                 BuildPagePool = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_page_pool.shader"),
-                    "BuildVirtualShadowPagePool",
-                    ShaderStage.Compute),
+                    "BuildVirtualShadowPagePool"),
                 CompactViews = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_view_compact.shader"),
-                    "CompactVirtualShadowViews",
-                    ShaderStage.Compute),
+                    "CompactVirtualShadowViews"),
                 InitializePageHiZ = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_page_hiz.shader"),
-                    "InitializeVirtualShadowPageHiZ",
-                    ShaderStage.Compute),
+                    "InitializeVirtualShadowPageHiZ"),
                 ReducePageHiZ = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_page_hiz_reduce.shader"),
-                    "ReduceVirtualShadowPageHiZ",
-                    ShaderStage.Compute),
+                    "ReduceVirtualShadowPageHiZ"),
                 DynamicResolution = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_dynamic_resolution.shader"),
-                    "UpdateVirtualShadowDynamicResolution",
-                    ShaderStage.Compute),
+                    "UpdateVirtualShadowDynamicResolution"),
             };
-        using var asset = new VirtualShadowMapShadersAsset(PageArena.Shared, DefaultContentIds.ShadowShaders) { Name = "Default Virtual Shadow" };
+        using var asset = new VirtualShadowMapShadersAsset(DefaultContentIds.ShadowShaders) { Name = "Default Virtual Shadow" };
         asset.SetBlock(settings);
         Guid guid = project.RegisterAsset(asset.SaveAsync(Path.Combine(project.RootPath, outputPath)).AsTask().GetAwaiter().GetResult());
         Console.WriteLine($"  VirtualShadowMap: {outputPath}");
@@ -402,7 +389,7 @@ public static class DefaultContent
         => new()
         {
             Role = role,
-            Shaders = [ShaderReference(shaderGuid, entryPoint, ShaderStage.Compute)],
+            Shaders = [ShaderReference(shaderGuid, entryPoint)],
         };
 
     private static ClusterShaderOperation RasterOperation(
@@ -415,8 +402,8 @@ public static class DefaultContent
             Role = role,
             Shaders =
             [
-                ShaderReference(shaderGuid, vertexEntryPoint, ShaderStage.Vertex),
-                ShaderReference(shaderGuid, pixelEntryPoint, ShaderStage.Pixel),
+                ShaderReference(shaderGuid, vertexEntryPoint),
+                ShaderReference(shaderGuid, pixelEntryPoint),
             ],
         };
 

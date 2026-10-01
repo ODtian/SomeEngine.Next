@@ -5,23 +5,24 @@ using SomeEngine.Serialization.Streaming;
 
 namespace SomeEngine.Assets;
 
-/// <summary>One file access, sharing its document and existing chunk scheduler with other accesses.</summary>
+/// <summary>One file access. Reads produce independent managed arrays and never retain decoded results.</summary>
 public sealed class AssetFile : IDisposable, IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly SharedData<FileContent> _content;
 
-    internal AssetFile(BinaryDocument document, string path, PageArena pages, long decodedBudgetBytes)
-        => _content = new(new FileContent(document, path, pages, decodedBudgetBytes));
+    internal AssetFile(BinaryDocument document, string path, long maxDecodedBytes = 256L * 1024 * 1024,
+        AssetByteCache? byteCache = null)
+        => _content = new(new FileContent(document, path, maxDecodedBytes, byteCache ?? AssetByteCache.Shared));
     private AssetFile(SharedData<FileContent> content) => _content = content;
 
     public string Path { get { lock (_gate) return _content.Read.Path; } }
     public Guid Version { get { lock (_gate) return _content.Read.Document.Generation; } }
     public BinaryWireTypeDescriptor RootType { get { lock (_gate) return _content.Read.Document.RootType; } }
     public long RootByteLength { get { lock (_gate) return _content.Read.Document.RootByteLength; } }
+    internal AssetByteCache ByteCache { get { lock (_gate) return _content.Read.ByteCache; } }
+    internal Guid ByteSource { get { lock (_gate) return _content.Read.ByteSource; } }
     internal uint ChunkCount { get { lock (_gate) return _content.Read.Document.ChunkCount; } }
-    public PageArena Pages { get { lock (_gate) return _content.Read.Pages; } }
-    public ChunkStreamingMetrics StreamingMetrics { get { lock (_gate) return _content.Read.Chunks.Metrics; } }
 
     /// <summary>Reads the validated root without I/O. The caller keeps this file access open while using the reader.</summary>
     public BinaryDataReader CreateRootReader()
@@ -35,13 +36,12 @@ public sealed class AssetFile : IDisposable, IAsyncDisposable
     }
 
     public static async ValueTask<AssetFile> OpenAsync(string path, BinaryWireTypeDescriptor type,
-        PageArena? pages = null, BinaryReadLimits? limits = null, CancellationToken cancellationToken = default)
+        BinaryReadLimits? limits = null, CancellationToken cancellationToken = default, AssetByteCache? byteCache = null)
     {
         string fullPath = System.IO.Path.GetFullPath(path);
-        pages ??= PageArena.Shared;
         BinaryDocument document = await BinaryDocument.OpenAsync(FileRangeSource.Open(fullPath), type,
             ownsSource: true, limits, cancellationToken).ConfigureAwait(false);
-        try { return new(document, fullPath, pages, pages.Residency.Budget(ResidencyClass.DecodedCpu)); }
+        try { return new(document, fullPath, byteCache: byteCache); }
         catch { await document.DisposeAsync().ConfigureAwait(false); throw; }
     }
 
@@ -72,12 +72,18 @@ public sealed class AssetFile : IDisposable, IAsyncDisposable
         access._content.Read.Document.ReadRootInto(target);
     }
 
-    public async ValueTask<PageBuffer> AcquireBufferAsync(ulong key, ChunkRequestOptions options = default,
-        CancellationToken cancellationToken = default)
+    public async ValueTask<byte[]> ReadBytesAsync(ulong key, CancellationToken cancellationToken = default)
     {
         await using AssetFile access = Retain();
-        using var acquired = await access._content.Read.Chunks.AcquireAsync(key, options, cancellationToken).ConfigureAwait(false);
-        return acquired.DuplicatePages();
+        FileContent content = access._content.Read;
+        byte[]? bytes = null;
+        Memory<byte>? found = await content.Document.TryReadChunkAsync(key, length =>
+        {
+            if (length > content.MaxDecodedBytes)
+                throw new InvalidDataException("The requested data exceeds the configured read limit.");
+            return bytes = new byte[length];
+        }, cancellationToken).ConfigureAwait(false);
+        return found.HasValue ? bytes! : throw new KeyNotFoundException($"Chunk {key:X16} is absent.");
     }
 
     public async ValueTask<BinaryChunkEntry> DescribeChunkAsync(ulong key, CancellationToken cancellationToken = default)
@@ -92,14 +98,6 @@ public sealed class AssetFile : IDisposable, IAsyncDisposable
     {
         using AssetFile access = Retain();
         return await access._content.Read.Document.OpenChunkRangeSourceAsync(key, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async ValueTask<PageRange<byte>> AcquireRangeAsync(ulong key, long offset = 0, long? length = null,
-        ChunkRequestOptions options = default, CancellationToken cancellationToken = default)
-    {
-        await using AssetFile access = Retain();
-        using var acquired = await access._content.Read.Chunks.AcquireAsync(key, options, cancellationToken).ConfigureAwait(false);
-        return acquired.RetainPages(offset, length);
     }
 
     public async ValueTask AddChunkAsync(BinaryDocumentWriter writer, ulong key,
@@ -121,21 +119,13 @@ public sealed class AssetFile : IDisposable, IAsyncDisposable
         return content.DisposeAsync();
     }
 
-    private sealed class FileContent : IAsyncDisposable
+    private sealed class FileContent(BinaryDocument document, string path, long maxDecodedBytes, AssetByteCache byteCache) : IAsyncDisposable
     {
-        internal readonly BinaryDocument Document;
-        internal readonly ChunkRequestScheduler Chunks;
-        internal readonly string Path;
-        internal readonly PageArena Pages;
-        internal FileContent(BinaryDocument document, string path, PageArena pages, long decodedBudgetBytes)
-        {
-            Document = document; Path = path; Pages = pages;
-            Chunks = ChunkRequestScheduler.CreateForDocument(document, pages, decodedBudgetBytes);
-        }
-        public async ValueTask DisposeAsync()
-        {
-            try { await Chunks.DisposeAsync().ConfigureAwait(false); }
-            finally { await Document.DisposeAsync().ConfigureAwait(false); }
-        }
+        internal readonly BinaryDocument Document = document;
+        internal readonly string Path = path;
+        internal readonly long MaxDecodedBytes = maxDecodedBytes;
+        internal readonly AssetByteCache ByteCache = byteCache;
+        internal readonly Guid ByteSource = Guid.NewGuid();
+        public ValueTask DisposeAsync() => Document.DisposeAsync();
     }
 }

@@ -74,6 +74,8 @@ public sealed partial class AssetProject
                 SourceMeta metadata = SourceMeta.Load(path);
                 result.Add(new(path, AssetFileKind.ImportedSource, null, metadata.SourceGuid));
             }
+            else if (MatchImporter(path) is not null)
+                result.Add(new(path, AssetFileKind.ImportedSource, null));
         }
         return result;
     }
@@ -87,14 +89,15 @@ public sealed partial class AssetProject
         {
             IReadOnlyList<AssetDiscoveredFile> discovered = await DiscoverFilesAsync(_projectRoot, cancellationToken).ConfigureAwait(false);
             var next = new AssetManifest();
-            var outputs = new Dictionary<Guid, (SourceMeta Metadata, SourceOutput Output)>();
+            var outputs = new Dictionary<Guid, (SourceGuid Source, string Element)>();
             foreach (AssetDiscoveredFile source in discovered.Where(static item => item.Kind == AssetFileKind.ImportedSource))
             {
+                if (source.SourceGuid.IsEmpty) continue;
                 SourceMeta metadata = SourceMeta.Load(source.Path);
                 next.AddSource(metadata.SourceGuid, ToManifestPath(source.Path));
-                foreach (SourceOutput output in metadata.Outputs)
-                    if (!outputs.TryAdd(output.AssetGuid, (metadata, output)))
-                        throw new InvalidDataException($"Asset {output.AssetGuid} has conflicting source records including '{source.Path}'.");
+                foreach ((string element, Guid id) in metadata.ElementIds)
+                    if (!outputs.TryAdd(id, (metadata.SourceGuid, element)))
+                        throw new InvalidDataException($"Asset {id} has conflicting source identities including '{source.Path}'.");
             }
             var definitions = new Dictionary<Guid, AssetDiscoveredFile>();
             foreach (AssetDiscoveredFile definition in discovered.Where(static item => item.Kind == AssetFileKind.NativeSource))
@@ -111,12 +114,10 @@ public sealed partial class AssetProject
                 SourceGuid sourceGuid = default;
                 string key = "";
                 IReadOnlyList<Guid> references = entry.Dependencies;
-                if (outputs.TryGetValue(entry.AssetGuid, out var imported)
-                    && PathsEqual(imported.Output.AssetPath, item.Path)
-                    && imported.Output.Version == entry.Version)
+                if (outputs.TryGetValue(entry.AssetGuid, out var imported))
                 {
-                    sourceGuid = imported.Metadata.SourceGuid;
-                    key = imported.Output.SubAssetKey;
+                    sourceGuid = imported.Source;
+                    key = imported.Element;
                 }
                 else if (Manifest.TryGetAsset(entry.AssetGuid, out AssetEntry previous) && previous.Version == entry.Version)
                     references = previous.Dependencies;

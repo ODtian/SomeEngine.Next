@@ -10,14 +10,14 @@ namespace SomeEngine.Render.Features;
 internal static class FeatureResourceLayout
 {
     internal static TKey[] Resolve<TKey>(
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         Func<string, ResourceBindingType, TKey?> resolve)
         where TKey : struct
     {
         ArgumentNullException.ThrowIfNull(resolve);
-        if (layout == ShaderVariableLayout.Null)
+        if (layout == VariableLayoutReflection.Null)
             throw new InvalidDataException("A feature shader has no linked parameter layout.");
-        ShaderTypeLayout contents = layout.TypeLayout.UnwrapArray();
+        TypeLayoutReflection contents = layout.TypeLayout.UnwrapArray();
         if (contents.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             contents = contents.ElementTypeLayout.UnwrapArray();
         int rangeCount = Count(contents.BindingRangeCount, "binding ranges");

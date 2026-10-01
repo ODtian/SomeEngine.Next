@@ -3,8 +3,6 @@
   <Project Path="tools\SomeEngine.Trace\SomeEngine.Trace.csproj" />
   <Project Path="tests\SomeEngine.Diagnostics.Tests\SomeEngine.Diagnostics.Tests.csproj" />
   <Project Path="src\SomeEngine.Core\SomeEngine.Core.csproj" />
-  <!-- SlangShaderSharp is used by asset cooking and executable shader-ABI reflection tests. -->
-  <Project Path="external\SlangShaderSharp\src\SlangShaderSharp.csproj" />
   <Project Path="src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
   <Project Path="src\SomeEngine.Resources\SomeEngine.Resources.csproj" />
   <Project Path="tests\SomeEngine.Resources.Tests\SomeEngine.Resources.Tests.csproj" />

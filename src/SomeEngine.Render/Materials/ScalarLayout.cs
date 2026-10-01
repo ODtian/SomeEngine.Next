@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
-using SomeEngine.Assets.Schema;
+using SlangShaderSharp;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Materials;
@@ -91,26 +91,73 @@ public sealed class ScalarLayout
             ComputeHash(name, materialFields, payloadByteSize));
     }
 
-    internal static ScalarLayout FromData(ShaderMaterialScalarLayout layout)
+    internal static ScalarLayout FromSlang(
+        string name,
+        TypeLayoutReflection typeLayout)
     {
-        string name = layout.Name ?? string.Empty;
         if (string.IsNullOrWhiteSpace(name))
-            throw new InvalidDataException("A cooked material scalar layout must have a name.");
+            throw new ArgumentException("A material scalar type requires a name.", nameof(name));
+        if (typeLayout == TypeLayoutReflection.Null)
+            throw new ArgumentException("The Slang type layout is null.", nameof(typeLayout));
 
-        IReadOnlyList<ScalarFieldLayout> fields = BorrowedReadOnlyList.Project(
-            layout.Fields,
-            static field => new ScalarFieldLayout(
-                field.Name ?? string.Empty,
-                field.Offset,
-                field.Size,
-                field.RowCount,
-                field.ColumnCount,
-                field.ScalarType));
-        return new ScalarLayout(
-            name,
-            fields,
-            layout.Size,
-            ComputeHash(name, fields, layout.Size));
+        nuint reflectedPayloadSize = typeLayout.GetSize(SlangParameterCategory.Uniform);
+        if (reflectedPayloadSize == Slang.UnknownSize ||
+            reflectedPayloadSize == Slang.UnboundedSize ||
+            reflectedPayloadSize > uint.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"Material scalar type '{name}' has an unresolved size.");
+        }
+        uint payloadSize = checked((uint)reflectedPayloadSize);
+        uint baseOffset = uint.MaxValue;
+        uint maximumFieldEnd = 0;
+        var fields = new List<ScalarFieldLayout>(checked((int)typeLayout.FieldCount));
+        for (uint fieldIndex = 0; fieldIndex < typeLayout.FieldCount; fieldIndex++)
+        {
+            VariableLayoutReflection field = typeLayout.GetFieldByIndex(fieldIndex);
+            if (field == VariableLayoutReflection.Null || string.IsNullOrWhiteSpace(field.Name))
+                continue;
+            TypeLayoutReflection fieldType = field.TypeLayout;
+            nuint reflectedOffset = field.GetOffset(SlangParameterCategory.Uniform);
+            nuint reflectedSize = fieldType.GetSize(SlangParameterCategory.Uniform);
+            if (reflectedSize == 0)
+                reflectedSize = fieldType.GetStride(SlangParameterCategory.Uniform);
+            if (reflectedOffset == Slang.UnknownSize ||
+                reflectedOffset == Slang.UnboundedSize ||
+                reflectedSize == Slang.UnknownSize ||
+                reflectedSize == Slang.UnboundedSize ||
+                reflectedOffset > uint.MaxValue || reflectedSize > uint.MaxValue)
+            {
+                throw new InvalidDataException(
+                    $"Material scalar field '{name}.{field.Name}' has an unresolved layout.");
+            }
+            uint offset = checked((uint)reflectedOffset);
+            uint size = checked((uint)reflectedSize);
+            baseOffset = Math.Min(baseOffset, offset);
+            maximumFieldEnd = Math.Max(maximumFieldEnd, checked(offset + size));
+            fields.Add(new ScalarFieldLayout(
+                field.Name,
+                offset,
+                size,
+                fieldType.RowCount,
+                fieldType.ColumnCount,
+                checked((byte)fieldType.ScalarType)));
+        }
+
+        if (payloadSize == 0)
+            payloadSize = maximumFieldEnd;
+        if (baseOffset != uint.MaxValue && baseOffset > 0)
+        {
+            for (int index = 0; index < fields.Count; index++)
+            {
+                ScalarFieldLayout field = fields[index];
+                fields[index] = field with { Offset = checked(field.Offset - baseOffset) };
+            }
+            if (payloadSize >= maximumFieldEnd)
+                payloadSize -= baseOffset;
+            payloadSize = Math.Max(payloadSize, maximumFieldEnd - baseOffset);
+        }
+        return FromFields(name, fields, payloadSize);
     }
 
     internal bool HasSameContract(ScalarLayout other)

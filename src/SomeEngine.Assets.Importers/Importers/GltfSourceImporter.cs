@@ -14,24 +14,20 @@ namespace SomeEngine.Assets.Importers;
 
 public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImportOverrides>
 {
-    public const uint ImporterVersion = 12;
+    public const uint ImporterVersion = 13;
     public static readonly Guid SourceImporterId = new("b0c10195-d8d1-46ab-81b8-f8c54db7d0aa");
-    private static readonly Guid LegacyMeshMaterialsSelectionId = new("ab43bf52-332c-4439-b3a7-e214c7cf63ad");
-    private static readonly Guid LegacyMaterialSelectionId = new("460b170b-0d65-4d55-89ed-4a2165935a27");
     private readonly Action<IServiceCollection> _configureServices;
     private readonly string _capabilitiesVersion;
-    private readonly PageArena _pages;
     private readonly Guid? _sceneImporterId;
 
     /// <param name="pages">Caller-held storage for imported assets. The caller keeps it alive until import completes.</param>
     public GltfSourceImporter(Action<IServiceCollection> configureServices, string capabilitiesVersion,
-        PageArena? pages = null, Guid? sceneImporterId = null)
+        Guid? sceneImporterId = null)
     {
         ArgumentNullException.ThrowIfNull(configureServices);
         ArgumentException.ThrowIfNullOrWhiteSpace(capabilitiesVersion);
         _configureServices = configureServices;
         _capabilitiesVersion = capabilitiesVersion;
-        _pages = pages ?? PageArena.Shared;
         _sceneImporterId = sceneImporterId;
     }
 
@@ -86,22 +82,22 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
 
         context.ConfigureAssets<GltfMesh, MeshAsset>(
             mesh => ElementKey(settings, "mesh", mesh.LogicalIndex, mesh),
-            (mesh, id) => new MeshAsset(_pages, id) { Name = mesh.Name ?? $"Mesh_{mesh.LogicalIndex}" },
+            (mesh, id) => new MeshAsset(id) { Name = mesh.Name ?? $"Mesh_{mesh.LogicalIndex}" },
             (_, id) => OutputPath(context.SourcePath, "mesh", id),
             static (asset, path, token) => asset.SaveAsync(path, token));
         context.ConfigureAssets<Scene, WorldAsset>(
             scene => ElementKey(settings, "scene", scene.LogicalIndex, scene),
-            (scene, id) => new WorldAsset(_pages, id) { Name = scene.Name ?? $"Scene_{scene.LogicalIndex}" },
+            (scene, id) => new WorldAsset(id) { Name = scene.Name ?? $"Scene_{scene.LogicalIndex}" },
             (_, id) => OutputPath(context.SourcePath, "scene", id),
             static (asset, path, token) => asset.SaveAsync(path, token));
         context.ConfigureAssets<GltfMaterial, MaterialAsset>(
             material => ElementKey(settings, "material", material.LogicalIndex, material),
-            (material, id) => new MaterialAsset(_pages, id) { Name = material.Name ?? $"Material_{material.LogicalIndex}" },
+            (material, id) => new MaterialAsset(id) { Name = material.Name ?? $"Material_{material.LogicalIndex}" },
             (_, id) => OutputPath(context.SourcePath, "material", id),
             static (asset, path, token) => asset.SaveAsync(path, token));
         context.ConfigureAssets<GltfTexture, TextureAsset>(
             texture => ElementKey(settings, "texture", texture.LogicalIndex, texture),
-            (texture, id) => new TextureAsset(_pages, id) { Name = texture.Name ?? texture.PrimaryImage?.Name ?? $"Texture_{texture.LogicalIndex}" },
+            (texture, id) => new TextureAsset(id) { Name = texture.Name ?? texture.PrimaryImage?.Name ?? $"Texture_{texture.LogicalIndex}" },
             (_, id) => OutputPath(context.SourcePath, "texture", id),
             static (asset, path, token) => asset.SaveAsync(path, token));
 
@@ -123,10 +119,6 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         context.EnableImporter<GltfMaterial, MaterialAsset>(sceneCapability.Id,
             [MaterialBlock.BlockTypeId], assembly.ImportMaterialAsync);
         EnableSelected<GltfTexture, TextureAsset>(scope.ServiceProvider, selections, context);
-        if (!context.HasImporters<GltfTexture, TextureAsset>())
-            context.EnableImporter<GltfTexture, TextureAsset>(new AssetImporter<GltfTexture, GltfTextureSettings>(
-                new Guid("451b3ab1-e318-4ed8-aebf-9b9e11219120"), [TextureBlock.BlockTypeId],
-                new GltfTextureImporter(), new()));
 
         foreach (Scene scene in source.LogicalScenes)
             await context.GetAssetAsync<Scene, WorldAsset>(scene, cancellationToken).ConfigureAwait(false);
@@ -165,30 +157,27 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         Guid? sceneImporterId)
     {
         GltfImporterSettings settings = GetSettings(metadata, null);
-        metadata.Importers.RemoveAll(selection => selection.ImporterId == LegacyMeshMaterialsSelectionId
-            || selection.ImporterId == LegacyMaterialSelectionId);
-        if (metadata.Importers.Any(selection =>
-            available.Any(capability => capability.Id == selection.ImporterId && capability.SourceType == typeof(Scene)))) return;
+        bool hasScene = metadata.Importers.Any(selection =>
+            available.Any(capability => capability.Id == selection.ImporterId && capability.SourceType == typeof(Scene)));
+        if (!metadata.UseDefaultImporters) return;
         AssetImporterCapability[] sceneImporters = available.Where(static capability => capability.SourceType == typeof(Scene)).ToArray();
-        Guid selectedSceneImporter = sceneImporterId ?? (sceneImporters.Length == 1
+        Guid selectedSceneImporter = hasScene ? metadata.Importers.First(selection =>
+            sceneImporters.Any(capability => capability.Id == selection.ImporterId)).ImporterId
+            : sceneImporterId ?? (sceneImporters.Length == 1
             ? sceneImporters[0].Id
             : throw new InvalidOperationException("Select one project glTF scene importer."));
         if (!sceneImporters.Any(capability => capability.Id == selectedSceneImporter))
             throw new InvalidOperationException($"Selected glTF scene importer {selectedSceneImporter} is unavailable in this project.");
-        if (!metadata.UseDefaultImporters)
-        {
-            metadata.Importers.Add(new(selectedSceneImporter,
-                JsonSerializer.SerializeToElement(new GltfSceneSettings(), GltfSceneSettingsJson.Default.GltfSceneSettings)));
-            return;
-        }
         Guid meshId = ImporterId<GltfMeshImporter>(available);
         Guid clusterId = ImporterId<ClusterGltfMeshImporter>(available);
         Guid textureId = ImporterId<GltfTextureImporter>(available);
-        metadata.Importers.RemoveAll(selection => selection.ImporterId == textureId);
         JsonElement geometry = JsonSerializer.SerializeToElement(new GltfMeshSettings(settings.GenerateTangents), GltfMeshSettingsJson.Default.GltfMeshSettings);
         if (!metadata.Importers.Any(selection => selection.ImporterId == meshId)) metadata.Importers.Add(new(meshId, geometry));
         if (!metadata.Importers.Any(selection => selection.ImporterId == clusterId)) metadata.Importers.Add(new(clusterId, geometry));
-        metadata.Importers.Add(new(selectedSceneImporter,
+        if (!metadata.Importers.Any(selection => selection.ImporterId == textureId))
+            metadata.Importers.Add(new(textureId,
+                JsonSerializer.SerializeToElement(new GltfTextureSettings(), GltfSettingsJson.Default.GltfTextureSettings)));
+        if (!hasScene) metadata.Importers.Add(new(selectedSceneImporter,
             JsonSerializer.SerializeToElement(new GltfSceneSettings(), GltfSceneSettingsJson.Default.GltfSceneSettings)));
     }
 

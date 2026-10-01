@@ -26,7 +26,7 @@
     <ProjectReference Include="..\SomeEngine.Render.Features\SomeEngine.Render.Features.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph.Diagnostics\SomeEngine.RenderGraph.Diagnostics.csproj" />
-    <ProjectReference Include="..\..\external\SlangShaderSharp\src\SlangShaderSharp.csproj" />
+    <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="imgui.ini" Condition="Exists('imgui.ini')">

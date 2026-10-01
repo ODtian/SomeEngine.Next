@@ -1,4 +1,5 @@
 using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -22,7 +23,7 @@ public sealed class ClusterAssetLoaderTests
         Guid[] shaderGuids = new Guid[roles.Length];
         for (int index = 0; index < shaderGuids.Length; index++)
         {
-            using ShaderAsset shader = CreateShaderData($"cluster-{index}");
+            using ShaderAsset shader = CreateShaderData($"cluster-{index}", directory.Path);
             shaderGuids[index] = project.RegisterAsset(await shader.SaveAsync(
                 Path.Combine(project.RootPath, $"assets/shaders/cluster-{index}.shader.asset")));
         }
@@ -39,8 +40,16 @@ public sealed class ClusterAssetLoaderTests
         await using ClusterShadersAsset second = opened[1];
         Assert.NotSame(first, second);
         Assert.Equal(shaderGuids.Order(), first.Describe().Dependencies.Order());
-        using ClusterShaders shaders = await first.GetBlock<ClusterShadersBlock>().CreateAsync(first.Name, loader);
-        using ClusterShaders other = await second.GetBlock<ClusterShadersBlock>().CreateAsync(second.Name, loader);
+        ClusterShaders shaders = await first.GetBlock<ClusterShadersBlock>().CreateAsync(
+            first.Name,
+            loader,
+            TestShaderLoading.Slang,
+            TestShaderLoading.CreateSessionDescription());
+        ClusterShaders other = await second.GetBlock<ClusterShadersBlock>().CreateAsync(
+            second.Name,
+            loader,
+            TestShaderLoading.Slang,
+            TestShaderLoading.CreateSessionDescription());
         Assert.NotSame(shaders, other);
         Assert.Equal("MainCluster", shaders.Name);
         Assert.Equal(roles.Length, shaders.Operations?.Count);
@@ -48,10 +57,10 @@ public sealed class ClusterAssetLoaderTests
         {
             ShaderOperation operation = shaders.Operations![index];
             Assert.Equal(roles[index], operation.Role);
-            ShaderEntry shader = operation.Shaders[0];
+            Shader shader = operation.Shaders[0];
             Guid shaderGuid = first.GetBlock<ClusterShadersBlock>().Operations[index].Shaders![0].Asset.Value;
-            Assert.Equal($"cluster-{index}", shader.Shader.Name);
-            Assert.NotSame(shader.Shader, other.Operations[index].Shaders[0].Shader);
+            Assert.Equal($"cluster-{index}", shader.Name);
+            Assert.NotSame(shader, other.Operations[index].Shaders[0]);
             Assert.Equal(shaderGuids[index], shaderGuid);
         }
     }
@@ -77,29 +86,35 @@ public sealed class ClusterAssetLoaderTests
         Assert.Contains("missing", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.False(File.Exists(fullPath));
     }
-    private static ShaderAsset CreateShaderData(string name)
+    private static ShaderAsset CreateShaderData(string name, string directory)
     {
-        var program = CookedShaderTestProgram.Create();
-        using var output = new MemoryStream();
-        program.Write(output);
-        byte[] bytes = output.ToArray();
-        var asset = new ShaderAsset { Name = name };
-        using var code = new ShaderBlock
-        {
-            Programs = [new CookedShaderProgram { Backend = program.Backend, DataChunkKey = ShaderBlock.BytecodeChunkKey(0),
-                DataDecodedLength = (ulong)bytes.Length }],
-            EntryPointReflections =
-            [
-                new ShaderEntryPointReflection
-                {
-                    Backend = "spirv",
-                    EntryPoint = "VSMain",
-                    Stage = SomeEngine.Resources.ShaderStage.Vertex,
-                },
-            ],
-        };
-        try { code.Chunks.Set(code.Programs[0].DataChunkKey, bytes); asset.SetBlock(code); return asset; }
-        catch { asset.Dispose(); throw; }
+        const string source = """
+            [shader("vertex")]
+            float4 vertex(uint id : SV_VertexID) : SV_Position
+            {
+                return float4(id == 1 ? 1 : -1, id == 2 ? 1 : -1, 0, 1);
+            }
+
+            [shader("fragment")]
+            float4 pixel() : SV_Target0
+            {
+                return float4(1, 1, 1, 1);
+            }
+
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void compute()
+            {
+            }
+            """;
+        string sourcePath = Path.Combine(directory, "cluster-test.slang");
+        File.WriteAllText(sourcePath, source);
+        using var definition = new ShaderAsset { Name = name };
+        definition.GetBlock<ShaderSourceBlock>().SourceNames = ["cluster-test.slang"];
+        return SlangShaderImporter.CompileDefinition(
+            definition,
+            Path.Combine(directory, name + ".shader"),
+            projectRoot: directory);
     }
 
     private static ClusterShadersAsset CreateClusterRoot(IReadOnlyList<Guid> shaders)
@@ -137,13 +152,11 @@ public sealed class ClusterAssetLoaderTests
                 {
                     Asset = new(guid),
                     EntryPoint = "vertex",
-                    Stage = ShaderStage.Vertex,
                 },
                 new ShaderRef
                 {
                     Asset = new(guid),
                     EntryPoint = "pixel",
-                    Stage = ShaderStage.Pixel,
                 },
             ] };
         }
@@ -155,7 +168,6 @@ public sealed class ClusterAssetLoaderTests
                 {
                     Asset = new(guid),
                     EntryPoint = "compute",
-                    Stage = ShaderStage.Compute,
                 },
             ] };
         }

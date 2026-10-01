@@ -60,8 +60,10 @@
           "Microsoft.Extensions.DependencyModel": "9.0.9"
         }
       },
-      "slangshadersharp": {
-        "type": "Project"
+      "SlangShaderSharp": {
+        "type": "Transitive",
+        "resolved": "2026.17.1",
+        "contentHash": "9jkYED/4WFGikxpM0gUC7a2R75n5XDBAL0HLF2lV0EdIIga8e916ZRtqnD9ZLjgpPQQgtyM1Cu0HGoFxFySFXA=="
       },
       "someengine.diagnostics": {
         "type": "Project"
@@ -69,7 +71,7 @@
       "someengine.graphics": {
         "type": "Project",
         "dependencies": {
-          "SlangShaderSharp": "[1.0.0, )",
+          "SlangShaderSharp": "[2026.17.1, )",
           "SomeEngine.Diagnostics": "[1.0.0, )"
         }
       }

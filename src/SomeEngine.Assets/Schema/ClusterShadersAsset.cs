@@ -18,13 +18,13 @@ public sealed partial class ClusterShadersAsset : Asset
         private set => base.BlockDescriptions = value;
     }
 
-    public ClusterShadersAsset() : this(PageArena.Shared) { }
-    public ClusterShadersAsset(PageArena pages, Guid id = default) : base(pages, id)
+    public ClusterShadersAsset() : this(Guid.Empty) { }
+    public ClusterShadersAsset(Guid id = default) : base(id)
     {
         try
         {
             AssetType = FileType;
-            using var settings = new ClusterShadersBlock(pages);
+            using var settings = new ClusterShadersBlock();
             SetBlock(settings);
         }
         catch (Exception error)
@@ -36,7 +36,7 @@ public sealed partial class ClusterShadersAsset : Asset
     }
 
     private ClusterShadersAsset(ClusterShadersAsset source) : base(source) { }
-    public override ClusterShadersAsset Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public override ClusterShadersAsset Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
     public override ClusterShadersAsset CreateCopy(Guid id = default) => (ClusterShadersAsset)base.CreateCopy(id);
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
@@ -52,7 +52,7 @@ public sealed partial class ClusterShadersAsset : Asset
         AssetEntry description = file.Describe();
         if ((expected != Guid.Empty && expected != description.AssetGuid) || description.AssetType != FileType)
             throw new InvalidDataException("The asset identity or type differs from the selected file.");
-        var result = new ClusterShadersAsset(file.Pages, description.AssetGuid);
+        var result = new ClusterShadersAsset(description.AssetGuid);
         try
         {
             result.ReadBlockContent(file);
@@ -72,11 +72,11 @@ public sealed partial class ClusterShadersAsset : Asset
         }
     }
 
-    public static async ValueTask<ClusterShadersAsset> OpenAsync(string path, PageArena? pages = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<ClusterShadersAsset> OpenAsync(string path, CancellationToken cancellationToken = default)
     {
         if (!path.EndsWith(PathSuffix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The asset path has a different suffix.");
-        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, cancellationToken: cancellationToken).ConfigureAwait(false);
         return await ReadFileAsync(file, Guid.Empty, cancellationToken).ConfigureAwait(false);
     }
 

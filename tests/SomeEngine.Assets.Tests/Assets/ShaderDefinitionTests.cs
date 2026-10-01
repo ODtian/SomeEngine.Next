@@ -1,5 +1,6 @@
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -30,7 +31,7 @@ public sealed class ShaderDefinitionTests : IDisposable
         File.WriteAllText(Path.Combine(_project, "Surface.slang"), "This is intentionally invalid Slang.");
         using var definition = new ShaderAsset { Name = "surface" };
         ShaderSourceBlock fields = definition.GetBlock<ShaderSourceBlock>();
-        fields.SourceFiles = ["Geometry.slang", "Lighting.slang"];
+        fields.SourceNames = ["Geometry.slang", "Lighting.slang"];
         await definition.SaveSourceAsync(definitionPath);
         string text = File.ReadAllText(definitionPath);
         Assert.DoesNotContain("ImportTrace", text);
@@ -46,13 +47,19 @@ public sealed class ShaderDefinitionTests : IDisposable
         Assert.Equal(definition.Id, output.AssetGuid);
         using ShaderAsset built = await ShaderAsset.OpenAsync(output.Path);
         Assert.Equal(
-            ["dxil", "spirv"],
-            built.GetBlock<ShaderBlock>().Programs.Select(static value => value.Backend!).Order().ToArray());
-        Assert.Equal(definition.GetBlock<ShaderSourceBlock>().SourceFiles, built.GetBlock<ShaderSourceBlock>().SourceFiles);
-        using var shader = await built.GetBlock<ShaderBlock>().CreateAsync(built.Name);
-        Assert.All(shader.Programs!, value => Assert.Equal(
-            ["Vertex", "Unselected", "Pixel"],
-            value!.EntryPoints.Select(static entry => entry.Name).ToArray()));
+            definition.GetBlock<ShaderSourceBlock>().SourceNames,
+            built.GetBlock<ShaderSourceBlock>().SourceNames);
+        Shader shader = await ShaderTestCompilation.CreateAsync(built);
+        Assert.Equal(2, shader.SlangTargetCount);
+        for (int targetIndex = 0; targetIndex < shader.SlangTargetCount; targetIndex++)
+        {
+            Assert.Equal(
+                ["Vertex", "Unselected", "Pixel"],
+                Enumerable.Range(0, shader.SlangEntryCount)
+                    .Select(index => shader.GetSlangReflection(targetIndex)
+                        .GetEntryPointByIndex(checked((uint)index)).Name)
+                    .ToArray());
+        }
         Assert.Empty(Directory.GetFiles(_project, "*.meta", SearchOption.AllDirectories));
         var trace = built.GetBlock<ShaderBlock>().ImportTrace;
         Assert.NotNull(trace);
@@ -79,7 +86,7 @@ public sealed class ShaderDefinitionTests : IDisposable
         File.WriteAllText(source, "#include \"color.inc\"\n[shader(\"pixel\")] float4 Pixel() : SV_Target { return color(); }");
         string path = Path.Combine(_project, "Material.shader");
         using var definition = new ShaderAsset();
-        definition.GetBlock<ShaderSourceBlock>().SourceFiles = ["Main.slang"];
+        definition.GetBlock<ShaderSourceBlock>().SourceNames = ["Main.slang"];
         await definition.SaveSourceAsync(path);
         AssetEntry first = await SlangShaderImporter.BuildAsync(path, includeDirectories: [library]);
         string? firstHash;
@@ -115,7 +122,7 @@ public sealed class ShaderDefinitionTests : IDisposable
         File.WriteAllText(source, "#include \"color.inc\"\n[shader(\"pixel\")] float4 Pixel() : SV_Target { return color(); }");
         string path = Path.Combine(_project, "Draw.shader");
         using var definition = new ShaderAsset { Name = "draw" };
-        definition.GetBlock<ShaderSourceBlock>().SourceFiles = ["Draw.slang"];
+        definition.GetBlock<ShaderSourceBlock>().SourceNames = ["Draw.slang"];
         await definition.SaveSourceAsync(path);
         var project = new AssetProject(_project, [], sourceFormats: [new ShaderSourceFormat([library])]);
         Guid id = await project.BuildAsync(path);
@@ -138,12 +145,11 @@ public sealed class ShaderDefinitionTests : IDisposable
         await definition.SaveSourceAsync(path);
         await Rebuild();
         Assert.Equal("renamed", Assert.Single(project.List()).Name);
-        definition.GetBlock<ShaderSourceBlock>().CookProfile =
-            SlangShaderCookProfiles.D3D12ShaderModel62Name;
-        await definition.SaveSourceAsync(path);
-        await Rebuild();
         using (ShaderAsset built = await ShaderAsset.OpenAsync(output))
-            Assert.Equal(2, built.GetBlock<ShaderBlock>().Programs.Count);
+        {
+            Shader shader = await ShaderTestCompilation.CreateAsync(built);
+            Assert.Equal(2, shader.SlangTargetCount);
+        }
         File.WriteAllBytes(output, [1, 2, 3]);
         await Restore();
         File.Delete(record);
@@ -183,7 +189,8 @@ public sealed class ShaderDefinitionTests : IDisposable
             Assert.Equal(version, Assert.Single(project.List()).Version);
             using ShaderAsset built = await ShaderAsset.OpenAsync(output);
             Assert.Equal(id, built.Id);
-            Assert.Equal(2, built.GetBlock<ShaderBlock>().Programs.Count);
+            Shader shader = await ShaderTestCompilation.CreateAsync(built);
+            Assert.Equal(2, shader.SlangTargetCount);
             using var savedRecord = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(record));
             Assert.Equal(version, savedRecord.RootElement.GetProperty("outputs")[0].GetProperty("version").GetGuid());
         }
@@ -199,35 +206,14 @@ public sealed class ShaderDefinitionTests : IDisposable
         File.WriteAllText(Path.Combine(_project, "Draw.slang"),
             "#include \"selected.inc\"\n[shader(\"pixel\")] float4 Pixel() : SV_Target { return color(); }");
         using var definition = new ShaderAsset();
-        definition.GetBlock<ShaderSourceBlock>().SourceFiles = ["Draw.slang"];
+        definition.GetBlock<ShaderSourceBlock>().SourceNames = ["Draw.slang"];
         string path = Path.Combine(_project, "surface.shader");
         Assert.Throws<InvalidDataException>(() => SlangShaderImporter.CompileDefinition(definition, path));
         using var result = SlangShaderImporter.CompileDefinition(definition, path, includeDirectories: [library], projectRoot: _project);
-        Assert.NotEmpty(result.GetBlock<ShaderBlock>().Programs);
+        Assert.Contains(
+            ShaderSourceBlock.SerializedSourceKey(0),
+            result.GetBlock<ShaderSourceBlock>().ContentKeys);
         Assert.Contains(result.GetBlock<ShaderBlock>().ImportTrace!.Dependencies!,
             input => input.Path == "../assets/Shaders/selected.inc");
-    }
-
-    [Fact]
-    public async Task ExplicitSpecializationCompilesBothBackends()
-    {
-        string path = Path.Combine(_project, "Generic.shader");
-        File.WriteAllText(Path.Combine(_project, "GenericSource.slang"), """
-            interface IValue { static int getValue(); }
-            struct NumberValue : IValue { static int getValue() { return 13; } }
-            RWStructuredBuffer<int> outputValues;
-            [shader("compute")] [numthreads(1, 1, 1)]
-            void Compute<T : IValue>(uint3 id : SV_DispatchThreadID) { outputValues[id.x] = T.getValue(); }
-            """);
-        using var definition = new ShaderAsset();
-        ShaderSourceBlock fields = definition.GetBlock<ShaderSourceBlock>();
-        fields.SourceFiles = ["GenericSource.slang"];
-        fields.Specializations = ["NumberValue"];
-        await definition.SaveSourceAsync(path);
-        AssetEntry result = await SlangShaderImporter.BuildAsync(path);
-        using ShaderAsset built = await ShaderAsset.OpenAsync(result.Path);
-        using var shader = await built.GetBlock<ShaderBlock>().CreateAsync(built.Name);
-        Assert.Equal(2, shader.Programs!.Count);
-        Assert.All(shader.Programs, value => Assert.Equal("Compute", Assert.Single(value!.EntryPoints).Name));
     }
 }

@@ -28,11 +28,11 @@ public sealed partial class SceneMaterial : Material
 
 public sealed class SceneMaterialAsset : MaterialAsset
 {
-    public SceneMaterialAsset(PageArena pages, Guid id = default) : base(pages, id, SceneMaterial.TypeId) { }
+    public SceneMaterialAsset(Guid id = default) : base(id, SceneMaterial.TypeId) { }
     private SceneMaterialAsset(SceneMaterialAsset source) : base(source) { }
     public override SceneMaterialAsset Duplicate()
     {
-        lock (Access.SyncRoot) { RequireIdle(); return new(this); }
+        lock (SyncRoot) { RequireIdle(); return new(this); }
     }
-    public static void Register() => MaterialAsset.RegisterType<SceneMaterial, SceneMaterialAsset>(static (pages, id) => new(pages, id));
+    public static void Register() => MaterialAsset.RegisterType<SceneMaterial, SceneMaterialAsset>(static id => new(id));
 }

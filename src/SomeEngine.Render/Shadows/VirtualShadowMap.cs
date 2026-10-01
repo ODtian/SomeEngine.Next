@@ -82,62 +82,75 @@ public sealed class VirtualShadowMap : IDisposable
         try
         {
             resetReceiverMasks = LinkedComputePipeline.Create(
-                _backend, _device, shaders.ResetReceiverMasks, "Virtual shadow receiver mask reset");
+                _backend, _device, shaders.ResetReceiverMasksShader, shaders.ResetReceiverMasks,
+                "Virtual shadow receiver mask reset");
             resetFrame = LinkedComputePipeline.Create(
-                _backend, _device, shaders.ResetFrame, "Virtual shadow frame reset");
+                _backend, _device, shaders.ResetFrameShader, shaders.ResetFrame,
+                "Virtual shadow frame reset");
             markPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.MarkPagesShader,
                 shaders.MarkPages,
                 "Virtual shadow receiver page marking");
             markCoarsePages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.MarkCoarsePagesShader,
                 shaders.MarkCoarsePages,
                 "Virtual shadow coarse page marking");
             allocatePages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.AllocatePagesShader,
                 shaders.AllocatePages,
                 "Virtual shadow physical-page allocation");
             clearPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.ClearPagesShader,
                 shaders.ClearPages,
                 "Virtual shadow active-page clear");
             initializeState = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.InitializeStateShader,
                 shaders.InitializeState,
                 "Virtual shadow state initialization");
             invalidateCasters = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.InvalidateCastersShader,
                 shaders.InvalidateCasters,
                 "Virtual shadow caster invalidation");
             buildPagePool = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.BuildPagePoolShader,
                 shaders.BuildPagePool,
                 "Virtual shadow page-pool build");
             compactViews = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.CompactViewsShader,
                 shaders.CompactViews,
                 "Virtual shadow active-view compaction");
             initializePageHiZ = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.InitializePageHiZShader,
                 shaders.InitializePageHiZ,
                 "Virtual shadow physical-page HiZ initialization");
             reducePageHiZ = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.ReducePageHiZShader,
                 shaders.ReducePageHiZ,
                 "Virtual shadow physical-page HiZ reduction");
             dynamicResolution = LinkedComputePipeline.Create(
                 _backend,
                 _device,
+                shaders.DynamicResolutionShader,
                 shaders.DynamicResolution,
                 "Virtual shadow dynamic resolution feedback");
             physicalPageOwners = _backend.CreateBuffer(

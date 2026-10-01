@@ -1,9 +1,11 @@
 # Vulkan Binding ABI
 
-Vulkan pipeline layout creation consumes cooked SPIR-V 与 Slang# detached reflection/layout。Bounded parameters 形成 pipeline-private descriptor-set layouts；unbounded declarations 使用 device-global descriptor indices。
+Vulkan pipeline layout 创建直接消费驻留 SPIR-V、`IComponentType`、`ShaderReflection` 与所选 `EntryPointReflection`。Bounded parameters 形成 pipeline-private descriptor-set layouts；unbounded declarations 使用 device-global descriptor indices。
 
-如果 backend 需要对 SPIR-V decoration 做映射，该映射只属于 Vulkan 实现，不产生第二套公开 shader ABI。command hot path 使用 pipeline creation 已预计算的 native placement，不遍历 reflection 或解析名字。
+SPIR-V decoration 到原生 set/binding 的映射只属于 Vulkan pipeline 创建结果。后端可以保存该原生对象所需的紧凑映射，但不得公开或持久化一棵通用 Shader ABI。command 热路径使用已经计算的 native placement。
 
-`WriteDescriptor` 只改变 CPU staging；`PublishDescriptors` 统一提交 descriptor 更新。已经录制并绑定的 command 保留它实际使用的 descriptor generation，后续 publish/dispose 不得改变已接受 GPU work。
+同步创建当场消费代码；异步创建持有代码副本和 Slang COM 身份直到完成。pipeline 保留直接反射句柄所需的所有者。
 
-参见 [[architecture/shader/Detached-Reflection]]。
+`WriteDescriptor` 只改变 CPU staging；`PublishDescriptors` 统一提交更新。已录制命令保留它实际使用的 descriptor generation，后续 publish/dispose 不改变已接受 GPU work。
+
+参见 [[architecture/shader/Shader-Block-Residency-Refactor]]。

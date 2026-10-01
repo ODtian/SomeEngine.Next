@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "9c3f7c001c905800f880be58a6fa9dcecaae4a86f4e31502184a6158f2425d36",
+  "importer_version": 29,
+  "input_hash": "1cb7208314add8117a3a950b79831bb21c86cee74940050791467920506aaf43",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bvh_cull_common.slang",
@@ -81,7 +81,7 @@
     },
     {
       "relative_path": "assets/Shaders/cluster_bvh_traverse.shader",
-      "content_hash": "8207b8fcf0935cf52a37b51083aa64968caa15f49cf85749cb3f23e0fc11cde2"
+      "content_hash": "35d5ba024d4fe986b51809e95794c33eb9fa763129b3cf3833f5bb7d5b2f0839"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -93,11 +93,11 @@
     {
       "asset_guid": "66c64f54-9883-59f4-aabf-d83f3925b7df",
       "sub_asset_key": "",
-      "input_hash": "9c3f7c001c905800f880be58a6fa9dcecaae4a86f4e31502184a6158f2425d36",
+      "input_hash": "1cb7208314add8117a3a950b79831bb21c86cee74940050791467920506aaf43",
       "dependencies": [],
       "asset_path": "cluster_bvh_traverse.shader.asset",
-      "version": "f3be52e0-8eb9-ec2e-2840-55685b402e6f",
-      "content_hash": "21A531F18953F35B5D996EA1481C32F125E35EE4B647053D4139989CAA1000A4",
+      "version": "30c7e3fe-f1a2-95d0-c884-5308649d724b",
+      "content_hash": "500AFE101819F7210B8D49F792522A4487D73F225EEA2E135E865083EDC1CEAD",
       "asset_dependencies": []
     }
   ]

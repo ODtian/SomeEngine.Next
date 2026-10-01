@@ -119,19 +119,22 @@ internal sealed partial class VulkanBackend
         private readonly TaskCompletionSource<Pipeline> _completion = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly VulkanDevice _device;
-        private RetainedShaderProgram? _program;
+        private IComponentType? _slangCode;
+        private object? _code;
         private VulkanPipelineCache? _cache;
         private Func<Pipeline>? _create;
         private int _state;
 
         internal VulkanPipelineJob(
             VulkanDevice device,
-            RetainedShaderProgram program,
+            IComponentType slangCode,
+            object code,
             VulkanPipelineCache? cache,
             Func<Pipeline> create)
         {
             _device = device;
-            _program = program;
+            _slangCode = slangCode;
+            _code = code;
             _cache = cache;
             _create = create;
         }
@@ -173,7 +176,8 @@ internal sealed partial class VulkanBackend
         private void ReleaseCapturedState()
         {
             Interlocked.Exchange(ref _create, null);
-            Interlocked.Exchange(ref _program, null)?.Dispose();
+            _ = Interlocked.Exchange(ref _code, null);
+            _ = Interlocked.Exchange(ref _slangCode, null);
             Interlocked.Exchange(ref _cache, null)?.ReleasePipelineCreationUse();
         }
     }
@@ -181,7 +185,8 @@ internal sealed partial class VulkanBackend
     private Task<Pipeline> EnqueuePipelineCreation(
         VulkanDevice device,
         VulkanPipelineCache? cache,
-        RetainedShaderProgram program,
+        IComponentType slangCode,
+        object code,
         Func<Pipeline> create)
     {
         bool cacheRetained = false;
@@ -193,32 +198,13 @@ internal sealed partial class VulkanBackend
                 cacheRetained = true;
             }
             return device.PipelineWorker.Enqueue(
-                new VulkanPipelineJob(device, program, cache, create));
+                new VulkanPipelineJob(device, slangCode, code, cache, create));
         }
         catch
         {
             if (cacheRetained)
                 cache!.ReleasePipelineCreationUse();
-            program.Dispose();
             throw;
         }
-    }
-
-    private sealed class RetainedShaderProgram : IDisposable
-    {
-        private ShaderProgram? _program;
-
-        private RetainedShaderProgram(ShaderProgram program) => _program = program;
-
-        internal ShaderProgram Program => Volatile.Read(ref _program)
-            ?? throw new ObjectDisposedException(nameof(RetainedShaderProgram));
-
-        internal static RetainedShaderProgram Capture(ShaderProgram program)
-        {
-            ArgumentNullException.ThrowIfNull(program);
-            return new RetainedShaderProgram(program);
-        }
-
-        public void Dispose() => Interlocked.Exchange(ref _program, null);
     }
 }

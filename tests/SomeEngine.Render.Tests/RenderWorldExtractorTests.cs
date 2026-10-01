@@ -205,7 +205,7 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         using var mainWorld = new World(execution: new SomeEngine.ECS.Systems.WorldJobs(SomeEngine.Job.JobSystem.Default));
         using var renderWorld = new RenderWorld(execution: new SomeEngine.ECS.Systems.WorldJobs(SomeEngine.Job.JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
-        using Mesh mesh = MeshAsset(812, 1);
+        var mesh = MeshAsset(812, 1);
         Entity source = AddMeshSource(mainWorld, mesh, 0, Vector3.Zero);
         ExtractAndApply(extraction, mainWorld, renderWorld);
         Entity mirror = renderWorld.GetByIndex<RenderSource, Entity>(source)[0];
@@ -219,9 +219,9 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
     [Fact]
     public void ExplicitPageSourceTravelsThroughTheExistingWorldExtractionPath()
     {
-        using var mesh = MeshAsset(901, 1);
+        var mesh = MeshAsset(901, 1);
         using var first = SomeEngine.Assets.Pipeline.MeshPayloadSource.FromMesh(mesh);
-        using var second = first.Retain();
+        var second = first;
         var game = new SomeEngine.ECS.World();
         var render = new SomeEngine.Render.Systems.RenderWorld();
         using var extraction = new SomeEngine.Render.Systems.RenderExtractionSystems(render, new MeshRenderExtractor(), new LightRenderExtractor());

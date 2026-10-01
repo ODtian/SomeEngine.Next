@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using SlangShaderSharp;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
@@ -54,42 +55,29 @@ public class WaveQueueCompilationTest
         try
         {
             using var assetFile = ShaderTestCompilation.Compile(slangFile);
-            using Shader asset = await assetFile.GetBlock<ShaderBlock>().CreateAsync(assetFile.Name);
+            Shader asset = await ShaderTestCompilation.CreateAsync(assetFile);
 
-            Assert.NotNull(asset);
-            Assert.NotNull(asset.Programs);
-            Assert.NotEmpty(asset.Programs!);
-
-            // At least SPIR-V should compile. DXIL requires DXC which may not be available.
-            Assert.True(asset.TryEntry(
-                "spirv",
+            int spirvTarget = asset.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(asset.TryGetSlangEntry(
+                spirvTarget,
                 "CSMain",
-                ShaderStage.Compute,
-                out _,
-                out var csSpirv));
-            Assert.True(csSpirv.Code.Length > 0);
+                SlangStage.Compute,
+                out EntryPointReflection spirvEntry));
+            Assert.Equal(SlangStage.Compute, spirvEntry.Stage);
+            Assert.True(
+                asset.GetSlangEntryBlob(spirvTarget, spirvEntry) is not null ||
+                !asset.GetSlangEntryBytes(spirvTarget, spirvEntry).IsEmpty);
 
-            if (asset.TryEntry(
-                "dxil",
+            int dxilTarget = asset.RequireSlangTarget(SlangCompileTarget.Dxil);
+            Assert.True(asset.TryGetSlangEntry(
+                dxilTarget,
                 "CSMain",
-                ShaderStage.Compute,
-                out _,
-                out var csDxil))
-            {
-                Assert.True(csDxil.Code.Length > 0);
-            }
-            else
-            {
-                Console.WriteLine("WARNING: DXIL variant not produced (DXC not found). SPIR-V OK.");
-            }
-
-            Console.WriteLine($"WaveQueue compilation OK: {asset.Programs.Count} programs");
-            foreach (var program in asset.Programs)
-            {
-                Console.WriteLine(
-                    $"  {program!.Backend}: {program.EntryPoints.Sum(static entry => entry.Code.Length)} code bytes, " +
-                    $"{program.EntryPoints.Count} entries");
-            }
+                SlangStage.Compute,
+                out EntryPointReflection dxilEntry));
+            Assert.Equal(SlangStage.Compute, dxilEntry.Stage);
+            Assert.True(
+                asset.GetSlangEntryBlob(dxilTarget, dxilEntry) is not null ||
+                !asset.GetSlangEntryBytes(dxilTarget, dxilEntry).IsEmpty);
         }
         finally
         {

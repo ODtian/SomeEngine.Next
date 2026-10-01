@@ -5,28 +5,26 @@ using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Examples.Curves;
 
-[AssetBlock, BinarySerializable, TextSerializable, BinaryFields(nameof(Points))]
-public sealed partial class CurveBlock : AssetPageBlock
+[AssetBlock("SomeEngine.Examples.Curves.CurveBlock"), BinarySerializable, TextSerializable, BinaryFields(nameof(Points))]
+public sealed partial class CurveBlock : AssetBlock
 {
     public partial IList<Point> Points { get; set; }
-    public Curve CreateCurve() => new(ReadPoints());
-    public void Update(Curve curve) => curve.Update(ReadPoints());
+    public Curve CreateCurve() => new(Points.ToArray());
+    public void Update(Curve curve) => curve.Update(Points.ToArray());
     public CurveSamples CreateSamples(float start, float end, int count)
     {
-        using var curve = CreateCurve();
+        var curve = CreateCurve();
         return new(curve, start, end, count);
     }
 }
 
-[AssetBlock, BinarySerializable, TextSerializable, BinaryFields(nameof(Value))]
-public sealed partial class ConstantCurveBlock : AssetPageBlock
+[AssetBlock("SomeEngine.Examples.Curves.ConstantCurveBlock"), BinarySerializable, TextSerializable, BinaryFields(nameof(Value))]
+public sealed partial class ConstantCurveBlock : AssetBlock
 {
     public partial float Value { get; set; }
     public Curve CreateCurve()
     {
-        using var points = new PageList<Point>(Pages);
-        points.Add(new Point(0, Value));
-        return new(points.Retain());
+        return new(new Point[] { new(0, Value) });
     }
 }
 [BinarySerializable, BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
@@ -42,15 +40,15 @@ public sealed partial class CurveAsset : Asset
         get => base.BlockDescriptions;
         private set => base.BlockDescriptions = value;
     }
-    public CurveAsset() : this(PageArena.Shared) { }
-    public CurveAsset(PageArena pages, Guid id = default) : base(pages, id)
+    public CurveAsset() : this(Guid.Empty) { }
+    public CurveAsset(Guid id = default) : base(id)
     {
         AssetType = FileType;
-        using var content = new CurveBlock(pages);
+        using var content = new CurveBlock();
         SetBlock(content);
     }
     private CurveAsset(CurveAsset source) : base(source) { }
-    public override CurveAsset Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public override CurveAsset Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
     public override CurveAsset CreateCopy(Guid id = default) => (CurveAsset)base.CreateCopy(id);
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
@@ -59,11 +57,11 @@ public sealed partial class CurveAsset : Asset
         using CurveAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);
     }
-    public static async ValueTask<CurveAsset> OpenAsync(string path, PageArena? pages = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<CurveAsset> OpenAsync(string path, CancellationToken cancellationToken = default)
     {
-        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, cancellationToken: cancellationToken).ConfigureAwait(false);
         AssetEntry entry = file.Describe();
-        var asset = new CurveAsset(file.Pages, entry.AssetGuid);
+        var asset = new CurveAsset(entry.AssetGuid);
         try
         {
             asset.ReadBlockContent(file);
@@ -75,11 +73,11 @@ public sealed partial class CurveAsset : Asset
     }
     public ValueTask<AssetEntry> SaveSourceAsync(string path, CancellationToken cancellationToken = default)
         => AssetText.SaveAsync(path, this, static (writer, asset) => writer.WriteBlock(asset.GetBlock<CurveBlock>()), cancellationToken);
-    public static async ValueTask<CurveAsset> OpenSourceAsync(string path, PageArena? pages = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<CurveAsset> OpenSourceAsync(string path, CancellationToken cancellationToken = default)
     {
         using AssetText.SourceReader source = await AssetText.OpenAsync(path, cancellationToken).ConfigureAwait(false);
         source.RequireAsset<CurveAsset>(FileType);
-        var asset = new CurveAsset(pages ?? PageArena.Shared, source.Description.AssetGuid) { Name = source.Description.Name };
+        var asset = new CurveAsset(source.Description.AssetGuid) { Name = source.Description.Name };
         try { await source.ReadBlockIntoAsync(asset.GetBlock<CurveBlock>(), cancellationToken).ConfigureAwait(false); return asset; }
         catch { asset.Dispose(); throw; }
     }
@@ -97,15 +95,15 @@ public sealed partial class ConstantCurveAsset : Asset
         get => base.BlockDescriptions;
         private set => base.BlockDescriptions = value;
     }
-    public ConstantCurveAsset() : this(PageArena.Shared) { }
-    public ConstantCurveAsset(PageArena pages, Guid id = default) : base(pages, id)
+    public ConstantCurveAsset() : this(Guid.Empty) { }
+    public ConstantCurveAsset(Guid id = default) : base(id)
     {
         AssetType = FileType;
-        using var content = new ConstantCurveBlock(pages);
+        using var content = new ConstantCurveBlock();
         SetBlock(content);
     }
     private ConstantCurveAsset(ConstantCurveAsset source) : base(source) { }
-    public override ConstantCurveAsset Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public override ConstantCurveAsset Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
     public override ConstantCurveAsset CreateCopy(Guid id = default) => (ConstantCurveAsset)base.CreateCopy(id);
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
@@ -114,11 +112,11 @@ public sealed partial class ConstantCurveAsset : Asset
         using ConstantCurveAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);
     }
-    public static async ValueTask<ConstantCurveAsset> OpenAsync(string path, PageArena? pages = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<ConstantCurveAsset> OpenAsync(string path, CancellationToken cancellationToken = default)
     {
-        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, cancellationToken: cancellationToken).ConfigureAwait(false);
         AssetEntry entry = file.Describe();
-        var asset = new ConstantCurveAsset(file.Pages, entry.AssetGuid);
+        var asset = new ConstantCurveAsset(entry.AssetGuid);
         try
         {
             asset.ReadBlockContent(file);
@@ -130,11 +128,11 @@ public sealed partial class ConstantCurveAsset : Asset
     }
     public ValueTask<AssetEntry> SaveSourceAsync(string path, CancellationToken cancellationToken = default)
         => AssetText.SaveAsync(path, this, static (writer, asset) => writer.WriteBlock(asset.GetBlock<ConstantCurveBlock>()), cancellationToken);
-    public static async ValueTask<ConstantCurveAsset> OpenSourceAsync(string path, PageArena? pages = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<ConstantCurveAsset> OpenSourceAsync(string path, CancellationToken cancellationToken = default)
     {
         using AssetText.SourceReader source = await AssetText.OpenAsync(path, cancellationToken).ConfigureAwait(false);
         source.RequireAsset<ConstantCurveAsset>(FileType);
-        var asset = new ConstantCurveAsset(pages ?? PageArena.Shared, source.Description.AssetGuid) { Name = source.Description.Name };
+        var asset = new ConstantCurveAsset(source.Description.AssetGuid) { Name = source.Description.Name };
         try { await source.ReadBlockIntoAsync(asset.GetBlock<ConstantCurveBlock>(), cancellationToken).ConfigureAwait(false); return asset; }
         catch { asset.Dispose(); throw; }
     }

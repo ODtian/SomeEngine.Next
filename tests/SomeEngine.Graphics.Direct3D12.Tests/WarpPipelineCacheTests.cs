@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using SlangShaderSharp;
@@ -22,16 +22,14 @@ public sealed class WarpPipelineCacheTests
             {
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "pipeline_cache_off_thread_prewarm",
             source,
             [new("computeMain", SlangStage.Compute)]);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using PipelineCache cache = backend.CreatePipelineCache(device, default);
-        ComputePipelineDesc description = new(
-            shader.Program,
-            shader.GetEntryPoint(0),
+        ComputePipelineDesc description = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
             "off-thread prewarm");
 
         Pipeline[] warmed = await Task.Factory.StartNew(
@@ -551,14 +549,14 @@ public sealed class WarpPipelineCacheTests
             [numthreads(1, 1, 1)]
             void computeMain() { outputValues[0] = 0xC0FFEEu; }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "pipeline_cache_backend_identity",
             source,
             [new("computeMain", SlangStage.Compute)]);
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using PipelineCache original = backend.CreatePipelineCache(device, default);
-        ComputePipelineDesc description = new(shader.Program, shader.GetEntryPoint(0));
+        ComputePipelineDesc description = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0));
         using Pipeline first = backend.CreateComputePipeline(device, description, original);
 
         byte[] originalEnvelope = ReadCache(backend, original);
@@ -694,12 +692,12 @@ public sealed class WarpPipelineCacheTests
             [numthreads(1, 1, 1)]
             void computeB() {}
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("computeA", SlangStage.Compute),
             new("computeB", SlangStage.Compute),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_pipeline_cache_compute",
             source,
             entries);
@@ -709,11 +707,11 @@ public sealed class WarpPipelineCacheTests
         using PipelineCache right = backend.CreatePipelineCache(device, default);
         using Pipeline leftPipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)),
             left);
         using Pipeline rightPipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(1)),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(1), shader.GetEntryCode(1)),
             right);
 
         using PipelineCache leftThenRight = backend.CreatePipelineCache(device, default);
@@ -728,11 +726,11 @@ public sealed class WarpPipelineCacheTests
             new PipelineCacheDesc(merged));
         using Pipeline reloadedA = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)),
             reloaded);
         using Pipeline reloadedB = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(1)),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(1), shader.GetEntryCode(1)),
             reloaded);
         Assert.Equal(merged, ReadCache(backend, reloaded));
     }
@@ -754,19 +752,19 @@ public sealed class WarpPipelineCacheTests
             [numthreads(1, 1, 1)]
             void computeC() {}
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_pipeline_cache_capacity_rejection",
             source,
             [
-                new D3D12TestShaderEntry("computeA", SlangStage.Compute),
-                new D3D12TestShaderEntry("computeB", SlangStage.Compute),
-                new D3D12TestShaderEntry("computeC", SlangStage.Compute),
+                new D3D12TestEntry("computeA", SlangStage.Compute),
+                new D3D12TestEntry("computeB", SlangStage.Compute),
+                new D3D12TestEntry("computeC", SlangStage.Compute),
             ]);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        ComputePipelineDesc descA = new(shader.Program, shader.GetEntryPoint(0));
-        ComputePipelineDesc descB = new(shader.Program, shader.GetEntryPoint(1));
-        ComputePipelineDesc descC = new(shader.Program, shader.GetEntryPoint(2));
+        ComputePipelineDesc descA = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0));
+        ComputePipelineDesc descB = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(1), shader.GetEntryCode(1));
+        ComputePipelineDesc descC = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(2), shader.GetEntryCode(2));
 
         using PipelineCache noAdmissionCache = backend.CreatePipelineCache(
             device,
@@ -779,7 +777,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             noAdmissionPipeline,
-            shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null,
+            shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
             11u);
         Assert.Equal(
             Convert.FromHexString(EmptyEnvelopeGolden),
@@ -820,15 +818,15 @@ public sealed class WarpPipelineCacheTests
             [numthreads(1, 1, 1)]
             void computeMain() { outputValues[0] = 0xC0FFEEu; }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_pipeline_cache_native_reject_compute",
             source,
-            [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)]);
+            [new D3D12TestEntry("computeMain", SlangStage.Compute)]);
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        ComputePipelineDesc description = new(shader.Program, shader.GetEntryPoint(0));
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        ComputePipelineDesc description = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0));
         using PipelineCache seed = backend.CreatePipelineCache(device, default);
         using (Pipeline pipeline = backend.CreateComputePipeline(device, description, seed)) { }
         byte[] validSection = GetOnlySection(ReadCache(backend, seed));
@@ -915,17 +913,16 @@ public sealed class WarpPipelineCacheTests
                 return float4(1, 1, 1, 1);
             }
             """;
-        using D3D12TestShaderProgram graphicsShader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader graphicsShader = D3D12TestShader.Compile(
             "rhi_pipeline_cache_graphics",
             graphicsSource,
             [
-                new D3D12TestShaderEntry("vertexMain", SlangStage.Vertex),
-                new D3D12TestShaderEntry("pixelMain", SlangStage.Fragment),
+                new D3D12TestEntry("vertexMain", SlangStage.Vertex),
+                new D3D12TestEntry("pixelMain", SlangStage.Fragment),
             ]);
-        GraphicsPipelineDesc graphicsDescription = new(
-            graphicsShader.Program,
-            graphicsShader.GetEntryPoint(0),
+        GraphicsPipelineDesc graphicsDescription = new(graphicsShader.SlangCode, graphicsShader.Reflection, graphicsShader.GetEntryPoint(0), graphicsShader.GetEntryCode(0),
             graphicsShader.GetEntryPoint(1),
+            graphicsShader.GetEntryCode(1),
             [],
             [],
             PrimitiveTopology.TriangleList,
@@ -953,7 +950,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             recreatedGraphicsPipeline,
-            graphicsShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            graphicsShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         Assert.NotEqual(corruptGraphicsEnvelope, ReadCache(backend, reloadedGraphicsCache));
         using Pipeline replayedGraphicsPipeline = backend.CreateGraphicsPipeline(
             device,
@@ -963,7 +960,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             replayedGraphicsPipeline,
-            graphicsShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            graphicsShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         using Pipeline noAdmissionGraphics = backend.CreateGraphicsPipeline(
             device,
             graphicsDescription,
@@ -972,7 +969,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             noAdmissionGraphics,
-            graphicsShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            graphicsShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         Assert.Equal(noAdmissionBytes, ReadCache(backend, noAdmissionCache));
 
         const string computeSource = """
@@ -981,13 +978,11 @@ public sealed class WarpPipelineCacheTests
             [numthreads(1, 1, 1)]
             void computeMain() { outputValues[0] = 41u; }
             """;
-        using D3D12TestShaderProgram computeShader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader computeShader = D3D12TestShader.Compile(
             "rhi_pipeline_cache_all_families_compute",
             computeSource,
-            [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)]);
-        ComputePipelineDesc computeDescription = new(
-            computeShader.Program,
-            computeShader.GetEntryPoint(0));
+            [new D3D12TestEntry("computeMain", SlangStage.Compute)]);
+        ComputePipelineDesc computeDescription = new(computeShader.SlangCode, computeShader.Reflection, computeShader.GetEntryPoint(0), computeShader.GetEntryCode(0));
         using PipelineCache computeCache = backend.CreatePipelineCache(device, default);
         using Pipeline computePipeline = backend.CreateComputePipeline(
             device,
@@ -1010,7 +1005,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             noAdmissionCompute,
-            computeShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null,
+            computeShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
             41u);
         Assert.Equal(noAdmissionBytes, ReadCache(backend, noAdmissionCache));
 
@@ -1027,13 +1022,15 @@ public sealed class WarpPipelineCacheTests
             [shader("raygeneration")]
             void rayGenerationMain() { outputValues[0] = 73u; }
             """;
-        using D3D12TestShaderProgram rayShader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader rayShader = D3D12TestShader.Compile(
             "rhi_pipeline_cache_ray",
             raySource,
-            [new D3D12TestShaderEntry("rayGenerationMain", SlangStage.RayGeneration)]);
-        ShaderEntryPoint[] rayGeneration = [rayShader.GetEntryPoint(0)];
+            [new D3D12TestEntry("rayGenerationMain", SlangStage.RayGeneration)]);
+        EntryPointReflection[] rayGeneration = [rayShader.GetEntryPoint(0)];
         RayTracingPipelineDesc rayDescription = new(
-            rayShader.Program,
+            rayShader.SlangCode,
+            rayShader.Reflection,
+            rayShader.TargetCode,
             rayGeneration,
             [],
             [],
@@ -1060,7 +1057,7 @@ public sealed class WarpPipelineCacheTests
             device,
             recreatedRayPipeline,
             rayGeneration[0],
-            rayShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            rayShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         Assert.Equal(reloadedRayBytes, ReadCache(backend, reloadedRayCache));
         using Pipeline replayedRayPipeline = backend.CreateRayTracingPipeline(
             device,
@@ -1071,7 +1068,7 @@ public sealed class WarpPipelineCacheTests
             device,
             replayedRayPipeline,
             rayGeneration[0],
-            rayShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            rayShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         using Pipeline noAdmissionRay = backend.CreateRayTracingPipeline(
             device,
             rayDescription,
@@ -1081,7 +1078,7 @@ public sealed class WarpPipelineCacheTests
             device,
             noAdmissionRay,
             rayGeneration[0],
-            rayShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            rayShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         Assert.Equal(noAdmissionBytes, ReadCache(backend, noAdmissionCache));
 
         Assert.True(backend.TryGetCapability(device, out WorkGraphs? workGraphs));
@@ -1102,12 +1099,12 @@ public sealed class WarpPipelineCacheTests
                 outputValues[0] = input.Get().Remaining;
             }
             """;
-        using D3D12TestShaderProgram graphShader =
-            D3D12TestShaderProgram.CompileExperimental(
+        D3D12TestShader graphShader =
+            D3D12TestShader.CompileExperimental(
                 "rhi_pipeline_cache_work_graph",
                 workGraphSource,
-                [new D3D12TestShaderEntry("graphMain", SlangStage.Node)]);
-        WorkGraphPipelineDesc graphDescription = new(graphShader.Program);
+                [new D3D12TestEntry("graphMain", SlangStage.Node)]);
+        WorkGraphPipelineDesc graphDescription = new(graphShader.SlangCode, graphShader.Reflection, graphShader.TargetCode);
         using PipelineCache graphCache = backend.CreatePipelineCache(device, default);
         using Pipeline graphPipeline = backend.CreateWorkGraphPipeline(
             device,
@@ -1126,7 +1123,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             recreatedGraphPipeline,
-            graphShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            graphShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         Assert.Equal(reloadedGraphBytes, ReadCache(backend, reloadedGraphCache));
         using Pipeline replayedGraphPipeline = backend.CreateWorkGraphPipeline(
             device,
@@ -1136,7 +1133,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             replayedGraphPipeline,
-            graphShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            graphShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         using Pipeline noAdmissionGraph = backend.CreateWorkGraphPipeline(
             device,
             graphDescription,
@@ -1145,7 +1142,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             noAdmissionGraph,
-            graphShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            graphShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         Assert.Equal(noAdmissionBytes, ReadCache(backend, noAdmissionCache));
 
     }
@@ -1179,19 +1176,19 @@ public sealed class WarpPipelineCacheTests
                 return float4(0.25, 0.5, 0.75, 1.0);
             }
             """;
-        using D3D12TestShaderProgram meshShader =
-            D3D12TestShaderProgram.Compile(
+        D3D12TestShader meshShader =
+            D3D12TestShader.Compile(
                 "rhi_pipeline_cache_mesh",
                 meshSource,
                 [
-                    new D3D12TestShaderEntry("meshMain", SlangStage.Mesh),
-                    new D3D12TestShaderEntry("pixelMain", SlangStage.Fragment),
+                    new D3D12TestEntry("meshMain", SlangStage.Mesh),
+                    new D3D12TestEntry("pixelMain", SlangStage.Fragment),
                 ]);
-        MeshPipelineDesc meshDescription = new(
-            meshShader.Program,
-            meshShader.GetEntryPoint(0),
-            ShaderEntryPoint.Null,
+        MeshPipelineDesc meshDescription = new(meshShader.SlangCode, meshShader.Reflection, meshShader.GetEntryPoint(0), meshShader.GetEntryCode(0),
+            EntryPointReflection.Null,
+            default,
             meshShader.GetEntryPoint(1),
+            meshShader.GetEntryCode(1),
             new RasterizerState(Cull: CullType.None),
             new MultisampleState(SampleCount: 1),
             new DepthStencilState(),
@@ -1215,7 +1212,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             recreatedMeshPipeline,
-            meshShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            meshShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         Assert.NotEqual(corruptMeshEnvelope, ReadCache(backend, reloadedMeshCache));
         using Pipeline replayedMeshPipeline = backend.CreateMeshPipeline(
             device,
@@ -1225,7 +1222,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             replayedMeshPipeline,
-            meshShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            meshShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         using PipelineCache noAdmissionCache = backend.CreatePipelineCache(
             device,
             new PipelineCacheDesc(maximumByteCount: 48));
@@ -1238,7 +1235,7 @@ public sealed class WarpPipelineCacheTests
             backend,
             device,
             noAdmissionPipeline,
-            meshShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null);
+            meshShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         Assert.Equal(before, ReadCache(backend, noAdmissionCache));
         return meshEnvelope;
     }
@@ -1247,7 +1244,7 @@ public sealed class WarpPipelineCacheTests
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        ShaderVariableLayout globals)
+        VariableLayoutReflection globals)
     {
         TextureSubresourceRange targetRange = new(0, 1, 0, 1, TextureAspects.Color);
         using Texture target = backend.CreateTexture(
@@ -1337,7 +1334,7 @@ public sealed class WarpPipelineCacheTests
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        ShaderVariableLayout globals)
+        VariableLayoutReflection globals)
     {
         TextureSubresourceRange targetRange = new(0, 1, 0, 1, TextureAspects.Color);
         using Texture target = backend.CreateTexture(
@@ -1428,7 +1425,7 @@ public sealed class WarpPipelineCacheTests
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         uint expected)
     {
         using Buffer output = backend.CreateBuffer(
@@ -1459,7 +1456,7 @@ public sealed class WarpPipelineCacheTests
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         Buffer output,
         BufferUav outputUav,
         Buffer readback,
@@ -1508,8 +1505,8 @@ public sealed class WarpPipelineCacheTests
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        ShaderEntryPoint rayGeneration,
-        ShaderVariableLayout globals)
+        EntryPointReflection rayGeneration,
+        VariableLayoutReflection globals)
     {
         using RayTracingShaderTable table = backend.CreateRayTracingShaderTable(
             device,
@@ -1573,7 +1570,7 @@ public sealed class WarpPipelineCacheTests
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        ShaderVariableLayout globals)
+        VariableLayoutReflection globals)
     {
         var entryPoints = new WorkGraphEntryPointInfo[1];
         Assert.True(backend.TryGetWorkGraphEntryPoints(pipeline, entryPoints, out int count));

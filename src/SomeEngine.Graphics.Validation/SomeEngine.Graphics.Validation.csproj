@@ -8,7 +8,7 @@
     <Description>Optional validation layer for the backend-neutral graphics receiver.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../external/SlangShaderSharp/src/SlangShaderSharp.csproj" />
+    <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
     <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
   </ItemGroup>
   <ItemGroup>

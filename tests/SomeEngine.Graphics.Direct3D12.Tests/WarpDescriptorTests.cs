@@ -24,13 +24,13 @@ public sealed class WarpDescriptorTests
                 output[id.x] = value;
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "persistent_recorded_lifetime",
             source,
-            [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)],
+            [new D3D12TestEntry("computeMain", SlangStage.Compute)],
             "sm_6_2");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         int ordinarySize = checked((int)GetDataLayout(layout).GetSize(
             SlangParameterCategory.Uniform));
 
@@ -38,7 +38,7 @@ public sealed class WarpDescriptorTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using Buffer output = backend.CreateBuffer(
             device,
             new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource),
@@ -112,13 +112,13 @@ public sealed class WarpDescriptorTests
                 output[id.x] = value;
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "persistent_concurrent_generation_capture",
             source,
-            [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)],
+            [new D3D12TestEntry("computeMain", SlangStage.Compute)],
             "sm_6_2");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         int ordinarySize = checked((int)GetDataLayout(layout).GetSize(
             SlangParameterCategory.Uniform));
 
@@ -126,7 +126,7 @@ public sealed class WarpDescriptorTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using Buffer output = backend.CreateBuffer(
             device,
             new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource),
@@ -235,20 +235,20 @@ public sealed class WarpDescriptorTests
                 if (tint.x == id.x) { }
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "root_cbv_single_descriptor_generation",
             source,
-            [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)],
+            [new D3D12TestEntry("computeMain", SlangStage.Compute)],
             "sm_6_2");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         Assert.Equal((nint)0, GetDataLayout(layout).BindingRangeCount);
 
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using PersistentParameterBindings persistent =
             backend.CreatePersistentParameterBindings(
                 device,
@@ -294,14 +294,14 @@ public sealed class WarpDescriptorTests
                 writeBuffer[id.x] = value;
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "transient_typed_null_descriptors",
             source,
-            [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)],
+            [new D3D12TestEntry("computeMain", SlangStage.Compute)],
             "sm_6_2");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout reflected = GetDataLayout(layout);
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection reflected = GetDataLayout(layout);
         (SlangBindingType Type, uint Register, uint Space)[] locations = Enumerable.Range(
                 0,
                 checked((int)reflected.BindingRangeCount))
@@ -356,7 +356,7 @@ public sealed class WarpDescriptorTests
         ];
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
@@ -369,10 +369,10 @@ public sealed class WarpDescriptorTests
         backend.Discard(context);
     }
 
-    private static ShaderTypeLayout GetDataLayout(
-        ShaderVariableLayout layout)
+    private static TypeLayoutReflection GetDataLayout(
+        VariableLayoutReflection layout)
     {
-        ShaderTypeLayout result = layout.TypeLayout.UnwrapArray();
+        TypeLayoutReflection result = layout.TypeLayout.UnwrapArray();
         if (result.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             result = result.ElementTypeLayout.UnwrapArray();
         return result;

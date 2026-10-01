@@ -97,7 +97,7 @@ public static class DisplacementBoundsTexture
 
         pixels.MipLevelCount = checked((uint)tiles.Count);
         pixels.MipTiles = tiles;
-        var asset = new TextureAsset(SomeEngine.Serialization.Containers.PageArena.Shared, assetGuid) { Name = name };
+        var asset = new TextureAsset(assetGuid) { Name = name };
         try { asset.SetBlock(pixels); return asset; }
         catch { asset.Dispose(); throw; }
     }
@@ -120,7 +120,7 @@ public static class DisplacementBoundsTexture
             RowPitch = checked((ulong)width * 8u),
             SlicePitch = checked((ulong)width * height * 8u),
         }, payload.Length);
-        pixels.Chunks.Set(tile.ChunkKey, payload);
+        pixels.SetBytes(tile.ChunkKey, payload.ToArray());
         return tile;
     }
 }

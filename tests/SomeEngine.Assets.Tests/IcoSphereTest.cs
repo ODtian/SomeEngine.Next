@@ -35,7 +35,7 @@ public class IcoSphereTest
             "IcoSphere_LOD5"
         );
 
-        using var payloadRead = meshAsset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        var payloadRead = meshAsset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
         byte[] payloadBytes = payloadRead.ToArray();
         Assert.NotEmpty(payloadBytes);
 
@@ -70,8 +70,8 @@ public class IcoSphereTest
 
         await meshAsset.SaveAsync(outputPath);
         using MeshAsset roundTrip = await MeshAsset.OpenAsync(outputPath);
-        using var reopenedBytes = await roundTrip.GetBlock<ClusterMeshBlock>().AcquireBufferAsync(ClusterMeshBlock.PayloadChunkKey);
-        using var reopenedRead = reopenedBytes.Retain();
+        var reopenedBytes = await roundTrip.GetBlock<ClusterMeshBlock>().ReadBytesAsync(ClusterMeshBlock.PayloadChunkKey);
+        var reopenedRead = reopenedBytes;
         Assert.Equal(payloadBytes, reopenedRead.ToArray());
     }
 

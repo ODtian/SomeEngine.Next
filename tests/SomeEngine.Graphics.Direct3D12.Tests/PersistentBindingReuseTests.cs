@@ -10,27 +10,29 @@ public sealed class PersistentBindingReuseTests
     [Fact]
     public void PersistentBindingsRemainCorrectAfterPartialTransientReplacement()
     {
-        using D3D12TestShaderProgram pairShader = D3D12TestShaderProgram.Compile("binding_pair", """
+        D3D12TestShader pairShader = D3D12TestShader.Compile("binding_pair", """
             RWBuffer<uint> first;
             RWBuffer<uint> second;
             [shader("compute")]
             [numthreads(1, 1, 1)]
             void computeMain() { first[0] = 11; second[0] = 22; }
-            """, [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)], "sm_6_2");
-        using D3D12TestShaderProgram singleShader = D3D12TestShaderProgram.Compile("binding_single", """
+            """, [new D3D12TestEntry("computeMain", SlangStage.Compute)], "sm_6_2");
+        D3D12TestShader singleShader = D3D12TestShader.Compile("binding_single", """
             RWBuffer<uint> value;
             [shader("compute")]
             [numthreads(1, 1, 1)]
             void computeMain() { value[0] = 99; }
-            """, [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)], "sm_6_2");
+            """, [new D3D12TestEntry("computeMain", SlangStage.Compute)], "sm_6_2");
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pair = backend.CreateComputePipeline(device,
-            new ComputePipelineDesc(pairShader.Program, pairShader.GetEntryPoint(0)));
+            new ComputePipelineDesc(pairShader.SlangCode, pairShader.Reflection, pairShader.GetEntryPoint(0), pairShader.GetEntryCode(0)));
         using Pipeline single = backend.CreateComputePipeline(device,
-            new ComputePipelineDesc(singleShader.Program, singleShader.GetEntryPoint(0)));
-        ShaderVariableLayout pairLayout = pairShader.Reflection.GetGlobalParamsVarLayout()!;
-        ShaderVariableLayout singleLayout = singleShader.Reflection.GetGlobalParamsVarLayout()!;
+            new ComputePipelineDesc(singleShader.SlangCode, singleShader.Reflection, singleShader.GetEntryPoint(0), singleShader.GetEntryCode(0)));
+        VariableLayoutReflection pairLayout = pairShader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        VariableLayoutReflection singleLayout = singleShader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         var description = new BufferDesc(4,
             BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination);
         using Buffer first = backend.CreateBuffer(device, description);

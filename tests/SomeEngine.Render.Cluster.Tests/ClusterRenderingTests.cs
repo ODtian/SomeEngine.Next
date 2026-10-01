@@ -1,5 +1,4 @@
 using SomeEngine.Resources;
-using System.Collections.Immutable;
 using Game.Content;
 ﻿using System.Numerics;
 using System.Runtime.InteropServices;
@@ -19,6 +18,7 @@ using SomeEngine.Render.Frame;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
+using SlangShaderSharp;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Cluster.Tests;
@@ -82,9 +82,16 @@ public sealed class ClusterRenderingTests
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library", "AssetManifest"));
         await using var assets = new AssetLoader(new LooseAssetStorage(root, manifest));
         Game.Assets.MaterialTypes.Register();
+        SlangCompileTarget shaderTarget = vulkan
+            ? SlangCompileTarget.Spirv
+            : SlangCompileTarget.Dxil;
         AssetEntry record = Assert.Single(manifest.List(ClusterShadersAsset.FileType));
         using ClusterShadersAsset file = await ClusterShadersAsset.OpenAsync(assets, new(record.AssetGuid));
-        using ClusterShaders configuration = await file.GetBlock<ClusterShadersBlock>().CreateAsync(file.Name, assets);
+        ClusterShaders configuration = await file.GetBlock<ClusterShadersBlock>().CreateAsync(
+            file.Name,
+            assets,
+            TestShaderLoading.Slang,
+            TestShaderLoading.CreateSessionDescription(shaderTarget));
         using IGraphicsBackend backend = new ValidationLayer(vulkan
             ? VulkanGraphicsBackend.Create()
             : D3D12GraphicsBackend.Create(), new ValidationOptions(NativeValidationDisabled: vulkan));
@@ -92,8 +99,11 @@ public sealed class ClusterRenderingTests
         backend.TryEnumerateAdapters(enumeration, [], out int count);
         var adapters = new AdapterInfo[count];
         backend.TryEnumerateAdapters(enumeration, adapters, out _);
-        // The compute raster shader requires a 32-lane wave; exercise it on the GPU.
-        AdapterInfo selected = vulkan ? adapters[0] : adapters.First(adapter => adapter.HardwareAccelerated == softwareRaster);
+        // The direct Slang path uses the SM 6.6 shader set for every Cluster stage.
+        // Smaller D3D12 tests retain WARP coverage; this full stage composition uses hardware.
+        AdapterInfo selected = vulkan
+            ? adapters[0]
+            : adapters.First(adapter => adapter.HardwareAccelerated);
         using Device device = backend.CreateDevice(new DeviceDesc(selected.Id,
             [new DeviceQueueDesc(QueueType.Graphics), new DeviceQueueDesc(QueueType.Compute), new DeviceQueueDesc(QueueType.Copy)], requiredFeatures: DeviceFeatures.IndirectCommands));
         Queue graphics = backend.GetQueue(device, QueueType.Graphics);
@@ -101,7 +111,8 @@ public sealed class ClusterRenderingTests
         Queue copy = backend.GetQueue(device, QueueType.Copy);
         using var mainWorld = new World();
         Entity source = Entity.Null;
-        using Mesh? mesh = changeGeometry ? await ReadMesh() : null;
+        var sharedMaterialShaders = new Dictionary<Guid, Shader>();
+        Mesh? mesh = changeGeometry ? await ReadMesh() : null;
         using Material? material = changeGeometry ? await ReadMaterial() : null;
         using Material? secondMaterial = shadeColor ? await ReadMaterial() : null;
 
@@ -126,7 +137,22 @@ public sealed class ClusterRenderingTests
         {
             using MaterialAsset value = await MaterialAsset.OpenAsync(assets,
                 new(manifest.List(MaterialAsset.FileType).First(item => item.Name == "Unlit").AssetGuid));
-            return await value.CreateAsync(assets);
+            return await value.CreateAsync(assets, LoadMaterialShader, null);
+        }
+        async ValueTask<Shader> LoadMaterialShader(
+            AssetId<ShaderAsset> id,
+            CancellationToken cancellationToken)
+        {
+            if (!separateShaders && sharedMaterialShaders.TryGetValue(id.Value, out Shader? shared))
+                return shared;
+            using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(assets, id, cancellationToken);
+            Shader shader = await TestShaderLoading.CreateAsync(
+                shaderFile,
+                shaderTarget,
+                cancellationToken);
+            if (!separateShaders)
+                sharedMaterialShaders.Add(id.Value, shader);
+            return shader;
         }
         Entity AddCameraMesh(Vector3 position, float scale, Material value)
         {
@@ -139,7 +165,6 @@ public sealed class ClusterRenderingTests
         }
         Entity secondSource = Entity.Null;
         List<Material> extraMaterials = [];
-        List<Shader> extraShaders = [];
         List<Entity> extraSources = [];
         if (shadeColor)
         {
@@ -276,15 +301,6 @@ public sealed class ClusterRenderingTests
                             Material extra = await ReadMaterial();
                             extraMaterials.Add(extra);
                             UnlitMaterial unlit = Assert.IsType<UnlitMaterial>(extra);
-                            if (separateShaders)
-                            {
-                                Shader shader = new();
-                                shader.Update(unlit.Shader!);
-                                shader.Programs = unlit.Shader!.Programs!.Select(code => code is null ? null :
-                                    SlangShaderSharp.ShaderProgram.Read(code.ToArray())).ToImmutableList();
-                                extraShaders.Add(shader);
-                                unlit.Shader = shader;
-                            }
                             unlit.AlbedoMap = sharedTexture;
                             unlit.MaterialSampler = new SamplerDesc(
                                 FilterType.Linear, FilterType.Linear, FilterType.Linear,
@@ -378,7 +394,13 @@ public sealed class ClusterRenderingTests
                     Assert.Equal(submitted, accepted.Length);
                     frame.Complete(accepted);
                     foreach (QueueCompletion completion in accepted)
-                        Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
+                    {
+                        WaitStatus status = backend.WaitCpu(completion, TimeSpan.FromSeconds(20));
+                        Assert.True(
+                            status == WaitStatus.Completed,
+                            $"Frame {renderIndex}, iteration {iteration}, queue {completion.Queue.Type} " +
+                            $"finished with {status}.");
+                    }
                 }
                 if (textureUpdate is not null)
                 {
@@ -493,7 +515,6 @@ public sealed class ClusterRenderingTests
             cluster.Dispose();
             instances.Dispose();
             foreach (Material extra in extraMaterials) extra.Dispose();
-            foreach (Shader shader in extraShaders) shader.Dispose();
         }
     }
 

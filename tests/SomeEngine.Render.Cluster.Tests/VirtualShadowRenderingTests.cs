@@ -21,6 +21,7 @@ using SomeEngine.Render.Shadows;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
+using SlangShaderSharp;
 using Xunit.Abstractions;
 using Buffer = SomeEngine.Graphics.Buffer;
 
@@ -64,15 +65,26 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library", "AssetManifest"));
         await using var assets = new AssetLoader(new LooseAssetStorage(root, manifest));
         Game.Assets.MaterialTypes.Register();
+        SlangCompileTarget shaderTarget = vulkan
+            ? SlangCompileTarget.Spirv
+            : SlangCompileTarget.Dxil;
         using ApplicationSettingsAsset settingsFile = await ApplicationSettingsAsset.OpenAsync(assets,
             new(manifest.List(ApplicationSettingsAsset.FileType).Single().AssetGuid));
         ApplicationSettingsBlock settings = settingsFile.GetBlock<ApplicationSettingsBlock>();
         using ClusterShadersAsset clusterFile = await ClusterShadersAsset.OpenAsync(assets, settings.Pipeline);
-        using ClusterShaders clusterShaders = await clusterFile.GetBlock<ClusterShadersBlock>().CreateAsync(clusterFile.Name, assets);
+        ClusterShaders clusterShaders = await clusterFile.GetBlock<ClusterShadersBlock>().CreateAsync(
+            clusterFile.Name,
+            assets,
+            TestShaderLoading.Slang,
+            TestShaderLoading.CreateSessionDescription(shaderTarget));
         using VirtualShadowMapShadersAsset shadowFile = await VirtualShadowMapShadersAsset.OpenAsync(assets, settings.VirtualShadowMap);
-        using VirtualShadowMapShaders shadowShaders = await shadowFile.GetBlock<VirtualShadowMapShadersBlock>().CreateAsync(shadowFile.Name, assets);
+        VirtualShadowMapShaders shadowShaders = await shadowFile.GetBlock<VirtualShadowMapShadersBlock>().CreateAsync(
+            shadowFile.Name,
+            assets,
+            TestShaderLoading.Slang,
+            TestShaderLoading.CreateSessionDescription(shaderTarget));
         using ShaderAsset lightFile = await ShaderAsset.OpenAsync(assets, settings.LightingShader);
-        using Shader lightShader = await lightFile.GetBlock<ShaderBlock>().CreateAsync(lightFile.Name);
+        Shader lightShader = await TestShaderLoading.CreateAsync(lightFile, shaderTarget);
         using IGraphicsBackend backend = new ValidationLayer(vulkan
             ? VulkanGraphicsBackend.Create()
             : D3D12GraphicsBackend.Create(), new ValidationOptions(NativeValidationDisabled: vulkan));
@@ -85,11 +97,14 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
             requiredFeatures: DeviceFeatures.IndirectCommands));
         using MeshAsset meshFile = await MeshAsset.OpenAsync(assets, new(manifest.List(MeshAsset.FileType).First().AssetGuid));
         ClusterMeshBlock geometry = meshFile.GetBlock<ClusterMeshBlock>();
-        using Mesh mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
+        Mesh mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
         await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
         using MaterialAsset materialFile = await MaterialAsset.OpenAsync(assets,
             new(manifest.List(MaterialAsset.FileType).First(item => item.Name == "Standard").AssetGuid));
-        using Material material = await materialFile.CreateAsync(assets);
+        using Material material = await materialFile.CreateAsync(
+            assets,
+            TestShaderLoading.Slang,
+            TestShaderLoading.CreateSessionDescription(shaderTarget));
         using var gameWorld = new World();
         using var world = new RenderWorld();
         AddMesh(new TransformQvvs(new Vector3(0, 0, -8), Quaternion.Identity) { Stretch = new Vector3(4, 4, .1f) });

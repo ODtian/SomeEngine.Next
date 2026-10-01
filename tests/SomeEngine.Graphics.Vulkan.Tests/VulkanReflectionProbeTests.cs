@@ -23,14 +23,14 @@ public sealed class VulkanReflectionProbeTests
                 OutputTexture[id.xy] = material.Albedo.SampleLevel(material.Sampler, float2(0, 0), 0);
             }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
         using Pipeline pipeline = backend.CreateComputePipeline(
-            device, new ComputePipelineDesc(shader.Program, shader.Entries[0]));
+            device, new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)));
         Assert.Equal(PipelineType.Compute, pipeline.Type);
     }
 
@@ -54,13 +54,13 @@ public sealed class VulkanReflectionProbeTests
                 return InputTexture.Sample(InputSampler, float2(0, 0)) * Tint;
             }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));
-        ShaderVariableLayout global = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout layout = global.TypeLayout.UnwrapArray();
+        VariableLayoutReflection global = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection layout = global.TypeLayout.UnwrapArray();
         if (layout.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             layout = layout.ElementTypeLayout.UnwrapArray();
         var report = new System.Text.StringBuilder();

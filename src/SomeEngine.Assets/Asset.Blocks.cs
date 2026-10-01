@@ -38,7 +38,7 @@ public abstract partial class Asset
 
     protected ImmutableArray<AssetBlockDescription> BlockDescriptions
     {
-        get { lock (Access.SyncRoot) { RequireIdle(); return _blockDescriptions; } }
+        get { lock (SyncRoot) { RequireIdle(); return _blockDescriptions; } }
         set
         {
             if (value.IsDefault) throw new InvalidDataException("The block directory is missing.");
@@ -59,7 +59,7 @@ public abstract partial class Asset
                     throw new InvalidDataException("Several blocks claim the same document chunk.");
                 entries.Add(description.BlockTypeId, new(description));
             }
-            lock (Access.SyncRoot)
+            lock (SyncRoot)
             {
                 RequireIdle();
                 if (_blocks.Values.Any(static entry => entry.Read is not null))
@@ -73,12 +73,12 @@ public abstract partial class Asset
 
     public bool ContainsBlock<T>() where T : AssetBlock, IAssetBlock<T>
     {
-        lock (Access.SyncRoot) { RequireIdle(); return _blocks.ContainsKey(T.BlockTypeId); }
+        lock (SyncRoot) { RequireIdle(); return _blocks.ContainsKey(T.BlockTypeId); }
     }
 
     public T GetBlock<T>() where T : AssetBlock, IAssetBlock<T>
     {
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
             BlockEntry? entry = _blocks.GetValueOrDefault(T.BlockTypeId);
@@ -96,7 +96,7 @@ public abstract partial class Asset
         TaskCompletionSource<AssetBlock>? completion = null;
         CancellationToken readCancellation = default;
         BlockEntry entry;
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
             entry = _blocks.GetValueOrDefault(T.BlockTypeId) ?? throw new KeyNotFoundException($"Block {T.BlockTypeId} is absent.");
@@ -129,11 +129,11 @@ public abstract partial class Asset
                 content = await T.ReadAsync(source, cancellationToken).ConfigureAwait(false);
             }
             if (content.BlockId != T.BlockTypeId) throw new InvalidDataException("A block reader returned a different persistent type.");
-            AssetBlock replacement = content.Duplicate(Access);
+            AssetBlock replacement = content.Duplicate(SyncRoot);
             try { content.Dispose(); }
             catch { replacement.Dispose(); throw; }
             content = (T)replacement;
-            lock (Access.SyncRoot)
+            lock (SyncRoot)
             {
                 RequireIdle();
                 entry.Content = content;
@@ -146,7 +146,7 @@ public abstract partial class Asset
         {
             try { content?.Dispose(); }
             catch (Exception cleanup) { error = new AggregateException("Block acquisition and cleanup failed.", error, cleanup); }
-            finally { lock (Access.SyncRoot) entry.Read = null; }
+            finally { lock (SyncRoot) entry.Read = null; }
             if (error is OperationCanceledException cancelled) completion.TrySetCanceled(cancelled.CancellationToken);
             else completion.TrySetException(error);
         }
@@ -157,11 +157,11 @@ public abstract partial class Asset
         ArgumentNullException.ThrowIfNull(block);
         if (block.BlockId != T.BlockTypeId) throw new InvalidDataException("The block identity differs from its declared type.");
         Guid id = T.BlockTypeId;
-        AssetBlock replacement = block.Duplicate(Access);
+        AssetBlock replacement = block.Duplicate(SyncRoot);
         AssetBlock? retired = null;
         try
         {
-            lock (Access.SyncRoot)
+            lock (SyncRoot)
             {
                 RequireIdle();
                 BlockEntry? current = _blocks.GetValueOrDefault(id);
@@ -181,7 +181,7 @@ public abstract partial class Asset
     {
         Guid id = T.BlockTypeId;
         AssetBlock? retired = null;
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
             BlockEntry? current = _blocks.GetValueOrDefault(id);
@@ -195,7 +195,7 @@ public abstract partial class Asset
 
     internal IReadOnlyList<Exception> ApplyBlocks(IReadOnlyCollection<AssetBlock> blocks)
     {
-        lock (Access.SyncRoot) RequireIdle();
+        lock (SyncRoot) RequireIdle();
         var replacements = new List<(Guid Id, BlockEntry Entry, AssetBlock Source)>();
         var used = new HashSet<Guid>();
         bool applied = false;
@@ -205,11 +205,11 @@ public abstract partial class Asset
             {
                 if (block.BlockId == Guid.Empty) throw new InvalidOperationException("The result contains an empty block identity.");
                 if (!used.Add(block.BlockId)) throw new InvalidOperationException("The result contains a repeated block identity.");
-                replacements.Add((block.BlockId, new BlockEntry(block.Duplicate(Access)), block));
+                replacements.Add((block.BlockId, new BlockEntry(block.Duplicate(SyncRoot)), block));
             }
 
             var retired = new List<AssetBlock>();
-            lock (Access.SyncRoot)
+            lock (SyncRoot)
             {
                 RequireIdle();
                 foreach ((Guid id, BlockEntry replacement, _) in replacements)
@@ -250,7 +250,7 @@ public abstract partial class Asset
 
     protected IEnumerable<Guid> BlockReferences()
     {
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
             return _blocks.Values.SelectMany(static entry => entry.Content?.References() ?? entry.Description!.References)
@@ -265,7 +265,7 @@ public abstract partial class Asset
         {
             foreach (var entry in source._blocks)
                 _blocks.Add(entry.Key, entry.Value.Content is { } content
-                    ? new(content.Duplicate(Access)) : new(entry.Value.Description!));
+                    ? new(content.Duplicate(SyncRoot)) : new(entry.Value.Description!));
         }
         catch { ReleaseBlocks(); throw; }
     }
@@ -284,7 +284,7 @@ public abstract partial class Asset
             if (entry.Content is { } block)
             {
                 if (block is not IAssetBlockWriter writable) continue;
-                var output = new AssetBlockWriter(writer, Pages);
+                var output = new AssetBlockWriter(writer);
                 retained.Add(output);
                 block.ValidateForWrite();
                 await writable.WriteAsync(output, cancellationToken).ConfigureAwait(false);

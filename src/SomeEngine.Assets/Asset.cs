@@ -11,23 +11,22 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
 {
     private AssetFile? _file;
     private bool _disposed;
+    private Task? _close;
     private Guid _id;
     private string _name = "";
     private string _assetType = "";
-    protected PageAccess Access { get; } = new();
+    protected object SyncRoot { get; } = new();
 
-    protected Asset(PageArena? pages = null, Guid id = default)
+    protected Asset(Guid id = default)
     {
-        Pages = pages ?? PageArena.Shared;
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
     }
 
     protected Asset(Asset source)
     {
-        lock (source.Access.SyncRoot)
+        lock (source.SyncRoot)
         {
             source.RequireIdle();
-            Pages = source.Pages;
             _id = source._id;
             _name = source._name;
             AssetType = source.AssetType;
@@ -38,10 +37,10 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
 
     public Guid Id
     {
-        get { lock (Access.SyncRoot) { RequireIdle(); return _id; } }
+        get { lock (SyncRoot) { RequireIdle(); return _id; } }
         protected set
         {
-            lock (Access.SyncRoot)
+            lock (SyncRoot)
             {
                 RequireIdle();
                 if (value == Guid.Empty) throw new InvalidDataException("An asset ID cannot be empty.");
@@ -54,16 +53,16 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
 
     public string Name
     {
-        get { lock (Access.SyncRoot) { RequireIdle(); return _name; } }
-        set { lock (Access.SyncRoot) { RequireIdle(); _name = value ?? throw new ArgumentNullException(nameof(value)); } }
+        get { lock (SyncRoot) { RequireIdle(); return _name; } }
+        set { lock (SyncRoot) { RequireIdle(); _name = value ?? throw new ArgumentNullException(nameof(value)); } }
     }
 
     public string AssetType
     {
-        get { lock (Access.SyncRoot) { RequireIdle(); return _assetType; } }
+        get { lock (SyncRoot) { RequireIdle(); return _assetType; } }
         protected set
         {
-            lock (Access.SyncRoot)
+            lock (SyncRoot)
             {
                 RequireIdle();
                 if (_file is not null && value != _assetType)
@@ -72,21 +71,16 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
             }
         }
     }
-    [BinaryIgnore] public PageArena Pages { get; }
-    [BinaryIgnore] public ChunkStreamingMetrics? StreamingMetrics
-    {
-        get { using AssetFile? file = RetainFile(); return file?.StreamingMetrics; }
-    }
-    [BinaryIgnore] public Guid SourceVersion { get { lock (Access.SyncRoot) { RequireIdle(); return _file?.Version ?? Guid.Empty; } } }
-    [BinaryIgnore] public string SourcePath { get { lock (Access.SyncRoot) { RequireIdle(); return _file?.Path ?? ""; } } }
+    [BinaryIgnore] public Guid SourceVersion { get { lock (SyncRoot) { RequireIdle(); return _file?.Version ?? Guid.Empty; } } }
+    [BinaryIgnore] public string SourcePath { get { lock (SyncRoot) { RequireIdle(); return _file?.Path ?? ""; } } }
 
     protected void RequireOpen() => ObjectDisposedException.ThrowIf(_disposed, this);
-    protected void RequireIdle() { RequireOpen(); Access.RequireIdle(); }
+    protected void RequireIdle() => RequireOpen();
 
     protected void AttachFile(AssetFile file)
     {
         AssetEntry entry = file.Describe();
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
             if (entry.AssetGuid != _id || entry.AssetType != _assetType)
@@ -99,7 +93,7 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
 
     protected AssetFile? RetainFile()
     {
-        lock (Access.SyncRoot) { RequireIdle(); return _file?.Retain(); }
+        lock (SyncRoot) { RequireIdle(); return _file?.Retain(); }
     }
 
     public abstract Asset Duplicate();
@@ -107,7 +101,7 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
     /// <summary>Shares content with a new independent identity. Source chunks remain available for later saving.</summary>
     public virtual Asset CreateCopy(Guid id = default)
     {
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
             Guid identity = id == Guid.Empty ? Guid.NewGuid() : id;
@@ -186,14 +180,14 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
     protected virtual void ReleaseContent() { }
 
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         AssetFile? file;
         Task[] blockReads;
         Exception? contentError = null;
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
-            if (_disposed) return;
+            if (_close is not null) return new(_close);
             RequireIdle();
             _disposed = true;
             file = _file;
@@ -205,7 +199,14 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
                 finally { ReleaseBlocks(); }
             }
             catch (Exception error) { contentError = error; }
+            _close = CloseAsync(file, blockReads, contentError);
+            return new(_close);
         }
+    }
+
+    private async Task CloseAsync(AssetFile? file, Task[] blockReads, Exception? contentError)
+    {
+        await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
             try { _blockReadCancellation?.Cancel(); }

@@ -26,7 +26,7 @@ public sealed class GltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshSettings
     public ValueTask ImportAsync(GltfMesh source, GltfMeshSettings settings, ImportContext context, ImportOutput output,
         CancellationToken cancellationToken)
     {
-        var geometry = new MeshBlock(output.Target.Pages);
+        var geometry = new MeshBlock();
         try
         {
             Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);

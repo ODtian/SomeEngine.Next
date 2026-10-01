@@ -777,7 +777,7 @@ internal sealed partial class FrameExecutor
         if (row.Pipeline is not null)
         {
             _frame.Backend.SetPipeline(context, row.Pipeline);
-            if (row.ParameterLayout != ShaderVariableLayout.Null)
+            if (row.ParameterLayout != VariableLayoutReflection.Null)
                 SetParameterBindings(pass, context);
         }
         if (row.PersistentCallbacks is not null)
@@ -1314,9 +1314,9 @@ internal sealed partial class FrameExecutor
     private sealed class ParameterBlock
     {
         internal int Pass;
-        internal required ShaderVariableLayout Layout;
+        internal required VariableLayoutReflection Layout;
         internal PersistentParameterBindings? Bindings;
-        internal ShaderVariableLayout? CachedLayout;
+        internal VariableLayoutReflection? CachedLayout;
         internal readonly List<ParameterBindingData> BindingData = [];
         internal byte[]? Data;
         internal ResourceBinding[] Resources = [];
@@ -1439,7 +1439,7 @@ internal sealed partial class FrameExecutor
         _parameterPassChanges.Clear();
     }
 
-    private ParameterBlock GetParameterBlock(PassParameters parameters, int pass, int index, ShaderVariableLayout layout, byte[]? data)
+    private ParameterBlock GetParameterBlock(PassParameters parameters, int pass, int index, VariableLayoutReflection layout, byte[]? data)
     {
         if (index == parameters.Blocks.Count) parameters.Blocks.Add(new() { Layout = layout });
         ParameterBlock block = parameters.Blocks[index];

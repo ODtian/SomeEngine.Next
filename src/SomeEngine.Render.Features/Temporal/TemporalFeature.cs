@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Entities;
+using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
@@ -83,7 +84,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 rasterizer: new RasterizerState(Cull: CullType.None),
                 label: "Temporal resolve");
             _resourceOrder = FeatureResourceLayout.Resolve<TemporalResource>(
-                pipeline.Program.Layout.GetGlobalParamsVarLayout(),
+                pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 ResolveResource);
 
             using RenderGraphEdit edit = graph.BeginEdit();
@@ -120,7 +121,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 new TemporalResolvePassData(resolvedAttachment, width, height),
                 new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 pipeline.Pipeline,
-                pipeline.Program.Layout.GetGlobalParamsVarLayout(),
+                pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 default,
                 TemporalResolvePassData.Declare,
                 TemporalResolvePassData.Record);

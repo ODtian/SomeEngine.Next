@@ -23,7 +23,7 @@ public static class MeshIntegrity
         return true;
     }
 
-    public static ImmutableArray<MeshPayloadPageDigest> Inspect(PageBuffer payload, long bvhOffset, string vertexEncoding)
+    public static ImmutableArray<MeshPayloadPageDigest> Inspect(ReadOnlyMemory<byte> payload, long bvhOffset, string vertexEncoding)
     {
         ValidateBvh(payload.Length, bvhOffset);
         ulong encoding = VertexEncodingCompatibility.Hash(vertexEncoding);
@@ -32,11 +32,11 @@ public static class MeshIntegrity
         long offset = 0;
         while (offset < bvhOffset)
         {
-            payload.Read(offset, header);
+            payload.Span.Slice(checked((int)offset), header.Length).CopyTo(header);
             MeshPayloadPage page = MeshPayloadLayout.ReadPage(header, offset, bvhOffset);
             if (page.VertexEncodingHash != encoding)
                 throw new InvalidDataException($"Mesh page at byte {offset} uses a different vertex encoding.");
-            using PageRange<byte> bytes = payload.Retain(offset, page.Size);
+            ReadOnlyMemory<byte> bytes = payload.Slice(checked((int)offset), page.Size);
             pages.Add(new()
             {
                 Offset = checked((ulong)offset), Length = checked((uint)page.Size),
@@ -69,26 +69,21 @@ public static class MeshIntegrity
         return offset;
     }
 
-    public static void ValidatePage(PageBuffer bytes, MeshPayloadPageDigest description)
+    public static void ValidatePage(ReadOnlyMemory<byte> bytes, MeshPayloadPageDigest description)
     {
         if (bytes.Length != description.Length) throw new InvalidDataException("Mesh page length differs from its description.");
         Span<byte> header = stackalloc byte[MeshPageHeader.Size];
-        bytes.Read(0, header);
+        bytes.Span[..header.Length].CopyTo(header);
         MeshPayloadPage page = MeshPayloadLayout.ReadPage(header, checked((long)description.Offset),
             checked((long)description.Offset + bytes.Length));
         if (page.ClusterCount != description.ClusterCount || page.VertexEncodingHash != description.VertexEncodingHash)
             throw new InvalidDataException("Mesh page header differs from its authenticated description.");
-        using PageRange<byte> content = bytes.Retain();
-        if (!CryptographicOperations.FixedTimeEquals(Hash(content).AsSpan(), description.Sha256.AsSpan()))
+        if (!CryptographicOperations.FixedTimeEquals(Hash(bytes).AsSpan(), description.Sha256.AsSpan()))
             throw new InvalidDataException("Mesh page bytes do not match their authenticated SHA-256 digest.");
     }
 
-    public static ImmutableArray<byte> Hash(PageRange<byte> bytes)
-    {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        foreach (ReadOnlyMemory<byte> segment in bytes.Sequence) hash.AppendData(segment.Span);
-        return ImmutableArray.Create(hash.GetHashAndReset());
-    }
+    public static ImmutableArray<byte> Hash(ReadOnlyMemory<byte> bytes)
+        => ImmutableArray.Create(SHA256.HashData(bytes.Span));
 
     private static void ValidateBvh(long length, long offset)
     {

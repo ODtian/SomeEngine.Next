@@ -10,7 +10,7 @@ public sealed record GltfImporterSettings
     public string LitMaterialTemplate { get; init; } = "assets/Materials/Standard.material.asset";
     public string UnlitMaterialTemplate { get; init; } = "assets/Materials/TestUnlit_1.material.asset";
     public bool GenerateTangents { get; init; }
-    public bool RequirePersistentElementIds { get; init; }
+    public bool RequirePersistentElementIds { get; init; } = true;
     public string PersistentIdProperty { get; init; } = "someengine_id";
     /// <summary>Project code or build input version. Bump when project conversion behavior changes.</summary>
     public string BuildVersion { get; init; } = "default-project-gltf-6";

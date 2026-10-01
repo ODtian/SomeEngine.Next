@@ -9,58 +9,36 @@ public readonly partial record struct Point(float X, float Y);
 
 /// <summary>A piecewise linear curve using already available points. It requires no asset facilities.</summary>
 [SomeEngine.Serialization.AssetUse]
-public sealed class Curve : IDisposable
+public sealed class Curve
 {
-    private PageRange<Point>? _points;
-
-    /// <summary>Takes responsibility for the supplied read, including disposal if the points are invalid.</summary>
-    public Curve(PageRange<Point> points) => _points = CheckPoints(points);
-
+    private ReadOnlyMemory<Point> _points;
+    public Curve(ReadOnlyMemory<Point> points) => _points = CheckPoints(points);
     public float Evaluate(float x)
     {
-        var points = (_points ?? throw new ObjectDisposedException(nameof(Curve))).Sequence;
-        Point previous = points.FirstSpan[0];
+        ReadOnlySpan<Point> points = _points.Span;
+        Point previous = points[0];
         if (x <= previous.X) return previous.Y;
-        foreach (var segment in points)
-            foreach (Point point in segment.Span)
-            {
-                if (x <= point.X)
-                    return previous.Y + (point.Y - previous.Y) * ((x - previous.X) / (point.X - previous.X));
-                previous = point;
-            }
+        foreach (Point point in points)
+        {
+            if (x <= point.X)
+                return previous.Y + (point.Y - previous.Y) * ((x - previous.X) / (point.X - previous.X));
+            previous = point;
+        }
         return previous.Y;
     }
-
-    /// <summary>Replaces points on this curve. Like Evaluate, callers serialize access to this operation.</summary>
-    public void Update(PageRange<Point> points)
+    public void Update(ReadOnlyMemory<Point> points) => _points = CheckPoints(points);
+    private static ReadOnlyMemory<Point> CheckPoints(ReadOnlyMemory<Point> points)
     {
-        PageRange<Point> next = CheckPoints(points);
-        if (_points is null) { next.Dispose(); throw new ObjectDisposedException(nameof(Curve)); }
-        PageRange<Point> previous = _points;
-        _points = next;
-        previous.Dispose();
-    }
-
-    private static PageRange<Point> CheckPoints(PageRange<Point> points)
-    {
-        ArgumentNullException.ThrowIfNull(points);
-        try
+        if (points.IsEmpty) throw new ArgumentException("A curve needs at least one point.", nameof(points));
+        float previous = float.NegativeInfinity;
+        foreach (Point point in points.Span)
         {
-            if (points.Sequence.IsEmpty) throw new ArgumentException("A curve needs at least one point.", nameof(points));
-            float previous = float.NegativeInfinity;
-            foreach (var segment in points.Sequence)
-                foreach (Point point in segment.Span)
-                {
-                    if (!float.IsFinite(point.X) || !float.IsFinite(point.Y) || point.X <= previous)
-                        throw new ArgumentException("Curve coordinates must be finite and X must increase.", nameof(points));
-                    previous = point.X;
-                }
-            return points;
+            if (!float.IsFinite(point.X) || !float.IsFinite(point.Y) || point.X <= previous)
+                throw new ArgumentException("Curve coordinates must be finite and X must increase.", nameof(points));
+            previous = point.X;
         }
-        catch { points.Dispose(); throw; }
+        return points;
     }
-
-    public void Dispose() { _points?.Dispose(); _points = null; }
 }
 
 /// <summary>An independent use of the same curve definition as evenly spaced samples.</summary>

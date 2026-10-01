@@ -26,19 +26,18 @@ public sealed class ObjectDestinationTests
     }
 
     [Fact]
-    public void DecodeIntoReusesTheObjectAndItsSelectedPageCollection()
+    public void DecodeIntoReusesTheObjectAndItsSelectedCollection()
     {
         var source = new ObjectDestinationValue(Guid.NewGuid(),
             Enumerable.Range(0, 3000).Select(i => new GeneratedPoint { X = i, Y = -i }).ToArray());
-        using var arena = new PageArena(new ResidencyBudgetLedger());
-        using var encoded = new PageBufferWriter(arena);
+        var encoded = new ArrayBufferWriter<byte>();
         BinarySerializer.Write(encoded, source);
-        using var input = encoded.Retain();
-        using var points = new PageList<GeneratedPoint>(arena);
+        var input = encoded.WrittenMemory;
+        var points = new List<GeneratedPoint>();
         points.Add(new GeneratedPoint { X = 100, Y = 200 });
         var target = new ObjectDestinationValue(Guid.NewGuid(), points);
         int constructed = ObjectDestinationValue.ConstructedCount;
-        BinarySerializer.DeserializeInto(input.Sequence, target);
+        BinarySerializer.DeserializeInto(input.Span, target);
         Assert.Equal(source.Id, target.Id);
         Assert.Same(points, target.Points);
         Assert.Equal(source.Points, points);

@@ -1570,7 +1570,7 @@ internal sealed unsafe partial class D3D12Backend
     private sealed class D3D12PersistentParameterBindings : PersistentParameterBindings
     {
         private readonly D3D12Device _device;
-        private RetainedShaderProgram? _program;
+        private IComponentType? _slangCode;
         private readonly NativeLease _pipelineState;
         private readonly object _gate = new();
         private D3D12PersistentParameterData? _current;
@@ -1580,7 +1580,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Device device,
             D3D12Pipeline ownerPipeline,
             NativeParameterBinding nativeLayout,
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             string? label)
             : base(device, layout, label)
         {
@@ -1593,20 +1593,19 @@ internal sealed unsafe partial class D3D12Backend
                 nativeLayout.OrdinaryRoot is { UsesRootConstants: false } ordinary
                     ? ordinary.RootParameterIndex
                     : null;
-            RetainedShaderProgram? program = null;
+            IComponentType? slangCode = null;
             NativeLease? pipelineState = null;
             try
             {
-                program = ownerPipeline.RetainProgramReference();
+                slangCode = ownerPipeline.GetSlangCodeReference();
                 pipelineState = ownerPipeline.RetainNativeState();
-                _program = program;
-                program = null;
+                _slangCode = slangCode;
+                slangCode = null;
                 _pipelineState = pipelineState;
             }
             catch
             {
                 pipelineState?.Release();
-                program?.Dispose();
                 throw;
             }
         }
@@ -1659,7 +1658,7 @@ internal sealed unsafe partial class D3D12Backend
             lock (_gate)
                 Interlocked.Exchange(ref _current, null)?.Release();
             _pipelineState.Release();
-            Interlocked.Exchange(ref _program, null)?.Dispose();
+            _ = Interlocked.Exchange(ref _slangCode, null);
             _device.UnregisterChild(this);
         }
     }

@@ -29,7 +29,7 @@ public sealed class AssetArchitectureAcceptanceTests
 
         Guid materialGuid = Guid.NewGuid();
         string materialPath = directory.File("root.material.asset");
-        using MaterialAsset material = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, materialGuid) {
+        using MaterialAsset material = new StandardMaterialAsset(materialGuid) {
             Name = "strong material",
         };
         _ = new StandardMaterialParameters(material.GetBlock<MaterialBlock>()) { Roughness = 0.37f };
@@ -80,8 +80,8 @@ public sealed class AssetArchitectureAcceptanceTests
                 },
             ],
         };
-        pixels.Chunks.Set(pixels.MipTiles[0].ChunkKey, expected);
-        using var texture = new TextureAsset(PageArena.Shared, Guid.NewGuid()) { Name = "lease-texture" };
+        pixels.SetBytes(pixels.MipTiles[0].ChunkKey, expected);
+        using var texture = new TextureAsset(Guid.NewGuid()) { Name = "lease-texture" };
         texture.SetBlock(pixels);
         await texture.SaveAsync(path);
 
@@ -97,33 +97,25 @@ public sealed class AssetArchitectureAcceptanceTests
     }
 
     [Fact]
-    public async Task ShaderVariant_IsAvailableThroughPublicDocument()
+    public async Task ShaderCodeChunkIsAvailableThroughPublicDocument()
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("lease.shader.asset");
         byte[] expected = Enumerable.Range(0, 257).Select(static value => (byte)value).ToArray();
-        using var shader = new ShaderAsset(PageArena.Shared, Guid.NewGuid()) { Name = "lease-shader" };
-        using var code = new ShaderBlock {
-            Programs =
-            [
-                new CookedShaderProgram
-                {
-                    Backend = "test",
-                    DataChunkKey = ShaderBlock.BytecodeChunkKey(0), DataDecodedLength = (ulong)expected.Length,
-                },
-            ],
-            EntryPointReflections = [new ShaderEntryPointReflection { EntryPoint = "main" }],
-        };
-        code.Chunks.Set(code.Programs[0].DataChunkKey, expected);
-        shader.SetBlock(code);
+        using var shader = new ShaderAsset(Guid.NewGuid()) { Name = "lease-shader" };
+        ShaderBlock code = shader.GetBlock<ShaderBlock>();
+        var sessionDescription = ShaderTestCompilation.CreateSessionDescription();
+        ulong contentKey = ShaderBlock.TargetCodeKey(sessionDescription, 0);
+        code.SetTargetCode(sessionDescription, 0, expected);
         await shader.SaveAsync(path);
 
         using ShaderAsset file = await ShaderAsset.OpenAsync(path);
         await using BinaryDocument document = await BinaryDocument.OpenAsync(FileRangeSource.Open(path), ShaderAsset.WireType, ownsSource: true);
-        CookedShaderProgram program = Assert.Single(file.GetBlock<ShaderBlock>().Programs);
         Assert.Empty(file.GetBlock<ShaderBlock>().Chunks.Keys);
-        ulong codeKey = file.BlockDescriptions.Single(block => block.BlockTypeId == ShaderBlock.BlockTypeId).GetStorageKey(program.DataChunkKey);
-        using ChunkLease lease = await document.AcquireChunkAsync(new BinaryChunkRef(codeKey, (long)program.DataDecodedLength));
+        ulong codeKey = file.BlockDescriptions.Single(block => block.BlockTypeId == ShaderBlock.BlockTypeId)
+            .GetStorageKey(contentKey);
+        using ChunkLease lease = await document.AcquireChunkAsync(
+            new BinaryChunkRef(codeKey, expected.Length));
 
         Assert.Equal(expected, lease.Memory.ToArray());
     }
@@ -134,11 +126,10 @@ public sealed class AssetArchitectureAcceptanceTests
         using var directory = new TemporaryDirectory();
         string path = directory.File("range.mesh.asset");
         byte[] payload = CreateMinimalStreamedMeshPayload(out ulong bvhOffset);
-        using var mesh = new MeshAsset(PageArena.Shared, Guid.NewGuid()) { Name = "range-mesh" };
+        using var mesh = new MeshAsset(Guid.NewGuid()) { Name = "range-mesh" };
         using var geometry = new MeshBlock();
         using var clusters = new ClusterMeshBlock { VertexEncoding = StandardClusterVertexEncoder.EncodingCompatibility };
-        using var bytes = new PageBuffer(mesh.Pages, payload.Length);
-        bytes.Write(0, payload);
+        ReadOnlyMemory<byte> bytes = payload;
         clusters.SetPayload(bytes, bvhOffset);
         mesh.SetBlock(geometry);
         mesh.SetBlock(clusters);
@@ -184,29 +175,24 @@ public sealed class AssetArchitectureAcceptanceTests
             SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 1, Height = 1, ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 4 }],
         };
-        pixels.Chunks.Set(pixels.MipTiles[0].ChunkKey, new byte[] { 1, 0, 0, 255 });
-        using var texture = new TextureAsset(PageArena.Shared, textureGuid) { Name = "texture" };
+        pixels.SetBytes(pixels.MipTiles[0].ChunkKey, new byte[] { 1, 0, 0, 255 });
+        using var texture = new TextureAsset(textureGuid) { Name = "texture" };
         texture.SetBlock(pixels);
         await texture.SaveAsync(texturePath);
         byte[] streamedMeshPayload = CreateMinimalStreamedMeshPayload(out ulong bvhOffset);
-        using var mesh = new MeshAsset(PageArena.Shared, meshGuid) { Name = "mesh" };
+        using var mesh = new MeshAsset(meshGuid) { Name = "mesh" };
         using var geometry = new MeshBlock();
         using var clusters = new ClusterMeshBlock { VertexEncoding = StandardClusterVertexEncoder.EncodingCompatibility };
-        using var bytes = new PageBuffer(mesh.Pages, streamedMeshPayload.Length);
-        bytes.Write(0, streamedMeshPayload);
+        ReadOnlyMemory<byte> bytes = streamedMeshPayload;
         clusters.SetPayload(bytes, bvhOffset);
         mesh.SetBlock(geometry);
         mesh.SetBlock(clusters);
         await mesh.SaveAsync(meshPath);
-        using var shader = new ShaderAsset(PageArena.Shared, shaderGuid) { Name = "shader" };
-        using var code = new ShaderBlock {
-            Programs = [new CookedShaderProgram { Backend = "test", DataChunkKey = ShaderBlock.BytecodeChunkKey(0), DataDecodedLength = 1 }],
-            EntryPointReflections = [new ShaderEntryPointReflection { EntryPoint = "main" }],
-        };
-        code.Chunks.Set(code.Programs[0].DataChunkKey, new byte[] { 3 });
-        shader.SetBlock(code);
+        using var shader = new ShaderAsset(shaderGuid) { Name = "shader" };
+        ShaderBlock code = shader.GetBlock<ShaderBlock>();
+        code.SetTargetCode(ShaderTestCompilation.CreateSessionDescription(), 0, new byte[] { 3 });
         await shader.SaveAsync(shaderPath);
-        using MaterialAsset material = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, materialGuid) {
+        using MaterialAsset material = new StandardMaterialAsset(materialGuid) {
             Name = "material",
         };
             await material.SaveAsync(materialPath);
@@ -240,7 +226,7 @@ public sealed class AssetArchitectureAcceptanceTests
         Guid shaderGuid)
     {
         AssetId<ShaderAsset> shader = new(shaderGuid);
-        var asset = new ClusterShadersAsset(global::SomeEngine.Serialization.Containers.PageArena.Shared, assetGuid) { Name = name };
+        var asset = new ClusterShadersAsset(assetGuid) { Name = name };
         using var settings = new ClusterShadersBlock {
             Operations = Enum.GetValues<ClusterShaderOperationRole>()
                 .Where(static role => role != ClusterShaderOperationRole.None)
@@ -269,13 +255,11 @@ public sealed class AssetArchitectureAcceptanceTests
                 {
                     Asset = shaderGuid,
                     EntryPoint = "vertex",
-                    Stage = ShaderStage.Vertex,
                 },
                 new ShaderRef
                 {
                     Asset = shaderGuid,
                     EntryPoint = "pixel",
-                    Stage = ShaderStage.Pixel,
                 },
             ] };
         }
@@ -287,7 +271,6 @@ public sealed class AssetArchitectureAcceptanceTests
                 {
                     Asset = shaderGuid,
                     EntryPoint = "compute",
-                    Stage = ShaderStage.Compute,
                 },
             ] };
         }

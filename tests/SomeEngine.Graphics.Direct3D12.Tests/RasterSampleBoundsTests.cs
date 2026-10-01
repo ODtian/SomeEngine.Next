@@ -67,7 +67,7 @@ public sealed class RasterSampleBoundsTests
                     ? float4(0, 1, 0, 1) : float4(1, 0, 0, 1);
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths(
+        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
             "sample_coverage", source,
             [new("DrawTriangle", SlangStage.Vertex), new("CheckCoverage", SlangStage.Fragment)],
             "sm_6_0", ShaderDirectory());
@@ -87,8 +87,7 @@ public sealed class RasterSampleBoundsTests
         using ColorAttachmentView targetView = backend.CreateColorAttachmentView(device,
             new(target, range, Format.R8G8B8A8UNorm, TextureViewDimension.Texture2D));
         using Buffer readback = backend.CreateBuffer(device, new(pitch * size, BufferUsages.CopyDestination), MemoryType.Readback);
-        using Pipeline pipeline = backend.CreateGraphicsPipeline(device, new(shader.Program,
-            shader.GetEntryPoint(0), shader.GetEntryPoint(1), [], [], PrimitiveTopology.TriangleList,
+        using Pipeline pipeline = backend.CreateGraphicsPipeline(device, new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0), shader.GetEntryPoint(1), shader.GetEntryCode(1), [], [], PrimitiveTopology.TriangleList,
             StripCut.Disabled, new RasterizerState(Cull: CullType.None), new MultisampleState(SampleCount: 1),
             new DepthStencilState(), new BlendState([new(Enabled: false, WriteMask: ColorWriteMasks.All)]),
             new AttachmentFormatSignature([Format.R8G8B8A8UNorm], null)));
@@ -99,7 +98,7 @@ public sealed class RasterSampleBoundsTests
         backend.SetPipeline(context, pipeline);
         backend.SetViewports(context, [new(-origin, -origin, screenSize, screenSize)]);
         backend.SetScissors(context, [new(0, 0, size, size)]);
-        backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout(),
+        backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
             [ResourceBinding.ReadOnlyBuffer(positionsView)], []));
         backend.BeginRendering(context, new([new(targetView, LoadType.Clear, StoreType.Store, Vector4.Zero)], null, size, size));
         backend.Draw(context, new((uint)vertices.Length, 1, 0, 0));

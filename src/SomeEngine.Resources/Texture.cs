@@ -6,14 +6,15 @@ using GraphicsViewDimension = SomeEngine.Graphics.TextureViewDimension;
 
 namespace SomeEngine.Resources;
 
-/// <summary>Caller-provided tile pixels; Texture.Create copies them into its retained pages.</summary>
+/// <summary>Immutable managed pixels for one texture tile. The caller must not modify published bytes.</summary>
 public readonly record struct TexturePixels(TextureMipTile Tile, ReadOnlyMemory<byte> Bytes);
 
-/// <summary>Texture shape and ready pixel pages, independent of asset files and reading schedulers.</summary>
+/// <summary>Texture shape and ready immutable pixels, independent of asset files.</summary>
 [SomeEngine.Serialization.AssetUse]
 public sealed partial class Texture : IDisposable, IAsyncDisposable
 {
-    private PageBufferMap? _pixels;
+    private ReadOnlyMemory<byte>[] _pixels = [];
+    public Guid DataVersion { get; internal set; }
     private int _disposed;
     private Texture() { }
 
@@ -31,7 +32,6 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     public ulong Revision { get; private set; } = 1;
     public event Action<Texture>? Changed;
     public uint BootstrapMipLevel => MipLevelCount - 1;
-    public PageArena Pages => (_pixels ?? throw new ObjectDisposedException(nameof(Texture))).Arena;
     public bool HasBootstrap
     {
         get
@@ -39,7 +39,7 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
             lock (_deviceGate)
             {
                 ObjectDisposedException.ThrowIf(IsDisposed, this);
-                return MipTiles.Where(tile => tile.MipLevel == BootstrapMipLevel).All(tile => _pixels!.Contains(tile.ChunkKey));
+                return MipTiles.Select((tile, index) => (tile, index)).Where(row => row.tile.MipLevel == BootstrapMipLevel).All(row => !_pixels[row.index].IsEmpty);
             }
         }
     }
@@ -49,27 +49,17 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         1, Format, TextureUsages.Sampled | TextureUsages.CopyDestination, label: Name);
 
     public static Texture Create(in TextureDesc description, IReadOnlyList<TexturePixels> pixels,
-        GraphicsViewDimension sampledDimension, Format? sampledFormat = null, PageArena? pages = null)
-    {
-        ArgumentNullException.ThrowIfNull(pixels);
-        using var content = new PageBufferMap(pages ?? PageArena.Shared);
-        var tiles = new TextureMipTile[pixels.Count];
-        for (int index = 0; index < pixels.Count; index++)
-        {
-            TexturePixels input = pixels[index];
-            TextureMipTile tile = TextureTiles.Describe(input.Tile, input.Bytes.Length);
-            if (content.Contains(tile.ChunkKey)) throw new InvalidDataException("Texture pixels repeat a tile.");
-            content.Set(tile.ChunkKey, input.Bytes.Span);
-            tiles[index] = tile;
-        }
-        Array.Sort(tiles, TextureTiles.Compare);
-        return Create(description, tiles, content, sampledDimension, sampledFormat);
-    }
-
-    public static Texture Create(in TextureDesc description, IReadOnlyList<TextureMipTile> tiles, PageBufferMap pixels,
         GraphicsViewDimension sampledDimension, Format? sampledFormat = null)
     {
-        ArgumentNullException.ThrowIfNull(pixels);
+        TexturePixels[] values = pixels.Select(input => new TexturePixels(TextureTiles.Describe(input.Tile, input.Bytes.Length), input.Bytes)).ToArray();
+        TextureMipTile[] tiles = values.Select(input => input.Tile).ToArray();
+        Array.Sort(tiles, TextureTiles.Compare);
+        return Create(description, tiles, values, sampledDimension, sampledFormat);
+    }
+
+    public static Texture Create(in TextureDesc description, IReadOnlyList<TextureMipTile> tiles,
+        IReadOnlyList<TexturePixels> pixels, GraphicsViewDimension sampledDimension, Format? sampledFormat = null)
+    {
         Format viewFormat = sampledFormat ?? description.Format;
         TextureTiles.Validate(description, sampledDimension, viewFormat, tiles);
         TextureMipTile[] bootstrap = TextureTiles.Bootstrap(description, sampledDimension, tiles);
@@ -80,67 +70,60 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
             MipLevelCount = description.MipLevelCount,
             ArrayLayerCount = TextureTiles.IsCube(sampledDimension) ? description.ArrayLayerCount / 6 : description.ArrayLayerCount,
             Format = description.Format, SampledFormat = viewFormat, SampledDimension = sampledDimension,
-            MipTiles = tiles.ToImmutableList(),
-            _pixels = pixels.Duplicate(),
+            MipTiles = tiles.ToImmutableList(), _pixels = new ReadOnlyMemory<byte>[tiles.Count],
         };
-        try
+        foreach (TexturePixels input in pixels)
         {
-            result.ValidatePixels(result._pixels);
-            foreach (TextureMipTile tile in bootstrap)
-                if (!result._pixels.Contains(tile.ChunkKey)) throw new InvalidDataException("Texture pixels do not contain the complete coarsest mip.");
-            return result;
+            int index = result.FindTile(input.Tile.ChunkKey);
+            result.ValidatePixels(index, input.Bytes);
+            if (!result._pixels[index].IsEmpty) throw new InvalidDataException("Texture pixels repeat a tile.");
+            result._pixels[index] = input.Bytes;
         }
-        catch { result.Dispose(); throw; }
+        foreach (TextureMipTile tile in bootstrap)
+            if (result._pixels[result.FindTile(tile.ChunkKey)].IsEmpty)
+                throw new InvalidDataException("Texture pixels do not contain the complete coarsest mip.");
+        return result;
     }
 
-    public bool TryRetainTile(ulong key, [NotNullWhen(true)] out PageRange<byte>? pixels)
+    public bool TryGetTile(ulong key, out ReadOnlyMemory<byte> pixels)
     {
         lock (_deviceGate)
         {
             ObjectDisposedException.ThrowIf(IsDisposed, this);
-            pixels = _pixels!.Contains(key) ? _pixels.Retain(key) : null;
-            return pixels is not null;
+            int index = MipTiles.FindIndex(tile => tile.ChunkKey == key);
+            pixels = index < 0 ? default : _pixels[index];
+            return !pixels.IsEmpty;
         }
     }
 
-    /// <summary>Adds explicitly acquired tiles to this content revision. Existing ready tiles are unchanged.</summary>
-    public void AddPixels(PageBufferMap pixels, ulong expectedRevision)
+    public void AddPixels(IReadOnlyList<TexturePixels> pixels, ulong expectedRevision)
     {
-        ArgumentNullException.ThrowIfNull(pixels);
-        using PageBufferMap input = pixels.Duplicate();
         lock (_deviceGate)
         {
             ObjectDisposedException.ThrowIf(IsDisposed, this);
             if (Revision != expectedRevision || _updateCompletion is not null)
                 throw new InvalidOperationException("The texture changed while its additional pixels were being acquired.");
-            ValidatePixels(input);
-            PageBufferMap replacement = _pixels!.Duplicate();
-            try
+            var replacement = (ReadOnlyMemory<byte>[])_pixels.Clone();
+            foreach (TexturePixels input in pixels)
             {
-                foreach (ulong key in input.Keys)
-                {
-                    if (replacement.Contains(key)) continue;
-                    using PageBuffer bytes = input.DuplicateBuffer(key);
-                    replacement.Set(key, bytes);
-                }
+                int index = FindTile(input.Tile.ChunkKey);
+                ValidatePixels(index, input.Bytes);
+                if (replacement[index].IsEmpty) replacement[index] = input.Bytes;
             }
-            catch { replacement.Dispose(); throw; }
-            PageBufferMap previous = _pixels;
             _pixels = replacement;
-            previous.Dispose();
         }
         RaiseChanged();
     }
 
-    private void ValidatePixels(PageBufferMap pixels)
+    private int FindTile(ulong key)
     {
-        foreach (ulong key in pixels.Keys)
-        {
-            TextureMipTile tile = MipTiles.FirstOrDefault(tile => tile.ChunkKey == key)
-                ?? throw new InvalidDataException("Pixels contain a tile absent from the texture description.");
-            if ((ulong)pixels.GetLength(key) != tile.DecodedLength)
-                throw new InvalidDataException("Texture pixels differ from the declared tile length.");
-        }
+        int index = MipTiles.FindIndex(tile => tile.ChunkKey == key);
+        return index >= 0 ? index : throw new InvalidDataException("Pixels contain an unknown tile.");
+    }
+    private void ValidatePixels(int index, ReadOnlyMemory<byte> pixels)
+    {
+        if ((ulong)pixels.Length != MipTiles[index].DecodedLength)
+            throw new InvalidDataException("Texture pixels differ from the declared tile length.");
     }
 
     /// <summary>Transfers ready replacement content through the existing device completion boundary.</summary>
@@ -165,14 +148,13 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
         cancellationToken.ThrowIfCancellationRequested();
-        return UpdateAsync(Create(description, pixels, sampledDimension, sampledFormat, Pages), cancellationToken);
+        return UpdateAsync(Create(description, pixels, sampledDimension, sampledFormat), cancellationToken);
     }
 
     private static ValueTask ApplyReloadAsync(Texture current, Texture replacement, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ulong revision = checked(current.Revision + 1);
-        PageBufferMap? previous = current._pixels;
         current.Name = replacement.Name;
         current.Dimension = replacement.Dimension;
         current.Width = replacement.Width;
@@ -184,9 +166,9 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         current.SampledFormat = replacement.SampledFormat;
         current.SampledDimension = replacement.SampledDimension;
         current.MipTiles = replacement.MipTiles;
-        current._pixels = Interlocked.Exchange(ref replacement._pixels, null);
+        current._pixels = replacement._pixels;
+        current.DataVersion = replacement.DataVersion;
         current.Revision = revision;
-        previous?.Dispose();
         current.RaiseChanged();
         return ValueTask.CompletedTask;
     }
@@ -208,7 +190,7 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         try { ReleaseDevices(); }
         finally
         {
-            lock (_deviceGate) Interlocked.Exchange(ref _pixels, null)?.Dispose();
+            lock (_deviceGate) _pixels = [];
         }
     }
     public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }

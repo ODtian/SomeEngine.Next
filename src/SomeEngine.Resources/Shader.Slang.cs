@@ -1,32 +1,70 @@
+using System.Buffers;
 using System.Collections.Immutable;
-using System.Runtime.InteropServices.Marshalling;
 using SlangShaderSharp;
 
 namespace SomeEngine.Resources;
 
-public partial class Shader
+public unsafe partial class Shader
 {
-    private ISession? _slangSession;
-    private ImmutableArray<IModule> _slangUnits = [];
-    private ImmutableArray<IEntryPoint> _slangEntries = [];
-    private IComponentType? _slangCode;
-    private ImmutableArray<TargetDesc> _slangTargets = [];
-    private ImmutableArray<ShaderReflection> _slangReflections = [];
-    private ImmutableArray<ISlangBlob> _slangEntryCode = [];
-    private int _slangEntryCount;
+    private readonly IGlobalSession _slangGlobal;
+    private readonly ISession _slangSession;
+    private readonly ImmutableArray<IModule> _slangUnits;
+    private readonly ImmutableArray<IEntryPoint> _slangEntries;
+    private readonly IComponentType _slangCode;
+    private readonly ImmutableArray<TargetDesc> _slangTargets;
+    private readonly ImmutableArray<ShaderReflection> _slangReflections;
+    private readonly ImmutableArray<ISlangBlob?> _slangTargetBlobs;
+    private readonly ImmutableArray<ISlangBlob?> _slangEntryBlobs;
+    private readonly ImmutableArray<byte[]?> _slangTargetBytes;
+    private readonly ImmutableArray<byte[]> _slangEntryBytes;
+    private readonly int _slangEntryCount;
+
+    private Shader(
+        string name,
+        IGlobalSession global,
+        ISession session,
+        ImmutableArray<IModule> sourceUnits,
+        ImmutableArray<IEntryPoint> entries,
+        IComponentType linkedCode,
+        ImmutableArray<TargetDesc> targets,
+        ImmutableArray<ShaderReflection> reflections,
+        ImmutableArray<ISlangBlob?> targetBlobs,
+        ImmutableArray<ISlangBlob?> entryBlobs,
+        ImmutableArray<byte[]?> targetBytes,
+        ImmutableArray<byte[]> entryBytes,
+        int entryCount)
+    {
+        Name = name;
+        _slangGlobal = global;
+        _slangSession = session;
+        _slangUnits = sourceUnits;
+        _slangEntries = entries;
+        _slangCode = linkedCode;
+        _slangTargets = targets;
+        _slangReflections = reflections;
+        _slangTargetBlobs = targetBlobs;
+        _slangEntryBlobs = entryBlobs;
+        _slangTargetBytes = targetBytes;
+        _slangEntryBytes = entryBytes;
+        _slangEntryCount = entryCount;
+    }
 
     /// <summary>
-    /// Creates a resident shader by taking ownership of the supplied Slang interfaces.
-    /// Slang reflection and generated code stay valid until this shader is updated or disposed.
+    /// Creates an immutable shader that keeps the supplied Slang interfaces reachable.
+    /// Generated code remains in its original <see cref="ISlangBlob"/> objects.
     /// </summary>
     public static Shader CreateFromSlang(
         string name,
+        IGlobalSession global,
         ISession session,
         IReadOnlyList<IModule> sourceUnits,
         IReadOnlyList<IEntryPoint> entries,
         IComponentType linkedCode,
-        ReadOnlySpan<TargetDesc> targets)
+        ReadOnlySpan<TargetDesc> targets,
+        bool generateCode = true)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(global);
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(sourceUnits);
         ArgumentNullException.ThrowIfNull(entries);
@@ -35,148 +73,95 @@ public partial class Shader
             throw new ArgumentException("Creating a shader requires at least one Slang target.", nameof(targets));
 
         var reflections = ImmutableArray.CreateBuilder<ShaderReflection>(targets.Length);
-        var code = ImmutableArray.CreateBuilder<ISlangBlob>();
-        try
+        var targetBlobs = ImmutableArray.CreateBuilder<ISlangBlob?>(targets.Length);
+        var entryBlobs = ImmutableArray.CreateBuilder<ISlangBlob?>();
+        int entryCount = -1;
+        for (int targetIndex = 0; targetIndex < targets.Length; targetIndex++)
         {
-            int entryCount = -1;
-            for (int targetIndex = 0; targetIndex < targets.Length; targetIndex++)
+            ShaderReflection reflection = linkedCode.GetLayout(
+                targetIndex,
+                out ISlangBlob? layoutDiagnostics);
+            string layoutText = DiagnosticText(layoutDiagnostics);
+            if (reflection == ShaderReflection.Null)
             {
-                ShaderReflection reflection = linkedCode.GetLayout(targetIndex, out ISlangBlob? layoutDiagnostics);
-                try
-                {
-                    if (reflection == ShaderReflection.Null)
-                    {
-                        throw new InvalidDataException(
-                            $"Slang did not produce reflection for target {targetIndex}: " +
-                            DiagnosticText(layoutDiagnostics));
-                    }
-                }
-                finally
-                {
-                    Release(layoutDiagnostics);
-                }
-
-                int reflectedEntryCount = checked((int)reflection.EntryPointCount);
-                if (entryCount < 0)
-                    entryCount = reflectedEntryCount;
-                else if (entryCount != reflectedEntryCount)
-                    throw new InvalidDataException("Slang targets expose different entry-point counts.");
-                if (reflectedEntryCount != entries.Count)
-                    throw new InvalidDataException("Slang reflection differs from the supplied entry points.");
-
-                reflections.Add(reflection);
-                for (int entryIndex = 0; entryIndex < reflectedEntryCount; entryIndex++)
-                {
-                    SlangResult result = linkedCode.GetEntryPointCode(
-                        entryIndex,
-                        targetIndex,
-                        out ISlangBlob entryCode,
-                        out ISlangBlob? codeDiagnostics);
-                    try
-                    {
-                        if (result.Failed || entryCode is null || entryCode.GetBufferSize() == 0)
-                        {
-                            Release(entryCode);
-                            throw new InvalidDataException(
-                                $"Slang did not produce code for target {targetIndex}, entry {entryIndex}: " +
-                                DiagnosticText(codeDiagnostics));
-                        }
-                    }
-                    finally
-                    {
-                        Release(codeDiagnostics);
-                    }
-                    code.Add(entryCode);
-                }
+                throw new InvalidDataException(
+                    $"Slang did not produce reflection for target {targetIndex}: {layoutText}");
             }
 
-            return new Shader
+            int reflectedEntryCount = checked((int)reflection.EntryPointCount);
+            if (entryCount < 0)
+                entryCount = reflectedEntryCount;
+            else if (entryCount != reflectedEntryCount)
+                throw new InvalidDataException("Slang targets expose different entry-point counts.");
+            if (reflectedEntryCount != entries.Count)
+                throw new InvalidDataException("Slang reflection differs from the supplied entry points.");
+
+            reflections.Add(reflection);
+            targetBlobs.Add(generateCode
+                ? GetTargetBlob(linkedCode, targetIndex)
+                : null);
+
+            for (int entryIndex = 0; entryIndex < reflectedEntryCount; entryIndex++)
             {
-                Name = name,
-                _slangSession = session,
-                _slangUnits = sourceUnits.ToImmutableArray(),
-                _slangEntries = entries.ToImmutableArray(),
-                _slangCode = linkedCode,
-                _slangTargets = targets.ToArray().ToImmutableArray(),
-                _slangReflections = reflections.ToImmutable(),
-                _slangEntryCode = code.ToImmutable(),
-                _slangEntryCount = entryCount,
-            };
+                entryBlobs.Add(generateCode
+                    ? GetEntryBlob(linkedCode, targetIndex, entryIndex)
+                    : null);
+            }
         }
-        catch
-        {
-            Release(code);
-            Release(linkedCode);
-            ReleaseReverse(entries);
-            ReleaseReverse(sourceUnits);
-            Release(session);
-            throw;
-        }
+
+        int codeCount = checked(targets.Length * entryCount);
+        return new Shader(
+            name,
+            global,
+            session,
+            sourceUnits.ToImmutableArray(),
+            entries.ToImmutableArray(),
+            linkedCode,
+            targets.ToArray().ToImmutableArray(),
+            reflections.ToImmutable(),
+            targetBlobs.ToImmutable(),
+            entryBlobs.ToImmutable(),
+            Enumerable.Repeat<byte[]?>(null, targets.Length).ToImmutableArray(),
+            Enumerable.Repeat(Array.Empty<byte>(), codeCount).ToImmutableArray(),
+            entryCount);
     }
 
-    public bool HasSlangData
+    public bool HasSlangData => true;
+    public int SlangTargetCount => _slangTargets.Length;
+    public int SlangEntryCount => _slangEntryCount;
+    public int SlangSourceUnitCount => _slangUnits.Length;
+    public IModule GetSlangSourceUnit(int index) => _slangUnits[index];
+    public IEntryPoint GetSlangEntryPoint(int index) => _slangEntries[index];
+    public IComponentType SlangCode => _slangCode;
+    public TargetDesc GetSlangTarget(int targetIndex) => _slangTargets[targetIndex];
+    public ShaderReflection GetSlangReflection(int targetIndex) => _slangReflections[targetIndex];
+
+    public ISlangBlob? GetSlangEntryBlob(int targetIndex, int entryIndex) =>
+        _slangEntryBlobs[GetCodeIndex(targetIndex, entryIndex)];
+
+    public ReadOnlySequence<byte> GetSlangEntryBytes(int targetIndex, int entryIndex)
     {
-        get
-        {
-            ObjectDisposedException.ThrowIf(IsDisposed, this);
-            return _slangCode is not null;
-        }
+        byte[] bytes = _slangEntryBytes[GetCodeIndex(targetIndex, entryIndex)];
+        return new ReadOnlySequence<byte>(bytes);
     }
 
-    public int SlangTargetCount
+    public ISlangBlob? GetSlangTargetBlob(int targetIndex)
     {
-        get
-        {
-            ObjectDisposedException.ThrowIf(IsDisposed, this);
-            return _slangTargets.Length;
-        }
-    }
-
-    public int SlangEntryCount
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(IsDisposed, this);
-            return _slangEntryCount;
-        }
-    }
-
-    public IComponentType SlangCode
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(IsDisposed, this);
-            return _slangCode ?? throw new InvalidOperationException("The shader has no direct Slang data.");
-        }
-    }
-
-    public TargetDesc GetSlangTarget(int targetIndex)
-    {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
-        return _slangTargets[targetIndex];
-    }
-
-    public ShaderReflection GetSlangReflection(int targetIndex)
-    {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
-        return _slangReflections[targetIndex];
-    }
-
-    public ISlangBlob GetSlangEntryCode(int targetIndex, int entryIndex)
-    {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
         ArgumentOutOfRangeException.ThrowIfNegative(targetIndex);
-        ArgumentOutOfRangeException.ThrowIfNegative(entryIndex);
-        if (targetIndex >= _slangTargets.Length)
-            throw new ArgumentOutOfRangeException(nameof(targetIndex));
-        if (entryIndex >= _slangEntryCount)
-            throw new ArgumentOutOfRangeException(nameof(entryIndex));
-        return _slangEntryCode[checked(targetIndex * _slangEntryCount + entryIndex)];
+        return _slangTargetBlobs[targetIndex];
+    }
+
+    public ReadOnlySequence<byte> GetSlangTargetBytes(int targetIndex)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(targetIndex);
+        byte[]? bytes = _slangTargetBytes[targetIndex];
+        return bytes is null
+            ? ReadOnlySequence<byte>.Empty
+            : new ReadOnlySequence<byte>(bytes);
     }
 
     public bool TryGetSlangTarget(SlangCompileTarget format, out int targetIndex)
     {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
         for (int index = 0; index < _slangTargets.Length; index++)
         {
             if (_slangTargets[index].Format == format)
@@ -189,104 +174,167 @@ public partial class Shader
         return false;
     }
 
+    public int RequireSlangTarget(SlangCompileTarget format)
+    {
+        if (TryGetSlangTarget(format, out int targetIndex))
+            return targetIndex;
+        throw new InvalidDataException(
+            $"Shader '{Name}' has no resident Slang target for {format}.");
+    }
+
+    public EntryPointReflection RequireSlangEntry(
+        int targetIndex,
+        string name,
+        SlangStage stage)
+    {
+        if (TryGetSlangEntry(targetIndex, name, stage, out EntryPointReflection entry))
+            return entry;
+        throw new InvalidDataException(
+            $"Shader '{Name}' has no {stage} Slang entry point named '{name}'.");
+    }
+
+    public ReadOnlySequence<byte> GetSlangEntryBytes(
+        int targetIndex,
+        EntryPointReflection entry) =>
+        GetSlangEntryBytes(targetIndex, GetEntryIndex(targetIndex, entry));
+
+    public ISlangBlob? GetSlangEntryBlob(
+        int targetIndex,
+        EntryPointReflection entry) =>
+        GetSlangEntryBlob(targetIndex, GetEntryIndex(targetIndex, entry));
+
     public bool TryGetSlangEntry(
         int targetIndex,
         string name,
-        SlangStage stage,
-        out EntryPointReflection entry,
-        out ISlangBlob code)
+        out EntryPointReflection entry)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ShaderReflection reflection = GetSlangReflection(targetIndex);
         for (int entryIndex = 0; entryIndex < _slangEntryCount; entryIndex++)
         {
             EntryPointReflection candidate = reflection.GetEntryPointByIndex(checked((nuint)entryIndex));
-            if (candidate.Stage == stage && string.Equals(candidate.Name, name, StringComparison.Ordinal))
+            if (string.Equals(candidate.Name, name, StringComparison.Ordinal) ||
+                string.Equals(candidate.NameOverride, name, StringComparison.Ordinal))
             {
                 entry = candidate;
-                code = GetSlangEntryCode(targetIndex, entryIndex);
                 return true;
             }
         }
         entry = EntryPointReflection.Null;
-        code = null!;
         return false;
     }
 
-    private void ReplaceSlangData(Shader replacement)
+    public bool TryGetSlangEntry(
+        int targetIndex,
+        string name,
+        SlangStage stage,
+        out EntryPointReflection entry)
     {
-        ISession? oldSession = _slangSession;
-        ImmutableArray<IModule> oldUnits = _slangUnits;
-        ImmutableArray<IEntryPoint> oldEntries = _slangEntries;
-        IComponentType? oldCode = _slangCode;
-        ImmutableArray<ISlangBlob> oldEntryCode = _slangEntryCode;
-
-        _slangSession = replacement._slangSession;
-        _slangUnits = replacement._slangUnits;
-        _slangEntries = replacement._slangEntries;
-        _slangCode = replacement._slangCode;
-        _slangTargets = replacement._slangTargets;
-        _slangReflections = replacement._slangReflections;
-        _slangEntryCode = replacement._slangEntryCode;
-        _slangEntryCount = replacement._slangEntryCount;
-
-        replacement.ClearSlangData();
-        Release(oldEntryCode);
-        Release(oldCode);
-        ReleaseReverse(oldEntries);
-        ReleaseReverse(oldUnits);
-        Release(oldSession);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ShaderReflection reflection = GetSlangReflection(targetIndex);
+        for (int entryIndex = 0; entryIndex < _slangEntryCount; entryIndex++)
+        {
+            EntryPointReflection candidate = reflection.GetEntryPointByIndex(checked((nuint)entryIndex));
+            if (candidate.Stage == stage &&
+                string.Equals(candidate.Name, name, StringComparison.Ordinal))
+            {
+                entry = candidate;
+                return true;
+            }
+        }
+        entry = EntryPointReflection.Null;
+        return false;
     }
 
-    private void DisposeSlangData()
+    internal Shader WithManagedCode(
+        IReadOnlyList<byte[]?> targetCode,
+        IReadOnlyList<byte[]> entryCode)
     {
-        ImmutableArray<ISlangBlob> entryCode = _slangEntryCode;
-        IComponentType? slangCode = _slangCode;
-        ImmutableArray<IEntryPoint> entries = _slangEntries;
-        ImmutableArray<IModule> units = _slangUnits;
-        ISession? session = _slangSession;
-        ClearSlangData();
-        Release(entryCode);
-        Release(slangCode);
-        ReleaseReverse(entries);
-        ReleaseReverse(units);
-        Release(session);
+        ArgumentNullException.ThrowIfNull(targetCode);
+        ArgumentNullException.ThrowIfNull(entryCode);
+        if (targetCode.Count != _slangTargets.Length ||
+            entryCode.Count != checked(_slangTargets.Length * _slangEntryCount))
+        {
+            throw new ArgumentException("Saved shader code does not match Slang reflection.");
+        }
+        if (entryCode.Any(static bytes => bytes.Length == 0))
+            throw new ArgumentException("Saved shader entry code cannot be empty.", nameof(entryCode));
+
+        return new Shader(
+            Name,
+            _slangGlobal,
+            _slangSession,
+            _slangUnits,
+            _slangEntries,
+            _slangCode,
+            _slangTargets,
+            _slangReflections,
+            Enumerable.Repeat<ISlangBlob?>(null, targetCode.Count).ToImmutableArray(),
+            Enumerable.Repeat<ISlangBlob?>(null, entryCode.Count).ToImmutableArray(),
+            targetCode.ToImmutableArray(),
+            entryCode.ToImmutableArray(),
+            _slangEntryCount);
     }
 
-    private void ClearSlangData()
+    private int GetCodeIndex(int targetIndex, int entryIndex)
     {
-        _slangSession = null;
-        _slangUnits = [];
-        _slangEntries = [];
-        _slangCode = null;
-        _slangTargets = [];
-        _slangReflections = [];
-        _slangEntryCode = [];
-        _slangEntryCount = 0;
+        ArgumentOutOfRangeException.ThrowIfNegative(targetIndex);
+        ArgumentOutOfRangeException.ThrowIfNegative(entryIndex);
+        if (targetIndex >= _slangTargets.Length)
+            throw new ArgumentOutOfRangeException(nameof(targetIndex));
+        if (entryIndex >= _slangEntryCount)
+            throw new ArgumentOutOfRangeException(nameof(entryIndex));
+        return checked(targetIndex * _slangEntryCount + entryIndex);
     }
 
-    private static string DiagnosticText(ISlangBlob? diagnostics)
-        => diagnostics is null || diagnostics.GetBufferSize() == 0
+    private int GetEntryIndex(int targetIndex, EntryPointReflection entry)
+    {
+        if (entry == EntryPointReflection.Null)
+            throw new ArgumentException("The Slang entry point is null.", nameof(entry));
+        ShaderReflection reflection = GetSlangReflection(targetIndex);
+        for (int entryIndex = 0; entryIndex < _slangEntryCount; entryIndex++)
+        {
+            if (reflection.GetEntryPointByIndex(checked((nuint)entryIndex)) == entry)
+                return entryIndex;
+        }
+        throw new ArgumentException(
+            "The Slang entry point does not belong to this shader target.",
+            nameof(entry));
+    }
+
+    private static ISlangBlob? GetTargetBlob(IComponentType linkedCode, int targetIndex)
+    {
+        SlangResult result = linkedCode.GetTargetCode(
+            targetIndex,
+            out ISlangBlob blob,
+            out ISlangBlob? diagnostics);
+        if (result.Failed || blob is null || blob.GetBufferSize() == 0)
+            return null;
+        return blob;
+    }
+
+    private static ISlangBlob GetEntryBlob(
+        IComponentType linkedCode,
+        int targetIndex,
+        int entryIndex)
+    {
+        SlangResult result = linkedCode.GetEntryPointCode(
+            entryIndex,
+            targetIndex,
+            out ISlangBlob blob,
+            out ISlangBlob? diagnostics);
+        string diagnosticText = DiagnosticText(diagnostics);
+        if (result.Failed || blob is null || blob.GetBufferSize() == 0)
+        {
+            throw new InvalidDataException(
+                $"Slang did not produce code for target {targetIndex}, entry {entryIndex}: " +
+                diagnosticText);
+        }
+        return blob;
+    }
+
+    private static string DiagnosticText(ISlangBlob? diagnostics) =>
+        diagnostics is null || diagnostics.GetBufferSize() == 0
             ? "no diagnostics"
             : diagnostics.AsString;
-
-    private static void Release<T>(IEnumerable<T> values)
-        where T : class
-    {
-        foreach (T value in values)
-            Release(value);
-    }
-
-    private static void ReleaseReverse<T>(IReadOnlyList<T> values)
-        where T : class
-    {
-        for (int index = values.Count - 1; index >= 0; index--)
-            Release(values[index]);
-    }
-
-    private static void Release(object? value)
-    {
-        if (value is ComObject com)
-            com.FinalRelease();
-    }
 }

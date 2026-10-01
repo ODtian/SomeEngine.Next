@@ -20,7 +20,7 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
         using SomeEngine.Serialization;
         namespace Extension;
         [AssetBlock("example.extension-data"), BinarySerializable, BinaryFields(nameof(Value))]
-        public partial class Data : AssetPageBlock { public partial int Value { get; set; } }
+        public partial class Data : AssetBlock { public partial int Value { get; set; } }
         public sealed class Source;
         public sealed record Settings(int Value);
         public sealed class Dependency { public int Number => 47; }
@@ -229,7 +229,7 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
             using SomeEngine.Serialization;
             namespace Second;
             [AssetBlock("example.shared-data"), BinarySerializable, BinaryFields(nameof(Value))]
-            public partial class Data : AssetPageBlock { public partial float Value { get; set; } }
+            public partial class Data : AssetBlock { public partial float Value { get; set; } }
             """;
         byte[] first = Emit(Compile(firstSource));
         byte[] second = Emit(Compile(secondSource));
@@ -259,6 +259,23 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
     }
 
     [Fact]
+    public void EncodedBlockTypeIdentitySurvivesAClrRename()
+    {
+        const string source = """
+            using System;
+            using SomeEngine.Assets;
+            using SomeEngine.Serialization;
+            namespace Extension;
+            [AssetBlock("example.rename-safe"), BinarySerializable, BinaryFields(nameof(Value))]
+            public sealed partial class Data : AssetBlock { public partial int Value { get; set; } }
+            public static class Consumer { public static Guid Execute() => Data.TypeId; }
+            """;
+        Guid before = (Guid)Execute(Emit(Compile(source)))!;
+        Guid after = (Guid)Execute(Emit(Compile(source.Replace("Data", "RenamedData"))))!;
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
     public void BlockIdentityDoesNotDependOnCodecFieldsClrNameOrAssemblyName()
     {
         const string name = "example.persisted-data";
@@ -268,7 +285,7 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
             using SomeEngine.Serialization;
             namespace Moved;
             [AssetBlock("example.persisted-data"), BinarySerializable, BinaryFields(nameof(Number), nameof(Label))]
-            public partial class Renamed : AssetPageBlock
+            public partial class Renamed : AssetBlock
             {
                 public partial int Number { get; set; }
                 public partial string Label { get; set; }
@@ -311,7 +328,7 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
                 using SomeEngine.Assets.Schema;
                 using SomeEngine.Serialization;
                 [AssetBlock("example.cross-project-extra"), BinarySerializable, BinaryFields(nameof(Value), nameof(Dependency))]
-                public sealed partial class ExtraData : AssetPageBlock
+                public sealed partial class ExtraData : AssetBlock
                 {
                     public partial int Value { get; set; }
                     public partial AssetId<TextureAsset> Dependency { get; set; }
@@ -390,9 +407,9 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
         {
             public int Value { get; }
             public {{type}}(int value) => Value = value;
-            private {{type}}({{type}} source, PageAccess? access = null) : base(source, access) => Value = source.Value;
+            private {{type}}({{type}} source, object? syncRoot = null) : base(source, syncRoot) => Value = source.Value;
             public override AssetBlock Duplicate() => new {{type}}(this);
-            public override AssetBlock Duplicate(PageAccess access) => new {{type}}(this, access);
+            public override AssetBlock Duplicate(object syncRoot) => new {{type}}(this, syncRoot);
         }
         """;
 

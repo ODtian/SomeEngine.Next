@@ -4,25 +4,25 @@ namespace SomeEngine.Graphics.Validation;
 
 public sealed partial class ValidationLayer
 {
-    private static ShaderTypeLayout GetParameterContentsLayout(ShaderTypeLayout layout)
+    private static TypeLayoutReflection GetParameterContentsLayout(TypeLayoutReflection layout)
     {
-        ShaderTypeLayout contents = layout.UnwrapArray();
+        TypeLayoutReflection contents = layout.UnwrapArray();
         if (contents.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
         {
-            ShaderTypeLayout element = contents.ElementTypeLayout.UnwrapArray();
-            if (element != ShaderTypeLayout.Null)
+            TypeLayoutReflection element = contents.ElementTypeLayout.UnwrapArray();
+            if (element != TypeLayoutReflection.Null)
                 contents = element;
         }
         return contents;
     }
 
     private static string? DiagnoseParameterBindings(
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         ReadOnlySpan<ResourceBinding> bindings,
         ReadOnlySpan<byte> ordinaryData,
         PipelineBindingValidationState? pipeline = null)
     {
-        ShaderTypeLayout contents = GetParameterContentsLayout(layout.TypeLayout);
+        TypeLayoutReflection contents = GetParameterContentsLayout(layout.TypeLayout);
         nuint ordinarySize = contents.GetSize(SlangParameterCategory.Uniform);
         if (ordinarySize == Slang.UnknownSize || ordinarySize == Slang.UnboundedSize ||
             ordinarySize > int.MaxValue)
@@ -69,8 +69,8 @@ public sealed partial class ValidationLayer
     }
 
     private static string? DiagnoseBindingRange(
-        ShaderTypeLayout contents,
-        ShaderVariableLayout layout,
+        TypeLayoutReflection contents,
+        VariableLayoutReflection layout,
         nint rangeIndex,
         nint descriptorSetCount,
         ReadOnlySpan<ResourceBinding> bindings,
@@ -152,8 +152,8 @@ public sealed partial class ValidationLayer
 
     private static (nint SetIndex, nint FirstDescriptorRangeIndex)
         ValidateDescriptorRangeLocation(
-            ShaderTypeLayout contents,
-            ShaderVariableLayout layout,
+            TypeLayoutReflection contents,
+            VariableLayoutReflection layout,
             nint rangeIndex,
             nint descriptorRangeCount,
             nint descriptorSetCount)
@@ -222,7 +222,7 @@ public sealed partial class ValidationLayer
     }
 
     private static string? DiagnoseBoundedDescriptorRange(
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         nint rangeIndex,
         uint nativeCount,
         string fieldName,
@@ -273,16 +273,16 @@ public sealed partial class ValidationLayer
 
     private sealed class PipelineBindingValidationState
     {
-        private readonly ShaderProgramLayout _reflection;
-        private readonly HashSet<ShaderVariableLayout> _layouts = [];
-        private readonly HashSet<ShaderVariable> _staticSamplers = [];
+        private readonly ShaderReflection _reflection;
+        private readonly HashSet<VariableLayoutReflection> _layouts = [];
+        private readonly HashSet<VariableReflection> _staticSamplers = [];
 
-        internal PipelineBindingValidationState(ShaderProgramLayout reflection)
+        internal PipelineBindingValidationState(ShaderReflection reflection)
         {
             _reflection = reflection;
         }
 
-        internal ShaderProgramLayout Reflection => _reflection;
+        internal ShaderReflection Reflection => _reflection;
 
         internal void AddStaticSamplers(ReadOnlySpan<StaticSamplerBinding> samplers)
         {
@@ -291,11 +291,11 @@ public sealed partial class ValidationLayer
                 _staticSamplers.Add(sampler.Sampler);
         }
 
-        internal void Add(ShaderVariableLayout layout)
+        internal void Add(VariableLayoutReflection layout)
         {
-            if (layout == ShaderVariableLayout.Null || !_layouts.Add(layout))
+            if (layout == VariableLayoutReflection.Null || !_layouts.Add(layout))
                 return;
-            ShaderTypeLayout contents = GetParameterContentsLayout(layout.TypeLayout);
+            TypeLayoutReflection contents = GetParameterContentsLayout(layout.TypeLayout);
             nint subObjectRangeCount = contents.SubObjectRangeCount;
             nuint subObjectRangeCountMarker = unchecked((nuint)subObjectRangeCount);
             if (subObjectRangeCount < 0 || subObjectRangeCountMarker == Slang.UnknownSize ||
@@ -325,25 +325,25 @@ public sealed partial class ValidationLayer
                     throw new GraphicsException(GraphicsError.NativeFailure,
                         $"Slang sub-object binding range {bindingRange} on layout " +
                         $"'{layout.Name}' has an unresolved occurrence count.");
-                ShaderVariableLayout child = contents.GetSubObjectRangeOffset(index);
-                if (child == ShaderVariableLayout.Null)
+                VariableLayoutReflection child = contents.GetSubObjectRangeOffset(index);
+                if (child == VariableLayoutReflection.Null)
                     throw new GraphicsException(GraphicsError.NativeFailure,
                         $"Slang sub-object range {index} on layout '{layout.Name}' has no variable layout.");
                 Add(child);
             }
         }
 
-        internal bool Contains(ShaderVariableLayout layout) => _layouts.Contains(layout);
+        internal bool Contains(VariableLayoutReflection layout) => _layouts.Contains(layout);
         internal bool IsStaticSampler(
-            ShaderVariableLayout rootLayout,
+            VariableLayoutReflection rootLayout,
             nint range,
             uint element)
         {
-            if (element != 0 || rootLayout == ShaderVariableLayout.Null)
+            if (element != 0 || rootLayout == VariableLayoutReflection.Null)
                 return false;
-            ShaderTypeLayout contents = GetParameterContentsLayout(rootLayout.TypeLayout);
-            ShaderVariable declaration = contents.GetBindingRangeLeafVariable(range);
-            return declaration != ShaderVariable.Null && _staticSamplers.Contains(declaration);
+            TypeLayoutReflection contents = GetParameterContentsLayout(rootLayout.TypeLayout);
+            VariableReflection declaration = contents.GetBindingRangeLeafVariable(range);
+            return declaration != VariableReflection.Null && _staticSamplers.Contains(declaration);
         }
     }
 }

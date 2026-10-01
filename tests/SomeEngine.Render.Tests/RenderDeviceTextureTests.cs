@@ -75,14 +75,14 @@ public sealed class RenderDeviceTextureTests
                     },
                 ],
             };
-        pixels.Chunks.Set(pixels.MipTiles[0].ChunkKey, new byte[16]);
+        pixels.SetBytes(pixels.MipTiles[0].ChunkKey, new byte[16]);
         using var original = new EngineTextureAsset { Name = "compressed-bootstrap" };
         original.SetBlock(pixels);
         Guid guid = assets.Project.RegisterAsset(await original.SaveAsync(Path.Combine(assets.Project.RootPath, "assets/compressed-bootstrap.texture.asset")));
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
         await using EngineTextureAsset file = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(guid));
         await using EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
-        ChunkStreamingSnapshot before = file.StreamingMetrics!.Snapshot();
+        await file.DisposeAsync();
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice BC test");
         using var renderDevice = new RenderDevice(backend, device);
@@ -90,9 +90,6 @@ public sealed class RenderDeviceTextureTests
 
         _ = ExecuteTextureFrame(graph, renderDevice, asset);
 
-        ChunkStreamingSnapshot after = file.StreamingMetrics.Snapshot();
-        Assert.Equal(before.LoadsCompleted, after.LoadsCompleted);
-        Assert.Equal(before.StoredBytesRead, after.StoredBytesRead);
     }
 
     [Fact]
@@ -107,7 +104,7 @@ public sealed class RenderDeviceTextureTests
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
         await using EngineTextureAsset file = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(guid));
         await using EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
-        ChunkStreamingSnapshot before = file.StreamingMetrics!.Snapshot();
+        await file.DisposeAsync();
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice first-use test");
@@ -115,13 +112,8 @@ public sealed class RenderDeviceTextureTests
         using var graph = CreateGraph(backend, device);
 
         RhiTexture resource = ExecuteTextureFrame(graph, renderDevice, asset);
-        ChunkStreamingSnapshot after = file.StreamingMetrics.Snapshot();
 
         Assert.Same(resource, renderDevice.GetTexture(asset));
-        Assert.Equal(before.LoadsCompleted, after.LoadsCompleted);
-        Assert.Equal(before.StoredBytesRead, after.StoredBytesRead);
-        Assert.Equal(before.CacheHits, after.CacheHits);
-        Assert.Equal(before.CacheMisses, after.CacheMisses);
 
         using (var secondGraph = CreateGraph(backend, device))
         {
@@ -181,14 +173,15 @@ public sealed class RenderDeviceTextureTests
         Assert.Same(firstUav, sameUav);
         Assert.NotSame(firstUav, secondUav);
 
-        await file.GetBlock<TextureBlock>().LoadMipAsync(asset, 0);
-        Assert.True(asset.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out var mipZeroLayerZero));
-        Assert.True(asset.TryRetainTile(TextureTiles.ChunkKey(0, 1, 0, 0, 0, 0), out var mipZeroLayerOne));
-        using (mipZeroLayerZero)
-        using (mipZeroLayerOne)
+        await using EngineTextureAsset refinement = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(guid));
+        await refinement.GetBlock<TextureBlock>().LoadMipAsync(asset, 0);
+        Assert.True(asset.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var mipZeroLayerZero));
+        Assert.True(asset.TryGetTile(TextureTiles.ChunkKey(0, 1, 0, 0, 0, 0), out var mipZeroLayerOne));
+        
+        
         {
-            Assert.Equal(4, mipZeroLayerZero.Sequence.Length);
-            Assert.Equal(4, mipZeroLayerOne.Sequence.Length);
+            Assert.Equal(4, mipZeroLayerZero.Length);
+            Assert.Equal(4, mipZeroLayerOne.Length);
         }
 
         _ = ExecuteTextureFrame(graph, renderDevice, asset);
@@ -649,8 +642,8 @@ public sealed class RenderDeviceTextureTests
         using (content)
         {
             content.MipTiles = pixels.Select(static item => item.Tile).ToArray();
-            foreach (TexturePixels item in pixels) content.Chunks.Set(item.Tile.ChunkKey, item.Bytes.Span);
-            var asset = new EngineTextureAsset(PageArena.Shared, id) { Name = name };
+            foreach (TexturePixels item in pixels) content.SetBytes(item.Tile.ChunkKey, item.Bytes);
+            var asset = new EngineTextureAsset(id) { Name = name };
             try { asset.SetBlock(content); return asset; }
             catch { asset.Dispose(); throw; }
         }

@@ -1,6 +1,6 @@
 # 资产文件、Block 与显式 I/O
 
-2026-09-16。资产持久化复用现有二进制文档、范围 I/O、压缩、摘要、包认证及页调度，不建立第二种容器。对象语义见 [Asset 与 Block](Asset-Objects.md)。
+2026-09-30。资产持久化复用现有二进制文档、范围 I/O、压缩、摘要、包认证，不建立第二种容器。对象语义见 [Asset 与 Block](Asset-Objects.md)。
 
 ## 公共根和类型目录
 
@@ -18,7 +18,7 @@
 
 ## 保存与未加载内容
 
-保存先建立隔离的内容分支，再让各 Block 提供自己的元数据和负载。已修改页通过分段缓冲写出；尚未取得且未修改的 Block 或负载可以使用原文档的有界复制，不需要为了改名而解压全部内容。
+保存先建立隔离的内容分支，再让各 Block 提供自己的元数据和负载。Block 直接编码普通字段、数组或已有的分段只读视图；尚未取得且未修改的 Block 或负载可以使用原文档的有界复制，不需要为了改名而解压全部内容。
 
 公共文件流程使用同目录临时文件，完成写出、刷新和目标身份检查后替换目标。失败或取消清理临时文件，保留已有成功内容。保存返回的 `AssetEntry` 描述本次实际输出；它不会暗中更新工程目录或把原对象绑定到新文件。
 
@@ -28,10 +28,12 @@
 
 来源文件的通用复制限定在同一目录，复制后分配新的来源及元素身份。跨目录复制可能改变外部相对引用的含义，因此必须由认识来源格式的代码改写，不能直接复制字节并登记。拒绝请求时，来源、伴随文件、外部数据和目录均保持原样；同目录复制与强类型资产复制不受此限制影响。
 
-## 字节与页的边界
+## 字节与业务分块
 
-Block 通过 `PageBufferMap` 保存可编辑负载，明确取得范围后使用 `ReadOnlySequence<byte>` 或页缓冲。文件 chunk、纹理 tile、Cluster 几何页和内存 COW 页分别有各自粒度；压缩块可能需要整体解压，不能根据内存页尺寸推导任意磁盘局部编辑。
+文件 chunk 与业务单元的关系由具体 Block 描述。Texture tile 使用独立 chunk；ClusterMeshBlock 的几何页和 BVH 是 payload chunk 内可独立校验的范围。需要独立读取的业务单元必须有可独立取得、解码和校验的存储边界。
 
-Texture 的 tile 是独立文件 chunk。ClusterMeshBlock 的多个几何页则是一个 payload chunk 内的范围，BVH 另有明确偏移。WorldBlock 通过既有 ECS 编码器与分页 Stream 读写完整存档。具体语义见各资产主题页。
+`AssetFile.ReadBytesAsync` 直接将文档数据读入最终实际长度数组。它不保留结果缓存；同一内容定义的复用由 Block 的数据节点提供，见 [共享规则](Asset-Sharing-and-Writes.md)。范围读取继续使用 `IRangeSource`，不强迫为读一页几何取得整个 payload。
+
+文件及映射的借用视图只在来源约定的操作范围内使用，不能作为普通使用对象的字节。WorldBlock 使用既有 ECS 编码器和普通 MemoryStream，取得完整编码数据后恢复独立 World。
 
 相关实现：[AssetHeader](../../../src/SomeEngine.Assets/AssetHeader.cs)、[AssetText](../../../src/SomeEngine.Assets/AssetText.cs)、[保存与 Block 写出](../../../src/SomeEngine.Assets/Asset.Blocks.cs)、[文档写入器](../../../src/SomeEngine.Serialization/Containers/BinaryDocumentWriter.cs)。

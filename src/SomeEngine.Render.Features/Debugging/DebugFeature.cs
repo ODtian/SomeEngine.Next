@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
@@ -67,7 +68,7 @@ public sealed class DebugFeature : IDisposable
                 rasterizer: new RasterizerState(Cull: CullType.None),
                 label: "Debug overlay");
             _resourceOrder = FeatureResourceLayout.Resolve<DebugResource>(
-                pipeline.Program.Layout.GetGlobalParamsVarLayout(),
+                pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 ResolveResource);
             using RenderGraphEdit edit = graph.BeginEdit();
             GraphTextureId output = edit.CreatePersistentTexture(new TextureDesc(
@@ -87,7 +88,7 @@ public sealed class DebugFeature : IDisposable
                 new DebugPassData(outputAttachment, width, height),
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 pipeline.Pipeline,
-                pipeline.Program.Layout.GetGlobalParamsVarLayout(),
+                pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 default,
                 DebugPassData.Declare,
                 DebugPassData.Record);

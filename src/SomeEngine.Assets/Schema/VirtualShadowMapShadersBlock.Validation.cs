@@ -44,8 +44,7 @@ public sealed partial class VirtualShadowMapShadersBlock
             ShaderRef.Require(
                 entries[index],
                 subject,
-                names[index],
-                ShaderStage.Compute);
+                names[index]);
         }
     }
 }

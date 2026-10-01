@@ -1,3 +1,4 @@
+using SlangShaderSharp;
 using SomeEngine.Resources;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
@@ -11,7 +12,7 @@ namespace SomeEngine.Assets.Schema;
 public partial class MaterialAsset : Asset
 {
     private static readonly object TypeGate = new();
-    private static readonly Dictionary<Guid, (Func<Material> Value, Func<PageArena, Guid, MaterialAsset> Asset)> Types = [];
+    private static readonly Dictionary<Guid, (Func<Material> Value, Func<Guid, MaterialAsset> Asset)> Types = [];
     public const string FileType = "SomeEngine.Assets.Schema.Material";
     public const string PathSuffix = ".material.asset";
     public static ulong SchemaHash => AssetHeader.SchemaFingerprint;
@@ -22,14 +23,14 @@ public partial class MaterialAsset : Asset
         private set => base.BlockDescriptions = value;
     }
 
-    public MaterialAsset() : this(PageArena.Shared) { }
-    public MaterialAsset(PageArena pages, Guid id = default) : this(pages, id, Guid.Empty) { }
-    protected MaterialAsset(PageArena pages, Guid id, Guid materialType) : base(pages, id)
+    public MaterialAsset() : this(Guid.Empty) { }
+    public MaterialAsset(Guid id = default) : this(id, Guid.Empty) { }
+    protected MaterialAsset(Guid id, Guid materialType) : base(id)
     {
         try
         {
             AssetType = FileType;
-            using var content = new MaterialBlock(pages, materialType);
+            using var content = new MaterialBlock(materialType);
             SetBlock(content);
         }
         catch (Exception error)
@@ -41,19 +42,19 @@ public partial class MaterialAsset : Asset
     }
     protected MaterialAsset(MaterialAsset source) : base(source) { }
     [BinaryIgnore] public AssetId<MaterialAsset> Reference => new(Id);
-    public static void RegisterType<TMaterial, TAsset>(Func<PageArena, Guid, TAsset> createAsset)
+    public static void RegisterType<TMaterial, TAsset>(Func<Guid, TAsset> createAsset)
         where TMaterial : Material, new() where TAsset : MaterialAsset
     {
         ArgumentNullException.ThrowIfNull(createAsset);
         using var value = new TMaterial();
         lock (TypeGate)
-            if (!Types.TryAdd(value.MaterialTypeId, (static () => new TMaterial(), (pages, id) => createAsset(pages, id))))
+            if (!Types.TryAdd(value.MaterialTypeId, (static () => new TMaterial(), id => createAsset(id))))
                 throw new InvalidOperationException($"Material type '{value.MaterialTypeId}' is already registered.");
     }
 
     public override MaterialAsset Duplicate()
     {
-        lock (Access.SyncRoot) { RequireIdle(); return new(this); }
+        lock (SyncRoot) { RequireIdle(); return new(this); }
     }
     public override MaterialAsset CreateCopy(Guid id = default) => (MaterialAsset)base.CreateCopy(id);
     public AssetEntry Describe() => Describe(SchemaHash, References());
@@ -69,11 +70,10 @@ public partial class MaterialAsset : Asset
         await using AssetFile file = await loader.OpenFileAsync(id, FileType, WireType, cancellationToken).ConfigureAwait(false);
         return await ReadFileAsync(file, id.Value, cancellationToken).ConfigureAwait(false);
     }
-    public static async ValueTask<MaterialAsset> OpenAsync(string path, CancellationToken cancellationToken = default,
-        PageArena? pages = null)
+    public static async ValueTask<MaterialAsset> OpenAsync(string path, CancellationToken cancellationToken = default)
     {
         if (!path.EndsWith(PathSuffix, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The material file has a different suffix.");
-        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, cancellationToken: cancellationToken).ConfigureAwait(false);
         return await ReadFileAsync(file, Guid.Empty, cancellationToken).ConfigureAwait(false);
     }
     protected static async ValueTask<TAsset> OpenTypedAsync<TAsset>(AssetLoader loader, AssetId<MaterialAsset> id,
@@ -85,9 +85,9 @@ public partial class MaterialAsset : Asset
         throw new InvalidDataException("The file contains a different concrete material type.");
     }
     protected static async ValueTask<TAsset> OpenTypedAsync<TAsset>(string path,
-        CancellationToken cancellationToken, PageArena? pages) where TAsset : MaterialAsset
+        CancellationToken cancellationToken) where TAsset : MaterialAsset
     {
-        MaterialAsset result = await OpenAsync(path, cancellationToken, pages).ConfigureAwait(false);
+        MaterialAsset result = await OpenAsync(path, cancellationToken).ConfigureAwait(false);
         if (result is TAsset typed) return typed;
         await result.DisposeAsync().ConfigureAwait(false);
         throw new InvalidDataException("The file contains a different concrete material type.");
@@ -97,7 +97,7 @@ public partial class MaterialAsset : Asset
         AssetEntry description = file.Describe();
         if ((expected != Guid.Empty && expected != description.AssetGuid) || description.AssetType != FileType)
             throw new InvalidDataException("The material file has a different identity or type.");
-        var root = new MaterialAsset(file.Pages, description.AssetGuid);
+        var root = new MaterialAsset(description.AssetGuid);
         try
         {
             root.ReadBlockContent(file);
@@ -107,7 +107,7 @@ public partial class MaterialAsset : Asset
             MaterialAsset result;
             lock (TypeGate)
                 result = Types.TryGetValue(content.MaterialTypeId, out var factories)
-                    ? factories.Asset(file.Pages, description.AssetGuid)
+                    ? factories.Asset(description.AssetGuid)
                     : throw new InvalidDataException($"Unknown material type '{content.MaterialTypeId}'.");
             try
             {
@@ -156,15 +156,57 @@ public partial class MaterialAsset : Asset
     public ValueTask<Material> CreateAsync(AssetLoader loader, CancellationToken cancellationToken = default)
         => CreateAsync(loader, null, null, cancellationToken);
 
+    public ValueTask<Material> CreateAsync(
+        AssetLoader loader,
+        IGlobalSession slang,
+        SessionDesc sessionDescription,
+        ReadOnlyMemory<SpecializationArg> specializations = default,
+        CancellationToken cancellationToken = default)
+    {
+        return CreateCoreAsync(
+            loader,
+            LoadShader,
+            null,
+            cancellationToken,
+            loadTexturesConcurrently: false);
+
+        async ValueTask<Shader> LoadShader(
+            AssetId<ShaderAsset> id,
+            CancellationToken loadCancellationToken)
+        {
+            Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(
+                [id.Value],
+                loader,
+                slang,
+                sessionDescription,
+                specializations,
+                loadCancellationToken).ConfigureAwait(false);
+            return shaders[id.Value];
+        }
+    }
+
     /// <summary>Creates material fields using direct references returned by the caller.
     /// Supplied shader and texture objects remain the caller's responsibility; disposing the material
     /// does not dispose them. Omitted loaders create private dependencies as in the simple overload.
     /// Distinct texture loader calls may overlap when loadTexturesConcurrently is true.</summary>
-    public async ValueTask<Material> CreateAsync(AssetLoader loader,
+    public ValueTask<Material> CreateAsync(AssetLoader loader,
         Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>>? loadShader,
         Func<AssetId<TextureAsset>, CancellationToken, ValueTask<Texture>>? loadTexture,
         CancellationToken cancellationToken = default,
-        bool loadTexturesConcurrently = false)
+        bool loadTexturesConcurrently = false) =>
+        CreateCoreAsync(
+            loader,
+            loadShader,
+            loadTexture,
+            cancellationToken,
+            loadTexturesConcurrently);
+
+    private async ValueTask<Material> CreateCoreAsync(
+        AssetLoader loader,
+        Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>>? loadShader,
+        Func<AssetId<TextureAsset>, CancellationToken, ValueTask<Texture>>? loadTexture,
+        CancellationToken cancellationToken,
+        bool loadTexturesConcurrently)
     {
         ArgumentNullException.ThrowIfNull(loader);
         using MaterialAsset copy = Duplicate();
@@ -185,9 +227,8 @@ public partial class MaterialAsset : Asset
                     shader = await loadShader(resolved.Shader, cancellationToken).ConfigureAwait(false);
                 else
                 {
-                    await using ShaderAsset file = await ShaderAsset.OpenAsync(loader, resolved.Shader, cancellationToken).ConfigureAwait(false);
-                    ShaderBlock code = await file.GetBlockAsync<ShaderBlock>(cancellationToken).ConfigureAwait(false);
-                    shader = await code.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
+                    throw new InvalidOperationException(
+                        "Creating a material with a shader requires an explicit shader-loading behavior.");
                 }
             }
             var textureReads = new Dictionary<Guid, Task<Texture>>();
@@ -227,8 +268,7 @@ public partial class MaterialAsset : Asset
             cancellationToken.ThrowIfCancellationRequested();
             Texture[] createdTextures = loadTexture is null ? [.. textures.Values] : [];
             transferred = true;
-            result.InitializeContent(copy.Name, shader, values,
-                loadShader is null ? shader : null, createdTextures);
+            result.InitializeContent(copy.Name, shader, values, createdTextures);
             return result;
         }
         catch
@@ -240,7 +280,6 @@ public partial class MaterialAsset : Asset
                 {
                     if (loadTexture is null)
                         foreach (Texture texture in textures.Values) texture.Dispose();
-                    if (loadShader is null) shader?.Dispose();
                 }
             }
             throw;
@@ -254,6 +293,32 @@ public partial class MaterialAsset : Asset
         ArgumentNullException.ThrowIfNull(material);
         ObjectDisposedException.ThrowIf(material.IsDisposed, material);
         using Material replacement = await CreateAsync(loader, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        material.Update(replacement);
+    }
+
+    public async ValueTask UpdateAsync(Material material, AssetLoader loader,
+        IGlobalSession slang, SessionDesc sessionDescription,
+        ReadOnlyMemory<SpecializationArg> specializations = default,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        ObjectDisposedException.ThrowIf(material.IsDisposed, material);
+        using Material replacement = await CreateAsync(loader, slang, sessionDescription,
+            specializations, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        material.Update(replacement);
+    }
+
+    public async ValueTask UpdateAsync(Material material, AssetLoader loader,
+        Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>>? loadShader,
+        Func<AssetId<TextureAsset>, CancellationToken, ValueTask<Texture>>? loadTexture,
+        CancellationToken cancellationToken = default, bool loadTexturesConcurrently = false)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        ObjectDisposedException.ThrowIf(material.IsDisposed, material);
+        using Material replacement = await CreateAsync(loader, loadShader, loadTexture,
+            cancellationToken, loadTexturesConcurrently).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         material.Update(replacement);
     }

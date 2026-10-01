@@ -18,13 +18,13 @@ public sealed partial class VirtualShadowMapShadersAsset : Asset
         private set => base.BlockDescriptions = value;
     }
 
-    public VirtualShadowMapShadersAsset() : this(PageArena.Shared) { }
-    public VirtualShadowMapShadersAsset(PageArena pages, Guid id = default) : base(pages, id)
+    public VirtualShadowMapShadersAsset() : this(Guid.Empty) { }
+    public VirtualShadowMapShadersAsset(Guid id = default) : base(id)
     {
         try
         {
             AssetType = FileType;
-            using var settings = new VirtualShadowMapShadersBlock(pages);
+            using var settings = new VirtualShadowMapShadersBlock();
             SetBlock(settings);
         }
         catch (Exception error)
@@ -36,7 +36,7 @@ public sealed partial class VirtualShadowMapShadersAsset : Asset
     }
 
     private VirtualShadowMapShadersAsset(VirtualShadowMapShadersAsset source) : base(source) { }
-    public override VirtualShadowMapShadersAsset Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public override VirtualShadowMapShadersAsset Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
     public override VirtualShadowMapShadersAsset CreateCopy(Guid id = default) => (VirtualShadowMapShadersAsset)base.CreateCopy(id);
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
@@ -52,7 +52,7 @@ public sealed partial class VirtualShadowMapShadersAsset : Asset
         AssetEntry description = file.Describe();
         if ((expected != Guid.Empty && expected != description.AssetGuid) || description.AssetType != FileType)
             throw new InvalidDataException("The asset identity or type differs from the selected file.");
-        var result = new VirtualShadowMapShadersAsset(file.Pages, description.AssetGuid);
+        var result = new VirtualShadowMapShadersAsset(description.AssetGuid);
         try
         {
             result.ReadBlockContent(file);
@@ -72,11 +72,11 @@ public sealed partial class VirtualShadowMapShadersAsset : Asset
         }
     }
 
-    public static async ValueTask<VirtualShadowMapShadersAsset> OpenAsync(string path, PageArena? pages = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<VirtualShadowMapShadersAsset> OpenAsync(string path, CancellationToken cancellationToken = default)
     {
         if (!path.EndsWith(PathSuffix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The asset path has a different suffix.");
-        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, cancellationToken: cancellationToken).ConfigureAwait(false);
         return await ReadFileAsync(file, Guid.Empty, cancellationToken).ConfigureAwait(false);
     }
 

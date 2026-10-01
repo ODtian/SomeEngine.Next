@@ -17,7 +17,6 @@ public abstract partial class Material : IDisposable
     private ulong[]? _changes;
     private bool _changingProperties;
     private Texture[] _createdTextures = [];
-    private Shader? _createdShader;
     private int _disposed;
     private Shader? _shader;
     private static long _nextMaterialId;
@@ -33,13 +32,10 @@ public abstract partial class Material : IDisposable
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             if (ReferenceEquals(_shader, value)) return;
-            if (_shader is not null) _shader.Changed -= OnShaderChanged;
             _shader = value;
-            if (_shader is not null) _shader.Changed += OnShaderChanged;
             if (!_changingProperties) { Revision++; RaiseChanged(); }
         }
     }
-    private void OnShaderChanged(Shader shader) { Revision++; RaiseChanged(); }
     public ulong Revision { get; private set; } = 1;
     public event Action<Material>? Changed;
     public abstract Guid MaterialTypeId { get; }
@@ -86,7 +82,6 @@ public abstract partial class Material : IDisposable
         previousFields.Shader = Shader;
         previousFields.CopyProperties(this);
         Texture[] previous = _createdTextures;
-        Shader? previousShader = _createdShader;
         _changingProperties = true;
         try
         {
@@ -106,22 +101,22 @@ public abstract partial class Material : IDisposable
         // User notification must not allow replacement.Dispose to destroy the new fields.
         _createdTextures = replacement._createdTextures;
         replacement._createdTextures = [];
-        _createdShader = replacement._createdShader;
-        replacement._createdShader = null;
         Revision = revision;
         var errors = new List<Exception>();
         NotifyChanged(errors);
-        CloseContent(previous, previousShader, errors);
+        CloseContent(previous, errors);
         if (errors.Count != 0)
             throw new AggregateException("Material content was updated, but notification or old-content cleanup failed.", errors);
     }
 
     // Called on a newly created, unpublished material. The dependencies transfer before setters run,
     // so a failed initialization is cleaned up by disposing that material.
-    internal void InitializeContent(string? name, Shader? shader,
-        IEnumerable<(MaterialValue Value, Texture? Texture)> values, Shader? createdShader, Texture[] createdTextures)
+    internal void InitializeContent(
+        string? name,
+        Shader? shader,
+        IEnumerable<(MaterialValue Value, Texture? Texture)> values,
+        Texture[] createdTextures)
     {
-        _createdShader = createdShader;
         _createdTextures = createdTextures;
         _changingProperties = true;
         try
@@ -135,10 +130,8 @@ public abstract partial class Material : IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        if (_shader is not null) _shader.Changed -= OnShaderChanged;
         var errors = new List<Exception>();
-        CloseContent(Interlocked.Exchange(ref _createdTextures, []),
-            Interlocked.Exchange(ref _createdShader, null), errors);
+        CloseContent(Interlocked.Exchange(ref _createdTextures, []), errors);
         if (errors.Count != 0)
             throw new AggregateException("Some material content could not be closed.", errors);
     }
@@ -162,13 +155,11 @@ public abstract partial class Material : IDisposable
             catch (Exception error) { errors.Add(error); }
     }
 
-    private static void CloseContent(Texture[] textures, Shader? shader, List<Exception> errors)
+    private static void CloseContent(Texture[] textures, List<Exception> errors)
     {
         foreach (Texture texture in textures)
             try { texture.Dispose(); }
             catch (Exception error) { errors.Add(error); }
-        try { shader?.Dispose(); }
-        catch (Exception error) { errors.Add(error); }
     }
 }
 

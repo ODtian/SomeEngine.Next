@@ -1,4 +1,4 @@
-﻿using SlangShaderSharp;
+using SlangShaderSharp;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Validation;
 using Xunit;
@@ -15,10 +15,10 @@ public sealed unsafe class WarpNativeAccessTests
             [numthreads(1, 1, 1)]
             void computeMain() {}
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_native_access_compute",
             source,
-            [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)]);
+            [new D3D12TestEntry("computeMain", SlangStage.Compute)]);
         using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
@@ -45,7 +45,7 @@ public sealed unsafe class WarpNativeAccessTests
             new QueryPoolDesc(QueryType.Timestamp, QueueType.Compute, 1));
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
 
         Assert.NotEqual(0, (nint)backend.GetNativeDevice(device));
         Assert.NotEqual(0, (nint)backend.GetNativeAdapter(device));
@@ -146,10 +146,10 @@ public sealed unsafe class WarpNativeAccessTests
             [numthreads(1, 1, 1)]
             void computeMain() {}
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_validated_native_access",
             source,
-            [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)]);
+            [new D3D12TestEntry("computeMain", SlangStage.Compute)]);
         IGraphicsBackend nativeBackend = D3D12GraphicsBackend.Create();
         using ValidationLayer backend = new(nativeBackend);
         using Device foreignDevice = D3D12TestSupport.CreateWarpDevice(nativeBackend);
@@ -164,7 +164,7 @@ public sealed unsafe class WarpNativeAccessTests
             MemoryType.Upload);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));

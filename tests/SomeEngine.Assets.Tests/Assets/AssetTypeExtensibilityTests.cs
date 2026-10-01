@@ -13,7 +13,7 @@ public sealed class AssetTypeExtensibilityTests
         using var directory = new AssetTestDirectory();
         Guid id = Guid.NewGuid();
         var project = new AssetProject(directory.Path, []);
-        using ReadingSampleAsset written = new ReadingSampleAsset(SomeEngine.Serialization.Containers.PageArena.Shared, id) { Name = "third-party" };
+        using ReadingSampleAsset written = new ReadingSampleAsset(id) { Name = "third-party" };
         using var content = new ReadingSampleBlock { Number = 42 };
         written.SetBlock(content);
         project.RegisterAsset(await written.SaveAsync(directory.File("new.reading.asset")));

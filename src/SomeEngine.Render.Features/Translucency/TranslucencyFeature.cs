@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
@@ -67,7 +68,7 @@ public sealed class TranslucencyFeature : IDisposable
                 rasterizer: new RasterizerState(Cull: CullType.None),
                 label: "Translucency composition");
             _resourceOrder = FeatureResourceLayout.Resolve<CompositionResource>(
-                pipeline.Program.Layout.GetGlobalParamsVarLayout(),
+                pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 ResolveResource);
 
             using RenderGraphEdit edit = graph.BeginEdit();
@@ -117,7 +118,7 @@ public sealed class TranslucencyFeature : IDisposable
                 new CompositionPassData(outputAttachment, width, height),
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 pipeline.Pipeline,
-                pipeline.Program.Layout.GetGlobalParamsVarLayout(),
+                pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 default,
                 CompositionPassData.Declare,
                 CompositionPassData.Record);

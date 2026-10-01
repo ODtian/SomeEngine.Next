@@ -1,53 +1,96 @@
-# 独立 Shader 定义
+# 独立 Shader 定义与运行时编译
 
-2026-09-16。`.shader` 使用 [AssetText 源格式](AssetSources.md)，在 ShaderAsset 内保存 ShaderSourceBlock；编译输出保存在 ShaderBlock。定义拥有自己的 ID，不从同名 Slang 文件推导，不生成重复的 `.shader.meta` 或 `.slang.meta`。
+`.shader` 是 `ShaderAsset` 的人类可编辑来源。它拥有独立 ID，并在同一个语义资产中声明 `ShaderSourceBlock`；内容构建还会产生 `ShaderBlock`。不从同名 `.slang` 推导资产身份，也不生成重复的 `.slang.meta`。
 
-## Slang 来源
+架构规则见 [Shader Block、驻留与 Slang 重构规范](../wiki/architecture/shader/Shader-Block-Residency-Refactor.md)。当前实现及验收缺口见 [2026-09-29 审查](../reviews/AssetSpecReview-2026-09-29.md)。
 
-ShaderSourceBlock 保存 SourceFiles、Specializations、CookProfile，以及构建时写入 Block chunk 的 Slang 序列化单元。SourceFiles 相对于定义文件，可包含多份源码。Slang 的 import、include、入口和阶段声明是唯一权威。
+## 来源格式
 
-所有由 Slang 声明的入口都会进入组合；引擎不再保存入口选择 record。Specializations 按 Slang 参数顺序提供原生特化表达式，不创建另一种组合语言。CookProfile 只选择内容构建使用的 Slang 配置。用户机器编译所需目标由调用方直接通过 Slang `SessionDesc.Targets` 提供，不写入引擎目标枚举。
+当前 `.shader` 的 Shader 数据只声明 `SourceNames`。以下只展示该字段；完整文件还包含身份、类型、schema 和 Block 描述，格式见 [可读资产源文件](AssetSources.md)：
 
-```csharp
-using var definition = new ShaderAsset { Name = "Surface" };
-ShaderSourceBlock inputs = definition.GetBlock<ShaderSourceBlock>();
-inputs.SourceFiles = ["Geometry.slang", "Lighting.slang"];
-inputs.CookProfile = "d3d12-sm6.6-bindless";
-await definition.SaveSourceAsync(Path.Combine(projectDirectory, "Surface.shader"));
-
-var project = new AssetProject(projectDirectory, [],
-    sourceFormats: [new ShaderSourceFormat(["../EngineShaderLibrary"])]);
-Guid id = await project.BuildAsync("Surface.shader");
+```json
+{
+  "Blocks": [
+    {
+      "Fields": {
+        "SourceNames": ["surface.slang"]
+      }
+    }
+  ]
+}
 ```
 
-调用代码需要 `SomeEngine.Assets`、`SomeEngine.Assets.Schema`、`SomeEngine.Assets.Importers` 命名空间。IAssetSourceFormat 表达来源格式能力，AssetManifest 记录具体实例；SG 不生成这里的来源编译流程。
+名称相对于定义文件。Slang 自己解析 include/import、入口、阶段、泛型和属性；引擎不保存入口选择、阶段、target 或反射副本。一个定义可以列出多份根模块，所有由 Slang 声明的入口按 Slang 顺序组成。
 
-## 输入、增量构建和失败
+target/profile 与特化属于一次具体编译调用：调用方直接提供 Slang `SessionDesc`、`TargetDesc` 和 `SpecializationArg`。这些值不以引擎枚举或字符串配置写进 `Shader`。
 
-AssetProject.BuildAsync 通过 ShaderSourceFormat 核验定义、实际传递依赖、编译选项、目标、编译器版本、Block 编码版本及已有输出文件。只相信缓存记录不足以复用：还要检查实际输出摘要和文档内容版本。
+## 内容构建
 
-不变输入与未被读取的其他源码不会触发重新编译。定义名称、实际 include、Slang 入口、特化或 CookProfile 变化会重新构建同一 ID。缺失或损坏产物仅在已登记身份和路径相符时允许修复，不能覆盖另一份有效资产。相同内容恢复可以保持原内容版本，不把版本当每次构建递增的计数。
+`ShaderSourceFormat` 通过 `AssetProject.BuildAsync` 调用 `SlangShaderImporter`。构建行为：
 
-构建记录保存在完整来源名追加 `.import.json`，是可丢弃的派生数据；人工 ID 与来源仍在 `.shader`。输出和记录保存完成后才切换目录；编译失败、输入中途变化或文件保存失败会保留旧的有效产物与目录。多个独立文件的进程内回退不承诺断电时整体原子性。
+1. 用 Slang 加载每份根源码；
+2. 让 Slang 处理实际 include/import；
+3. 对每个根 `IModule.Serialize`，把 Slang 不透明 IR 保存到 `ShaderSourceBlock`；
+4. compose/link 所有 `IEntryPoint`；
+5. 保存可取得的整 target 代码和每个入口代码到 `ShaderBlock`；
+6. 写入实际依赖、内容摘要和 importer 版本。
 
-需要直接编译而不登记文件的代码使用 SlangShaderImporter.CompileDefinition。旧的单个 Slang 文件隐式导入与独立缓存入口已删除。
+二进制 `ShaderSourceBlock` 因此包含用户机器可取得的 Slang 输入，不依赖构建机器的源码路径。`ShaderBlock` 只保存代码 chunk，不保存入口、资源、类型、布局或属性的引擎副本。
+
+整 target blob 是可选的；Slang 对多入口组合不提供整 blob 时，逐入口代码仍是有效产物。
+
+## 用户机器编译
+
+用户机器上的显式编译通过 ShaderSourceBlock 完成。CreateAsync 使用已有 Slang 数据或调用方搜索路径中的源码；CompileAsync 返回 Shader、序列化 Slang 数据和实际读取文件的摘要。调用已有 Slang 数据的示例：
+
+```csharp
+await using ShaderAsset asset = await ShaderAsset.OpenAsync(loader, shaderId, cancellationToken);
+ShaderSourceBlock source = await asset.GetBlockAsync<ShaderSourceBlock>(cancellationToken);
+Shader shader = await source.CreateAsync(
+    slangGlobal,
+    sessionDescription,
+    asset.Name,
+    specializations,
+    cancellationToken);
+```
+
+`CreateAsync` 异步取得 IR，在新 `ISession` 中恢复 `IModule`，取得 `IEntryPoint`，compose/specialize/link/codegen，并返回驻留完成的 `Shader`。`Shader` 直接持有必要 Slang 接口、反射句柄和生成的 `ISlangBlob`，不为统一形式把 blob 复制进页。它不实现 `IDisposable`，调用方通过普通 GC 引用保持使用期限。
+
+如果保存代码适用于本次 Slang 设置，可由 `ShaderBlock.CreateAsync` 取得：
+
+```csharp
+ShaderBlock code = await asset.GetBlockAsync<ShaderBlock>(cancellationToken);
+Shader shader = await code.CreateAsync(
+    source,
+    slangGlobal,
+    sessionDescription,
+    asset.Name,
+    specializations,
+    cancellationToken);
+```
+
+这条路径恢复相同的直接 Slang 对象，并将所需代码交给最终 `byte[]`，由 `Shader` 通过普通引用持有。当前实现仍先取得页，再复制到数组；总规范要求收敛到最终存储的取得边界，见审查 I11。Asset 和文件随后可以释放，Shader 不持有页保留，也不承担页的释放责任。
+
+内部 `ShaderRef.LoadAsync` 与公共材质/管线配置创建 API 也要求调用边界显式提供 Slang 参数或 Shader 加载行为。`AssetLoader` 不推断设备 target。材质 UpdateAsync 同样接收显式 Slang 参数或 Shader、Texture 加载行为，完整取得替代内容后在既有更新边界更新 Material。
+
+## 增量构建与失败
+
+构建记录位于完整来源名追加 `.import.json`，是可丢弃的派生数据。定义内容、实际依赖、Slang 编译设置、编译器版本、Block 编码和输出摘要共同决定复用；只相信记录文件不足以复用。
+
+未读取的其他源码变化不会触发构建。定义、实际 include/import、编译器或 target 设置变化会重建同一 ID。缺失或损坏产物只在登记身份与路径一致时修复，不能覆盖另一有效资产。
+
+编译失败、输入在编译期间变化或保存失败时，旧成功产物和目录继续有效。旧 Shader schema 没有兼容 reader；升级后必须重新构建 `.shader.asset`。
 
 ## 显式工程和库路径
 
-项目根目录与 include 路径由调用方提供。默认局部编译以定义所在目录为根，不向父目录寻找工程文件，也不使用进程当前目录推断引擎库。
-
-`SlangShaderImporter.BuildAsync`、`CompileDefinition` 与 `GetDefinitionInputs` 均接受可选 `projectRoot`，含义一致。调用方选择工程目录后，构建与后续输入核验应传入同一目录；省略则记录定义目录相对的依赖，不因为上级存在 `Directory.Build.props` 改变行为。
-
-依赖由实际 Slang 编译读取获得，不用正则模拟语言。相同卷中的项目外文件使用完整相对路径而不是只记文件名；跨卷路径按平台路径规则保留完整位置。库位置和解析顺序参与构建键，换机器或改变库配置后按新位置核验并重建。
+项目根目录与 include 路径由调用方提供。默认局部构建以定义所在目录为根，不向父目录搜索工程，也不以进程当前目录猜引擎库。
 
 ```powershell
 dotnet run --project tools/SomeEngine.AssetCook/SomeEngine.AssetCook.csproj -c Release -- shader assets/Shaders/hello_triangle.shader --project <project-directory> --include <engine-directory>/assets/Shaders
 ```
 
-AssetCook 在构建后通过存储打开资产并创建 Shader，报告 ID、配置、后端和存储读取结果。它不扫描仓库猜测默认项目。
+`AssetCook` 使用正常 `AssetProject`/Block 行为，并在保存后重新打开资产、恢复直接 Slang 数据和检查每个 target 的入口数。
 
 ## 模板边界
 
-Standard、Unlit 的具体 C#、顶层 Slang 和 Shader 定义随项目模板分发；创建后由用户维护。引擎只提供原有可复用 Shader 算法和入口库。构建不会补回被用户删除的来源，也不会静默覆盖修改。
-
-项目构建从自己的源码生成 63 项默认资产；来源改动与删除衍生记录后重建仍保持 Shader ID 和材质引用。原有六种渲染场景以及独立目录运行结果见 [当前验证](../wiki/architecture/Assets/Asset-Verification-2026-09-16.md)。
+Standard、Unlit 的具体 C#、顶层 Slang 和 `.shader` 随默认项目模板分发；创建项目后由用户维护。引擎只提供共享 Shader 算法与接口库，不补回用户删除的来源，也不静默覆盖修改。

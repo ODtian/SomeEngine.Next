@@ -112,7 +112,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
                 ? Guid.Parse(JsonNode.Parse(File.ReadAllText(definitionPath))!["Fields"]!["Id"]!.GetValue<string>()) : Guid.NewGuid();
             definition["Fields"]!["Id"] = shaderId.ToString();
             definition["Fields"]!["Name"] = shaderName;
-            definition["Blocks"]![0]!["Fields"]!["SourceFiles"] = new JsonArray(shaderName + ".slang");
+            definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(shaderName + ".slang");
             WriteIfChanged(definitionPath, definition.ToJsonString());
             await project.BuildAsync(definitionPath);
             _shaders.Add(cutoff, shaderId);
@@ -126,7 +126,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
         // sample viewer; the engine still sees an ordinary user material.
         if (old.MaterialTypeId != SceneMaterial.TypeId)
         {
-            using var replacement = new SceneMaterialAsset(PageArena.Shared, template.Id) { Name = "Imported scene material" };
+            using var replacement = new SceneMaterialAsset(template.Id) { Name = "Imported scene material" };
             var block = replacement.GetBlock<MaterialBlock>();
             foreach (var parameter in old.Parameters) block.SetParameter(parameter);
             block.Shader = new(_shaders.Values.First());

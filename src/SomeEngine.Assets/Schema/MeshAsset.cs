@@ -21,15 +21,15 @@ public sealed partial class MeshAsset : Asset
         private set => base.BlockDescriptions = value;
     }
 
-    public MeshAsset() : this(PageArena.Shared) { }
+    public MeshAsset() : this(Guid.Empty) { }
 
-    public MeshAsset(PageArena pages, Guid id = default) : base(pages, id)
+    public MeshAsset(Guid id = default) : base(id)
     {
         AssetType = FileType;
     }
 
     private MeshAsset(MeshAsset source) : base(source) { }
-    public override MeshAsset Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public override MeshAsset Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
     public override MeshAsset CreateCopy(Guid id = default) => (MeshAsset)base.CreateCopy(id);
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
@@ -45,7 +45,7 @@ public sealed partial class MeshAsset : Asset
         AssetEntry description = file.Describe();
         if ((expected != Guid.Empty && expected != description.AssetGuid) || description.AssetType != FileType)
             throw new InvalidDataException("The asset identity or type differs from the selected file.");
-        var result = new MeshAsset(file.Pages, description.AssetGuid);
+        var result = new MeshAsset(description.AssetGuid);
         try
         {
             result.ReadBlockContent(file);
@@ -62,11 +62,11 @@ public sealed partial class MeshAsset : Asset
         catch { result.Dispose(); throw; }
     }
 
-    public static async ValueTask<MeshAsset> OpenAsync(string path, PageArena? pages = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<MeshAsset> OpenAsync(string path, CancellationToken cancellationToken = default)
     {
         if (!path.EndsWith(PathSuffix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The asset path has a different suffix.");
-        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, cancellationToken: cancellationToken).ConfigureAwait(false);
         return await ReadFileAsync(file, Guid.Empty, cancellationToken).ConfigureAwait(false);
     }
 

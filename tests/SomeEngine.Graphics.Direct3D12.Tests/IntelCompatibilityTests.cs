@@ -46,12 +46,12 @@ public sealed class IntelCompatibilityTests
                 return input.Color * Tint;
             }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("vertexMain", SlangStage.Vertex),
             new("pixelMain", SlangStage.Fragment),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "intel_sm60_persistent_draw",
             source,
             entries,
@@ -76,10 +76,7 @@ public sealed class IntelCompatibilityTests
         Assert.Throws<InvalidOperationException>(() =>
             backend.CreateGraphicsPipeline(
                 device,
-                new GraphicsPipelineDesc(
-                    shader.Program,
-                    shader.GetEntryPoint(0),
-                    shader.GetEntryPoint(1),
+                new GraphicsPipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0), shader.GetEntryPoint(1), shader.GetEntryCode(1),
                     [],
                     [],
                     PrimitiveTopology.TriangleList,
@@ -94,10 +91,7 @@ public sealed class IntelCompatibilityTests
                     DynamicStates.StripCut)));
         using Pipeline pipeline = backend.CreateGraphicsPipeline(
             device,
-            new GraphicsPipelineDesc(
-                shader.Program,
-                shader.GetEntryPoint(0),
-                shader.GetEntryPoint(1),
+            new GraphicsPipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0), shader.GetEntryPoint(1), shader.GetEntryCode(1),
                 [],
                 [],
                 PrimitiveTopology.TriangleList,
@@ -108,9 +102,9 @@ public sealed class IntelCompatibilityTests
                 new BlendState(blendAttachments),
                 new AttachmentFormatSignature(formats, null),
                 DynamicStates.Viewport | DynamicStates.Scissor));
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        Assert.NotEqual(ShaderVariableLayout.Null, layout);
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        Assert.NotEqual(VariableLayoutReflection.Null, layout);
         byte[] ordinaryData = new byte[16];
         BitConverter.TryWriteBytes(ordinaryData.AsSpan(0, 4), 1f);
         BitConverter.TryWriteBytes(ordinaryData.AsSpan(4, 4), 1f);

@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "6b30dbe52612949d9fd1135a3b85f20467f0d33190c8459edbf4ec835a92d441",
+  "importer_version": 29,
+  "input_hash": "843fcdf0542cff1753df43bca213d021612b8c85b852825827b603e22883e764",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/render_lighting.slang",
@@ -37,7 +37,7 @@
     },
     {
       "relative_path": "assets/Shaders/vsm_mark_pages.shader",
-      "content_hash": "03d01d05945377b4f87b7b1063f5aac009b679de142de60bcb40afa6fd3cd58c"
+      "content_hash": "8142ecd87703b47e1829789f24b7628fa8d515d99498f21ba1982bd3230ed160"
     }
   ],
   "reported_inputs": [],
@@ -45,11 +45,11 @@
     {
       "asset_guid": "6c441d68-a857-5643-9923-2d03131e0a37",
       "sub_asset_key": "",
-      "input_hash": "6b30dbe52612949d9fd1135a3b85f20467f0d33190c8459edbf4ec835a92d441",
+      "input_hash": "843fcdf0542cff1753df43bca213d021612b8c85b852825827b603e22883e764",
       "dependencies": [],
       "asset_path": "vsm_mark_pages.shader.asset",
-      "version": "be4f1841-ae28-c558-38ac-6f3cc618c7b0",
-      "content_hash": "5F0E405CE478E74E774F7DC1001F08D89A34B64FFC20504217A0AA78584A6419",
+      "version": "0b7914cb-3868-4e98-abdc-ac7826604d6a",
+      "content_hash": "C2D47D997570731D6C90D543E710744A1B961C09259830090931C42617616078",
       "asset_dependencies": []
     }
   ]

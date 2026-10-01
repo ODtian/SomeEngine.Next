@@ -10,7 +10,7 @@ namespace SomeEngine.Assets.Schema;
 [AssetBlock("SomeEngine.Assets.Schema.ClusterMeshBlock"), BinarySerializable]
 [BinaryFields(nameof(VertexEncoding), nameof(PayloadKey), nameof(PayloadLength), nameof(BvhOffset),
     nameof(PageDigests), nameof(LowestDetailPageIndices), nameof(BvhLength), nameof(BvhSha256))]
-public sealed partial class ClusterMeshBlock : AssetPageBlock
+public sealed partial class ClusterMeshBlock : AssetBlock
 {
     public static ulong PayloadChunkKey { get; } = BinaryFieldKey.FromName("SomeEngine.Assets.Schema.Mesh.Payload");
     public partial string VertexEncoding { get; set; }
@@ -29,20 +29,20 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
     }
 
     /// <summary>Assigns completed geometry pages and derives their integrity metadata.</summary>
-    public void SetPayload(PageBuffer payload, ulong bvhOffset)
+    public void SetPayload(ReadOnlyMemory<byte> payload, ulong bvhOffset)
     {
-        using PageBuffer bytes = payload.Duplicate();
-        lock (Access.SyncRoot)
+        ReadOnlyMemory<byte> bytes = payload;
+        lock (SyncRoot)
         {
             RequireIdle();
             var descriptions = MeshIntegrity.Inspect(bytes, checked((long)bvhOffset), VertexEncoding);
-            using PageRange<byte> bvh = bytes.Retain(checked((long)bvhOffset), bytes.Length - checked((long)bvhOffset));
+            ReadOnlyMemory<byte> bvh = bytes[checked((int)bvhOffset)..];
             ImmutableArray<byte> digest = MeshIntegrity.Hash(bvh);
-            Chunks.Set(PayloadChunkKey, bytes);
+            SetBytes(PayloadChunkKey, bytes);
             PayloadKey = PayloadChunkKey;
             PayloadLength = checked((ulong)bytes.Length);
             BvhOffset = bvhOffset;
-            BvhLength = checked((ulong)bvh.Sequence.Length);
+            BvhLength = checked((ulong)bvh.Length);
             BvhSha256 = digest;
             PageDigests = descriptions;
             if (LowestDetailPageIndices.Count == 0)
@@ -52,11 +52,8 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
 
     protected override void ValidateContent()
     {
-        if (Chunks.Contains(PayloadChunkKey))
-        {
-            using PageBuffer bytes = Chunks.DuplicateBuffer(PayloadChunkKey);
-            SetPayload(bytes, BvhOffset);
-        }
+        if (Chunks.TryGetValue(PayloadChunkKey, out ReadOnlyMemory<byte> bytes) && (ulong)bytes.Length != PayloadLength)
+            throw new InvalidDataException("Mesh payload length differs from its declaration.");
         if (PayloadKey != PayloadChunkKey || BvhLength > int.MaxValue
             || BvhOffset >= PayloadLength || PayloadLength - BvhOffset != BvhLength
             || BvhSha256.IsDefault || BvhSha256.Length != Digest256.Size)
@@ -83,43 +80,50 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
         return await OpenPayloadSourceAsync(copy, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async ValueTask<MeshPayloadSource> OpenPayloadSourceAsync(ClusterMeshBlock copy, CancellationToken cancellationToken)
+    private MeshPayloadData? _geometry;
+    private Guid _geometryVersion;
+    partial void CopyFrom(ClusterMeshBlock source)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        ImmutableArray<MeshPayloadPageDigest> descriptions = copy.PageDigests.ToImmutableArray();
-        if (copy.Chunks.Contains(PayloadChunkKey))
+        _geometry = source.GetGeometry();
+        _geometryVersion = source._geometryVersion;
+    }
+    private MeshPayloadData GetGeometry()
+    {
+        lock (SyncRoot)
         {
-            PageBuffer bytes = copy.Chunks.DuplicateBuffer(PayloadChunkKey);
-            try { return new(bytes, checked((long)copy.BvhOffset), checked((int)copy.BvhLength), copy.BvhSha256.AsMemory(), descriptions, copy.LowestDetailPageIndices); }
-            catch { bytes.Dispose(); throw; }
-        }
-        AssetBlockSource blockSource = copy.RetainSource() ?? throw new InvalidDataException("Cluster mesh block has no payload.");
-        IRangeSource? source = null;
-        try
-        {
-            source = await blockSource.OpenChunkRangeSourceAsync(PayloadChunkKey, cancellationToken).ConfigureAwait(false);
-            if (checked((ulong)source.Length) != copy.PayloadLength)
-                throw new InvalidDataException("Mesh payload length differs from the block declaration.");
-            return new(blockSource, source, checked((long)copy.BvhOffset), checked((int)copy.BvhLength), copy.BvhSha256.AsMemory(), descriptions, copy.LowestDetailPageIndices);
-        }
-        catch
-        {
-            try { if (source is not null) await source.DisposeAsync().ConfigureAwait(false); }
-            finally { blockSource.Dispose(); }
-            throw;
+            if (_geometry is null || _geometryVersion != DataVersion
+                || !PageDigests.SequenceEqual(_geometry.Digests)
+                || !LowestDetailPageIndices.SequenceEqual(_geometry.LowestDetailPages))
+            {
+                _geometry = new(PageDigests, LowestDetailPageIndices, checked((long)BvhOffset), checked((int)BvhLength), BvhSha256.AsMemory());
+                _geometryVersion = DataVersion;
+            }
+            return _geometry;
         }
     }
+    private static ValueTask<MeshPayloadSource> OpenPayloadSourceAsync(ClusterMeshBlock copy, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        MeshPayloadData data = copy.GetGeometry();
+        if (copy.Chunks.TryGetValue(PayloadChunkKey, out var bytes))
+            return ValueTask.FromResult(new MeshPayloadSource(bytes, data));
+        using AssetBlockSource source = copy.RetainSource() ?? throw new InvalidDataException("Cluster mesh block has no payload.");
+        return ValueTask.FromResult(new MeshPayloadSource(source, data));
+    }
 
-    /// <summary>Acquires the BVH; geometry pages remain available through explicit page reads.</summary>
+    /// <summary>Acquires the BVH and lowest-detail geometry; finer pages are loaded explicitly.</summary>
     public async ValueTask<Mesh> CreateAsync(MeshBlock geometry, string name, CancellationToken cancellationToken = default)
     {
         using ClusterMeshBlock copy = Duplicate();
         using MeshBlock shape = geometry.Duplicate();
         copy.ValidateContent();
         using MeshPayloadSource source = await OpenPayloadSourceAsync(copy, cancellationToken).ConfigureAwait(false);
-        using PageBuffer bvh = await source.AcquireBvhAsync(copy.Pages, cancellationToken).ConfigureAwait(false);
+        ReadOnlyMemory<byte> bvh = await source.ReadBvhAsync(cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        return Mesh.Create(name, copy.VertexEncoding, copy.PageDigests.ToImmutableArray(), bvh,
+        var ready = new ReadOnlyMemory<byte>[copy.PageDigests.Count];
+        foreach (uint index in copy.LowestDetailPageIndices)
+            ready[index] = await source.ReadPageAsync(checked((int)index), cancellationToken).ConfigureAwait(false);
+        return Mesh.Create(name, copy.VertexEncoding, copy.PageDigests.ToImmutableArray(), bvh, ready,
             lowestDetailPageIndices: copy.LowestDetailPageIndices.ToArray(),
             bounds: shape.Bounds, regions: shape.Regions.ToImmutableArray());
     }
@@ -135,12 +139,12 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
             || !mesh.BvhSha256.AsSpan().SequenceEqual(copy.BvhSha256.AsSpan()))
             throw new InvalidOperationException("Mesh content differs; update the mesh before acquiring more pages.");
         using MeshPayloadSource source = await OpenPayloadSourceAsync(copy, cancellationToken).ConfigureAwait(false);
-        using var pages = new PageBufferMap(copy.Pages);
+        var pages = new List<(int Index, ReadOnlyMemory<byte> Bytes)>();
         foreach (int index in pageIndices.Distinct())
         {
-            if (mesh.TryRetainPage(index, out PageRange<byte>? ready)) { ready.Dispose(); continue; }
-            using PageBuffer bytes = await source.AcquirePageAsync(index, copy.Pages, cancellationToken).ConfigureAwait(false);
-            pages.Set(checked((ulong)index), bytes);
+            if (mesh.TryGetPage(index, out _)) continue;
+            ReadOnlyMemory<byte> bytes = await source.ReadPageAsync(index, cancellationToken).ConfigureAwait(false);
+            pages.Add((index, bytes));
         }
         cancellationToken.ThrowIfCancellationRequested();
         mesh.AddPages(pages, revision);
@@ -148,9 +152,9 @@ public sealed partial class ClusterMeshBlock : AssetPageBlock
 
     protected override async ValueTask WriteChunksAsync(AssetBlockWriter writer, CancellationToken cancellationToken)
     {
-        if (Chunks.Contains(PayloadChunkKey))
+        if (Chunks.ContainsKey(PayloadChunkKey))
         {
-            writer.WriteChunk(PayloadChunkKey, Chunks, ChunkCompression.None, alignment: 4096);
+            writer.WriteChunk(PayloadChunkKey, Chunks[PayloadChunkKey], ChunkCompression.None, alignment: 4096);
             return;
         }
         using AssetBlockSource source = RetainSource() ?? throw new InvalidDataException("Cluster mesh block has no payload.");

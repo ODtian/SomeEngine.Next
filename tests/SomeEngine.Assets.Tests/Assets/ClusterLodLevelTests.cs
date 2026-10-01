@@ -17,7 +17,7 @@ public sealed class ClusterLodLevelTests
             ClusterBuilderTestMaterials.Slots(),
             "TestLOD");
 
-        using var payload = meshAsset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        var payload = meshAsset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
         (int[] levelCounts, int maxLevel, _) = ReadLevelCounts(payload.ToArray());
 
         Assert.True(levelCounts[0] > 0, "Should have Level 0 clusters");

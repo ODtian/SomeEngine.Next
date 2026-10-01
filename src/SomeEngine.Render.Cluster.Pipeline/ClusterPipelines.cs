@@ -1,29 +1,26 @@
-using SomeEngine.Assets.Schema;
-using SomeEngine.Resources;
-using SomeEngine.Graphics;
-using SomeEngine.RenderGraph;
+using System.Buffers;
 using SlangShaderSharp;
+using SomeEngine.Graphics;
+using SomeEngine.Resources;
 using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-/// <summary>Owns one RHI pipeline created from a cooked shader program.</summary>
 internal abstract class ClusterPipeline : IDisposable
 {
     private bool _disposed;
 
-    protected ClusterPipeline(
-        ShaderProgram program,
-        GraphicsPipeline pipeline)
+    protected ClusterPipeline(ShaderReflection reflection, GraphicsPipeline pipeline)
     {
-        Program = program ?? throw new ArgumentNullException(nameof(program));
+        if (reflection == ShaderReflection.Null)
+            throw new ArgumentException("Slang reflection is null.", nameof(reflection));
+        Reflection = reflection;
         Pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
     }
 
-    internal ShaderProgram Program { get; }
-
-    internal ShaderVariableLayout ParameterLayout => Program.Layout.GetGlobalParamsVarLayout();
-
+    internal ShaderReflection Reflection { get; }
+    internal VariableLayoutReflection ParameterLayout =>
+        Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
     internal GraphicsPipeline Pipeline { get; }
 
     public void Dispose()
@@ -53,18 +50,21 @@ internal abstract class ClusterPipeline : IDisposable
 
     private static void TryDispose(IDisposable value, ref List<Exception>? failures)
     {
-        try { value.Dispose(); }
-        catch (Exception failure) { (failures ??= []).Add(failure); }
+        try
+        {
+            value.Dispose();
+        }
+        catch (Exception failure)
+        {
+            (failures ??= []).Add(failure);
+        }
     }
 }
 
-/// <summary>A cooked compute program and its compute pipeline.</summary>
 internal sealed class ClusterComputePipeline : ClusterPipeline
 {
-    private ClusterComputePipeline(
-        ShaderProgram program,
-        GraphicsPipeline pipeline)
-        : base(program, pipeline)
+    private ClusterComputePipeline(ShaderReflection reflection, GraphicsPipeline pipeline)
+        : base(reflection, pipeline)
     {
     }
 
@@ -75,47 +75,65 @@ internal sealed class ClusterComputePipeline : ClusterPipeline
         string entryPoint,
         string name)
     {
-        GraphicsPipeline? pipeline = null;
-        try
-        {
-            CookedShaderEntry cooked = shader.RequireEntry(
-                device.Capabilities.CompileTarget,
-                entryPoint,
-                ShaderStage.Compute);
-            pipeline = backend.CreateComputePipeline(
-                device,
-                new ComputePipelineDesc(
-                    cooked.Program,
-                    cooked.EntryPoint,
-                    name));
-            return new ClusterComputePipeline(cooked.Program, pipeline);
-        }
-        catch (Exception primary)
-        {
-            CleanupConstructionFailure(
-                primary,
-                pipeline,
-                $"Cluster compute pipeline '{name}' construction failed and cleanup also reported failures.");
-            throw;
-        }
+        int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+        EntryPointReflection entry = shader.RequireSlangEntry(
+            targetIndex,
+            entryPoint,
+            SlangStage.Compute);
+        return Create(
+            backend,
+            device,
+            shader,
+            entry,
+            shader.GetSlangEntryBytes(targetIndex, entry),
+            shader.GetSlangEntryBlob(targetIndex, entry),
+            name);
     }
 
     internal static ClusterComputePipeline Create(
         IGraphicsBackend backend,
         Device device,
-        in CookedShaderEntry cooked,
+        Shader shader,
+        EntryPointReflection entry,
+        string name)
+    {
+        if (entry == EntryPointReflection.Null || entry.Stage != SlangStage.Compute)
+            throw new InvalidDataException($"Cluster compute pipeline '{name}' has no compute entry.");
+        int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+        return Create(
+            backend,
+            device,
+            shader,
+            entry,
+            shader.GetSlangEntryBytes(targetIndex, entry),
+            shader.GetSlangEntryBlob(targetIndex, entry),
+            name);
+    }
+
+    private static ClusterComputePipeline Create(
+        IGraphicsBackend backend,
+        Device device,
+        Shader shader,
+        EntryPointReflection entry,
+        ReadOnlySequence<byte> code,
+        ISlangBlob? codeBlob,
         string name)
     {
         GraphicsPipeline? pipeline = null;
         try
         {
+            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+            ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
             pipeline = backend.CreateComputePipeline(
                 device,
                 new ComputePipelineDesc(
-                    cooked.Program,
-                    cooked.EntryPoint,
-                    name));
-            return new ClusterComputePipeline(cooked.Program, pipeline);
+                    shader.SlangCode,
+                    reflection,
+                    entry,
+                    code,
+                    name,
+                    CodeBlob: codeBlob));
+            return new ClusterComputePipeline(reflection, pipeline);
         }
         catch (Exception primary)
         {
@@ -128,38 +146,43 @@ internal sealed class ClusterComputePipeline : ClusterPipeline
     }
 }
 
-/// <summary>Owns one cooked vertex/pixel program and its RHI pipeline.</summary>
 internal sealed class ClusterRasterPipeline : ClusterPipeline
 {
     private ClusterRasterPipeline(
-        ShaderProgram program,
-        GraphicsPipeline pipeline, bool usesMesh, string geometryEntry)
-        : base(program, pipeline)
+        ShaderReflection reflection,
+        GraphicsPipeline pipeline,
+        bool usesMesh,
+        string geometryEntry)
+        : base(reflection, pipeline)
     {
         UsesMesh = usesMesh;
         GeometryEntry = geometryEntry;
     }
 
     internal bool UsesMesh { get; }
-
     internal string GeometryEntry { get; }
-
-    internal bool UsesMaterialRanges => GeometryEntry is "MSVisBufferMeshlet" or ClusterMaterialEntries.HardwareMeshlet;
+    internal bool UsesMaterialRanges =>
+        GeometryEntry is "MSVisBufferMeshlet" or ClusterMaterialEntries.HardwareMeshlet;
 
     internal static bool SupportsMeshlets(IGraphicsBackend backend, Device device) =>
-        SupportsMesh(backend, device) && backend.TryGetCapability(device, out MeshShaders? mesh) &&
-        mesh!.MaximumOutputVertices >= 64 && mesh.MaximumOutputPrimitives >= 128;
+        SupportsMesh(backend, device) &&
+        backend.TryGetCapability(device, out MeshShaders? mesh) &&
+        mesh!.MaximumOutputVertices >= 64 &&
+        mesh.MaximumOutputPrimitives >= 128;
 
     internal static bool SupportsMesh(IGraphicsBackend backend, Device device) =>
-        backend.TryGetCapability(device, out MeshShaders? mesh) && mesh is not null &&
-        mesh.IndirectDispatch && mesh.MaximumThreadsPerGroup >= 32 &&
-        mesh.MaximumOutputVertices >= 96 && mesh.MaximumOutputPrimitives >= 64;
+        backend.TryGetCapability(device, out MeshShaders? mesh) &&
+        mesh is not null &&
+        mesh.IndirectDispatch &&
+        mesh.MaximumThreadsPerGroup >= 32 &&
+        mesh.MaximumOutputVertices >= 96 &&
+        mesh.MaximumOutputPrimitives >= 64;
 
     internal static ClusterRasterPipeline Create(
         IGraphicsBackend backend,
         Device device,
         Shader shader,
-        string vertexEntryPoint,
+        string geometryEntryPoint,
         string pixelEntryPoint,
         ReadOnlySpan<Format> colorFormats,
         Format? depthStencilFormat = null,
@@ -172,21 +195,25 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
         bool alphaToCoverage = false,
         ReadOnlySpan<VertexBufferLayout> vertexBuffers = default,
         ReadOnlySpan<VertexAttribute> vertexAttributes = default,
-        ShaderStage geometryStage = ShaderStage.Vertex)
+        SlangStage geometryStage = SlangStage.Vertex)
     {
         GraphicsPipeline? pipeline = null;
         try
         {
-            CookedShaderEntry vertex = shader.RequireEntry(
-                device.Capabilities.CompileTarget,
-                vertexEntryPoint,
+            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+            ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+            EntryPointReflection geometry = shader.RequireSlangEntry(
+                targetIndex,
+                geometryEntryPoint,
                 geometryStage);
-            CookedShaderEntry pixel = shader.RequireEntry(
-                device.Capabilities.CompileTarget,
+            EntryPointReflection pixel = shader.RequireSlangEntry(
+                targetIndex,
                 pixelEntryPoint,
-                ShaderStage.Pixel);
-            if (!ReferenceEquals(vertex.Program, pixel.Program))
-                throw new InvalidDataException("Cluster raster entries must belong to one cooked shader program.");
+                SlangStage.Fragment);
+            ReadOnlySequence<byte> geometryCode = shader.GetSlangEntryBytes(targetIndex, geometry);
+            ReadOnlySequence<byte> pixelCode = shader.GetSlangEntryBytes(targetIndex, pixel);
+            ISlangBlob? geometryBlob = shader.GetSlangEntryBlob(targetIndex, geometry);
+            ISlangBlob? pixelBlob = shader.GetSlangEntryBlob(targetIndex, pixel);
             var multisample = new MultisampleState(sampleCount, sampleMask, alphaToCoverage);
             var blend = new BlendState(
                 blendAttachments,
@@ -195,29 +222,55 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
                 colorFormats,
                 depthStencilFormat,
                 sampleCount);
-            var description = new GraphicsPipelineDesc(
-                vertex.Program,
-                vertex.EntryPoint,
-                pixel.EntryPoint,
-                vertexBuffers,
-                vertexAttributes,
-                PrimitiveTopology.TriangleList,
-                StripCut.Disabled,
-                rasterizer,
-                multisample,
-                depthStencil,
-                blend,
-                attachments,
-                DynamicStates.Viewport | DynamicStates.Scissor,
-                name);
-            bool usesMesh = geometryStage == ShaderStage.Mesh;
+            bool usesMesh = geometryStage == SlangStage.Mesh;
             pipeline = usesMesh
-                ? backend.CreateMeshPipeline(device, new MeshPipelineDesc(
-                    vertex.Program, vertex.EntryPoint, ShaderEntryPoint.Null, pixel.EntryPoint,
-                    rasterizer, multisample, depthStencil, blend, attachments,
-                    DynamicStates.Viewport | DynamicStates.Scissor, name))
-                : backend.CreateGraphicsPipeline(device, description);
-            return new ClusterRasterPipeline(vertex.Program, pipeline, usesMesh, vertexEntryPoint);
+                ? backend.CreateMeshPipeline(
+                    device,
+                    new MeshPipelineDesc(
+                        shader.SlangCode,
+                        reflection,
+                        geometry,
+                        geometryCode,
+                        EntryPointReflection.Null,
+                        ReadOnlySequence<byte>.Empty,
+                        pixel,
+                        pixelCode,
+                        rasterizer,
+                        multisample,
+                        depthStencil,
+                        blend,
+                        attachments,
+                        DynamicStates.Viewport | DynamicStates.Scissor,
+                        name,
+                        meshCodeBlob: geometryBlob,
+                        pixelCodeBlob: pixelBlob))
+                : backend.CreateGraphicsPipeline(
+                    device,
+                    new GraphicsPipelineDesc(
+                        shader.SlangCode,
+                        reflection,
+                        geometry,
+                        geometryCode,
+                        pixel,
+                        pixelCode,
+                        vertexBuffers,
+                        vertexAttributes,
+                        PrimitiveTopology.TriangleList,
+                        StripCut.Disabled,
+                        rasterizer,
+                        multisample,
+                        depthStencil,
+                        blend,
+                        attachments,
+                        DynamicStates.Viewport | DynamicStates.Scissor,
+                        name,
+                        vertexCodeBlob: geometryBlob,
+                        pixelCodeBlob: pixelBlob));
+            return new ClusterRasterPipeline(
+                reflection,
+                pipeline,
+                usesMesh,
+                geometryEntryPoint);
         }
         catch (Exception primary)
         {

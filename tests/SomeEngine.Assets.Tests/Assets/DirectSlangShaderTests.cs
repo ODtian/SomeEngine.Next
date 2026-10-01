@@ -1,13 +1,53 @@
-using System.Runtime.InteropServices.Marshalling;
+using System.Buffers;
 using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+using System.Runtime.InteropServices.Marshalling;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class DirectSlangShaderTests
 {
+    [Fact]
+    public async Task SourceHashesDescribeTheBytesSuppliedByTheCompilerFileSystem()
+    {
+        using var files = new AssetTestDirectory();
+        string path = files.File("changing.slang");
+        await File.WriteAllTextAsync(path, Source);
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+        using var block = new ShaderSourceBlock { SourceNames = ["changing.slang"] };
+        ShaderCompilation compiled = await block.CompileAsync(SlangShaderImporter.GlobalSession,
+            new SessionDesc { Targets = CreateTargets(), SearchPaths = [files.Path],
+                FileSystem = new ChangingShaderFileSystem(path, bytes) }, "changing");
+        ShaderSourceFile input = Assert.Single(compiled.Files);
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes)), input.ContentHash);
+        Assert.NotEqual(ImportHash.FileSha256(path), input.ContentHash);
+        Assert.True(compiled.Shader.TryGetSlangEntry(0, "Compute", SlangStage.Compute, out _));
+    }
+
+    [Fact]
+    public async Task SourceBlockCompilesRelativeSourceAndRecordsTheReadBytes()
+    {
+        using var files = new AssetTestDirectory();
+        string directory = files.File("definitions");
+        Directory.CreateDirectory(directory);
+        string path = files.File("relative.slang");
+        await File.WriteAllTextAsync(path, Source);
+        using var block = new ShaderSourceBlock { SourceNames = ["../relative.slang"] };
+        ShaderCompilation compiled = await block.CompileAsync(SlangShaderImporter.GlobalSession,
+            new SessionDesc { Targets = CreateTargets(), SearchPaths = [directory] }, "relative");
+        ShaderSourceFile input = Assert.Single(compiled.Files);
+        Assert.Equal(path, input.Path);
+        Assert.Equal(ImportHash.FileSha256(path), input.ContentHash);
+        Assert.Single(compiled.SerializedSources);
+        block.SetSerializedSource(0, compiled.SerializedSources[0].Span);
+        File.Delete(path);
+        Shader restored = await block.CreateAsync(SlangShaderImporter.GlobalSession,
+            new SessionDesc { Targets = CreateTargets() }, "restored");
+        Assert.True(restored.TryGetSlangEntry(0, "Compute", SlangStage.Compute, out _));
+    }
+
     private const string Source = """
         RWStructuredBuffer<uint> values;
 
@@ -24,25 +64,19 @@ public sealed class DirectSlangShaderTests
     {
         TargetDesc[] targets = CreateTargets();
         Shader shader = CompileSource(targets);
-        using (shader)
-        {
-            Assert.True(shader.HasSlangData);
-            Assert.Equal(1, shader.SlangTargetCount);
-            Assert.Equal(1, shader.SlangEntryCount);
-            Assert.Equal(SlangCompileTarget.Spirv, shader.GetSlangTarget(0).Format);
-            Assert.True(shader.TryGetSlangEntry(
-                0,
-                "Compute",
-                SlangStage.Compute,
-                out EntryPointReflection entry,
-                out ISlangBlob code));
-            Assert.Equal("Compute", entry.Name);
-            Assert.Equal(SlangStage.Compute, entry.Stage);
-            Assert.True(code.GetBufferSize() > 0);
-            Assert.Equal(entry, shader.GetSlangReflection(0).GetEntryPointByIndex(0));
-        }
-
-        Assert.Throws<ObjectDisposedException>(() => shader.GetSlangReflection(0));
+        Assert.True(shader.HasSlangData);
+        Assert.Equal(1, shader.SlangTargetCount);
+        Assert.Equal(1, shader.SlangEntryCount);
+        Assert.Equal(SlangCompileTarget.Spirv, shader.GetSlangTarget(0).Format);
+        Assert.True(shader.TryGetSlangEntry(
+            0,
+            "Compute",
+            SlangStage.Compute,
+            out EntryPointReflection entry));
+        Assert.Equal("Compute", entry.Name);
+        Assert.Equal(SlangStage.Compute, entry.Stage);
+        Assert.NotEmpty(GetCode(shader, 0, entry));
+        Assert.Equal(entry, shader.GetSlangReflection(0).GetEntryPointByIndex(0));
     }
 
     [Fact]
@@ -50,96 +84,68 @@ public sealed class DirectSlangShaderTests
     {
         TargetDesc[] targets = CreateTargets();
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
-        AssertSuccess(slang.CreateSession(new SessionDesc { Targets = targets }, out ISession firstSession));
-        ISlangBlob source = Slang.CreateBlob(System.Text.Encoding.UTF8.GetBytes(Source));
-        IModule? firstUnit = null;
-        ISlangBlob? serialized = null;
-        try
+        byte[] serializedBytes = SerializeSource(slang, targets);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        ISlangBlob serialized = Slang.CreateBlob(serializedBytes);
+
+        AssertSuccess(slang.CreateSession(new SessionDesc { Targets = targets }, out ISession secondSession));
+        IModule? secondUnit = secondSession.LoadModuleFromIRBlob(
+            "SerializedSlangUnit",
+            "SerializedSlangUnit.slang",
+            serialized,
+            out ISlangBlob? reloadDiagnostics);
+        string reloadText = DiagnosticText(reloadDiagnostics);
+        Assert.NotNull(secondUnit);
+        Assert.True(string.IsNullOrEmpty(reloadText), reloadText);
+        AssertSuccess(secondUnit!.GetDefinedEntryPoint(0, out IEntryPoint entry));
+        SlangResult combineResult = secondSession.CreateCompositeComponentType(
+            [secondUnit, entry],
+            out IComponentType combinedCode,
+            out ISlangBlob? combineDiagnostics);
+        string combineText = DiagnosticText(combineDiagnostics);
+        AssertSuccess(combineResult, combineText);
+        Assert.NotNull(combinedCode);
+        SlangResult linkResult = combinedCode.Link(
+            out IComponentType linkedCode,
+            out ISlangBlob? linkDiagnostics);
+        string linkText = DiagnosticText(linkDiagnostics);
+        AssertSuccess(linkResult, linkText);
+        Assert.NotNull(linkedCode);
+
+        Shader shader = Shader.CreateFromSlang(
+            "serialized",
+            slang,
+            secondSession,
+            [secondUnit],
+            [entry],
+            linkedCode,
+            targets);
+        Assert.True(shader.TryGetSlangEntry(
+            0,
+            "Compute",
+            SlangStage.Compute,
+            out EntryPointReflection reflection));
+        Assert.Equal(SlangStage.Compute, reflection.Stage);
+        Assert.NotEmpty(GetCode(shader, 0, reflection));
+
+        static byte[] SerializeSource(IGlobalSession slang, TargetDesc[] targets)
         {
-            firstUnit = firstSession.LoadModuleFromSource(
+            AssertSuccess(slang.CreateSession(
+                new SessionDesc { Targets = targets },
+                out ISession session));
+            ISlangBlob source = Slang.CreateBlob(System.Text.Encoding.UTF8.GetBytes(Source));
+            IModule? unit = session.LoadModuleFromSource(
                 "SerializedSlangUnit",
                 "SerializedSlangUnit.slang",
                 source,
-                out ISlangBlob? loadDiagnostics);
-            string loadText = DiagnosticText(loadDiagnostics);
-            Release(loadDiagnostics);
-            Assert.NotNull(firstUnit);
-            AssertSuccess(firstUnit!.Serialize(out serialized));
-            Assert.NotNull(serialized);
-            Assert.True(serialized!.GetBufferSize() > 0);
-            Assert.True(string.IsNullOrEmpty(loadText), loadText);
-        }
-        finally
-        {
-            Release(source);
-            Release(firstUnit);
-            Release(firstSession);
-        }
-
-        AssertSuccess(slang.CreateSession(new SessionDesc { Targets = targets }, out ISession secondSession));
-        IModule? secondUnit = null;
-        IEntryPoint? entry = null;
-        IComponentType? combinedCode = null;
-        IComponentType? linkedCode = null;
-        bool shaderOwnsSlang = false;
-        try
-        {
-            secondUnit = secondSession.LoadModuleFromIRBlob(
-                "SerializedSlangUnit",
-                "SerializedSlangUnit.slang",
-                serialized!,
-                out ISlangBlob? reloadDiagnostics);
-            string reloadText = DiagnosticText(reloadDiagnostics);
-            Release(reloadDiagnostics);
-            Release(serialized);
-            serialized = null;
-            Assert.NotNull(secondUnit);
-            Assert.True(string.IsNullOrEmpty(reloadText), reloadText);
-            AssertSuccess(secondUnit!.GetDefinedEntryPoint(0, out entry));
-            SlangResult combineResult = secondSession.CreateCompositeComponentType(
-                [secondUnit!, entry!],
-                out combinedCode,
-                out ISlangBlob? combineDiagnostics);
-            string combineText = DiagnosticText(combineDiagnostics);
-            Release(combineDiagnostics);
-            AssertSuccess(combineResult, combineText);
-            Assert.NotNull(combinedCode);
-            SlangResult linkResult = combinedCode!.Link(out linkedCode, out ISlangBlob? linkDiagnostics);
-            string linkText = DiagnosticText(linkDiagnostics);
-            Release(linkDiagnostics);
-            AssertSuccess(linkResult, linkText);
-            Assert.NotNull(linkedCode);
-            Release(combinedCode);
-            combinedCode = null;
-
-            shaderOwnsSlang = true;
-            using Shader shader = Shader.CreateFromSlang(
-                "serialized",
-                secondSession,
-                [secondUnit!],
-                [entry!],
-                linkedCode!,
-                targets);
-            Assert.True(shader.TryGetSlangEntry(
-                0,
-                "Compute",
-                SlangStage.Compute,
-                out EntryPointReflection reflection,
-                out ISlangBlob code));
-            Assert.Equal(SlangStage.Compute, reflection.Stage);
-            Assert.True(code.GetBufferSize() > 0);
-        }
-        finally
-        {
-            Release(serialized);
-            Release(combinedCode);
-            if (!shaderOwnsSlang)
-            {
-                Release(linkedCode);
-                Release(entry);
-                Release(secondUnit);
-                Release(secondSession);
-            }
+                out ISlangBlob? diagnostics);
+            string diagnosticText = DiagnosticText(diagnostics);
+            Assert.NotNull(unit);
+            Assert.True(string.IsNullOrEmpty(diagnosticText), diagnosticText);
+            AssertSuccess(unit!.Serialize(out ISlangBlob serialized));
+            Assert.True(serialized.GetBufferSize() > 0);
+            return serialized.Buffer.ToArray();
         }
     }
 
@@ -148,34 +154,28 @@ public sealed class DirectSlangShaderTests
     {
         using var files = new AssetTestDirectory();
         string sourcePath = files.File("on-demand.slang");
-        string definitionPath = files.File("on-demand.shader");
         await File.WriteAllTextAsync(sourcePath, Source);
 
         Shader shader;
-        using (var block = new ShaderSourceBlock
+        using (ShaderAsset definition = ShaderTestCompilation.Define(sourcePath))
+        using (ShaderAsset built = ShaderTestCompilation.Compile(definition, sourcePath))
+        using (ShaderSourceBlock block = built.GetBlock<ShaderSourceBlock>().Duplicate())
         {
-            SourceFiles = [Path.GetFileName(sourcePath)],
-        })
-        {
+            File.Delete(sourcePath);
             shader = await block.CreateAsync(
                 SlangShaderImporter.GlobalSession,
                 new SessionDesc { Targets = CreateTargets() },
-                definitionPath);
+                "on-demand");
         }
 
-        File.Delete(sourcePath);
-        using (shader)
-        {
-            Assert.Equal("on-demand", shader.Name);
-            Assert.True(shader.TryGetSlangEntry(
-                0,
-                "Compute",
-                SlangStage.Compute,
-                out EntryPointReflection entry,
-                out ISlangBlob code));
-            Assert.Equal("Compute", entry.Name);
-            Assert.True(code.GetBufferSize() > 0);
-        }
+        Assert.Equal("on-demand", shader.Name);
+        Assert.True(shader.TryGetSlangEntry(
+            0,
+            "Compute",
+            SlangStage.Compute,
+            out EntryPointReflection entry));
+        Assert.Equal("Compute", entry.Name);
+        Assert.NotEmpty(GetCode(shader, 0, entry));
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public sealed class DirectSlangShaderTests
         File.Delete(sourcePath);
         using ShaderAsset reopened = await ShaderAsset.OpenAsync(assetPath);
         ShaderSourceBlock source = await reopened.GetBlockAsync<ShaderSourceBlock>();
-        using Shader shader = await source.CreateAsync(
+        Shader shader = await source.CreateAsync(
             SlangShaderImporter.GlobalSession,
             new SessionDesc { Targets = CreateTargets() },
             definitionPath);
@@ -203,10 +203,109 @@ public sealed class DirectSlangShaderTests
             0,
             "Compute",
             SlangStage.Compute,
-            out EntryPointReflection entry,
-            out ISlangBlob code));
+            out EntryPointReflection entry));
         Assert.Equal(SlangStage.Compute, entry.Stage);
-        Assert.True(code.GetBufferSize() > 0);
+        Assert.NotEmpty(GetCode(shader, 0, entry));
+    }
+
+    [Fact]
+    public async Task SourceBlockAppliesDirectSlangSpecializationArguments()
+    {
+        const string specializedSource = """
+            RWStructuredBuffer<uint> values;
+
+            interface IQuality
+            {
+                static uint GetValue();
+            }
+
+            struct HighQuality : IQuality
+            {
+                static uint GetValue() { return 100; }
+            }
+
+            struct LowQuality : IQuality
+            {
+                static uint GetValue() { return 1; }
+            }
+
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void Compute<T : IQuality>(uint3 threadId : SV_DispatchThreadID)
+            {
+                values[threadId.x] = T::GetValue();
+            }
+            """;
+
+        IGlobalSession slang = SlangShaderImporter.GlobalSession;
+        TargetDesc[] targets = CreateTargets();
+        var sessionDescription = new SessionDesc { Targets = targets };
+        AssertSuccess(slang.CreateSession(sessionDescription, out ISession session));
+        ISlangBlob source = Slang.CreateBlob(System.Text.Encoding.UTF8.GetBytes(specializedSource));
+        IModule? unit = session.LoadModuleFromSource(
+            "SpecializedSourceBlock",
+            "SpecializedSourceBlock.slang",
+            source,
+            out ISlangBlob? loadDiagnostics);
+        string loadText = DiagnosticText(loadDiagnostics);
+        Assert.NotNull(unit);
+        Assert.True(string.IsNullOrEmpty(loadText), loadText);
+        AssertSuccess(unit!.Serialize(out ISlangBlob serialized));
+
+        using var block = new ShaderSourceBlock { SourceNames = ["SpecializedSourceBlock.slang"] };
+        block.SetSerializedSource(0, serialized.Buffer);
+        Shader high = await block.CreateAsync(
+            slang,
+            sessionDescription,
+            "high",
+            new[] { SpecializationArg.FromExpression("HighQuality") });
+        Shader low = await block.CreateAsync(
+            slang,
+            sessionDescription,
+            "low",
+            new[] { SpecializationArg.FromExpression("LowQuality") });
+
+        Assert.True(high.TryGetSlangEntry(
+            0,
+            "Compute",
+            SlangStage.Compute,
+            out EntryPointReflection highEntry));
+        Assert.True(low.TryGetSlangEntry(
+            0,
+            "Compute",
+            SlangStage.Compute,
+            out EntryPointReflection lowEntry));
+        byte[] highCode = GetCode(high, 0, highEntry);
+        byte[] lowCode = GetCode(low, 0, lowEntry);
+        Assert.False(highCode.AsSpan().SequenceEqual(lowCode));
+
+        using var savedCode = new ShaderBlock();
+        Shader savedBlockHigh = await savedCode.CreateAsync(
+            block,
+            slang,
+            sessionDescription,
+            "saved-high",
+            new[] { SpecializationArg.FromExpression("HighQuality") });
+        Shader savedBlockLow = await savedCode.CreateAsync(
+            block,
+            slang,
+            sessionDescription,
+            "saved-low",
+            new[] { SpecializationArg.FromExpression("LowQuality") });
+        Assert.True(savedBlockHigh.TryGetSlangEntry(
+            0,
+            "Compute",
+            SlangStage.Compute,
+            out EntryPointReflection savedHighEntry));
+        Assert.True(savedBlockLow.TryGetSlangEntry(
+            0,
+            "Compute",
+            SlangStage.Compute,
+            out EntryPointReflection savedLowEntry));
+        Assert.True(highCode.AsSpan().SequenceEqual(
+            GetCode(savedBlockHigh, 0, savedHighEntry)));
+        Assert.True(lowCode.AsSpan().SequenceEqual(
+            GetCode(savedBlockLow, 0, savedLowEntry)));
     }
 
     private static Shader CompileSource(TargetDesc[] targets)
@@ -214,62 +313,37 @@ public sealed class DirectSlangShaderTests
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
         AssertSuccess(slang.CreateSession(new SessionDesc { Targets = targets }, out ISession session));
         ISlangBlob source = Slang.CreateBlob(System.Text.Encoding.UTF8.GetBytes(Source));
-        IModule? sourceUnit = null;
-        IEntryPoint? entry = null;
-        IComponentType? combinedCode = null;
-        IComponentType? linkedCode = null;
-        bool shaderOwnsSlang = false;
-        try
-        {
-            sourceUnit = session.LoadModuleFromSource(
-                "DirectSlangShader",
-                "DirectSlangShader.slang",
-                source,
-                out ISlangBlob? loadDiagnostics);
-            string loadText = DiagnosticText(loadDiagnostics);
-            Release(loadDiagnostics);
-            Release(source);
-            source = null!;
-            Assert.NotNull(sourceUnit);
-            Assert.True(string.IsNullOrEmpty(loadText), loadText);
-            AssertSuccess(sourceUnit!.GetDefinedEntryPoint(0, out entry));
-            SlangResult combineResult = session.CreateCompositeComponentType(
-                [sourceUnit!, entry!],
-                out combinedCode,
-                out ISlangBlob? combineDiagnostics);
-            string combineText = DiagnosticText(combineDiagnostics);
-            Release(combineDiagnostics);
-            AssertSuccess(combineResult, combineText);
-            Assert.NotNull(combinedCode);
-            SlangResult linkResult = combinedCode!.Link(out linkedCode, out ISlangBlob? linkDiagnostics);
-            string linkText = DiagnosticText(linkDiagnostics);
-            Release(linkDiagnostics);
-            AssertSuccess(linkResult, linkText);
-            Assert.NotNull(linkedCode);
-            Release(combinedCode);
-            combinedCode = null;
+        IModule? sourceUnit = session.LoadModuleFromSource(
+            "DirectSlangShader",
+            "DirectSlangShader.slang",
+            source,
+            out ISlangBlob? loadDiagnostics);
+        string loadText = DiagnosticText(loadDiagnostics);
+        Assert.NotNull(sourceUnit);
+        Assert.True(string.IsNullOrEmpty(loadText), loadText);
+        AssertSuccess(sourceUnit!.GetDefinedEntryPoint(0, out IEntryPoint entry));
+        SlangResult combineResult = session.CreateCompositeComponentType(
+            [sourceUnit, entry],
+            out IComponentType combinedCode,
+            out ISlangBlob? combineDiagnostics);
+        string combineText = DiagnosticText(combineDiagnostics);
+        AssertSuccess(combineResult, combineText);
+        Assert.NotNull(combinedCode);
+        SlangResult linkResult = combinedCode.Link(
+            out IComponentType linkedCode,
+            out ISlangBlob? linkDiagnostics);
+        string linkText = DiagnosticText(linkDiagnostics);
+        AssertSuccess(linkResult, linkText);
+        Assert.NotNull(linkedCode);
 
-            shaderOwnsSlang = true;
-            return Shader.CreateFromSlang(
-                "direct",
-                session,
-                [sourceUnit!],
-                [entry!],
-                linkedCode!,
-                targets);
-        }
-        finally
-        {
-            Release(source);
-            Release(combinedCode);
-            if (!shaderOwnsSlang)
-            {
-                Release(linkedCode);
-                Release(entry);
-                Release(sourceUnit);
-                Release(session);
-            }
-        }
+        return Shader.CreateFromSlang(
+            "direct",
+            slang,
+            session,
+            [sourceUnit],
+            [entry],
+            linkedCode,
+            targets);
     }
 
     private static TargetDesc[] CreateTargets()
@@ -290,12 +364,32 @@ public sealed class DirectSlangShaderTests
             ? string.Empty
             : diagnostics.AsString;
 
+    private static byte[] GetCode(
+        Shader shader,
+        int targetIndex,
+        EntryPointReflection entry)
+    {
+        ISlangBlob? blob = shader.GetSlangEntryBlob(targetIndex, entry);
+        return blob is null
+            ? shader.GetSlangEntryBytes(targetIndex, entry).ToArray()
+            : blob.Buffer.ToArray();
+    }
+
     private static void AssertSuccess(SlangResult result, string diagnostics = "")
         => Assert.True(result.Succeeded, diagnostics.Length == 0 ? result.ToString() : diagnostics);
 
-    private static void Release(object? value)
+}
+
+[GeneratedComClass]
+internal partial class ChangingShaderFileSystem(string sourcePath, byte[] sourceBytes) : ISlangFileSystem
+{
+    public unsafe void* CastAs(Guid guid) => null;
+    public SlangResult LoadFile(string path, out ISlangBlob outBlob)
     {
-        if (value is ComObject com)
-            com.FinalRelease();
+        if (!StringComparer.OrdinalIgnoreCase.Equals(Path.GetFullPath(path), sourcePath))
+        { outBlob = null!; return SlangResult.SLANG_E_NOT_FOUND; }
+        outBlob = Slang.CreateBlob(sourceBytes);
+        File.WriteAllText(sourcePath, "changed after the compiler read its input");
+        return SlangResult.SLANG_OK;
     }
 }

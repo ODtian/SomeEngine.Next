@@ -19,12 +19,12 @@ public sealed class VulkanParameterBindingTests
                 Result[0] = Values[0] + 7u;
             }
             """;
-        using var shader = VulkanTestShaderProgram.Compile(source, ("computeMain", SlangStage.Compute));
-        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()!;
-        ShaderVariableLayout entry = shader.Entries[0].VarLayout;
+        var shader = VulkanTestShader.Compile(source, ("computeMain", SlangStage.Compute));
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        VariableLayoutReflection entry = shader.Entries[0].VarLayout;
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         using Device device = backend.CreateDevice(new DeviceDesc(default, [new DeviceQueueDesc(QueueType.Graphics)]));
-        using Pipeline pipeline = backend.CreateComputePipeline(device, new ComputePipelineDesc(shader.Program, shader.Entries[0]));
+        using Pipeline pipeline = backend.CreateComputePipeline(device, new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)));
         using Buffer input = backend.CreateBuffer(device, new BufferDesc(4, BufferUsages.ShaderRead), MemoryType.Upload);
         using (MappedBuffer mapping = backend.Map(input, MapType.Write, BufferRange.Whole))
         {

@@ -12,9 +12,9 @@ public sealed class ClusterTessellationBinningTests
     {
         const int materialCount = 19, binCount = materialCount * 8, patchCount = 1031;
         string[] entries = ["ResetTessellationBins", "CountTessellationBins", "ReserveTessellationBins", "ScatterTessellationBins"];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths(
+        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
             "tessellation_bins", "#include \"cluster_tessellation_bin.slang\"",
-            entries.Select(name => new D3D12TestShaderEntry(name, SlangStage.Compute)).ToArray(), "sm_6_0", ShaderDirectory());
+            entries.Select(name => new D3D12TestEntry(name, SlangStage.Compute)).ToArray(), "sm_6_0", ShaderDirectory());
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         var owned = new List<IDisposable>();
@@ -70,10 +70,10 @@ public sealed class ClusterTessellationBinningTests
                 ResourceAccess.CopyDestination, ResourceAccess.ShaderResource | ResourceAccess.UnorderedAccess));
             for (int stage = 0; stage < entries.Length; stage++)
             {
-                Pipeline pipeline = Keep(backend.CreateComputePipeline(device, new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(stage))));
+                Pipeline pipeline = Keep(backend.CreateComputePipeline(device, new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(stage), shader.GetEntryCode(stage))));
                 backend.SetPipeline(context, pipeline);
                 backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
-                    shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null, bindings, []));
+                    shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null, bindings, []));
                 uint groups = stage == 0 ? (binCount + 63u) / 64u : stage == 2 ? (binCount + 127u) / 128u : (patchCount + 63u) / 64u;
                 backend.Dispatch(context, new DispatchArguments(groups, 1, 1));
                 backend.Barrier(context, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,

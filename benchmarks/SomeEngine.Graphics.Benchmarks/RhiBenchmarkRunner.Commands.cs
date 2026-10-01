@@ -13,7 +13,7 @@ internal static partial class RhiBenchmarkRunner
             receiver.Draw(context, stableArguments);
     }
 
-    private static void DrawTransientPackets(IGraphicsBackend receiver, CommandContext context, ShaderVariableLayout layout, byte[] packets, in DrawArguments arguments, int count)
+    private static void DrawTransientPackets(IGraphicsBackend receiver, CommandContext context, VariableLayoutReflection layout, byte[] packets, in DrawArguments arguments, int count)
     {
         DrawArguments stableArguments = arguments;
         for (int index = 0; index < count; index++)

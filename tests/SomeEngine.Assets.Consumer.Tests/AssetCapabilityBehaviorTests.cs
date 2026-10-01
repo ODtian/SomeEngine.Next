@@ -61,8 +61,8 @@ public sealed class AssetCapabilityBehaviorTests
 [AssetCapabilities]
 public static partial class ConsumerAssetCapabilities;
 
-[AssetBlock, BinarySerializable, BinaryFields(nameof(Value))]
-public sealed partial class CapabilityData : AssetPageBlock
+[AssetBlock("SomeEngine.Assets.Consumer.Tests.CapabilityData"), BinarySerializable, BinaryFields(nameof(Value))]
+public sealed partial class CapabilityData : AssetBlock
 {
     public partial int Value { get; set; }
 }

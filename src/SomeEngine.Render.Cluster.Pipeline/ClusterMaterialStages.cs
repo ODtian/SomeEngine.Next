@@ -81,10 +81,10 @@ internal static class ClusterMaterialEntries
         Shader shader,
         SlangCompileTarget target,
         string entryPoint,
-        ShaderStage stage)
+        SlangStage stage)
     {
-        string backend = target == SlangCompileTarget.Spirv ? "spirv" : "dxil";
-        return shader.TryEntry(backend, entryPoint, stage, out _, out _);
+        return shader.TryGetSlangTarget(target, out int targetIndex) &&
+            shader.TryGetSlangEntry(targetIndex, entryPoint, stage, out _);
     }
 }
 
@@ -103,8 +103,8 @@ internal readonly record struct ClusterRasterCompatibilityKey(
     ClusterRasterPipeline? TargetHardware = null);
 
 internal readonly record struct ClusterShadeCompatibilityKey(
-    ShaderProgram Program,
-    ShaderEntryPoint EntryPoint);
+    IComponentType SlangCode,
+    EntryPointReflection EntryPoint);
 
 internal static class ClusterMaterialBindingDefaults
 {
@@ -405,9 +405,17 @@ internal readonly record struct ClusterShadeBinKey(
     uint ScalarPayloadBytes,
     ClusterCommandBindingKey Bindings);
 
+internal readonly record struct ClusterLinkedStageKey(
+    IComponentType SlangCode,
+    SlangCompileTarget Target,
+    string FirstEntry,
+    string? SecondEntry);
+
 /// <summary>Owns raster-only compatibility grouping and its material-slot mapping.</summary>
 internal sealed class ClusterRasterStages : IDisposable
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite ResolveTrace =
+        new("render", "Cluster.RasterStageResolve");
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly string _defaultVertexEncoding;
@@ -415,9 +423,11 @@ internal sealed class ClusterRasterStages : IDisposable
     private readonly ClusterComputePipeline? _defaultSoftware;
     private readonly ClusterRasterPipeline _defaultHardware;
     private readonly IGraphResourceProvider? _featureResources;
+    private readonly ClusterEntryUsageCache _entryUsages;
     private readonly Dictionary<ClusterRasterSoftwareKey, ClusterComputePipeline> _softwarePipelines = [];
     private readonly Dictionary<ClusterRasterSoftwareKey, ClusterComputePipeline> _tessellationPipelines = [];
     private readonly Dictionary<ClusterRasterHardwareKey, ClusterRasterPipeline> _hardwarePipelines = [];
+    private readonly Dictionary<ClusterLinkedStageKey, ClusterLinkedStageLayout> _linkedLayouts = [];
     private ClusterBinIndexMap<ClusterRasterBinKey, ClusterRasterInvocation> _binIndices =
         new(static (before, after) => before.HasSameBindings(after) && before.Bounds == after.Bounds);
     private ImmutableDictionary<long, HashSet<uint>> _resourceProperties = ImmutableDictionary<long, HashSet<uint>>.Empty;
@@ -437,7 +447,8 @@ internal sealed class ClusterRasterStages : IDisposable
         string vertexEncoding,
         ClusterComputePipeline? defaultSoftware,
         ClusterRasterPipeline defaultHardware,
-        IGraphResourceProvider? featureResources)
+        IGraphResourceProvider? featureResources,
+        ClusterEntryUsageCache entryUsages)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
@@ -449,12 +460,14 @@ internal sealed class ClusterRasterStages : IDisposable
         _defaultSoftware = defaultSoftware;
         _defaultHardware = defaultHardware ?? throw new ArgumentNullException(nameof(defaultHardware));
         _featureResources = featureResources;
+        _entryUsages = entryUsages ?? throw new ArgumentNullException(nameof(entryUsages));
     }
 
     private ClusterMaterialAssignmentSet? _resolvedAssignments;
 
     internal ClusterRasterStageSet Resolve(ClusterMaterialAssignmentSet assignments)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ResolveTrace);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (ReferenceEquals(assignments, _resolvedAssignments)) return _resolved!;
         var addresses = _resolvedAssignments is null
@@ -462,6 +475,9 @@ internal sealed class ClusterRasterStages : IDisposable
             : new HashSet<int>(assignments.ChangedOffsets);
         foreach (long material in assignments.ChangedMaterialIds)
             addresses.UnionWith(assignments.GetMaterialOffsets(material));
+        foreach (int address in addresses)
+            if (assignments.TryGetEntry(address, out Material material, out _))
+                QueueEntryUsage(material);
         var bins = new ClusterBinIndexMap<ClusterRasterBinKey, ClusterRasterInvocation>(_binIndices);
         var resourceProperties = _resourceProperties;
         foreach (long material in assignments.ChangedMaterialIds)
@@ -527,7 +543,7 @@ internal sealed class ClusterRasterStages : IDisposable
             ? ClusterMaterialEntries.SoftwareMeshletImageAtomic64
             : ClusterMaterialEntries.SoftwareMeshletBufferAtomic64;
         bool softwareUsesMaterialRanges = softwareEntry is not null &&
-            ClusterMaterialEntries.HasEntry(shader, target, meshletSoftwareEntry, ShaderStage.Compute);
+            ClusterMaterialEntries.HasEntry(shader, target, meshletSoftwareEntry, SlangStage.Compute);
         if (softwareUsesMaterialRanges)
             softwareEntry = meshletSoftwareEntry;
         string hardwarePixelEntry = ClusterMaterialEntries.HardwarePixel(_visibilityMode, ClusterRasterPipeline.SupportsMesh(_backend, _device));
@@ -535,18 +551,18 @@ internal sealed class ClusterRasterStages : IDisposable
             ? null
             : ClusterMaterialEntries.TessellationDice(_visibilityMode);
         bool hasSoftware = softwareEntry is not null && ClusterMaterialEntries.HasEntry(
-            shader, target, softwareEntry, ShaderStage.Compute);
+            shader, target, softwareEntry, SlangStage.Compute);
         bool usesMesh = ClusterRasterPipeline.SupportsMesh(_backend, _device);
-        bool hasMesh = ClusterMaterialEntries.HasEntry(shader, target, ClusterMaterialEntries.HardwareMesh, ShaderStage.Mesh);
-        bool hasMeshlet = ClusterMaterialEntries.HasEntry(shader, target, ClusterMaterialEntries.HardwareMeshlet, ShaderStage.Mesh);
+        bool hasMesh = ClusterMaterialEntries.HasEntry(shader, target, ClusterMaterialEntries.HardwareMesh, SlangStage.Mesh);
+        bool hasMeshlet = ClusterMaterialEntries.HasEntry(shader, target, ClusterMaterialEntries.HardwareMeshlet, SlangStage.Mesh);
         string hardwareEntry = usesMesh ? ClusterMaterialEntries.HardwareMesh : ClusterMaterialEntries.HardwareVertex;
         if (usesMesh && hasMeshlet && ClusterRasterPipeline.SupportsMeshlets(_backend, _device))
             hardwareEntry = ClusterMaterialEntries.HardwareMeshlet;
         bool selectedMeshAvailable = hardwareEntry == ClusterMaterialEntries.HardwareMeshlet ? hasMeshlet : hasMesh;
         bool hasVertex = ClusterMaterialEntries.HasEntry(
-            shader, target, ClusterMaterialEntries.HardwareVertex, ShaderStage.Vertex);
+            shader, target, ClusterMaterialEntries.HardwareVertex, SlangStage.Vertex);
         bool hasPixel = ClusterMaterialEntries.HasEntry(
-            shader, target, hardwarePixelEntry, ShaderStage.Pixel);
+            shader, target, hardwarePixelEntry, SlangStage.Fragment);
         bool hasVisibilityRaster = hasSoftware || hasVertex || hasMesh || hasMeshlet || hasPixel;
         if (!hasVisibilityRaster)
         {
@@ -590,15 +606,15 @@ internal sealed class ClusterRasterStages : IDisposable
         }
 
         bool hasSeed = ClusterMaterialEntries.HasEntry(
-            shader, target, ClusterMaterialEntries.TessellationSeed, ShaderStage.Compute);
+            shader, target, ClusterMaterialEntries.TessellationSeed, SlangStage.Compute);
         bool hasSplit = ClusterMaterialEntries.HasEntry(
-            shader, target, ClusterMaterialEntries.TessellationSplit, ShaderStage.Compute);
+            shader, target, ClusterMaterialEntries.TessellationSplit, SlangStage.Compute);
         bool hasDice = tessellationDiceEntry is not null && ClusterMaterialEntries.HasEntry(
-            shader, target, tessellationDiceEntry, ShaderStage.Compute);
+            shader, target, tessellationDiceEntry, SlangStage.Compute);
         bool hasTessellationHardwareVertex = ClusterMaterialEntries.HasEntry(
-            shader, target, ClusterMaterialEntries.TessellationHardwareVertex, ShaderStage.Vertex);
+            shader, target, ClusterMaterialEntries.TessellationHardwareVertex, SlangStage.Vertex);
         bool hasTessellationHardwarePixel = ClusterMaterialEntries.HasEntry(
-            shader, target, ClusterMaterialEntries.TessellationHardwarePixel, ShaderStage.Pixel);
+            shader, target, ClusterMaterialEntries.TessellationHardwarePixel, SlangStage.Fragment);
         bool hasTessellationTerminal = _visibilityMode == ClusterVisibilityMode.HardwareOnly
             ? hasTessellationHardwareVertex || hasTessellationHardwarePixel
             : hasDice;
@@ -617,7 +633,7 @@ internal sealed class ClusterRasterStages : IDisposable
                     shader,
                     target,
                     ClusterMaterialEntries.Shade,
-                    ShaderStage.Compute))
+                    SlangStage.Compute))
             {
                 throw new InvalidDataException(
                     $"Material '{material.Name}' provides runtime tessellation, so its same shader must also " +
@@ -683,7 +699,7 @@ internal sealed class ClusterRasterStages : IDisposable
             ? null
             : CreateTargetStages(material, visibilityShader, vertexEncoding, hardware, softwareUsesMaterialRanges);
         if (targetStages?.Software is not null &&
-            ClusterGeometryContracts.RequireConservativeBounds(
+            ClusterGeometryRequirements.RequireConservativeBounds(
                 visibilityShader!, softwareUsesMaterialRanges
                     ? ClusterMaterialEntries.SoftwareMeshletTarget : ClusterMaterialEntries.SoftwareTarget,
                 $"Material '{material.Name}' target software raster") != ClusterConservativeBounds.Finite)
@@ -800,7 +816,7 @@ internal sealed class ClusterRasterStages : IDisposable
                 tessellationHardwareResources,
                 splitBindings);
             ClusterConservativeBounds tessellationBounds =
-                ClusterGeometryContracts.RequireConservativeBounds(
+                ClusterGeometryRequirements.RequireConservativeBounds(
                     tessellationShader,
                     ClusterMaterialEntries.TessellationSplit,
                     $"Material '{material.Name}' tessellation split");
@@ -848,10 +864,10 @@ internal sealed class ClusterRasterStages : IDisposable
             : ClusterMaterialEntries.HardwarePixelTarget;
         SlangCompileTarget target = _device.Capabilities.CompileTarget;
         ClusterComputePipeline? software = _visibilityMode != ClusterVisibilityMode.HardwareOnly &&
-            ClusterMaterialEntries.HasEntry(shader, target, softwareEntry, ShaderStage.Compute)
+            ClusterMaterialEntries.HasEntry(shader, target, softwareEntry, SlangStage.Compute)
                 ? ResolveSoftwarePipeline(material, shader, softwareEntry, vertexEncoding)
                 : null;
-        ClusterRasterPipeline? hardware = ClusterMaterialEntries.HasEntry(shader, target, pixelEntry, ShaderStage.Pixel)
+        ClusterRasterPipeline? hardware = ClusterMaterialEntries.HasEntry(shader, target, pixelEntry, SlangStage.Fragment)
             ? ResolveHardwarePipeline(material, shader, primaryHardware.GeometryEntry,
                 pixelEntry, vertexEncoding, targetOutput: true)
             : null;
@@ -868,7 +884,7 @@ internal sealed class ClusterRasterStages : IDisposable
 
     private ClusterRasterStageResources<TCore> ResolveRasterResources<TCore>(
         Material material,
-        ShaderVariableLayout parameterLayout,
+        VariableLayoutReflection parameterLayout,
         Shader? shader,
         string? firstEntry,
         string? secondEntry,
@@ -878,11 +894,13 @@ internal sealed class ClusterRasterStages : IDisposable
     {
         ClusterLinkedStageLayout resources = shader is null
             ? ClusterLinkedStageLayout.Create(parameterLayout)
-            : ClusterLinkedStageLayout.Create(shader, _device.Capabilities.CompileTarget,
-                firstEntry ?? throw new InvalidDataException("A custom raster stage has no entry name."), secondEntry);
+            : ResolveLinkedLayout(
+                shader,
+                firstEntry ?? throw new InvalidDataException("A custom raster stage has no entry name."),
+                secondEntry);
         Dictionary<string, byte> materialResources = shader is null
             ? new Dictionary<string, byte>(StringComparer.Ordinal)
-            : ResolveMaterialResources(shader, resources);
+            : ResolveMaterialResources(material, resources);
         resources.ValidateMaterialResources(materialResources);
         GraphResourceBinder?[] featureBinders = resources.ResolveFeatureResources(
             materialResources,
@@ -908,25 +926,140 @@ internal sealed class ClusterRasterStages : IDisposable
             featureBinders);
     }
 
-    private static Dictionary<string, byte> ResolveMaterialResources(
+    private ClusterLinkedStageLayout ResolveLinkedLayout(
         Shader shader,
+        string firstEntry,
+        string? secondEntry)
+    {
+        SlangCompileTarget target = _device.Capabilities.CompileTarget;
+        var key = new ClusterLinkedStageKey(
+            shader.SlangCode,
+            target,
+            firstEntry,
+            secondEntry);
+        if (_linkedLayouts.TryGetValue(key, out ClusterLinkedStageLayout? resources))
+            return resources;
+        resources = ClusterLinkedStageLayout.Create(
+            shader,
+            target,
+            firstEntry,
+            secondEntry,
+            _entryUsages.Get(shader, target));
+        _linkedLayouts.Add(key, resources);
+        return resources;
+    }
+
+    private void QueueEntryUsage(Material material)
+    {
+        Shader shader = ClusterMaterialEntries.RequireShader(material);
+        SlangCompileTarget target = _device.Capabilities.CompileTarget;
+        ClusterEntryUsageSet entries = _entryUsages.Get(shader, target);
+
+        void Queue(string name, SlangStage stage)
+        {
+            if (ClusterMaterialEntries.HasEntry(shader, target, name, stage))
+                entries.Queue(name);
+        }
+
+        Queue(ClusterMaterialEntries.Shade, SlangStage.Compute);
+        string? softwareEntry = _visibilityMode == ClusterVisibilityMode.HardwareOnly
+            ? null
+            : ClusterMaterialEntries.SoftwareRaster(_visibilityMode);
+        bool softwareUsesMaterialRanges = false;
+        if (softwareEntry is not null)
+        {
+            string meshletSoftwareEntry = _visibilityMode == ClusterVisibilityMode.ImageAtomic64
+                ? ClusterMaterialEntries.SoftwareMeshletImageAtomic64
+                : ClusterMaterialEntries.SoftwareMeshletBufferAtomic64;
+            softwareUsesMaterialRanges = ClusterMaterialEntries.HasEntry(
+                shader,
+                target,
+                meshletSoftwareEntry,
+                SlangStage.Compute);
+            if (softwareUsesMaterialRanges)
+                softwareEntry = meshletSoftwareEntry;
+            Queue(softwareEntry, SlangStage.Compute);
+            Queue(
+                softwareUsesMaterialRanges
+                    ? ClusterMaterialEntries.SoftwareMeshletTarget
+                    : ClusterMaterialEntries.SoftwareTarget,
+                SlangStage.Compute);
+        }
+
+        bool usesMesh = ClusterRasterPipeline.SupportsMesh(_backend, _device);
+        bool usesMeshlets = usesMesh &&
+            ClusterRasterPipeline.SupportsMeshlets(_backend, _device) &&
+            ClusterMaterialEntries.HasEntry(
+                shader,
+                target,
+                ClusterMaterialEntries.HardwareMeshlet,
+                SlangStage.Mesh);
+        string hardwareEntry = usesMeshlets
+            ? ClusterMaterialEntries.HardwareMeshlet
+            : usesMesh
+                ? ClusterMaterialEntries.HardwareMesh
+                : ClusterMaterialEntries.HardwareVertex;
+        Queue(hardwareEntry, usesMesh ? SlangStage.Mesh : SlangStage.Vertex);
+        Queue(
+            ClusterMaterialEntries.HardwarePixel(_visibilityMode, usesMesh),
+            SlangStage.Fragment);
+        Queue(
+            usesMesh
+                ? ClusterMaterialEntries.HardwareMeshPixelTarget
+                : ClusterMaterialEntries.HardwarePixelTarget,
+            SlangStage.Fragment);
+
+        Queue(ClusterMaterialEntries.TessellationSeed, SlangStage.Compute);
+        Queue(ClusterMaterialEntries.TessellationSplit, SlangStage.Compute);
+        if (_visibilityMode == ClusterVisibilityMode.HardwareOnly)
+        {
+            Queue(
+                usesMesh
+                    ? ClusterMaterialEntries.TessellationHardwareMesh
+                    : ClusterMaterialEntries.TessellationHardwareVertex,
+                usesMesh ? SlangStage.Mesh : SlangStage.Vertex);
+            Queue(
+                usesMesh
+                    ? ClusterMaterialEntries.TessellationHardwareMeshPixel
+                    : ClusterMaterialEntries.TessellationHardwarePixel,
+                SlangStage.Fragment);
+        }
+        else
+        {
+            Queue(
+                ClusterMaterialEntries.TessellationDice(_visibilityMode),
+                SlangStage.Compute);
+        }
+    }
+
+    private static Dictionary<string, byte> ResolveMaterialResources(
+        Material material,
         ClusterLinkedStageLayout resources)
     {
         var result = new Dictionary<string, byte>(StringComparer.Ordinal);
-        foreach (ShaderMaterialBinding binding in shader.Metadata?.MaterialBindings ?? [])
+        foreach (ref readonly ClusterLinkedStageResource resource in resources.Resources)
         {
-            string name = binding.Name ?? throw new InvalidDataException(
-                $"Shader '{shader.Name}' has an unnamed material resource.");
-            if (!resources.Contains(name))
-                continue;
-            if (!result.TryAdd(name, binding.ResourceType))
+            string resourceName = resource.Name;
+            if (!resource.IsUsed || resource.Type == ResourceBindingType.None ||
+                !material.Properties.Any(property =>
+                    string.Equals(property.Name, resourceName, StringComparison.Ordinal)))
             {
-                throw new InvalidDataException(
-                    $"Shader '{shader.Name}' has duplicate material resource '{name}'.");
+                continue;
             }
+            result.TryAdd(resource.Name, MaterialResourceKind(resource.Type));
         }
         return result;
     }
+
+    private static byte MaterialResourceKind(ResourceBindingType type) => type switch
+    {
+        ResourceBindingType.TextureSrv or ResourceBindingType.TextureUav => 0,
+        ResourceBindingType.Sampler => 1,
+        ResourceBindingType.BufferSrv or ResourceBindingType.BufferUav or
+            ResourceBindingType.ConstantBuffer => 2,
+        ResourceBindingType.AccelerationStructure => 3,
+        _ => throw new InvalidDataException($"Resource type {type} cannot be a material resource."),
+    };
 
     private static ClusterMaterialStageBinding[] ResolveMaterialBindings(
         Material material,
@@ -978,17 +1111,19 @@ internal sealed class ClusterRasterStages : IDisposable
             entryPoint,
             vertexEncoding,
             $"Material '{material.Name}' software raster");
-        CookedShaderEntry cooked = shader.RequireEntry(
-            _device.Capabilities.CompileTarget,
+        int targetIndex = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
+        EntryPointReflection entry = shader.RequireSlangEntry(
+            targetIndex,
             entryPoint,
-            ShaderStage.Compute);
-        var key = new ClusterRasterSoftwareKey(cooked.Program, cooked.EntryPoint);
+            SlangStage.Compute);
+        var key = new ClusterRasterSoftwareKey(shader.SlangCode, entry);
         if (_softwarePipelines.TryGetValue(key, out ClusterComputePipeline? pipeline))
             return pipeline;
         pipeline = ClusterComputePipeline.Create(
             _backend,
             _device,
-            cooked,
+            shader,
+            entry,
             $"Cluster material software raster {entryPoint}");
         _softwarePipelines.Add(key, pipeline);
         return pipeline;
@@ -1006,17 +1141,19 @@ internal sealed class ClusterRasterStages : IDisposable
             entryPoint,
             vertexEncoding,
             $"Material '{material.Name}' tessellation {phase}");
-        CookedShaderEntry cooked = shader.RequireEntry(
-            _device.Capabilities.CompileTarget,
+        int targetIndex = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
+        EntryPointReflection entry = shader.RequireSlangEntry(
+            targetIndex,
             entryPoint,
-            ShaderStage.Compute);
-        var key = new ClusterRasterSoftwareKey(cooked.Program, cooked.EntryPoint);
+            SlangStage.Compute);
+        var key = new ClusterRasterSoftwareKey(shader.SlangCode, entry);
         if (_tessellationPipelines.TryGetValue(key, out ClusterComputePipeline? pipeline))
             return pipeline;
         pipeline = ClusterComputePipeline.Create(
             _backend,
             _device,
-            cooked,
+            shader,
+            entry,
             $"Cluster material tessellation {phase} {entryPoint}");
         _tessellationPipelines.Add(key, pipeline);
         return pipeline;
@@ -1035,19 +1172,18 @@ internal sealed class ClusterRasterStages : IDisposable
             vertexEntry,
             vertexEncoding,
             $"Material '{material.Name}' hardware raster");
-        ShaderStage geometryStage = vertexEntry is ClusterMaterialEntries.HardwareMesh or ClusterMaterialEntries.HardwareMeshlet or ClusterMaterialEntries.TessellationHardwareMesh
-            ? ShaderStage.Mesh : ShaderStage.Vertex;
-        CookedShaderEntry vertex = shader.RequireEntry(
-            _device.Capabilities.CompileTarget,
+        SlangStage geometryStage = vertexEntry is ClusterMaterialEntries.HardwareMesh or ClusterMaterialEntries.HardwareMeshlet or ClusterMaterialEntries.TessellationHardwareMesh
+            ? SlangStage.Mesh : SlangStage.Vertex;
+        int targetIndex = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
+        EntryPointReflection vertex = shader.RequireSlangEntry(
+            targetIndex,
             vertexEntry,
             geometryStage);
-        CookedShaderEntry pixel = shader.RequireEntry(
-            _device.Capabilities.CompileTarget,
+        EntryPointReflection pixel = shader.RequireSlangEntry(
+            targetIndex,
             pixelEntry,
-            ShaderStage.Pixel);
-        if (!ReferenceEquals(vertex.Program, pixel.Program))
-            throw new InvalidDataException("Cluster material raster entries must share one cooked shader program.");
-        var key = new ClusterRasterHardwareKey(vertex.Program, vertex.EntryPoint, pixel.EntryPoint);
+            SlangStage.Fragment);
+        var key = new ClusterRasterHardwareKey(shader.SlangCode, vertex, pixel);
         if (_hardwarePipelines.TryGetValue(key, out ClusterRasterPipeline? pipeline))
             return pipeline;
         pipeline = ClusterRasterPipeline.Create(
@@ -1085,11 +1221,11 @@ internal sealed class ClusterRasterStages : IDisposable
         string softwareEntry,
         string vertexEntry)
     {
-        ClusterConservativeBounds software = ClusterGeometryContracts.RequireConservativeBounds(
+        ClusterConservativeBounds software = ClusterGeometryRequirements.RequireConservativeBounds(
             shader,
             softwareEntry,
             $"Material '{material.Name}' software raster");
-        ClusterConservativeBounds hardware = ClusterGeometryContracts.RequireConservativeBounds(
+        ClusterConservativeBounds hardware = ClusterGeometryRequirements.RequireConservativeBounds(
             shader,
             vertexEntry,
             $"Material '{material.Name}' hardware raster");
@@ -1243,13 +1379,13 @@ internal sealed class ClusterRasterStageResources<TCore>
 }
 
 internal readonly record struct ClusterRasterSoftwareKey(
-    ShaderProgram Program,
-    ShaderEntryPoint EntryPoint);
+    IComponentType SlangCode,
+    EntryPointReflection EntryPoint);
 
 internal readonly record struct ClusterRasterHardwareKey(
-    ShaderProgram Program,
-    ShaderEntryPoint Vertex,
-    ShaderEntryPoint Pixel);
+    IComponentType SlangCode,
+    EntryPointReflection Vertex,
+    EntryPointReflection Pixel);
 
 /// <summary>
 /// Resolves the final cooked shade entries and groups work by execution plus command binding
@@ -1257,10 +1393,16 @@ internal readonly record struct ClusterRasterHardwareKey(
 /// </summary>
 internal sealed class ClusterShadeStages : IDisposable
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite ResolveTrace =
+        new("render", "Cluster.ShadeStageResolve");
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly IGraphResourceProvider? _featureResources;
+    private readonly ClusterEntryUsageCache _entryUsages;
     private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterComputePipeline> _pipelines = [];
+    private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterLinkedStageLayout> _linkedLayouts = [];
+    private readonly Dictionary<ClusterShadeCompatibilityKey, ScalarLayout> _scalarLayouts = [];
+    private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterShadeCoreResource[]> _coreResourceLayouts = [];
     private ClusterBinIndexMap<ClusterShadeBinKey, ClusterShadeInvocation> _binIndices =
         new(static (before, after) => before.MaterialBindings.AsSpan().SequenceEqual(after.MaterialBindings));
     private ImmutableDictionary<long, HashSet<uint>> _resourceProperties = ImmutableDictionary<long, HashSet<uint>>.Empty;
@@ -1276,17 +1418,20 @@ internal sealed class ClusterShadeStages : IDisposable
     internal ClusterShadeStages(
         IGraphicsBackend backend,
         Device device,
-        IGraphResourceProvider? featureResources)
+        IGraphResourceProvider? featureResources,
+        ClusterEntryUsageCache entryUsages)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _featureResources = featureResources;
+        _entryUsages = entryUsages ?? throw new ArgumentNullException(nameof(entryUsages));
     }
 
     private ClusterMaterialAssignmentSet? _resolvedAssignments;
 
     internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ResolveTrace);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (ReferenceEquals(assignments, _resolvedAssignments)) return _resolved!;
         var addresses = _resolvedAssignments is null
@@ -1294,6 +1439,21 @@ internal sealed class ClusterShadeStages : IDisposable
             : new HashSet<int>(assignments.ChangedOffsets);
         foreach (long material in assignments.ChangedMaterialIds)
             addresses.UnionWith(assignments.GetMaterialOffsets(material));
+        foreach (int address in addresses)
+        {
+            if (!assignments.TryGetEntry(address, out Material material, out _))
+                continue;
+            Shader shader = ClusterMaterialEntries.RequireShader(material);
+            SlangCompileTarget target = _device.Capabilities.CompileTarget;
+            if (ClusterMaterialEntries.HasEntry(
+                    shader,
+                    target,
+                    ClusterMaterialEntries.Shade,
+                    SlangStage.Compute))
+            {
+                _entryUsages.Get(shader, target).Queue(ClusterMaterialEntries.Shade);
+            }
+        }
         var bins = new ClusterBinIndexMap<ClusterShadeBinKey, ClusterShadeInvocation>(_binIndices);
         var resourceProperties = _resourceProperties;
         foreach (long material in assignments.ChangedMaterialIds)
@@ -1337,29 +1497,42 @@ internal sealed class ClusterShadeStages : IDisposable
             entryPoint,
             vertexEncoding,
             $"Material '{material.Name}' shade");
-        CookedShaderEntry cooked = shader.RequireEntry(
-            _device.Capabilities.CompileTarget,
+        int targetIndex = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
+        EntryPointReflection entry = shader.RequireSlangEntry(
+            targetIndex,
             entryPoint,
-            ShaderStage.Compute);
-        var key = new ClusterShadeCompatibilityKey(cooked.Program, cooked.EntryPoint);
+            SlangStage.Compute);
+        var key = new ClusterShadeCompatibilityKey(shader.SlangCode, entry);
         if (!_pipelines.TryGetValue(key, out ClusterComputePipeline? pipeline))
         {
             pipeline = ClusterComputePipeline.Create(
                 _backend,
                 _device,
-                cooked,
+                shader,
+                entry,
                 $"Cluster shade {entryPoint}");
             _pipelines.Add(key, pipeline);
         }
 
-        ScalarLayout scalars = ResolveScalarLayout(shader);
+        if (!_linkedLayouts.TryGetValue(key, out ClusterLinkedStageLayout? resources))
+        {
+            resources = ClusterLinkedStageLayout.Create(
+                shader,
+                _device.Capabilities.CompileTarget,
+                entryPoint,
+                entryUsage: _entryUsages.Get(shader, _device.Capabilities.CompileTarget));
+            _linkedLayouts.Add(key, resources);
+            _scalarLayouts.Add(
+                key,
+                resources.Contains("MaterialScalarRegion")
+                    ? ResolveScalarLayout(shader, targetIndex)
+                    : ScalarLayout.Empty);
+            _coreResourceLayouts.Add(key, ResolveShadeCoreResources(resources));
+        }
+        ScalarLayout scalars = _scalarLayouts[key];
         ScalarLayout.ScalarMaterialLayout scalarMaterialLayout = scalars.Resolve(material);
-        ClusterLinkedStageLayout resources = ClusterLinkedStageLayout.Create(
-            shader,
-            _device.Capabilities.CompileTarget,
-            entryPoint);
-        ClusterShadeCoreResource[] coreResources = ResolveShadeCoreResources(resources);
-        Dictionary<string, byte> materialResources = ResolveMaterialResources(shader, resources);
+        ClusterShadeCoreResource[] coreResources = _coreResourceLayouts[key];
+        Dictionary<string, byte> materialResources = ResolveMaterialResources(material, resources);
         resources.ValidateMaterialResources(materialResources);
         GraphResourceBinder?[] featureResourceBinders = resources.ResolveFeatureResources(
             materialResources,
@@ -1445,32 +1618,88 @@ internal sealed class ClusterShadeStages : IDisposable
         return result;
     }
 
-    private static ScalarLayout ResolveScalarLayout(Shader shader)
+    private static ScalarLayout ResolveScalarLayout(Shader shader, int targetIndex)
     {
-        IList<ShaderMaterialScalarLayout>? layouts = shader.Metadata?.MaterialScalarLayouts;
-        return layouts switch
+        var materialTypeNames = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (int unitIndex = 0; unitIndex < shader.SlangSourceUnitCount; unitIndex++)
+            Visit(shader.GetSlangSourceUnit(unitIndex).GetModuleReflection());
+        if (materialTypeNames.Count == 0)
+            throw new InvalidDataException(
+                $"Shader '{shader.Name}' exposes no MaterialScalars type after IR restoration.");
+        if (materialTypeNames.Count != 1)
         {
-            null or { Count: 0 } => ScalarLayout.Empty,
-            { Count: 1 } => ScalarLayout.FromData(layouts[0]),
-            _ => throw new InvalidDataException(
-                $"Shader '{shader.Name}' exposes multiple material scalar layouts without an entry-local selection."),
-        };
+            throw new InvalidDataException(
+                $"Shader '{shader.Name}' exposes multiple MaterialScalars types.");
+        }
+
+        string typeName = materialTypeNames[0];
+        ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+        TypeReflection type = reflection.FindTypeByName(typeName)
+            ?? throw new InvalidDataException(
+                $"Shader '{shader.Name}' has no linked MaterialScalars type '{typeName}'.");
+        TypeLayoutReflection layout = reflection.GetTypeLayout(type, LayoutRules.Default)
+            ?? throw new InvalidDataException(
+                $"Shader '{shader.Name}' has no layout for MaterialScalars type '{type.Name}'.");
+        return ScalarLayout.FromSlang(type.Name, layout);
+
+        void Visit(DeclReflection declaration)
+        {
+            if (declaration == DeclReflection.Null)
+                return;
+            if (declaration.Kind == DeclReflectionKind.Struct)
+            {
+                TypeReflection candidate = declaration.Type;
+                if (candidate != TypeReflection.Null && HasAttribute(candidate, "MaterialScalars") &&
+                    !string.IsNullOrWhiteSpace(candidate.Name) &&
+                    seen.Add(candidate.Name))
+                {
+                    materialTypeNames.Add(candidate.Name);
+                }
+            }
+            for (int index = 0; index < declaration.ChildrenCount; index++)
+                Visit(declaration.GetChild(checked((uint)index)));
+        }
+
+        static bool HasAttribute(TypeReflection type, string name)
+        {
+            for (uint index = 0; index < type.AttributeCount; index++)
+            {
+                AttributeReflection attribute = type.GetAttribute(index);
+                if (attribute != AttributeReflection.Null &&
+                    string.Equals(attribute.Name, name, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     private static Dictionary<string, byte> ResolveMaterialResources(
-        Shader shader,
+        Material material,
         ClusterLinkedStageLayout resources)
     {
         var result = new Dictionary<string, byte>(StringComparer.Ordinal);
-        foreach (ShaderMaterialBinding binding in shader.Metadata?.MaterialBindings ?? [])
+        foreach (ref readonly ClusterLinkedStageResource resource in resources.Resources)
         {
-            string name = binding.Name ?? throw new InvalidDataException(
-                $"Shader '{shader.Name}' has an unnamed material resource.");
-            if (!resources.Contains(name))
+            string resourceName = resource.Name;
+            if (!resource.IsUsed || resource.Type == ResourceBindingType.None ||
+                !material.Properties.Any(property =>
+                    string.Equals(property.Name, resourceName, StringComparison.Ordinal)))
+            {
                 continue;
-            if (!result.TryAdd(name, binding.ResourceType))
-                throw new InvalidDataException(
-                    $"Shader '{shader.Name}' has duplicate material resource '{name}'.");
+            }
+            result.TryAdd(resource.Name, resource.Type switch
+            {
+                ResourceBindingType.TextureSrv or ResourceBindingType.TextureUav => (byte)0,
+                ResourceBindingType.Sampler => 1,
+                ResourceBindingType.BufferSrv or ResourceBindingType.BufferUav or
+                    ResourceBindingType.ConstantBuffer => 2,
+                ResourceBindingType.AccelerationStructure => 3,
+                _ => throw new InvalidDataException(
+                    $"Resource type {resource.Type} cannot be a material resource."),
+            });
         }
         return result;
     }
@@ -1634,9 +1863,185 @@ internal enum ClusterShadeCoreResource : byte
     MaterialScalarOffsets,
 }
 
+internal readonly record struct ClusterParameterLocation(
+    SlangParameterCategory Category,
+    nuint Space,
+    nuint Register);
+
+internal readonly record struct ClusterLinkedShaderKey(
+    IComponentType SlangCode,
+    SlangCompileTarget Target);
+
+internal sealed class ClusterEntryUsageCache : IDisposable
+{
+    private readonly Dictionary<ClusterLinkedShaderKey, ClusterEntryUsageSet> _entries = [];
+    private bool _disposed;
+
+    internal ClusterEntryUsageSet Get(Shader shader, SlangCompileTarget target)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var key = new ClusterLinkedShaderKey(shader.SlangCode, target);
+        if (_entries.TryGetValue(key, out ClusterEntryUsageSet? result))
+            return result;
+        result = new ClusterEntryUsageSet(shader, target);
+        _entries.Add(key, result);
+        return result;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        foreach (ClusterEntryUsageSet entries in _entries.Values)
+            entries.Wait();
+        _entries.Clear();
+    }
+}
+
+internal sealed class ClusterEntryUsageSet
+{
+    private static readonly SemaphoreSlim MetadataConcurrency = new(
+        Math.Max(1, Math.Min(Environment.ProcessorCount, 4)));
+
+    private readonly Shader _shader;
+    private readonly int _targetIndex;
+    private readonly ShaderReflection _reflection;
+    private readonly ClusterParameterLocation[] _locations;
+    private readonly Dictionary<ClusterParameterLocation, int> _locationIndices;
+    private readonly Dictionary<string, Task<bool[]>> _entries = new(StringComparer.Ordinal);
+    private readonly object _gate = new();
+
+    internal ClusterEntryUsageSet(Shader shader, SlangCompileTarget target)
+    {
+        _shader = shader ?? throw new ArgumentNullException(nameof(shader));
+        _targetIndex = shader.RequireSlangTarget(target);
+        _reflection = shader.GetSlangReflection(_targetIndex);
+        VariableLayoutReflection globals = _reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        _locations = globals == VariableLayoutReflection.Null
+            ? []
+            : ClusterLinkedStageLayout.CollectLocations(globals);
+        _locationIndices = new Dictionary<ClusterParameterLocation, int>(_locations.Length);
+        for (int index = 0; index < _locations.Length; index++)
+            _locationIndices.Add(_locations[index], index);
+    }
+
+    internal void Queue(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        lock (_gate)
+        {
+            if (_entries.ContainsKey(name))
+                return;
+            int entryIndex = FindEntry(name);
+            _entries.Add(name, ReadUsageAsync(entryIndex, name));
+        }
+    }
+
+    internal bool IsUsed(
+        IReadOnlyList<string> entries,
+        SlangParameterCategory category,
+        nuint space,
+        nuint register)
+    {
+        if (!_locationIndices.TryGetValue(
+                new ClusterParameterLocation(category, space, register),
+                out int locationIndex))
+        {
+            throw new InvalidDataException(
+                $"Cluster linked resource location {category}:{space}:{register} was not reflected.");
+        }
+        foreach (string entry in entries)
+        {
+            Queue(entry);
+            Task<bool[]> read;
+            lock (_gate)
+                read = _entries[entry];
+            if (read.GetAwaiter().GetResult()[locationIndex])
+                return true;
+        }
+        return false;
+    }
+
+    internal void Wait()
+    {
+        Task<bool[]>[] reads;
+        lock (_gate)
+            reads = [.. _entries.Values];
+        try { Task.WhenAll(reads).GetAwaiter().GetResult(); }
+        catch
+        {
+            // A required result is reported at its use site. Waiting here only keeps the
+            // linked Slang component alive until every already-started backend call returns.
+        }
+    }
+
+    private int FindEntry(string name)
+    {
+        for (int index = 0; index < _shader.SlangEntryCount; index++)
+        {
+            EntryPointReflection entry = _reflection.GetEntryPointByIndex(checked((nuint)index));
+            if (string.Equals(entry.Name, name, StringComparison.Ordinal) ||
+                string.Equals(entry.NameOverride, name, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+        throw new InvalidDataException(
+            $"Shader '{_shader.Name}' has no Slang entry point named '{name}'.");
+    }
+
+    private async Task<bool[]> ReadUsageAsync(int entryIndex, string name)
+    {
+        await Task.Yield();
+        await MetadataConcurrency.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(
+                ClusterLinkedStageLayout.MetadataTrace);
+            SlangResult metadataResult = _shader.SlangCode.GetEntryPointMetadata(
+                entryIndex,
+                _targetIndex,
+                out IMetadata metadata,
+                out ISlangBlob? diagnostics);
+            if (metadataResult.Failed)
+            {
+                throw new InvalidDataException(
+                    $"Slang could not describe resource usage for shader '{_shader.Name}', " +
+                    $"entry '{name}': {diagnostics?.AsString ?? metadataResult.ToString()}");
+            }
+            var result = new bool[_locations.Length];
+            for (int index = 0; index < _locations.Length; index++)
+            {
+                ClusterParameterLocation location = _locations[index];
+                SlangResult usageResult = metadata.IsParameterLocationUsed(
+                    location.Category,
+                    location.Space,
+                    location.Register,
+                    out result[index]);
+                if (usageResult.Failed)
+                {
+                    throw new InvalidDataException(
+                        $"Slang could not resolve resource usage for shader '{_shader.Name}', " +
+                        $"entry '{name}': {usageResult}.");
+                }
+            }
+            return result;
+        }
+        finally
+        {
+            MetadataConcurrency.Release();
+        }
+    }
+
+}
+
 /// <summary>Bounded resource order captured from the final linked Slang program.</summary>
 internal sealed class ClusterLinkedStageLayout
 {
+    internal static readonly SomeEngine.Diagnostics.TraceSite MetadataTrace =
+        new("render", "Cluster.EntryMetadata");
     private readonly ClusterLinkedStageResource[] _resources;
 
     private ClusterLinkedStageLayout(ClusterLinkedStageResource[] resources)
@@ -1655,49 +2060,127 @@ internal sealed class ClusterLinkedStageLayout
     }
 
     internal static ClusterLinkedStageLayout Create(
-        Shader shader, SlangCompileTarget target, string firstEntry, string? secondEntry = null)
+        Shader shader,
+        SlangCompileTarget target,
+        string firstEntry,
+        string? secondEntry = null,
+        ClusterEntryUsageSet? entryUsage = null)
     {
-        string backend = target == SlangCompileTarget.Spirv ? "spirv" : "dxil";
-        if (!shader.TryProgram(backend, out ShaderProgram program))
-            throw new InvalidDataException($"Shader '{shader.Name}' has no {backend} shader data.");
+        int targetIndex = shader.RequireSlangTarget(target);
+        ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
         string[] names = secondEntry is null ? [firstEntry] : [firstEntry, secondEntry];
-        HashSet<string> used = new(StringComparer.Ordinal);
-        foreach (string name in names)
-        {
-            if (!shader.TryReflection(backend, name, out ShaderEntryPointReflection reflection) ||
-                reflection.Reflection?.Resources is not { } resources)
-                throw new InvalidDataException($"Shader '{shader.Name}' has no resource usage for '{name}'.");
-            foreach (ShaderResourceReflection resource in resources)
-                used.Add(resource.Name ?? throw new InvalidDataException("A reflected resource has no name."));
-        }
         List<ClusterLinkedStageResource> result = [];
-        AddBlock(program.Layout.GetGlobalParamsVarLayout());
+        var entryLayouts = new List<VariableLayoutReflection>(names.Length);
+        var metadata = new List<IMetadata>(names.Length);
         foreach (string name in names)
         {
-            ShaderEntryPoint entry = program.EntryPoints.First(value => value.Name == name);
-            AddBlock(entry.VarLayout);
+            int entryIndex = -1;
+            EntryPointReflection entry = EntryPointReflection.Null;
+            for (int index = 0; index < shader.SlangEntryCount; index++)
+            {
+                EntryPointReflection candidate = reflection.GetEntryPointByIndex(checked((nuint)index));
+                if (!string.Equals(candidate.Name, name, StringComparison.Ordinal) &&
+                    !string.Equals(candidate.NameOverride, name, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                entryIndex = index;
+                entry = candidate;
+                break;
+            }
+            if (entryIndex < 0)
+            {
+                throw new InvalidDataException(
+                    $"Shader '{shader.Name}' has no Slang entry point named '{name}'.");
+            }
+
+            if (entryUsage is null)
+            {
+                using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(MetadataTrace);
+                SlangResult metadataResult = shader.SlangCode.GetEntryPointMetadata(
+                    entryIndex,
+                    targetIndex,
+                    out IMetadata entryMetadata,
+                    out ISlangBlob? diagnostics);
+                if (metadataResult.Failed)
+                {
+                    throw new InvalidDataException(
+                        $"Slang could not describe resource usage for shader '{shader.Name}', " +
+                        $"entry '{name}': {diagnostics?.AsString ?? metadataResult.ToString()}");
+                }
+                metadata.Add(entryMetadata);
+            }
+            else entryUsage.Queue(name);
+            entryLayouts.Add(entry.VarLayout);
         }
+
+        AddBlock(
+            reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
+            IsUsedByEntry);
+        foreach (VariableLayoutReflection entryLayout in entryLayouts)
+            AddBlock(entryLayout, null);
         return new ClusterLinkedStageLayout([.. result]);
 
-        void AddBlock(ShaderVariableLayout layout)
+        bool IsUsedByEntry(
+            SlangParameterCategory category,
+            nuint space,
+            nuint register)
         {
-            if (layout == ShaderVariableLayout.Null)
+            if (entryUsage is not null)
+                return entryUsage.IsUsed(names, category, space, register);
+            foreach (IMetadata item in metadata)
+            {
+                SlangResult usageResult = item.IsParameterLocationUsed(
+                    category,
+                    space,
+                    register,
+                    out bool used);
+                if (usageResult.Failed)
+                {
+                    throw new InvalidDataException(
+                        $"Slang could not resolve resource usage for shader '{shader.Name}': " +
+                        usageResult);
+                }
+                if (used)
+                    return true;
+            }
+            return false;
+        }
+
+        void AddBlock(
+            VariableLayoutReflection layout,
+            Func<SlangParameterCategory, nuint, nuint, bool>? isUsed)
+        {
+            if (layout == VariableLayoutReflection.Null)
                 return;
-            ClusterLinkedStageLayout block = Create(layout);
+            ClusterLinkedStageLayout block = Create(layout, isUsed);
             if (block._resources.Length == 0)
                 return;
             result.Add(new ClusterLinkedStageResource("", ResourceBindingType.None, 0)
-                { ParameterLayout = layout, IsUsed = false });
-            foreach (ClusterLinkedStageResource resource in block._resources)
-                result.Add(resource with { IsUsed = used.Contains(resource.Name) });
+            { ParameterLayout = layout, IsUsed = false });
+            result.AddRange(block._resources);
         }
     }
 
-    internal static ClusterLinkedStageLayout Create(ShaderVariableLayout layout)
+    internal static ClusterLinkedStageLayout Create(VariableLayoutReflection layout)
+        => Create(layout, null);
+
+    internal static ClusterParameterLocation[] CollectLocations(
+        VariableLayoutReflection layout)
     {
-        if (layout == ShaderVariableLayout.Null)
+        var locations = new List<ClusterParameterLocation>();
+        _ = Create(layout, null, locations);
+        return [.. locations.Distinct()];
+    }
+
+    private static ClusterLinkedStageLayout Create(
+        VariableLayoutReflection layout,
+        Func<SlangParameterCategory, nuint, nuint, bool>? isUsed,
+        List<ClusterParameterLocation>? locations = null)
+    {
+        if (layout == VariableLayoutReflection.Null)
             throw new InvalidDataException("A material stage has no linked parameter layout.");
-        ShaderTypeLayout contents = layout.TypeLayout.UnwrapArray();
+        TypeLayoutReflection contents = layout.TypeLayout.UnwrapArray();
         if (contents.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             contents = contents.ElementTypeLayout.UnwrapArray();
         int rangeCount = ResolveCount(contents.BindingRangeCount, "binding ranges");
@@ -1747,11 +2230,50 @@ internal sealed class ClusterLinkedStageLayout
                 ResourceBindingType type = ExpectedType(
                     contents.GetDescriptorSetDescriptorRangeType(set, descriptorRange),
                     contents.GetDescriptorSetDescriptorRangeCategory(set, descriptorRange));
+                SlangParameterCategory category =
+                    contents.GetDescriptorSetDescriptorRangeCategory(set, descriptorRange);
+                nuint space = checked(
+                    (nuint)contents.GetDescriptorSetSpaceOffset(set) +
+                    layout.GetBindingSpace(category) +
+                    ResolveSubObjectSpace(contents, range, category));
+                nuint register = checked(
+                    (nuint)contents.GetDescriptorSetDescriptorRangeIndexOffset(set, descriptorRange) +
+                    layout.GetOffset(category));
                 for (int element = 0; element < descriptorCount; element++)
-                    resources.Add(new ClusterLinkedStageResource(name, type, checked((uint)element)));
+                {
+                    var location = new ClusterParameterLocation(
+                        category,
+                        space,
+                        checked(register + (nuint)element));
+                    locations?.Add(location);
+                    resources.Add(new ClusterLinkedStageResource(name, type, checked((uint)element))
+                    {
+                        IsUsed = isUsed?.Invoke(
+                            location.Category,
+                            location.Space,
+                            location.Register) ?? true,
+                    });
+                }
             }
         }
         return new ClusterLinkedStageLayout([.. resources]);
+    }
+
+    private static nuint ResolveSubObjectSpace(
+        TypeLayoutReflection layout,
+        nint bindingRange,
+        SlangParameterCategory category)
+    {
+        for (nint index = 0; index < layout.SubObjectRangeCount; index++)
+        {
+            if (layout.GetSubObjectRangeBindingRangeIndex(index) != bindingRange)
+                continue;
+            VariableLayoutReflection variable = layout.GetSubObjectRangeOffset(index);
+            return variable == VariableLayoutReflection.Null
+                ? 0
+                : variable.GetBindingSpace(category);
+        }
+        return 0;
     }
 
     internal void ValidateMaterialResources(IReadOnlyDictionary<string, byte> materialResources)
@@ -1866,19 +2388,6 @@ internal sealed class ClusterLinkedStageLayout
         };
     }
 
-    private static ResourceBindingType ExpectedType(DescriptorType type) => type switch
-    {
-        DescriptorType.ConstantBuffer => ResourceBindingType.ConstantBuffer,
-        DescriptorType.SampledTexture => ResourceBindingType.TextureSrv,
-        DescriptorType.StorageTexture => ResourceBindingType.TextureUav,
-        DescriptorType.ReadOnlyBuffer => ResourceBindingType.BufferSrv,
-        DescriptorType.StorageBuffer => ResourceBindingType.BufferUav,
-        DescriptorType.Sampler => ResourceBindingType.Sampler,
-        DescriptorType.AccelerationStructure => ResourceBindingType.AccelerationStructure,
-        _ => throw new InvalidDataException(
-            $"Cooked shader resource type {type} cannot be represented by the RHI."),
-    };
-
     private static int ResolveIndex(nint value, int limit, string description)
     {
         int result = ResolveCount(value, description);
@@ -1903,7 +2412,7 @@ internal readonly record struct ClusterLinkedStageResource(
     uint Element)
 {
     internal bool IsUsed { get; init; } = true;
-    internal ShaderVariableLayout ParameterLayout { get; init; } = ShaderVariableLayout.Null;
+    internal VariableLayoutReflection ParameterLayout { get; init; } = VariableLayoutReflection.Null;
 }
 
 internal static class ClusterShadeCoreResources
@@ -2179,7 +2688,7 @@ internal static class ClusterStageTargets
         string expected,
         string subject)
     {
-        string actual = ClusterGeometryContracts.RequireVertexEncoding(
+        string actual = ClusterGeometryRequirements.RequireVertexEncoding(
             shader,
             entryPoint,
             subject);

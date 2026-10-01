@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "b42092e21ab688fba90598dc325b209840c29a2b5d71f1932915e88f88c356f4",
+  "importer_version": 28,
+  "input_hash": "e2b8aedabbeecb8fa6a00f7308b12253dac00fbb665149139b0f15ffb8c53fd7",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_bin_common.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "assets/Shaders/cluster_bin_reset.shader",
-      "content_hash": "359f62a459e38d20299b13844ddc3a7716f59f101b3641ee4a40178a4f52af23"
+      "content_hash": "d49aae03b4fd5bd38dbf079a826ede69fb2b205ff49bef944129ab8d60d2260d"
     },
     {
       "relative_path": "assets/Shaders/cluster_bin_reset.slang",
@@ -37,11 +37,11 @@
     {
       "asset_guid": "6c6e4f69-98e7-5b37-b30d-7c13f7b9e043",
       "sub_asset_key": "",
-      "input_hash": "b42092e21ab688fba90598dc325b209840c29a2b5d71f1932915e88f88c356f4",
+      "input_hash": "e2b8aedabbeecb8fa6a00f7308b12253dac00fbb665149139b0f15ffb8c53fd7",
       "dependencies": [],
       "asset_path": "cluster_bin_reset.shader.asset",
-      "version": "65fe6001-c6f3-ea28-9832-aa947f9ee3a4",
-      "content_hash": "C3000429C07214E8B0F39EC8DB7527D6C4CDA993CE83A42D9AC9A6F2EF8D7B32",
+      "version": "d0df83af-6263-947a-f5b3-9e3d5de8c34d",
+      "content_hash": "7E53BBBF200654FB7691923058878CA2355C0E0F352F813697567931AC5FE6C1",
       "asset_dependencies": []
     }
   ]

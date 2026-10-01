@@ -696,7 +696,7 @@ internal sealed partial class RenderGraphFrameState
         RasterFrameCallback<TState> callback,
         int extensionOrdinal) =>
         AddDynamicPass(label, GraphPassKind.Raster, queue, state, options,
-            null, ShaderVariableLayout.Null, default,
+            null, VariableLayoutReflection.Null, default,
             declaration, GetRasterCallbackStore<TState>(), callback, extensionOrdinal);
 
     internal GraphPassId AddRasterPass<TState>(
@@ -705,7 +705,7 @@ internal sealed partial class RenderGraphFrameState
         in TState state,
         in PassOptions options,
         Pipeline pipeline,
-        ShaderVariableLayout parameterLayout,
+        VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         RasterFrameCallback<TState> callback,
@@ -723,7 +723,7 @@ internal sealed partial class RenderGraphFrameState
         ComputeFrameCallback<TState> callback,
         int extensionOrdinal) =>
         AddDynamicPass(label, GraphPassKind.Compute, queue, state, options,
-            null, ShaderVariableLayout.Null, default,
+            null, VariableLayoutReflection.Null, default,
             declaration, GetComputeCallbackStore<TState>(), callback, extensionOrdinal);
 
     internal GraphPassId AddComputePass<TState>(
@@ -732,7 +732,7 @@ internal sealed partial class RenderGraphFrameState
         in TState state,
         in PassOptions options,
         Pipeline pipeline,
-        ShaderVariableLayout parameterLayout,
+        VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         ComputeFrameCallback<TState> callback,
@@ -750,7 +750,7 @@ internal sealed partial class RenderGraphFrameState
         CopyFrameCallback<TState> callback,
         int extensionOrdinal) =>
         AddDynamicPass(label, GraphPassKind.Copy, queue, state, options,
-            null, ShaderVariableLayout.Null, default,
+            null, VariableLayoutReflection.Null, default,
             declaration, GetCopyCallbackStore<TState>(), callback, extensionOrdinal);
 
     internal GraphPassId AddGeneralPass<TState>(
@@ -762,7 +762,7 @@ internal sealed partial class RenderGraphFrameState
         GeneralFrameCallback<TState> callback,
         int extensionOrdinal) =>
         AddDynamicPass(label, GraphPassKind.General, queue, state, options,
-            null, ShaderVariableLayout.Null, default,
+            null, VariableLayoutReflection.Null, default,
             declaration, GetGeneralCallbackStore<TState>(), callback, extensionOrdinal);
 
     internal void SetPassPipeline(in GraphIdentity pass, Pipeline pipeline)
@@ -781,7 +781,7 @@ internal sealed partial class RenderGraphFrameState
 
     internal void SetPassParameterBlock(
         in GraphIdentity pass,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         ReadOnlySpan<byte> ordinaryData)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.ParameterUpdates);
@@ -790,7 +790,7 @@ internal sealed partial class RenderGraphFrameState
             "The parameter layout of a persistent pass must be declared in a graph edit.");
         int index = ResolveDynamicPass(pass);
         FramePass row = _dynamicPasses[index];
-        DevelopmentCheck.Require(row.ParameterLayout == ShaderVariableLayout.Null,
+        DevelopmentCheck.Require(row.ParameterLayout == VariableLayoutReflection.Null,
             "The Pass parameter block is already assigned.");
         row.ParameterLayout = layout;
         row.ParameterOrdinaryData = ordinaryData.ToArray();
@@ -1108,7 +1108,7 @@ internal sealed partial class RenderGraphFrameState
         in TState state,
         in PassOptions options,
         Pipeline? pipeline,
-        ShaderVariableLayout parameterLayout,
+        VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         FramePassCallbackStore callbackStore,
@@ -1122,7 +1122,7 @@ internal sealed partial class RenderGraphFrameState
         Graph.ValidateQueueSelection(queue, kind);
         if (pipeline is not null && !ReferenceEquals(pipeline.Device, Graph.Device))
             throw new ArgumentException("The Pipeline belongs to another Device.", nameof(pipeline));
-        if (pipeline is null && parameterLayout != ShaderVariableLayout.Null)
+        if (pipeline is null && parameterLayout != VariableLayoutReflection.Null)
             throw new ArgumentException("A parameter layout requires a Pipeline.", nameof(parameterLayout));
         GraphIdentity identity = NewIdentity(
             _dynamicPasses.Count,

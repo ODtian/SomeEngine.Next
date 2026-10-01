@@ -12,56 +12,49 @@ public sealed class MeshTests
     private const string Encoding = "tests.opaque-vertex-12";
 
     [Fact]
-    public void ReadyGeometryAndBvhRemainAvailableAfterInputsClose()
+    public void ReadyGeometryAndBvhViewsSurviveReplacement()
     {
-        using var arena = new PageArena(new ResidencyBudgetLedger());
         byte[] payload = Payload(out int offset);
-        using var bytes = new PageBuffer(arena, payload.Length);
-        bytes.Write(0, payload);
-        using var mesh = Mesh.Create("ready", Encoding, bytes, (ulong)offset);
-        bytes.Dispose();
-        arena.Dispose();
+        Mesh mesh = Mesh.Create("ready", Encoding, payload, (ulong)offset);
         Assert.Equal(1, mesh.PageCount);
-        Assert.True(mesh.TryRetainPage(0, out PageRange<byte>? page));
-        using (page)
-        using (PageRange<byte> bvh = mesh.RetainBvh())
-        {
-            mesh.Dispose();
-            Assert.Equal(payload[..offset], page.Sequence.ToArray());
-            Assert.Equal(payload[offset..], bvh.Sequence.ToArray());
-        }
-        Assert.Equal(0, arena.Residency.Used(ResidencyClass.DecodedCpu));
+        Assert.True(mesh.TryGetPage(0, out ReadOnlyMemory<byte> page));
+        ReadOnlyMemory<byte> bvh = mesh.Bvh;
+        Mesh copy = mesh.Duplicate();
+        Assert.True(copy.TryGetPage(0, out var shared));
+        Assert.True(page.Equals(shared));
+        mesh.Update(Mesh.Create("replacement", Encoding, payload, (ulong)offset));
+        Assert.Equal(payload[..offset], page.ToArray());
+        Assert.Equal(payload[offset..], bvh.ToArray());
     }
 
     [Fact]
     public void MissingPagesRequireExplicitSupplyAndBadPagesDoNotChangeTheMesh()
     {
-        using var arena = new PageArena(new ResidencyBudgetLedger());
         byte[] payload = Payload(out int offset);
-        using var bytes = new PageBuffer(arena, payload.Length);
-        bytes.Write(0, payload);
-        var descriptions = MeshIntegrity.Inspect(bytes, offset, Encoding);
-        using PageBuffer bvh = bytes.Slice(offset, payload.Length - offset);
-        using var mesh = Mesh.Create("partial", Encoding, descriptions, bvh);
-        Assert.False(mesh.TryRetainPage(0, out _));
-        Assert.Throws<KeyNotFoundException>(() => mesh.ReadPage(0, new byte[offset]));
-        using var ready = new PageBufferMap(arena);
-        using PageBuffer page = bytes.Slice(0, offset);
-        ready.Set(0, page);
-        ready.Write(0, offset - 1, new byte[] { 99 });
-        Assert.Throws<InvalidDataException>(() => mesh.AddPages(ready, mesh.Revision));
-        Assert.False(mesh.TryRetainPage(0, out _));
-        ready.Set(0, page);
-        mesh.AddPages(ready, mesh.Revision);
+        var descriptions = MeshIntegrity.Inspect(payload, offset, Encoding);
+        Mesh mesh = Mesh.Create("partial", Encoding, descriptions, payload.AsMemory(offset));
+        Assert.False(mesh.TryGetPage(0, out _));
+        Assert.Throws<InvalidOperationException>(() => mesh.ReadPage(0, new byte[offset]));
+        byte[] corrupt = payload[..offset];
+        corrupt[^1] = 99;
+        Assert.Throws<InvalidDataException>(() => mesh.AddPages([(0, corrupt)], mesh.Revision));
+        Assert.False(mesh.TryGetPage(0, out _));
+        Mesh captured = mesh.CaptureData();
+        int changes = 0;
+        mesh.Changed += _ => changes++;
+        mesh.AddPages([(0, payload.AsMemory(0, offset))], mesh.Revision);
+        Assert.Equal(1, changes);
+        Assert.False(captured.TryGetPage(0, out _));
+        Assert.True(mesh.CaptureData().TryGetPage(0, out _));
         byte[] restored = new byte[offset];
         mesh.ReadPage(0, restored);
         Assert.Equal(payload[..offset], restored);
-        using var replacement = Mesh.Create("replacement", Encoding, bytes, (ulong)offset);
+        Mesh replacement = Mesh.Create("replacement", Encoding, payload, (ulong)offset);
         ulong previousRevision = mesh.Revision;
         mesh.Update(replacement);
         Assert.Equal("replacement", mesh.Name);
         Assert.Equal(previousRevision + 1, mesh.Revision);
-        Assert.Throws<InvalidOperationException>(() => mesh.AddPages(ready, previousRevision));
+        Assert.Throws<InvalidOperationException>(() => mesh.AddPages([(0, restored)], previousRevision));
     }
 
     [Fact]

@@ -1,5 +1,7 @@
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using SlangShaderSharp;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
@@ -19,6 +21,13 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in GraphicsPipelineDesc desc,
         PipelineCache? cache = null)
+        => CreateGraphicsPipeline(device, desc, cache, null);
+
+    private Pipeline CreateGraphicsPipeline(
+        Device device,
+        in GraphicsPipelineDesc desc,
+        PipelineCache? cache,
+        IComponentType? capturedSlangCode)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
@@ -29,22 +38,24 @@ internal sealed unsafe partial class D3D12Backend
         ValidateDepthBounds(nativeDevice, desc.DepthStencil, desc.DynamicStates);
         ValidateAttachmentFormats(nativeDevice, desc.Attachments, desc.Blend);
 
-        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
+        ShaderReflection reflection = desc.Reflection;
         CompiledShader vertex = CompileShader(
-            desc.Program,
             reflection,
             desc.Vertex,
+            desc.VertexCode,
+            desc.VertexCodeBlob,
             SlangStage.Vertex,
             "vertex");
         CompiledShader pixel = CompileShader(
-            desc.Program,
             reflection,
             desc.Pixel,
+            desc.PixelCode,
+            desc.PixelCodeBlob,
             SlangStage.Fragment,
             "pixel");
         ValidateVertexLocations(desc.Vertex, desc.VertexAttributes);
 
-        ShaderEntryPoint[] entries = [desc.Vertex, desc.Pixel];
+        EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
         D3D12RootSignatureState root = D3D12RootSignatureBuilder.Compile(
             this,
             nativeDevice,
@@ -58,7 +69,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12PipelineState* pipelineState = null;
         NativeLease? nativeState = null;
         D3D12RootSignatureState? rootToRelease = root;
-        RetainedShaderProgram? retainedProgram = null;
+        IComponentType? retainedCode = null;
         D3D12ClassicPipeline? result = null;
         nint[] allocatedSemantics = [];
         try
@@ -79,12 +90,12 @@ internal sealed unsafe partial class D3D12Backend
                 ownsReference: true,
                 root.NativeLifetime);
             pipelineState = null;
-            retainedProgram = RetainProgram(desc.Program);
+            retainedCode = capturedSlangCode ?? desc.SlangCode;
             result = new D3D12ClassicPipeline(
                 nativeDevice,
                 nativeState,
                 root,
-                retainedProgram,
+                retainedCode,
                 PipelineType.Graphics,
                 desc.Topology,
                 desc.StripCut,
@@ -92,7 +103,7 @@ internal sealed unsafe partial class D3D12Backend
                 desc.Label);
             nativeState = null;
             rootToRelease = null;
-            retainedProgram = null;
+            retainedCode = null;
             nativeDevice.RegisterChild(result);
             StoreCachedData(nativeDevice, nativeCache, 1, key, (ID3D12PipelineState*)result.NativeObject);
             return result;
@@ -106,7 +117,6 @@ internal sealed unsafe partial class D3D12Backend
                 nativeState?.Release();
                 if (pipelineState is not null)
                     _ = PipelineTrace.Release(pipelineState);
-                retainedProgram?.Dispose();
             }
             throw;
         }
@@ -329,21 +339,29 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in ComputePipelineDesc desc,
         PipelineCache? cache = null)
+        => CreateComputePipeline(device, desc, cache, null);
+
+    private Pipeline CreateComputePipeline(
+        Device device,
+        in ComputePipelineDesc desc,
+        PipelineCache? cache,
+        IComponentType? capturedSlangCode)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        ArgumentNullException.ThrowIfNull(desc.Program);
+        ArgumentNullException.ThrowIfNull(desc.SlangCode);
 
-        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
+        ShaderReflection reflection = desc.Reflection;
         CompiledShader compute = CompileShader(
-            desc.Program,
             reflection,
             desc.Compute,
+            desc.Code,
+            desc.CodeBlob,
             SlangStage.Compute,
             "compute");
-        ShaderEntryPoint[] entries = [desc.Compute];
+        EntryPointReflection[] entries = [desc.Compute];
         D3D12RootSignatureState root = D3D12RootSignatureBuilder.Compile(
             this,
             nativeDevice,
@@ -356,7 +374,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12PipelineState* pipelineState = null;
         NativeLease? nativeState = null;
         D3D12RootSignatureState? rootToRelease = root;
-        RetainedShaderProgram? retainedProgram = null;
+        IComponentType? retainedCode = null;
         D3D12ClassicPipeline? result = null;
         try
         {
@@ -406,12 +424,12 @@ nativeDevice.Native, &native,
                 ownsReference: true,
                 root.NativeLifetime);
             pipelineState = null;
-            retainedProgram = RetainProgram(desc.Program);
+            retainedCode = capturedSlangCode ?? desc.SlangCode;
             result = new D3D12ClassicPipeline(
                 nativeDevice,
                 nativeState,
                 root,
-                retainedProgram,
+                retainedCode,
                 PipelineType.Compute,
                 default,
                 default,
@@ -419,7 +437,7 @@ nativeDevice.Native, &native,
                 desc.Label);
             nativeState = null;
             rootToRelease = null;
-            retainedProgram = null;
+            retainedCode = null;
             nativeDevice.RegisterChild(result);
             StoreCachedData(nativeDevice, nativeCache, 2, key, (ID3D12PipelineState*)result.NativeObject);
             return result;
@@ -433,7 +451,6 @@ nativeDevice.Native, &native,
                 nativeState?.Release();
                 if (pipelineState is not null)
                     _ = PipelineTrace.Release(pipelineState);
-                retainedProgram?.Dispose();
             }
             throw;
         }
@@ -447,12 +464,19 @@ nativeDevice.Native, &native,
         Device device,
         in MeshPipelineDesc desc,
         PipelineCache? cache = null)
+        => CreateMeshPipeline(device, desc, cache, null);
+
+    private Pipeline CreateMeshPipeline(
+        Device device,
+        in MeshPipelineDesc desc,
+        PipelineCache? cache,
+        IComponentType? capturedSlangCode)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         MeshShaders meshCapability =
             nativeDevice.RequireCapability<MeshShaders>(nameof(CreateMeshPipeline));
-        if (desc.Amplification != ShaderEntryPoint.Null &&
+        if (desc.Amplification != EntryPointReflection.Null &&
             !meshCapability.AmplificationShaders)
         {
             throw new NotSupportedException(
@@ -464,34 +488,37 @@ nativeDevice.Native, &native,
         ValidateDepthBounds(nativeDevice, desc.DepthStencil, desc.DynamicStates);
         ValidateAttachmentFormats(nativeDevice, desc.Attachments, desc.Blend);
 
-        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
+        ShaderReflection reflection = desc.Reflection;
         CompiledShader mesh = CompileShader(
-            desc.Program,
             reflection,
             desc.Mesh,
+            desc.MeshCode,
+            desc.MeshCodeBlob,
             SlangStage.Mesh,
             "mesh");
-        CompiledShader? amplification = desc.Amplification == ShaderEntryPoint.Null
+        CompiledShader? amplification = desc.Amplification == EntryPointReflection.Null
             ? null
             : CompileShader(
-                desc.Program,
                 reflection,
                 desc.Amplification,
+                desc.AmplificationCode,
+                desc.AmplificationCodeBlob,
                 SlangStage.Amplification,
                 "amplification");
-        CompiledShader? pixel = desc.Pixel == ShaderEntryPoint.Null
+        CompiledShader? pixel = desc.Pixel == EntryPointReflection.Null
             ? null
             : CompileShader(
-                desc.Program,
                 reflection,
                 desc.Pixel,
+                desc.PixelCode,
+                desc.PixelCodeBlob,
                 SlangStage.Fragment,
                 "pixel");
 
-        List<ShaderEntryPoint> entryList = [desc.Mesh];
-        if (desc.Amplification != ShaderEntryPoint.Null)
+        List<EntryPointReflection> entryList = [desc.Mesh];
+        if (desc.Amplification != EntryPointReflection.Null)
             entryList.Add(desc.Amplification);
-        if (desc.Pixel != ShaderEntryPoint.Null)
+        if (desc.Pixel != EntryPointReflection.Null)
             entryList.Add(desc.Pixel);
         D3D12RootSignatureState root = D3D12RootSignatureBuilder.Compile(
             this,
@@ -505,7 +532,7 @@ nativeDevice.Native, &native,
         ID3D12PipelineState* pipelineState = null;
         NativeLease? nativeState = null;
         D3D12RootSignatureState? rootToRelease = root;
-        RetainedShaderProgram? retainedProgram = null;
+        IComponentType? retainedCode = null;
         D3D12ClassicPipeline? result = null;
         try
         {
@@ -525,12 +552,12 @@ nativeDevice.Native, &native,
                 ownsReference: true,
                 root.NativeLifetime);
             pipelineState = null;
-            retainedProgram = RetainProgram(desc.Program);
+            retainedCode = capturedSlangCode ?? desc.SlangCode;
             result = new D3D12ClassicPipeline(
                 nativeDevice,
                 nativeState,
                 root,
-                retainedProgram,
+                retainedCode,
                 PipelineType.Mesh,
                 PrimitiveTopology.TriangleList,
                 StripCut.Disabled,
@@ -538,7 +565,7 @@ nativeDevice.Native, &native,
                 desc.Label);
             nativeState = null;
             rootToRelease = null;
-            retainedProgram = null;
+            retainedCode = null;
             nativeDevice.RegisterChild(result);
             StoreCachedData(nativeDevice, nativeCache, 3, key, (ID3D12PipelineState*)result.NativeObject);
             return result;
@@ -552,7 +579,6 @@ nativeDevice.Native, &native,
                 nativeState?.Release();
                 if (pipelineState is not null)
                     _ = PipelineTrace.Release(pipelineState);
-                retainedProgram?.Dispose();
             }
             throw;
         }
@@ -733,26 +759,15 @@ nativeDevice.Native, &native,
         return result;
     }
 
-    private static ShaderProgramLayout GetProgramReflection(ShaderProgram program)
-    {
-        ArgumentNullException.ThrowIfNull(program);
-        if (!string.Equals(program.Backend, "dxil", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                $"D3D12 pipeline creation requires cooked DXIL, not '{program.Backend}'.");
-        }
-        return program.Layout;
-    }
-
     private static CompiledShader CompileShader(
-        ShaderProgram program,
-        ShaderProgramLayout reflection,
-        ShaderEntryPoint entryPoint,
+        ShaderReflection reflection,
+        EntryPointReflection entryPoint,
+        ReadOnlySequence<byte> code,
+        ISlangBlob? codeBlob,
         SlangStage expectedStage,
         string role)
     {
-        if (entryPoint == ShaderEntryPoint.Null)
+        if (entryPoint == EntryPointReflection.Null)
             throw new ArgumentException($"The {role} entry point is null.", nameof(entryPoint));
         if (entryPoint.Stage != expectedStage)
         {
@@ -777,7 +792,7 @@ nativeDevice.Native, &native,
                 nameof(entryPoint));
         }
 
-        byte[] bytes = entryPoint.Code.ToArray();
+        byte[] bytes = CopyCode(code, codeBlob);
         if (bytes.Length == 0)
         {
             throw new GraphicsException(
@@ -787,13 +802,30 @@ nativeDevice.Native, &native,
         return new CompiledShader(
             entryPoint,
             bytes,
-            SHA256.HashData(bytes),
-            SHA256.HashData(program.ToArray()));
+            SHA256.HashData(bytes));
+    }
+
+    private static byte[] CopyCode(
+        ReadOnlySequence<byte> code,
+        ISlangBlob? codeBlob)
+    {
+        if (codeBlob is null)
+            return code.ToArray();
+
+        nuint length = codeBlob.GetBufferSize();
+        void* pointer = codeBlob.GetBufferPointer();
+        if (length > (nuint)Array.MaxLength || (length != 0 && pointer is null))
+            throw new GraphicsException(
+                GraphicsError.ShaderCompilation,
+                "Slang returned an invalid code blob.");
+        return new ReadOnlySpan<byte>(pointer, checked((int)length)).ToArray();
     }
 
     private static void ValidateGraphicsDescription(in GraphicsPipelineDesc desc)
     {
-        ArgumentNullException.ThrowIfNull(desc.Program);
+        ArgumentNullException.ThrowIfNull(desc.SlangCode);
+        if (desc.Reflection == ShaderReflection.Null)
+            throw new ArgumentException("A graphics pipeline requires Slang reflection.", nameof(desc));
         ValidateOutputState(
             desc.Attachments,
             desc.Multisample,
@@ -833,7 +865,9 @@ nativeDevice.Native, &native,
 
     private static void ValidateMeshDescription(in MeshPipelineDesc desc)
     {
-        ArgumentNullException.ThrowIfNull(desc.Program);
+        ArgumentNullException.ThrowIfNull(desc.SlangCode);
+        if (desc.Reflection == ShaderReflection.Null)
+            throw new ArgumentException("A mesh pipeline requires Slang reflection.", nameof(desc));
         ValidateOutputState(
             desc.Attachments,
             desc.Multisample,
@@ -971,7 +1005,7 @@ nativeDevice.Native, &native,
     }
 
     private static void ValidateVertexLocations(
-        ShaderEntryPoint vertex,
+        EntryPointReflection vertex,
         ReadOnlySpan<VertexAttribute> attributes)
     {
         foreach (ref readonly VertexAttribute attribute in attributes)
@@ -986,7 +1020,7 @@ nativeDevice.Native, &native,
     }
 
     private static bool ContainsSemantic(
-        ShaderEntryPoint entry,
+        EntryPointReflection entry,
         string semantic,
         uint semanticIndex)
     {
@@ -999,16 +1033,16 @@ nativeDevice.Native, &native,
     }
 
     private static bool ContainsSemantic(
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         string semantic,
         uint semanticIndex)
     {
-        if (layout == ShaderVariableLayout.Null)
+        if (layout == VariableLayoutReflection.Null)
             return false;
         if (string.Equals(layout.SemanticName, semantic, StringComparison.OrdinalIgnoreCase) &&
             layout.SemanticIndex == semanticIndex)
             return true;
-        ShaderTypeLayout type = layout.TypeLayout.UnwrapArray();
+        TypeLayoutReflection type = layout.TypeLayout.UnwrapArray();
         for (uint index = 0; index < type.FieldCount; index++)
         {
             if (ContainsSemantic(type.GetFieldByIndex(index), semantic, semanticIndex))
@@ -1070,7 +1104,7 @@ nativeDevice.Native, &native,
                 uint semanticIndex = 0;
                 if (!element.IsGap)
                 {
-                    if (element.Variable == ShaderVariableLayout.Null ||
+                    if (element.Variable == VariableLayoutReflection.Null ||
                         string.IsNullOrEmpty(element.Variable.SemanticName))
                         throw new ArgumentException("A stream-output variable has no Slang semantic.", nameof(state));
                     nint allocation = Marshal.StringToCoTaskMemUTF8(element.Variable.SemanticName);
@@ -1469,7 +1503,6 @@ device.Native, &description,
     {
         writer.Write((int)shader.EntryPoint.Stage);
         WriteCanonicalString(writer, GetStableEntryPointName(shader.EntryPoint));
-        WriteCanonicalBytes(writer, shader.ProgramIdentity);
         WriteCanonicalBytes(writer, shader.CodeHash);
     }
 
@@ -1576,44 +1609,18 @@ device.Native, &description,
     private sealed class CompiledShader
     {
         internal CompiledShader(
-            ShaderEntryPoint entryPoint,
+            EntryPointReflection entryPoint,
             byte[] code,
-            byte[] codeHash,
-            byte[] programIdentity)
+            byte[] codeHash)
         {
             EntryPoint = entryPoint;
             Code = code;
             CodeHash = codeHash;
-            ProgramIdentity = programIdentity;
         }
 
-        internal ShaderEntryPoint EntryPoint { get; }
+        internal EntryPointReflection EntryPoint { get; }
         internal byte[] Code { get; }
         internal byte[] CodeHash { get; }
-        internal byte[] ProgramIdentity { get; }
-    }
-
-    private static RetainedShaderProgram RetainProgram(ShaderProgram program) =>
-        RetainedShaderProgram.Capture(program);
-
-    private sealed class RetainedShaderProgram : IDisposable
-    {
-        private ShaderProgram? _program;
-
-        private RetainedShaderProgram(ShaderProgram program) => _program = program;
-
-        internal ShaderProgram Program => Volatile.Read(ref _program)
-            ?? throw new ObjectDisposedException(nameof(RetainedShaderProgram));
-
-        internal static RetainedShaderProgram Capture(ShaderProgram program)
-        {
-            ArgumentNullException.ThrowIfNull(program);
-            return new RetainedShaderProgram(program);
-        }
-
-        internal RetainedShaderProgram Retain() => Capture(Program);
-
-        public void Dispose() => Interlocked.Exchange(ref _program, null);
     }
 
     private abstract class D3D12Pipeline : Pipeline
@@ -1623,8 +1630,8 @@ device.Native, &description,
         private readonly NativeLease _native;
         private readonly D3D12RootSignatureState[] _additionalRoots;
         private readonly NativeLease[] _additionalLeases;
-        private readonly object _programGate = new();
-        private RetainedShaderProgram? _program;
+        private readonly object _slangCodeGate = new();
+        private IComponentType? _slangCode;
 
         protected D3D12Pipeline(
             D3D12Device device,
@@ -1632,7 +1639,7 @@ device.Native, &description,
             D3D12RootSignatureState root,
             D3D12RootSignatureState[] additionalRoots,
             NativeLease[] additionalLeases,
-            RetainedShaderProgram program,
+            IComponentType slangCode,
             PipelineType type,
             string? label)
             : base(device, type, label)
@@ -1642,19 +1649,19 @@ device.Native, &description,
             _additionalRoots = additionalRoots;
             _additionalLeases = additionalLeases;
             _native = native;
-            _program = program;
+            _slangCode = slangCode;
         }
 
         internal IUnknown* NativeObject => (IUnknown*)_native.Pointer;
         internal NativeLease NativeLifetime => _native;
         internal D3D12RootSignatureState RootSignature => _root;
-        internal RetainedShaderProgram RetainProgramReference()
+        internal IComponentType GetSlangCodeReference()
         {
-            lock (_programGate)
+            lock (_slangCodeGate)
             {
-                RetainedShaderProgram program = _program
+                IComponentType slangCode = _slangCode
                     ?? throw new ObjectDisposedException(nameof(Pipeline));
-                return program.Retain();
+                return slangCode;
             }
         }
         internal NativeLease RetainNativeState()
@@ -1670,13 +1677,8 @@ device.Native, &description,
             for (int index = _additionalRoots.Length - 1; index >= 0; index--)
                 _additionalRoots[index].Release();
             _root.Release();
-            RetainedShaderProgram? program;
-            lock (_programGate)
-            {
-                program = _program;
-                _program = null;
-            }
-            program?.Dispose();
+            lock (_slangCodeGate)
+                _slangCode = null;
             _device.UnregisterChild(this);
         }
     }
@@ -1687,7 +1689,7 @@ device.Native, &description,
             D3D12Device device,
             NativeLease native,
             D3D12RootSignatureState root,
-            RetainedShaderProgram program,
+            IComponentType slangCode,
             PipelineType type,
             PrimitiveTopology topology,
             StripCut stripCut,
@@ -1699,7 +1701,7 @@ device.Native, &description,
                 root,
                 [],
                 [],
-                program,
+                slangCode,
                 type,
                 label)
         {

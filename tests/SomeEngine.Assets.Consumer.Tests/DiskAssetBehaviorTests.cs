@@ -23,7 +23,7 @@ public sealed class DiskAssetBehaviorTests
             SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles = [new SomeEngine.Resources.TextureMipTile { Width = 1, Height = 1, ChunkKey = SomeEngine.Resources.TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 1 }],
         };
-        pixels.Chunks.Set(pixels.MipTiles[0].ChunkKey, new byte[] { 1 });
+        pixels.SetBytes(pixels.MipTiles[0].ChunkKey, new byte[] { 1 });
         using var original = new SomeEngine.Assets.Schema.TextureAsset();
         original.SetBlock(pixels);
         await original.SaveAsync(path);
@@ -273,15 +273,17 @@ public sealed class DiskAssetBehaviorTests
         byte[] bytes = [1, 2, 3];
         using var asset = CreateAsset(Guid.NewGuid(), "edited", 17, bytes);
         using var branch = asset.Duplicate();
-        using var reader = asset.GetBlock<DiskProbeBlock>().Chunks.Retain(1);
-        asset.GetBlock<DiskProbeBlock>().Chunks.Write(1, 1, new byte[] { 8 });
+        var reader = asset.GetBlock<DiskProbeBlock>().Chunks[1];
+        byte[] edited = asset.GetBlock<DiskProbeBlock>().Chunks[1].ToArray();
+        edited[1] = 8;
+        asset.GetBlock<DiskProbeBlock>().SetBytes(1, edited);
         await asset.SaveAsync(files.Path);
         using var opened = await DiskProbeAsset.OpenAsync(files.Path);
-        using var contents = await (await opened.GetBlockAsync<DiskProbeBlock>()).AcquireBufferAsync(1);
-        using var contentRead = contents.Retain();
+        var contents = await (await opened.GetBlockAsync<DiskProbeBlock>()).ReadBytesAsync(1);
+        var contentRead = contents;
         Assert.Equal(new byte[] { 1, 8, 3 }, contentRead.ToArray());
         Assert.Equal(new byte[] { 1, 2, 3 }, bytes);
-        using var branchRead = branch.GetBlock<DiskProbeBlock>().Chunks.Retain(1);
+        var branchRead = branch.GetBlock<DiskProbeBlock>().Chunks[1];
         Assert.Equal(new byte[] { 1, 2, 3 }, branchRead.ToArray());
         Assert.Equal(new byte[] { 1, 2, 3 }, reader.ToArray());
     }
@@ -404,8 +406,8 @@ public sealed class DiskAssetBehaviorTests
         Assert.Equal(saved.Version, copy.SourceVersion);
         Assert.Equal(sourceVersion, file.SourceVersion);
         Assert.NotEqual(sourceVersion, saved.Version);
-        using var contents = await (await copy.GetBlockAsync<DiskProbeBlock>()).AcquireBufferAsync(1);
-        using var contentRead = contents.Retain();
+        var contents = await (await copy.GetBlockAsync<DiskProbeBlock>()).ReadBytesAsync(1);
+        var contentRead = contents;
         Assert.Equal(bytes, contentRead.ToArray());
     }
 
@@ -458,17 +460,14 @@ public sealed class DiskAssetBehaviorTests
     }
 
     [Fact]
-    public void AByteEditMustFinishBeforeTheAssetCanBeDuplicated()
+    public void ReplacingBytesKeepsExistingBranchesUnchanged()
     {
         using var asset = CreateAsset(Guid.NewGuid(), "sample", 0, [1]);
-        asset.GetBlock<DiskProbeBlock>().Chunks.Write(1, 0, 1, (_, bytes) =>
-        {
-            Assert.Throws<InvalidOperationException>(() => asset.Duplicate());
-            bytes[0] = 2;
-        });
-        using var copy = asset.Duplicate();
-        using var read = copy.GetBlock<DiskProbeBlock>().Chunks.Retain(1);
-        Assert.Equal(new byte[] { 2 }, read.ToArray());
+        using var before = asset.Duplicate();
+        asset.GetBlock<DiskProbeBlock>().SetBytes(1, new byte[] { 2 });
+        using var after = asset.Duplicate();
+        Assert.Equal(new byte[] { 1 }, before.GetBlock<DiskProbeBlock>().Chunks[1].ToArray());
+        Assert.Equal(new byte[] { 2 }, after.GetBlock<DiskProbeBlock>().Chunks[1].ToArray());
     }
 
     private sealed class TestFiles : IDisposable
@@ -496,11 +495,11 @@ public sealed class DiskAssetBehaviorTests
 
     private static DiskProbeAsset CreateAsset(Guid id, string name, int number, byte[] bytes)
     {
-        var asset = new DiskProbeAsset(PageArena.Shared, id) { Name = name };
+        var asset = new DiskProbeAsset(id) { Name = name };
         try
         {
             using var content = new DiskProbeBlock { Number = number, PayloadKey = 1, PayloadLength = checked((ulong)bytes.Length) };
-            content.Chunks.Set(1, bytes);
+            content.SetBytes(1, bytes);
             asset.SetBlock(content);
             return asset;
         }
@@ -587,27 +586,27 @@ public sealed class DiskAssetBehaviorTests
 public sealed class DiskProbe : IAsyncDisposable
 {
     private static int _constructionCount;
-    private PageBuffer? _bytes;
-    public DiskProbe(PageBuffer bytes)
+    private ReadOnlyMemory<byte>? _bytes;
+    public DiskProbe(ReadOnlyMemory<byte> bytes)
     {
-        _bytes = bytes.Duplicate();
+        _bytes = bytes;
         Interlocked.Increment(ref _constructionCount);
     }
     public static int ConstructionCount => Volatile.Read(ref _constructionCount);
     public static void ResetConstructionCount() => Interlocked.Exchange(ref _constructionCount, 0);
     public byte[] ReadBytes()
     {
-        using var read = (_bytes ?? throw new ObjectDisposedException(nameof(DiskProbe))).Retain();
+        var read = _bytes ?? throw new ObjectDisposedException(nameof(DiskProbe));
         return read.ToArray();
     }
     public ValueTask DisposeAsync()
     {
-        Interlocked.Exchange(ref _bytes, null)?.Dispose();
+        _bytes = null;
         return ValueTask.CompletedTask;
     }
 }
 
-[Asset(".probe.asset"), BinarySerializable]
+[Asset(".probe.asset", SchemaName = "SomeEngine.Assets.Consumer.Tests.DiskProbeAsset"), BinarySerializable]
 [BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
 public sealed partial class DiskProbeAsset : Asset
 {
@@ -615,8 +614,8 @@ public sealed partial class DiskProbeAsset : Asset
     { get => base.BlockDescriptions; private set => base.BlockDescriptions = value; }
 }
 
-[AssetBlock, BinarySerializable, BinaryFields(nameof(Number), nameof(PayloadKey), nameof(PayloadLength))]
-public sealed partial class DiskProbeBlock : AssetPageBlock
+[AssetBlock("SomeEngine.Assets.Consumer.Tests.DiskProbeBlock"), BinarySerializable, BinaryFields(nameof(Number), nameof(PayloadKey), nameof(PayloadLength))]
+public sealed partial class DiskProbeBlock : AssetBlock
 {
     public partial int Number { get; set; }
     public partial ulong PayloadKey { get; set; }
@@ -624,34 +623,34 @@ public sealed partial class DiskProbeBlock : AssetPageBlock
     public async ValueTask<DiskProbe> CreateAsync(CancellationToken cancellationToken = default)
     {
         using var copy = Duplicate();
-        using var bytes = await copy.AcquireBufferAsync(copy.PayloadKey, cancellationToken);
+        var bytes = await copy.ReadBytesAsync(copy.PayloadKey, cancellationToken);
         if ((ulong)bytes.Length != copy.PayloadLength) throw new InvalidDataException("Probe payload length differs.");
         return new DiskProbe(bytes);
     }
 }
 
-[Asset(".other.asset"), BinarySerializable]
+[Asset(".other.asset", SchemaName = "SomeEngine.Assets.Consumer.Tests.OtherProbeAsset"), BinarySerializable]
 [BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
 public sealed partial class OtherProbeAsset : Asset
 {
     public new System.Collections.Immutable.ImmutableArray<AssetBlockDescription> BlockDescriptions
     { get => base.BlockDescriptions; private set => base.BlockDescriptions = value; }
 }
-[AssetBlock, BinarySerializable, BinaryFields(nameof(Number))]
-public sealed partial class OtherProbeBlock : AssetPageBlock
+[AssetBlock("SomeEngine.Assets.Consumer.Tests.OtherProbeBlock"), BinarySerializable, BinaryFields(nameof(Number))]
+public sealed partial class OtherProbeBlock : AssetBlock
 {
     public partial int Number { get; set; }
 }
 
-[Asset(".counted.asset"), BinarySerializable]
+[Asset(".counted.asset", SchemaName = "SomeEngine.Assets.Consumer.Tests.CountedAsset"), BinarySerializable]
 [BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
 public sealed partial class CountedAsset : Asset
 {
     public new System.Collections.Immutable.ImmutableArray<AssetBlockDescription> BlockDescriptions
     { get => base.BlockDescriptions; private set => base.BlockDescriptions = value; }
 }
-[AssetBlock, BinarySerializable, BinaryFields(nameof(Value))]
-public sealed partial class CountedBlock : AssetPageBlock
+[AssetBlock("SomeEngine.Assets.Consumer.Tests.CountedBlock"), BinarySerializable, BinaryFields(nameof(Value))]
+public sealed partial class CountedBlock : AssetBlock
 {
     public partial CountedNumber Value { get; set; }
 }

@@ -32,7 +32,7 @@ public ref partial struct RenderGraphEdit
             declarationState,
             options,
             null,
-            ShaderVariableLayout.Null,
+            VariableLayoutReflection.Null,
             default,
             declaration,
             new RasterFrameOnlyPassCallbackStorage<TState>(
@@ -45,7 +45,7 @@ public ref partial struct RenderGraphEdit
         in TState declarationState,
         in PassOptions options,
         Pipeline pipeline,
-        ShaderVariableLayout parameterLayout,
+        VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         RasterFrameCallback<TState> callback) =>
@@ -77,7 +77,7 @@ public ref partial struct RenderGraphEdit
             declarationState,
             options,
             null,
-            ShaderVariableLayout.Null,
+            VariableLayoutReflection.Null,
             default,
             declaration,
             new ComputeFrameOnlyPassCallbackStorage<TState>(
@@ -90,7 +90,7 @@ public ref partial struct RenderGraphEdit
         in TState declarationState,
         in PassOptions options,
         Pipeline pipeline,
-        ShaderVariableLayout parameterLayout,
+        VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         ComputeFrameCallback<TState> callback) =>
@@ -122,7 +122,7 @@ public ref partial struct RenderGraphEdit
             declarationState,
             options,
             null,
-            ShaderVariableLayout.Null,
+            VariableLayoutReflection.Null,
             default,
             declaration,
             new CopyFrameOnlyPassCallbackStorage<TState>(
@@ -143,7 +143,7 @@ public ref partial struct RenderGraphEdit
             declarationState,
             options,
             null,
-            ShaderVariableLayout.Null,
+            VariableLayoutReflection.Null,
             default,
             declaration,
             new GeneralFrameOnlyPassCallbackStorage<TState>(
@@ -271,7 +271,7 @@ public ref partial struct RenderGraphEdit
         in TState declarationState,
         in PassOptions options,
         Pipeline? pipeline,
-        ShaderVariableLayout parameterLayout,
+        VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         PassCallbackStorage callbackStorage)
@@ -280,7 +280,7 @@ public ref partial struct RenderGraphEdit
         ArgumentNullException.ThrowIfNull(declaration);
         if (pipeline is not null && !ReferenceEquals(pipeline.Device, Graph.Device))
             throw new ArgumentException("The Pipeline belongs to another Device.", nameof(pipeline));
-        if (pipeline is null && parameterLayout != ShaderVariableLayout.Null)
+        if (pipeline is null && parameterLayout != VariableLayoutReflection.Null)
             throw new ArgumentException("A parameter layout requires a Pipeline.", nameof(parameterLayout));
 
         var pass = new GraphPass

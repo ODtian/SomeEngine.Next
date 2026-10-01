@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using SlangShaderSharp;
 
@@ -85,7 +85,7 @@ public sealed partial class ValidationLayer
                 bindings.OrdinaryData, pipelineBindings) is string createDiagnostic)
             Reject("Bindings", createDiagnostic, label);
         GraphicsObject[] dependencies = CollectBindingDependencies(device, bindings.Resources);
-        ShaderVariableLayout reflectedLayout = bindings.Layout;
+        VariableLayoutReflection reflectedLayout = bindings.Layout;
         var state = new BindingValidationState(
             reflectedLayout, pipeline, pipelineBindings, dependencies);
         var objectInfo = new ValidationObjectInfo(device);
@@ -274,9 +274,9 @@ public sealed partial class ValidationLayer
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
         ValidateDynamicStates(device, desc.DynamicStates);
-        ShaderEntryPoint[] entries = [desc.Vertex, desc.Pixel];
+        EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, entries);
+            ReflectPipelineBindings(desc.Reflection, entries);
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -316,9 +316,9 @@ public sealed partial class ValidationLayer
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
         ValidateDynamicStates(device, desc.DynamicStates);
-        ShaderEntryPoint[] entries = [desc.Vertex, desc.Pixel];
+        EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, entries);
+            ReflectPipelineBindings(desc.Reflection, entries);
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         Task<Pipeline> creation = Backend.CreateGraphicsPipelineAsync(device, desc, cache);
@@ -333,9 +333,9 @@ public sealed partial class ValidationLayer
         RequireDevice(device);
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
-        ShaderEntryPoint[] entries = [desc.Compute];
+        EntryPointReflection[] entries = [desc.Compute];
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, entries);
+            ReflectPipelineBindings(desc.Reflection, entries);
         bindings.AddStaticSamplers(desc.StaticSamplers.Span);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -374,9 +374,9 @@ public sealed partial class ValidationLayer
         RequireDevice(device);
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
-        ShaderEntryPoint[] entries = [desc.Compute];
+        EntryPointReflection[] entries = [desc.Compute];
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, entries);
+            ReflectPipelineBindings(desc.Reflection, entries);
         bindings.AddStaticSamplers(desc.StaticSamplers.Span);
         var objectInfo = new ValidationObjectInfo(device);
         Task<Pipeline> creation = Backend.CreateComputePipelineAsync(device, desc, cache);
@@ -392,13 +392,13 @@ public sealed partial class ValidationLayer
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
         ValidateDynamicStates(device, desc.DynamicStates);
-        List<ShaderEntryPoint> entries = [desc.Mesh];
-        if (desc.Amplification != ShaderEntryPoint.Null)
+        List<EntryPointReflection> entries = [desc.Mesh];
+        if (desc.Amplification != EntryPointReflection.Null)
             entries.Add(desc.Amplification);
-        if (desc.Pixel != ShaderEntryPoint.Null)
+        if (desc.Pixel != EntryPointReflection.Null)
             entries.Add(desc.Pixel);
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, CollectionsMarshal.AsSpan(entries));
+            ReflectPipelineBindings(desc.Reflection, CollectionsMarshal.AsSpan(entries));
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -438,13 +438,13 @@ public sealed partial class ValidationLayer
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
         ValidateDynamicStates(device, desc.DynamicStates);
-        List<ShaderEntryPoint> entries = [desc.Mesh];
-        if (desc.Amplification != ShaderEntryPoint.Null)
+        List<EntryPointReflection> entries = [desc.Mesh];
+        if (desc.Amplification != EntryPointReflection.Null)
             entries.Add(desc.Amplification);
-        if (desc.Pixel != ShaderEntryPoint.Null)
+        if (desc.Pixel != EntryPointReflection.Null)
             entries.Add(desc.Pixel);
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, CollectionsMarshal.AsSpan(entries));
+            ReflectPipelineBindings(desc.Reflection, CollectionsMarshal.AsSpan(entries));
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         Task<Pipeline> creation = Backend.CreateMeshPipelineAsync(device, desc, cache);
@@ -499,9 +499,9 @@ public sealed partial class ValidationLayer
     private GraphicsObject[] ValidateBindings(
         Device device,
         in ParameterBlockBindings bindings,
-        out ShaderVariableLayout reflectedLayout)
+        out VariableLayoutReflection reflectedLayout)
     {
-        if (bindings.Layout == SlangShaderSharp.ShaderVariableLayout.Null)
+        if (bindings.Layout == SlangShaderSharp.VariableLayoutReflection.Null)
             Reject("Bindings", "ParameterBlockBindings.Layout is null.");
         try
         {
@@ -520,7 +520,7 @@ public sealed partial class ValidationLayer
     private GraphicsObject[] ValidateBindings(
         Device device,
         in ParameterBlockBindings bindings,
-        ShaderVariableLayout reflectedLayout,
+        VariableLayoutReflection reflectedLayout,
         PipelineBindingValidationState? pipeline = null)
     {
         if (bindings.Layout != reflectedLayout)
@@ -572,29 +572,30 @@ public sealed partial class ValidationLayer
     }
 
     private PipelineBindingValidationState ReflectPipelineBindings(
-        ShaderProgram program,
-        ReadOnlySpan<ShaderEntryPoint> entries,
+        ShaderReflection reflection,
+        ReadOnlySpan<EntryPointReflection> entries,
         bool useConservativeWorkGraphEntries = false)
     {
-        ArgumentNullException.ThrowIfNull(program);
         try
         {
-            ShaderProgramLayout reflection = program.Layout;
+            if (reflection == ShaderReflection.Null)
+                throw new ArgumentException("Pipeline Slang reflection is null.", nameof(reflection));
 
             var result = new PipelineBindingValidationState(reflection);
-            ShaderVariableLayout global = reflection.GetGlobalParamsVarLayout();
+            VariableLayoutReflection global =
+                reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
             result.Add(global);
             if (useConservativeWorkGraphEntries)
             {
                 for (uint index = 0; index < reflection.EntryPointCount; index++)
                 {
-                    ShaderEntryPoint entry = reflection.GetEntryPointByIndex(index);
+                    EntryPointReflection entry = reflection.GetEntryPointByIndex(index);
                     if (entry.Stage is SlangStage.Dispatch or SlangStage.Node)
                         result.Add(entry.VarLayout);
                 }
             }
             else
-                foreach (ShaderEntryPoint entry in entries)
+                foreach (EntryPointReflection entry in entries)
                     result.Add(entry.VarLayout);
             return result;
         }

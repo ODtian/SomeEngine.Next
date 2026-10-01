@@ -1,4 +1,5 @@
-﻿using SlangShaderSharp;
+using System.Buffers;
+using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Vulkan;
 
@@ -37,15 +38,22 @@ internal sealed unsafe partial class VulkanBackend
         RhiDevice device,
         in GraphicsPipelineDesc desc,
         SomeEngine.Graphics.PipelineCache? cache = null)
+        => CreateGraphicsPipeline(device, desc, cache, null);
+
+    private Pipeline CreateGraphicsPipeline(
+        RhiDevice device,
+        in GraphicsPipelineDesc desc,
+        SomeEngine.Graphics.PipelineCache? cache,
+        IComponentType? capturedSlangCode)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
         ValidateGraphicsPipeline(nativeDevice, desc);
-        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
+        ShaderReflection reflection = desc.Reflection;
         VulkanStreamOutputPlan? streamOutput = desc.HasStreamOutput
             ? VulkanStreamOutputPlan.Create(nativeDevice, desc.Vertex, desc.StreamOutput)
             : null;
-        ShaderEntryPoint[] entries = [desc.Vertex, desc.Pixel];
+        EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
         VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
             nativeDevice,
             reflection,
@@ -53,24 +61,40 @@ internal sealed unsafe partial class VulkanBackend
             desc.StaticSamplers);
         VkPipeline native = default;
         VulkanPipeline? pipeline = null;
+        IComponentType? retainedCode = null;
         try
         {
             CompiledSpirv vertex = CompileSpirv(
-                desc.Program,
                 reflection,
                 layout,
                 desc.Vertex,
+                desc.VertexCode,
+                desc.VertexCodeBlob,
                 SlangStage.Vertex,
                 "vertex",
                 streamOutput);
             CompiledSpirv pixel = CompileSpirv(
-                desc.Program, reflection, layout, desc.Pixel, SlangStage.Fragment, "fragment");
+                reflection,
+                layout,
+                desc.Pixel,
+                desc.PixelCode,
+                desc.PixelCodeBlob,
+                SlangStage.Fragment,
+                "fragment");
             if (nativeCache is null)
                 native = CreateGraphicsPipelineNative(nativeDevice, layout, vertex, pixel, desc, default);
             else
                 lock (nativeCache.Gate)
                     native = CreateGraphicsPipelineNative(nativeDevice, layout, vertex, pixel, desc, nativeCache.Native);
-            pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Graphics, desc.Label);
+            retainedCode = capturedSlangCode ?? desc.SlangCode;
+            pipeline = new VulkanPipeline(
+                nativeDevice,
+                native,
+                layout,
+                retainedCode,
+                PipelineType.Graphics,
+                desc.Label);
+            retainedCode = null;
             return RegisterChildOrDispose(nativeDevice, pipeline);
         }
         catch
@@ -90,32 +114,32 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        RetainedShaderProgram program = RetainedShaderProgram.Capture(desc.Program);
-        try
-        {
-            GraphicsPipelineSnapshot snapshot = new(desc, program.Program);
-            return EnqueuePipelineCreation(
-                nativeDevice,
-                nativeCache,
-                program,
-                () => snapshot.Create(this, nativeDevice, nativeCache));
-        }
-        catch
-        {
-            program.Dispose();
-            throw;
-        }
+        IComponentType slangCode = desc.SlangCode;
+        GraphicsPipelineData data = new(desc);
+        return EnqueuePipelineCreation(
+            nativeDevice,
+            nativeCache,
+            slangCode,
+            data,
+            () => data.Create(this, nativeDevice, nativeCache, slangCode));
     }
 
     internal Pipeline CreateComputePipeline(
         RhiDevice device,
         in ComputePipelineDesc desc,
         SomeEngine.Graphics.PipelineCache? cache = null)
+        => CreateComputePipeline(device, desc, cache, null);
+
+    private Pipeline CreateComputePipeline(
+        RhiDevice device,
+        in ComputePipelineDesc desc,
+        SomeEngine.Graphics.PipelineCache? cache,
+        IComponentType? capturedSlangCode)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        ArgumentNullException.ThrowIfNull(desc.Program);
-        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
+        ArgumentNullException.ThrowIfNull(desc.SlangCode);
+        ShaderReflection reflection = desc.Reflection;
         VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
             nativeDevice,
             reflection,
@@ -125,13 +149,15 @@ internal sealed unsafe partial class VulkanBackend
         VkShaderModule module = default;
         nint entryName = 0;
         VulkanPipeline? pipeline = null;
+        IComponentType? retainedCode = null;
         try
         {
             CompiledSpirv compute = CompileSpirv(
-                desc.Program,
                 reflection,
                 layout,
                 desc.Compute,
+                desc.Code,
+                desc.CodeBlob,
                 SlangStage.Compute,
                 "compute");
             module = CreateShaderModule(nativeDevice, compute.Code);
@@ -172,7 +198,15 @@ internal sealed unsafe partial class VulkanBackend
                         nativeDevice.Native, nativeCache.Native, 1, &createInfo, null, &native);
             }
             ThrowPipelineFailure(nativeDevice, result, "vkCreateComputePipelines");
-            pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Compute, desc.Label);
+            retainedCode = capturedSlangCode ?? desc.SlangCode;
+            pipeline = new VulkanPipeline(
+                nativeDevice,
+                native,
+                layout,
+                retainedCode,
+                PipelineType.Compute,
+                desc.Label);
+            retainedCode = null;
             return RegisterChildOrDispose(nativeDevice, pipeline);
         }
         catch
@@ -199,21 +233,14 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        RetainedShaderProgram program = RetainedShaderProgram.Capture(desc.Program);
-        try
-        {
-            ComputePipelineSnapshot snapshot = new(desc, program.Program);
-            return EnqueuePipelineCreation(
-                nativeDevice,
-                nativeCache,
-                program,
-                () => snapshot.Create(this, nativeDevice, nativeCache));
-        }
-        catch
-        {
-            program.Dispose();
-            throw;
-        }
+        IComponentType slangCode = desc.SlangCode;
+        ComputePipelineData data = new(desc);
+        return EnqueuePipelineCreation(
+            nativeDevice,
+            nativeCache,
+            slangCode,
+            data,
+            () => data.Create(this, nativeDevice, nativeCache, slangCode));
     }
 
     private VkPipeline CreateGraphicsPipelineNative(
@@ -499,15 +526,16 @@ internal sealed unsafe partial class VulkanBackend
     }
 
     private static CompiledSpirv CompileSpirv(
-        ShaderProgram program,
-        ShaderProgramLayout reflection,
+        ShaderReflection reflection,
         VulkanPipelineLayoutState layout,
-        ShaderEntryPoint entry,
+        EntryPointReflection entry,
+        ReadOnlySequence<byte> code,
+        ISlangBlob? codeBlob,
         SlangStage expectedStage,
         string role,
         VulkanStreamOutputPlan? streamOutput = null)
     {
-        if (entry == ShaderEntryPoint.Null || entry.Stage != expectedStage)
+        if (entry == EntryPointReflection.Null || entry.Stage != expectedStage)
             throw new ArgumentException($"The {role} entry point has the wrong Slang stage.", nameof(entry));
         bool belongsToProgram = false;
         for (uint index = 0; index < reflection.EntryPointCount; index++)
@@ -520,15 +548,19 @@ internal sealed unsafe partial class VulkanBackend
         }
         if (!belongsToProgram)
             throw new ArgumentException("The entry point does not belong to the supplied Slang program.", nameof(entry));
-        if (entry.Code.IsEmpty)
+        if (code.IsEmpty && codeBlob is null)
             throw new GraphicsException(
                 GraphicsError.ShaderCompilation,
                 $"The cooked {role} entry point contains no SPIR-V.");
+        byte[] source = CopyCode(code, codeBlob);
         byte[] bytes = NormalizeSpirvDescriptorBindings(
-            entry.Code.Span,
+            source,
             layout.GetSpirvTargets(entry),
             out _);
-        string entryName = entry.TargetName;
+        string reflectedName = string.IsNullOrWhiteSpace(entry.NameOverride)
+            ? entry.Name
+            : entry.NameOverride;
+        string entryName = FindSpirvEntryPointName(bytes, reflectedName);
         if (string.IsNullOrWhiteSpace(entryName))
             throw new GraphicsException(
                 GraphicsError.ShaderCompilation,
@@ -538,23 +570,70 @@ internal sealed unsafe partial class VulkanBackend
         return new CompiledSpirv(bytes, entryName);
     }
 
-    private static ShaderProgramLayout GetProgramReflection(ShaderProgram program)
+    private static byte[] CopyCode(
+        ReadOnlySequence<byte> code,
+        ISlangBlob? codeBlob)
     {
-        ArgumentNullException.ThrowIfNull(program);
-        if (!string.Equals(program.Backend, "spirv", StringComparison.OrdinalIgnoreCase))
-        {
+        if (codeBlob is null)
+            return code.ToArray();
+
+        nuint length = codeBlob.GetBufferSize();
+        void* pointer = codeBlob.GetBufferPointer();
+        if (length > (nuint)Array.MaxLength || (length != 0 && pointer is null))
             throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                $"Vulkan pipeline creation requires cooked SPIR-V, not '{program.Backend}'.");
+                GraphicsError.ShaderCompilation,
+                "Slang returned an invalid code blob.");
+        return new ReadOnlySpan<byte>(pointer, checked((int)length)).ToArray();
+    }
+
+    private static string FindSpirvEntryPointName(
+        ReadOnlySpan<byte> code,
+        string reflectedName)
+    {
+        if (code.Length < 20 || (code.Length & 3) != 0)
+            return reflectedName;
+        ReadOnlySpan<uint> words =
+            System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(code);
+        if (words[0] != 0x07230203)
+            return reflectedName;
+
+        string? soleName = null;
+        int nameCount = 0;
+        for (int index = 5; index < words.Length;)
+        {
+            uint instruction = words[index];
+            int wordCount = checked((int)(instruction >> 16));
+            if (wordCount <= 0 || index > words.Length - wordCount)
+                break;
+            if ((instruction & 0xFFFF) == 15 && wordCount >= 4)
+            {
+                ReadOnlySpan<byte> bytes =
+                    System.Runtime.InteropServices.MemoryMarshal.AsBytes(
+                        words.Slice(index + 3, wordCount - 3));
+                int terminator = bytes.IndexOf((byte)0);
+                if (terminator >= 0)
+                    bytes = bytes[..terminator];
+                string name = System.Text.Encoding.UTF8.GetString(bytes);
+                if (string.Equals(name, reflectedName, StringComparison.Ordinal))
+                    return name;
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    soleName = name;
+                    nameCount++;
+                }
+            }
+            index += wordCount;
         }
-        return program.Layout;
+        return nameCount == 1 && soleName is not null ? soleName : reflectedName;
     }
 
     private static void ValidateGraphicsPipeline(
         VulkanDevice device,
         in GraphicsPipelineDesc desc)
     {
-        ArgumentNullException.ThrowIfNull(desc.Program);
+        ArgumentNullException.ThrowIfNull(desc.SlangCode);
+        if (desc.Reflection == ShaderReflection.Null)
+            throw new ArgumentException("A graphics pipeline requires Slang reflection.", nameof(desc));
         if (!desc.Blend.Attachments.IsEmpty &&
             desc.Attachments.ColorFormats.Length != desc.Blend.Attachments.Length)
             throw new ArgumentException("Blend attachment count must match color attachment count.", nameof(desc));
@@ -763,11 +842,14 @@ internal sealed unsafe partial class VulkanBackend
         byte[] Code,
         string Name);
 
-    private sealed class GraphicsPipelineSnapshot
+    private sealed class GraphicsPipelineData
     {
-        private readonly ShaderProgram _program;
-        private readonly ShaderEntryPoint _vertex;
-        private readonly ShaderEntryPoint _pixel;
+        private readonly IComponentType _slangCode;
+        private readonly ShaderReflection _reflection;
+        private readonly EntryPointReflection _vertex;
+        private readonly ReadOnlySequence<byte>[] _code;
+        private readonly ISlangBlob?[] _codeBlobs;
+        private readonly EntryPointReflection _pixel;
         private readonly VertexBufferLayout[] _vertexBuffers;
         private readonly VertexAttribute[] _vertexAttributes;
         private readonly SomeEngine.Graphics.PrimitiveTopology _topology;
@@ -788,11 +870,10 @@ internal sealed unsafe partial class VulkanBackend
         private readonly uint? _rasterizedStreamIndex;
         private readonly bool _hasStreamOutput;
 
-        internal GraphicsPipelineSnapshot(
-            in GraphicsPipelineDesc desc,
-            ShaderProgram program)
+        internal GraphicsPipelineData(in GraphicsPipelineDesc desc)
         {
-            _program = program;
+            _slangCode = desc.SlangCode;
+            _reflection = desc.Reflection;
             _vertex = desc.Vertex;
             _pixel = desc.Pixel;
             _vertexBuffers = desc.VertexBuffers.ToArray();
@@ -820,12 +901,15 @@ internal sealed unsafe partial class VulkanBackend
             _rasterizedStreamIndex = desc.HasStreamOutput
                 ? desc.StreamOutput.RasterizedStreamIndex
                 : null;
+            _code = [desc.VertexCode, desc.PixelCode];
+            _codeBlobs = [desc.VertexCodeBlob, desc.PixelCodeBlob];
         }
 
         internal Pipeline Create(
             VulkanBackend backend,
             VulkanDevice device,
-            SomeEngine.Graphics.PipelineCache? cache)
+            SomeEngine.Graphics.PipelineCache? cache,
+            IComponentType capturedSlangCode)
         {
             BlendState blend = new(_blendAttachments, _independentBlend, _logicOperation);
             AttachmentFormatSignature attachments = new(_colorFormats, _depthFormat, _multisample.SampleCount);
@@ -838,9 +922,12 @@ internal sealed unsafe partial class VulkanBackend
                 return backend.CreateGraphicsPipeline(
                     device,
                     new GraphicsPipelineDesc(
-                    _program,
+                    _slangCode,
+                    _reflection,
                     _vertex,
+                    _code[0],
                     _pixel,
+                    _code[1],
                     _vertexBuffers,
                     _vertexAttributes,
                     _topology,
@@ -851,17 +938,23 @@ internal sealed unsafe partial class VulkanBackend
                     blend,
                     attachments,
                     streamOutput,
-                    _dynamicStates,
-                    _label,
-                    _staticSamplers),
-                    cache);
+                     _dynamicStates,
+                     _label,
+                     _staticSamplers,
+                     _codeBlobs[0],
+                     _codeBlobs[1]),
+                    cache,
+                    capturedSlangCode);
             }
             return backend.CreateGraphicsPipeline(
                 device,
                 new GraphicsPipelineDesc(
-                    _program,
+                    _slangCode,
+                    _reflection,
                     _vertex,
+                    _code[0],
                     _pixel,
+                    _code[1],
                     _vertexBuffers,
                     _vertexAttributes,
                     _topology,
@@ -871,54 +964,68 @@ internal sealed unsafe partial class VulkanBackend
                     _depthStencil,
                     blend,
                     attachments,
-                    _dynamicStates,
-                    _label,
-                    _staticSamplers),
-                cache);
+                     _dynamicStates,
+                     _label,
+                     _staticSamplers,
+                     _codeBlobs[0],
+                     _codeBlobs[1]),
+                 cache,
+                 capturedSlangCode);
         }
     }
 
-    private sealed class ComputePipelineSnapshot
+    private sealed class ComputePipelineData
     {
-        private readonly ShaderProgram _program;
-        private readonly ShaderEntryPoint _compute;
+        private readonly IComponentType _slangCode;
+        private readonly ShaderReflection _reflection;
+        private readonly EntryPointReflection _compute;
+        private readonly ReadOnlySequence<byte>[] _code;
+        private readonly ISlangBlob?[] _codeBlobs;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
 
-        internal ComputePipelineSnapshot(
-            in ComputePipelineDesc desc,
-            ShaderProgram program)
+        internal ComputePipelineData(in ComputePipelineDesc desc)
         {
-            _program = program;
+            _slangCode = desc.SlangCode;
+            _reflection = desc.Reflection;
             _compute = desc.Compute;
             _label = desc.Label;
             _staticSamplers = desc.StaticSamplers.ToArray();
+            _code = [desc.Code];
+            _codeBlobs = [desc.CodeBlob];
         }
 
         internal Pipeline Create(
             VulkanBackend backend,
             VulkanDevice device,
-            SomeEngine.Graphics.PipelineCache? cache) =>
+            SomeEngine.Graphics.PipelineCache? cache,
+            IComponentType capturedSlangCode) =>
             backend.CreateComputePipeline(
                 device,
                 new ComputePipelineDesc(
-                    _program,
+                    _slangCode,
+                    _reflection,
                     _compute,
-                    _label,
-                    _staticSamplers),
-                cache);
+                     _code[0],
+                     _label,
+                     _staticSamplers,
+                     _codeBlobs[0]),
+                 cache,
+                 capturedSlangCode);
     }
 
     private sealed class VulkanPipeline : Pipeline, IVulkanRetained
     {
         private readonly VulkanDevice _device;
         private readonly VulkanLifetime _lifetime;
+        private IComponentType? _slangCode;
         private VkPipeline _native;
 
         internal VulkanPipeline(
             VulkanDevice device,
             VkPipeline native,
             VulkanPipelineLayoutState layout,
+            IComponentType slangCode,
             PipelineType type,
             string? label,
             VulkanRayTracingPipelineState? rayTracing = null)
@@ -927,6 +1034,7 @@ internal sealed unsafe partial class VulkanBackend
             _device = device;
             _native = native;
             Layout = layout;
+            _slangCode = slangCode;
             RayTracing = rayTracing;
             _lifetime = new VulkanLifetime(DestroyNative);
         }
@@ -937,6 +1045,13 @@ internal sealed unsafe partial class VulkanBackend
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
         internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
-        private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyPipeline(_device.Native, _native, null); _native = default; Layout.Release(); }
+        private void DestroyNative()
+        {
+            if (_native.Handle != 0)
+                _device.Backend.Api.DestroyPipeline(_device.Native, _native, null);
+            _native = default;
+            Layout.Release();
+            _slangCode = null;
+        }
     }
 }

@@ -21,7 +21,7 @@ public sealed class ReadingSample : IDisposable
     public void Dispose() => IsDisposed = true;
 }
 
-[Asset(".reading.asset"), BinarySerializable]
+[Asset(".reading.asset", SchemaName = "SomeEngine.Assets.Tests.Assets.ReadingSampleAsset"), BinarySerializable]
 [BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
 public sealed partial class ReadingSampleAsset : Asset
 {
@@ -30,8 +30,8 @@ public sealed partial class ReadingSampleAsset : Asset
     partial void Initialize() => Name = "sample";
 }
 
-[AssetBlock, BinarySerializable, BinaryFields(nameof(Number), nameof(Dependency))]
-public sealed partial class ReadingSampleBlock : AssetPageBlock
+[AssetBlock("SomeEngine.Assets.Tests.Assets.ReadingSampleBlock"), BinarySerializable, BinaryFields(nameof(Number), nameof(Dependency))]
+public sealed partial class ReadingSampleBlock : AssetBlock
 {
     public partial int Number { get; set; }
     public partial AssetId<ReadingSampleAsset> Dependency { get; set; }
@@ -55,7 +55,7 @@ internal sealed class AssetTestDirectory : IDisposable
     internal string WriteSample(Guid id, int number, string name = "sample")
     {
         string path = File(name + ".reading.asset");
-        using var asset = new ReadingSampleAsset(SomeEngine.Serialization.Containers.PageArena.Shared, id) { Name = name };
+        using var asset = new ReadingSampleAsset(id) { Name = name };
         using var content = new ReadingSampleBlock { Number = number };
         asset.SetBlock(content);
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();

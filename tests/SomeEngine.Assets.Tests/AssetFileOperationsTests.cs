@@ -195,7 +195,7 @@ public sealed partial class AssetFileOperationsTests
         data.SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D;
         ulong key = TextureTiles.ChunkKey(0, 0, 0, 0, 0, 0);
         data.MipTiles.Add(new TextureMipTile { Width = 4, Height = 1, RowPitch = 4, SlicePitch = 4, ChunkKey = key, DecodedLength = 4 });
-        data.Chunks.Set(key, pixels);
+        data.SetBytes(key, pixels);
         Guid related = Guid.NewGuid();
         if (secondBlock)
         {
@@ -226,8 +226,8 @@ public sealed partial class AssetFileOperationsTests
         Assert.Equal(texture.Id, moved.Description.AssetGuid);
         using var reopened = new TextureBlock();
         await moved.ReadBlockIntoAsync(reopened);
-        using var bytes = await reopened.AcquireBufferAsync(key);
-        using var read = bytes.Retain();
+        var bytes = await reopened.ReadBytesAsync(key);
+        var read = bytes;
         Assert.Equal(pixels, read.ToArray());
         if (secondBlock)
         {
@@ -301,9 +301,9 @@ public sealed partial class AssetFileOperationsTests
     }
 }
 
-[AssetBlock, BinarySerializable, TextSerializable]
+[AssetBlock("SomeEngine.Assets.Tests.FileOperationNotesBlock"), BinarySerializable, TextSerializable]
 [BinaryFields(nameof(RelatedAsset), nameof(RelativeFile))]
-internal sealed partial class FileOperationNotesBlock : AssetPageBlock
+internal sealed partial class FileOperationNotesBlock : AssetBlock
 {
     public partial AssetId<TextureAsset> RelatedAsset { get; set; }
     public partial string RelativeFile { get; set; }

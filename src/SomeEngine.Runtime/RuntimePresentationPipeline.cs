@@ -48,16 +48,20 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         if (!ReferenceEquals(graph.Device, device))
             throw new ArgumentException("Presentation and RenderGraph must use the same Device.", nameof(graph));
 
-        CookedShaderEntry vertex = shader.RequireEntry(
-            device.Capabilities.CompileTarget,
+        int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+        ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+        EntryPointReflection vertex = shader.RequireSlangEntry(
+            targetIndex,
             vertexEntryPoint,
-            ShaderStage.Vertex);
-        CookedShaderEntry pixel = shader.RequireEntry(
-            device.Capabilities.CompileTarget,
+            SlangStage.Vertex);
+        EntryPointReflection pixel = shader.RequireSlangEntry(
+            targetIndex,
             pixelEntryPoint,
-            ShaderStage.Pixel);
-        if (!ReferenceEquals(vertex.Program, pixel.Program))
-            throw new InvalidDataException("Presentation entries must share one cooked shader program.");
+            SlangStage.Fragment);
+        System.Buffers.ReadOnlySequence<byte> vertexCode =
+            shader.GetSlangEntryBytes(targetIndex, vertex);
+        System.Buffers.ReadOnlySequence<byte> pixelCode =
+            shader.GetSlangEntryBytes(targetIndex, pixel);
 
         GraphicsPipeline? pipeline = null;
         try
@@ -65,9 +69,12 @@ internal sealed class RuntimePresentationPipeline : IDisposable
             pipeline = backend.CreateGraphicsPipeline(
                 device,
                 new GraphicsPipelineDesc(
-                    vertex.Program,
-                    vertex.EntryPoint,
-                    pixel.EntryPoint,
+                    shader.SlangCode,
+                    reflection,
+                    vertex,
+                    vertexCode,
+                    pixel,
+                    pixelCode,
                     vertexBuffers: default,
                     vertexAttributes: default,
                     PrimitiveTopology.TriangleList,
@@ -78,7 +85,9 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     new BlendState(),
                     new AttachmentFormatSignature([outputFormat], null),
                     DynamicStates.Viewport | DynamicStates.Scissor,
-                    "Runtime presentation"));
+                    "Runtime presentation",
+                    vertexCodeBlob: shader.GetSlangEntryBlob(targetIndex, vertex),
+                    pixelCodeBlob: shader.GetSlangEntryBlob(targetIndex, pixel)));
 
             RenderGraphEdit edit = graph.BeginEdit();
             try
@@ -126,7 +135,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     data,
                     new PassOptions(Culling: PassCullingMode.NeverCull),
                     pipeline,
-                    vertex.Program.Layout.GetGlobalParamsVarLayout(),
+                    reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                     bindings,
                     RuntimePresentationPassData.Declare,
                     RuntimePresentationPassData.Record);

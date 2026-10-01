@@ -4,6 +4,11 @@
 #include "domain_interfaces.slang"
 #include "visibility_evaluate.slang"
 
+[__AttributeUsage(_AttributeTargets.Struct)]
+struct MaterialScalarsAttribute
+{
+};
+
 [__AttributeUsage(_AttributeTargets.Var)]
 struct InstancePropertyAttribute
 {

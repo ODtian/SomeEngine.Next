@@ -56,7 +56,7 @@ public sealed class AssetUseBehaviorTests
             public readonly record struct Point(float X, float Y);
             [AssetUse] public class Use
             {
-                private PageBuffer bytes;
+                private System.ReadOnlyMemory<byte> bytes;
                 public Point[] Points { get; set; }
                 public int Read() => Points.Length;
             }

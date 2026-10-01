@@ -45,10 +45,10 @@ public ref partial struct PassDefinition
     }
 
     public void SetParameterBlock(
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         ReadOnlySpan<byte> ordinaryData = default)
     {
-        DevelopmentCheck.Require(layout != ShaderVariableLayout.Null, "The parameter layout cannot be null.");
+        DevelopmentCheck.Require(layout != VariableLayoutReflection.Null, "The parameter layout cannot be null.");
         if (_frame is null) _edit.SetPassParameterBlock(_pass, layout, ordinaryData);
         else Frame.SetPassParameterBlock(_pass, layout, ordinaryData);
     }
@@ -120,7 +120,7 @@ public ref partial struct PassDefinition
     }
 
     /// <summary>Starts the next reflected parameter block in this pass's binding stream.</summary>
-    public void BindParameterBlock(ShaderVariableLayout layout, ReadOnlySpan<byte> ordinaryData = default) =>
+    public void BindParameterBlock(VariableLayoutReflection layout, ReadOnlySpan<byte> ordinaryData = default) =>
         Bind(GraphParameterResourceBinding.BeginBlock(layout, ordinaryData));
 
     public GraphBufferAccessId Bind(

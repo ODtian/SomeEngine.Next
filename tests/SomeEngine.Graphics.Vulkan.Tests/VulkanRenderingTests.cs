@@ -25,7 +25,7 @@ public sealed class VulkanRenderingTests
             [shader("fragment")]
             float4 pixelMain() : SV_Target0 { return Tint; }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));
@@ -38,9 +38,9 @@ public sealed class VulkanRenderingTests
         using Pipeline pipeline = backend.CreateGraphicsPipeline(
             device,
             new GraphicsPipelineDesc(
-                shader.Program,
-                shader.Entries[0],
+                shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0),
                 shader.Entries[1],
+                shader.GetEntryCode(1),
                 [],
                 [],
                 PrimitiveTopology.TriangleList,
@@ -51,8 +51,8 @@ public sealed class VulkanRenderingTests
                 new BlendState(blend),
                 new AttachmentFormatSignature(colorFormats, null),
                 DynamicStates.Viewport | DynamicStates.Scissor));
-        ShaderVariableLayout global = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        VariableLayoutReflection global = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         byte[] tint =
         [
             0, 0, 0x80, 0x3F,

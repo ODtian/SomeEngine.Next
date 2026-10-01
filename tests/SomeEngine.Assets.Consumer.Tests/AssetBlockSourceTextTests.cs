@@ -24,7 +24,7 @@ public sealed class AssetBlockSourceTextTests : IDisposable
         await SaveAsync(path, asset, files);
         byte[] previous = await File.ReadAllBytesAsync(path);
         ulong key = Assert.Single(pixels.MipTiles).ChunkKey;
-        pixels.Chunks.Write(key, 7, new byte[] { 219 });
+        { byte[] edited = pixels.Chunks[key].ToArray(); (new byte[] { 219 }).AsSpan().CopyTo(edited.AsSpan(7)); pixels.SetBytes(key, edited); }
         asset.Name = "changed";
 
         await Assert.ThrowsAsync<InvalidDataException>(async () => await SaveAsync(path, asset, files));
@@ -42,7 +42,7 @@ public sealed class AssetBlockSourceTextTests : IDisposable
         string path = Path.Combine(_directory, "paint.texture");
         await SaveAsync(path, asset, files);
         ulong key = Assert.Single(pixels.MipTiles).ChunkKey;
-        pixels.Chunks.Write(key, 7, new byte[] { 219 });
+        { byte[] edited = pixels.Chunks[key].ToArray(); (new byte[] { 219 }).AsSpan().CopyTo(edited.AsSpan(7)); pixels.SetBytes(key, edited); }
         await WritePixelsAsync(pixels);
         asset.Name = "edited";
 
@@ -55,8 +55,8 @@ public sealed class AssetBlockSourceTextTests : IDisposable
         using var restored = new TextureBlock();
         await source.ReadBlockIntoAsync(restored);
         Assert.Equal(pixels.MipTiles.ToArray(), restored.MipTiles.ToArray());
-        using PageRange<byte> expected = pixels.Chunks.Retain(key);
-        using PageRange<byte> actual = restored.Chunks.Retain(key);
+        ReadOnlyMemory<byte> expected = pixels.Chunks[key];
+        ReadOnlyMemory<byte> actual = restored.Chunks[key];
         Assert.Equal(expected.ToArray(), actual.ToArray());
         using SomeEngine.Resources.Texture ready = await restored.CreateAsync(source.Description.Name);
         Assert.Equal(8u, ready.Width);
@@ -89,14 +89,13 @@ public sealed class AssetBlockSourceTextTests : IDisposable
     }
 
     [Fact]
-    public async Task LazyTexturePayloadIsComparedWithoutLoadingItIntoTheDecodedPageBudget()
+    public async Task LazyTexturePayloadIsComparedWithoutMaterializingIt()
     {
         using TextureAsset original = CreateTexture(1024, 1024);
         Dictionary<ulong, string> files = await WritePixelsAsync(original.GetBlock<TextureBlock>());
         string binaryPath = Path.Combine(_directory, "large.texture.asset");
         await original.SaveAsync(binaryPath);
-        using var pages = new PageArena(new ResidencyBudgetLedger(new() { DecodedCpuBytes = 128 * 1024 }));
-        using TextureAsset asset = await TextureAsset.OpenAsync(binaryPath, pages);
+        using TextureAsset asset = await TextureAsset.OpenAsync(binaryPath);
         TextureBlock block = asset.GetBlock<TextureBlock>();
         Assert.Empty(block.Chunks.Keys);
         string sourcePath = Path.Combine(_directory, "large.texture");
@@ -116,52 +115,24 @@ public sealed class AssetBlockSourceTextTests : IDisposable
     }
 
     [Fact]
-    public async Task AllExternalPixelsAreBudgetedTogetherWithPagesAlreadyInUseBeforeReadingAnyPixels()
+    public async Task ExternalPixelsBecomeIndependentManagedData()
     {
         using TextureAsset asset = CreateTexture(256, 256, mipCount: 2);
         Dictionary<ulong, string> files = await WritePixelsAsync(asset.GetBlock<TextureBlock>());
         string path = Path.Combine(_directory, "mips.texture");
         await SaveAsync(path, asset, files);
         using AssetText.SourceReader source = await AssetText.OpenAsync(path);
-        using var pages = new PageArena(new ResidencyBudgetLedger(new() { DecodedCpuBytes = 96 * 1024 }));
-        using var alreadyUsed = new PageBuffer(pages, 32 * 1024);
-        using var target = new TextureBlock(pages);
-
-        await Assert.ThrowsAsync<InvalidDataException>(async () =>
-            await source.ReadBlockIntoAsync(target).AsTask().WaitAsync(TimeSpan.FromSeconds(5)));
-
-        Assert.Empty(target.Chunks.Keys);
+        using var target = new TextureBlock();
+        await source.ReadBlockIntoAsync(target);
+        Assert.Equal(2, target.Chunks.Count);
+        Assert.Equal(65536, target.Chunks[target.MipTiles[0].ChunkKey].Length);
+        Assert.Equal(16384, target.Chunks[target.MipTiles[1].ChunkKey].Length);
+        using SomeEngine.Resources.Texture texture = await target.CreateAsync();
+        Assert.True(texture.TryGetTile(target.MipTiles[0].ChunkKey, out var bytes));
         target.Dispose();
-        alreadyUsed.Dispose();
-        Assert.Equal(0, pages.Statistics.ActiveBytes);
-    }
-
-    [Fact]
-    public async Task ExternalPixelsAutomaticallyReclaimOtherAssetsUnusedCachedPages()
-    {
-        string binaryPath = Path.Combine(_directory, "cached.texture.asset");
-        using (TextureAsset original = CreateTexture(256, 256)) await original.SaveAsync(binaryPath);
-        using TextureAsset next = CreateTexture(256, 256, mipCount: 2);
-        Dictionary<ulong, string> files = await WritePixelsAsync(next.GetBlock<TextureBlock>());
-        string sourcePath = Path.Combine(_directory, "incoming.texture");
-        await SaveAsync(sourcePath, next, files);
-        using var pages = new PageArena(new ResidencyBudgetLedger(new() { DecodedCpuBytes = 96 * 1024 }));
-        using TextureAsset cached = await TextureAsset.OpenAsync(binaryPath, pages);
-        TextureBlock old = cached.GetBlock<TextureBlock>();
-        using (PageBuffer read = await old.AcquireBufferAsync(old.MipTiles[0].ChunkKey))
-            Assert.Equal(65536, read.Length);
-        Assert.True(pages.Residency.Used(ResidencyClass.DecodedCpu) >= 65536);
-        using AssetText.SourceReader source = await AssetText.OpenAsync(sourcePath);
-        using var target = new TextureBlock(pages);
-
-        await source.ReadBlockIntoAsync(target).AsTask().WaitAsync(TimeSpan.FromSeconds(5));
-
-        Assert.Equal(2, target.Chunks.Keys.Count());
-        Assert.Equal(65536, target.Chunks.GetLength(target.MipTiles[0].ChunkKey));
-        Assert.Equal(16384, target.Chunks.GetLength(target.MipTiles[1].ChunkKey));
-        target.Dispose();
-        cached.Dispose();
-        Assert.Equal(0, pages.Statistics.ActiveBytes);
+        source.Dispose();
+        Assert.Equal(65536, bytes.Length);
+        Assert.Equal((byte)7, bytes.Span[7]);
     }
 
     [Fact]
@@ -201,7 +172,7 @@ public sealed class AssetBlockSourceTextTests : IDisposable
                 MipLevel = mip, Width = mipWidth, Height = mipHeight,
                 RowPitch = mipWidth, SlicePitch = (ulong)bytes.Length, DecodedLength = (ulong)bytes.Length, ChunkKey = key,
             });
-            pixels.Chunks.Set(key, bytes);
+            pixels.SetBytes(key, bytes);
         }
         var asset = new TextureAsset { Name = "paint" };
         try { asset.SetBlock(pixels); return asset; }
@@ -215,7 +186,7 @@ public sealed class AssetBlockSourceTextTests : IDisposable
         foreach (TextureMipTile tile in block.MipTiles)
         {
             string name = $"pixels-{index++}.bin";
-            using PageRange<byte> bytes = block.Chunks.Retain(tile.ChunkKey);
+            ReadOnlyMemory<byte> bytes = block.Chunks[tile.ChunkKey];
             await File.WriteAllBytesAsync(Path.Combine(_directory, name), bytes.ToArray());
             files.Add(tile.ChunkKey, name);
         }

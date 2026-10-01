@@ -522,19 +522,19 @@ public sealed class WarpReceiverTests
                 return values[0] * multiplier;
             }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("computeMain", SlangStage.Compute),
             new("vertexMain", SlangStage.Vertex),
             new("pixelMain", SlangStage.Fragment),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_state_shadow_content_identity",
             source,
             entries);
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout reflected = GetDataLayout(layout);
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection reflected = GetDataLayout(layout);
         Assert.Equal((nint)1, reflected.BindingRangeCount);
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -561,7 +561,7 @@ public sealed class WarpReceiverTests
 
         byte[] ordinaryData = new byte[checked((int)reflected.GetSize(
             SlangParameterCategory.Uniform))];
-        ComputePipelineDesc pipelineDescription = new(shader.Program, shader.GetEntryPoint(0));
+        ComputePipelineDesc pipelineDescription = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0));
         using Pipeline firstPipeline = backend.CreateComputePipeline(device, pipelineDescription);
         using Pipeline secondPipeline = backend.CreateComputePipeline(device, pipelineDescription);
         using PersistentParameterBindings firstBindings =
@@ -614,10 +614,9 @@ public sealed class WarpReceiverTests
         [
             new(Enabled: false, WriteMask: ColorWriteMasks.All),
         ];
-        GraphicsPipelineDesc graphicsDescription = new(
-            shader.Program,
-            shader.GetEntryPoint(1),
+        GraphicsPipelineDesc graphicsDescription = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(1), shader.GetEntryCode(1),
             shader.GetEntryPoint(2),
+            shader.GetEntryCode(2),
             [],
             [],
             PrimitiveTopology.TriangleList,
@@ -676,13 +675,13 @@ public sealed class WarpReceiverTests
                 if (tint.x == id.x) { }
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_transient_constant_buffer_16",
             source,
             [new("computeMain", SlangStage.Compute)]);
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout reflected = GetDataLayout(layout);
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection reflected = GetDataLayout(layout);
         Assert.Equal((nuint)16, reflected.GetSize(SlangParameterCategory.Uniform));
         Assert.Equal((nint)0, reflected.BindingRangeCount);
 
@@ -694,7 +693,7 @@ public sealed class WarpReceiverTests
         second[0] = 2;
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using PersistentParameterBindings persistent =
             backend.CreatePersistentParameterBindings(
                 device,
@@ -784,13 +783,13 @@ public sealed class WarpReceiverTests
     private static byte[] ExecuteInterface(IGraphicsBackend backend, ReadOnlySpan<byte> source) =>
         D3D12TestSupport.ExecuteCopyChain(backend, source);
 
-    private static ShaderTypeLayout GetDataLayout(ShaderVariableLayout layout)
+    private static TypeLayoutReflection GetDataLayout(VariableLayoutReflection layout)
     {
-        ShaderTypeLayout result = layout.TypeLayout.UnwrapArray();
+        TypeLayoutReflection result = layout.TypeLayout.UnwrapArray();
         if (result.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
         {
-            ShaderTypeLayout element = result.ElementTypeLayout.UnwrapArray();
-            if (element != ShaderTypeLayout.Null)
+            TypeLayoutReflection element = result.ElementTypeLayout.UnwrapArray();
+            if (element != TypeLayoutReflection.Null)
                 result = element;
         }
         return result;

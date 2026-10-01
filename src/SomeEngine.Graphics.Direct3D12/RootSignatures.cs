@@ -17,23 +17,23 @@ internal sealed unsafe partial class D3D12Backend
         Sampler,
     }
 
-    private static ShaderTypeLayout GetParameterDataLayout(ShaderVariableLayout layout)
+    private static TypeLayoutReflection GetParameterDataLayout(VariableLayoutReflection layout)
     {
-        ShaderTypeLayout typeLayout = layout.TypeLayout;
-        if (typeLayout == ShaderTypeLayout.Null)
+        TypeLayoutReflection typeLayout = layout.TypeLayout;
+        if (typeLayout == TypeLayoutReflection.Null)
             throw new GraphicsException(GraphicsError.NativeFailure, "Slang returned a null type layout.");
 
-        ShaderTypeLayout dataLayout = typeLayout.UnwrapArray();
+        TypeLayoutReflection dataLayout = typeLayout.UnwrapArray();
         if (dataLayout.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
         {
-            ShaderTypeLayout element = dataLayout.ElementTypeLayout.UnwrapArray();
-            if (element != ShaderTypeLayout.Null)
+            TypeLayoutReflection element = dataLayout.ElementTypeLayout.UnwrapArray();
+            if (element != TypeLayoutReflection.Null)
                 dataLayout = element;
         }
         return dataLayout;
     }
 
-    private static uint GetOrdinaryDataSize(ShaderVariableLayout layout)
+    private static uint GetOrdinaryDataSize(VariableLayoutReflection layout)
     {
         nuint ordinarySize = GetParameterDataLayout(layout).GetSize(SlangParameterCategory.Uniform);
         if (ordinarySize == Slang.UnknownSize ||
@@ -48,11 +48,11 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static SlangBindingType GetOrdinaryDataBindingType(
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         SlangBindingType reflectedOrdinaryBindingType = SlangBindingType.Unknown)
     {
         uint ordinaryDataSize = GetOrdinaryDataSize(layout);
-        ShaderTypeLayout typeLayout = layout.TypeLayout;
+        TypeLayoutReflection typeLayout = layout.TypeLayout;
         SlangBindingType ordinaryDataBindingType = ordinaryDataSize == 0
             ? SlangBindingType.Unknown
             : ResolveOrdinaryDataBindingType(
@@ -73,7 +73,7 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static SlangBindingType ResolveOrdinaryDataBindingType(
-        ShaderTypeLayout typeLayout,
+        TypeLayoutReflection typeLayout,
         SlangBindingType reflected)
     {
         SlangBindingType reflectedBase = reflected & SlangBindingType.BaseMask;
@@ -101,12 +101,12 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static (uint Register, uint Space) ResolveOrdinaryDataLocation(
-        ShaderVariableLayout layout,
-        ShaderTypeLayout typeLayout,
+        VariableLayoutReflection layout,
+        TypeLayoutReflection typeLayout,
         SlangBindingType bindingType,
         uint registerSpaceBase)
     {
-        ShaderVariableLayout container = typeLayout.ContainerVarLayout;
+        VariableLayoutReflection container = typeLayout.ContainerVarLayout;
         SlangParameterCategory category =
             UsesCategory(layout, SlangParameterCategory.PushConstantBuffer) ||
             UsesCategory(container, SlangParameterCategory.PushConstantBuffer)
@@ -144,7 +144,7 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static bool UsesCategory(
-        ShaderTypeLayout layout,
+        TypeLayoutReflection layout,
         SlangParameterCategory category)
     {
         for (uint index = 0; index < layout.CategoryCount; index++)
@@ -156,7 +156,7 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static bool UsesCategory(
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         SlangParameterCategory category)
     {
         for (uint index = 0; index < layout.CategoryCount; index++)
@@ -419,8 +419,8 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static NativeDescriptorRangeFacts ResolveNativeDescriptorRangeFacts(
-        ShaderVariableLayout layout,
-        ShaderTypeLayout contents,
+        VariableLayoutReflection layout,
+        TypeLayoutReflection contents,
         nint bindingRangeIndex,
         nint setIndex,
         nint descriptorRangeIndex,
@@ -467,8 +467,8 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static (uint Count, bool Unbounded) ResolveNativeDescriptorCount(
-        ShaderVariableLayout layout,
-        ShaderTypeLayout contents,
+        VariableLayoutReflection layout,
+        TypeLayoutReflection contents,
         nint bindingRangeIndex,
         nint setIndex,
         nint descriptorRangeIndex,
@@ -496,8 +496,8 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static uint ResolveNativeShaderRegister(
-        ShaderVariableLayout layout,
-        ShaderTypeLayout contents,
+        VariableLayoutReflection layout,
+        TypeLayoutReflection contents,
         nint setIndex,
         nint descriptorRangeIndex,
         SlangParameterCategory descriptorCategory,
@@ -519,8 +519,8 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static uint ResolveNativeRegisterSpace(
-        ShaderVariableLayout layout,
-        ShaderTypeLayout contents,
+        VariableLayoutReflection layout,
+        TypeLayoutReflection contents,
         nint bindingRangeIndex,
         nint setIndex,
         nint descriptorRangeIndex,
@@ -551,7 +551,7 @@ internal sealed unsafe partial class D3D12Backend
 
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
     private static void ThrowInvalidNativeDescriptorLocation(
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         nint bindingRangeIndex,
         nint descriptorRangeIndex)
     {
@@ -563,13 +563,13 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static DescriptorSlotDesc ResolveDescriptorSlotDesc(
-        ShaderTypeLayout contents,
+        TypeLayoutReflection contents,
         nint bindingRangeIndex,
         ResourceBindingType type)
     {
-        ShaderTypeLayout leaf =
+        TypeLayoutReflection leaf =
             contents.GetBindingRangeLeafTypeLayout(bindingRangeIndex).UnwrapArray();
-        if (leaf == ShaderTypeLayout.Null)
+        if (leaf == TypeLayoutReflection.Null)
         {
             throw new GraphicsException(
                 GraphicsError.PipelineCreation,
@@ -594,13 +594,13 @@ internal sealed unsafe partial class D3D12Backend
         };
 
         static DescriptorSlotDesc ResolveBufferSlot(
-            ShaderTypeLayout leaf,
+            TypeLayoutReflection leaf,
             ResourceBindingType type)
         {
             SlangResourceShape baseShape =
                 leaf.ResourceShape & SlangResourceShape.BaseShapeMask;
             bool hasCounter = type == ResourceBindingType.BufferUav &&
-                leaf.ExplicitCounter != ShaderVariableLayout.Null;
+                leaf.ExplicitCounter != VariableLayoutReflection.Null;
             return baseShape switch
             {
                 SlangResourceShape.StructuredBuffer => new DescriptorSlotDesc(
@@ -619,10 +619,10 @@ internal sealed unsafe partial class D3D12Backend
             };
         }
 
-        static uint ResolveStructuredStride(ShaderTypeLayout resource)
+        static uint ResolveStructuredStride(TypeLayoutReflection resource)
         {
-            ShaderTypeLayout element = resource.ElementTypeLayout;
-            if (element == ShaderTypeLayout.Null)
+            TypeLayoutReflection element = resource.ElementTypeLayout;
+            if (element == TypeLayoutReflection.Null)
             {
                 throw new GraphicsException(
                     GraphicsError.PipelineCreation,
@@ -667,9 +667,9 @@ internal sealed unsafe partial class D3D12Backend
         };
     }
 
-    private static Format ResolveCanonicalResourceFormat(ShaderType resultType)
+    private static Format ResolveCanonicalResourceFormat(TypeReflection resultType)
     {
-        if (resultType == ShaderType.Null)
+        if (resultType == TypeReflection.Null)
         {
             throw new GraphicsException(
                 GraphicsError.PipelineCreation,
@@ -719,7 +719,7 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static nuint GetDescriptorSubObjectCategorySpace(
-        ShaderTypeLayout layout,
+        TypeLayoutReflection layout,
         nint bindingRangeIndex,
         SlangParameterCategory category,
         string layoutName)
@@ -738,8 +738,8 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (layout.GetSubObjectRangeBindingRangeIndex(index) != bindingRangeIndex)
                 continue;
-            ShaderVariableLayout leaf = layout.GetSubObjectRangeOffset(index);
-            if (leaf == ShaderVariableLayout.Null)
+            VariableLayoutReflection leaf = layout.GetSubObjectRangeOffset(index);
+            if (leaf == VariableLayoutReflection.Null)
             {
                 throw new GraphicsException(
                     GraphicsError.NativeFailure,
@@ -759,14 +759,14 @@ internal sealed unsafe partial class D3D12Backend
     private sealed class D3D12RootSignatureState
     {
         private readonly NativeLease _native;
-        private readonly FrozenDictionary<ShaderVariableLayout, NativeParameterBinding>
+        private readonly FrozenDictionary<VariableLayoutReflection, NativeParameterBinding>
             _parameterBindings;
         private int _released;
 
         internal D3D12RootSignatureState(
             ID3D12RootSignature* native,
-            ShaderProgramLayout reflection,
-            Dictionary<ShaderVariableLayout, NativeParameterBinding> blocks,
+            ShaderReflection reflection,
+            Dictionary<VariableLayoutReflection, NativeParameterBinding> blocks,
             DefaultRootTable[] defaults,
             StaticSamplerDesc[] staticSamplers,
             byte[] serialized,
@@ -784,7 +784,7 @@ internal sealed unsafe partial class D3D12Backend
 
         internal ID3D12RootSignature* Native =>
             (ID3D12RootSignature*)_native.Pointer;
-        internal ShaderProgramLayout Reflection { get; }
+        internal ShaderReflection Reflection { get; }
         internal NativeLease NativeLifetime => _native;
         internal DefaultRootTable[] DefaultTables { get; }
         internal StaticSamplerDesc[] StaticSamplers { get; }
@@ -793,7 +793,7 @@ internal sealed unsafe partial class D3D12Backend
         internal int RootStateLength { get; }
 
         private static int GetRootStateLength(
-            Dictionary<ShaderVariableLayout, NativeParameterBinding> blocks,
+            Dictionary<VariableLayoutReflection, NativeParameterBinding> blocks,
             DefaultRootTable[] defaults)
         {
             int result = 0;
@@ -812,7 +812,7 @@ internal sealed unsafe partial class D3D12Backend
             return result;
         }
 
-        internal NativeParameterBinding GetBlock(ShaderVariableLayout layout)
+        internal NativeParameterBinding GetBlock(VariableLayoutReflection layout)
         {
             if (!_parameterBindings.TryGetValue(layout, out NativeParameterBinding? binding))
             {
@@ -837,12 +837,12 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         internal IndirectRootDestination ResolveIndirectRoot(
-            ShaderVariableLayout parameters,
+            VariableLayoutReflection parameters,
             IndirectArgumentType type,
             uint byteOffset,
             uint valueCount)
         {
-            if (parameters == ShaderVariableLayout.Null)
+            if (parameters == VariableLayoutReflection.Null)
                 throw new ArgumentException("A Slang parameter-object layout is required.", nameof(parameters));
             NativeParameterBinding block = GetBlock(parameters);
             OrdinaryRootBinding ordinary = block.OrdinaryRoot
@@ -904,22 +904,22 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Backend _backend;
         private readonly D3D12Device _device;
-        private readonly ShaderProgramLayout _reflection;
+        private readonly ShaderReflection _reflection;
         private readonly PipelineType _pipelineType;
         private readonly bool _allowInputAssembler;
         private readonly bool _allowStreamOutput;
         private readonly bool _localRootSignature;
         private readonly List<RootDeclaration> _declarations = [];
-        private readonly Dictionary<ShaderVariable, SamplerDesc> _staticSamplers = [];
+        private readonly Dictionary<VariableReflection, SamplerDesc> _staticSamplers = [];
         private readonly List<StaticSamplerDesc> _nativeStaticSamplers = [];
-        private readonly HashSet<ShaderVariable> _resolvedStaticSamplers = [];
-        private readonly Dictionary<ShaderVariableLayout, NativeParameterBindingBuild> _parameterBindingBuilds = [];
-        private readonly HashSet<ShaderVariableLayout> _parameterBindingsInProgress = [];
+        private readonly HashSet<VariableReflection> _resolvedStaticSamplers = [];
+        private readonly Dictionary<VariableLayoutReflection, NativeParameterBindingBuild> _parameterBindingBuilds = [];
+        private readonly HashSet<VariableLayoutReflection> _parameterBindingsInProgress = [];
 
         private D3D12RootSignatureBuilder(
             D3D12Backend backend,
             D3D12Device device,
-            ShaderProgramLayout reflection,
+            ShaderReflection reflection,
             PipelineType pipelineType,
             bool allowInputAssembler,
             bool allowStreamOutput,
@@ -935,7 +935,7 @@ internal sealed unsafe partial class D3D12Backend
             _localRootSignature = localRootSignature;
             foreach (ref readonly StaticSamplerBinding sampler in staticSamplers)
             {
-                if (sampler.Sampler == ShaderVariable.Null)
+                if (sampler.Sampler == VariableReflection.Null)
                     throw new GraphicsException(GraphicsError.PipelineCreation,
                         "A static sampler must identify a non-null Slang sampler declaration.");
                 if (_staticSamplers.ContainsKey(sampler.Sampler))
@@ -952,8 +952,8 @@ internal sealed unsafe partial class D3D12Backend
         internal static D3D12RootSignatureState Compile(
             D3D12Backend backend,
             D3D12Device device,
-            ShaderProgramLayout reflection,
-            ReadOnlySpan<ShaderEntryPoint> entryPoints,
+            ShaderReflection reflection,
+            ReadOnlySpan<EntryPointReflection> entryPoints,
             ReadOnlySpan<StaticSamplerBinding> staticSamplers,
             PipelineType pipelineType,
             bool allowInputAssembler,
@@ -977,7 +977,7 @@ internal sealed unsafe partial class D3D12Backend
         internal static D3D12RootSignatureState CompileGlobal(
             D3D12Backend backend,
             D3D12Device device,
-            ShaderProgramLayout reflection,
+            ShaderReflection reflection,
             ReadOnlySpan<StaticSamplerBinding> staticSamplers,
             PipelineType pipelineType,
             bool requireAllStaticSamplers = false) =>
@@ -985,7 +985,7 @@ internal sealed unsafe partial class D3D12Backend
                 backend,
                 device,
                 reflection,
-                ReadOnlySpan<ShaderEntryPoint>.Empty,
+                ReadOnlySpan<EntryPointReflection>.Empty,
                 staticSamplers,
                 pipelineType,
                 allowInputAssembler: false,
@@ -998,8 +998,8 @@ internal sealed unsafe partial class D3D12Backend
         internal static D3D12RootSignatureState CompileLocal(
             D3D12Backend backend,
             D3D12Device device,
-            ShaderProgramLayout reflection,
-            ReadOnlySpan<ShaderEntryPoint> entryPoints,
+            ShaderReflection reflection,
+            ReadOnlySpan<EntryPointReflection> entryPoints,
             ReadOnlySpan<StaticSamplerBinding> staticSamplers,
             PipelineType pipelineType) =>
             CompileCore(
@@ -1019,8 +1019,8 @@ internal sealed unsafe partial class D3D12Backend
         internal static void ValidateStaticSamplers(
             D3D12Backend backend,
             D3D12Device device,
-            ShaderProgramLayout reflection,
-            ReadOnlySpan<ShaderEntryPoint> entryPoints,
+            ShaderReflection reflection,
+            ReadOnlySpan<EntryPointReflection> entryPoints,
             ReadOnlySpan<StaticSamplerBinding> staticSamplers,
             PipelineType pipelineType)
         {
@@ -1035,13 +1035,13 @@ internal sealed unsafe partial class D3D12Backend
                 allowStreamOutput: false,
                 localRootSignature: false,
                 staticSamplers);
-            ShaderVariableLayout global = reflection.GetGlobalParamsVarLayout()
-                ?? ShaderVariableLayout.Null;
-            if (global != ShaderVariableLayout.Null)
+            VariableLayoutReflection global = reflection.GetGlobalParamsVarLayout()
+                ?? VariableLayoutReflection.Null;
+            if (global != VariableLayoutReflection.Null)
                 builder.AddBlock(global, ShaderVisibility.All);
-            foreach (ShaderEntryPoint entryPoint in entryPoints)
+            foreach (EntryPointReflection entryPoint in entryPoints)
             {
-                if (entryPoint.VarLayout != ShaderVariableLayout.Null)
+                if (entryPoint.VarLayout != VariableLayoutReflection.Null)
                     builder.AddBlock(entryPoint.VarLayout, ToNativeVisibility(entryPoint.Stage));
             }
             builder.RequireAllStaticSamplersResolved();
@@ -1050,8 +1050,8 @@ internal sealed unsafe partial class D3D12Backend
         private static D3D12RootSignatureState CompileCore(
             D3D12Backend backend,
             D3D12Device device,
-            ShaderProgramLayout reflection,
-            ReadOnlySpan<ShaderEntryPoint> entryPoints,
+            ShaderReflection reflection,
+            ReadOnlySpan<EntryPointReflection> entryPoints,
             ReadOnlySpan<StaticSamplerBinding> staticSamplers,
             PipelineType pipelineType,
             bool allowInputAssembler,
@@ -1071,18 +1071,18 @@ internal sealed unsafe partial class D3D12Backend
                 localRootSignature,
                 staticSamplers);
             if (includeGlobal &&
-                reflection.GetGlobalParamsVarLayout() is ShaderVariableLayout global &&
-                global != ShaderVariableLayout.Null)
+                reflection.GetGlobalParamsVarLayout() is VariableLayoutReflection global &&
+                global != VariableLayoutReflection.Null)
             {
                 builder.AddBlock(global, ShaderVisibility.All);
             }
             if (includeEntries)
             {
-                foreach (ShaderEntryPoint entryPoint in entryPoints)
+                foreach (EntryPointReflection entryPoint in entryPoints)
                 {
                     ShaderVisibility stage = ToNativeVisibility(entryPoint.Stage);
-                    ShaderVariableLayout container = entryPoint.VarLayout;
-                    if (container != ShaderVariableLayout.Null)
+                    VariableLayoutReflection container = entryPoint.VarLayout;
+                    if (container != VariableLayoutReflection.Null)
                         builder.AddBlock(container, stage);
                 }
             }
@@ -1106,11 +1106,11 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private bool HasStaticSamplerInRange(
-            ShaderTypeLayout dataLayout,
+            TypeLayoutReflection dataLayout,
             nint bindingRangeIndex)
         {
-            ShaderVariable declaration = dataLayout.GetBindingRangeLeafVariable(bindingRangeIndex);
-            return declaration != ShaderVariable.Null && _staticSamplers.ContainsKey(declaration);
+            VariableReflection declaration = dataLayout.GetBindingRangeLeafVariable(bindingRangeIndex);
+            return declaration != VariableReflection.Null && _staticSamplers.ContainsKey(declaration);
         }
 
         private static void ValidateStaticSampler(in SamplerDesc sampler)
@@ -1120,12 +1120,12 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private void AddBlock(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ShaderVisibility visibility,
             SlangBindingType reflectedOrdinaryBindingType = SlangBindingType.Unknown,
             uint registerSpaceBase = 0)
         {
-            if (layout == ShaderVariableLayout.Null)
+            if (layout == VariableLayoutReflection.Null)
                 return;
             if (!_parameterBindingsInProgress.Add(layout))
             {
@@ -1150,7 +1150,7 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private void AddBlockCore(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ShaderVisibility visibility,
             SlangBindingType reflectedOrdinaryBindingType,
             uint registerSpaceBase)
@@ -1159,7 +1159,7 @@ internal sealed unsafe partial class D3D12Backend
                 return;
 
             int staticSamplerStart = _nativeStaticSamplers.Count;
-            ShaderTypeLayout dataLayout = GetParameterDataLayout(layout);
+            TypeLayoutReflection dataLayout = GetParameterDataLayout(layout);
             uint ordinaryDataSize = GetOrdinaryDataSize(layout);
             RootDeclaration? ordinary = AddOrdinaryRootDeclaration(
                 layout,
@@ -1212,7 +1212,7 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private bool MergeExistingBlock(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ShaderVisibility visibility,
             uint registerSpaceBase)
         {
@@ -1244,7 +1244,7 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private RootDeclaration? AddOrdinaryRootDeclaration(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ShaderVisibility visibility,
             SlangBindingType reflectedOrdinaryBindingType,
             uint registerSpaceBase,
@@ -1282,8 +1282,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private void AddDescriptorBindings(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
             ShaderVisibility visibility,
             uint registerSpaceBase,
             List<DescriptorRange1> resourceRanges,
@@ -1315,7 +1315,7 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private static void ValidateDescriptorContainerCounts(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             nint bindingRangeCount,
             nint descriptorSetCount)
         {
@@ -1333,8 +1333,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private void AddDescriptorBindingRange(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
             nint rangeIndex,
             nint descriptorSetCount,
             ShaderVisibility visibility,
@@ -1395,8 +1395,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private static nint GetDescriptorRangeCount(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
             nint rangeIndex)
         {
             nint descriptorRangeCount = dataLayout.GetBindingRangeDescriptorRangeCount(rangeIndex);
@@ -1412,7 +1412,7 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private static void ValidateStaticSamplerRange(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             nint rangeIndex,
             nint countValue,
             nint descriptorRangeCount,
@@ -1433,8 +1433,8 @@ internal sealed unsafe partial class D3D12Backend
 
         private static (nint SetIndex, nint FirstDescriptorRangeIndex)
             ResolveDescriptorRangeLocation(
-                ShaderVariableLayout layout,
-                ShaderTypeLayout dataLayout,
+                VariableLayoutReflection layout,
+                TypeLayoutReflection dataLayout,
                 nint rangeIndex,
                 nint descriptorRangeCount,
                 nint descriptorSetCount)
@@ -1471,8 +1471,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private void AddNativeDescriptorBinding(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
             nint rangeIndex,
             nint setIndex,
             nint descriptorRangeIndex,
@@ -1542,14 +1542,14 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private void AddStaticSampler(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
             nint rangeIndex,
             in NativeDescriptorRangeFacts facts,
             ShaderVisibility visibility)
         {
-            ShaderVariable declaration = dataLayout.GetBindingRangeLeafVariable(rangeIndex);
-            if (declaration == ShaderVariable.Null ||
+            VariableReflection declaration = dataLayout.GetBindingRangeLeafVariable(rangeIndex);
+            if (declaration == VariableReflection.Null ||
                 !_staticSamplers.TryGetValue(declaration, out SamplerDesc sampler))
             {
                 throw new GraphicsException(
@@ -1613,11 +1613,11 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private void AddChildBlocks(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ShaderVisibility visibility,
             uint registerSpaceBase)
         {
-            ShaderTypeLayout dataLayout = GetParameterDataLayout(layout);
+            TypeLayoutReflection dataLayout = GetParameterDataLayout(layout);
             nint subObjectRangeCount = GetResolvedSubObjectRangeCount(layout, dataLayout);
             nint bindingRangeCount = GetResolvedChildBindingRangeCount(layout, dataLayout);
             for (nint index = 0; index < subObjectRangeCount; index++)
@@ -1633,8 +1633,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private static nint GetResolvedSubObjectRangeCount(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout)
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout)
         {
             nint count = dataLayout.SubObjectRangeCount;
             nuint marker = unchecked((nuint)count);
@@ -1648,8 +1648,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private static nint GetResolvedChildBindingRangeCount(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout)
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout)
         {
             nint count = dataLayout.BindingRangeCount;
             nuint marker = unchecked((nuint)count);
@@ -1663,8 +1663,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private void AddChildBlock(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
             nint index,
             nint bindingRangeCount,
             ShaderVisibility visibility,
@@ -1697,8 +1697,8 @@ internal sealed unsafe partial class D3D12Backend
             if (nativeDescriptorRanges != 0)
                 return;
             ValidateDescriptorlessChildBinding(layout, dataLayout, bindingRangeIndex, source);
-            ShaderVariableLayout child = dataLayout.GetSubObjectRangeOffset(index);
-            if (child == ShaderVariableLayout.Null)
+            VariableLayoutReflection child = dataLayout.GetSubObjectRangeOffset(index);
+            if (child == VariableLayoutReflection.Null)
             {
                 throw new GraphicsException(
                     GraphicsError.NativeFailure,
@@ -1717,8 +1717,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private static void ValidateDescriptorlessChildBinding(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
             nint bindingRangeIndex,
             SlangBindingType source)
         {
@@ -1745,9 +1745,9 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         private static uint ResolveChildRegisterSpaceBase(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
-            ShaderVariableLayout child,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
+            VariableLayoutReflection child,
             nint index,
             uint registerSpaceBase)
         {
@@ -1792,7 +1792,7 @@ internal sealed unsafe partial class D3D12Backend
                 out byte[] serialized);
             try
             {
-                Dictionary<ShaderVariableLayout, NativeParameterBinding> blocks =
+                Dictionary<VariableLayoutReflection, NativeParameterBinding> blocks =
                     CreateNativeParameterBindings();
                 DefaultRootTable[] defaults = CreateDefaultRootTables(declarations);
                 uint rootArgumentSize = GetRootArgumentSize(declarations);
@@ -1946,11 +1946,11 @@ internal sealed unsafe partial class D3D12Backend
             return rootSignature;
         }
 
-        private Dictionary<ShaderVariableLayout, NativeParameterBinding>
+        private Dictionary<VariableLayoutReflection, NativeParameterBinding>
             CreateNativeParameterBindings()
         {
-            Dictionary<ShaderVariableLayout, NativeParameterBinding> blocks = [];
-            foreach ((ShaderVariableLayout layout, NativeParameterBindingBuild candidate)
+            Dictionary<VariableLayoutReflection, NativeParameterBinding> blocks = [];
+            foreach ((VariableLayoutReflection layout, NativeParameterBindingBuild candidate)
                      in _parameterBindingBuilds)
             {
                 D3D12BoundedTable? resourceTable = ToBoundedTable(

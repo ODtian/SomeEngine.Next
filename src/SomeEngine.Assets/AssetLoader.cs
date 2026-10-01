@@ -26,7 +26,7 @@ public sealed class AssetLoader : IAsyncDisposable
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _options = options ?? new();
         ArgumentNullException.ThrowIfNull(_options.ReadLimits);
-        ArgumentNullException.ThrowIfNull(_options.Pages);
+        ArgumentNullException.ThrowIfNull(_options.ByteCache);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(_options.MaxDecodedBytes);
         ArgumentOutOfRangeException.ThrowIfNegative(_options.MaxCachedFiles);
         ArgumentOutOfRangeException.ThrowIfNegative(_options.MaxCachedRootBytes);
@@ -35,7 +35,6 @@ public sealed class AssetLoader : IAsyncDisposable
         _readConcurrency = new(_options.MaxConcurrentReads, _options.MaxConcurrentReads);
     }
 
-    public PageArena Pages => _options.Pages;
     public int MaxConcurrentReads => _options.MaxConcurrentReads;
 
     public async ValueTask<AssetFile> OpenFileAsync<T>(AssetId<T> id,
@@ -114,7 +113,7 @@ public sealed class AssetLoader : IAsyncDisposable
             BinaryDocument document = await BinaryDocument.OpenAsync(source, wireType, ownsSource: true, _options.ReadLimits, _stop.Token).ConfigureAwait(false);
             try
             {
-                file = new AssetFile(document, entry.Path, _options.Pages, _options.MaxDecodedBytes);
+                file = new AssetFile(document, entry.Path, _options.MaxDecodedBytes, _options.ByteCache);
                 AssetEntry actual = file.Describe();
                 // OpenAsync validates the storage-selected version. For a pack this is the pack
                 // generation, while the nested document has its own content generation.
@@ -262,7 +261,8 @@ public sealed class AssetLoader : IAsyncDisposable
 
 public sealed class AssetLoaderOptions
 {
-    public PageArena Pages { get; init; } = PageArena.Shared;
+    /// <summary>The shared CPU byte cache used by the application's asset loaders.</summary>
+    public AssetByteCache ByteCache { get; init; } = AssetByteCache.Shared;
     public long MaxDecodedBytes { get; init; } = 256L * 1024 * 1024;
     public BinaryReadLimits ReadLimits { get; init; } = BinaryReadLimits.Default;
     public int MaxConcurrentReads { get; init; } = 8;

@@ -42,12 +42,12 @@ public sealed class RepeatingDisplacementTests
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
             if (Directory.Exists(Path.Combine(directory.FullName, "assets", "Shaders")))
             { shaders = Path.Combine(directory.FullName, "assets", "Shaders"); break; }
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths(
+        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
             "repeating_displacement", source, [new("SampleDisplacement", SlangStage.Compute)], "sm_6_0",
             shaders ?? throw new DirectoryNotFoundException());
         using IGraphicsBackend backend = new SomeEngine.Graphics.Validation.ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Pipeline pipeline = backend.CreateComputePipeline(device, new(shader.Program, shader.GetEntryPoint(0)));
+        using Pipeline pipeline = backend.CreateComputePipeline(device, new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using Buffer input = backend.CreateBuffer(device, new((ulong)coordinates.Count * 8, BufferUsages.ShaderRead), MemoryType.Upload);
         using (MappedBuffer map = backend.Map(input, MapType.Write, BufferRange.Whole))
         {
@@ -92,8 +92,9 @@ public sealed class RepeatingDisplacementTests
             backend.Barrier(context, new BufferBarrier(output, PipelineSync.None, PipelineSync.ComputeShading,
                 ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
             backend.SetPipeline(context, pipeline);
-            backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout()!,
-                [ResourceBinding.SampledTexture(textureView), ResourceBinding.ReadOnlyBuffer(inputView), ResourceBinding.WritableBuffer(outputView)], []));
+            backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
+                [ResourceBinding.Null(ResourceBindingType.BufferSrv), ResourceBinding.Null(ResourceBindingType.ConstantBuffer),
+                 ResourceBinding.SampledTexture(textureView), ResourceBinding.ReadOnlyBuffer(inputView), ResourceBinding.WritableBuffer(outputView)], []));
             backend.Dispatch(context, new((uint)(coordinates.Count + 31) / 32, 1, 1));
             backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.Copy,
                 ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));

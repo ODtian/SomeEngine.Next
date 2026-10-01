@@ -44,7 +44,7 @@ public class AssetStorageTests
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "generated.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            using var generated = new StandardMaterialAsset(PageArena.Shared, materialGuid) {
+            using var generated = new StandardMaterialAsset(materialGuid) {
                 Name = "GeneratedMaterial",
             };
             await generated.SaveAsync(materialPath);

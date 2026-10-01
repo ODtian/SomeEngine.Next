@@ -13,6 +13,32 @@ namespace SomeEngine.Assets.Tests;
 public sealed class AssetImportTests
 {
     [Fact]
+    public async Task RebuildingWithoutTheBuildRecordRestoresSourceElementIdentities()
+    {
+        using var files = new TestFiles();
+        var importer = new SourceImporter();
+        var project = new AssetProject(files.Root, [importer]);
+        IReadOnlyList<Guid> first = await project.ImportAsync(files.Source, importer);
+        SourceMeta metadata = SourceMeta.Load(files.Source);
+        File.Delete(SourceMeta.GetBuildPath(files.Source));
+        await project.RebuildAsync();
+        Assert.All(first, id => Assert.Equal(metadata.SourceGuid, project.Manifest.Assets[id].SourceGuid));
+        Assert.Equal(first, await project.ImportAsync(files.Source, importer));
+    }
+
+    [Fact]
+    public async Task DiscoveryFindsARegisteredSourceBeforeItHasMetadata()
+    {
+        using var files = new TestFiles();
+        var project = new AssetProject(files.Root, [new SourceImporter()]);
+        AssetDiscoveredFile found = Assert.Single(await project.DiscoverAsync());
+        Assert.Equal(AssetFileKind.ImportedSource, found.Kind);
+        Assert.Equal(files.Source, found.Path);
+        Assert.True(found.SourceGuid.IsEmpty);
+        Assert.False(File.Exists(SourceMeta.GetMetaPath(files.Source)));
+    }
+
+    [Fact]
     public async Task RealMeshAndShaderSaveTogetherAndReopenWithPersistentIdentities()
     {
         using var files = new TestFiles();
@@ -24,7 +50,7 @@ public sealed class AssetImportTests
         using ShaderAsset shader = await ShaderAsset.OpenAsync(files.Path("shader0.shader.asset"));
         Assert.Contains(mesh.Id, first);
         Assert.Contains(shader.Id, first);
-        using var bytes = await mesh.GetBlock<ClusterMeshBlock>().AcquireBufferAsync(ClusterMeshBlock.PayloadChunkKey);
+        var bytes = await mesh.GetBlock<ClusterMeshBlock>().ReadBytesAsync(ClusterMeshBlock.PayloadChunkKey);
         Assert.True(bytes.Length > 0);
         Assert.All(project.List(), entry => Assert.NotEqual(Guid.Empty, entry.Version));
         File.WriteAllText(files.Source, "renamed source content");
@@ -345,7 +371,7 @@ public sealed class AssetImportTests
         public ValueTask<string> ReadAsync(string path, CancellationToken token) => ValueTask.FromResult(File.ReadAllText(path));
         public async ValueTask ImportAsync(string source, ImportContext context, CancellationToken token)
         {
-            context.ConfigureAssets<ShaderPart, ShaderAsset>(part => "outside", (_, id) => new ShaderAsset(PageArena.Shared, id),
+            context.ConfigureAssets<ShaderPart, ShaderAsset>(part => "outside", (_, id) => new ShaderAsset(id),
                 (_, _) => outputPath, static (asset, path, cancellation) => asset.SaveAsync(path, cancellation));
             context.EnableImporter<ShaderPart, ShaderAsset>(new AssetImporter<ShaderPart, int>(Id,
                 [ShaderBlock.BlockTypeId, ShaderSourceBlock.BlockTypeId], new ShaderConversion(), 0));
@@ -355,6 +381,7 @@ public sealed class AssetImportTests
 
     private sealed class SourceImporter : IAssetSourceImporter<string, int>
     {
+        public IReadOnlyList<string> SourceExtensions => [".input"];
         public Guid Id => new("e2eaad2c-7ee5-4bf3-85a2-6314b61d8c9c");
         public int Reads { get; private set; }
         public int ShaderCount { get; set; } = 1;
@@ -375,7 +402,7 @@ public sealed class AssetImportTests
             int settings = context.GetSettings(Id, 0, ImportTestJsonContext.Default.Int32, overrides);
             int saved = 0;
             context.ConfigureAssets<ShaderPart, ShaderAsset>(part => $"shader/{part.Index}",
-                (part, id) => new ShaderAsset(PageArena.Shared, id) { Name = $"{part.Text}:{settings}" },
+                (part, id) => new ShaderAsset(id) { Name = $"{part.Text}:{settings}" },
                 (part, _) => $"shader{part.Index}.shader.asset", async (asset, path, cancellation) =>
                 {
                     AssetEntry entry = await asset.SaveAsync(path, cancellation);
@@ -387,7 +414,7 @@ public sealed class AssetImportTests
                 [ShaderBlock.BlockTypeId, ShaderSourceBlock.BlockTypeId], new ShaderConversion(), settings));
             if (IncludeMesh)
             {
-                context.ConfigureAssets<string, MeshAsset>(_ => "mesh/0", (_, id) => new MeshAsset(PageArena.Shared, id),
+                context.ConfigureAssets<string, MeshAsset>(_ => "mesh/0", (_, id) => new MeshAsset(id),
                     (_, _) => "mesh.mesh.asset", static (asset, path, cancellation) => asset.SaveAsync(path, cancellation));
                 context.EnableImporter<string, MeshAsset>(new AssetImporter<string, int>(
                     new Guid("c698a681-8c3a-4e20-965e-f8d321f6bda9"),

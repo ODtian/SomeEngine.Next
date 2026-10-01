@@ -73,11 +73,11 @@ public sealed partial class ClusterPipelineSystem
     // Only GPU binding dependencies are remembered; scalar values stay on the Material.
     private readonly Dictionary<long, MaterialBindingVersions> _materialBindingVersions = [];
     private sealed record MaterialBindingVersions(
-        Shader? Shader, ulong ShaderRevision, ulong[] Properties)
+        Shader? Shader, ulong[] Properties)
     {
         internal bool Matches(Material material, ClusterRasterStages raster, ClusterShadeStages shade)
         {
-            if (!ReferenceEquals(Shader, material.Shader) || ShaderRevision != (material.Shader?.Revision ?? 0))
+            if (!ReferenceEquals(Shader, material.Shader))
                 return false;
             for (uint property = 0; property < Properties.Length; property++)
                 if (material.GetPropertyRevision(property) != Properties[property] &&
@@ -109,7 +109,7 @@ public sealed partial class ClusterPipelineSystem
             var properties = new ulong[material.PropertyCount];
             for (uint property = 0; property < material.PropertyCount; property++)
                 properties[property] = material.GetPropertyRevision(property);
-            _materialBindingVersions[id] = new(material.Shader, material.Shader?.Revision ?? 0, properties);
+            _materialBindingVersions[id] = new(material.Shader, properties);
         }
         _materialAssignments.AcceptMaterialChanges(assignments);
     }
@@ -117,7 +117,7 @@ public sealed partial class ClusterPipelineSystem
     private static bool BindInactiveStageResource(
         ref PassDefinition pass, in ClusterLinkedStageResource resource)
     {
-        if (resource.ParameterLayout != SlangShaderSharp.ShaderVariableLayout.Null)
+        if (resource.ParameterLayout != SlangShaderSharp.VariableLayoutReflection.Null)
         {
             pass.BindParameterBlock(resource.ParameterLayout);
             return true;

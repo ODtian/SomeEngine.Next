@@ -146,16 +146,21 @@ internal static class RenderGraphCpuBenchmark
                 ? ".NET 10 / SomeEngine RenderGraph / Silk.NET Vulkan 1.3"
                 : ".NET 10 / SomeEngine RenderGraph / Silk.NET D3D12");
 
-        using BenchmarkShaderProgram shader = options.GraphicsBackend == GraphicsBackendKind.Vulkan
+        BenchmarkShader shader = options.GraphicsBackend == GraphicsBackendKind.Vulkan
             ? BenchmarkShaders.OpenVulkan()
             : BenchmarkShaders.Open(options.ShaderDirectory);
         using Pipeline graphicsPipeline = CreateGraphicsPipeline(backend, device, shader);
         using Pipeline computePipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.Entries[2], "Dagor graph CPU compute"));
-        ShaderVariableLayout globalLayout =
-            shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
-        if (globalLayout == ShaderVariableLayout.Null)
+            new ComputePipelineDesc(
+                shader.SlangCode,
+                shader.Reflection,
+                shader.Entries[2],
+                shader.GetEntryCode(2),
+                "Dagor graph CPU compute"));
+        VariableLayoutReflection globalLayout =
+            shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        if (globalLayout == VariableLayoutReflection.Null)
             throw new InvalidDataException("The benchmark shader has no global parameter layout.");
 
         PersistentParameterBindings[] materials = CreateMaterials(
@@ -899,7 +904,7 @@ internal static class RenderGraphCpuBenchmark
     private static Pipeline CreateGraphicsPipeline(
         IGraphicsBackend backend,
         Device device,
-        BenchmarkShaderProgram shader)
+        BenchmarkShader shader)
     {
         Format[] colorFormats = [Format.R8G8B8A8UNorm];
         BlendAttachmentState[] blendAttachments =
@@ -909,9 +914,12 @@ internal static class RenderGraphCpuBenchmark
         return backend.CreateGraphicsPipeline(
             device,
             new GraphicsPipelineDesc(
-                shader.Program,
+                shader.SlangCode,
+                shader.Reflection,
                 shader.Entries[0],
+                shader.GetEntryCode(0),
                 shader.Entries[1],
+                shader.GetEntryCode(1),
                 [],
                 [],
                 PrimitiveTopology.TriangleList,
@@ -929,7 +937,7 @@ internal static class RenderGraphCpuBenchmark
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         int count)
     {
         var result = new PersistentParameterBindings[count];

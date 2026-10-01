@@ -25,9 +25,9 @@ public sealed class TextureMipTileStreamingTests
         using Texture texture = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
         Assert.True(texture.HasBootstrap);
         Assert.Equal(1u, texture.BootstrapMipLevel);
-        Assert.False(texture.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out _));
-        Assert.True(texture.TryRetainTile(TextureTiles.ChunkKey(1, 0, 0), out var read));
-        using (read) Assert.Equal(new byte[] { 1, 2, 3, 4 }, read.ToArray());
+        Assert.False(texture.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out _));
+        Assert.True(texture.TryGetTile(TextureTiles.ChunkKey(1, 0, 0), out var read));
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, read.ToArray());
     }
 
     [Fact]
@@ -73,8 +73,8 @@ public sealed class TextureMipTileStreamingTests
         Assert.Equal(2ul, current.Revision);
         Assert.Equal("before", file.Name);
         Assert.True(current.HasBootstrap);
-        Assert.True(current.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out var read));
-        using (read) Assert.Equal(new byte[] { 3, 4, 5, 6 }, read.ToArray());
+        Assert.True(current.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var read));
+        Assert.Equal(new byte[] { 3, 4, 5, 6 }, read.ToArray());
     }
 
     [Fact]
@@ -102,11 +102,10 @@ public sealed class TextureMipTileStreamingTests
         Assert.All(metadata, static tile => Assert.NotEqual(0ul, tile.ChunkKey));
         Assert.Equal(new ulong[] { 4, 4, 2 }, metadata.Select(static tile => tile.DecodedLength).ToArray());
         TextureMipTile selected = Assert.Single(metadata, static tile => tile.MipLevel == 1 && tile.ArrayLayer == 2);
-        long loadsBefore = file.StreamingMetrics!.Snapshot().LoadsCompleted;
-        using var bytes = await file.GetBlock<TextureBlock>().AcquireBufferAsync(selected.ChunkKey);
-        using var read = bytes.Retain();
+        var bytes = await file.GetBlock<TextureBlock>().ReadBytesAsync(selected.ChunkKey);
+        var read = bytes;
         Assert.Equal(mipOne, read.ToArray());
-        Assert.Equal(loadsBefore + 1, file.StreamingMetrics!.Snapshot().LoadsCompleted);
+        Assert.True(bytes.Equals(await file.GetBlock<TextureBlock>().ReadBytesAsync(selected.ChunkKey)));
     }
 
     [Fact]
@@ -155,7 +154,7 @@ public sealed class TextureMipTileStreamingTests
         await asset.SaveAsync(path);
         TextureMipTile current = Assert.Single(asset.GetBlock<TextureBlock>().MipTiles);
         Assert.Same(pixel.Tile, current);
-        using var inputRead = asset.GetBlock<TextureBlock>().Chunks.Retain(0);
+        var inputRead = asset.GetBlock<TextureBlock>().Chunks[0];
         Assert.Equal(payload, inputRead.ToArray());
         Assert.Equal(0ul, current.ChunkKey);
         Assert.Equal(0ul, current.DecodedLength);
@@ -164,8 +163,8 @@ public sealed class TextureMipTileStreamingTests
         Assert.NotEqual(0ul, written.ChunkKey);
         Assert.Equal((ulong)payload.Length, written.DecodedLength);
         Assert.Empty(opened.GetBlock<TextureBlock>().Chunks.Keys);
-        using var bytes = await opened.GetBlock<TextureBlock>().AcquireBufferAsync(written.ChunkKey);
-        using var read = bytes.Retain();
+        var bytes = await opened.GetBlock<TextureBlock>().ReadBytesAsync(written.ChunkKey);
+        var read = bytes;
         Assert.Equal(payload, read.ToArray());
     }
 
@@ -191,7 +190,7 @@ public sealed class TextureMipTileStreamingTests
             Depth = 1, MipLevelCount = 2, ArrayLayerCount = 1, Format = Format.R8UNorm,
             SampledFormat = Format.R8UNorm, SampledDimension = TextureViewDimension.Texture2D,
         };
-        var asset = new TextureAsset(PageArena.Shared, Guid.Parse("20112233445566778899aabbccddeeff")) { Name = "deterministic" };
+        var asset = new TextureAsset(Guid.Parse("20112233445566778899aabbccddeeff")) { Name = "deterministic" };
         asset.SetBlock(content);
         try { SetPixels(asset, pixels); return asset; }
         catch { asset.Dispose(); throw; }
@@ -205,7 +204,7 @@ public sealed class TextureMipTileStreamingTests
             Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1, Format = Format.R8UNorm,
             SampledFormat = Format.R8UNorm, SampledDimension = TextureViewDimension.Texture2D,
         };
-        var asset = new TextureAsset(PageArena.Shared, id) { Name = name };
+        var asset = new TextureAsset(id) { Name = name };
         asset.SetBlock(content);
         try { SetPixels(asset, [Tile(0, 0, 0, width, 1, payload, rowPitch: width, slicePitch: width)]); return asset; }
         catch { asset.Dispose(); throw; }
@@ -215,7 +214,7 @@ public sealed class TextureMipTileStreamingTests
     {
         asset.GetBlock<TextureBlock>().MipTiles = pixels.Select(static item => item.Tile).ToArray();
         foreach (TexturePixels item in pixels)
-            if (!item.Bytes.IsEmpty) asset.GetBlock<TextureBlock>().Chunks.Set(item.Tile.ChunkKey, item.Bytes.Span);
+            if (!item.Bytes.IsEmpty) asset.GetBlock<TextureBlock>().SetBytes(item.Tile.ChunkKey, item.Bytes);
     }
 
     private static TexturePixels Tile(uint mipLevel, uint tileX, uint tileY, uint width, uint height,

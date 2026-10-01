@@ -69,8 +69,6 @@ Console.WriteLine(string.Create(
     $"serialization-native-performance: payload={payload.Length} samples={sampleCount} direct={directGiBs:F3}GiB/s native={nativeGiBs:F3}GiB/s median-ratio={medianRatio:P2}"));
 
 ViewMeasurements.Run();
-PageMeasurements.Run();
-await PageWorkloads.RunAsync();
 return 0;
 
 static long MeasureDirect(ReadOnlySpan<byte> source, byte[] destination, int copies)

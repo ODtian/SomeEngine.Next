@@ -1,46 +1,7 @@
-using SlangShaderSharp;
-using Schema = global::SomeEngine.Assets.Schema;
-
 namespace SomeEngine.Assets.Importers;
 
 internal static class SlangDeps
 {
-    public static FileDependency[] Collect(
-        IModule module,
-        string sourcePath,
-        string projectRoot)
-    {
-        var dependencies = new Dictionary<string, FileDependency>(
-            StringComparer.OrdinalIgnoreCase);
-
-        void Add(string dependencyPath)
-        {
-            string fullPath = Path.GetFullPath(dependencyPath);
-            if (!File.Exists(fullPath))
-            {
-                return;
-            }
-
-            string relativePath = RelPath(projectRoot, fullPath);
-            dependencies[relativePath] = new FileDependency
-            {
-                RelativePath = relativePath,
-                ContentHash = ImportHash.FileSha256(fullPath),
-            };
-        }
-
-        Add(sourcePath);
-        int dependencyCount = module.GetDependencyFileCount();
-        for (int i = 0; i < dependencyCount; i++)
-        {
-            Add(module.GetDependencyFilePath(i));
-        }
-
-        return dependencies
-            .Values.OrderBy(static x => x.RelativePath, StringComparer.Ordinal)
-            .ToArray();
-    }
-
     public static ImportInputs? Refresh(
         IReadOnlyList<FileDependency> dependencies,
         string projectRoot,

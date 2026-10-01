@@ -64,7 +64,6 @@ public sealed class ChunkLease : IDisposable
 {
     private readonly DocumentLifetime _documentLifetime;
     private RangeLease? _range;
-    private PageBuffer? _pages;
     private int _disposed;
 
     internal ChunkLease(
@@ -79,34 +78,7 @@ public sealed class ChunkLease : IDisposable
 
     public BinaryChunkEntry Descriptor { get; }
 
-    internal ChunkLease(BinaryChunkEntry descriptor, PageBuffer pages)
-    {
-        Descriptor = descriptor;
-        _pages = pages;
-        _documentLifetime = new DocumentLifetime();
-    }
-
-    internal long Length
-    {
-        get
-        {
-            _documentLifetime.ThrowIfDisposed(this);
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-            return _pages?.Length ?? _range!.Memory.Length;
-        }
-    }
-
-    internal PageBuffer DuplicatePages()
-    {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        return (_pages ?? throw new InvalidOperationException("The chunk was not acquired with a page arena.")).Duplicate();
-    }
-
-    internal PageRange<byte> RetainPages(long offset, long length)
-    {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        return (_pages ?? throw new InvalidOperationException("The chunk was not acquired with a page arena.")).Retain(offset, length);
-    }
+    internal long Length => Memory.Length;
 
     public ReadOnlyMemory<byte> Memory
     {
@@ -114,7 +86,6 @@ public sealed class ChunkLease : IDisposable
         {
             _documentLifetime.ThrowIfDisposed(this);
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-            if (_pages is { } pages) return pages.ReadSingleMemory();
             RangeLease? range = Volatile.Read(ref _range);
             ObjectDisposedException.ThrowIf(range is null || Volatile.Read(ref _disposed) != 0, this);
             return range.Memory;
@@ -126,7 +97,6 @@ public sealed class ChunkLease : IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
         Interlocked.Exchange(ref _range, null)?.Dispose();
-        Interlocked.Exchange(ref _pages, null)?.Dispose();
     }
 }
 

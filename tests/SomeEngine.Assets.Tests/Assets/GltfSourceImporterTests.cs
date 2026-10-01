@@ -60,21 +60,16 @@ public class GltfSourceImporterTests
     }
 
     [Fact]
-    public async Task ImportUsesCallerStorageAndReleasesItAfterCommit()
+    public async Task ImportCanBeRepeatedWithoutCallerMemoryStorage()
     {
         string directory = CreateTempDir();
         try
         {
             string path = WriteTestProject(directory, writeImporterSettings: false);
-            using var pages = new PageArena(new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 16 * 1024 * 1024 }));
-            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter(pages: pages);
+            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
             var assets = await ImportAsync(importer, directory, path);
             Assert.Contains(assets, value => value.SubAssetKey.StartsWith("texture:"));
-            Assert.True(pages.Statistics.RequestedBytes > 0);
-            Assert.Equal(0, pages.Residency.Used(ResidencyClass.DecodedCpu));
-            // Successful reimport also proves the importer did not dispose the borrowed pool.
             await ImportAsync(importer, directory, path);
-            Assert.Equal(0, pages.Residency.Used(ResidencyClass.DecodedCpu));
         }
         finally { Directory.Delete(directory, recursive: true); }
     }
@@ -91,7 +86,7 @@ public class GltfSourceImporterTests
             source.Primitives[0].Material = null;
             await using var context = new ImportContext();
             context.ConfigureAssets<SharpGLTF.Schema2.Mesh, MeshAsset>(mesh => $"mesh/{mesh.LogicalIndex}",
-                (_, id) => new MeshAsset(SomeEngine.Serialization.Containers.PageArena.Shared, id),
+                (_, id) => new MeshAsset(id),
                 (_, id) => id + ".mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
             var geometry = new GltfMeshImporter();
             var clusters = new ClusterGltfMeshImporter(StandardClusterVertexEncoder.Instance);
@@ -365,7 +360,8 @@ public class GltfSourceImporterTests
                 """
                 {
                   "lit_material_template": "assets/Materials/Templates/PbrTemplate.material.asset",
-                  "unlit_material_template": "assets/Materials/Templates/UnlitTemplate.material.asset"
+                  "unlit_material_template": "assets/Materials/Templates/UnlitTemplate.material.asset",
+                  "require_persistent_element_ids": false
                 }
                 """).RootElement.Clone();
 
@@ -375,6 +371,13 @@ public class GltfSourceImporterTests
                 Importers = [new(SomeEngine.Assets.Importers.GltfSourceImporter.SourceImporterId, settings)],
             });
         }
+        else SourceMeta.Save(gltfPath, new SourceMeta
+        {
+            SourceGuid = SourceGuid.New(),
+            Importers = [new(GltfSourceImporter.SourceImporterId,
+                JsonSerializer.SerializeToElement(new GltfImporterSettings { RequirePersistentElementIds = false },
+                    GltfSettingsJson.Default.GltfImporterSettings))],
+        });
 
         return gltfPath;
     }
@@ -383,10 +386,10 @@ public class GltfSourceImporterTests
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using MaterialAsset material = unlit
-            ? new UnlitMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, Guid.NewGuid()) {
+            ? new UnlitMaterialAsset(Guid.NewGuid()) {
                 Name = name,
             }
-            : new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, Guid.NewGuid()) {
+            : new StandardMaterialAsset(Guid.NewGuid()) {
                 Name = name,
             };
         material.GetBlock<MaterialBlock>().Shader = new(Guid.Parse(unlit ? UnlitShaderGuid : LitShaderGuid));

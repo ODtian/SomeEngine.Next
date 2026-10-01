@@ -19,13 +19,13 @@ public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSetting
     public const string UnlitTemplate = "assets/Materials/TestUnlit_1.material.asset";
 
     public static GltfSourceImporter CreateSourceImporter(Action<IServiceCollection>? configureServices = null,
-        string? capabilitiesVersion = null, PageArena? pages = null)
+        string? capabilitiesVersion = null)
         => new(services =>
         {
             ProjectAssetCapabilities.AddAssetCapabilities(services);
             services.AddSingleton<IClusterVertexEncoder>(StandardClusterVertexEncoder.Instance);
             configureServices?.Invoke(services);
-        }, capabilitiesVersion ?? ProjectAssetCapabilities.BuildVersion, pages, ImporterId);
+        }, capabilitiesVersion ?? ProjectAssetCapabilities.BuildVersion, ImporterId);
 
     public override async ValueTask ImportMaterialAsync(GltfMaterial source, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)

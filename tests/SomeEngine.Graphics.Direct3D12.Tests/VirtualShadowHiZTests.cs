@@ -10,16 +10,16 @@ public sealed class VirtualShadowHiZTests
     [Fact]
     public void Two_dispatches_match_a_cpu_max_pyramid_for_reordered_physical_pages()
     {
-        using D3D12TestShaderProgram initialize = D3D12TestShaderProgram.CompileWithSearchPaths(
+        D3D12TestShader initialize = D3D12TestShader.CompileWithSearchPaths(
             "shadow_hiz_initialize", "#include \"vsm_page_hiz.slang\"",
             [new("InitializeVirtualShadowPageHiZ", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
-        using D3D12TestShaderProgram reduce = D3D12TestShaderProgram.CompileWithSearchPaths(
+        D3D12TestShader reduce = D3D12TestShader.CompileWithSearchPaths(
             "shadow_hiz_reduce", "#include \"vsm_page_hiz_reduce.slang\"",
             [new("ReduceVirtualShadowPageHiZ", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Pipeline first = backend.CreateComputePipeline(device, new ComputePipelineDesc(initialize.Program, initialize.GetEntryPoint(0)));
-        using Pipeline second = backend.CreateComputePipeline(device, new ComputePipelineDesc(reduce.Program, reduce.GetEntryPoint(0)));
+        using Pipeline first = backend.CreateComputePipeline(device, new ComputePipelineDesc(initialize.SlangCode, initialize.Reflection, initialize.GetEntryPoint(0), initialize.GetEntryCode(0)));
+        using Pipeline second = backend.CreateComputePipeline(device, new ComputePipelineDesc(reduce.SlangCode, reduce.Reflection, reduce.GetEntryPoint(0), reduce.GetEntryCode(0)));
         using Buffer uniforms0 = Upload(backend, device, [128u, 2u, 0u, 0u], BufferUsages.Constant, 256);
         using Buffer uniforms1 = Upload(backend, device, [128u, 2u, 3u, 4u], BufferUsages.Constant, 256);
         using BufferCbv cbv0 = backend.CreateBufferCbv(device, new BufferCbvDesc(uniforms0, new BufferRange(0, 256)));
@@ -72,7 +72,7 @@ public sealed class VirtualShadowHiZTests
                 TextureLayout.Undefined, TextureLayout.UnorderedAccess));
             backend.SetPipeline(context, first);
             backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
-                initialize.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null,
+                initialize.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 [ResourceBinding.ConstantBuffer(cbv0), ResourceBinding.ReadOnlyBuffer(activeView), ResourceBinding.SampledTexture(atlasView),
                     ResourceBinding.StorageTexture(destinations[0]), ResourceBinding.StorageTexture(destinations[1]),
                     ResourceBinding.StorageTexture(destinations[2]), ResourceBinding.StorageTexture(destinations[3])], []));
@@ -82,7 +82,7 @@ public sealed class VirtualShadowHiZTests
                 TextureLayout.UnorderedAccess, TextureLayout.ShaderResource));
             backend.SetPipeline(context, second);
             backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
-                reduce.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null,
+                reduce.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 [ResourceBinding.ConstantBuffer(cbv1), ResourceBinding.ReadOnlyBuffer(activeView), ResourceBinding.SampledTexture(source),
                     ResourceBinding.StorageTexture(destinations[4]), ResourceBinding.StorageTexture(destinations[5]),
                     ResourceBinding.StorageTexture(destinations[6]), ResourceBinding.StorageTexture(destinations[6])], []));

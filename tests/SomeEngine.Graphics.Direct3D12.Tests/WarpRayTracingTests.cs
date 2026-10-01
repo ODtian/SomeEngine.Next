@@ -44,17 +44,17 @@ public sealed class WarpRayTracingTests
                 parameters.outputValues[parameters.outputIndex] = parameters.recordValue;
             }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("rayGenerationMain", SlangStage.RayGeneration),
             new("callableA", SlangStage.Callable),
             new("callableB", SlangStage.Callable),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "dxr_local_callable_bindings", source, entries, "lib_6_5");
-        ShaderEntryPoint rayGeneration = shader.GetEntryPoint(0);
-        ShaderEntryPoint callableA = shader.GetEntryPoint(1);
-        ShaderEntryPoint callableB = shader.GetEntryPoint(2);
+        EntryPointReflection rayGeneration = shader.GetEntryPoint(0);
+        EntryPointReflection callableA = shader.GetEntryPoint(1);
+        EntryPointReflection callableB = shader.GetEntryPoint(2);
         Assert.Equal((nuint)0,
             callableA.VarLayout.GetOffset(SlangParameterCategory.UnorderedAccess));
         Assert.Equal((nuint)1,
@@ -72,7 +72,7 @@ public sealed class WarpRayTracingTests
         Assert.True(backend.TryGetCapability(device, out RayTracing? capability));
         Assert.NotNull(capability);
         using Pipeline pipeline = backend.CreateRayTracingPipeline(device,
-            new RayTracingPipelineDesc(shader.Program, [rayGeneration], [],
+            new RayTracingPipelineDesc(shader.SlangCode, shader.Reflection, shader.TargetCode, [rayGeneration], [],
                 [callableA, callableB], [], 1, 4, 8));
         using RayTracingShaderTable table = backend.CreateRayTracingShaderTable(device,
             new RayTracingShaderTableDesc(pipeline, 1, 0, 0, 2, 64));
@@ -154,22 +154,22 @@ public sealed class WarpRayTracingTests
                 uniform SamplerState localSampler)
             { outputValues[0] = payload.value; }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("rayGenerationMain", SlangStage.RayGeneration),
             new("callableMain", SlangStage.Callable),
         ];
-        using D3D12TestShaderProgram ordinary = D3D12TestShaderProgram.Compile(
+        D3D12TestShader ordinary = D3D12TestShader.Compile(
             "dxr_local_ordinary_codegen_limit", ordinarySource, entries, "lib_6_5");
-        using D3D12TestShaderProgram descriptors = D3D12TestShaderProgram.Compile(
+        D3D12TestShader descriptors = D3D12TestShader.Compile(
             "dxr_local_descriptor_codegen_limit", descriptorSource, entries, "lib_6_5");
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline ordinaryPipeline = backend.CreateRayTracingPipeline(device,
-            new RayTracingPipelineDesc(ordinary.Program, [ordinary.GetEntryPoint(0)], [],
+            new RayTracingPipelineDesc(ordinary.SlangCode, ordinary.Reflection, ordinary.TargetCode, [ordinary.GetEntryPoint(0)], [],
                 [ordinary.GetEntryPoint(1)], [], 1, 4, 8));
         using Pipeline descriptorPipeline = backend.CreateRayTracingPipeline(device,
-            new RayTracingPipelineDesc(descriptors.Program, [descriptors.GetEntryPoint(0)], [],
+            new RayTracingPipelineDesc(descriptors.SlangCode, descriptors.Reflection, descriptors.TargetCode, [descriptors.GetEntryPoint(0)], [],
                 [descriptors.GetEntryPoint(1)], [], 1, 4, 8));
     }
 
@@ -184,24 +184,25 @@ public sealed class WarpRayTracingTests
                 outputValues[0] = 11;
             }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("rayGenerationA", SlangStage.RayGeneration),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "dxr_local_ordinary_records", source, entries, "sm_6_5");
-        ShaderEntryPoint rayGenerationA = shader.GetEntryPoint(0);
-        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        EntryPointReflection rayGenerationA = shader.GetEntryPoint(0);
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateRayTracingPipeline(device,
-            new RayTracingPipelineDesc(shader.Program, [rayGenerationA], [],
+            new RayTracingPipelineDesc(shader.SlangCode, shader.Reflection, shader.TargetCode, [rayGenerationA], [],
                 [], [], 1, 4, 8));
         using RayTracingShaderTable table = backend.CreateRayTracingShaderTable(device,
             new RayTracingShaderTableDesc(pipeline, 1, 0, 0, 0, 32));
         using Buffer output = backend.CreateBuffer(device,
-            new BufferDesc(8, BufferUsages.ShaderWrite | BufferUsages.CopySource),
+            new BufferDesc(8, BufferUsages.ShaderWrite | BufferUsages.CopySource |
+                BufferUsages.CopyDestination),
             MemoryType.DeviceLocal);
         using BufferUav outputUav = backend.CreateBufferUav(device,
             new BufferUavDesc(output, BufferRange.Whole, Format.R32UInt));
@@ -223,7 +224,7 @@ public sealed class WarpRayTracingTests
             new RayTracingShaderTableUpdate(
                 [RayTracingShaderRecord.Entry(rayGenerationA, 0, 1)],
                 [], [], [],
-                [new RayTracingLocalParameterBlock(ShaderVariableLayout.Null, 0, 0, 0, 0)],
+                [new RayTracingLocalParameterBlock(VariableLayoutReflection.Null, 0, 0, 0, 0)],
                 [], [])));
         Assert.Throws<ArgumentException>(() => backend.UpdateRayTracingShaderTable(context, table,
             new RayTracingShaderTableUpdate(
@@ -238,7 +239,10 @@ public sealed class WarpRayTracingTests
                 [new RayTracingLocalParameterBlock(rayGenerationA.VarLayout, 0, 0, 0, 4)],
                 [], new byte[4])));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
-            PipelineSync.RayTracing, ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
+            PipelineSync.Copy, ResourceAccess.NoAccess, ResourceAccess.CopyDestination));
+        backend.ClearBuffer(context, output, BufferRange.Whole, 0);
+        backend.Barrier(context, new BufferBarrier(output, PipelineSync.Copy,
+            PipelineSync.RayTracing, ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
         backend.SetTransientParameterBindings(context,
             new ParameterBlockBindings(globals, [ResourceBinding.WritableBuffer(outputUav)], []));
         backend.UpdateRayTracingShaderTable(context, table,
@@ -271,13 +275,13 @@ public sealed class WarpRayTracingTests
             [shader("anyhit")]
             void anyMain(inout Payload payload, BuiltInTriangleIntersectionAttributes attributes) { }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("rayGenerationMain", SlangStage.RayGeneration),
             new("closestMain", SlangStage.ClosestHit),
             new("anyMain", SlangStage.AnyHit),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "dxr_hit_group_layout_identity", source, entries, "sm_6_5");
         Assert.NotEqual(shader.GetEntryPoint(1).VarLayout, shader.GetEntryPoint(2).VarLayout);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -285,10 +289,10 @@ public sealed class WarpRayTracingTests
         RayTracingHitGroup[] hitGroups =
         [
             new("hitGroup", shader.GetEntryPoint(1), shader.GetEntryPoint(2),
-                ShaderEntryPoint.Null),
+                EntryPointReflection.Null),
         ];
         using Pipeline pipeline = backend.CreateRayTracingPipeline(device,
-            new RayTracingPipelineDesc(shader.Program, [shader.GetEntryPoint(0)], [], [],
+            new RayTracingPipelineDesc(shader.SlangCode, shader.Reflection, shader.TargetCode, [shader.GetEntryPoint(0)], [], [],
                 hitGroups, 1, 4, 8));
         using RayTracingShaderTable table = backend.CreateRayTracingShaderTable(
             device,
@@ -677,18 +681,17 @@ public sealed class WarpRayTracingTests
             [shader("raygeneration")]
             void rayGenerationMain() { }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "dxr_pipeline_ownership_failure",
             source,
-            [new D3D12TestShaderEntry("rayGenerationMain", SlangStage.RayGeneration)]);
-        ShaderEntryPoint rayGeneration = shader.GetEntryPoint(0);
+            [new D3D12TestEntry("rayGenerationMain", SlangStage.RayGeneration)]);
+        EntryPointReflection rayGeneration = shader.GetEntryPoint(0);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.Throws<ArgumentException>(() => backend.CreateRayTracingPipeline(
             device,
-            new RayTracingPipelineDesc(
-                shader.Program,
+            new RayTracingPipelineDesc(shader.SlangCode, shader.Reflection, shader.TargetCode,
                 [rayGeneration],
                 [rayGeneration],
                 [],
@@ -699,8 +702,7 @@ public sealed class WarpRayTracingTests
 
         using Pipeline pipeline = backend.CreateRayTracingPipeline(
             device,
-            new RayTracingPipelineDesc(
-                shader.Program,
+            new RayTracingPipelineDesc(shader.SlangCode, shader.Reflection, shader.TargetCode,
                 [rayGeneration],
                 [],
                 [],

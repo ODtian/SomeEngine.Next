@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using System.Buffers;
 using SomeEngine.Assets.Importing;
 
 namespace SomeEngine.Assets;
@@ -22,8 +23,24 @@ public sealed partial class SourceMeta
     public T GetSettings<T>(Guid importerId, T defaults, JsonTypeInfo<T> typeInfo)
     {
         SourceImporterSettings? selection = Importers.SingleOrDefault(value => value.ImporterId == importerId);
-        return selection is null || selection.Settings.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
-            ? defaults : selection.Settings.Deserialize(typeInfo)
+        if (selection is null || selection.Settings.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) return defaults;
+        JsonElement baseline = JsonSerializer.SerializeToElement(defaults, typeInfo);
+        if (selection.Settings.ValueKind != JsonValueKind.Object || baseline.ValueKind != JsonValueKind.Object)
+            return selection.Settings.Deserialize(typeInfo) ?? throw new InvalidDataException($"Importer {importerId} has null settings.");
+        var bytes = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(bytes))
+        {
+            writer.WriteStartObject();
+            foreach (JsonProperty field in baseline.EnumerateObject())
+            {
+                writer.WritePropertyName(field.Name);
+                (selection.Settings.TryGetProperty(field.Name, out JsonElement value) ? value : field.Value).WriteTo(writer);
+            }
+            foreach (JsonProperty field in selection.Settings.EnumerateObject())
+                if (!baseline.TryGetProperty(field.Name, out _)) field.WriteTo(writer);
+            writer.WriteEndObject();
+        }
+        return JsonSerializer.Deserialize(bytes.WrittenSpan, typeInfo)
             ?? throw new InvalidDataException($"Importer {importerId} has null settings.");
     }
 
@@ -124,10 +141,6 @@ public sealed partial class SourceMeta
 
     internal static void AddFiles(AssetImportFiles files, string sourcePath, SourceMeta meta)
     {
-        foreach (SourceOutput output in meta.Outputs)
-            if (!meta.ElementIds.TryAdd(output.SubAssetKey, output.AssetGuid)
-                && meta.ElementIds[output.SubAssetKey] != output.AssetGuid)
-                throw new InvalidDataException($"Output '{output.SubAssetKey}' changes an existing source element identity.");
         string directory = Path.GetDirectoryName(GetMetaPath(sourcePath))!;
         var data = new SourceMetaDocument
         {

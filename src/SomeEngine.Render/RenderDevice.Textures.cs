@@ -352,13 +352,12 @@ public sealed partial class RenderDevice
         {
             if (!includeUploaded && realization.ContainsUploadedChunk(tile.ChunkKey))
                 continue;
-            if (!asset.TryRetainTile(tile.ChunkKey, out PageRange<byte>? pixels)) continue;
-            using (pixels)
+            if (!asset.TryGetTile(tile.ChunkKey, out ReadOnlyMemory<byte> pixels)) continue;
                 result.Add(PrepareTile(
                     realization.Resource,
                     realization.Shape,
                     tile,
-                    pixels.Sequence));
+                    new ReadOnlySequence<byte>(pixels)));
         }
         return [.. result];
     }

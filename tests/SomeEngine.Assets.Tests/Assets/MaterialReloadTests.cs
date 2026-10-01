@@ -6,11 +6,33 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class MaterialReloadTests
 {
     [Fact]
+    public async Task ReloadUsesTheSameExplicitShaderLoaderAsCreation()
+    {
+        using var directory = new AssetTestDirectory();
+        await using var loader = new AssetLoader(new LooseAssetStorage(directory.Path, new AssetManifest()));
+        using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(SomeEngine.Tests.TestProjectPaths.BuiltShaderPath("hello_triangle.shader.asset"));
+        Shader shader = await ShaderTestCompilation.CreateAsync(shaderFile);
+        using MaterialAsset file = new StandardMaterialAsset { Name = "after" };
+        Guid id = Guid.NewGuid();
+        file.GetBlock<MaterialBlock>().Shader = new(id);
+        using var material = new StandardMaterial { Name = "before" };
+        await file.UpdateAsync(material, loader, (selected, _) =>
+        {
+            Assert.Equal(id, selected.Value);
+            return ValueTask.FromResult(shader);
+        }, null);
+        Assert.Same(shader, material.Shader);
+        Assert.Equal("after", material.Name);
+    }
+
+    [Fact]
     public async Task MaterialsKeepDirectShaderReferencesWithoutTakingTheirLifetime()
     {
         using var directory = new AssetTestDirectory();
         await using var loader = new AssetLoader(new LooseAssetStorage(directory.Path, new AssetManifest()));
-        using var shader = new Shader { Name = "shared shader" };
+        await using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(
+            SomeEngine.Tests.TestProjectPaths.BuiltShaderPath("hello_triangle.shader.asset"));
+        Shader shader = await ShaderTestCompilation.CreateAsync(shaderFile);
         using MaterialAsset file = new StandardMaterialAsset();
         file.GetBlock<MaterialBlock>().Shader = new(Guid.NewGuid());
         using Material first = await file.CreateAsync(loader, (_, _) => ValueTask.FromResult(shader), null);
@@ -18,14 +40,13 @@ public sealed class MaterialReloadTests
         Assert.Same(shader, first.Shader);
         Assert.Same(shader, second.Shader);
         first.Dispose();
-        Assert.False(shader.IsDisposed);
         ulong revision = second.Revision;
-        using var replacement = new Shader { Name = "changed shader" };
+        Shader replacement = await ShaderTestCompilation.CreateAsync(shaderFile);
         second.Shader = replacement;
         Assert.Same(replacement, second.Shader);
         Assert.Equal(revision + 1, second.Revision);
         second.Dispose();
-        Assert.False(shader.IsDisposed);
+        Assert.True(shader.TryGetSlangTarget(SlangShaderSharp.SlangCompileTarget.Dxil, out _));
     }
 
     [Fact]

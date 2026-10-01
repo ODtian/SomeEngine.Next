@@ -241,7 +241,7 @@ if (mode == "materials")
             Width = 8, Height = 8, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
             Format = Format.R8G8B8A8UNorm, SampledFormat = Format.R8G8B8A8UNorm, SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 8, Height = 8, RowPitch = 32, SlicePitch = 256, ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 256 }] };
-        maskPixels.Chunks.Set(maskPixels.MipTiles[0].ChunkKey, pixels);
+        maskPixels.SetBytes(maskPixels.MipTiles[0].ChunkKey, pixels);
         using Texture mask = new() { Name = "mask " + index };
         mask.SetBlock(maskPixels);
         project.RegisterAsset(await mask.SaveAsync(Path.Combine(project.RootPath, $"assets/Textures/scenario-mask-{index}.texture.asset")));
@@ -287,7 +287,7 @@ if (mode == "displacement")
         Format = Format.R32Float, SampledFormat = Format.R32Float, SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
         MipTiles = [new TextureMipTile { Width = 8, Height = 8, RowPitch = 32, SlicePitch = 256,
             ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 256 }] };
-    heightPixels.Chunks.Set(heightPixels.MipTiles[0].ChunkKey, MemoryMarshal.AsBytes(heights.AsSpan()));
+    heightPixels.SetBytes(heightPixels.MipTiles[0].ChunkKey, MemoryMarshal.AsBytes(heights.AsSpan()).ToArray());
     using Texture height = new() { Name = "heights" };
     height.SetBlock(heightPixels);
     project.RegisterAsset(await height.SaveAsync(Path.Combine(project.RootPath, "assets/Textures/scenario-height.texture.asset")));

@@ -1,6 +1,6 @@
 # Importer、Context 与工程存储
 
-2026-09-20：本页记录已实施的开放导入架构。Asset 与 Block 的含义见 [对象模型](Asset-Objects.md)；SG 的限定职责见 [代码生成](Asset-Code-Generation.md)。
+2026-09-29：本页规定开放导入架构及其当前 API。Asset 与 Block 的含义见 [对象模型](Asset-Objects.md)；SG 的限定职责见 [代码生成](Asset-Code-Generation.md)。实现未满足这些规则的具体位置见 [本轮审查](../../../reviews/AssetSpecReview-2026-09-29.md)。
 
 原讨论 Thread 中的预生成固定组装链不再作为实现依据。当前流程由来源集成组织，Importer 只生产自己负责的 Block；项目引用的顺序、注册的顺序和遍历的顺序都不决定同一 Block 最终由谁写入。具体生产者由本次选择确定，竞争必须明确失败。
 
@@ -24,7 +24,7 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 新增来源、Importer 或 Block 不需要修改引擎中央类型分支。依赖服务通过普通 Microsoft DI 构造注入。每次导入使用明确的服务作用域，同一作用域解析到同一 Importer；作用域与来源内容的释放跟随该次导入。
 
-该服务作用域保持到输出保存完成，而不是局部转换返回时立即结束。Block 可以在保存时才取得其来源数据，因此 `AssetImportBatch` 先等待 Context 中的真实执行结束，再释放资产草稿和本次服务。失败及取消沿用同一清理边界，不要求每个 Importer 另建资源管理机制。
+该服务作用域保持到输出保存完成。`AssetProject.ImportAsync` 在保存和提交期间保留 `ImportContext`；Context 关闭时先取消并等待真实执行结束，再释放资产草稿和通过 `Hold` 保留的本次服务。来源对象在 Context 关闭后释放。Block 可以在保存时才取得来源数据，失败及取消也沿用这个清理顺序。
 
 ## Context 的执行与依赖规则
 
@@ -40,11 +40,11 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 ## 完整流程与失败处理
 
-`IAssetSourceImporter<TSource, TSettings>` 连接格式读取及遍历。`AssetImportBatch` 提供来源设置、Context、子元素到语义 Asset 的 ID 对应、输出草稿和释放边界。它不要求局部 Importer 自行保存文件。
+`IAssetSourceImporter<TSource, TSettings>` 连接格式读取及遍历。`AssetProject` 读取来源配置、创建 Context 并组织保存提交；`ImportContext` 通过 `ConfigureAssets`、`EnableImporter` 和 `GetAssetAsync` 维护子元素到语义 Asset 的对应、输出草稿和本次执行期限。局部 Importer 不自行保存文件。
 
 `AssetProject.ImportAsync` 选择来源及配置，读取来源，执行遍历和递归依赖，检查实际输入仍与本次读取一致，然后保存全部草稿。实现位于该 partial 类型的 `Importing/AssetImportProject.cs`。来源、设置、工具或扩展版本变化均参与重新导入判断。实际读取产生的依赖与构建记录分开保存，失败任务的依赖不冒充成功构建结果。
 
-`.meta` 仅保存人工来源身份、Importer 选择、参数和元素 ID 映射；`.import.json` 保存可丢弃的输入及输出验证记录。删除或损坏后者不会改变来源或已保存元素身份。旧的通用设置袋、合并缓存字段及从构建输出回填身份的兼容读取已删除。设置必须不可变，并以完整导入语义实现值相等。
+`.meta` 仅保存人工来源身份、Importer 选择、参数和元素 ID 映射；`.import.json` 保存可丢弃的输入及输出验证记录。删除或损坏后者不得改变来源或已保存元素身份，也不得从构建输出补回人工身份。目录重建从 .meta 的 ElementIds 恢复产物归属；来源保存直接维护主要身份映射。每个被选择的 Importer 都由本项目已注册能力解析。设置必须不可变，并以完整导入语义实现值相等。
 
 输出、来源描述、构建记录和目录先在临时位置生成，检查身份与冲突，再沿现有文件替换流程提交。失败或取消会回退本次已经替换的文件，旧的有效目录保持可用。该保证覆盖进程内可观察的失败；不声称多个独立文件在断电或并发外部写入下具有文件系统整体原子性。
 

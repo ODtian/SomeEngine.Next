@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -8,33 +9,28 @@ namespace SomeEngine.Graphics.Direct3D12;
 internal sealed unsafe partial class D3D12Backend
 {
 
-    private static CompiledProgramLibrary CompileProgramLibrary(
-        ShaderProgram program,
-        ShaderProgramLayout reflection,
-        ReadOnlySpan<ShaderEntryPoint> entries)
+    private static CompiledShaderLibrary CompileShaderLibrary(
+        ReadOnlySequence<byte> code,
+        ISlangBlob? codeBlob,
+        ShaderReflection reflection,
+        ReadOnlySpan<EntryPointReflection> entries)
     {
-        ArgumentNullException.ThrowIfNull(program);
         if (entries.IsEmpty)
             throw new ArgumentException("A state-object library requires at least one Slang entry point.", nameof(entries));
-        byte[][] libraries = new byte[entries.Length][];
         for (int entryIndex = 0; entryIndex < entries.Length; entryIndex++)
-        {
             _ = GetStateObjectEntryPointIndex(reflection, entries[entryIndex]);
-            libraries[entryIndex] = entries[entryIndex].Code.ToArray();
-            if (libraries[entryIndex].Length == 0)
-            {
-                throw new GraphicsException(
-                    GraphicsError.ShaderCompilation,
-                    $"The cooked state-object entry '{GetStableEntryPointName(entries[entryIndex])}' contains no DXIL.");
-            }
-        }
+        byte[] library = CopyCode(code, codeBlob);
+        if (library.Length == 0)
+            throw new GraphicsException(
+                GraphicsError.ShaderCompilation,
+                "The state-object Slang target contains no DXIL.");
 
-        return new CompiledProgramLibrary(libraries);
+        return new CompiledShaderLibrary(library);
     }
 
     private static int GetStateObjectEntryPointIndex(
-        ShaderProgramLayout reflection,
-        ShaderEntryPoint entry)
+        ShaderReflection reflection,
+        EntryPointReflection entry)
     {
         for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
@@ -46,19 +42,19 @@ internal sealed unsafe partial class D3D12Backend
             nameof(entry));
     }
 
-    internal static string GetStableEntryPointName(ShaderEntryPoint entryPoint) =>
+    internal static string GetStableEntryPointName(EntryPointReflection entryPoint) =>
         WorkGraphValidation.GetEffectiveEntryPointName(entryPoint);
 
     internal static string GetStableEntryPointName(string name, string? nameOverride) =>
         WorkGraphValidation.GetEffectiveEntryPointName(name, nameOverride);
 
     private static string ValidateStateObjectEntryPoint(
-        ShaderProgramLayout reflection,
-        ShaderEntryPoint entryPoint,
+        ShaderReflection reflection,
+        EntryPointReflection entryPoint,
         ReadOnlySpan<SlangStage> permittedStages,
         string role)
     {
-        if (entryPoint == ShaderEntryPoint.Null)
+        if (entryPoint == EntryPointReflection.Null)
             throw new ArgumentException($"The {role} entry point is null.", nameof(entryPoint));
         if (!permittedStages.Contains(entryPoint.Stage))
         {
@@ -89,15 +85,11 @@ internal sealed unsafe partial class D3D12Backend
         return name;
     }
 
-    private sealed class CompiledProgramLibrary
+    private sealed class CompiledShaderLibrary
     {
-        internal CompiledProgramLibrary(
-            byte[][] libraries)
-        {
-            Libraries = libraries;
-        }
+        internal CompiledShaderLibrary(byte[] code) => Code = code;
 
-        internal byte[][] Libraries { get; }
+        internal byte[] Code { get; }
     }
 
     private sealed class NativeStateObjectArena : IDisposable

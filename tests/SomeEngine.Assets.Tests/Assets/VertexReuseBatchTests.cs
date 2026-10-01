@@ -39,7 +39,7 @@ public sealed class VertexReuseBatchTests
         using var mesh = ClusterBuilder.ProcessRaw(positions,
             [new RawAttribute("_MATERIAL_INDEX", materialValues, 1, ValueType.UInt8, 1, false)],
             indices.ToArray(), ClusterBuilderTestMaterials.Slots(materialCount), "Reuse batch bounds");
-        using var bytes = mesh.GetBlock<ClusterMeshBlock>().Chunks.Retain(ClusterMeshBlock.PayloadChunkKey);
+        var bytes = mesh.GetBlock<ClusterMeshBlock>().Chunks[ClusterMeshBlock.PayloadChunkKey];
         ReadOnlySpan<byte> page = bytes.ToArray();
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(page);
         ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(

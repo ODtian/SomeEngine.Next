@@ -64,7 +64,7 @@ public sealed class DisplacementBoundsTextureTests
 
     private static Vector2[] Ranges(TextureAsset texture, TextureMipTile tile)
     {
-        using var bytes = texture.GetBlock<TextureBlock>().Chunks.Retain(tile.ChunkKey);
+        var bytes = texture.GetBlock<TextureBlock>().Chunks[tile.ChunkKey];
         return MemoryMarshal.Cast<byte, Vector2>(bytes.ToArray()).ToArray();
     }
 }

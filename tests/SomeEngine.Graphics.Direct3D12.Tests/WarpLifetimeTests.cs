@@ -464,18 +464,18 @@ public sealed class WarpLifetimeTests
             }
 
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("computeMain", SlangStage.Compute),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_lifetime_matrix",
             source,
             entries);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         var children = new List<GraphicsObject>();
-        D3D12TestShaderProgram? rayShader = null;
+        D3D12TestShader? rayShader = null;
 
         BufferDesc placedDescription = new(
             4_096,
@@ -600,10 +600,10 @@ public sealed class WarpLifetimeTests
 
         Pipeline computePipeline = Keep(backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0))));
-        ShaderVariableLayout globalLayout =
-            shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
-        Assert.NotEqual(ShaderVariableLayout.Null, globalLayout);
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0))));
+        VariableLayoutReflection globalLayout =
+            shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        Assert.NotEqual(VariableLayoutReflection.Null, globalLayout);
         _ = Keep(backend.CreatePersistentParameterBindings(
             device,
             computePipeline,
@@ -665,19 +665,18 @@ public sealed class WarpLifetimeTests
                 {
                 }
                 """;
-            D3D12TestShaderEntry[] rayEntries =
+            D3D12TestEntry[] rayEntries =
             [
                 new("rayGenerationMain", SlangStage.RayGeneration),
             ];
-            rayShader = D3D12TestShaderProgram.Compile(
+            rayShader = D3D12TestShader.Compile(
                 "rhi_lifetime_ray_table",
                 raySource,
                 rayEntries);
-            ShaderEntryPoint[] rayGeneration = [rayShader.GetEntryPoint(0)];
+            EntryPointReflection[] rayGeneration = [rayShader.GetEntryPoint(0)];
             Pipeline rayPipeline = Keep(backend.CreateRayTracingPipeline(
                 device,
-                new RayTracingPipelineDesc(
-                    rayShader.Program,
+                new RayTracingPipelineDesc(rayShader.SlangCode, rayShader.Reflection, rayShader.TargetCode,
                     rayGeneration,
                     [],
                     [],
@@ -710,7 +709,6 @@ public sealed class WarpLifetimeTests
         executable.Dispose();
         Assert.Equal(RecordedCommandsStatus.Disposed, executable.Status);
         Assert.Equal(PipelineType.Compute, computePipeline.Type);
-        rayShader?.Dispose();
 
         T Keep<T>(T value)
             where T : GraphicsObject

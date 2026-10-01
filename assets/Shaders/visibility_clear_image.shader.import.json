@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "991e18de32a858d68ddf96eafbded0e11dc02687baef6c75124a30145d44a832",
+  "importer_version": 28,
+  "input_hash": "96d5a74d5dead94718f92dff97ce895771c5a9e600b35d090d4b96c29eeeb278",
   "inputs": [
     {
       "relative_path": "assets/Shaders/visibility_clear.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "assets/Shaders/visibility_clear_image.shader",
-      "content_hash": "e4b982b142c26be846b2c4c04e745f57337889ee43ce76ad9e90bc377a748f9e"
+      "content_hash": "a7febbfa07846c6a1703c71e302a1ac86122088830355a4aba659f79c5ca7fef"
     },
     {
       "relative_path": "assets/Shaders/visibility_clear_image.slang",
@@ -21,11 +21,11 @@
     {
       "asset_guid": "90fc577c-9777-584a-bbb9-b0715bdf88a1",
       "sub_asset_key": "",
-      "input_hash": "991e18de32a858d68ddf96eafbded0e11dc02687baef6c75124a30145d44a832",
+      "input_hash": "96d5a74d5dead94718f92dff97ce895771c5a9e600b35d090d4b96c29eeeb278",
       "dependencies": [],
       "asset_path": "visibility_clear_image.shader.asset",
-      "version": "c6be89c7-0f40-94c5-ba89-12cd339b6e8a",
-      "content_hash": "2B86F11B2AA876C1E58D5FFB4E668D1EEB0BC782EC417C4173B8C48ADF6885A0",
+      "version": "cf38fd1c-c263-d45f-422b-534fe512b5be",
+      "content_hash": "13A3965F7111080069D51BD44B3BE2D0F65850670CB400E233F39CAD299E2121",
       "asset_dependencies": []
     }
   ]

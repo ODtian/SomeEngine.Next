@@ -11,22 +11,21 @@ public sealed class DocumentOutputTests
     [Theory]
     [InlineData(ChunkCompression.None)]
     [InlineData(ChunkCompression.Brotli)]
-    public async Task SegmentedPagesProduceTheSameDocumentAsContinuousMemory(ChunkCompression compression)
+    public async Task SegmentedArraysProduceTheSameDocumentAsContinuousMemory(ChunkCompression compression)
     {
         byte[] payload = new byte[256 * 1024 + 173];
         new Random(218).NextBytes(payload);
-        using var arena = new PageArena(new ResidencyBudgetLedger(),
-            new() { MaximumPageSize = 1024, AllocationSize = 16384 });
-        using var buffer = new PageBuffer(arena, payload.Length);
-        buffer.Write(0, payload);
-        using var pages = buffer.Retain();
-        buffer.Dispose();
+        var first = new ByteSegment(payload.AsMemory(0, 1024));
+        ByteSegment last = first;
+        for (int offset = 1024; offset < payload.Length; offset += 1024)
+            last = last.Append(payload.AsMemory(offset, Math.Min(1024, payload.Length - offset)));
+        var sequence = new System.Buffers.ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
         using var continuous = new MemoryStream();
         await BinaryDocumentWriter.Create(TestRoots.Canonical())
             .AddChunk(1, payload, compression: compression).WriteAsync(continuous);
         using var segmented = new MemoryStream();
         await BinaryDocumentWriter.Create(TestRoots.Canonical())
-            .AddChunk(1, pages.Sequence, compression: compression).WriteAsync(segmented);
+            .AddChunk(1, sequence, compression: compression).WriteAsync(segmented);
         Assert.Equal(continuous.ToArray(), segmented.ToArray());
         await using var document = await BinaryDocument<TestRoot>.OpenAsync(
             new MemoryRangeSource(segmented.ToArray()), ownsSource: true);
@@ -138,4 +137,15 @@ public sealed class DocumentOutputTests
         public override void Flush() => _bytes.Flush();
         protected override void Dispose(bool disposing) { if (disposing) _bytes.Dispose(); base.Dispose(disposing); }
     }
+    private sealed class ByteSegment : System.Buffers.ReadOnlySequenceSegment<byte>
+    {
+        internal ByteSegment(ReadOnlyMemory<byte> bytes) => Memory = bytes;
+        internal ByteSegment Append(ReadOnlyMemory<byte> bytes)
+        {
+            var next = new ByteSegment(bytes) { RunningIndex = RunningIndex + Memory.Length };
+            Next = next;
+            return next;
+        }
+    }
+
 }

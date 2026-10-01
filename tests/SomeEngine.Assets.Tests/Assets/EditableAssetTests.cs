@@ -67,7 +67,7 @@ public sealed class EditableAssetTests
             SampledDimension = TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 1, Height = 1, ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 1 }],
         };
-        pixels.Chunks.Set(pixels.MipTiles[0].ChunkKey, new byte[] { 37 });
+        pixels.SetBytes(pixels.MipTiles[0].ChunkKey, new byte[] { 37 });
         using var texture = new TextureAsset { Name = "before" };
         texture.SetBlock(pixels);
         AssetEntry original = await texture.SaveAsync(directory.File("pixels.texture.asset"));
@@ -78,8 +78,8 @@ public sealed class EditableAssetTests
         await branch.SaveAsync(directory.File("edited.texture.asset"));
         using var reloaded = await TextureAsset.OpenAsync(directory.File("edited.texture.asset"));
         await using var value = await reloaded.GetBlock<TextureBlock>().CreateAsync(reloaded.Name);
-        Assert.True(value.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
-        using (bytes) Assert.Equal(new byte[] { 37 }, bytes.ToArray());
+        Assert.True(value.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
+        Assert.Equal(new byte[] { 37 }, bytes.ToArray());
         Assert.Equal("after", value.Name);
         Assert.Equal("before", opened.Name);
     }

@@ -19,56 +19,47 @@ public sealed class TextureTests
     }
 
     [Fact]
-    public void ReadyPixelsSurviveClosedInputsAndStayChargedUntilTheLastReadEnds()
+    public void ReadyPixelsSurviveTextureDisposal()
     {
-        var budget = new ResidencyBudgetLedger();
-        using var arena = new PageArena(budget);
         TextureMipTile fine = Tile(0, 4);
         TextureMipTile coarse = Tile(1, 2);
-        using var pixels = new PageBufferMap(arena);
-        pixels.Set(coarse.ChunkKey, Enumerable.Repeat((byte)7, 16).ToArray());
+        var pixels = new List<TexturePixels>();
+        pixels.Add(new(coarse, Enumerable.Repeat((byte)7, 16).ToArray()));
         using var texture = Create([fine, coarse], pixels);
-        pixels.Dispose();
-        arena.Dispose();
         Assert.True(texture.HasBootstrap);
-        Assert.False(texture.TryRetainTile(fine.ChunkKey, out _));
-        Assert.True(texture.TryRetainTile(coarse.ChunkKey, out PageRange<byte>? read));
-        using (read)
-        {
+        Assert.False(texture.TryGetTile(fine.ChunkKey, out _));
+        Assert.True(texture.TryGetTile(coarse.ChunkKey, out ReadOnlyMemory<byte> read));
+                {
             texture.Dispose();
-            Assert.Equal(Enumerable.Repeat((byte)7, 16), read.Sequence.ToArray());
-            Assert.Equal(256, budget.Used(ResidencyClass.DecodedCpu));
+            Assert.Equal(Enumerable.Repeat((byte)7, 16), read.ToArray());
         }
-        Assert.Equal(0, budget.Used(ResidencyClass.DecodedCpu));
     }
 
     [Fact]
     public async Task ExplicitPixelsExtendARevisionAndOldReadsSurviveContentReplacement()
     {
-        using var arena = new PageArena(new ResidencyBudgetLedger());
         TextureMipTile fine = Tile(0, 4), coarse = Tile(1, 2);
-        using var initial = new PageBufferMap(arena);
-        initial.Set(coarse.ChunkKey, Enumerable.Repeat((byte)7, 16).ToArray());
+        var initial = new List<TexturePixels>();
+        initial.Add(new(coarse, Enumerable.Repeat((byte)7, 16).ToArray()));
         using var texture = Create([fine, coarse], initial);
         ulong revision = texture.Revision;
-        using var additional = new PageBufferMap(arena);
-        additional.Set(fine.ChunkKey, Enumerable.Repeat((byte)9, 64).ToArray());
-        additional.Set(coarse.ChunkKey, new byte[16]);
+        var additional = new List<TexturePixels>();
+        additional.Add(new(fine, Enumerable.Repeat((byte)9, 64).ToArray()));
+        additional.Add(new(coarse, new byte[16]));
         texture.AddPixels(additional, revision);
         Assert.Equal(revision, texture.Revision);
-        Assert.True(texture.TryRetainTile(fine.ChunkKey, out PageRange<byte>? fineRead));
-        using (fineRead) Assert.Equal(Enumerable.Repeat((byte)9, 64), fineRead.Sequence.ToArray());
-        Assert.True(texture.TryRetainTile(coarse.ChunkKey, out PageRange<byte>? oldRead));
-        using (oldRead)
-        {
+        Assert.True(texture.TryGetTile(fine.ChunkKey, out ReadOnlyMemory<byte> fineRead));
+        Assert.Equal(Enumerable.Repeat((byte)9, 64), fineRead.ToArray());
+        Assert.True(texture.TryGetTile(coarse.ChunkKey, out ReadOnlyMemory<byte> oldRead));
+                {
             Texture replacement = Texture.Create(new(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
                     Format.R8G8B8A8UNorm, TextureUsages.Sampled),
-                [new TexturePixels(Tile(0, 1), new byte[] { 1, 2, 3, 4 })], GraphicsViewDimension.Texture2D, pages: arena);
+                [new TexturePixels(Tile(0, 1), new byte[] { 1, 2, 3, 4 })], GraphicsViewDimension.Texture2D);
             await texture.UpdateAsync(replacement);
             Assert.True(replacement.IsDisposed);
             Assert.Equal(revision + 1, texture.Revision);
             Assert.Equal(1u, texture.Width);
-            Assert.Equal(Enumerable.Repeat((byte)7, 16), oldRead.Sequence.ToArray());
+            Assert.Equal(Enumerable.Repeat((byte)7, 16), oldRead.ToArray());
             Assert.Throws<InvalidOperationException>(() => texture.AddPixels(additional, revision));
         }
     }
@@ -82,24 +73,22 @@ public sealed class TextureTests
         Assert.True(replacement.IsDisposed);
         Assert.False(original.IsDisposed);
         Assert.Equal(1ul, original.Revision);
-        Assert.True(original.TryRetainTile(original.MipTiles[0].ChunkKey, out PageRange<byte>? pixels));
-        using (pixels) Assert.Equal(new byte[] { 3, 3, 3, 3 }, pixels.Sequence.ToArray());
+        Assert.True(original.TryGetTile(original.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> pixels));
+        Assert.Equal(new byte[] { 3, 3, 3, 3 }, pixels.ToArray());
     }
 
     [Fact]
     public void InvalidCubeLayerCountsAndSampleCountsRemainRejected()
     {
-        using var arena = new PageArena(new ResidencyBudgetLedger());
         Assert.Throws<ArgumentException>(() => Texture.Create(new(TextureDimension.Texture2D,
                 1, 1, 1, 1, 7, 1, Format.R8G8B8A8UNorm, TextureUsages.Sampled),
-            [new TexturePixels(Tile(0, 1), new byte[4])], GraphicsViewDimension.Cube, pages: arena));
+            [new TexturePixels(Tile(0, 1), new byte[4])], GraphicsViewDimension.Cube));
         Assert.Throws<ArgumentException>(() => Texture.Create(new(TextureDimension.Texture2D,
                 1, 1, 1, 1, 1, 4, Format.R8G8B8A8UNorm, TextureUsages.Sampled),
-            [new TexturePixels(Tile(0, 1), new byte[4])], GraphicsViewDimension.Texture2D, pages: arena));
-        Assert.Equal(0, arena.Residency.Used(ResidencyClass.DecodedCpu));
+            [new TexturePixels(Tile(0, 1), new byte[4])], GraphicsViewDimension.Texture2D));
     }
 
-    private static Texture Create(TextureMipTile[] tiles, PageBufferMap pixels)
+    private static Texture Create(TextureMipTile[] tiles, IReadOnlyList<TexturePixels> pixels)
         => Texture.Create(new(TextureDimension.Texture2D, 4, 4, 1, 2, 1, 1,
             Format.R8G8B8A8UNorm, TextureUsages.Sampled), tiles, pixels, GraphicsViewDimension.Texture2D);
 
@@ -109,7 +98,6 @@ public sealed class TextureTests
     [InlineData(true, 1u)]
     public void CubeFacesArrayLayersAndVolumeSlicesRetainTheirOwnPixels(bool volume, uint cubes)
     {
-        using var arena = new PageArena(new ResidencyBudgetLedger());
         uint depth = volume ? 2u : 1u;
         uint faces = volume ? 1u : 6u;
         uint layers = volume ? 1u : cubes * 6;
@@ -125,18 +113,17 @@ public sealed class TextureTests
                 RowPitch = 2, SlicePitch = 4,
             }, Enumerable.Repeat(checked((byte)(inputs.Count + 1)), 4).ToArray()));
         using var texture = Texture.Create(new(volume ? TextureDimension.Texture3D : TextureDimension.Texture2D,
-            2, 2, depth, 1, layers, 1, Format.R8UNorm, TextureUsages.Sampled), inputs, view, pages: arena);
+            2, 2, depth, 1, layers, 1, Format.R8UNorm, TextureUsages.Sampled), inputs, view);
         Assert.Equal(layers, texture.GetDescription().ArrayLayerCount);
         Assert.Equal(depth, texture.Depth);
         Assert.Equal(view, texture.SampledDimension);
         for (int index = 0; index < inputs.Count; index++)
         {
             TextureMipTile tile = TextureTiles.Describe(inputs[index].Tile, 4);
-            Assert.True(texture.TryRetainTile(tile.ChunkKey, out PageRange<byte>? bytes));
-            using (bytes) Assert.Equal(inputs[index].Bytes.ToArray(), bytes.Sequence.ToArray());
+            Assert.True(texture.TryGetTile(tile.ChunkKey, out ReadOnlyMemory<byte> bytes));
+            Assert.Equal(inputs[index].Bytes.ToArray(), bytes.ToArray());
         }
         texture.Dispose();
-        Assert.Equal(0, arena.Residency.Used(ResidencyClass.DecodedCpu));
     }
     private static Texture SinglePixel(byte value)
         => Texture.Create(new(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,

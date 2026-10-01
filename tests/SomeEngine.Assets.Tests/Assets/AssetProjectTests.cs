@@ -5,6 +5,7 @@ using System.Linq;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Assets.Tests.Assets;
 using SomeEngine.Resources;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
@@ -169,7 +170,7 @@ public sealed class AssetProjectTests
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "test.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            using var savedMaterial = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, materialGuid) {
+            using var savedMaterial = new StandardMaterialAsset(materialGuid) {
                 Name = "TestMaterial",
             };
             await savedMaterial.SaveAsync(materialPath);
@@ -201,7 +202,7 @@ public sealed class AssetProjectTests
             const string path = "assets/Materials/mismatch.material.asset";
             string fullPath = Path.Combine(dir, path.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-            using var savedMaterial = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, payloadGuid) {
+            using var savedMaterial = new StandardMaterialAsset(payloadGuid) {
                 Name = "MismatchMaterial",
             };
             await savedMaterial.SaveAsync(fullPath);
@@ -227,7 +228,7 @@ public sealed class AssetProjectTests
     }
 
     [Fact]
-    public async Task Project_OpensShaderDataWithoutApplyingRuntimeProjectionRules()
+    public async Task ProjectOpensShaderBlocksAndCreationRejectsMissingContent()
     {
         string dir = CreateTempDir();
 
@@ -239,9 +240,9 @@ public sealed class AssetProjectTests
             string shaderAssetPath = Path.Combine(dir, "assets", "Shaders", "stale.shader.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(shaderAssetPath)!);
             File.WriteAllText(sourcePath, "[shader(\"compute\")] [numthreads(1,1,1)] void CSMain() {}");
-            using var shader = new ShaderAsset(SomeEngine.Serialization.Containers.PageArena.Shared, shaderGuid) { Name = "stale" };
-            using var code = new ShaderBlock {
-                ImportTrace = new ImportTrace
+            using var shader = new ShaderAsset(shaderGuid) { Name = "stale" };
+            ShaderBlock code = shader.GetBlock<ShaderBlock>();
+            code.ImportTrace = new ImportTrace
                 {
                     SourceGuid = sourceGuid.ToString(),
                     SourcePath = sourcePath,
@@ -249,19 +250,7 @@ public sealed class AssetProjectTests
                     ContentFingerprint = "old",
                     Dependencies = [],
                     ImporterVersion = 1,
-                },
-                Programs = [],
-                EntryPointAttributes = [],
-                Reflections = [],
-                EntryPointReflections = [],
-                Metadata = new ShaderMetadata
-                {
-                    Tags = [],
-                    MaterialBindings = [],
-                    MaterialScalarLayouts = [],
-                },
-            };
-            shader.SetBlock(code);
+                };
             await shader.SaveAsync(shaderAssetPath);
 
             AssetManifest manifest = new();
@@ -279,8 +268,9 @@ public sealed class AssetProjectTests
 
             ShaderAsset? root = await OpenShaderAsync(project, shaderGuid);
             Assert.NotNull(root);
-            Assert.Empty(root!.GetBlock<ShaderBlock>().EntryPointReflections!);
-            await Assert.ThrowsAsync<InvalidDataException>(() => root.GetBlock<ShaderBlock>().CreateAsync(root.Name).AsTask());
+            Assert.Empty(root!.GetBlock<ShaderBlock>().ContentKeys);
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                ShaderTestCompilation.CreateAsync(root).AsTask());
         }
         finally
         {
@@ -311,7 +301,7 @@ public sealed class AssetProjectTests
             Assert.Equal(firstGuid, firstLoad!.Id);
             Assert.Equal("CreatedMaterial", firstLoad.Name);
 
-            using var second = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, firstGuid) {
+            using var second = new StandardMaterialAsset(firstGuid) {
                 Name = "UpdatedMaterial",
             };
             Guid secondGuid = project.RegisterAsset(await second.SaveAsync(Path.Combine(dir, path)));
@@ -340,7 +330,7 @@ public sealed class AssetProjectTests
 
             Guid staleGuid = Guid.NewGuid();
             Guid fileGuid = Guid.NewGuid();
-            using var savedMaterial = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, fileGuid) {
+            using var savedMaterial = new StandardMaterialAsset(fileGuid) {
                 Name = "ExistingFile",
             };
             await savedMaterial.SaveAsync(fullPath);
@@ -355,7 +345,7 @@ public sealed class AssetProjectTests
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, [Game.Importing.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
-            using var replacement = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, staleGuid) {
+            using var replacement = new StandardMaterialAsset(staleGuid) {
                 Name = "Reconciled",
             };
             await Assert.ThrowsAsync<InvalidDataException>(() => replacement.SaveAsync(fullPath).AsTask());
@@ -418,12 +408,9 @@ public sealed class AssetProjectTests
             // 创建 valid shader .asset 文件和 material .asset 文件
             string shaderAssetPath = Path.Combine(dir, "assets", "Shaders", "valid.shader.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(shaderAssetPath)!);
-            using var shader = new ShaderAsset(SomeEngine.Serialization.Containers.PageArena.Shared, shaderGuid) { Name = "ShaderA" };
-            using var code = new ShaderBlock {
-                Metadata = new ShaderMetadata { Tags = [], MaterialBindings = [] },
-                Programs = [],
-                Reflections = [],
-                ImportTrace = new ImportTrace
+            using var shader = new ShaderAsset(shaderGuid) { Name = "ShaderA" };
+            ShaderBlock code = shader.GetBlock<ShaderBlock>();
+            code.ImportTrace = new ImportTrace
                 {
                     SourceGuid = validSourceGuid.ToString(),
                     SourcePath = "assets/Shaders/valid.slang",
@@ -431,14 +418,12 @@ public sealed class AssetProjectTests
                     ContentFingerprint = "fp",
                     Dependencies = [],
                     ImporterVersion = 1,
-                },
-            };
-            shader.SetBlock(code);
+                };
             await shader.SaveAsync(shaderAssetPath);
 
             string materialAssetPath = Path.Combine(dir, "assets", "Materials", "dangling.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialAssetPath)!);
-            using var material = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, materialGuid) {
+            using var material = new StandardMaterialAsset(materialGuid) {
                 Name = "DanglingMaterial",
             };
             _ = new StandardMaterialParameters(material.GetBlock<MaterialBlock>()) { AlbedoMap = new(missingTextureGuid) };
@@ -484,7 +469,7 @@ public sealed class AssetProjectTests
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "imported.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            using var savedMaterial = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, materialGuid) {
+            using var savedMaterial = new StandardMaterialAsset(materialGuid) {
                 Name = "ImportedMaterial",
             };
             await savedMaterial.SaveAsync(materialPath);
@@ -512,7 +497,7 @@ public sealed class AssetProjectTests
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "lazy.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            using var savedMaterial = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, materialGuid) {
+            using var savedMaterial = new StandardMaterialAsset(materialGuid) {
                 Name = "LazyMaterial",
             };
             await savedMaterial.SaveAsync(materialPath);
@@ -599,7 +584,7 @@ public sealed class AssetProjectTests
             Guid guid = Guid.NewGuid();
             string path = Path.Combine(dir, "assets", "Materials", "dup.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            using var savedMaterial = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, guid) {
+            using var savedMaterial = new StandardMaterialAsset(guid) {
                 Name = "Dup",
             };
             await savedMaterial.SaveAsync(path);
@@ -626,8 +611,8 @@ public sealed class AssetProjectTests
             string p2 = Path.Combine(dir, "assets", "Materials", "b.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(p1)!);
 
-            using var firstMaterial = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, g1) { Name = "A" };
-            using var secondMaterial = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, g2) { Name = "B" };
+            using var firstMaterial = new StandardMaterialAsset(g1) { Name = "A" };
+            using var secondMaterial = new StandardMaterialAsset(g2) { Name = "B" };
             await firstMaterial.SaveAsync(p1);
             await secondMaterial.SaveAsync(p2);
 
@@ -700,7 +685,7 @@ public sealed class AssetProjectTests
             Guid guid = Guid.NewGuid();
             string path = Path.Combine(dir, "assets", "Materials", "lazy2.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            using var savedMaterial = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, guid) {
+            using var savedMaterial = new StandardMaterialAsset(guid) {
                 Name = "Lazy2",
             };
             await savedMaterial.SaveAsync(path);
@@ -766,7 +751,7 @@ public sealed class AssetProjectTests
             }
             """);
         using var definition = new ShaderAsset { Name = Path.GetFileNameWithoutExtension(fullPath) };
-        definition.GetBlock<ShaderSourceBlock>().SourceFiles = [Path.GetFileName(sourcePath)];
+        definition.GetBlock<ShaderSourceBlock>().SourceNames = [Path.GetFileName(sourcePath)];
         await definition.SaveSourceAsync(fullPath);
     }
 }

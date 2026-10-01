@@ -24,7 +24,7 @@ internal static class Program
         {
             int serializedLength = RunContractViewSmoke();
             RunStandardBufferSmoke();
-            RunPageSmoke();
+            RunManagedValuesSmoke();
 
             var catalog = new BinaryContractCatalog();
             global::SomeEngine.GeneratedContracts.Assembly_SomeEngine_Serialization_AotSmoke
@@ -70,51 +70,25 @@ internal static class Program
         }
     }
 
-    private static void RunPageSmoke()
+    private static void RunManagedValuesSmoke()
     {
-        using var arena = new PageArena(new ResidencyBudgetLedger());
-        using var writer = new PageBufferWriter(arena);
+        var writer = new ArrayBufferWriter<byte>();
         SmokeContract expected = CreateExpected();
         BinarySerializer.Write(writer, expected);
-        using var read = writer.Retain();
-        SmokeContract actual = BinarySerializer.Deserialize<SmokeContract>(read.Sequence);
-        Require(actual.AssetId == expected.AssetId, "Page encoding lost the root identity.");
-        using var decodedPoints = new PageList<SmokePoint>(arena);
-        var target = new SmokeContract { Points = decodedPoints };
-        BinarySerializer.DeserializeInto(read.Sequence, target);
-        Require(ReferenceEquals(target.Points, decodedPoints) && decodedPoints.Count == 2,
-            "Decoding replaced the selected point storage.");
-        using var points = new PageList<SmokePoint>(arena);
-        points.Add(new SmokePoint { X = 1, Y = 2 });
-        using var branch = points.Duplicate();
-        branch[0] = new SmokePoint { X = 4, Y = 5 };
-        Require(points[0].X == 1 && branch[0].X == 4, "A page write changed another branch.");
-
-        var access = new PageAccess();
-        using var values = new PageList<SmokeValues>(arena, access);
-        values.Add(new() { Name = "first", Bytes = ImmutableArray.Create<byte>(1, 2, 3) });
-        using var otherValues = values.Duplicate();
-        otherValues[0] = values[0] with { Name = "second" };
-        Require(values[0].Name == "first", "A reference page assignment changed another branch.");
+        SmokeContract actual = BinarySerializer.Deserialize<SmokeContract>(writer.WrittenSpan);
+        Require(actual.AssetId == expected.AssetId, "Managed encoding lost the root identity.");
+        var points = new List<SmokePoint>();
+        var target = new SmokeContract { Points = points };
+        BinarySerializer.DeserializeInto(writer.WrittenSpan, target);
+        Require(ReferenceEquals(target.Points, points) && points.Count == 2,
+            "Decoding replaced the selected point collection.");
+        var original = new SmokeValues { Name = "first", Bytes = ImmutableArray.Create<byte>(1, 2, 3) };
+        var changed = original with { Name = "second" };
+        Require(original.Name == "first" && original.Bytes == changed.Bytes, "Immutable value sharing changed.");
         var encoded = new ArrayBufferWriter<byte>();
-        BinarySerializer.Write(encoded, values[0]);
+        BinarySerializer.Write(encoded, original);
         SmokeValues decoded = BinarySerializer.Deserialize<SmokeValues>(encoded.WrittenSpan);
-        Require(decoded.Bytes.AsSpan().SequenceEqual(values[0].Bytes.AsSpan()), "Immutable array encoding changed.");
-
-        using var buffers = new PageBufferMap(arena, access);
-        buffers.Set(17, new byte[] { 2, 3, 5 });
-        using var otherBuffers = buffers.Duplicate();
-        buffers.Write(17, 0, 1, (_, bytes) =>
-        {
-            bool rejected = false;
-            try { using var invalid = values.Duplicate(); }
-            catch (InvalidOperationException) { rejected = true; }
-            Require(rejected, "Chunk writes did not exclude sibling content sharing.");
-            bytes[0] = 7;
-        });
-        using PageBuffer previous = otherBuffers.DuplicateBuffer(17);
-        using var previousStream = new PageBufferStream(previous, writable: false);
-        Require(previousStream.ReadByte() == 2, "A mapped page write changed another branch.");
+        Require(decoded.Bytes.AsSpan().SequenceEqual(original.Bytes.AsSpan()), "Immutable array encoding changed.");
     }
 
     private static int RunContractViewSmoke()
@@ -284,21 +258,12 @@ internal static class Program
             for (int index = 0; index < compressed.Memory.Length; index++)
                 Require(compressed.Memory.Span[index] == (byte)(index % 251),
                     "Decompressed chunk contents did not round-trip under NativeAOT.");
-            using var arena = new PageArena(new ResidencyBudgetLedger(),
-                new() { MaximumPageSize = 1024, AllocationSize = 16384 });
-            await using var cache = ChunkRequestScheduler.CreateForDocument(chunkDocument, arena, 64 * 1024);
-            using var acquiredPages = await cache.AcquireAsync(CompressedChunkKey);
-            using PageRange<byte> retainedPages = acquiredPages.RetainPages();
-            acquiredPages.Dispose();
-            await cache.DisposeAsync();
+            byte[]? decodedBytes = null;
+            await chunkDocument.TryReadChunkAsync(CompressedChunkKey, length => decodedBytes = new byte[length]);
             await chunkDocument.DisposeAsync();
-            int position = 0;
-            foreach (ReadOnlyMemory<byte> segment in retainedPages.Sequence)
-                foreach (byte value in segment.Span)
-                    Require(value == (byte)(position++ % 251), "Retained decoded pages changed after cache disposal.");
-            Require(position == CompressedChunkLength, "Retained decoded page length changed.");
-            retainedPages.Dispose();
-            Require(arena.Residency.Used(ResidencyClass.DecodedCpu) == 0, "Decoded pages leaked their transferred budget.");
+            Require(decodedBytes is not null && decodedBytes.Length == CompressedChunkLength, "Managed decoded length changed.");
+            for (int index = 0; index < decodedBytes!.Length; index++)
+                Require(decodedBytes[index] == (byte)(index % 251), "Managed decoded bytes changed after document closure.");
             generation = rootViewDocument.Generation;
         }
 

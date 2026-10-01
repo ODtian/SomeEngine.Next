@@ -306,7 +306,7 @@ internal struct FramePass
     internal PassQueueSelection QueuePolicy;
     internal PassOptions Options;
     internal Pipeline? Pipeline;
-    internal ShaderVariableLayout ParameterLayout;
+    internal VariableLayoutReflection ParameterLayout;
     internal byte[]? ParameterOrdinaryData;
     internal List<GraphParameterResourceBinding>? ParameterBindings;
     internal List<GraphIdentity>? PersistentBindings;

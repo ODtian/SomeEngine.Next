@@ -13,6 +13,16 @@ namespace SomeEngine.Tests.Assets;
 public class AssetManifestTests
 {
     [Fact]
+    public void SelfReferencesArePreservedAsDependencyFacts()
+    {
+        Guid id = Guid.NewGuid();
+        var manifest = new AssetManifest();
+        manifest.AddAsset(id, "self", "self.material.asset", MaterialAsset.FileType, MaterialAsset.SchemaHash,
+            dependencies: [id, Guid.Empty, id]);
+        Assert.Equal(new[] { id }, manifest.GetDependencies(id));
+    }
+
+    [Fact]
     public void SaveLoad_Roundtrip_PreservesSourcesAssetsAndDependencies()
     {
         string dir = CreateTempDir();

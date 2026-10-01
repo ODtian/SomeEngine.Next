@@ -70,7 +70,7 @@ internal static partial class RhiBenchmarkRunner
             diagnostics.DebugLayerEnabled || diagnostics.GpuBasedValidationEnabled || diagnostics.SynchronizedQueueValidationEnabled,
             diagnostics.DredEnabled,
             System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription + " / Silk.NET 2.23.0");
-        using BenchmarkShaderProgram shader = BenchmarkShaders.Open(configuration.ShaderDirectory);
+        BenchmarkShader shader = BenchmarkShaders.Open(configuration.ShaderDirectory);
         Format[] colorFormats = [Format.R8G8B8A8UNorm];
         BlendAttachmentState[] blendAttachments =
         [
@@ -81,9 +81,12 @@ internal static partial class RhiBenchmarkRunner
         using Pipeline graphicsPipeline = backend.CreateGraphicsPipeline(
             device,
             new GraphicsPipelineDesc(
-                shader.Program,
+                shader.SlangCode,
+                shader.Reflection,
                 shader.Entries[0],
+                shader.GetEntryCode(0),
                 shader.Entries[1],
+                shader.GetEntryCode(1),
                 [],
                 [],
                 PrimitiveTopology.TriangleList,
@@ -97,10 +100,15 @@ internal static partial class RhiBenchmarkRunner
                 "graphics benchmark pipeline"));
         using Pipeline computePipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.Entries[2], "graphics benchmark compute"));
-        ShaderVariableLayout globalLayout =
-            shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
-        if (globalLayout == ShaderVariableLayout.Null)
+            new ComputePipelineDesc(
+                shader.SlangCode,
+                shader.Reflection,
+                shader.Entries[2],
+                shader.GetEntryCode(2),
+                "graphics benchmark compute"));
+        VariableLayoutReflection globalLayout =
+            shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        if (globalLayout == VariableLayoutReflection.Null)
             throw new InvalidDataException("The benchmark shader has no global parameter layout.");
         byte[] persistentData = new byte[16];
         WriteTint(persistentData, 1, 1, 1, 1);
@@ -213,7 +221,7 @@ internal static partial class RhiBenchmarkRunner
         Device device,
         Pipeline pipeline,
         PersistentParameterBindings persistent,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         string shaderManifest,
         in WorkerConfiguration configuration,
         GraphicsWorkload workload)
@@ -379,7 +387,7 @@ internal static partial class RhiBenchmarkRunner
         ScissorRect[] scissors,
         Pipeline pipeline,
         PersistentParameterBindings persistent,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         byte[] transientPackets,
         in DrawArguments draw,
         in CommandRecordingDesc recording,

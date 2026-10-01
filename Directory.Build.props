@@ -7,7 +7,8 @@
     <Deterministic>true</Deterministic>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <_RequestedSlangToolchainVersion>$(SlangToolchainVersion)</_RequestedSlangToolchainVersion>
-    <SlangToolchainVersion>2026.14</SlangToolchainVersion>
+    <SlangToolchainVersion>2026.17.1</SlangToolchainVersion>
+    <SlangShaderSharpPackageVersion>2026.17.1</SlangShaderSharpPackageVersion>
     <SlangStandardModuleDirectory>slang-standard-module-$(SlangToolchainVersion)</SlangStandardModuleDirectory>
     <SlangTestFixtureDirectory>SlangStandardModule$(SlangToolchainVersion)</SlangTestFixtureDirectory>
   </PropertyGroup>

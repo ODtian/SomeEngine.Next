@@ -446,8 +446,8 @@ public sealed partial class ValidationLayer
         }
         RayTracingPipelineValidationState validation = ValidateRayTracingPipeline(desc);
         PipelineBindingValidationState pipelineBindings = ReflectPipelineBindings(
-            desc.Program,
-            ReadOnlySpan<SlangShaderSharp.ShaderEntryPoint>.Empty);
+            desc.Reflection,
+            ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty);
         pipelineBindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -505,8 +505,8 @@ public sealed partial class ValidationLayer
         }
         RayTracingPipelineValidationState validation = ValidateRayTracingPipeline(desc);
         PipelineBindingValidationState bindings = ReflectPipelineBindings(
-            desc.Program,
-            ReadOnlySpan<SlangShaderSharp.ShaderEntryPoint>.Empty);
+            desc.Reflection,
+            ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty);
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         Task<Pipeline> creation = Backend.CreateRayTracingPipelineAsync(device, desc, cache);
@@ -943,11 +943,11 @@ public sealed partial class ValidationLayer
         if (desc.NodeMask == 0)
             Reject("WorkGraphs", "A Work Graph Pipeline requires a non-zero node mask.");
         PipelineBindingValidationState pipelineBindings = ReflectPipelineBindings(
-            desc.Program,
-            ReadOnlySpan<SlangShaderSharp.ShaderEntryPoint>.Empty,
+            desc.Reflection,
+            ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty,
             useConservativeWorkGraphEntries: true);
         pipelineBindings.AddStaticSamplers(desc.StaticSamplers);
-        HashSet<ShaderEntryPoint> reflectedEntries = CollectReflectedWorkGraphEntries(
+        HashSet<EntryPointReflection> reflectedEntries = CollectReflectedWorkGraphEntries(
             pipelineBindings.Reflection,
             capability.MaximumNodeCount);
         var objectInfo = new ValidationObjectInfo(device);
@@ -1003,11 +1003,11 @@ public sealed partial class ValidationLayer
         if (desc.NodeMask == 0)
             Reject("WorkGraphs", "A Work Graph Pipeline requires a non-zero node mask.");
         PipelineBindingValidationState bindings = ReflectPipelineBindings(
-            desc.Program,
-            ReadOnlySpan<SlangShaderSharp.ShaderEntryPoint>.Empty,
+            desc.Reflection,
+            ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty,
             useConservativeWorkGraphEntries: true);
         bindings.AddStaticSamplers(desc.StaticSamplers);
-        HashSet<ShaderEntryPoint> reflectedEntries = CollectReflectedWorkGraphEntries(
+        HashSet<EntryPointReflection> reflectedEntries = CollectReflectedWorkGraphEntries(
             bindings.Reflection,
             capability.MaximumNodeCount);
         var objectInfo = new ValidationObjectInfo(device);
@@ -1023,7 +1023,7 @@ public sealed partial class ValidationLayer
     private async Task<Pipeline> RegisterWorkGraphPipelineAsync(
         Task<Pipeline> creation,
         WorkGraphs capability,
-        HashSet<ShaderEntryPoint> reflectedEntries,
+        HashSet<EntryPointReflection> reflectedEntries,
         ValidationObjectInfo objectInfo,
         PipelineBindingValidationState bindings)
     {
@@ -1068,14 +1068,14 @@ public sealed partial class ValidationLayer
         }
     }
 
-    private HashSet<ShaderEntryPoint> CollectReflectedWorkGraphEntries(
-        ShaderProgramLayout reflection,
+    private HashSet<EntryPointReflection> CollectReflectedWorkGraphEntries(
+        ShaderReflection reflection,
         uint maximumNodeCount)
     {
-        var reflectedEntries = new HashSet<ShaderEntryPoint>();
+        var reflectedEntries = new HashSet<EntryPointReflection>();
         for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
-            ShaderEntryPoint entry = reflection.GetEntryPointByIndex(index);
+            EntryPointReflection entry = reflection.GetEntryPointByIndex(index);
             if (entry.Stage is not (SlangStage.Dispatch or SlangStage.Node))
                 continue;
             if (!reflectedEntries.Add(entry))
@@ -1109,7 +1109,7 @@ public sealed partial class ValidationLayer
 
     private void ValidateMaterializedWorkGraphEntries(
         WorkGraphs capability,
-        HashSet<ShaderEntryPoint> reflectedEntries,
+        HashSet<EntryPointReflection> reflectedEntries,
         ReadOnlySpan<WorkGraphEntryPointInfo> materializedEntries)
     {
         if (materializedEntries.IsEmpty ||
@@ -1117,7 +1117,7 @@ public sealed partial class ValidationLayer
         {
             Reject("WorkGraphs", "The backend returned an invalid Work Graph entry-point count.");
         }
-        var materializedIdentities = new HashSet<ShaderEntryPoint>();
+        var materializedIdentities = new HashSet<EntryPointReflection>();
         foreach (ref readonly WorkGraphEntryPointInfo entry in materializedEntries)
         {
             if (!WorkGraphValidation.IsEntryPointLayoutValid(
@@ -1140,7 +1140,7 @@ public sealed partial class ValidationLayer
     }
 
     internal static string GetEffectiveStateObjectEntryPointName(
-        SlangShaderSharp.ShaderEntryPoint entryPoint) =>
+        SlangShaderSharp.EntryPointReflection entryPoint) =>
         WorkGraphValidation.GetEffectiveEntryPointName(entryPoint);
 
     internal static string GetEffectiveStateObjectEntryPointName(
@@ -1368,7 +1368,7 @@ public sealed partial class ValidationLayer
 
     private void ValidateCpuNodeInput(
             WorkGraphPipelineValidationState graph,
-            ShaderEntryPoint entryPoint,
+            EntryPointReflection entryPoint,
             uint recordCount,
             uint recordStride,
             uint recordOffset,
@@ -1387,7 +1387,7 @@ public sealed partial class ValidationLayer
     private void ValidateGpuNodeInput(
             Device device,
             WorkGraphPipelineValidationState graph,
-            ShaderEntryPoint entryPoint,
+            EntryPointReflection entryPoint,
             in BufferRegion records,
             uint recordCount,
             uint recordStride,
@@ -1406,7 +1406,7 @@ public sealed partial class ValidationLayer
 
     private WorkGraphEntryPointInfo RequireWorkGraphEntry(
             WorkGraphPipelineValidationState graph,
-            ShaderEntryPoint entryPoint,
+            EntryPointReflection entryPoint,
             string role)
         {
             try
@@ -1452,9 +1452,9 @@ public sealed partial class ValidationLayer
     private void RequireUniqueCpuEntry(
             ReadOnlySpan<WorkGraphCpuNodeInput> inputs,
             int index,
-            ShaderEntryPoint entryPoint)
+            EntryPointReflection entryPoint)
         {
-            if (entryPoint == ShaderEntryPoint.Null)
+            if (entryPoint == EntryPointReflection.Null)
                 Reject("WorkGraphs", "A Work Graph node input requires a Slang entry point.");
             for (int prior = 0; prior < index; prior++)
             {
@@ -1466,9 +1466,9 @@ public sealed partial class ValidationLayer
     private void RequireUniqueGpuEntry(
             ReadOnlySpan<WorkGraphGpuNodeInput> inputs,
             int index,
-            ShaderEntryPoint entryPoint)
+            EntryPointReflection entryPoint)
         {
-            if (entryPoint == ShaderEntryPoint.Null)
+            if (entryPoint == EntryPointReflection.Null)
                 Reject("WorkGraphs", "A Work Graph node input requires a Slang entry point.");
             for (int prior = 0; prior < index; prior++)
             {
@@ -1638,7 +1638,9 @@ public sealed partial class ValidationLayer
     private RayTracingPipelineValidationState ValidateRayTracingPipeline(
         in RayTracingPipelineDesc desc)
     {
-        ArgumentNullException.ThrowIfNull(desc.Program);
+        ArgumentNullException.ThrowIfNull(desc.SlangCode);
+        if (desc.Reflection == ShaderReflection.Null)
+            Reject("RayTracing", "A ray-tracing Pipeline requires Slang reflection.");
         if (desc.RayGeneration.IsEmpty)
             Reject("RayTracing", "A ray-tracing Pipeline requires a ray-generation export.");
         const RayTracingPipelineOptions supportedOptions =
@@ -1649,7 +1651,7 @@ public sealed partial class ValidationLayer
 
         var result = new RayTracingPipelineValidationState();
         var names = new HashSet<string>(StringComparer.Ordinal);
-        var shaders = new Dictionary<string, SlangShaderSharp.ShaderEntryPoint>(StringComparer.Ordinal);
+        var shaders = new Dictionary<string, SlangShaderSharp.EntryPointReflection>(StringComparer.Ordinal);
         AddEntries(
             desc.RayGeneration,
             SlangShaderSharp.SlangStage.RayGeneration,
@@ -1667,7 +1669,7 @@ public sealed partial class ValidationLayer
         {
             if (string.IsNullOrWhiteSpace(hitGroup.Name) || !names.Add(hitGroup.Name))
                 Reject("RayTracing", "Ray-tracing state-object export names must be unique.");
-            var layouts = new HashSet<SlangShaderSharp.ShaderVariableLayout>();
+            var layouts = new HashSet<SlangShaderSharp.VariableLayoutReflection>();
             bool hasMember = false;
             AddHitMember(
                 hitGroup.ClosestHit,
@@ -1685,45 +1687,45 @@ public sealed partial class ValidationLayer
                     [.. layouts]));
 
             void AddHitMember(
-                SlangShaderSharp.ShaderEntryPoint entry,
+                SlangShaderSharp.EntryPointReflection entry,
                 SlangShaderSharp.SlangStage expectedStage)
             {
-                if (entry == SlangShaderSharp.ShaderEntryPoint.Null)
+                if (entry == SlangShaderSharp.EntryPointReflection.Null)
                     return;
                 ValidateEntry(entry, expectedStage);
                 if (!hasMember)
                 {
                     hasMember = true;
                 }
-                if (entry.VarLayout != SlangShaderSharp.ShaderVariableLayout.Null)
+                if (entry.VarLayout != SlangShaderSharp.VariableLayoutReflection.Null)
                     layouts.Add(entry.VarLayout);
             }
         }
         return result;
 
         void AddEntries(
-            ReadOnlySpan<SlangShaderSharp.ShaderEntryPoint> entries,
+            ReadOnlySpan<SlangShaderSharp.EntryPointReflection> entries,
             SlangShaderSharp.SlangStage expectedStage,
             RayExportValidationType type)
         {
-            foreach (SlangShaderSharp.ShaderEntryPoint entry in entries)
+            foreach (SlangShaderSharp.EntryPointReflection entry in entries)
             {
                 ValidateEntry(entry, expectedStage);
                 result.Entries.TryAdd(
                     entry,
                     CreateRayExportValidationState(
                         type,
-                        entry.VarLayout == SlangShaderSharp.ShaderVariableLayout.Null
+                        entry.VarLayout == SlangShaderSharp.VariableLayoutReflection.Null
                             ? []
                             : [entry.VarLayout]));
             }
         }
 
         void ValidateEntry(
-            SlangShaderSharp.ShaderEntryPoint entry,
+            SlangShaderSharp.EntryPointReflection entry,
             SlangShaderSharp.SlangStage expectedStage)
         {
-            if (entry == SlangShaderSharp.ShaderEntryPoint.Null ||
+            if (entry == SlangShaderSharp.EntryPointReflection.Null ||
                 entry.Stage != expectedStage ||
                 string.IsNullOrWhiteSpace(entry.Name) ||
                 (shaders.TryGetValue(entry.Name, out var existing) ? existing != entry : !names.Add(entry.Name)))
@@ -1738,7 +1740,7 @@ public sealed partial class ValidationLayer
 
     private RayExportValidationState CreateRayExportValidationState(
         RayExportValidationType type,
-        SlangShaderSharp.ShaderVariableLayout[] layouts)
+        SlangShaderSharp.VariableLayoutReflection[] layouts)
     {
         return new RayExportValidationState(type, layouts);
     }
@@ -1837,7 +1839,7 @@ public sealed partial class ValidationLayer
     {
         if (hitRecord)
         {
-            if (record.EntryPoint != SlangShaderSharp.ShaderEntryPoint.Null ||
+            if (record.EntryPoint != SlangShaderSharp.EntryPointReflection.Null ||
                 record.HitGroupName is null)
             {
                 Reject("RayTracing", "A hit record names an incompatible hit-group export.");
@@ -1890,7 +1892,7 @@ public sealed partial class ValidationLayer
         {
             ref readonly RayTracingLocalParameterBlock block = ref blocks[blockIndex];
             bool expectedLayout = false;
-            foreach (SlangShaderSharp.ShaderVariableLayout layout in export.Layouts)
+            foreach (SlangShaderSharp.VariableLayoutReflection layout in export.Layouts)
                 expectedLayout |= block.Layout == layout;
             if (!expectedLayout)
             {

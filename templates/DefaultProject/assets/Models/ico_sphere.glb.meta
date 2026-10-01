@@ -2,6 +2,13 @@
   "source_guid": "3eb68767-2b54-4673-ac69-64fd05b0b4cb",
   "importers": [
     {
+      "importer_id": "b0c10195-d8d1-46ab-81b8-f8c54db7d0aa",
+      "settings": {
+        "require_persistent_element_ids": false
+      },
+      "enabled": true
+    },
+    {
       "importer_id": "334ba003-337f-4298-ae72-1a5ce4861591",
       "settings": {
         "generate_tangents": false
@@ -17,6 +24,11 @@
     },
     {
       "importer_id": "9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b",
+      "settings": {},
+      "enabled": true
+    },
+    {
+      "importer_id": "451b3ab1-e318-4ed8-aebf-9b9e11219120",
       "settings": {},
       "enabled": true
     }

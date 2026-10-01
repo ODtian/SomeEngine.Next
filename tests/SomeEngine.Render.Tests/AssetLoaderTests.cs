@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using System.Numerics;
+using SlangShaderSharp;
 using SomeEngine.Assets;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Pipeline;
@@ -22,20 +23,6 @@ namespace SomeEngine.Render.Tests;
 public sealed class AssetLoaderTests
 {
     [Fact]
-    public async Task ShaderCreationRejectsMissingReflectionAfterDiskOpenSucceeds()
-    {
-        using var directory = new TemporaryDirectory();
-        Guid id = Guid.NewGuid();
-        string path = directory.File("shader.sepack");
-        await new AssetPackBuilder().AddAsset(id, ShaderAsset.FileType, CookShader(id, false), ShaderAsset.SchemaHash).PublishAsync(path);
-        await using var storage = new AssetPackStorage([await AssetPack.OpenAsync(path)]);
-        await using var loader = new AssetLoader(storage);
-        await using ShaderAsset file = await ShaderAsset.OpenAsync(loader, new AssetId<ShaderAsset>(id));
-        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() => file.GetBlock<ShaderBlock>().CreateAsync(file.Name).AsTask());
-        Assert.Contains("serialized entry-point reflection", error.Message);
-    }
-
-    [Fact]
     public async Task IndependentDiskOpensShareIoAndCreatedTexturesOutliveTheLoaderAndStorage()
     {
         using var directory = new TemporaryDirectory();
@@ -52,11 +39,11 @@ public sealed class AssetLoaderTests
         foreach (TextureAsset file in files) await file.DisposeAsync();
         await loader.DisposeAsync();
         await storage.DisposeAsync();
-        Assert.True(first.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
-        using (bytes) Assert.Equal(new byte[] { 1, 2, 3, 4 }, bytes.ToArray());
+        Assert.True(first.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, bytes.ToArray());
         await first.DisposeAsync();
-        Assert.True(second.TryRetainTile(TextureTiles.ChunkKey(1, 2, 0, 0, 0, 0), out var other));
-        using (other) Assert.Equal(new byte[] { 5, 6 }, other.ToArray());
+        Assert.True(second.TryGetTile(TextureTiles.ChunkKey(1, 2, 0, 0, 0, 0), out var other));
+        Assert.Equal(new byte[] { 5, 6 }, other.ToArray());
     }
 
     [Fact]
@@ -73,19 +60,25 @@ public sealed class AssetLoaderTests
             .PublishAsync(path);
         await using var storage = new AssetPackStorage([await AssetPack.OpenAsync(path)]);
         var residency = new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 1024 * 1024 });
-        using var arena = new PageArena(residency);
-        await using var loader = new AssetLoader(storage, new() { Pages = arena, MaxDecodedBytes = 1024 * 1024 });
+        await using var loader = new AssetLoader(storage, new() { MaxDecodedBytes = 1024 * 1024 });
         await using TextureAsset textureFile = await TextureAsset.OpenAsync(loader, new AssetId<TextureAsset>(textureId));
         await using Texture texture = await textureFile.GetBlock<TextureBlock>().CreateAsync(textureFile.Name);
-        Assert.Same(residency, texture.Pages.Residency);
         Assert.Empty(textureFile.GetBlock<TextureBlock>().Chunks.Keys);
         await using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(loader, new AssetId<ShaderAsset>(shaderId));
-        using Shader shader = await shaderFile.GetBlock<ShaderBlock>().CreateAsync(shaderFile.Name);
-        Assert.True(shader.TryEntry("spirv", "VSMain", ShaderStage.Vertex, out _, out var entry));
-        Assert.False(entry.Code.IsEmpty);
+        Shader shader = await TestShaderLoading.CreateAsync(
+            shaderFile,
+            SlangCompileTarget.Spirv);
+        int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+        Assert.True(shader.TryGetSlangEntry(
+            targetIndex,
+            "VSMain",
+            out EntryPointReflection shaderEntry));
+        Assert.True(
+            shader.GetSlangEntryBlob(targetIndex, shaderEntry) is not null ||
+            !shader.GetSlangEntryBytes(targetIndex, shaderEntry).IsEmpty);
         await using MeshAsset meshFile = await MeshAsset.OpenAsync(loader, new AssetId<MeshAsset>(meshId));
-        await using Mesh mesh = await meshFile.GetBlock<ClusterMeshBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
-        Assert.False(mesh.TryRetainPage(0, out _));
+        var mesh = await meshFile.GetBlock<ClusterMeshBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
+        Assert.True(mesh.TryGetPage(0, out _));
         await meshFile.GetBlock<ClusterMeshBlock>().LoadPagesAsync(mesh, [0]);
         await using MaterialAsset materialFile = await MaterialAsset.OpenAsync(loader, new AssetId<MaterialAsset>(materialId));
         using Material material = await materialFile.CreateAsync(loader);
@@ -100,8 +93,6 @@ public sealed class AssetLoaderTests
         Assert.NotEmpty(page);
         await texture.DisposeAsync();
         material.Dispose();
-        shader.Dispose();
-        mesh.Dispose();
         textureFile.Dispose();
         shaderFile.Dispose();
         materialFile.Dispose();
@@ -171,11 +162,11 @@ public sealed class AssetLoaderTests
                 },
             ],
         };
-        pixels.Chunks.Set(pixels.MipTiles[0].ChunkKey, mipZero);
-        pixels.Chunks.Set(pixels.MipTiles[1].ChunkKey, new byte[] { 0 });
-        pixels.Chunks.Set(pixels.MipTiles[2].ChunkKey, new byte[] { 0 });
-        pixels.Chunks.Set(pixels.MipTiles[3].ChunkKey, mipOne);
-        using var asset = new TextureAsset(PageArena.Shared, guid) { Name = "stored-texture" };
+        pixels.SetBytes(pixels.MipTiles[0].ChunkKey, mipZero);
+        pixels.SetBytes(pixels.MipTiles[1].ChunkKey, new byte[] { 0 });
+        pixels.SetBytes(pixels.MipTiles[2].ChunkKey, new byte[] { 0 });
+        pixels.SetBytes(pixels.MipTiles[3].ChunkKey, mipOne);
+        using var asset = new TextureAsset(guid) { Name = "stored-texture" };
         asset.SetBlock(pixels);
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
@@ -185,7 +176,7 @@ public sealed class AssetLoaderTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.material.asset");
-        using var material = new StandardMaterialAsset(PageArena.Shared, guid) {
+        using var material = new StandardMaterialAsset(guid) {
             Name = "stored-material",
         };
         _ = new StandardMaterialParameters(material.GetBlock<MaterialBlock>()) { AlbedoMap = new(textureGuid) };
@@ -193,32 +184,18 @@ public sealed class AssetLoaderTests
         return File.ReadAllBytes(path);
     }
 
-    private static byte[] CookShader(Guid guid, bool includeReflection = true)
+    private static byte[] CookShader(Guid guid)
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.shader.asset");
-        var program = CookedShaderTestProgram.Create();
-        using var output = new MemoryStream();
-        program.Write(output);
-        byte[] bytes = output.ToArray();
-        using var asset = new ShaderAsset(PageArena.Shared, guid) { Name = "stored-shader" };
-        using var code = new ShaderBlock {
-            Programs = [new CookedShaderProgram { Backend = program.Backend,
-                DataChunkKey = ShaderBlock.BytecodeChunkKey(0), DataDecodedLength = (ulong)bytes.Length }],
-            EntryPointReflections = includeReflection
-                ?
-                [
-                    new ShaderEntryPointReflection
-                    {
-                        Backend = "spirv",
-                        EntryPoint = "VSMain",
-                        Stage = SomeEngine.Resources.ShaderStage.Vertex,
-                    },
-                ]
-                : [],
-        };
-        code.Chunks.Set(code.Programs[0].DataChunkKey, bytes);
-        asset.SetBlock(code);
+        string sourcePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Content",
+            "Shaders",
+            "hello_triangle.shader.asset");
+        using ShaderAsset source = ShaderAsset.OpenAsync(sourcePath).AsTask().GetAwaiter().GetResult();
+        using ShaderAsset asset = source.CreateCopy(guid);
+        asset.Name = "stored-shader";
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
@@ -258,12 +235,10 @@ public sealed class AssetLoaderTests
         MemoryMarshal.Write(
             payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes),
             in cluster);
-        using var asset = new MeshAsset(PageArena.Shared, guid) { Name = "stored-mesh" };
+        using var asset = new MeshAsset(guid) { Name = "stored-mesh" };
         using var geometry = new MeshBlock();
         using var clusters = new ClusterMeshBlock { VertexEncoding = vertexEncoding };
-        using var bytes = new PageBuffer(asset.Pages, payload.Length);
-        bytes.Write(0, payload);
-        clusters.SetPayload(bytes, (ulong)pageSize);
+        clusters.SetPayload(payload, (ulong)pageSize);
         asset.SetBlock(geometry);
         asset.SetBlock(clusters);
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();

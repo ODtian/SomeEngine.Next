@@ -27,7 +27,7 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
     private readonly NativeWindow _window;
     private readonly nint _context;
     private nint _iniFilename;
-    private ShaderProgram? _program;
+    private ShaderReflection _reflection = ShaderReflection.Null;
     private Pipeline? _pipeline;
     private readonly Buffer?[] _vertexBuffers = new Buffer?[2];
     private readonly Buffer?[] _indexBuffers = new Buffer?[2];
@@ -266,7 +266,9 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
             SomeEngine.Graphics.TextureViewDimension.Texture2D, "Runtime ImGui font atlas view");
         RuntimeUiPassData data = new(this,
             _pipeline ?? throw new InvalidOperationException("The ImGui pipeline is unavailable."),
-            (_program ?? throw new InvalidOperationException("The ImGui shader is unavailable.")).Layout.GetGlobalParamsVarLayout(),
+            _reflection != ShaderReflection.Null
+                ? _reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null
+                : throw new InvalidOperationException("The ImGui shader is unavailable."),
             targetView, vertices, indices, uniform, fontView,
             _fontSampler ?? throw new InvalidOperationException("The ImGui sampler is unavailable."), 0, 0);
         GraphPassId pass = edit.AddRasterFramePass("Runtime ImGui overlay",
@@ -442,7 +444,7 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         _fontTexture = null;
         Destroy(_pipeline, ref failures);
         _pipeline = null;
-        _program = null;
+        _reflection = ShaderReflection.Null;
         if (_context != 0)
         {
             try { ImGui.DestroyContext(_context); }
@@ -464,17 +466,20 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         string pixelEntryPoint,
         Format outputFormat)
     {
-        CookedShaderEntry vertex = shader.RequireEntry(
-            _device.Capabilities.CompileTarget,
+        int targetIndex = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
+        _reflection = shader.GetSlangReflection(targetIndex);
+        EntryPointReflection vertex = shader.RequireSlangEntry(
+            targetIndex,
             vertexEntryPoint,
-            ShaderStage.Vertex);
-        CookedShaderEntry pixel = shader.RequireEntry(
-            _device.Capabilities.CompileTarget,
+            SlangStage.Vertex);
+        EntryPointReflection pixel = shader.RequireSlangEntry(
+            targetIndex,
             pixelEntryPoint,
-            ShaderStage.Pixel);
-        if (!ReferenceEquals(vertex.Program, pixel.Program))
-            throw new InvalidDataException("Runtime UI entries must belong to one cooked shader program.");
-        _program = vertex.Program;
+            SlangStage.Fragment);
+        System.Buffers.ReadOnlySequence<byte> vertexCode =
+            shader.GetSlangEntryBytes(targetIndex, vertex);
+        System.Buffers.ReadOnlySequence<byte> pixelCode =
+            shader.GetSlangEntryBytes(targetIndex, pixel);
         SomeEngine.Graphics.VertexAttribute[] attributes =
         [
             new(0, 0, Format.R32G32Float, 0),
@@ -497,9 +502,12 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         var blend = new BlendState(blendAttachments);
         var attachments = new AttachmentFormatSignature([outputFormat], null);
         var description = new GraphicsPipelineDesc(
-            _program,
-            vertex.EntryPoint,
-            pixel.EntryPoint,
+            shader.SlangCode,
+            _reflection,
+            vertex,
+            vertexCode,
+            pixel,
+            pixelCode,
             buffers,
             attributes,
             PrimitiveTopology.TriangleList,
@@ -510,7 +518,9 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
             blend,
             attachments,
             DynamicStates.Viewport | DynamicStates.Scissor,
-            "Runtime ImGui pipeline");
+            "Runtime ImGui pipeline",
+            vertexCodeBlob: shader.GetSlangEntryBlob(targetIndex, vertex),
+            pixelCodeBlob: shader.GetSlangEntryBlob(targetIndex, pixel));
         _pipeline = _backend.CreateGraphicsPipeline(_device, description);
     }
 
@@ -1049,7 +1059,7 @@ internal readonly record struct RuntimeUiMetrics(
 internal readonly record struct RuntimeUiPassData(
     RuntimeUiRenderer Renderer,
     Pipeline Pipeline,
-    ShaderVariableLayout ParameterLayout,
+    VariableLayoutReflection ParameterLayout,
     GraphColorAttachmentViewId Target,
     GraphBufferInput Vertices,
     GraphBufferInput Indices,

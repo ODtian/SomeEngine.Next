@@ -97,11 +97,11 @@ public sealed class TextureDisplacementTests
                     length(evaluated.Position - d.position(t,middle)));
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths(
+        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
             "displacement_bounds", source, [new("CheckDisplacement", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Pipeline pipeline = backend.CreateComputePipeline(device, new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+        using Pipeline pipeline = backend.CreateComputePipeline(device, new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using Buffer upload = backend.CreateBuffer(device, new BufferDesc(4096, BufferUsages.CopySource), MemoryType.Upload);
         using (MappedBuffer map = backend.Map(upload, MapType.Write, BufferRange.Whole))
         {
@@ -142,7 +142,7 @@ public sealed class TextureDisplacementTests
                 ResourceAccess.CopyDestination, ResourceAccess.ShaderResource, TextureLayout.CopyDestination, TextureLayout.ShaderResource));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None, PipelineSync.ComputeShading, ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
         backend.SetPipeline(context, pipeline);
-        backend.SetTransientParameterBindings(context, new ParameterBlockBindings(shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null,
+        backend.SetTransientParameterBindings(context, new ParameterBlockBindings(shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
             [ResourceBinding.Null(ResourceBindingType.BufferSrv), ResourceBinding.Null(ResourceBindingType.ConstantBuffer),
              ResourceBinding.SampledTexture(heightView), ResourceBinding.SampledTexture(boundsView), ResourceBinding.SampledWith(sampler), ResourceBinding.WritableBuffer(outputView)], []));
         backend.Dispatch(context, new DispatchArguments((count + 31u) / 32u, 1, 1));

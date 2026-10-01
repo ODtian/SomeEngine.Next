@@ -10,13 +10,11 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "A7AF37A540C30A9B",
+      "Schema": "B7BA7FC20330279C",
       "Fields": {
-        "SourceFiles": [
+        "SourceNames": [
           "vsm_mark_pages.slang"
-        ],
-        "Specializations": [],
-        "CookProfile": "d3d12-sm6.2"
+        ]
       },
       "Chunks": {}
     }

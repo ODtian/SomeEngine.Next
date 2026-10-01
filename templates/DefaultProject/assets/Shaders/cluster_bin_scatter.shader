@@ -10,13 +10,11 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "A7AF37A540C30A9B",
+      "Schema": "B7BA7FC20330279C",
       "Fields": {
-        "SourceFiles": [
+        "SourceNames": [
           "Pipeline/build_cluster_bin_scatter.slang"
-        ],
-        "Specializations": [],
-        "CookProfile": "default"
+        ]
       },
       "Chunks": {}
     }

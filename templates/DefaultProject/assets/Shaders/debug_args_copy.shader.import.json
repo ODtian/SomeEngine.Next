@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "5b2ea8095805d108bea49e02476cd33561d95b4faa4b2047d37e5f3de149ab80",
+  "importer_version": 29,
+  "input_hash": "8432f1e3bf65b534e1079b538e2c785843e35de4205f601ea801c76a6c85a1e6",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/debug_args_copy.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "assets/Shaders/debug_args_copy.shader",
-      "content_hash": "623f627219f9c558a8006928055df244ff62d6ef45c9551b9f93064ed214f83d"
+      "content_hash": "d6e07814fd4a7daf62ec66447e1e81b13270863b6a72ca784fae08d0ec28b58d"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,11 +25,11 @@
     {
       "asset_guid": "c93cba86-7cff-5bb5-8aae-5932cc7d273c",
       "sub_asset_key": "",
-      "input_hash": "5b2ea8095805d108bea49e02476cd33561d95b4faa4b2047d37e5f3de149ab80",
+      "input_hash": "8432f1e3bf65b534e1079b538e2c785843e35de4205f601ea801c76a6c85a1e6",
       "dependencies": [],
       "asset_path": "debug_args_copy.shader.asset",
-      "version": "12ac9369-d71f-d68b-4173-ce582210a06d",
-      "content_hash": "91C6993C5B6920D7A027D1762E797A0ADBC243E909359D311BA31648E15631BC",
+      "version": "6cc9ed05-93fa-6646-32f8-717ca9183eb0",
+      "content_hash": "85EFD0E9DDF296931F7FFA7B24B26709C4B8EB613CF0D3EE45FF60C04597A2B5",
       "asset_dependencies": []
     }
   ]

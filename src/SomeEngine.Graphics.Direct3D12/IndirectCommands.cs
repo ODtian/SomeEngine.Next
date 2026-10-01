@@ -199,7 +199,7 @@ internal sealed unsafe partial class D3D12Backend
         in SomeEngine.Graphics.IndirectArgumentDesc argument)
     {
         if (argument.Parameters is not null &&
-            argument.Parameters != ShaderVariableLayout.Null || argument.ByteOffset != 0 ||
+            argument.Parameters != VariableLayoutReflection.Null || argument.ByteOffset != 0 ||
             argument.ValueCount != 0)
         {
             throw new ArgumentException(
@@ -434,7 +434,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Device _device;
         private readonly NativeLease _native;
-        private RetainedShaderProgram? _program;
+        private IComponentType? _slangCode;
 
         internal D3D12IndirectCommandLayout(
             D3D12Device device,
@@ -449,25 +449,24 @@ internal sealed unsafe partial class D3D12Backend
         {
             _device = device;
             NativeLease? pipelineState = null;
-            RetainedShaderProgram? program = null;
+            IComponentType? slangCode = null;
             try
             {
                 if (nativePipeline is not null)
                 {
                     pipelineState = nativePipeline.NativeLifetime;
-                    program = nativePipeline.RetainProgramReference();
+                    slangCode = nativePipeline.GetSlangCodeReference();
                     RequiredRoot = nativePipeline.RootSignature;
                 }
                 _native = new NativeLease(
                     (Silk.NET.Core.Native.IUnknown*)native,
                     ownsReference: true,
                     dependency: pipelineState);
-                _program = program;
-                program = null;
+                _slangCode = slangCode;
+                slangCode = null;
             }
             catch
             {
-                program?.Dispose();
                 throw;
             }
             Effects = effects;
@@ -484,7 +483,7 @@ internal sealed unsafe partial class D3D12Backend
         internal override void Release(bool fromParent)
         {
             _native.Release();
-            Interlocked.Exchange(ref _program, null)?.Dispose();
+            _ = Interlocked.Exchange(ref _slangCode, null);
             _device.UnregisterChild(this);
         }
     }

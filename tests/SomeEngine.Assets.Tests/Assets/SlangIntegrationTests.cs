@@ -1,523 +1,213 @@
-using System.IO;
-using System.Linq;
-using SomeEngine.Assets;
+using System.Buffers;
+using System.Security.Cryptography;
+using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+
 namespace SomeEngine.Assets.Tests.Assets;
 
-public class SlangIntegrationTests
+public sealed class SlangIntegrationTests
 {
     [Fact]
-    public async Task TestSlangCompilation()
+    public async Task CompilationReturnsDirectEntriesForEveryTarget()
     {
-        string source = @"
-            [shader(""vertex"")]
-            float4 vertexMain(float4 pos : POSITION) : SV_Position
+        const string source = """
+            [shader("vertex")]
+            float4 vertexMain(float4 position : POSITION) : SV_Position
             {
-                return pos;
+                return position;
             }
 
-            [shader(""pixel"")]
-            float4 pixelMain() : SV_Target
+            [shader("fragment")]
+            float4 pixelMain() : SV_Target0
             {
-                return float4(1.0, 0.0, 0.0, 1.0);
+                return float4(1, 0, 0, 1);
             }
-        ";
+            """;
+        using var files = new AssetTestDirectory();
+        string sourcePath = files.File("compiled.slang");
+        File.WriteAllText(sourcePath, source);
 
-        using var directory = new AssetTestDirectory();
-        string slangFile = directory.File("compiled.slang");
-        File.WriteAllText(slangFile, source);
+        using ShaderAsset asset = ShaderTestCompilation.Compile(sourcePath);
+        Shader shader = await ShaderTestCompilation.CreateAsync(asset);
 
-        try
+        Assert.Equal(2, shader.SlangTargetCount);
+        Assert.Equal(2, shader.SlangEntryCount);
+        foreach (SlangCompileTarget target in new[]
+                 {
+                     SlangCompileTarget.Dxil,
+                     SlangCompileTarget.Spirv,
+                 })
         {
-            using var assetFile = ShaderTestCompilation.Compile(slangFile);
-            using Shader asset = await assetFile.GetBlock<ShaderBlock>().CreateAsync(assetFile.Name);
-
-            Assert.NotNull(asset);
-            Assert.Equal(Path.GetFileNameWithoutExtension(slangFile), asset.Name);
-
-            // DXIL depends on local DXC availability; SPIR-V must always compile.
-            Assert.True(asset.Programs!.Count >= 2);
-
-            Assert.True(asset.TryEntry(
-                "spirv",
+            int targetIndex = shader.RequireSlangTarget(target);
+            EntryPointReflection vertex = shader.RequireSlangEntry(
+                targetIndex,
                 "vertexMain",
-                ShaderStage.Vertex,
-                out _,
-                out var vsSpirv));
-            Assert.True(vsSpirv.Code.Length > 0);
-
-            Assert.True(asset.TryEntry(
-                "spirv",
+                SlangStage.Vertex);
+            EntryPointReflection pixel = shader.RequireSlangEntry(
+                targetIndex,
                 "pixelMain",
-                ShaderStage.Pixel,
-                out _,
-                out var psSpirv));
-            Assert.True(psSpirv.Code.Length > 0);
-        }
-        finally
-        {
-            if (File.Exists(slangFile)) File.Delete(slangFile);
-        }
-    }
-    [Fact]
-    public async Task TestSlangReflection()
-    {
-        string source = @"
-            struct Params {
-                float4 color;
-            };
-
-            [[vk::binding(0, 0)]]
-            ConstantBuffer<Params> gParams;
-
-            [[vk::binding(1, 0)]]
-            Texture2D gTexture;
-
-            [shader(""pixel"")]
-            float4 main() : SV_Target
-            {
-                return gTexture.Load(int3(0, 0, 0)) * gParams.color;
-            }
-        ";
-
-        using var directory = new AssetTestDirectory();
-        string tempFile = directory.File("test_reflection.slang");
-        File.WriteAllText(tempFile, source);
-
-        try
-        {
-            using var assetFile = ShaderTestCompilation.Compile(tempFile);
-            using Shader asset = await assetFile.GetBlock<ShaderBlock>().CreateAsync(assetFile.Name);
-
-            var reflection = asset.Reflections?.FirstOrDefault()?.Reflection;
-            Assert.NotNull(reflection);
-            Assert.NotNull(reflection!.Resources);
-
-            // Check gParams
-            var gParams = reflection.Resources!.FirstOrDefault(r => r.Name == "gParams");
-            Assert.NotNull(gParams);
-            Assert.True((gParams.Stages & 0x02) != 0, "Should be visible in Pixel stage (0x02)");
-
-            // Check gTexture
-            var gTexture = reflection.Resources.FirstOrDefault(r => r.Name == "gTexture");
-            Assert.NotNull(gTexture);
-            Assert.True((gTexture!.Stages & 0x02) != 0, "Should be visible in Pixel stage (0x02)");
-
-            // Print all resources for manual verification
-            Console.WriteLine($"--- Layout for {asset.Name} ---");
-            foreach (var r in reflection.Resources)
-            {
-                Console.WriteLine($"  Name: {r.Name}, Stages: 0x{r.Stages:X}");
-            }
-        }
-        finally
-        {
-            if (File.Exists(tempFile)) File.Delete(tempFile);
+                SlangStage.Fragment);
+            Assert.Equal(SlangStage.Vertex, vertex.Stage);
+            Assert.Equal(SlangStage.Fragment, pixel.Stage);
+            Assert.NotEmpty(GetCode(shader, targetIndex, vertex));
+            Assert.NotEmpty(GetCode(shader, targetIndex, pixel));
         }
     }
 
     [Fact]
-    public async Task NativeDefinitionRetainsIdentityWithoutCreatingSourceCompanions()
+    public async Task DirectReflectionExposesGlobalShaderFields()
     {
-        string source = @"
-            [shader(""compute"")]
-            [numthreads(1,1,1)]
-            void main() {}
-        ";
+        const string source = """
+            struct Parameters { float4 Color; }
+            ConstantBuffer<Parameters> ParametersData;
+            Texture2D TextureData;
 
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string slangFile = Path.Combine(dir, "stable_guid.slang");
-        File.WriteAllText(slangFile, source);
-
-        try
-        {
-            string definitionPath = Path.Combine(dir, "selected.shader");
-            using var definition = ShaderTestCompilation.Define(slangFile);
-            await definition.SaveSourceAsync(definitionPath);
-            using var asset1File = SlangShaderImporter.CompileDefinition(definition, definitionPath);
-            using Shader asset1 = await asset1File.GetBlock<ShaderBlock>().CreateAsync(asset1File.Name);
-            using var reloaded = await ShaderAsset.OpenSourceAsync(definitionPath);
-            using var asset2File = SlangShaderImporter.CompileDefinition(reloaded, definitionPath);
-            using Shader asset2 = await asset2File.GetBlock<ShaderBlock>().CreateAsync(asset2File.Name);
-
-            Guid guid1 = asset1File.Id;
-            Guid guid2 = asset2File.Id;
-            Assert.Equal(guid2, guid1);
-            Assert.Equal(definition.Id, guid1);
-            Assert.Empty(Directory.EnumerateFiles(dir, "*.meta"));
-            Assert.Empty(Directory.EnumerateFiles(dir, "*.asset"));
-            Assert.NotNull(asset1File.GetBlock<ShaderBlock>().ImportTrace);
-            Assert.Equal(definitionPath, asset1File.GetBlock<ShaderBlock>().ImportTrace!.SourcePath);
-        }
-        finally
-        {
-            if (Directory.Exists(dir))
+            [shader("fragment")]
+            float4 pixelMain() : SV_Target0
             {
-                Directory.Delete(dir, true);
+                return TextureData.Load(int3(0, 0, 0)) * ParametersData.Color;
             }
-        }
+            """;
+        using var files = new AssetTestDirectory();
+        string sourcePath = files.File("reflection.slang");
+        File.WriteAllText(sourcePath, source);
+
+        using ShaderAsset asset = ShaderTestCompilation.Compile(sourcePath);
+        Shader shader = await ShaderTestCompilation.CreateAsync(asset);
+        int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+        ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+        VariableLayoutReflection globals = reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        Assert.NotEqual(VariableLayoutReflection.Null, globals);
+        TypeLayoutReflection fields = globals.TypeLayout;
+        if (fields.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
+            fields = fields.ElementTypeLayout;
+
+        string[] names = Enumerable.Range(0, checked((int)fields.FieldCount))
+            .Select(index => fields.GetFieldByIndex(checked((uint)index)).Name)
+            .ToArray();
+        Assert.Contains("ParametersData", names);
+        Assert.Contains("TextureData", names);
     }
 
     [Fact]
-    public async Task TestSlangImport_TracksIncludeDependencies_AndKeepsAssetGuidStable()
+    public async Task DefinitionRetainsIdentityAndSerializedSource()
     {
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
+        const string source = """
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void computeMain() {}
+            """;
+        using var files = new AssetTestDirectory();
+        string sourcePath = files.File("identity.slang");
+        string definitionPath = files.File("identity.shader");
+        File.WriteAllText(sourcePath, source);
 
-        string includeFile = Path.Combine(dir, "common_inc.slang");
-        string sourceFile = Path.Combine(dir, "with_include.slang");
+        using ShaderAsset definition = ShaderTestCompilation.Define(sourcePath);
+        await definition.SaveSourceAsync(definitionPath);
+        using ShaderAsset first = SlangShaderImporter.CompileDefinition(
+            definition,
+            definitionPath);
+        using ShaderAsset reopened = await ShaderAsset.OpenSourceAsync(definitionPath);
+        using ShaderAsset second = SlangShaderImporter.CompileDefinition(
+            reopened,
+            definitionPath);
+        Shader firstShader = await ShaderTestCompilation.CreateAsync(first);
+        Shader secondShader = await ShaderTestCompilation.CreateAsync(second);
 
-        File.WriteAllText(includeFile, "float4 GetColor() { return float4(1, 0, 0, 1); }");
-        File.WriteAllText(sourceFile, "#include \"common_inc.slang\"\n[shader(\"pixel\")] float4 main() : SV_Target { return GetColor(); }");
-
-        try
-        {
-            using var definition = ShaderTestCompilation.Define(sourceFile);
-            using var asset1File = ShaderTestCompilation.Compile(definition, sourceFile);
-            using Shader asset1 = await asset1File.GetBlock<ShaderBlock>().CreateAsync(asset1File.Name);
-            Guid guid1 = asset1File.Id;
-            var trace1 = asset1File.GetBlock<ShaderBlock>().ImportTrace;
-            Assert.NotNull(trace1);
-            Assert.NotNull(trace1.Dependencies);
-            IList<DependencyEntry> dependencies1 = trace1.Dependencies;
-            Assert.True(dependencies1.Count >= 2);
-            Assert.Contains(dependencies1, d => d.Path == "common_inc.slang" || d.Path!.EndsWith("/common_inc.slang"));
-
-            string inputHash1 = trace1.ContentFingerprint!;
-
-            File.WriteAllText(includeFile, "float4 GetColor() { return float4(0, 1, 0, 1); }");
-
-            using var asset2File = ShaderTestCompilation.Compile(definition, sourceFile);
-
-            using Shader asset2 = await asset2File.GetBlock<ShaderBlock>().CreateAsync(asset2File.Name);
-            Guid guid2 = asset2File.Id;
-            Assert.Equal(guid1, guid2);
-            var trace2 = asset2File.GetBlock<ShaderBlock>().ImportTrace;
-            Assert.NotNull(trace2);
-            Assert.NotEqual(inputHash1, trace2.ContentFingerprint);
-            Assert.NotNull(trace2.Dependencies);
-            IList<DependencyEntry> dependencies2 = trace2.Dependencies;
-            Assert.Contains(dependencies2, d => d.Path == "common_inc.slang" || d.Path!.EndsWith("/common_inc.slang"));
-        }
-        finally
-        {
-            if (Directory.Exists(dir))
-            {
-                Directory.Delete(dir, true);
-            }
-        }
+        Assert.Equal(definition.Id, first.Id);
+        Assert.Equal(first.Id, second.Id);
+        Assert.NotNull(first.GetBlock<ShaderBlock>().ImportTrace);
+        Assert.Contains(
+            ShaderSourceBlock.SerializedSourceKey(0),
+            first.GetBlock<ShaderSourceBlock>().ContentKeys);
+        Assert.Equal(
+            EntryHash(firstShader, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute),
+            EntryHash(secondShader, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute));
     }
 
     [Fact]
-    public async Task ContentHash_IdenticalLogicInDifferentFiles_ProducesSameHash()
+    public void IncludeChangesUpdateTheImportFingerprint()
     {
-        // 两个不同文件，相同的 compute shader 逻辑 → content hash 应该一致
-        string source = @"
-            RWStructuredBuffer<float> outputBuffer;
+        using var files = new AssetTestDirectory();
+        string includePath = files.File("common.slang");
+        string sourcePath = files.File("include.slang");
+        File.WriteAllText(includePath, "float4 Color() { return float4(1, 0, 0, 1); }");
+        File.WriteAllText(
+            sourcePath,
+            "#include \"common.slang\"\n[shader(\"fragment\")] float4 pixelMain() : SV_Target0 { return Color(); }");
+        using ShaderAsset definition = ShaderTestCompilation.Define(sourcePath);
+        using ShaderAsset first = ShaderTestCompilation.Compile(definition, sourcePath);
+        string firstHash = first.GetBlock<ShaderBlock>().ImportTrace!.ContentFingerprint!;
 
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
+        File.WriteAllText(includePath, "float4 Color() { return float4(0, 1, 0, 1); }");
+        using ShaderAsset second = ShaderTestCompilation.Compile(definition, sourcePath);
+        ImportTrace trace = second.GetBlock<ShaderBlock>().ImportTrace!;
 
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "shader_a.slang");
-        string fileB = Path.Combine(dir, "shader_b.slang");
-        File.WriteAllText(fileA, source);
-        File.WriteAllText(fileB, source);
-
-        try
-        {
-            using var assetAFile = ShaderTestCompilation.Compile(fileA);
-            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
-            using var assetBFile = ShaderTestCompilation.Compile(fileB);
-            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
-
-            Assert.NotNull(assetA.Programs);
-            Assert.NotNull(assetB.Programs);
-
-            // 验证每个 backend 的 content hash 都一致
-            var hashesA = assetA.Programs!.Select(program => { Assert.NotNull(program); return program; })
-                .ToDictionary(
-                    program => program.Backend!,
-                    program => EntryHash(assetA, program.Backend!, "CSMain", ShaderStage.Compute));
-            var hashesB = assetB.Programs!.Select(program => { Assert.NotNull(program); return program; })
-                .ToDictionary(
-                    program => program.Backend!,
-                    program => EntryHash(assetB, program.Backend!, "CSMain", ShaderStage.Compute));
-
-            Assert.True(hashesA.Count > 0, "Should have at least one CSMain variant");
-
-            foreach (var kvp in hashesA)
-            {
-                Assert.True(hashesB.ContainsKey(kvp.Key), $"Backend {kvp.Key} missing from shader_b");
-                Assert.Equal(kvp.Value, hashesB[kvp.Key]);
-                Assert.NotNull(kvp.Value);
-                Assert.NotEmpty(kvp.Value!);
-
-                Console.WriteLine($"  {kvp.Key}: {kvp.Value}");
-            }
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
+        Assert.NotEqual(firstHash, trace.ContentFingerprint);
+        Assert.Contains(
+            trace.Dependencies!,
+            dependency => dependency.Path!.EndsWith("common.slang", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task ContentHash_DifferentLogic_ProducesDifferentHash()
+    public async Task DifferentShaderBehaviorProducesDifferentEntryCode()
     {
-        string sourceA = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
+        const string firstSource = """
+            RWStructuredBuffer<float> Values;
+            [shader("compute")]
+            [numthreads(64, 1, 1)]
+            void computeMain(uint3 id : SV_DispatchThreadID)
             {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
+                Values[id.x] = float(id.x) * 2.0;
             }
-        ";
-
-        string sourceB = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
+            """;
+        const string secondSource = """
+            RWStructuredBuffer<float> Values;
+            [shader("compute")]
+            [numthreads(64, 1, 1)]
+            void computeMain(uint3 id : SV_DispatchThreadID)
             {
-                outputBuffer[tid.x] = float(tid.x) * 3.0 + 1.0;
+                Values[id.x] = float(id.x) * 3.0 + 1.0;
             }
-        ";
+            """;
+        using var files = new AssetTestDirectory();
+        Shader first = await Compile(files.File("first.slang"), firstSource);
+        Shader second = await Compile(files.File("second.slang"), secondSource);
 
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "shader_same.slang");
-        string fileB = Path.Combine(dir, "shader_diff.slang");
-        File.WriteAllText(fileA, sourceA);
-        File.WriteAllText(fileB, sourceB);
-
-        try
-        {
-            using var assetAFile = ShaderTestCompilation.Compile(fileA);
-            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
-            using var assetBFile = ShaderTestCompilation.Compile(fileB);
-            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
-
-            string spirvA = EntryHash(assetA, "spirv", "CSMain", ShaderStage.Compute);
-            string spirvB = EntryHash(assetB, "spirv", "CSMain", ShaderStage.Compute);
-
-            Assert.NotEqual(spirvB, spirvA);
-
-            Console.WriteLine($"  A: {spirvA}");
-            Console.WriteLine($"  B: {spirvB}");
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
+        Assert.NotEqual(
+            EntryHash(first, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute),
+            EntryHash(second, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute));
     }
 
-    [Fact]
-    public async Task CookedProgramHash_CoversEachDetachedBackendPayload()
+    private static async ValueTask<Shader> Compile(string sourcePath, string source)
     {
-        // Backend compilers may preserve or erase local names independently. The asset hash
-        // always covers the exact detached payload that runtime pipeline creation consumes.
-        string sourceA = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                float value = float(tid.x) * 2.0;
-                outputBuffer[tid.x] = value;
-            }
-        ";
-
-        string sourceB = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                float result = float(tid.x) * 2.0;
-                outputBuffer[tid.x] = result;
-            }
-        ";
-
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "varname_a.slang");
-        string fileB = Path.Combine(dir, "varname_b.slang");
-        File.WriteAllText(fileA, sourceA);
-        File.WriteAllText(fileB, sourceB);
-
-        try
-        {
-            using var assetAFile = ShaderTestCompilation.Compile(fileA);
-            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
-            using var assetBFile = ShaderTestCompilation.Compile(fileB);
-            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
-
-            foreach (var backend in new[] { "spirv", "dxil" })
-            {
-                CookedShaderProgram programA = assetAFile.GetBlock<ShaderBlock>().Programs.Single(program =>
-                    string.Equals(program.Backend, backend, StringComparison.Ordinal));
-                CookedShaderProgram programB = assetBFile.GetBlock<ShaderBlock>().Programs.Single(program =>
-                    string.Equals(program.Backend, backend, StringComparison.Ordinal));
-                using var bytesA = await assetAFile.GetBlock<ShaderBlock>().AcquireBufferAsync(programA.DataChunkKey);
-                using var bytesB = await assetBFile.GetBlock<ShaderBlock>().AcquireBufferAsync(programB.DataChunkKey);
-                using var readA = bytesA.Retain();
-                using var readB = bytesB.Retain();
-                string hashA = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(readA.ToArray()));
-                string hashB = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(readB.ToArray()));
-
-                Console.WriteLine($"  [{backend}] A: {hashA}");
-                Console.WriteLine($"  [{backend}] B: {hashB}");
-                Assert.Equal(programA.ContentHash, hashA);
-                Assert.Equal(programB.ContentHash, hashB);
-            }
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
-    }
-
-    [Fact]
-    public async Task ContentHash_UnusedExtraBuffer_SameHash()
-    {
-        // 一个文件多了一个未使用的 buffer 声明 → DCE 应剥离 → hash 相同
-        string sourceA = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
-
-        string sourceB = @"
-            RWStructuredBuffer<float> outputBuffer;
-            RWStructuredBuffer<float> unusedBuffer;  // 额外声明，但未使用
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
-
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "no_extra.slang");
-        string fileB = Path.Combine(dir, "with_extra.slang");
-        File.WriteAllText(fileA, sourceA);
-        File.WriteAllText(fileB, sourceB);
-
-        try
-        {
-            using var assetAFile = ShaderTestCompilation.Compile(fileA);
-            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
-            using var assetBFile = ShaderTestCompilation.Compile(fileB);
-            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
-
-            foreach (var backend in new[] { "spirv", "dxil" })
-            {
-                string hashA = EntryHash(assetA, backend, "CSMain", ShaderStage.Compute);
-                string hashB = EntryHash(assetB, backend, "CSMain", ShaderStage.Compute);
-
-                Console.WriteLine($"  [{backend}] A: {hashA}");
-                Console.WriteLine($"  [{backend}] B: {hashB}");
-                Assert.Equal(hashB, hashA);
-            }
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
-    }
-
-    [Fact]
-    public async Task ContentHash_DifferentUnusedBufferLayout_SameHash()
-    {
-        // 两个文件都有一个未使用的 buffer，但布局不同 → DCE 剥离后 hash 应相同
-        string sourceA = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            struct ExtraA { float x; float y; };
-            RWStructuredBuffer<ExtraA> unusedBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
-
-        string sourceB = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            struct ExtraB { int a; int b; int c; };
-            RWStructuredBuffer<ExtraB> unusedBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
-
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "layout_a.slang");
-        string fileB = Path.Combine(dir, "layout_b.slang");
-        File.WriteAllText(fileA, sourceA);
-        File.WriteAllText(fileB, sourceB);
-
-        try
-        {
-            using var assetAFile = ShaderTestCompilation.Compile(fileA);
-            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
-            using var assetBFile = ShaderTestCompilation.Compile(fileB);
-            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
-
-            foreach (var backend in new[] { "spirv", "dxil" })
-            {
-                string hashA = EntryHash(assetA, backend, "CSMain", ShaderStage.Compute);
-                string hashB = EntryHash(assetB, backend, "CSMain", ShaderStage.Compute);
-
-                Console.WriteLine($"  [{backend}] A: {hashA}");
-                Console.WriteLine($"  [{backend}] B: {hashB}");
-                Assert.Equal(hashB, hashA);
-            }
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
+        File.WriteAllText(sourcePath, source);
+        using ShaderAsset asset = ShaderTestCompilation.Compile(sourcePath);
+        return await ShaderTestCompilation.CreateAsync(asset);
     }
 
     private static string EntryHash(
-        Shader asset,
-        string backend,
-        string entryPoint,
-        ShaderStage stage)
+        Shader shader,
+        SlangCompileTarget target,
+        string entryName,
+        SlangStage stage)
     {
-        Assert.True(asset.TryEntry(backend, entryPoint, stage, out _, out var entry));
-        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(entry.Code.Span));
+        int targetIndex = shader.RequireSlangTarget(target);
+        EntryPointReflection entry = shader.RequireSlangEntry(targetIndex, entryName, stage);
+        return Convert.ToHexString(SHA256.HashData(GetCode(shader, targetIndex, entry)));
+    }
+
+    private static byte[] GetCode(
+        Shader shader,
+        int targetIndex,
+        EntryPointReflection entry)
+    {
+        ISlangBlob? blob = shader.GetSlangEntryBlob(targetIndex, entry);
+        return blob is null
+            ? shader.GetSlangEntryBytes(targetIndex, entry).ToArray()
+            : blob.Buffer.ToArray();
     }
 }

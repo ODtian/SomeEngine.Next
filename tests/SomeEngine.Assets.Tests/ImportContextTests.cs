@@ -337,9 +337,9 @@ internal sealed partial class ContextNumberBlock : AssetBlock
     public int Value { get; }
     public bool Disposed { get; private set; }
     public ContextNumberBlock(int value) => Value = value;
-    private ContextNumberBlock(ContextNumberBlock source, PageAccess? access = null) : base(source, access) => Value = source.Value;
+    private ContextNumberBlock(ContextNumberBlock source, object? syncRoot = null) : base(source, syncRoot) => Value = source.Value;
     public override AssetBlock Duplicate() => new ContextNumberBlock(this);
-    public override AssetBlock Duplicate(PageAccess access) => new ContextNumberBlock(this, access);
+    public override AssetBlock Duplicate(object syncRoot) => new ContextNumberBlock(this, syncRoot);
     protected override void ReleaseContent() => Disposed = true;
 }
 
@@ -349,8 +349,8 @@ internal sealed partial class ContextTextBlock : AssetBlock
     public string Text { get; }
     public bool Disposed { get; private set; }
     public ContextTextBlock(string text) => Text = text;
-    private ContextTextBlock(ContextTextBlock source, PageAccess? access = null) : base(source, access) => Text = source.Text;
+    private ContextTextBlock(ContextTextBlock source, object? syncRoot = null) : base(source, syncRoot) => Text = source.Text;
     public override AssetBlock Duplicate() => new ContextTextBlock(this);
-    public override AssetBlock Duplicate(PageAccess access) => new ContextTextBlock(this, access);
+    public override AssetBlock Duplicate(object syncRoot) => new ContextTextBlock(this, syncRoot);
     protected override void ReleaseContent() => Disposed = true;
 }

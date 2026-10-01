@@ -7,7 +7,7 @@
 - 删除全局 Block 下标初始化及读取委托注册。每个资产在打开时建立自己的持久 ID 目录，查询复用目录，`IAssetBlock<T>.ReadAsync` 静态分派到对应读取代码；仅内存 Block 无需持久读取实现。
 - 项目 SG 继续生成 Microsoft DI 注册，并新增 `BlockKind`、`ImporterKind`、GUI 可绑定的 `BlockChoices` / `ImporterChoices`、`SelectImporter` 及枚举 Block API。枚举值不作为持久文件身份。
 - glTF 来源读取、遍历、设置和依赖收集移入 Importers 库。本轮之后的场景组装重构又删除了项目的独立材质映射接口：现在由选中的项目 `GltfSceneImporter` 直接组成纹理、材质、Mesh 和 World 资产。
-- 明确一个语义资产可混用不同存储 Block，可读格式不是必备主文件。Asset 与使用对象的驻留差异是同一底层页系统的使用约定。
+- 明确一个语义资产可混用不同存储 Block，可读格式不是必备主文件。Asset 与使用对象的语义边界不规定同一种 backing：文件 I/O 和业务分页可以用页，普通不可变发布值由 GC 对象/数组持有。
 
 ## 验证结果
 

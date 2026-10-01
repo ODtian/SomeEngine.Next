@@ -22,12 +22,12 @@ public sealed class WarpCapabilityTests
             [shader("fragment")]
             float4 pixelMain() : SV_Target0 { return float4(1, 1, 1, 1); }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("vertexMain", SlangStage.Vertex),
             new("pixelMain", SlangStage.Fragment),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_dynamic_state_flags",
             source,
             entries);
@@ -43,10 +43,7 @@ public sealed class WarpCapabilityTests
 
         using Pipeline pipeline = backend.CreateGraphicsPipeline(
             device,
-            new GraphicsPipelineDesc(
-                shader.Program,
-                shader.GetEntryPoint(0),
-                shader.GetEntryPoint(1),
+            new GraphicsPipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0), shader.GetEntryPoint(1), shader.GetEntryCode(1),
                 [],
                 [],
                 PrimitiveTopology.TriangleList,
@@ -62,10 +59,7 @@ public sealed class WarpCapabilityTests
         {
             using Pipeline invalid = backend.CreateGraphicsPipeline(
                 device,
-                new GraphicsPipelineDesc(
-                    shader.Program,
-                    shader.GetEntryPoint(0),
-                    shader.GetEntryPoint(1),
+                new GraphicsPipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0), shader.GetEntryPoint(1), shader.GetEntryCode(1),
                     [],
                     [],
                     PrimitiveTopology.TriangleList,
@@ -583,8 +577,8 @@ public sealed class WarpCapabilityTests
             {
             }
             """;
-        D3D12TestShaderEntry[] entries = [new("computeMain", SlangStage.Compute)];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestEntry[] entries = [new("computeMain", SlangStage.Compute)];
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_indirect_compute",
             source,
             entries);
@@ -592,7 +586,7 @@ public sealed class WarpCapabilityTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         IndirectArgumentDesc[] arguments = [new(IndirectArgumentType.Dispatch)];
         using IndirectCommandLayout layout = backend.CreateIndirectCommandLayout(
             device,
@@ -636,7 +630,7 @@ public sealed class WarpCapabilityTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 dispatchThread : SV_DispatchThreadID) { }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_async_pipeline_prewarm",
             source,
             [new("computeMain", SlangStage.Compute)]);
@@ -652,9 +646,7 @@ public sealed class WarpCapabilityTests
         using PipelineCache cache = backend.CreatePipelineCache(device, default);
         Assert.False(backend.TryGetPipelineCacheData(cache, [], out int emptySize));
 
-        ComputePipelineDesc description = new(
-            shader.Program,
-            shader.GetEntryPoint(0),
+        ComputePipelineDesc description = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
             "async prewarmed compute");
         using Pipeline pipeline = await backend.CreateComputePipelineAsync(
             device,
@@ -716,32 +708,30 @@ public sealed class WarpCapabilityTests
                 outputValues[dispatchThread.x] = value;
             }
             """;
-        D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_async_pipeline_program_ownership",
             source,
             [new("computeMain", SlangStage.Compute)]);
         using IGraphicsBackend backend = CreateValidatedBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         var creations = new Task<Pipeline>[16];
-        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        Assert.NotEqual(ShaderVariableLayout.Null, globals);
-        try
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        Assert.NotEqual(VariableLayoutReflection.Null, globals);
+        ComputePipelineDesc description = new(
+            shader.SlangCode,
+            shader.Reflection,
+            shader.GetEntryPoint(0),
+            shader.GetEntryCode(0));
+        for (int index = 0; index < creations.Length; index++)
         {
-            ComputePipelineDesc description = new(
-                shader.Program,
-                shader.GetEntryPoint(0));
-            for (int index = 0; index < creations.Length; index++)
-            {
-                creations[index] = backend.CreateComputePipelineAsync(
-                    device,
-                    description);
-            }
+            creations[index] = backend.CreateComputePipelineAsync(
+                device,
+                description);
         }
-        finally
-        {
-            shader.Dispose();
-        }
+        shader = null!;
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
 
         Pipeline[] pipelines = await Task.WhenAll(creations);
         try
@@ -813,7 +803,7 @@ public sealed class WarpCapabilityTests
             {
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "rhi_indirect_pipeline_native_ownership",
             source,
             [new("computeMain", SlangStage.Compute)]);
@@ -821,7 +811,7 @@ public sealed class WarpCapabilityTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
 
         IndirectArgumentDesc[] arguments = [new(IndirectArgumentType.Dispatch)];
         using (IndirectCommandLayout layout = backend.CreateIndirectCommandLayout(
@@ -931,12 +921,12 @@ public sealed class WarpCapabilityTests
                 return float4(0.25, 0.5, 0.75, 1.0);
             }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("meshMain", SlangStage.Mesh),
             new("pixelMain", SlangStage.Fragment),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileHlslPassThrough(
+        D3D12TestShader shader = D3D12TestShader.CompileHlslPassThrough(
             "rhi_mesh_dispatch",
             source,
             entries);
@@ -959,10 +949,14 @@ public sealed class WarpCapabilityTests
         using Pipeline pipeline = backend.CreateMeshPipeline(
             device,
             new MeshPipelineDesc(
-                shader.Program,
+                shader.SlangCode,
+                shader.Reflection,
                 shader.GetEntryPoint(0),
-                ShaderEntryPoint.Null,
+                shader.GetEntryCode(0),
+                EntryPointReflection.Null,
+                default,
                 shader.GetEntryPoint(1),
+                shader.GetEntryCode(1),
                 rasterizer,
                 multisample,
                 depthStencil,

@@ -34,8 +34,7 @@ public static partial class ClusterBuilder
             throw new ArgumentOutOfRangeException(
                 nameof(materialSlots),
                 "Cluster meshes require between one and 256 material/deform cook slots.");
-        using var payload = new PageBuffer(PageArena.Shared);
-        using var stream = new PageBufferStream(payload);
+        using var stream = new MemoryStream();
         var scratch = new RawMeshScratch(rawPos.Length);
         try
         {
@@ -57,7 +56,7 @@ public static partial class ClusterBuilder
             if (lowestDetailPageIndices.Length == 0)
                 lowestDetailPageIndices = [clusterInfos.Max(static cluster => cluster.PageIndex)];
             long bvhOffset = WriteBvh(stream, clusterInfos);
-            using PageBuffer content = payload.Slice(0, stream.Length);
+            byte[] content = stream.ToArray();
             return CreateMeshAsset(
                 name,
                 materialSlots,
@@ -284,7 +283,7 @@ public static partial class ClusterBuilder
     private static MeshAsset CreateMeshAsset(
         string name,
         IReadOnlyList<MeshMaterialSlot> materialSlots,
-        PageBuffer payload,
+        ReadOnlyMemory<byte> payload,
         MeshBoundsInfo bounds,
         string vertexEncoding,
         long bvhOffset,

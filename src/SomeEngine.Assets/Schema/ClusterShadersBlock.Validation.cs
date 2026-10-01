@@ -25,19 +25,11 @@ public sealed partial class ClusterShadersBlock
 
             IList<ShaderRef> shaders = operation.Shaders
                 ?? throw Invalid(path, $"{field}.Shaders is missing.");
-            bool isCompute =
-                shaders.Count == 1 &&
-                shaders[0] is not null &&
-                shaders[0].Stage == ShaderStage.Compute;
-            bool isRaster =
-                shaders.Count == 2 &&
-                shaders.Count(shader => shader is not null && shader.Stage == ShaderStage.Vertex) == 1 &&
-                shaders.Count(shader => shader is not null && shader.Stage == ShaderStage.Pixel) == 1;
-            if (!isCompute && !isRaster)
+            if (shaders.Count is not (1 or 2) || shaders.Any(static shader => shader is null))
             {
                 throw Invalid(
                     path,
-                    $"{field}.Shaders must contain either one compute entry or one vertex/pixel pair.");
+                    $"{field}.Shaders must contain one or two entry references.");
             }
 
             Guid? operationShader = null;

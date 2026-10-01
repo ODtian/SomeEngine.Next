@@ -11,7 +11,7 @@ namespace SomeEngine.Assets.Schema;
 [BinaryFields(nameof(Dimension), nameof(Width), nameof(Height),
     nameof(Depth), nameof(MipLevelCount), nameof(ArrayLayerCount), nameof(Format), nameof(SampledFormat),
     nameof(SampledDimension), nameof(MipTiles))]
-public sealed partial class TextureBlock : AssetPageBlock
+public sealed partial class TextureBlock : AssetBlock
 {
     public partial TextureDimension Dimension { get; set; }
     public partial uint Width { get; set; }
@@ -42,8 +42,8 @@ public sealed partial class TextureBlock : AssetPageBlock
             TextureMipTile tile = MipTiles[index];
             ulong key = TextureTiles.ChunkKey(tile.MipLevel, tile.ArrayLayer, tile.Face, tile.DepthSlice, tile.TileX, tile.TileY);
             if (!keys.Add(key)) throw new InvalidDataException("Texture tile keys collided or repeat the same coordinates.");
-            ulong contentKey = Chunks.Contains(tile.ChunkKey) ? tile.ChunkKey : Chunks.Contains(key) ? key : tile.ChunkKey;
-            ulong length = Chunks.Contains(contentKey) ? checked((ulong)Chunks.GetLength(contentKey)) : tile.DecodedLength;
+            ulong contentKey = Chunks.ContainsKey(tile.ChunkKey) ? tile.ChunkKey : Chunks.ContainsKey(key) ? key : tile.ChunkKey;
+            ulong length = Chunks.ContainsKey(contentKey) ? checked((ulong)Chunks[contentKey].Length) : tile.DecodedLength;
             result[index] = (tile.ChunkKey == key && tile.DecodedLength == length
                 ? tile : tile with { ChunkKey = key, DecodedLength = length }, contentKey);
         }
@@ -62,18 +62,19 @@ public sealed partial class TextureBlock : AssetPageBlock
         _ = TextureTiles.Bootstrap(copy.GetDescription(), copy.SampledDimension, tiles);
         uint first = firstMip ?? copy.MipLevelCount - 1;
         if (first >= copy.MipLevelCount) throw new ArgumentOutOfRangeException(nameof(firstMip));
-        var selected = content.Where(row => row.Tile.MipLevel >= first || copy.Chunks.Contains(row.ContentKey)).ToArray();
-        copy.ValidateAcquisitionSize(selected.Select(static row => row.Tile));
-        using var pixels = new PageBufferMap(copy.Pages);
+        var selected = content.Where(row => row.Tile.MipLevel >= first || copy.Chunks.ContainsKey(row.ContentKey)).ToArray();
+        var pixels = new List<SomeEngine.Resources.TexturePixels>();
         foreach (var row in selected)
         {
-            using PageBuffer bytes = await copy.AcquireBufferAsync(row.ContentKey, cancellationToken).ConfigureAwait(false);
+            ReadOnlyMemory<byte> bytes = await copy.ReadBytesAsync(row.ContentKey, cancellationToken).ConfigureAwait(false);
             if ((ulong)bytes.Length != row.Tile.DecodedLength)
                 throw new InvalidDataException("Texture chunk length differs from its tile declaration.");
-            pixels.Set(row.Tile.ChunkKey, bytes);
+            pixels.Add(new(row.Tile, bytes));
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return EngineTexture.Create(copy.GetDescription(name), tiles, pixels, copy.SampledDimension, copy.SampledFormat);
+        EngineTexture texture = EngineTexture.Create(copy.GetDescription(name), tiles, pixels, copy.SampledDimension, copy.SampledFormat);
+        texture.DataVersion = copy.DataVersion;
+        return texture;
     }
 
     /// <summary>Explicitly acquires an additional mip; the Texture itself never opens a source.</summary>
@@ -85,31 +86,22 @@ public sealed partial class TextureBlock : AssetPageBlock
         var content = copy.ReadTiles();
         if (mipLevel >= copy.MipLevelCount) throw new ArgumentOutOfRangeException(nameof(mipLevel));
         ulong revision = texture.Revision;
-        if (texture.Width != copy.Width || texture.Height != copy.Height || texture.Depth != copy.Depth
+        if (texture.DataVersion != copy.DataVersion || texture.Width != copy.Width || texture.Height != copy.Height || texture.Depth != copy.Depth
             || texture.Dimension != copy.Dimension || texture.MipLevelCount != copy.MipLevelCount
             || texture.ArrayLayerCount != copy.ArrayLayerCount || texture.Format != copy.Format
             || texture.SampledFormat != copy.SampledFormat || texture.SampledDimension != copy.SampledDimension
             || !texture.MipTiles.SequenceEqual(content.Select(static row => row.Tile)))
             throw new InvalidOperationException("The texture description differs; use a full content update before loading more mips.");
         var selected = content.Where(row => row.Tile.MipLevel == mipLevel).ToArray();
-        copy.ValidateAcquisitionSize(selected.Select(static row => row.Tile));
-        using var pixels = new PageBufferMap(texture.Pages);
+        var pixels = new List<SomeEngine.Resources.TexturePixels>();
         foreach (var row in selected)
         {
-            using PageBuffer bytes = await copy.AcquireBufferAsync(row.ContentKey, cancellationToken).ConfigureAwait(false);
-            pixels.Set(row.Tile.ChunkKey, bytes);
+            if (texture.TryGetTile(row.Tile.ChunkKey, out _)) continue;
+            ReadOnlyMemory<byte> bytes = await copy.ReadBytesAsync(row.ContentKey, cancellationToken).ConfigureAwait(false);
+            pixels.Add(new(row.Tile, bytes));
         }
         cancellationToken.ThrowIfCancellationRequested();
         texture.AddPixels(pixels, revision);
-    }
-
-    private void ValidateAcquisitionSize(IEnumerable<TextureMipTile> tiles)
-    {
-        long required = 0;
-        foreach (TextureMipTile tile in tiles)
-            required = checked(required + Pages.GetBufferCapacity(checked((long)tile.DecodedLength)));
-        if (required > Pages.Residency.Budget(ResidencyClass.DecodedCpu))
-            throw new InvalidDataException("The requested texture pixels exceed the configured decoded memory budget.");
     }
 
     public async ValueTask UpdateAsync(EngineTexture texture, string? name = null, CancellationToken cancellationToken = default)
@@ -132,9 +124,9 @@ public sealed partial class TextureBlock : AssetPageBlock
         {
             cancellationToken.ThrowIfCancellationRequested();
             var row = content[index];
-            if (Chunks.Contains(row.ContentKey))
-                writer.WriteChunk(row.Tile.ChunkKey, Chunks, ChunkCompression.None,
-                    alignment: 4096, sourceKey: row.ContentKey, ordinal: checked((uint)index));
+            if (Chunks.ContainsKey(row.ContentKey))
+                writer.WriteChunk(row.Tile.ChunkKey, Chunks[row.ContentKey], ChunkCompression.None,
+                    alignment: 4096, ordinal: checked((uint)index));
             else
                 await writer.CopyChunkAsync(source ?? throw new InvalidDataException("Texture tile has no pixel content."),
                     row.ContentKey, cancellationToken, destinationKey: row.Tile.ChunkKey, ordinal: checked((uint)index)).ConfigureAwait(false);

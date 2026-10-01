@@ -15,7 +15,7 @@ internal static class DefaultMaterials
             ?? throw new InvalidDataException("The Standard shader has not been built.");
         Guid unlitShader = project.Resolve("assets/Shaders/unlit.shader")
             ?? throw new InvalidDataException("The Unlit shader has not been built.");
-        using var standard = new StandardMaterialAsset(PageArena.Shared, DefaultContentIds.StandardMaterial)
+        using var standard = new StandardMaterialAsset(DefaultContentIds.StandardMaterial)
         {
             Name = "Standard",
         };
@@ -32,7 +32,7 @@ internal static class DefaultMaterials
         standard.GetBlock<MaterialBlock>().Shader = new(standardShader);
         AssetEntry standardEntry = await standard.SaveAsync(Path.Combine(project.RootPath, "assets/Materials/Standard.material.asset"), cancellationToken).ConfigureAwait(false);
         project.RegisterAsset(standardEntry);
-        using var unlit = new UnlitMaterialAsset(PageArena.Shared, DefaultContentIds.UnlitMaterial)
+        using var unlit = new UnlitMaterialAsset(DefaultContentIds.UnlitMaterial)
         {
             Name = "Unlit",
         };

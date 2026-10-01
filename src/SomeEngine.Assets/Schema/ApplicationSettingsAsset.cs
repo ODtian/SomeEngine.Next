@@ -18,14 +18,14 @@ public sealed partial class ApplicationSettingsAsset : Asset
         private set => base.BlockDescriptions = value;
     }
 
-    public ApplicationSettingsAsset() : this(PageArena.Shared) { }
-    public ApplicationSettingsAsset(PageArena pages, Guid id = default) : base(pages, id)
+    public ApplicationSettingsAsset() : this(Guid.Empty) { }
+    public ApplicationSettingsAsset(Guid id = default) : base(id)
     {
         try
         {
             AssetType = FileType;
             Name = "SomeEngine";
-            using var settings = new ApplicationSettingsBlock(pages);
+            using var settings = new ApplicationSettingsBlock();
             SetBlock(settings);
         }
         catch (Exception error)
@@ -37,7 +37,7 @@ public sealed partial class ApplicationSettingsAsset : Asset
     }
 
     private ApplicationSettingsAsset(ApplicationSettingsAsset source) : base(source) { }
-    public override ApplicationSettingsAsset Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public override ApplicationSettingsAsset Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
     public override ApplicationSettingsAsset CreateCopy(Guid id = default) => (ApplicationSettingsAsset)base.CreateCopy(id);
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
@@ -53,7 +53,7 @@ public sealed partial class ApplicationSettingsAsset : Asset
         AssetEntry description = file.Describe();
         if ((expected != Guid.Empty && expected != description.AssetGuid) || description.AssetType != FileType)
             throw new InvalidDataException("The asset identity or type differs from the selected file.");
-        var result = new ApplicationSettingsAsset(file.Pages, description.AssetGuid);
+        var result = new ApplicationSettingsAsset(description.AssetGuid);
         try
         {
             result.ReadBlockContent(file);
@@ -70,11 +70,11 @@ public sealed partial class ApplicationSettingsAsset : Asset
         }
     }
 
-    public static async ValueTask<ApplicationSettingsAsset> OpenAsync(string path, PageArena? pages = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<ApplicationSettingsAsset> OpenAsync(string path, CancellationToken cancellationToken = default)
     {
         if (!path.EndsWith(PathSuffix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The asset path has a different suffix.");
-        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, cancellationToken: cancellationToken).ConfigureAwait(false);
         return await ReadFileAsync(file, Guid.Empty, cancellationToken).ConfigureAwait(false);
     }
 

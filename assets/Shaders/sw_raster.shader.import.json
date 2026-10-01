@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "872836aa805f50c5c52d640c184aee5bb7f242ba63d70ec317fe870f967d48af",
+  "importer_version": 28,
+  "input_hash": "b06fd1ca51bc654b25d24bd6f62d4c231ec62fe76769c779faf13ab82c0dd4c8",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_bin_common.slang",
@@ -65,7 +65,7 @@
     },
     {
       "relative_path": "assets/Shaders/material_interfaces.slang",
-      "content_hash": "10a65f5d953269663874193785a8c995b1ed0502b98437c724fe6cb928a0cb43"
+      "content_hash": "de83680e1e102c1b2c960b2cdee3dd33c36194c8ae3bdf1c4a07b8955bd6465d"
     },
     {
       "relative_path": "assets/Shaders/render_instance_properties.slang",
@@ -81,7 +81,7 @@
     },
     {
       "relative_path": "assets/Shaders/sw_raster.shader",
-      "content_hash": "bb7e8d3ba79d7bb9103d2906d521d37f78fccee1f38e4977677ee32714d1b6a3"
+      "content_hash": "3a233487849e5c82e43cd32dfd1c5ee4c9e57bf8899fea357472b12f68ba0213"
     },
     {
       "relative_path": "assets/Shaders/sw_raster.slang",
@@ -121,11 +121,11 @@
     {
       "asset_guid": "70cd2572-fa34-5f52-9676-f355f8f8b6db",
       "sub_asset_key": "",
-      "input_hash": "872836aa805f50c5c52d640c184aee5bb7f242ba63d70ec317fe870f967d48af",
+      "input_hash": "b06fd1ca51bc654b25d24bd6f62d4c231ec62fe76769c779faf13ab82c0dd4c8",
       "dependencies": [],
       "asset_path": "sw_raster.shader.asset",
-      "version": "59aca757-5c34-2dbb-35a1-0b7a404aa5a1",
-      "content_hash": "C00E11D3216C44BF5299C32C4A31927B63DD77EE203A66DC88FC77BA3F2794BE",
+      "version": "3ec737a3-d9b7-f3d0-e4e7-50df30e9d44c",
+      "content_hash": "589DD77C26E9E2CE25F602E33CC2461AA7C594CAE96118CD19937929E76D9A61",
       "asset_dependencies": []
     }
   ]

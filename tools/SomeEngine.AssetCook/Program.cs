@@ -1,3 +1,4 @@
+using SlangShaderSharp;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
@@ -30,13 +31,26 @@ static async Task<int> RunAsync(string[] args)
         Guid id = await project.BuildAsync(sourcePath);
         await using var loader = new AssetLoader(project.CreateStorage());
         using ShaderAsset file = await ShaderAsset.OpenAsync(loader, new AssetId<ShaderAsset>(id));
-        using Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(file.Name);
+        IGlobalSession slang = SlangShaderImporter.GlobalSession;
+        TargetDesc[] targets = SlangShaderImporter.CreateDefaultTargets(slang);
+        SessionDesc sessionDescription = SlangShaderImporter.CreateSessionDescription(
+            sourcePath,
+            targets,
+            includes);
+        Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(
+            file.GetBlock<ShaderSourceBlock>(),
+            slang,
+            sessionDescription,
+            file.Name);
         Console.WriteLine($"source={Path.GetRelativePath(projectRoot, sourcePath).Replace('\\', '/')}");
         Console.WriteLine($"asset-guid={id}");
-        Console.WriteLine($"cook-profile={file.GetBlock<ShaderSourceBlock>().CookProfile}");
         Console.WriteLine($"content-hash={file.GetBlock<ShaderBlock>().ImportTrace?.ContentFingerprint}");
-        foreach (var target in shader.Programs!)
-            Console.WriteLine($"backend={target!.Backend} entries={target.EntryPoints.Count}");
+        for (int targetIndex = 0; targetIndex < shader.SlangTargetCount; targetIndex++)
+        {
+            Console.WriteLine(
+                $"target={shader.GetSlangTarget(targetIndex).Format} " +
+                $"entries={shader.GetSlangReflection(targetIndex).EntryPointCount}");
+        }
         Console.WriteLine("storage-open=ok");
         return 0;
     }

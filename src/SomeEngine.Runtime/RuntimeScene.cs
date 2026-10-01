@@ -23,7 +23,6 @@ internal sealed class RuntimeScene : IDisposable
     private (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings)[] _meshes = [];
     private readonly (Entity Entity, PointLight Value)[] _playbackLights;
     private readonly Material[] _playbackMaterials;
-    private Shader[] _shaders = [];
     private Texture[] _textures = [];
     private readonly Vector3 _initialCameraPosition;
     private readonly Vector3 _cameraOrbitTarget;
@@ -74,15 +73,18 @@ internal sealed class RuntimeScene : IDisposable
 
     internal Vector3 MeshPositionMax { get; }
 
-    internal static async ValueTask<RuntimeScene> CreateAsync(World world, AssetLoader assets)
+    internal static async ValueTask<RuntimeScene> CreateAsync(
+        World world,
+        AssetLoader assets,
+        Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>> loadShader)
     {
+        ArgumentNullException.ThrowIfNull(loadShader);
         Entity[] instances = Entities(world, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());
         Entity[] cameras = Entities(world, new QueryDefinitionBuilder().Read<SceneCamera>());
         if (cameras.Length != 1) throw new InvalidDataException("The Game world must contain one scene camera.");
         SceneCamera camera = world.Read<SceneCamera>(cameras[0]);
         var meshes = new Dictionary<Guid, (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings)>();
         var materials = new Dictionary<Guid, Material>();
-        var shaderReads = new Dictionary<Guid, Lazy<Task<Shader>>>();
         var textureReads = new Dictionary<Guid, Lazy<Task<Texture>>>();
         Vector3 meshPositionMin = new(float.PositiveInfinity);
         Vector3 meshPositionMax = new(float.NegativeInfinity);
@@ -112,7 +114,7 @@ internal sealed class RuntimeScene : IDisposable
                         pages = await clusters.OpenPayloadSourceAsync(cancellationToken).ConfigureAwait(false);
                         loadedMeshes[index] = new SceneMeshData(mesh, pages, references.Materials.ToArray());
                     }
-                    catch { try { pages?.Dispose(); } finally { mesh.Dispose(); } throw; }
+                    catch { try { pages?.Dispose(); } finally {  } throw; }
                 }).ConfigureAwait(false);
 
             AssetId<MaterialAsset>[] materialIds = loadedMeshes
@@ -127,7 +129,7 @@ internal sealed class RuntimeScene : IDisposable
                 {
                     using MaterialAsset file = await MaterialAsset.OpenAsync(assets, materialIds[index], cancellationToken)
                         .ConfigureAwait(false);
-                    loadedMaterials[index] = await file.CreateAsync(assets, LoadShaderAsync, LoadTextureAsync,
+                    loadedMaterials[index] = await file.CreateAsync(assets, loadShader, LoadTextureAsync,
                         cancellationToken, loadTexturesConcurrently: true).ConfigureAwait(false);
                 }).ConfigureAwait(false);
             for (int index = 0; index < materialIds.Length; index++)
@@ -189,7 +191,6 @@ internal sealed class RuntimeScene : IDisposable
                     runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
                     camera.FarPlane, instances.Length, meshPositionMin, meshPositionMax)
                     { _meshes = [.. meshes.Values],
-                        _shaders = [.. shaderReads.Values.Select(read => read.Value.Result)],
                         _textures = [.. textureReads.Values.Select(read => read.Value.Result)] };
             }
             catch { world.ReleaseQuery(motionQuery); throw; }
@@ -208,46 +209,19 @@ internal sealed class RuntimeScene : IDisposable
                 try { (await read.Value.ConfigureAwait(false)).Dispose(); }
                 catch (Exception cleanup) { errors.Add(cleanup); }
             }
-            foreach (Lazy<Task<Shader>> read in shaderReads.Values)
-            {
-                if (!read.IsValueCreated) continue;
-                try { (await read.Value.ConfigureAwait(false)).Dispose(); }
-                catch (Exception cleanup) { errors.Add(cleanup); }
-            }
             foreach (var mesh in meshes.Values)
             {
-                try { mesh.Mesh.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
+                try { } catch (Exception cleanup) { errors.Add(cleanup); }
                 try { mesh.Source.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
             }
             foreach (SceneMeshData? mesh in loadedMeshes)
             {
                 if (mesh is null) continue;
-                try { mesh.Mesh.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
+                try { } catch (Exception cleanup) { errors.Add(cleanup); }
                 try { mesh.PageSource.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
             }
             if (errors.Count != 1) throw new AggregateException("Scene loading and cleanup failed.", errors);
             throw;
-        }
-
-        async ValueTask<Shader> LoadShaderAsync(AssetId<ShaderAsset> id, CancellationToken cancellationToken)
-        {
-            Lazy<Task<Shader>> read;
-            lock (shaderReads)
-            {
-                if (!shaderReads.TryGetValue(id.Value, out read!))
-                {
-                    read = new Lazy<Task<Shader>>(() => ReadShaderAsync(id, cancellationToken));
-                    shaderReads.Add(id.Value, read);
-                }
-            }
-            return await read.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        async Task<Shader> ReadShaderAsync(AssetId<ShaderAsset> id, CancellationToken cancellationToken)
-        {
-            using ShaderAsset file = await ShaderAsset.OpenAsync(assets, id, cancellationToken).ConfigureAwait(false);
-            ShaderBlock code = await file.GetBlockAsync<ShaderBlock>(cancellationToken).ConfigureAwait(false);
-            return await code.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
         }
 
         async ValueTask<Texture> LoadTextureAsync(AssetId<TextureAsset> id, CancellationToken cancellationToken)
@@ -376,11 +350,9 @@ internal sealed class RuntimeScene : IDisposable
             try { material.Dispose(); } catch (Exception error) { errors.Add(error); }
         foreach (Texture texture in _textures)
             try { texture.Dispose(); } catch (Exception error) { errors.Add(error); }
-        foreach (Shader shader in _shaders)
-            try { shader.Dispose(); } catch (Exception error) { errors.Add(error); }
         foreach (var mesh in _meshes)
         {
-            try { mesh.Mesh.Dispose(); } catch (Exception error) { errors.Add(error); }
+            try { } catch (Exception error) { errors.Add(error); }
             try { mesh.Source.Dispose(); } catch (Exception error) { errors.Add(error); }
         }
         _meshes = [];

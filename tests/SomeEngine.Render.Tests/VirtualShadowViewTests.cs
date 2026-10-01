@@ -6,6 +6,7 @@ using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Shadows;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
+using SlangShaderSharp;
 
 namespace SomeEngine.Render.Tests;
 
@@ -16,10 +17,21 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Content", "Shaders", "vsm_frame_reset.shader.asset");
         using ShaderAsset asset = await ShaderAsset.OpenAsync(path);
-        Shader shader = await asset.GetBlock<ShaderBlock>().CreateAsync(asset.Name);
-        var entry = new ShaderEntry(shader, "ResetVirtualShadowFrame", ShaderStage.Compute);
-        using var shaders = new VirtualShadowMapShaders
+        Shader shader = await TestShaderLoading.CreateAsync(asset);
+        int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Dxil);
+        EntryPointReflection entry = shader.RequireSlangEntry(
+            targetIndex,
+            "ResetVirtualShadowFrame",
+            SlangStage.Compute);
+        var shaders = new VirtualShadowMapShaders
         {
+            ResetFrameShader = shader, ResetReceiverMasksShader = shader,
+            MarkPagesShader = shader, MarkCoarsePagesShader = shader,
+            AllocatePagesShader = shader, ClearPagesShader = shader,
+            InitializeStateShader = shader, InvalidateCastersShader = shader,
+            BuildPagePoolShader = shader, CompactViewsShader = shader,
+            InitializePageHiZShader = shader, ReducePageHiZShader = shader,
+            DynamicResolutionShader = shader,
             ResetFrame = entry, ResetReceiverMasks = entry, MarkPages = entry, MarkCoarsePages = entry,
             AllocatePages = entry, ClearPages = entry, InitializeState = entry, InvalidateCasters = entry,
             BuildPagePool = entry, CompactViews = entry, InitializePageHiZ = entry,

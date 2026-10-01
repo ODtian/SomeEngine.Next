@@ -7,8 +7,8 @@ public static class MaterialTypes
 {
     private static readonly Lazy<bool> Registered = new(() =>
     {
-        MaterialAsset.RegisterType<StandardMaterial, StandardMaterialAsset>(static (pages, id) => new(pages, id));
-        MaterialAsset.RegisterType<UnlitMaterial, UnlitMaterialAsset>(static (pages, id) => new(pages, id));
+        MaterialAsset.RegisterType<StandardMaterial, StandardMaterialAsset>(static id => new(id));
+        MaterialAsset.RegisterType<UnlitMaterial, UnlitMaterialAsset>(static id => new(id));
         return true;
     });
 

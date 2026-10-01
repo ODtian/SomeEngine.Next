@@ -22,7 +22,7 @@ public readonly struct GraphParameterResourceBinding
         bool requiresExplicitAccess = false,
         BufferContentScope bufferContentScope = BufferContentScope.FullRange,
         UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered,
-        ShaderVariableLayout? parameterLayout = null,
+        VariableLayoutReflection? parameterLayout = null,
         byte[]? ordinaryData = null,
         GraphBufferInput? bufferInput = null, GraphParameterInput? parameterInput = null)
     {
@@ -43,7 +43,7 @@ public readonly struct GraphParameterResourceBinding
         RequiresExplicitAccess = requiresExplicitAccess;
         BufferContentScope = bufferContentScope;
         UnorderedAccessHazards = unorderedAccessHazards;
-        ParameterLayout = parameterLayout ?? ShaderVariableLayout.Null;
+        ParameterLayout = parameterLayout ?? VariableLayoutReflection.Null;
         OrdinaryData = ordinaryData;
     }
 
@@ -67,10 +67,10 @@ public readonly struct GraphParameterResourceBinding
     internal bool RequiresExplicitAccess { get; }
     internal BufferContentScope BufferContentScope { get; }
     internal UnorderedAccessHazardMode UnorderedAccessHazards { get; }
-    internal ShaderVariableLayout ParameterLayout { get; }
+    internal VariableLayoutReflection ParameterLayout { get; }
     internal byte[]? OrdinaryData { get; }
     internal bool IsBufferRange => Type == ResourceBindingType.ConstantBuffer && (BufferInput is not null || Value.Domain == GraphIdentityDomain.Buffer);
-    internal bool BeginsParameterBlock => ParameterLayout is not null && ParameterLayout != ShaderVariableLayout.Null;
+    internal bool BeginsParameterBlock => ParameterLayout != VariableLayoutReflection.Null;
     internal bool IsNull => Type != ResourceBindingType.None && !Value.IsValid && Resource is null && BufferInput is null && ParameterInput is null;
 
     internal static GraphParameterResourceBinding FromInput(GraphParameterInput input) =>
@@ -86,9 +86,9 @@ public readonly struct GraphParameterResourceBinding
     }
 
     internal static GraphParameterResourceBinding BeginBlock(
-        ShaderVariableLayout layout, ReadOnlySpan<byte> ordinaryData)
+        VariableLayoutReflection layout, ReadOnlySpan<byte> ordinaryData)
     {
-        DevelopmentCheck.Require(layout != ShaderVariableLayout.Null, "The parameter layout cannot be null.");
+        DevelopmentCheck.Require(layout != VariableLayoutReflection.Null, "The parameter layout cannot be null.");
         return new(ResourceBindingType.None, default, default, null, default,
             default, default, default, null, default, default, default,
             requiresExplicitAccess: true, parameterLayout: layout,

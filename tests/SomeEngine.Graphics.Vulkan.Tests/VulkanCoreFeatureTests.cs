@@ -59,7 +59,7 @@ public sealed class VulkanCoreFeatureTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) {}
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
@@ -68,7 +68,7 @@ public sealed class VulkanCoreFeatureTests
         using PipelineCache first = backend.CreatePipelineCache(device, default);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.Entries[0]),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)),
             first);
         Assert.False(backend.TryGetPipelineCacheData(first, [], out int required));
         byte[] data = new byte[required];
@@ -86,7 +86,7 @@ public sealed class VulkanCoreFeatureTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) {}
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
@@ -98,7 +98,7 @@ public sealed class VulkanCoreFeatureTests
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.Entries[0]));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)));
         using Buffer arguments = backend.CreateBuffer(
             device,
             new BufferDesc(12, BufferUsages.CopySource | BufferUsages.Indirect),
@@ -142,11 +142,11 @@ public sealed class VulkanCoreFeatureTests
                 InterlockedAdd(outputValues[0], 1);
             }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("computeMain", SlangStage.Compute));
-        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(
@@ -155,7 +155,7 @@ public sealed class VulkanCoreFeatureTests
             optionalFeatures: DeviceFeatures.IndirectCommands));
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.Entries[0]));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)));
         using Buffer arguments = backend.CreateBuffer(
             device,
             new BufferDesc(36, BufferUsages.Indirect),

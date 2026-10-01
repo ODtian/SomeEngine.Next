@@ -34,9 +34,14 @@ public static class ImportedSceneBuild
                 Path.Combine(projectRoot, "Library", "AssetManifest"));
         }
         CopyFiles(Path.GetDirectoryName(sourcePath)!, Path.GetDirectoryName(copiedSource)!);
-        using var pages = new PageArena(new ResidencyBudgetLedger(new ResidencyBudgets
-            { DecodedCpuBytes = 8L * 1024 * 1024 * 1024 }));
         SourceMeta sourceMetadata = SourceMeta.GetOrCreate(copiedSource);
+        if (!sourceMetadata.Importers.Any(selection => selection.ImporterId == GltfSourceImporter.SourceImporterId))
+        {
+            sourceMetadata.Importers.Add(new(GltfSourceImporter.SourceImporterId,
+                JsonSerializer.SerializeToElement(new GltfImporterSettings { RequirePersistentElementIds = false },
+                    GltfSettingsJson.Default.GltfImporterSettings)));
+            SourceMeta.Save(copiedSource, sourceMetadata);
+        }
         GltfImporterSettings sourceSettings = sourceMetadata.GetSettings(GltfSourceImporter.SourceImporterId,
             new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
         var sceneImporter = new ImportedSceneImporter(sourceSettings);
@@ -46,7 +51,7 @@ public static class ImportedSceneBuild
             ImportedSceneCapabilities.AddAssetCapabilities(services);
             services.AddSingleton(sceneImporter);
             services.AddSingleton<IClusterVertexEncoder, SceneVertexEncoder>();
-        }, "imported-scenes-3;" + ImportedSceneCapabilities.BuildVersion, pages, ImportedSceneImporter.ImporterId);
+        }, "imported-scenes-3;" + ImportedSceneCapabilities.BuildVersion, ImportedSceneImporter.ImporterId);
         var project = new AssetProject(projectRoot, [importer],
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);
         AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
@@ -68,8 +73,6 @@ public static class ImportedSceneBuild
         var timer = Stopwatch.StartNew();
         await project.ImportAsync(copiedSource);
         double importSeconds = timer.Elapsed.TotalSeconds;
-        if (pages.Residency.Used(ResidencyClass.DecodedCpu) != 0)
-            throw new InvalidDataException("Import retained decoded output pages after commit.");
         SourceMeta metadata = SourceMeta.Load(copiedSource);
         var previous = metadata.Outputs.ToDictionary(value => value.AssetGuid, value => (value.Version, value.ContentHash));
         timer.Restart();

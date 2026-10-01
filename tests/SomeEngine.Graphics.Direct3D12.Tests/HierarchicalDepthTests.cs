@@ -12,14 +12,14 @@ public sealed class HierarchicalDepthTests
     public void EveryMipMatchesTheMaximumDepthIncludingOddEdgesAndArrayLayers()
     {
         string directory = ShaderDirectory();
-        using D3D12TestShaderProgram initialize = Compile("hiz_init.slang", "InitHiZ");
-        using D3D12TestShaderProgram pair = Compile("hiz_reduce_pair.slang", "ReduceHiZPair");
-        using D3D12TestShaderProgram tail = Compile("hiz_reduce.slang", "ReduceHiZ");
+        D3D12TestShader initialize = Compile("hiz_init.slang", "InitHiZ");
+        D3D12TestShader pair = Compile("hiz_reduce_pair.slang", "ReduceHiZPair");
+        D3D12TestShader tail = Compile("hiz_reduce.slang", "ReduceHiZ");
         using IGraphicsBackend backend = new SomeEngine.Graphics.Validation.ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Pipeline firstPipeline = backend.CreateComputePipeline(device, new(initialize.Program, initialize.GetEntryPoint(0)));
-        using Pipeline pairPipeline = backend.CreateComputePipeline(device, new(pair.Program, pair.GetEntryPoint(0)));
-        using Pipeline tailPipeline = backend.CreateComputePipeline(device, new(tail.Program, tail.GetEntryPoint(0)));
+        using Pipeline firstPipeline = backend.CreateComputePipeline(device, new(initialize.SlangCode, initialize.Reflection, initialize.GetEntryPoint(0), initialize.GetEntryCode(0)));
+        using Pipeline pairPipeline = backend.CreateComputePipeline(device, new(pair.SlangCode, pair.Reflection, pair.GetEntryPoint(0), pair.GetEntryCode(0)));
+        using Pipeline tailPipeline = backend.CreateComputePipeline(device, new(tail.SlangCode, tail.Reflection, tail.GetEntryPoint(0), tail.GetEntryCode(0)));
         foreach ((int width, int height) in new[]
         {
             (1, 1), (1, 65), (7, 3), (16, 16), (16, 17), (17, 16),
@@ -27,7 +27,7 @@ public sealed class HierarchicalDepthTests
         })
             Check(width, height);
 
-        D3D12TestShaderProgram Compile(string file, string entry) => D3D12TestShaderProgram.CompileWithSearchPaths(
+        D3D12TestShader Compile(string file, string entry) => D3D12TestShader.CompileWithSearchPaths(
             entry, $"#include \"{file}\"", [new(entry, SlangStage.Compute)], "sm_6_0", directory);
 
         void Check(int width, int height)
@@ -141,10 +141,10 @@ public sealed class HierarchicalDepthTests
                     }
                 }
 
-                void Dispatch(Pipeline pipeline, D3D12TestShaderProgram shader, DispatchArguments arguments)
+                void Dispatch(Pipeline pipeline, D3D12TestShader shader, DispatchArguments arguments)
                 {
                     backend.SetPipeline(context, pipeline);
-                    backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout()!, CollectionsMarshal.AsSpan(bindings), []));
+                    backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null, CollectionsMarshal.AsSpan(bindings), []));
                     backend.Dispatch(context, arguments);
                 }
             }

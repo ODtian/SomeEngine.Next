@@ -23,7 +23,7 @@ public sealed class MaterialFileTests
             SampledDimension = TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 1, Height = 1, ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 1 }],
         };
-        content.Chunks.Set(content.MipTiles[0].ChunkKey, new byte[] { 19 });
+        content.SetBytes(content.MipTiles[0].ChunkKey, new byte[] { 19 });
         using var textureFile = new TextureAsset { Name = "material texture" };
         textureFile.SetBlock(content);
         Guid textureId = project.RegisterAsset(await textureFile.SaveAsync(Path.Combine(project.RootPath, "color.texture.asset")));
@@ -62,8 +62,8 @@ public sealed class MaterialFileTests
         await copy.DisposeAsync();
         await loader.DisposeAsync();
         first.Dispose();
-        Assert.True(b.AlbedoMap!.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
-        using (bytes) Assert.Equal(new byte[] { 19 }, bytes.ToArray());
+        Assert.True(b.AlbedoMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
+        Assert.Equal(new byte[] { 19 }, bytes.ToArray());
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class MaterialFileTests
         using var directory = new AssetTestDirectory();
         var project = new AssetProject(directory.Path, []);
         Guid id = Guid.NewGuid();
-        using MaterialAsset file = new StandardMaterialAsset(SomeEngine.Serialization.Containers.PageArena.Shared, id)
+        using MaterialAsset file = new StandardMaterialAsset(id)
         {
             Name = "cycle",
         };
@@ -99,7 +99,7 @@ public sealed class MaterialFileTests
             SampledDimension = TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 1, Height = 1, ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 1 }],
         };
-        content.Chunks.Set(content.MipTiles[0].ChunkKey, new byte[] { 73 });
+        content.SetBytes(content.MipTiles[0].ChunkKey, new byte[] { 73 });
         using var pixels = new TextureAsset { Name = "replacement pixels" };
         pixels.SetBlock(content);
         Guid id = project.RegisterAsset(await pixels.SaveAsync(Path.Combine(project.RootPath, "replacement.texture.asset")));
@@ -119,7 +119,7 @@ public sealed class MaterialFileTests
         Assert.Equal("after", material.Name);
         Assert.Equal(0.7f, material.Roughness);
         await loader.DisposeAsync();
-        Assert.True(material.AlbedoMap!.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
-        using (bytes) Assert.Equal(new byte[] { 73 }, bytes.ToArray());
+        Assert.True(material.AlbedoMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
+        Assert.Equal(new byte[] { 73 }, bytes.ToArray());
     }
 }

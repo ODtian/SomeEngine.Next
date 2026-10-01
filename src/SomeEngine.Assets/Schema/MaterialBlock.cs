@@ -8,86 +8,38 @@ namespace SomeEngine.Assets.Schema;
 /// <summary>Material type, references and local parameter overrides, encoded with the material parameter codec.</summary>
 [AssetBlock("SomeEngine.Assets.MaterialBlock")]
 [BinarySerializable(LogicalName = "SomeEngine.Assets.MaterialBlock")]
-public sealed partial class MaterialBlock : AssetPageBlock, IAssetBlockWriter,
+public sealed partial class MaterialBlock : AssetBlock, IAssetBlockWriter,
     IBinarySerializable<MaterialBlock>, IBinaryObjectReader<MaterialBlock>
 {
-    private readonly PageBuffer _values = null!;
-    private readonly PageList<MaterialParameter> _parameters = null!;
+    private Guid _materialType;
+    private AssetId<ShaderAsset> _shader;
+    private AssetId<MaterialAsset> _parent;
+    private readonly List<MaterialParameter> _parameters = [];
     public static Guid TypeId { get; } = BinaryTypeId.FromLogicalName("SomeEngine.Assets.MaterialBlock");
     public static ulong SchemaFingerprint => 0x4D41544276310001UL;
     public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
     public static uint SchemaEpoch => 1;
 
-    public MaterialBlock() : this(PageArena.Shared) { }
-    public MaterialBlock(PageArena pages, Guid materialType = default) : base(pages)
+    public MaterialBlock() { }
+    public MaterialBlock(Guid materialType) => _materialType = materialType;
+    private MaterialBlock(MaterialBlock source, object? syncRoot = null) : base(source, syncRoot)
     {
-        try
-        {
-            _values = new(Pages, 48, Access);
-            _parameters = new(Pages, Access);
-            _values.Write(0, materialType);
-        }
-        catch (Exception error)
-        {
-            try { Dispose(); }
-            catch (Exception cleanupError) { throw new AggregateException(error, cleanupError); }
-            throw;
-        }
+        _materialType = source._materialType;
+        _shader = source._shader;
+        _parent = source._parent;
+        _parameters.AddRange(source._parameters);
     }
-
-    private MaterialBlock(MaterialBlock source, PageAccess? access = null) : base(source, access)
-    {
-        try
-        {
-            _values = source._values.Duplicate(Access);
-            _parameters = source._parameters.Duplicate(Access);
-        }
-        catch (Exception error)
-        {
-            try { Dispose(); }
-            catch (Exception cleanupError) { throw new AggregateException(error, cleanupError); }
-            throw;
-        }
-    }
-
-    public Guid MaterialTypeId => _values.Read<Guid>(0);
-    public AssetId<ShaderAsset> Shader
-    {
-        get => new(_values.Read<Guid>(16));
-        set => _values.Write(16, value.Value);
-    }
-    public AssetId<MaterialAsset> Parent
-    {
-        get => new(_values.Read<Guid>(32));
-        set => _values.Write(32, value.Value);
-    }
+    public Guid MaterialTypeId => _materialType;
+    public AssetId<ShaderAsset> Shader { get => _shader; set { _shader = value; MarkChanged(); } }
+    public AssetId<MaterialAsset> Parent { get => _parent; set { _parent = value; MarkChanged(); } }
     public IList<MaterialParameter> Parameters => _parameters;
-
-    public override MaterialBlock Duplicate()
-    {
-        lock (Access.SyncRoot) { RequireIdle(); return new(this); }
-    }
-    public override MaterialBlock Duplicate(PageAccess access)
-    {
-        lock (Access.SyncRoot) { RequireIdle(); return new(this, access); }
-    }
-    protected override void ReleaseContent()
-    {
-        List<Exception>? errors = null;
-        try { _values?.Dispose(); } catch (Exception error) { (errors ??= []).Add(error); }
-        try { _parameters?.Dispose(); } catch (Exception error) { (errors ??= []).Add(error); }
-        try { base.ReleaseContent(); } catch (Exception error) { (errors ??= []).Add(error); }
-        if (errors is not null)
-        {
-            if (errors.Count == 1) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(errors[0]).Throw();
-            throw new AggregateException(errors);
-        }
-    }
+    public override MaterialBlock Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
+    public override MaterialBlock Duplicate(object syncRoot) { lock (SyncRoot) { RequireIdle(); return new(this, syncRoot); } }
 
     public bool HasOverride(string name) => GetParameter(name).HasValue;
     public bool Reset(string name)
     {
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
             for (int index = 0; index < _parameters.Count; index++)
@@ -97,7 +49,7 @@ public sealed partial class MaterialBlock : AssetPageBlock, IAssetBlockWriter,
     }
     public MaterialParameter? GetParameter(string name)
     {
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
             foreach (MaterialParameter value in _parameters) if (value.Name == name) return value;
@@ -106,7 +58,7 @@ public sealed partial class MaterialBlock : AssetPageBlock, IAssetBlockWriter,
     }
     public void SetParameter(MaterialParameter value)
     {
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
             for (int index = 0; index < _parameters.Count; index++)
@@ -151,7 +103,7 @@ public sealed partial class MaterialBlock : AssetPageBlock, IAssetBlockWriter,
         Guid type = reader.ReadGuid();
         if (target.MaterialTypeId != Guid.Empty && target.MaterialTypeId != type)
             throw new InvalidDataException("The block contains a different concrete material type.");
-        target._values.Write(0, type);
+        target._materialType = type;
         target.Shader = new(reader.ReadGuid());
         target.Parent = new(reader.ReadGuid());
         int count = reader.ReadCollectionCount("material parameters", Unsafe.SizeOf<MaterialParameter>(), 0);
@@ -166,7 +118,7 @@ public sealed partial class MaterialBlock : AssetPageBlock, IAssetBlockWriter,
     }
     public static async ValueTask<MaterialBlock> ReadAsync(AssetBlockSource source, CancellationToken cancellationToken = default)
     {
-        var result = new MaterialBlock(source.Pages);
+        var result = new MaterialBlock();
         try
         {
             await source.ReadIntoAsync(result, cancellationToken).ConfigureAwait(false);

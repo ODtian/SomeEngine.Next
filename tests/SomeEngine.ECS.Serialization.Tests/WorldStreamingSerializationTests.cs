@@ -18,15 +18,13 @@ namespace SomeEngine.ECS.Serialization.Tests;
 public sealed class WorldStreamingSerializationTests
 {
     [Fact]
-    public void DurableWorldUsesPagesWithoutChangingItsEncodingOrReadBehavior()
+    public void DurableWorldUsesManagedStorageWithoutChangingItsEncodingOrReadBehavior()
     {
         var registry = new SerializationRegistry().Register<SerPosition, PagePositionCodec>(new(
             Guid.Parse("57C630DB-1452-42CB-915A-A0CE63728294"), "tests.page-position", 1));
         using var world = new World();
         var entity = world.CreateEntity(new SerPosition { X = 17, Y = 23 });
-        using var arena = new PageArena(new ResidencyBudgetLedger(), new() { MaximumPageSize = 1024 });
-        using var bytes = new PageBuffer(arena);
-        using var stream = new PageBufferStream(bytes);
+        using var stream = new MemoryStream();
         WorldSerializer.WriteDurableWorld(stream, world, registry);
         using var expected = new MemoryStream();
         WorldSerializer.WriteDurableWorld(expected, world, registry);
@@ -35,12 +33,10 @@ public sealed class WorldStreamingSerializationTests
         stream.ReadExactly(encoded);
         Assert.Equal(expected.ToArray(), encoded);
 
-        using PageBuffer retained = bytes.Slice(0, stream.Length);
-        bytes.Dispose();
-        using var input = new PageBufferStream(retained, writable: false);
+        byte[] retained = stream.ToArray();
+        using var input = new MemoryStream(retained, writable: false);
         using World decoded = WorldSerializer.ReadWorld(input, registry,
             new() { RequiredContract = SerializationContract.DurableSave });
-        retained.Dispose();
         Assert.True(decoded.IsAlive(entity));
         Assert.Equal(17, decoded.Read<SerPosition>(entity).X);
         Assert.Equal(23, decoded.Read<SerPosition>(entity).Y);

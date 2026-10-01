@@ -6,8 +6,9 @@
 | --- | --- | --- |
 | Asset | 身份、引用、Block 索引、当前内容分支及共同保存和释放边界 | 固定业务字段、文本或二进制分类、唯一业务对象 |
 | Block | 强类型数据、编解码、按需取得、自己的直接引用与负载描述 | 另建页池、工程遍历、全局输出登记 |
-| 现有页管理与调度 | 页分配、共享、COW、读取合并、驻留、预算和真实工作完成 | 资产 ID、材质选择、场景业务 |
-| 使用对象 | 当前可用的数据、普通业务状态、资源和使用期间的保留 | 异步资产查询、导入、保存 |
+| AssetByteCache | 所有可再次取得的最终数组、整数 LRU 记录、统一保留预算和进行中的共同读取 | 唯一业务对象、CPU 页池、消费者释放协议 |
+| 文件读取 | 来源版本、范围读取、解压和格式校验，直接写最终目标 | 长期解码缓存、业务对象保活 |
+| 使用对象 | 当前可用的数据、普通业务状态，以及自身语义真正需要的分页或设备资源 | 异步资产查询、导入、保存、为普通托管数据传播统一释放协议 |
 | 局部 Importer | 本地格式转换、声明的 Block、自己直接负责的引用 | 整份来源遍历、输出文件提交、重新导入策略 |
 | Context | 同次调用缓存、生产者检查、依赖调用、结果清理 | SG 生成的固定业务流程、跨项目全局对象缓存 |
 | 来源与工程流程 | 来源读取、元素遍历、目标身份、保存登记、失败处理和重新导入 | 每种 Block 的字段解释 |
@@ -20,8 +21,8 @@
 
 一个来源 ID、一个 Asset ID、一个 Block 类型 ID、一个文档内容版本和一个使用对象引用分别回答不同问题。不要以路径、内容摘要或 CLR 实例引用代替持久资产身份。
 
-编码、解码页、上传数据和 GPU 资源是不同的必要表示，分别纳入现有预算。它们并不授权增加第二份同义可写字段或新的页生命周期。Asset/Block 关闭、使用对象关闭和 GPU 使用完成也不是同一个时点。
+编码输入、解码临时数据、最终托管值、上传数据和 GPU 资源可能处于不同存活区间，分别纳入对应预算；这不代表每种数据都必须同时保留这些表示。借用或压缩输入物化成最终值后不长期保留旧表示，已经独立且大小匹配的 GC backing 直接共享。Asset/Block 关闭、普通 GC 对象不可达、业务分页保留结束和 GPU 使用完成是不同事件，不能被一个通用引用计数或 `Dispose` 链合并。
 
 业务类型集中于其业务程序集，例如 Resources；资产集成依赖它们而非反向依赖。World 使用既有 ECS 序列化和同一个 Game world。渲染继续经过既有提取进入 Rendering world，不接收另一个资产场景图。
 
-源码：[Asset](../../../src/SomeEngine.Assets/Asset.cs)、[Block](../../../src/SomeEngine.Assets/AssetBlock.cs)、[页管理](../../../src/SomeEngine.Serialization/Containers/PageArena.cs)、[导入](../../../src/SomeEngine.Assets/Importing/)、[资源类型](../../../src/SomeEngine.Resources/)。
+源码：[Asset](../../../src/SomeEngine.Assets/Asset.cs)、[Block](../../../src/SomeEngine.Assets/AssetBlock.cs)、[业务数据取得](../../../src/SomeEngine.Assets/AssetBlockStorage.cs)、[导入](../../../src/SomeEngine.Assets/Importing/)、[资源类型](../../../src/SomeEngine.Resources/)。

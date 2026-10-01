@@ -18,6 +18,48 @@ namespace SomeEngine.Assets.Consumer.Tests;
 public sealed class GltfExtensionBehaviorTests
 {
     [Fact]
+    public async Task ExplicitlyDisabledTextureProducerPreservesThePreviouslyBuiltAssets()
+    {
+        using var files = new GltfFiles();
+        await files.WriteDefaultTemplatesAsync();
+        files.AddTexturedMaterial();
+        files.WriteSelections(new SourceImporterSettings(ImporterId<GltfMeshImporter>(),
+            JsonSerializer.SerializeToElement(new GltfMeshSettings(), GltfMeshSettingsJson.Default.GltfMeshSettings)));
+        var importer = CreateImporter();
+        var project = new AssetProject(files.Directory, [importer]);
+        Guid id = MeshId(project, await project.ImportAsync(files.Source, importer));
+        string path = Path.Combine(files.Directory, project.Manifest.Assets[id].Path);
+        byte[] successful = await File.ReadAllBytesAsync(path);
+        SourceMeta metadata = SourceMeta.Load(files.Source);
+        int texture = metadata.Importers.FindIndex(selection => selection.ImporterId == ImporterId<GltfTextureImporter>());
+        metadata.Importers[texture] = metadata.Importers[texture] with { Enabled = false };
+        SourceMeta.Save(files.Source, metadata);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => project.ImportAsync(files.Source, importer).AsTask());
+        Assert.Equal(successful, await File.ReadAllBytesAsync(path));
+        Assert.False(SourceMeta.Load(files.Source).Importers.Single(selection => selection.ImporterId == ImporterId<GltfTextureImporter>()).Enabled);
+    }
+
+    [Fact]
+    public async Task SourceWithoutPersistentElementIdsRequiresAnExplicitIdentitySetting()
+    {
+        using var files = new GltfFiles();
+        await files.WriteDefaultTemplatesAsync();
+        JsonNode source = JsonNode.Parse(File.ReadAllText(files.Source))!;
+        source["scenes"]![0]!["extras"] = null;
+        File.WriteAllText(files.Source, source.ToJsonString());
+        var importer = CreateImporter();
+        var project = new AssetProject(files.Directory, [importer]);
+        await Assert.ThrowsAsync<InvalidDataException>(() => project.ImportAsync(files.Source, importer).AsTask());
+        SourceMeta metadata = SourceMeta.GetOrCreate(files.Source);
+        metadata.Importers.Add(new(GltfSourceImporter.SourceImporterId,
+            JsonSerializer.SerializeToElement(new GltfImporterSettings { RequirePersistentElementIds = false },
+                GltfSettingsJson.Default.GltfImporterSettings)));
+        SourceMeta.Save(files.Source, metadata);
+        Assert.NotEmpty(await project.ImportAsync(files.Source, importer));
+        Assert.Contains("scene:index:0", SourceMeta.Load(files.Source).ElementIds.Keys);
+    }
+
+    [Fact]
     public async Task LibrarySourceImporterUsesGeneratedProjectServicesWithoutProjectTraversalCode()
     {
         using var files = new GltfFiles();
@@ -43,7 +85,7 @@ public sealed class GltfExtensionBehaviorTests
         Guid id = MeshId(project, await project.ImportAsync(files.Source, original));
         Guid version = project.Manifest.Assets[id].Version;
         SourceMeta metadata = SourceMeta.Load(files.Source);
-        Assert.Equal(new[] { ImporterId<GltfMeshImporter>(), ImporterId<ClusterGltfMeshImporter>(), StandardGltfSceneImporter.ImporterId }.Order(),
+        Assert.Equal(new[] { ImporterId<GltfMeshImporter>(), ImporterId<ClusterGltfMeshImporter>(), ImporterId<GltfTextureImporter>(), StandardGltfSceneImporter.ImporterId }.Order(),
             metadata.Importers.Select(value => value.ImporterId).Order());
         var extended = StandardGltfSceneImporter.CreateSourceImporter(services => ConsumerAssetCapabilities.AddAssetCapabilities(services), "project-services-1");
         Assert.Equal(id, MeshId(project, await project.ImportAsync(files.Source, extended)));
@@ -116,8 +158,8 @@ public sealed class GltfExtensionBehaviorTests
         Assert.Equal(textureEntry.AssetGuid, Assert.Single(material.GetBlock<MaterialBlock>().Parameters, value => value.Name == "AlbedoMap").Texture.Value);
         using TextureAsset texture = await TextureAsset.OpenAsync(Path.Combine(files.Directory, textureEntry.Path));
         TextureBlock content = await texture.GetBlockAsync<TextureBlock>();
-        using PageBuffer pixels = await content.AcquireBufferAsync(Assert.Single(content.MipTiles).ChunkKey);
-        using PageRange<byte> read = pixels.Retain();
+        ReadOnlyMemory<byte> pixels = await content.ReadBytesAsync(Assert.Single(content.MipTiles).ChunkKey);
+        ReadOnlyMemory<byte> read = pixels;
         Assert.Equal(new byte[] { 69, 0, 0, 255 }, read.ToArray());
     }
 
@@ -223,11 +265,20 @@ public sealed class GltfExtensionBehaviorTests
                 "bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36,"target":34962},{"buffer":0,"byteOffset":36,"byteLength":6,"target":34963}],
                 "accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]},{"bufferView":1,"componentType":5123,"count":3,"type":"SCALAR"}],
                 "meshes":[{"name":"Triangle","extras":{"someengine_id":"mesh-A"},"primitives":[{"attributes":{"POSITION":0},"indices":1}]}],
-                "nodes":[{"mesh":0}],"scenes":[{"nodes":[0]}],"scene":0}
+                "nodes":[{"mesh":0}],"scenes":[{"extras":{"someengine_id":"scene-A"},"nodes":[0]}],"scene":0}
                 """);
         }
-        public void WriteSelections(params SourceImporterSettings[] selections) => SourceMeta.Save(Source, new SourceMeta
-        { SourceGuid = SourceGuid.New(), UseDefaultImporters = false, Importers = selections.ToList() });
+        public void WriteSelections(params SourceImporterSettings[] selections)
+        {
+            var metadata = new SourceMeta { SourceGuid = SourceGuid.New(), UseDefaultImporters = false, Importers =
+                [.. selections, new(StandardGltfSceneImporter.ImporterId,
+                    JsonSerializer.SerializeToElement(new GltfSceneSettings(), GltfSceneSettingsJson.Default.GltfSceneSettings))] };
+            if (!selections.Any(selection => ConsumerAssetCapabilities.ImporterCapabilities.Any(capability =>
+                capability.Id == selection.ImporterId && capability.SourceType == typeof(SharpGLTF.Schema2.Texture))))
+                metadata.Importers.Add(new(ImporterId<GltfTextureImporter>(),
+                    JsonSerializer.SerializeToElement(new GltfTextureSettings(), GltfSettingsJson.Default.GltfTextureSettings)));
+            SourceMeta.Save(Source, metadata);
+        }
         public async Task WriteDefaultTemplatesAsync()
         {
             Game.Assets.MaterialTypes.Register();
@@ -254,8 +305,8 @@ public sealed class GltfExtensionBehaviorTests
     }
 }
 
-[AssetBlock, BinarySerializable, BinaryFields(nameof(Number), nameof(Label))]
-public sealed partial class ExtensionGltfBlock : AssetPageBlock
+[AssetBlock("SomeEngine.Assets.Consumer.Tests.ExtensionGltfBlock"), BinarySerializable, BinaryFields(nameof(Number), nameof(Label))]
+public sealed partial class ExtensionGltfBlock : AssetBlock
 {
     public partial int Number { get; set; }
     public partial string Label { get; set; }
@@ -336,22 +387,20 @@ public sealed partial class ServiceEncodedGltfBlock : AssetBlock, IAssetBlockWri
     private readonly ExtensionEncodingService? _encoding;
     public string Text { get; }
     public ServiceEncodedGltfBlock(string text, ExtensionEncodingService? encoding = null) { Text = text; _encoding = encoding; }
-    private ServiceEncodedGltfBlock(ServiceEncodedGltfBlock source, PageAccess? access = null) : base(source, access)
+    private ServiceEncodedGltfBlock(ServiceEncodedGltfBlock source, object? syncRoot = null) : base(source, syncRoot)
     { Text = source.Text; _encoding = source._encoding; }
     public override ServiceEncodedGltfBlock Duplicate() => new(this);
-    public override ServiceEncodedGltfBlock Duplicate(PageAccess access) => new(this, access);
+    public override ServiceEncodedGltfBlock Duplicate(object syncRoot) => new(this, syncRoot);
     public static async ValueTask<ServiceEncodedGltfBlock> ReadAsync(AssetBlockSource source, CancellationToken cancellationToken = default)
     {
-        using PageBuffer metadata = await source.AcquireMetadataAsync(cancellationToken);
-        using PageRange<byte> read = metadata.Retain();
+        ReadOnlyMemory<byte> metadata = await source.ReadMetadataAsync(cancellationToken);
+        ReadOnlyMemory<byte> read = metadata;
         return new(System.Text.Encoding.UTF8.GetString(read.ToArray()));
     }
     public ValueTask WriteAsync(AssetBlockWriter writer, CancellationToken cancellationToken)
     {
         byte[] bytes = _encoding?.Encode(Text) ?? System.Text.Encoding.UTF8.GetBytes(Text);
-        using var metadata = new PageBuffer(PageArena.Shared, bytes.Length);
-        metadata.Write(0, bytes);
-        writer.WriteMetadata(BlockTypeId, new(new Guid("ff1721e2-0e1a-4f31-bab3-98e334e465ea"), 0x1132, BinaryCompatibility.ExactSchema, 1), metadata);
+        writer.WriteMetadata(BlockTypeId, new(new Guid("ff1721e2-0e1a-4f31-bab3-98e334e465ea"), 0x1132, BinaryCompatibility.ExactSchema, 1), bytes);
         return ValueTask.CompletedTask;
     }
 }
@@ -371,14 +420,14 @@ public sealed class PaintGltfTextureImporter : IAssetImporter<SharpGLTF.Schema2.
 {
     public ValueTask ImportAsync(SharpGLTF.Schema2.Texture source, PaintGltfTextureSettings settings, ImportContext context, ImportOutput output, CancellationToken cancellationToken)
     {
-        var block = new TextureBlock(output.Target.Pages)
+        var block = new TextureBlock()
         {
             Dimension = SomeEngine.Graphics.TextureDimension.Texture2D, Width = 1, Height = 1, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
             Format = SomeEngine.Graphics.Format.R8G8B8A8UNorm, SampledFormat = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
             SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
         };
         block.MipTiles.Add(new SomeEngine.Resources.TextureMipTile { MipLevel = 0, TileX = 0, TileY = 0, Width = 1, Height = 1, RowPitch = 4, SlicePitch = 4, ChunkKey = 1, DecodedLength = 4 });
-        block.Chunks.Set(1, new byte[] { settings.Red, 0, 0, 255 });
+        block.SetBytes(1, new byte[] { settings.Red, 0, 0, 255 });
         try { output.SetBlock(block); }
         catch { block.Dispose(); throw; }
         return ValueTask.CompletedTask;

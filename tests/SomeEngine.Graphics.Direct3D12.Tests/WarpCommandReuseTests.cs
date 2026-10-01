@@ -20,17 +20,17 @@ public sealed class WarpCommandReuseTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) { output[id.x] = value + bias.value; }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "descriptor_content_reuse", source, [new("computeMain", SlangStage.Compute)], "sm_6_2");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout dataLayout = layout.TypeLayout.UnwrapArray();
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection dataLayout = layout.TypeLayout.UnwrapArray();
         if (dataLayout.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             dataLayout = dataLayout.ElementTypeLayout.UnwrapArray();
         int ordinarySize = checked((int)dataLayout.GetSize(SlangParameterCategory.Uniform));
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using Buffer constants = backend.CreateBuffer(device, new BufferDesc(512, BufferUsages.Constant), MemoryType.Upload);
         using (MappedBuffer mapping = backend.Map(constants, MapType.Write, BufferRange.Whole))
         {
@@ -107,16 +107,16 @@ public sealed class WarpCommandReuseTests
                 for (uint i = 0; i < {{count}}; i++) outputs[i][0] = value;
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             $"descriptor_array_{count}", source, [new("computeMain", SlangStage.Compute)], "sm_6_6");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout dataLayout = layout.TypeLayout.UnwrapArray();
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection dataLayout = layout.TypeLayout.UnwrapArray();
         if (dataLayout.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             dataLayout = dataLayout.ElementTypeLayout.UnwrapArray();
         byte[] ordinary = new byte[checked((int)dataLayout.GetSize(SlangParameterCategory.Uniform))];
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Pipeline pipeline = backend.CreateComputePipeline(device, new(shader.Program, shader.GetEntryPoint(0)));
+        using Pipeline pipeline = backend.CreateComputePipeline(device, new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using Buffer first = backend.CreateBuffer(device, new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource));
         using Buffer second = backend.CreateBuffer(device, new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource));
         using BufferUav firstView = backend.CreateBufferUav(device, new(first, BufferRange.Whole, StructureStride: 4));

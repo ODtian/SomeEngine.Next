@@ -15,7 +15,7 @@ internal static partial class RhiBenchmarkRunner
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         string shaderManifest,
         in WorkerConfiguration configuration,
         GraphicsWorkload workload)
@@ -227,7 +227,7 @@ internal static partial class RhiBenchmarkRunner
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        ShaderVariableLayout layout)
+        VariableLayoutReflection layout)
     {
         var result = new PersistentParameterBindings[RepresentativeFrameProfile.MaterialCount];
         try

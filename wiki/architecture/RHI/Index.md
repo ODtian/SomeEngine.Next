@@ -23,7 +23,7 @@
 ## Shader boundary
 - [[architecture/shader/Slang-Authority|Slang Authority]]
 - [[architecture/shader/Shader-Build|Shader Build]]
-- [[architecture/shader/Detached-Reflection|Detached Reflection]]
+- [[architecture/shader/Shader-Block-Residency-Refactor|Shader Block and Residency]]
 
 ## Evidence and history
 - [[evidence/RHI/Performance-Evidence-2026-08-17]]

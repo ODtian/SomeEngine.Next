@@ -3,6 +3,7 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
 using SlangShaderSharp;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -14,9 +15,10 @@ public sealed class SlangComLifetimeTests : IDisposable
     public void Dispose() => Directory.Delete(_directory, recursive: true);
 
     [Theory]
-    [InlineData(SlangCompileTarget.Dxil, "dxil")]
-    [InlineData(SlangCompileTarget.Spirv, "spirv")]
-    public async Task CreatedShaderKeepsCompiledCodeAfterDefinitionsAndCompilerObjectsClose(SlangCompileTarget target, string backend)
+    [InlineData(SlangCompileTarget.Dxil)]
+    [InlineData(SlangCompileTarget.Spirv)]
+    public async Task CreatedShaderKeepsCompiledCodeAfterDefinitionsAndCompilerObjectsClose(
+        SlangCompileTarget target)
     {
         string path = Path.Combine(_directory, "selected.slang");
         File.WriteAllText(path, ValidSource);
@@ -24,16 +26,20 @@ public sealed class SlangComLifetimeTests : IDisposable
         using (var definition = ShaderTestCompilation.Define(path))
         {
             using var result = ShaderTestCompilation.Compile(definition, path);
-            shader = await result.GetBlock<ShaderBlock>().CreateAsync(target, result.Name);
+            shader = await ShaderTestCompilation.CreateAsync(result);
         }
         File.Delete(path);
         GC.Collect();
         GC.WaitForPendingFinalizers();
-        using (shader)
-        {
-            Assert.True(shader.TryEntry(backend, "Compute", ShaderStage.Compute, out _, out var entry));
-            Assert.True(entry.Code.Length > 0);
-        }
+        int targetIndex = shader.RequireSlangTarget(target);
+        Assert.True(shader.TryGetSlangEntry(
+            targetIndex,
+            "Compute",
+            SlangStage.Compute,
+            out EntryPointReflection entry));
+        Assert.True(
+            shader.GetSlangEntryBlob(targetIndex, entry) is not null ||
+            !shader.GetSlangEntryBytes(targetIndex, entry).IsEmpty);
         Assert.Empty(Directory.EnumerateFiles(_directory));
     }
 
@@ -48,12 +54,19 @@ public sealed class SlangComLifetimeTests : IDisposable
             Assert.Throws<InvalidDataException>(() => ShaderTestCompilation.Compile(definition, path));
             File.WriteAllText(path, ValidSource);
             using var result = ShaderTestCompilation.Compile(definition, path);
-            using Shader shader = await result.GetBlock<ShaderBlock>().CreateAsync(result.Name);
+            Shader shader = await ShaderTestCompilation.CreateAsync(result);
             GC.Collect();
             GC.WaitForPendingFinalizers();
             Assert.Equal(definition.Id, result.Id);
-            Assert.True(shader.TryEntry("spirv", "Compute", ShaderStage.Compute, out _, out var entry));
-            Assert.True(entry.Code.Length > 0);
+            int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(shader.TryGetSlangEntry(
+                targetIndex,
+                "Compute",
+                SlangStage.Compute,
+                out EntryPointReflection entry));
+            Assert.True(
+                shader.GetSlangEntryBlob(targetIndex, entry) is not null ||
+                !shader.GetSlangEntryBytes(targetIndex, entry).IsEmpty);
         }
         Assert.Empty(Directory.EnumerateFiles(_directory, "*.meta"));
         Assert.Empty(Directory.EnumerateFiles(_directory, "*.asset"));
@@ -71,6 +84,42 @@ public sealed class SlangComLifetimeTests : IDisposable
             Path.Combine(_directory, "selected.shader"), cancellation.Token));
         using var result = ShaderTestCompilation.Compile(definition, path);
         Assert.Equal(definition.Id, result.Id);
-        Assert.NotEmpty(result.GetBlock<ShaderBlock>().Programs);
+        Assert.Contains(
+            ShaderBlock.TargetCodeKey(ShaderTestCompilation.CreateSessionDescription(), 0),
+            result.GetBlock<ShaderBlock>().ContentKeys);
+    }
+
+    [Fact]
+    public async Task UnreferencedShaderIsCollectedAndTheCompilerRemainsUsable()
+    {
+        string path = Path.Combine(_directory, "collected.slang");
+        File.WriteAllText(path, ValidSource);
+        WeakReference shader = CreateUnreferencedShader(path);
+
+        for (int attempt = 0; attempt < 8 && shader.IsAlive; attempt++)
+        {
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+            GC.WaitForPendingFinalizers();
+        }
+
+        Assert.False(shader.IsAlive);
+        using ShaderAsset definition = ShaderTestCompilation.Define(path);
+        using ShaderAsset result = ShaderTestCompilation.Compile(definition, path);
+        Shader replacement = await ShaderTestCompilation.CreateAsync(result);
+        int targetIndex = replacement.RequireSlangTarget(SlangCompileTarget.Spirv);
+        Assert.True(replacement.TryGetSlangEntry(
+            targetIndex,
+            "Compute",
+            SlangStage.Compute,
+            out _));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateUnreferencedShader(string path)
+    {
+        using ShaderAsset definition = ShaderTestCompilation.Define(path);
+        using ShaderAsset result = ShaderTestCompilation.Compile(definition, path);
+        Shader shader = ShaderTestCompilation.CreateAsync(result).AsTask().GetAwaiter().GetResult();
+        return new WeakReference(shader);
     }
 }

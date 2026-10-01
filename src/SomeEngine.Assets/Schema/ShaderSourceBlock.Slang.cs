@@ -1,5 +1,6 @@
+using System.Buffers;
 using System.Globalization;
-using System.Runtime.InteropServices.Marshalling;
+using System.Runtime.CompilerServices;
 using SlangShaderSharp;
 using SomeEngine.Resources;
 using SomeEngine.Serialization;
@@ -10,6 +11,8 @@ namespace SomeEngine.Assets.Schema;
 
 public sealed partial class ShaderSourceBlock
 {
+    private static readonly ConditionalWeakTable<IGlobalSession, SemaphoreSlim> s_slangFrontEnds = new();
+
     public static ulong SerializedSourceKey(int sourceIndex)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(sourceIndex);
@@ -22,23 +25,20 @@ public sealed partial class ShaderSourceBlock
     {
         if (bytes.IsEmpty)
             throw new ArgumentException("Serialized Slang source cannot be empty.", nameof(bytes));
-        lock (Access.SyncRoot)
+        lock (SyncRoot)
         {
             RequireIdle();
-            if ((uint)sourceIndex >= (uint)SourceFiles.Count)
+            if ((uint)sourceIndex >= (uint)SourceNames.Count)
                 throw new ArgumentOutOfRangeException(nameof(sourceIndex));
         }
 
-        using var storage = new PageBuffer(Pages);
-        using (var output = new PageBufferStream(storage))
-            output.Write(bytes);
-        using PageBuffer content = storage.Slice(0, bytes.Length);
-        lock (Access.SyncRoot)
+        byte[] content = bytes.ToArray();
+        lock (SyncRoot)
         {
             RequireIdle();
-            if ((uint)sourceIndex >= (uint)SourceFiles.Count)
+            if ((uint)sourceIndex >= (uint)SourceNames.Count)
                 throw new InvalidOperationException("The shader source list changed while its Slang data was encoded.");
-            Chunks.Set(SerializedSourceKey(sourceIndex), content);
+            SetBytes(SerializedSourceKey(sourceIndex), content);
         }
     }
 
@@ -49,88 +49,113 @@ public sealed partial class ShaderSourceBlock
     public async ValueTask<Shader> CreateAsync(
         IGlobalSession slang,
         SessionDesc sessionDescription,
-        string definitionPath,
-        CancellationToken cancellationToken = default)
+        string name,
+        ReadOnlyMemory<SpecializationArg> specializations = default,
+        CancellationToken cancellationToken = default) =>
+        (await CreateCoreAsync(
+            slang,
+            sessionDescription,
+            name,
+            specializations,
+            generateCode: true,
+            saveSources: false,
+            cancellationToken).ConfigureAwait(false)).Shader;
+
+    /// <summary>Compiles the current source files and returns their serialized Slang data and read-byte hashes.</summary>
+    public ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
+        string name, CancellationToken cancellationToken = default)
+        => CreateCoreAsync(slang, sessionDescription, name, default, generateCode: true,
+            saveSources: true, cancellationToken);
+
+    internal async ValueTask<Shader> CreateUsingSavedCodeAsync(
+        IGlobalSession slang,
+        SessionDesc sessionDescription,
+        string name,
+        ReadOnlyMemory<SpecializationArg> specializations = default,
+        CancellationToken cancellationToken = default) =>
+        (await CreateCoreAsync(
+            slang,
+            sessionDescription,
+            name,
+            specializations,
+            generateCode: false,
+            saveSources: false,
+            cancellationToken).ConfigureAwait(false)).Shader;
+
+    private async ValueTask<ShaderCompilation> CreateCoreAsync(
+        IGlobalSession slang,
+        SessionDesc sessionDescription,
+        string name,
+        ReadOnlyMemory<SpecializationArg> specializations,
+        bool generateCode,
+        bool saveSources,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(slang);
-        ArgumentException.ThrowIfNullOrWhiteSpace(definitionPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if (sessionDescription.Targets is not { Length: > 0 } targets)
             throw new ArgumentException("Creating a shader requires at least one Slang target.", nameof(sessionDescription));
 
         using ShaderSourceBlock copy = Duplicate();
-        if (copy.SourceFiles.Count == 0)
-            throw new InvalidDataException("The shader source block contains no source files.");
-
-        string fullDefinitionPath = Path.GetFullPath(definitionPath);
-        string definitionDirectory = Path.GetDirectoryName(fullDefinitionPath)!;
-        string[] paths = copy.SourceFiles.Select(path => ResolveSourcePath(definitionDirectory, path)).ToArray();
-        if (paths.Distinct(StringComparer.OrdinalIgnoreCase).Count() != paths.Length)
-            throw new InvalidDataException("The shader source block contains duplicate source files.");
-
-        sessionDescription.SearchPaths = paths
-            .Select(static path => Path.GetDirectoryName(path)!)
-            .Concat(sessionDescription.SearchPaths ?? [])
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        SlangResult sessionResult = slang.CreateSession(sessionDescription, out ISession session);
-        if (sessionResult.Failed || session is null)
-            throw new InvalidDataException($"Slang session creation failed with {sessionResult}.");
-
-        var sourceUnits = new List<IModule>(paths.Length);
-        var entries = new List<IEntryPoint>();
-        IComponentType? combinedCode = null;
-        IComponentType? specializedCode = null;
-        IComponentType? linkedCode = null;
-        bool shaderOwnsSlang = false;
+        SemaphoreSlim frontEnd = s_slangFrontEnds.GetValue(
+            slang,
+            static _ => new SemaphoreSlim(1, 1));
+        await frontEnd.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (copy.SourceNames.Count == 0)
+                throw new InvalidDataException("The shader source block contains no source files.");
+
+            string[] paths = copy.SourceNames.Select(NormalizeSourceName).ToArray();
+            if (paths.Distinct(StringComparer.OrdinalIgnoreCase).Count() != paths.Length)
+                throw new InvalidDataException("The shader source block contains duplicate source files.");
+
+            var sourceFiles = new ShaderSourceFiles(sessionDescription.FileSystem);
+            sessionDescription.FileSystem = sourceFiles;
+            SlangResult sessionResult = slang.CreateSession(sessionDescription, out ISession session);
+            if (sessionResult.Failed || session is null)
+                throw new InvalidDataException($"Slang session creation failed with {sessionResult}.");
+
+            var sourceUnits = new List<IModule>(paths.Length);
+            var entries = new List<IEntryPoint>();
+            var serializedSources = new List<ReadOnlyMemory<byte>>(saveSources ? paths.Length : 0);
             for (int sourceIndex = 0; sourceIndex < paths.Length; sourceIndex++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ulong serializedKey = SerializedSourceKey(sourceIndex);
-                bool hasSerializedSource = copy.ContentKeys.Contains(serializedKey);
-                ISlangBlob source;
-                if (hasSerializedSource)
+                IModule? sourceUnit;
+                ISlangBlob? diagnostics;
+                if (!saveSources && copy.ContentKeys.Contains(serializedKey))
                 {
-                    using PageBuffer bytes = await copy.AcquireBufferAsync(serializedKey, cancellationToken)
-                        .ConfigureAwait(false);
-                    using PageRange<byte> range = bytes.Retain();
-                    source = Slang.CreateBlob(range.ToArray());
+                    ReadOnlyMemory<byte> serialized = await copy.ReadBytesAsync(serializedKey, cancellationToken).ConfigureAwait(false);
+                    ISlangBlob source = Slang.CreateBlob(serialized.Span);
+                    sourceUnit = session.LoadModuleFromIRBlob(Path.GetFileNameWithoutExtension(paths[sourceIndex]),
+                        paths[sourceIndex], source, out diagnostics);
+                    if (saveSources) serializedSources.Add(serialized);
                 }
                 else
                 {
-                    byte[] bytes = await File.ReadAllBytesAsync(paths[sourceIndex], cancellationToken)
-                        .ConfigureAwait(false);
-                    source = Slang.CreateBlob(bytes);
-                }
-                try
-                {
-                    IModule? sourceUnit = hasSerializedSource
-                        ? session.LoadModuleFromIRBlob(
-                            Path.GetFileNameWithoutExtension(paths[sourceIndex]),
-                            paths[sourceIndex],
-                            source,
-                            out ISlangBlob? diagnostics)
-                        : session.LoadModuleFromSource(
-                            Path.GetFileNameWithoutExtension(paths[sourceIndex]),
-                            paths[sourceIndex],
-                            source,
-                            out diagnostics);
-                    string diagnosticText = DiagnosticText(diagnostics);
-                    Release(diagnostics);
-                    if (sourceUnit is null)
+                    string directory = sessionDescription.SearchPaths?.FirstOrDefault() ?? Directory.GetCurrentDirectory();
+                    string path = Path.GetFullPath(Path.Combine(directory, paths[sourceIndex]));
+                    if (sourceFiles.LoadFile(path, out ISlangBlob source).Failed)
+                        throw new FileNotFoundException("Shader source file could not be read.", path);
+                    sourceUnit = session.LoadModuleFromSource(Path.GetFileNameWithoutExtension(path), path,
+                        source, out diagnostics);
+                    if (saveSources && sourceUnit is not null)
                     {
-                        string inputKind = hasSerializedSource ? "serialized source" : "source file";
-                        throw new InvalidDataException(
-                            $"Slang could not load {inputKind} '{paths[sourceIndex]}': {diagnosticText}");
+                        SlangResult serialized = sourceUnit.Serialize(out ISlangBlob data);
+                        if (serialized.Failed || data.GetBufferSize() == 0)
+                            throw new InvalidDataException($"Slang could not serialize source '{path}'.");
+                        serializedSources.Add(data.Buffer.ToArray());
                     }
-                    sourceUnits.Add(sourceUnit);
                 }
-                finally
+                string diagnosticText = DiagnosticText(diagnostics);
+                if (sourceUnit is null)
                 {
-                    Release(source);
+                    throw new InvalidDataException(
+                        $"Slang could not load source '{paths[sourceIndex]}': {diagnosticText}");
                 }
+                sourceUnits.Add(sourceUnit);
             }
 
             foreach (IModule sourceUnit in sourceUnits)
@@ -153,87 +178,62 @@ public sealed partial class ShaderSourceBlock
                 .ToArray();
             SlangResult combineResult = session.CreateCompositeComponentType(
                 components,
-                out combinedCode,
+                out IComponentType combinedCode,
                 out ISlangBlob? combineDiagnostics);
             string combineText = DiagnosticText(combineDiagnostics);
-            Release(combineDiagnostics);
             if (combineResult.Failed || combinedCode is null)
                 throw new InvalidDataException("Slang composition failed: " + combineText);
 
             IComponentType codeToLink = combinedCode;
-            if (copy.Specializations.Count > 0)
+            if (!specializations.IsEmpty)
             {
-                SpecializationArg[] arguments = copy.Specializations
-                    .Select(SpecializationArg.FromExpression)
-                    .ToArray();
+                SpecializationArg[] arguments = specializations.ToArray();
                 SlangResult specializationResult = combinedCode.Specialize(
                     arguments,
-                    out specializedCode,
+                    out IComponentType specializedCode,
                     out ISlangBlob? specializationDiagnostics);
                 string specializationText = DiagnosticText(specializationDiagnostics);
-                Release(specializationDiagnostics);
                 if (specializationResult.Failed || specializedCode is null)
                     throw new InvalidDataException("Slang specialization failed: " + specializationText);
                 codeToLink = specializedCode;
             }
 
-            SlangResult linkResult = codeToLink.Link(out linkedCode, out ISlangBlob? linkDiagnostics);
+            SlangResult linkResult = codeToLink.Link(
+                out IComponentType linkedCode,
+                out ISlangBlob? linkDiagnostics);
             string linkText = DiagnosticText(linkDiagnostics);
-            Release(linkDiagnostics);
             if (linkResult.Failed || linkedCode is null)
                 throw new InvalidDataException("Slang link failed: " + linkText);
 
             cancellationToken.ThrowIfCancellationRequested();
-            Release(specializedCode);
-            specializedCode = null;
-            Release(combinedCode);
-            combinedCode = null;
-
-            shaderOwnsSlang = true;
-            return Shader.CreateFromSlang(
-                Path.GetFileNameWithoutExtension(fullDefinitionPath),
+            Shader shader = Shader.CreateFromSlang(
+                name,
+                slang,
                 session,
                 sourceUnits,
                 entries,
                 linkedCode,
-                targets);
+                targets,
+                generateCode);
+            return new(shader, serializedSources, sourceFiles.Finish());
         }
         finally
         {
-            Release(specializedCode);
-            Release(combinedCode);
-            if (!shaderOwnsSlang)
-            {
-                Release(linkedCode);
-                ReleaseReverse(entries);
-                ReleaseReverse(sourceUnits);
-                Release(session);
-            }
+            frontEnd.Release();
         }
     }
 
-    private static string ResolveSourcePath(string definitionDirectory, string sourcePath)
+    private static string NormalizeSourceName(string sourceName)
     {
-        if (string.IsNullOrWhiteSpace(sourcePath) || Path.IsPathRooted(sourcePath))
-            throw new InvalidDataException("Shader source paths must be relative to the definition file.");
-        return Path.GetFullPath(Path.Combine(definitionDirectory, sourcePath));
+        if (string.IsNullOrWhiteSpace(sourceName) || Path.IsPathRooted(sourceName))
+            throw new InvalidDataException("Shader source names must be relative.");
+        string normalized = sourceName.Replace('\\', '/');
+        string directory = Path.GetFullPath(".");
+        return Path.GetRelativePath(directory, Path.GetFullPath(Path.Combine(directory, normalized))).Replace('\\', '/');
     }
 
     private static string DiagnosticText(ISlangBlob? diagnostics)
         => diagnostics is null || diagnostics.GetBufferSize() == 0
             ? "no diagnostics"
             : diagnostics.AsString;
-
-    private static void ReleaseReverse<T>(IReadOnlyList<T> values)
-        where T : class
-    {
-        for (int index = values.Count - 1; index >= 0; index--)
-            Release(values[index]);
-    }
-
-    private static void Release(object? value)
-    {
-        if (value is ComObject com)
-            com.FinalRelease();
-    }
 }

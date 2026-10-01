@@ -427,7 +427,7 @@ internal sealed class GraphPass
     internal required PassOptions Options;
     internal required PassCallbackStorage CallbackStorage;
     internal Pipeline? Pipeline;
-    internal ShaderVariableLayout ParameterLayout = ShaderVariableLayout.Null;
+    internal VariableLayoutReflection ParameterLayout = VariableLayoutReflection.Null;
     internal byte[] ParameterOrdinaryData = [];
     internal List<GraphParameterResourceBinding> ParameterBindings = [];
     internal HashSet<GraphIdentity> ViewReferences = [];

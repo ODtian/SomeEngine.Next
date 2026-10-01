@@ -805,9 +805,9 @@ internal sealed unsafe partial class D3D12Backend
         private D3D12Pipeline? _pipeline;
         private D3D12PersistentParameterBindings? _persistentBindings;
         private D3D12PersistentParameterData? _persistentData;
-        private ShaderVariableLayout _resolvedParameterLayout = ShaderVariableLayout.Null;
+        private VariableLayoutReflection _resolvedParameterLayout = VariableLayoutReflection.Null;
         private NativeParameterBinding? _resolvedParameterBinding;
-        private ShaderVariableLayout _transientBindingLayout = ShaderVariableLayout.Null;
+        private VariableLayoutReflection _transientBindingLayout = VariableLayoutReflection.Null;
         private ResourceBinding[] _transientBindingResources = [];
         private byte[] _transientBindingOrdinaryData = [];
         private int _transientBindingResourceCount;
@@ -835,7 +835,7 @@ internal sealed unsafe partial class D3D12Backend
             _persistentBindings = null;
             _persistentData = null;
             _pipeline = pipeline;
-            _resolvedParameterLayout = ShaderVariableLayout.Null;
+            _resolvedParameterLayout = VariableLayoutReflection.Null;
             _resolvedParameterBinding = null;
             _computeRootBindings = pipeline.Type is PipelineType.Compute or
                 PipelineType.RayTracing or PipelineType.WorkGraph;
@@ -845,7 +845,7 @@ internal sealed unsafe partial class D3D12Backend
         internal void ResetPipelineBindingState()
         {
             _pipeline = null;
-            _resolvedParameterLayout = ShaderVariableLayout.Null;
+            _resolvedParameterLayout = VariableLayoutReflection.Null;
             _resolvedParameterBinding = null;
             ClearRootBindingState();
         }
@@ -873,7 +873,7 @@ internal sealed unsafe partial class D3D12Backend
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal NativeParameterBinding ResolveParameterBlock(
             D3D12Pipeline pipeline,
-            ShaderVariableLayout layout)
+            VariableLayoutReflection layout)
         {
             NativeParameterBinding? cached = _resolvedParameterBinding;
             if (cached is not null && _resolvedParameterLayout == layout)
@@ -893,7 +893,7 @@ internal sealed unsafe partial class D3D12Backend
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool ParameterBindingsEqual(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ReadOnlySpan<ResourceBinding> resources,
             ReadOnlySpan<byte> ordinaryData,
             out bool sameTransientShape)
@@ -917,7 +917,7 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         internal bool TransientResourceBindingsEqual(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ReadOnlySpan<ResourceBinding> resources) =>
             _hasTransientBindings && _transientBindingLayout == layout &&
             _transientBindingResourceCount == resources.Length &&
@@ -1277,7 +1277,7 @@ internal sealed unsafe partial class D3D12Backend
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetTransientOrdinaryConstantBuffer16(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             uint rootParameter,
             ref byte data)
         {
@@ -1329,7 +1329,7 @@ internal sealed unsafe partial class D3D12Backend
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private bool PrepareTransientOrdinaryConstantBuffer16Slow(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ref byte data)
         {
             if (!_hasTransientBindings &&

@@ -9,6 +9,19 @@ namespace SomeEngine.Tests.Assets;
 public sealed class SourceMetaFilesTests
 {
     [Fact]
+    public void PartialSettingsKeepTheSuppliedTypedDefaults()
+    {
+        using var fields = JsonDocument.Parse("{\"require_persistent_element_ids\":false}");
+        var metadata = new SourceMeta { SourceGuid = SourceGuid.New(), Importers =
+            [new(GltfSourceImporter.SourceImporterId, fields.RootElement.Clone())] };
+        GltfImporterSettings settings = metadata.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+        Assert.False(settings.RequirePersistentElementIds);
+        Assert.Equal(new GltfImporterSettings().LitMaterialTemplate, settings.LitMaterialTemplate);
+        Assert.Equal("someengine_id", settings.PersistentIdProperty);
+    }
+
+    [Fact]
     public void SavedSelectionsKeepTypedSettingsSeparateFromBuildResults()
     {
         string directory = CreateTempDir();

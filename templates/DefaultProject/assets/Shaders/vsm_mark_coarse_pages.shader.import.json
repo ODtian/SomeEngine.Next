@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "cfae8a07f414253ddabddf73418ea30f94c24f97e9981ed7ff6b7cd6038a52e0",
+  "importer_version": 29,
+  "input_hash": "e882692172e90768088f3d28612b139af00a073c32b915dad784e91ad870a70e",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -33,7 +33,7 @@
     },
     {
       "relative_path": "assets/Shaders/vsm_mark_coarse_pages.shader",
-      "content_hash": "64449aea4d11e28cb943d5c677eaabd0c87b751d0527b55e76aceb4b7a59e25c"
+      "content_hash": "489f96b4d3ec2d564ceceff9893355fd6cf0b05bfab907bd7c0f1cda1be5fc1f"
     }
   ],
   "reported_inputs": [],
@@ -41,11 +41,11 @@
     {
       "asset_guid": "72823443-a8cb-5b69-998b-497eef6660ae",
       "sub_asset_key": "",
-      "input_hash": "cfae8a07f414253ddabddf73418ea30f94c24f97e9981ed7ff6b7cd6038a52e0",
+      "input_hash": "e882692172e90768088f3d28612b139af00a073c32b915dad784e91ad870a70e",
       "dependencies": [],
       "asset_path": "vsm_mark_coarse_pages.shader.asset",
-      "version": "f971eaab-bbbc-c2a6-decd-f91795464546",
-      "content_hash": "8CDB4C2448BEEFB8796B3463EA37B1A24B78E9B2B1E9F162525BC6B4AF248A8B",
+      "version": "ce5f8762-f4a0-d16a-8932-e15acfeb249d",
+      "content_hash": "E4863E231862C60BB5838C61C868C26142DB18BA87800DDF8B52DD916950CBEF",
       "asset_dependencies": []
     }
   ]

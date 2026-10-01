@@ -1,4 +1,4 @@
-﻿using SlangShaderSharp;
+using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Vulkan;
 
@@ -11,8 +11,8 @@ internal sealed unsafe partial class VulkanBackend
         private VkDescriptorSetLayout[] _setLayouts;
         private bool[] _ownedSetLayouts;
         private VkSampler[] _staticSamplers;
-        private readonly Dictionary<ShaderVariableLayout, VulkanBlockLayout> _sourceBlocks;
-        private readonly Dictionary<ShaderEntryPoint, VulkanSpirvBindingTarget[]> _spirvTargets;
+        private readonly Dictionary<VariableLayoutReflection, VulkanBlockLayout> _sourceBlocks;
+        private readonly Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> _spirvTargets;
         private readonly VulkanBindlessSetBinding[] _bindlessBindings;
 
         internal VulkanPipelineLayoutState(
@@ -22,9 +22,9 @@ internal sealed unsafe partial class VulkanBackend
             bool[] ownedSetLayouts,
             VkSampler[] staticSamplers,
             VulkanBindlessSetBinding[] bindlessBindings,
-            ShaderVariableLayout globalLayout,
-            Dictionary<ShaderVariableLayout, VulkanBlockLayout> blocks,
-            Dictionary<ShaderEntryPoint, VulkanSpirvBindingTarget[]> spirvTargets)
+            VariableLayoutReflection globalLayout,
+            Dictionary<VariableLayoutReflection, VulkanBlockLayout> blocks,
+            Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> spirvTargets)
         {
             _device = device;
             _native = native;
@@ -37,21 +37,21 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal VkPipelineLayout Native => _native;
-        internal IReadOnlyDictionary<ShaderVariableLayout, VulkanBlockLayout> Blocks =>
+        internal IReadOnlyDictionary<VariableLayoutReflection, VulkanBlockLayout> Blocks =>
             _sourceBlocks;
         internal ReadOnlySpan<VkDescriptorSetLayout> SetLayouts => _setLayouts;
         internal ReadOnlySpan<VulkanBindlessSetBinding> BindlessBindings =>
             _bindlessBindings;
 
         internal ReadOnlySpan<VulkanSpirvBindingTarget> GetSpirvTargets(
-            ShaderEntryPoint entry) =>
+            EntryPointReflection entry) =>
             _spirvTargets.TryGetValue(entry, out VulkanSpirvBindingTarget[]? targets)
                 ? targets
                 : throw new ArgumentException(
                     "The entry point is not part of the current Vulkan Pipeline layout.",
                     nameof(entry));
 
-        internal VulkanBlockLayout GetBlock(ShaderVariableLayout layout) =>
+        internal VulkanBlockLayout GetBlock(VariableLayoutReflection layout) =>
             _sourceBlocks.TryGetValue(layout, out VulkanBlockLayout? block)
                 ? block
                 : throw new ArgumentException(
@@ -80,13 +80,13 @@ internal sealed unsafe partial class VulkanBackend
     }
 
     private sealed class VulkanBlockLayout(
-        ShaderVariableLayout reflectedLayout,
+        VariableLayoutReflection reflectedLayout,
         VulkanDescriptorSlot[] slots,
         VulkanOrdinaryBinding? ordinary,
         uint[] setIndices,
         VulkanSpirvBindingTarget[] spirvTargets)
     {
-        internal ShaderVariableLayout ReflectedLayout { get; } = reflectedLayout;
+        internal VariableLayoutReflection ReflectedLayout { get; } = reflectedLayout;
         internal VulkanDescriptorSlot[] Slots { get; } = slots;
         internal VulkanOrdinaryBinding? Ordinary { get; } = ordinary;
         internal uint[] SetIndices { get; } = setIndices;
@@ -125,12 +125,12 @@ internal sealed unsafe partial class VulkanBackend
     {
         private readonly VulkanDevice _device;
         private readonly Dictionary<uint, Dictionary<uint, SetBindingBuild>> _sets = [];
-        private readonly Dictionary<ShaderVariableLayout, VulkanBlockLayout> _blocks = [];
-        private readonly HashSet<ShaderVariableLayout> _inProgress = [];
+        private readonly Dictionary<VariableLayoutReflection, VulkanBlockLayout> _blocks = [];
+        private readonly HashSet<VariableLayoutReflection> _inProgress = [];
         private readonly List<PushConstantRange> _pushConstants = [];
         private readonly List<UnboundedBindingBuild> _unboundedBindings = [];
-        private readonly Dictionary<ShaderVariable, SamplerDesc> _staticSamplerDescriptions = [];
-        private readonly HashSet<ShaderVariable> _resolvedStaticSamplers = [];
+        private readonly Dictionary<VariableReflection, SamplerDesc> _staticSamplerDescriptions = [];
+        private readonly HashSet<VariableReflection> _resolvedStaticSamplers = [];
         private readonly List<VkSampler> _nativeStaticSamplers = [];
         private uint _nextDescriptorSet;
 
@@ -141,7 +141,7 @@ internal sealed unsafe partial class VulkanBackend
             _device = device;
             foreach (ref readonly StaticSamplerBinding sampler in staticSamplers)
             {
-                if (sampler.Sampler == ShaderVariable.Null ||
+                if (sampler.Sampler == VariableReflection.Null ||
                     !_staticSamplerDescriptions.TryAdd(sampler.Sampler, sampler.Description))
                     throw new ArgumentException("A Vulkan static sampler declaration is null or duplicated.", nameof(staticSamplers));
             }
@@ -149,20 +149,20 @@ internal sealed unsafe partial class VulkanBackend
 
         internal static VulkanPipelineLayoutState Compile(
             VulkanDevice device,
-            ShaderProgramLayout reflection,
-            ReadOnlySpan<ShaderEntryPoint> entries,
+            ShaderReflection reflection,
+            ReadOnlySpan<EntryPointReflection> entries,
             ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
         {
             var compiler = new VulkanPipelineLayoutCompiler(device, staticSamplers);
             try
             {
-                ShaderVariableLayout global = reflection.GetGlobalParamsVarLayout()
-                    ?? ShaderVariableLayout.Null;
-                if (global != ShaderVariableLayout.Null)
+                VariableLayoutReflection global = reflection.GetGlobalParamsVarLayout()
+                    ?? VariableLayoutReflection.Null;
+                if (global != VariableLayoutReflection.Null)
                     compiler.AddBlock(global, ShaderStageFlags.All);
-                foreach (ShaderEntryPoint entry in entries)
+                foreach (EntryPointReflection entry in entries)
                 {
-                    if (entry.VarLayout != ShaderVariableLayout.Null)
+                    if (entry.VarLayout != VariableLayoutReflection.Null)
                         compiler.AddBlock(entry.VarLayout, ToNativeShaderStage(entry.Stage));
                 }
                 compiler.RequireStaticSamplersResolved();
@@ -179,7 +179,7 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private void AddBlock(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ShaderStageFlags stages,
             uint setBase = 0,
             SlangBindingType reflectedOrdinaryType = SlangBindingType.Unknown)
@@ -202,12 +202,12 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private void AddBlockCore(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             ShaderStageFlags stages,
             uint setBase,
             SlangBindingType reflectedOrdinaryType)
         {
-            ShaderTypeLayout dataLayout = GetParameterDataLayout(layout);
+            TypeLayoutReflection dataLayout = GetParameterDataLayout(layout);
             // Independently bound parameter blocks must not replace each other's
             // descriptors when Slang puts their resources in the same source set.
             var parameterSets = new Dictionary<uint, uint>();
@@ -240,8 +240,8 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private VulkanOrdinaryBinding AddOrdinaryBinding(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
             uint size,
             ShaderStageFlags stages,
             uint setBase,
@@ -281,8 +281,8 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private void AddDescriptorBindings(
-            ShaderVariableLayout layout,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection layout,
+            TypeLayoutReflection dataLayout,
             ShaderStageFlags stages,
             uint setBase,
             Dictionary<uint, uint> parameterSets,
@@ -297,7 +297,7 @@ internal sealed unsafe partial class VulkanBackend
                     continue;
                 nint setIndex = dataLayout.GetBindingRangeDescriptorSetIndex(bindingRange);
                 nint firstRange = dataLayout.GetBindingRangeFirstDescriptorRangeIndex(bindingRange);
-                ShaderTypeLayout leaf = dataLayout.GetBindingRangeLeafTypeLayout(bindingRange).UnwrapArray();
+                TypeLayoutReflection leaf = dataLayout.GetBindingRangeLeafTypeLayout(bindingRange).UnwrapArray();
                 for (nint relative = 0; relative < descriptorRangeCount; relative++)
                 {
                     nint descriptorRange = firstRange + relative;
@@ -320,18 +320,18 @@ internal sealed unsafe partial class VulkanBackend
                     bool unbounded = unchecked((nuint)reflectedCount) == Slang.UnboundedSize;
                     uint set = unbounded ? sourceSet : AllocateParameterSet(parameterSets, sourceSet);
                     uint count = unbounded ? 0 : checked((uint)reflectedCount);
-                    ShaderVariable declaration = dataLayout.GetBindingRangeLeafVariable(bindingRange);
+                    VariableReflection declaration = dataLayout.GetBindingRangeLeafVariable(bindingRange);
                     var spirvTarget = new VulkanSpirvBindingTarget(
                         set,
                         binding,
-                        declaration == ShaderVariable.Null
+                        declaration == VariableReflection.Null
                             ? null
                             : declaration.Name,
                         sourceSet);
                     spirvTargets.Add(spirvTarget);
                     SamplerDesc samplerDescription = default;
                     bool staticSampler = bindingType == ResourceBindingType.Sampler &&
-                        declaration != ShaderVariable.Null &&
+                        declaration != VariableReflection.Null &&
                         _staticSamplerDescriptions.TryGetValue(declaration, out samplerDescription);
                     VkSampler immutableSampler = default;
                     if (staticSampler)
@@ -371,7 +371,7 @@ internal sealed unsafe partial class VulkanBackend
                             binding,
                             element,
                             shape,
-                            declaration == ShaderVariable.Null
+                            declaration == VariableReflection.Null
                                 ? null
                                 : declaration.Name));
                     }
@@ -380,8 +380,8 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private void AddChildBlocks(
-            ShaderVariableLayout parent,
-            ShaderTypeLayout dataLayout,
+            VariableLayoutReflection parent,
+            TypeLayoutReflection dataLayout,
             ShaderStageFlags stages,
             uint setBase)
         {
@@ -395,8 +395,8 @@ internal sealed unsafe partial class VulkanBackend
                 if (type is not (SlangBindingType.ParameterBlock or SlangBindingType.ConstantBuffer or
                     SlangBindingType.InlineUniformData or SlangBindingType.PushConstant))
                     continue;
-                ShaderVariableLayout child = dataLayout.GetSubObjectRangeOffset(index);
-                if (child == ShaderVariableLayout.Null)
+                VariableLayoutReflection child = dataLayout.GetSubObjectRangeOffset(index);
+                if (child == VariableLayoutReflection.Null)
                     continue;
                 uint childSetBase = setBase;
                 if (type == SlangBindingType.ParameterBlock)
@@ -466,11 +466,11 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private VulkanPipelineLayoutState Build(
-            ShaderVariableLayout global,
-            ReadOnlySpan<ShaderEntryPoint> entries)
+            VariableLayoutReflection global,
+            ReadOnlySpan<EntryPointReflection> entries)
         {
             VulkanBindlessSetBinding[] bindlessBindings = AssignBindlessSets();
-            Dictionary<ShaderEntryPoint, VulkanSpirvBindingTarget[]> spirvTargets =
+            Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> spirvTargets =
                 CreateSpirvTargetMap(global, entries);
             uint maximumSet = 0;
             bool hasSets = false;
@@ -606,15 +606,15 @@ internal sealed unsafe partial class VulkanBackend
             return result;
         }
 
-        private Dictionary<ShaderEntryPoint, VulkanSpirvBindingTarget[]> CreateSpirvTargetMap(
-            ShaderVariableLayout global,
-            ReadOnlySpan<ShaderEntryPoint> entries)
+        private Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> CreateSpirvTargetMap(
+            VariableLayoutReflection global,
+            ReadOnlySpan<EntryPointReflection> entries)
         {
-            var result = new Dictionary<ShaderEntryPoint, VulkanSpirvBindingTarget[]>();
-            foreach (ShaderEntryPoint entry in entries)
+            var result = new Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]>();
+            foreach (EntryPointReflection entry in entries)
             {
                 var targets = new HashSet<VulkanSpirvBindingTarget>();
-                var visited = new HashSet<ShaderVariableLayout>();
+                var visited = new HashSet<VariableLayoutReflection>();
                 AddSpirvTargets(global, targets, visited);
                 AddSpirvTargets(entry.VarLayout, targets, visited);
                 result.Add(
@@ -627,11 +627,11 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private void AddSpirvTargets(
-            ShaderVariableLayout layout,
+            VariableLayoutReflection layout,
             HashSet<VulkanSpirvBindingTarget> targets,
-            HashSet<ShaderVariableLayout> visited)
+            HashSet<VariableLayoutReflection> visited)
         {
-            if (layout == ShaderVariableLayout.Null || !visited.Add(layout))
+            if (layout == VariableLayoutReflection.Null || !visited.Add(layout))
                 return;
             if (!_blocks.TryGetValue(layout, out VulkanBlockLayout? block))
             {
@@ -643,7 +643,7 @@ internal sealed unsafe partial class VulkanBackend
             if (block.Ordinary is VulkanOrdinaryBinding ordinary && !ordinary.PushConstants)
                 targets.Add(new VulkanSpirvBindingTarget(ordinary.Set, ordinary.Binding, SourceSet: ordinary.SourceSet));
 
-            ShaderTypeLayout dataLayout = GetParameterDataLayout(layout);
+            TypeLayoutReflection dataLayout = GetParameterDataLayout(layout);
             for (nint index = 0; index < dataLayout.SubObjectRangeCount; index++)
             {
                 nint bindingRange = dataLayout.GetSubObjectRangeBindingRangeIndex(index);
@@ -763,24 +763,24 @@ internal sealed unsafe partial class VulkanBackend
 
         private void RequireStaticSamplersResolved()
         {
-            foreach (ShaderVariable sampler in _staticSamplerDescriptions.Keys)
+            foreach (VariableReflection sampler in _staticSamplerDescriptions.Keys)
                 if (!_resolvedStaticSamplers.Contains(sampler))
                     throw new ArgumentException($"Static sampler '{sampler.Name}' is not part of the linked Pipeline.");
         }
 
-        private static ShaderTypeLayout GetParameterDataLayout(ShaderVariableLayout layout)
+        private static TypeLayoutReflection GetParameterDataLayout(VariableLayoutReflection layout)
         {
-            ShaderTypeLayout result = layout.TypeLayout.UnwrapArray();
+            TypeLayoutReflection result = layout.TypeLayout.UnwrapArray();
             if (result.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
                 result = result.ElementTypeLayout.UnwrapArray();
-            if (result == ShaderTypeLayout.Null)
+            if (result == TypeLayoutReflection.Null)
                 throw new GraphicsException(GraphicsError.PipelineCreation, "Slang returned a null parameter data layout.");
             return result;
         }
 
         private static uint GetOrdinaryDataSize(
-            ShaderTypeLayout dataLayout,
-            ShaderVariableLayout layout)
+            TypeLayoutReflection dataLayout,
+            VariableLayoutReflection layout)
         {
             nuint size = dataLayout.GetSize(SlangParameterCategory.Uniform);
             if (size == Slang.UnknownSize || size == Slang.UnboundedSize || size > uint.MaxValue)
@@ -820,7 +820,7 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private static DescriptorSlotDesc ResolveDescriptorSlot(
-            ShaderTypeLayout leaf,
+            TypeLayoutReflection leaf,
             ResourceBindingType type) => type switch
         {
             ResourceBindingType.ConstantBuffer or ResourceBindingType.Sampler or
@@ -835,17 +835,17 @@ internal sealed unsafe partial class VulkanBackend
         };
 
         private static DescriptorSlotDesc ResolveBufferSlot(
-            ShaderTypeLayout leaf,
+            TypeLayoutReflection leaf,
             ResourceBindingType type)
         {
             SlangResourceShape shape = leaf.ResourceShape & SlangResourceShape.BaseShapeMask;
             bool counter = type == ResourceBindingType.BufferUav &&
-                leaf.ExplicitCounter != ShaderVariableLayout.Null;
+                leaf.ExplicitCounter != VariableLayoutReflection.Null;
             if (shape == SlangResourceShape.TextureBuffer)
                 return new DescriptorSlotDesc(type, ResolveCanonicalResourceFormat(leaf.ResourceResultType), HasCounter: counter);
             if (shape == SlangResourceShape.StructuredBuffer)
             {
-                ShaderTypeLayout element = leaf.ElementTypeLayout;
+                TypeLayoutReflection element = leaf.ElementTypeLayout;
                 nuint stride = element.GetStride(SlangParameterCategory.Uniform);
                 if (stride == 0 || stride == Slang.UnknownSize || stride == Slang.UnboundedSize)
                     stride = element.GetSize(SlangParameterCategory.Uniform);
@@ -873,7 +873,7 @@ internal sealed unsafe partial class VulkanBackend
             };
         }
 
-        private static RhiFormat ResolveCanonicalResourceFormat(ShaderType type)
+        private static RhiFormat ResolveCanonicalResourceFormat(TypeReflection type)
         {
             uint components = type.Kind == SlangTypeKind.Vector
                 ? Math.Max(type.RowCount, type.ColumnCount)
@@ -905,7 +905,7 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private static uint ResolveSubObjectSpace(
-            ShaderTypeLayout layout,
+            TypeLayoutReflection layout,
             nint bindingRange,
             SlangParameterCategory category)
         {
@@ -913,15 +913,15 @@ internal sealed unsafe partial class VulkanBackend
             {
                 if (layout.GetSubObjectRangeBindingRangeIndex(index) != bindingRange)
                     continue;
-                ShaderVariableLayout variable = layout.GetSubObjectRangeOffset(index);
-                return variable == ShaderVariableLayout.Null
+                VariableLayoutReflection variable = layout.GetSubObjectRangeOffset(index);
+                return variable == VariableLayoutReflection.Null
                     ? 0
                     : ResolveUInt(variable.GetBindingSpace(category), 0);
             }
             return 0;
         }
 
-        private static bool UsesCategory(ShaderTypeLayout layout, SlangParameterCategory category)
+        private static bool UsesCategory(TypeLayoutReflection layout, SlangParameterCategory category)
         {
             for (uint index = 0; index < layout.CategoryCount; index++)
                 if (layout.GetCategoryByIndex(index) == category)
@@ -929,7 +929,7 @@ internal sealed unsafe partial class VulkanBackend
             return false;
         }
 
-        private static bool UsesCategory(ShaderVariableLayout layout, SlangParameterCategory category)
+        private static bool UsesCategory(VariableLayoutReflection layout, SlangParameterCategory category)
         {
             for (uint index = 0; index < layout.CategoryCount; index++)
                 if (layout.GetCategoryByIndex(index) == category)

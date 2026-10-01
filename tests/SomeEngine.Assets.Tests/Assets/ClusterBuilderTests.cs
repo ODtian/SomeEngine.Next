@@ -70,7 +70,7 @@ public class ClusterBuilderTests
             "TestPlane");
 
         // 3. Assertions
-        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
         byte[] payloadBytes = payloadRead.ToArray();
         Assert.True(payloadBytes.Length > 0);
 
@@ -108,7 +108,7 @@ public class ClusterBuilderTests
             ClusterBuilderTestMaterials.Slots(),
             "TestSoA");
 
-        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
         byte[] payloadBytes = payloadRead.ToArray();
         var span = payloadBytes.AsSpan();
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
@@ -161,7 +161,7 @@ public class ClusterBuilderTests
             ClusterBuilderTestMaterials.Slots(),
             "TestSoAWithTangent");
 
-        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
         byte[] payloadBytes = payloadRead.ToArray();
         var span = payloadBytes.AsSpan();
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
@@ -197,7 +197,7 @@ public class ClusterBuilderTests
             encoder);
 
         Assert.Equal(SentinelVertexEncoder.CompatibilityName, asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().VertexEncoding);
-        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
         ReadOnlySpan<byte> payload = payloadRead.ToArray();
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(payload);
         Assert.Equal(
@@ -251,7 +251,7 @@ public class ClusterBuilderTests
             ClusterBuilderTestMaterials.Slots(),
             "UvSeam");
 
-        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
         byte[] payloadBytes = payloadRead.ToArray();
         var span = payloadBytes.AsSpan();
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
@@ -280,7 +280,7 @@ public class ClusterBuilderTests
             ClusterBuilderTestMaterials.Slots(),
             "QuantizedBounds");
 
-        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
         byte[] payloadBytes = payloadRead.ToArray();
         var span = payloadBytes.AsSpan();
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
@@ -361,7 +361,7 @@ public class ClusterBuilderTests
             materials,
             "MixedDeform");
 
-        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
         ReadOnlySpan<byte> payload = payloadRead.ToArray();
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(payload);
         ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(

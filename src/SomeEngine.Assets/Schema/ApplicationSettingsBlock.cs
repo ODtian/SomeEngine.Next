@@ -5,7 +5,7 @@ namespace SomeEngine.Assets.Schema;
 [AssetBlock("SomeEngine.Assets.Schema.ApplicationSettingsBlock")]
 [BinarySerializable, TextSerializable]
 [BinaryFields(nameof(Scene), nameof(Pipeline), nameof(VirtualShadowMap), nameof(UiShader), nameof(UiVertexEntry), nameof(UiPixelEntry), nameof(PresentationShader), nameof(PresentationVertexEntry), nameof(PresentationPixelEntry), nameof(LightingShader), nameof(LightingEntryPoint), nameof(TemporalShader), nameof(TemporalVertexEntry), nameof(TemporalPixelEntry), nameof(TranslucencyShader), nameof(TranslucencyVertexEntry), nameof(TranslucencyPixelEntry), nameof(DebugShader), nameof(DebugVertexEntry), nameof(DebugPixelEntry), nameof(Width), nameof(Height))]
-public sealed partial class ApplicationSettingsBlock : AssetPageBlock
+public sealed partial class ApplicationSettingsBlock : AssetBlock
 {
     public partial AssetId<WorldAsset> Scene { get; set; }
     public partial AssetId<ClusterShadersAsset> Pipeline { get; set; }

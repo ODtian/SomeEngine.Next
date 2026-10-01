@@ -26,11 +26,11 @@ public sealed class WarpValidationLayerTests
                     + inputTexture.SampleLevel(secondSampler, 0.75, 0);
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "persistent_root_token", source, [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout data = GetDataLayout(layout);
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection data = GetDataLayout(layout);
         nint[] samplerRanges = Enumerable.Range(0, checked((int)data.BindingRangeCount))
             .Select(static value => (nint)value)
             .Where(index => (data.GetBindingRangeType(index) & SlangBindingType.BaseMask) ==
@@ -45,13 +45,13 @@ public sealed class WarpValidationLayerTests
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline first = backend.CreateComputePipeline(device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
                 StaticSamplers: new StaticSamplerBinding[] { firstStatic }));
         using Pipeline sameRoot = backend.CreateComputePipeline(device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
                 StaticSamplers: new StaticSamplerBinding[] { firstStatic }));
         using Pipeline differentOmission = backend.CreateComputePipeline(device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
                 StaticSamplers: new StaticSamplerBinding[] { secondStatic }));
         using Sampler runtimeSampler = backend.CreateSampler(device, state);
         ResourceBinding[] runtime = CreateNullBindings(layout).ToList() switch
@@ -99,13 +99,13 @@ public sealed class WarpValidationLayerTests
                     pipelineSampler, float2(0.5, 0.5), 0);
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "pipeline_static_sampler_binding_contract",
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         SamplerDesc samplerDescription = new(
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
             AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
@@ -114,9 +114,7 @@ public sealed class WarpValidationLayerTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(
-                shader.Program,
-                shader.GetEntryPoint(0),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
                 StaticSamplers: new StaticSamplerBinding[]
                 {
                     StaticSampler(shader.Reflection, layout, 3, 2, samplerDescription),
@@ -190,12 +188,12 @@ public sealed class WarpValidationLayerTests
                     pipelineSampler, float2(0.5, 0.5), 0).x);
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "auto_scalar_static_sampler_execution", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout data = GetDataLayout(layout);
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection data = GetDataLayout(layout);
         nint samplerRange = Enumerable.Range(0, checked((int)data.BindingRangeCount))
             .Select(static index => (nint)index)
             .Single(index => (data.GetBindingRangeType(index) & SlangBindingType.BaseMask) ==
@@ -207,7 +205,7 @@ public sealed class WarpValidationLayerTests
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
                 StaticSamplers: new StaticSamplerBinding[]
                 {
                     new(data.GetBindingRangeLeafVariable(samplerRange), sampler),
@@ -286,23 +284,21 @@ public sealed class WarpValidationLayerTests
                     0);
             }
             """;
-        D3D12TestShaderEntry[] entries = [new("computeMain", SlangStage.Compute)];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestEntry[] entries = [new("computeMain", SlangStage.Compute)];
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "pipeline_static_sampler_duplicate_rejection",
             source,
             entries,
             "sm_6_0");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         GraphicsException failure = Assert.Throws<GraphicsException>(() =>
             backend.CreateComputePipeline(
                 device,
-                new ComputePipelineDesc(
-                    shader.Program,
-                    shader.GetEntryPoint(0),
+                new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
                     StaticSamplers: new StaticSamplerBinding[]
                     {
                         StaticSampler(shader.Reflection, layout, 3, 2, new SamplerDesc(
@@ -337,14 +333,14 @@ public sealed class WarpValidationLayerTests
                     bindlessSamplers[id.x], float2(0.5, 0.5), 0);
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "pipeline_static_sampler_unbounded_rejection",
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout reflected = GetDataLayout(layout);
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection reflected = GetDataLayout(layout);
         nint samplerRange = Enumerable.Range(
                 0,
                 checked((int)reflected.BindingRangeCount))
@@ -361,14 +357,12 @@ public sealed class WarpValidationLayerTests
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
             AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
 
-        ShaderVariable samplerDeclaration =
+        VariableReflection samplerDeclaration =
             reflected.GetBindingRangeLeafVariable(samplerRange);
         GraphicsException failure = Assert.Throws<GraphicsException>(() =>
             backend.CreateComputePipeline(
                 device,
-                new ComputePipelineDesc(
-                    shader.Program,
-                    shader.GetEntryPoint(0),
+                new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
                     StaticSamplers: new StaticSamplerBinding[]
                     {
                         new(samplerDeclaration, sampler),
@@ -393,32 +387,30 @@ public sealed class WarpValidationLayerTests
                     pipelineSamplers[id.x % 3], float2(0.5, 0.5), 0);
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "pipeline_static_sampler_bounded_array",
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc sampler = new(
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
             AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
 
-        ShaderTypeLayout reflected = GetDataLayout(layout);
+        TypeLayoutReflection reflected = GetDataLayout(layout);
         nint samplerRange = Enumerable.Range(0, checked((int)reflected.BindingRangeCount))
             .Select(static index => (nint)index)
             .Single(index => (reflected.GetBindingRangeType(index) &
                 SlangBindingType.BaseMask) == SlangBindingType.Sampler);
-        ShaderVariable samplerDeclaration =
+        VariableReflection samplerDeclaration =
             reflected.GetBindingRangeLeafVariable(samplerRange);
         GraphicsException failure = Assert.Throws<GraphicsException>(() =>
             backend.CreateComputePipeline(
                 device,
-                new ComputePipelineDesc(
-                    shader.Program,
-                    shader.GetEntryPoint(0),
+                new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
                     StaticSamplers: new StaticSamplerBinding[]
                     {
                         new(samplerDeclaration, sampler),
@@ -444,13 +436,13 @@ public sealed class WarpValidationLayerTests
                     pipelineSampler, float2(0.5, 0.5), 0);
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "pipeline_static_sampler_border_rejection",
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc sampler = new(
@@ -461,9 +453,7 @@ public sealed class WarpValidationLayerTests
         GraphicsException failure = Assert.Throws<GraphicsException>(() =>
             backend.CreateComputePipeline(
                 device,
-                new ComputePipelineDesc(
-                    shader.Program,
-                    shader.GetEntryPoint(0),
+                new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
                     StaticSamplers: new StaticSamplerBinding[] { StaticSampler(shader.Reflection, layout, 0, 0, sampler) })));
 
         Assert.Equal(GraphicsError.PipelineCreation, failure.Error);
@@ -491,14 +481,14 @@ public sealed class WarpValidationLayerTests
                     .SampleLevel(inputSampler, float2(0.5, 0.5), 0) * multiplier;
             }
             """;
-        D3D12TestShaderEntry[] entries = [new("computeMain", SlangStage.Compute)];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestEntry[] entries = [new("computeMain", SlangStage.Compute)];
+        D3D12TestShader shader = D3D12TestShader.Compile(
             "slang_parameter_layout_authority",
             source,
             entries);
-        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? ShaderVariableLayout.Null;
-        ShaderTypeLayout reflected = GetDataLayout(layout);
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection reflected = GetDataLayout(layout);
 
         Assert.Equal(4u, checked((uint)reflected.GetSize(SlangParameterCategory.Uniform)));
         Assert.Equal((nint)3, reflected.BindingRangeCount);
@@ -1372,19 +1362,19 @@ public sealed class WarpValidationLayerTests
             {
             }
             """;
-        D3D12TestShaderEntry[] entries = [new("computeMain", SlangStage.Compute)];
-        using D3D12TestShaderProgram bindingShader = D3D12TestShaderProgram.Compile(
+        D3D12TestEntry[] entries = [new("computeMain", SlangStage.Compute)];
+        D3D12TestShader bindingShader = D3D12TestShader.Compile(
             "rhi_validation_binding_contract",
             bindingSource,
             entries);
-        using D3D12TestShaderProgram otherShader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader otherShader = D3D12TestShader.Compile(
             "rhi_validation_other_contract",
             otherSource,
             entries);
-        ShaderVariableLayout layout =
-            bindingShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
-        Assert.NotEqual(ShaderVariableLayout.Null, layout);
-        ShaderTypeLayout reflectedLayout = GetDataLayout(layout);
+        VariableLayoutReflection layout =
+            bindingShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        Assert.NotEqual(VariableLayoutReflection.Null, layout);
+        TypeLayoutReflection reflectedLayout = GetDataLayout(layout);
         ResourceBinding[] validResources = CreateNullBindings(layout);
         uint ordinaryDataSize = checked((uint)reflectedLayout.GetSize(
             SlangParameterCategory.Uniform));
@@ -1417,10 +1407,10 @@ public sealed class WarpValidationLayerTests
         }
         using Pipeline bindingPipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(bindingShader.Program, bindingShader.GetEntryPoint(0)));
+            new ComputePipelineDesc(bindingShader.SlangCode, bindingShader.Reflection, bindingShader.GetEntryPoint(0), bindingShader.GetEntryCode(0)));
         using Pipeline otherPipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(otherShader.Program, otherShader.GetEntryPoint(0)));
+            new ComputePipelineDesc(otherShader.SlangCode, otherShader.Reflection, otherShader.GetEntryPoint(0), otherShader.GetEntryCode(0)));
 
         byte[] wrongOrdinaryData = new byte[checked(validOrdinaryData.Length + 1)];
         Assert.Throws<InvalidOperationException>(() => CreateAndDisposeBindings(
@@ -1561,9 +1551,9 @@ public sealed class WarpValidationLayerTests
     }
 
     private static ResourceBinding[] CreateNullBindings(
-        ShaderVariableLayout layout)
+        VariableLayoutReflection layout)
     {
-        ShaderTypeLayout reflectedLayout = GetDataLayout(layout);
+        TypeLayoutReflection reflectedLayout = GetDataLayout(layout);
         var result = new List<ResourceBinding>();
         for (nint rangeIndex = 0;
              rangeIndex < reflectedLayout.BindingRangeCount;
@@ -1596,26 +1586,26 @@ public sealed class WarpValidationLayerTests
         return [.. result];
     }
 
-    private static ShaderTypeLayout GetDataLayout(ShaderVariableLayout layout)
+    private static TypeLayoutReflection GetDataLayout(VariableLayoutReflection layout)
     {
-        ShaderTypeLayout result = layout.TypeLayout.UnwrapArray();
+        TypeLayoutReflection result = layout.TypeLayout.UnwrapArray();
         if (result.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
         {
-            ShaderTypeLayout element = result.ElementTypeLayout.UnwrapArray();
-            if (element != ShaderTypeLayout.Null)
+            TypeLayoutReflection element = result.ElementTypeLayout.UnwrapArray();
+            if (element != TypeLayoutReflection.Null)
                 result = element;
         }
         return result;
     }
 
     private static StaticSamplerBinding StaticSampler(
-        ShaderProgramLayout reflection,
-        ShaderVariableLayout block,
+        ShaderReflection reflection,
+        VariableLayoutReflection block,
         uint shaderRegister,
         uint registerSpace,
         in SamplerDesc description)
     {
-        ShaderTypeLayout data = GetDataLayout(block);
+        TypeLayoutReflection data = GetDataLayout(block);
         for (nint rangeIndex = 0; rangeIndex < data.BindingRangeCount; rangeIndex++)
         {
             if ((data.GetBindingRangeType(rangeIndex) & SlangBindingType.BaseMask) !=
@@ -1687,7 +1677,7 @@ public sealed class WarpValidationLayerTests
         ValidationLayer backend,
         Device device,
         Pipeline pipeline,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         ResourceBinding[] resources,
         byte[] ordinaryData)
     {
@@ -1700,7 +1690,7 @@ public sealed class WarpValidationLayerTests
     private static void SetTransientBindings(
         ValidationLayer backend,
         CommandContext context,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         ResourceBinding[] resources,
         byte[] ordinaryData) =>
         backend.SetTransientParameterBindings(

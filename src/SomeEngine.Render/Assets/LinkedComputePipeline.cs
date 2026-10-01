@@ -7,44 +7,46 @@ using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
 namespace SomeEngine.Render.Assets;
 
-/// <summary>Owns one RHI pipeline created from a cooked compute entry point.</summary>
+/// <summary>Owns one RHI pipeline created from a direct Slang compute entry point.</summary>
 public sealed class LinkedComputePipeline : IDisposable
 {
     private bool _disposed;
 
     private LinkedComputePipeline(
-        ShaderProgram program,
-        ShaderEntryPoint entryPoint,
+        ShaderReflection reflection,
+        EntryPointReflection entryPoint,
         GraphicsPipeline pipeline)
     {
-        Program = program;
+        Reflection = reflection;
         EntryPoint = entryPoint;
         Pipeline = pipeline;
     }
 
-    public ShaderProgram Program { get; }
-    public ShaderEntryPoint EntryPoint { get; }
-    public ShaderVariableLayout ParameterLayout => Program.Layout.GetGlobalParamsVarLayout();
+    public ShaderReflection Reflection { get; }
+    public EntryPointReflection EntryPoint { get; }
+    public VariableLayoutReflection ParameterLayout =>
+        Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
     public GraphicsPipeline Pipeline { get; }
 
     public static LinkedComputePipeline Create(
         IGraphicsBackend backend,
         Device device,
-        ShaderEntry? shader,
+        Shader? shader,
+        EntryPointReflection entry,
         string label)
     {
-        ArgumentNullException.ThrowIfNull(backend);
-        ArgumentNullException.ThrowIfNull(device);
-        ArgumentException.ThrowIfNullOrWhiteSpace(label);
-        if (shader is null ||
-            shader.Stage != ShaderStage.Compute ||
-            string.IsNullOrWhiteSpace(shader.EntryPoint) || shader.Shader is null)
-        {
-            throw new InvalidDataException(
-                $"Compute pipeline '{label}' has no valid shader entry.");
-        }
-        Shader loaded = shader.Shader;
-        return Create(backend, device, loaded, shader.EntryPoint, label);
+        ArgumentNullException.ThrowIfNull(shader);
+        if (entry == EntryPointReflection.Null || entry.Stage != SlangStage.Compute)
+            throw new InvalidDataException($"Compute pipeline '{label}' has no compute entry.");
+        int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+        return Create(
+            backend,
+            device,
+            shader,
+            entry,
+            shader.GetSlangEntryBytes(targetIndex, entry),
+            shader.GetSlangEntryBlob(targetIndex, entry),
+            label);
     }
 
     public static LinkedComputePipeline Create(
@@ -62,17 +64,20 @@ public sealed class LinkedComputePipeline : IDisposable
         GraphicsPipeline? pipeline = null;
         try
         {
-            CookedShaderEntry cooked = shader.RequireEntry(
-                device.Capabilities.CompileTarget,
+            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+            ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+            EntryPointReflection entry = shader.RequireSlangEntry(
+                targetIndex,
                 entryPoint,
-                ShaderStage.Compute);
-            pipeline = backend.CreateComputePipeline(
+                SlangStage.Compute);
+            return Create(
+                backend,
                 device,
-                new ComputePipelineDesc(
-                    cooked.Program,
-                    cooked.EntryPoint,
-                    label));
-            return new LinkedComputePipeline(cooked.Program, cooked.EntryPoint, pipeline);
+                shader,
+                entry,
+                shader.GetSlangEntryBytes(targetIndex, entry),
+                shader.GetSlangEntryBlob(targetIndex, entry),
+                label);
         }
         catch (Exception primary)
         {
@@ -85,6 +90,38 @@ public sealed class LinkedComputePipeline : IDisposable
                     $"Compute pipeline '{label}' construction failed and cleanup also reported failures.",
                     cleanupFailures);
             }
+            throw;
+        }
+    }
+
+    private static LinkedComputePipeline Create(
+        IGraphicsBackend backend,
+        Device device,
+        Shader shader,
+        EntryPointReflection entry,
+        System.Buffers.ReadOnlySequence<byte> code,
+        ISlangBlob? codeBlob,
+        string label)
+    {
+        GraphicsPipeline? pipeline = null;
+        try
+        {
+            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+            ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+            pipeline = backend.CreateComputePipeline(
+                device,
+                new ComputePipelineDesc(
+                    shader.SlangCode,
+                    reflection,
+                    entry,
+                    code,
+                    label,
+                    CodeBlob: codeBlob));
+            return new LinkedComputePipeline(reflection, entry, pipeline);
+        }
+        catch
+        {
+            pipeline?.Dispose();
             throw;
         }
     }

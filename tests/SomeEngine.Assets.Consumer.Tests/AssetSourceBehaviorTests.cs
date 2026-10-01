@@ -25,15 +25,13 @@ public sealed class AssetSourceBehaviorTests : IDisposable
         AssetEntry description = AssetText.Describe(text);
         Assert.Equal(original.Id, description.AssetGuid);
         Assert.Equal("speed", description.Name);
-        using var pages = new PageArena(new ResidencyBudgetLedger());
-        using CurveAsset source = await CurveAsset.OpenSourceAsync(sourcePath, pages);
-        Assert.Same(pages, source.Pages);
+        using CurveAsset source = await CurveAsset.OpenSourceAsync(sourcePath);
         Assert.Equal(original.Id, source.Id);
         source.GetBlock<CurveBlock>().Points[1] = new(1, 9);
         await source.SaveSourceAsync(sourcePath);
         await source.SaveAsync(binaryPath);
         using CurveAsset binary = await CurveAsset.OpenAsync(binaryPath);
-        using Curve curve = binary.GetBlock<CurveBlock>().CreateCurve();
+        Curve curve = binary.GetBlock<CurveBlock>().CreateCurve();
         Assert.Equal(5, curve.Evaluate(0.5f));
         binary.Dispose();
         File.Delete(binaryPath);
@@ -73,20 +71,17 @@ public sealed class AssetSourceBehaviorTests : IDisposable
         Assert.True(new FileInfo(path).Length < 1000);
         using var source = await TextPayloadAsset.OpenSourceAsync(path);
         TextPayloadBlock sourceContent = source.GetBlock<TextPayloadBlock>();
-        using var acquired = await sourceContent.AcquireBufferAsync(sourceContent.Key);
+        var acquired = await sourceContent.ReadBytesAsync(sourceContent.Key);
         source.Dispose();
         File.Delete(Path.Combine(_directory, "data.bin"));
-        using var read = acquired.Retain();
+        var read = acquired;
         Assert.Equal(bytes, read.ToArray());
-        using var pages = new PageArena(new ResidencyBudgetLedger());
-        await Assert.ThrowsAsync<FileNotFoundException>(async () => await TextPayloadAsset.OpenSourceAsync(path, pages));
-        Assert.Equal(0, pages.Statistics.ActiveBytes);
+        await Assert.ThrowsAsync<FileNotFoundException>(async () => await TextPayloadAsset.OpenSourceAsync(path));
         await File.WriteAllBytesAsync(Path.Combine(_directory, "first.bin"), bytes);
         await File.WriteAllBytesAsync(Path.Combine(_directory, "second.bin"), bytes);
         await asset.SaveSourceAsync(path, new Dictionary<ulong, string> { [7] = "first.bin", [8] = "second.bin" });
         File.Delete(Path.Combine(_directory, "second.bin"));
-        await Assert.ThrowsAsync<FileNotFoundException>(async () => await TextPayloadAsset.OpenSourceAsync(path, pages));
-        Assert.Equal(0, pages.Statistics.ActiveBytes);
+        await Assert.ThrowsAsync<FileNotFoundException>(async () => await TextPayloadAsset.OpenSourceAsync(path));
     }
 
     [Fact]
@@ -111,7 +106,7 @@ public sealed class AssetSourceBehaviorTests : IDisposable
         byte[] bytes = [3, 7, 9];
         using var asset = new TextPayloadAsset();
         using var content = new TextPayloadBlock { Key = 7, Length = 3 };
-        content.Chunks.Set(7, bytes);
+        content.SetBytes(7, bytes);
         asset.SetBlock(content);
         await asset.SaveAsync(binaryPath);
         using var binary = await TextPayloadAsset.OpenAsync(binaryPath);
@@ -122,7 +117,7 @@ public sealed class AssetSourceBehaviorTests : IDisposable
         await File.WriteAllBytesAsync(Path.Combine(_directory, "data.bin"), bytes);
         await binary.SaveSourceAsync(sourcePath, new Dictionary<ulong, string> { [7] = "data.bin" });
         using var source = await TextPayloadAsset.OpenSourceAsync(sourcePath);
-        using var read = source.GetBlock<TextPayloadBlock>().Chunks.Retain(7);
+        var read = source.GetBlock<TextPayloadBlock>().Chunks[7];
         Assert.Equal(bytes, read.ToArray());
     }
 
@@ -142,7 +137,7 @@ public sealed class AssetSourceBehaviorTests : IDisposable
     }
 }
 
-[Asset(".payload.asset"), BinarySerializable]
+[Asset(".payload.asset", SchemaName = "SomeEngine.Assets.Consumer.Tests.TextPayloadAsset"), BinarySerializable]
 [BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
 public sealed partial class TextPayloadAsset : Asset
 {
@@ -154,14 +149,14 @@ public sealed partial class TextPayloadAsset : Asset
         await GetBlockAsync<TextPayloadBlock>(cancellationToken);
         return await AssetText.SaveAsync(path, this, (writer, asset) => writer.WriteBlock(asset.GetBlock<TextPayloadBlock>(), chunkFiles), cancellationToken);
     }
-    public static async ValueTask<TextPayloadAsset> OpenSourceAsync(string path, PageArena? pages = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<TextPayloadAsset> OpenSourceAsync(string path, CancellationToken cancellationToken = default)
     {
         using AssetText.SourceReader source = await AssetText.OpenAsync(path, cancellationToken);
         source.RequireAsset<TextPayloadAsset>(FileType);
-        var asset = new TextPayloadAsset(pages ?? PageArena.Shared, source.Description.AssetGuid) { Name = source.Description.Name };
+        var asset = new TextPayloadAsset(source.Description.AssetGuid) { Name = source.Description.Name };
         try
         {
-            using var block = new TextPayloadBlock(asset.Pages);
+            using var block = new TextPayloadBlock();
             await source.ReadBlockIntoAsync(block, cancellationToken);
             asset.SetBlock(block);
             return asset;
@@ -169,8 +164,8 @@ public sealed partial class TextPayloadAsset : Asset
         catch { asset.Dispose(); throw; }
     }
 }
-[AssetBlock, BinarySerializable, TextSerializable, BinaryFields(nameof(Key), nameof(Length))]
-public sealed partial class TextPayloadBlock : AssetPageBlock
+[AssetBlock("SomeEngine.Assets.Consumer.Tests.TextPayloadBlock"), BinarySerializable, TextSerializable, BinaryFields(nameof(Key), nameof(Length))]
+public sealed partial class TextPayloadBlock : AssetBlock
 {
     public partial ulong Key { get; set; }
     public partial ulong Length { get; set; }

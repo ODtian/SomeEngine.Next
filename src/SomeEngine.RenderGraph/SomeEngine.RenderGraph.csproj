@@ -6,7 +6,7 @@
     <Description>Persistent render graph with explicit structural edits and direct RHI execution.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../external/SlangShaderSharp/src/SlangShaderSharp.csproj" />
+    <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
     <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
     <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
     <ProjectReference Include="../SomeEngine.Job/SomeEngine.Job.csproj" />

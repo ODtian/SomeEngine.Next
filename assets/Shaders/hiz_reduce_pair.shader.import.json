@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "f174b00ab923238de7df86a85ae018a26453b5ffbc396b63f11189f673fd00bb",
+  "importer_version": 28,
+  "input_hash": "12ccfff7bd4679ca364df55415bd188f11e28311b3425272285443c1896bf384",
   "inputs": [
     {
       "relative_path": "assets/Shaders/hiz_common.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "assets/Shaders/hiz_reduce_pair.shader",
-      "content_hash": "6e713fa8cd5a68dc13ecd31768076b3d3b1655f02a01432f2784715f7e3dca95"
+      "content_hash": "1cd589c5ad7c3409d6bfba460f6b265f5d33ca3ed6959e21f9bb2e9cb8e33b0d"
     },
     {
       "relative_path": "assets/Shaders/hiz_reduce_pair.slang",
@@ -25,11 +25,11 @@
     {
       "asset_guid": "127f9d54-98ec-566d-bb4d-41e06037e66d",
       "sub_asset_key": "",
-      "input_hash": "f174b00ab923238de7df86a85ae018a26453b5ffbc396b63f11189f673fd00bb",
+      "input_hash": "12ccfff7bd4679ca364df55415bd188f11e28311b3425272285443c1896bf384",
       "dependencies": [],
       "asset_path": "hiz_reduce_pair.shader.asset",
-      "version": "9e4ec4ea-4c49-81be-c9fb-5dc42fbed265",
-      "content_hash": "18529AEF59F5F1F701A6E89957AA5CE541AE86028158C84136CEF04A65284DA6",
+      "version": "5fa3c6d4-dc96-0234-4e5f-a663fbb4e125",
+      "content_hash": "D76F79274534F4D7AE042B84FF9CB738E30D4ED61AAED12B949E6B156F0ECDC6",
       "asset_dependencies": []
     }
   ]

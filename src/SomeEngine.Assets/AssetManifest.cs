@@ -98,7 +98,7 @@ public sealed partial class AssetManifest
             sourceGuid,
             subAssetKey ?? string.Empty)
         {
-            Dependencies = NormalizeDependencies(guid, dependencies),
+            Dependencies = NormalizeDependencies(dependencies),
             DefinitionPath = AssetIoHelpers.NormalizePath(definitionPath),
             Version = version,
         };
@@ -383,9 +383,9 @@ public sealed partial class AssetManifest
             static pair => (IReadOnlyList<Guid>)pair.Value.OrderBy(static guid => guid.ToString(), StringComparer.Ordinal).ToArray());
     }
 
-    private static IReadOnlyList<Guid> NormalizeDependencies(Guid owner, IEnumerable<Guid>? dependencies)
+    private static IReadOnlyList<Guid> NormalizeDependencies(IEnumerable<Guid>? dependencies)
         => dependencies?
-            .Where(dependency => (dependency != System.Guid.Empty) && dependency != owner)
+            .Where(static dependency => dependency != System.Guid.Empty)
             .Distinct()
             .OrderBy(static dependency => dependency.ToString(), StringComparer.Ordinal)
             .ToArray() ?? [];

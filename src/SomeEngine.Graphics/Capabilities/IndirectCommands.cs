@@ -79,7 +79,7 @@ public enum IndirectArgumentType : byte
 /// </remarks>
 public readonly record struct IndirectArgumentDesc(
     IndirectArgumentType Type,
-    ShaderVariableLayout? Parameters = default,
+    VariableLayoutReflection? Parameters = default,
     uint VertexBufferSlot = 0,
     uint ByteOffset = 0,
     uint ValueCount = 0);

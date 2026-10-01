@@ -30,8 +30,8 @@ internal static class DefaultTextures
         {
             Width = 1, Height = 1, RowPitch = 4, SlicePitch = 4, ChunkKey = key, DecodedLength = 4,
         });
-        pixels.Chunks.Set(key, rgba);
-        using var asset = new TextureAsset(PageArena.Shared, id) { Name = name };
+        pixels.SetBytes(key, rgba);
+        using var asset = new TextureAsset(id) { Name = name };
         asset.SetBlock(pixels);
         AssetEntry entry = await asset.SaveAsync(Path.Combine(project.RootPath, $"assets/Textures/{name}.texture.asset"), cancellationToken).ConfigureAwait(false);
         project.RegisterAsset(entry);

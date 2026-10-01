@@ -13,32 +13,31 @@ public sealed class VirtualShadowPageTests
     [InlineData(0, -17, 5)]
     [InlineData(1, 0, 0)]
     [InlineData(2, 0, 0)]
-    public void CoarsePagesCoverEveryFinePageIncludingScrolledBorders(uint lightKind, int originX, int originY)
+    public void CoarseRequestsUseDirectionalCentersAndOneLocalFallback(uint lightKind, int originX, int originY)
     {
-        uint[] view = new uint[42];
+        const int pageTableEntryCount = 22000;
+        uint[] view = new uint[44];
         view[16] = 16384;
         view[17] = 128;
         view[21] = unchecked((uint)originX);
         view[25] = unchecked((uint)originY);
+        view[33] = 1;
         view[34] = 5;
-        view[36] = lightKind;
+        view[36] = lightKind == 0 ? 1u : 0u;
+        view[37] = lightKind;
         uint[][] result = Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
         [
-            ([1, 64, 7, 0], ResourceBindingType.ConstantBuffer, 0),
-            (view, ResourceBindingType.BufferSrv, 168),
-            (new uint[64], ResourceBindingType.BufferUav, 4),
+            new BufferInput("CoarsePageDemand", [1, pageTableEntryCount, 7, 0], ResourceBindingType.ConstantBuffer, 0),
+            new BufferInput("ShadowViews", view, ResourceBindingType.BufferSrv, 176),
+            new BufferInput("RequestedShadowPages", new uint[pageTableEntryCount], ResourceBindingType.BufferUav, 4),
+            new BufferInput("RequestedPageFlags", new uint[pageTableEntryCount], ResourceBindingType.BufferUav, 4),
+            new BufferInput("RequestedPageIndices", new uint[pageTableEntryCount], ResourceBindingType.BufferUav, 4),
+            new BufferInput("RequestedPageCount", new uint[1], ResourceBindingType.BufferUav, 4),
+            new BufferInput("PageReceiverMasks", new uint[pageTableEntryCount * 2], ResourceBindingType.BufferUav, 8),
         ]);
-        var requiredPages = new HashSet<int>();
-        for (int y = 0; y < 128; y++)
-        for (int x = 0; x < 128; x++)
-        {
-            int coarseX = (int)Math.Floor((originX + x) / 32.0);
-            int coarseY = (int)Math.Floor((originY + y) / 32.0);
-            int tableIndex = (coarseY & 7) * 8 + (coarseX & 7);
-            requiredPages.Add(tableIndex);
-            Assert.Equal(7u, result[0][tableIndex]);
-        }
-        Assert.Equal(requiredPages.Count, result[0].Count(value => value != 0));
+        int expectedRequests = lightKind == 0 ? 5 : 1;
+        Assert.Equal(expectedRequests, result[0].Count(value => value == 7));
+        Assert.Equal((uint)expectedRequests, result[3][0]);
     }
 
     [Theory]

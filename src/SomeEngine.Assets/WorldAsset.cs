@@ -22,15 +22,15 @@ public sealed partial class WorldAsset : Asset
     }
     [BinaryIgnore] public ulong ContentLength => GetBlock<WorldBlock>().ContentLength;
     [BinaryIgnore] public ImmutableArray<AssetId<Asset>> ExternalReferences => GetBlock<WorldBlock>().ExternalReferences;
-    public WorldAsset() : this(PageArena.Shared) { }
-    public WorldAsset(PageArena pages, Guid id = default) : base(pages, id)
+    public WorldAsset() : this(Guid.Empty) { }
+    public WorldAsset(Guid id = default) : base(id)
     {
         AssetType = FileType;
-        using var world = new WorldBlock(pages);
+        using var world = new WorldBlock();
         SetBlock(world);
     }
     private WorldAsset(WorldAsset source) : base(source) { }
-    public override WorldAsset Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public override WorldAsset Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
     public override WorldAsset CreateCopy(Guid id = default) => (WorldAsset)base.CreateCopy(id);
     public void WriteWorld(World world, SerializationRegistry registry, SerializeOptions options = default)
         => GetBlock<WorldBlock>().WriteWorld(world, registry, options);
@@ -49,10 +49,10 @@ public sealed partial class WorldAsset : Asset
         await using AssetFile file = await loader.OpenFileAsync(id, FileType, WireType, cancellationToken).ConfigureAwait(false);
         return await ReadFileAsync(file, id.Value, cancellationToken).ConfigureAwait(false);
     }
-    public static async ValueTask<WorldAsset> OpenAsync(string path, CancellationToken cancellationToken = default, PageArena? pages = null)
+    public static async ValueTask<WorldAsset> OpenAsync(string path, CancellationToken cancellationToken = default)
     {
         if (!path.EndsWith(PathSuffix, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The World path has a different suffix.");
-        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, cancellationToken: cancellationToken).ConfigureAwait(false);
         return await ReadFileAsync(file, default, cancellationToken).ConfigureAwait(false);
     }
     private static async ValueTask<WorldAsset> ReadFileAsync(AssetFile file, Guid expected, CancellationToken cancellationToken)
@@ -60,7 +60,7 @@ public sealed partial class WorldAsset : Asset
         AssetEntry entry = file.Describe();
         if ((expected != Guid.Empty && entry.AssetGuid != expected) || entry.AssetType != FileType)
             throw new InvalidDataException("The World file has a different identity or type.");
-        var asset = new WorldAsset(file.Pages, entry.AssetGuid);
+        var asset = new WorldAsset(entry.AssetGuid);
         try
         {
             asset.ReadBlockContent(file);

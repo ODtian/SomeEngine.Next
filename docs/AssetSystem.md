@@ -1,6 +1,6 @@
 # Asset 系统
 
-2026-09-16。当前模型与职责在原 Wiki 持续维护：[架构导航](../wiki/architecture/Asset-Files.md)、[对象与 Block](../wiki/architecture/Assets/Asset-Objects.md)、[导入与工程存储](../wiki/architecture/Assets/Asset-Import-and-Storage.md)。[执行任务](../wiki/architecture/Assets/Asset-Rebuild-Tasks.md) 与 [验证记录](../wiki/architecture/Assets/Asset-Verification-2026-09-16.md) 区分实现、已执行验证及最终验收缺口。
+2026-09-30。当前规则与职责见 [架构导航](../wiki/architecture/Asset-Files.md)、[对象与 Block](../wiki/architecture/Assets/Asset-Objects.md)、[导入与工程存储](../wiki/architecture/Assets/Asset-Import-and-Storage.md)。[执行任务](../wiki/architecture/Assets/Asset-Rebuild-Tasks.md) 保存各轮范围，本次托管数据与共享结果见 [2026-09-30 验证](../wiki/architecture/Assets/Asset-Verification-2026-09-30.md)；具名修复及验收未关闭项见 [审查及后续状态](../reviews/AssetSpecReview-2026-09-29.md)。
 
 ## 身份与强类型数据
 
@@ -20,7 +20,7 @@ using SomeEngine.Resources.Texture texture = await pixels.CreateAsync(asset.Name
 
 打开 Asset 不创建 GPU 资源，也不保证像素或几何负载全部驻留。显式转换负责取得当前需要的数据；转换后的使用对象保留自己的必要内容，不通过 Asset 的异步访问模型执行普通业务访问。未来 mip 或几何页仍经显式流送取得，再更新可用状态。
 
-Block 复用现有 PageArena、PageBuffer、PageList、范围来源、读取调度和预算。Duplicate 保留身份并建立可隔离编辑的内容分支，CreateCopy 创建新身份；普通 C# 引用赋值仍共享对象。页级 COW 不承诺复制任意第三方对象图。关闭不是保存，旧读取者和正在使用的资源按各自使用期限释放。
+Block 使用普通字段、集合与不可变托管数组。业务 tile、mip、LOD 和几何页决定取得粒度；所有字节语义共用整数 LRU 缓存、CPU 字节预算和实际读取任务表，规则见 [数据共享](../wiki/architecture/Assets/Asset-Sharing-and-Writes.md)。Duplicate 保留身份，复制需要独立编辑的字段与集合结构，共享不变数据；CreateCopy 创建新身份。普通引用保活数据，不使用通用 CPU 页、页级 COW 或每文件解码缓存。关闭不是保存。
 
 ## 保存、目录与来源
 
@@ -48,4 +48,4 @@ dotnet run --project tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAsset
 dotnet run --project <project-directory>/Game.Build/Game.Build.csproj -c Release -- --project <project-directory> --engine <engine-directory>
 ```
 
-GenerateDefaultAssets 仅调用模板的唯一内容构建实现，不再维护引擎根目录的另一套默认内容生成流程。[Shader 来源](ShaderSources.md)、[可读源格式](AssetSources.md)、[页 API](AssetPages.md) 和 [通用编码](BinarySerialization.md) 说明各自边界。
+GenerateDefaultAssets 仅调用模板的唯一内容构建实现，不再维护引擎根目录的另一套默认内容生成流程。[Shader 来源](ShaderSources.md)、[可读源格式](AssetSources.md)、[资产字节与业务分块](AssetPages.md) 和 [通用编码](BinarySerialization.md) 说明各自边界。

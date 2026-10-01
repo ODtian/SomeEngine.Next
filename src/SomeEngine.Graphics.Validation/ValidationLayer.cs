@@ -644,9 +644,9 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         }
 
         internal WorkGraphEntryPointInfo GetEntryPoint(
-            SlangShaderSharp.ShaderEntryPoint entryPoint)
+            SlangShaderSharp.EntryPointReflection entryPoint)
         {
-            if (entryPoint == SlangShaderSharp.ShaderEntryPoint.Null)
+            if (entryPoint == SlangShaderSharp.EntryPointReflection.Null)
                 throw new ArgumentException("A Work Graph dispatch requires a Slang entry point.");
             foreach (ref readonly WorkGraphEntryPointInfo entry in _entries.AsSpan())
             {
@@ -668,11 +668,11 @@ public sealed partial class ValidationLayer : IGraphicsBackend
 
     private sealed record RayExportValidationState(
         RayExportValidationType Type,
-        SlangShaderSharp.ShaderVariableLayout[] Layouts);
+        SlangShaderSharp.VariableLayoutReflection[] Layouts);
 
     private sealed class RayTracingPipelineValidationState
     {
-        internal Dictionary<SlangShaderSharp.ShaderEntryPoint, RayExportValidationState>
+        internal Dictionary<SlangShaderSharp.EntryPointReflection, RayExportValidationState>
             Entries { get; } = [];
         internal Dictionary<string, RayExportValidationState> HitGroups { get; } =
             new(StringComparer.Ordinal);
@@ -793,7 +793,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     private sealed class BindingValidationState
     {
         internal BindingValidationState(
-            SlangShaderSharp.ShaderVariableLayout layout,
+            SlangShaderSharp.VariableLayoutReflection layout,
             Pipeline pipeline,
             PipelineBindingValidationState validation,
             GraphicsObject[] dependencies)
@@ -804,7 +804,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
             Dependencies = dependencies;
         }
 
-        internal SlangShaderSharp.ShaderVariableLayout Layout { get; }
+        internal SlangShaderSharp.VariableLayoutReflection Layout { get; }
         internal Pipeline Pipeline { get; }
         internal PipelineBindingValidationState Validation { get; }
         internal GraphicsObject[] Dependencies { get; set; }

@@ -1,6 +1,8 @@
 using SomeEngine.Assets.Importers;
 using SomeEngine.Tests;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
+using SlangShaderSharp;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -16,13 +18,18 @@ public class ShaderSourcePolicyTests
         string path = TestProjectPaths.ShaderPath(shaderFile);
         using var definition = await ShaderAsset.OpenSourceAsync(path);
         using var asset = SlangShaderImporter.CompileDefinition(definition, path);
-        using var shader = await asset.GetBlock<ShaderBlock>().CreateAsync(asset.Name);
+        Shader shader = await ShaderTestCompilation.CreateAsync(asset);
 
         foreach (string entryPoint in entryPoints)
         {
-            Assert.Contains(shader.Programs!, program =>
-                program is not null && program.EntryPoints.Any(entry =>
-                    entry.Name == entryPoint && entry.Code.Length > 0));
+            int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(shader.TryGetSlangEntry(
+                targetIndex,
+                entryPoint,
+                out EntryPointReflection entry));
+            Assert.True(
+                shader.GetSlangEntryBlob(targetIndex, entry) is not null ||
+                !shader.GetSlangEntryBytes(targetIndex, entry).IsEmpty);
         }
     }
 
@@ -44,9 +51,16 @@ public class ShaderSourcePolicyTests
             includeDirectories: [TestProjectPaths.ShaderDirectory()]);
 
         ShaderBlock code = asset.GetBlock<ShaderBlock>();
-        Assert.NotEmpty(code.Programs);
-        Assert.NotNull(code.EntryPointReflections);
-        Assert.NotEmpty(code.EntryPointReflections);
+        Assert.Contains(
+            ShaderBlock.EntryCodeKey(
+                ShaderTestCompilation.CreateSessionDescription(),
+                0,
+                0),
+            code.ContentKeys);
+        Assert.Contains(ShaderSourceBlock.SerializedSourceKey(0),
+            asset.GetBlock<ShaderSourceBlock>().ContentKeys);
+        Shader shader = await ShaderTestCompilation.CreateAsync(asset);
+        Assert.True(shader.SlangEntryCount > 0);
     }
 
 }

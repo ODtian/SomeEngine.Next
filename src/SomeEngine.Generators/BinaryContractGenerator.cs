@@ -254,7 +254,13 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
             }
         }
 
-        string logicalName = explicitLogicalName ?? StableName(type);
+        AttributeData? assetBlock = type.GetAttributes().FirstOrDefault(attribute =>
+            attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Assets.AssetBlockAttribute");
+        string? blockName = assetBlock?.ConstructorArguments.FirstOrDefault().Value as string;
+        AttributeData? asset = type.GetAttributes().FirstOrDefault(attribute =>
+            attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Assets.AssetAttribute");
+        string? assetName = asset?.NamedArguments.FirstOrDefault(argument => argument.Key == "SchemaName").Value.Value as string;
+        string logicalName = explicitLogicalName ?? blockName ?? assetName ?? StableName(type);
         ContractModel model = new(type, epoch, logicalName);
         model.UsesExistingCodec = ImplementsContractInterface(type);
         AttributeData? nativeLayout = FindAttribute(type, NativeLayoutAttributeName);

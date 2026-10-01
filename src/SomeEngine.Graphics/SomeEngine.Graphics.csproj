@@ -8,7 +8,7 @@
     <Description>Backend-neutral graphics device, resource, command, synchronization, and presentation contracts.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../external/SlangShaderSharp/src/SlangShaderSharp.csproj" />
+    <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
     <ProjectReference Include="../SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj" />
   </ItemGroup>
 

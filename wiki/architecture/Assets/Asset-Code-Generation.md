@@ -1,26 +1,28 @@
 # 资产声明与编译期生成
 
-2026-09-20：SG 只生成编译期已经确定的重复代码。数据与执行边界见 [Asset 与 Block](Asset-Objects.md)，项目能力与一次导入的区别见 [导入架构](Asset-Import-and-Storage.md)。
+2026-09-30：SG 只生成编译期已经确定的重复代码。数据与执行边界见 [Asset 与 Block](Asset-Objects.md)，项目能力与一次导入的区别见 [导入架构](Asset-Import-and-Storage.md)。
 
 ## 数据声明
 
-Asset 的公共根仅含身份、名称、资产类型和 Block 描述。业务内容直接声明在强类型 Block 上。`[AssetBlock]` 接入共同分支与页存储，`[BinarySerializable]` 和 `[BinaryFields]` 定义静态编码；需要人类可读表达的 Block 增加 `[TextSerializable]`。
+Asset 的公共根仅含身份、名称、资产类型和 Block 描述。业务内容直接声明在强类型 Block 上。`[AssetBlock]` 生成普通字段、集合和分支复制，`[BinarySerializable]` 和 `[BinaryFields]` 定义静态编码；需要人类可读表达的 Block 增加 `[TextSerializable]`。
 
 ```csharp
 [AssetBlock, BinarySerializable, TextSerializable, BinaryFields(nameof(Points))]
-public sealed partial class CurveBlock : AssetPageBlock
+public sealed partial class CurveBlock : AssetBlock
 {
     public partial IList<Point> Points { get; set; }
 }
 ```
 
-这是外部 Curve 样例采用的声明方式。元素赋值与批量页操作使用共同存储，不生成每种类型自己的编辑包装或第二套字段根。安全共享的值由声明端证明；通用编码仍允许明确的可变对象，但不能将其任意内部写入宣称为自动 COW。
+这是外部 Curve 样例采用的声明方式。Points 使用普通 List，允许元素赋值、添加和删除；Duplicate 复制集合结构，共享已证明不可变的元素，不生成编辑包装或第二套字段根。普通集合遵守 BCL 的并发使用规则，异步创建在首次等待前复制需要固定的输入。通用编码仍允许明确的可变对象，但不为其提供自动分支隔离。
 
 Asset 生成器拒绝把业务字段继续放在资产根上。它产生独立资产的身份、打开和保存入口，不从使用对象 T 镜像字段，也不要求资产与 T 一一对应。通用二进制生成器只处理其自己的显式声明，不再调用资产生成器注入字段。
 
 ## 类型身份、字段顺序与 AOT
 
 Block 的持久类型 ID 由 `[AssetBlock]` 的语义名称静态生成，与文本或二进制编码的类型 ID 分开。Asset 以这个 ID 建索引，管线请求 `GetBlockAsync<TBlock>()`，由 TBlock 的静态读取函数解释内容。没有装入类型名称字符串后寻找实现、扫描程序集或动态生成代码的步骤。
+
+生成声明明确填写 Asset.SchemaName 和 AssetBlock 的持久名称。Block 的默认二进制编码名称沿用该持久名称，显式 BinarySerializable.LogicalName 可以为编码单独命名。重命名 CLR 类型或命名空间时保留这些声明，文件类型、Block 身份和编码身份保持原值。
 
 资产打开时读取自己的 Block 目录，后续查询复用该目录。没有进程全局的 Block 下标分配、初始化函数或读取委托注册表；`IAssetBlock<T>.ReadAsync` 是静态接口入口。仅内存中的 Block 可以不实现持久读取；已设置的实例仍可通过相同强类型 API 取得。不同项目可以在同一进程使用不同 Block 集合。
 

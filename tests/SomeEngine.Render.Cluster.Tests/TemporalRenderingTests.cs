@@ -26,7 +26,7 @@ public sealed class TemporalRenderingTests
         await using var assets = new AssetLoader(new LooseAssetStorage(root, manifest));
         var record = manifest.List(ShaderAsset.FileType).Single(item => item.Name == "temporal_resolve");
         using ShaderAsset file = await ShaderAsset.OpenAsync(assets, new(record.AssetGuid));
-        using Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(file.Name);
+        Shader shader = await TestShaderLoading.CreateAsync(file);
         using IGraphicsBackend backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         var enumeration = new AdapterEnumerationOptions(AdapterPreference.HighPerformance, IncludeSoftware: true);
         backend.TryEnumerateAdapters(enumeration, [], out int count);

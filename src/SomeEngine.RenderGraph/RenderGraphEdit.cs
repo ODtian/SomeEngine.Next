@@ -883,7 +883,7 @@ public ref partial struct RenderGraphEdit
 
     internal void SetPassParameterBlock(
         in GraphIdentity pass,
-        ShaderVariableLayout layout,
+        VariableLayoutReflection layout,
         ReadOnlySpan<byte> ordinaryData)
     {
         GraphPass previous = Structure.Passes.Get(pass);

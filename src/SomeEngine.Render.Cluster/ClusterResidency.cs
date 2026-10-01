@@ -53,6 +53,7 @@ internal readonly record struct ClusterResidencyProviderSnapshot(
 /// </summary>
 internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 {
+    private const ulong MaximumEagerPageBytes = 64ul * 1024 * 1024;
     private readonly Buffer _pageHeapBuffer;
     private readonly Buffer _bvhBuffer;
     private readonly IGraphicsBackend _backend;
@@ -220,7 +221,9 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                 throw new InvalidOperationException($"Cluster page {pageId} is not registered.");
             allPageBytes = checked(allPageBytes + PageHeap.AllocationSize(page.Size));
         }
-        IReadOnlyCollection<uint> pageIds = allPageBytes <= _pageHeapCapacityBytes
+        IReadOnlyCollection<uint> pageIds = allPageBytes <= Math.Min(
+            _pageHeapCapacityBytes,
+            MaximumEagerPageBytes)
             ? allPageIds
             : lowestDetailPageIds;
         await Parallel.ForEachAsync(

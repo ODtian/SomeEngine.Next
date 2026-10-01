@@ -34,7 +34,7 @@ public abstract class GltfSceneImporter : IAssetImporter<Scene, GltfSceneSetting
     public virtual async ValueTask ImportMeshMaterialsAsync(GltfMesh source, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
     {
-        var references = new MeshMaterialsBlock(output.Target.Pages);
+        var references = new MeshMaterialsBlock();
         try
         {
             foreach (var primitive in source.Primitives)
@@ -63,7 +63,7 @@ public abstract class GltfSceneImporter : IAssetImporter<Scene, GltfSceneSetting
         using var world = new World();
         await AddNodesAsync(world, source, context, cancellationToken).ConfigureAwait(false);
         await AddSceneContentAsync(world, source, context, cancellationToken).ConfigureAwait(false);
-        var block = new WorldBlock(output.Target.Pages);
+        var block = new WorldBlock();
         try
         {
             block.WriteWorld(world, SceneSerialization.CreateRegistry());

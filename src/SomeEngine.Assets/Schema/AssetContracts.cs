@@ -44,20 +44,3 @@ public sealed partial record ClusterShaderOperation
     public ClusterShaderOperationRole Role { get; init; }
     public ImmutableList<ShaderRef>? Shaders { get; init; }
 }
-
-
-[BinarySerializable(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.CookedShaderProgram")]
-public sealed partial record CookedShaderProgram
-{
-    public CookedShaderProgram()
-    {
-    }
-
-
-    public string? Backend { get; init; }
-    public ulong DataChunkKey { get; init; }
-    public ulong DataDecodedLength { get; init; }
-    public string? ContentHash { get; init; }
-
-
-}

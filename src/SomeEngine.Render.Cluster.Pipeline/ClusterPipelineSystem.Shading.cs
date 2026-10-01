@@ -86,7 +86,7 @@ public sealed partial class ClusterPipelineSystem
                 checked((ulong)bin * ClusterIndirectAbi.DispatchBytes));
             GraphPassId pass = graph.AddComputeFramePass(
                 $"Shade Cluster bin {bin}", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                dispatch, new PassOptions(RepeatCommands: true), stage.Pipeline.Pipeline, ShaderVariableLayout.Null, default,
+                dispatch, new PassOptions(RepeatCommands: true), stage.Pipeline.Pipeline, VariableLayoutReflection.Null, default,
                 static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
                     _ = access.Read(data.Arguments,
                         new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),

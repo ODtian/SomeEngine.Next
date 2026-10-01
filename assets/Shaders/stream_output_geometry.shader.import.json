@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "75d1be759f72df84bfa3bab23817a84ea25f6132f2b7af33aaf9265f5dddc597",
+  "importer_version": 28,
+  "input_hash": "406c506f4fee1fb69472a0517bd47fe356b99589a0c83cd4ca73e11c3a4cdc15",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_structures.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "assets/Shaders/stream_output_geometry.shader",
-      "content_hash": "0bc7b1fc3fbbff986d8f0d0e0d25e26b1fb364aaa5d47849b1f5f2c82587184c"
+      "content_hash": "9373ec499711ecca1b43b7f7658d68fb58e62028a3b687d2f1c270fe43e7735b"
     },
     {
       "relative_path": "assets/Shaders/stream_output_geometry.slang",
@@ -25,11 +25,11 @@
     {
       "asset_guid": "e6ded447-fb9a-5e51-af41-85e07802cecb",
       "sub_asset_key": "",
-      "input_hash": "75d1be759f72df84bfa3bab23817a84ea25f6132f2b7af33aaf9265f5dddc597",
+      "input_hash": "406c506f4fee1fb69472a0517bd47fe356b99589a0c83cd4ca73e11c3a4cdc15",
       "dependencies": [],
       "asset_path": "stream_output_geometry.shader.asset",
-      "version": "89a98093-06f7-8464-8267-8959955250c1",
-      "content_hash": "6FC4D7D3379E73DE88E602D7E4EC098631582A89FE0B3CD531DD9E088DAA306D",
+      "version": "71f52de4-9697-e8dd-bd53-96bf054f6e4b",
+      "content_hash": "A1985DC7B0879C68A0C52E5BBE9F132227EA4D37B1B051BD0C11EEE899268CD9",
       "asset_dependencies": []
     }
   ]

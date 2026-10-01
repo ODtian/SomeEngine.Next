@@ -24,7 +24,6 @@ internal static class ImportingSmoke
         int registrations = services.Count;
         ImportingCapabilities.AddAssetCapabilities(services);
         Check(registrations == services.Count, "Repeated registration changed the service collection.");
-        using var pages = new PageArena(new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 32L * 1024 * 1024 }));
         Guid assetId = Guid.NewGuid();
         string path = Path.Combine(directory, "imported.mesh.asset");
         await using (var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }))
@@ -89,7 +88,7 @@ internal static class ImportingSmoke
             }
             Check(counts.ScopesCreated == 2 && counts.ScopesClosed == 2, "The service scopes were not released.");
         }
-        using (var reopened = await MeshAsset.OpenAsync(path, pages).ConfigureAwait(false))
+        using (var reopened = await MeshAsset.OpenAsync(path).ConfigureAwait(false))
         {
             Check(reopened.Id == assetId && !reopened.ContainsBlock<SmokeSessionBlock>(), "The stored identity or process-only content is incorrect.");
             SmokeNumberBlock number = await reopened.GetBlockAsync<SmokeNumberBlock>();
@@ -99,16 +98,13 @@ internal static class ImportingSmoke
                 Check(ReferenceEquals(number, reopened.GetBlock<SmokeNumberBlock>()), "Typed lookup returned different data.");
         }
         CheckCatalogReplacement(Path.Combine(directory, "目录"), assetId);
-        pages.Trim();
-        PageArenaStatistics usage = pages.Statistics;
-        Check(usage.ActiveBytes == 0 && usage.AllocatedBytes == 0 && usage.BackingBytes == 0, "Importing retained page storage.");
-        Console.WriteLine("assets-import-nativeaot:ok generated-di=ok enum-api=ok gui-choices=ok referenced-block=ok descriptions=ok settings=ok scopes=ok dependency-dedup=ok producer-conflict=ok same-mesh=ok persistence=ok process-block=ok catalog-replace=ok after-release=0");
+        Console.WriteLine("assets-import-nativeaot:ok generated-di=ok enum-api=ok gui-choices=ok referenced-block=ok descriptions=ok settings=ok scopes=ok dependency-dedup=ok producer-conflict=ok same-mesh=ok persistence=ok process-block=ok catalog-replace=ok managed-data=ok");
 
         ImportContext CreateContext()
         {
             var metadata = new SourceMeta { SourceGuid = SourceGuid.New(), ElementIds = new() { ["mesh"] = assetId } };
             var context = new ImportContext(directory, "", metadata);
-            context.ConfigureAssets<SmokeImportSource, MeshAsset>(_ => "mesh", (_, id) => new MeshAsset(pages, id),
+            context.ConfigureAssets<SmokeImportSource, MeshAsset>(_ => "mesh", (_, id) => new MeshAsset(id),
                 (_, _) => "imported.mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
             return context;
         }
@@ -139,14 +135,14 @@ internal static class ImportingSmoke
 [AssetCapabilities]
 public static partial class ImportingCapabilities;
 
-[AssetBlock, BinarySerializable, BinaryFields(nameof(Value))]
-public sealed partial class SmokeNumberBlock : AssetPageBlock
+[AssetBlock("SmokeNumberBlock"), BinarySerializable, BinaryFields(nameof(Value))]
+public sealed partial class SmokeNumberBlock : AssetBlock
 {
     public partial int Value { get; set; }
 }
 
-[AssetBlock, BinarySerializable, BinaryFields(nameof(Text))]
-public sealed partial class SmokeLabelBlock : AssetPageBlock
+[AssetBlock("SmokeLabelBlock"), BinarySerializable, BinaryFields(nameof(Text))]
+public sealed partial class SmokeLabelBlock : AssetBlock
 {
     public partial string Text { get; set; }
 }
@@ -156,9 +152,9 @@ public sealed partial class SmokeSessionBlock : AssetBlock
 {
     public AssetId<Asset> Reference { get; }
     public SmokeSessionBlock(Guid reference) => Reference = new(reference);
-    private SmokeSessionBlock(SmokeSessionBlock source, PageAccess? access = null) : base(source, access) => Reference = source.Reference;
+    private SmokeSessionBlock(SmokeSessionBlock source, object? syncRoot = null) : base(source, syncRoot) => Reference = source.Reference;
     public override AssetBlock Duplicate() => new SmokeSessionBlock(this);
-    public override AssetBlock Duplicate(PageAccess access) => new SmokeSessionBlock(this, access);
+    public override AssetBlock Duplicate(object syncRoot) => new SmokeSessionBlock(this, syncRoot);
     public override IEnumerable<Guid> References() => [Reference.Value];
 }
 
@@ -224,7 +220,7 @@ public sealed class SmokeNumberImporter(SmokeImportService dependency) : IAssetI
         Dependency.CountNumber();
         await Task.Yield();
         cancellationToken.ThrowIfCancellationRequested();
-        var block = new SmokeNumberBlock(output.Target.Pages) { Value = checked(source.Value * settings.Multiplier) };
+        var block = new SmokeNumberBlock() { Value = checked(source.Value * settings.Multiplier) };
         try { output.SetBlock(block); }
         catch { block.Dispose(); throw; }
     }
@@ -240,7 +236,7 @@ public sealed class SmokeLabelImporter(SmokeImportService dependency)
     {
         Dependency.CountLabel();
         SmokeNumberBlock numberBlock = await context.GetBlockAsync<SmokeNumberBlock>(output.Target, cancellationToken).ConfigureAwait(false);
-        var block = new SmokeLabelBlock(output.Target.Pages)
+        var block = new SmokeLabelBlock()
         {
             Text = source.Label + settings.Suffix + ":" + numberBlock.Value.ToString(CultureInfo.InvariantCulture),
         };

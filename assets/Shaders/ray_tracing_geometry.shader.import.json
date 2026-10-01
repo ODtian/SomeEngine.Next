@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 27,
-  "input_hash": "7aee58a21652ddd3aef16c4c6c3b244ae3fbaae6d8fd35d18c4412c07f4c960f",
+  "importer_version": 28,
+  "input_hash": "036e6b76b2039b399aa7af2c10d6a65d5fc65a3e4b429125a4e2e687a0975a4f",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_structures.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "assets/Shaders/ray_tracing_geometry.shader",
-      "content_hash": "a4f1100a66c802a16746017b9d0141e109f456c4059d39b8785191517b991172"
+      "content_hash": "83868b81073177d997edfa182bd3f2741105c91b07689ff4fc9abbd66428ac35"
     },
     {
       "relative_path": "assets/Shaders/ray_tracing_geometry.slang",
@@ -25,11 +25,11 @@
     {
       "asset_guid": "f950c332-8897-5f3a-9b27-6b641f44871e",
       "sub_asset_key": "",
-      "input_hash": "7aee58a21652ddd3aef16c4c6c3b244ae3fbaae6d8fd35d18c4412c07f4c960f",
+      "input_hash": "036e6b76b2039b399aa7af2c10d6a65d5fc65a3e4b429125a4e2e687a0975a4f",
       "dependencies": [],
       "asset_path": "ray_tracing_geometry.shader.asset",
-      "version": "4595af0d-098a-c335-0fc0-aef606f29f28",
-      "content_hash": "1F35AE6B0E771D6D71AF831BA99CF71E0E78DE67872949EBC9B09D5EAE83F6A0",
+      "version": "975b3ea7-5e74-5b3d-4fc5-3d5709f2c775",
+      "content_hash": "517AA95E8D8CD0426BA21A6BDF0357357D41DB6BE8D3CA2B24FE8687611750B7",
       "asset_dependencies": []
     }
   ]

@@ -1,31 +1,35 @@
+using SlangShaderSharp;
+
 namespace SomeEngine.Resources;
 
-/// <summary>Ready shadow-map entries. This object disposes the distinct shaders supplied to it.</summary>
-public sealed class VirtualShadowMapShaders : IDisposable
+/// <summary>Ready shadow-map shaders and their direct Slang entry points.</summary>
+public sealed class VirtualShadowMapShaders
 {
-    private int _disposed;
     public string? Name { get; init; }
-    public ShaderEntry? ResetReceiverMasks { get; init; }
-    public ShaderEntry? ResetFrame { get; init; }
-    public ShaderEntry? MarkPages { get; init; }
-    public ShaderEntry? MarkCoarsePages { get; init; }
-    public ShaderEntry? AllocatePages { get; init; }
-    public ShaderEntry? ClearPages { get; init; }
-    public ShaderEntry? InitializeState { get; init; }
-    public ShaderEntry? InvalidateCasters { get; init; }
-    public ShaderEntry? BuildPagePool { get; init; }
-    public ShaderEntry? CompactViews { get; init; }
-    public ShaderEntry? InitializePageHiZ { get; init; }
-    public ShaderEntry? ReducePageHiZ { get; init; }
-    public ShaderEntry? DynamicResolution { get; init; }
-
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        ShaderEntry?[] entries = [ResetReceiverMasks, ResetFrame, MarkPages, MarkCoarsePages, AllocatePages, ClearPages,
-            InitializeState, InvalidateCasters, BuildPagePool, CompactViews, InitializePageHiZ,
-            ReducePageHiZ, DynamicResolution];
-        foreach (Shader shader in entries.OfType<ShaderEntry>().Select(static entry => entry.Shader).Distinct())
-            shader.Dispose();
-    }
+    public Shader? ResetReceiverMasksShader { get; init; }
+    public EntryPointReflection ResetReceiverMasks { get; init; }
+    public Shader? ResetFrameShader { get; init; }
+    public EntryPointReflection ResetFrame { get; init; }
+    public Shader? MarkPagesShader { get; init; }
+    public EntryPointReflection MarkPages { get; init; }
+    public Shader? MarkCoarsePagesShader { get; init; }
+    public EntryPointReflection MarkCoarsePages { get; init; }
+    public Shader? AllocatePagesShader { get; init; }
+    public EntryPointReflection AllocatePages { get; init; }
+    public Shader? ClearPagesShader { get; init; }
+    public EntryPointReflection ClearPages { get; init; }
+    public Shader? InitializeStateShader { get; init; }
+    public EntryPointReflection InitializeState { get; init; }
+    public Shader? InvalidateCastersShader { get; init; }
+    public EntryPointReflection InvalidateCasters { get; init; }
+    public Shader? BuildPagePoolShader { get; init; }
+    public EntryPointReflection BuildPagePool { get; init; }
+    public Shader? CompactViewsShader { get; init; }
+    public EntryPointReflection CompactViews { get; init; }
+    public Shader? InitializePageHiZShader { get; init; }
+    public EntryPointReflection InitializePageHiZ { get; init; }
+    public Shader? ReducePageHiZShader { get; init; }
+    public EntryPointReflection ReducePageHiZ { get; init; }
+    public Shader? DynamicResolutionShader { get; init; }
+    public EntryPointReflection DynamicResolution { get; init; }
 }

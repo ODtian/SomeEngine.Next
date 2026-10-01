@@ -94,7 +94,7 @@ public sealed class VulkanFaultAndLifetimeTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) {}
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = VulkanTestShader.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         using var backend = VulkanGraphicsBackend.Create();
@@ -104,7 +104,7 @@ public sealed class VulkanFaultAndLifetimeTests
         PipelineCache cache = graphics.CreatePipelineCache(device, default);
         Task<Pipeline> creation = graphics.CreateComputePipelineAsync(
             device,
-            new ComputePipelineDesc(shader.Program, shader.Entries[0]),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)),
             cache);
         cache.Dispose();
 

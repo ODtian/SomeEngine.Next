@@ -129,30 +129,23 @@ The existing mesh consumer's source restrictions are separately scheduled for mi
 
 Signed packs use RSA PKCS#1 v1.5 with SHA-256 over deterministic pack identity and authenticated content receipts. Signature metadata is hashed online rather than materialized as a second encoded buffer. `OpenVerifiedAsync` verifies header/catalog/root/directory identity without eagerly reading every semantic payload; modified payload bytes fail against their signed directory receipt on first acquire. Unsigned packs under a verification policy, wrong keys, modified metadata, modified nested bytes, and corrupt signatures fail closed.
 
-## Scheduler, coalescing, telemetry, and residency
+## Managed results and resource budgets
 
-`ChunkRequestScheduler` provides bounded admission, priority ordering and promotion, deadlines, per-waiter cancellation, concurrent-load limits, in-flight key deduplication, pinned leases, decoded LRU eviction, and telemetry. A waiter deadline never cancels the shared load or another waiter. Pinned and actively awaited entries cannot be evicted.
+`BinaryDocument.TryReadChunkAsync` reads or decompresses directly into caller-provided final memory. An uncompressed chunk can also expose a bounded range source for independently authenticated semantic ranges. File access keeps its source valid until actual I/O ends.
 
-`DocumentChunkBatchLoader` waits up to 1 ms for adjacent requests, merges stored ranges separated by at most 4 KiB, and caps one merged read at 4 MiB. Gap bytes are admitted to the stored/compressed budget. One corrupt member fails only that member; valid siblings from the same merged range can complete. Metrics include stored bytes read, decoded bytes, read amplification, deduplication, and time to first resident byte.
+The former per-file chunk scheduler and decoded page cache have been removed. Asset data reuse belongs to the existing block data definitions: weak references to completed arrays and one shared task while a read is active. Consumers hold ordinary managed references. See [asset sharing](../wiki/architecture/Assets/Asset-Sharing-and-Writes.md).
 
-`ResidencyBudgetLedger` independently accounts for:
-
-- stored/compressed bytes;
-- decoded CPU bytes;
-- upload-staging bytes;
-- GPU bytes.
-
-Reservations are atomic, overflow-checked, pre-admitted before expensive work, and released by idempotent ownership tokens. Undefined classes are rejected.
+`ResidencyBudgetLedger` remains available for operations and GPU resources with explicit completion boundaries. It does not turn ordinary escaped GC arrays into pinned, manually released storage or promise an exact bound on all reachable managed memory.
 
 ## Assets and offline importers
 
 Disk content and application objects have independent lifetimes. The directory identifies content, an asset selects editable content, and explicitly created business objects retain what they need for use. The loader does not maintain one unique business object per GUID.
 
-Asset identity and references are separate from strongly typed Block content. All asset families use independent asset declarations and explicit Block-to-object conversion; the former generator that mirrored business types into field roots and nested asset classes has been removed. Block encoding reuses the generic interfaces above. Current architecture and verification status are maintained in the [original Wiki](../wiki/architecture/Asset-Files.md); page APIs are documented in [AssetPages.md](AssetPages.md).
+Asset identity and references are separate from strongly typed Block content. All asset families use independent asset declarations and explicit Block-to-object conversion; the former generator that mirrored business types into field roots and nested asset classes has been removed. Block encoding reuses the generic interfaces above. Current architecture and verification status are maintained in the [original Wiki](../wiki/architecture/Asset-Files.md); managed byte APIs are documented in [AssetPages.md](AssetPages.md).
 
-`AssetLoader.OpenSourceAsync` resolves an `IAssetStorage` record, joins a bounded file read and returns independently closable binary-document access. Content versions can coexist. Closing the loader attempts all cleanup and does not dispose external storage or application objects.
+`AssetLoader.OpenFileAsync` resolves an `IAssetStorage` record, joins a bounded file read and returns independently closable binary-document access. Content versions can coexist. Closing the loader attempts all cleanup and does not dispose external storage or application objects.
 
-Asset and Block saving use the existing document writer and file replacement. The binary layer copies unchanged chunks from their original source with bounded memory and preserves their stored representation, including unknown or unopened Blocks. Asset branch duplication uses shared content indexes; it does not serialize the asset to make a copy.
+Asset and Block saving use the existing document writer and file replacement. The binary layer copies unchanged chunks from their original source with bounded memory and preserves their stored representation, including unknown or unopened Blocks. Asset branch duplication copies editable field and collection structure and shares immutable values and unchanged data definitions. It does not serialize the asset to make a copy.
 
 `AssetProject` imports, creates, registers, indexes and diagnoses files. `AssetEntry` is the shared directory record. Source identity, settings and element identities live in `.meta`; derived inputs and output verification live in `.import.json`. Source, asset and dependency indexes are saved together in one `catalog.json`, without the three old index files. Explicit mesh streaming reads authenticated pages directly into final storage; already usable meshes do not query Asset on ordinary access. Textures acquire selected mip data asynchronously before use and feed existing device upload/completion handling. Shader backend selection and material parent/override data remain supported. Scene instances enter the existing Game world to Rendering world extraction path, not a loader-maintained object graph.
 

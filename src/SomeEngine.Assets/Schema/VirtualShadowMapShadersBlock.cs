@@ -1,3 +1,4 @@
+using SlangShaderSharp;
 using SomeEngine.Serialization;
 
 namespace SomeEngine.Assets.Schema;
@@ -5,7 +6,7 @@ namespace SomeEngine.Assets.Schema;
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
 [BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution))]
-public sealed partial class VirtualShadowMapShadersBlock : AssetPageBlock
+public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 {
     public partial ShaderRef? ResetReceiverMasks { get; set; }
     public partial ShaderRef? ResetFrame { get; set; }
@@ -23,45 +24,67 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetPageBlock
 
     protected override void ValidateContent() => Validate("shader settings");
 
-    public async ValueTask<VirtualShadowMapShaders> CreateAsync(string name, AssetLoader loader, CancellationToken cancellationToken = default)
+    public async ValueTask<VirtualShadowMapShaders> CreateAsync(
+        string name,
+        AssetLoader loader,
+        IGlobalSession slang,
+        SessionDesc sessionDescription,
+        ReadOnlyMemory<SpecializationArg> specializations = default,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(loader);
         using VirtualShadowMapShadersBlock copy = Duplicate();
         cancellationToken.ThrowIfCancellationRequested();
         copy.Validate(name);
-        Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(copy.References(), loader, cancellationToken).ConfigureAwait(false);
-        try
+        Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(
+            copy.References(),
+            loader,
+            slang,
+            sessionDescription,
+            specializations,
+            cancellationToken).ConfigureAwait(false);
+        EntryPointReflection Resolve(ShaderRef reference)
         {
-            var result = new VirtualShadowMapShaders
+            EntryPointReflection entry = reference.ResolveEntry(shaders);
+            if (entry.Stage != SlangStage.Compute)
             {
-                Name = name,
-                ResetReceiverMasks = copy.ResetReceiverMasks!.Resolve(shaders),
-                ResetFrame = copy.ResetFrame!.Resolve(shaders),
-                MarkPages = copy.MarkPages!.Resolve(shaders),
-                MarkCoarsePages = copy.MarkCoarsePages!.Resolve(shaders),
-                AllocatePages = copy.AllocatePages!.Resolve(shaders),
-                ClearPages = copy.ClearPages!.Resolve(shaders),
-                InitializeState = copy.InitializeState!.Resolve(shaders),
-                InvalidateCasters = copy.InvalidateCasters!.Resolve(shaders),
-                BuildPagePool = copy.BuildPagePool!.Resolve(shaders),
-                CompactViews = copy.CompactViews!.Resolve(shaders),
-                InitializePageHiZ = copy.InitializePageHiZ!.Resolve(shaders),
-                ReducePageHiZ = copy.ReducePageHiZ!.Resolve(shaders),
-                DynamicResolution = copy.DynamicResolution!.Resolve(shaders),
-            };
-            cancellationToken.ThrowIfCancellationRequested();
-            return result;
-        }
-        catch (Exception error)
-        {
-            var errors = new List<Exception> { error };
-            foreach (Shader shader in shaders.Values)
-            {
-                try { shader.Dispose(); }
-                catch (Exception cleanup) { errors.Add(cleanup); }
+                throw new InvalidDataException(
+                    $"Virtual shadow entry '{reference.EntryPoint}' is {entry.Stage}, not compute.");
             }
-            if (errors.Count > 1) throw new AggregateException("Creating shadow shaders and releasing resources failed.", errors);
-            throw;
+            return entry;
         }
+
+        var result = new VirtualShadowMapShaders
+        {
+            Name = name,
+            ResetReceiverMasksShader = shaders[copy.ResetReceiverMasks!.Asset.Value],
+            ResetReceiverMasks = Resolve(copy.ResetReceiverMasks),
+            ResetFrameShader = shaders[copy.ResetFrame!.Asset.Value],
+            ResetFrame = Resolve(copy.ResetFrame),
+            MarkPagesShader = shaders[copy.MarkPages!.Asset.Value],
+            MarkPages = Resolve(copy.MarkPages),
+            MarkCoarsePagesShader = shaders[copy.MarkCoarsePages!.Asset.Value],
+            MarkCoarsePages = Resolve(copy.MarkCoarsePages),
+            AllocatePagesShader = shaders[copy.AllocatePages!.Asset.Value],
+            AllocatePages = Resolve(copy.AllocatePages),
+            ClearPagesShader = shaders[copy.ClearPages!.Asset.Value],
+            ClearPages = Resolve(copy.ClearPages),
+            InitializeStateShader = shaders[copy.InitializeState!.Asset.Value],
+            InitializeState = Resolve(copy.InitializeState),
+            InvalidateCastersShader = shaders[copy.InvalidateCasters!.Asset.Value],
+            InvalidateCasters = Resolve(copy.InvalidateCasters),
+            BuildPagePoolShader = shaders[copy.BuildPagePool!.Asset.Value],
+            BuildPagePool = Resolve(copy.BuildPagePool),
+            CompactViewsShader = shaders[copy.CompactViews!.Asset.Value],
+            CompactViews = Resolve(copy.CompactViews),
+            InitializePageHiZShader = shaders[copy.InitializePageHiZ!.Asset.Value],
+            InitializePageHiZ = Resolve(copy.InitializePageHiZ),
+            ReducePageHiZShader = shaders[copy.ReducePageHiZ!.Asset.Value],
+            ReducePageHiZ = Resolve(copy.ReducePageHiZ),
+            DynamicResolutionShader = shaders[copy.DynamicResolution!.Asset.Value],
+            DynamicResolution = Resolve(copy.DynamicResolution),
+        };
+        cancellationToken.ThrowIfCancellationRequested();
+        return result;
     }
 }
