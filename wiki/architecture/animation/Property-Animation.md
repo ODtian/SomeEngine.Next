@@ -27,6 +27,11 @@ public struct Track<T> : IBufferElement where T : unmanaged
     public TrackEndpoints Endpoints;
     public uint StartId;
     public bool Finished;
+    public bool CaptureStart, FromGraph;
+    public int GraphMotion, GraphGroup;
+    public ushort MotionStage;
+    public uint MotionStartId;
+    public T Displacement;
 }
 
 public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) : ISystem<ImmediateSystemContext>
@@ -54,6 +59,7 @@ public static partial class PropertyAnimation
 - 一帧跨过固定时长阶段时，各类型求值系统按阶段顺序采样所经过的轨道。离开的阶段采样到边界，后续固定时长或外部阶段使用越界时间采样；新收敛阶段沿时间线规则交给下一帧。同一时间线、目标、通道和层提交最后到达的对应阶段值，单来源直接写入一次，多来源交给层合成写入一次。时间线的阶段与完成状态统一由收尾系统写回，完整跨过阶段表的帧先写完最终字段值再完成。
 - `SampleTime` 是弹簧上一次采样的阶段时间。弹簧步进使用本次时间与上次时间之差，暂停、游戏时钟暂停、时间缩放与速度变化均沿时间线产生效果。
 - tween 完成时写目标值；弹簧按 `TOps.Distance` 与曲线容差收敛并写目标值。`Finished` 表达轨道完成，随后字段可由调用方继续修改。
+- 图轨道用 `CaptureStart` 在区间起点形成起始值，用图内来源编号选择阶段与混合权重；完成的来源在图内等待与混合期间保留采样值。构建与共享规则见 [[architecture/animation/Animation-Graph|Animation Graph]]。
 - 关键帧存于动画实体的 `DynamicBuffer<Keyframe>`；调用方在初始化或配置实例时填充缓冲，`Spec.Keyframes` 选择其中的范围。
 - 入口是作用于 `World` 的静态函数和普通系统，轨道数据与 ECS 查询承担查找和放置。
 
