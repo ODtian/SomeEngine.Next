@@ -1168,13 +1168,17 @@ internal sealed partial class RenderGraphFrameState
         if (destination.Length < Graph.MaximumQueueCompletionCount)
             throw new ArgumentException("The completion destination is too small.", nameof(destination));
         destination[..Graph.MaximumQueueCompletionCount].Clear();
-        _sealed = true;
         try
         {
             _executor.Reset();
+            PrepareBufferUploads();
+            PrepareReadbacks();
+            _sealed = true;
             Slot.TransientResources!.FlushUploads();
             _executorActive = true;
-            return _executor.Execute(destination);
+            int count = _executor.Execute(destination);
+            SaveReadbackResults();
+            return count;
         }
         catch (GraphicsException exception) when (exception.Error == GraphicsError.DeviceLost)
         {
@@ -1195,6 +1199,7 @@ internal sealed partial class RenderGraphFrameState
         if (_finished || Identity != identity) return;
         _finished = true;
         _executorActive = false;
+        Slot.GetBufferTransfers(Graph).ResetUploads();
         FinishFrame(null);
     }
 
@@ -1498,6 +1503,8 @@ internal sealed partial class RenderGraphFrameState
 
     private void ClearFrameData()
     {
+        ClearBufferUploads();
+        _readbacks.Clear();
         foreach (GraphIdentity id in _bufferData.Keys) _executor.ChangeBuffer(id, refreshViews: false);
         _bufferData.Clear();
         foreach (FramePassCallbackStore callbackStore in _callbackStores.Values) callbackStore.Reset();

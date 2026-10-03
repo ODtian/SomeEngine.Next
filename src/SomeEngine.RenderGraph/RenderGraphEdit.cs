@@ -194,6 +194,8 @@ public ref partial struct RenderGraphEdit
     public void Remove(GraphBufferId buffer)
     {
         ValidateOwner(buffer.Value);
+        GraphPassId upload = Structure.Buffers.Get(buffer.Value).BufferUploadPass;
+        if (upload != default) Remove(upload);
         Changes.TouchBuffer(buffer.Value, membership: true);
         _ = Staging.Buffers.Remove(buffer.Value);
     }
@@ -231,6 +233,11 @@ public ref partial struct RenderGraphEdit
         ValidateOwner(pass.Value);
         Changes.TouchPass(pass.Value, membership: true);
         GraphPass removed = Staging.Passes.Remove(pass.Value);
+        if (removed.CallbackStorage is BufferUploadCommands upload && Staging.Buffers.Contains(upload.Buffer.Value))
+        {
+            Staging.Buffers.GetMutable(upload.Buffer.Value).BufferUploadPass = default;
+            Changes.TouchBuffer(upload.Buffer.Value);
+        }
         RemoveRegionEntry(removed.Region, pass.Value);
         Changes.ReleasedViews.UnionWith(removed.ViewReferences);
         foreach (GraphParameterResourceBinding binding in removed.ParameterBindings)

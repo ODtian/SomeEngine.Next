@@ -207,6 +207,7 @@ internal sealed partial class GraphStructure
     internal GraphRows<GraphRegion> Regions { get; private init; } =
         new(GraphIdentityDomain.Region, static value => value.Clone());
     internal GraphRegion RootRegion { get; private init; } = new() { Label = "Root" };
+    internal GraphRegionId BufferUploadRegion;
 
     internal GraphStructure Fork()
     {
@@ -224,6 +225,7 @@ internal sealed partial class GraphStructure
             Orders = Orders.Fork(),
             Regions = Regions.Fork(),
             RootRegion = RootRegion.Clone(),
+            BufferUploadRegion = BufferUploadRegion,
         };
     }
 
@@ -256,11 +258,13 @@ internal sealed class GraphBuffer
     internal Buffer? RegisteredResource;
     internal Buffer? BoundResource;
     internal BufferRange? CurrentViewRange;
+    internal GraphPassId BufferUploadPass;
     internal BufferBoundaryState[] BoundaryStates = [];
     internal string? Label => Description.Label;
 
     internal GraphBuffer Clone() => new()
     {
+        BufferUploadPass = BufferUploadPass,
         Description = Description,
         MemoryType = MemoryType,
         Ownership = Ownership,
