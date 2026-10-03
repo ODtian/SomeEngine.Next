@@ -311,6 +311,7 @@ internal struct FramePass
     internal List<GraphParameterResourceBinding>? ParameterBindings;
     internal List<GraphIdentity>? PersistentBindings;
     internal long DeclarationOrdinal;
+    internal bool IsBufferUpload;
     internal bool Enabled;
     internal bool Live;
     internal Queue? Queue;
