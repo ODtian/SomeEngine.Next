@@ -38,9 +38,6 @@ public sealed partial class ViewGenerator
                 .Append(GenerateParameters(method.Parameters)).Append(')')
                 .Append(" : global::SomeEngine.Views.IView, global::SomeEngine.ECS.Components.ISparseComponent")
                 .AppendLine(GenerateConstraints(method.TypeParameters)).AppendLine("    {");
-            if (hasContent)
-                GenerateContentEquality(text, "@" + viewName + GenerateTypeParameters(method.TypeParameters),
-                    method.Parameters.Select(parameter => (parameter.Name, parameter.Type, ViewCalls.IsContentParameter(parameter))));
             text.AppendLine("        [global::System.CodeDom.Compiler.GeneratedCode(\"SomeEngine.Views.Generators.Compose\", \"1.0\")]")
                 .Append("        public global::SomeEngine.Views.BuildTask Build()")
                 .Append(method.ReturnsVoid ? "\n        {\n            " : " => ")
