@@ -22,7 +22,8 @@ public sealed class RenderInstanceDataTransfer : IRenderGraphFrameExecutionObser
     private bool _initialized;
     private bool _frameActive;
 
-    internal RenderInstanceDataTransfer(RenderInstanceResources storage, ref RenderGraphEdit edit)
+    internal RenderInstanceDataTransfer(RenderInstanceResources storage, ref RenderGraphEdit edit,
+        GraphRegionId region)
     {
         _storage = storage;
         ulong bytes = checked((ulong)storage.PropertyDataBytes);
@@ -35,7 +36,7 @@ public sealed class RenderInstanceDataTransfer : IRenderGraphFrameExecutionObser
                 pass.Write(buffer, BufferRange.Whole, PipelineSync.Copy,
                     ResourceAccess.CopyDestination, WriteCoverage.Complete),
             static (ref CopyPassCommandScope commands, in GraphBufferId buffer) =>
-                commands.ClearBuffer(commands.GetBuffer(buffer), BufferRange.Whole));
+                commands.ClearBuffer(commands.GetBuffer(buffer), BufferRange.Whole), region: region);
         for (int generation = 0; generation < _sources.Length; generation++)
             _sources[generation] = edit.DeclareExternalBuffer(new BufferDesc(bytes,
                 BufferUsages.CopySource | BufferUsages.ShaderRead, $"Render instance upload data {generation}"), MemoryType.Upload);
@@ -48,7 +49,7 @@ public sealed class RenderInstanceDataTransfer : IRenderGraphFrameExecutionObser
                     pass.Read(source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
                 pass.Write(values.Destination, BufferRange.Whole, PipelineSync.Copy,
                     ResourceAccess.CopyDestination, WriteCoverage.Partial);
-            }, CopyData.Record);
+            }, CopyData.Record, region: region);
         edit.OrderAfter(_copy, _initialize);
     }
 

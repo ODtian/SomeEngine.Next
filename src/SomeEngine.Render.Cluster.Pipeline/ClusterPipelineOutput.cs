@@ -70,16 +70,9 @@ public readonly record struct ClusterRenderContext(
     uint MaximumInvocationCount,
     uint RasterWidth,
     uint RasterHeight,
-    GraphPassId ActivationReady,
-    GraphPassId IntermediateOcclusionBuildBegin,
-    GraphPassId IntermediateOcclusionReady,
-    GraphPassId FinalOcclusionBuildBegin,
-    GraphPassId FinalOcclusionReady,
     uint OcclusionMipCount,
     uint OcclusionTexelSize,
-    GraphPassId FinishBefore = default,
-    bool HardwareRasterOnly = false,
-    GraphPassId BoundsConsumer = default)
+    bool HardwareRasterOnly = false)
 {
     public const uint TargetViewSizeInBytes = 80;
 
@@ -94,11 +87,6 @@ public readonly record struct ClusterRenderContext(
         MaximumInvocationCount != 0 &&
         RasterWidth != 0 &&
         RasterHeight != 0 &&
-        ActivationReady != default &&
-        IntermediateOcclusionBuildBegin != default &&
-        IntermediateOcclusionReady != default &&
-        FinalOcclusionBuildBegin != default &&
-        FinalOcclusionReady != default &&
         OcclusionMipCount != 0u &&
         OcclusionTexelSize != 0u;
 }

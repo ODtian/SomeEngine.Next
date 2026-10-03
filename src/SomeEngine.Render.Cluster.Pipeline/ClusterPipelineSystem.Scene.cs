@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SomeEngine.Graphics;
@@ -49,12 +49,10 @@ public sealed partial class ClusterPipelineSystem
             PassQueueSelection.AnyOfType(QueueType.Copy), clear, default,
             static (ref PassDefinition pass, ref ClusterBufferClearParameters data) =>
                 _ = pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
-                    ResourceAccess.CopyDestination, WriteCoverage.Complete), ClusterBufferClearParameters.Record);
+                    ResourceAccess.CopyDestination, WriteCoverage.Complete), ClusterBufferClearParameters.Record, region: _regions.PrimaryGeometry);
         _sceneBoundsPass = AddComputePass(ref graph, "Update Cluster spatial scene bounds", _pipelines!.SceneBounds,
             new ClusterDispatchParameters(new DispatchArguments(1, 1, 1)), 0, ClusterDispatchParameters.Record);
         graph.OrderAfter(_sceneBoundsPass, _sceneInitializePass);
-        if (_renderContext.BoundsConsumer != default)
-            graph.OrderAfter(_renderContext.BoundsConsumer, _sceneBoundsPass);
         _frameSceneInstances = graph.CreateBufferInput(BufferUsages.ShaderRead);
         _sceneInstanceData = _uploads!.Declare(ref graph,
             ClusterUploadData.Zero(_options.UseInstanceGroups ? checked((int)Math.Max(capacity, 1u) * sizeof(uint)) : sizeof(uint)),

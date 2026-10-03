@@ -88,11 +88,19 @@ public sealed class ClusterMaterialTextureTests
         prepare.Add(new ClusterMaterialAssignmentSystem(assignments));
         prepare.Add(instanceSystem);
         var graph = new global::SomeEngine.RenderGraph.RenderGraph(backend, device, queues);
+        ClusterGraphRegions regions;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            regions = new ClusterGraphRegions(edit.AddRegion("Primary geometry"), edit.AddRegion("Target geometry"),
+                edit.AddRegion("Shading"), edit.AddRegion("Feedback"));
+            edit.Commit();
+        }
         var frameSystems = new RenderFrameSystems(world, instances);
         var feedback = new ClusterStreamingFeedbackChannel();
         var streaming = new ClusterStreamingFeedbackConsumer(cluster, feedback);
         var pipeline = new ClusterPipelineSystem(backend, device, renderDevice, cluster, instanceSystem,
             ClusterRenderFeature.InstanceLayout, assignments, configuration, graph,
+            regions,
             new ClusterPipelineOutputDescription(width, height, 1), feedback,
             options: new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true });
         frameSystems.Add(pipeline);
@@ -104,14 +112,13 @@ public sealed class ClusterMaterialTextureTests
             using (initialize) { prepare.Update(initialize); initialize.Commit(); }
             frameSystems.Initialize();
             GraphTextureInput output;
-            GraphPassId readback;
             using (RenderGraphEdit edit = graph.BeginEdit())
             {
                 output = edit.CreateTextureInput();
                 GraphBufferId resultId = edit.RegisterExternalBuffer(result,
                     [new BufferBoundaryState(BufferRange.Whole, result.InitialSync,
                         result.InitialAccess, ResourceContentState.Undefined)]);
-                readback = edit.AddCopyFramePass("read material colors", PassQueueSelection.AnyOfType(QueueType.Copy),
+                _ = edit.AddCopyFramePass("read material colors", PassQueueSelection.AnyOfType(QueueType.Copy),
                     (output, resultId), new PassOptions(Culling: PassCullingMode.NeverCull),
                     static (ref PassDefinition pass, ref (GraphTextureInput Texture, GraphBufferId Buffer) data) =>
                     {
@@ -123,10 +130,9 @@ public sealed class ClusterMaterialTextureTests
                         in (GraphTextureInput Texture, GraphBufferId Buffer) data) =>
                         commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Buffer), 0, 256,
                             height, commands.GetTexture(data.Texture), 0, 0, TextureAspects.Color,
-                            0, 0, 0, width, height, 1)));
+                            0, 0, 0, width, height, 1)), region: regions.Feedback);
                 edit.Commit();
             }
-            pipeline.ConfigureShadeCompleteBefore(readback);
             var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
             for (int frame = 0; frame < 4; frame++) await Render();
             Vector4[] before = ReadColors();

@@ -168,14 +168,28 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
         prepare.Add(instanceSystem);
         var graph = new global::SomeEngine.RenderGraph.RenderGraph(backend, device,
             [backend.GetQueue(device, QueueType.Graphics), backend.GetQueue(device, QueueType.Compute), backend.GetQueue(device, QueueType.Copy)]);
+        GraphRegionId sceneRegion, depthAfter, targetAfter;
+        ClusterGraphRegions regions;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            sceneRegion = edit.AddRegion("Scene");
+            GraphRegionId primary = edit.AddRegion("Primary geometry");
+            depthAfter = edit.AddRegion("After primary depth");
+            GraphRegionId target = edit.AddRegion("Target geometry");
+            targetAfter = edit.AddRegion("After target geometry");
+            regions = new ClusterGraphRegions(primary, target, edit.AddRegion("Shading"), edit.AddRegion("Feedback"));
+            edit.Commit();
+        }
         using var lighting = new LightingFeature(backend, device, graph, width, height, 1,
-            lightShader, settings.LightingEntryPoint, new ClusteredLightGridSettings { MaxLights = 1, MaxLightsPerCell = 1 });
+            lightShader, settings.LightingEntryPoint, new ClusteredLightGridSettings { MaxLights = 1, MaxLightsPerCell = 1 },
+            region: sceneRegion);
         var resources = new GraphResourceGroup();
         resources.Add(lighting);
         var feedback = new ClusterStreamingFeedbackChannel();
         var streaming = new ClusterStreamingFeedbackConsumer(cluster, feedback);
         var pipeline = new ClusterPipelineSystem(backend, device, renderDevice, cluster, instanceSystem,
             ClusterRenderFeature.InstanceLayout, assignments, clusterShaders, graph,
+            regions,
             new ClusterPipelineOutputDescription(width, height, 1), feedback, resources,
             new ClusterPipelineOptions
             {
@@ -189,7 +203,7 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
                 MaxShadowLights = 1, DirectionalClipmapLevels = cameraScroll ? 16u : 1u,
                 DynamicResolutionEnabled = false, LocalReceiverMask = receiverMask,
                 NormalBias = normalBias,
-            }, graph, pipeline, lighting);
+            }, graph, pipeline, lighting, depthAfter, targetAfter, regions.Feedback);
         resources.Add(shadow);
         var lightSystem = new RenderLightSetSystem();
         var frames = new RenderFrameSystems(world, instances);
@@ -234,7 +248,7 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
                     colorInput = edit.CreateTextureInput();
                     GraphBufferId buffer = edit.RegisterExternalBuffer(readback,
                         [new BufferBoundaryState(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
-                    GraphPassId copy = edit.AddCopyFramePass("Read shadowed receiver", PassQueueSelection.AnyOfType(QueueType.Copy),
+                    _ = edit.AddCopyFramePass("Read shadowed receiver", PassQueueSelection.AnyOfType(QueueType.Copy),
                         (Color: colorInput, Buffer: buffer), new PassOptions(Culling: PassCullingMode.NeverCull),
                         static (ref PassDefinition pass, ref (GraphTextureInput Color, GraphBufferId Buffer) data) =>
                         {
@@ -244,8 +258,8 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
                         },
                         static (ref CopyPassCommandScope commands, in (GraphTextureInput Color, GraphBufferId Buffer) data) =>
                             commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Buffer), 0, rowPitch, height,
-                                commands.GetTexture(data.Color), 0, 0, TextureAspects.Color, 0, 0, 0, width, height, 1)));
-                    edit.OrderAfter(copy, pipeline.ShadeCompletePass);
+                                commands.GetTexture(data.Color), 0, 0, TextureAspects.Color, 0, 0, 0, width, height, 1)),
+                        region: regions.Feedback);
                     edit.Commit();
                 }
                 Assert.True(coordinator.TryBeginFrame(out var frame));

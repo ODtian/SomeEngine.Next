@@ -941,7 +941,7 @@ public sealed partial class ClusterPipelineSystem
         graph.BindExternalBuffer(id, buffer, states);
     }
 
-    private static void RecordBufferInitialization(
+    private void RecordBufferInitialization(
         ref RenderGraphEdit graph,
         in FrameResources frame)
     {
@@ -994,7 +994,7 @@ public sealed partial class ClusterPipelineSystem
                     ResourceAccess.CopyDestination,
                     WriteCoverage.Complete);
             },
-            ClusterBufferCopyParameters.Record);
+            ClusterBufferCopyParameters.Record, region: _regions.PrimaryGeometry);
 
         ClusterBufferCopyParameters phaseTwoCopy = new(
             frame.CandidateArgsInitialization,
@@ -1021,9 +1021,9 @@ public sealed partial class ClusterPipelineSystem
                     ResourceAccess.CopyDestination,
                     WriteCoverage.Complete);
             },
-            ClusterBufferCopyParameters.Record);
+            ClusterBufferCopyParameters.Record, region: _regions.PrimaryGeometry);
 
-        static void AddSmallClear(
+        void AddSmallClear(
             ref RenderGraphEdit activeGraph,
             GraphBufferId buffer,
             in BufferRange range,
@@ -1042,11 +1042,11 @@ public sealed partial class ClusterPipelineSystem
                         PipelineSync.Copy,
                         ResourceAccess.CopyDestination,
                         WriteCoverage.Complete),
-                ClusterBufferRangeClearParameters.Record);
+                ClusterBufferRangeClearParameters.Record, region: _regions.PrimaryGeometry);
         }
     }
 
-    private static void RecordTargetInitialization(
+    private void RecordTargetInitialization(
         ref RenderGraphEdit graph,
         in FrameResources frame)
     {
@@ -1086,7 +1086,7 @@ public sealed partial class ClusterPipelineSystem
             data,
             new PassOptions(RepeatCommands: true),
             ClusterTargetClearParameters.Declare,
-            ClusterTargetClearParameters.Record);
+            ClusterTargetClearParameters.Record, region: _regions.PrimaryGeometry);
 
         {
             GraphColorAttachmentViewId neutralPolicyOutput = graph.CreateColorAttachmentView(
@@ -1103,7 +1103,7 @@ public sealed partial class ClusterPipelineSystem
                 neutralData,
                 new PassOptions(RepeatCommands: true),
                 ClusterColorAttachmentClearParameters.Declare,
-                ClusterColorAttachmentClearParameters.Record);
+                ClusterColorAttachmentClearParameters.Record, region: _regions.PrimaryGeometry);
         }
         if (frame.PolicyVisibilityScratch != default && frame.PolicyDepthScratch != default)
         {
@@ -1128,7 +1128,7 @@ public sealed partial class ClusterPipelineSystem
                 policyData,
                 new PassOptions(RepeatCommands: true),
                 ClusterPolicyTargetClearParameters.Declare,
-                ClusterPolicyTargetClearParameters.Record);
+                ClusterPolicyTargetClearParameters.Record, region: _regions.PrimaryGeometry);
         }
     }
 
@@ -1155,7 +1155,7 @@ public sealed partial class ClusterPipelineSystem
                 data,
                 default,
                 ClusterColorAttachmentClearParameters.Declare,
-                ClusterColorAttachmentClearParameters.Record));
+                ClusterColorAttachmentClearParameters.Record, region: _regions.PrimaryGeometry));
         }
 
     }

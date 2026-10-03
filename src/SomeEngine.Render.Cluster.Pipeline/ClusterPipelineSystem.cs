@@ -47,6 +47,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterMaterialAssignments _materialAssignments;
     private readonly ClusterShaders _configuration;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
+    private readonly ClusterGraphRegions _regions;
+    private readonly GraphRegionId _targetPhaseOneRegion;
+    private readonly GraphRegionId _targetPhaseTwoRegion;
     private readonly ClusterPipelineOutputDescription _outputDescription;
     private readonly IGraphResourceProvider? _stageResourceProvider;
     private readonly ClusterStreamingFeedbackChannel _streamingFeedback;
@@ -107,9 +110,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private GraphPassId _shadeResolvePass;
     private ClusterPipelineOutputs _outputs;
     private ClusterRenderContext _renderContext;
-    private GraphPassId _shadeBeginAfter;
-    private GraphPassId _shadeCompleteBefore;
-    private GraphPassId _depthCompleteBefore;
     private ulong _installedMaterialTopologyVersion;
     private bool _cullingEnabled;
     private bool _graphInstalled;
@@ -153,6 +153,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ClusterMaterialAssignments materialAssignments,
         ClusterShaders configuration,
         global::SomeEngine.RenderGraph.RenderGraph graph,
+        in ClusterGraphRegions regions,
         in ClusterPipelineOutputDescription outputDescription,
         ClusterStreamingFeedbackChannel streamingFeedback,
         IGraphResourceProvider? stageResourceProvider = null,
@@ -183,6 +184,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _stagedHasPreviousView = new bool[_stagedViews.Length];
         _stagedPolicies = new uint[_stagedViews.Length];
         _stagedPolicyViewIndices = new uint[_stagedViews.Length];
+        _regions = regions;
+        using RenderGraphEdit edit = graph.BeginEdit();
+        _targetPhaseOneRegion = edit.AddRegion("Cluster target first geometry", regions.TargetGeometry);
+        IntermediateOcclusionRegion = edit.AddRegion("Cluster target intermediate occlusion", regions.TargetGeometry);
+        _targetPhaseTwoRegion = edit.AddRegion("Cluster target second geometry", regions.TargetGeometry);
+        edit.Commit();
     }
 
     public ClusterPipelineOutputs Outputs => _outputs.IsValid
@@ -200,6 +207,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ? current.Groups[0].Batch : null;
 
     public ClusterVisibilityMode VisibilityMode => _visibilityMode;
+
+    /// <summary>Target-view occlusion work between the two geometry phases.</summary>
+    public GraphRegionId IntermediateOcclusionRegion { get; }
 
     public int CurrentInstanceCount
     {
@@ -319,37 +329,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (_renderContext.IsValid)
             throw new InvalidOperationException("A policy-backed Cluster render context is already registered.");
         _renderContext = context;
-    }
-
-    public void ConfigureShadeBeginAfter(GraphPassId pass)
-    {
-        if (_graphInstalled)
-            throw new InvalidOperationException("The shade dependency must be configured before graph installation.");
-        if (pass == default)
-            throw new ArgumentException("The shade dependency pass is invalid.", nameof(pass));
-        _shadeBeginAfter = pass;
-    }
-
-    public GraphPassId ShadeCompletePass => _shadeGroups.Count != 0
-        ? _shadeGroups[_shadeGroupOrder.Max].Pass
-        : _shadeResolvePass;
-
-    public void ConfigureShadeCompleteBefore(GraphPassId pass)
-    {
-        if (_graphInstalled)
-            throw new InvalidOperationException("The shade completion pass must be configured before graph installation.");
-        if (pass == default)
-            throw new ArgumentException("The shade completion pass is invalid.", nameof(pass));
-        _shadeCompleteBefore = pass;
-    }
-
-    public void ConfigureDepthCompleteBefore(GraphPassId pass)
-    {
-        if (_graphInstalled)
-            throw new InvalidOperationException("The depth consumer must be configured before graph installation.");
-        if (pass == default)
-            throw new ArgumentException("A depth consumer pass is required.", nameof(pass));
-        _depthCompleteBefore = pass;
     }
 
     public void OnCreate(ref RenderFrameSystemContext context)
@@ -493,7 +472,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         {
             _uploads = uploads;
             _instanceDataTransfer = _device.Adapter.Type == AdapterType.Discrete
-                ? _resources.InstanceResources.GetDataTransfer(_graph) : null;
+                ? _resources.InstanceResources.GetDataTransfer(_graph, _regions.PrimaryGeometry) : null;
             RenderGraphEdit edit = _graph.BeginEdit();
             try
             {
@@ -1300,8 +1279,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _instanceDataTransfer = null;
         _outputs = default;
         _renderContext = default;
-        _shadeCompleteBefore = default;
-        _depthCompleteBefore = default;
         _installedRasterStages = null;
         _installedShadeStages = null;
         Array.Clear(_rasterBinning);

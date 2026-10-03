@@ -87,7 +87,7 @@ public sealed partial class ClusterPipelineSystem
                     _ = access.Read(data.Arguments,
                         new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                         PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
-                ClusterIndirectDispatchParameters.Record);
+                ClusterIndirectDispatchParameters.Record, region: _regions.Shading);
             GraphBufferInput uniforms = BindShadeResources(ref graph, pass, stage, stages);
             _shadeGroups = _shadeGroups.Add(bin, new ShadeGroup(pass, uniforms, stage));
             _shadeGroupOrder.Add(bin);
@@ -134,9 +134,9 @@ public sealed partial class ClusterPipelineSystem
 
     private GraphPassId ShadeSuccessor(uint bin)
     {
-        if (bin == uint.MaxValue) return _shadeCompleteBefore;
+        if (bin == uint.MaxValue) return default;
         using var after = _shadeGroupOrder.GetViewBetween(bin + 1, uint.MaxValue).GetEnumerator();
-        return after.MoveNext() ? _shadeGroups[after.Current].Pass : _shadeCompleteBefore;
+        return after.MoveNext() ? _shadeGroups[after.Current].Pass : default;
     }
 
     private static uint CalculateShadeBinItemCapacity(in FrameResources frame)

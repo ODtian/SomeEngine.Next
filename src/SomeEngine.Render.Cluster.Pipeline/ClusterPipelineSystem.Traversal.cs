@@ -69,7 +69,10 @@ public sealed partial class ClusterPipelineSystem
     {
         int firstNewPass = passes.Count;
         GraphPassId last = RecordTraversal(ref edit, _frameResources, _frameResources.PackedViews,
-            _frameResources.ViewCount, 0u, mode, false, previous, passes, label, out _);
+            _frameResources.ViewCount, 0u, mode, false, previous, passes, label, out _,
+            region: ReferenceEquals(passes, _continuationTraversalLevelPasses) ? _targetPhaseOneRegion :
+                ReferenceEquals(passes, _continuationPostTraversalLevelPasses) ? _targetPhaseTwoRegion :
+                _regions.PrimaryGeometry);
         bool policyTarget = ReferenceEquals(passes, _continuationTraversalLevelPasses) ||
             ReferenceEquals(passes, _continuationPostTraversalLevelPasses);
         for (int index = firstNewPass; index < passes.Count; index++)

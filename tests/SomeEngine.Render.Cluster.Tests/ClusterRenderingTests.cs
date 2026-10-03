@@ -216,6 +216,13 @@ public sealed class ClusterRenderingTests
         prepare.Add(new ClusterMaterialAssignmentSystem(assignments));
         prepare.Add(instanceSystem);
         var graph = new global::SomeEngine.RenderGraph.RenderGraph(backend, device, [graphics, compute, copy]);
+        ClusterGraphRegions regions;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            regions = new ClusterGraphRegions(edit.AddRegion("Primary geometry"), edit.AddRegion("Target geometry"),
+                edit.AddRegion("Shading"), edit.AddRegion("Feedback"));
+            edit.Commit();
+        }
         var frameSystems = new RenderFrameSystems(world, instances);
         using Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(checked((ulong)height * 256), BufferUsages.CopyDestination), MemoryType.Readback);
@@ -223,6 +230,7 @@ public sealed class ClusterRenderingTests
         var streaming = new ClusterStreamingFeedbackConsumer(cluster, feedback);
         var pipeline = new ClusterPipelineSystem(backend, device, renderDevice, cluster, instanceSystem,
             ClusterRenderFeature.InstanceLayout, assignments, configuration, graph,
+            regions,
             new ClusterPipelineOutputDescription(width, height, 1), feedback,
             options: new ClusterPipelineOptions { MaxCandidates = candidateCapacity ?? (changeGeometry ? 1024u : 65u),
                 ForceHardwareRaster = !softwareRaster, SoftwareRasterEdgeThreshold = softwareRaster ? 64f : 4f,
@@ -254,12 +262,11 @@ public sealed class ClusterRenderingTests
                     static (ref CopyPassCommandScope commands, in (GraphTextureInput Texture, GraphBufferId Buffer, int Width, int Height) data) =>
                         commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Buffer), 0, 256,
                             checked((uint)data.Height), commands.GetTexture(data.Texture), 0, 0, TextureAspects.Color,
-                            0, 0, 0, checked((uint)data.Width), checked((uint)data.Height), 1)));
+                            0, 0, 0, checked((uint)data.Width), checked((uint)data.Height), 1)), region: regions.Feedback);
                 edit.Commit();
             }
             if (shadeColor)
             {
-                pipeline.ConfigureShadeCompleteBefore(readbackPass);
                 outputs = pipeline.ReconcileGraph();
             }
             if (!shadeColor)

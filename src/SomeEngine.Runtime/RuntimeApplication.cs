@@ -546,6 +546,24 @@ internal static class RuntimeApplication
                 // frames. Match that count instead of rotating a third copy of graph data.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
+        GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
+        GraphRegionId targetGeometryAfterRegion, shadingRegion, temporalRegion, presentationRegion, uiRegion, feedbackRegion;
+        using (RenderGraphEdit edit = renderGraph.BeginEdit())
+        {
+            _ = edit.AddRegion("Frame uploads");
+            sceneRegion = edit.AddRegion("Scene");
+            primaryGeometryRegion = edit.AddRegion("Primary view geometry");
+            primaryDepthAfterRegion = edit.AddRegion("After primary view depth");
+            targetGeometryRegion = edit.AddRegion("Target view geometry");
+            targetGeometryAfterRegion = edit.AddRegion("After target view geometry");
+            shadingRegion = edit.AddRegion("Shading");
+            GraphRegionId postProcessing = edit.AddRegion("Post processing");
+            temporalRegion = edit.AddRegion("Temporal", postProcessing);
+            presentationRegion = edit.AddRegion("Presentation", postProcessing);
+            uiRegion = edit.AddRegion("UI", postProcessing);
+            feedbackRegion = edit.AddRegion("Feedback");
+            edit.Commit();
+        }
         var outputDescription = new ClusterPipelineOutputDescription(boot.Width, boot.Height, 1);
         using var lighting = new LightingFeature(
             backend,
@@ -555,7 +573,8 @@ internal static class RuntimeApplication
             outputDescription.Height,
             outputDescription.ViewCount,
             lightingShader,
-            boot.LightingEntryPoint);
+            boot.LightingEntryPoint,
+            region: sceneRegion);
         var stageResources = new GraphResourceGroup();
         stageResources.Add(lighting);
         var lightSystem = new RenderLightSetSystem();
@@ -572,7 +591,10 @@ internal static class RuntimeApplication
             shadowSettings,
             renderGraph,
             pipeline,
-            lighting);
+            lighting,
+            primaryDepthAfterRegion,
+            targetGeometryAfterRegion,
+            feedbackRegion);
         stageResources.Add(virtualShadows);
         RenderFrameSystems frameSystems = CreateFrameSystems(
             pipeline,
@@ -583,7 +605,6 @@ internal static class RuntimeApplication
         RuntimeUiRenderer? ui = null;
         RuntimePresentationPipeline? presentation = null;
         TemporalFeature? temporal = null;
-        GraphPassId temporalProducer = default;
         Task? nextGameUpdate = null;
         var input = new RuntimeInput();
         int width = boot.Width;
@@ -605,6 +626,7 @@ internal static class RuntimeApplication
             materialAssignments,
             pipelineConfiguration,
             renderGraph,
+            new ClusterGraphRegions(primaryGeometryRegion, targetGeometryRegion, shadingRegion, feedbackRegion),
             description,
             streamingFeedback,
             stageResources,
@@ -852,7 +874,6 @@ internal static class RuntimeApplication
                 using (EngineTrace.Begin(ApplicationTrace.Reconcile))
                     clusterOutputs = pipeline.ReconcileGraph();
                 double reconcileMs = Stopwatch.GetElapsedTime(reconcileStarted).TotalMilliseconds;
-                bool connectPostProcessing = temporal is null;
                 temporal ??= new TemporalFeature(
                     backend,
                     device,
@@ -861,21 +882,8 @@ internal static class RuntimeApplication
                     boot.Height,
                     temporalShader,
                     boot.TemporalVertexEntry,
-                    boot.TemporalPixelEntry);
-                if (connectPostProcessing || temporalProducer != pipeline.ShadeCompletePass)
-                {
-                    RenderGraphEdit edit = renderGraph.BeginEdit();
-                    try
-                    {
-                        temporal.OrderAfter(ref edit, pipeline.ShadeCompletePass);
-                        edit.Commit();
-                        temporalProducer = pipeline.ShadeCompletePass;
-                    }
-                    finally
-                    {
-                        edit.Dispose();
-                    }
-                }
+                    boot.TemporalPixelEntry,
+                    region: temporalRegion);
                 presentation ??= new RuntimePresentationPipeline(
                     backend,
                     device,
@@ -884,12 +892,12 @@ internal static class RuntimeApplication
                     temporal.Output.Format,
                     temporal.Output.Width,
                     temporal.Output.Height,
-                    temporal.Output.CompletePass,
                     presentationShader,
                     boot.PresentationVertexEntry,
                     boot.PresentationPixelEntry,
-                    PresentationFormat);
-                ui.InstallGraph(renderGraph, presentation.Target);
+                    PresentationFormat,
+                    presentationRegion);
+                ui.InstallGraph(renderGraph, presentation.Target, uiRegion);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
                 SwapchainImage image = AcquireImage(backend, swapchain, window);
