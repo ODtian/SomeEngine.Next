@@ -413,6 +413,7 @@ public static partial class Scope
         data.Task = default;
         data.Computation = null;
         data.ComponentCopies?.Clear();
+        data.RememberOccurrences?.Clear();
         data.ParameterVersion = null;
         data.Suspended = false;
         if (data.OutermostBuild)
