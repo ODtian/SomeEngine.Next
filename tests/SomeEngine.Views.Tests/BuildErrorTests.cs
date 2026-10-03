@@ -7,7 +7,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class BuildErrorTests
+public sealed partial class BuildErrorTests
 {
     [Theory]
     [InlineData(false)]

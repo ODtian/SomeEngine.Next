@@ -50,7 +50,8 @@ public sealed class ViewFunctionTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new UninterceptedCards(1));
 #if DEBUG
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
         Assert.Contains("intercept", error.Message, StringComparison.OrdinalIgnoreCase);
 #else
         frames.Frame();
