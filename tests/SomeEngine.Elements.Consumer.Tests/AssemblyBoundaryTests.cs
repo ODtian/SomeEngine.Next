@@ -52,6 +52,10 @@ public sealed class AssemblyBoundaryTests
         var assemblies = new Dictionary<string, Assembly>(StringComparer.OrdinalIgnoreCase);
         var remaining = new Queue<Assembly>();
         remaining.Enqueue(typeof(AssemblyBoundaryTests).Assembly);
+        remaining.Enqueue(Assembly.Load("SomeEngine.Animation"));
+        remaining.Enqueue(Assembly.Load("SomeEngine.Typography"));
+        remaining.Enqueue(Assembly.Load("SomeEngine.Views.Compose"));
+        remaining.Enqueue(Assembly.Load("SomeEngine.Views.SwiftUI"));
         while (remaining.TryDequeue(out Assembly? assembly))
         {
             if (!assemblies.TryAdd(assembly.GetName().Name!, assembly))

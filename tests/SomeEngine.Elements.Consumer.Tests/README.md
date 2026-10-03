@@ -1,7 +1,9 @@
 # External element examples
 
 This consumer assembly references the public Views, Layout, and Elements packages
-through their repository projects. It uses public ECS, view, and layout APIs to
+through their repository projects. Animation, Typography, Compose, and SwiftUI
+are also referenced to check assembly access across the available SomeUI layers.
+It uses public ECS, view, and layout APIs to
 build views, advance frames, and observe node data.
 
 Add each built-in control's user equivalent under `Rewrites/`. Run both versions

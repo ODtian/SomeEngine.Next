@@ -52,9 +52,11 @@ Surface 的字段、默认值和调用方写入规则见 [[architecture/someui/M
 `SomeEngine.Elements.Consumer.Tests` 是外部重写工程，直接引用 Views、Layout 与 Elements
 的公开项目，用户示例位于 `Rewrites/`。每个内置控件的等价重写在这一工程中接入同一组
 公开行为用例；首个示例覆盖 Surface 的三种修饰。
+该工程还引用 Animation、Typography、Compose 与 SwiftUI 的公开项目，
+把现有 SomeUI 各层的程序集属性纳入架构验收。
 
 `AssemblyBoundaryTests.ElementLayerUsesPublicAssemblyAccess` 读取这个消费者所引用的
-引擎程序集及其传递依赖，并检查编译结果中的 `InternalsVisibleTo` 声明。
+引擎程序集、现有 SomeUI 各层及其传递依赖，并检查编译结果中的 `InternalsVisibleTo` 声明。
 受检查的公开层包括 Elements 系列（含 Elements.Render）、Compose、SwiftUI、Solid，
 以及引用这些层的消费者。带公钥的友元名称按程序集名称识别。
 发现向这些公开层授予内部访问的声明时，架构验收失败并列出声明来源与目标程序集。

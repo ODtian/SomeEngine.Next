@@ -153,6 +153,7 @@ Absolute 嵌套、最小/最大尺寸、单轴自动尺寸、零尺寸、非均�
 ## Surface 与外部对等验收（#28）
 
 `SomeEngine.Elements.Consumer.Tests` 直接引用公开的 Views、Layout 与 Elements 项目。
+架构用例同时引用公开的 Animation、Typography、Compose 与 SwiftUI 项目。
 `Rewrites/SurfaceModifiers.cs` 提供用户的三个等价修饰，`SurfaceTests` 将同一组
 节点数据、返回实体、布局结果与写版本用例应用于内置修饰和用户修饰。
 尺寸变化后的重建保留相同 Surface 的节点写版本与类型写版本，填充色变化则推进两者。
