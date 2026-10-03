@@ -20,5 +20,17 @@
 | `Timeline`（可启用）、`Track<T>` 内联缓冲、`PresentationOffset` | 表格；首次声明时加入，之后只改缓冲元素与启用位 |
 | `Contribution<T>`、`BaseValue<T>` | 表格缓冲，仅在多来源合成的节点上存在 |
 
+## 视图参数的存储接入（#6）
+
+视图的参数组件保持实际视图类型 `T`。Views 使用 ECS 内部的
+`World.AddComponentData<T>` 与 `World.ReadComponentData<T>` 接入现有存储。
+这两个 struct 泛型入口按 `default(T) is ISparseComponent` 选择 sparse 或表格路径，
+沿相应的 World 访问范围操作原有组件存储。泛型静态视图注册中的开发检查要求视图
+声明 `IComponent` 或 `ISparseComponent`。
+
+参数新增和读取所需的内部泛型辅助方法采用 `struct` 约束，以支持这一编译期存储选择；
+ECS 的公开 `Add`、`Read`、`AddSparse` 和 `ReadSparse` 延续各自的组件接口约束。
+视图构建从 ECS 取当前参数值，组件继续是参数数据的主要持有者。
+
 ## Relations
 [[architecture/someui/Views|Views]] · [[architecture/someui/Build-Scope|Build Scope]]

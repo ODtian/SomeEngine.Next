@@ -28,7 +28,7 @@ internal sealed class Sparse
 
 
     internal void Add<T>(Entity entity, in T value)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _iteration.Throw();
         _entities.ThrowDead(entity);
@@ -58,7 +58,7 @@ internal sealed class Sparse
     }
 
     internal T Read<T>(Entity entity)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _entities.ThrowDead(entity);
         if (!TrySet<T>(out SparseSet<T> sparseSet))

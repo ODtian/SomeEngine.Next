@@ -48,6 +48,7 @@ internal static class Program
     private static AotSmokeResult Run()
     {
         global::SomeEngine.ECS.Tests.ManagedComponentChecks.VerifyAll();
+        global::SomeEngine.Views.Tests.FirstBuildChecks.Verify();
 
         var registry = new SerializationRegistry();
         GameSerializationModule.RegisterAll(registry);
@@ -201,7 +202,8 @@ internal static class Program
             semanticChecksum,
             asyncJobRejected,
             durableGeneration,
-            ManagedReferencesVerified: true);
+            ManagedReferencesVerified: true,
+            ViewsVerified: true);
     }
 
     private static ulong ExerciseDurableStore(
@@ -291,7 +293,8 @@ internal sealed record AotSmokeResult(
     long SemanticChecksum,
     bool AsyncJobRejected,
     ulong DurableGeneration,
-    bool ManagedReferencesVerified);
+    bool ManagedReferencesVerified,
+    bool ViewsVerified);
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

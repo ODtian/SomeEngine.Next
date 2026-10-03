@@ -11,11 +11,17 @@
   <ItemGroup>
     <Compile Include="../../tests/SomeEngine.ECS.Tests/ManagedComponentChecks.cs"
              Link="ManagedComponentChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/FirstBuildChecks.cs"
+             Link="FirstBuildChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs"
+             Link="HeadlessFrameDriver.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.ECS/SomeEngine.ECS.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj"
+                      GlobalPropertiesToRemove="PublishAot" />
+    <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Serialization/SomeEngine.ECS.Serialization.csproj"
                       GlobalPropertiesToRemove="PublishAot" />

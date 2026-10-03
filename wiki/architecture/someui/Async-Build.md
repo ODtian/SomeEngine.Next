@@ -17,5 +17,16 @@
 - `Launch(key, static async (k) => ...)`：后台任务，key 变化时取消并重新开始。
 - `Resource<T>`：值、加载中、错误三部分组成的状态；来源变化时重新请求，期间保留旧值。
 
+## 同步完成阶段（#6）
+
+`BuildTask` 标注 `AsyncMethodBuilder(typeof(BuildTaskBuilder))`，当前支持普通同步
+`Build` 及同步完成的 `async BuildTask Build()`。已经完成的 `Task`、`ValueTask`
+和 `BuildTask` await 在当前构建作用域内继续执行。
+
+方法构建器直接驱动同步状态机，并把同步异常保存在构建结果中。构建入口消费结果时
+重新抛出该异常，随后作用域通过 `Dispose` 恢复。真实挂起的 await 调用统一
+`DevelopmentCheck.Fail`，报告当前阶段要求同步完成。恢复队列、取消与跨帧 await
+由 #20 在这一构建器与重建阶段接缝中继续实现。
+
 ## Relations
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · ADR 0012
