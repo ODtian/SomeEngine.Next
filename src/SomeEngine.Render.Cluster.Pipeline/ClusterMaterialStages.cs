@@ -194,9 +194,9 @@ internal sealed class ClusterBinIndexMap<TKey, TStage> where TKey : notnull
         _updated = _updated.Clear();
         return _stages;
     }
-    internal ClusterUploadData GetIndices(
+    internal ClusterBytes GetIndices(
         uint capacity,
-        ClusterUploadData previous,
+        ClusterBytes previous,
         IEnumerable<int> addresses,
         Func<TStage, uint, uint>? encodeIndex = null)
     {
@@ -516,7 +516,7 @@ internal sealed class ClusterRasterStages : IDisposable
         var invocations = bins.GetStages(static (stage, index) => stage with { BinIndex = index });
         var result = new ClusterRasterStageSet(bins.GetIndices(
             assignments.SlotCapacity,
-            _resolved?.BinIndices ?? ClusterUploadData.Zero(0),
+            _resolved?.BinIndices ?? ClusterBytes.Zero(0),
             addresses,
             static (stage, index) => index | (stage.Software is null ? 0u : 0x80000000u) |
                 (stage.Hardware.UsesMaterialRanges && stage.Tessellation is null ? 0x40000000u : 0u) |
@@ -1271,7 +1271,7 @@ internal sealed class ClusterRasterStageSet
     private readonly int _unboundedBinCount;
 
     internal ClusterRasterStageSet(
-        ClusterUploadData binIndices,
+        ClusterBytes binIndices,
         ImmutableSortedDictionary<uint, ClusterRasterInvocation> invocations,
         uint binCount,
         uint[]? changedBins = null,
@@ -1296,7 +1296,7 @@ internal sealed class ClusterRasterStageSet
             }
     }
 
-    internal ClusterUploadData BinIndices { get; }
+    internal ClusterBytes BinIndices { get; }
     internal IReadOnlyList<int> ChangedOffsets { get; }
     internal IEnumerable<ClusterRasterInvocation> Invocations => _bins.Values;
     internal uint BinCount { get; }
@@ -1726,14 +1726,14 @@ internal sealed class ClusterShadeStages : IDisposable
 internal sealed class ClusterShadeStageSet
 {
     internal static ClusterShadeStageSet Empty { get; } =
-        new(ClusterUploadData.Zero(0), ImmutableSortedDictionary<uint, ClusterShadeInvocation>.Empty, 0u,
+        new(ClusterBytes.Zero(0), ImmutableSortedDictionary<uint, ClusterShadeInvocation>.Empty, 0u,
             ImmutableDictionary<int, ScalarLayout.ScalarMaterialLayout>.Empty);
 
     private readonly ImmutableSortedDictionary<uint, ClusterShadeInvocation> _bins;
     internal ImmutableDictionary<int, ScalarLayout.ScalarMaterialLayout> ScalarLayouts { get; }
 
     internal ClusterShadeStageSet(
-        ClusterUploadData binIndices,
+        ClusterBytes binIndices,
         ImmutableSortedDictionary<uint, ClusterShadeInvocation> invocations,
         uint binCount,
         ImmutableDictionary<int, ScalarLayout.ScalarMaterialLayout> scalarLayouts,
@@ -1748,7 +1748,7 @@ internal sealed class ClusterShadeStageSet
         ChangedOffsets = changedOffsets ?? [];
     }
 
-    internal ClusterUploadData BinIndices { get; }
+    internal ClusterBytes BinIndices { get; }
     internal IReadOnlyList<int> ChangedOffsets { get; }
     internal IEnumerable<ClusterShadeInvocation> Invocations => _bins.Values;
     internal uint BinCount { get; }

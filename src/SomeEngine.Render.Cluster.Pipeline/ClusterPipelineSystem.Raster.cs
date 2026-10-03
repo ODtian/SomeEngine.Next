@@ -71,8 +71,8 @@ public sealed partial class ClusterPipelineSystem
 
     private void ReleaseRasterInputs(ref RenderGraphEdit graph, RasterInputs inputs)
     {
-        foreach (GraphBufferId buffer in inputs.Buffers) _uploads!.Remove(ref graph, buffer);
-        foreach (GraphBufferInput uniform in inputs.Uniforms) _uploads!.RemoveUniform(uniform);
+        foreach (GraphBufferId buffer in inputs.Buffers) RemoveBufferData(ref graph, buffer);
+        foreach (GraphBufferInput uniform in inputs.Uniforms) RemoveParameters(uniform);
     }
 
     private GraphRegionMap<uint, RasterBin> ReconcileRasterBins(ref RenderGraphEdit graph,
@@ -208,7 +208,7 @@ public sealed partial class ClusterPipelineSystem
                     ScreenHeight = checked((uint)GraphData.Resources.Height),
                     ViewCount = GraphData.Resources.ViewCount,
                 };
-                _uploads!.SetUniformValue(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(uniforms));
+                UpdateParameters(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(uniforms));
             }
         Span<ClusterTessellationBinUniforms> patches = stackalloc ClusterTessellationBinUniforms[1];
         patches[0] = new ClusterTessellationBinUniforms
@@ -219,7 +219,7 @@ public sealed partial class ClusterPipelineSystem
         };
         foreach (RasterPhase phase in phases.Values)
             if (phase.Patches.Values.FirstOrDefault()?.PatchBinning is { } binning)
-                _uploads!.SetUniformValue(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(patches));
+                UpdateParameters(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(patches));
     }
 
     private ulong MeshRasterOffset(uint bin) => checked((ulong)GraphData.Resources.RasterBinCount * 8u *
@@ -243,7 +243,7 @@ public sealed partial class ClusterPipelineSystem
                         DebugDump = _options.EnableFrameMetricsReadback ? 1u : 0u,
                         CurrentBin = bin.Stage.BinIndex,
                     };
-                    _uploads!.SetUniformValue(ref graph, uniforms, MemoryMarshal.AsBytes(software));
+                    UpdateParameters(ref graph, uniforms, MemoryMarshal.AsBytes(software));
                 }
                 if (bin.Inputs.MeshDraw is { } mesh)
                     graph.SetBufferAccess(mesh.Access, GraphAccessMode.Read, WriteCoverage.Partial,

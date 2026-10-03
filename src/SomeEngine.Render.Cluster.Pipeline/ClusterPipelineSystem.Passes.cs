@@ -18,7 +18,6 @@ public sealed partial class ClusterPipelineSystem
         ClusterRasterStageSet rasterStages,
         ClusterShadeStageSet shadeStages)
     {
-        GraphData.ResidencyUploads = graph.AddFrameRegion("Cluster residency uploads", _regions.PrimaryGeometry);
         FrameResources frame = CreateFrameResources(ref graph, in output, assignments, rasterStages, shadeStages);
         GraphData.Resources = frame;
         AuthorHistoryInitialization(ref graph, frame);
@@ -125,10 +124,10 @@ public sealed partial class ClusterPipelineSystem
                 0,
                 frame.Width / 2 - VisibilityProbePixelCount / 2)),
             VisibilityProbeY = checked((uint)(frame.Height / 2)),
-            Destination = frame.FrameMetricsReadback,
+            Destination = frame.FrameMetricsBuffer,
         };
         GraphPassId candidates = graph.AddCopyFramePass(
-            "Read back primary Cluster candidate metrics",
+            "Copy primary Cluster candidate metrics",
             PassQueueSelection.AnyCompatible(), passData,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             static (ref PassDefinition access, ref ClusterFrameMetricsReadbackParameters data) =>
@@ -144,7 +143,7 @@ public sealed partial class ClusterPipelineSystem
             }, ClusterFrameMetricsReadbackParameters.RecordCandidates, region: candidateRegion);
         GraphData.Feedback = GraphData.Feedback.SetItem(FeedbackKind.Candidates, candidates);
         GraphPassId metrics = graph.AddCopyFramePass(
-            "Read back Cluster frame metrics",
+            "Copy Cluster frame metrics",
             PassQueueSelection.AnyCompatible(),
             passData,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
@@ -178,6 +177,8 @@ public sealed partial class ClusterPipelineSystem
             },
             ClusterFrameMetricsReadbackParameters.Record, region: _regions.Feedback);
         GraphData.Feedback = GraphData.Feedback.SetItem(FeedbackKind.FrameMetrics, metrics);
+        GraphData.FrameMetricsReadback = graph.AddReadback(frame.FrameMetricsBuffer, BufferRange.Whole,
+            new FrameMetricsReceiver(this), "Read back Cluster frame metrics", _regions.Feedback);
     }
 
     private void RecordFrameMetricsSourceReset(
@@ -207,31 +208,9 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         in FrameResources frame)
     {
-        ulong byteCount = checked(
-            sizeof(uint) + (ulong)frame.PageFaultCapacity * sizeof(uint));
-        BufferRange range = new(0, byteCount);
-        ClusterBufferCopyParameters passData = new(
-            frame.PageFaults,
-            0,
-            frame.PageFaultReadback,
-            0,
-            byteCount);
-        GraphPassId faults = graph.AddCopyFramePass(
-            "Read back Cluster page faults",
-            PassQueueSelection.AnyCompatible(),
-            passData,
-            new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true) { SubmitAfter = true },
-            static (ref PassDefinition access, ref ClusterBufferCopyParameters data) =>
-            {
-                _ = access.Read(data.Source, new BufferRange(0, data.ByteCount),
-                    PipelineSync.Copy, ResourceAccess.CopySource);
-                _ = access.Write(data.Destination, new BufferRange(0, data.ByteCount),
-                    PipelineSync.Copy, ResourceAccess.CopyDestination,
-                    WriteCoverage.Complete);
-            },
-            ClusterBufferCopyParameters.Record, region: _regions.Feedback);
-        GraphData.Feedback = GraphData.Feedback.SetItem(FeedbackKind.PageFaults, faults);
-        }
+        GraphData.PageFaultReadback = graph.AddReadback(frame.PageFaults, new BufferRange(0, checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * sizeof(uint))),
+            new PageFaultReceiver(this), "Read back Cluster page faults", _regions.Feedback);
+    }
 
     private GraphRegionMap<int, bool> RecordTraversal(
         ref RenderGraphEdit graph,
@@ -1887,7 +1866,7 @@ public sealed partial class ClusterPipelineSystem
         in FrameResources frame,
         bool phaseOne, GraphRegionId region)
     {
-        int mipCount = _history!.HiZMipCount;
+        int mipCount = ClusterCullingHistory.CalculateMipCount(frame.Width, frame.Height);
         GraphAccessMode outputAccess = phaseOne ? GraphAccessMode.Write : GraphAccessMode.ReadWrite;
         WriteCoverage outputCoverage = phaseOne ? WriteCoverage.Complete : WriteCoverage.Partial;
         int bindingCount = 0;
@@ -2343,6 +2322,16 @@ public sealed partial class ClusterPipelineSystem
         TextureSubresourceRange? range,
         TextureViewDimension? dimension = null) =>
         graph.CreateTextureUav(texture, range, format, dimension);
+
+    private static GraphTextureSrvId CreateSampledTextureView(RenderGraphEdit graph,
+        GraphTextureInput texture, Format? format, TextureSubresourceRange? range,
+        TextureViewDimension? dimension = null) => range is { } value
+            ? graph.CreateTextureSrv(texture, value, format!.Value, dimension!.Value)
+            : graph.CreateTextureSrv(texture, format!.Value, dimension!.Value);
+
+    private static GraphTextureUavId CreateStorageTextureView(RenderGraphEdit graph,
+        GraphTextureInput texture, Format format, TextureSubresourceRange? range,
+        TextureViewDimension? dimension = null) => graph.CreateTextureUav(texture, range!.Value, format, dimension!.Value);
 
     private static GraphBufferCbvId CreateConstantBufferView(
         RenderGraphEdit graph,

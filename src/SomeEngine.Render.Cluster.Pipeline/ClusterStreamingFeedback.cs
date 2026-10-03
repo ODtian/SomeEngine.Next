@@ -1,73 +1,54 @@
 using SomeEngine.Render.Cluster;
-using SomeEngine.RenderGraph;
 using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-/// <summary>
-/// Fixed-capacity publication boundary between geometry fault readback and streaming policy. The
-/// geometry producer never resolves pages or advances streaming work.
-/// </summary>
+/// <summary>Completed page-fault data awaiting streaming consumption.</summary>
 public sealed class ClusterStreamingFeedbackChannel
 {
-    private const int Capacity = 2;
     private static readonly byte[][] EmptyPayloads = [[]];
-    private readonly ClusterStreamingFeedbackPacket[] _packets =
-        new ClusterStreamingFeedbackPacket[Capacity];
-    private int _readIndex;
-    private int _count;
+    private readonly Queue<ClusterStreamingFeedbackPacket> _packets = new();
+    private ClusterStreamingFeedbackStatistics _statistics;
 
-    internal void Publish(ClusterReadbackTicket ticket, ReadOnlySpan<byte> payload)
+    public ClusterStreamingFeedbackStatistics CaptureStatistics() => _statistics;
+
+    internal void Publish(ulong epoch, ReadOnlySpan<byte> payload)
     {
-        if (!ticket.IsValid)
-            throw new ArgumentException("Cluster streaming feedback requires a valid ticket.", nameof(ticket));
+        var ticket = new ClusterReadbackTicket(new ClusterEpochId(epoch), checked(_statistics.ReceivedFrames + 1));
         uint reportedCount = MemoryMarshal.Read<uint>(payload);
         int storedCount = checked((int)Math.Min(reportedCount, (uint)(payload.Length / sizeof(uint) - 1)));
-        // Preserve the reported count, including overflow, without copying unused
-        // queue capacity. An empty payload decodes to zero faults for this ticket.
         byte[] bytes = reportedCount == 0 ? [] : payload[..((storedCount + 1) * sizeof(uint))].ToArray();
-        for (int offset = 0; offset < _count; offset++)
+        _packets.Enqueue(new ClusterStreamingFeedbackPacket(ticket, bytes.Length == 0 ? EmptyPayloads : [bytes]));
+        _statistics = _statistics with
         {
-            int packetIndex = (_readIndex + offset) % Capacity;
-            ClusterStreamingFeedbackPacket packet = _packets[packetIndex];
-            if (packet.Ticket != ticket)
-                continue;
-
-            byte[][] payloads = new byte[packet.Payloads.Length + 1][];
-            packet.Payloads.CopyTo(payloads, 0);
-            payloads[^1] = bytes;
-            _packets[packetIndex] = new ClusterStreamingFeedbackPacket(ticket, payloads);
-            return;
-        }
-        if (_count == Capacity)
-        {
-            throw new InvalidOperationException(
-                "Cluster streaming feedback was not consumed before its fixed publication capacity filled.");
-        }
-        int writeIndex = (_readIndex + _count) % Capacity;
-        _packets[writeIndex] = new ClusterStreamingFeedbackPacket(ticket, bytes.Length == 0 ? EmptyPayloads : [bytes]);
-        _count++;
+            ReceivedFrames = ticket.FeedbackSequence,
+            ReportedPageFaults = _statistics.ReportedPageFaults + reportedCount,
+            LastEpoch = ticket.EpochId.Value,
+        };
     }
 
-    internal bool TryTake(out ClusterStreamingFeedbackPacket packet)
+    internal bool TryTake(out ClusterStreamingFeedbackPacket packet) => _packets.TryDequeue(out packet);
+
+    internal void RecordConsumption(ClusterStreamingFeedbackPacket packet)
     {
-        if (_count == 0)
+        ulong count = 0;
+        foreach (byte[] payload in packet.Payloads)
+            if (payload.Length != 0) count += MemoryMarshal.Read<uint>(payload);
+        _statistics = _statistics with
         {
-            packet = default;
-            return false;
-        }
-        packet = _packets[_readIndex];
-        _packets[_readIndex] = default;
-        _readIndex = (_readIndex + 1) % Capacity;
-        _count--;
-        return true;
+            ConsumedFrames = _statistics.ConsumedFrames + 1,
+            ConsumedPageFaults = _statistics.ConsumedPageFaults + count,
+        };
     }
 }
+
+public readonly record struct ClusterStreamingFeedbackStatistics(
+    ulong ReceivedFrames, ulong ConsumedFrames, ulong ReportedPageFaults, ulong ConsumedPageFaults, ulong LastEpoch);
 
 /// <summary>
 /// Consumes geometry page faults and advances reads through the shared feedback channel.
 /// </summary>
-public sealed class ClusterStreamingFeedbackConsumer : IRenderGraphFrameExecutionObserver
+public sealed class ClusterStreamingFeedbackConsumer
 {
     private readonly ClusterRenderResources _resources;
     private readonly ClusterStreamingFeedbackChannel _channel;
@@ -82,28 +63,17 @@ public sealed class ClusterStreamingFeedbackConsumer : IRenderGraphFrameExecutio
 
     public void Pump()
     {
-        _ = ConsumeFaults();
+        ConsumeFaults();
         _resources.PumpStreaming();
     }
 
-    private bool ConsumeFaults()
+    private void ConsumeFaults()
     {
-        bool hasFaults = false;
         while (_channel.TryTake(out ClusterStreamingFeedbackPacket packet))
         {
             _resources.IngestPageFaultReadbackBatch(packet.Ticket, packet.Payloads);
-            foreach (byte[] payload in packet.Payloads) hasFaults |= payload.Length != 0;
+            _channel.RecordConsumption(packet);
         }
-        return hasFaults;
-    }
-
-    void IRenderGraphFrameExecutionObserver.OnRenderGraphSubmitted(RenderGraphFrameResult result)
-    {
-        if (ConsumeFaults()) _resources.PumpStreaming();
-    }
-    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
-    {
-        if (ConsumeFaults()) _resources.PumpStreaming();
     }
 }
 

@@ -175,7 +175,6 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
                     using (var commands = graph.BeginFrame(next))
                     {
                         frames.Update(renderFrame, commands);
-                        commands.ObserveExecution(streaming);
                         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
                         int count = commands.Execute(completions);
                         renderFrame.Complete(completions.AsSpan(0, count));

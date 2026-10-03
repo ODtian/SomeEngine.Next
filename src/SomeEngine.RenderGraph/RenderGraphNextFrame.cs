@@ -73,12 +73,20 @@ public sealed partial class RenderGraph
         {
             DevelopmentCheck.Require(_frameToken == 0, "A CPU frame must finish before opening another frame.");
             int index = _preferredFrameIndex;
+            ulong firstFrameIdentity = _frameSlots[index].FrameIdentity;
             for (int probe = 0; probe < _frameSlots.Length; probe++)
             {
                 int candidate = (_preferredFrameIndex + probe) % _frameSlots.Length;
-                if (!_frameSlots[candidate].IsReady(_backend)) continue;
-                index = candidate;
-                break;
+                if (_frameSlots[candidate].IsReady(_backend))
+                {
+                    index = candidate;
+                    break;
+                }
+                if (_frameSlots[candidate].FrameIdentity < firstFrameIdentity)
+                {
+                    index = candidate;
+                    firstFrameIdentity = _frameSlots[candidate].FrameIdentity;
+                }
             }
             storage = _frameSlots[index];
             identity = AllocateOwnerIdentity();

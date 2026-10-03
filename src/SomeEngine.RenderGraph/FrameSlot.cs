@@ -30,6 +30,7 @@ internal sealed class FrameSlot : IDisposable
     }
 
     internal int Index { get; }
+    internal ulong FrameIdentity => _state?.Identity ?? 0;
     internal IReadOnlyList<QueueCompletion> Completions => _completions;
     internal FrameTransientResourceAllocator? TransientResources { get; private set; }
 

@@ -5,6 +5,33 @@ namespace SomeEngine.RenderGraph.Tests;
 public sealed class FrameBufferRangesTests
 {
     [Fact]
+    public void PersistentBufferIdentityReportsOnlyItsUsedRanges()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
+        GraphBufferId buffer;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            buffer = edit.CreatePersistentBuffer(new BufferDesc(64, BufferUsages.CopyDestination));
+            edit.AddBufferUploadPass(buffer);
+            edit.Commit();
+        }
+        var submitted = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        using (RenderGraphFrame frame = graph.BeginFrame())
+        {
+            frame.WriteBuffer(buffer, 16, new byte[8]);
+            frame.Execute(submitted);
+        }
+        var copied = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        Assert.Equal(1, graph.GetRangeCompletionCount(buffer, new BufferRange(16, 8)));
+        Assert.Equal(1, graph.CopyRangeCompletions(buffer, new BufferRange(16, 8), copied));
+        Assert.Equal(submitted[0], copied[0]);
+        Assert.Equal(0, graph.GetRangeCompletionCount(buffer, new BufferRange(0, 16)));
+        Assert.Equal(0, graph.GetRangeCompletionCount(buffer, new BufferRange(24, 40)));
+        support.Wait(submitted);
+    }
+
+    [Fact]
     public void DescriptorReadersReportCompletionOnlyForTheFramesBufferRanges()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();

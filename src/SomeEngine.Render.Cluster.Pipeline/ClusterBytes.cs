@@ -2,22 +2,22 @@ using System.Collections.Immutable;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-/// <summary>Immutable upload bytes. Local changes copy only the pages containing those bytes.</summary>
-internal sealed class ClusterUploadData
+/// <summary>Encoded material bytes. Changes copy the pages containing those bytes.</summary>
+internal sealed class ClusterBytes
 {
     private const int PageSize = 4096;
     private readonly ImmutableDictionary<int, byte[]> _pages;
 
-    private ClusterUploadData(int length, ImmutableDictionary<int, byte[]> pages)
+    private ClusterBytes(int length, ImmutableDictionary<int, byte[]> pages)
     {
         Length = length;
         _pages = pages;
     }
 
     internal int Length { get; }
-    internal static ClusterUploadData Zero(int length) => new(length, ImmutableDictionary<int, byte[]>.Empty);
+    internal static ClusterBytes Zero(int length) => new(length, ImmutableDictionary<int, byte[]>.Empty);
 
-    internal static ClusterUploadData FromBytes(ReadOnlySpan<byte> bytes)
+    internal static ClusterBytes FromBytes(ReadOnlySpan<byte> bytes)
     {
         var pages = ImmutableDictionary.CreateBuilder<int, byte[]>();
         for (int offset = 0; offset < bytes.Length;)
@@ -29,7 +29,7 @@ internal sealed class ClusterUploadData
         return new(bytes.Length, pages.ToImmutable());
     }
 
-    internal ClusterUploadData WithChanges(int length, IReadOnlyList<(int Offset, byte[] Bytes)> changes)
+    internal ClusterBytes WithChanges(int length, IReadOnlyList<(int Offset, byte[] Bytes)> changes)
     {
         if (length == Length && changes.Count == 0) return this;
         var changedPages = new Dictionary<int, byte[]>();
@@ -79,17 +79,4 @@ internal sealed class ClusterUploadData
 
     private static int PageCount(int length) => length == 0 ? 0 : (length - 1) / PageSize + 1;
 
-    internal bool ContentEquals(ReadOnlySpan<byte> other)
-    {
-        if (other.Length != Length) return false;
-        Span<byte> page = stackalloc byte[Math.Min(PageSize, Length)];
-        for (int offset = 0; offset < Length;)
-        {
-            Span<byte> part = page[..Math.Min(PageSize, Length - offset)];
-            CopyTo(part, offset);
-            if (!part.SequenceEqual(other.Slice(offset, part.Length))) return false;
-            offset += part.Length;
-        }
-        return true;
-    }
 }

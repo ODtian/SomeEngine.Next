@@ -23,6 +23,9 @@ Frame data 是在既有图结构中变化的值和绑定。
 图清零对齐填充并将成功写入的范围注册到当帧。上传页按帧完成点复用，取消帧和
 写入异常沿原帧资源回收路径处理。
 
+声明上传缓冲通过 `SetBufferData` 或 `GetBufferDataWriteSpan` 填充图持有的当帧映射空间，
+保留其图身份与绑定范围。具体存储和完成边界见 [[Frame-Uploads]]。
+
 ## Persistent buffer uploads and readback tags
 
 `RenderGraphNextFrame.GetWriteSpan` / `WriteBuffer` 和 `RenderGraphFrame` 中的同名方法按目标

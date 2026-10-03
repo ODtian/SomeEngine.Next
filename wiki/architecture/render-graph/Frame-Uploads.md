@@ -21,7 +21,7 @@ if (graph.TryOpenNextFrame(out RenderGraphNextFrame next, timeout))
 ```
 
 `TryOpenNextFrame` 先收集已完成工作，再选定帧槽位。存在空闲帧槽位时直接使用；全部在途时，
-对选定帧槽位按同一个超时预算等待各队列完成点。超时返回 `false`，完成后返回下一帧对象。
+选择最早的在途帧，按同一个超时预算等待各队列完成点。超时返回 `false`，完成后返回下一帧对象。
 
 `RenderGraphNextFrame` 为映射写入和结构编辑提供准备阶段。使用者完成写入任务、提交编辑后，
 调用 `BeginFrame(next)` 取得编辑后的图版本，并把下一帧的记录交给帧执行数据。
@@ -67,12 +67,21 @@ if (graph.TryOpenNextFrame(out RenderGraphNextFrame next, timeout))
 参数与状态检查使用 `DevelopmentCheck`；GPU 等待失败、图内存预算耗尽和后端失败沿执行
 失败路径处理。
 
+## Declared frame uploads
+
+`DeclareExternalBuffer(description, MemoryType.Upload)` 与 `SetBufferData` 表达具有持久图身份的
+当帧上传数据。`GetBufferDataWriteSpan` 返回该帧的最终映射跨度，使用者在执行前填充描述中的
+完整范围。每个图帧资源持有自己的实际缓冲；参数输入与视图可以保留声明身份和范围，使
+当帧值变化沿用原有绑定位置。图负责映射缓冲的复用、提交与取消。
+
 ## Behavior evidence
 
 `tests/SomeEngine.RenderGraph.Tests/FrameUploadTests.cs` 使用 WARP 和 RenderGraph 公共 API，
 以自给的复制读者和持久回读验证映射写入、字节写入、部分更新、取消、并行任务、录制阶段
-写入、结构版本与开帧超时，以及写入组的提交、取消和并行范围。并行场景每帧十六个任务
-写入不同范围，持续八帧。
+写入、结构版本与开帧超时，以及写入组的提交、取消和并行范围。
+独立队列门控还验证较早 GPU 工作完成时可以开帧，而较晚工作继续在途。并行场景每帧十六个任务
+写入不同范围，持续八帧。`BufferDataCommandsTests` 在三种提交模式中，通过公开 GPU 字节
+读取验证声明上传的直接映射、数据改变、缓冲增大和命令数据修改。
 
 ## Relations
 

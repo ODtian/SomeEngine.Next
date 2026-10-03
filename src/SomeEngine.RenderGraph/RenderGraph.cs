@@ -201,6 +201,25 @@ public sealed partial class RenderGraph : IDisposable
             slot.CollectCompleted(_backend);
     }
 
+    public int GetRangeCompletionCount(GraphBufferId buffer, in BufferRange range) =>
+        GetRangeCompletionCount(GetPersistentBuffer(buffer), range);
+
+    public int CopyRangeCompletions(GraphBufferId buffer, in BufferRange range, Span<QueueCompletion> destination) =>
+        CopyRangeCompletions(GetPersistentBuffer(buffer), range, destination);
+
+    private Buffer GetPersistentBuffer(GraphBufferId buffer)
+    {
+        EnsureAvailable();
+        lock (_structureGate)
+        {
+            DevelopmentCheck.Require(buffer.Value.Owner == Identity && _structure.Buffers.Contains(buffer.Value),
+                "The buffer must belong to this graph.");
+            GraphBuffer data = _structure.Buffers.Get(buffer.Value);
+            return data.PersistentResource ?? data.RegisteredResource ??
+                throw new InvalidOperationException("Range completions require a persistent buffer.");
+        }
+    }
+
     /// <summary>
     /// Returns the number of Queue completions that can still access the requested Buffer range.
     /// At most one (the maximum known value) is returned for each registered Queue.

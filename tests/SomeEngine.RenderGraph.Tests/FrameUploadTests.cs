@@ -259,6 +259,63 @@ public sealed class FrameUploadTests
         next.Dispose();
     }
 
+    [Fact]
+    public async Task OpeningNextFrameUsesEarlierCompletedWorkWhileLaterWorkIsStillInFlight()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true,
+            requiredFeatures: DeviceFeatures.ExternalTimelines);
+        using var gate = support.Backend.CreateExternalTimeline(support.Device, 0);
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue, support.ComputeQueue], new RenderGraphDesc(MaximumFramesInFlight: 2));
+        GraphPassId first, second;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            first = AddWork(edit, support.GraphicsQueue);
+            second = AddWork(edit, support.ComputeQueue);
+            edit.Commit();
+        }
+        var earlier = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        var later = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        support.Backend.Submit(support.GraphicsQueue, new([], [new(gate, 1)], [], [], []));
+        support.Backend.Submit(support.ComputeQueue, new([], [new(gate, 2)], [], [], []));
+        Task release = Task.CompletedTask;
+        try
+        {
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                frame.SetPassEnabled(second, false);
+                frame.Execute(earlier);
+            }
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                frame.SetPassEnabled(first, false);
+                frame.SetPassEnabled(second, true);
+                frame.Execute(later);
+            }
+            release = Task.Run(async () =>
+            {
+                await Task.Delay(50);
+                support.Backend.Submit(support.CopyQueue, new([], [], [], [], [new(gate, 1)]));
+            });
+            Assert.True(graph.TryOpenNextFrame(out RenderGraphNextFrame next, TimeSpan.FromMilliseconds(500)));
+            using (next)
+                Assert.Contains(later, completion => completion != default && !support.Backend.IsComplete(completion));
+            await release;
+        }
+        finally
+        {
+            await release;
+            support.Backend.Submit(support.CopyQueue, new([], [], [], [], [new(gate, 2)]));
+            support.Wait(earlier.Concat(later).Where(completion => completion != default).ToArray());
+        }
+
+        static GraphPassId AddWork(RenderGraphEdit edit, Queue queue) => edit.AddCopyFramePass(
+            "Independent queue work", PassQueueSelection.Exact(queue), 0,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition pass, ref int data) => { },
+            static (ref CopyPassCommandScope commands, in int data) => { });
+    }
+
     private sealed class UploadBuffers : IGraphReadbackReceiver, IDisposable
     {
         private readonly WarpGraphTestSupport _support = WarpGraphTestSupport.Create(enableValidation: true);

@@ -4,6 +4,8 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Frame;
+using SomeEngine.RenderGraph;
+using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Render.Cluster;
 
@@ -33,12 +35,15 @@ public sealed record ClusterResidencyOptions
 }
 
 internal readonly record struct ClusterResidencyBinding(
-    Buffer PageHeap,
-    Buffer Bvh,
+    BufferDesc PageHeapDescription,
+    BufferDesc BvhDescription,
     int PageFaultCapacity,
     BufferRange[] ResidentPageRanges,
     BufferRange BvhRange,
     ClusterResidencyPublication? Publication);
+
+internal readonly record struct ClusterGeometryBuffers(
+    GraphBufferId PageHeap, GraphBufferId Bvh, GraphPassId PageUpload, GraphPassId BvhUpload);
 
 internal sealed record ClusterResidencyPublication(
     ulong Sequence,
@@ -49,12 +54,14 @@ internal readonly record struct ClusterResidencyProviderSnapshot(
     PageStreamSnapshot Streaming);
 
 /// <summary>
-/// Owns device-local Cluster page-heap and BVH resources plus their CPU staging machinery.
+/// Holds Cluster residency capacities, CPU mesh data, and streaming work.
 /// </summary>
 internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 {
-    private readonly Buffer _pageHeapBuffer;
-    private readonly Buffer _bvhBuffer;
+    private global::SomeEngine.RenderGraph.RenderGraph? _graph;
+    internal ClusterGeometryBuffers GeometryBuffers { get; private set; }
+    private readonly BufferDesc _pageHeapDescription;
+    private readonly BufferDesc _bvhDescription;
     private readonly IGraphicsBackend _backend;
     private readonly ClusterMeshes _meshes;
     private readonly PageStream _stream;
@@ -65,8 +72,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     private Task? _streamDisposal;
     private Exception? _meshCleanupFailure;
     private bool _meshCleanupAttempted;
-    private bool _bvhBufferDestroyed;
-    private bool _pageHeapBufferDestroyed;
     private int _lifecycleState;
     private ulong _publicationSequence;
     private ClusterResidencyPublication? _activePublication;
@@ -91,30 +96,14 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         ClusterResidencyOptions selected = options ?? new ClusterResidencyOptions();
         selected.Validate();
 
-        Buffer? pageHeapBuffer = null;
-        Buffer? bvhBuffer = null;
         SparseClusterPageStorage? pageStorage = null;
         SparseClusterBvhStorage? bvhStorage = null;
         ClusterMeshes? meshes = null;
         PageStream? stream = null;
         try
         {
-            pageHeapBuffer = backend.CreateBuffer(
-                device,
-                new BufferDesc(
-                    selected.PageHeapCapacityBytes,
-                    BufferUsages.ShaderRead | BufferUsages.CopyDestination,
-                    "Cluster page heap"),
-                MemoryType.DeviceLocal);
             pageStorage = new SparseClusterPageStorage(selected.PageHeapCapacityBytes);
 
-            bvhBuffer = backend.CreateBuffer(
-                device,
-                new BufferDesc(
-                    selected.BvhCapacityBytes,
-                    BufferUsages.ShaderRead | BufferUsages.CopyDestination,
-                    "Cluster BVH"),
-                MemoryType.DeviceLocal);
             bvhStorage = new SparseClusterBvhStorage(selected.BvhCapacityBytes);
 
             meshes = new ClusterMeshes(
@@ -126,8 +115,10 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             bvhStorage = null;
             stream = new PageStream(meshes);
 
-            _pageHeapBuffer = pageHeapBuffer;
-            _bvhBuffer = bvhBuffer;
+            _pageHeapDescription = new BufferDesc(selected.PageHeapCapacityBytes,
+                BufferUsages.ShaderRead | BufferUsages.CopyDestination, "Cluster page heap");
+            _bvhDescription = new BufferDesc(selected.BvhCapacityBytes,
+                BufferUsages.ShaderRead | BufferUsages.CopyDestination, "Cluster BVH");
             _backend = backend;
             _meshes = meshes;
             _stream = stream;
@@ -166,8 +157,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                 TryDispose(pageStorage);
             }
 
-            TryDestroy(bvhBuffer);
-            TryDestroy(pageHeapBuffer);
             throw;
         }
     }
@@ -182,12 +171,26 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 
     internal int PageFaultCapacity => _pageFaultCapacity;
 
+    internal void InstallGeometryBuffers(global::SomeEngine.RenderGraph.RenderGraph graph)
+    {
+        if (ReferenceEquals(_graph, graph)) return;
+        DevelopmentCheck.Require(_graph is null, "Cluster geometry buffers require one graph per residency epoch.");
+        using var edit = graph.BeginEdit();
+        GraphBufferId pages = edit.CreatePersistentBuffer(_pageHeapDescription);
+        GraphBufferId bvh = edit.CreatePersistentBuffer(_bvhDescription);
+        GraphPassId pageUpload = edit.AddBufferUploadPass(pages);
+        GraphPassId bvhUpload = edit.AddBufferUploadPass(bvh);
+        edit.Commit();
+        GeometryBuffers = new ClusterGeometryBuffers(pages, bvh, pageUpload, bvhUpload);
+        _graph = graph;
+    }
+
     internal ClusterResidencyBinding GetBinding()
     {
         ThrowIfNotActive();
         return new ClusterResidencyBinding(
-            _pageHeapBuffer,
-            _bvhBuffer,
+            _pageHeapDescription,
+            _bvhDescription,
             _pageFaultCapacity,
             _activePublication?.Meshes.ResidentPageRanges ?? _meshes.CaptureResidentPageRanges(),
             _meshes.CaptureBvhRange(),
@@ -469,9 +472,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                     failures ?? []);
             }
 
-            ReleaseBuffer(_bvhBuffer, ref _bvhBufferDestroyed);
-            ReleaseBuffer(_pageHeapBuffer, ref _pageHeapBufferDestroyed);
-
             if (failures is not null)
             {
                 throw new AggregateException(
@@ -479,23 +479,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                     failures);
             }
             Volatile.Write(ref _lifecycleState, 2);
-
-            void ReleaseBuffer(Buffer buffer, ref bool destroyed)
-            {
-                if (destroyed)
-                    return;
-                try
-                {
-                    buffer.Dispose();
-                    destroyed = true;
-                }
-                catch (Exception error)
-                {
-                    // A live handle remains owned by this residency and is retried by the next
-                    // Shutdown call.
-                    AddFailure(error);
-                }
-            }
 
             void AddFailure(Exception error)
             {
@@ -562,19 +545,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         try
         {
             value?.Dispose();
-        }
-        catch
-        {
-        }
-    }
-
-    private static void TryDestroy(Buffer? buffer)
-    {
-        if (buffer is null)
-            return;
-        try
-        {
-            buffer.Dispose();
         }
         catch
         {

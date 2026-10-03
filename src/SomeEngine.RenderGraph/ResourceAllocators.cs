@@ -1089,7 +1089,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             if (value.Page.Used != 0) value.Page.Mapping.Flush(new BufferRange(0, value.Page.Used));
     }
 
-    internal UploadPage WriteBufferData(GraphIdentity id, in BufferDesc description, ReadOnlySpan<byte> data)
+    internal UploadPage ReserveBufferData(GraphIdentity id, in BufferDesc description)
     {
         if (!_bufferUploads.TryGetValue(id, out var stored) || stored.Description != description)
         {
@@ -1120,7 +1120,6 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
                 throw;
             }
         }
-        data.CopyTo(stored.Page.Mapping.Bytes);
         stored.Page.Used = description.Size;
         return stored.Page;
     }

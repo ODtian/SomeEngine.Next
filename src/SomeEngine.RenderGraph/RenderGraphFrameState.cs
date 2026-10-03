@@ -484,7 +484,7 @@ internal sealed partial class RenderGraphFrameState
         return RegisterUpload(page, range);
     }
 
-    internal void SetBufferData(GraphBufferId buffer, scoped ReadOnlySpan<byte> data)
+    private GraphBuffer GetBufferDataDeclaration(GraphBufferId buffer)
     {
         EnsureAuthoring();
         ValidateStatic(buffer.Value, StructureIndex.Structure.Buffers);
@@ -494,15 +494,30 @@ internal sealed partial class RenderGraphFrameState
             declaration.Ownership == RenderGraphResourceOwnership.CallerOwned &&
             (declaration.Description.Usages & ~(BufferUsages.ShaderRead | BufferUsages.Constant | BufferUsages.CopySource)) == 0,
             "Buffer data requires an external upload declaration used only for GPU reads.");
-        if ((ulong)data.Length != declaration.Description.Size)
-            throw new ArgumentException("Buffer data must cover the declared byte size.", nameof(data));
+        return declaration;
+    }
+
+    internal Span<byte> GetBufferDataWriteSpan(GraphBufferId buffer) =>
+        GetBufferDataWriteSpan(buffer, GetBufferDataDeclaration(buffer));
+
+    private Span<byte> GetBufferDataWriteSpan(GraphBufferId buffer, GraphBuffer declaration)
+    {
         FrameTransientResourceAllocator.UploadPage page = Slot.TransientResources!
-            .WriteBufferData(buffer.Value, declaration.Description, data);
+            .ReserveBufferData(buffer.Value, declaration.Description);
         if (_bufferData.TryGetValue(buffer.Value, out var previous) && !ReferenceEquals(previous.Buffer, page.Buffer))
             _importedBuffers.Remove(previous.Buffer);
         _bufferData[buffer.Value] = page;
         _importedBuffers[page.Buffer] = buffer;
         _executor.ChangeBuffer(buffer.Value, refreshViews: false);
+        return page.Mapping.Bytes.Slice(0, checked((int)declaration.Description.Size));
+    }
+
+    internal void SetBufferData(GraphBufferId buffer, scoped ReadOnlySpan<byte> data)
+    {
+        GraphBuffer declaration = GetBufferDataDeclaration(buffer);
+        if ((ulong)data.Length != declaration.Description.Size)
+            throw new ArgumentException("Buffer data must cover the declared byte size.", nameof(data));
+        data.CopyTo(GetBufferDataWriteSpan(buffer, declaration));
     }
 
     internal bool TryGetBufferData(GraphIdentity id, out FrameTransientResourceAllocator.UploadPage page) =>
