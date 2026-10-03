@@ -44,6 +44,41 @@ internal static class RasterTestShaders
         return shader;
     }
 
+    internal static Shader CreateWithUnresolvedShade(string backend)
+    {
+        string root = FrameStageScene.FindRoot();
+        string projectShaders = Path.Combine(root, "templates", "DefaultProject", "assets", "Shaders");
+        string material = File.ReadAllText(Path.Combine(projectShaders, "unlit_material.slang"))
+            .Replace("struct UnlitMaterial :", "extern float3 missingShadeColor();\nstruct UnlitMaterial :")
+            .Replace("albedoSample.rgb * scalars.BaseColorTint.rgb", "missingShadeColor()");
+        string source = File.ReadAllText(Path.Combine(projectShaders, "unlit.slang"))
+            .Replace("#include \"unlit_material.slang\"", material);
+        var description = TestShaderLoading.CreateSessionDescription(
+            backend == "Vulkan" ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil);
+        description.SearchPaths = [projectShaders, Path.Combine(root, "assets", "Shaders")];
+        var slang = TestShaderLoading.Slang;
+        Assert.True(slang.CreateSession(description, out ISession session).Succeeded);
+        var text = Slang.CreateBlob(Encoding.UTF8.GetBytes(source));
+        var unit = session.LoadModuleFromSource("UnresolvedShade", "UnresolvedShade.slang", text, out var diagnostics);
+        Assert.True(unit is not null, DiagnosticText(diagnostics));
+        var entries = new List<IEntryPoint>();
+        for (int index = 0; index < unit!.GetDefinedEntryPointCount(); index++)
+        {
+            Assert.True(unit.GetDefinedEntryPoint(index, out IEntryPoint entry).Succeeded);
+            entries.Add(entry);
+        }
+        Assert.True(session.CreateCompositeComponentType([unit, .. entries], out IComponentType combined,
+            out diagnostics).Succeeded, DiagnosticText(diagnostics));
+        Assert.True(combined.Link(out var linked, out diagnostics).Succeeded, DiagnosticText(diagnostics));
+        var reflection = linked.GetLayout(0, out diagnostics);
+        int shade = Enumerable.Range(0, entries.Count).Single(index =>
+            reflection.GetEntryPointByIndex((uint)index).Name == "ClusterShade");
+        Assert.True(linked.GetEntryPointCode(shade, 0, out _, out diagnostics).Failed);
+        Assert.Contains("missingShadeColor", DiagnosticText(diagnostics));
+        return Shader.CreateFromSlang("Unresolved shade", slang, session, [unit], entries, combined,
+            description.Targets, generateCode: false);
+    }
+
     private static string DiagnosticText(ISlangBlob? text) => text is null ? "" : Encoding.UTF8.GetString(text.Buffer);
 
     // The visibility texture gives each material its own raster bin while tessellated materials

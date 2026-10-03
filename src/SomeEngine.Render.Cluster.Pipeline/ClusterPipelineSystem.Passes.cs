@@ -18,310 +18,90 @@ public sealed partial class ClusterPipelineSystem
         ClusterRasterStageSet rasterStages,
         ClusterShadeStageSet shadeStages)
     {
-        _residencyUploadRegion = graph.AddFrameRegion("Cluster residency uploads", _regions.PrimaryGeometry);
-        FrameResources frame = CreateFrameResources(
-            ref graph,
-            in output,
-            assignments,
-            rasterStages,
-            shadeStages);
-        _frameResources = frame;
+        GraphData.ResidencyUploads = graph.AddFrameRegion("Cluster residency uploads", _regions.PrimaryGeometry);
+        FrameResources frame = CreateFrameResources(ref graph, in output, assignments, rasterStages, shadeStages);
+        GraphData.Resources = frame;
         AuthorHistoryInitialization(ref graph, frame);
-        GraphBufferId packedViews = graph.DeclareExternalBuffer(new BufferDesc(
+        frame.PackedViews = graph.DeclareExternalBuffer(new BufferDesc(
             checked((ulong)_packedViews.Length * ClusterViewUniforms.SizeInBytes),
             BufferUsages.ShaderRead, "Cluster packed views"), MemoryType.Upload);
-        frame.PackedViews = packedViews;
-        _frameResources = frame;
-
+        GraphData.Resources = frame;
         RecordFrameMetricsSourceReset(ref graph, frame);
+        RecordCullStateReset(ref graph, frame);
         InstallSceneBounds(ref graph);
-        _primaryTraversalRegion = graph.AddRegion("Cluster primary traversal", _regions.PrimaryGeometry);
-        _traversalPass = RecordTraversal(
-            ref graph,
-            frame,
-            packedViews,
-            frame.ViewCount,
-            viewIndexMode: 0u,
-            traversalMode: 0u,
-            seedRoots: true,
-            startAfter: default,
-            _traversalLevelPasses,
-            "primary",
-            out _traversalSeedPass, region: _primaryTraversalRegion);
-        graph.OrderAfter(_traversalSeedPass, _sceneBoundsPass);
-        var phases = RecordStageRegion(
-            ref graph,
-            frame,
-            rasterStages,
-            packedViews,
-            shadeStages,
-            installCommonPasses: true);
-        phases = RecordContinuation(
-            ref graph,
-            frame,
-            rasterStages,
-            packedViews,
-            phases);
-        BindTargetPolicyResources(ref graph);
+        GraphData.PrimaryGeometry = graph.AddRegion("Cluster primary geometry work", _regions.PrimaryGeometry);
+        GraphRegionId primaryTraversal = graph.AddRegion("Cluster primary traversal", GraphData.PrimaryGeometry);
+        GraphData.TraversalLevels = GraphData.TraversalLevels.Add(0, RecordTraversal(ref graph, frame, frame.PackedViews,
+            frame.ViewCount, 0u, 0u, true, new GraphRegionMap<int, bool>(primaryTraversal), "primary"));
+        RecordCullPhaseOne(ref graph, frame, frame.PackedViews, frame.DrawArgs, frame.ReadOffsetZero,
+            frame.ReadOffsetZero, true, "primary", graph.AddRegion("Cluster first cull", GraphData.PrimaryGeometry));
+        RasterPhase first = RecordRasterPhase(ref graph, frame, rasterStages, frame.DrawArgs,
+            frame.ReadOffsetZero, frame.ReadOffsetZero, frame.ReadOffsetZero, 0, true);
+        GraphRegionId firstHiZ = graph.AddRegion("Cluster first HiZ", GraphData.PrimaryGeometry);
+        RecordHiZ(ref graph, frame, true, firstHiZ);
+        RecordPhaseOneTessellationCounters(ref graph, frame, firstHiZ);
+        GraphRegionId primaryDeferredTraversal = graph.AddRegion("Cluster primary deferred traversal", GraphData.PrimaryGeometry);
+        RecordDeferredResume(ref graph, frame, frame.Phase2DrawArgs, "primary post-HiZ", primaryDeferredTraversal);
+        GraphData.TraversalLevels = GraphData.TraversalLevels.Add(1, RecordTraversal(ref graph, frame, frame.PackedViews,
+            frame.ViewCount, 0u, 2u, false, new GraphRegionMap<int, bool>(primaryDeferredTraversal), "primary post-HiZ"));
+        RecordCullPhaseTwo(ref graph, frame, frame.PackedViews, frame.CandidateClusters, frame.CandidateCount,
+            frame.CandidateArgs, frame.Phase2DrawArgs, frame.DrawArgs, frame.ReadOffsetZero, frame.ReadOffsetZero,
+            "primary phase-two", graph.AddRegion("Cluster second cull", GraphData.PrimaryGeometry));
+        RasterPhase second = RecordRasterPhase(ref graph, frame, rasterStages, frame.Phase2DrawArgs,
+            frame.DrawArgs, frame.ReadOffsetZero, frame.ReadOffsetZero, 1, false);
+        GraphPassId geometryComplete = RecordHiZ(ref graph, frame, false,
+            graph.AddRegion("Cluster second HiZ", GraphData.PrimaryGeometry));
+        var phases = ImmutableDictionary<int, RasterPhase>.Empty.Add(0, first).Add(1, second);
+        phases = RecordContinuation(ref graph, frame, rasterStages, frame.PackedViews, phases);
+        RecordShade(ref graph, frame, shadeStages);
         RecordPageFaultReadback(ref graph, frame);
-        RecordFrameMetricsReadback(ref graph, frame);
-        _outputs = new ClusterPipelineOutputs(
-            frame.VisBuffer,
-            frame.Depth,
-            frame.SceneColor,
-            frame.MotionVectors,
-            new ClusterGeometryCapabilities(
-                frame.PackedViews,
-                frame.InstanceData,
-                frame.InstanceProperties,
-                frame.InstancePropertiesRange,
-                frame.VisibleClusters,
-                frame.DrawArgs,
-                frame.Phase2DrawArgs,
-                _options.MaxCandidates,
-                frame.PageHeap,
-                frame.Bvh,
-                _phaseTwoHiZPass)
+        RecordFrameMetricsReadback(ref graph, frame, firstHiZ);
+        GraphData.Outputs = new ClusterPipelineOutputs(frame.VisBuffer, frame.Depth, frame.SceneColor, frame.MotionVectors,
+            new ClusterGeometryCapabilities(frame.PackedViews, frame.InstanceData, frame.InstanceProperties,
+                frame.InstancePropertiesRange, frame.VisibleClusters, frame.DrawArgs, frame.Phase2DrawArgs,
+                _options.MaxCandidates, frame.PageHeap, frame.Bvh, geometryComplete)
             {
-                InstanceWorldBounds = _instanceWorldBounds,
-                BoundsReady = _sceneBoundsPass,
-            },
-            frame.Width,
-            frame.Height,
-            frame.ViewCount);
+                InstanceWorldBounds = GraphData.InstanceWorldBounds,
+                BoundsReady = GraphData.SceneBounds.Pass,
+            }, frame.Width, frame.Height, frame.ViewCount);
         return phases;
     }
 
-    private ImmutableDictionary<int, RasterPhase> RecordStageRegion(
-        ref RenderGraphEdit graph,
-        in FrameResources frame,
-        ClusterRasterStageSet rasterStages,
-        GraphBufferId packedViews,
-        ClusterShadeStageSet shadeStages,
-        bool installCommonPasses)
-    {
-
-        if (installCommonPasses)
-        {
-            _phaseOneCullPass = RecordCullPhaseOne(
-                ref graph,
-                frame,
-                packedViews,
-                frame.DrawArgs,
-                frame.ReadOffsetZero,
-                frame.ReadOffsetZero,
-                resetPrimaryCullState: true,
-                "primary");
-            graph.OrderAfter(_phaseOneCullPass, _traversalPass);
-        }
-        RasterPhase phaseOneRaster = RecordRasterPhase(
-            ref graph,
-            frame,
-            rasterStages,
-            frame.DrawArgs,
-            frame.ReadOffsetZero,
-            frame.ReadOffsetZero,
-            frame.ReadOffsetZero,
-            epoch: 0,
-            phaseOne: true);
-        if (installCommonPasses)
-        {
-            _phaseOneHiZPass = RecordHiZ(ref graph, frame, phaseOne: true);
-        }
-
-        RecordPhaseOneTessellationCounters(ref graph, frame);
-
-
-        if (installCommonPasses)
-        {
-            _primaryPostTraversalRegion = graph.AddRegion("Cluster primary deferred traversal", _regions.PrimaryGeometry);
-            _primaryDeferredResumePass = RecordDeferredResume(
-                ref graph,
-                frame,
-                frame.Phase2DrawArgs,
-                "primary post-HiZ",
-                out _primaryDeferredResetPass, region: _primaryPostTraversalRegion);
-            _primaryPostTraversalPass = RecordTraversal(
-                ref graph,
-                frame,
-                packedViews,
-                frame.ViewCount,
-                viewIndexMode: 0u,
-                traversalMode: 2u,
-                seedRoots: false,
-                startAfter: _primaryDeferredResumePass,
-                _primaryPostTraversalLevelPasses,
-                "primary post-HiZ",
-                out _, region: _primaryPostTraversalRegion);
-            _phaseTwoCullPass = RecordCullPhaseTwo(
-                ref graph,
-                frame,
-                packedViews,
-                frame.CandidateClusters,
-                frame.CandidateCount,
-                frame.CandidateArgs,
-                frame.Phase2DrawArgs,
-                frame.DrawArgs,
-                frame.ReadOffsetZero,
-                frame.ReadOffsetZero,
-                "primary phase-two");
-            graph.OrderAfter(_phaseTwoCullPass, _primaryPostTraversalPass);
-        }
-        RasterPhase phaseTwoRaster = RecordRasterPhase(
-            ref graph,
-            frame,
-            rasterStages,
-            frame.Phase2DrawArgs,
-            frame.DrawArgs,
-            frame.ReadOffsetZero,
-            frame.ReadOffsetZero,
-            epoch: 1,
-            phaseOne: false);
-        if (installCommonPasses)
-        {
-            _phaseTwoHiZPass = RecordHiZ(ref graph, frame, phaseOne: false);
-        }
-
-
-
-        RecordShade(ref graph, frame, shadeStages, installCommonPasses);
-        return ImmutableDictionary<int, RasterPhase>.Empty.Add(0, phaseOneRaster).Add(1, phaseTwoRaster);
-
-    }
-
     private ImmutableDictionary<int, RasterPhase> RecordContinuation(
-        ref RenderGraphEdit graph,
-        in FrameResources frame,
-        ClusterRasterStageSet rasterStages,
-        GraphBufferId packedViews,
-        ImmutableDictionary<int, RasterPhase> phases)
+        ref RenderGraphEdit graph, in FrameResources frame, ClusterRasterStageSet rasterStages,
+        GraphBufferId packedViews, ImmutableDictionary<int, RasterPhase> phases)
     {
-        if (!_renderContext.IsValid)
-            return phases;
-        if (frame.ContinuationDrawArgs == default)
-            throw new InvalidOperationException("The Cluster continuation count buffer is missing.");
-
-        var reset = new ClusterContinuationResetParameters(
-            frame.CandidateCount,
-            frame.TraversalArguments0,
-            frame.TraversalArguments1,
-            frame.CandidateArgsInitialization,
-            frame.CandidateArgs,
-            frame.ContinuationDrawArgs,
-            frame.Phase2CandidateCount,
-            frame.Phase2CandidateArgs,
-            frame.ContinuationPostDrawArgs);
-        _continuationResetPass = graph.AddCopyFramePass(
-            "Reset Cluster continuation scratch",
-            PassQueueSelection.AnyOfType(QueueType.Graphics),
-            reset,
-            new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
-            ClusterContinuationResetParameters.Declare,
-            ClusterContinuationResetParameters.Record, region: _targetPhaseOneRegion);
-        graph.OrderAfter(_continuationResetPass, _phaseTwoCullPass);
-
-        _continuationTraversalRegion = graph.AddRegion("Cluster target traversal", _targetPhaseOneRegion);
-        _continuationTraversalPass = RecordTraversal(
-            ref graph,
-            frame,
-            packedViews,
-            _renderContext.MaximumInvocationCount,
-            viewIndexMode: 1u,
-            traversalMode: 1u,
-            seedRoots: true,
-            startAfter: default,
-            _continuationTraversalLevelPasses,
-            "continuation",
-            out _continuationTraversalSeedPass, region: _continuationTraversalRegion);
-        graph.OrderAfter(_continuationTraversalSeedPass, _continuationResetPass);
-
-        _continuationCullPass = RecordCullPhaseOne(
-            ref graph,
-            frame,
-            packedViews,
-            frame.ContinuationDrawArgs,
-            frame.DrawArgs,
-            frame.Phase2DrawArgs,
-            resetPrimaryCullState: false,
-            "continuation", region: _targetPhaseOneRegion);
-        graph.OrderAfter(_continuationCullPass, _continuationTraversalPass);
-
-
-        RasterPhase first = RecordRasterPhase(
-            ref graph,
-            frame,
-            rasterStages,
-            frame.ContinuationDrawArgs,
-            frame.DrawArgs,
-            frame.Phase2DrawArgs,
-            frame.ReadOffsetZero,
-            epoch: 2,
-            phaseOne: true,
-            orderPrimaryDepth: false);
-
-
-        _continuationPostTraversalRegion = graph.AddRegion("Cluster target deferred traversal", _targetPhaseTwoRegion);
-        _continuationDeferredResumePass = RecordDeferredResume(
-            ref graph,
-            frame,
-            frame.ContinuationPostDrawArgs,
-            "continuation post-HiZ",
-            out _continuationDeferredResetPass, region: _continuationPostTraversalRegion);
-        _continuationPostTraversalPass = RecordTraversal(
-            ref graph,
-            frame,
-            packedViews,
-            _renderContext.MaximumInvocationCount,
-            viewIndexMode: 1u,
-            traversalMode: 2u,
-            seedRoots: false,
-            startAfter: _continuationDeferredResumePass,
-            _continuationPostTraversalLevelPasses,
-            "continuation post-HiZ",
-            out _, region: _continuationPostTraversalRegion);
-        _continuationPostCullPass = RecordCullPhaseTwo(
-            ref graph,
-            frame,
-            packedViews,
-            frame.CandidateClusters,
-            frame.CandidateCount,
-            frame.CandidateArgs,
-            frame.ContinuationPostDrawArgs,
-            frame.DrawArgs,
-            frame.Phase2DrawArgs,
-            frame.ContinuationDrawArgs,
-            "continuation post", region: _targetPhaseTwoRegion);
-        graph.OrderAfter(
-            _continuationPostCullPass,
-            _continuationPostTraversalPass);
-        RasterPhase second = RecordRasterPhase(
-            ref graph,
-            frame,
-            rasterStages,
-            frame.ContinuationPostDrawArgs,
-            frame.DrawArgs,
-            frame.Phase2DrawArgs,
-            frame.ContinuationDrawArgs,
-            epoch: 3,
-            phaseOne: false,
-            orderPrimaryDepth: false);
+        if (!_renderContext.IsValid) return phases;
+        var reset = new ClusterContinuationResetParameters(frame.CandidateCount, frame.TraversalArguments0,
+            frame.TraversalArguments1, frame.CandidateArgsInitialization, frame.CandidateArgs,
+            frame.ContinuationDrawArgs, frame.Phase2CandidateCount, frame.Phase2CandidateArgs, frame.ContinuationPostDrawArgs);
+        graph.AddCopyFramePass("Reset Cluster continuation scratch", PassQueueSelection.AnyOfType(QueueType.Graphics),
+            reset, new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            ClusterContinuationResetParameters.Declare, ClusterContinuationResetParameters.Record, region: _targetPhaseOneRegion);
+        GraphRegionId targetTraversal = graph.AddRegion("Cluster target traversal", _targetPhaseOneRegion);
+        GraphData.TraversalLevels = GraphData.TraversalLevels.Add(2, RecordTraversal(ref graph, frame, packedViews,
+            _renderContext.MaximumInvocationCount, 1u, 1u, true,
+            new GraphRegionMap<int, bool>(targetTraversal), "continuation"));
+        RecordCullPhaseOne(ref graph, frame, packedViews, frame.ContinuationDrawArgs, frame.DrawArgs,
+            frame.Phase2DrawArgs, false, "continuation", graph.AddRegion("Cluster target first cull", _targetPhaseOneRegion));
+        RasterPhase first = RecordRasterPhase(ref graph, frame, rasterStages, frame.ContinuationDrawArgs,
+            frame.DrawArgs, frame.Phase2DrawArgs, frame.ReadOffsetZero, 2, true);
+        GraphRegionId targetDeferredTraversal = graph.AddRegion("Cluster target deferred traversal", _targetPhaseTwoRegion);
+        RecordDeferredResume(ref graph, frame, frame.ContinuationPostDrawArgs, "continuation post-HiZ", targetDeferredTraversal);
+        GraphData.TraversalLevels = GraphData.TraversalLevels.Add(3, RecordTraversal(ref graph, frame, packedViews,
+            _renderContext.MaximumInvocationCount, 1u, 2u, false,
+            new GraphRegionMap<int, bool>(targetDeferredTraversal), "continuation post-HiZ"));
+        RecordCullPhaseTwo(ref graph, frame, packedViews, frame.CandidateClusters, frame.CandidateCount,
+            frame.CandidateArgs, frame.ContinuationPostDrawArgs, frame.DrawArgs, frame.Phase2DrawArgs,
+            frame.ContinuationDrawArgs, "continuation post", graph.AddRegion("Cluster target second cull", _targetPhaseTwoRegion));
+        RasterPhase second = RecordRasterPhase(ref graph, frame, rasterStages, frame.ContinuationPostDrawArgs,
+            frame.DrawArgs, frame.Phase2DrawArgs, frame.ContinuationDrawArgs, 3, false);
         return phases.Add(2, first).Add(3, second);
-    }
-
-    private void RecordShadeStageRegion(
-        ref RenderGraphEdit graph,
-        in FrameResources frame,
-        ClusterShadeStageSet shadeStages)
-    {
-
-        UpdateShadeBinning(ref graph);
-        UpdateShadeGroups(ref graph, shadeStages);
-
     }
 
     private void RecordFrameMetricsReadback(
         ref RenderGraphEdit graph,
-        in FrameResources frame)
+        in FrameResources frame, GraphRegionId candidateRegion)
     {
         if (!_options.EnableFrameMetricsReadback)
             return;
@@ -361,11 +141,9 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
                 access.Write(data.Destination, new BufferRange(Phase2CandidateCountReadbackOffset, 16),
                     PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            }, ClusterFrameMetricsReadbackParameters.RecordCandidates, region: _regions.PrimaryGeometry);
-        graph.OrderAfter(candidates, _phaseOneCullPass);
-        _candidateMetricsReadbackPass = candidates;
-        graph.OrderAfter(_primaryDeferredResetPass, candidates);
-        _frameMetricsReadbackPass = graph.AddCopyFramePass(
+            }, ClusterFrameMetricsReadbackParameters.RecordCandidates, region: candidateRegion);
+        GraphData.Feedback = GraphData.Feedback.SetItem(FeedbackKind.Candidates, candidates);
+        GraphPassId metrics = graph.AddCopyFramePass(
             "Read back Cluster frame metrics",
             PassQueueSelection.AnyCompatible(),
             passData,
@@ -399,8 +177,7 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             },
             ClusterFrameMetricsReadbackParameters.Record, region: _regions.Feedback);
-        graph.OrderAfter(_frameMetricsReadbackPass, _shadeResolvePass);
-        graph.OrderAfter(_frameMetricsReadbackPass, _shadeScatterPass);
+        GraphData.Feedback = GraphData.Feedback.SetItem(FeedbackKind.FrameMetrics, metrics);
     }
 
     private void RecordFrameMetricsSourceReset(
@@ -439,7 +216,7 @@ public sealed partial class ClusterPipelineSystem
             frame.PageFaultReadback,
             0,
             byteCount);
-        _pageFaultReadbackPass = graph.AddCopyFramePass(
+        GraphPassId faults = graph.AddCopyFramePass(
             "Read back Cluster page faults",
             PassQueueSelection.AnyCompatible(),
             passData,
@@ -453,12 +230,10 @@ public sealed partial class ClusterPipelineSystem
                     WriteCoverage.Complete);
             },
             ClusterBufferCopyParameters.Record, region: _regions.Feedback);
-        graph.OrderAfter(_pageFaultReadbackPass, _phaseTwoCullPass);
-        if (_continuationPostCullPass != default)
-            graph.OrderAfter(_pageFaultReadbackPass, _continuationPostCullPass);
-    }
+        GraphData.Feedback = GraphData.Feedback.SetItem(FeedbackKind.PageFaults, faults);
+        }
 
-    private GraphPassId RecordTraversal(
+    private GraphRegionMap<int, bool> RecordTraversal(
         ref RenderGraphEdit graph,
         in FrameResources frame,
         GraphBufferId packedViews,
@@ -466,15 +241,12 @@ public sealed partial class ClusterPipelineSystem
         uint viewIndexMode,
         uint traversalMode,
         bool seedRoots,
-        GraphPassId startAfter,
-        List<GraphPassId> levelPasses,
-        string epochLabel,
-        out GraphPassId seedPass,
-        GraphRegionId region = default)
+        GraphRegionMap<int, bool> levels,
+        string epochLabel)
     {
         int bindingCount = 0;
-        GraphPassId previous = startAfter;
-        seedPass = default;
+        GraphRegionId region = levels.Parent;
+        GraphPassId seedPass;
         if (seedRoots)
         {
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
@@ -514,9 +286,9 @@ public sealed partial class ClusterPipelineSystem
                 },
                 $"Cluster {epochLabel} traversal seed uniforms");
             if (viewIndexMode == 0u)
-                _primaryTraversalSeedUniforms = seedUniforms;
+                GraphData.PrimarySeedUniforms = seedUniforms;
             else
-                _continuationTraversalSeedUniforms = seedUniforms;
+                GraphData.TargetSeedUniforms = seedUniforms;
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
                 CreateConstantBufferView(graph, seedUniforms),
                 PipelineSync.ComputeShading));
@@ -550,21 +322,31 @@ public sealed partial class ClusterPipelineSystem
                             ResourceAccess.IndirectArgument),
                     ClusterIndirectDispatchParameters.Record, region: region);
             }
-            previous = seedPass;
+            PassDefinition seed = graph.GetPass(seedPass);
+            if (viewIndexMode == 0u)
+            {
+                GraphData.PrimarySeed = new ClusterLayerDispatch(seedPass, 1, 1);
+                BindNeutralInvocationCount(ref graph, ref seed);
+            }
+            else _renderContext.InvocationCountBinder(ref graph, ref seed, PipelineSync.ComputeShading);
+            BindHierarchySeedResources(ref graph, seedPass, viewIndexMode != 0u);
         }
-        uint hierarchyLevels = checked((uint)_resources.HierarchyLevels);
-        for (uint level = checked((uint)levelPasses.Count); level < hierarchyLevels; level++)
+        FrameResources data = frame;
+        return levels.Reconcile(ref graph,
+            Enumerable.Range(0, _resources.HierarchyLevels).Select(static level => new KeyValuePair<int, bool>(level, true)),
+            (ref RenderGraphEdit edit, GraphRegionId layer, int index, bool value) =>
         {
+            uint level = checked((uint)index);
             GraphBufferId currentArguments = (level & 1u) == 0u
-                ? frame.TraversalArguments0
-                : frame.TraversalArguments1;
+                ? data.TraversalArguments0
+                : data.TraversalArguments1;
             GraphBufferId nextArguments = (level & 1u) == 0u
-                ? frame.TraversalArguments1
-                : frame.TraversalArguments0;
+                ? data.TraversalArguments1
+                : data.TraversalArguments0;
             uint currentOffset = checked(level * (uint)TraversalArgumentStride);
             uint nextOffset = checked((level + 1u) * (uint)TraversalArgumentStride);
             GraphBufferInput levelUniforms = UploadUniform(
-                ref graph,
+                ref edit,
                 new ClusterTraversalLevelUniforms
                 {
                     NodeLevel = level,
@@ -577,75 +359,75 @@ public sealed partial class ClusterPipelineSystem
 
             bindingCount = 0;
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, packedViews, ClusterViewUniforms.SizeInBytes),
+                CreateReadOnlyBufferView(edit, packedViews, ClusterViewUniforms.SizeInBytes),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
-                CreateReadOnlyBufferView(graph, frame.Bvh, stride: 64)));
+                CreateReadOnlyBufferView(edit, data.Bvh, stride: 64)));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
+                CreateReadOnlyBufferView(edit, data.InstanceData), PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
-                CreateConstantBufferView(graph, frame.InstanceProperties, frame.InstancePropertiesRange),
+                CreateConstantBufferView(edit, data.InstanceProperties, data.InstancePropertiesRange),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.CandidateArgs),
+                CreateStorageBufferView(edit, data.CandidateArgs),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.ReadWrite,
                 WriteCoverage.Complete));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.CandidateClusters, CandidateStride),
+                CreateStorageBufferView(edit, data.CandidateClusters, CandidateStride),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.Write,
                 WriteCoverage.Partial,
                 ResourceContentState.Defined,
                 BufferContentScope.CountBoundedPrefix));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.CandidateCount, sizeof(uint)),
+                CreateStorageBufferView(edit, data.CandidateCount, sizeof(uint)),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.ReadWrite,
                 WriteCoverage.Complete));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.PageFaults),
+                CreateStorageBufferView(edit, data.PageFaults),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.ReadWrite,
                 WriteCoverage.Complete));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
-                CreateConstantBufferView(graph, levelUniforms),
+                CreateConstantBufferView(edit, levelUniforms),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.TraversalNodes, TraversalNodeStride),
+                CreateStorageBufferView(edit, data.TraversalNodes, TraversalNodeStride),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.ReadWrite,
                 WriteCoverage.Partial,
                 ResourceContentState.Defined,
                 BufferContentScope.CountBoundedPrefix));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, currentArguments),
+                CreateReadOnlyBufferView(edit, currentArguments),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, nextArguments),
+                CreateStorageBufferView(edit, nextArguments),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.ReadWrite,
                 WriteCoverage.Complete));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.SampledTexture(
-                graph.CreateTextureSrv(
-                    traversalMode == 2u ? frame.CurrentHiZ : frame.PreviousHiZ,
+                edit.CreateTextureSrv(
+                    traversalMode == 2u ? data.CurrentHiZ : data.PreviousHiZ,
                     format: Format.R32Float,
                     dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.Phase2CandidateClusters, CandidateStride),
+                CreateStorageBufferView(edit, data.Phase2CandidateClusters, CandidateStride),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.Write,
                 WriteCoverage.Partial,
                 ResourceContentState.Defined,
                 BufferContentScope.CountBoundedPrefix));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.Phase2CandidateCount, sizeof(uint)),
+                CreateStorageBufferView(edit, data.Phase2CandidateCount, sizeof(uint)),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.ReadWrite,
                 WriteCoverage.Complete));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.Phase2CandidateArgs),
+                CreateStorageBufferView(edit, data.Phase2CandidateArgs),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.ReadWrite,
                 WriteCoverage.Complete));
@@ -655,7 +437,7 @@ public sealed partial class ClusterPipelineSystem
                 currentArguments,
                 currentOffset);
             GraphPassId levelPass = AddComputePass(
-                ref graph,
+                ref edit,
                 $"Traverse Cluster {epochLabel} hierarchy level {level}",
                 _pipelines!.Traversal,
                 indirect,
@@ -666,22 +448,17 @@ public sealed partial class ClusterPipelineSystem
                         new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                         PipelineSync.ExecuteIndirect,
                         ResourceAccess.IndirectArgument),
-                ClusterIndirectDispatchParameters.Record, region: region);
-            if (previous != default)
-                graph.OrderAfter(levelPass, previous);
-            levelPasses.Add(levelPass);
-            previous = levelPass;
-        }
-        return previous;
+                ClusterIndirectDispatchParameters.Record, region: layer);
+            BindTargetPolicyResources(ref edit, levelPass, viewIndexMode != 0u);
+        });
     }
 
-    private GraphPassId RecordDeferredResume(
+    private void RecordDeferredResume(
         ref RenderGraphEdit graph,
         in FrameResources frame,
         GraphBufferId drawArgs,
         string epochLabel,
-        out GraphPassId resetPass,
-        GraphRegionId region = default)
+        GraphRegionId region)
     {
         var reset = new ClusterDeferredResumeResetParameters(
             frame.CandidateCount,
@@ -690,7 +467,7 @@ public sealed partial class ClusterPipelineSystem
             frame.TraversalArguments0,
             frame.TraversalArguments1,
             drawArgs);
-        resetPass = graph.AddCopyFramePass(
+        graph.AddCopyFramePass(
             $"Reset Cluster {epochLabel} deferred-resume outputs",
             PassQueueSelection.AnyOfType(QueueType.Graphics),
             reset,
@@ -743,7 +520,7 @@ public sealed partial class ClusterPipelineSystem
             WriteCoverage.Complete));
         var indirect = new ClusterIndirectDispatchParameters(
             RequireDispatchIndirectLayout(), frame.Phase2CandidateArgs, 0u);
-        GraphPassId resume = AddComputePass(
+        _ = AddComputePass(
             ref graph,
             $"Resume Cluster {epochLabel} deferred hierarchy work",
             _pipelines!.DeferredResume,
@@ -753,8 +530,25 @@ public sealed partial class ClusterPipelineSystem
                 _ = access.Read(data.Arguments, new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                     PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: region);
-        graph.OrderAfter(resume, resetPass);
-        return resume;
+
+    }
+
+    private void RecordCullStateReset(ref RenderGraphEdit graph, in FrameResources frame)
+    {
+        int bindingCount = 0;
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DrawArgs),
+            PipelineSync.ComputeShading,
+            GraphAccessMode.Write,
+            WriteCoverage.Complete));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.Phase2DrawArgs),
+            PipelineSync.ComputeShading,
+            GraphAccessMode.Write,
+            WriteCoverage.Complete));
+        ClusterDispatchParameters clear = new(new DispatchArguments(1, 1, 1));
+        _ = AddComputePass(ref graph, "Reset Cluster primary cull",
+            _pipelines!.CullReset, clear, bindingCount, ClusterDispatchParameters.Record, region: _regions.PrimaryGeometry);
     }
 
     private GraphPassId RecordCullPhaseOne(
@@ -764,29 +558,11 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferId drawArgs,
         GraphBufferId baseDrawArgs0,
         GraphBufferId baseDrawArgs1,
-        bool resetPrimaryCullState,
+        bool primaryView,
         string epochLabel,
         GraphRegionId region = default)
     {
         int bindingCount = 0;
-        if (resetPrimaryCullState)
-        {
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.DrawArgs),
-                PipelineSync.ComputeShading,
-                GraphAccessMode.Write,
-                WriteCoverage.Complete));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.Phase2DrawArgs),
-                PipelineSync.ComputeShading,
-                GraphAccessMode.Write,
-                WriteCoverage.Complete));
-            ClusterDispatchParameters clear = new(new DispatchArguments(1, 1, 1));
-            _ = AddComputePass(ref graph, "Reset Cluster primary cull",
-                _pipelines!.CullReset, clear, bindingCount, ClusterDispatchParameters.Record, region: region);
-        }
-
-        bindingCount = 0;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(
                 graph,
@@ -851,13 +627,15 @@ public sealed partial class ClusterPipelineSystem
             CreateStorageBufferView(graph, frame.Phase2CandidateArgs), PipelineSync.ComputeShading));
         ClusterIndirectDispatchParameters cull = new(
             RequireDispatchIndirectLayout(), frame.CandidateArgs, 0);
-        return AddComputePass(ref graph, $"Cluster {epochLabel} cull", _pipelines!.CullPhase1,
+        GraphPassId pass = AddComputePass(ref graph, $"Cluster {epochLabel} cull", _pipelines!.CullPhase1,
             cull, bindingCount,
             static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
                 _ = access.Read(data.Arguments,
                     new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                     PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: region);
+        BindTargetPolicyResources(ref graph, pass, !primaryView);
+        return pass;
     }
 
     private GraphPassId RecordCullPhaseTwo(
@@ -929,13 +707,15 @@ public sealed partial class ClusterPipelineSystem
             CreateStorageBufferView(graph, phaseDrawArgs), PipelineSync.ComputeShading));
         ClusterIndirectDispatchParameters cull = new(
             RequireDispatchIndirectLayout(), candidateArgs, 0);
-        return AddComputePass(ref graph, $"Cluster {epochLabel} cull", _pipelines!.CullPhase2,
+        GraphPassId pass = AddComputePass(ref graph, $"Cluster {epochLabel} cull", _pipelines!.CullPhase2,
             cull, bindingCount,
             static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
                 _ = access.Read(data.Arguments,
                     new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                     PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: region);
+        BindTargetPolicyResources(ref graph, pass, phaseDrawArgs != frame.Phase2DrawArgs);
+        return pass;
     }
 
     private RasterPhase RecordRasterPhase(
@@ -947,14 +727,13 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferId readOffsetArgs1,
         GraphBufferId readOffsetArgs2,
         int epoch,
-        bool phaseOne,
-        bool orderPrimaryDepth = true)
+        bool phaseOne)
     {
         GraphRegionId parent = epoch switch
         {
             2 => _targetPhaseOneRegion,
             3 => _targetPhaseTwoRegion,
-            _ => _regions.PrimaryGeometry,
+            _ => GraphData.PrimaryGeometry,
         };
         GraphRegionId phase = graph.AddRegion(
             $"Cluster {(epoch < 2 ? "primary" : "target")} {(phaseOne ? "first" : "second")} raster", parent);
@@ -972,7 +751,7 @@ public sealed partial class ClusterPipelineSystem
             ImmutableDictionary<TessellationSplitKey, TessellationGroup>.Empty,
             new GraphRegionMap<int, RasterInputs>(patches), phaseOne, epoch >= 2);
         data = ReconcileRasterPhase(ref graph, data, rasterStages);
-        if (orderPrimaryDepth && _visibilityMode != ClusterVisibilityMode.HardwareOnly)
+        if (epoch < 2 && _visibilityMode != ClusterVisibilityMode.HardwareOnly)
             RecordWinnerResolve(ref graph, frame, phaseOne, graph.AddRegion("Visibility resolve", phase));
         return data;
     }
@@ -1195,13 +974,11 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.ExecuteIndirect,
                     ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: scatterRegion);
-        _rasterBinning[epoch] = new RasterBinning(
+        GraphData.RasterBinning[epoch] = new RasterBinning(
             binningUniforms,
             resetPass,
             reservePass,
-            epoch >= 2,
-            countRegion,
-            scatterRegion);
+            epoch >= 2);
 
     }
 
@@ -1331,7 +1108,7 @@ public sealed partial class ClusterPipelineSystem
 
     private GraphPassId RecordPhaseOneTessellationCounters(
         ref RenderGraphEdit graph,
-        in FrameResources frame)
+        in FrameResources frame, GraphRegionId region)
     {
         ClusterBufferCopyParameters copy = new(
             frame.TessellationCounters,
@@ -1358,7 +1135,7 @@ public sealed partial class ClusterPipelineSystem
                     ResourceAccess.CopyDestination,
                     WriteCoverage.Complete);
             },
-            ClusterBufferCopyParameters.Record, region: _regions.PrimaryGeometry);
+            ClusterBufferCopyParameters.Record, region: region);
     }
 
     private void RecordTessellationBinning(
@@ -1937,7 +1714,7 @@ public sealed partial class ClusterPipelineSystem
             (ref PassDefinition access, ref ClusterFullscreenParameters _) =>
                 DeclareTargets(ref access),
             ClusterFullscreenParameters.Record, region: region);
-        _winnerResolvePasses.Add(pass);
+        GraphData.WinnerDispatches.Add(new ClusterLayerDispatch(pass, checked((uint)frame.Width), checked((uint)frame.Height)));
         return pass;
 
         void DeclareTargets(ref PassDefinition access)
@@ -2108,7 +1885,7 @@ public sealed partial class ClusterPipelineSystem
     private GraphPassId RecordHiZ(
         ref RenderGraphEdit graph,
         in FrameResources frame,
-        bool phaseOne)
+        bool phaseOne, GraphRegionId region)
     {
         int mipCount = _history!.HiZMipCount;
         GraphAccessMode outputAccess = phaseOne ? GraphAccessMode.Write : GraphAccessMode.ReadWrite;
@@ -2129,7 +1906,7 @@ public sealed partial class ClusterPipelineSystem
         GraphPassId firstPass = RecordHiZDispatch(ref graph, frame,
             phaseOne ? "Build Cluster phase one HiZ mips 0-4" : "Build Cluster final HiZ mips 0-4",
             _pipelines!.HiZFirst, bindingCount, firstWidth, firstHeight,
-            phaseOne, ClusterRasterArguments.HiZFirstOffset);
+            phaseOne, ClusterRasterArguments.HiZFirstOffset, region);
 
         GraphPassId previousPass = firstPass;
         int sourceMip = Math.Min(4, mipCount - 1);
@@ -2159,7 +1936,7 @@ public sealed partial class ClusterPipelineSystem
                 $"Build Cluster {(phaseOne ? "phase one" : "final")} HiZ {(tail ? "tail" : "mip pair")}",
                 tail ? _pipelines.HiZDownsample : _pipelines.HiZDownsampleTwo,
                 bindingCount, dispatchWidth, dispatchHeight, phaseOne,
-                tail ? ClusterRasterArguments.HiZTailOffset : ClusterRasterArguments.HiZPairOffset(destinationMip));
+                tail ? ClusterRasterArguments.HiZTailOffset : ClusterRasterArguments.HiZPairOffset(destinationMip), region);
             previousPass = pass;
             sourceMip = destinationMip;
         }
@@ -2175,14 +1952,14 @@ public sealed partial class ClusterPipelineSystem
         uint width,
         uint height,
         bool phaseOne,
-        ulong argumentOffset)
+        ulong argumentOffset, GraphRegionId region)
     {
         if (phaseOne)
         {
             GraphPassId pass = AddComputePass(ref graph, label, pipeline,
                 new ClusterDispatchParameters(new DispatchArguments(width, height, 1)),
-                bindingCount, ClusterDispatchParameters.Record);
-            _layerDispatches.Add(new ClusterLayerDispatch(pass, width, height));
+                bindingCount, ClusterDispatchParameters.Record, region: region);
+            GraphData.LayerDispatches.Add(new ClusterLayerDispatch(pass, width, height));
             return pass;
         }
         ClusterIndirectDispatchParameters indirect = new(
@@ -2192,21 +1969,17 @@ public sealed partial class ClusterPipelineSystem
                 _ = access.Read(data.Arguments,
                     new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                     PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
-            ClusterIndirectDispatchParameters.Record);
+            ClusterIndirectDispatchParameters.Record, region: region);
     }
 
     private void RecordShade(
         ref RenderGraphEdit graph,
         in FrameResources frame,
-        ClusterShadeStageSet shadeStages,
-        bool installCommonPasses)
+        ClusterShadeStageSet shadeStages)
     {
-        if (!installCommonPasses)
-        {
-            UpdateShadeBinning(ref graph);
-            UpdateShadeGroups(ref graph, shadeStages);
-            return;
-        }
+        GraphData.ShadeBinning = graph.AddRegion("Cluster shade binning", _regions.Shading);
+        GraphData.ShadeGroups = new GraphRegionMap<uint, ShadeGroup>(graph.AddRegion("Cluster shade materials", _regions.Shading), ShadeGroupComparer.Instance);
+        GraphRegionId resolveRegion = graph.AddRegion("Cluster background resolve", _regions.Shading);
         GraphBufferInput binUniforms = UploadUniform(
             ref graph,
             new ClusterShadeBinUniforms
@@ -2240,7 +2013,7 @@ public sealed partial class ClusterPipelineSystem
             Math.Max(1u, (frame.ShadeBinCount + 127u) / 128u), 1, 1));
         GraphPassId clearPass = AddComputePass(ref graph, "Clear Cluster shade bins",
             _pipelines!.ShadeBinClearPrepare, clear, bindingCount,
-            ClusterDispatchParameters.Record, asyncCompute: true, region: _regions.Shading);
+            ClusterDispatchParameters.Record, asyncCompute: true, region: GraphData.ShadeBinning);
 
         bindingCount = 0;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
@@ -2285,11 +2058,8 @@ public sealed partial class ClusterPipelineSystem
             ref graph,
             "Count Cluster shade bins",
             _pipelines.ShadeBinCount, count, bindingCount,
-            ClusterDispatchParameters.Record, asyncCompute: true, region: _regions.Shading);
-        if (_phaseTwoHiZPass == default)
-            throw new InvalidOperationException("Cluster shade preparation requires a geometry completion pass.");
-        graph.OrderAfter(countPass, clearPass);
-        _layerDispatches.Add(new ClusterLayerDispatch(
+            ClusterDispatchParameters.Record, asyncCompute: true, region: GraphData.ShadeBinning);
+        GraphData.LayerDispatches.Add(new ClusterLayerDispatch(
             countPass,
             Groups(frame.Width, 8),
             Groups(frame.Height, 8)));
@@ -2326,12 +2096,9 @@ public sealed partial class ClusterPipelineSystem
             Math.Max(1u, (frame.ShadeBinCount + 127u) / 128u), 1, 1));
         GraphPassId reservePass = AddComputePass(ref graph, "Reserve Cluster shade bins",
             _pipelines.ShadeBinReserve, reserve, bindingCount,
-            ClusterDispatchParameters.Record, asyncCompute: false, region: _regions.Shading);
-        _shadeBinUniforms = binUniforms;
-        _shadeCountPass = countPass;
-        _shadeClearPass = clearPass;
-        _shadeReservePass = reservePass;
-        graph.OrderAfter(reservePass, countPass);
+            ClusterDispatchParameters.Record, asyncCompute: false, region: GraphData.ShadeBinning);
+        GraphData.ShadeBinUniforms = binUniforms;
+        GraphData.ShadeBinDispatches = [new(clearPass, 1, 1), new(reservePass, 1, 1)];
 
         bindingCount = 0;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
@@ -2377,20 +2144,20 @@ public sealed partial class ClusterPipelineSystem
             BufferContentScope.CountBoundedRanges));
         ClusterDispatchParameters scatter = new(new DispatchArguments(
             Groups(frame.Width, 8), Groups(frame.Height, 8), 1));
+        GraphData.ShadeScatter = graph.AddRegion("Cluster shade scatter", GraphData.ShadeBinning);
         GraphPassId scatterPass = AddComputePass(ref graph, "Scatter Cluster shade bins",
             _pipelines.ShadeBinScatter, scatter, bindingCount,
-            ClusterDispatchParameters.Record, asyncCompute: true, region: _regions.Shading);
-        graph.OrderAfter(scatterPass, reservePass);
-        _layerDispatches.Add(new ClusterLayerDispatch(
+            ClusterDispatchParameters.Record, asyncCompute: true, region: GraphData.ShadeScatter);
+        GraphData.LayerDispatches.Add(new ClusterLayerDispatch(
             scatterPass,
             Groups(frame.Width, 8),
             Groups(frame.Height, 8)));
 
-        _shadeScatterPass = scatterPass;
-        GraphPassId resolvePass;
-        if (installCommonPasses)
+
         {
 
+            // Material bins define geometry pixels; this final write fills every background pixel.
+            // Together they define the complete color and motion outputs while retaining the bin writes.
             GraphBufferInput resolveUniforms = UploadUniform(
                 ref graph,
                 new ClusterResolveUniforms
@@ -2419,7 +2186,8 @@ public sealed partial class ClusterPipelineSystem
                     TextureViewDimension.Texture2DArray),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.Write,
-                WriteCoverage.Complete));
+                WriteCoverage.Partial,
+                ResourceContentState.Defined));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
                 CreateStorageTextureView(
                     graph,
@@ -2429,27 +2197,22 @@ public sealed partial class ClusterPipelineSystem
                     TextureViewDimension.Texture2DArray),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.Write,
-                WriteCoverage.Complete));
+                WriteCoverage.Partial,
+                ResourceContentState.Defined));
             ClusterDispatchParameters resolve = new(new DispatchArguments(
                 Groups(frame.Width, 8), Groups(frame.Height, 8), 1));
-            resolvePass = AddComputePass(ref graph, "Resolve Cluster visibility background",
+            GraphPassId resolvePass = AddComputePass(ref graph, "Resolve Cluster visibility background",
                 _pipelines.Resolve, resolve, bindingCount,
-                ClusterDispatchParameters.Record, region: _regions.Shading);
-            _layerDispatches.Add(new ClusterLayerDispatch(
+                ClusterDispatchParameters.Record, region: resolveRegion);
+            GraphData.LayerDispatches.Add(new ClusterLayerDispatch(
                 resolvePass,
                 Groups(frame.Width, 8),
                 Groups(frame.Height, 8)));
-            _shadeResolvePass = resolvePass;
+
 
         }
-        else
-        {
-            resolvePass = _shadeResolvePass;
-        }
-        graph.OrderAfter(resolvePass, scatterPass);
-        graph.OrderAfter(resolvePass, reservePass);
 
-        UpdateShadeGroups(ref graph, shadeStages);
+        GraphData.ShadeGroups = UpdateShadeGroups(ref graph, shadeStages);
     }
     private GraphPassId AddRasterPass<TState>(
         ref RenderGraphEdit graph,
