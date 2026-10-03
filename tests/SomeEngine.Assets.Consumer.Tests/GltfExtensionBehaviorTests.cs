@@ -4,6 +4,8 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using System.Text.Json.Nodes;
 using System.Security.Cryptography;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Game.Importing;
 using SomeEngine.Assets.Importers;
@@ -17,6 +19,58 @@ namespace SomeEngine.Assets.Consumer.Tests;
 
 public sealed class GltfExtensionBehaviorTests
 {
+    [Fact]
+    public async Task GeneratedCapabilitiesImportClustersWithTheImportersOwnEncoding()
+    {
+        var services = ProjectAssetCapabilities.AddAssetCapabilities(new ServiceCollection());
+        using var provider = services.BuildServiceProvider();
+        Assert.Empty(provider.GetServices<IClusterVertexEncoder>());
+        using var scope = provider.CreateScope();
+        Assert.IsType<ClusterGltfMeshImporter>(scope.ServiceProvider.GetRequiredService<ClusterGltfMeshImporter>());
+
+        using var files = new GltfFiles();
+        await files.WriteDefaultTemplatesAsync();
+        var importer = StandardGltfSceneImporter.CreateSourceImporter();
+        var project = new AssetProject(files.Directory, [importer]);
+        Guid id = MeshId(project, await project.ImportAsync(files.Source));
+        using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
+        ClusterMeshBlock clusters = await mesh.GetBlockAsync<ClusterMeshBlock>();
+        Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, clusters.VertexEncoding);
+        Assert.NotEmpty(clusters.LowestDetailPageIndices);
+    }
+
+    [Theory]
+    [InlineData("TEXCOORD_1")]
+    [InlineData("_CUSTOM")]
+    public async Task StandardClusterImportReportsSkippedSourceAttributes(string attribute)
+    {
+        using var files = new GltfFiles();
+        files.AddVertexAttribute(attribute);
+        await files.WriteDefaultTemplatesAsync();
+        using var diagnostics = new ImportDiagnostics();
+        Trace.Listeners.Add(diagnostics);
+        try
+        {
+            var importer = StandardGltfSceneImporter.CreateSourceImporter();
+            var project = new AssetProject(files.Directory, [importer]);
+            Guid id = MeshId(project, await project.ImportAsync(files.Source));
+            using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
+            ClusterMeshBlock clusters = await mesh.GetBlockAsync<ClusterMeshBlock>();
+            Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, clusters.VertexEncoding);
+            Assert.NotEmpty(clusters.LowestDetailPageIndices);
+            Assert.Contains(diagnostics.Messages, message => message.Contains(attribute, StringComparison.Ordinal)
+                && message.Contains("Skipped", StringComparison.Ordinal));
+        }
+        finally { Trace.Listeners.Remove(diagnostics); }
+    }
+
+    private sealed class ImportDiagnostics : TraceListener
+    {
+        public ConcurrentQueue<string> Messages { get; } = new();
+        public override void Write(string? message) { if (message is not null) Messages.Enqueue(message); }
+        public override void WriteLine(string? message) => Write(message);
+    }
+
     [Fact]
     public async Task ExplicitlyDisabledTextureProducerPreservesThePreviouslyBuiltAssets()
     {
@@ -299,6 +353,22 @@ public sealed class GltfExtensionBehaviorTests
             source["textures"] = JsonNode.Parse("""[{"source":0,"extras":{"someengine_id":"texture-A"}}]""");
             source["images"] = JsonNode.Parse("""[{"uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6Z0ioAAAAASUVORK5CYII="}]""");
             source["meshes"]![0]!["primitives"]![0]!["material"] = 0;
+            File.WriteAllText(Source, source.ToJsonString());
+        }
+        public void AddVertexAttribute(string name)
+        {
+            JsonNode source = JsonNode.Parse(File.ReadAllText(Source))!;
+            byte[] bytes = new byte[68];
+            string uri = source["buffers"]![0]!["uri"]!.GetValue<string>();
+            Convert.FromBase64String(uri[(uri.IndexOf(',') + 1)..]).CopyTo(bytes, 0);
+            float[] values = [0, 0, 1, 0, 0, 1];
+            for (int index = 0; index < values.Length; index++)
+                BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(44 + index * 4, 4), values[index]);
+            source["buffers"]![0]!["uri"] = "data:application/octet-stream;base64," + Convert.ToBase64String(bytes);
+            source["buffers"]![0]!["byteLength"] = bytes.Length;
+            source["bufferViews"]!.AsArray().Add(JsonNode.Parse("""{"buffer":0,"byteOffset":44,"byteLength":24,"target":34962}"""));
+            source["accessors"]!.AsArray().Add(JsonNode.Parse("""{"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}"""));
+            source["meshes"]![0]!["primitives"]![0]!["attributes"]![name] = 2;
             File.WriteAllText(Source, source.ToJsonString());
         }
         public void Dispose() { if (System.IO.Directory.Exists(Directory)) System.IO.Directory.Delete(Directory, recursive: true); }

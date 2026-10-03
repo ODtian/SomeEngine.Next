@@ -187,13 +187,3 @@ struct SceneMask : IVisibilityEvaluate<StandardVertex>
 
 [AssetCapabilities]
 public static partial class ImportedSceneCapabilities;
-
-// This project's material shader consumes UV0; the source file can retain other UV sets.
-internal sealed class SceneVertexEncoder : IClusterVertexEncoder
-{
-    public string Compatibility => StandardClusterVertexEncoder.EncodingCompatibility;
-    public EncodedClusterVertices Encode(ReadOnlySpan<Vector3> positions,
-        IReadOnlyList<RawAttribute> attributes, ReadOnlySpan<uint> clusterVertices)
-        => StandardClusterVertexEncoder.Instance.Encode(positions,
-            attributes.Where(value => !value.Name.StartsWith("TEXCOORD_") || value.Name == "TEXCOORD_0").ToArray(), clusterVertices);
-}

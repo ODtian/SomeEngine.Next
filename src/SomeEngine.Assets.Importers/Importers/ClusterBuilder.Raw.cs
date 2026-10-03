@@ -41,6 +41,8 @@ public static partial class ClusterBuilder
             PreparedRawMesh prepared = PrepareRawMesh(rawPos, rawAttributes, rawIndices, scratch);
             MeshletBuild meshletBuild = BuildMeshletData(prepared, materialSlots);
             SortMeshlets(meshletBuild.Meshlets, meshletBuild.Bounds);
+            if (vertexEncoder is StandardClusterVertexEncoder)
+                prepared = prepared with { Attributes = StandardClusterVertexEncoder.SelectAttributes(prepared.Attributes) };
             List<ClusterInfo> clusterInfos = WriteMeshPages(
                 stream,
                 scratch.PageBuffer,

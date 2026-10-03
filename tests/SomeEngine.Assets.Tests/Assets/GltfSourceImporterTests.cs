@@ -89,7 +89,7 @@ public class GltfSourceImporterTests
                 (_, id) => new MeshAsset(id),
                 (_, id) => id + ".mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
             var geometry = new GltfMeshImporter();
-            var clusters = new ClusterGltfMeshImporter(StandardClusterVertexEncoder.Instance);
+            var clusters = new ClusterGltfMeshImporter();
             var settings = new GltfMeshSettings();
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
                 new Guid("548d394b-5600-49e0-b04a-9c9d0d53b4b0"), [ClusterMeshBlock.BlockTypeId], clusters, settings));

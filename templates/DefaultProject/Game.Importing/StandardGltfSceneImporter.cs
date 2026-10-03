@@ -23,7 +23,6 @@ public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSetting
         => new(services =>
         {
             ProjectAssetCapabilities.AddAssetCapabilities(services);
-            services.AddSingleton<IClusterVertexEncoder>(StandardClusterVertexEncoder.Instance);
             configureServices?.Invoke(services);
         }, capabilitiesVersion ?? ProjectAssetCapabilities.BuildVersion, ImporterId);
 

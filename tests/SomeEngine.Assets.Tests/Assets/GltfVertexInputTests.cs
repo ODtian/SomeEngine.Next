@@ -113,8 +113,10 @@ public sealed class GltfVertexInputTests
         {
             RawAttribute uv0 = attributes.Single(x => x.Name == "TEXCOORD_0");
             RawAttribute uv1 = attributes.Single(x => x.Name == "TEXCOORD_1");
-            if (uv0.Data.Contains(1f) && uv0.Data.All(x => x is >= 0 and <= 1)) Interlocked.Exchange(ref _normalizedUv, 1);
-            if (uv1.Data.Contains(.25f) && uv1.Data.Contains(.75f)) Interlocked.Exchange(ref _sparseUv, 1);
+            IEnumerable<float> normalizedUv = uv0.Data.Take(positions.Length * uv0.Dimension);
+            IEnumerable<float> sparseUv = uv1.Data.Take(positions.Length * uv1.Dimension);
+            if (normalizedUv.Contains(1f) && normalizedUv.All(x => x is >= 0 and <= 1)) Interlocked.Exchange(ref _normalizedUv, 1);
+            if (sparseUv.Contains(.25f) && sparseUv.Contains(.75f)) Interlocked.Exchange(ref _sparseUv, 1);
             for (int index = 0; index < positions.Length; index++)
                 if (positions[index].X < 1.5f)
                 {

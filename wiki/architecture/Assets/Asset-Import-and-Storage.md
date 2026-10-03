@@ -36,11 +36,11 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 几何生产者提供 `MeshBlock`，Cluster 生产者提供 `ClusterMeshBlock`。需要依赖的生产者可以通过 `context.GetBlockAsync<TBlock>(output.Target)` 请求对应数据；Context 按需执行生产者，执行顺序不依赖来源遍历顺序。当前 Cluster 转换直接读取原生 glTF 几何。每个生产者通过 `output.SetBlock` 交付自己的 Block，完整来源流程通过 `GetAssetAsync` 取得完成的语义资产。
 
-`IClusterVertexEncoder` 由项目通过 Microsoft DI 明确提供，管线不据此引入默认顶点属性布局。替换只针对本次隔离的资产草稿，失败不登记输出。
-
 Importer 的 `ProducedBlocks` 声明可产出的类型，一个来源元素可以只交付其中适用的 Block。`context.TryGetBlockAsync<T>(Asset asset, CancellationToken cancellationToken = default)` 返回 `ValueTask<T?>`：先完成选中的生产者，再取得实际结果；省略输出或类型缺失时返回 `null`。导入失败、读取失败、依赖环与取消继续传播。需要必选数据的读者使用 `GetBlockAsync<T>`，缺失时得到 `KeyNotFoundException`。
 
-中间结果通过 `ImportOutput.SetBlock` 交付给同一 Asset，并由其它 Importer 通过 Context 请求。持久性按 [Block 类型声明](Asset-Objects.md) 参与保存。
+中间结果通过 `ImportOutput.SetBlock` 交付给同一 Asset，并由其它 Importer 通过 Context 请求。持久性按 [Block 类型声明](Asset-Objects.md) 参与保存，划分原则见 [Block Division](Block-Division.md)。
+
+顶点编码是产出顶点属性 Block 的 Importer 的内部规则，不作为 DI 服务提供；换编码就是换产出该 Block 的 Importer（[Block Division](Block-Division.md)、[glTF Mesh Import](Gltf-Mesh-Import.md)）。管线不因此引入默认顶点属性布局。替换只针对本次隔离的资产草稿，失败不登记输出。`ClusterGltfMeshImporter` 无参构造，内部使用 `StandardClusterVertexEncoder`；`IClusterVertexEncoder` 保留为 `ClusterBuilder` 的库参数。顶点属性 Block 迁移完成前，标准编码跳过自身格式以外的属性并通过 `Trace` 报告警告；全部来源属性仍参与顶点焊接。
 
 ## 完整流程与失败处理
 

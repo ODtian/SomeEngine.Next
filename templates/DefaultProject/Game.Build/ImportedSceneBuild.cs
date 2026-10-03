@@ -50,7 +50,6 @@ public static class ImportedSceneBuild
             Game.Importing.ProjectAssetCapabilities.AddAssetCapabilities(services);
             ImportedSceneCapabilities.AddAssetCapabilities(services);
             services.AddSingleton(sceneImporter);
-            services.AddSingleton<IClusterVertexEncoder, SceneVertexEncoder>();
         }, "imported-scenes-3;" + ImportedSceneCapabilities.BuildVersion, ImportedSceneImporter.ImporterId);
         var project = new AssetProject(projectRoot, [importer],
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);

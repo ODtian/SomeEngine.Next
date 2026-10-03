@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -138,6 +139,22 @@ public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder
         return result;
     }
 
+    // Select after welding and LOD construction so every source stream still contributes to vertex identity.
+    internal static List<RawAttribute> SelectAttributes(List<RawAttribute> attributes)
+    {
+        var selected = new List<RawAttribute>(attributes.Count);
+        foreach (RawAttribute attribute in attributes)
+        {
+            if (attribute.Name is "NORMAL" or "TANGENT" or "TEXCOORD_0") selected.Add(attribute);
+            else ReportSkippedAttribute(attribute);
+        }
+        return selected;
+    }
+
+    private static void ReportSkippedAttribute(RawAttribute attribute)
+        => Trace.TraceWarning($"Skipped vertex attribute '{attribute.Name}' in standard cluster encoding. " +
+            "This encoding supports NORMAL, TANGENT and TEXCOORD_0; complete attribute retention follows the vertex attribute Block migration.");
+
     private static void ValidateAttributes(
         IReadOnlyList<RawAttribute> attributes,
         RawAttribute? normal,
@@ -152,9 +169,8 @@ public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder
                 !ReferenceEquals(attribute, tangent) &&
                 !ReferenceEquals(attribute, uv0))
             {
-                throw new InvalidDataException(
-                    $"Standard vertex encoding does not consume '{attribute.Name}'. " +
-                    "Select a vertex encoder whose compatibility includes that attribute.");
+                ReportSkippedAttribute(attribute);
+                continue;
             }
             int required = checked(vertexCount * attribute.Dimension);
             if (attribute.Dimension <= 0 || attribute.Data.Length < required)
