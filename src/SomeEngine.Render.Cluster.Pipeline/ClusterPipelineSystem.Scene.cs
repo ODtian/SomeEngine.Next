@@ -151,30 +151,18 @@ public sealed partial class ClusterPipelineSystem
             RasterBinning? binning = _rasterBinning[index];
             if (binning is null) continue;
             bool enabled = index < 2 ? hasGeometry : hasTargetGeometry;
-            graph.SetPassEnabled(binning.Count, enabled);
-            graph.SetPassEnabled(binning.Scatter, enabled);
+            graph.SetRegionEnabled(binning.CountRegion, enabled);
+            graph.SetRegionEnabled(binning.ScatterRegion, enabled);
         }
-        foreach (RasterEpoch epoch in _rasterEpochs.Values)
+        foreach (RasterPhase phase in _rasterPhases.Values)
         {
-            bool enabled = epoch.PolicyTarget ? hasTargetGeometry : hasGeometry;
-            if (epoch.PolicyTarget)
-                foreach (GraphPassId pass in epoch.Work.Passes)
-                    graph.SetPassEnabled(pass, enabled);
-            foreach (RasterBin bin in epoch.Bins.Values)
-                foreach (GraphPassId pass in bin.Passes.Passes)
-                    graph.SetPassEnabled(pass, enabled);
-            foreach (GraphPassId pass in epoch.Patches.Passes)
-                graph.SetPassEnabled(pass, enabled);
-            foreach (TessellationGroup group in epoch.Splits.Values)
+            if (phase.PolicyTarget)
+                graph.SetRegionEnabled(phase.Region, hasTargetGeometry);
+            else
             {
-                if (epoch.PolicyTarget)
-                    foreach (GraphPassId pass in group.Reset.Passes)
-                        graph.SetPassEnabled(pass, enabled);
-                foreach (GraphPassId pass in group.Split.Passes)
-                    graph.SetPassEnabled(pass, enabled);
-                foreach (TessellationSeed seed in group.Seeds.Values)
-                    foreach (GraphPassId pass in seed.Passes.Passes)
-                        graph.SetPassEnabled(pass, enabled);
+                graph.SetRegionEnabled(phase.Groups.Parent, hasGeometry);
+                graph.SetRegionEnabled(phase.Patches.Parent, hasGeometry);
+                graph.SetRegionEnabled(phase.Bins.Parent, hasGeometry);
             }
         }
         graph.SetPassEnabled(_shadeCountPass, hasGeometry);

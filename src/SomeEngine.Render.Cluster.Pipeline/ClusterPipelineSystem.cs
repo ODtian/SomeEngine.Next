@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -35,7 +36,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private static readonly SomeEngine.Diagnostics.TraceSite GraphInstallTrace = new("render", "Cluster.InstallGraph");
 
     private const int ReadbackGenerationCount = 2;
-    private const int RasterEpochCount = 4;
+    private const int RasterPhaseCount = 4;
     private static readonly TimeSpan ReadbackRetirementTimeout = TimeSpan.FromSeconds(30);
 
     private readonly IGraphicsBackend _backend;
@@ -48,6 +49,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterShaders _configuration;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly ClusterGraphRegions _regions;
+    private GraphRegionId _residencyUploadRegion;
+    private GraphRegionId _primaryTraversalRegion;
+    private GraphRegionId _primaryPostTraversalRegion;
+    private GraphRegionId _continuationTraversalRegion;
+    private GraphRegionId _continuationPostTraversalRegion;
     private readonly GraphRegionId _targetPhaseOneRegion;
     private readonly GraphRegionId _targetPhaseTwoRegion;
     private readonly ClusterPipelineOutputDescription _outputDescription;
@@ -99,8 +105,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private GraphPassId _phaseOneCullPass;
     private GraphPassId _winnerClearPass;
     private GraphPassId _phaseTwoCullPass;
-    private GraphPassId _phaseOneWinnerResolvePass;
-    private GraphPassId _phaseTwoWinnerResolvePass;
     private GraphPassId _phaseOneHiZPass;
     private GraphPassId _phaseTwoHiZPass;
     private GraphPassId _pageFaultReadbackPass;
@@ -482,8 +486,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     BufferUsages.ShaderRead, "Cluster material scalar offsets");
                 _shadeScalarsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _shadeScalarOffsetsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+                ImmutableDictionary<int, RasterPhase> rasterPhases;
                 using (SomeEngine.Diagnostics.EngineTrace.Begin(GraphInstallTrace))
-                    InstallGraph(
+                    rasterPhases = InstallGraph(
                         ref edit,
                         in _outputDescription,
                         assignments,
@@ -491,6 +496,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                         shadeStages);
                 var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
                 edit.Commit();
+                _rasterPhases = rasterPhases;
                 _materialBuffers = materialResources.Buffers;
                 AcceptMaterialTextures(materialResources.Textures);
                 uploads.CompleteDeclarations(_graph);
@@ -545,8 +551,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _instanceDataTransfer = null;
             _outputs = default;
             Array.Clear(_rasterBinning);
-            _rasterEpochs = _rasterEpochs.Clear();
-            _meshRasterPasses = _meshRasterPasses.Clear();
             _shadeGroups = _shadeGroups.Clear();
             _shadeGroupOrder.Clear();
             throw;
@@ -587,8 +591,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         ClusterFrameUploads uploads = _uploads ?? throw new InvalidOperationException(
             "Cluster retained upload storage was not created.");
-        var previousEpochs = _rasterEpochs;
-        var previousMeshPasses = _meshRasterPasses;
+        var rasterPhases = _rasterPhases;
         var previousMaterialInputs = _materialInputs;
         var previousShadeGroups = _shadeGroups;
         FrameResources previousFrameResources = _frameResources;
@@ -602,17 +605,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 assignments,
                 rasterStages,
                 shadeStages);
-            UpdateRasterBinning(ref edit);
             if (rasterChanged)
-            {
-                RecordGeometryStageRegion(
-                    ref edit,
-                    _frameResources,
-                    rasterStages,
-                    _frameResources.PackedViews,
-                    rasterChanged);
-            }
-            UpdateRasterCapacity(ref edit, previousFrameResources.RasterBinCount);
+                rasterPhases = ReconcileRasterPhases(ref edit, rasterStages);
+            UpdateRasterBinning(ref edit, rasterPhases);
+            UpdateRasterCapacity(ref edit, previousFrameResources.RasterBinCount, rasterPhases);
             if (shadeChanged)
             {
                 RecordShadeStageRegion(
@@ -622,14 +618,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             }
             var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
             edit.Commit();
+            _rasterPhases = rasterPhases;
             _materialBuffers = materialResources.Buffers;
             AcceptMaterialTextures(materialResources.Textures);
         }
         catch
         {
             uploads.CancelDeclarations();
-            _rasterEpochs = previousEpochs;
-            _meshRasterPasses = previousMeshPasses;
             _materialInputs = previousMaterialInputs;
             _shadeGroups = previousShadeGroups;
             foreach (uint bin in shadeStages.ChangedBins)
@@ -1282,8 +1277,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _installedRasterStages = null;
         _installedShadeStages = null;
         Array.Clear(_rasterBinning);
-        _rasterEpochs = _rasterEpochs.Clear();
-        _meshRasterPasses = _meshRasterPasses.Clear();
+        _rasterPhases = _rasterPhases.Clear();
         _shadeGroups = _shadeGroups.Clear();
         _shadeGroupOrder.Clear();
         _installedMaterialTopologyVersion = 0;

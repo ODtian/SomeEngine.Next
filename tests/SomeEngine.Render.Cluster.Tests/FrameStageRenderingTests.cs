@@ -96,8 +96,16 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private readonly ClusterStreamingFeedbackConsumer _streaming;
     private readonly TemporalFeature _temporal;
     private readonly Buffer _readback;
+    private readonly Buffer _depthReadback;
+    private readonly GraphTextureInput _readbackDepth;
     private readonly Entity _view;
     private readonly Entity[] _meshes;
+    private readonly Mesh _mesh;
+    private readonly string _backendName;
+    private readonly List<Material> _extraMaterials = [];
+    private readonly List<SomeEngine.Resources.Texture> _extraTextures = [];
+    private readonly List<RenderGraphStatistics> _colorStatistics = [];
+    private RenderGraphStatistics _statistics;
     private readonly Material _standard;
     private readonly Material _unlit;
     private readonly GraphTextureInput _readbackColor;
@@ -106,9 +114,11 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private FrameStageScene(IGraphicsBackend backend, Device device, Mesh mesh,
         Material standard, Material unlit, ClusterShaders clusterShaders,
         VirtualShadowMapShaders shadowShaders, Shader lightingShader, Shader temporalShader,
-        ApplicationSettingsBlock settings, bool shadows)
+        ApplicationSettingsBlock settings, bool shadows, ClusterPipelineOptions? pipelineOptions, string backendName)
     {
         _backend = backend;
+        _backendName = backendName;
+        _mesh = mesh;
         _device = device;
         _standard = standard;
         _unlit = unlit;
@@ -125,7 +135,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _renderDevice = new RenderDevice(backend, device);
         _coordinator = new RenderFrameCoordinator(_renderDevice);
         _instances = new RenderInstanceStorageSystem(backend, device, _coordinator, _world,
-            ClusterRenderFeature.InstanceLayout, new RenderInstanceOptions { RowCapacity = 4, BatchCapacity = 2 });
+            ClusterRenderFeature.InstanceLayout, new RenderInstanceOptions { RowCapacity = 16, BatchCapacity = 8 });
         _cluster = new ClusterRenderResources(backend, device, _coordinator, _world, _instances,
             new ClusterRenderOptions { Residency = new ClusterResidencyOptions
                 { PageHeapCapacityBytes = 1048576, BvhCapacityBytes = 65536, PageFaultCapacity = 16 } });
@@ -164,7 +174,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             ClusterRenderFeature.InstanceLayout, assignments, clusterShaders, _graph,
             new ClusterGraphRegions(primary, target, shading, feedbackRegion),
             new ClusterPipelineOutputDescription(Width, Height, 1), feedback, resources,
-            new ClusterPipelineOptions { MaxCandidates = 4096 });
+            pipelineOptions ?? new ClusterPipelineOptions { MaxCandidates = 4096 });
         _shadows = new VirtualShadowFeature(backend, device, shadowShaders,
             new VirtualShadowMapSettings { Enabled = shadows, VirtualResolution = 4096,
                 AtlasSize = 2048, MaxShadowLights = 1, DirectionalClipmapLevels = 1,
@@ -182,7 +192,26 @@ internal sealed class FrameStageScene : IAsyncDisposable
             temporalShader, settings.TemporalVertexEntry, settings.TemporalPixelEntry, region: post);
         _readback = backend.CreateBuffer(device,
             new BufferDesc(RowPitch * Height, BufferUsages.CopyDestination), MemoryType.Readback);
+        _depthReadback = backend.CreateBuffer(device,
+            new BufferDesc(Width * Height * 4, BufferUsages.CopyDestination), MemoryType.Readback);
         using RenderGraphEdit edit = _graph.BeginEdit();
+        _readbackDepth = edit.CreateTextureInput();
+        GraphBufferId depthDestination = edit.RegisterExternalBuffer(_depthReadback,
+            [new BufferBoundaryState(BufferRange.Whole, _depthReadback.InitialSync, _depthReadback.InitialAccess,
+                ResourceContentState.Undefined)]);
+        edit.AddCopyFramePass("Read frame stage depth", PassQueueSelection.AnyOfType(QueueType.Copy),
+            (_readbackDepth, depthDestination), new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition pass, ref (GraphTextureInput Depth, GraphBufferId Destination) data) =>
+            {
+                pass.Read(data.Depth, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth),
+                    PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination,
+                    WriteCoverage.Complete);
+            },
+            static (ref CopyPassCommandScope commands, in (GraphTextureInput Depth, GraphBufferId Destination) data) =>
+                commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Destination), 0,
+                    Width * 4, Height, commands.GetTexture(data.Depth), 0, 0, TextureAspects.Depth,
+                    0, 0, 0, Width, Height, 1)), region: feedbackRegion);
         _readbackColor = edit.CreateTextureInput();
         GraphBufferId destination = edit.RegisterExternalBuffer(_readback,
             [new BufferBoundaryState(BufferRange.Whole, _readback.InitialSync, _readback.InitialAccess,
@@ -204,7 +233,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _completions = new QueueCompletion[_graph.MaximumQueueCompletionCount];
     }
 
-    internal static async Task<FrameStageScene> CreateAsync(string backendName, bool shadows)
+    internal static async Task<FrameStageScene> CreateAsync(string backendName, bool shadows,
+        ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -224,11 +254,16 @@ internal sealed class FrameStageScene : IAsyncDisposable
         Shader lightingShader = await TestShaderLoading.CreateAsync(lightingFile, target);
         using ShaderAsset temporalFile = await ShaderAsset.OpenAsync(assets, settings.TemporalShader);
         Shader temporalShader = await TestShaderLoading.CreateAsync(temporalFile, target);
-        using MeshAsset meshFile = await MeshAsset.OpenAsync(assets,
-            new(manifest.List(MeshAsset.FileType).First().AssetGuid));
-        ClusterMeshBlock geometry = meshFile.GetBlock<ClusterMeshBlock>();
-        Mesh mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
-        await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
+        Mesh mesh;
+        if (geometryMesh is not null) mesh = geometryMesh;
+        else
+        {
+            using MeshAsset meshFile = await MeshAsset.OpenAsync(assets,
+                new(manifest.List(MeshAsset.FileType).First().AssetGuid));
+            ClusterMeshBlock geometry = meshFile.GetBlock<ClusterMeshBlock>();
+            mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
+            await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
+        }
         using MaterialAsset standardFile = await MaterialAsset.OpenAsync(assets,
             new(manifest.List(MaterialAsset.FileType).First(item => item.Name == "Standard").AssetGuid));
         Material standard = await standardFile.CreateAsync(assets, TestShaderLoading.Slang,
@@ -248,7 +283,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)],
             requiredFeatures: DeviceFeatures.IndirectCommands));
         return new FrameStageScene(backend, device, mesh, standard, unlit, clusterShaders,
-            shadowShaders, lightingShader, temporalShader, settings, shadows);
+            shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName);
     }
 
     internal void UseMaterial(string material) => SetMaterial(material switch
@@ -260,21 +295,72 @@ internal sealed class FrameStageScene : IAsyncDisposable
 
     private void SetMaterial(Material material)
     {
-        foreach (Entity entity in _meshes)
+        for (int index = 0; index < _meshes.Length; index++) UseMaterial(index, material);
+    }
+
+    internal void UseMaterial(int index, Material material) => SetEntityMaterial(_meshes[index], material);
+
+    private void SetEntityMaterial(Entity entity, Material material)
+    {
+        _gameWorld.ExecuteBufferWrite<MeshMaterialBinding, Material>(entity, ref material,
+            static (DynamicBuffer<MeshMaterialBinding> buffer, ref Material value) =>
+            {
+                buffer.Clear();
+                buffer.Add(new MeshMaterialBinding(value));
+            });
+    }
+
+    internal Entity AddMaterialMesh(Material material)
+    {
+        Entity entity = AddMesh(_mesh, new TransformQvvs(new Vector3(1.3f, 0, -5), Quaternion.Identity, .5f));
+        SetEntityMaterial(entity, material);
+        return entity;
+    }
+
+    internal void RemoveMaterialMesh(Entity entity) => _gameWorld.DestroyEntity(entity);
+
+    internal Material CreateRasterMaterial(RasterMaterialKind kind, Vector4 color)
+    {
+        Shader shader = RasterTestShaders.Create(_backendName, kind);
+        byte[] pixel = [(byte)(color.X * 255), (byte)(color.Y * 255), (byte)(color.Z * 255), 255];
+        var texture = SomeEngine.Resources.Texture.Create(
+            new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,
+                TextureUsages.Sampled | TextureUsages.CopyDestination),
+            [new TexturePixels(new TextureMipTile { Width = 1, Height = 1, RowPitch = 4, SlicePitch = 4 }, pixel)],
+            TextureViewDimension.Texture2D);
+        var material = new Game.Content.UnlitMaterial { Shader = shader, AlbedoMap = texture, BaseColorTint = Vector4.One };
+        _extraTextures.Add(texture);
+        _extraMaterials.Add(material);
+        return material;
+    }
+
+    internal IReadOnlyList<RenderGraphStatistics> ColorStatistics => _colorStatistics;
+
+    internal void AddIndependentWork(int count)
+    {
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        GraphRegionId region = edit.AddRegion("Independent buffer work");
+        for (int index = 0; index < count; index++)
         {
-            Material value = material;
-            _gameWorld.ExecuteBufferWrite<MeshMaterialBinding, Material>(entity, ref value,
-                static (DynamicBuffer<MeshMaterialBinding> buffer, ref Material item) =>
-                {
-                    buffer.Clear();
-                    buffer.Add(new MeshMaterialBinding(item));
-                });
+            GraphBufferId buffer = edit.CreatePersistentBuffer(new BufferDesc(16, BufferUsages.CopyDestination));
+            edit.AddCopyFramePass("Write independent buffer", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                buffer, new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref GraphBufferId value) =>
+                    pass.Write(value, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
+                static (ref CopyPassCommandScope commands, in GraphBufferId value) =>
+                    commands.ClearBuffer(commands.GetBuffer(value), new BufferRange(0, 16), 37), region: region);
         }
+        edit.Commit();
     }
 
     internal async Task<byte[]> ReadClusterColorAsync()
     {
-        for (int frame = 0; frame < 24; frame++) await RenderAsync();
+        _colorStatistics.Clear();
+        for (int frame = 0; frame < 24; frame++)
+        {
+            await RenderAsync();
+            _colorStatistics.Add(_statistics);
+        }
         return ReadColor();
     }
 
@@ -299,7 +385,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
         ClusterPipelineOutputs outputs = _pipeline.ReconcileGraph();
         Assert.True(_coordinator.TryBeginFrame(out var frame));
         using (frame)
-        using (RenderGraphFrame commands = _graph.BeginFrame())
+        using (RenderGraphFrame commands = _graph.BeginFrame(new RenderGraphFrameOptions(
+            Diagnostics: (in RenderGraphDiagnosticsView diagnostics) => _statistics = diagnostics.Statistics)))
         {
             _frames.Update(frame, commands);
             commands.ObserveExecution(_streaming);
@@ -307,6 +394,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             _temporal.Record(ref temporalFrame, outputs.MaterialColor, outputs.Depth,
                 new MotionFeatureOutput(outputs.MotionVectors, Width, Height, 1),
                 TemporalResolveSettings.Default, cameraCut: true, view: _view);
+            commands.SetTextureInput(_readbackDepth, outputs.Depth);
             commands.SetTextureInput(_readbackColor, postProcessedColor ? _temporal.Output.ResolvedColor : outputs.MaterialColor);
             commands.Execute(_completions);
             QueueCompletion[] accepted = _completions.Where(value => value != default).ToArray();
@@ -314,6 +402,16 @@ internal sealed class FrameStageScene : IAsyncDisposable
             foreach (QueueCompletion completion in accepted)
                 Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
         }
+    }
+
+    internal async Task<RasterImage> ReadRasterImageAsync() => new(
+        await ReadClusterColorAsync(), ReadDepth(), _pipeline.CaptureFrameMetrics());
+
+    internal byte[] ReadDepth()
+    {
+        using MappedBuffer mapping = _backend.Map(_depthReadback, MapType.Read, BufferRange.Whole);
+        mapping.Invalidate(mapping.Range);
+        return mapping.Bytes.ToArray();
     }
 
     private byte[] ReadColor()
@@ -349,6 +447,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _shadows.Dispose();
         _lighting.Dispose();
         _readback.Dispose();
+        _depthReadback.Dispose();
         Assert.True(_coordinator.TryBeginPrepare(out var shutdown));
         using (shutdown)
         {
@@ -365,6 +464,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _renderDevice.Dispose();
         _world.Dispose();
         _gameWorld.Dispose();
+        foreach (Material material in _extraMaterials) material.Dispose();
+        foreach (SomeEngine.Resources.Texture texture in _extraTextures) texture.Dispose();
         _standard.Dispose();
         _unlit.Dispose();
         _device.Dispose();
@@ -372,3 +473,5 @@ internal sealed class FrameStageScene : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 }
+
+internal sealed record RasterImage(byte[] Color, byte[] Depth, ClusterFrameMetrics Metrics);

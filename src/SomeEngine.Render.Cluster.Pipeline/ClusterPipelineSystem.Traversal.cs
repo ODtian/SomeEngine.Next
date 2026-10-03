@@ -1,4 +1,4 @@
-﻿using SomeEngine.Graphics;
+using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
@@ -70,9 +70,10 @@ public sealed partial class ClusterPipelineSystem
         int firstNewPass = passes.Count;
         GraphPassId last = RecordTraversal(ref edit, _frameResources, _frameResources.PackedViews,
             _frameResources.ViewCount, 0u, mode, false, previous, passes, label, out _,
-            region: ReferenceEquals(passes, _continuationTraversalLevelPasses) ? _targetPhaseOneRegion :
-                ReferenceEquals(passes, _continuationPostTraversalLevelPasses) ? _targetPhaseTwoRegion :
-                _regions.PrimaryGeometry);
+            region: ReferenceEquals(passes, _continuationTraversalLevelPasses) ? _continuationTraversalRegion :
+                ReferenceEquals(passes, _continuationPostTraversalLevelPasses) ? _continuationPostTraversalRegion :
+                ReferenceEquals(passes, _primaryPostTraversalLevelPasses) ? _primaryPostTraversalRegion :
+                _primaryTraversalRegion);
         bool policyTarget = ReferenceEquals(passes, _continuationTraversalLevelPasses) ||
             ReferenceEquals(passes, _continuationPostTraversalLevelPasses);
         for (int index = firstNewPass; index < passes.Count; index++)
