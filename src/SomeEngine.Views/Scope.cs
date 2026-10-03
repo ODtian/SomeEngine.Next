@@ -33,17 +33,52 @@ public static class Scope
                 Component = ComponentId<T>.Value,
                 Version = current.World.ComponentDataWriteVersion<T>(entity),
             };
-            if (!current.World.HasBuffer<Dependency>(current.Entity))
-                current.World.AddBuffer<Dependency>(current.Entity);
-            current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
-            {
-                foreach (Dependency existing in buffer.ReadSpan())
-                    if (existing.Entity == read.Entity && existing.Component == read.Component)
-                        return;
-                buffer.Add(read);
-            });
+            RegisterDependency(current, ref dependency);
         }
         return ref current.World.ReadComponentReference<T>(entity);
+    }
+
+    /// <summary>Reads the nearest environment component on this view or its ElementTree ancestors.</summary>
+    /// <remarks>Returns the default value when the component is absent. Consume stored references before structural changes.</remarks>
+    public static ref readonly T ReadUp<T>() where T : struct
+    {
+        ScopeData current = Current;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.ReadUp requires table or sparse component {typeof(T).Name}.");
+        ushort component = ComponentId<T>.Value;
+        Entity source = EnvironmentData.FindSource(current.World, current.Entity, component);
+        if (current.DependenciesEnabled)
+        {
+            var dependency = new Dependency
+            {
+                Entity = source,
+                Component = component,
+                Version = source == Entity.Null ? 0 : current.World.ComponentDataWriteVersion<T>(source),
+                Kind = DependencyKind.Environment,
+            };
+            RegisterDependency(current, ref dependency);
+        }
+        if (source == Entity.Null)
+            return ref EnvironmentDefault<T>.Value;
+        return ref current.World.ReadComponentReference<T>(source);
+    }
+
+    private static void RegisterDependency(ScopeData current, ref Dependency dependency)
+    {
+        if (!current.World.HasBuffer<Dependency>(current.Entity))
+            current.World.AddBuffer<Dependency>(current.Entity);
+        current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
+        {
+            foreach (Dependency existing in buffer.ReadSpan())
+                if (existing.Kind == read.Kind && existing.Entity == read.Entity && existing.Component == read.Component)
+                    return;
+            buffer.Add(read);
+        });
+    }
+
+    private static class EnvironmentDefault<T> where T : struct
+    {
+        internal static readonly T Value;
     }
 
     /// <summary>Declares a child with key zero, or the surrounding Key scope's key.</summary>

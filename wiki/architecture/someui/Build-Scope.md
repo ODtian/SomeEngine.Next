@@ -39,7 +39,7 @@ public static class Scope
 ## 首次构建实现（#6）
 
 当前公开入口为 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
-`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)` 与 `Scope.Read<T>(Entity)`。
+`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)` 与 `Scope.ReadUp<T>()`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
 返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
 成功构建结束时完成子节点匹配与释放；key 分组与节点身份规则见
@@ -59,6 +59,9 @@ public static class Scope
 `Scope.Read<T>(Entity)` 只约束 `struct`，按 `default(T) is ISparseComponent` 选择存储。
 它返回源组件的 `ref readonly T`，调用方在后续结构修改前消费这份引用。
 首次读取造成依赖缓冲添加时，先完成登记，再取得组件引用，使该次读取使用当前存储位置。
+
+`Scope.ReadUp<T>()` 使用当前视图实体作为环境查找起点，读取路径、缺省值和父链变化的处理见
+[[architecture/someui/Dependencies|Dependencies]] 的环境读取依赖。
 
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]

@@ -56,6 +56,30 @@ public struct Dependency : IBufferElement
 公开验收：[ReadDependencyTests](../../../tests/SomeEngine.Views.Tests/ReadDependencyTests.cs)，
 覆盖组件更新、父子共享来源、释放子树、读取来源切换、混合存储重复读取及嵌套构建。
 
+## 环境读取依赖（#13）
+
+`Scope.ReadUp<T>() where T : struct` 从当前视图实体开始，沿 `ElementTree` 的父链查找
+最近带有 `T` 的节点，包含当前节点自身。表格与 sparse 组件使用同一读取入口，返回
+提供者组件的只读引用。调用方在后续可能移动存储的结构修改前消费该引用。
+
+`Rerun` 构建将环境读取登记到节点的 `DynamicBuffer<Dependency>`。
+`Dependency.Kind` 区分直接组件读取与环境查找；环境记录持有组件编号、找到的来源实体和
+该组件的观察写版本。重建阶段从读取者当前所在的父链重新查找；来源实体改变或该来源的
+组件写版本改变时，读取者重新构建。中间节点添加同类型组件时，其子树读取新的最近来源。
+
+查找到根仍缺少 `T` 时，返回类型默认值的只读引用，并以 `Entity.Null` 记录该次环境来源。
+后续祖先添加 `T`，或读取者通过自身或祖先的父节点移动进入带 `T` 的子树时，来源比较
+使读取者失效。环境查找由当前 `ElementTree` 父链提供；父链和提供者组件各由 ECS 持有。
+
+环境记录随每次构建清空并重新登记，嵌套构建沿用各自的读取者实体。
+`Once` 构建按同样方式读取值，保持仅取值状态。
+
+实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
+[环境来源查找](../../../src/SomeEngine.Views/EnvironmentData.cs)、
+[重建阶段](../../../src/SomeEngine.Views/ViewRebuildSystem.cs)。
+公开验收：[EnvironmentTests](../../../tests/SomeEngine.Views.Tests/EnvironmentTests.cs)，
+覆盖两种存储、最近提供者、自身提供、缺省值、祖先移动、相同值下的来源切换和提供者移除。
+
 ## ECS 组件类型写版本
 
 `World.ComponentWriteVersion<T>() where T : struct` 返回当前 World 中表格或 sparse 组件类型的写计数。首次写入之前为 `0`；对任意实体添加、整值替换、取得可写引用或移除该类型时，每个写入口推进一次。连续同帧写入各自推进，对其它类型或其它 World 的写入各自维护自己的版本。

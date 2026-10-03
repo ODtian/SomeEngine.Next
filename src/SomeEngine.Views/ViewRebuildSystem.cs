@@ -70,12 +70,15 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         if (!world.HasBuffer<Dependency>(entity))
             return false;
 
-        var changes = (World: world, Found: false);
-        world.ExecuteBufferRead<Dependency, (World World, bool Found)>(entity, ref changes, static (buffer, ref result) =>
+        var changes = (World: world, Entity: entity, Found: false);
+        world.ExecuteBufferRead<Dependency, (World World, Entity Entity, bool Found)>(entity, ref changes, static (buffer, ref result) =>
         {
             foreach (Dependency dependency in buffer.AsSpan())
             {
-                if (result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version)
+                bool changed = dependency.Kind == DependencyKind.Environment
+                    ? EnvironmentData.HasChanges(result.World, result.Entity, in dependency)
+                    : result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version;
+                if (changed)
                 {
                     result.Found = true;
                     return;
