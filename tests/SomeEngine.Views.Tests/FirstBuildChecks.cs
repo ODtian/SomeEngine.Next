@@ -6,7 +6,7 @@ using SomeEngine.ECS.Hierarchy;
 namespace SomeEngine.Views.Tests;
 
 /// <summary>Public view behavior shared by the test runner and the ECS NativeAOT executable.</summary>
-internal static class FirstBuildChecks
+internal static partial class FirstBuildChecks
 {
     internal static void Verify()
     {
@@ -440,9 +440,9 @@ internal static class FirstBuildChecks
                 using (Scope.Key(id))
                 {
                     if (TextOnly)
-                        Scope.View(new TableText(id.ToString()));
+                        Scope.View(new TableText(id.ToString()), 0);
                     else
-                        Scope.View(new KeyedBranch(id));
+                        Scope.View(new KeyedBranch(id), 0);
                 }
             }
             return default;

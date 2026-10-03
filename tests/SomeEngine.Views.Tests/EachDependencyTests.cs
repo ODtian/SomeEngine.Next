@@ -6,7 +6,7 @@ using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class EachDependencyTests
+public sealed partial class EachDependencyTests
 {
     [Fact]
     public void PublicStructureDependenciesPassTheNativeSmokeScenario() => StructureDependencyChecks.Verify();

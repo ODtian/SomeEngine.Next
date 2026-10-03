@@ -16,5 +16,15 @@
 - `SomeEngine.Elements` 及之后的程序集只使用底层公开 API，不使用 `InternalsVisibleTo` 或任何内部入口。
 - 只面向 NativeAOT：不使用反射、`MakeGenericType`、`Activator`、表达式树编译。
 
+## 源生成接入（#19）
+
+`SomeEngine.Views.Generators` 使用 Roslyn 增量生成器、`ViewAnalyzer`
+和 `BuildWarningSuppressor` 提供同名函数、调用位置身份、编译期接入检查与 CS1998 屏蔽。
+`SomeEngine.Views` 的 NuGet 包将生成器放入 `analyzers/dotnet/cs`，
+并通过 `buildTransitive/SomeEngine.Views.props` 启用 `SomeEngine.Views.Generated` 拦截命名空间。
+仓库内由 `Directory.Build.props` 与 `Directory.Build.targets` 接入引用 Views 的项目。
+视图函数的参数与可见范围见 [[architecture/someui/Views|Views]]；
+编译诊断见 [[architecture/someui/Checks|Checks]]。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · ADR 0011 · ADR 0013

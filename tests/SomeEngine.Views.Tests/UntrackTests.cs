@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class UntrackTests
+public sealed partial class UntrackTests
 {
     [Theory]
     [InlineData(false)]
