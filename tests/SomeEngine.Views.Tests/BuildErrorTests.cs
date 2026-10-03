@@ -9,6 +9,27 @@ namespace SomeEngine.Views.Tests;
 
 public sealed partial class BuildErrorTests
 {
+    [Fact]
+    public void FailedParentPreservesTheChildsUnconsumedParameterChange()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new Content(1));
+        var first = new State<int>(3);
+        var second = new State<int>(7);
+        Entity root = Views.Spawn(frames.World, Entity.Null, new OutputGroup(source, first, second, false));
+        frames.Frame();
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        frames.World.Replace(child, new OutputChild(3, first, second, false));
+        frames.World.Replace(source, new Content(2));
+
+        frames.Frame();
+
+        Assert.Equal(3, frames.World.Read<OutputChild>(child).Value);
+        Assert.Equal(7, frames.World.Read<Display>(child).Value);
+        frames.Frame();
+        Assert.Equal(7, frames.World.Read<Display>(child).Value);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

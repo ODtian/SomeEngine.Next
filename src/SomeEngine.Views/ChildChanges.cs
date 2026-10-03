@@ -16,8 +16,8 @@ internal sealed class ChildChanges
     internal void RememberOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) =>
         _previousData.Add(new ChildOrder(parent, children));
 
-    internal void RememberParameters<T>(Entity entity, in T value) where T : struct =>
-        _previousData.Add(new ChildParameters<T>(entity, value));
+    internal void RememberParameters<T>(World world, Entity entity, in T value) where T : struct, IView =>
+        _previousData.Add(new ChildParameters<T>(world, entity, value));
 
     internal void RememberAddedChild(Entity entity) => _previousData.Add(new AddedChild(entity));
 
@@ -90,9 +90,29 @@ internal sealed class ChildChanges
         }
     }
 
-    private sealed class ChildParameters<T>(Entity entity, T value) : IChildData where T : struct
+    private sealed class ChildParameters<T>(World world, Entity entity, T value) : IChildData where T : struct, IView
     {
-        public void Restore(World world) => world.OverwriteComponentData(entity, in value);
+        private readonly ViewType _viewType = world.Read<ViewType>(entity);
+        private readonly bool _buildRequested = world.Has<BuildRequest>(entity);
+        private readonly uint _parameterWriteVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
+        private readonly uint? _parameterVersion = world.Has<ParameterVersion>(entity) ? world.Read<ParameterVersion>(entity).Value : null;
+
+        public void Restore(World world)
+        {
+            world.OverwriteComponentData(entity, in value);
+            world.OverwriteComponentData(entity, in _viewType);
+            if (_buildRequested && !world.Has<BuildRequest>(entity))
+                world.AddTag<BuildRequest>(entity);
+            if (T.Mode != BuildMode.Rerun)
+                return;
+            if (_parameterVersion is uint previous)
+            {
+                uint version = previous == _parameterWriteVersion ? world.ComponentDataWriteVersion<T>(entity) : previous;
+                world.OverwriteComponentData(entity, new ParameterVersion(version));
+            }
+            else if (world.Has<ParameterVersion>(entity))
+                world.Remove<ParameterVersion>(entity);
+        }
     }
 
     private sealed class ChildComponent<T>(Entity entity, bool exists, T value) : IChildData where T : struct

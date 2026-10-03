@@ -267,7 +267,7 @@ public static partial class Scope
                 break;
             current.DeclaredChildren.Add(existing);
             T previous = current.World.ReadComponentData<T>(existing);
-            current.Changes.RememberParameters(existing, in previous);
+            current.Changes.RememberParameters(current.World, existing, in previous);
             if (previous.Equals(view))
             {
                 current.World.OverwriteComponentData(existing, in view);
