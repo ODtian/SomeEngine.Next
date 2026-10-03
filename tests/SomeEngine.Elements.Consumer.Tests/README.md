@@ -13,6 +13,6 @@ first example rewrites `Background`, `Corner`, and `Border` with
 
 `SurfaceTests` observes node identity, Surface values, layout rectangles, write
 versions, and development errors. `SurfaceChecks` is compiled by these tests and
-the Views NativeAOT smoke executable to share the public behavior checks.
+the Views NativeAOT smoke executable to share the Column behavior checks.
 `AssemblyBoundaryTests` checks the public assembly access rule owned by Wiki
 `architecture/someui/Assemblies`.

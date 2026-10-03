@@ -52,6 +52,10 @@ public static class SurfaceModifiers
 }
 ```
 
+```csharp
+Column().Background(fill).Corner(4).Border(borderColor, 2);
+```
+
 调用方在参与布局的节点上使用这些修饰。`Background` 更新填充色，`Corner` 更新圆角半径，
 `Border` 同时更新描边颜色和宽度；每个修饰保留 Surface 的其余字段并返回原实体。
 圆角与描边宽度采用布局单位。默认 Surface 的颜色为透明黑，圆角和描边宽度为零。
