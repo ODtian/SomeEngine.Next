@@ -112,7 +112,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
         if (ObjectReads.HasChanges(changes.Frame))
             return true;
         foreach (Dependency read in Reads)
-            if (changes.HasChanges(World, read, recheck))
+            if (changes.HasChanges(World, Entity, read, recheck))
                 return true;
         return false;
     }
@@ -122,7 +122,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
         if (ObjectReads.HasChanges(frame))
             return true;
         foreach (Dependency read in Reads)
-            if (DependencyChanges.HasChanges(World, read))
+            if (DependencyChanges.HasChanges(World, Entity, read))
                 return true;
         return false;
     }
