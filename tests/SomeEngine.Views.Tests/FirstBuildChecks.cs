@@ -32,6 +32,7 @@ internal static class FirstBuildChecks
 
         VerifyParameterChanges(frames, root, children.ToArray(), grandchildren[0]);
         VerifyOnceParameters(frames);
+        VerifyReadDependencies(frames);
     }
 
     private static int ReadNumber() => 41;
@@ -81,6 +82,30 @@ internal static class FirstBuildChecks
         Require(frames.World.Read<TableText>(child).Value == "first", "Once retains its first content.");
     }
 
+    private static void VerifyReadDependencies(HeadlessFrameDriver frames)
+    {
+        Entity source = frames.World.CreateEntity(new TableText("table"));
+        frames.World.AddSparse(source, new SparseText("sparse"));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ComponentText(source));
+        uint sourceVersion = frames.World.WriteVersion<TableText>(source);
+
+        frames.Frame();
+
+        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Require(frames.World.Read<TableText>(child).Value == "table:sparse", "Reads supply table and sparse text.");
+        Require(frames.World.WriteVersion<TableText>(source) == sourceVersion, "A read preserves the source write version.");
+        frames.World.Replace(source, new TableText("changed"));
+        frames.World.ReplaceSparse(source, new SparseText("updated"));
+
+        frames.Frame();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+
+        Require(frames.World.Read<TableText>(child).Value == "changed:updated", "Changed sources update the displayed text.");
+        uint textVersion = frames.World.WriteVersion<TableText>(child);
+        frames.Frame();
+        Require(frames.World.WriteVersion<TableText>(child) == textVersion, "A later frame retains the displayed text version.");
+    }
+
     private static void Require(bool condition, string message)
     {
         if (!condition)
@@ -111,6 +136,19 @@ internal static class FirstBuildChecks
     private readonly record struct TableText(string Value) : IView, IComponent
     {
         public BuildTask Build() => default;
+    }
+
+    private readonly record struct SparseText(string Value) : ISparseComponent;
+
+    private readonly record struct ComponentText(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            string table = Scope.Read<TableText>(Source).Value;
+            string sparse = Scope.Read<SparseText>(Source).Value;
+            Scope.View(new TableText($"{table}:{sparse}"));
+            return default;
+        }
     }
 
     private readonly record struct OnceText(string Value) : IView, IComponent

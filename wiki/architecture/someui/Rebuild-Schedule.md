@@ -52,5 +52,20 @@
 `ParameterBuildTests.cs` 经公开 World、视图与无头帧入口验证更新时机，
 并用视图写出的显示历史验证父子参数同帧变化时的结果。
 
+## 读取依赖重建实现（#9）
+
+每帧收集阶段把首次请求、参数版本变化或读取依赖版本变化的视图放入同一个候选列表，
+按 `ElementTree` 深度从父到子执行。读取依赖的存储与版本语义见
+[[architecture/someui/Dependencies|Dependencies]]。
+
+每个候选执行前先确认视图实体存活，再复核当前参数与读取依赖版本。
+父构建释放的子视图在存活检查处跳过；父构建中当场重建的子视图已经重新登记读取版本，
+复核消费这份最新结果。父传入相等参数时，子视图保留自己的读取依赖，
+来源变化仍由候选复核触发子视图构建。查询借用在构建前结束，
+依赖缓冲借用也在各次登记或比较完成后结束，构建继续通过 World 执行结构修改。
+
+`ReadDependencyTests.cs` 通过无头帧驱动、公开视图和组件数据显示历史验证父子顺序，
+并通过公开 `Hierarchy<ElementTree>.DestroySubtree` 验证父构建释放失效子视图后的帧结果。
+
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]

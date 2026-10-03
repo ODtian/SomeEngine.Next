@@ -19,6 +19,43 @@
 - 依赖粒度是整个组件。需要更细的粒度时按变化频率拆分组件（例如点击计数 `Clicks` 与悬停状态 `Hover` 分开），不提供字段级依赖。
 - 列表的父计算只依赖 `Each` 的成员，每行是读取自身实体的子视图。
 
+## ECS 读取依赖实现（#9）
+
+```csharp
+public static class Scope
+{
+    public static ref readonly T Read<T>(Entity entity) where T : struct;
+}
+
+public struct Dependency : IBufferElement
+{
+    public Entity Entity;
+    public ushort Component;
+    public uint Version;
+}
+```
+
+`Scope.Read<T>` 从当前 World 的表格或 sparse 存储返回组件的只读引用。
+`Rerun` 构建按 `(Entity, Component)` 登记读到的实体组件写版本；同一次构建重复读取该来源时，
+保留首次读取的版本。一个实体上的不同组件，以及不同实体上的同一组件，分别形成依赖。
+
+视图实体首次登记时添加 `DynamicBuffer<Dependency>`。每次构建开始先清空已有缓冲，
+随后按该次构建实际走过的读取路径重新登记。嵌套子构建使用自己的作用域；
+子构建返回后，后续读取继续登记到父视图。`Once` 构建沿相同存储路径读取，作用域保持仅取值状态。
+
+重建阶段逐条读取依赖来源的实体组件写版本，以 `!=` 比较登记版本。
+表格行与 sparse dense 行继续持有各自版本，视图依赖缓冲保存该次读取的观察值。
+源组件与版本通过 ECS 既有只读访问权限取得。调度顺序与候选执行前的复核见
+[[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
+
+调用方在当前计算所在 World 中使用有效实体及其已有组件，并在可能移动数据的结构修改前消费返回的引用。
+作用域和组件使用错误沿统一的 `DevelopmentCheck` 开发检查报告。
+
+实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、[依赖数据](../../../src/SomeEngine.Views/Dependency.cs)、
+[ECS 读取桥接](../../../src/SomeEngine.ECS/World.ComponentData.cs)。
+公开验收：[ReadDependencyTests](../../../tests/SomeEngine.Views.Tests/ReadDependencyTests.cs)，
+覆盖组件更新、父子共享来源、释放子树、读取来源切换、混合存储重复读取及嵌套构建。
+
 ## ECS 组件类型写版本
 
 `World.ComponentWriteVersion<T>() where T : struct` 返回当前 World 中表格或 sparse 组件类型的写计数。首次写入之前为 `0`；对任意实体添加、整值替换、取得可写引用或移除该类型时，每个写入口推进一次。连续同帧写入各自推进，对其它类型或其它 World 的写入各自维护自己的版本。
