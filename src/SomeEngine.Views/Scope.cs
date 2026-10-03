@@ -15,7 +15,9 @@ public static class Scope
     private static Stack<ScopeData>? s_scopes;
 #if DEBUG
     [ThreadStatic]
-    private static Dictionary<Entity, (ScopeData Data, int Version)>? s_childDeclarations;
+    private static Dictionary<Entity, (Entity Entity, ScopeData Data, int Version, int BuildNumber)>? s_childDeclarations;
+    [ThreadStatic]
+    private static int s_buildNumber;
 #endif
 
     [ThreadStatic]
@@ -121,9 +123,8 @@ public static class Scope
             key = key == 0 ? prefix : CombineKeys(prefix, key);
         current.Occurrences.TryGetValue(key, out int occurrence);
         current.Occurrences[key] = occurrence + 1;
-        int childIndex = current.ChildIndex++;
-        var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Parent);
-        for (int index = childIndex; index < children.Count; index++)
+        var children = current.PreviousChildren;
+        for (int index = 0; index < children.Count; index++)
         {
             Entity existing = children[index];
             ElementKey identity = current.World.Read<ElementKey>(existing);
@@ -131,13 +132,10 @@ public static class Scope
                 continue;
 
             if (current.World.Read<ViewType>(existing).Id != ViewRegistration<T>.Id)
-            {
-                Hierarchy<ElementTree>.DestroySubtree(current.World, existing);
                 break;
-            }
-            if (index != childIndex)
-                Hierarchy<ElementTree>.SetParent(current.World, existing, current.Parent, childIndex);
+            current.DeclaredChildren.Add(existing);
             T previous = current.World.ReadComponentData<T>(existing);
+            current.Changes.RememberParameters(existing, in previous);
             if (previous.Equals(view))
             {
                 current.World.OverwriteComponentData(existing, in view);
@@ -146,12 +144,14 @@ public static class Scope
 
             current.World.ReplaceComponentData(existing, in view);
             if (T.Mode == BuildMode.Rerun)
-                ViewRegistration<T>.Build(current.World, existing);
+                ViewRegistration<T>.Build(current.World, existing, current.Frame);
             return existing;
         }
         Entity child = Views.Create(current.World, in view, new ElementKey { Key = key, Occurrence = occurrence });
-        Hierarchy<ElementTree>.SetParent(current.World, child, current.Parent, childIndex);
-        ViewRegistration<T>.Build(current.World, child);
+        current.Changes.RememberAddedChild(child);
+        current.DeclaredChildren.Add(child);
+        Hierarchy<ElementTree>.SetParent(current.World, child, current.Parent);
+        ViewRegistration<T>.Build(current.World, child, current.Frame);
         return child;
     }
 
@@ -190,7 +190,7 @@ public static class Scope
         }
     }
 
-    internal static BuildScope Enter(World world, Entity entity, bool declaresChildren, bool dependenciesEnabled)
+    internal static BuildScope Enter(World world, Entity entity, ulong frame, bool declaresChildren, bool dependenciesEnabled)
     {
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
@@ -203,8 +203,15 @@ public static class Scope
         current.DeclaresChildren = declaresChildren;
         current.DependenciesEnabled = dependenciesEnabled;
         current.Queue = BuildQueue.For(world);
+        ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
+        current.BeginChildren(frame, parent?.World == world ? parent.Changes : null);
+#if DEBUG
+        current.ContentVersion++;
+        current.BuildNumber = ++s_buildNumber;
+#endif
         if (declaresChildren)
         {
+            CheckChildDeclaration(current);
             CaptureSiblingCounts(current);
         }
         (s_scopes ??= new Stack<ScopeData>()).Push(current);
@@ -213,7 +220,7 @@ public static class Scope
 
     internal static BuildScope Resume(ScopeData data)
     {
-        if (data != data.ViewData)
+        if (data.DeclaresChildren)
             CheckChildDeclaration(data);
         (s_scopes ??= new Stack<ScopeData>()).Push(data);
         return new BuildScope(data, releaseOnExit: false);
@@ -221,6 +228,8 @@ public static class Scope
 
     internal static void Release(ScopeData data)
     {
+        if (data == data.ViewData && data.StateMachines != 0)
+            return;
         if (data.ContentData is { } content)
         {
             foreach (ScopeData declaration in content)
@@ -235,7 +244,12 @@ public static class Scope
         data.Task = default;
         data.ParameterVersion = null;
         data.Suspended = false;
-        data.ChildIndex = 0;
+        if (data.OutermostBuild)
+            data.Changes.Clear();
+        data.Changes = null!;
+        data.PreviousChildren = default;
+        data.DeclaredChildren.Clear();
+        data.Completed = false;
         data.KeyPrefix = null;
         data.Occurrences.Clear();
 #if DEBUG
@@ -252,6 +266,22 @@ public static class Scope
             data.Suspended = true;
             (view.ContentData ??= new()).Add(data);
         }
+        if (!view.OutermostBuild)
+        {
+            int firstData = view.FirstData;
+            int firstRemoval = view.FirstRemoval;
+            ChildChanges changes = view.OwnChanges ??= new();
+            view.Changes.CopyTo(changes, firstData, firstRemoval);
+            if (s_scopes is { } scopes)
+                foreach (ScopeData scope in scopes)
+                    if (scope.ViewData == view)
+                        scope.ReplaceChanges(changes, firstData, firstRemoval);
+            if (view.ContentData is { } content)
+                foreach (ScopeData scope in content)
+                    if (scope.Changes != changes)
+                        scope.ReplaceChanges(changes, firstData, firstRemoval);
+            view.OutermostBuild = true;
+        }
     }
 
     internal static void CompleteBuild(ScopeData data)
@@ -260,18 +290,38 @@ public static class Scope
             foreach (ScopeData declaration in content)
                 CompleteChildren(declaration);
         CompleteChildren(data);
-        if (data.ParameterVersion is uint version)
-            data.World.Replace(data.Entity, new ParameterVersion(version));
+        if (data.World.HasSparse<BuildError>(data.Entity))
+            data.World.RemoveSparse<BuildError>(data.Entity);
     }
 
     private static void CompleteChildren(ScopeData data)
     {
         if (!data.DeclaresChildren)
+        {
+            data.Completed = true;
             return;
+        }
         CheckSiblingCounts(data);
         var children = Hierarchy<ElementTree>.GetChildren(data.World, data.Parent);
-        for (int index = children.Count - 1; index >= data.ChildIndex; index--)
-            Hierarchy<ElementTree>.DestroySubtree(data.World, children[index]);
+        for (int index = 0; index < data.DeclaredChildren.Count; index++)
+        {
+            if (children[index] == data.DeclaredChildren[index])
+                continue;
+            Hierarchy<ElementTree>.SetParent(data.World, data.DeclaredChildren[index], data.Parent, index);
+            children = Hierarchy<ElementTree>.GetChildren(data.World, data.Parent);
+        }
+        foreach (Entity child in data.PreviousChildren)
+            if (!data.DeclaredChildren.Contains(child))
+                data.Changes.RemoveChild(child);
+        data.Completed = true;
+    }
+
+    internal static void FinishChildren(ScopeData data)
+    {
+        if (!data.Completed)
+            data.Changes.Restore(data.World, data.FirstData, data.FirstRemoval);
+        else if (data.OutermostBuild)
+            data.Changes.ReleaseChildren(data.World);
     }
 
     internal static ParentScope EnterContent(Entity entity)
@@ -287,8 +337,10 @@ public static class Scope
         current.DeclaresChildren = true;
         current.DependenciesEnabled = build.DependenciesEnabled;
         current.Queue = build.Queue;
+        current.BeginChildren(build.Frame, build.Changes);
 #if DEBUG
         current.ContentVersion++;
+        current.BuildNumber = build.ViewData.BuildNumber;
 #endif
         CheckChildDeclaration(current);
         CaptureSiblingCounts(current);
@@ -300,7 +352,7 @@ public static class Scope
     internal static RebuildScope EnterRebuild()
     {
         var scope = new RebuildScope(s_childDeclarations);
-        s_childDeclarations = new Dictionary<Entity, (ScopeData Data, int Version)>();
+        s_childDeclarations = new();
         return scope;
     }
 #endif
@@ -310,10 +362,10 @@ public static class Scope
     {
 #if DEBUG
         if (s_childDeclarations!.TryGetValue(data.Parent, out var previous))
-            DevelopmentCheck.Require(previous.Data == data && previous.Version == data.ContentVersion,
+            DevelopmentCheck.Require(previous.Data == data && previous.Version == data.ContentVersion ||
+                previous.Entity == data.Entity && previous.BuildNumber != data.ViewData.BuildNumber,
                 $"The children of {data.Parent} were declared by two scopes in the same rebuild.");
-        else
-            s_childDeclarations.Add(data.Parent, (data, data.ContentVersion));
+        s_childDeclarations[data.Parent] = (data.Entity, data, data.ContentVersion, data.ViewData.BuildNumber);
 #endif
     }
 
@@ -321,7 +373,7 @@ public static class Scope
     private static void CaptureSiblingCounts(ScopeData current)
     {
 #if DEBUG
-        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(current.World, current.Parent))
+        foreach (Entity child in current.PreviousChildren)
         {
             ulong key = current.World.Read<ElementKey>(child).Key;
             current.PreviousSiblings.TryGetValue(key, out SiblingGroup group);
@@ -335,7 +387,7 @@ public static class Scope
     private static void CheckSiblingCounts(ScopeData current)
     {
 #if DEBUG
-        var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Parent);
+        var children = current.DeclaredChildren;
         foreach (var (key, previous) in current.PreviousSiblings)
         {
             current.Occurrences.TryGetValue(key, out int count);
@@ -343,7 +395,7 @@ public static class Scope
                 continue;
 
             bool localState = previous.LocalState;
-            for (int index = 0; !localState && index < current.ChildIndex; index++)
+            for (int index = 0; !localState && index < children.Count; index++)
             {
                 Entity child = children[index];
                 if (current.World.Read<ElementKey>(child).Key == key)
@@ -379,6 +431,16 @@ public static class Scope
         internal Entity Parent;
         internal ScopeData ViewData = null!;
         internal List<ScopeData>? ContentData;
+        internal ulong Frame;
+        internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren;
+        internal List<Entity> DeclaredChildren { get; } = new();
+        internal ChildChanges Changes = null!;
+        internal ChildChanges? OwnChanges;
+        internal int FirstData;
+        internal int FirstRemoval;
+        internal bool OutermostBuild;
+        internal bool Completed;
+        internal int StateMachines;
         internal bool DeclaresChildren;
         internal bool DependenciesEnabled;
         internal BuildQueue Queue = null!;
@@ -386,16 +448,36 @@ public static class Scope
         internal uint? ParameterVersion;
         internal bool Suspended;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
-        internal int ChildIndex;
         internal ulong? KeyPrefix;
 #if DEBUG
         internal int ContentVersion;
+        internal int BuildNumber;
         internal Dictionary<ulong, SiblingGroup> PreviousSiblings { get; } = new();
 #endif
+
+        internal void BeginChildren(ulong frame, ChildChanges? changes)
+        {
+            Frame = frame;
+            PreviousChildren = Hierarchy<ElementTree>.GetChildren(World, Parent);
+            OutermostBuild = changes is null;
+            Changes = changes ?? (OwnChanges ??= new());
+            FirstData = Changes.DataCount;
+            FirstRemoval = Changes.RemovedCount;
+            if (DeclaresChildren)
+                Changes.RememberOrder(Parent, PreviousChildren);
+        }
+
+        internal void ReplaceChanges(ChildChanges changes, int firstData, int firstRemoval)
+        {
+            Changes = changes;
+            FirstData -= firstData;
+            FirstRemoval -= firstRemoval;
+        }
     }
 
     internal readonly struct BuildScope(ScopeData data, bool releaseOnExit) : IDisposable
     {
+        internal bool IsSuspended => data.Suspended;
         internal void Finish(BuildTask task, uint? parameterVersion)
         {
             data.Task = task;
@@ -424,16 +506,19 @@ public static class Scope
         {
             s_scopes!.Pop();
             if (releaseOnExit && !data.Suspended)
+            {
+                FinishChildren(data);
                 Release(data);
+            }
         }
     }
 
 #if DEBUG
     internal readonly struct RebuildScope : IDisposable
     {
-        private readonly Dictionary<Entity, (ScopeData Data, int Version)>? _previousDeclarations;
+        private readonly Dictionary<Entity, (Entity Entity, ScopeData Data, int Version, int BuildNumber)>? _previousDeclarations;
 
-        internal RebuildScope(Dictionary<Entity, (ScopeData Data, int Version)>? previousDeclarations) =>
+        internal RebuildScope(Dictionary<Entity, (Entity Entity, ScopeData Data, int Version, int BuildNumber)>? previousDeclarations) =>
             _previousDeclarations = previousDeclarations;
 
         public void Dispose() => s_childDeclarations = _previousDeclarations;

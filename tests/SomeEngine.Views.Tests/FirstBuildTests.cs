@@ -140,9 +140,10 @@ public sealed class FirstBuildTests
     {
         using var frames = new HeadlessFrameDriver();
         var completion = new TaskCompletionSource();
-        Views.Spawn(frames.World, Entity.Null, new SuspendedView(completion.Task));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new SuspendedView(completion.Task));
 
         frames.Frame();
+        Assert.False(frames.World.HasSparse<BuildError>(root));
         var scopeError = Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
         Assert.Contains("active view build", scopeError.Message, StringComparison.OrdinalIgnoreCase);
         completion.SetResult();

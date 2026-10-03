@@ -13,7 +13,7 @@ internal static unsafe class ViewTypes
     private static int s_count;
 
     internal static ushort Register(
-        delegate*<World, Entity, void> buildFunction,
+        delegate*<World, Entity, ulong, void> buildFunction,
         delegate*<World, Entity, bool> parameterCheckFunction,
         ChildSource children)
     {
@@ -28,10 +28,10 @@ internal static unsafe class ViewTypes
         }
     }
 
-    internal static void Build(World world, Entity entity)
+    internal static void Build(World world, Entity entity, ulong frame)
     {
         ushort typeId = world.Read<ViewType>(entity).Id;
-        Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity);
+        Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity, frame);
     }
 
     internal static bool HasParameterChanges(World world, Entity entity)
@@ -52,14 +52,14 @@ internal static unsafe class ViewTypes
 
     private readonly struct ViewFunctions
     {
-        internal readonly delegate*<World, Entity, void> BuildFunction;
+        internal readonly delegate*<World, Entity, ulong, void> BuildFunction;
         internal readonly delegate*<World, Entity, bool> ParameterCheckFunction;
 #if DEBUG
         internal readonly ChildSource Children;
 #endif
 
         internal ViewFunctions(
-            delegate*<World, Entity, void> buildFunction,
+            delegate*<World, Entity, ulong, void> buildFunction,
             delegate*<World, Entity, bool> parameterCheckFunction,
             ChildSource children)
         {
@@ -69,6 +69,16 @@ internal static unsafe class ViewTypes
             Children = children;
 #endif
         }
+    }
+
+    internal static void RecordError(World world, Entity entity, Exception exception, ulong frame)
+    {
+        var error = new BuildError { Exception = exception, Frame = frame };
+        if (world.HasSparse<BuildError>(entity))
+            world.ReplaceSparse(entity, in error);
+        else
+            world.AddSparse(entity, in error);
+        DevelopmentCheck.Report($"View {entity} failed to build in frame {frame}: {exception}");
     }
 }
 
@@ -83,15 +93,26 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
         return ViewTypes.Register(&Build, &HasParameterChanges, T.Children);
     }
 
-    internal static void Build(World world, Entity entity)
+    internal static void Build(World world, Entity entity, ulong frame)
     {
         if (BuildQueue.For(world).Contains(entity))
             return;
         T view = world.ReadComponentData<T>(entity);
         uint? parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : null;
-        using var scope = Scope.Enter(world, entity,
-            declaresChildren: T.Children == ChildSource.Build, dependenciesEnabled: T.Mode == BuildMode.Rerun);
-        scope.Finish(view.Build(), parameterVersion);
+        bool suspended = false;
+        try
+        {
+            using var scope = Scope.Enter(world, entity, frame,
+                declaresChildren: T.Children == ChildSource.Build, dependenciesEnabled: T.Mode == BuildMode.Rerun);
+            scope.Finish(view.Build(), parameterVersion);
+            suspended = scope.IsSuspended;
+        }
+        catch (Exception exception)
+        {
+            ViewTypes.RecordError(world, entity, exception, frame);
+        }
+        if (!suspended && parameterVersion is uint version)
+            world.Replace(entity, new ParameterVersion(version));
     }
 
     private static bool HasParameterChanges(World world, Entity entity) =>

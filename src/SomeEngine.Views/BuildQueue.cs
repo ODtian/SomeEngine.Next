@@ -37,7 +37,7 @@ internal sealed class BuildQueue
                 _nextFrame.Add(continuation);
     }
 
-    internal void Resume(World world)
+    internal void Resume(World world, ulong frame)
     {
         lock (_gate)
             (_nextFrame, _frameCallbacks) = (_frameCallbacks, _nextFrame);
@@ -96,6 +96,8 @@ internal sealed class BuildQueue
                 bool completed = false;
                 try
                 {
+                    data.Frame = frame;
+                    view.Frame = frame;
                     using var scope = Scope.Resume(data);
                     stateMachine.Resume();
                     if (view.Task.IsCompleted)
@@ -105,11 +107,19 @@ internal sealed class BuildQueue
                         Scope.CompleteBuild(view);
                     }
                 }
+                catch (Exception exception)
+                {
+                    completed = true;
+                    ViewTypes.RecordError(world, build.Entity, exception, frame);
+                }
                 finally
                 {
                     stateMachine.NotifyCompletion();
                     if (completed)
                     {
+                        Scope.FinishChildren(view);
+                        if (view.ParameterVersion is uint version)
+                            world.Replace(build.Entity, new ParameterVersion(version));
                         _builds.Remove(build.Entity);
                         Scope.Release(view);
                     }

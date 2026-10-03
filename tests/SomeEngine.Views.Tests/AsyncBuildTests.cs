@@ -195,22 +195,22 @@ public sealed class AsyncBuildTests
 #endif
 
     [Fact]
-    public void FaultedBuildReportsItsErrorAndOtherReadyContentCompletesInAFollowingFrame()
+    public void FaultedBuildRecordsItsErrorWhileOtherReadyContentCompletesInTheSameFrame()
     {
         using var frames = new HeadlessFrameDriver();
         var failed = new TaskCompletionSource<string>();
         var ready = new TaskCompletionSource<string>();
-        Views.Spawn(frames.World, Entity.Null, new ResultView(failed.Task));
+        Entity first = Views.Spawn(frames.World, Entity.Null, new ResultView(failed.Task));
         Entity second = Views.Spawn(frames.World, Entity.Null, new ResultView(ready.Task));
         frames.Frame();
         var failure = new ApplicationException("failed result");
         failed.SetException(failure);
         ready.SetResult("ready result");
 
-        Assert.Same(failure, Assert.Throws<ApplicationException>(frames.Frame));
-
         frames.Frame();
 
+        Assert.Same(failure, frames.World.ReadSparse<BuildError>(first).Exception);
+        Assert.Equal(2ul, frames.World.ReadSparse<BuildError>(first).Frame);
         Assert.Equal("ready result", frames.World.Read<DisplayText>(second).Value);
         var recovered = new TaskCompletionSource<string>();
         Entity third = Views.Spawn(frames.World, Entity.Null, new ResultView(recovered.Task));
@@ -272,6 +272,65 @@ public sealed class AsyncBuildTests
         Assert.Equal(2, Hierarchy<ElementTree>.GetChildren(frames.World, group).Count);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SuspendedFailureRestoresPreviousChildParametersAndOrder(bool nested)
+    {
+        using var frames = new HeadlessFrameDriver();
+        var error = new InvalidOperationException("async content failed");
+        Entity root = nested
+            ? Views.Spawn(frames.World, Entity.Null, new AsyncGroupParent(Task.CompletedTask, false, error))
+            : Views.Spawn(frames.World, Entity.Null, new AsyncChangingGroup(Task.CompletedTask, false, error));
+        frames.Frame();
+        Entity group = nested ? Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)) : root;
+        Entity[] previous = Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray();
+        var completion = new TaskCompletionSource();
+        if (nested)
+            frames.World.Replace(root, new AsyncGroupParent(completion.Task, true, error));
+        else
+            frames.World.Replace(root, new AsyncChangingGroup(completion.Task, true, error));
+
+        frames.Frame();
+
+        Assert.Equal("changed third", frames.World.Read<TextView>(previous[2]).Value);
+        Assert.Equal(4, Hierarchy<ElementTree>.GetChildren(frames.World, group).Count);
+        completion.SetResult();
+        frames.Frame();
+
+        Assert.Same(error, frames.World.ReadSparse<BuildError>(group).Exception);
+        Assert.Equal(3ul, frames.World.ReadSparse<BuildError>(group).Frame);
+        Assert.Equal(previous, Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray());
+        Assert.Equal("second", frames.World.Read<TextView>(previous[1]).Value);
+        Assert.Equal("third", frames.World.Read<TextView>(previous[2]).Value);
+    }
+
+    private readonly record struct AsyncGroupParent(Task Result, bool Fail, Exception Error) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.View(new AsyncChangingGroup(Result, Fail, Error));
+            return default;
+        }
+    }
+
+    private readonly record struct AsyncChangingGroup(Task Result, bool Fail, Exception Error) : IView, IComponent
+    {
+        public async BuildTask Build()
+        {
+            Scope.View(new TextView("first"), 1);
+            if (Fail)
+            {
+                Scope.View(new TextView("changed third"), 3);
+                Scope.View(new TextView("added"), 4);
+                await Result;
+                throw Error;
+            }
+            Scope.View(new TextView("second"), 2);
+            Scope.View(new TextView("third"), 3);
+        }
+    }
+
     private readonly record struct ContentHelperView(ManualWait Wait) : IView, IComponent
     {
         public async BuildTask Build()
@@ -311,7 +370,7 @@ public sealed class AsyncBuildTests
         using var frames = new HeadlessFrameDriver();
         var completion = new TaskCompletionSource();
         Task method = null!;
-        Views.Spawn(frames.World, Entity.Null,
+        Entity root = Views.Spawn(frames.World, Entity.Null,
             new TaskHelperView(completion.Task, result => method = result));
         frames.Frame();
         var worker = new Thread(completion.SetResult);
@@ -321,8 +380,8 @@ public sealed class AsyncBuildTests
         Assert.True(method.IsFaulted);
         var error = Assert.Throws<InvalidOperationException>(() => Complete(method));
         Assert.Contains("active view build", error.Message, StringComparison.OrdinalIgnoreCase);
-        error = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains("active view build", error.Message, StringComparison.OrdinalIgnoreCase);
+        frames.Frame();
+        Assert.Same(error, frames.World.ReadSparse<BuildError>(root).Exception);
     }
 
     private readonly record struct TaskHelperView(Task Result, Action<Task> TaskOutput) : IView, IComponent

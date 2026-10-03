@@ -59,8 +59,10 @@ C# 编译器在 Release 中生成 struct 状态机，Debug 中的 async 状态�
 
 恢复完成的通知在退出作用域后发出。返回 `Task` 的辅助方法挂起后调用 `Scope`
 时，由 `Core.Diagnostics.DevelopmentCheck` 报告所需的活动构建作用域；
-返回 `BuildTask` 的辅助方法由重建阶段恢复作用域。构建异常沿构建入口传播，
-作用域在异常路径恢复，其余已经就绪的视图保留到后续帧执行。
+返回 `BuildTask` 的辅助方法由重建阶段恢复作用域。异步辅助方法的异常由 await 传播，
+视图构建异常沿 #18 的处理写入 `BuildError`，记录异常和当前重建帧，恢复该视图原有子声明。
+作用域在异常路径恢复，同帧其余就绪视图继续执行。嵌套子视图首次挂起时保留自己的
+子声明变更，以便在外层同步构建结束后独立完成或恢复。
 
 实现：[BuildTask](../../../src/SomeEngine.Views/BuildTask.cs)、
 [逐帧等待](../../../src/SomeEngine.Views/FrameAwaitable.cs)、

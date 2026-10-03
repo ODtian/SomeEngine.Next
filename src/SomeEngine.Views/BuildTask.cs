@@ -111,6 +111,7 @@ internal abstract class BuildStateMachine
     protected void Begin(Scope.ScopeData data)
     {
         Data = data;
+        data.ViewData.StateMachines++;
         Scope.RetainContent(data);
         Version++;
     }
@@ -147,6 +148,7 @@ internal abstract class BuildStateMachine
         }
         finally
         {
+            Data.ViewData.StateMachines--;
             _error = null;
             _continuation = null;
             IsCompleted = false;
