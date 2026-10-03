@@ -17,6 +17,8 @@
              Link="ComponentWriteChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs"
              Link="HeadlessFrameDriver.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/StructureDependencyChecks.cs"
+             Link="StructureDependencyChecks.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.ECS/SomeEngine.ECS.csproj"

@@ -5,7 +5,7 @@ namespace SomeEngine.ECS.Queries;
 internal sealed class QueryMembership
 {
     private readonly Lock _gate = new();
-    private readonly List<Entity> _entities = new();
+    private Entity[] _entities = [];
     private readonly List<ChunkMembers> _chunks = new();
     private uint _version;
 
@@ -13,8 +13,7 @@ internal sealed class QueryMembership
     {
         lock (_gate)
         {
-            var clone = new QueryMembership { _version = _version };
-            clone._entities.AddRange(_entities);
+            var clone = new QueryMembership { _version = _version, _entities = _entities };
             clone._chunks.AddRange(_chunks);
             return clone;
         }
@@ -24,10 +23,25 @@ internal sealed class QueryMembership
     {
         lock (_gate)
         {
-            if (RefreshChunks(query) && RefreshEntities(query))
-                _version = unchecked(_version + 1);
+            Refresh(query);
             return _version;
         }
+    }
+
+    internal ReadOnlySpan<Entity> ReadEntities(QueryState query, out uint version)
+    {
+        lock (_gate)
+        {
+            Refresh(query);
+            version = _version;
+            return _entities;
+        }
+    }
+
+    private void Refresh(QueryState query)
+    {
+        if (RefreshChunks(query) && RefreshEntities(query))
+            _version = unchecked(_version + 1);
     }
 
     private bool RefreshChunks(QueryState query)
@@ -61,12 +75,29 @@ internal sealed class QueryMembership
                 {
                     if ((rows & ((UInt128)1 << row)) == 0)
                         continue;
-                    changed |= Store(_entities, index++, chunk.Entities[row]);
+                    changed |= index >= _entities.Length || _entities[index] != chunk.Entities[row];
+                    index++;
                 }
             }
         }
 
-        return Trim(_entities, index) || changed;
+        if (!changed && index == _entities.Length)
+            return false;
+
+        var entities = new Entity[index];
+        index = 0;
+        foreach (QueryArchetypeMatch match in query.Matches)
+        {
+            foreach (var chunk in match.Archetype.Chunks)
+            {
+                UInt128 rows = match.RowFilterMask(chunk);
+                for (int row = 0; row < chunk.Count; row++)
+                    if ((rows & ((UInt128)1 << row)) != 0)
+                        entities[index++] = chunk.Entities[row];
+            }
+        }
+        _entities = entities;
+        return true;
     }
 
     private static bool Store<T>(List<T> values, int index, T value)

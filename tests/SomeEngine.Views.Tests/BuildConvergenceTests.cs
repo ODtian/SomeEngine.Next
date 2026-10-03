@@ -1,6 +1,8 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views.Tests;
 
@@ -54,6 +56,58 @@ public sealed class BuildConvergenceTests
         Assert.Equal(1, frames.World.Read<Number>(source).Value);
         Assert.Equal(1, frames.World.Read<DisplayedNumber>(root).Value);
     }
+
+    [Fact]
+    public void PresenceAndMembershipObserveComponentAdditionsWithinTheFrame()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity();
+        QueryHandle query = frames.World.Query(frames.World.QueryDefinition().All<Number>());
+        Entity root = Views.Spawn(frames.World, Entity.Null, new StructureGroup(source, query));
+
+        frames.Frame();
+
+        Entity observer = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Assert.Equal(new StructureValues(true, 1), frames.World.Read<StructureValues>(observer));
+        Assert.Equal(7, frames.World.Read<Number>(source).Value);
+        uint displayVersion = frames.World.WriteVersion<StructureValues>(observer);
+        frames.Frame();
+        Assert.Equal(displayVersion, frames.World.WriteVersion<StructureValues>(observer));
+    }
+
+    private readonly record struct StructureGroup(Entity Source, QueryHandle Query) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.View(new StructureDisplay(Source, Query));
+            Scope.View(new NumberAddition(Source));
+            return default;
+        }
+    }
+
+    private readonly record struct StructureDisplay(Entity Source, QueryHandle Query) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            bool present = Scope.Has<Number>(Source);
+            int members = 0;
+            foreach (Entity entity in Scope.Each(Query))
+                members++;
+            Scope.Write<StructureValues>(Scope.Entity) = new StructureValues(present, members);
+            return default;
+        }
+    }
+
+    private readonly record struct NumberAddition(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Write<Number>(Source) = new Number(7);
+            return default;
+        }
+    }
+
+    private readonly record struct StructureValues(bool Present, int Members) : IComponent;
 
     private readonly record struct ConvergingDisplay(Entity Source) : IView, IComponent
     {

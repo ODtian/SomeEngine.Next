@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
@@ -29,6 +30,9 @@ internal static class ComponentWriteChecks
         Require(frames.World.Read<Number>(target).Value == 17, "Write adds the changed component value.");
         Require(frames.World.ReadSparse<Counter>(source).Value == 4, "ReadWrite adds and updates sparse data.");
         Require(frames.World.Read<Text>(root).Value == "Count:4", "The first frame displays the converged count.");
+        Entity group = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, group)[0];
+        Require(frames.World.Read<Number>(container).Value == 19, "Caller builds commit their own component copies.");
         frames.World.Replace(clicks, new Clicks(7));
 
         frames.Frame();
@@ -54,12 +58,29 @@ internal static class ComponentWriteChecks
             Scope.Ensure<ExtraData>(Source);
             number = new Number(3);
             Scope.Write<SparseText>(Source) = new SparseText(new string('a', 3));
-            Scope.Write<Number>(Target) = new Number(17);
-            ref Counter counter = ref Scope.ReadWrite<Counter>(Source);
-            Scope.Write<Text>(Scope.Entity) = new Text($"Count:{counter.Value}");
-            int clicks = Scope.Read<Clicks>(Input).Value;
-            if (counter.Value < clicks)
-                counter = new Counter(clicks);
+            ref Number target = ref Scope.Write<Number>(Target);
+            using (Scope.View(new Group()).Content())
+            {
+                using (Scope.View(new NumberContainer()).Content()) { }
+                Scope.Write<Number>(Target) = new Number(17);
+                ref Counter counter = ref Scope.ReadWrite<Counter>(Source);
+                Scope.Write<Text>(Scope.Entity) = new Text($"Count:{counter.Value}");
+                int clicks = Scope.Read<Clicks>(Input).Value;
+                if (counter.Value < clicks)
+                    counter = new Counter(clicks);
+            }
+            Require(target.Value == 17, "Content shares the calling calculation's component copy.");
+            return default;
+        }
+    }
+
+    private readonly record struct NumberContainer : IView, IComponent
+    {
+        public static ChildSource Children => ChildSource.Caller;
+
+        public BuildTask Build()
+        {
+            Scope.Write<Number>(Scope.Entity) = new Number(19);
             return default;
         }
     }

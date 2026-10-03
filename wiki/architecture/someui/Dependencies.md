@@ -29,8 +29,10 @@ public static class Scope
 
 public struct Dependency : IBufferElement
 {
+    public DependencyKind Kind;
     public Entity Entity;
     public ushort Component;
+    public QueryHandle Query;
     public uint Version;
 }
 ```
@@ -43,7 +45,7 @@ public struct Dependency : IBufferElement
 随后按该次构建实际走过的读取路径重新登记。嵌套子构建使用自己的作用域；
 子构建返回后，后续读取继续登记到父视图。`Once` 构建沿相同存储路径读取，作用域保持仅取值状态。
 
-重建阶段逐条读取依赖来源的实体组件写版本，以 `!=` 比较登记版本。
+重建阶段先按下述组件类型检查筛选来源，再读取这些来源的实体组件写版本，以 `!=` 比较登记版本。
 表格行与 sparse dense 行继续持有各自版本，视图依赖缓冲保存该次读取的观察值。
 源组件与版本通过 ECS 既有只读访问权限取得。调度顺序与候选执行前的复核见
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
@@ -55,6 +57,42 @@ public struct Dependency : IBufferElement
 [ECS 读取桥接](../../../src/SomeEngine.ECS/World.ComponentData.cs)。
 公开验收：[ReadDependencyTests](../../../tests/SomeEngine.Views.Tests/ReadDependencyTests.cs)，
 覆盖组件更新、父子共享来源、释放子树、读取来源切换、混合存储重复读取及嵌套构建。
+
+## 存在性与查询成员依赖（#12）
+
+```csharp
+public static bool Has<T>(Entity entity) where T : struct;
+public static QueryRows Each(QueryHandle query);
+```
+
+`Scope.Has<T>` 按组件存储路径检查当前 World 中的实体，支持表格、sparse、tag 与 shared
+组件的存在性。`Rerun` 构建登记 `(Entity, Component, Presence, 结果)`，用 `Version` 的
+`0` / `1` 保存观察结果。每轮重新判断存在性，结果变化时使视图失效；组件值写入、
+启用位变化和其它组件的结构修改保持已有存在结果。源实体销毁后，原实体身份的结果为 false。
+同帧增删在下一次检查时按最终存在结果观察。
+
+`Scope.Each` 在调用时登记 `(QueryHandle, Membership, World.MembershipVersion)`，
+返回 `QueryRows`，通过 `foreach (Entity entity in Scope.Each(query))` 遍历。
+实体序列与版本来自同一次查询成员观察，采用上面的 Query membership 匹配范围和遍历顺序。
+`QueryRows` 是 `readonly ref struct`，在当前同步构建中消费。
+查询的成员观察持有唯一的实体数组；实体序列变化时替换数组。
+一次调用拿到的序列保留其内容，行视图构建中的结构修改可沿普通 World API 执行。
+
+`DependencyKind` 包含 `Component`、`Presence` 和 `Membership`。
+三种 ECS 依赖共用节点的 `DynamicBuffer<Dependency>`，每次构建按实际读取路径重新登记。
+同一次构建中，组件读与存在性按各自的 `(Kind, Entity, Component)` 去重，
+查询成员按 `(Kind, QueryHandle)` 去重，并保留首次观察值。
+`Once` 构建沿相同入口取值与遍历，依赖登记由构建模式控制。
+
+重建阶段将源实体销毁或源组件移除视为组件读取依赖失效。
+父列表随后按深度顺序更新成员并释放对应行；候选执行前继续复核节点存活和当前依赖。
+列表组合用法由 [[architecture/someui/Lists|Lists]] 维护。
+作用域外使用 `Has` / `Each`，以及使用无效或已释放的查询句柄，沿统一
+`DevelopmentCheck` 开发检查报告，shipping 编译移除检查调用及其参数求值。
+
+实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、[QueryRows](../../../src/SomeEngine.Views/QueryRows.cs)。
+公开验收：[HasDependencyTests](../../../tests/SomeEngine.Views.Tests/HasDependencyTests.cs)、
+[EachDependencyTests](../../../tests/SomeEngine.Views.Tests/EachDependencyTests.cs)。
 
 ## ECS 组件类型写版本
 
@@ -69,6 +107,27 @@ public struct Dependency : IBufferElement
 表格类型计数由 World 的结构数据持有，sparse 类型计数由其唯一的 `SparseSet<T>` 持有。各存储在统一写入口维护计数；实体复制、销毁与命令回放沿相同入口更新。结构事务从当前计数建立候选数据，成功时随组件数据一起提交，回滚时保留原有数据与计数。
 
 类型版本读取与已有类型的推进均为 O(1)。表格首次登记类型时扩展按组件编号索引的版本表；后续写入只定位该类型并原子递增。sparse 存储直接递增自身的类型计数。
+
+## 按组件类型检查依赖（#11）
+
+每个 World 的 `ViewRebuildSystem` 保存自己已经检查过的依赖组件类型与各类型上次候选收集时的写计数。
+每轮收集候选前，各类型读取一次当前 `ComponentWriteVersion`，以 `!=` 判断该类型是否变化。
+收集候选时，计数相等的类型直接跳过其依赖的实体组件版本读取；计数变化的类型继续逐条比较
+依赖登记的版本。一个类型的其它实体被写入时，同样进入逐条比较，由来源实体的版本决定视图是否变化。
+
+首次遇到某依赖类型时，先完成该类型的逐条比较，再让下一轮使用类型计数筛选。
+这覆盖第一次构建登记依赖后、同一帧后续构建又写入该来源的情况。
+系统只保存按类型编号索引的版本数据与类型列表，依赖来源继续由节点的 `DynamicBuffer<Dependency>` 持有。
+
+候选执行前再次检查参数与依赖。对于收集候选时计数相等的类型，复核当前类型写计数；
+父构建或此前的候选构建写入该类型时，继续比较来源实体的当前组件版本。
+本轮记录的计数保留到下一次候选收集，用来观察收集之后产生的写入。
+新依赖类型、不同 World 和表格 / sparse 组件沿相同的检查规则处理。
+
+实现：[ViewRebuildSystem](../../../src/SomeEngine.Views/ViewRebuildSystem.cs)。
+公开行为验收继续使用 [ReadDependencyTests](../../../tests/SomeEngine.Views.Tests/ReadDependencyTests.cs)，
+覆盖不同类型分别变化、父构建后的同帧写入、第一次子构建后的写入与各 World 的独立显示结果。
+本地检查耗时见 [[architecture/someui/Performance|Performance]]。
 
 ## Query membership
 
