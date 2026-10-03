@@ -29,8 +29,10 @@ public static class Scope
 
 public struct Dependency : IBufferElement
 {
+    public DependencyKind Kind;
     public Entity Entity;
     public ushort Component;
+    public QueryHandle Query;
     public uint Version;
 }
 ```
@@ -80,6 +82,42 @@ public struct Dependency : IBufferElement
 [重建阶段](../../../src/SomeEngine.Views/ViewRebuildSystem.cs)。
 公开验收：[EnvironmentTests](../../../tests/SomeEngine.Views.Tests/EnvironmentTests.cs)，
 覆盖两种存储、最近提供者、自身提供、缺省值、祖先移动、相同值下的来源切换和提供者移除。
+
+## 存在性与查询成员依赖（#12）
+
+```csharp
+public static bool Has<T>(Entity entity) where T : struct;
+public static QueryRows Each(QueryHandle query);
+```
+
+`Scope.Has<T>` 按组件存储路径检查当前 World 中的实体，支持表格、sparse、tag 与 shared
+组件的存在性。`Rerun` 构建登记 `(Entity, Component, Presence, 结果)`，用 `Version` 的
+`0` / `1` 保存观察结果。每帧重新判断存在性，结果变化时使视图失效；组件值写入、
+启用位变化和其它组件的结构修改保持已有存在结果。源实体销毁后，原实体身份的结果为 false。
+同帧增删在下一次检查时按最终存在结果观察。
+
+`Scope.Each` 在调用时登记 `(QueryHandle, Membership, World.MembershipVersion)`，
+返回 `QueryRows`，通过 `foreach (Entity entity in Scope.Each(query))` 遍历。
+实体序列与版本来自同一次查询成员观察，采用上面的 Query membership 匹配范围和遍历顺序。
+`QueryRows` 是 `readonly ref struct`，在当前同步构建中消费。
+查询的成员观察持有唯一的实体数组；实体序列变化时替换数组。
+一次调用拿到的序列保留其内容，行视图构建中的结构修改可沿普通 World API 执行。
+
+`DependencyKind` 包含 `Component`、`Presence` 和 `Membership`。
+三种 ECS 依赖共用节点的 `DynamicBuffer<Dependency>`，每次构建按实际读取路径重新登记。
+同一次构建中，组件读与存在性按各自的 `(Kind, Entity, Component)` 去重，
+查询成员按 `(Kind, QueryHandle)` 去重，并保留首次观察值。
+`Once` 构建沿相同入口取值与遍历，依赖登记由构建模式控制。
+
+重建阶段将源实体销毁或源组件移除视为组件读取依赖失效。
+父列表随后按深度顺序更新成员并释放对应行；候选执行前继续复核节点存活和当前依赖。
+列表组合用法由 [[architecture/someui/Lists|Lists]] 维护。
+作用域外使用 `Has` / `Each`，以及使用无效或已释放的查询句柄，沿统一
+`DevelopmentCheck` 开发检查报告，shipping 编译移除检查调用及其参数求值。
+
+实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、[QueryRows](../../../src/SomeEngine.Views/QueryRows.cs)。
+公开验收：[HasDependencyTests](../../../tests/SomeEngine.Views.Tests/HasDependencyTests.cs)、
+[EachDependencyTests](../../../tests/SomeEngine.Views.Tests/EachDependencyTests.cs)。
 
 ## ECS 组件类型写版本
 

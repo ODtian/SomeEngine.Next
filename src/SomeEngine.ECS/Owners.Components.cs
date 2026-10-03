@@ -169,8 +169,7 @@ internal readonly partial struct Components
     }
 
     internal bool Has<T>(Entity entity)
-        where T : struct
-        => Has(entity, ComponentMetadata<T>.Id);
+        where T : struct => Has(entity, ComponentMetadata<T>.Id);
 
     internal bool Has(Entity entity, int componentId)
     {

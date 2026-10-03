@@ -112,18 +112,14 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         {
             foreach (Dependency dependency in buffer.AsSpan())
             {
-                bool changed;
-                if (dependency.Kind == DependencyKind.Environment)
+                bool changed = dependency.Kind switch
                 {
-                    bool sourcesChanged = result.System.HasComponentChanges(result.World, dependency.Component, result.Recheck) ||
-                        result.System.HasComponentChanges(result.World, ComponentId<Parent<ElementTree>>.Value, result.Recheck);
-                    changed = sourcesChanged && EnvironmentLookup.HasChanges(result.World, result.Entity, in dependency);
-                }
-                else
-                {
-                    changed = result.System.HasComponentChanges(result.World, dependency.Component, result.Recheck) &&
-                        result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version;
-                }
+                    DependencyKind.Environment => result.System.HasEnvironmentChanges(result.World, result.Entity, in dependency, result.Recheck),
+                    DependencyKind.Presence => result.World.HasComponentData(dependency.Entity, dependency.Component) != (dependency.Version != 0),
+                    DependencyKind.Membership => result.World.MembershipVersion(dependency.Query) != dependency.Version,
+                    _ => result.System.HasComponentChanges(result.World, dependency.Component, result.Recheck) &&
+                        result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version,
+                };
                 if (changed)
                 {
                     result.Found = true;
@@ -132,6 +128,13 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
             }
         });
         return changes.Found;
+    }
+
+    private bool HasEnvironmentChanges(World world, Entity entity, in Dependency dependency, bool recheck)
+    {
+        bool sourcesChanged = HasComponentChanges(world, dependency.Component, recheck) ||
+            HasComponentChanges(world, ComponentId<Parent<ElementTree>>.Value, recheck);
+        return sourcesChanged && EnvironmentLookup.HasChanges(world, entity, in dependency);
     }
 
     private readonly record struct ViewDepth(Entity Entity, int Depth);

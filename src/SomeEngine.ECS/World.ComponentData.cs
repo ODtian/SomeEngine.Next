@@ -6,6 +6,18 @@ namespace SomeEngine.ECS;
 
 public partial class World
 {
+    internal bool HasComponentData<T>(Entity entity) where T : struct
+    {
+        if (default(T) is ISparseComponent)
+        {
+            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Read);
+            return _sparse.Has<T>(entity);
+        }
+
+        using WorldJobAdmissionScope access = EnterJobTopologyRead();
+        return _components.Has<T>(entity);
+    }
+
     internal bool HasComponentData(Entity entity, ushort component)
     {
         if (ComponentRegistry.Get(component).Storage == StoragePath.Sparse)
@@ -72,12 +84,16 @@ public partial class World
         return _components.WriteVersion<T>(entity);
     }
 
-    internal uint ComponentDataWriteVersion(Entity entity, ushort component)
+    internal uint? ComponentDataWriteVersion(Entity entity, ushort component)
     {
         bool sparse = ComponentRegistry.Get(component).Storage == StoragePath.Sparse;
         using WorldJobAdmissionScope access = EnterJobAdmission(WorldJobAdmissionRequest.ForStorage(
             sparse ? WorldStorageKind.Sparse : WorldStorageKind.Table, component, WorldStorageAccess.Read));
-        return sparse ? _sparse.WriteVersion(entity, component) : _components.WriteVersion(entity, component);
+        if (sparse)
+            return _entities.Alive(entity) && _sparse.HasValue(component, entity)
+                ? _sparse.WriteVersion(entity, component)
+                : null;
+        return _components.Has(entity, component) ? _components.WriteVersion(entity, component) : null;
     }
 
     /// <summary>Stores an equal value while preserving component write versions.</summary>

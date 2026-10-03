@@ -35,6 +35,7 @@ internal static class FirstBuildChecks
         VerifyKeyedChildren(frames);
         VerifyCallerChildren(frames);
         VerifyReadDependencies(frames);
+        StructureDependencyChecks.Verify();
     }
 
     private static int ReadNumber() => 41;
