@@ -136,7 +136,7 @@ internal sealed class Indices
     }
 
     internal void Fix<T>(Entity entity, in T oldValue, in T newValue)
-        where T : struct, IComponent
+        where T : struct
     {
         if (!ComponentMetadata<T>.IsIndexed || !Any)
             return;
@@ -324,7 +324,7 @@ internal sealed class Indices
     }
 
     private bool Try<T>(int componentId, out IIndex<T> index)
-        where T : struct, IComponent
+        where T : struct
     {
         index = null!;
         if ((uint)componentId >= (uint)_stores.Length ||

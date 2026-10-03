@@ -14,5 +14,32 @@
 - 参数比较规则：值类型、record 与 `string` 用 `Equals`；其它类按引用；回调委托不参与比较但存储总是更新为最新；内容函数按引用比较。比较相等时静默覆盖存储，不推进版本。
 - 一个视图参数被改写后如何向下传播由该视图自己的模式决定，不同前端在这一点衔接。
 
+## 参数比较与重跑实现（#7）
+
+`Scope.View<T>(in T)` 的约束为 `struct, IView, IEquatable<T>`，
+由视图的 `Equals(T)` 决定参数是否相等。record struct 提供这一值比较入口。
+回调、引用与内容函数的具体比较规则由生成器生成的 `Equals` 提供（#59）；
+通用构建路径直接采用视图的相等判断结果。
+
+父视图每次构建从第一个子节点开始，按同一父节点下的 `View` 调用序号复用子实体。
+本阶段固定每个序号的视图类型，类型变化经 `DevelopmentCheck` 报告；
+完整节点身份、key、重排与释放由 #8 承接。
+
+| 子视图参数 | 存储与版本 | 内容行为 |
+|---|---|---|
+| 相等 | 覆盖为最新参数，保持实体组件与组件类型写版本 | 保持已有内容 |
+| 变化，`Rerun` | 替换参数并推进写版本 | 父构建中立即以新参数构建 |
+| 变化，`Once` | 替换参数并推进写版本 | 保持首次构建的内容 |
+| 新节点，两种模式 | 新增参数组件 | 立即完成首次构建 |
+
+`Rerun` 节点在 ECS 中保存本次成功构建所使用的参数写版本。
+每帧重建阶段用 `!=` 对照当前实体组件版本，沿表格或 sparse 存储读取。
+游戏系统或测试通过 ECS 写入参数后，下一次重建阶段消费新参数；
+后续帧使用已更新的版本基线。`Once` 按自己的首次构建规则保留内容。
+
+重建的父子顺序和当场构建后的版本复查见
+[[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
+公开行为测试位于 `tests/SomeEngine.Views.Tests/ParameterBuildTests.cs`。
+
 ## Relations
 [[architecture/someui/Views|Views]] · [[architecture/someui/Frontends|Frontends]] · [[architecture/someui/Computations|Computations]]

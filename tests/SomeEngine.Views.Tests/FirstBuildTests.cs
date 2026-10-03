@@ -8,7 +8,7 @@ namespace SomeEngine.Views.Tests;
 public sealed class FirstBuildTests
 {
     [Fact]
-    public void NativeConsumerBuildsMixedStorageAndCompletedAwaits() => FirstBuildChecks.Verify();
+    public void NativeConsumerBuildsAndUpdatesMixedStorageWithCompletedAwaits() => FirstBuildChecks.Verify();
 
     [Fact]
     public void RootBuildCreatesChildrenInDeclarationOrderWithTheirParametersAndTypes()
