@@ -14,7 +14,7 @@ namespace SomeEngine.Assets.Importers;
 
 public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImportOverrides>
 {
-    public const uint ImporterVersion = 13;
+    public const uint ImporterVersion = 14;
     public static readonly Guid SourceImporterId = new("b0c10195-d8d1-46ab-81b8-f8c54db7d0aa");
     private readonly Action<IServiceCollection> _configureServices;
     private readonly string _capabilitiesVersion;
@@ -100,6 +100,16 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
             (texture, id) => new TextureAsset(id) { Name = texture.Name ?? texture.PrimaryImage?.Name ?? $"Texture_{texture.LogicalIndex}" },
             (_, id) => OutputPath(context.SourcePath, "texture", id),
             static (asset, path, token) => asset.SaveAsync(path, token));
+        context.ConfigureAssets<Skin, SkeletonAsset>(
+            skin => ElementKey(settings, "skin", skin.LogicalIndex, skin),
+            (skin, id) => new SkeletonAsset(id) { Name = skin.Name ?? $"Skin_{skin.LogicalIndex}" },
+            (_, id) => OutputPath(context.SourcePath, "skeleton", id),
+            static (asset, path, token) => asset.SaveAsync(path, token));
+        context.ConfigureAssets<Animation, AnimationClipAsset>(
+            animation => ElementKey(settings, "animation", animation.LogicalIndex, animation),
+            (animation, id) => new AnimationClipAsset(id) { Name = animation.Name ?? $"Animation_{animation.LogicalIndex}" },
+            (_, id) => OutputPath(context.SourcePath, "animation-clip", id),
+            static (asset, path, token) => asset.SaveAsync(path, token));
 
         var capabilities = scope.ServiceProvider.GetServices<AssetImporterCapability>().ToDictionary(static value => value.Id);
         SourceImporterSettings[] selections = SelectImporters(overrides?.Value.Importers, context.Selections,
@@ -119,7 +129,15 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         context.EnableImporter<GltfMaterial, MaterialAsset>(sceneCapability.Id,
             [MaterialBlock.BlockTypeId], assembly.ImportMaterialAsync);
         EnableSelected<GltfTexture, TextureAsset>(scope.ServiceProvider, selections, context);
+        EnableSelected<Skin, SkeletonAsset>(scope.ServiceProvider, selections, context);
+        EnableSelected<Animation, AnimationClipAsset>(scope.ServiceProvider, selections, context);
 
+        if (context.HasImporters<Skin, SkeletonAsset>())
+            foreach (Skin skin in source.LogicalSkins)
+                await context.GetAssetAsync<Skin, SkeletonAsset>(skin, cancellationToken).ConfigureAwait(false);
+        if (context.HasImporters<Animation, AnimationClipAsset>())
+            foreach (Animation animation in source.LogicalAnimations)
+                await context.GetAssetAsync<Animation, AnimationClipAsset>(animation, cancellationToken).ConfigureAwait(false);
         foreach (Scene scene in source.LogicalScenes)
             await context.GetAssetAsync<Scene, WorldAsset>(scene, cancellationToken).ConfigureAwait(false);
     }

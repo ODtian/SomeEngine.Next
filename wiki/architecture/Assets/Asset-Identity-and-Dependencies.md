@@ -4,7 +4,7 @@
 
 ## 身份和位置
 
-`AssetId<TAsset>` 限定语义资产家族，例如 Scene 的 `AssetId<MeshAsset>`、材质引用的 `AssetId<MaterialAsset>`。它不是某个管线表示、使用对象或页的身份。空 ID 表示没有引用，不能用于文件打开。
+`AssetId<TAsset>` 限定语义资产家族，例如 Scene 的 `AssetId<MeshAsset>`、`AssetId<SkeletonAsset>`、材质引用的 `AssetId<MaterialAsset>`，以及动画片段的 `AssetId<AnimationClipAsset>`。它不是某个管线表示、使用对象或页的身份。空 ID 表示没有引用，不能用于文件打开。
 
 移动、重命名及内容编辑保留资产 ID。`Duplicate()` 建立同一身份的内容分支，`CreateCopy()` 明确产生新身份。普通 C# 引用赋值仍指向同一对象。一个资产 ID 不要求对应唯一 CLR 对象，也不建立全局资产实例缓存。
 
@@ -31,6 +31,8 @@ Block 的持久类型 ID 用来在一个 Asset 内索引某一种内容，不是
 使用依赖是具体系统创建对象时真正取得的对象、页和设备资源。材质继承解析后的纹理集合与材质自身的直接引用不是同一项数据。
 
 World 的引用由实际 ECS codec 写入外部引用时收集，不把任意 GUID 或另一套 Scene 图推导为依赖。来源 Importer 只负责自身转换所产生的直接引用；完整遍历和保存由工程流程负责。
+
+glTF 蒙皮节点通过 `SkeletonSource` 保留 skin 对应的 `AssetId<SkeletonAsset>`，场景 codec 将它写入 World 的外部引用。骨架归属节点使用的 skin，而不是 mesh；两个节点可以共享网格并引用不同骨架。skin 与 animation 元素的持久键及输出规则见 [导入组合](Importer-Sets.md)。
 
 ## 保存与登记
 

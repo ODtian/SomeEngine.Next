@@ -87,6 +87,11 @@ public abstract class GltfSceneImporter : IAssetImporter<Scene, GltfSceneSetting
             {
                 MeshAsset imported = await context.GetAssetAsync<GltfMesh, MeshAsset>(mesh, cancellationToken).ConfigureAwait(false);
                 world.Add(entity, new MeshSource { Mesh = imported.Reference });
+                if (node.Skin is Skin skin && context.HasImporters<Skin, SkeletonAsset>())
+                {
+                    SkeletonAsset skeleton = await context.GetAssetAsync<Skin, SkeletonAsset>(skin, cancellationToken).ConfigureAwait(false);
+                    world.Add(entity, new SkeletonSource { Skeleton = skeleton.Reference });
+                }
             }
         }
         foreach ((Node node, Entity entity) in nodes)

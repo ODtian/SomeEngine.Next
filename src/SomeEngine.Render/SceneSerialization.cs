@@ -15,6 +15,7 @@ public static class SceneSerialization
         .Register<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"))
         .RegisterHierarchyDomain<DefaultHierarchyDomain>()
         .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f"))
+        .Register<SkeletonSource, SkeletonSourceCodec>(Key(nameof(SkeletonSource), "skeleton:external"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
         .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f"))
         .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32"))
@@ -51,6 +52,13 @@ public static class SceneSerialization
         }
         public void Read(ref DataReader reader, out MeshSource value)
             => value = new() { Mesh = new(reader.ReadExternalReference().Value), BoundsExpansion = reader.ReadSingle() };
+    }
+    private struct SkeletonSourceCodec : ICanonicalComponentCodec<SkeletonSource>
+    {
+        public void Write(ref DataWriter writer, in SkeletonSource value)
+            => writer.WriteExternalReference(new(value.Skeleton.Value));
+        public void Read(ref DataReader reader, out SkeletonSource value)
+            => value = new() { Skeleton = new(reader.ReadExternalReference().Value) };
     }
     private struct MotionCodec : ICanonicalComponentCodec<MeshMotion>
     {
