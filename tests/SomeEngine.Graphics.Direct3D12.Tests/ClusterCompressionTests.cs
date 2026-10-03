@@ -5,7 +5,8 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class ClusterCompressionTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class ClusterCompressionTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData("sm_6_0")]
@@ -33,7 +34,7 @@ public sealed class ClusterCompressionTests
                 Results.Store2(id.x * 24u + 16u, uint2(WaveGetLaneCount(), WaveGetLaneIndex()));
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "wave_matching", source, [new("TestWaveMatching", SlangStage.Compute)], profile, ShaderDirectory());
         uint[] result = Execute(shader, count, words);
         for (int index = 0; index < count; index++)
@@ -82,9 +83,10 @@ public sealed class ClusterCompressionTests
                 Results.Store2(id.x * 8u, asuint(float2(bound, maximum)));
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "quadratic_error", source, [new("TestQuadraticBounds", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
-        uint[] results = Execute(shader, count, 2, instanceBindings: true);
+        uint[] results = Execute(shader, count, 2, leadingBindings:
+            [ResourceBinding.Null(ResourceBindingType.BufferSrv), ResourceBinding.Null(ResourceBindingType.ConstantBuffer)]);
         for (int index = 0; index < count; index++)
         {
             double a = (index % 8) / 7.0, b = ((index / 8) % 8) / 7.0, c = (index / 64) / 7.0;
@@ -186,7 +188,7 @@ public sealed class ClusterCompressionTests
                 Results.Store(address + 36u, valid ? 0u : 1u);
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "cluster_compression", source, [new("TestCompression", SlangStage.Compute)],
             "sm_6_0", ShaderDirectory());
         uint[] result = Execute(shader, count, words);
@@ -251,9 +253,10 @@ public sealed class ClusterCompressionTests
                 Results.Store((group.x * 64u + lane) * 4u, errors);
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "dice_registers", source, [new("TestDiceRegisters", SlangStage.Compute)], "sm_6_6", ShaderDirectory());
-        Assert.Equal(0u, Execute(shader, 512, 1, hardware: true).Aggregate(0u, (sum, errors) => sum + errors));
+        Assert.Equal(0u, Execute(shader, 512, 1, createDevice: CreateHardwareDevice)
+            .Aggregate(0u, (sum, errors) => sum + errors));
     }
 
     [Fact]
@@ -277,7 +280,7 @@ public sealed class ClusterCompressionTests
                     uint4(bin, selected ? 1u : 0u, full ? 1u : 0u, mask));
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "shade_tiles", source, [new("TestShadeTiles", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         uint[] result = Execute(shader, 16 * 64, 4);
         for (int tile = 0; tile < 16; tile++)
@@ -332,10 +335,11 @@ public sealed class ClusterCompressionTests
                     ClusterMeshVertexRank(used, triangle.z), ClusterMeshVertexCount(used)));
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "mesh_compaction", hardware ? source.Replace("[numthreads", "[WaveSize(32)] [numthreads", StringComparison.Ordinal) : source,
             [new("TestMeshCompaction", SlangStage.Compute)], hardware ? "sm_6_6" : "sm_6_0", ShaderDirectory());
-        uint[] result = Execute(shader, 32 * 32, 4, hardware, groupWidth: 32);
+        uint[] result = Execute(shader, 32 * 32, 4, groupWidth: 32,
+            createDevice: backend => hardware ? CreateHardwareDevice(backend) : D3D12TestSupport.CreateWarpDevice(backend));
         for (int group = 0; group < 32; group++)
         {
             int[] vertices = Enumerable.Range(0, group + 1)
@@ -369,10 +373,11 @@ public sealed class ClusterCompressionTests
             label: "Wave32 register-cache integration device"));
     }
 
-    private static uint[] Execute(D3D12TestShader shader, int count, int words, bool hardware = false, int groupWidth = 64, bool instanceBindings = false)
+    private static uint[] Execute(D3D12TestShader shader, int count, int words, int groupWidth = 64,
+        ReadOnlySpan<ResourceBinding> leadingBindings = default, Func<IGraphicsBackend, Device>? createDevice = null)
     {
         using var backend = D3D12GraphicsBackend.Create();
-        using Device device = hardware ? CreateHardwareDevice(backend) : D3D12TestSupport.CreateWarpDevice(backend);
+        using Device device = createDevice is null ? D3D12TestSupport.CreateWarpDevice(backend) : createDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         ulong size = checked((ulong)count * (ulong)words * sizeof(uint));
@@ -388,9 +393,7 @@ public sealed class ClusterCompressionTests
         backend.SetPipeline(context, pipeline);
         backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
             shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
-            instanceBindings
-                ? [ResourceBinding.Null(ResourceBindingType.BufferSrv), ResourceBinding.Null(ResourceBindingType.ConstantBuffer), ResourceBinding.WritableBuffer(outputView)]
-                : [ResourceBinding.WritableBuffer(outputView)], []));
+            [.. leadingBindings, ResourceBinding.WritableBuffer(outputView)], []));
         backend.Dispatch(context, new DispatchArguments(checked((uint)((count + groupWidth - 1) / groupWidth)), 1, 1));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));

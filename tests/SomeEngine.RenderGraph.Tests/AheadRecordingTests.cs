@@ -15,11 +15,7 @@ public sealed class AheadRecordingTests
         GraphPassId first;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            first = edit.AddCopyFramePass(
-                "earlier copy", PassQueueSelection.AnyOfType(QueueType.Copy), 0,
-                new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
-                static (ref PassDefinition _, ref int _) => { },
-                static (ref CopyPassCommandScope _, in int _) => { });
+            first = edit.DeclareCopyPass("earlier copy", PassQueueSelection.AnyOfType(QueueType.Copy), options: new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread));
             for (int index = 0; index < 4; index++)
             {
                 GraphPassId later = edit.AddCopyFramePass(

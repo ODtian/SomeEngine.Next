@@ -96,69 +96,9 @@ TEST002	tests/SomeEngine.ECS.Tests/WorldReadSnapshotTests.cs	WorldReadSnapshotTe
 TEST002	tests/SomeEngine.ECS.Tests/WorldReadSnapshotTests.cs	WorldReadSnapshotTests.ReadSnapshot_RejectsExactWorldMutationAndAllowsNestedReads	Assert . Contains ( "read-snapshot" , clockMutation . Message , StringComparison . Ordinal )
 TEST002	tests/SomeEngine.ECS.Tests/WorldReadSnapshotTests.cs	WorldReadSnapshotTests.ReadSnapshot_RejectsExactWorldMutationAndAllowsNestedReads	Assert . Contains ( "read-snapshot" , queryMutation . Message , StringComparison . Ordinal )
 
-[SomeEngine.Graphics.Benchmarks.Tests]
-TEST001	benchmarks/SomeEngine.Graphics.Benchmarks/AssemblyInfo.cs	assembly	InternalsVisibleTo ( "SomeEngine.Graphics.Benchmarks.Tests" )
-TEST002	tests/SomeEngine.Graphics.Benchmarks.Tests/BenchmarkOptionsTests.cs	BenchmarkOptionsTests.GraphCpuRejectsUnsupportedResourceCounts	Assert . Contains ( "resource count" , exception . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Graphics.Benchmarks.Tests/BenchmarkOptionsTests.cs	BenchmarkOptionsTests.GraphCpuResourceSelectionIsNotAcceptedByOtherCommands	Assert . Contains ( "graph-cpu" , exception . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Benchmarks.Tests/BenchmarkOptionsTests.cs	BenchmarkOptionsTests.ProbeRejectsNativeCppBecauseItCannotSelectWorkloads	Assert . Contains ( "native-cpp" , exception . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Benchmarks.Tests/BenchmarkOptionsTests.cs	BenchmarkOptionsTests.DiagnosticRequiresHardwareAdapter	Assert . Contains ( "adapter" , missingAdapter . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Graphics.Benchmarks.Tests/BenchmarkOptionsTests.cs	BenchmarkOptionsTests.ResumeIsRestrictedToHardwareControllers	Assert . Contains ( "probe" , exception . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Graphics.Benchmarks.Tests/BenchmarkOptionsTests.cs	BenchmarkOptionsTests.ManagedRunnerIsRestrictedToDiagnosticCommand	Assert . Contains ( "diagnose" , exception . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Graphics.Benchmarks.Tests/BenchmarkOptionsTests.cs	BenchmarkOptionsTests.WarpAlwaysSelectsWarp	Assert . Contains ( "WARP" , exception . Message , StringComparison . Ordinal )
-
-[SomeEngine.Graphics.Direct3D12.Tests]
-TEST001	benchmarks/SomeEngine.Graphics.Benchmarks/AssemblyInfo.cs	assembly	InternalsVisibleTo ( "SomeEngine.Graphics.Direct3D12.Tests" )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/HardwareSamplerFeedbackTests.cs	HardwareSamplerFeedbackTests.AssertOrdinaryFeedbackViewRejected	Assert . Contains ( "Sampler-feedback" , error . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/SlangReflectionFactTests.cs	SlangReflectionFactTests.Direct_code_generation_rejects_a_runtime_existential_without_type_conformances	Assert . Contains ( "no type conformances" , error . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/SlangReflectionFactTests.cs	SlangReflectionFactTests.Slang_rejects_parameter_block_arrays_and_distinct_scalar_occurrences_have_distinct_identities	Assert . Contains ( "arrays of non-addressable type" , exception . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpCapabilityTests.cs	WarpCapabilityTests.Cpu_staged_descriptor_tables_do_not_claim_a_stable_gpu_residency_identity	Assert . Contains ( "CPU staging" , failure . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpCapabilityTests.cs	WarpCapabilityTests.Cpu_staged_descriptor_tables_do_not_claim_a_stable_gpu_residency_identity	Assert . Contains ( "command-scoped" , failure . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpCopyTests.cs	WarpCopyTests.Copy_context_rejects_a_first_use_texture_layout_transition	Assert . Contains ( "QueueRelease/QueueAcquire" , failure . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Duplicate_pipeline_static_sampler_location_is_rejected	Assert . Contains ( "declared more than once" , failure . Message )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Unbounded_sampler_range_cannot_be_made_static	Assert . Contains ( "one scalar Slang sampler" , failure . Message )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Bounded_sampler_array_cursor_is_rejected_before_d3d12_pipeline_creation	Assert . Contains ( "only one scalar Slang sampler" , failure . Message )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Nonrepresentable_static_sampler_border_color_is_rejected	Assert . Contains ( "border color" , failure . Message )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Foreign_layer_resource_is_rejected_and_reported_before_command_forwarding	Assert . Contains ( "Validation Layer" , exception . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Resource_from_another_device_in_the_same_layer_is_rejected_before_forwarding	Assert . Contains ( "another Device" , exception . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Barrier_history_rejects_an_incorrect_local_Before_state_without_forwarding_it	Assert . Contains ( "Incorrect Before state" , exception . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Split_barrier_requires_an_exact_End_and_commits_the_after_state	Assert . Contains ( "exact Begin transition" , mismatch . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Split_barrier_End_without_Begin_is_rejected_at_submission	Assert . Contains ( "no matching submitted Begin" , failure . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Queue_handoff_requires_an_exact_acquire_and_an_explicit_matching_wait	Assert . Contains ( "missing" , missingWait . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Texture_queue_ownership_rejects_use_on_another_Queue_without_release_and_acquire	Assert . Contains ( "use moved from Graphics to Copy" , exception . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpValidationLayerTests.cs	WarpValidationLayerTests.Acceleration_structure_commands_are_rejected_from_bundles_before_forwarding	Assert . Contains ( "not legal in a bundle" , buildError . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpWorkGraphTests.cs	WarpWorkGraphTests.Pinned_slang_work_graph_file_identity_is_fail_closed	Assert . Contains ( "Pinned Slang file identity mismatch" , mismatch . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpWorkGraphTests.cs	WarpWorkGraphTests.Pinned_slang_work_graph_file_identity_is_fail_closed	Assert . Contains ( probePath , mismatch . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpWorkGraphTests.cs	WarpWorkGraphTests.Pinned_slang_work_graph_file_identity_is_fail_closed	Assert . Contains ( "Expected SHA-256" , mismatch . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpWorkGraphTests.cs	WarpWorkGraphTests.Pinned_slang_work_graph_file_identity_is_fail_closed	Assert . Contains ( "actual SHA-256" , mismatch . Message , StringComparison . Ordinal )
-
-[SomeEngine.Graphics.Tests]
-
-[SomeEngine.Graphics.Vulkan.Tests]
-
 [SomeEngine.Render.Cluster.Tests]
 TEST002	tests/SomeEngine.Render.Cluster.Tests/ClusterAssetLoaderTests.cs	ClusterAssetLoaderTests.ClusterRenderAssetWithEmptyLastShaderReferenceFailsBeforeWriting	Assert . Contains ( "Asset" , error . Message , StringComparison . Ordinal )
 TEST002	tests/SomeEngine.Render.Cluster.Tests/ClusterAssetLoaderTests.cs	ClusterAssetLoaderTests.ClusterRenderAssetWithEmptyLastShaderReferenceFailsBeforeWriting	Assert . Contains ( "missing" , error . Message , StringComparison . OrdinalIgnoreCase )
-
-[SomeEngine.Render.Tests]
-TEST002	tests/SomeEngine.Render.Tests/RenderInstanceLayoutTests.cs	RenderInstanceLayoutTests.ComposeRejectsOnlyEncodingConflictsForTheSameKey	Assert . Contains ( "encoding" , conflict . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_ApplyFaultKeepsPublishedRootUnchanged	Assert . Contains ( "intentional extraction apply fault" , error . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_LightModuleFaultRollsBackEarlierMeshModuleChanges	Assert . Contains ( "intentional light extraction fault" , error . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_RejectsReentrantHookBeforeScratchCanBeRewritten	Assert . Contains ( "has not reached a render update boundary" , nestedFault . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_TopologyFaultRollsBackCreatedAndDestroyedMirrorsThenCanRetry	Assert . Contains ( "intentional mirror topology fault" , fault . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_FirstFailureDoesNotBindSourceWorld	Assert . Contains ( "intentional first extraction fault" , firstFault . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_FirstFailureDoesNotBindSourceWorld	Assert . Contains ( "one authoritative main World" , bindingFault . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_BindsRenderWorldToOneMainWorld	Assert . Contains ( "one authoritative main World" , error . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_RejectsUsingRenderWorldAsItsOwnMainWorld	Assert . Contains ( "cannot be an authoritative" , error . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_RejectsAnotherRenderWorldAsTheMainWorld	Assert . Contains ( "requires a main World" , error . Message , StringComparison . Ordinal )
-
-[SomeEngine.RenderGraph.Tests]
-TEST002	tests/SomeEngine.RenderGraph.Tests/BufferRangeReadTests.cs	BufferRangeReadTests.SharedSparseReadsReuseAnalysisAndRetainUploadDependencies	Assert . Contains ( "RG4001" , failure )
-TEST002	tests/SomeEngine.RenderGraph.Tests/CountedBufferRangesTests.cs	CountedBufferRangesTests.DisjointRangesRequireReadersToRespectTheirBounds	Assert . Contains ( "RG4001" , failure )
-TEST002	tests/SomeEngine.RenderGraph.Tests/CountedBufferRangesTests.cs	CountedBufferRangesTests.DisjointRangesRequireReadersToRespectTheirBounds	Assert . Null ( failure )
-TEST002	tests/SomeEngine.RenderGraph.Tests/FrameAnalysisReuseTests.cs	FrameAnalysisReuseTests.ChangedExternalContentsAreValidatedAfterAnalysisWasReused	Assert . Contains ( "RG4001" , failure )
-TEST002	tests/SomeEngine.RenderGraph.Tests/PersistentRenderGraphTests.cs	PersistentRenderGraphTests.ExplicitUndefinedResultRejectsSameFrameRead	Assert . Contains ( "RG4001:" , exception . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.RenderGraph.Tests/PersistentRenderGraphTests.cs	PersistentRenderGraphTests.ExplicitUndefinedResultRejectsSameFrameRead	Assert . Contains ( "reads undefined Buffer" , exception . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.RenderGraph.Tests/PersistentRenderGraphTests.cs	PersistentRenderGraphTests.WriteOnlyDeclarationMismatchIsCheckedOnlyInDevelopment	Assert . Contains ( "not covered" , exception . Message , StringComparison . Ordinal )
 
 [SomeEngine.Resources.Tests]
 

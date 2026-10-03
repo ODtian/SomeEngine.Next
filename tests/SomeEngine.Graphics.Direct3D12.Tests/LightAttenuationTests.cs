@@ -2,7 +2,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class LightAttenuationTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class LightAttenuationTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void LocalLightsFadeContinuouslyBeforeTheirRangeBoundary()
@@ -24,7 +25,7 @@ public sealed class LightAttenuationTests
                 Results[7] = EvaluateDistanceAttenuation(0.0, 0.0);
             }
             """;
-        uint[][] result = D3D12TestCompute.ExecuteSource(source, "Evaluate", new(1, 1, 1),
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource(source, "Evaluate", new(1, 1, 1),
             [(new uint[8], ResourceBindingType.BufferUav, 4)]);
         float[] values = result[0].Select(BitConverter.UInt32BitsToSingle).ToArray();
         Assert.All(values, value => Assert.True(float.IsFinite(value)));

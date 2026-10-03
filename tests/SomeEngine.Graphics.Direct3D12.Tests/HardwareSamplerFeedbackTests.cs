@@ -208,11 +208,8 @@ public sealed class HardwareSamplerFeedbackTests
         secondSampled.Dispose();
     }
 
-    private static void AssertOrdinaryFeedbackViewRejected(Action create)
-    {
-        ArgumentException error = Assert.Throws<ArgumentException>(create);
-        Assert.Contains("Sampler-feedback", error.Message, StringComparison.Ordinal);
-    }
+    private static void AssertOrdinaryFeedbackViewRejected(Action create) =>
+        Assert.Throws<ArgumentException>(create);
 }
 
 [AttributeUsage(AttributeTargets.Method)]

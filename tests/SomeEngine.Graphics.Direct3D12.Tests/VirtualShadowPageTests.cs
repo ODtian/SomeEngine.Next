@@ -7,7 +7,8 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class VirtualShadowPageTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(0, -17, 5)]
@@ -25,7 +26,7 @@ public sealed class VirtualShadowPageTests
         view[34] = 5;
         view[36] = lightKind == 0 ? 1u : 0u;
         view[37] = lightKind;
-        uint[][] result = Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
+        uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
         [
             new BufferInput("CoarsePageDemand", [1, pageTableEntryCount, 7, 0], ResourceBindingType.ConstantBuffer, 0),
             new BufferInput("ShadowViews", view, ResourceBindingType.BufferSrv, 176),
@@ -66,7 +67,7 @@ public sealed class VirtualShadowPageTests
         uint[] views = new uint[44];
         views[16] = 4096; views[17] = 128; views[21] = unchecked((uint)-3);
         views[24] = 5; views[25] = 5; views[34] = 1;
-        uint[][] result = Execute("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(16, 1, 1),
+        uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(16, 1, 1),
         [
             ([1024, 1024, capacity, 1, 10, 8, 63, 1], ResourceBindingType.ConstantBuffer, 0),
             (views, ResourceBindingType.BufferSrv, 176),
@@ -139,7 +140,7 @@ public sealed class VirtualShadowPageTests
             bounds[offset + 1] = bounds[offset + 2] = Float(-0.05f);
             bounds[offset + 5] = bounds[offset + 6] = Float(0.05f);
         }
-        uint[][] result = Execute("vsm_caster_invalidation.slang", "InvalidateMovedVirtualShadowCasters", new(2, 1, 1),
+        uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_caster_invalidation.slang", "InvalidateMovedVirtualShadowCasters", new(2, 1, 1),
         [
             ([2, 1, pages, 1, 10, 46, 2, 0], ResourceBindingType.ConstantBuffer, 0),
             (views, ResourceBindingType.BufferSrv, 176), (bounds, ResourceBindingType.BufferSrv, 16),
@@ -200,7 +201,7 @@ public sealed class VirtualShadowPageTests
         uint[] node = new uint[16];
         node[0] = node[1] = node[2] = Float(-1);
         node[4] = node[5] = node[6] = Float(1);
-        uint[][] result = Execute("cluster_scene_bounds.slang", "BuildClusterSceneBounds", new(3, 1, 1),
+        uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("cluster_scene_bounds.slang", "BuildClusterSceneBounds", new(3, 1, 1),
         [
             ([(uint)count, history ? 1u : 0u, instanceGroups ? 1u : 0u, 0], ResourceBindingType.ConstantBuffer, 0),
             (node, ResourceBindingType.BufferSrv, 64), (data, ResourceBindingType.BufferSrv, 0),

@@ -8,11 +8,13 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpLifetimeTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Validated_graphics_root_cross_thread_dispose_joins_the_single_receiver_release()
     {
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         int lifetimeMessages = 0;
@@ -35,8 +37,12 @@ public sealed class WarpLifetimeTests
 
         try
         {
-            var owner = new Thread(validation.Dispose);
-            owner.Start();
+            var disposal = new Thread(() =>
+            {
+                validation.Dispose();
+                events.Enqueue("first disposal completed");
+            });
+            disposal.Start();
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             Assert.Throws<ObjectDisposedException>(() => validation.TryEnumerateAdapters(
                 new AdapterEnumerationOptions(IncludeSoftware: true),
@@ -49,14 +55,18 @@ public sealed class WarpLifetimeTests
             {
                 contenderStarted.Set();
                 validation.Dispose();
+                events.Enqueue("second disposal completed");
                 contenderReturned.Set();
             });
             contender.Start();
             Assert.True(contenderStarted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.False(contenderReturned.Wait(TimeSpan.FromMilliseconds(100)));
+            events.Enqueue("release");
             release.Set();
-            Assert.True(owner.Join(TimeSpan.FromSeconds(10)));
+            Assert.True(disposal.Join(TimeSpan.FromSeconds(10)));
             Assert.True(contender.Join(TimeSpan.FromSeconds(10)));
+            Assert.Equal("release", events.First());
+            Assert.Contains("first disposal completed", events);
+            Assert.Contains("second disposal completed", events);
 
             Assert.Equal(1, Volatile.Read(ref lifetimeMessages));
             Assert.Equal(DeviceStatus.Disposed, device.Status);
@@ -75,6 +85,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Validation_receiver_contenders_join_and_sink_failure_is_observational()
     {
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var sink = new BlockingThrowingSink(entered, release);
@@ -86,8 +97,12 @@ public sealed class WarpLifetimeTests
 
         try
         {
-            var owner = new Thread(validation.Dispose);
-            owner.Start();
+            var disposal = new Thread(() =>
+            {
+                validation.Dispose();
+                events.Enqueue("first disposal completed");
+            });
+            disposal.Start();
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             using var contenderStarted = new ManualResetEventSlim();
             using var contenderReturned = new ManualResetEventSlim();
@@ -95,14 +110,18 @@ public sealed class WarpLifetimeTests
             {
                 contenderStarted.Set();
                 validation.Dispose();
+                events.Enqueue("second disposal completed");
                 contenderReturned.Set();
             });
             contender.Start();
             Assert.True(contenderStarted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.False(contenderReturned.Wait(TimeSpan.FromMilliseconds(100)));
+            events.Enqueue("release");
             release.Set();
-            Assert.True(owner.Join(TimeSpan.FromSeconds(10)));
+            Assert.True(disposal.Join(TimeSpan.FromSeconds(10)));
             Assert.True(contender.Join(TimeSpan.FromSeconds(10)));
+            Assert.Equal("release", events.First());
+            Assert.Contains("first disposal completed", events);
+            Assert.Contains("second disposal completed", events);
 
             Assert.Equal(1, sink.ReportCount);
             Assert.Equal(DeviceStatus.Disposed, device.Status);
@@ -127,6 +146,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Backend_cross_thread_dispose_joins_while_real_queue_gate_is_held()
     {
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Copy);
@@ -158,12 +178,14 @@ public sealed class WarpLifetimeTests
         Thread owner = new(() =>
         {
             backend.Dispose();
+            events.Enqueue("first disposal completed");
             ownerReturned.Set();
         });
         Thread contender = new(() =>
         {
             contenderStarted.Set();
             backend.Dispose();
+            events.Enqueue("second disposal completed");
             contenderReturned.Set();
         });
 
@@ -178,12 +200,14 @@ public sealed class WarpLifetimeTests
             Assert.True(invalidationObserved.Wait(TimeSpan.FromSeconds(5)));
             contender.Start();
             Assert.True(contenderStarted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.False(ownerReturned.Wait(TimeSpan.FromMilliseconds(100)));
-            Assert.False(contenderReturned.Wait(TimeSpan.FromMilliseconds(100)));
+            events.Enqueue("release");
             releaseGate.Set();
             Assert.True(holder.Join(TimeSpan.FromSeconds(10)));
             Assert.True(owner.Join(TimeSpan.FromSeconds(10)));
             Assert.True(contender.Join(TimeSpan.FromSeconds(10)));
+            Assert.Equal("release", events.First());
+            Assert.Contains("first disposal completed", events);
+            Assert.Contains("second disposal completed", events);
         }
         finally
         {
@@ -237,7 +261,7 @@ public sealed class WarpLifetimeTests
 
 
     [Fact]
-    public void Structured_uav_retains_both_native_resources_without_owning_their_wrappers()
+    public void Structured_uav_retains_both_native_resources_without_owning_their_wrappers_DoesNotThrow()
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -468,7 +492,7 @@ public sealed class WarpLifetimeTests
         [
             new("computeMain", SlangStage.Compute),
         ];
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_lifetime_matrix",
             source,
             entries);
@@ -669,7 +693,7 @@ public sealed class WarpLifetimeTests
             [
                 new("rayGenerationMain", SlangStage.RayGeneration),
             ];
-            rayShader = D3D12TestShader.Compile(
+            rayShader = shaderCompiler.Compile(
                 "rhi_lifetime_ray_table",
                 raySource,
                 rayEntries);
@@ -873,7 +897,7 @@ public sealed class WarpLifetimeTests
     }
 
     [Fact]
-    public void View_retains_resource_native_state_exactly_until_view_disposal()
+    public void View_retains_resource_native_state_exactly_until_view_disposal_DoesNotThrow()
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);

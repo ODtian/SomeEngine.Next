@@ -6,14 +6,14 @@ using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Tests;
 
-internal static class TestAssets
+internal sealed class TestAssets
 {
-    private static readonly object Gate = new();
-    private static readonly Dictionary<(int Id, int Revision), Mesh> Meshes = [];
-    private static readonly Dictionary<(int Id, int Revision), Material> Materials = [];
-    private static readonly Dictionary<(int Id, int Revision), Texture> Textures = [];
+    private readonly object Gate = new();
+    private readonly Dictionary<(int Id, int Revision), Mesh> Meshes = [];
+    private readonly Dictionary<(int Id, int Revision), Material> Materials = [];
+    private readonly Dictionary<(int Id, int Revision), Texture> Textures = [];
 
-    internal static Mesh Mesh(int id, int revision = 1)
+    internal Mesh Mesh(int id, int revision = 1)
     {
         lock (Gate)
         {
@@ -26,7 +26,7 @@ internal static class TestAssets
         }
     }
 
-    internal static Material Material(int id, int revision = 1)
+    internal Material Material(int id, int revision = 1)
     {
         lock (Gate)
         {
@@ -39,7 +39,7 @@ internal static class TestAssets
         }
     }
 
-    internal static Texture Texture(int id, int revision = 1)
+    internal Texture Texture(int id, int revision = 1)
     {
         lock (Gate)
         {

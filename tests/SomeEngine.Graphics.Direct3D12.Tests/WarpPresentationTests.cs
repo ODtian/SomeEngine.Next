@@ -60,14 +60,14 @@ public sealed class WarpPresentationTests
     }
 
     [Fact]
-    public void Acquire_submit_present_and_reconfigure_enforce_sequence_and_commit_boundaries()
+    public void Acquire_submit_present_and_reconfigure_enforce_sequence_and_commit_boundaries_DoesNotThrow()
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         ExercisePresentationLifecycle(backend);
     }
 
     [Fact]
-    public void Native_validation_accepts_the_complete_presentation_lifecycle()
+    public void Native_validation_accepts_the_complete_presentation_lifecycle_DoesNotThrow()
     {
         using IGraphicsBackend backend =
             new ValidationLayer(D3D12GraphicsBackend.Create());
@@ -150,7 +150,7 @@ public sealed class WarpPresentationTests
     [InlineData(PresentedTeardown.Surface)]
     [InlineData(PresentedTeardown.Device)]
     [InlineData(PresentedTeardown.Backend)]
-    public void Native_validation_retires_an_in_flight_present_during_parent_teardown(
+    public void Native_validation_retires_an_in_flight_present_during_parent_teardown_DoesNotThrow(
         PresentedTeardown teardown)
     {
         using IGraphicsBackend backend =
@@ -424,6 +424,7 @@ public sealed class WarpPresentationTests
     [InlineData(true)]
     public void Parent_disposal_joins_an_already_running_swapchain_release(bool disposeDevice)
     {
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using D3D12TestWindow window = new();
         using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -460,6 +461,7 @@ public sealed class WarpPresentationTests
             Thread child = new(() =>
             {
                 swapchain.Dispose();
+                events.Enqueue("swapchain disposal completed");
                 childReturned.Set();
             });
             child.Start();
@@ -472,15 +474,19 @@ public sealed class WarpPresentationTests
                     device.Dispose();
                 else
                     surface.Dispose();
+                events.Enqueue("parent disposal completed");
                 parentReturned.Set();
             });
             parent.Start();
             Assert.True(parentStarted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.False(parentReturned.Wait(TimeSpan.FromMilliseconds(100)));
+            events.Enqueue("release");
             releaseQueueGate.Set();
             Assert.True(holder.Join(TimeSpan.FromSeconds(10)));
             Assert.True(child.Join(TimeSpan.FromSeconds(10)));
             Assert.True(parent.Join(TimeSpan.FromSeconds(10)));
+            Assert.Equal("release", events.First());
+            Assert.Contains("swapchain disposal completed", events);
+            Assert.Contains("parent disposal completed", events);
         }
         finally
         {
@@ -503,7 +509,7 @@ public sealed class WarpPresentationTests
 
 
     [Fact]
-    public void Final_drain_waits_for_maximum_target_and_collects_all_payload_families()
+    public void Final_drain_waits_for_maximum_target_and_collects_all_payload_families_DoesNotThrow()
     {
         using D3D12TestWindow window = new();
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();

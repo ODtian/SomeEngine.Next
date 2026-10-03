@@ -9,7 +9,8 @@ using Xunit.Sdk;
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 [Trait("Category", "Hardware")]
-public sealed class IntelCompatibilityTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class IntelCompatibilityTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [IntelHardwareData]
@@ -52,7 +53,7 @@ public sealed class IntelCompatibilityTests
             new("vertexMain", SlangStage.Vertex),
             new("pixelMain", SlangStage.Fragment),
         ];
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "intel_sm60_persistent_draw",
             source,
             entries,

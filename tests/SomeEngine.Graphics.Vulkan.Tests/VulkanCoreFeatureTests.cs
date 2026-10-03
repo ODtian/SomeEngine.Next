@@ -4,7 +4,8 @@ using SlangShaderSharp;
 using Xunit;
 using Xunit.Sdk;
 
-public sealed class VulkanCoreFeatureTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanCoreFeatureTests(VulkanTestCompiler shaderCompiler)
 {
     [Fact]
     public void Public_factory_dispatches_through_graphics_backend_contract()
@@ -59,7 +60,7 @@ public sealed class VulkanCoreFeatureTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) {}
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
@@ -86,7 +87,7 @@ public sealed class VulkanCoreFeatureTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) {}
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
@@ -142,7 +143,7 @@ public sealed class VulkanCoreFeatureTests
                 InterlockedAdd(outputValues[0], 1);
             }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
