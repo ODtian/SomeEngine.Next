@@ -39,10 +39,15 @@ public static KeyScope Key(ulong key);
 - 每次声明从层级中尚待匹配的子节点查找 `(Key, Occurrence)`。
   类型相同的匹配项复用实体，参数更新沿
   [[architecture/someui/Build-Modes|Build Modes]] 的比较与构建规则处理。
-  匹配项的类型变化时，使用 `Hierarchy<ElementTree>.DestroySubtree` 释放旧实体和后代，
-  随后创建新视图；新增声明同样创建并当场完成首次构建。
-- 声明顺序由 `Hierarchy<ElementTree>.SetParent(world, child, parent, insertIndex)` 维护。
-  成功构建结束时，尚待匹配的旧子节点及其整个子树通过同一层级接口释放。
+  匹配项的类型变化时，保留旧实体和后代，创建新视图并当场构建；
+  新增声明同样创建并当场完成首次构建。
+- 本次作用域保存构建开始时的只读子集合与本次声明的子集合。
+  两种 [[architecture/someui/Child-Source|Child Source]] 共用这次子声明的恢复边界。
+  构建成功时，通过 `Hierarchy<ElementTree>.SetParent(world, child, parent, insertIndex)`
+  应用声明次序，外层构建成功后通过 `DestroySubtree` 释放被替换及省略的旧子树。
+  嵌套构建共用当次子声明修改记录；失败作用域按倒序恢复子参数与已完成的后代声明，
+  释放新增子树并恢复原次序。原有节点身份、类型、参数及原有后代由 ECS 继续持有。
+  参数相等时仍保存原值，使自定义 `Equals` 忽略的回调字段也能随失败声明恢复。
   视图参数、`ElementKey` 和 `ElementTree` 持有节点数据；出现次数只在本次构建期间计数。
 - `Views.Spawn` 创建的根也带有 `ElementKey`，其值为 key 0、出现次数 0。
 

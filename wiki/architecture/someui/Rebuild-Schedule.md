@@ -47,7 +47,7 @@
 
 每个候选执行前再次检查当前参数版本。父构建中已经当场构建的子视图已消费新版本，
 后续检查保持这份结果；父参数相等时，子视图自己的外部参数写入仍由同一检查处理。
-版本记录对应构建开始时使用的参数，成功完成构建后写回节点。
+版本记录对应构建开始时使用的参数，每次构建结束后写回节点。
 
 `ParameterBuildTests.cs` 经公开 World、视图与无头帧入口验证更新时机，
 并用视图写出的显示历史验证父子参数同帧变化时的结果。
@@ -55,10 +55,12 @@
 ## 读取依赖重建实现（#9）
 
 每帧收集阶段把首次请求、参数版本变化或读取依赖版本变化的视图放入同一个候选列表，
-按 `ElementTree` 深度从父到子执行。读取依赖的存储与版本语义见
+按 `ElementTree` 深度从父到子执行。收集时按组件类型写计数跳过计数相等类型的实体组件版本比较，
+读取依赖的存储与版本语义见
 [[architecture/someui/Dependencies|Dependencies]]。
 
-每个候选执行前先确认视图实体存活，再复核当前参数与读取依赖版本。
+每个候选执行前先确认视图实体存活，再复核当前参数与读取依赖版本；
+类型写计数复核同时观察候选收集后的构建写入。
 父构建释放的子视图在存活检查处跳过；父构建中当场重建的子视图已经重新登记读取版本，
 复核消费这份最新结果。父传入相等参数时，子视图保留自己的读取依赖，
 来源变化仍由候选复核触发子视图构建。查询借用在构建前结束，
@@ -66,6 +68,45 @@
 
 `ReadDependencyTests.cs` 通过无头帧驱动、公开视图和组件数据显示历史验证父子顺序，
 并通过父视图改为声明空内容，验证成功构建后的子树释放与后续帧结果。
+
+## 结构依赖重建实现（#12）
+
+组件存在性与查询成员依赖进入同一个视图候选与复核路径。
+每帧检查 `Has` 的当前布尔结果以及 `Each` 的查询成员版本；
+源实体销毁或组件移除使组件读取依赖进入失效状态。
+父列表按既有深度顺序先声明当前成员，其后继续检查存活行的各自数据依赖。
+源实体销毁后，对应行由父列表在本帧释放；查询重排通过既有 key 匹配更新层级位置。
+公开验收由 `EachDependencyTests.cs` 覆盖列表增删、单行血量更新、查询顺序与启用过滤变化。
+
+## 构建异常隔离实现（#18）
+
+```csharp
+public struct BuildError : ISparseComponent
+{
+    public Exception Exception;
+    public ulong Frame;
+}
+```
+
+每个 World 的 `ViewRebuildSystem` 从 1 开始推进自己的重建帧号。
+系统执行与父构建中当场执行的子构建共用这一帧号。
+构建入口捕获 `Build` 及已完成 `BuildTask` 中的异常，作用域先恢复子声明，
+随后在出错视图实体上添加或替换 sparse `BuildError`，保留原异常对象与当次帧号。
+开发报告通过 [[architecture/someui/Checks|Checks]] 的统一入口送出，兄弟和本帧后续视图继续构建。
+子声明的恢复与释放边界见 [[architecture/someui/Node-Identity|Node Identity]]。
+
+每次构建尝试消费开始时的参数版本，并保留本次实际读取的依赖。
+这些数据再次变化后，普通失效检查触发重建；成功构建移除该视图的 `BuildError`。
+首次构建失败时，视图实体仍在树上，子内容恢复到空集合。
+
+祖先通过 `Scope.Has<BuildError>(child)` 登记错误组件的存在依赖，
+随后通过 `Scope.Read<BuildError>(child)` 读取异常或帧号，并声明自己的后备节点。
+当场子构建的错误在 `Scope.View` 返回后即可读取；在本帧祖先执行之后出现或清除的错误，
+由下一帧的失效收集触发祖先重建。
+
+公开验收见 [BuildErrorTests](../../../tests/SomeEngine.Views.Tests/BuildErrorTests.cs)：
+覆盖系统调度与当场子构建、key 重排、类型替换、新增声明回滚、嵌套后代参数恢复、
+首次失败、后备内容恢复、同步完成的异步异常及开发报告。
 
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]

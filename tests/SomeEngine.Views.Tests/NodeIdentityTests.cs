@@ -145,7 +145,8 @@ public sealed class NodeIdentityTests
         frames.Frame();
         frames.World.Replace(root, new RowList(Enumerable.Repeat(42UL, count).ToArray()));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
 
         Assert.Contains("42", error.Message, StringComparison.Ordinal);
         Assert.Contains("local state", error.Message, StringComparison.OrdinalIgnoreCase);

@@ -33,7 +33,11 @@ internal static class FirstBuildChecks
         VerifyParameterChanges(frames, root, children.ToArray(), grandchildren[0]);
         VerifyOnceParameters(frames);
         VerifyKeyedChildren(frames);
+        VerifyCallerChildren(frames);
         VerifyReadDependencies(frames);
+        VerifyBuildErrors();
+        StructureDependencyChecks.Verify();
+        VerifyUntrackedReads(frames);
     }
 
     private static int ReadNumber() => 41;
@@ -142,10 +146,161 @@ internal static class FirstBuildChecks
         Require(frames.World.WriteVersion<TableText>(child) == textVersion, "A later frame retains the displayed text version.");
     }
 
+    private static void VerifyUntrackedReads(HeadlessFrameDriver frames)
+    {
+        Entity sample = frames.World.CreateEntity(new TableText("table"));
+        frames.World.AddSparse(sample, new SparseText("sparse"));
+        Entity trigger = frames.World.CreateEntity(new TableText("first"));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new SampledText(sample, trigger));
+
+        frames.Frame();
+
+        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Require(frames.World.Read<TableText>(child).Value == "table:sparse:first",
+            "Untracked reads supply table and sparse values.");
+        frames.World.Replace(sample, new TableText("changed"));
+        frames.World.ReplaceSparse(sample, new SparseText("updated"));
+
+        frames.Frame();
+
+        Require(frames.World.Read<TableText>(child).Value == "table:sparse:first",
+            "Untracked source writes retain the displayed values.");
+        frames.World.Replace(trigger, new TableText("second"));
+
+        frames.Frame();
+
+        Require(frames.World.Read<TableText>(child).Value == "changed:updated:second",
+            "An outside dependency refreshes the displayed values.");
+    }
+
+    private static void VerifyBuildErrors()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity();
+        frames.World.AddSparse(source, new SparseText("before"));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ErrorContent(source));
+        frames.Frame();
+        Entity branch = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, branch).ToArray();
+        frames.World.ReplaceSparse(source, new SparseText("failed"));
+
+        frames.Frame();
+        frames.Frame();
+
+        BuildError error = frames.World.ReadSparse<BuildError>(branch);
+        Require(error.Frame == 2 && error.Exception.Message == "content failed", "The child retains its exception and frame.");
+        Require(Hierarchy<ElementTree>.GetChildren(frames.World, branch).Span.SequenceEqual(children),
+            "A failed build retains its complete children.");
+        Require(frames.World.Read<TableText>(children[0]).Value == "before", "The previous child parameters survive.");
+        Require(frames.World.Read<TableText>(children[1]).Value == "last", "The second child parameters survive.");
+        Entity fallback = Hierarchy<ElementTree>.GetChildren(frames.World, root)[1];
+        Require(frames.World.Read<TableText>(fallback).Value == "content failed", "The ancestor displays the child's error.");
+
+        frames.World.ReplaceSparse(source, new SparseText("after"));
+        frames.Frame();
+        frames.Frame();
+
+        Require(!frames.World.HasSparse<BuildError>(branch), "The recovered child clears its error.");
+        Require(frames.World.Read<TableText>(children[0]).Value == "after", "A changed dependency restores content.");
+        Require(!frames.World.IsAlive(fallback), "The ancestor releases its fallback after recovery.");
+        Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, root)[1];
+        Require(frames.World.Read<TableText>(content).Value == "content", "The ancestor restores its content.");
+    }
+
     private static void Require(bool condition, string message)
     {
         if (!condition)
             throw new InvalidOperationException(message);
+    }
+
+    private static void VerifyCallerChildren(HeadlessFrameDriver frames)
+    {
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ContentGroup(3, 11, true));
+        frames.Frame();
+        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, container).ToArray();
+        Require(children.Length == 2, "Content declares both branches under its container.");
+        Entity firstLeaf = Hierarchy<ElementTree>.GetChildren(frames.World, children[0])[0];
+        Entity secondLeaf = Hierarchy<ElementTree>.GetChildren(frames.World, children[1])[0];
+        frames.World.Replace(container, new ContentContainer(7));
+
+        frames.Frame();
+
+        Require(frames.World.Read<Selection>(container).Value == 7,
+            "Caller containers rebuild their own data from changed parameters.");
+        Require(Hierarchy<ElementTree>.GetChildren(frames.World, container).Span.SequenceEqual(children),
+            "Caller container rebuilds preserve the declared children.");
+        uint displayVersion = frames.World.WriteVersion<Selection>(container);
+        frames.World.Replace(root, new ContentGroup(7, 33, false));
+
+        frames.Frame();
+
+        var content = Hierarchy<ElementTree>.GetChildren(frames.World, container);
+        Require(content.Count == 1 && content[0] == children[0], "Content keeps the remaining branch entity.");
+        Require(frames.World.WriteVersion<Selection>(container) == displayVersion,
+            "Equal container parameters preserve the container data version.");
+        Require(frames.World.Read<TableText>(firstLeaf).Value == "33",
+            "Caller changes update nested content while the container parameters stay equal.");
+        Require(!frames.World.IsAlive(children[1]) && !frames.World.IsAlive(secondLeaf),
+            "Content completion releases the removed branch and its subtree.");
+
+        Entity source = frames.World.CreateEntity(new TableText("first"));
+        frames.World.AddSparse(source, new SparseText("source"));
+        Entity readingRoot = Views.Spawn(frames.World, Entity.Null, new ContentText(source));
+        frames.Frame();
+        Entity group = Hierarchy<ElementTree>.GetChildren(frames.World, readingRoot)[0];
+        Entity text = Hierarchy<ElementTree>.GetChildren(frames.World, group)[0];
+        Require(frames.World.Read<TableText>(text).Value == "first:source",
+            "Content reads the caller's table and sparse sources.");
+        frames.World.Replace(source, new TableText("changed"));
+        frames.World.ReplaceSparse(source, new SparseText("updated"));
+
+        frames.Frame();
+
+        Require(frames.World.Read<TableText>(text).Value == "changed:updated",
+            "Changed content sources rebuild the caller's children.");
+    }
+
+    private readonly record struct ContentText(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Scope.View(new Group()).Content())
+            {
+                string table = Scope.Read<TableText>(Source).Value;
+                string sparse = Scope.Read<SparseText>(Source).Value;
+                Scope.View(new TableText($"{table}:{sparse}"));
+            }
+            return default;
+        }
+    }
+
+    private readonly record struct ContentGroup(int Value, ulong First, bool IncludeSecond) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Scope.View(new ContentContainer(Value)).Content())
+            {
+                Scope.View(new KeyedBranch(First), 11);
+                if (IncludeSecond)
+                    Scope.View(new KeyedBranch(22), 22);
+            }
+            return default;
+        }
+    }
+
+    private readonly record struct ContentContainer(int Value) : IView, IComponent
+    {
+        public static ChildSource Children => ChildSource.Caller;
+
+        public BuildTask Build()
+        {
+            if (Scope.World.Has<Selection>(Scope.Entity))
+                Scope.World.Replace(Scope.Entity, new Selection(Value));
+            else
+                Scope.World.Add(Scope.Entity, new Selection(Value));
+            return default;
+        }
     }
 
     private readonly record struct ReferenceGroup(string Name, Func<int> NumberCallback) : IView, ISparseComponent
@@ -176,6 +331,41 @@ internal static class FirstBuildChecks
 
     private readonly record struct SparseText(string Value) : ISparseComponent;
 
+    private readonly record struct ErrorContent(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Entity branch = Scope.View(new FailingContent(Source), 1);
+            if (Scope.Has<BuildError>(branch))
+            {
+                string message = Scope.Read<BuildError>(branch).Exception.Message;
+                Scope.View(new TableText(message), 2);
+            }
+            else
+            {
+                Scope.View(new TableText("content"), 3);
+            }
+            return default;
+        }
+    }
+
+    private readonly record struct FailingContent(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            string value = Scope.Read<SparseText>(Source).Value;
+            if (value == "failed")
+            {
+                Scope.View(new TableText("changed"), 2);
+                Scope.View(new TableText("added"), 3);
+                throw new InvalidOperationException("content failed");
+            }
+            Scope.View(new TableText(value), 1);
+            Scope.View(new TableText("last"), 2);
+            return default;
+        }
+    }
+
     private readonly record struct ComponentText(Entity Source) : IView, IComponent
     {
         public BuildTask Build()
@@ -183,6 +373,23 @@ internal static class FirstBuildChecks
             string table = Scope.Read<TableText>(Source).Value;
             string sparse = Scope.Read<SparseText>(Source).Value;
             Scope.View(new TableText($"{table}:{sparse}"));
+            return default;
+        }
+    }
+
+    private readonly record struct SampledText(Entity Sample, Entity Trigger) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            string table;
+            string sparse;
+            using (Scope.Untrack())
+            {
+                table = Scope.Read<TableText>(Sample).Value;
+                sparse = Scope.Read<SparseText>(Sample).Value;
+            }
+            string trigger = Scope.Read<TableText>(Trigger).Value;
+            Scope.View(new TableText($"{table}:{sparse}:{trigger}"));
             return default;
         }
     }
