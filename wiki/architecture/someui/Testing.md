@@ -150,5 +150,18 @@ Absolute 嵌套、最小/最大尺寸、单轴自动尺寸、零尺寸、非均�
 | `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj --nologo -v quiet` | 298 通过 |
 | `just views-aot win-x64` | 原生发布、布局/Compose/视图检查、存档类型编号重映射和下一帧重建全部通过，退出码 0 |
 
+## Surface 与外部对等验收（#28）
+
+`SomeEngine.Elements.Consumer.Tests` 直接引用公开的 Views、Layout 与 Elements 项目。
+`Rewrites/SurfaceModifiers.cs` 提供用户的三个等价修饰，`SurfaceTests` 将同一组
+节点数据、返回实体、布局结果与写版本用例应用于内置修饰和用户修饰。
+尺寸变化后的重建保留相同 Surface 的节点写版本与类型写版本，填充色变化则推进两者。
+开发构建中的三种修饰共用 Core 的作用域检查。
+
+`AssemblyBoundaryTests` 经编译程序集的公开属性读取访问边界。
+向 Views 临时加入 `[assembly: InternalsVisibleTo("SomeEngine.Elements")]` 后，
+架构用例报告该声明并以退出码 1 失败；移除该声明后的验收通过。
+访问边界规则由 [[architecture/someui/Assemblies|Assemblies]] 维护。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

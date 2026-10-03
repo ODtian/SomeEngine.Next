@@ -43,6 +43,22 @@ Compose 的视图生成、调用位置拦截与跨程序集类型复用由同一
 声明与调用诊断由 `ComposeAnalyzer` 提供，接口形状见
 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
 
+## Elements 接入（#28）
+
+`SomeEngine.Elements` 提供 `Surface` 和 `SurfaceModifiers`，当前引用 Views 与 Layout。
+Surface 的字段、默认值和调用方写入规则见 [[architecture/someui/Modifiers|Modifiers]]。
+后续元素按实际使用的公开能力接入 Typography 与 Animation。
+
+`SomeEngine.Elements.Consumer.Tests` 是外部重写工程，直接引用 Views、Layout 与 Elements
+的公开项目，用户示例位于 `Rewrites/`。每个内置控件的等价重写在这一工程中接入同一组
+公开行为用例；首个示例覆盖 Surface 的三种修饰。
+
+`AssemblyBoundaryTests.ElementLayerUsesPublicAssemblyAccess` 读取这个消费者所引用的
+引擎程序集及其传递依赖，并检查编译结果中的 `InternalsVisibleTo` 声明。
+受检查的公开层包括 Elements 系列（含 Elements.Render）、Compose、SwiftUI、Solid，
+以及引用这些层的消费者。带公钥的友元名称按程序集名称识别。
+发现向这些公开层授予内部访问的声明时，架构验收失败并列出声明来源与目标程序集。
+
 ## 视图序列化（#66）
 
 界面节点参与 ECS 检查点和存档。应用先调用 `ViewSerialization.Register(registry)`，
