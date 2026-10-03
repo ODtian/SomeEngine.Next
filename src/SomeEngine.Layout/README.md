@@ -2,7 +2,7 @@
 
 从 Canvas 的视图根测量布局，写入画布坐标的 `LayoutRect`。
 将 `LayoutSystem` 放在 `ViewRebuildSystem` 后，每个父布局通过 `LayoutPass`
-测量并摆放自己的子节点。用户视图实现 `ILayout`，使用与内置 `Absolute` 相同的类型分派。
+测量并摆放自己的子节点。用户视图实现 `ILayout`，使用与内置 `Absolute`、`Flex` 相同的类型分派。
 
 ```csharp
 using static SomeEngine.Layout.AbsoluteFunctions;
@@ -16,6 +16,22 @@ using (Absolute().Padding(16).Content())
     Absolute().MinSize(80, 40).MaxSize(200, 120).Position(200, 20);
 }
 ```
+
+```csharp
+using static SomeEngine.Layout.FlexFunctions;
+
+using (Row(10).Padding(16).Align(Align.Start, Align.Center).Content())
+{
+    Absolute().Size(100, 40);
+    Absolute().Size(4, float.NaN).Shrink(0).AlignSelf(Align.Stretch);
+    using (Column(6).Grow().Basis(120).Content())
+        Absolute().Size(float.NaN, 30);
+}
+```
+
+`Flex` 支持横纵方向、Gap、主轴和交叉轴对齐以及换行。
+子节点通过 `Grow`、`Shrink`、`Basis` 和 `AlignSelf` 写入 `FlexItem`。
+Flex 按行分配尺寸后将最终约束传给子节点，使嵌套布局随分配结果更新。
 
 协议、约束与节点组件使用 `SomeEngine.Layout` 命名空间，由 Views 基础层提供，
 使构建与测量共用视图类型表，并保持 Layout → Views 的程序集依赖。
