@@ -16,6 +16,67 @@ public sealed partial class RebuildDiagnosticsTests : IDisposable
     public void Dispose() => RebuildDiagnostics.Enabled = false;
 
     [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ObjectChangesIdentifyTheSourceThatUpdatesTheView(int kind)
+    {
+        using var frames = new HeadlessFrameDriver();
+        var number = new State<int>(3);
+        var cell = new VersionCell();
+        var memoSource = new State<VersionCell?>();
+        Entity view = kind switch
+        {
+            0 => Views.Spawn(frames.World, Entity.Null, new StateDisplay(number)),
+            1 => Views.Spawn(frames.World, Entity.Null, new VersionDisplay(cell)),
+            _ => Views.Spawn(frames.World, Entity.Null, new MemoDisplay(number, memoSource)),
+        };
+        frames.Frame();
+        number.Value = 7;
+        cell.Advance();
+
+        frames.Frame();
+
+        Assert.Equal(kind == 1 ? 2 : 7, frames.World.Read<DisplayValue>(view).Number);
+        VersionCell source = kind switch { 0 => number, 1 => cell, _ => memoSource.Value! };
+        Assert.Contains(RebuildDiagnostics.LastFrame(frames.World).ToArray(),
+            record => record.View == view && ReferenceEquals(record.SourceObject, source));
+    }
+
+    private readonly record struct StateDisplay(State<int> Number) : IView, ISparseComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Write<DisplayValue>(Scope.Entity) = new DisplayValue(Number.Value);
+            return default;
+        }
+    }
+
+    private readonly record struct VersionDisplay(VersionCell Cell) : IView, ISparseComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Depend(Cell);
+            Scope.Depend(Cell);
+            Scope.Write<DisplayValue>(Scope.Entity) = new DisplayValue((int)Cell.Version);
+            return default;
+        }
+    }
+
+    private readonly record struct MemoDisplay(State<int> Number, State<VersionCell?> Source) : IView, ISparseComponent
+    {
+        public static BuildMode Mode => BuildMode.Once;
+        public BuildTask Build()
+        {
+            State<int> number = Number;
+            Memo<int> memo = Scope.Memo(() => number.Value);
+            Source.Value = memo;
+            Scope.Compute(() => Scope.Write<DisplayValue>(Scope.Entity) = new DisplayValue(memo.Value));
+            return default;
+        }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void ComponentWritesReportTheViewAndChangedSource(bool sparse)

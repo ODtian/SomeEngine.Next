@@ -18,7 +18,7 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
 
     public void OnCreate(ref ImmediateSystemContext context) =>
         _tracks = context.World.Query(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<Track<T>>()
+            .ReadWrite<Timeline>().WriteBuffer<Track<T>>()
             .OptionalBuffer<Keyframe>(QueryAccess.Read)
             .OptionalBuffer<TimelineStage>(QueryAccess.Read));
 
@@ -43,6 +43,9 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
                     ref Timeline timeline = ref row.ReadWrite<Timeline>();
                     DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
                     int lastStage = FindLastSampledStage(stages, timeline.Stage, timeline.Time, timeline.Paused);
+                    SubmitFinishedTracks(world, row.Entity, tracks, lastStage, timeline.Starts, evaluation.WeightChannels);
+                    if (!world.IsEnabled<Timeline>(row.Entity))
+                        continue;
                     float time = timeline.Time;
                     for (int stage = timeline.Stage; stage <= lastStage; stage++)
                     {
@@ -73,6 +76,24 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
             stage = next;
         }
         return stage;
+    }
+
+    private static void SubmitFinishedTracks(World world, Entity animation, DynamicBuffer<Track<T>> tracks,
+        int lastStage, uint starts, bool weightChannels)
+    {
+        if (weightChannels)
+            return;
+        for (int index = 0; index < tracks.Count; index++)
+        {
+            Track<T> track = tracks.Read(index);
+            Entity target = track.Target == Entity.Null ? animation : track.Target;
+            if (!track.Finished || track.Endpoints != TrackEndpoints.Values || track.StartId != starts ||
+                track.Stage > lastStage || track.Channel.Component == ComponentId<AnimationLayers>.Value ||
+                !world.IsAlive(target) || !world.Has<AnimationLayers>(target) ||
+                HasLaterTrack(tracks, animation, target, in track, lastStage))
+                continue;
+            Submit(world, target, animation, (uint)index, in track);
+        }
     }
 
     private static bool SampleTracks(World world, Entity animation, DynamicBuffer<Track<T>> tracks,
@@ -124,10 +145,7 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
             track.Finished = finished;
             if (!HasLaterTrack(tracks, animation, target, in track, lastStage))
             {
-                if (world.HasBuffer<Contribution<T>>(target))
-                    Append(world, target, animation, (uint)i, in track);
-                else
-                    PropertyAnimation.WriteSingle<T, TOps>(world, target, track.Channel, track.Layer, ReadValue(world, target, in track));
+                Submit(world, target, animation, (uint)i, in track);
             }
             running |= !finished;
         }
@@ -141,7 +159,7 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
         for (int i = 0; i < tracks.Count; i++)
         {
             Track<T> later = tracks.Read(i);
-            if (later.Finished || later.StartId != track.StartId || later.Stage <= track.Stage || later.Stage > lastStage ||
+            if (later.StartId != track.StartId || later.Stage <= track.Stage || later.Stage > lastStage ||
                 later.Channel != track.Channel || later.Layer != track.Layer)
                 continue;
             Entity laterTarget = later.Target == Entity.Null ? animation : later.Target;
@@ -149,6 +167,14 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
                 return true;
         }
         return false;
+    }
+
+    private static void Submit(World world, Entity target, Entity animation, uint output, in Track<T> track)
+    {
+        if (world.HasBuffer<Contribution<T>>(target))
+            Append(world, target, animation, output, in track);
+        else
+            PropertyAnimation.WriteSingle<T, TOps>(world, target, track.Channel, track.Layer, ReadValue(world, target, in track));
     }
 
     private static void Append(World world, Entity target, Entity source, uint output, in Track<T> track)

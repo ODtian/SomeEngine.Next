@@ -6,6 +6,49 @@ namespace SomeEngine.Views.Generators.Tests;
 public sealed class ComposeTests
 {
     [Fact]
+    public async Task ReferencedComposeViewsRegisterGeneratedCodecsAndRestoreTheirOutput()
+    {
+        Assert.True(await CompilerChecks.Run("""
+            using SomeEngine.Views;
+            using SomeEngine.Views.Tests;
+            using SomeEngine.Views.Generators.Tests;
+            using SomeEngine.ECS;
+            using SomeEngine.ECS.Entities;
+            using SomeEngine.ECS.Hierarchy;
+            using SomeEngine.ECS.Serialization;
+            using System.IO;
+            using System.Linq;
+
+            public static class ReferenceChecks
+            {
+                public static bool Check()
+                {
+                    var registry = new SerializationRegistry();
+                    ViewSerialization.Register(registry);
+                    CheckpointComposition.Number_ViewFunctions.RegisterSerialization(registry);
+                    CheckpointLabelFunctions.RegisterSerialization(registry);
+                    registry.Register<CheckpointValue, CheckpointValueCodec>(new SerializationTypeKey(
+                        new System.Guid("e4b64561-5a8c-4b95-9200-29b54aee4d97"), "ComposeNumber", 1));
+                    using var frames = new HeadlessFrameDriver();
+                    Entity source = frames.World.CreateEntity(new CheckpointValue(7));
+                    Entity root = Views.Spawn(frames.World, Entity.Null, new CheckpointComposition.Number_View(source));
+                    frames.Frame();
+                    Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
+                    using var checkpoint = new MemoryStream();
+                    WorldCheckpointCodec.Write(checkpoint, frames.World, registry);
+                    checkpoint.Position = 0;
+                    using var restored = new HeadlessFrameDriver(WorldCheckpointCodec.Read(checkpoint, registry));
+                    restored.World.Replace(source, new CheckpointValue(13));
+                    restored.Frame();
+                    return Hierarchy<ElementTree>.GetChildren(restored.World, root).Single() == child &&
+                        restored.World.ReadSparse<CheckpointComposition.Number_View>(root).source == source &&
+                        restored.World.ReadSparse<CheckpointLabel>(child).Value == 13;
+                }
+            }
+            """));
+    }
+
+    [Fact]
     public async Task InternalComposeParameterTypesCanBeStoredAsViewParameters()
     {
         var diagnostics = await CompilerChecks.Diagnostics("""
@@ -383,6 +426,13 @@ public sealed class ComposeTests
             }
             """));
     }
+}
+
+public static partial class CheckpointComposition
+{
+    [Composable]
+    public static void Number(SomeEngine.ECS.Entities.Entity source) =>
+        SomeEngine.Views.Scope.View(new CheckpointLabel(SomeEngine.Views.Scope.Read<CheckpointValue>(source).Value));
 }
 
 public static partial class ReferencedComposition

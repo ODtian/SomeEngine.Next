@@ -21,6 +21,35 @@ internal sealed class ChildChanges
 
     internal void RememberAddedChild(Entity entity) => _previousData.Add(new AddedChild(entity));
 
+    internal void RememberComponent<T>(World world, Entity entity) where T : struct
+    {
+        bool exists = world.HasComponentData<T>(entity);
+        _previousData.Add(new ChildComponent<T>(entity, exists,
+            exists ? world.ReadComponentData<T>(entity) : default));
+    }
+
+    internal void RememberReads(World world, Entity entity)
+    {
+        Dependency[]? reads = null;
+        if (world.HasBuffer<Dependency>(entity))
+            world.ExecuteBufferRead<Dependency, Dependency[]?>(entity, ref reads,
+                static (buffer, ref values) => values = buffer.AsSpan().ToArray());
+        ObjectDependencyList? objects = world.Has<ObjectDependencies>(entity)
+            ? world.Read<ObjectDependencies>(entity).Reads : null;
+        _previousData.Add(new ChildReads(entity, reads, objects));
+        if (objects is not null)
+            world.Remove<ObjectDependencies>(entity);
+    }
+
+    internal void RememberComputations(World world, Entity entity)
+    {
+        ComputationList? computations = world.HasSparse<Computations>(entity)
+            ? world.ReadSparse<Computations>(entity).List : null;
+        _previousData.Add(new ChildComputations(entity, computations));
+        if (computations is not null)
+            world.RemoveSparse<Computations>(entity);
+    }
+
     internal void RemoveChild(Entity entity) => _removedChildren.Add(entity);
 
     internal void Restore(World world, int firstData, int firstRemoval)
@@ -33,6 +62,8 @@ internal sealed class ChildChanges
 
     internal void ReleaseChildren(World world)
     {
+        foreach (IChildData data in _previousData)
+            data.Complete();
         foreach (Entity entity in _removedChildren)
             if (world.IsAlive(entity))
                 Hierarchy<ElementTree>.DestroySubtree(world, entity);
@@ -41,6 +72,7 @@ internal sealed class ChildChanges
     private interface IChildData
     {
         void Restore(World world);
+        void Complete() { }
     }
 
     private sealed class ChildOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) : IChildData
@@ -61,6 +93,62 @@ internal sealed class ChildChanges
     private sealed class ChildParameters<T>(Entity entity, T value) : IChildData where T : struct
     {
         public void Restore(World world) => world.OverwriteComponentData(entity, in value);
+    }
+
+    private sealed class ChildComponent<T>(Entity entity, bool exists, T value) : IChildData where T : struct
+    {
+        public void Restore(World world)
+        {
+            if (exists)
+                world.OverwriteComponentData(entity, in value);
+            else if (world.HasComponentData<T>(entity))
+                world.DiscardComponentData<T>(entity);
+        }
+    }
+
+    private sealed class ChildComputations(Entity entity, ComputationList? computations) : IChildData
+    {
+        public void Restore(World world)
+        {
+            if (world.HasSparse<Computations>(entity))
+            {
+                world.ReadSparse<Computations>(entity).List.ReleaseChildren();
+                if (computations is not null)
+                    world.ReplaceSparse(entity, new Computations(computations));
+                else
+                    world.RemoveSparse<Computations>(entity);
+            }
+            else if (computations is not null)
+                world.AddSparse(entity, new Computations(computations));
+        }
+
+        public void Complete() => computations?.ReleaseChildren();
+    }
+
+    private sealed class ChildReads(Entity entity, Dependency[]? reads, ObjectDependencyList? objects) : IChildData
+    {
+        public void Restore(World world)
+        {
+            if (reads is not null)
+                world.ExecuteBufferWrite<Dependency, Dependency[]>(entity, ref reads, static (buffer, ref values) =>
+                {
+                    buffer.Clear();
+                    foreach (Dependency value in values)
+                        buffer.Add(value);
+                });
+            else if (world.HasBuffer<Dependency>(entity))
+                world.RemoveBuffer<Dependency>(entity);
+            if (objects is not null)
+            {
+                var dependencies = new ObjectDependencies(objects);
+                if (world.Has<ObjectDependencies>(entity))
+                    world.Replace(entity, dependencies);
+                else
+                    world.Add(entity, dependencies);
+            }
+            else if (world.Has<ObjectDependencies>(entity))
+                world.Remove<ObjectDependencies>(entity);
+        }
     }
 
     private sealed class AddedChild(Entity entity) : IChildData

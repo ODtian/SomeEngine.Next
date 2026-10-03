@@ -38,7 +38,7 @@ public static partial class PropertyAnimation
             AnimationLayers layers = world.Read<AnimationLayers>(target);
             DevelopmentCheck.Require(layers.Count <= 8 && layer < layers.Count,
                 "A property track requires a defined animation layer.");
-            if (layers.Items[layer].Mode == LayerMode.Additive)
+            if (endpoints == TrackEndpoints.Displacement && layers.Items[layer].Mode == LayerMode.Additive)
                 ReadBase(world, target, channel, ref current);
         }
         bool inline = world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target);

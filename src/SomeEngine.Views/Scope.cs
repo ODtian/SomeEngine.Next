@@ -162,16 +162,15 @@ public static class Scope
     /// <summary>Adds default component data when the entity first requires it.</summary>
     public static void Ensure<T>(Entity entity) where T : struct
     {
-        World world = Current.World;
+        ScopeData current = Current;
+        World world = current.World;
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"Scope.Ensure requires table or sparse component {typeof(T).Name}.");
         if (ComponentCopy<T>.HasComponent(world, entity))
             return;
+        current.Changes.RememberComponent<T>(world, entity);
         T value = default;
-        if (default(T) is ISparseComponent)
-            world.AddSparse(entity, in value);
-        else
-            world.Add(entity, in value);
+        world.AddComponentData(entity, in value);
     }
 
     /// <summary>Observes component presence and records additions or removals as a dependency.</summary>
@@ -222,10 +221,7 @@ public static class Scope
         current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
         {
             foreach (Dependency existing in buffer.ReadSpan())
-                if (existing.Kind == read.Kind &&
-                    (read.Kind == DependencyKind.Membership
-                        ? existing.Query.Equals(read.Query)
-                        : existing.Entity == read.Entity && existing.Component == read.Component))
+                if (existing.HasSameSource(in read))
                     return;
             buffer.Add(read);
         });
@@ -279,7 +275,10 @@ public static class Scope
             }
             current.World.ReplaceComponentData(existing, in view);
             if (T.Mode == BuildMode.Rerun)
+            {
+                current.Changes.RememberComponent<BuildError>(current.World, existing);
                 ViewRegistration<T>.Build(current.World, existing, current.Frame, firstBuild: false);
+            }
             return existing;
         }
         Entity child = Views.Create(current.World, in view, new ElementKey { Key = key, Occurrence = occurrence });
@@ -327,15 +326,16 @@ public static class Scope
 
     internal static BuildScope Enter(World world, Entity entity, ulong frame, bool declaresChildren, bool dependenciesEnabled)
     {
-        if (world.HasSparse<Computations>(entity))
-            world.ReadSparse<Computations>(entity).List.ReleaseChildren();
+        ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
+        if (parent?.World == world)
+            parent.Changes.RememberReads(world, entity);
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
         if (world.Has<ObjectDependencies>(entity))
             world.Read<ObjectDependencies>(entity).Reads.Clear(frame);
-        ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
         var current = new ScopeData(world, entity, entity, frame, declaresChildren, dependenciesEnabled,
             parent?.World == world ? parent.Changes : null);
+        current.Changes.RememberComputations(world, entity);
 #if DEBUG
         current.BuildNumber = ++s_buildNumber;
 #endif
@@ -527,7 +527,7 @@ public static class Scope
             }
             if (current.ComponentCopies is { } copies)
                 foreach (ComponentCopy copy in copies.Values)
-                    copy.Commit(current.World);
+                    copy.Commit(current.World, current.Changes);
             current.Completed = true;
         }
 
