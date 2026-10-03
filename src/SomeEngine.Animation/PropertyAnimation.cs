@@ -7,7 +7,7 @@ using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Animation;
 
-public static class PropertyAnimation
+public static partial class PropertyAnimation
 {
     /// <summary>Declares inline storage before animation starts.</summary>
     public static void Declare<T>(World world, Entity entity) where T : unmanaged
@@ -32,10 +32,19 @@ public static class PropertyAnimation
         where T : unmanaged
     {
         T current = Unsafe.ReadUnaligned<T>(ref world.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>()));
+        bool hasLayers = channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target);
+        if (hasLayers)
+        {
+            AnimationLayers layers = world.Read<AnimationLayers>(target);
+            DevelopmentCheck.Require(layers.Count <= 8 && layer < layers.Count,
+                "A property track requires a defined animation layer.");
+            if (layers.Items[layer].Mode == LayerMode.Additive)
+                ReadBase(world, target, channel, ref current);
+        }
         bool inline = world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target);
         var matches = new FieldAnimations<T>
         {
-            World = world, Target = target, Channel = channel, Layer = layer,
+            World = world, Target = target, Channel = channel, Layer = layer, Endpoints = endpoints,
             InlineTarget = inline ? target : Entity.Null,
         };
         QueryHandle query = world.Query(world.QueryDefinition()
@@ -60,17 +69,17 @@ public static class PropertyAnimation
                         Entity target = track.Target == Entity.Null ? row.Entity : track.Target;
                         if (track.Finished || target != matches.Target || track.Channel != matches.Channel || track.StartId != timeline.Starts || track.Stage != timeline.Stage)
                             continue;
-                        if (track.Layer == matches.Layer)
+                        if (track.Layer == matches.Layer && track.Endpoints == TrackEndpoints.Values && matches.Endpoints == TrackEndpoints.Values)
                         {
                             matches.ExistingAnimation = row.Entity;
                             matches.CurveKind = track.Curve.Kind;
                             matches.Velocity = track.Velocity;
+                            matches.Current = track.Current;
                             if (matches.InlineTarget != Entity.Null && row.Entity != matches.InlineTarget)
                                 tracks[i].Finished = true;
                         }
                         else
                         {
-                            tracks[i].Finished = true;
                             matches.SharedField = true;
                         }
                     }
@@ -81,6 +90,11 @@ public static class PropertyAnimation
         {
             world.ReleaseQuery(query);
         }
+
+        if (matches.SharedField && !world.HasBuffer<Contribution<T>>(target))
+            world.AddBuffer<Contribution<T>>(target);
+        if (matches.ExistingAnimation != Entity.Null && (hasLayers || world.HasBuffer<Contribution<T>>(target)))
+            current = matches.Current;
 
         Entity animation = target;
         if (!inline)
@@ -123,6 +137,9 @@ public static class PropertyAnimation
                     Track<T> previous = tracks.Read(i);
                     if (previous.Target != track.Target || previous.Channel != track.Channel || previous.Layer != track.Layer)
                         continue;
+                    if (!previous.Finished && previous.StartId == track.StartId &&
+                        (previous.Stage != track.Stage || previous.Endpoints != TrackEndpoints.Values || track.Endpoints != TrackEndpoints.Values))
+                        continue;
                     tracks[i] = track;
                     return;
                 }
@@ -130,7 +147,6 @@ public static class PropertyAnimation
             });
         world.Replace(animation, timeline);
         world.Enable<Timeline>(animation);
-        DevelopmentCheck.Require(!matches.SharedField, "Multiple animation sources share a field; the latest source replaces the earlier source.");
         return animation;
     }
 
@@ -153,7 +169,9 @@ public static class PropertyAnimation
                         continue;
                     ref Track<T> track = ref tracks[i];
                     Entity target = track.Target == Entity.Null ? destination.Animation : track.Target;
-                    T current = Unsafe.ReadUnaligned<T>(ref destination.World.WriteBytes(target, track.Channel.Component, track.Channel.Offset, Unsafe.SizeOf<T>()));
+                    T current = destination.World.Has<AnimationLayers>(target) || destination.World.HasBuffer<Contribution<T>>(target)
+                        ? previous.Current
+                        : Unsafe.ReadUnaligned<T>(ref destination.World.WriteBytes(target, track.Channel.Component, track.Channel.Offset, Unsafe.SizeOf<T>()));
                     track.From = track.Current = current;
                     track.To = destination.Value;
                     track.Endpoints = TrackEndpoints.Values;
@@ -221,9 +239,11 @@ public static class PropertyAnimation
         public Entity Target;
         public Channel<T> Channel;
         public byte Layer;
+        public TrackEndpoints Endpoints;
         public Entity InlineTarget, ExistingAnimation, AvailableAnimation;
         public bool SharedField;
         public CurveKind CurveKind;
         public T Velocity;
+        public T Current;
     }
 }

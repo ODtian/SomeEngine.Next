@@ -406,7 +406,7 @@ public sealed class PropertyAnimationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void LaterSourcesReplaceEarlierSourcesAndReportTheirSharedFieldInDevelopment(bool inline)
+    public void HigherLayersBlendAfterLowerLayers(bool inline)
     {
         using var world = new World();
         Entity target = world.CreateEntity(new Visual());
@@ -416,23 +416,13 @@ public sealed class PropertyAnimationTests
         using var systems = FloatSystems(world);
         Tick(systems, world, 0.25);
 
-#if DEBUG
-        Assert.Throws<InvalidOperationException>(() =>
-            PropertyAnimation.To(world, target, Opacity, 2f, Spec.Tween(1), layer: 1));
-#else
         PropertyAnimation.To(world, target, Opacity, 2f, Spec.Tween(1), layer: 1);
-#endif
         Tick(systems, world, 0.5);
         Assert.Equal(1.125f, world.Read<Visual>(target).Opacity);
 
-#if DEBUG
-        Assert.Throws<InvalidOperationException>(() =>
-            PropertyAnimation.To(world, target, Opacity, 3f, Spec.Tween(1), layer: 0));
-#else
         PropertyAnimation.To(world, target, Opacity, 3f, Spec.Tween(1), layer: 0);
-#endif
         Tick(systems, world, 0.5);
-        Assert.Equal(2.0625f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(2f, world.Read<Visual>(target).Opacity);
         Tick(systems, world, 1);
         Assert.Equal(3, world.Read<Visual>(target).Opacity);
     }
@@ -515,26 +505,26 @@ public sealed class PropertyAnimationTests
     }
 
     [Fact]
-    public void RetargetKeepsTheCurrentSpringSourceAfterAnotherLayerWasReplaced()
+    public void RetargetContinuesSpringMomentumAcrossLayers()
     {
         using var world = new World();
         Entity target = world.CreateEntity(new Visual());
+        var layers = new AnimationLayers { Count = 2 };
+        layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
+        layers.Items[1] = new AnimationLayer { Mode = LayerMode.Override, Weight = 0 };
+        world.Add(target, layers);
+        PropertyAnimation.SetBase(world, target, Opacity, 0f);
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Spring());
         using var systems = FloatSystems(world);
         Tick(systems, world, 1d / 60);
-#if DEBUG
-        Assert.Throws<InvalidOperationException>(() => PropertyAnimation.To(world, target, Opacity, 2f, Spec.Tween(1), layer: 1));
-        Assert.Throws<InvalidOperationException>(() => PropertyAnimation.To(world, target, Opacity, 3f, Spec.Spring(), layer: 0));
-#else
         PropertyAnimation.To(world, target, Opacity, 2f, Spec.Tween(1), layer: 1);
         PropertyAnimation.To(world, target, Opacity, 3f, Spec.Spring(), layer: 0);
-#endif
 
         PropertyAnimation.Retarget(world, target, Opacity, 4f);
         Tick(systems, world, 1d / 60);
 
-        Assert.Equal(0.17505881f, world.Read<Visual>(target).Opacity, 6);
+        Assert.Equal(0.20959455f, world.Read<Visual>(target).Opacity, 6);
     }
 
     [Fact]
@@ -718,6 +708,7 @@ public sealed class PropertyAnimationTests
         var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new TimelineSystem());
         systems.Add(new TrackSystem<float, FloatOps>());
+        systems.Add(new ComposeSystem<float, FloatOps>());
         systems.Add(new TimelineEndSystem());
         return systems;
     }
