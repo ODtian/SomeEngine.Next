@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class ParameterBuildTests
+public sealed partial class ParameterBuildTests
 {
     [Theory]
     [InlineData(false)]

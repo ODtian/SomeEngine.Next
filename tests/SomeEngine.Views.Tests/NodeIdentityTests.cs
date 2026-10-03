@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class NodeIdentityTests
+public sealed partial class NodeIdentityTests
 {
     [Fact]
     public void KeyedRowsKeepTheirEntitiesAndLocalStateWhenReordered()
@@ -72,14 +72,14 @@ public sealed class NodeIdentityTests
     }
 
     [Fact]
-    public void UnkeyedRowsReuseTheirEntitiesByOccurrence()
+    public void ZeroKeyRowsReuseTheirEntitiesByOccurrence()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity root = Views.Spawn(frames.World, Entity.Null, new UnkeyedRows([11, 22, 33]));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ZeroKeyRows([11, 22, 33]));
         frames.Frame();
         Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
         frames.World.Replace(rows[0], new Selection(5));
-        frames.World.Replace(root, new UnkeyedRows([33, 11, 22]));
+        frames.World.Replace(root, new ZeroKeyRows([33, 11, 22]));
 
         frames.Frame();
 
@@ -179,7 +179,7 @@ public sealed class NodeIdentityTests
             if (Reordered)
                 Scope.View(new Leaf(90), 9);
             using (Scope.Key(5))
-                Scope.View(new Leaf(20));
+                Scope.View(new Leaf(20), 0);
             if (Reordered)
                 Scope.View(new Leaf(40), 5);
             else
@@ -202,17 +202,17 @@ public sealed class NodeIdentityTests
                 }
             }
             Scope.View(new Row(90), 90);
-            Scope.View(new Row(0));
+            Scope.View(new Row(0), 0);
             return default;
         }
     }
 
-    private readonly record struct UnkeyedRows(ulong[] Ids) : IView, IComponent
+    private readonly record struct ZeroKeyRows(ulong[] Ids) : IView, IComponent
     {
         public BuildTask Build()
         {
             foreach (ulong id in Ids)
-                Scope.View(new Row(id));
+                Scope.View(new Row(id), 0);
             return default;
         }
     }
@@ -238,7 +238,7 @@ public sealed class NodeIdentityTests
             foreach (ulong id in Ids)
             {
                 using (Scope.Key(id))
-                    Scope.View(new Row(id));
+                    Scope.View(new Row(id), 0);
             }
             return default;
         }
@@ -253,7 +253,7 @@ public sealed class NodeIdentityTests
                 Scope.World.Add(Scope.Entity, new Selection(0));
                 Scope.World.AddTag<LocalState>(Scope.Entity);
             }
-            Scope.View(new Leaf(Id));
+            Scope.View(new Leaf(Id), 0);
             return default;
         }
     }
@@ -262,7 +262,7 @@ public sealed class NodeIdentityTests
     {
         public BuildTask Build()
         {
-            Scope.View(new Tip(Id));
+            Scope.View(new Tip(Id), 0);
             return default;
         }
     }

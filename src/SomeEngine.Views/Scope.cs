@@ -17,13 +17,17 @@ public static class Scope
     /// <summary>The entity of the view being built.</summary>
     public static Entity Entity => Current.Entity;
 
-    /// <summary>Declares a child with key zero, or the surrounding Key scope's key.</summary>
+    /// <summary>Declares a child whose call-site key is supplied by the view generator.</summary>
     /// <remarks>
     /// Equal parameters overwrite the stored value while preserving its write version.
     /// Changed parameters rebuild Rerun views immediately. Each new child completes its first build.
     /// </remarks>
     public static Entity View<T>(in T view)
-        where T : struct, IView, IEquatable<T> => View(in view, 0);
+        where T : struct, IView, IEquatable<T>
+    {
+        DevelopmentCheck.Fail("View calls require source-generator interception. Use View(in T, ulong) for an explicit node identity.");
+        return View(in view, 0);
+    }
 
     /// <summary>Matches a child by key and occurrence and updates its parameters.</summary>
     public static Entity View<T>(in T view, ulong key)

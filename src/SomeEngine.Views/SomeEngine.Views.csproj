@@ -8,5 +8,12 @@
     <ProjectReference Include="../SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="../SomeEngine.Job/SomeEngine.Job.csproj" />
     <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
+    <ProjectReference Include="../SomeEngine.Views.Generators/SomeEngine.Views.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="PublishAot" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../SomeEngine.Views.Generators/bin/$(Configuration)/netstandard2.0/SomeEngine.Views.Generators.dll"
+          Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Update="buildTransitive/SomeEngine.Views.props" Pack="true" PackagePath="buildTransitive" />
   </ItemGroup>
 </Project>

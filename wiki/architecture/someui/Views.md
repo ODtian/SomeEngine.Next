@@ -19,7 +19,7 @@ public record struct Text(string Value) : IView, IComponent
 
 ## Invariants
 - 参数作为组件保存在节点实体上，并且就是系统消费的节点数据；不另存一份派生副本。
-- `IView` 与存储方式无关。每种视图自己实现 `IComponent` 或 `ISparseComponent`，按 [[architecture/someui/Component-Storage|Component Storage]] 选择。
+- `IView` 与存储方式无关。视图通过 `IComponent` 或 `ISparseComponent` 选择存储；生成器为省略这两种声明的 `partial` 视图补充 sparse 存储，并给出 info 级选择提示。选择依据见 [[architecture/someui/Component-Storage|Component Storage]]。
 - `View<T>(in T)` 返回节点实体：新建或参数不相等时写入参数，并在 `Rerun` 模式下当场构建；参数相等时静默覆盖存储（不推进版本）并跳过。
 - 源生成器为每个带主构造函数的视图生成同名函数，与 `View(new T(...))` 等价，返回 `Entity`。
 - 构建入口和布局入口按视图类型存在函数指针表中，节点只保存公共组件 `ViewType`（类型编号）与 `ElementKey`；依赖记录按需添加。
@@ -70,6 +70,47 @@ Entity root = Views.Spawn(world, Entity.Null, new Panel("Inventory"));
 及开发检查由 [[architecture/someui/Node-Identity|Node Identity]] 维护。
 公开行为测试 `NodeIdentityTests.cs` 覆盖列表和默认 key 声明，
 `FirstBuildChecks.cs` 同时验证 NativeAOT 下的 keyed 节点生命周期。
+
+## 同名函数实现（#19）
+
+`SomeEngine.Views.Generators` 为带主构造函数的 `IView` struct 生成
+`<视图名>Functions` 静态 partial 类，保留构造参数的名称、类型、默认值、传参方式
+及泛型约束。函数与视图使用同一命名空间；嵌套视图的函数类位于相同的外层类型内。
+每个视图对应自己的函数类，调用方可以按视图选择 `global using static`。
+
+```csharp
+global using static Inventory.CardFunctions;
+
+namespace Inventory;
+
+public readonly partial record struct Card(string Title) : IView
+{
+    public async BuildTask Build() { }
+}
+// 在构建中使用 Card("背包")，返回 Entity。
+```
+
+- 上例由生成器补充 `ISparseComponent`，并以 `SEV002`（info）提示明确选择存储。
+  显式实现 `IComponent` 或 `ISparseComponent` 的视图沿其声明存储。
+  为补充接口，省略存储声明的视图需为 `partial`（`SEV003`）；
+  嵌套视图的外层类型需为 `partial`（`SEV005`）。
+- `Scope.View` 的 `struct, IView, IEquatable<T>` 约束同样适用于同名函数；
+  `record struct` 提供参数相等比较，普通 struct 可以自己实现 `IEquatable<T>`。
+- 函数生成 `Declare<视图名>(ulong callKey, ...)` 入口供拦截器传入调用位置常量，
+  通过公开的 `Scope.View(in T, ulong)` 声明节点。这样私有嵌套视图的实例化留在
+  其外层类型中；能够对外表示的构造参数允许同名函数参与调用位置拦截。
+  带私有构造参数类型的函数类保留在外层类型内，调用方通过 `Scope.View(new ...)`
+  声明这类视图。编译期接入规则见 [[architecture/someui/Checks|Checks]]。
+- 普通函数、lambda 与生成的同名函数体中的节点声明同样获得位置常量。
+  位置与列表分组规则由 [[architecture/someui/Node-Identity|Node Identity]] 维护。
+- `BuildWarningSuppressor` 对实际实现 `IView.Build` 的方法屏蔽 CS1998，
+  包含显式接口实现；辅助异步方法继续使用编译器自己的警告规则。
+
+`SomeEngine.Views` 包内提供分析器 DLL 与 `buildTransitive/SomeEngine.Views.props`；
+仓库的 `Directory.Build.props` 启用 `SomeEngine.Views.Generated`，
+`Directory.Build.targets` 为直接引用 Views 的项目接入生成器。
+公开行为测试入口为 `tests/SomeEngine.Views.Generators.Tests`。
+`tools/SomeEngine.Views.AotSmoke` 通过 `win-x64` NativeAOT 发布并执行相同公开入口。
 
 ## Relations
 [[architecture/someui/Build-Modes|Build Modes]] · [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Node-Identity|Node Identity]] · [[architecture/someui/Build-Scope|Build Scope]]
