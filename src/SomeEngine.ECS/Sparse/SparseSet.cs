@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Collections;
 using SomeEngine.ECS.Entities;
+using System.Runtime.CompilerServices;
 using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.ECS.Sparse;
@@ -7,6 +8,8 @@ namespace SomeEngine.ECS.Sparse;
 internal interface ISparseSet
 {
     bool Has(Entity entity);
+
+    ref byte WriteBytes(Entity entity, uint version);
 
     void AddCopy(Entity source, Entity target, uint version);
 
@@ -218,6 +221,9 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
         storage.WriteVersions[denseIndex] = version;
         return ref storage.DenseData[denseIndex];
     }
+
+    ref byte ISparseSet.WriteBytes(Entity entity, uint version) =>
+        ref Unsafe.As<T, byte>(ref Get(entity, version));
 
     /// <summary>读取组件值（返回拷贝）。</summary>
     public T Read(Entity entity)
