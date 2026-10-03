@@ -1,7 +1,7 @@
 # Compose Frontend
 
 ## Definition
-Compose 写法使用 `[Composable] static` 方法。源生成器为不返回值的函数生成视图 struct，拦截器把调用点改写为 `View(new X_View(...))`。
+Compose 写法使用 `[Composable] static` 方法。源生成器为返回 `void` 或 `BuildTask` 的方法生成视图 struct，拦截器把调用点改写为 `Scope.View(new X_View(...), 调用位置 key)`。
 
 ```csharp
 [Composable]
@@ -14,14 +14,60 @@ static void Game(Entity player)
 
 ## Invariants
 - 参数可以是普通值，也可以是 `State<T>`；比较规则见 [[architecture/someui/Build-Modes|Build Modes]]。
-- 返回值或标记 `[Inline]` 的 `[Composable]` 函数只形成 key 前缀分组，不创建实体，可以有返回值。
+- `[Inline]` 的 `[Composable]` 函数形成 key 前缀分组，可以有返回值；分组语义由 #60 接入。
 - `Remember` 的值保存在视图实体的状态存储中，按调用位置常量加出现次数识别；调用 `Remember` 的函数必须是 `[Composable]`。
 - `MutableStateOf` 产出 `State<T>`。
 - `[Composable]` 内容参数由组件调用，作为独立子视图执行，按引用比较；捕获变量的 lambda 允许使用，分析器提示每次调用方重跑都会分配。
 - 拦截覆盖 `[Composable]` 调用；函数体内产出节点的调用与其它写法一样获得调用位置常量。
 
 ## Current design
-分析器在以下情况报告错误：`[Composable]` 以方法组、委托或取地址方式使用；非 `static`；在其它生成器产出的代码中调用；项目未开启生成命名空间的 `InterceptorsNamespaces`（由包内 buildTransitive props 和仓库 `Directory.Build.props` 设置）。编译通过即每个调用都已拦截。
+分析器要求 `[Composable]` 以源码直接调用的形式使用，方法声明为 `static`，视图结果为 `void` 或 `BuildTask`。方法组、委托、取地址和其它生成器产出的调用由 `SEV008` 报告；声明诊断见 [[architecture/someui/Checks|Checks]]。项目的 `InterceptorsNamespaces` 由 Views 包内 buildTransitive props 和仓库 `Directory.Build.props` 设置。编译通过即每个视图调用都已拦截。
+
+## Compose 视图实现（#58）
+
+`SomeEngine.Views.Compose` 提供方法标记 `ComposableAttribute`，依赖 `SomeEngine.Views`。
+`SomeEngine.Views.Generators` 将 Compose 视图声明与普通视图的同名函数放入同一次语义绑定，
+从源码调用位置生成拦截器。各种视图继续通过公开的 `Scope.View(in T, ulong)` 声明节点。
+
+```csharp
+using SomeEngine.ECS.Entities;
+using SomeEngine.Views;
+using SomeEngine.Views.Compose;
+
+public static partial class Screens
+{
+    [Composable]
+    public static void Hud(Entity player, bool paused) { /* 声明子视图 */ }
+}
+
+// Screens 中生成的视图，调用方也可以通过 Views.Spawn 创建根：
+// public readonly record struct Hud_View(Entity player, bool paused)
+//     : IView, ISparseComponent
+// {
+//     public BuildTask Build() { Screens.Hud(player, paused); return default; }
+// }
+```
+
+- 方法的包含类型和各级外层类型声明为 `partial`，生成视图与原方法位于同一类型中。
+  这样视图的 `Build` 能直接使用私有静态方法。`SEV005` 提示该生成接缝。
+  包含类型与参数类型的可见范围应允许拦截命名空间引用。
+- 单个 Compose 方法的视图名为 `<方法名>_View`，存储为 sparse。
+  公开方法生成公开视图，其它方法生成程序集内可用的视图；私有参数类型沿自己的可见范围保留声明。
+  主构造函数保留参数名称、类型、默认值和泛型约束，参数由视图组件持有。
+  重载方法的视图名添加参数类型签名的 64 位 FNV-1a 后缀，供源码与引用程序集一致定位。
+- `void` 方法的 `Build` 调用原方法后返回默认 `BuildTask`；`BuildTask` 方法的 `Build`
+  直接返回原结果，使同步完成、构建错误及恢复沿共同的视图构建路径处理。
+  生成的 `Build` 对原方法的调用是视图体执行入口；其方法标记将该入口与用户的视图声明调用区分。
+- 用户在方法体、普通辅助函数或 lambda 中直接调用 Compose 方法时，拦截器以该调用位置声明独立子视图。
+  参数相等时保留已有子内容，参数变化时在同一身份上重建。
+  当前 record struct 的相等比较由共同构建路径消费；前端参数比较规则由 #59 接续。
+- 消费程序集直接引用定义程序集生成的视图类型。方法的泛型约束、命名参数及可选参数继续由 C# 绑定处理。
+  节点的位置 key、出现次数及 `Key` 前缀按 [[architecture/someui/Node-Identity|Node Identity]] 组合。
+- `Remember` 与参数比较、内联分组、内容函数参数分别由 #59、#60、#61 接入。
+
+公开编译与行为验收见 `tests/SomeEngine.Views.Generators.Tests/ComposeTests.cs`，
+通过生成视图的参数组件、`ElementTree` 子内容、局部状态和 `BuildError` 验证结果。
+NativeAOT 验收沿 `tools/SomeEngine.Views.AotSmoke` 使用同一公开入口。
 
 ## Relations
 [[architecture/someui/Frontends|Frontends]] · [[architecture/someui/Node-Identity|Node Identity]] · ADR 0013

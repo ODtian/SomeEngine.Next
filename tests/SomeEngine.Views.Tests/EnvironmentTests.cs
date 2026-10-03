@@ -99,6 +99,45 @@ public sealed partial class EnvironmentTests
         Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(reader));
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void ThemeCalculationsFollowTheirViewThroughChangesAndMissingSources(bool sparse, bool memo)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity first = frames.World.CreateEntity();
+        Entity second = frames.World.CreateEntity();
+        SetTheme(frames.World, first, sparse, 3);
+        SetTheme(frames.World, second, sparse, 5);
+        Entity reader = Views.Spawn(frames.World, first, new ThemeCalculationDisplay(sparse, memo));
+        frames.Frame();
+        Assert.Equal("3", frames.World.Read<DisplayText>(reader).Value);
+        frames.Frame();
+
+        SetTheme(frames.World, first, sparse, 7);
+        frames.Frame();
+        Assert.Equal("7", frames.World.Read<DisplayText>(reader).Value);
+
+        Hierarchy<ElementTree>.SetParent(frames.World, reader, second);
+        frames.Frame();
+        Assert.Equal("5", frames.World.Read<DisplayText>(reader).Value);
+
+        RemoveTheme(frames.World, second, sparse);
+        frames.Frame();
+        Assert.Equal("0", frames.World.Read<DisplayText>(reader).Value);
+
+        SetTheme(frames.World, second, sparse, 11);
+        frames.Frame();
+        Assert.Equal("11", frames.World.Read<DisplayText>(reader).Value);
+        uint displayVersion = frames.World.WriteVersion<DisplayText>(reader);
+        SetTheme(frames.World, first, sparse, 13);
+        frames.Frame();
+        Assert.Equal("11", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(reader));
+    }
+
 #if DEBUG
     [Fact]
     public void ReadUpOutsideBuildReportsTheRequiredScope()
@@ -421,6 +460,27 @@ public sealed partial class EnvironmentTests
         public BuildTask Build()
         {
             Scope.Write<DisplayText>(Scope.Entity) = new DisplayText(ReadTheme(Sparse).ToString());
+            return default;
+        }
+    }
+
+    private readonly record struct ThemeCalculationDisplay(bool Sparse, bool Memo) : IView, IComponent
+    {
+        public static BuildMode Mode => BuildMode.Once;
+
+        public BuildTask Build()
+        {
+            bool sparse = Sparse;
+            Entity node = Scope.Entity;
+            if (Memo)
+            {
+                Memo<int> color = Scope.Memo(() => ReadTheme(sparse));
+                Scope.Compute(() => Scope.Write<DisplayText>(node) = new DisplayText(color.Value.ToString()));
+            }
+            else
+            {
+                Scope.Compute(() => Scope.Write<DisplayText>(node) = new DisplayText(ReadTheme(sparse).ToString()));
+            }
             return default;
         }
     }

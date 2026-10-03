@@ -15,6 +15,7 @@ default: test
 views-aot rid:
     dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false
     ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/publish/SomeEngine.Views.AotSmoke{{ aot_executable_extension }}
+    pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/publish/SomeEngine.Views.AotSmoke{{ aot_executable_extension }}
 
 test *args:
     dotnet test SomeEngine.slnx {{ args }}

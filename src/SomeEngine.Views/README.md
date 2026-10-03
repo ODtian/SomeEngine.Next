@@ -3,6 +3,11 @@
 视图是实现 `IView` 的 struct，参数作为 ECS 组件保存在节点实体上，`Build` 声明内容。
 `Views.Spawn` 创建根，`ViewRebuildSystem` 完成首次构建及参数、读取依赖变化后的重跑。
 
+`Scope.Compute(Action)` 在所属视图登记并立即执行无节点计算，依赖变化后单独重跑。
+`Scope.Memo<T>(Func<T>)` 返回版本单元 `Memo<T>`，读取 `Value` 当场复核并重算过期值，
+相等结果保留已有版本。计算随创建者重跑与所属视图释放，规则见
+[Computations](../../wiki/architecture/someui/Computations.md)。
+
 包附带 `SomeEngine.Views.Generators` 分析器和 buildTransitive props。
 生成器为带主构造函数的视图生成同名静态函数，每个视图对应一个函数类。
 
@@ -33,6 +38,21 @@ public readonly partial record struct Card(string Title) : IView
 `SEV001` 检查项目配置，`SEV004` 检查实际拦截结果；方法组或委托形式可改为源码直接调用，
 需要显式身份的调用可以使用双参数 `Scope.View`。
 `IView.Build` 的 CS1998 由 suppressor 屏蔽，辅助异步方法保留编译器警告。
+
+界面节点使用 ECS 序列化注册表保存参数与有序层级：
+
+```csharp
+var registry = new SomeEngine.ECS.Serialization.SerializationRegistry();
+ViewSerialization.Register(registry);
+CardFunctions.RegisterSerialization(registry);
+GroupFunctions.RegisterSerialization(registry);
+```
+
+生成器提供固定字段 codec，也可通过 `RegisterSerialization<CardCodec>(registry)`
+接入应用 codec。泛型视图在注册时提供闭合类型自己的 `SerializationTypeKey`。
+`ViewType` 的序列化身份映射到当前进程的类型编号，读回后下一帧重建所有视图。
+整 World 保存沿用 ECS 的无托管引用数据边界；含引用参数通过组件或实体入口编码。
+完整字段支持与存档规则见仓库 Wiki `architecture/someui/Assemblies`。
 
 仓库验收入口：
 

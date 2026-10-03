@@ -15,6 +15,8 @@ public static class Scope
     public static QueryRows Each(QueryHandle query);                        // 查询成员依赖
     public static ref readonly T ReadUp<T>() where T : struct;              // 祖先环境数据
     public static void Depend(VersionCell cell);                            // 对象依赖
+    public static void Compute(Action run);                                // 登记并立即执行计算
+    public static Memo<T> Memo<T>(Func<T> compute);                         // 按读取复核的计算值
 
     public static ref T Write<T>(Entity entity) where T : struct;           // 不登记依赖
     public static ref T ReadWrite<T>(Entity entity) where T : struct;
@@ -40,7 +42,8 @@ public static class Scope
 
 当前公开入口包括 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
 `Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)`、`Scope.Has<T>(Entity)`、
-`Scope.Each(QueryHandle)`、`Scope.ReadUp<T>()`、`Scope.Depend(VersionCell)` 与 `Scope.Untrack()`。
+`Scope.Each(QueryHandle)`、`Scope.ReadUp<T>()`、`Scope.Depend(VersionCell)`、`Scope.Compute(Action)`、
+`Scope.Memo<T>(Func<T>)` 与 `Scope.Untrack()`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
 返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
 成功构建结束时完成子节点匹配，外层构建完成后释放旧子树；key 分组与节点身份规则见
@@ -66,6 +69,13 @@ public static class Scope
 
 对象读取通过 `Scope.Depend(VersionCell)` 接入相同的登记状态；`State<T>.Value` 自动登记读值对应的版本。
 计算之外的 `Depend` 为空操作。存储和版本规则见 [[architecture/someui/Dependencies|Dependencies]]。
+
+## 计算作用域实现（#16）
+
+`Scope.Compute(Action)` 与 `Scope.Memo<T>(Func<T>)` 沿当前视图登记无节点计算。
+计算执行进入自己的读取作用域，`Scope.Entity` 仍为所属视图；嵌套返回后恢复外层。
+Memo 当场重算与重建阶段使用同一个进入入口。
+列表、版本和生命周期规则由 [[architecture/someui/Computations|Computations]] 维护。
 
 ## 组件写入实现（#10）
 

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -9,12 +10,12 @@ using Microsoft.CodeAnalysis.Text;
 namespace SomeEngine.Views.Generators;
 
 [Generator(LanguageNames.CSharp)]
-public sealed class ViewGenerator : IIncrementalGenerator
+public sealed partial class ViewGenerator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var views = context.SyntaxProvider.CreateSyntaxProvider(
-            static (node, _) => node is TypeDeclarationSyntax { ParameterList: not null },
+            static (node, _) => node is TypeDeclarationSyntax,
             static (syntax, cancellation) =>
             {
                 var type = (INamedTypeSymbol?)syntax.SemanticModel.GetDeclaredSymbol(syntax.Node, cancellation);
@@ -23,16 +24,22 @@ public sealed class ViewGenerator : IIncrementalGenerator
                     ? type : null;
             }).Where(static type => type is not null).Select(static (type, _) => type!);
 
-        context.RegisterSourceOutput(views.Collect().Combine(context.CompilationProvider),
-            static (output, input) => Generate(output, input.Right, input.Left));
+        var composables = context.SyntaxProvider.ForAttributeWithMetadataName(
+            "SomeEngine.Views.Compose.ComposableAttribute",
+            static (node, _) => node is MethodDeclarationSyntax,
+            static (syntax, _) => (IMethodSymbol)syntax.TargetSymbol);
+
+        context.RegisterSourceOutput(views.Collect().Combine(composables.Collect()).Combine(context.CompilationProvider),
+            static (output, input) => Generate(output, input.Right, input.Left.Left, input.Left.Right));
     }
 
     private static void Generate(SourceProductionContext output, Compilation compilation,
-        ImmutableArray<INamedTypeSymbol> views)
+        ImmutableArray<INamedTypeSymbol> views, ImmutableArray<IMethodSymbol> composables)
     {
         var options = (CSharpParseOptions)compilation.SyntaxTrees.First().Options;
         var functions = new List<SyntaxTree>();
-        foreach (INamedTypeSymbol type in views)
+        GenerateComposeViews(output, options, functions, composables);
+        foreach (INamedTypeSymbol type in views.Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default))
         {
             INamedTypeSymbol[] containers = GetContainingTypes(type!).ToArray();
             INamedTypeSymbol? enclosing = containers.FirstOrDefault(value => !value.DeclaringSyntaxReferences
@@ -75,7 +82,11 @@ public sealed class ViewGenerator : IIncrementalGenerator
                     continue;
                 bool viewCall = ViewCalls.IsView(method);
                 bool namedCall = ViewCalls.IsViewFunction(method);
-                if (!viewCall && !namedCall)
+                bool composeCall = ViewCalls.IsComposeView(method);
+                if (!viewCall && !namedCall && !composeCall)
+                    continue;
+                if (composeCall && model.GetEnclosingSymbol(call.SpanStart, output.CancellationToken) is IMethodSymbol enclosingMethod &&
+                    ViewCalls.IsComposeBuild(enclosingMethod))
                     continue;
                 if (namedCall && !compilation.IsSymbolAccessibleWithin(method.ContainingType, compilation.Assembly))
                     continue;
@@ -84,6 +95,11 @@ public sealed class ViewGenerator : IIncrementalGenerator
                     continue;
                 SimpleNameSyntax name = GetMethodName(call);
                 ulong key = GetCallKey(name.GetLocation().GetMappedLineSpan());
+                if (composeCall)
+                {
+                    GenerateComposeInterceptor(interceptors, method, location, key, count++);
+                    continue;
+                }
                 interceptors.Append("        [global::System.Runtime.CompilerServices.InterceptsLocationAttribute(")
                     .Append(location.Version).Append(", ")
                     .Append(SymbolDisplay.FormatLiteral(location.Data, true)).AppendLine(")]")
@@ -129,18 +145,24 @@ public sealed class ViewGenerator : IIncrementalGenerator
 
     private static string GenerateFunctions(INamedTypeSymbol type)
     {
-        var constructor = type.InstanceConstructors.First(value =>
+        var constructor = type.InstanceConstructors.FirstOrDefault(value =>
             value.DeclaringSyntaxReferences.Any(reference => reference.GetSyntax() is TypeDeclarationSyntax));
+        var text = OpenContainingTypes(type);
+        string access = type.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
+        if (constructor?.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)) == true)
+            access = "private";
+        text.Append(access).Append(" static partial class ").Append(type.Name).AppendLine("Functions\n{");
+        GenerateSerialization(text, type);
+        if (constructor is null)
+        {
+            text.AppendLine("}");
+            CloseContainingTypes(text, type);
+            return text.ToString();
+        }
         string keyParameter = "callKey";
         for (int suffix = 1; constructor.Parameters.Any(parameter => parameter.Name == keyParameter); suffix++)
             keyParameter = "callKey" + suffix.ToString(CultureInfo.InvariantCulture);
-        var text = OpenContainingTypes(type);
-        string access = type.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
-        if (constructor.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)))
-            access = "private";
-        text.Append(access)
-            .Append(" static partial class ").Append(type.Name).AppendLine("Functions\n{")
-            .AppendLine("    [global::System.CodeDom.Compiler.GeneratedCode(\"SomeEngine.Views.Generators\", \"1.0\")]")
+        text.AppendLine("    [global::System.CodeDom.Compiler.GeneratedCode(\"SomeEngine.Views.Generators\", \"1.0\")]")
             .Append("    public static global::SomeEngine.ECS.Entities.Entity @").Append(type.Name)
             .Append(GenerateTypeParameters(type.TypeParameters)).Append('(')
             .Append(GenerateParameters(constructor.Parameters))
@@ -159,6 +181,75 @@ public sealed class ViewGenerator : IIncrementalGenerator
             .Append(GenerateArguments(constructor.Parameters)).Append("), ").Append(keyParameter).AppendLine(");\n}");
         CloseContainingTypes(text, type);
         return text.ToString();
+    }
+
+    private static void GenerateSerialization(StringBuilder text, INamedTypeSymbol type)
+    {
+        string typeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        string register = type.AllInterfaces.Any(value => value.ToDisplayString() == "SomeEngine.ECS.IComponent")
+            ? "Register" : "RegisterSparse";
+        bool generic = type.TypeParameters.Length > 0 || GetContainingTypes(type).Any(value => value.TypeParameters.Length > 0);
+        string keyParameter = generic ? ", global::SomeEngine.ECS.Serialization.SerializationTypeKey typeKey" : "";
+        if (!generic)
+            text.Append("    public static global::SomeEngine.ECS.Serialization.SerializationTypeKey SerializationType => ")
+                .Append(GenerateSerializationKey(type)).AppendLine(";");
+        string key = generic ? "" : "        var typeKey = SerializationType;\n";
+        IFieldSymbol[] fields = ViewParameterCodecs.GetFields(type);
+        bool generatedCodec = ViewParameterCodecs.CanEncode(fields);
+        if (generatedCodec)
+        {
+            string codec = "ParameterCodec" + GenerateTypeParameters(type.TypeParameters);
+            bool references = fields.Any(field => field.Type.ToDisplayString() == "SomeEngine.ECS.Entities.Entity");
+            text.Append("    public static void RegisterSerialization").Append(GenerateTypeParameters(type.TypeParameters))
+                .Append("(global::SomeEngine.ECS.Serialization.SerializationRegistry registry").Append(keyParameter).Append(')')
+                .AppendLine(GenerateConstraints(type.TypeParameters)).AppendLine("    {").Append(key)
+                .Append("        registry.").Append(register).Append('<').Append(typeName).Append(", ").Append(codec);
+            if (references)
+                text.Append(", ").Append(codec);
+            text.AppendLine(">(typeKey);")
+                .Append("        global::SomeEngine.Views.ViewSerialization.RegisterType<").Append(typeName).AppendLine(">(typeKey);\n    }");
+        }
+        string codecParameter = "TViewCodec";
+        while (type.TypeParameters.Concat(GetContainingTypes(type).SelectMany(value => value.TypeParameters))
+            .Any(value => value.Name == codecParameter))
+            codecParameter += "Value";
+        string codecArguments = string.Join(", ", type.TypeParameters.Select(value => "@" + value.Name).Concat([codecParameter]));
+        string codecAccess = ContainsPrivateType(type) ? "private" : "public";
+        string codecKeyParameter = generic ? keyParameter : ", global::SomeEngine.ECS.Serialization.SerializationTypeKey? serializationType = null";
+        string codecKey = generic ? "" : "        var typeKey = serializationType ?? SerializationType;\n";
+        text.Append("    ").Append(codecAccess).Append(" static void RegisterSerialization<").Append(codecArguments)
+            .Append(">(global::SomeEngine.ECS.Serialization.SerializationRegistry registry").Append(codecKeyParameter).Append(')')
+            .AppendLine(GenerateConstraints(type.TypeParameters))
+            .Append("        where ").Append(codecParameter).Append(" : struct, global::SomeEngine.ECS.Serialization.IComponentCodec<")
+            .Append(typeName).AppendLine(">\n    {").Append(codecKey)
+            .Append("        registry.").Append(register).Append('<').Append(typeName).Append(", ").Append(codecParameter).AppendLine(">(typeKey);")
+            .Append("        global::SomeEngine.Views.ViewSerialization.RegisterType<").Append(typeName).AppendLine(">(typeKey);\n    }");
+        if (generatedCodec)
+            ViewParameterCodecs.Generate(text, type, fields, GenerateTypeParameters(type.TypeParameters), GenerateConstraints(type.TypeParameters));
+    }
+
+    private static string GenerateSerializationKey(INamedTypeSymbol type)
+    {
+        string name = type.ContainingAssembly.Name + ":" + type.ToDisplayString();
+        using var hash = SHA256.Create();
+        string id = new Guid(hash.ComputeHash(Encoding.UTF8.GetBytes(name)).Take(16).ToArray()).ToString();
+        string fields = string.Join(";", ViewParameterCodecs.GetFields(type)
+            .Select(field => field.MetadataName + ":" + GetSerializedTypeName(field.Type)));
+        string storage = type.AllInterfaces.Any(value => value.ToDisplayString() == "SomeEngine.ECS.IComponent") ? "table" : "sparse";
+        ulong schema = HashText(name + ":fields-v1:" + storage + ":" + fields);
+        return "new global::SomeEngine.ECS.Serialization.SerializationTypeKey(new global::System.Guid(\"" + id + "\"), " +
+            SymbolDisplay.FormatLiteral(name, true) + ", " + schema.ToString(CultureInfo.InvariantCulture) + "UL)";
+    }
+
+    private static string GetSerializedTypeName(ITypeSymbol type)
+    {
+        string name = type.ToDisplayString();
+        if (type is not INamedTypeSymbol { TypeKind: TypeKind.Enum } enumeration)
+            return name;
+        string values = string.Join(",", enumeration.GetMembers().OfType<IFieldSymbol>()
+            .Where(field => field.HasConstantValue).OrderBy(field => field.Name, StringComparer.Ordinal)
+            .Select(field => field.Name + "=" + Convert.ToString(field.ConstantValue, CultureInfo.InvariantCulture)));
+        return name + ":" + enumeration.EnumUnderlyingType!.ToDisplayString() + ":" + values;
     }
 
     private static string GenerateArguments(ImmutableArray<IParameterSymbol> parameters) =>
@@ -254,6 +345,11 @@ public sealed class ViewGenerator : IIncrementalGenerator
     {
         string text = location.Path.Replace('\\', '/') + ":" + (location.StartLinePosition.Line + 1).ToString(CultureInfo.InvariantCulture) +
             ":" + (location.StartLinePosition.Character + 1).ToString(CultureInfo.InvariantCulture);
+        return HashText(text);
+    }
+
+    private static ulong HashText(string text)
+    {
         ulong hash = 14695981039346656037UL;
         foreach (byte value in Encoding.UTF8.GetBytes(text))
             hash = unchecked((hash ^ value) * 1099511628211UL);

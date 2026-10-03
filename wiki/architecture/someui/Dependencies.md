@@ -14,7 +14,7 @@
 ## Invariants
 - 只有带版本的数据能被依赖。外部数据通过持有 `VersionCell` 接入，不必进入 ECS。
 - 写入只推进版本，不推送通知；跨线程写入无需派发，下一次重建阶段即可看到。
-- ECS 依赖存于节点的 `DynamicBuffer<Dependency>`；对象依赖存为 `(VersionCell 引用, 版本)` 数组，均不装箱。
+- 视图 `Build` 的 ECS 依赖存于节点的 `DynamicBuffer<Dependency>`；无节点计算的 ECS 读取存于其计算列表项。对象依赖使用池化的 `(VersionCell 引用, 版本)` 数组，均不装箱。
 - 按组件类型的全局写版本未变时，该类型的所有依赖整批跳过。
 - 依赖粒度是整个组件。需要更细的粒度时按变化频率拆分组件（例如点击计数 `Clicks` 与悬停状态 `Hover` 分开），不提供字段级依赖。
 - 列表的父计算只依赖 `Each` 的成员，每行是读取自身实体的子视图。
@@ -67,24 +67,27 @@ public struct Dependency : IBufferElement
 最近带有 `T` 的节点，包含当前节点自身。表格与 sparse 组件使用同一读取入口，返回
 提供者组件的只读引用。调用方在后续可能移动存储的结构修改前消费该引用。
 
-`Rerun` 构建将环境读取登记到节点的 `DynamicBuffer<Dependency>`。
+`Rerun` 构建将环境读取登记到节点的 `DynamicBuffer<Dependency>`，
+`Compute` 和 Memo 将读取登记到各自的计算记录。各类计算以所属视图实体作为查找起点。
 `Dependency.Kind` 区分直接组件读取与环境查找；环境记录持有组件编号、找到的来源实体和
 该组件的观察写版本。重建阶段比较环境组件与 `Parent<ElementTree>` 的类型写版本，
 其中任一类型有写入时，从读取者当前所在的父链重新查找；来源实体改变或该来源的
-组件写版本改变时，读取者重新构建。中间节点添加同类型组件时，其子树读取新的最近来源。
+组件写版本改变时，读取者重新执行。中间节点添加同类型组件时，其子树读取新的最近来源。
+Memo 在读取时复核环境来源与值，嵌套重算使用所属视图的当前父链。
 
 查找到根仍缺少 `T` 时，返回类型默认值的只读引用，并以 `Entity.Null` 记录该次环境来源。
 后续祖先添加 `T`，或读取者通过自身或祖先的父节点移动进入带 `T` 的子树时，来源比较
 使读取者失效。环境查找由当前 `ElementTree` 父链提供；父链和提供者组件各由 ECS 持有。
 
-环境记录随每次构建清空并重新登记，嵌套构建沿用各自的读取者实体。
+环境记录随每次计算清空并重新登记，嵌套构建沿用各自的读取者实体。
 `Once` 构建按同样方式读取值，保持仅取值状态。
 
 实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
 [环境来源查找](../../../src/SomeEngine.Views/EnvironmentLookup.cs)、
-[重建阶段](../../../src/SomeEngine.Views/ViewRebuildSystem.cs)。
+[依赖变化检查](../../../src/SomeEngine.Views/DependencyChanges.cs)。
 公开验收：[EnvironmentTests](../../../tests/SomeEngine.Views.Tests/EnvironmentTests.cs)，
-覆盖两种存储、最近提供者、自身提供、缺省值、祖先移动、相同值下的来源切换和提供者移除。
+覆盖两种存储、最近提供者、自身提供、缺省值、祖先移动、相同值下的来源切换、提供者移除、
+`Once` 视图内绑定与 Memo 的环境更新。
 
 ## 对象读取依赖实现（#14）
 
@@ -106,8 +109,14 @@ public static class Scope
 `Content()` 块沿用调用方计算的视图实体，块内对象读取继续登记到该计算，随调用方重建重新收集。
 
 重建检查通过 `Volatile.Read` 观察每个来源的版本，以 `!=` 比较已登记版本。
-奇数版本表示写入期间，在逐帧筛选与候选执行前复核中均视为变化。
+对象读取同时记录所属 World 的重建帧号。奇数版本表示写入期间，
+在新帧筛选与候选执行前复核中视为变化；本帧构建已登记相同奇数版本后，
+该来源在版本再次变化或下一帧时继续失效。写入发布偶数版本后，版本差异进入本帧的后续重建轮次。
 ECS 与对象依赖共用原有的候选列表和深度调度。
+
+无节点计算使用同一依赖登记与检查入口，分别持有各自的读取数据。
+检查 Memo 来源时先刷新其值，再比较版本；失败与恢复观察及计算生命周期见
+[[architecture/someui/Computations|Computations]]。
 
 实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
 [对象依赖](../../../src/SomeEngine.Views/ObjectDependencies.cs)、

@@ -11,6 +11,7 @@ public readonly struct ElementTree : IHierarchyDomain;
 public struct ViewType : IComponent
 {
     public ushort Id;
+    internal bool RebuildRequired;
 }
 
 /// <summary>The child's key and its zero-based occurrence among siblings with that key.</summary>
