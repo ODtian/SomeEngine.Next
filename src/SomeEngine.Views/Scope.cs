@@ -15,7 +15,7 @@ public static class Scope
     private static Stack<ScopeData>? s_scopes;
 #if DEBUG
     [ThreadStatic]
-    private static Dictionary<Entity, Entity>? s_childDeclarations;
+    private static Dictionary<Entity, ScopeData>? s_childDeclarations;
 #endif
 
     /// <summary>The World containing the view being built.</summary>
@@ -191,10 +191,9 @@ public static class Scope
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
         var current = new ScopeData(world, entity, entity, declaresChildren, dependenciesEnabled);
-        ClearChildDeclarations(entity);
         if (declaresChildren)
         {
-            CheckChildDeclaration(entity, entity);
+            CheckChildDeclaration(entity, current);
             CaptureSiblingCounts(current);
         }
         (s_scopes ??= new Stack<ScopeData>()).Push(current);
@@ -205,9 +204,12 @@ public static class Scope
     {
         ScopeData build = Current;
         ViewTypes.CheckContent(build.World, entity);
-        CheckChildDeclaration(entity, build.Entity);
         var current = new ScopeData(build.World, build.Entity, entity,
             declaresChildren: true, dependenciesEnabled: build.DependenciesEnabled);
+#if DEBUG
+        current.Calculation = build.Calculation ?? build;
+#endif
+        CheckChildDeclaration(entity, current);
         CaptureSiblingCounts(current);
         s_scopes!.Push(current);
         return new ParentScope(entity, default);
@@ -215,30 +217,19 @@ public static class Scope
 
 #if DEBUG
     internal static RebuildScope EnterRebuild()
-    {
-        var scope = new RebuildScope(s_childDeclarations);
-        s_childDeclarations = new Dictionary<Entity, Entity>();
-        return scope;
-    }
+        => RebuildScope.Enter();
 #endif
 
     [Conditional("DEBUG")]
-    private static void CheckChildDeclaration(Entity entity, Entity view)
+    private static void CheckChildDeclaration(Entity entity, ScopeData current)
     {
 #if DEBUG
-        DevelopmentCheck.Require(s_childDeclarations!.TryAdd(entity, view),
-            $"The children of {entity} were declared by two scopes in the same rebuild.");
-#endif
-    }
-
-    [Conditional("DEBUG")]
-    private static void ClearChildDeclarations(Entity view)
-    {
-#if DEBUG
-        Dictionary<Entity, Entity> declarations = s_childDeclarations!;
-        foreach (Entity entity in declarations.Where(declaration => declaration.Value == view)
-            .Select(declaration => declaration.Key).ToArray())
-            declarations.Remove(entity);
+        ScopeData calculation = current.Calculation ?? current;
+        if (s_childDeclarations!.TryGetValue(entity, out ScopeData? previous))
+            DevelopmentCheck.Require(previous.Entity == calculation.Entity &&
+                !ReferenceEquals(previous, calculation),
+                $"The children of {entity} were declared by two scopes in the same rebuild.");
+        s_childDeclarations[entity] = calculation;
 #endif
     }
 
@@ -308,6 +299,7 @@ public static class Scope
         internal int ChildIndex;
         internal ulong? KeyPrefix;
 #if DEBUG
+        internal ScopeData? Calculation;
         internal Dictionary<ulong, SiblingGroup> PreviousSiblings { get; } = new();
 #endif
     }
@@ -331,10 +323,17 @@ public static class Scope
 #if DEBUG
     internal readonly struct RebuildScope : IDisposable
     {
-        private readonly Dictionary<Entity, Entity>? _previousDeclarations;
+        private readonly Dictionary<Entity, ScopeData>? _previousDeclarations;
 
-        internal RebuildScope(Dictionary<Entity, Entity>? previousDeclarations) =>
+        private RebuildScope(Dictionary<Entity, ScopeData>? previousDeclarations) =>
             _previousDeclarations = previousDeclarations;
+
+        internal static RebuildScope Enter()
+        {
+            var scope = new RebuildScope(s_childDeclarations);
+            s_childDeclarations = new Dictionary<Entity, ScopeData>();
+            return scope;
+        }
 
         public void Dispose() => s_childDeclarations = _previousDeclarations;
     }
