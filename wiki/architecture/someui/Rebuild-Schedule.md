@@ -86,6 +86,9 @@
 同一视图本帧已登记该版本后，来源发布新版本或进入下一帧时继续失效；
 具体观察规则见 [[architecture/someui/Dependencies|Dependencies]]。
 
+共享对象的版本变化与持续写入分别按
+[[architecture/someui/Dependencies|Dependencies]] 的读取版本、帧号规则进入重建轮次。
+
 公开属性 `ViewRebuildSystem.IterationLimit` 配置每帧重建轮次上限，默认 `8`，
 开发检查要求正值。在最后一轮后再次比较版本，刚好收敛时正常完成；
 仍有失效节点时停止该帧重建，并通过 `Core.Diagnostics.DevelopmentCheck` 报告上限与节点。

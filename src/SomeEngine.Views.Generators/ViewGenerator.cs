@@ -9,7 +9,7 @@ using Microsoft.CodeAnalysis.Text;
 namespace SomeEngine.Views.Generators;
 
 [Generator(LanguageNames.CSharp)]
-public sealed class ViewGenerator : IIncrementalGenerator
+public sealed partial class ViewGenerator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -23,15 +23,21 @@ public sealed class ViewGenerator : IIncrementalGenerator
                     ? type : null;
             }).Where(static type => type is not null).Select(static (type, _) => type!);
 
-        context.RegisterSourceOutput(views.Collect().Combine(context.CompilationProvider),
-            static (output, input) => Generate(output, input.Right, input.Left));
+        var composables = context.SyntaxProvider.ForAttributeWithMetadataName(
+            "SomeEngine.Views.Compose.ComposableAttribute",
+            static (node, _) => node is MethodDeclarationSyntax,
+            static (syntax, _) => (IMethodSymbol)syntax.TargetSymbol);
+
+        context.RegisterSourceOutput(views.Collect().Combine(composables.Collect()).Combine(context.CompilationProvider),
+            static (output, input) => Generate(output, input.Right, input.Left.Left, input.Left.Right));
     }
 
     private static void Generate(SourceProductionContext output, Compilation compilation,
-        ImmutableArray<INamedTypeSymbol> views)
+        ImmutableArray<INamedTypeSymbol> views, ImmutableArray<IMethodSymbol> composables)
     {
         var options = (CSharpParseOptions)compilation.SyntaxTrees.First().Options;
         var functions = new List<SyntaxTree>();
+        GenerateComposeViews(output, options, functions, composables);
         foreach (INamedTypeSymbol type in views)
         {
             INamedTypeSymbol[] containers = GetContainingTypes(type!).ToArray();
@@ -75,7 +81,11 @@ public sealed class ViewGenerator : IIncrementalGenerator
                     continue;
                 bool viewCall = ViewCalls.IsView(method);
                 bool namedCall = ViewCalls.IsViewFunction(method);
-                if (!viewCall && !namedCall)
+                bool composeCall = ViewCalls.IsComposeView(method);
+                if (!viewCall && !namedCall && !composeCall)
+                    continue;
+                if (composeCall && model.GetEnclosingSymbol(call.SpanStart, output.CancellationToken) is IMethodSymbol enclosingMethod &&
+                    ViewCalls.IsComposeBuild(enclosingMethod))
                     continue;
                 if (namedCall && !compilation.IsSymbolAccessibleWithin(method.ContainingType, compilation.Assembly))
                     continue;
@@ -84,6 +94,11 @@ public sealed class ViewGenerator : IIncrementalGenerator
                     continue;
                 SimpleNameSyntax name = GetMethodName(call);
                 ulong key = GetCallKey(name.GetLocation().GetMappedLineSpan());
+                if (composeCall)
+                {
+                    GenerateComposeInterceptor(interceptors, method, location, key, count++);
+                    continue;
+                }
                 interceptors.Append("        [global::System.Runtime.CompilerServices.InterceptsLocationAttribute(")
                     .Append(location.Version).Append(", ")
                     .Append(SymbolDisplay.FormatLiteral(location.Data, true)).AppendLine(")]")
@@ -254,6 +269,11 @@ public sealed class ViewGenerator : IIncrementalGenerator
     {
         string text = location.Path.Replace('\\', '/') + ":" + (location.StartLinePosition.Line + 1).ToString(CultureInfo.InvariantCulture) +
             ":" + (location.StartLinePosition.Character + 1).ToString(CultureInfo.InvariantCulture);
+        return HashText(text);
+    }
+
+    private static ulong HashText(string text)
+    {
         ulong hash = 14695981039346656037UL;
         foreach (byte value in Encoding.UTF8.GetBytes(text))
             hash = unchecked((hash ^ value) * 1099511628211UL);

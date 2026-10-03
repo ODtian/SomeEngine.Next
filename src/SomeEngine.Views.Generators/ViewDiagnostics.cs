@@ -13,6 +13,6 @@ internal static class ViewDiagnostics
         "Views", DiagnosticSeverity.Error, true);
 
     internal static readonly DiagnosticDescriptor PartialContainerRequired = new(
-        "SEV005", "Allow nested view functions", "Make enclosing type '{0}' partial to generate its nested view functions",
+        "SEV005", "Allow generated nested views", "Make enclosing type '{0}' partial to generate its view declarations",
         "Views", DiagnosticSeverity.Error, true);
 }
