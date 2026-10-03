@@ -87,6 +87,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
             rowsPerPacket);
     }
 
+    public QueryDefinition EntityQuery => _entities;
+
     public RenderInstanceBatches<RenderInstanceSingleGroup>? Current => _builder.Current;
 
     public void OnCreate(ref RenderPrepareSystemContext context)

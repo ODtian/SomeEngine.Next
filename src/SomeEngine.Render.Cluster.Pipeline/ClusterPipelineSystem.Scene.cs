@@ -5,6 +5,8 @@ using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
 using SomeEngine.RenderGraph;
+using SomeEngine.Render.Systems;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -22,7 +24,6 @@ public sealed partial class ClusterPipelineSystem
     private RenderInstanceBatch? _sceneBatch;
     private ulong _sceneInstanceRevision;
     private ulong _sceneGeometryRevision;
-    private RenderTransform[] _sceneTransforms = [];
     private Vector3[] _scenePositions = [];
     private uint[] _sceneRemap = [];
     private uint[] _sceneInstances = [];
@@ -68,7 +69,7 @@ public sealed partial class ClusterPipelineSystem
         _geometryPassesEnabled = null;
     }
 
-    private void BindSceneBounds(ref RenderGraphFrame graph, RenderInstanceBatch batch, bool hasTargetViews)
+    private void BindSceneBounds(ref RenderGraphFrame graph, RenderWorld world, RenderInstanceBatch batch, bool hasTargetViews)
     {
         bool hasPrevious = ReferenceEquals(_sceneBatch, batch);
         bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision || _sceneGeometryRevision != GeometryRevision;
@@ -80,15 +81,13 @@ public sealed partial class ClusterPipelineSystem
             int count = batch.InstanceCount;
             if (_sceneInstances.Length != count)
             {
-                _sceneTransforms = new RenderTransform[count];
                 _scenePositions = new Vector3[count];
                 _sceneRemap = new uint[count];
                 _sceneInstances = new uint[count];
             }
-            _resources.InstanceResources.ReadInstances(batch,
-                _instanceLayout.Resolve<RenderTransform>(RenderInstanceTransformProperties.CurrentTransformKey), _sceneTransforms.AsSpan());
-            for (int index = 0; index < count; index++)
-                _scenePositions[index] = _sceneTransforms[index].Position;
+            var positions = new ScenePositions(_instances.Current!, _scenePositions);
+            world.ExecuteQuery(_sceneQuery, ref positions,
+                static (QueryCursor query, ref ScenePositions data) => data.Collect(query));
             if (count != 0)
                 Meshopt.SpatialSortRemap(_sceneRemap, MemoryMarshal.Cast<Vector3, float>(_scenePositions), 12u);
             for (uint index = 0; index < count; index++)
@@ -114,6 +113,21 @@ public sealed partial class ClusterPipelineSystem
         graph.SetRegionEnabled(GraphData.SceneBoundsRegion, changed && hasGeometry);
         SetGeometryPassesEnabled(ref graph, hasGeometry, hasGeometry && hasTargetViews);
         graph.SetRegionEnabled(GraphData.SceneInitialization, _sceneBatch is null);
+    }
+
+    private struct ScenePositions(RenderInstanceBatches<RenderInstanceSingleGroup> batches, Vector3[] positions)
+    {
+        private int _entityIndex;
+
+        internal void Collect(QueryCursor query)
+        {
+            foreach (QueryRow row in query.Rows)
+            {
+                Vector3 position = row.Read<RenderTransform>().Position;
+                foreach (var address in batches.RowsForEntity(_entityIndex++))
+                    positions[address.Row] = position;
+            }
+        }
     }
 
     private void SetGeometryPassesEnabled(ref RenderGraphFrame graph, bool hasGeometry, bool hasTargetGeometry)

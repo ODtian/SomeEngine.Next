@@ -74,6 +74,8 @@
 
 **持久回读**（`GraphReadbackId`）：图中长期存在的缓冲范围读取，关联接收者与标签，字节通过 `IGraphReadbackReceiver` 交付。
 
+**渲染数据读写锁**（`RenderDataLock`）：管理渲染数据 CPU 访问的读写锁；prepare 取得独占写入权限，帧录制、诊断与捕获取得共享读取权限。访问冲突返回失败，作用域释放后结束访问。
+
 ## Cluster
 
 **光栅箱**：具有相同光栅 shader 与资源绑定的一组材质工作。

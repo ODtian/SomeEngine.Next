@@ -408,19 +408,21 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private async Task RenderAsync(bool postProcessedColor = false)
     {
         _extraction.Extract(_gameWorld);
+        Assert.True(_graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(20)));
+        using var nextFrameResources = nextFrame;
         Assert.True(_coordinator.TryBeginPrepare(out var update));
         using (update)
         {
             _prepare.ApplyExtraction(update);
             await _cluster.PrepareMeshesAsync();
             _streaming.Pump();
-            _prepare.Update(update);
+            _prepare.Update(update, nextFrame);
             update.Commit();
         }
         ClusterPipelineOutputs outputs = _pipeline.ReconcileGraph();
         Assert.True(_coordinator.TryBeginFrame(out var frame));
         using (frame)
-        using (RenderGraphFrame commands = _graph.BeginFrame(new RenderGraphFrameOptions(
+        using (RenderGraphFrame commands = _graph.BeginFrame(nextFrame, new RenderGraphFrameOptions(
             Diagnostics: (in RenderGraphDiagnosticsView diagnostics) => _statistics = diagnostics.Statistics)))
         {
             _frames.Update(frame, commands);

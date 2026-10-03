@@ -2,21 +2,18 @@ using SomeEngine.Render.Frame;
 
 namespace SomeEngine.Render.Instances;
 
-/// <summary>
-/// Scoped read-only access to the published instance store. Disposing it ends command-recording
-/// use for the storage timeline; it owns neither batches nor GPU resources.
-/// </summary>
+/// <summary>Read access to batch graph buffers during a render frame.</summary>
 public ref struct RenderInstanceStorageView
 {
     private RenderInstanceResources? _owner;
-    private RenderFrameUseLease? _frameUse;
+    private RenderFrame? _frame;
 
     internal RenderInstanceStorageView(
         RenderInstanceResources owner,
-        RenderFrameUseLease frameUse)
+        RenderFrame frame)
     {
         _owner = owner;
-        _frameUse = frameUse;
+        _frame = frame;
     }
 
     public RenderInstanceBatchView Bind(
@@ -24,23 +21,18 @@ public ref struct RenderInstanceStorageView
         RenderInstancePropertyLayout exactShaderLayout)
     {
         RenderInstanceResources owner = RequireOwner();
-        return owner.GetBatchView(
-            batch,
-            exactShaderLayout,
-            _frameUse ?? throw new ObjectDisposedException(nameof(RenderInstanceStorageView)));
+        return owner.GetBatchView(batch, exactShaderLayout);
     }
 
     public void Dispose()
     {
         _owner = null;
-        RenderFrameUseLease? frameUse = _frameUse;
-        _frameUse = null;
-        frameUse?.Dispose();
+        _frame = null;
     }
 
     private RenderInstanceResources RequireOwner()
     {
-        if (_owner is null || _frameUse is null || _frameUse.IsClosed)
+        if (_owner is null || _frame is null || _frame.IsClosed)
             throw new ObjectDisposedException(nameof(RenderInstanceStorageView));
         return _owner;
     }

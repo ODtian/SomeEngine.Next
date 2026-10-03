@@ -25,6 +25,7 @@ internal sealed class FrameBufferTransfers : IDisposable
         internal required Buffer Buffer;
         internal required MappedBuffer Mapping;
         internal required ulong CommittedBytes;
+        internal BufferBoundaryState[] BoundaryStates = [];
         internal long Used;
 
         internal bool TryReserve(long size, out ulong offset)
@@ -39,6 +40,26 @@ internal sealed class FrameBufferTransfers : IDisposable
         UploadPage Page, BufferRange Range);
 
     internal Span<byte> GetWriteSpan(GraphBufferId buffer, ulong offset, int length)
+    {
+        BufferUpload upload = ReserveUpload(buffer, offset, length);
+        _uploads.Value!.Add(upload);
+        return GetUploadSpan(upload);
+    }
+
+    internal void AddUploads(IEnumerable<BufferUpload> uploads) => _uploads.Value!.AddRange(uploads);
+
+    internal void AddUploadRanges(GraphBufferId buffer, List<BufferRange> ranges)
+    {
+        foreach (List<BufferUpload> uploads in _uploads.Values)
+            foreach (BufferUpload upload in uploads)
+                if (upload.Destination == buffer)
+                    ranges.Add(new BufferRange(upload.Offset, upload.Range.Size));
+    }
+
+    internal static Span<byte> GetUploadSpan(scoped in BufferUpload upload) =>
+        upload.Page.Mapping.Bytes.Slice(checked((int)upload.Range.Offset), checked((int)upload.Range.Size));
+
+    internal BufferUpload ReserveUpload(GraphBufferId buffer, ulong offset, int length)
     {
         long size = ((long)length + 3) & ~3L;
         UploadPage? target = Volatile.Read(ref _uploadPage);
@@ -63,8 +84,7 @@ internal sealed class FrameBufferTransfers : IDisposable
                 Volatile.Write(ref _uploadPage, target);
             }
         }
-        _uploads.Value!.Add(new BufferUpload(buffer, offset, target, new BufferRange(start, checked((ulong)length))));
-        return target.Mapping.Bytes.Slice(checked((int)start), length);
+        return new BufferUpload(buffer, offset, target, new BufferRange(start, checked((ulong)length)));
     }
 
     private UploadPage CreateUploadPage(ulong size)
@@ -84,6 +104,8 @@ internal sealed class FrameBufferTransfers : IDisposable
                 Buffer = resource,
                 Mapping = _backend.Map(resource, MapType.Write, BufferRange.Whole),
                 CommittedBytes = requirements.Size,
+                BoundaryStates = [new BufferBoundaryState(BufferRange.Whole, resource.InitialSync,
+                    resource.InitialAccess, ResourceContentState.Defined)],
             };
             _uploadPages.Add(page);
             return page;
@@ -116,20 +138,21 @@ internal sealed class FrameBufferTransfers : IDisposable
     {
         internal required Buffer Buffer;
         internal required ulong CommittedBytes;
+        internal BufferBoundaryState[] BoundaryStates = [];
         internal ulong Used;
     }
 
     private readonly record struct ReadbackResult(
         Buffer Buffer, BufferRange Range, IGraphReadbackReceiver Receiver, ulong Tag);
 
-    internal BufferRegion ReserveReadback(ulong size)
+    internal (BufferRegion Destination, BufferBoundaryState[] BoundaryStates) ReserveReadback(ulong size)
     {
         foreach (ReadbackPage page in _readbackPages)
         {
             if (size > page.Buffer.Info.Size - page.Used) continue;
             ulong offset = page.Used;
             page.Used += size;
-            return new BufferRegion(page.Buffer, new BufferRange(offset, size));
+            return (new BufferRegion(page.Buffer, new BufferRange(offset, size)), page.BoundaryStates);
         }
         ulong capacity = Math.Max(64UL << 10, (size + 65535) & ~65535UL);
         var description = new BufferDesc(capacity, BufferUsages.CopyDestination, "Frame readback page");
@@ -139,8 +162,30 @@ internal sealed class FrameBufferTransfers : IDisposable
         Buffer buffer;
         try { buffer = _backend.CreateBuffer(_device, description, MemoryType.Readback); }
         catch { _budget.Release(requirements.Size); throw; }
-        _readbackPages.Add(new ReadbackPage { Buffer = buffer, CommittedBytes = requirements.Size, Used = size });
-        return new BufferRegion(buffer, new BufferRange(0, size));
+        var created = new ReadbackPage
+        {
+            Buffer = buffer,
+            CommittedBytes = requirements.Size,
+            Used = size,
+            BoundaryStates = [new BufferBoundaryState(BufferRange.Whole, buffer.InitialSync,
+                buffer.InitialAccess, ResourceContentState.Undefined)],
+        };
+        _readbackPages.Add(created);
+        return (new BufferRegion(buffer, new BufferRange(0, size)), created.BoundaryStates);
+    }
+
+    internal void SaveBufferStates(RenderGraphFrameResult result)
+    {
+        foreach (UploadPage page in _uploadPages)
+        {
+            ReadOnlySpan<BufferBoundaryState> states = result.GetBufferStates(page.Buffer);
+            if (!states.IsEmpty) page.BoundaryStates = states.ToArray();
+        }
+        foreach (ReadbackPage page in _readbackPages)
+        {
+            ReadOnlySpan<BufferBoundaryState> states = result.GetBufferStates(page.Buffer);
+            if (!states.IsEmpty) page.BoundaryStates = states.ToArray();
+        }
     }
 
     internal void AddReadbackResult(Buffer buffer, BufferRange range, IGraphReadbackReceiver receiver, ulong tag) =>

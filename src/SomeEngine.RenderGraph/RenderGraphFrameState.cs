@@ -1199,6 +1199,7 @@ internal sealed partial class RenderGraphFrameState
     {
         try
         {
+            Slot.SaveBufferTransferStates(new RenderGraphFrameResult(frame));
             NotifyExecutionObservers(frame);
         }
         finally
