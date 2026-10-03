@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class ContentWriteTests
+public sealed partial class ContentWriteTests
 {
     [Theory]
     [InlineData(false)]

@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class EnvironmentTests
+public sealed partial class EnvironmentTests
 {
     [Fact]
     public void ProvideStoresTableAndSparseThemesAndReturnsTheNode()
@@ -25,6 +25,78 @@ public sealed class EnvironmentTests
 
         Assert.Equal(tableVersion, frames.World.WriteVersion<Theme>(root));
         Assert.Equal(sparseVersion, frames.World.SparseWriteVersion<SparseTheme>(root));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ProvidedThemeChangesUpdateReadersAndKeepOtherDescendants(bool sparse)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ThemeGroup(3, sparse));
+        frames.Frame();
+        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
+        Entity reader = children[0];
+        Entity other = children[1];
+        Assert.Equal("3", frames.World.Read<DisplayText>(reader).Value);
+        frames.Frame();
+        uint otherVersion = frames.World.WriteVersion<DisplayText>(other);
+
+        frames.World.Replace(root, new ThemeGroup(7, sparse));
+        frames.Frame();
+
+        Assert.Equal("7", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("other", frames.World.Read<DisplayText>(other).Value);
+        Assert.Equal(otherVersion, frames.World.WriteVersion<DisplayText>(other));
+        uint readerVersion = frames.World.WriteVersion<DisplayText>(reader);
+        frames.Frame();
+        Assert.Equal(readerVersion, frames.World.WriteVersion<DisplayText>(reader));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MiddleNodeProvidesItsWholeThemeIncludingTheDefaultValue(bool sparse)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ThemeGroup(3, sparse, ChildColor: 0));
+        frames.Frame();
+        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
+        Entity outerReader = children[0];
+        Entity middle = children[2];
+        Entity innerReader = Hierarchy<ElementTree>.GetChildren(frames.World, middle)[0];
+
+        Assert.Equal("3", frames.World.Read<DisplayText>(outerReader).Value);
+        Assert.Equal("0", frames.World.Read<DisplayText>(innerReader).Value);
+        Assert.True(sparse ? frames.World.HasSparse<SparseTheme>(middle) : frames.World.Has<Theme>(middle));
+        uint innerVersion = frames.World.WriteVersion<DisplayText>(innerReader);
+        frames.World.Replace(root, new ThemeGroup(7, sparse, ChildColor: 0));
+        frames.Frame();
+
+        Assert.Equal("7", frames.World.Read<DisplayText>(outerReader).Value);
+        Assert.Equal("0", frames.World.Read<DisplayText>(innerReader).Value);
+        Assert.Equal(innerVersion, frames.World.WriteVersion<DisplayText>(innerReader));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LaterProvideRefreshesAFormerlyMissingThemeWithinTheFrame(bool sparse)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ThemeGroup(0, sparse, ThemePresent: false));
+        frames.Frame();
+        Entity reader = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Assert.Equal("0", frames.World.Read<DisplayText>(reader).Value);
+        frames.Frame();
+
+        frames.World.Replace(root, new ThemeGroup(7, sparse));
+        frames.Frame();
+
+        Assert.Equal("7", frames.World.Read<DisplayText>(reader).Value);
+        uint displayVersion = frames.World.WriteVersion<DisplayText>(reader);
+        frames.Frame();
+        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(reader));
     }
 
 #if DEBUG
@@ -322,6 +394,34 @@ public sealed class EnvironmentTests
         else
         {
             Scope.World.Add(Scope.Entity, new DisplayText(text));
+        }
+    }
+
+    private readonly record struct ThemeGroup(int Color, bool Sparse, bool ThemePresent = true, int? ChildColor = null) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            if (ThemePresent)
+            {
+                if (Sparse)
+                    Scope.Entity.Provide(new SparseTheme(Color));
+                else
+                    Scope.Entity.Provide(new Theme(Color));
+            }
+            Scope.View(new ThemeValueDisplay(Sparse), key: 1);
+            Scope.View(new FixedDisplay("other"), key: 2);
+            if (ChildColor is int color)
+                Scope.View(new ThemeGroup(color, Sparse), key: 3);
+            return default;
+        }
+    }
+
+    private readonly record struct ThemeValueDisplay(bool Sparse) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Write<DisplayText>(Scope.Entity) = new DisplayText(ReadTheme(Sparse).ToString());
+            return default;
         }
     }
 

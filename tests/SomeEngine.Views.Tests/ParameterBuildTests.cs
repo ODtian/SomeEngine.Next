@@ -311,7 +311,7 @@ public sealed partial class ParameterBuildTests
     {
         public BuildTask Build()
         {
-            Entity child = Scope.View(new HistoryDisplay(Value));
+            Entity child = Scope.View(new HistoryDisplay(Value), key: 0);
             WriteDisplayedValues(Scope.World.Read<DisplayedValues>(child).Text);
             return default;
         }
