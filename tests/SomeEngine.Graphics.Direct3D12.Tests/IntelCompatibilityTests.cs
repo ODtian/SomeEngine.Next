@@ -8,6 +8,7 @@ using Xunit.Sdk;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
+[Trait("Category", "Hardware")]
 public sealed class IntelCompatibilityTests
 {
     [Theory]

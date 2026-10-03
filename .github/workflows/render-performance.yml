@@ -1,0 +1,34 @@
+name: Rendering performance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scenes:
+    runs-on: [self-hosted, Windows, X64, gpu]
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Build projects and default content
+        run: ./tools/Build.ps1
+      - name: Build Sponza and Amazon Bistro
+        run: ./samples/ImportedScenes/build_scenes.ps1 -Download 2>&1 | Tee-Object artifacts/test-results/scenes.log
+      - name: Measure 1024 spheres, Sponza and Amazon Bistro
+        run: ./tools/Measure-Scenes.ps1 2>&1 | Tee-Object artifacts/test-results/performance.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: scenes-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: |
+            artifacts/test-results/**
+            templates/DefaultProject/Game.App/bin/Release/net10.0/Performance/**

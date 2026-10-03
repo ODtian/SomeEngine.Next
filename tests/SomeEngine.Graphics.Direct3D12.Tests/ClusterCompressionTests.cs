@@ -214,6 +214,8 @@ public sealed class ClusterCompressionTests
     }
 
     [Fact]
+    // WaveSize(32) requires a hardware adapter for this shader.
+    [Trait("Category", "Hardware")]
     public void Dice_registers_preserve_all_factors_and_partial_patch_groups()
     {
         const string source = """

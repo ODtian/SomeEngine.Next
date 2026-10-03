@@ -12,10 +12,10 @@ aot_rid_list_pattern := '^(win-(x64|arm64)|linux-(x64|arm64)|linux-musl-(x64|arm
 default: test
 
 test *args:
-    dotnet test SomeEngine.slnx {{ args }}
+    pwsh -NoProfile -File tools/Test.ps1 {{ args }}
 
 build *args:
-    dotnet build SomeEngine.slnx {{ args }}
+    pwsh -NoProfile -File tools/Build.ps1 {{ args }}
 
 # Short deterministic model/reference check. Failure artifacts are emitted beside the test binary.
 ecs-fuzz *args:
@@ -60,3 +60,15 @@ d3d12-device-loss:
 d3d12-presentation:
     dotnet test tests/SomeEngine.Graphics.Direct3D12.Tests/SomeEngine.Graphics.Direct3D12.Tests.csproj --filter 'Isolation=PresentationProcess' --logger 'trx;LogFileName=d3d12-presentation.trx' --results-directory artifacts/test-results
 
+
+# Hardware adapters and installed Vulkan drivers are required by these tests.
+test-hardware *args:
+    pwsh -NoProfile -File tools/Test.ps1 -Category Hardware {{ args }}
+
+# The seed and step count are required environment inputs for the long campaign.
+test-long-fuzz *args:
+    pwsh -NoProfile -File tools/Test.ps1 -Category LongFuzz {{ args }}
+
+# DefaultGame supplies all three scenes; this runner enforces complete results within 60 seconds.
+render-perf *args:
+    pwsh -NoProfile -File tools/Measure-Scenes.ps1 {{ args }}

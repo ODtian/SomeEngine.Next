@@ -1,9 +1,47 @@
 # 功能回归范围
 
-默认入口为 `SomeEngine.slnx`。测试以公开操作、返回数据、错误和资源生命周期为判据。源码字符串、类型或成员名单、私有存储身份、缓存命中与内部扫描次数、分配和耗时阈值不作为功能验收条件。
+默认入口为 `just test` 或 `pwsh -NoProfile -File tools/Test.ps1`。入口先通过 `tools/Build.ps1` 生成 DefaultProject 的 shader 与场景内容、构建 `SomeEngine.slnx` 的全部项目，再运行 CPU 与 D3D12 WARP 公共行为测试。构建与测试配置统一为 Release。
 
-本次清理没有运行测试、构建或门禁。下面列的是源码中的覆盖目标，不是执行成功报告。先前已重写部分现有测试；本轮按要求只继续清理，不补新测试、不增加结果断言或测试工程。
+GitHub Actions 的 `Software adapter tests` 在任意分支推送、PR 和手动触发时执行同一入口。PR 可以直接查看构建和测试状态。`Directory.Build.targets` 持有唯一的默认过滤条件；完成内容构建后，`dotnet test SomeEngine.slnx -c Release --no-build` 使用同一条件。显式 `--filter` 可选择独立类别。
 
+```text
+(Category=Software)&(Category!=Hardware)&(Category!=LongFuzz)&(Category!=Performance)&(Isolation!=PresentationProcess)&(Isolation!=DeviceLossProcess)
+```
+
+每个测试程序集通过 `Xunit.AssemblyTraitAttribute` 获得类别。普通库和 WARP 测试为 `Software`，Vulkan 项目为 `Hardware`，基准工具测试为 `Performance`。特定用例通过 `Trait("Category", ...)` 标记额外类别。
+
+| 类别与入口 | 所需环境与执行范围 |
+| --- | --- |
+| `just test` | Windows，CPU 与 WARP；包含 ECS 固定种子短回归 |
+| `just test-hardware` | GPU 与系统 Vulkan 驱动；Vulkan、Intel 适配器、Sampler Feedback、WaveSize(32)、Cluster 完整场景和 VSM |
+| `just test-long-fuzz` | `SOMEENGINE_ECS_FUZZ_SEED` 与 `SOMEENGINE_ECS_FUZZ_STEPS`；可提供 `SOMEENGINE_ECS_FUZZ_TRACE` 重放 |
+| `just render-perf` | 已构建 DefaultGame 与三个场景；统一测量 1024 小球、Sponza、Amazon Bistro |
+
+硬件类别对应源码中的明确要求：Vulkan 选择系统默认适配器，Intel 和 Sampler Feedback 用例选择具有指定能力的硬件，Dice 寄存器用例要求 WaveSize(32)，Cluster 与 VSM 场景选择硬件适配器。Temporal 与 Cluster 资源加载用例继续通过默认软件入口执行。
+
+硬件和性能工作流由手动操作触发，使用带 `self-hosted`、`Windows`、`X64`、`gpu` 标签的运行器。运行器提供 GPU、Vulkan 驱动、Python、可创建窗口的 Windows 会话以及支持所选 Actions 版本的 runner。性能工作流先调用现有场景下载和构建脚本，再执行 `tools/Measure-Scenes.ps1`；该入口对完整性、三个场景和 60 秒时限进行核对。长模糊工作流支持手动输入种子和操作数，每周日北京时间 04:00 自动执行 10000 次操作的模型对照。
+
+测试以公开操作、返回数据、错误和资源生命周期为判据。合入 #84 时，默认 dotnet 测试入口承接该票的测试规则门禁。
+
+## 失败诊断
+
+`tools/Test.ps1` 将 TRX、控制台日志、崩溃/挂起证据写入 `artifacts/test-results`，并把该目录通过 `SOMEENGINE_TEST_ARTIFACTS` 交给测试。图像测试将失败图像写入此目录。默认工作流失败时上传整个目录，以及现有测试输出目录中的 PNG、BMP、PPM、日志和 `fuzz-failures`，保留 14 天。
+
+`pwsh -NoProfile -File tools/Test-CiFailure.ps1` 临时创建一个故意失败的软件用例，核对非零退出码、TRX 中的测试输出、控制台日志与 PNG，并清理临时工程。手动运行 `CI failure diagnostics` 工作流会执行相同验收，并以失败状态结束，将日志和图像上传到该次运行。
+
+## 软件测试基线（#85）
+
+2026-10-04，基线 `1339869ff7e721ad3d7bcc176d6de96d1f1131e7`，Windows 10.0.26200、SDK 10.0.112、Release：统一构建的 72 个项目全部成功，零警告、零错误。完整默认测试执行 2417 项：2414 通过、3 失败、0 跳过，命令退出码为 1。逐项失败记录如下。
+
+| 软件用例 | 首次完整集合结果 | 单独执行结果 | 跟踪票 |
+| --- | --- | --- | --- |
+| `GltfVertexInputTests.ImportConvertsSourceLayoutsBeforeCallingTheMaterialEncoder(5, false)` | 第 94 行规范化 UV 观察值为 false | 通过 | [#126](https://github.com/ODtian/SomeEngine.Next/issues/126) |
+| 同一方法 `(6, false)` | 同上 | 通过 | [#126](https://github.com/ODtian/SomeEngine.Next/issues/126) |
+| 同一方法 `(5, true)` | 同上 | 通过 | [#126](https://github.com/ODtian/SomeEngine.Next/issues/126) |
+
+完整默认命令为 `pwsh -NoProfile -File tools/Test.ps1 -NoBuild`；独立诊断命令为 `dotnet test tests/SomeEngine.Assets.Tests/SomeEngine.Assets.Tests.csproj -c Release --no-build --filter FullyQualifiedName~GltfVertexInputTests`，后者六项全部通过。三个参数化失败继续保留为 Software 类别，由 CI 的正常失败状态反映。
+
+## 现有功能覆盖
 | 功能 | 现有回归入口与观察结果 |
 | --- | --- |
 | ECS 基本操作与复制 | `SomeEngine.ECS.Tests` 的实体、组件、查询、缓冲区、共享值、稀疏值和关系测试；复制后独立修改，增删后读取正确 |
