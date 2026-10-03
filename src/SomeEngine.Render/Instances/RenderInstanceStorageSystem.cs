@@ -2,14 +2,13 @@ using System.Runtime.CompilerServices;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Systems;
+using SomeEngine.RenderGraph;
 
 namespace SomeEngine.Render.Instances;
 
 /// <summary>
-/// The single instance-storage owner for one RenderWorld and graphics device. Pipeline systems
-/// submit classified entity sets and producers to this owner; only this type opens allocation,
-/// publication, and retirement scopes. Producers receive restricted write slices and consumers
-/// receive read-only storage views.
+/// Coordinates the batches for one RenderWorld and graphics device. Producers write directly
+/// into graph upload pages, and consumers bind the graph buffers through read views.
 /// </summary>
 public sealed class RenderInstanceStorageSystem : IDisposable
 {
@@ -50,9 +49,7 @@ public sealed class RenderInstanceStorageSystem : IDisposable
         try
         {
             _storage = new RenderInstanceResources(
-                backend,
                 device,
-                coordinator,
                 layout,
                 options);
         }
@@ -72,12 +69,12 @@ public sealed class RenderInstanceStorageSystem : IDisposable
 
     public int PropertyDataBytes => Storage.PropertyDataBytes;
 
-    /// <summary>
-    /// Gets the shared GPU transfer for this store and graph. Call before opening an edit or
-    /// frame; the first call installs its buffer and passes in a committed graph edit.
-    /// </summary>
-    public RenderInstanceDataTransfer GetDataTransfer(global::SomeEngine.RenderGraph.RenderGraph graph) =>
-        Storage.GetDataTransfer(graph);
+    public GraphBufferId PropertyData => Storage.PropertyData;
+
+    public GraphBufferId BatchMetadata => Storage.BatchMetadata;
+
+    /// <summary>Installs the two persistent device buffers in the rendering graph.</summary>
+    public void Install(global::SomeEngine.RenderGraph.RenderGraph graph) => Storage.Install(graph);
 
     internal RenderInstanceResources Storage
     {
@@ -88,21 +85,12 @@ public sealed class RenderInstanceStorageSystem : IDisposable
         }
     }
 
-    internal RenderTimeline Timeline => Storage.Timeline;
+    internal bool RequiresValueWrite => Storage.RequiresValueWrite;
 
     internal RenderInstanceBorrowerLease AcquireBorrower() => Storage.AcquireBorrower();
 
-    internal int AdmitFrameResources() => Storage.AdmitFrameResources();
-
-    internal bool TryAdmitFrameResources(
-        out int availableGenerationCount,
-        out QueueCompletion[] retirementFences) =>
-        Storage.TryAdmitFrameResources(
-            out availableGenerationCount,
-            out retirementFences);
-
-    internal RenderInstanceWriteScope OpenWrite(RenderPrepareScope scope) =>
-        Storage.BeginPrepare(scope);
+    internal RenderInstanceWriteScope OpenWrite(RenderPrepareScope scope, RenderGraphNextFrame? nextFrame) =>
+        Storage.BeginPrepare(scope, nextFrame);
 
     /// <summary>
     /// Allocates an unclassified logical batch for a pipeline system. The returned capability can
@@ -155,7 +143,8 @@ public sealed class RenderInstanceStorageSystem : IDisposable
         write.ReleaseBatch(batch);
     }
 
-    internal RenderInstanceStorageView OpenRead(RenderFrame frame) => Storage.OpenRead(frame);
+    internal RenderInstanceStorageView OpenRead(RenderFrame frame, scoped ref RenderGraphFrame graph) =>
+        Storage.OpenRead(frame, ref graph);
 
     public RenderInstanceDiagnostics CaptureDiagnostics() => Storage.CaptureDiagnostics();
 

@@ -27,7 +27,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private static readonly SomeEngine.Diagnostics.TraceSite ResidencyUploadsTrace = new("render", "Cluster.ResidencyUploads");
     private static readonly SomeEngine.Diagnostics.TraceSite FrameResourcesTrace = new("render", "Cluster.FrameResources");
     private static readonly SomeEngine.Diagnostics.TraceSite FrameUploadsTrace = new("render", "Cluster.FrameUploads");
-    private static readonly SomeEngine.Diagnostics.TraceSite InstanceTransferTrace = new("render", "Cluster.InstanceTransfer");
     private static readonly SomeEngine.Diagnostics.TraceSite SceneBoundsTrace = new("render", "Cluster.SceneBounds");
     private static readonly SomeEngine.Diagnostics.TraceSite RasterInputsTrace = new("render", "Cluster.RasterInputs");
     private static readonly SomeEngine.Diagnostics.TraceSite RasterStagesTrace = new("render", "Cluster.ResolveRasterStages");
@@ -56,6 +55,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterPipelineOptions _options;
     private readonly ClusterVisibilityMode _visibilityMode;
     private QueryHandle _viewQuery;
+    private QueryHandle _sceneQuery;
     private ClusterPipelineSet? _pipelines;
     private ClusterEntryUsageCache? _entryUsages;
     private ClusterRasterStages? _rasterStages;
@@ -65,7 +65,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private ClusterCullingHistory? _history;
     private ClusterFrameUploads? _uploads;
     private FrameResources _frameResources;
-    private RenderInstanceDataTransfer? _instanceDataTransfer;
     private readonly List<GraphPassId> _historyInitializationPasses = [];
     private readonly List<ClusterLayerDispatch> _layerDispatches = [];
     private readonly List<GraphPassId> _winnerResolvePasses = [];
@@ -137,7 +136,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private ClusterFrameMetrics? _latestFrameMetrics;
     private ClusterEpochId _pendingReadbackEpoch;
     private QueueCompletion? _pageFaultSubmission;
-    private int _pendingInstanceGeneration = -1;
     private ClusterResidencyPublication? _pendingResidencyPublication;
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
     private bool _hasPendingFrame;
@@ -342,6 +340,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         {
             view = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
             _viewQuery = view;
+            _sceneQuery = context.World.Query(_instances.EntityQuery);
             EnsurePipelineResources();
             _entryUsages = new ClusterEntryUsageCache();
             _rasterStages = new ClusterRasterStages(
@@ -381,6 +380,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _drawIndirectLayout?.Dispose();
             _drawIndirectLayout = null;
             ReleaseIfValid(context.World, view);
+            ReleaseIfValid(context.World, _sceneQuery);
+            _sceneQuery = default;
             throw;
         }
     }
@@ -471,8 +472,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         try
         {
             _uploads = uploads;
-            _instanceDataTransfer = _device.Adapter.Type == AdapterType.Discrete
-                ? _resources.InstanceResources.GetDataTransfer(_graph, _regions.PrimaryGeometry) : null;
+            _resources.InstanceResources.Install(_graph);
             RenderGraphEdit edit = _graph.BeginEdit();
             try
             {
@@ -542,7 +542,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _continuationPostCullPass = default;
             _materialInputs = _materialInputs.Clear();
             _frameResources = default;
-            _instanceDataTransfer = null;
             _outputs = default;
             Array.Clear(_rasterBinning);
             _rasterEpochs = _rasterEpochs.Clear();
@@ -842,7 +841,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             }
 
             _pendingReadbackEpoch = binding.ReadbackEpoch;
-            _pendingInstanceGeneration = binding.InstanceGeneration;
             _pendingResidencyPublication = binding.Publication;
             _outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRange);
             _residentPageReads = _outputs.Geometry.ResidentPageReads;
@@ -870,10 +868,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     ref graph,
                     in binding,
                     history);
-            using (SomeEngine.Diagnostics.EngineTrace.Begin(InstanceTransferTrace))
-                _instanceDataTransfer?.Stage(ref graph, batch, binding.InstanceData);
+            _resources.InstanceResources.BindFrame(ref graph);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(SceneBoundsTrace))
-                BindSceneBounds(ref graph, batch, policyViewCount != 0);
+                BindSceneBounds(ref graph, context.World, batch, policyViewCount != 0);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyUploadsTrace))
                 RecordResidencyUploads(ref graph, in binding);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyReadsTrace))
@@ -1140,13 +1137,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _history!.FinishFrame(result, _frameResources.PreviousHiZ, _frameResources.CurrentHiZ,
                 result.TryGetPassCompletion(_phaseTwoHiZPass, out _));
             _uploads!.FinishFrame(generation, result);
-            if (_instanceDataTransfer is null)
-                _resources.StoreInstanceReadStates(_pendingInstanceGeneration,
-                    result.GetBufferStates(_frameResources.InstanceData),
-                    result.GetBufferStates(_frameResources.InstanceProperties));
-            else
-                _resources.InstanceResources.StoreMetadataReadStates(_pendingInstanceGeneration,
-                    result.GetBufferStates(_frameResources.InstanceProperties));
             RegisterPageFaultReadback(result);
             DrainCompletedReadbacks();
             if (_options.EnableFrameMetricsReadback &&
@@ -1193,7 +1183,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _outputs.Geometry.ClearFrame();
         _pendingReadbackEpoch = default;
         _pageFaultSubmission = null;
-        _pendingInstanceGeneration = -1;
         _pendingResidencyPublication = null;
         _residencyUploadPasses.Clear();
         _residentPageReads = BufferRangeSet.Empty;
@@ -1209,6 +1198,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _materialBindingVersions.Clear();
         List<Exception>? failures = null;
         Release(ref _viewQuery, context.World, ref failures);
+        Release(ref _sceneQuery, context.World, ref failures);
         Dispose(ref _uploads, ref failures);
         Dispose(ref _shadeStages, ref failures);
         Dispose(ref _rasterStages, ref failures);
@@ -1276,7 +1266,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _continuationPostTraversalLevelPasses.Clear();
         _continuationPostCullPass = default;
         _frameResources = default;
-        _instanceDataTransfer = null;
         _outputs = default;
         _renderContext = default;
         _installedRasterStages = null;

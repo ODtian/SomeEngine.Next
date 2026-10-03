@@ -1,0 +1,37 @@
+# Instance Storage
+
+## Data and buffers
+
+RenderWorld 保存实例属性的来源组件。`RenderInstanceStorageSystem` 为一张 RenderGraph 安装
+属性数据和批元数据两份持久 device-local 缓冲；图持有 GPU 缓冲和上传页的生命周期。
+批保存行范围、属性布局和供场景 Feature 使用的内容修订。读取视图交付图缓冲身份与批元数据范围。
+
+## Writing a frame
+
+帧循环通过 `TryOpenNextFrame` 取得下一帧，随后把它传给 `RenderPrepareSystems.Update(scope, next)`。
+批构建按变化的属性和行，从下一帧上传页取得目标写入跨度。连续 ECS 组件跨度直接复制到该跨度，
+带填充的编码分别写入值和填充字节。元数据按属性的字范围写入。
+
+每个批更新持有一组 `RenderGraphBufferWrites`。发布批时提交范围，取消批更新时释放这组记录。
+同帧其它批的写入继续生效。上传复制先于图中的实例读者，范围外数据保留在持久缓冲中。
+缓冲首次使用时，清零范围取本帧上传范围的补集，直接在图上传页中填零，与实例值一同复制；每个字节完成一次 CPU 写入和一次 GPU 复制。
+图根据自己的跨帧缓冲状态安排后续访问。
+
+图提交回调确认本次实例上传后，下一轮准备沿系统变化版本写入变化行。下一帧被放弃或上传中断时，
+下一轮准备从 RenderWorld 重新写入实例属性，恢复 GPU 与组件的一致性。
+
+## Spatial grouping
+
+实例来源交付组合使用的 `EntityQuery`。Cluster 场景排序通过同一查询读取 `RenderTransform.Position`，
+用 `RowsForEntity` 把实体位置填入批行位置，再调用 Meshopt 空间排序。批成员变化时更新排序，
+移动中的批沿用组成员并由 GPU 重拟合包围盒。
+
+## Behavior evidence
+
+`InstancePreparationTests` 使用 WARP、自给的 ECS 组件和公共持久回读，验证单行变化、批成员替换、
+取消批更新、连续动态帧和放弃下一帧后的重新写入。`ClusterSpatialSortingTests` 使用完整 SM 6.6
+Cluster 着色组合和硬件适配器，读取多个 ECS archetype 的空间分组渲染结果。
+
+## Relations
+
+[[GameWorld-and-RenderWorld]] · [[Extraction]] · [[architecture/render-graph/Frame-Uploads]] · [[architecture/render-graph/Readback]]

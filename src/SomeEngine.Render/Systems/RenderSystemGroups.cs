@@ -163,10 +163,10 @@ public ref struct RenderFrameSystemContext
         }
     }
 
-    public readonly RenderInstanceStorageView OpenInstances() =>
+    public RenderInstanceStorageView OpenInstances() =>
         RequireInstances().OpenRead(
             _frame ?? throw new InvalidOperationException(
-                "A render frame is not active during this lifecycle callback."));
+                "A render frame is not active during this lifecycle callback."), ref _graph);
 
     internal readonly RenderFrame ActiveFrame =>
         _frame ?? throw new InvalidOperationException(
@@ -267,11 +267,11 @@ public sealed class RenderPrepareSystems : IDisposable
         }
     }
 
-    public void Update(RenderPrepareScope scope)
+    public void Update(RenderPrepareScope scope, RenderGraphNextFrame? nextFrame = null)
     {
         ArgumentNullException.ThrowIfNull(scope);
         ObjectDisposedException.ThrowIf(_shutdown, this);
-        _driver.Enter(scope);
+        _driver.Enter(scope, nextFrame: nextFrame);
         try
         {
             _extraction.ApplyPendingCandidate();
@@ -314,6 +314,7 @@ public sealed class RenderPrepareSystems : IDisposable
         RenderWorld world,
         RenderInstanceStorageSystem? instances) : ISystemDriver<RenderPrepareSystemContext>
     {
+        private bool _rewriteValues;
         private RenderInstanceWriteScope? _write;
         private RenderPrepareScope? _scope;
 
@@ -324,10 +325,10 @@ public sealed class RenderPrepareSystems : IDisposable
             instances,
             _write,
             _scope,
-            slot.LastSystemVersion,
+            _rewriteValues ? 0 : slot.LastSystemVersion,
             slot.CurrentSystemVersion);
 
-        internal void Enter(RenderPrepareScope scope, bool writeInstances = true)
+        internal void Enter(RenderPrepareScope scope, bool writeInstances = true, RenderGraphNextFrame? nextFrame = null)
         {
             if (Interlocked.CompareExchange(ref _scope, scope, null) is not null)
                 throw new InvalidOperationException("Render prepare systems are already updating.");
@@ -336,9 +337,9 @@ public sealed class RenderPrepareSystems : IDisposable
             {
                 scope.EnterOperation();
                 entered = true;
-                // Applying extracted components does not write GPU instance data. Keep that
-                // phase independent of writable buffer availability and buffer rotation.
-                _write = writeInstances ? instances?.OpenWrite(scope) : null;
+                // Extraction publishes ECS components; the update phase borrows the next frame's upload pages.
+                _rewriteValues = writeInstances && instances?.RequiresValueWrite == true;
+                _write = writeInstances ? instances?.OpenWrite(scope, nextFrame) : null;
             }
             catch
             {

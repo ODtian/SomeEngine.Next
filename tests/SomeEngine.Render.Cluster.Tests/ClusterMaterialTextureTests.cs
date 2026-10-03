@@ -108,8 +108,11 @@ public sealed class ClusterMaterialTextureTests
             new BufferDesc(height * 256, BufferUsages.CopyDestination), MemoryType.Readback);
         try
         {
+            Assert.True(graph.TryOpenNextFrame(out var initializationFrame, TimeSpan.FromSeconds(10)));
+            using var initializationResources = initializationFrame;
             Assert.True(coordinator.TryBeginPrepare(out var initialize));
-            using (initialize) { prepare.Update(initialize); initialize.Commit(); }
+            using (initialize) { prepare.Update(initialize, initializationFrame); initialize.Commit(); }
+            initializationFrame.Dispose();
             frameSystems.Initialize();
             GraphTextureInput output;
             using (RenderGraphEdit edit = graph.BeginEdit())
@@ -148,19 +151,21 @@ public sealed class ClusterMaterialTextureTests
             async Task Render()
             {
                 extraction.Extract(game);
+                Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
+                using var nextFrameResources = nextFrame;
                 Assert.True(coordinator.TryBeginPrepare(out var update));
                 using (update)
                 {
                     prepare.ApplyExtraction(update);
                     await cluster.PrepareMeshesAsync();
                     streaming.Pump();
-                    prepare.Update(update);
+                    prepare.Update(update, nextFrame);
                     update.Commit();
                 }
                 ClusterPipelineOutputs outputs = pipeline.ReconcileGraph();
                 Assert.True(coordinator.TryBeginFrame(out var frame));
                 using (frame)
-                using (RenderGraphFrame commands = graph.BeginFrame())
+                using (RenderGraphFrame commands = graph.BeginFrame(nextFrame))
                 {
                     frameSystems.Update(frame, commands);
                     commands.ObserveExecution(streaming);

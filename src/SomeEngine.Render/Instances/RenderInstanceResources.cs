@@ -1,10 +1,8 @@
-using System.Buffers;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using SomeEngine.Core.Diagnostics;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Frame;
 using SomeEngine.RenderGraph;
-using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Instances;
 
@@ -49,7 +47,7 @@ public sealed record RenderInstanceOptions
         if (cursor > int.MaxValue)
         {
             throw new ArgumentException(
-                "Render-instance property storage is too large for a persistently mapped buffer.",
+                "Render-instance property storage exceeds its byte addressing range.",
                 nameof(layout));
         }
         return checked((int)cursor);
@@ -59,7 +57,7 @@ public sealed record RenderInstanceOptions
         checked((value + alignment - 1) / alignment * alignment);
 }
 
-/// <summary>Snapshot of one batch-packed property-storage arena.</summary>
+/// <summary>Usage counts for the batch property storage.</summary>
 public sealed record RenderInstanceDiagnostics(
     int RowCapacity,
     int BatchCapacity,
@@ -67,32 +65,15 @@ public sealed record RenderInstanceDiagnostics(
     int ActiveBatches,
     int PropertyDataBytes);
 
-/// <summary>Immutable GPU-facing view of one exact live batch.</summary>
+/// <summary>Graph buffers and the metadata range for one live batch.</summary>
 public readonly record struct RenderInstanceBatchView(
-    Buffer? PropertyData,
-    Buffer Metadata,
+    GraphBufferId PropertyData,
+    GraphBufferId Metadata,
     BufferRange MetadataRange,
     int InstanceCount,
-    int Generation,
-    ulong ContentRevision)
-{
-    /// <summary>
-    /// Byte ranges allocated to this batch in PropertyData, at their original offsets.
-    /// Consumers may copy these ranges without interpreting property metadata. Both shared
-    /// and per-instance storage are included so changing a binding does not change the ranges.
-    /// </summary>
-    public ReadOnlyMemory<BufferRange> PropertyDataRanges { get; init; }
+    ulong ContentRevision);
 
-    internal BufferBoundaryState[] PropertyDataEndpoints { get; init; } = [];
-
-    internal BufferBoundaryState[] MetadataEndpoints { get; init; } = [];
-}
-
-/// <summary>
-/// Opaque handle and exact ABI of one live physical batch. It is not an entity or instance
-/// identity. Property words already live in the mapped constant buffer, and this object
-/// deliberately does not retain a duplicate CPU metadata array.
-/// </summary>
+/// <summary>One live batch, its property layout, and the revisions consumed by scene features.</summary>
 public sealed class RenderInstanceBatch
 {
     internal RenderInstanceBatch(
@@ -101,8 +82,7 @@ public sealed class RenderInstanceBatch
         int slot,
         RenderInstancePropertyLayout contract,
         int instanceCount,
-        ulong contentRevision,
-        BufferRange[] propertyDataRanges)
+        ulong contentRevision)
     {
         Owner = owner;
         Allocation = allocation;
@@ -110,7 +90,6 @@ public sealed class RenderInstanceBatch
         Contract = contract;
         InstanceCount = instanceCount;
         ContentRevision = contentRevision;
-        PropertyDataRanges = propertyDataRanges;
         _chunkRevisions = new ulong[(instanceCount + 63) / 64];
         Array.Fill(_chunkRevisions, contentRevision);
         _instanceRevisions = new ulong[instanceCount];
@@ -119,11 +98,7 @@ public sealed class RenderInstanceBatch
 
     public int InstanceCount { get; }
 
-    /// <summary>
-    /// Monotonic revision of the batch's published values. Unlike the physical upload-buffer
-    /// generation, this changes on every successful content publication and never identifies a
-    /// transport slot.
-    /// </summary>
+    /// <summary>Revision of the latest successful batch value update.</summary>
     public ulong ContentRevision { get; internal set; }
 
     private readonly ulong[] _chunkRevisions;
@@ -169,8 +144,6 @@ public sealed class RenderInstanceBatch
     internal int Slot { get; }
 
     internal RenderInstancePropertyLayout Contract { get; }
-
-    internal ReadOnlyMemory<BufferRange> PropertyDataRanges { get; }
 }
 
 /// <summary>
@@ -178,29 +151,29 @@ public sealed class RenderInstanceBatch
 /// It has no RenderWorld reference and no entity ownership table: ECS systems borrow component
 /// spans and write final batch rows only while building a batch.
 /// </summary>
-internal sealed class RenderInstanceResources : IDisposable
+internal sealed class RenderInstanceResources : IDisposable, IRenderGraphFrameExecutionObserver
 {
     private const int MaxConstantBufferRangeBytes = 65_536;
+    private const int PropertyBytesWritten = 1;
+    private const int MetadataWordsWritten = 2;
     private const int LifecycleActive = 0;
     private const int LifecycleShutdown = 1;
     private const int LifecycleDisposed = 2;
-    private static readonly TimeSpan GenerationWaitTimeout = TimeSpan.FromSeconds(30);
-
-    private readonly IGraphicsBackend _backend;
     private readonly Device _device;
-    private readonly RenderTimeline _timeline;
-    private readonly ConditionalWeakTable<global::SomeEngine.RenderGraph.RenderGraph, RenderInstanceDataTransfer> _transfers = new();
-    private readonly UploadBuffer?[] _propertyData;
-    private readonly UploadBuffer[] _batchMetadata;
-    private readonly bool[] _generationNeedsFlush = new bool[2];
+    private global::SomeEngine.RenderGraph.RenderGraph? _graph;
+    private bool _initialized;
+    private bool _valuesUploaded;
+    private GraphPassId _propertyUpload;
+    private GraphPassId _metadataUpload;
+    private readonly int[] _batchWrittenBuffers;
+    private int _writtenBuffers;
+    private RenderGraphNextFrame? _nextFrame;
+    private readonly RenderGraphBufferWrites?[] _batchWrites;
     private readonly int _batchMetadataStrideBytes;
     private readonly PropertyStorage[] _properties;
-    private readonly record struct BufferBytes(Buffer Resource, BufferRange Range, byte[] Data);
-    private readonly Dictionary<int, BufferBytes[]> _batchOriginalBytes = [];
     private readonly object?[] _batchAllocations;
     private readonly bool[] _batchReady;
     private readonly PackedRange[] _batchRows;
-    private readonly int[] _batchGenerations;
     private readonly Stack<int> _freeBatchSlots = [];
     private readonly List<PackedRange> _freeRows = [];
     private readonly object _lifecycleGate = new();
@@ -211,97 +184,96 @@ internal sealed class RenderInstanceResources : IDisposable
     private int _activeRowCount;
     private int _activeBorrowerCount;
     private int _operationActive;
-    private int _writeGeneration = -1;
-    private MappedBuffer? _propertyWrite;
-    private MappedBuffer? _metadataWrite;
-    private int _preferredGeneration;
     private ulong _nextContentRevision;
     private int _lifecycleState;
     private bool _cleanupCompleted;
 
     public RenderInstanceResources(
-        IGraphicsBackend backend,
         Device device,
-        RenderFrameCoordinator coordinator,
         RenderInstancePropertyLayout layout,
         RenderInstanceOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(coordinator);
         ArgumentNullException.ThrowIfNull(layout);
         RenderInstanceOptions selected = options ?? new RenderInstanceOptions();
         int propertyDataBytes = selected.ValidateAndMeasure(layout);
-        (int metadataStride, int metadataBytes) = MeasureBatchMetadata(device, layout, selected);
+        (int metadataStride, _) = MeasureBatchMetadata(device, layout, selected);
 
-        RenderTimeline timeline = coordinator.CreateTimeline(generationCount: 2);
-        if (!ReferenceEquals(timeline.Device, device))
+        _device = device;
+        Layout = layout;
+        Options = selected;
+        PropertyDataBytes = propertyDataBytes;
+        _batchMetadataStrideBytes = metadataStride;
+        _properties = BuildStorage(layout, selected, propertyDataBytes);
+        _batchAllocations = new object?[selected.BatchCapacity];
+        _batchReady = new bool[selected.BatchCapacity];
+        _batchRows = new PackedRange[selected.BatchCapacity];
+        _batchWrites = new RenderGraphBufferWrites?[selected.BatchCapacity];
+        _batchWrittenBuffers = new int[selected.BatchCapacity];
+        _freeRows.Add(new PackedRange(0, selected.RowCapacity));
+    }
+
+    internal GraphBufferId PropertyData { get; private set; }
+    internal GraphBufferId BatchMetadata { get; private set; }
+
+    internal void Install(global::SomeEngine.RenderGraph.RenderGraph graph)
+    {
+        if (ReferenceEquals(_graph, graph)) return;
+        DevelopmentCheck.Require(_graph is null && ReferenceEquals(graph.Device, _device),
+            "Instance buffers require one graph on the storage device.");
+        using var edit = graph.BeginEdit();
+        PropertyData = edit.CreatePersistentBuffer(new BufferDesc(
+            Math.Max(4ul, ((ulong)PropertyDataBytes + 3ul) & ~3ul),
+            BufferUsages.ShaderRead | BufferUsages.CopySource | BufferUsages.CopyDestination,
+            "Render instance properties"));
+        BatchMetadata = edit.CreatePersistentBuffer(new BufferDesc(
+            checked((ulong)_batchMetadataStrideBytes * (ulong)Options.BatchCapacity),
+            BufferUsages.Constant | BufferUsages.CopySource | BufferUsages.CopyDestination,
+            "Render instance batch metadata"));
+        _propertyUpload = edit.AddBufferUploadPass(PropertyData);
+        _metadataUpload = edit.AddBufferUploadPass(BatchMetadata);
+        edit.Commit();
+        _graph = graph;
+    }
+
+    internal void BindFrame(ref RenderGraphFrame frame)
+    {
+        if (!_initialized)
         {
-            throw new ArgumentException(
-                "Instance storage and its frame coordinator must use the same device domain.",
-                nameof(coordinator));
+            foreach (BufferRange range in UnwrittenRanges(Math.Max(4ul, ((ulong)PropertyDataBytes + 3ul) & ~3ul),
+                         frame.GetBufferUploadRanges(PropertyData).Ranges))
+                frame.GetWriteSpan(PropertyData, range.Offset, checked((int)range.Size)).Clear();
+            foreach (BufferRange range in UnwrittenRanges(
+                         checked((ulong)_batchMetadataStrideBytes * (ulong)Options.BatchCapacity),
+                         frame.GetBufferUploadRanges(BatchMetadata).Ranges))
+                frame.GetWriteSpan(BatchMetadata, range.Offset, checked((int)range.Size)).Clear();
         }
+        frame.ObserveExecution(this);
+    }
 
-        var propertyData = new UploadBuffer?[2];
-        var batchMetadata = new UploadBuffer[2];
-        try
+    private static BufferRange[] UnwrittenRanges(ulong size, ReadOnlySpan<BufferRange> writes)
+    {
+        var ranges = new List<BufferRange>();
+        ulong end = 0;
+        foreach (BufferRange write in writes)
         {
-            PropertyStorage[] storage = BuildStorage(layout, selected, propertyDataBytes);
-            for (int generation = 0; generation < 2; generation++)
-            {
-                if (propertyDataBytes != 0)
-                {
-                    propertyData[generation] = CreateMappedBuffer(
-                        backend,
-                        device,
-                        checked((ulong)propertyDataBytes),
-                        $"Render instance batch property data {generation}");
-                    BufferRange propertyRange = new(0, checked((ulong)propertyDataBytes));
-                    using MappedBuffer propertyMapping = backend.Map(
-                        propertyData[generation]!.Handle,
-                        MapType.Write,
-                        propertyRange);
-                    propertyMapping.Bytes.Clear();
-                    propertyMapping.Flush(propertyRange);
-                }
-                batchMetadata[generation] = CreateMappedConstantBuffer(
-                    backend,
-                    device,
-                    checked((ulong)metadataBytes),
-                    $"Render instance batch metadata {generation}");
-                BufferRange metadataRange = new(0, checked((ulong)metadataBytes));
-                using MappedBuffer metadataMapping = backend.Map(
-                    batchMetadata[generation].Handle,
-                    MapType.Write,
-                    metadataRange);
-                metadataMapping.Bytes.Clear();
-                metadataMapping.Flush(metadataRange);
-            }
-
-            _backend = backend;
-            _device = device;
-            _timeline = timeline;
-            Layout = layout;
-            Options = selected;
-            PropertyDataBytes = propertyDataBytes;
-            _propertyData = propertyData;
-            _batchMetadata = batchMetadata;
-            _batchMetadataStrideBytes = metadataStride;
-            _properties = storage;
-            _batchAllocations = new object?[selected.BatchCapacity];
-            _batchReady = new bool[selected.BatchCapacity];
-            _batchRows = new PackedRange[selected.BatchCapacity];
-            _batchGenerations = new int[selected.BatchCapacity];
-            _freeRows.Add(new PackedRange(0, selected.RowCapacity));
+            if (write.Offset > end) ranges.Add(new BufferRange(end, write.Offset - end));
+            end = Math.Max(end, write.Offset + write.Size);
         }
-        catch
+        if (end < size) ranges.Add(new BufferRange(end, size - end));
+        return ranges.ToArray();
+    }
+
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    {
+        if (!_initialized && result.TryGetPassCompletion(_propertyUpload, out _) &&
+            result.TryGetPassCompletion(_metadataUpload, out _)) _initialized = true;
+        bool propertiesUploaded = (_writtenBuffers & PropertyBytesWritten) == 0 || result.TryGetPassCompletion(_propertyUpload, out _);
+        bool metadataUploaded = (_writtenBuffers & MetadataWordsWritten) == 0 || result.TryGetPassCompletion(_metadataUpload, out _);
+        if (_initialized && propertiesUploaded && metadataUploaded)
         {
-            for (int generation = 0; generation < 2; generation++)
-            {
-                TryDispose(batchMetadata[generation]);
-                TryDispose(propertyData[generation]);
-            }
-            throw;
+            _valuesUploaded = true;
+            _writtenBuffers = 0;
         }
     }
 
@@ -311,9 +283,9 @@ internal sealed class RenderInstanceResources : IDisposable
 
     public int PropertyDataBytes { get; }
 
-    internal RenderTimeline Timeline => _timeline;
-
     internal int BatchMetadataStrideBytes => _batchMetadataStrideBytes;
+
+    internal bool RequiresValueWrite => !_valuesUploaded;
 
     internal RenderInstanceBorrowerLease AcquireBorrower()
     {
@@ -334,181 +306,37 @@ internal sealed class RenderInstanceResources : IDisposable
         }
     }
 
-    internal RenderInstanceWriteScope BeginPrepare(RenderPrepareScope scope)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-        EnterOperation();
-        RenderTimelineLease? lease = null;
-        try
-        {
-            lease = scope.AcquireTimeline(_timeline);
-            int generation = _writeGeneration = SelectWritableGeneration();
-            if (_propertyData[generation] is { } data)
-                _propertyWrite = _backend.Map(data.Handle, MapType.Write, new BufferRange(0, data.Size));
-            _metadataWrite = _backend.Map(_batchMetadata[generation].Handle, MapType.Write,
-                new BufferRange(0, _batchMetadata[generation].Size));
-            _generationNeedsFlush[generation] = true;
-            RenderInstanceWriteScope result = new(this, scope, lease);
-            lease = null;
-            return result;
-        }
-        catch
-        {
-            try { CloseWriteMappings(flush: false); }
-            finally
-            {
-                try { lease?.Dispose(); }
-                finally { _writeGeneration = -1; ExitOperation(); }
-            }
-            throw;
-        }
-    }
-
-    internal int AdmitFrameResources()
+    internal RenderInstanceWriteScope BeginPrepare(RenderPrepareScope scope, RenderGraphNextFrame? nextFrame)
     {
         EnterOperation();
         try
         {
-            _ = SelectWritableGeneration(out int availableGenerationCount);
-            return availableGenerationCount;
+            if (nextFrame is not null) Install(nextFrame.Graph);
+            _nextFrame = nextFrame;
+            return new RenderInstanceWriteScope(this, scope);
         }
-        finally
-        {
-            ExitOperation();
-        }
+        catch { ExitOperation(); throw; }
     }
 
-    internal bool TryAdmitFrameResources(
-        out int availableGenerationCount,
-        out QueueCompletion[] retirementFences)
+    public RenderInstanceStorageView OpenRead(RenderFrame frame, scoped ref RenderGraphFrame graph)
     {
-        EnterOperation();
-        try
-        {
-            return TrySelectWritableGeneration(
-                out _,
-                out availableGenerationCount,
-                out retirementFences);
-        }
-        finally
-        {
-            ExitOperation();
-        }
-    }
-
-    /// <summary>
-    /// Acquires read-only frame access to published instance storage. The returned view can bind
-    /// batches but exposes no allocation or mutation surface.
-    /// </summary>
-    public RenderInstanceStorageView OpenRead(RenderFrame frame)
-    {
-        ArgumentNullException.ThrowIfNull(frame);
         ThrowIfNotActive();
-        RenderFrameUseLease lease = frame.AcquireUse([_timeline]);
-        try
-        {
-            lock (_lifecycleGate)
-            {
-                for (int generation = 0; generation < _generationNeedsFlush.Length; generation++)
-                {
-                    if (!_generationNeedsFlush[generation]) continue;
-                    Flush(_propertyData[generation]);
-                    Flush(_batchMetadata[generation]);
-                    _generationNeedsFlush[generation] = false;
-                }
-            }
-            return new RenderInstanceStorageView(this, lease);
-        }
-        catch { lease.Dispose(); throw; }
-
-        void Flush(UploadBuffer? buffer)
-        {
-            if (buffer is null) return;
-            BufferRange range = new(0, buffer.Size);
-            using MappedBuffer mapping = _backend.Map(buffer.Handle, MapType.Write, range);
-            mapping.Flush(range);
-        }
+        BindFrame(ref graph);
+        return new RenderInstanceStorageView(this, frame);
     }
 
     internal RenderInstanceBatchView GetBatchView(
-        RenderInstanceBatch metadata,
-        RenderInstancePropertyLayout requiredLayout,
-        RenderFrameUseLease? frameUse = null)
+        RenderInstanceBatch batch, RenderInstancePropertyLayout requiredLayout)
     {
-        ArgumentNullException.ThrowIfNull(metadata);
-        ArgumentNullException.ThrowIfNull(requiredLayout);
         ThrowIfNotActive();
-        ValidateBatchOwner(metadata, nameof(metadata));
-        ValidateBatch(metadata.Slot, metadata.Allocation);
-        ValidateBatchReady(metadata.Slot);
-        if (!metadata.Contract.HasSameContract(requiredLayout))
-        {
-            throw new ArgumentException(
-                "The batch instance-property layout does not exactly match the shader layout.",
-                nameof(requiredLayout));
-        }
-
-        int generation = _batchGenerations[metadata.Slot];
-        frameUse?.RegisterGeneration(_timeline, generation);
-        return new RenderInstanceBatchView(
-            _propertyData[generation]?.Handle,
-            _batchMetadata[generation].Handle,
-            BatchMetadataRange(metadata.Slot),
-            metadata.InstanceCount,
-            generation,
-            metadata.ContentRevision)
-        {
-            PropertyDataRanges = metadata.PropertyDataRanges,
-            PropertyDataEndpoints = _propertyData[generation]?.CaptureEndpoints() ?? [],
-            MetadataEndpoints = _batchMetadata[generation].CaptureEndpoints(),
-        };
+        ValidateBatchOwner(batch, nameof(batch));
+        ValidateBatch(batch.Slot, batch.Allocation);
+        ValidateBatchReady(batch.Slot);
+        if (!batch.Contract.HasSameContract(requiredLayout))
+            throw new ArgumentException("The batch property layout must match the shader layout.", nameof(requiredLayout));
+        return new RenderInstanceBatchView(PropertyData, BatchMetadata, BatchMetadataRange(batch.Slot),
+            batch.InstanceCount, batch.ContentRevision);
     }
-
-    internal void StoreReadStates(int generation, ReadOnlySpan<BufferBoundaryState> properties,
-        ReadOnlySpan<BufferBoundaryState> metadata)
-    {
-        if ((uint)generation >= (uint)_batchMetadata.Length)
-            throw new ArgumentOutOfRangeException(nameof(generation));
-        _propertyData[generation]?.StoreStates(properties);
-        _batchMetadata[generation].StoreStates(metadata);
-    }
-
-    internal RenderInstanceDataTransfer GetDataTransfer(global::SomeEngine.RenderGraph.RenderGraph graph,
-        GraphRegionId region = default)
-    {
-        ArgumentNullException.ThrowIfNull(graph);
-        ThrowIfNotActive();
-        if (!ReferenceEquals(graph.Device, _device))
-            throw new ArgumentException("The graph belongs to another graphics device.", nameof(graph));
-        if (PropertyDataBytes == 0)
-            throw new InvalidOperationException("The instance store has no managed property data to transfer.");
-        return _transfers.GetValue(graph, target =>
-        {
-            var edit = target.BeginEdit();
-            try
-            {
-                var transfer = new RenderInstanceDataTransfer(this, ref edit, region);
-                edit.Commit();
-                return transfer;
-            }
-            finally { edit.Dispose(); }
-        });
-    }
-
-    internal void BindDataSources(ref RenderGraphFrame frame, GraphBufferId[] sources)
-    {
-        for (int generation = 0; generation < sources.Length; generation++)
-        {
-            UploadBuffer data = _propertyData[generation]!;
-            frame.BindExternalBuffer(sources[generation], data.Handle, data.CaptureEndpoints());
-        }
-    }
-
-    internal void StorePropertyReadStates(int generation, ReadOnlySpan<BufferBoundaryState> states) =>
-        _propertyData[generation]!.StoreStates(states);
-
-    internal void StoreMetadataReadStates(int generation, ReadOnlySpan<BufferBoundaryState> states) =>
-        _batchMetadata[generation].StoreStates(states);
 
     public RenderInstanceDiagnostics CaptureDiagnostics()
     {
@@ -528,7 +356,7 @@ internal sealed class RenderInstanceResources : IDisposable
         foreach (RenderInstancePropertyDescriptor property in contract.Properties)
             _ = Layout.RequireCompatible(property, nameof(contract));
 
-        _ = RequireWriteGeneration();
+        RenderGraphNextFrame nextFrame = RequireNextFrame();
         int batchSlot = AllocateBatchSlot();
         object allocation = new();
         PackedRange rows = default;
@@ -547,15 +375,16 @@ internal sealed class RenderInstanceResources : IDisposable
             _activeBatchCount++;
             _activeRowCount = checked(_activeRowCount + rows.Count);
             batchActivated = true;
-            ResetSharedBatch(batchSlot);
-            ResetRows(rows);
-            ResetBatchMetadata(batchSlot);
+            _batchWrites[batchSlot] = nextFrame.BeginBufferWrites();
             return new BatchLease(batchSlot, allocation, contract, rows);
         }
         catch
         {
             if (batchActivated)
             {
+                _batchWrites[batchSlot]?.Dispose();
+                _batchWrites[batchSlot] = null;
+                _batchWrittenBuffers[batchSlot] = 0;
                 _batchAllocations[batchSlot] = null;
                 _batchReady[batchSlot] = false;
                 _batchRows[batchSlot] = default;
@@ -581,16 +410,14 @@ internal sealed class RenderInstanceResources : IDisposable
         contract.Validate(property, nameof(property));
         PropertyStorage storage = RequireStorage(property, nameof(property));
         RequireLinearBinding(storage.Descriptor, nameof(property));
-        int generation = RequireWriteGeneration();
         BufferRange propertyRange = SharedElementRange(storage, batchSlot);
-        Span<byte> propertyMapping = GetWriteBytes(RequirePropertyData(generation).Handle, propertyRange);
+        Span<byte> propertyMapping = GetWriteBytes(batchSlot, PropertyData, propertyRange);
         Span<byte> element = propertyMapping;
-        element.Clear();
+        element.Slice(RenderInstancePropertyValue<T>.Size).Clear();
         RenderInstancePropertyValue<T>.Write(element, in value);
-        BufferRange metadataRange = BatchMetadataRange(batchSlot);
-        Span<byte> metadataMapping = GetWriteBytes(_batchMetadata[generation].Handle, metadataRange);
-        MemoryMarshal.Cast<byte, uint>(metadataMapping)
-            [property.Descriptor.MetadataWordOffset] =
+        BufferRange metadataRange = PropertyMetadataRange(batchSlot, property.Descriptor);
+        Span<byte> metadataMapping = GetWriteBytes(batchSlot, BatchMetadata, metadataRange);
+        MemoryMarshal.Cast<byte, uint>(metadataMapping)[0] =
             checked((uint)SharedAddress(storage, batchSlot));
     }
 
@@ -607,11 +434,9 @@ internal sealed class RenderInstanceResources : IDisposable
         RequireLinearBinding(storage.Descriptor, nameof(property));
         PackedRange rows = _batchRows[batchSlot];
         int address = checked(storage.InstanceBase + rows.Start * property.Encoding.StorageStride);
-        int generation = RequireWriteGeneration();
-        BufferRange metadataRange = BatchMetadataRange(batchSlot);
-        Span<byte> metadataMapping = GetWriteBytes(_batchMetadata[generation].Handle, metadataRange);
-        MemoryMarshal.Cast<byte, uint>(metadataMapping)
-            [property.Descriptor.MetadataWordOffset] =
+        BufferRange metadataRange = PropertyMetadataRange(batchSlot, property.Descriptor);
+        Span<byte> metadataMapping = GetWriteBytes(batchSlot, BatchMetadata, metadataRange);
+        MemoryMarshal.Cast<byte, uint>(metadataMapping)[0] =
             checked((uint)address) | RenderInstanceLinearMetadata.PerInstanceBit;
     }
 
@@ -631,11 +456,9 @@ internal sealed class RenderInstanceResources : IDisposable
         PackedRange rows = _batchRows[batchSlot];
         int address = checked(
             storage.InstanceBase + rows.Start * destination.Encoding.StorageStride);
-        int generation = RequireWriteGeneration();
-        BufferRange metadataRange = BatchMetadataRange(batchSlot);
-        Span<byte> metadataMapping = GetWriteBytes(_batchMetadata[generation].Handle, metadataRange);
-        MemoryMarshal.Cast<byte, uint>(metadataMapping)
-            [destination.MetadataWordOffset] =
+        BufferRange metadataRange = PropertyMetadataRange(batchSlot, destination);
+        Span<byte> metadataMapping = GetWriteBytes(batchSlot, BatchMetadata, metadataRange);
+        MemoryMarshal.Cast<byte, uint>(metadataMapping)[0] =
             checked((uint)address) | RenderInstanceLinearMetadata.PerInstanceBit;
     }
 
@@ -671,7 +494,7 @@ internal sealed class RenderInstanceResources : IDisposable
         BufferRange destinationRange = new(
             checked((ulong)(storage.InstanceBase + firstRow * stride)),
             checked((ulong)(source.Length * stride)));
-        Span<byte> mapping = GetWriteBytes(RequirePropertyData(RequireWriteGeneration()).Handle, destinationRange);
+        Span<byte> mapping = GetWriteBytes(batchSlot, PropertyData, destinationRange);
         Span<byte> destination = mapping;
 
         if (stride == valueSize)
@@ -684,7 +507,7 @@ internal sealed class RenderInstanceResources : IDisposable
         for (int index = 0; index < source.Length; index++)
         {
             Span<byte> element = destination.Slice(index * stride, stride);
-            element.Clear();
+            element.Slice(valueSize).Clear();
             bytes.Slice(index * valueSize, valueSize).CopyTo(element);
         }
     }
@@ -727,7 +550,7 @@ internal sealed class RenderInstanceResources : IDisposable
         BufferRange destinationRange = new(
             checked((ulong)(storage.InstanceBase + firstRow * stride)),
             checked((ulong)(sourceCount * stride)));
-        Span<byte> mapping = GetWriteBytes(RequirePropertyData(RequireWriteGeneration()).Handle, destinationRange);
+        Span<byte> mapping = GetWriteBytes(batchSlot, PropertyData, destinationRange);
         Span<byte> destination = mapping;
 
         if (stride == valueSize)
@@ -739,7 +562,7 @@ internal sealed class RenderInstanceResources : IDisposable
         for (int index = 0; index < sourceCount; index++)
         {
             Span<byte> element = destination.Slice(index * stride, stride);
-            element.Clear();
+            element.Slice(valueSize).Clear();
             source.Slice(index * valueSize, valueSize).CopyTo(element);
         }
     }
@@ -760,9 +583,9 @@ internal sealed class RenderInstanceResources : IDisposable
             throw new ArgumentOutOfRangeException(nameof(destinationIndex));
         PropertyStorage storage = RequireStorage(property, nameof(property));
         BufferRange range = InstanceElementRange(storage, checked(rows.Start + destinationIndex));
-        Span<byte> mapping = GetWriteBytes(RequirePropertyData(RequireWriteGeneration()).Handle, range);
+        Span<byte> mapping = GetWriteBytes(batchSlot, PropertyData, range);
         Span<byte> element = mapping;
-        element.Clear();
+        element.Slice(RenderInstancePropertyValue<T>.Size).Clear();
         RenderInstancePropertyValue<T>.Write(element, in value);
     }
 
@@ -783,12 +606,9 @@ internal sealed class RenderInstanceResources : IDisposable
                 $"Property '{property.Key}' requires exactly {expected} metadata words.",
                 nameof(words));
         }
-        int generation = RequireWriteGeneration();
-        BufferRange metadataRange = BatchMetadataRange(batchSlot);
-        Span<byte> mapping = GetWriteBytes(_batchMetadata[generation].Handle, metadataRange);
-        words.CopyTo(MemoryMarshal.Cast<byte, uint>(mapping).Slice(
-            property.Descriptor.MetadataWordOffset,
-            expected));
+        BufferRange metadataRange = PropertyMetadataRange(batchSlot, property.Descriptor);
+        Span<byte> mapping = GetWriteBytes(batchSlot, BatchMetadata, metadataRange);
+        words.CopyTo(MemoryMarshal.Cast<byte, uint>(mapping));
     }
 
     internal RenderInstanceBatch BuildBatch(
@@ -797,7 +617,7 @@ internal sealed class RenderInstanceResources : IDisposable
         RenderInstancePropertyLayout contract)
     {
         ValidateBatch(batchSlot, allocation);
-        _batchGenerations[batchSlot] = RequireWriteGeneration();
+        CommitBatchWrites(batchSlot);
         _batchReady[batchSlot] = true;
         return new RenderInstanceBatch(
             this,
@@ -805,33 +625,7 @@ internal sealed class RenderInstanceResources : IDisposable
             batchSlot,
             contract,
             _batchRows[batchSlot].Count,
-            NextContentRevision(),
-            GetBatchDataRanges(batchSlot, contract));
-    }
-
-    private BufferRange[] GetBatchDataRanges(int batchIndex, RenderInstancePropertyLayout properties)
-    {
-        PackedRange rows = _batchRows[batchIndex];
-        var ranges = new List<BufferRange>();
-        foreach (PropertyStorage storage in _properties)
-        {
-            RenderInstancePropertyEncoding encoding = storage.Descriptor.Encoding;
-            if (!encoding.HasManagedStorage || !properties.Contains(storage.Descriptor.Key)) continue;
-            Add(SharedElementRange(storage, batchIndex));
-            if (rows.Count != 0)
-                Add(new BufferRange(
-                    checked((ulong)(storage.InstanceBase + rows.Start * encoding.StorageStride)),
-                    checked((ulong)(rows.Count * encoding.StorageStride))));
-        }
-        return ranges.ToArray();
-
-        void Add(BufferRange range)
-        {
-            if (ranges.Count != 0 && ranges[^1].Offset + ranges[^1].Size == range.Offset)
-                ranges[^1] = new BufferRange(ranges[^1].Offset, ranges[^1].Size + range.Size);
-            else
-                ranges.Add(range);
-        }
+            NextContentRevision());
     }
 
     internal void ReleaseBatch(RenderInstanceBatch metadata)
@@ -859,12 +653,7 @@ internal sealed class RenderInstanceResources : IDisposable
         if (replacedProperties is not null)
             foreach (RenderInstancePropertyDescriptor property in replacedProperties.Properties)
                 _ = properties.RequireCompatible(property, nameof(replacedProperties));
-        int writeGeneration = RequireWriteGeneration();
-        int publishedGeneration = _batchGenerations[batch.Slot];
-        if (writeGeneration != publishedGeneration)
-            CopyBatchState(batch.Slot, _batchRows[batch.Slot], publishedGeneration, writeGeneration, replacedProperties);
-        else
-            _batchOriginalBytes.Add(batch.Slot, CaptureBatchBytes(batch.Slot, properties, writeGeneration));
+        _batchWrites[batch.Slot] = RequireNextFrame().BeginBufferWrites();
         _batchReady[batch.Slot] = false;
         return new BatchLease(batch.Slot, batch.Allocation, batch.Contract, _batchRows[batch.Slot]);
     }
@@ -872,206 +661,33 @@ internal sealed class RenderInstanceResources : IDisposable
     internal ulong CompleteBatchUpdate(int batchSlot, object allocation)
     {
         ValidateBatch(batchSlot, allocation);
-        int generation = RequireWriteGeneration();
-        ulong revision = NextContentRevision();
-        _batchGenerations[batchSlot] = generation;
+        CommitBatchWrites(batchSlot);
         _batchReady[batchSlot] = true;
-        ReleaseBatchBytes(batchSlot);
-        return revision;
+        return NextContentRevision();
     }
 
     internal void CancelBatchUpdate(int batchSlot, object allocation)
     {
         ValidateBatch(batchSlot, allocation);
-        if (_batchOriginalBytes.TryGetValue(batchSlot, out BufferBytes[]? original))
-        {
-            foreach (BufferBytes value in original)
-            {
-                Span<byte> mapping = GetWriteBytes(value.Resource, value.Range);
-                value.Data.AsSpan(0, checked((int)value.Range.Size)).CopyTo(mapping);
-            }
-            ReleaseBatchBytes(batchSlot);
-        }
+        _batchWrites[batchSlot]?.Dispose();
+        _batchWrites[batchSlot] = null;
+        _batchWrittenBuffers[batchSlot] = 0;
         _batchReady[batchSlot] = true;
     }
 
-    private void ReleaseBatchBytes(int batchIndex)
+    private void CommitBatchWrites(int batchIndex)
     {
-        if (!_batchOriginalBytes.Remove(batchIndex, out BufferBytes[]? bytes)) return;
-        foreach (BufferBytes value in bytes)
-            ArrayPool<byte>.Shared.Return(value.Data);
-    }
-
-    private BufferBytes[] CaptureBatchBytes(int batchIndex, RenderInstancePropertyLayout properties, int generation)
-    {
-        var bytes = new List<BufferBytes>();
-        try
-        {
-            Capture(_batchMetadata[generation].Handle, BatchMetadataRange(batchIndex));
-            if (_propertyData[generation] is { } data)
-            {
-                PackedRange rows = _batchRows[batchIndex];
-                foreach (PropertyStorage storage in _properties)
-                {
-                    RenderInstancePropertyEncoding encoding = storage.Descriptor.Encoding;
-                    if (!encoding.HasManagedStorage || !properties.Contains(storage.Descriptor.Key)) continue;
-                    Capture(data.Handle, SharedElementRange(storage, batchIndex));
-                    Capture(data.Handle, new BufferRange(
-                        checked((ulong)(storage.InstanceBase + rows.Start * encoding.StorageStride)),
-                        checked((ulong)(rows.Count * encoding.StorageStride))));
-                }
-            }
-            return bytes.ToArray();
-        }
-        catch
-        {
-            foreach (BufferBytes value in bytes)
-                ArrayPool<byte>.Shared.Return(value.Data);
-            throw;
-        }
-
-        void Capture(Buffer resource, BufferRange range)
-        {
-            if (range.Size == 0) return;
-            int size = checked((int)range.Size);
-            byte[] data = ArrayPool<byte>.Shared.Rent(size);
-            try
-            {
-                GetWriteMapping(resource).Read(data.AsSpan(0, size), checked((int)range.Offset));
-                bytes.Add(new BufferBytes(resource, range, data));
-            }
-            catch
-            {
-                ArrayPool<byte>.Shared.Return(data);
-                throw;
-            }
-        }
+        _batchWrites[batchIndex]!.Commit();
+        _batchWrites[batchIndex] = null;
+        _writtenBuffers |= _batchWrittenBuffers[batchIndex];
+        _batchWrittenBuffers[batchIndex] = 0;
+        _valuesUploaded = false;
     }
 
     private ulong NextContentRevision()
     {
         _nextContentRevision = checked(_nextContentRevision + 1ul);
         return _nextContentRevision;
-    }
-
-    private void CopyBatchState(
-        int batchSlot,
-        PackedRange rows,
-        int sourceGeneration,
-        int destinationGeneration,
-        RenderInstancePropertyLayout? replacedProperties)
-    {
-        if (sourceGeneration == destinationGeneration)
-            return;
-
-        BufferRange metadataRange = BatchMetadataRange(batchSlot);
-        using (MappedBuffer sourceMetadata = _backend.Map(
-                   _batchMetadata[sourceGeneration].Handle,
-                   MapType.Read,
-                   metadataRange))
-        {
-            sourceMetadata.Read(GetWriteBytes(_batchMetadata[destinationGeneration].Handle, metadataRange));
-        }
-
-        UploadBuffer? sourceData = _propertyData[sourceGeneration];
-        UploadBuffer? destinationData = _propertyData[destinationGeneration];
-        if (sourceData is null || destinationData is null)
-            return;
-
-        BufferRange fullRange = new(0, sourceData.Size);
-        using MappedBuffer sourceMapping = _backend.Map(
-            sourceData.Handle,
-            MapType.Read,
-            fullRange);
-        Span<byte> destinationMapping = GetWriteBytes(destinationData.Handle, fullRange);
-        for (int ordinal = 0; ordinal < _properties.Length; ordinal++)
-        {
-            PropertyStorage storage = _properties[ordinal];
-            if (replacedProperties?.Contains(storage.Descriptor.Key) == true)
-                continue;
-            RenderInstancePropertyEncoding encoding = storage.Descriptor.Encoding;
-            if (!encoding.HasManagedStorage)
-                continue;
-
-            BufferRange shared = SharedElementRange(storage, batchSlot);
-            sourceMapping.Read(destinationMapping.Slice(
-                checked((int)shared.Offset), checked((int)shared.Size)), checked((int)shared.Offset));
-
-            int instanceOffset = checked(
-                storage.InstanceBase + rows.Start * encoding.StorageStride);
-            int instanceBytes = checked(rows.Count * encoding.StorageStride);
-            sourceMapping.Read(destinationMapping.Slice(instanceOffset, instanceBytes), instanceOffset);
-        }
-    }
-
-    internal T ReadInstance<T>(
-        RenderInstanceBatch metadata,
-        int instanceIndex,
-        ResolvedRenderInstanceProperty<T> property)
-        where T : unmanaged
-    {
-        ValidateBatchOwner(metadata, nameof(metadata));
-        ValidateBatch(metadata.Slot, metadata.Allocation);
-        ValidateBatchReady(metadata.Slot);
-        if ((uint)instanceIndex >= (uint)metadata.InstanceCount)
-            throw new ArgumentOutOfRangeException(nameof(instanceIndex));
-        PropertyStorage storage = RequireStorage(property, nameof(property));
-        PackedRange rows = _batchRows[metadata.Slot];
-        int generation = _batchGenerations[metadata.Slot];
-        BufferRange range = InstanceElementRange(storage, checked(rows.Start + instanceIndex));
-        bool writing = generation == _writeGeneration && _propertyWrite.HasValue;
-        using MappedBuffer mapping = writing ? default : _backend.Map(
-            RequirePropertyData(generation).Handle, MapType.Read, range);
-        return RenderInstancePropertyValue<T>.Read(writing
-            ? GetWriteBytes(RequirePropertyData(generation).Handle, range) : mapping.Bytes);
-    }
-
-    internal void ReadInstances<T>(RenderInstanceBatch batch,
-        ResolvedRenderInstanceProperty<T> property, Span<T> destination) where T : unmanaged
-    {
-        ValidateBatchOwner(batch, nameof(batch));
-        ValidateBatch(batch.Slot, batch.Allocation);
-        ValidateBatchReady(batch.Slot);
-        if (destination.Length != batch.InstanceCount)
-            throw new ArgumentException("The destination must cover the batch.", nameof(destination));
-        if (destination.IsEmpty) return;
-        PropertyStorage storage = RequireStorage(property, nameof(property));
-        uint metadata = ReadMetadataWord(batch, property.Descriptor.MetadataWordOffset);
-        bool perInstance = (metadata & 0x80000000u) != 0u;
-        int stride = storage.Descriptor.Encoding.StorageStride;
-        ulong offset = metadata & 0x7FFFFFFFu;
-        ulong bytes = checked((ulong)(perInstance ? destination.Length : 1) * (ulong)stride);
-        int generation = _batchGenerations[batch.Slot];
-        Buffer resource = RequirePropertyData(generation).Handle;
-        BufferRange range = new(offset, bytes);
-        bool writing = generation == _writeGeneration && _propertyWrite.HasValue;
-        using MappedBuffer mapping = writing ? default : _backend.Map(resource, MapType.Read, range);
-        if (perInstance && stride == Unsafe.SizeOf<T>())
-        {
-            MappedBuffer sourceMapping = writing ? GetWriteMapping(resource) : mapping;
-            sourceMapping.Read(MemoryMarshal.AsBytes(destination), writing ? checked((int)range.Offset) : 0);
-            return;
-        }
-        ReadOnlySpan<byte> source = writing ? GetWriteBytes(resource, range) : mapping.Bytes;
-        for (int index = 0; index < destination.Length; index++)
-            destination[index] = RenderInstancePropertyValue<T>.Read(source.Slice(perInstance ? index * stride : 0, stride));
-    }
-
-    internal uint ReadMetadataWord(RenderInstanceBatch metadata, int word)
-    {
-        ValidateBatchOwner(metadata, nameof(metadata));
-        ValidateBatch(metadata.Slot, metadata.Allocation);
-        ValidateBatchReady(metadata.Slot);
-        if ((uint)word >= (uint)metadata.Contract.MetadataWordCount)
-            throw new ArgumentOutOfRangeException(nameof(word));
-        int generation = _batchGenerations[metadata.Slot];
-        BufferRange metadataRange = BatchMetadataRange(metadata.Slot);
-        bool writing = generation == _writeGeneration && _metadataWrite.HasValue;
-        using MappedBuffer mapping = writing ? default : _backend.Map(
-            _batchMetadata[generation].Handle, MapType.Read, metadataRange);
-        ReadOnlySpan<byte> source = writing
-            ? GetWriteBytes(_batchMetadata[generation].Handle, metadataRange) : mapping.Bytes;
-        return MemoryMarshal.Cast<byte, uint>(source)[word];
     }
 
     public void Shutdown(RenderPrepareScope scope)
@@ -1092,7 +708,6 @@ internal sealed class RenderInstanceResources : IDisposable
                         $"{_activeBorrowerCount} borrower(s) and {_activeBatchCount} batch(es) are live.");
                 }
 
-                using RenderTimelineLease lease = scope.AcquireTimeline(_timeline);
                 _lifecycleState = LifecycleShutdown;
                 _shutdownScope = scope;
             }
@@ -1115,48 +730,22 @@ internal sealed class RenderInstanceResources : IDisposable
 
     internal void EndWrite()
     {
-        try
-        {
-            CloseWriteMappings();
-            _generationNeedsFlush[RequireWriteGeneration()] = false;
-        }
-        finally
-        {
-            // Reuse the current buffer when its readers have finished; the selection
-            // path still moves to the other buffer whenever that one is busy.
-            if (_writeGeneration >= 0) _preferredGeneration = _writeGeneration;
-            _writeGeneration = -1;
-            ExitOperation();
-        }
+        _nextFrame = null;
+        ExitOperation();
     }
 
-    private void CloseWriteMappings(bool flush = true)
+    private RenderGraphNextFrame RequireNextFrame() => _nextFrame ??
+        throw new InvalidOperationException("Instance writing requires the next graph frame.");
+
+    private Span<byte> GetWriteBytes(int batchIndex, GraphBufferId buffer, BufferRange range)
     {
-        try { Close(_propertyWrite); }
-        finally
-        {
-            _propertyWrite = null;
-            try { Close(_metadataWrite); }
-            finally { _metadataWrite = null; }
-        }
-
-        void Close(MappedBuffer? mapping)
-        {
-            if (mapping is not { } value) return;
-            try { if (flush) value.Flush(value.Range); }
-            finally { value.Dispose(); }
-        }
+        Interlocked.Or(ref _batchWrittenBuffers[batchIndex], buffer == PropertyData ? PropertyBytesWritten : MetadataWordsWritten);
+        return _batchWrites[batchIndex]!.GetWriteSpan(buffer, range.Offset, checked((int)range.Size));
     }
 
-    private MappedBuffer GetWriteMapping(Buffer resource)
-    {
-        int generation = RequireWriteGeneration();
-        return ReferenceEquals(resource, _batchMetadata[generation].Handle)
-            ? _metadataWrite.GetValueOrDefault() : _propertyWrite.GetValueOrDefault();
-    }
-
-    private Span<byte> GetWriteBytes(Buffer resource, BufferRange range) =>
-        GetWriteMapping(resource).Bytes.Slice(checked((int)range.Offset), checked((int)range.Size));
+    private BufferRange PropertyMetadataRange(int batchIndex, RenderInstancePropertyDescriptor property) =>
+        new(checked(BatchMetadataRange(batchIndex).Offset + (ulong)property.MetadataWordOffset * 4ul),
+            checked((ulong)property.Encoding.MetadataWordCount * 4ul));
 
     private int AllocateBatchSlot()
     {
@@ -1225,7 +814,9 @@ internal sealed class RenderInstanceResources : IDisposable
     {
         ValidateBatch(batchSlot, allocation);
         PackedRange rows = _batchRows[batchSlot];
-        ReleaseBatchBytes(batchSlot);
+        _batchWrites[batchSlot]?.Dispose();
+        _batchWrites[batchSlot] = null;
+        _batchWrittenBuffers[batchSlot] = 0;
         _batchAllocations[batchSlot] = null;
         _batchReady[batchSlot] = false;
         _batchRows[batchSlot] = default;
@@ -1270,43 +861,6 @@ internal sealed class RenderInstanceResources : IDisposable
                 parameterName);
         }
         return storage;
-    }
-
-    private void ResetRows(PackedRange rows)
-    {
-        int generation = RequireWriteGeneration();
-        UploadBuffer? propertyData = _propertyData[generation];
-        if (propertyData is null) return;
-        BufferRange fullRange = new(0, propertyData.Size);
-        Span<byte> mapping = GetWriteBytes(propertyData.Handle, fullRange);
-        for (int index = 0; index < _properties.Length; index++)
-        {
-            PropertyStorage storage = _properties[index];
-            if (!storage.Descriptor.Encoding.HasManagedStorage)
-                continue;
-            mapping.Slice(
-                checked(storage.InstanceBase + rows.Start * storage.Descriptor.Encoding.StorageStride),
-                checked(rows.Count * storage.Descriptor.Encoding.StorageStride)).Clear();
-        }
-    }
-
-    private void ResetSharedBatch(int batchIndex)
-    {
-        int generation = RequireWriteGeneration();
-        UploadBuffer? propertyData = _propertyData[generation];
-        if (propertyData is null)
-            return;
-        BufferRange fullRange = new(0, propertyData.Size);
-        Span<byte> mapping = GetWriteBytes(propertyData.Handle, fullRange);
-        for (int index = 0; index < _properties.Length; index++)
-        {
-            PropertyStorage storage = _properties[index];
-            if (storage.Descriptor.Encoding.HasManagedStorage)
-            {
-                BufferRange range = SharedElementRange(storage, batchIndex);
-                mapping.Slice(checked((int)range.Offset), checked((int)range.Size)).Clear();
-            }
-        }
     }
 
     private void ValidateBatch(int batchSlot, object allocation)
@@ -1383,110 +937,10 @@ internal sealed class RenderInstanceResources : IDisposable
                 row * storage.Descriptor.Encoding.StorageStride)),
             checked((ulong)storage.Descriptor.Encoding.StorageStride));
 
-    private UploadBuffer RequirePropertyData(int generation) =>
-        _propertyData[generation] ?? throw new InvalidOperationException(
-            "The property contract does not allocate standard linear storage.");
-
     private BufferRange BatchMetadataRange(int batchIndex) =>
         new(
             checked((ulong)batchIndex * (ulong)_batchMetadataStrideBytes),
             checked((ulong)_batchMetadataStrideBytes));
-
-    private void ResetBatchMetadata(int batchIndex)
-    {
-        int generation = RequireWriteGeneration();
-        BufferRange range = BatchMetadataRange(batchIndex);
-        Span<byte> mapping = GetWriteBytes(_batchMetadata[generation].Handle, range);
-        mapping.Clear();
-    }
-
-    private int SelectWritableGeneration() => SelectWritableGeneration(out _);
-
-    private int SelectWritableGeneration(out int availableGenerationCount)
-    {
-        if (TrySelectWritableGeneration(
-                out int admitted,
-                out availableGenerationCount,
-                out _))
-        {
-            return admitted;
-        }
-
-        int preferred = _timeline.GetOldestSubmittedGeneration();
-        int alternate = 1 - preferred;
-        long started = Environment.TickCount64;
-        while (true)
-        {
-            TimeSpan remaining = GenerationWaitTimeout -
-                TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
-            if (remaining <= TimeSpan.Zero)
-            {
-                throw new TimeoutException(
-                    $"Both render instance generations remained in flight for {GenerationWaitTimeout}.");
-            }
-
-            TimeSpan slice = remaining > TimeSpan.FromMilliseconds(1)
-                ? TimeSpan.FromMilliseconds(1)
-                : remaining;
-            if (_timeline.WaitForGeneration(preferred, slice))
-            {
-                availableGenerationCount = 1;
-                return preferred;
-            }
-            if (_timeline.IsGenerationAvailable(alternate))
-            {
-                availableGenerationCount = 1;
-                return alternate;
-            }
-            (preferred, alternate) = (alternate, preferred);
-        }
-    }
-
-    private bool TrySelectWritableGeneration(
-        out int generation,
-        out int availableGenerationCount,
-        out QueueCompletion[] retirementFences)
-    {
-        int preferred = _preferredGeneration;
-        int alternate = 1 - preferred;
-        bool preferredAvailable = _timeline.IsGenerationAvailable(preferred);
-        bool alternateAvailable = _timeline.IsGenerationAvailable(alternate);
-        availableGenerationCount =
-            (preferredAvailable ? 1 : 0) + (alternateAvailable ? 1 : 0);
-        if (preferredAvailable)
-        {
-            generation = preferred;
-            retirementFences = [];
-            return true;
-        }
-        if (alternateAvailable)
-        {
-            generation = alternate;
-            retirementFences = [];
-            return true;
-        }
-
-        generation = -1;
-        // Locality chooses an already-free buffer. When both are busy, wait for the
-        // older readers instead of draining the most recently submitted frame.
-        retirementFences = _timeline.GetGenerationFences(_timeline.GetOldestSubmittedGeneration());
-        if (retirementFences.Length == 0)
-        {
-            throw new InvalidOperationException(
-                "An unavailable render instance generation has no retirement position.");
-        }
-        return false;
-    }
-
-    private int RequireWriteGeneration()
-    {
-        if (_writeGeneration < 0)
-        {
-            throw new InvalidOperationException(
-                "Render instance mapped storage has no admitted write generation.");
-        }
-        return _writeGeneration;
-    }
 
     private static int SharedAddress(PropertyStorage storage, int batchIndex) =>
         checked(storage.SharedBase + batchIndex * storage.Descriptor.Encoding.StorageStride);
@@ -1535,26 +989,6 @@ internal sealed class RenderInstanceResources : IDisposable
     private static int AlignUp(int value, int alignment) =>
         checked((value + alignment - 1) / alignment * alignment);
 
-    private static UploadBuffer CreateMappedBuffer(
-        IGraphicsBackend backend,
-        Device device,
-        ulong size,
-        string name) =>
-        new(
-            backend,
-            device,
-            new BufferDesc(size, BufferUsages.ShaderRead | BufferUsages.CopySource, name));
-
-    private static UploadBuffer CreateMappedConstantBuffer(
-        IGraphicsBackend backend,
-        Device device,
-        ulong size,
-        string name) =>
-        new(
-            backend,
-            device,
-            new BufferDesc(size, BufferUsages.Constant | BufferUsages.CopySource, name));
-
     private static (int StrideBytes, int BufferBytes) MeasureBatchMetadata(
         Device device,
         RenderInstancePropertyLayout layout,
@@ -1597,7 +1031,7 @@ internal sealed class RenderInstanceResources : IDisposable
         if (bufferBytes > int.MaxValue)
         {
             throw new ArgumentException(
-                "The render-instance batch metadata buffer is too large to remain persistently mapped.",
+                "The render-instance batch metadata exceeds its byte addressing range.",
                 nameof(options));
         }
         return (checked((int)strideBytes), checked((int)bufferBytes));
@@ -1628,49 +1062,8 @@ internal sealed class RenderInstanceResources : IDisposable
                 _lifecycleState = LifecycleDisposed;
             }
 
-            List<Exception>? failures = null;
-            for (int generation = 0; generation < 2; generation++)
-            {
-                try
-                {
-                    _propertyData[generation]?.Dispose();
-                }
-                catch (Exception error)
-                {
-                    (failures ??= []).Add(error);
-                }
-                try
-                {
-                    _batchMetadata[generation].Dispose();
-                }
-                catch (Exception error)
-                {
-                    (failures ??= []).Add(error);
-                }
-            }
-
-            if (failures is not null)
-            {
-                lock (_lifecycleGate)
-                    _lifecycleState = LifecycleShutdown;
-                throw failures.Count == 1
-                    ? failures[0]
-                    : new AggregateException(
-                        "Not every render-instance storage generation could be released.",
-                        failures);
-            }
+            foreach (RenderGraphBufferWrites? writes in _batchWrites) writes?.Dispose();
             _cleanupCompleted = true;
-        }
-    }
-
-    private static void TryDispose(IDisposable? value)
-    {
-        try
-        {
-            value?.Dispose();
-        }
-        catch
-        {
         }
     }
 
@@ -1690,58 +1083,6 @@ internal sealed class RenderInstanceResources : IDisposable
         internal int End => checked(Start + Count);
     }
 
-    private sealed class UploadBuffer : IDisposable
-    {
-        private readonly ulong _size;
-        private BufferBoundaryState[] _states;
-
-        internal UploadBuffer(
-            IGraphicsBackend backend,
-            Device device,
-            in BufferDesc description)
-        {
-            _size = description.Size;
-            Buffer? handle = null;
-            try
-            {
-                handle = backend.CreateBuffer(device, description, MemoryType.Upload);
-                Handle = handle;
-                _states = [new BufferBoundaryState(
-                    new BufferRange(0, description.Size),
-                    handle.InitialSync,
-                    handle.InitialAccess,
-                    ResourceContentState.Defined)];
-            }
-            catch
-            {
-                if (handle is not null)
-                {
-                    try
-                    {
-                        handle.Dispose();
-                    }
-                    catch
-                    {
-                    }
-                }
-                throw;
-            }
-        }
-
-        internal Buffer Handle { get; }
-
-        internal ulong Size => _size;
-
-        internal BufferBoundaryState[] CaptureEndpoints() => (BufferBoundaryState[])_states.Clone();
-
-        internal void StoreStates(ReadOnlySpan<BufferBoundaryState> states)
-        {
-            if (!states.IsEmpty)
-                _states = states.ToArray();
-        }
-
-        public void Dispose() => Handle.Dispose();
-    }
 }
 
 /// <summary>Keeps the batch-storage arena alive while a rendering subsystem retains its ABI.</summary>
@@ -1776,17 +1117,14 @@ internal sealed class RenderInstanceWriteScope : IDisposable
 {
     private RenderInstanceResources? _owner;
     private readonly RenderPrepareScope _prepareScope;
-    private RenderTimelineLease? _lease;
     private int _activeBatchBuilders;
 
     internal RenderInstanceWriteScope(
         RenderInstanceResources owner,
-        RenderPrepareScope prepareScope,
-        RenderTimelineLease lease)
+        RenderPrepareScope prepareScope)
     {
         _owner = owner;
         _prepareScope = prepareScope;
-        _lease = lease;
     }
 
     internal RenderInstanceResources Resources =>
@@ -1865,15 +1203,7 @@ internal sealed class RenderInstanceWriteScope : IDisposable
         RenderInstanceResources? owner = Interlocked.Exchange(ref _owner, null);
         if (owner is null)
             return;
-        RenderTimelineLease? lease = Interlocked.Exchange(ref _lease, null);
-        try
-        {
-            owner.EndWrite();
-        }
-        finally
-        {
-            lease?.Dispose();
-        }
+        owner.EndWrite();
     }
 }
 

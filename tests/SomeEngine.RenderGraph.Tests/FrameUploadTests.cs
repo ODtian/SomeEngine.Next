@@ -5,6 +5,70 @@ namespace SomeEngine.RenderGraph.Tests;
 public sealed class FrameUploadTests
 {
     [Fact]
+    public void CommittedWriteGroupsReachTheSameFrameReader()
+    {
+        using var data = new UploadBuffers();
+        Assert.True(data.Graph.TryOpenNextFrame(out RenderGraphNextFrame next, TimeSpan.Zero));
+        using (next)
+        {
+            using var first = next.BeginBufferWrites();
+            first.GetWriteSpan(data.Values, 0, 8).Fill(13);
+            using var second = next.BeginBufferWrites();
+            second.WriteBuffer(data.Values, 8, new byte[] { 2, 4, 6, 8, 10, 12, 14, 16 });
+            second.Commit();
+            first.Commit();
+            using RenderGraphFrame frame = data.Graph.BeginFrame(next);
+            data.Execute(frame);
+        }
+        Assert.Equal(new byte[] { 13, 13, 13, 13, 13, 13, 13, 13, 2, 4, 6, 8, 10, 12, 14, 16 },
+            Assert.Single(data.Results));
+    }
+
+    [Fact]
+    public void DiscardedWriteGroupPreservesOtherGroupsWrites()
+    {
+        using var data = new UploadBuffers();
+        Assert.True(data.Graph.TryOpenNextFrame(out RenderGraphNextFrame next, TimeSpan.Zero));
+        using (next)
+        {
+            next.GetWriteSpan(data.Values, 0, 16).Fill(7);
+            using (var discarded = next.BeginBufferWrites())
+                discarded.GetWriteSpan(data.Values, 8, 8).Fill(99);
+            using var committed = next.BeginBufferWrites();
+            committed.GetWriteSpan(data.Values, 0, 8).Fill(31);
+            committed.Commit();
+            using RenderGraphFrame frame = data.Graph.BeginFrame(next);
+            data.Execute(frame);
+        }
+        Assert.Equal(new byte[] { 31, 31, 31, 31, 31, 31, 31, 31, 7, 7, 7, 7, 7, 7, 7, 7 },
+            Assert.Single(data.Results));
+    }
+
+    [Fact]
+    public async Task ParallelWritesInOneGroupReachTheFrameReader()
+    {
+        using var data = new UploadBuffers(64);
+        Assert.True(data.Graph.TryOpenNextFrame(out RenderGraphNextFrame next, TimeSpan.Zero));
+        using (next)
+        {
+            using var writes = next.BeginBufferWrites();
+            using var ready = new Barrier(16);
+            Task[] tasks = Enumerable.Range(0, 16).Select(index => Task.Factory.StartNew(() =>
+            {
+                ready.SignalAndWait();
+                uint value = (uint)index + 3;
+                MemoryMarshal.Write(writes.GetWriteSpan(data.Values, (ulong)index * 4, 4), in value);
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+            await Task.WhenAll(tasks);
+            writes.Commit();
+            using RenderGraphFrame frame = data.Graph.BeginFrame(next);
+            data.Execute(frame);
+        }
+        Assert.Equal(Enumerable.Range(3, 16).Select(value => (uint)value).ToArray(),
+            MemoryMarshal.Cast<byte, uint>(Assert.Single(data.Results)).ToArray());
+    }
+
+    [Fact]
     public void NextFrameMappedAndByteWritesReachTheSameFrameReader()
     {
         using var data = new UploadBuffers();

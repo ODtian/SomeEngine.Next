@@ -29,6 +29,8 @@ public readonly struct RenderInstanceSingleGroup : IEquatable<RenderInstanceSing
 public interface IRenderInstanceBatchSource<TGroupKey>
     where TGroupKey : notnull
 {
+    QueryDefinition EntityQuery { get; }
+
     RenderInstanceBatches<TGroupKey>? Current { get; }
 }
 
