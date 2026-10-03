@@ -31,6 +31,7 @@ internal sealed class WorldStructureRoot
         World = world;
         Hooks = hooks;
         Clock = new Owners.Clock();
+        ComponentWriteVersions = new ComponentWriteVersions();
         Queries = new Queries.QueryRegistry();
         Entities = new Owners.Entities(this, initialEntityCapacity);
         Tables = new Owners.Tables(Entities, Queries.OnNewArchetype);
@@ -55,6 +56,7 @@ internal sealed class WorldStructureRoot
         Hooks = hooks;
         Clock = new Owners.Clock();
         Clock.Write(source.Clock.Tick);
+        ComponentWriteVersions = source.ComponentWriteVersions.CloneDetached();
 
         Archetypes.ArchetypeRegistry registry = source.Tables.Registry.CloneExact(
             out Archetypes.DetachedTableMap tableMap, cloneDerivedTableCaches);
@@ -80,6 +82,7 @@ internal sealed class WorldStructureRoot
     internal Queries.QueryRegistry Queries { get; }
     internal Owners.Shared Shared { get; }
     internal Owners.Clock Clock { get; }
+    internal ComponentWriteVersions ComponentWriteVersions { get; }
     internal Owners.Hierarchy Hierarchy { get; }
     internal BundleData BundleData { get; } = new();
 

@@ -39,6 +39,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     private Storage _storage;
     private readonly Lock _writeGate = new();
     private int _detachCount;
+    private int _componentWriteVersion;
 
     public SparseSet(int initialDenseCapacity = 16)
     {
@@ -52,10 +53,13 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
             count: 0);
     }
 
-    private SparseSet(Storage storage)
+    private SparseSet(Storage storage, uint componentWriteVersion)
     {
         _storage = storage;
+        _componentWriteVersion = unchecked((int)componentWriteVersion);
     }
+
+    internal uint ComponentWriteVersion => unchecked((uint)Volatile.Read(ref _componentWriteVersion));
 
     /// <summary>当前元素数。</summary>
     public int Count => _storage.Count;
@@ -98,6 +102,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
         storage.WriteVersions[denseIndex] = version;
         storage.SparsePages[page][entity.Index & PageMask] = denseIndex;
         storage.Count++;
+        Interlocked.Increment(ref _componentWriteVersion);
     }
 
     /// <summary>替换组件。不存在时抛异常。</summary>
@@ -115,6 +120,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
         storage = WritableStorage();
         storage.DenseData[denseIndex] = value;
         storage.WriteVersions[denseIndex] = version;
+        Interlocked.Increment(ref _componentWriteVersion);
     }
 
     internal uint WriteVersion(Entity entity)
@@ -137,6 +143,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
             throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
 
         RemoveDense(WritableStorage(), entity, page, denseIndex);
+        Interlocked.Increment(ref _componentWriteVersion);
     }
 
     bool ISparseSet.RemoveOptional(Entity entity)
@@ -148,6 +155,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
             return false;
 
         RemoveDense(WritableStorage(), entity, page, denseIndex);
+        Interlocked.Increment(ref _componentWriteVersion);
         return true;
     }
 
@@ -161,7 +169,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     {
         Storage storage = _storage;
         storage.MarkShared();
-        return new SparseSet<T>(storage);
+        return new SparseSet<T>(storage, ComponentWriteVersion);
     }
 
     void ISparseSet.AddCopy(Entity source, Entity target, uint version)
@@ -219,6 +227,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
 
         storage = WritableStorage();
         storage.WriteVersions[denseIndex] = version;
+        Interlocked.Increment(ref _componentWriteVersion);
         return ref storage.DenseData[denseIndex];
     }
 
@@ -263,6 +272,8 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     {
         Storage storage = WritableStorage();
         storage.WriteVersions.AsSpan(0, storage.Count).Fill(version);
+        if (storage.Count > 0)
+            Interlocked.Increment(ref _componentWriteVersion);
         return storage.DenseData.AsSpan(0, storage.Count);
     }
 

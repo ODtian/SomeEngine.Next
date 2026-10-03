@@ -637,7 +637,7 @@ internal readonly struct Copy
                     targetRow,
                     in operations);
 
-                copy.MarkWrite(targetChunk, destinationColumn, targetRow);
+                copy.MarkWrite(targetChunk, destinationColumn, targetRow, componentId);
                 copy._components.CommitReplace(
                     componentId,
                     target,
@@ -678,9 +678,9 @@ internal readonly struct Copy
                     in operations);
 
                 if (targetArchetype.HasComponent(componentId))
-                    MarkWrite(destinationChunk, destinationColumn, destinationRow);
+                    MarkWrite(destinationChunk, destinationColumn, destinationRow, componentId);
                 else
-                    MarkAdd(destinationChunk, destinationColumn, destinationRow);
+                    MarkAdd(destinationChunk, destinationColumn, destinationRow, componentId);
                 continue;
             }
 
@@ -766,14 +766,14 @@ internal readonly struct Copy
         }
     }
 
-    private void MarkAdd(Chunk chunk, int columnIndex, int row)
+    private void MarkAdd(Chunk chunk, int columnIndex, int row, int componentId)
     {
-        chunk.MarkAdd(columnIndex, row, _clock.Tick);
+        _components.MarkAdd(chunk, columnIndex, row, componentId, _clock.Tick);
     }
 
-    private void MarkWrite(Chunk chunk, int columnIndex, int row)
+    private void MarkWrite(Chunk chunk, int columnIndex, int row, int componentId)
     {
-        chunk.MarkWrite(columnIndex, row, _clock.Tick);
+        _components.MarkWrite(chunk, columnIndex, row, componentId, _clock.Tick);
     }
 
     private static class ComponentChanges

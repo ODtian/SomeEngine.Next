@@ -25,6 +25,10 @@
 
 `QueryRow.Read<T>()` 返回组件值；`Write<T>()` 和 `ReadWrite<T>()` 返回组件引用。查询对象及回调边界从当前 `QueryCursor`、`QueryRow` 和 `QueryChunkView` API 读取。
 
+## 组件类型写版本
+
+公开 `World.ComponentWriteVersion<T>()` 提供组件类型写版本，用于整批依赖检查。计数语义、数据持有和事务行为由 [[architecture/someui/Dependencies|Dependencies]] 维护。
+
 ## 查询成员观察版本
 
 公开 `World.MembershipVersion(QueryHandle)` 提供查询成员观察版本，供列表拉取依赖。匹配、顺序、启用过滤与结构事务的语义见 [[architecture/someui/Dependencies|Dependencies]] 的 Query membership；公开行为由 `QueryMembershipTests` 验证。

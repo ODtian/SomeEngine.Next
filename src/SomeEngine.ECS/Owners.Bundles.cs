@@ -369,6 +369,7 @@ internal readonly struct Bundles
             in value,
             _clock.Tick,
             enableMaskIndex);
+        _structure.ComponentWriteVersions.Advance(componentId);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
