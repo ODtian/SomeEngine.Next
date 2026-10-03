@@ -260,7 +260,8 @@ public sealed class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new BuildContentDeclaration());
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
+        var error = ReadBuildException(frames.World);
 
         Assert.Contains("Content", error.Message, StringComparison.Ordinal);
         Assert.Contains("ChildSource.Build", error.Message, StringComparison.Ordinal);
@@ -282,7 +283,8 @@ public sealed class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Views.Spawn(frames.World, Entity.Null, new RepeatedContentDeclaration(nested));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
+        var error = ReadBuildException(frames.World);
 
         Assert.Contains("children", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("same rebuild", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -295,7 +297,8 @@ public sealed class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Views.Spawn(frames.World, Entity.Null, new ChildDeclaringContainer());
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
+        var error = ReadBuildException(frames.World);
 
         Assert.Contains("ChildSource.Caller", error.Message, StringComparison.Ordinal);
         Assert.Contains("Content", error.Message, StringComparison.Ordinal);
@@ -307,7 +310,8 @@ public sealed class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Views.Spawn(frames.World, Entity.Null, new SharedContentDeclaration());
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
+        var error = ReadBuildException(frames.World);
 
         Assert.Contains("children", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("same rebuild", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -324,10 +328,19 @@ public sealed class ChildSourceTests
         frames.World.AddTag<LocalState>(child);
         frames.World.Replace(root, new RepeatedChildren(1));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
+        var error = ReadBuildException(frames.World);
 
         Assert.Contains("local state", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
+    }
+
+    private static InvalidOperationException ReadBuildException(World world)
+    {
+        InvalidOperationException? exception = null;
+        world.ExecuteSparseRead<BuildError>((entities, errors) =>
+            exception = Assert.IsType<InvalidOperationException>(Assert.Single(errors.ToArray()).Exception));
+        return exception!;
     }
 
     private readonly record struct RepeatedChildren(int Count) : IView, IComponent
