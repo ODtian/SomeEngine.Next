@@ -35,6 +35,7 @@ public readonly record struct RebuildRecord(Entity View, Entity Source, ushort C
 |---|---|---|---|
 | 读取的表格或 sparse 组件写版本变化 | 构建的视图 | 被读取的实体 | `ComponentId<T>.Value` |
 | `Has<T>` 的存在性变化 | 构建的视图 | 被检查的实体 | `ComponentId<T>.Value` |
+| `ReadUp<T>` 的值或提供者变化 | 构建的视图 | 上次读取的提供者，缺省来源为 `Entity.Null` | `ComponentId<T>.Value` |
 | 参数写版本变化 | 构建的视图 | 视图自身 | 参数类型的 `ComponentId<T>.Value` |
 | `Each(query)` 的成员变化 | 构建的视图 | `Entity.Null` | `0` |
 | 首次构建 | 构建的视图 | `Entity.Null` | `0` |
