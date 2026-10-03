@@ -4,7 +4,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views;
 
-internal static class EnvironmentData
+internal static class EnvironmentLookup
 {
     internal static Entity FindSource(World world, Entity entity, ushort component)
     {

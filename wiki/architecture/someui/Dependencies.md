@@ -75,7 +75,7 @@ public struct Dependency : IBufferElement
 `Once` 构建按同样方式读取值，保持仅取值状态。
 
 实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
-[环境来源查找](../../../src/SomeEngine.Views/EnvironmentData.cs)、
+[环境来源查找](../../../src/SomeEngine.Views/EnvironmentLookup.cs)、
 [重建阶段](../../../src/SomeEngine.Views/ViewRebuildSystem.cs)。
 公开验收：[EnvironmentTests](../../../tests/SomeEngine.Views.Tests/EnvironmentTests.cs)，
 覆盖两种存储、最近提供者、自身提供、缺省值、祖先移动、相同值下的来源切换和提供者移除。

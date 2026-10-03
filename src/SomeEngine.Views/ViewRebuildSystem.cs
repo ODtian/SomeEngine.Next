@@ -76,7 +76,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
             foreach (Dependency dependency in buffer.AsSpan())
             {
                 bool changed = dependency.Kind == DependencyKind.Environment
-                    ? EnvironmentData.HasChanges(result.World, result.Entity, in dependency)
+                    ? EnvironmentLookup.HasChanges(result.World, result.Entity, in dependency)
                     : result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version;
                 if (changed)
                 {

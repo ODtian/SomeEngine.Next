@@ -46,7 +46,7 @@ public static class Scope
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"Scope.ReadUp requires table or sparse component {typeof(T).Name}.");
         ushort component = ComponentId<T>.Value;
-        Entity source = EnvironmentData.FindSource(current.World, current.Entity, component);
+        Entity source = EnvironmentLookup.FindSource(current.World, current.Entity, component);
         if (current.DependenciesEnabled)
         {
             var dependency = new Dependency
