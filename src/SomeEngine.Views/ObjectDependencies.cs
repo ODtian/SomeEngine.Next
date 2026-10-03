@@ -10,9 +10,11 @@ internal sealed class ObjectDependencyList
 {
     private ObjectDependency[] _reads = ArrayPool<ObjectDependency>.Shared.Rent(4);
     private int _count;
+    private ulong _readFrame;
 
-    internal void Add(VersionCell cell, uint version)
+    internal void Add(VersionCell cell, uint version, ulong frame)
     {
+        _readFrame = frame;
         for (int index = 0; index < _count; index++)
             if (ReferenceEquals(_reads[index].Cell, cell))
                 return;
@@ -33,13 +35,13 @@ internal sealed class ObjectDependencyList
         _count = 0;
     }
 
-    internal bool HasChanges()
+    internal bool HasChanges(ulong frame)
     {
         for (int index = 0; index < _count; index++)
         {
             ObjectDependency read = _reads[index];
             uint version = Volatile.Read(ref read.Cell.Version);
-            if ((version & 1) != 0 || version != read.Version)
+            if (version != read.Version || ((version & 1) != 0 && _readFrame != frame))
                 return true;
         }
         return false;

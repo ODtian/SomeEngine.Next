@@ -6,7 +6,7 @@ using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class BuildConvergenceTests
+public sealed partial class BuildConvergenceTests
 {
     [Theory]
     [InlineData(2)]

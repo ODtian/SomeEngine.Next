@@ -127,7 +127,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     {
         if (ViewTypes.HasParameterChanges(world, entity))
             return true;
-        if (world.Has<ObjectDependencies>(entity) && world.Read<ObjectDependencies>(entity).Reads.HasChanges())
+        if (world.Has<ObjectDependencies>(entity) && world.Read<ObjectDependencies>(entity).Reads.HasChanges(_frame))
             return true;
         if (!world.HasBuffer<Dependency>(entity))
             return false;
