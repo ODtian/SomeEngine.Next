@@ -3,6 +3,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Queries;
+using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Views;
 
@@ -15,6 +16,18 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private ComponentChange[] _componentChanges = new ComponentChange[16];
     private QueryHandle _viewQuery;
     private ulong _frame;
+    private int _iterationLimit = 8;
+
+    /// <summary>The maximum number of rebuild rounds in one interface frame.</summary>
+    public int IterationLimit
+    {
+        get => _iterationLimit;
+        set
+        {
+            DevelopmentCheck.Require(value > 0, "The view rebuild iteration limit requires a positive value.");
+            _iterationLimit = value;
+        }
+    }
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
@@ -29,11 +42,36 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 #if DEBUG
         using var rebuild = Scope.EnterRebuild();
 #endif
-        RecordComponentChanges(context.World);
+        World world = context.World;
+        for (int iteration = 0; iteration < IterationLimit; iteration++)
+        {
+            CollectChangedViews(world);
+            if (_changedViews.Count == 0)
+                return;
+
+            foreach (ViewDepth view in _changedViews)
+            {
+                Entity entity = view.Entity;
+                if (world.IsAlive(entity))
+                {
+                    if (world.Has<BuildRequest>(entity) || HasChanges(world, entity, recheck: true))
+                        ViewTypes.Build(world, entity, _frame);
+                }
+            }
+        }
+        CollectChangedViews(world);
+        if (_changedViews.Count > 0)
+            DevelopmentCheck.Fail($"View rebuilds exceeded the per-frame iteration limit of {IterationLimit}; " +
+                $"view {_changedViews[0].Entity} still has changed dependencies or parameters.");
+    }
+
+    private void CollectChangedViews(World world)
+    {
+        RecordComponentChanges(world);
         _views.Clear();
         _changedViews.Clear();
         List<Entity> views = _views;
-        context.World.ExecuteQuery(_viewQuery, ref views, static (rows, ref viewEntities) =>
+        world.ExecuteQuery(_viewQuery, ref views, static (rows, ref viewEntities) =>
         {
             foreach (var row in rows.Rows)
                 viewEntities.Add(row.Entity);
@@ -41,31 +79,19 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
         foreach (Entity entity in _views)
         {
-            if (context.World.Has<BuildRequest>(entity) || HasChanges(context.World, entity))
+            if (world.Has<BuildRequest>(entity) || HasChanges(world, entity))
             {
                 int depth = 0;
-                Entity ancestor = Hierarchy<ElementTree>.GetParent(context.World, entity);
+                Entity ancestor = Hierarchy<ElementTree>.GetParent(world, entity);
                 while (ancestor != Entity.Null)
                 {
                     depth++;
-                    ancestor = Hierarchy<ElementTree>.GetParent(context.World, ancestor);
+                    ancestor = Hierarchy<ElementTree>.GetParent(world, ancestor);
                 }
                 _changedViews.Add(new ViewDepth(entity, depth));
             }
         }
         _changedViews.Sort(static (left, right) => left.Depth.CompareTo(right.Depth));
-
-        foreach (ViewDepth view in _changedViews)
-        {
-            Entity entity = view.Entity;
-            if (context.World.IsAlive(entity))
-            {
-                if (context.World.Has<BuildRequest>(entity) || HasChanges(context.World, entity, recheck: true))
-                    ViewTypes.Build(context.World, entity, _frame);
-            }
-        }
-        _views.Clear();
-        _changedViews.Clear();
     }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_viewQuery);
@@ -93,7 +119,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
             change.Recorded = true;
             _dependencyTypes.Add(component);
         }
-        // Builds can write a type after its version was recorded at the start of the frame.
+        // Builds can write a type after its version was recorded for candidate collection.
         return change.Changed || (recheck && world.ComponentWriteVersion(component) != change.Version);
     }
 
