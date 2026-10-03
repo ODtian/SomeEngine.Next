@@ -1,20 +1,23 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views;
 
-/// <summary>A component value or presence observed by the view.</summary>
+/// <summary>A component, presence result, or query membership observed by a view.</summary>
 public struct Dependency : IBufferElement
 {
+    public DependencyKind Kind;
     public Entity Entity;
     public ushort Component;
+    public QueryHandle Query;
     public uint Version;
-    public DependencyKind Kind;
 }
 
-/// <summary>The component fact that causes a view to rebuild when it changes.</summary>
+/// <summary>The data observed by a view dependency.</summary>
 public enum DependencyKind : byte
 {
-    ComponentValue,
-    ComponentPresence,
+    Component,
+    Presence,
+    Membership,
 }

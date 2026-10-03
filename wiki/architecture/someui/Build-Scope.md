@@ -39,7 +39,8 @@ public static class Scope
 ## 首次构建实现（#6）
 
 当前公开入口为 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
-`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)` 与 `Scope.Has<T>(Entity)`。
+`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)`、
+`Scope.Has<T>(Entity)`、`Scope.Each(QueryHandle)` 与 `Scope.Untrack()`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
 返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
 成功构建结束时完成子节点匹配，外层构建完成后释放旧子树；key 分组与节点身份规则见
@@ -60,19 +61,41 @@ public static class Scope
 它返回源组件的 `ref readonly T`，调用方在后续结构修改前消费这份引用。
 首次读取造成依赖缓冲添加时，先完成登记，再取得组件引用，使该次读取使用当前存储位置。
 
-`Scope.Has<T>(Entity)` 只约束 `struct`，按组件存储路径读取存在状态。
-`Rerun` 构建登记存在依赖，`Once` 构建取得当前值。
-错误组件的观察与后备内容示例见
-[[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
-
 ## 内容作用域实现（#17）
 
 活动构建支持 `Entity.Content()` 的 `ParentScope`。
 构建实体与子节点声明的父实体分别保存在上下文中，
 容器内容继承当前构建，并在块结束时恢复外层声明上下文。
+内容块与外层构建共用当次子声明修改记录，外层失败时一同恢复。
 公开 API、子节点来源与收尾时机见
 [[architecture/someui/Child-Source|Child Source]]。
-内容块的子声明与外层构建共用当次修改记录，外层失败时一同恢复。
+
+## 存在性与成员读取实现（#12）
+
+当前公开入口增加 `Scope.Has<T>(Entity)` 与 `Scope.Each(QueryHandle)`。
+两者共用作用域栈帧的登记状态，`Rerun` 构建记录观察值，`Once` 构建直接取值。
+`Each` 返回在当前同步构建中遍历的 `QueryRows`，枚举值为 `Entity`；
+每次调用在取得实体序列时完成成员依赖登记。
+失效与去重规则由 [[architecture/someui/Dependencies|Dependencies]] 维护，
+父列表与 keyed 行的组合见 [[architecture/someui/Lists|Lists]]。
+
+## 局部读取作用域（#15）
+
+`Scope.Untrack()` 返回实现 `IDisposable` 的 `readonly struct UntrackScope`，
+按 `using (Scope.Untrack()) { ... }` 使用。进入时保存当前构建的依赖登记状态，
+并将该构建切换为仅取值状态；退出时恢复进入前的状态，异常退出也沿 `Dispose` 恢复。
+
+嵌套 `Untrack` 块逐层恢复：内层结束后继续使用外层的仅取值状态，
+最外层结束后恢复视图构建原有的状态。`Rerun` 随后读取的数据重新作为依赖登记；
+`Once` 随后读取的数据继续使用仅取值状态。
+
+状态由当前作用域栈帧持有。块内当场构建的子视图按自己的 `BuildMode` 设置登记状态，
+子构建返回后父构建继续使用进入子构建前的状态。`Untrack` 的有效范围是当前构建，
+作用域外调用通过同一 `DevelopmentCheck.Require` 报告。
+
+实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
+[UntrackScope](../../../src/SomeEngine.Views/UntrackScope.cs)。
+公开行为验收见 [UntrackTests](../../../tests/SomeEngine.Views.Tests/UntrackTests.cs)。
 
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]

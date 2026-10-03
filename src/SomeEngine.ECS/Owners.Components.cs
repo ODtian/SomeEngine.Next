@@ -169,13 +169,15 @@ internal readonly partial struct Components
     }
 
     internal bool Has<T>(Entity entity)
-        where T : struct
+        where T : struct => Has(entity, ComponentMetadata<T>.Id);
+
+    internal bool Has(Entity entity, int componentId)
     {
         if (!_entities.Store.IsAlive(entity))
             return false;
 
         EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
-        return record.Archetype is not null && record.Archetype.HasComponent(ComponentMetadata<T>.Id);
+        return record.Archetype is not null && record.Archetype.HasComponent(componentId);
     }
 
     private void Add<T>(Entity entity, int componentId, string name, in T value)
