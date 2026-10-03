@@ -68,5 +68,14 @@ public static class Scope
 公开 API、子节点来源与收尾时机见
 [[architecture/someui/Child-Source|Child Source]]。
 
+## 存在性与成员读取实现（#12）
+
+当前公开入口增加 `Scope.Has<T>(Entity)` 与 `Scope.Each(QueryHandle)`。
+两者共用作用域栈帧的登记状态，`Rerun` 构建记录观察值，`Once` 构建直接取值。
+`Each` 返回在当前同步构建中遍历的 `QueryRows`，枚举值为 `Entity`；
+每次调用在取得实体序列时完成成员依赖登记。
+失效与去重规则由 [[architecture/someui/Dependencies|Dependencies]] 维护，
+父列表与 keyed 行的组合见 [[architecture/someui/Lists|Lists]]。
+
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]

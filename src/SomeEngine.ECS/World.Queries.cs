@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Entities;
 using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS;
@@ -450,6 +451,18 @@ public partial class World
                 record.Definition.MembershipStorageAccesses,
                 canWrite: false));
         return record.ReadMembershipVersion();
+    }
+
+    internal ReadOnlySpan<Entity> ReadQueryEntities(QueryHandle query, out uint version)
+    {
+        using WorldJobAdmissionScope control = EnterRootControlMutation();
+        QueryRecord record = _queries.GetMembershipRecord(query);
+        using WorldJobAdmissionScope access = EnterJobAdmission(
+            WorldJobAdmissionRequest.ForQuery(
+                WorldTopologyAccess.Read,
+                record.Definition.MembershipStorageAccesses,
+                canWrite: false));
+        return record.ReadMembershipEntities(out version);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
