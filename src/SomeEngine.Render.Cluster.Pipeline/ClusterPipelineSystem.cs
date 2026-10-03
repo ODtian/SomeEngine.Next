@@ -442,7 +442,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _shadeStages!.AcceptChanges();
         _cullingEnabled = cullingEnabled;
         _graphInstalled = true;
-        _geometryPassesEnabled = null;
         if (rasterChanged) _rasterRevision = checked(_rasterRevision + 1);
         return GraphData.Outputs;
     }

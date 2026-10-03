@@ -56,6 +56,30 @@ public sealed class StageRegionRenderingTests
 
     [Theory]
     [MemberData(nameof(Backends))]
+    public async Task GeometryRestoredInADiscardedFrameMatchesFreshInstallationOnItsNextFrame(string backend)
+    {
+        RasterImage expected;
+        await using (var fresh = await CreateSceneAsync(backend))
+        {
+            fresh.UseMaterial("Unlit");
+            fresh.AddMaterialMesh(fresh.CreateShadeMaterial(Blue));
+            expected = await fresh.ReadRasterImageAsync();
+        }
+        await using var changed = await CreateSceneAsync(backend);
+        changed.UseMaterial("Unlit");
+        await changed.ReadRasterImageAsync();
+        changed.SetGeometryVisible(false);
+        await changed.ReadClusterColorAsync();
+        changed.SetGeometryVisible(true);
+        changed.AddMaterialMesh(changed.CreateShadeMaterial(Blue));
+        await changed.DiscardNextFrameAsync();
+        RasterImage next = await changed.ReadNextRasterImageAsync();
+        Assert.Equal(expected.Color, next.Color);
+        Assert.Equal(expected.Depth, next.Depth);
+    }
+
+    [Theory]
+    [MemberData(nameof(Backends))]
     public async Task AddingAShadeMaterialMatchesFreshInstallation(string backend)
     {
         RasterImage expected;

@@ -27,7 +27,6 @@ public sealed partial class ClusterPipelineSystem
     private Vector3[] _scenePositions = [];
     private uint[] _sceneRemap = [];
     private uint[] _sceneInstances = [];
-    private (bool Geometry, bool Targets, bool Scatter)? _geometryPassesEnabled;
 
     private void InstallSceneBounds(ref RenderGraphEdit graph)
     {
@@ -66,7 +65,6 @@ public sealed partial class ClusterPipelineSystem
         _ = pass.Bind(graph.CreateBufferUav(GraphData.InstanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
         _sceneBatch = null;
-        _geometryPassesEnabled = null;
     }
 
     private void BindSceneBounds(ref RenderGraphFrame graph, RenderWorld world, RenderInstanceBatch batch, bool hasTargetViews)
@@ -133,13 +131,11 @@ public sealed partial class ClusterPipelineSystem
     private void SetGeometryPassesEnabled(ref RenderGraphFrame graph, bool hasGeometry, bool hasTargetGeometry)
     {
         bool scatter = hasGeometry && CalculateShadeBinItemCapacity(GraphData.Resources) == 0u;
-        if (_geometryPassesEnabled == (hasGeometry, hasTargetGeometry, scatter)) return;
         graph.SetRegionEnabled(GraphData.PrimaryGeometry, hasGeometry);
         graph.SetRegionEnabled(_regions.TargetGeometry, hasTargetGeometry);
         graph.SetRegionEnabled(GraphData.ShadeBinning, hasGeometry);
         graph.SetRegionEnabled(GraphData.ShadeGroups.Parent, hasGeometry);
         graph.SetRegionEnabled(GraphData.ShadeScatter, scatter);
-        _geometryPassesEnabled = (hasGeometry, hasTargetGeometry, scatter);
     }
 
     private void BindSceneSeed(ref RenderGraphEdit graph, ref PassDefinition pass)

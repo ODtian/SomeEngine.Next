@@ -405,6 +405,27 @@ internal sealed class FrameStageScene : IAsyncDisposable
         return ReadColor();
     }
 
+    internal async Task DiscardNextFrameAsync()
+    {
+        _extraction.Extract(_gameWorld);
+        Assert.True(_graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(20)));
+        using var resources = nextFrame;
+        Assert.True(_coordinator.TryBeginPrepare(out var update));
+        using (update)
+        {
+            _prepare.ApplyExtraction(update);
+            await _cluster.PrepareMeshesAsync();
+            _streaming.Pump();
+            _prepare.Update(update, nextFrame);
+            update.Commit();
+        }
+        _pipeline.ReconcileGraph();
+        Assert.True(_coordinator.TryBeginFrame(out var frame));
+        using (frame)
+        using (RenderGraphFrame commands = _graph.BeginFrame(nextFrame))
+            _frames.Update(frame, commands);
+    }
+
     private async Task RenderAsync(bool postProcessedColor = false)
     {
         _extraction.Extract(_gameWorld);
