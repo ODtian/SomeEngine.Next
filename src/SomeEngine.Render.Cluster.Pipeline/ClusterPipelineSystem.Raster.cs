@@ -36,7 +36,8 @@ public sealed partial class ClusterPipelineSystem
         uint? FirstSeed,
         uint? LastSeed,
         TessellationSplitKey? Previous,
-        TessellationSplitKey? Next);
+        TessellationSplitKey? Next,
+        ClusterRasterInvocation MaterialStage);
     private sealed record RasterEpoch(
         RasterPassGroup Work,
         RasterPassGroup Patches,
@@ -53,8 +54,6 @@ public sealed partial class ClusterPipelineSystem
         foreach (GraphPassId pass in group.Passes)
         {
             graph.Remove(pass);
-            _materialInputs = _materialInputs.Remove(pass);
-            _pageHeapReaderPasses = _pageHeapReaderPasses.Remove(pass);
             _meshRasterPasses = _meshRasterPasses.Remove(pass);
         }
         foreach (GraphBufferId buffer in group.Uploads)
@@ -93,7 +92,7 @@ public sealed partial class ClusterPipelineSystem
             stages.TryGetBin(bin, out ClusterRasterInvocation? stage);
             if (data.Bins.TryGetValue(bin, out RasterBin? previous))
             {
-                if (stage is not null && previous.Stage.Key.Equals(stage.Key) &&
+                if (stage is not null && ReferenceEquals(previous.Stage.Material, stage.Material) && previous.Stage.Key.Equals(stage.Key) &&
                     previous.Stage.CommandBindings.Equals(stage.CommandBindings) && previous.Stage.HasSameBindings(stage))
                     continue;
                 RemoveRasterPasses(ref graph, previous.Passes);
@@ -137,7 +136,7 @@ public sealed partial class ClusterPipelineSystem
             if (group.FirstSeed is null)
                 data = RemoveTessellationGroup(ref graph, data, key);
             else
-                UpdateTessellationSplit(ref graph, data, group);
+                data = data with { Splits = data.Splits.SetItem(key, UpdateTessellationSplit(ref graph, data, group)) };
         }
         _rasterEpochs = _rasterEpochs.SetItem(epoch, data);
     }
@@ -182,7 +181,7 @@ public sealed partial class ClusterPipelineSystem
             graph.OrderAfter(reset.First, predecessor);
             graph.OrderAfter(data.Patches.First, split.Last);
             group = new TessellationGroup(reset, split, ImmutableDictionary<uint, TessellationSeed>.Empty,
-                null, null, data.LastSplit, null);
+                null, null, data.LastSplit, null, stage);
             if (data.LastSplit is { } previous)
                 data = data with { Splits = data.Splits.SetItem(previous, data.Splits[previous] with { Next = key }) };
             data = data with { Splits = data.Splits.Add(key, group), FirstSplit = data.FirstSplit ?? key, LastSplit = key };
@@ -249,7 +248,7 @@ public sealed partial class ClusterPipelineSystem
         return data;
     }
 
-    private void UpdateTessellationSplit(ref RenderGraphEdit graph, RasterEpoch data, TessellationGroup group)
+    private TessellationGroup UpdateTessellationSplit(ref RenderGraphEdit graph, RasterEpoch data, TessellationGroup group)
     {
         uint bin = group.FirstSeed!.Value;
         ClusterRasterInvocation stage = data.Bins[bin].Stage;
@@ -261,19 +260,22 @@ public sealed partial class ClusterPipelineSystem
             _uploads!.SetUniformValue(ref graph, group.Split.SplitUniforms[level], MemoryMarshal.AsBytes(value));
         }
         var resources = stage.Tessellation!.SplitResources;
-        foreach (GraphPassId pass in group.Split.Passes)
+        var previousResources = group.MaterialStage.Tessellation!.SplitResources;
+        for (int index = 0; index < previousResources.MaterialBindings.Length; index++)
         {
-            if (!_materialInputs.TryGetValue(pass, out var inputs)) continue;
-            for (int i = 0; i < inputs.Count; i++)
-            {
-                MaterialInput input = inputs[i];
-                int resourceIndex = 0;
-                while (resources.Resources.Resources[resourceIndex].Name != input.Name) resourceIndex++;
-                MaterialInput updated = input with { Bin = bin, MaterialSlot = resources.MaterialBindings[resourceIndex].MaterialSlot };
-                if (input != updated) inputs = inputs.SetItem(i, updated);
-            }
-            _materialInputs = _materialInputs.SetItem(pass, inputs);
+            ClusterMaterialStageBinding previous = previousResources.MaterialBindings[index];
+            ref readonly ClusterLinkedStageResource resource = ref previousResources.Resources.Resources[index];
+            if (!previous.IsMaterialResource || !resource.IsUsed) continue;
+            MaterialInput before = _materialInputs[(group.MaterialStage.Material, previous.MaterialSlot)];
+            int resourceIndex = 0;
+            while (resources.Resources.Resources[resourceIndex].Name != resource.Name) resourceIndex++;
+            ClusterMaterialStageBinding binding = resources.MaterialBindings[resourceIndex];
+            MaterialInput input = GetMaterialInput(ref graph, stage.Material,
+                binding.MaterialSlot, resource.Name, binding.Type);
+            foreach (GraphPassId pass in group.Split.Passes)
+                graph.ReplaceParameterInput(pass, before.Input, input.Input);
         }
+        return group with { MaterialStage = stage };
     }
 
     private readonly RasterBinning?[] _rasterBinning = new RasterBinning?[RasterEpochCount];

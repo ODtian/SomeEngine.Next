@@ -429,7 +429,8 @@ internal sealed class ClusterRasterStages : IDisposable
     private readonly Dictionary<ClusterRasterHardwareKey, ClusterRasterPipeline> _hardwarePipelines = [];
     private readonly Dictionary<ClusterLinkedStageKey, ClusterLinkedStageLayout> _linkedLayouts = [];
     private ClusterBinIndexMap<ClusterRasterBinKey, ClusterRasterInvocation> _binIndices =
-        new(static (before, after) => before.HasSameBindings(after) && before.Bounds == after.Bounds);
+        new(static (before, after) => ReferenceEquals(before.Material, after.Material) &&
+            before.HasSameBindings(after) && before.Bounds == after.Bounds);
     private ImmutableDictionary<long, HashSet<uint>> _resourceProperties = ImmutableDictionary<long, HashSet<uint>>.Empty;
 
     internal bool UsesResourceProperty(long materialId, uint property) =>
@@ -1404,7 +1405,8 @@ internal sealed class ClusterShadeStages : IDisposable
     private readonly Dictionary<ClusterShadeCompatibilityKey, ScalarLayout> _scalarLayouts = [];
     private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterShadeCoreResource[]> _coreResourceLayouts = [];
     private ClusterBinIndexMap<ClusterShadeBinKey, ClusterShadeInvocation> _binIndices =
-        new(static (before, after) => before.MaterialBindings.AsSpan().SequenceEqual(after.MaterialBindings));
+        new(static (before, after) => ReferenceEquals(before.Material, after.Material) &&
+            before.MaterialBindings.AsSpan().SequenceEqual(after.MaterialBindings));
     private ImmutableDictionary<long, HashSet<uint>> _resourceProperties = ImmutableDictionary<long, HashSet<uint>>.Empty;
 
     internal bool UsesResourceProperty(long materialId, uint property) =>
