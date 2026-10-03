@@ -83,7 +83,7 @@ public sealed partial class StateTests
     }
 
     [Fact]
-    public void ReadingAroundACrossThreadChangeRefreshesTheCompleteDisplayOnTheNextFrame()
+    public void ReadingAroundACrossThreadChangeCompletesTheDisplayWithinTheFrame()
     {
         using var frames = new HeadlessFrameDriver();
         var state = new State<int>(3);
@@ -91,7 +91,7 @@ public sealed partial class StateTests
             new RepeatedStateDisplay(state, () => Task.Run(() => state.Value = 7).GetAwaiter().GetResult()));
 
         frames.Frame();
-        Assert.Equal("3+7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+7;7+7", frames.World.Read<DisplayText>(root).Value);
         frames.Frame();
         Assert.Equal("3+7;7+7", frames.World.Read<DisplayText>(root).Value);
         frames.Frame();

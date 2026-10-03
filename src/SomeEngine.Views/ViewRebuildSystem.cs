@@ -7,7 +7,7 @@ using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Views;
 
-/// <summary>Builds requested roots and views with changed parameters or dependencies in the World's interface phase.</summary>
+/// <summary>Runs requested view builds and changed calculations in the World's interface phase.</summary>
 public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 {
     private readonly List<Entity> _views = new();
@@ -16,6 +16,18 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private readonly DependencyChanges _dependencyChanges = new();
     private QueryHandle _viewQuery;
     private ulong _frame;
+    private int _iterationLimit = 8;
+
+    /// <summary>The maximum number of rebuild rounds in one interface frame.</summary>
+    public int IterationLimit
+    {
+        get => _iterationLimit;
+        set
+        {
+            DevelopmentCheck.Require(value > 0, "The view rebuild iteration limit requires a positive value.");
+            _iterationLimit = value;
+        }
+    }
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
@@ -29,11 +41,37 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 #if DEBUG
         using var rebuild = Scope.EnterRebuild();
 #endif
-        _dependencyChanges.Record(context.World, _frame);
+        World world = context.World;
+        for (int iteration = 0; iteration < IterationLimit; iteration++)
+        {
+            CollectChangedViews(world);
+            if (_changedViews.Count == 0)
+                return;
+
+            foreach (ViewDepth view in _changedViews)
+            {
+                Entity entity = view.Entity;
+                if (!world.IsAlive(entity))
+                    continue;
+                if (world.Has<BuildRequest>(entity) || HasBuildChanges(world, entity, recheck: true))
+                    ViewTypes.Build(world, entity, _frame);
+                if (world.IsAlive(entity) && world.HasSparse<Computations>(entity))
+                    RebuildComputations(world, entity);
+            }
+        }
+        CollectChangedViews(world);
+        if (_changedViews.Count > 0)
+            DevelopmentCheck.Fail($"View calculations exceeded the per-frame iteration limit of {IterationLimit}; " +
+                $"view {_changedViews[0].Entity} still has changed dependencies or parameters.");
+    }
+
+    private void CollectChangedViews(World world)
+    {
+        _dependencyChanges.Record(world, _frame);
         _views.Clear();
         _changedViews.Clear();
         List<Entity> views = _views;
-        context.World.ExecuteQuery(_viewQuery, ref views, static (rows, ref viewEntities) =>
+        world.ExecuteQuery(_viewQuery, ref views, static (rows, ref viewEntities) =>
         {
             foreach (var row in rows.Rows)
                 viewEntities.Add(row.Entity);
@@ -41,33 +79,19 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
         foreach (Entity entity in _views)
         {
-            if (context.World.Has<BuildRequest>(entity) || HasChanges(context.World, entity))
+            if (world.Has<BuildRequest>(entity) || HasChanges(world, entity))
             {
                 int depth = 0;
-                Entity ancestor = Hierarchy<ElementTree>.GetParent(context.World, entity);
+                Entity ancestor = Hierarchy<ElementTree>.GetParent(world, entity);
                 while (ancestor != Entity.Null)
                 {
                     depth++;
-                    ancestor = Hierarchy<ElementTree>.GetParent(context.World, ancestor);
+                    ancestor = Hierarchy<ElementTree>.GetParent(world, ancestor);
                 }
                 _changedViews.Add(new ViewDepth(entity, depth));
             }
         }
         _changedViews.Sort(static (left, right) => left.Depth.CompareTo(right.Depth));
-
-        foreach (ViewDepth view in _changedViews)
-        {
-            Entity entity = view.Entity;
-            if (context.World.IsAlive(entity))
-            {
-                if (context.World.Has<BuildRequest>(entity) || HasBuildChanges(context.World, entity, recheck: true))
-                    ViewTypes.Build(context.World, entity, _frame);
-                if (context.World.IsAlive(entity) && context.World.HasSparse<Computations>(entity))
-                    RebuildComputations(context.World, entity);
-            }
-        }
-        _views.Clear();
-        _changedViews.Clear();
     }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_viewQuery);
@@ -81,15 +105,16 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
             CollectComputations(world, entity);
             bool changed = false;
             foreach (Computation computation in _computations)
+            {
                 if (!computation.Released && !computation.EvaluatesOnRead &&
                     computation.HasChanges(_dependencyChanges))
                 {
                     changed = true;
                     break;
                 }
+            }
             _computations.Clear();
-            if (changed)
-                return true;
+            return changed;
         }
         return false;
     }
@@ -105,25 +130,16 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     private void RebuildComputations(World world, Entity entity)
     {
-        for (int pass = 0; pass < 64; pass++)
+        CollectComputations(world, entity);
+        foreach (Computation computation in _computations)
         {
-            CollectComputations(world, entity);
-            bool changed = false;
-            foreach (Computation computation in _computations)
-            {
-                if (!world.IsAlive(entity))
-                    break;
-                if (computation.Released || computation.EvaluatesOnRead ||
-                    !computation.HasChanges(_dependencyChanges, recheck: true))
-                    continue;
-                changed = true;
+            if (!world.IsAlive(entity))
+                break;
+            if (!computation.Released && !computation.EvaluatesOnRead &&
+                computation.HasChanges(_dependencyChanges, recheck: true))
                 computation.Rebuild(_frame);
-            }
-            _computations.Clear();
-            if (!changed || !world.IsAlive(entity))
-                return;
         }
-        DevelopmentCheck.Report($"Calculations on {entity} reached the rebuild iteration limit in frame {_frame}.");
+        _computations.Clear();
     }
 
     private readonly record struct ViewDepth(Entity Entity, int Depth);

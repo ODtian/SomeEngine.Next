@@ -10,9 +10,11 @@ internal sealed class ObjectDependencyList
 {
     private ObjectDependency[] _reads = ArrayPool<ObjectDependency>.Shared.Rent(4);
     private int _count;
+    private ulong _readFrame;
 
     internal void Add(VersionCell cell, uint version)
     {
+        _readFrame = Scope.Frame;
         for (int index = 0; index < _count; index++)
             if (ReferenceEquals(_reads[index].Cell, cell))
                 return;
@@ -47,7 +49,8 @@ internal sealed class ObjectDependencyList
                 // The consuming calculation reports the failure when it reads the Memo.
             }
             uint version = Volatile.Read(ref read.Cell.Version);
-            if ((version & 1) != 0 || version != read.Version || !ReferenceEquals(read.Error, read.Cell.Error))
+            if (((version & 1) != 0 && _readFrame != frame) || version != read.Version ||
+                !ReferenceEquals(read.Error, read.Cell.Error))
                 return true;
         }
         return false;

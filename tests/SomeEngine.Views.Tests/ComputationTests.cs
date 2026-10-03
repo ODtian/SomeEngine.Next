@@ -149,9 +149,9 @@ public sealed partial class ComputationTests
             Scope.Compute(() =>
             {
                 int value = number.Value;
+                Scope.Write<Number>(Scope.Entity).Value = value;
                 if (value == 7)
                     throw error;
-                Scope.World.Replace(Scope.Entity, new Number(value));
             });
         }));
         Entity sibling = Views.Spawn(frames.World, Entity.Null, new NumberBinding(number));
@@ -359,6 +359,57 @@ public sealed partial class ComputationTests
         Assert.Equal(18, frames.World.Read<Number>(root).Value);
     }
 
+    [Fact]
+    public void NestedCalculationsCommitTheirOwnComponentWrites()
+    {
+        using var frames = new HeadlessFrameDriver();
+        var number = new State<int>(5);
+        Entity root = Views.Spawn(frames.World, Entity.Null, new CalculationView(() =>
+        {
+            ref Number parentValue = ref Scope.Write<Number>(Scope.Entity);
+            parentValue.Value = 2;
+            Scope.Compute(() => Scope.Write<Number>(Scope.Entity).Value = number.Value);
+            parentValue.Value = 11;
+        }));
+        frames.Frame();
+        Assert.Equal(11, frames.World.Read<Number>(root).Value);
+
+        number.Value = 7;
+        frames.Frame();
+
+        Assert.Equal(7, frames.World.Read<Number>(root).Value);
+    }
+
+    [Fact]
+    public void CalculationFeedbackUsesTheConfiguredRebuildLimitAndCanRecover()
+    {
+        using var frames = new HeadlessFrameDriver(iterationLimit: 2);
+        var enabled = new State<bool>(true);
+        var number = new State<int>();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new CalculationView(() =>
+        {
+            Scope.Compute(() =>
+            {
+                int value = number.Value;
+                Scope.Write<Number>(Scope.Entity).Value = value;
+                if (enabled.Value)
+                    number.Value = value + 1;
+            });
+        }));
+#if DEBUG
+        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        Assert.Contains("iteration limit of 2", error.Message, StringComparison.OrdinalIgnoreCase);
+#else
+        frames.Frame();
+#endif
+
+        enabled.Value = false;
+        number.Value = 0;
+        frames.Frame();
+
+        Assert.Equal(0, frames.World.Read<Number>(root).Value);
+    }
+
 #if DEBUG
     [Fact]
     public void CalculationFactoriesReportTheRequiredScope()
@@ -469,7 +520,7 @@ public sealed partial class ComputationTests
             State<int> number = Number;
             if (!Scope.World.Has<Number>(Scope.Entity))
                 Scope.World.Add(Scope.Entity, new Number());
-            Scope.Compute(() => Scope.World.Replace(Scope.Entity, new Number(number.Value)));
+            Scope.Compute(() => Scope.Write<Number>(Scope.Entity).Value = number.Value);
             return default;
         }
     }
@@ -483,7 +534,7 @@ public sealed partial class ComputationTests
         }
     }
 
-    private readonly record struct Number(int Value) : IComponent;
+    private record struct Number(int Value) : IComponent;
     private readonly record struct SparseNumber(int Value) : ISparseComponent;
     private readonly record struct Text(string Value) : IComponent;
     private readonly record struct MemoValue(Memo<int> Value) : IComponent;

@@ -55,7 +55,7 @@ internal static partial class ComputationChecks
             Memo<bool> positive = Scope.Memo(() => number.Value > 0);
             Scope.World.AddSparse(Scope.Entity, new MemoResults(doubled, positive));
             Scope.World.Add(Scope.Entity, new Text("built"));
-            Scope.Compute(() => Scope.World.Replace(target, new Number(number.Value)));
+            Scope.Compute(() => Scope.Write<Number>(target) = new Number(number.Value));
             Scope.Compute(() => Scope.World.Replace(Scope.Entity,
                 new Text(positive.Value ? "positive" : "negative")));
             return default;

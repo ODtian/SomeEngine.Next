@@ -10,7 +10,7 @@
 
 ## Invariants
 - 两种计算共用同一套依赖登记、版本检查与调度。
-- 属性绑定直接写目标节点的目标字段，例如 `Write<Text>(node).Value = ...`；唯一的比较发生在写入时，值相同则不推进版本。
+- 属性绑定写目标节点组件副本的目标字段，例如 `Write<Text>(node).Value = ...`；计算结束时与当前值比较提交，值相同则保留版本。提交规则见 [[architecture/someui/Build-Scope|Build Scope]]。
 - Memo 在被读取时检查自身依赖，过期则在嵌套作用域中当场重算，外层只依赖 Memo 本身；结果相等时不使下游失效。
 - 在某个计算中创建的计算随它释放。
 
@@ -48,13 +48,13 @@ Memo 使用 `EqualityComparer<T>.Default` 比较结果。结果相等时保留�
 调用 `VersionCell.Advance()`。Memo 的生命周期随创建者和所属视图，开发构建通过
 Core 的 `DevelopmentCheck` 报告过期 Memo 的读取、递归读取以及作用域外的创建。
 
-计算可以通过已有 World API 写节点数据。例如在构建中登记以下绑定，`count` 的变化会更新
+计算通过 `Scope.Write` 写节点数据。例如在构建中登记以下绑定，`count` 的变化会更新
 已经带有 `Count` 组件的节点：
 
 ```csharp
 Entity node = Scope.Entity;
 State<int> count = CountState;
-Scope.Compute(() => Scope.World.Replace(node, new Count(count.Value)));
+Scope.Compute(() => Scope.Write<Count>(node).Value = count.Value);
 ```
 
 `Once` 视图的计算需要读取最新参数时，使用 `Scope.Read<Self>(Scope.Entity)`；闭包捕获的
