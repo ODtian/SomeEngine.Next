@@ -33,7 +33,7 @@ partial record struct Counter(string Label, int Initial = 0) : IView, ISparseCom
 泛型视图、readonly 视图及由生成器默认选择的 sparse 视图采用同一套属性规则。
 
 属性按名称排序后编号，一个实体上的 sparse 托管组件保存这些编号对应的 `State<T>`。
-首次访问属性或对应的 Binding 时创建该项状态。显式初始值采用 C# 14 的 partial 属性初始值语义：
+首次访问属性或对应的 Binding 时创建该项状态。显式初始值采用 [C# 14 的 partial 属性初始值语义](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/proposals/csharp-14.0/field-keyword#interaction-with-partial-properties)：
 视图构造时，编译器将表达式值保存到属性的初始值字段，生成访问器以该值创建状态；
 省略初始值时使用 `default(T)`。后续 getter 与 setter 访问实体上的状态，初始值字段继续作为构造数据。
 重跑或父视图传入新参数时，同一节点的状态持续保留。
