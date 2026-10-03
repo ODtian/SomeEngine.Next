@@ -54,7 +54,9 @@ public record struct Group : IView, IComponent
 因此容器因参数变化单独重跑时保留内容；调用方重跑时，
 参数相等的容器保持自身参数和输出的写版本，内容作用域继续更新其子节点。
 
-内容作用域继承当前构建的 World 和构建实体；`Scope.Entity` 继续表示正在构建的视图。
+内容作用域继承当前构建的 World、构建实体和读取登记状态；
+`Scope.Entity` 继续表示正在构建的视图，`Scope.Read<T>` 的依赖归该视图的计算。
+整个构建中的内容块共用该视图的依赖缓冲，`Once` 构建沿仅取值状态读取。
 每个内容作用域从自身父节点的 key 上下文开始，
 嵌套的内容块结束后恢复外层父节点、出现次数和 key 前缀。
 使用 `ParentScope.Entity` 可以向内容容器写入数据。
@@ -68,7 +70,7 @@ public record struct Group : IView, IComponent
 
 公开行为测试为 `tests/SomeEngine.Views.Tests/ChildSourceTests.cs`，
 覆盖两种组件存储的容器数据与内容更新、子树释放、keyed 重排、
-嵌套作用域与开发检查。`FirstBuildChecks.cs` 同时在 ECS NativeAOT 冒烟中
+嵌套作用域、读取依赖与开发检查。`FirstBuildChecks.cs` 同时在 ECS NativeAOT 冒烟中
 验证调用方内容的声明、保留、更新与释放。
 
 ## Relations

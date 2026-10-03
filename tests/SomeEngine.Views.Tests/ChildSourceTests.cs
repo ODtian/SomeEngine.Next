@@ -164,6 +164,95 @@ public sealed class ChildSourceTests
         Assert.Equal(11UL, frames.World.Read<ElementKey>(leaf).Key);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ContentReadsUpdateTheCallerChildrenWhenTheirSourceChanges(bool sparse)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity();
+        if (sparse)
+            frames.World.AddSparse(source, new SparseText("A"));
+        else
+            frames.World.Add(source, new DisplayText("A"));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ReadContentDeclaration(source, sparse));
+        frames.Frame();
+        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
+        uint groupVersion = frames.World.WriteVersion<Group>(group);
+        if (sparse)
+            frames.World.ReplaceSparse(source, new SparseText("B"));
+        else
+            frames.World.Replace(source, new DisplayText("B"));
+
+        frames.Frame();
+
+        Assert.Equal(group, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
+        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group)));
+        Assert.Equal("B", frames.World.Read<Label>(child).Text);
+        Assert.Equal(groupVersion, frames.World.WriteVersion<Group>(group));
+    }
+
+    [Fact]
+    public void ContainerDependencyChangesUpdateItsDataAndPreserveCallerChildren()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new DisplayText("first"));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ReadContainerDeclaration(source));
+        frames.Frame();
+        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
+        frames.World.Replace(source, new DisplayText("updated"));
+
+        frames.Frame();
+
+        Assert.Equal("updated", frames.World.Read<DisplayText>(container).Text);
+        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container)));
+        Assert.Equal("A", frames.World.Read<Label>(child).Text);
+    }
+
+    [Fact]
+    public void OnceContentReadsPreserveTheFirstChildrenAfterSourceChanges()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new DisplayText("A"));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new OnceReadContentDeclaration(source));
+        frames.Frame();
+        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
+        uint childVersion = frames.World.WriteVersion<Label>(child);
+        frames.World.Replace(source, new DisplayText("B"));
+
+        frames.Frame();
+
+        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group)));
+        Assert.Equal("A", frames.World.Read<Label>(child).Text);
+        Assert.Equal(childVersion, frames.World.WriteVersion<Label>(child));
+    }
+
+    [Fact]
+    public void ContentKeepsDependenciesReadBeforeAndAfterItsBlock()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity before = frames.World.CreateEntity(new DisplayText("A"));
+        Entity inside = frames.World.CreateEntity(new DisplayText("B"));
+        Entity after = frames.World.CreateEntity(new DisplayText("C"));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new SurroundingReads(before, inside, after));
+        frames.Frame();
+        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
+        frames.World.Replace(before, new DisplayText("D"));
+
+        frames.Frame();
+        Assert.Equal("DC", frames.World.Read<DisplayText>(root).Text);
+        frames.World.Replace(inside, new DisplayText("E"));
+        frames.Frame();
+        Assert.Equal("E", frames.World.Read<Label>(child).Text);
+        frames.World.Replace(after, new DisplayText("F"));
+        frames.Frame();
+        Assert.Equal("DF", frames.World.Read<DisplayText>(root).Text);
+    }
+
 #if DEBUG
     [Fact]
     public void ContentOnBuildChildrenReportsTheSourceAndRestoresTheScope()
@@ -375,6 +464,66 @@ public sealed class ChildSourceTests
             return default;
         }
     }
+
+    private readonly record struct ReadContentDeclaration(Entity Source, bool Sparse) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Scope.View(new Group()).Content())
+            {
+                string text = Sparse ? Scope.Read<SparseText>(Source).Text : Scope.Read<DisplayText>(Source).Text;
+                Scope.View(new Label(text));
+            }
+            return default;
+        }
+    }
+
+    private readonly record struct OnceReadContentDeclaration(Entity Source) : IView, IComponent
+    {
+        public static BuildMode Mode => BuildMode.Once;
+
+        public BuildTask Build()
+        {
+            using (Scope.View(new Group()).Content())
+                Scope.View(new Label(Scope.Read<DisplayText>(Source).Text));
+            return default;
+        }
+    }
+
+    private readonly record struct ReadContainerDeclaration(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Scope.View(new ReadContainer(Source)).Content())
+                Scope.View(new Label("A"));
+            return default;
+        }
+    }
+
+    private readonly record struct ReadContainer(Entity Source) : IView, IComponent
+    {
+        public static ChildSource Children => ChildSource.Caller;
+
+        public BuildTask Build()
+        {
+            WriteDisplay(Scope.Read<DisplayText>(Source).Text);
+            return default;
+        }
+    }
+
+    private readonly record struct SurroundingReads(Entity Before, Entity Inside, Entity After) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            string before = Scope.Read<DisplayText>(Before).Text;
+            using (Scope.View(new Group()).Content())
+                Scope.View(new Label(Scope.Read<DisplayText>(Inside).Text));
+            WriteDisplay(before + Scope.Read<DisplayText>(After).Text);
+            return default;
+        }
+    }
+
+    private readonly record struct SparseText(string Text) : ISparseComponent;
 
     private readonly record struct ContainerDeclaration(string Name, string Text, bool Sparse) : IView, IComponent
     {

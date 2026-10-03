@@ -6,7 +6,7 @@ using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views;
 
-/// <summary>Builds requested roots and views with changed parameters in the World's interface phase.</summary>
+/// <summary>Builds requested roots and views with changed parameters or dependencies in the World's interface phase.</summary>
 public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 {
     private readonly List<Entity> _views = new();
@@ -34,7 +34,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
         foreach (Entity entity in _views)
         {
-            if (context.World.Has<BuildRequest>(entity) || ViewTypes.HasParameterChanges(context.World, entity))
+            if (context.World.Has<BuildRequest>(entity) || HasChanges(context.World, entity))
             {
                 int depth = 0;
                 Entity ancestor = Hierarchy<ElementTree>.GetParent(context.World, entity);
@@ -56,7 +56,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
                 bool firstBuild = context.World.Has<BuildRequest>(entity);
                 if (firstBuild)
                     context.World.RemoveTag<BuildRequest>(entity);
-                if (firstBuild || ViewTypes.HasParameterChanges(context.World, entity))
+                if (firstBuild || HasChanges(context.World, entity))
                     ViewTypes.Build(context.World, entity);
             }
         }
@@ -65,6 +65,28 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_viewQuery);
+
+    private static bool HasChanges(World world, Entity entity)
+    {
+        if (ViewTypes.HasParameterChanges(world, entity))
+            return true;
+        if (!world.HasBuffer<Dependency>(entity))
+            return false;
+
+        var changes = (World: world, Found: false);
+        world.ExecuteBufferRead<Dependency, (World World, bool Found)>(entity, ref changes, static (buffer, ref result) =>
+        {
+            foreach (Dependency dependency in buffer.AsSpan())
+            {
+                if (result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version)
+                {
+                    result.Found = true;
+                    return;
+                }
+            }
+        });
+        return changes.Found;
+    }
 
     private readonly record struct ViewDepth(Entity Entity, int Depth);
 }

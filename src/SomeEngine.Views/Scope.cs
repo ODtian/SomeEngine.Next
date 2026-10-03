@@ -2,6 +2,7 @@ using System.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Components;
 using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Views;
@@ -20,6 +21,34 @@ public static class Scope
     public static World World => Current.World;
     /// <summary>The entity of the view being built.</summary>
     public static Entity Entity => Current.Entity;
+
+    /// <summary>Reads a table or sparse component and records it as a dependency of a Rerun build.</summary>
+    /// <remarks>Consume the reference before a structural change can move the component.</remarks>
+    public static ref readonly T Read<T>(Entity entity) where T : struct
+    {
+        ScopeData current = Current;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.Read requires table or sparse component {typeof(T).Name}.");
+        if (current.DependenciesEnabled)
+        {
+            var dependency = new Dependency
+            {
+                Entity = entity,
+                Component = ComponentId<T>.Value,
+                Version = current.World.ComponentDataWriteVersion<T>(entity),
+            };
+            if (!current.World.HasBuffer<Dependency>(current.Entity))
+                current.World.AddBuffer<Dependency>(current.Entity);
+            current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
+            {
+                foreach (Dependency existing in buffer.ReadSpan())
+                    if (existing.Entity == read.Entity && existing.Component == read.Component)
+                        return;
+                buffer.Add(read);
+            });
+        }
+        return ref current.World.ReadComponentReference<T>(entity);
+    }
 
     /// <summary>Declares a child with key zero, or the surrounding Key scope's key.</summary>
     /// <remarks>
@@ -97,9 +126,11 @@ public static class Scope
         }
     }
 
-    internal static BuildScope Enter(World world, Entity entity, bool declaresChildren)
+    internal static BuildScope Enter(World world, Entity entity, bool declaresChildren, bool dependenciesEnabled)
     {
-        var current = new ScopeData(world, entity, entity, declaresChildren);
+        if (world.HasBuffer<Dependency>(entity))
+            world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
+        var current = new ScopeData(world, entity, entity, declaresChildren, dependenciesEnabled);
         if (declaresChildren)
         {
             CheckChildDeclaration(entity);
@@ -114,7 +145,8 @@ public static class Scope
         ScopeData build = Current;
         ViewTypes.CheckContent(build.World, entity);
         CheckChildDeclaration(entity);
-        var current = new ScopeData(build.World, build.Entity, entity, declaresChildren: true);
+        var current = new ScopeData(build.World, build.Entity, entity,
+            declaresChildren: true, dependenciesEnabled: build.DependenciesEnabled);
         CaptureSiblingCounts(current);
         s_scopes!.Push(current);
         return new ParentScope(entity, default);
@@ -193,12 +225,13 @@ public static class Scope
     private readonly record struct SiblingGroup(int Count, bool LocalState);
 #endif
 
-    private sealed class ScopeData(World world, Entity entity, Entity parent, bool declaresChildren)
+    private sealed class ScopeData(World world, Entity entity, Entity parent, bool declaresChildren, bool dependenciesEnabled)
     {
         internal World World { get; } = world;
         internal Entity Entity { get; } = entity;
         internal Entity Parent { get; } = parent;
         internal bool DeclaresChildren { get; } = declaresChildren;
+        internal bool DependenciesEnabled { get; } = dependenciesEnabled;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal int ChildIndex;
         internal ulong? KeyPrefix;
