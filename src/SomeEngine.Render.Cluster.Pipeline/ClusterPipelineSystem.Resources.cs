@@ -58,10 +58,7 @@ public sealed partial class ClusterPipelineSystem
         int pageFaultCapacity = _resources.PageFaultCapacity;
         ClusterResidencyBinding residency = _resources.Residency.GetBinding();
         RenderInstanceResources instanceResources = _resources.InstanceResources;
-        ulong instanceDataBytes = checked((ulong)instanceResources.PropertyDataBytes);
         ulong instanceMetadataStride = checked((ulong)instanceResources.BatchMetadataStrideBytes);
-        ulong instanceMetadataBytes = checked(
-            instanceMetadataStride * (ulong)instanceResources.Options.BatchCapacity);
         ClusterCullingHistory history = _history ?? throw new InvalidOperationException(
             "The Cluster culling history was not created.");
         history.EnsureDimensions(
@@ -110,10 +107,8 @@ public sealed partial class ClusterPipelineSystem
             PageFaultCapacity = pageFaultCapacity,
             PageHeap = graph.RegisterExternalBuffer(residency.PageHeap, []),
             Bvh = graph.RegisterExternalBuffer(residency.Bvh, []),
-            InstanceData = _instanceDataTransfer?.Data ?? DeclareExternalBuffer(ref graph, instanceDataBytes, BufferUsages.ShaderRead,
-                "Cluster instance data"),
-            InstanceProperties = DeclareExternalBuffer(ref graph, instanceMetadataBytes, BufferUsages.Constant,
-                "Cluster instance metadata"),
+            InstanceData = instanceResources.PropertyData,
+            InstanceProperties = instanceResources.BatchMetadata,
             InstancePropertiesRange = new BufferRange(0, instanceMetadataStride),
             PageFaultReadback = DeclareExternalBuffer(
                 ref graph,
@@ -667,12 +662,6 @@ public sealed partial class ClusterPipelineSystem
         ClusterCullingHistory history)
     {
         FrameResources frame = _frameResources;
-        if (_instanceDataTransfer is null)
-            graph.BindExternalBuffer(frame.InstanceData, binding.PropertyData, binding.PropertyDataEndpoints);
-        graph.BindExternalBuffer(
-            frame.InstanceProperties,
-            binding.InstancePropertyMetadata,
-            binding.InstancePropertyMetadataEndpoints);
         graph.SetBufferRange(
             frame.InstanceProperties,
             binding.InstancePropertyMetadataRange);

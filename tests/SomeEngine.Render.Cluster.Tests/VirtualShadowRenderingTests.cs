@@ -218,13 +218,15 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
                 }
                 if (refreshShadows && iteration >= 16) shadow.InvalidateAllCasters();
                 extraction.Extract(gameWorld);
+                Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
+                using var nextFrameResources = nextFrame;
                 Assert.True(coordinator.TryBeginPrepare(out var update));
                 using (update)
                 {
                     prepare.ApplyExtraction(update);
                     await cluster.PrepareMeshesAsync();
                     streaming.Pump();
-                    prepare.Update(update);
+                    prepare.Update(update, nextFrame);
                     update.Commit();
                 }
                 ClusterPipelineOutputs outputs = pipeline.ReconcileGraph();
@@ -250,7 +252,7 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
                 }
                 Assert.True(coordinator.TryBeginFrame(out var frame));
                 using (frame)
-                using (RenderGraphFrame commands = graph.BeginFrame())
+                using (RenderGraphFrame commands = graph.BeginFrame(nextFrame))
                 {
                     frames.Update(frame, commands);
                     commands.ObserveExecution(streaming);

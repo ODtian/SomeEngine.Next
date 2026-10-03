@@ -230,8 +230,10 @@ public sealed class ClusterRenderingTests
         frameSystems.Add(pipeline);
         try
         {
+            Assert.True(graph.TryOpenNextFrame(out var initializationFrame, TimeSpan.FromSeconds(10)));
+            using var initializationResources = initializationFrame;
             Assert.True(coordinator.TryBeginPrepare(out var preparation));
-            using (preparation) { prepare.Update(preparation); preparation.Commit(); }
+            using (preparation) { prepare.Update(preparation, initializationFrame); preparation.Commit(); }
             frameSystems.Initialize();
             ClusterPipelineOutputs outputs = shadeColor ? default : pipeline.ReconcileGraph();
             GraphPassId readbackPass;
@@ -270,7 +272,7 @@ public sealed class ClusterRenderingTests
             }
             Assert.True(coordinator.TryBeginFrame(out var canceled));
             using (canceled)
-            using (RenderGraphFrame candidate = graph.BeginFrame())
+            using (RenderGraphFrame candidate = graph.BeginFrame(initializationFrame))
                 frameSystems.Update(canceled, candidate);
 
             var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
@@ -394,13 +396,15 @@ public sealed class ClusterRenderingTests
                     if (applyChanges && changeGeometry && iteration == 16) mainWorld.DestroyEntity(source);
                 }
                 extraction.Extract(mainWorld);
+                Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
+                using var nextFrameResources = nextFrame;
                 Assert.True(coordinator.TryBeginPrepare(out var update));
                 using (update)
                 {
                     prepare.ApplyExtraction(update);
                     await cluster.PrepareMeshesAsync();
                     streaming.Pump();
-                    prepare.Update(update);
+                    prepare.Update(update, nextFrame);
                     update.Commit();
                 }
                 ulong structureVersion = graph.StructureVersion;
@@ -410,12 +414,16 @@ public sealed class ClusterRenderingTests
                 {
                     Assert.True(coordinator.TryBeginFrame(out var discarded));
                     using (discarded)
-                    using (RenderGraphFrame candidate = graph.BeginFrame())
+                    using (RenderGraphFrame candidate = graph.BeginFrame(nextFrame))
                         frameSystems.Update(discarded, candidate);
+                    Assert.True(graph.TryOpenNextFrame(out nextFrame, TimeSpan.FromSeconds(10)));
+                    Assert.True(coordinator.TryBeginPrepare(out var rewrite));
+                    using (rewrite) { prepare.Update(rewrite, nextFrame); rewrite.Commit(); }
                 }
+                using var recordingResources = nextFrame;
                 Assert.True(coordinator.TryBeginFrame(out var frame));
                 using (frame)
-                using (RenderGraphFrame commands = graph.BeginFrame())
+                using (RenderGraphFrame commands = graph.BeginFrame(nextFrame))
                 {
                     frameSystems.Update(frame, commands);
                     commands.ObserveExecution(streaming);

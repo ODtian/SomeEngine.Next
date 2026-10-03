@@ -37,7 +37,8 @@ if (graph.TryOpenNextFrame(out RenderGraphNextFrame next, timeout))
 后续帧通过范围数据更新这个 pass，结构版本保持原值。删除目标缓冲时，一并删除其上传 pass。
 
 开始帧按目标缓冲收集下一帧记录，合并来源和目标均连续的复制。录制阶段继续加入字节，
-执行前合并完整范围集合。相邻目标范围形成一个普通写入声明；来源也连续时使用一次复制，
+执行前合并完整范围集合。重叠范围采用最后登记的字节，裁剪较早记录中的重叠部分，
+使每个目标字节参与一次复制。相邻目标范围形成一个普通写入声明；来源也连续时使用一次复制，
 其余来源各自复制到对应目标范围。所有复制都先于这些目标的读者执行，保留范围外的原有字节。
 
 首次在录制阶段写入的目标仍按已取得的图版本执行；本帧使用即时复制节点，
@@ -49,6 +50,14 @@ if (graph.TryOpenNextFrame(out RenderGraphNextFrame next, timeout))
 页内分配通过原子偏移递增完成。并行任务各自收集写入记录，开始帧时汇合；
 页增长时由图创建和映射新页。页内数据由写入者直接填充，复制依据登记的实际字节范围。
 
+`next.BeginBufferWrites()` 返回一组上传写入。组内的 `GetWriteSpan` 与 `WriteBuffer` 直接使用
+同一帧上传页，允许并行任务写入各自范围。写入者汇合后调用 `Commit()`，把这组范围交给
+帧上传；释放写入组则丢弃该组记录，帧上的其它写入继续生效。页内空间由图随帧资源回收。
+
+使用者可以通过 `edit.AddBufferUploadPass(buffer)` 显式安装持久上传 pass。
+`frame.GetBufferUploadRanges(buffer)` 返回下一帧已提交及录制阶段的上传范围，使用者可以
+据此在映射页中清零其补集，初始化字节与业务字节各写入和复制一次。后续写入沿用同一持久 pass。
+
 释放下一帧对象会丢弃全部记录。释放录制帧同样取消本帧写入；持久缓冲继续保存之前的 GPU
 内容。成功提交的帧保留映射页，直到该帧槽位的完整队列完成点就绪。
 
@@ -59,7 +68,8 @@ if (graph.TryOpenNextFrame(out RenderGraphNextFrame next, timeout))
 
 `tests/SomeEngine.RenderGraph.Tests/FrameUploadTests.cs` 使用 WARP 和 RenderGraph 公共 API，
 以自给的复制读者和持久回读验证映射写入、字节写入、部分更新、取消、并行任务、录制阶段
-写入、结构版本与开帧超时。并行场景每帧十六个任务写入不同范围，持续八帧。
+写入、结构版本与开帧超时，以及写入组的提交、取消和并行范围。并行场景每帧十六个任务
+写入不同范围，持续八帧。
 
 ## Relations
 
