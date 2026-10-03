@@ -158,6 +158,8 @@ internal sealed partial class FrameExecutor
             _frame.Graph.HeapByteBudget.CommittedBytes)
         {
             AnalysisReused = _reuseAnalysis,
+            AnalyzedPassCount = _analyzedPasses.Count,
+            RebuiltRowCount = _rebuiltRowCount,
         };
         var view = new RenderGraphDiagnosticsView(
             _frame.StructureVersion,

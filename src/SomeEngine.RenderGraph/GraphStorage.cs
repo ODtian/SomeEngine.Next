@@ -183,7 +183,7 @@ internal sealed class GraphOrders : IEnumerable<ExplicitPassOrder>
     IEnumerator<ExplicitPassOrder> IEnumerable<ExplicitPassOrder>.GetEnumerator() => GetEnumerator();
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }
-internal sealed class GraphStructure
+internal sealed partial class GraphStructure
 {
     internal GraphRows<GraphBuffer> Buffers { get; private init; } =
         new(GraphIdentityDomain.Buffer, static value => value.Clone());
@@ -204,7 +204,9 @@ internal sealed class GraphStructure
     internal GraphRows<GraphExtensionPoint> ExtensionPoints { get; private init; } =
         new(GraphIdentityDomain.ExtensionPoint);
     internal GraphOrders Orders { get; private init; } = new();
-    internal int NextDeclarationOrdinal { get; set; }
+    internal GraphRows<GraphRegion> Regions { get; private init; } =
+        new(GraphIdentityDomain.Region, static value => value.Clone());
+    internal GraphRegion RootRegion { get; private init; } = new() { Label = "Root" };
 
     internal GraphStructure Fork()
     {
@@ -220,7 +222,8 @@ internal sealed class GraphStructure
             Accesses = Accesses.Fork(),
             ExtensionPoints = ExtensionPoints.Fork(),
             Orders = Orders.Fork(),
-            NextDeclarationOrdinal = NextDeclarationOrdinal,
+            Regions = Regions.Fork(),
+            RootRegion = RootRegion.Clone(),
         };
     }
 
@@ -237,6 +240,7 @@ internal sealed class GraphStructure
         if (ReferenceEquals(Accesses.BlockIdentity, other.Accesses.BlockIdentity)) count++;
         if (ReferenceEquals(ExtensionPoints.BlockIdentity, other.ExtensionPoints.BlockIdentity)) count++;
         if (ReferenceEquals(Orders.BlockIdentity, other.Orders.BlockIdentity)) count++;
+        if (ReferenceEquals(Regions.BlockIdentity, other.Regions.BlockIdentity)) count++;
         return count;
     }
 }
@@ -416,7 +420,7 @@ internal sealed class GraphView
 
 internal readonly record struct ExplicitPassOrder(GraphIdentity Predecessor, GraphIdentity Consumer);
 
-internal readonly record struct GraphExtensionPoint(string Label, int DeclarationOrdinal);
+internal readonly record struct GraphExtensionPoint(string Label, long DeclarationOrdinal);
 
 internal sealed class GraphPass
 {
@@ -432,7 +436,8 @@ internal sealed class GraphPass
     internal List<GraphParameterResourceBinding> ParameterBindings = [];
     internal HashSet<GraphIdentity> ViewReferences = [];
     internal List<GraphIdentity> PersistentBindings = [];
-    internal int DeclarationOrdinal;
+    internal long DeclarationOrdinal;
+    internal GraphIdentity Region;
     internal List<GraphIdentity> Accesses = [];
     internal List<GraphColorAttachment> ColorAttachments = [];
     internal GraphDepthStencilAttachment? DepthStencilAttachment;
@@ -453,6 +458,7 @@ internal sealed class GraphPass
         ViewReferences = new HashSet<GraphIdentity>(ViewReferences),
         PersistentBindings = new List<GraphIdentity>(PersistentBindings),
         DeclarationOrdinal = DeclarationOrdinal,
+        Region = Region,
         Accesses = new List<GraphIdentity>(Accesses),
         ColorAttachments = new List<GraphColorAttachment>(ColorAttachments),
         DepthStencilAttachment = DepthStencilAttachment,

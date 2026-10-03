@@ -12,6 +12,7 @@ internal enum GraphIdentityDomain : byte
     Pass = 7,
     Access = 8,
     ExtensionPoint = 9,
+    Region = 10,
 }
 
 internal readonly struct GraphIdentity : IEquatable<GraphIdentity>
@@ -56,6 +57,19 @@ public readonly struct GraphPassId : IEquatable<GraphPassId>
     public override int GetHashCode() => _value.GetHashCode();
     public static bool operator ==(GraphPassId left, GraphPassId right) => left.Equals(right);
     public static bool operator !=(GraphPassId left, GraphPassId right) => !left.Equals(right);
+}
+
+/// <summary>An ordered region of the graph. The default value denotes the root region.</summary>
+public readonly struct GraphRegionId : IEquatable<GraphRegionId>
+{
+    private readonly GraphIdentity _value;
+    internal GraphRegionId(in GraphIdentity value) => _value = value;
+    internal GraphIdentity Value => _value;
+    public bool Equals(GraphRegionId other) => _value.Equals(other._value);
+    public override bool Equals(object? value) => value is GraphRegionId other && Equals(other);
+    public override int GetHashCode() => _value.GetHashCode();
+    public static bool operator ==(GraphRegionId left, GraphRegionId right) => left.Equals(right);
+    public static bool operator !=(GraphRegionId left, GraphRegionId right) => !left.Equals(right);
 }
 
 public readonly struct GraphExtensionPointId : IEquatable<GraphExtensionPointId>
