@@ -18,8 +18,12 @@
 
 `Scope.View<T>(in T)` 的约束为 `struct, IView, IEquatable<T>`，
 由视图的 `Equals(T)` 决定参数是否相等。record struct 提供这一值比较入口。
-回调、引用与内容函数的具体比较规则由生成器生成的 `Equals` 提供（#59）；
+Compose 回调、引用与内容函数的具体比较规则由生成器生成的 `Equals` 和匹配的哈希提供（#59）；
 通用构建路径直接采用视图的相等判断结果。
+生成视图的值类型、record 与 `string` 参数使用 `EqualityComparer<T>.Default`；
+其它引用参数使用 `ReferenceEquals` 和引用哈希。`Action`/`Func` 回调字段在相等判断与哈希中省略，
+带 `[Composable]` 标记的内容字段使用引用判断。完整前端接缝见
+[[architecture/someui/Compose-Frontend|Compose Frontend]]。
 
 父视图每次构建按 key 与出现次数复用子实体。
 同一身份的类型变化会释放旧节点与后代，再创建新视图。

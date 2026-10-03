@@ -34,7 +34,10 @@ SomeUI 的使用错误通过 [[architecture/validation/Development-Checks|Develo
 | `SEV005` | error | 嵌套视图函数与 Compose 视图声明需要其包含类型声明为 partial |
 | `SEV006` | error | Compose 视图方法声明为 static |
 | `SEV007` | error | Compose 视图方法返回 void 或 BuildTask；产生值的内联分组由 Inline 标记及 #60 接入 |
-| `SEV008` | error | Compose 调用应由编译器识别为视图拦截；方法组、委托、取地址与其它生成器产出的调用改为源码直接调用 |
+| `SEV008` | error | Compose 视图与 Remember 调用应由编译器识别为位置拦截；方法组、委托、取地址与其它生成器产出的调用改为源码直接调用 |
+| `SEV009` | error | 调用 Remember 的方法或 lambda 使用自己的 Composable 标记 |
+| `SEV013` | info | Compose 方法或 SwiftUI Build 中传入捕获外部变量的 lambda；提示“调用方每次重跑都会分配”，推荐 static lambda 加显式状态参数 |
+| `SEV014` | error | Composable 内容参数使用返回 void 或 BuildTask、实参按值传递的委托 |
 
 `DiagnosticSuppressor` 根据 `IView.Build` 的实际实现屏蔽 CS1998，包含显式接口实现。
 辅助方法的 CS1998 继续由编译器报告。
@@ -42,6 +45,8 @@ Compose 生成的 `Build` 直接执行原方法，用户的直接调用沿位置
 生成入口的区分与跨程序集规则见 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
 绕过编译期拦截检查后直接进入单参数 `Scope.View`，由 Core 的 `DevelopmentCheck`
 报告调用位置接入要求；shipping 的条件编译移除该检查并使用 key 0 后备行为。
+`Compose.Remember` 的源码调用沿同样的拦截核对与 Core 开发检查边界，
+位置、状态保留及回调规则见 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
 
 ## Relations
 [[architecture/someui/Build-Scope|Build Scope]] · [[architecture/someui/Compose-Frontend|Compose Frontend]]

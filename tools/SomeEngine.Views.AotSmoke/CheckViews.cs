@@ -39,7 +39,9 @@ Require(first[2] == second[2] && frames.World.Read<Selection>(second[2]).Value =
 LayoutChecks.Run();
 FlexChecks.Run();
 ComposeChecks.Run(frames);
-Console.WriteLine("View functions, Compose views, identities, sparse storage, scaled canvases, Flex, and user layouts passed under NativeAOT.");
+SwiftUIChecks.Run(frames);
+RememberChecks.Run(frames);
+Console.WriteLine("View functions, Compose content, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, and user layouts passed under NativeAOT.");
 
 static void Require(bool value, string message)
 {

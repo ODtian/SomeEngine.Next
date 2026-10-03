@@ -17,6 +17,7 @@ internal static class AnimationSmoke
         CheckFieldReadsAndStages();
         CheckDefaultFrames();
         CheckCustomValues();
+        CheckGraphs();
     }
 
     private static void CheckFieldReadsAndStages()
@@ -118,6 +119,44 @@ internal static class AnimationSmoke
         for (int frame = 0; frame < 1200 && world.IsEnabled<Timeline>(target); frame++) Tick(systems, world, 1d / 60);
         Require(world.Read<Reading>(target).Value == new Meter(40) && !world.IsEnabled<Timeline>(target),
             "Custom value operations settle a spring at its target.");
+    }
+
+    private static void CheckGraphs()
+    {
+        using var world = new World();
+        Entity first = world.CreateEntity(new Visual());
+        Entity second = world.CreateEntity(new Visual());
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.AddDefaults(systems);
+        using var graph = new AnimationBuilder(world);
+        using (graph.Sequence())
+        {
+            graph.To(first, Opacity, 1f, Spec.Tween(0.1f));
+            graph.Delay(0.1f);
+            graph.To(second, Position, new Vector2(2, 4), Spec.Tween(0.1f));
+        }
+        Entity animation = graph.Play();
+        Tick(systems, world, 0.3);
+        Require(world.Read<Visual>(first).Opacity == 1 && world.Read<Visual>(second).Position == new Vector2(2, 4),
+            "Fused graphs sample closed generic track installers and all value types.");
+        Require(!world.IsEnabled<Timeline>(animation), "Fused graph time completes after its final interval.");
+        var parameters = new GraphParameters();
+        using (var machine = graph.StateMachine(ref parameters))
+        {
+            using (machine.State(0)) graph.To(first, Opacity, 0f, Spec.Tween(0));
+            using (machine.State(1)) graph.To(first, Opacity, 2f, Spec.Tween(0));
+            machine.Transition(0, 1, GraphCondition.Equal(0, 1), 0.2f);
+        }
+        CompiledGraph compiled = graph.Compile();
+        Entity a = compiled.Play(world, first);
+        compiled.Play(world, second);
+        compiled.Dispose();
+        Tick(systems, world, 0);
+        parameters.Values[0] = 1;
+        world.Replace(a, parameters);
+        Tick(systems, world, 0.1);
+        Require(world.Read<Visual>(first).Opacity == 1 && world.Read<Visual>(second).Opacity == 0,
+            "Shared compiled state graphs retain data and advance their own parameters and fade weights.");
     }
 
     private static void Tick(SystemGroup<ImmediateSystemContext> systems, World world, double delta)

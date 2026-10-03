@@ -3,7 +3,7 @@
 ## Definition
 动画系统是库：内置的值类型、曲线、节点和求值系统只是用公开 API 写成的其中一种实现，用户的扩展与它们地位相同。
 
-当前核心、属性求值与层合成在 `SomeEngine.Animation` 中实现：时间线、轨道与合成使用公开 struct 系统，值运算通过 `IValueOps<T>` 和 `ValueOps<T, TOps>` 扩展，曲线接收数据与函数指针。图的目标接缝见对应页面。
+当前核心、属性求值、层合成与动画图在 `SomeEngine.Animation` 中实现：时间线、图推进、轨道与合成使用公开 struct 系统，值运算通过 `IValueOps<T>` 和 `ValueOps<T, TOps>` 扩展，曲线接收数据与函数指针。图节点通过 [[architecture/animation/Animation-Graph|Animation Graph]] 的构建器原语表达。
 
 | 扩展 | 方式 |
 |---|---|
@@ -20,15 +20,17 @@
 ## Property evaluators
 用户定义值类型与其 `ops struct` 后，通过 `Channel<T>.Of<TComponent>` 声明字段，使用 `PropertyAnimation.To`、`By` 和 `Retarget`，并把 `TrackSystem<T, TOps>` 放在时间推进与收尾之间。求值与位移端点计算都调用同一个 `TOps`。
 
-`AnimationSystems.AddDefaults(SystemGroup<ImmediateSystemContext> schedule, Entity time = default)` 按顺序加入 `TimelineSystem(time)`、float 层权重的求值与合成、float、Vector2/3/4、Quaternion、Color、Thickness、Rect、Matrix3x2 的全部字段求值系统、对应的全部字段合成系统，以及 `TimelineEndSystem`。调用方也可按自己的值类型与行为直接组合这些公开系统。
+`AnimationSystems.AddDefaults(SystemGroup<ImmediateSystemContext> schedule, Entity time = default)` 按顺序加入 `TimelineSystem(time)`、`GraphSystem`、float 层权重的求值与合成、float、Vector2/3/4、Quaternion、Color、Thickness、Rect、Matrix3x2 的全部字段求值系统、对应的全部字段合成系统、`GraphEndSystem`，以及 `TimelineEndSystem`。调用方也可按自己的值类型与行为直接组合这些公开系统。
 
 ```csharp
 var schedule = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
 schedule.Add(new TimelineSystem(time));
+schedule.Add(new GraphSystem());
 schedule.Add(new TrackSystem<float, FloatOps>(TrackFields.LayerWeights));
 schedule.Add(new ComposeSystem<float, FloatOps>(TrackFields.LayerWeights));
 schedule.Add(new TrackSystem<MyValue, MyOps>());
 schedule.Add(new ComposeSystem<MyValue, MyOps>());
+schedule.Add(new GraphEndSystem());
 schedule.Add(new TimelineEndSystem());
 ```
 
