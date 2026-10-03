@@ -34,6 +34,7 @@ internal static class FirstBuildChecks
         VerifyOnceParameters(frames);
         VerifyKeyedChildren(frames);
         VerifyReadDependencies(frames);
+        VerifyUntrackedReads(frames);
     }
 
     private static int ReadNumber() => 41;
@@ -142,6 +143,33 @@ internal static class FirstBuildChecks
         Require(frames.World.WriteVersion<TableText>(child) == textVersion, "A later frame retains the displayed text version.");
     }
 
+    private static void VerifyUntrackedReads(HeadlessFrameDriver frames)
+    {
+        Entity sample = frames.World.CreateEntity(new TableText("table"));
+        frames.World.AddSparse(sample, new SparseText("sparse"));
+        Entity trigger = frames.World.CreateEntity(new TableText("first"));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new SampledText(sample, trigger));
+
+        frames.Frame();
+
+        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Require(frames.World.Read<TableText>(child).Value == "table:sparse:first",
+            "Untracked reads supply table and sparse values.");
+        frames.World.Replace(sample, new TableText("changed"));
+        frames.World.ReplaceSparse(sample, new SparseText("updated"));
+
+        frames.Frame();
+
+        Require(frames.World.Read<TableText>(child).Value == "table:sparse:first",
+            "Untracked source writes retain the displayed values.");
+        frames.World.Replace(trigger, new TableText("second"));
+
+        frames.Frame();
+
+        Require(frames.World.Read<TableText>(child).Value == "changed:updated:second",
+            "An outside dependency refreshes the displayed values.");
+    }
+
     private static void Require(bool condition, string message)
     {
         if (!condition)
@@ -183,6 +211,23 @@ internal static class FirstBuildChecks
             string table = Scope.Read<TableText>(Source).Value;
             string sparse = Scope.Read<SparseText>(Source).Value;
             Scope.View(new TableText($"{table}:{sparse}"));
+            return default;
+        }
+    }
+
+    private readonly record struct SampledText(Entity Sample, Entity Trigger) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            string table;
+            string sparse;
+            using (Scope.Untrack())
+            {
+                table = Scope.Read<TableText>(Sample).Value;
+                sparse = Scope.Read<SparseText>(Sample).Value;
+            }
+            string trigger = Scope.Read<TableText>(Trigger).Value;
+            Scope.View(new TableText($"{table}:{sparse}:{trigger}"));
             return default;
         }
     }
