@@ -58,6 +58,9 @@ public struct Dependency : IBufferElement
 公开验收：[ReadDependencyTests](../../../tests/SomeEngine.Views.Tests/ReadDependencyTests.cs)，
 覆盖组件更新、父子共享来源、释放子树、读取来源切换、混合存储重复读取及嵌套构建。
 
+失败构建保留这次尝试已读取的依赖，恢复时机见
+[[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
+
 ## 环境读取依赖（#13）
 
 `Scope.ReadUp<T>() where T : struct` 从当前视图实体开始，沿 `ElementTree` 的父链查找

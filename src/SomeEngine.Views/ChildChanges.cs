@@ -1,0 +1,70 @@
+using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
+
+namespace SomeEngine.Views;
+
+/// <summary>Child declarations shared by nested builds until their outer build completes.</summary>
+internal sealed class ChildChanges
+{
+    private readonly List<IChildData> _previousData = new();
+    private readonly List<Entity> _removedChildren = new();
+
+    internal int DataCount => _previousData.Count;
+    internal int RemovedCount => _removedChildren.Count;
+
+    internal void RememberOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) =>
+        _previousData.Add(new ChildOrder(parent, children));
+
+    internal void RememberParameters<T>(Entity entity, in T value) where T : struct =>
+        _previousData.Add(new ChildParameters<T>(entity, value));
+
+    internal void RememberAddedChild(Entity entity) => _previousData.Add(new AddedChild(entity));
+
+    internal void RemoveChild(Entity entity) => _removedChildren.Add(entity);
+
+    internal void Restore(World world, int firstData, int firstRemoval)
+    {
+        for (int index = _previousData.Count - 1; index >= firstData; index--)
+            _previousData[index].Restore(world);
+        _previousData.RemoveRange(firstData, _previousData.Count - firstData);
+        _removedChildren.RemoveRange(firstRemoval, _removedChildren.Count - firstRemoval);
+    }
+
+    internal void ReleaseChildren(World world)
+    {
+        foreach (Entity entity in _removedChildren)
+            if (world.IsAlive(entity))
+                Hierarchy<ElementTree>.DestroySubtree(world, entity);
+    }
+
+    private interface IChildData
+    {
+        void Restore(World world);
+    }
+
+    private sealed class ChildOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) : IChildData
+    {
+        public void Restore(World world)
+        {
+            var currentChildren = Hierarchy<ElementTree>.GetChildren(world, parent);
+            for (int index = 0; index < children.Count; index++)
+            {
+                if (currentChildren[index] == children[index])
+                    continue;
+                Hierarchy<ElementTree>.SetParent(world, children[index], parent, index);
+                currentChildren = Hierarchy<ElementTree>.GetChildren(world, parent);
+            }
+        }
+    }
+
+    private sealed class ChildParameters<T>(Entity entity, T value) : IChildData where T : struct
+    {
+        public void Restore(World world) => world.OverwriteComponentData(entity, in value);
+    }
+
+    private sealed class AddedChild(Entity entity) : IChildData
+    {
+        public void Restore(World world) => Hierarchy<ElementTree>.DestroySubtree(world, entity);
+    }
+}

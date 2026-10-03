@@ -140,9 +140,10 @@ public sealed class FirstBuildTests
     {
         using var frames = new HeadlessFrameDriver();
         var completion = new TaskCompletionSource();
-        Views.Spawn(frames.World, Entity.Null, new SuspendedView(completion.Task));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new SuspendedView(completion.Task));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
 
         Assert.Contains("synchronously", error.Message, StringComparison.OrdinalIgnoreCase);
         var scopeError = Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
