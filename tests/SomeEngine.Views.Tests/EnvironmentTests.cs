@@ -516,7 +516,7 @@ public sealed partial class EnvironmentTests
         }
     }
 
-    private readonly record struct ThemePair(int TableColor, int SparseColor, int Refresh) : IView, IComponent
+    private readonly record struct ThemePair(int TableColor, int SparseColor, int Revision) : IView, IComponent
     {
         public BuildTask Build()
         {
