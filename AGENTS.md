@@ -23,3 +23,17 @@ Debug、优化时，先问是否是架构造成的，不要在错误的架构下
 
 
 RG 采用持久图，稳定拓扑和资源通过显式修改维护。按更新频率拆分：接近每帧刷新且重建更便宜的工作使用即时子图或当帧重建，不为这类工作强行维护增量拓扑，也不能因此每帧重建主体图。
+
+## Agent skills
+
+### Issue tracker
+
+需求规格与任务票使用 GitHub Issues：`ODtian/SomeEngine.Next`。执行相关技能前读取 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+任务角色与标签名称见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+领域文档采用根级 `GLOSSARY.md`、`docs/adr/` 与现有 Wiki。探索代码前读取 `docs/agents/domain.md`。当前行为以源码核对结果为准，已确认的需求和设计目标用于规划变更；Wiki/ADR 的引用范围按该文件中的筛选规则确定。

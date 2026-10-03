@@ -14,6 +14,7 @@ Library/
 # Build outputs
 bin/
 obj/
+*.import.json
 artifacts/
 TestResults/
 BenchmarkDotNet.Artifacts/
