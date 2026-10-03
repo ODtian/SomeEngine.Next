@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Collections;
 using SomeEngine.ECS.Entities;
+using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.ECS.Sparse;
 
@@ -7,9 +8,9 @@ internal interface ISparseSet
 {
     bool Has(Entity entity);
 
-    void AddCopy(Entity source, Entity target);
+    void AddCopy(Entity source, Entity target, uint version);
 
-    void ReplaceCopy(Entity source, Entity target);
+    void ReplaceCopy(Entity source, Entity target, uint version);
 
     bool RemoveOptional(Entity entity);
 
@@ -33,6 +34,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     private const int SentinelValue = -1;
 
     private Storage _storage;
+    private readonly Lock _writeGate = new();
     private int _detachCount;
 
     public SparseSet(int initialDenseCapacity = 16)
@@ -43,6 +45,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
             new int[4][],
             new Entity[initialDenseCapacity],
             new T[initialDenseCapacity],
+            new uint[initialDenseCapacity],
             count: 0);
     }
 
@@ -71,6 +74,9 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
 
     /// <summary>添加组件。重复添加抛异常。</summary>
     public void Add(Entity entity, in T value)
+        => Add(entity, in value, version: 0);
+
+    internal void Add(Entity entity, in T value, uint version)
     {
         ThrowInvalidEntity(entity);
 
@@ -86,12 +92,16 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
         int denseIndex = storage.Count;
         storage.DenseEntities[denseIndex] = entity;
         storage.DenseData[denseIndex] = value;
+        storage.WriteVersions[denseIndex] = version;
         storage.SparsePages[page][entity.Index & PageMask] = denseIndex;
         storage.Count++;
     }
 
     /// <summary>替换组件。不存在时抛异常。</summary>
     public void Replace(Entity entity, in T value)
+        => Replace(entity, in value, version: 0);
+
+    internal void Replace(Entity entity, in T value, uint version)
     {
         ThrowInvalidEntity(entity);
 
@@ -101,6 +111,17 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
 
         storage = WritableStorage();
         storage.DenseData[denseIndex] = value;
+        storage.WriteVersions[denseIndex] = version;
+    }
+
+    internal uint WriteVersion(Entity entity)
+    {
+        Storage storage = _storage;
+        bool hasValue = TryDenseIndex(storage, entity, out _, out int denseIndex);
+        DevelopmentCheck.Require(hasValue,
+            $"Entity {entity} requires sparse component {typeof(T).Name} to read its write version.");
+
+        return storage.WriteVersions[denseIndex];
     }
 
     /// <summary>移除组件。不存在时抛异常。</summary>
@@ -140,16 +161,16 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
         return new SparseSet<T>(storage);
     }
 
-    void ISparseSet.AddCopy(Entity source, Entity target)
+    void ISparseSet.AddCopy(Entity source, Entity target, uint version)
     {
         var value = Read(source);
-        Add(target, in value);
+        Add(target, in value, version);
     }
 
-    void ISparseSet.ReplaceCopy(Entity source, Entity target)
+    void ISparseSet.ReplaceCopy(Entity source, Entity target, uint version)
     {
         var value = Read(source);
-        Replace(target, in value);
+        Replace(target, in value, version);
     }
 
     private static void RemoveDense(
@@ -165,6 +186,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
             // swap-remove: 把最后一个元素移到被删位置
             storage.DenseEntities[denseIndex] = storage.DenseEntities[lastDenseIndex];
             storage.DenseData[denseIndex] = storage.DenseData[lastDenseIndex];
+            storage.WriteVersions[denseIndex] = storage.WriteVersions[lastDenseIndex];
 
             // 更新被交换 entity 的 sparse 映射
             var movedEntity = storage.DenseEntities[denseIndex];
@@ -176,11 +198,15 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
         storage.SparsePages[page][entity.Index & PageMask] = SentinelValue;
         storage.DenseEntities[lastDenseIndex] = default;
         storage.DenseData[lastDenseIndex] = default;
+        storage.WriteVersions[lastDenseIndex] = default;
         storage.Count--;
     }
 
     /// <summary>获取组件的 ref 引用。</summary>
     public ref T Get(Entity entity)
+        => ref Get(entity, version: 0);
+
+    internal ref T Get(Entity entity, uint version)
     {
         ThrowInvalidEntity(entity);
 
@@ -189,6 +215,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
             throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
 
         storage = WritableStorage();
+        storage.WriteVersions[denseIndex] = version;
         return ref storage.DenseData[denseIndex];
     }
 
@@ -226,9 +253,10 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     /// Returns the dense writable storage to the World owner. Public World callers receive this
     /// span only through a runtime-scoped callback, so it cannot outlive structural protection.
     /// </summary>
-    internal Span<T> BorrowDenseWrite()
+    internal Span<T> BorrowDenseWrite(uint version)
     {
         Storage storage = WritableStorage();
+        storage.WriteVersions.AsSpan(0, storage.Count).Fill(version);
         return storage.DenseData.AsSpan(0, storage.Count);
     }
 
@@ -236,6 +264,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     {
         ArrayGrowthExtensions.EnsureCapacity(ref storage.DenseEntities, required, 16);
         ArrayGrowthExtensions.EnsureCapacity(ref storage.DenseData, required, 16);
+        ArrayGrowthExtensions.EnsureCapacity(ref storage.WriteVersions, required, 16);
     }
 
     private static void EnsurePage(Storage storage, int pageIndex)
@@ -273,14 +302,21 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
 
     private Storage WritableStorage()
     {
-        Storage storage = _storage;
+        Storage storage = Volatile.Read(ref _storage);
         if (!storage.IsShared)
             return storage;
 
-        storage = storage.CloneWritable();
-        _storage = storage;
-        _detachCount++;
-        return storage;
+        lock (_writeGate)
+        {
+            storage = _storage;
+            if (storage.IsShared)
+            {
+                storage = storage.CloneWritable();
+                Volatile.Write(ref _storage, storage);
+                _detachCount++;
+            }
+            return storage;
+        }
     }
 
     private static void ThrowInvalidEntity(Entity entity)
@@ -297,11 +333,13 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
             int[][] sparsePages,
             Entity[] denseEntities,
             T[] denseData,
+            uint[] writeVersions,
             int count)
         {
             SparsePages = sparsePages;
             DenseEntities = denseEntities;
             DenseData = denseData;
+            WriteVersions = writeVersions;
             Count = count;
         }
 
@@ -310,6 +348,8 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
         internal Entity[] DenseEntities;
 
         internal T[] DenseData;
+
+        internal uint[] WriteVersions;
 
         internal int Count;
 
@@ -331,6 +371,7 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
                 sparsePages,
                 (Entity[])DenseEntities.Clone(),
                 (T[])DenseData.Clone(),
+                (uint[])WriteVersions.Clone(),
                 Count);
         }
     }

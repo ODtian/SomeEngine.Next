@@ -18,6 +18,8 @@ internal enum CommandType : byte
     AddComponent,
     RemoveComponent,
     ReplaceComponent,
+    AddSparse,
+    ReplaceSparse,
     AddTag,
     RemoveTag,
     AddBuffer,
@@ -811,6 +813,16 @@ public sealed partial class CommandBuffer : IDisposable
                 case CommandType.RemoveComponent:
                     var removeList = DataList(command.ComponentId);
                     removeList.PlaybackRemove(world, command.Entity.Resolve(context));
+                    break;
+
+                case CommandType.AddSparse:
+                    DataList(command.ComponentId).PlaybackAdd(
+                        world, command.Entity.Resolve(context), command.DataIndex);
+                    break;
+
+                case CommandType.ReplaceSparse:
+                    DataList(command.ComponentId).PlaybackReplace(
+                        world, command.Entity.Resolve(context), command.DataIndex);
                     break;
 
                 case CommandType.AddTag:

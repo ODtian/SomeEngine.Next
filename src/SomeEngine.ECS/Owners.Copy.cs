@@ -90,6 +90,7 @@ internal readonly struct Copy
             destinationArchetype,
             surface);
 
+        _clock.Acquire();
         TableSurface.Replace(
             this,
             target,
@@ -116,6 +117,7 @@ internal readonly struct Copy
 
         var destinationArchetype = ResolveCloneArchetype(source, sourceArchetype, surface);
 
+        _clock.Acquire();
         EntityRecordWriter targetRecord = _entities.Store.Allocate(out var target);
         var (destinationChunk, destinationRow) = AllocateCloneDestination(
             target,
