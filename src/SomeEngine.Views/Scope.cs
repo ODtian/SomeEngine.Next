@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Components;
 using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Views;
@@ -16,23 +18,67 @@ public static class Scope
     /// <summary>The entity of the view being built.</summary>
     public static Entity Entity => Current.Entity;
 
-    /// <summary>Declares a child at this build's call index and updates its parameters.</summary>
+    /// <summary>Reads a table or sparse component and records it as a dependency of a Rerun build.</summary>
+    /// <remarks>Consume the reference before a structural change can move the component.</remarks>
+    public static ref readonly T Read<T>(Entity entity) where T : struct
+    {
+        ScopeData current = Current;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.Read requires table or sparse component {typeof(T).Name}.");
+        if (current.DependenciesEnabled)
+        {
+            var dependency = new Dependency
+            {
+                Entity = entity,
+                Component = ComponentId<T>.Value,
+                Version = current.World.ComponentDataWriteVersion<T>(entity),
+            };
+            if (!current.World.HasBuffer<Dependency>(current.Entity))
+                current.World.AddBuffer<Dependency>(current.Entity);
+            current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
+            {
+                foreach (Dependency existing in buffer.ReadSpan())
+                    if (existing.Entity == read.Entity && existing.Component == read.Component)
+                        return;
+                buffer.Add(read);
+            });
+        }
+        return ref current.World.ReadComponentReference<T>(entity);
+    }
+
+    /// <summary>Declares a child with key zero, or the surrounding Key scope's key.</summary>
     /// <remarks>
     /// Equal parameters overwrite the stored value while preserving its write version.
     /// Changed parameters rebuild Rerun views immediately. Each new child completes its first build.
     /// </remarks>
     public static Entity View<T>(in T view)
+        where T : struct, IView, IEquatable<T> => View(in view, 0);
+
+    /// <summary>Matches a child by key and occurrence and updates its parameters.</summary>
+    public static Entity View<T>(in T view, ulong key)
         where T : struct, IView, IEquatable<T>
     {
         ScopeData current = Current;
-        s_scopes!.Pop();
-        s_scopes.Push(current with { ChildIndex = current.ChildIndex + 1 });
+        if (current.KeyPrefix is ulong prefix)
+            key = key == 0 ? prefix : CombineKeys(prefix, key);
+        current.Occurrences.TryGetValue(key, out int occurrence);
+        current.Occurrences[key] = occurrence + 1;
+        int childIndex = current.ChildIndex++;
         var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Entity);
-        if (current.ChildIndex < children.Count)
+        for (int index = childIndex; index < children.Count; index++)
         {
-            Entity existing = children[current.ChildIndex];
-            DevelopmentCheck.Require(current.World.Read<ViewType>(existing).Id == ViewRegistration<T>.Id,
-                "View declarations require the same view type at each child index.");
+            Entity existing = children[index];
+            ElementKey identity = current.World.Read<ElementKey>(existing);
+            if (identity.Key != key || identity.Occurrence != occurrence)
+                continue;
+
+            if (current.World.Read<ViewType>(existing).Id != ViewRegistration<T>.Id)
+            {
+                Hierarchy<ElementTree>.DestroySubtree(current.World, existing);
+                break;
+            }
+            if (index != childIndex)
+                Hierarchy<ElementTree>.SetParent(current.World, existing, current.Entity, childIndex);
             T previous = current.World.ReadComponentData<T>(existing);
             if (previous.Equals(view))
             {
@@ -45,11 +91,25 @@ public static class Scope
                 ViewRegistration<T>.Build(current.World, existing);
             return existing;
         }
-        Entity child = Views.Create(current.World, in view);
-        Hierarchy<ElementTree>.SetParent(current.World, child, current.Entity);
+        Entity child = Views.Create(current.World, in view, new ElementKey { Key = key, Occurrence = occurrence });
+        Hierarchy<ElementTree>.SetParent(current.World, child, current.Entity, childIndex);
         ViewRegistration<T>.Build(current.World, child);
         return child;
     }
+
+    /// <summary>Groups child declaration keys until the returned scope is disposed.</summary>
+    public static KeyScope Key(ulong key)
+    {
+        ScopeData current = Current;
+        var scope = new KeyScope(current.KeyPrefix);
+        current.KeyPrefix = current.KeyPrefix is ulong prefix ? CombineKeys(prefix, key) : key;
+        return scope;
+    }
+
+    internal static void RestoreKey(ulong? key) => Current.KeyPrefix = key;
+
+    private static ulong CombineKeys(ulong prefix, ulong key) =>
+        unchecked((prefix + 0x9E3779B97F4A7C15UL) * 0xBF58476D1CE4E5B9UL ^ key);
 
     private static ScopeData Current
     {
@@ -60,16 +120,95 @@ public static class Scope
         }
     }
 
-    internal static BuildScope Enter(World world, Entity entity)
+    internal static BuildScope Enter(World world, Entity entity, bool dependenciesEnabled)
     {
-        (s_scopes ??= new Stack<ScopeData>()).Push(new ScopeData(world, entity, 0));
+        if (world.HasBuffer<Dependency>(entity))
+            world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
+        var current = new ScopeData(world, entity, dependenciesEnabled);
+        CaptureSiblingCounts(current);
+        (s_scopes ??= new Stack<ScopeData>()).Push(current);
         return default;
     }
 
-    private readonly record struct ScopeData(World World, Entity Entity, int ChildIndex);
+    [Conditional("DEBUG")]
+    private static void CaptureSiblingCounts(ScopeData current)
+    {
+#if DEBUG
+        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(current.World, current.Entity))
+        {
+            ulong key = current.World.Read<ElementKey>(child).Key;
+            current.PreviousSiblings.TryGetValue(key, out SiblingGroup group);
+            current.PreviousSiblings[key] = new SiblingGroup(group.Count + 1,
+                group.LocalState || ContainsLocalState(current.World, child));
+        }
+#endif
+    }
+
+    [Conditional("DEBUG")]
+    private static void CheckSiblingCounts(ScopeData current)
+    {
+#if DEBUG
+        var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Entity);
+        foreach (var (key, previous) in current.PreviousSiblings)
+        {
+            current.Occurrences.TryGetValue(key, out int count);
+            if (count == previous.Count || Math.Max(count, previous.Count) <= 1)
+                continue;
+
+            bool localState = previous.LocalState;
+            for (int index = 0; !localState && index < current.ChildIndex; index++)
+            {
+                Entity child = children[index];
+                if (current.World.Read<ElementKey>(child).Key == key)
+                    localState = ContainsLocalState(current.World, child);
+            }
+            DevelopmentCheck.Require(!localState,
+                $"Sibling key {key} with local state changed from {previous.Count} to {count} children. " +
+                "Use distinct Key scopes for stateful list items.");
+        }
+#endif
+    }
+
+#if DEBUG
+    private static bool ContainsLocalState(World world, Entity entity)
+    {
+        if (world.Has<LocalState>(entity))
+            return true;
+        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(world, entity))
+        {
+            if (ContainsLocalState(world, child))
+                return true;
+        }
+        return false;
+    }
+
+    private readonly record struct SiblingGroup(int Count, bool LocalState);
+#endif
+
+    private sealed class ScopeData(World world, Entity entity, bool dependenciesEnabled)
+    {
+        internal World World { get; } = world;
+        internal Entity Entity { get; } = entity;
+        internal bool DependenciesEnabled { get; } = dependenciesEnabled;
+        internal Dictionary<ulong, int> Occurrences { get; } = new();
+        internal int ChildIndex;
+        internal ulong? KeyPrefix;
+#if DEBUG
+        internal Dictionary<ulong, SiblingGroup> PreviousSiblings { get; } = new();
+#endif
+    }
 
     internal readonly struct BuildScope : IDisposable
     {
+        internal void Complete()
+        {
+            ScopeData current = Current;
+            CheckSiblingCounts(current);
+            var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Entity);
+            for (int index = current.ChildIndex; index < children.Count; index++)
+                Hierarchy<ElementTree>.DestroySubtree(current.World, children[index]);
+        }
+
         public void Dispose() => s_scopes!.Pop();
     }
 }

@@ -53,3 +53,26 @@ The Latin font's single-glyph advance references are 639 units for `A` and
 600 units for `V` (12.78 and 12.00 px at 20 px), as recorded in its `hmtx`
 table. The wrapped-line tests use these values to verify that kerning applies
 within each line.
+
+## SDF geometry reference
+
+The Latin fixture's `glyf` table gives glyph 34 (`A`) the outline bounds
+`xMin=0`, `yMin=0`, `xMax=638`, `yMax=717`, at 1000 units per em. These
+values can be read independently with fontTools:
+
+```python
+font = TTFont("Latin.ttf")
+glyph = font["glyf"][font.getGlyphOrder()[34]]
+print(glyph.xMin, glyph.yMin, glyph.xMax, glyph.yMax)
+```
+
+At 48 pixels per em, the unhinted outline covers the integer grid rectangle
+`[0, 31) x [0, 35)`. FreeType's SDF adds 8 pixels on each side, giving a
+47 x 51 bitmap and baseline-to-top-left offset (-8, -43) in downward-Y
+coordinates. The atlas test compares its public rectangle and offset to
+these worked values, and checks that the pixels include distances both
+inside and outside the contour.
+
+At 32 pixels per em with a spread of 4, the same bounds give a 29 x 31
+bitmap and offset (-4, -27). Shared-font rasterization tests use the two
+sizes to check that each atlas receives pixels and offsets for its own size.

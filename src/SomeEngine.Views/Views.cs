@@ -22,11 +22,12 @@ public static class Views
         return entity;
     }
 
-    internal static Entity Create<T>(World world, in T view)
+    internal static Entity Create<T>(World world, in T view, ElementKey key = default)
         where T : struct, IView, IEquatable<T>
     {
         ushort typeId = ViewRegistration<T>.Id;
         Entity entity = world.CreateEntity(new ViewType { Id = typeId });
+        world.Add(entity, key);
         world.AddComponentData(entity, in view);
         if (T.Mode == BuildMode.Rerun)
             world.Add(entity, new ParameterVersion());

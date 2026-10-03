@@ -38,13 +38,27 @@ public static class Scope
 
 ## 首次构建实现（#6）
 
-当前公开入口为 `Scope.World`、`Scope.Entity` 与 `Scope.View<T>(in T)`。
+当前公开入口为 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
+`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)` 与 `Scope.Read<T>(Entity)`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
 返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
+成功构建结束时完成子节点匹配与释放；key 分组与节点身份规则见
+[[architecture/someui/Node-Identity|Node Identity]]。
 
 `Scope` 在取出当前作用域时调用 `Core.Diagnostics.DevelopmentCheck.Require`，
 开发构建中的作用域外调用会报告需要活动构建。shipping 编译按统一开发检查规则移除该调用。
-其余读取、写入、依赖与异步入口按对应任务票继续实现。
+写入、其它依赖来源与异步入口按对应任务票继续实现。
+
+## 读取作用域实现（#9）
+
+作用域栈帧保存当前 World、视图实体、子声明位置、key 分组与读取登记状态。
+`Rerun` 构建开启登记，`Once` 构建使用仅取值状态；嵌套构建返回时同时恢复父视图的登记状态。
+读取依赖的缓冲、去重键与逐帧版本比较由
+[[architecture/someui/Dependencies|Dependencies]] 维护。
+
+`Scope.Read<T>(Entity)` 只约束 `struct`，按 `default(T) is ISparseComponent` 选择存储。
+它返回源组件的 `ref readonly T`，调用方在后续结构修改前消费这份引用。
+首次读取造成依赖缓冲添加时，先完成登记，再取得组件引用，使该次读取使用当前存储位置。
 
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]
