@@ -28,6 +28,10 @@ internal static unsafe partial class HarfBuzz
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial uint GetUnitsPerEm(nint face);
 
+    [LibraryImport("harfbuzz", EntryPoint = "hb_face_get_glyph_count")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial uint GetGlyphCount(nint face);
+
     [LibraryImport("harfbuzz", EntryPoint = "hb_font_create")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial nint CreateFont(nint face);

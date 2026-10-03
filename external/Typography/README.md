@@ -26,3 +26,11 @@ FreeType loads the asset bytes. HarfBuzz reads OpenType data at the font's
 units-per-em scale; pixel scaling happens while the public shape is produced.
 The font is immutable after loading and can be shared by independent shape
 buffers.
+
+`GlyphBitmap.c` adds `SomeEngine_RenderGlyph` to the FreeType library. It
+sets the pixel size and SDF spread, rasterizes an unhinted outline through
+the grayscale and bitmap-SDF renderers, and returns
+the single-channel bitmap with its baseline offset through a small C
+structure. The managed bindings use `LibraryImport`; the FreeType headers
+describe the face layout on each target platform. Each font serializes
+rasterization and retains its native resources while copying the bitmap.
