@@ -78,23 +78,32 @@ public static class Shaper
     {
         float scale = fontSize / font.UnitsPerEm;
         GlyphBuffer buffer = output.NativeBuffer;
-        HarfBuzz.ResetBuffer(buffer);
-        fixed (char* characters = text)
-            HarfBuzz.AddText(buffer, characters, text.Length, (uint)start, length);
-        HarfBuzz.SetDirection(buffer, HarfBuzz.LeftToRight);
-        HarfBuzz.GuessSegmentProperties(buffer);
-        HarfBuzz.Shape(font.Data, buffer, 0, 0);
-        if (HarfBuzz.IsBufferAllocated(buffer) == 0)
-            throw new OutOfMemoryException();
-
-        GlyphInfo* info = HarfBuzz.GetGlyphInfo(buffer, out uint count);
-        GlyphPosition* positions = HarfBuzz.GetGlyphPositions(buffer, out _);
-        for (int index = 0; index < count; index++)
+        bool retained = false;
+        buffer.DangerousAddRef(ref retained);
+        try
         {
-            GlyphPosition position = positions[index];
-            var advance = new Vector2(position.AdvanceX, -position.AdvanceY) * scale;
-            output.Add(new Glyph(font, info[index].Index, (int)info[index].Cluster,
-                new Vector2(position.OffsetX, -position.OffsetY) * scale, advance, 0));
+            HarfBuzz.ResetBuffer(buffer);
+            fixed (char* characters = text)
+                HarfBuzz.AddText(buffer, characters, text.Length, (uint)start, length);
+            HarfBuzz.SetDirection(buffer, HarfBuzz.LeftToRight);
+            HarfBuzz.GuessSegmentProperties(buffer);
+            HarfBuzz.Shape(font.Data, buffer, 0, 0);
+            if (HarfBuzz.IsBufferAllocated(buffer) == 0)
+                throw new OutOfMemoryException();
+
+            GlyphInfo* info = HarfBuzz.GetGlyphInfo(buffer, out uint count);
+            GlyphPosition* positions = HarfBuzz.GetGlyphPositions(buffer, out _);
+            for (int index = 0; index < count; index++)
+            {
+                GlyphPosition position = positions[index];
+                var advance = new Vector2(position.AdvanceX, -position.AdvanceY) * scale;
+                output.Add(new Glyph(font, info[index].Index, (int)info[index].Cluster,
+                    new Vector2(position.OffsetX, -position.OffsetY) * scale, advance, 0));
+            }
+        }
+        finally
+        {
+            if (retained) buffer.DangerousRelease();
         }
     }
 

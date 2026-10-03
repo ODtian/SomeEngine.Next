@@ -1,4 +1,6 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using SomeEngine.Core.Diagnostics;
 
@@ -38,6 +40,8 @@ internal sealed unsafe class FontData : SafeHandle
     private nint library;
     private nint freeTypeFace;
     private byte* bytes;
+    private int byteLength;
+    private readonly object glyphBitmapLock = new();
     internal nint Face { get; private set; }
 
     private FontData() : base(0, true) { }
@@ -48,6 +52,7 @@ internal sealed unsafe class FontData : SafeHandle
         var data = new FontData();
         try
         {
+            data.byteLength = source.Length;
             data.bytes = (byte*)NativeMemory.Alloc((nuint)source.Length);
             if (data.bytes == null && source.Length != 0)
                 throw new OutOfMemoryException();
@@ -78,6 +83,48 @@ internal sealed unsafe class FontData : SafeHandle
             data.ReleaseHandle();
             data.SetHandleAsInvalid();
             throw;
+        }
+    }
+
+    internal GlyphBitmap RenderGlyph(uint glyph, int fontSize, int spread)
+    {
+        bool retained = false;
+        DangerousAddRef(ref retained);
+        try
+        {
+            lock (glyphBitmapLock)
+            {
+                int error = FreeType.RenderGlyph(library, freeTypeFace, glyph, (uint)fontSize, spread, out FreeTypeBitmap bitmap);
+                if (error != 0)
+                    throw new InvalidOperationException($"FreeType glyph rasterization failed: {error}.");
+
+                byte[] pixels = new byte[checked(bitmap.Width * bitmap.Height)];
+                for (int row = 0; row < bitmap.Height; row++)
+                {
+                    byte* source = bitmap.Pixels + row * bitmap.Pitch;
+                    new ReadOnlySpan<byte>(source, bitmap.Width).CopyTo(pixels.AsSpan(row * bitmap.Width, bitmap.Width));
+                }
+                return new GlyphBitmap(bitmap.Width, bitmap.Height, new Vector2(bitmap.Left, -bitmap.Top), pixels);
+            }
+        }
+        finally
+        {
+            if (retained) DangerousRelease();
+        }
+    }
+
+    internal byte[] GetAssetHash()
+    {
+        DevelopmentCheck.Require(!IsClosed, "The font must be alive while saving or loading atlas data.");
+        bool retained = false;
+        DangerousAddRef(ref retained);
+        try
+        {
+            return SHA256.HashData(new ReadOnlySpan<byte>(bytes, byteLength));
+        }
+        finally
+        {
+            if (retained) DangerousRelease();
         }
     }
 

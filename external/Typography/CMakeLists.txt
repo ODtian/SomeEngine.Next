@@ -13,6 +13,7 @@ FetchContent_Declare(freetype
     URL_HASH SHA256=dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(freetype)
+target_sources(freetype PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/GlyphBitmap.c")
 
 set(HB_BUILD_SUBSET OFF CACHE BOOL "" FORCE)
 set(HB_BUILD_UTILS OFF CACHE BOOL "" FORCE)

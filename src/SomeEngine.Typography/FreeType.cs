@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -20,4 +21,21 @@ internal static unsafe partial class FreeType
     [LibraryImport("freetype", EntryPoint = "FT_Done_FreeType")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial int DestroyLibrary(nint library);
+
+    [LibraryImport("freetype", EntryPoint = "SomeEngine_RenderGlyph")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial int RenderGlyph(nint library, nint face, uint glyph, uint fontSize, int spread, out FreeTypeBitmap bitmap);
 }
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct FreeTypeBitmap
+{
+    internal int Width;
+    internal int Height;
+    internal int Pitch;
+    internal int Left;
+    internal int Top;
+    internal byte* Pixels;
+}
+
+internal readonly record struct GlyphBitmap(int Width, int Height, Vector2 Offset, byte[] Pixels);
