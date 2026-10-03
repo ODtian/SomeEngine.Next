@@ -71,5 +71,109 @@ Core 的公开检查验收通过参数求值的可观察效果验证开发报告
 | `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Debug` | 298 通过 |
 | `just ecs-aot win-x64` | 原生发布与执行成功，退出码 0，`viewsVerified: true` 与 `managedReferencesVerified: true` |
 
+## 重建诊断验收（#65）
+
+2026-10-04，实现提交 `58bbfe003b1bd1a186ee755d8ebab80370e9b937`，
+已合入集成分支 `af3bd85e23b57804fd1c15ca85aa6e0fe7d16fb0`。
+Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+
+`RebuildDiagnosticsTests` 通过公开 World、视图、系统帧与 `LastFrame` 验证表格和 sparse 来源、
+参数、存在性、查询成员、多个同时变化的来源、同步子构建、首次构建、失败构建、
+World 隔离、逐帧替换、关闭与再次开启。开发构建通过公开诊断入口验证 World 使用错误。
+类型区段通过公开 EngineTrace 采集与 Trace 文件读取 API 验证，并以真实 Tracy 采集导出复核。
+采集关闭时的配对计时和分配数据见 [[architecture/someui/Performance|Performance]]。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug --no-restore --verbosity minimal` | 129 个公共行为用例通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release --no-restore --verbosity minimal` | 111 个公共行为用例通过 |
+| `dotnet test tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj -c Release --verbosity minimal` | 620 个回归用例通过 |
+| `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Release --no-restore --verbosity minimal` | 298 个回归用例通过 |
+| `dotnet test tests/SomeEngine.Core.Tests/SomeEngine.Core.Tests.csproj -c Debug --no-restore --verbosity minimal` | 59 个回归用例通过 |
+| `dotnet test tests/SomeEngine.Core.Tests/SomeEngine.Core.Tests.csproj -c Release --verbosity minimal` | 59 个回归用例通过 |
+| `dotnet test tests/SomeEngine.Diagnostics.Tests/SomeEngine.Diagnostics.Tests.csproj -c Debug --verbosity minimal` | 20 个回归用例通过 |
+| `just ecs-aot win-x64` | 原生发布与执行成功，退出码 0，`viewsVerified: true` 与 `managedReferencesVerified: true` |
+
+NativeAOT 构建的 IL2026、IL3050 与 IL2070 位于已有 `TraceCapture` 与
+`JobStorageTypeShape` 路径，本次原生执行覆盖合入后的视图、组件字节访问与动画冒烟行为。
+
+## 环境数据验收（#13）
+
+2026-10-04，源码验收提交 `99ada7094a4103680d023b5e1f10b014913586e7`，
+已对齐集成分支 `b259174a8f9f117bc5dedc2c3b69f5d494a248a5`。
+Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+
+[EnvironmentTests](../../../tests/SomeEngine.Views.Tests/EnvironmentTests.cs) 经公开 World、
+视图、`Provide`、`ReadUp` 与系统帧验证表格和 sparse 的最近来源、自身提供、完整默认值、
+祖先提供后的当帧更新、中间提供者、提供者增删、自身及祖先移动、相同值下的来源切换、
+其它后代的内容与写版本保留，以及 `Once` 的首次取值。
+绑定计算与 Memo 的验收验证所属视图移动、来源移除、恢复提供后的显示，
+诊断验收通过公开 `LastFrame` 读取相同主题值下的来源切换记录。
+环境组在 Debug 中包含 31 个用例，Release 中包含 29 个用例。
+
+公开接口与父链移动的验收采用先红后绿流程；联合回归同时覆盖已集成的组件副本提交、
+计算、状态、异常恢复、生成器与重建诊断。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug --no-restore --verbosity minimal` | 246 个公共行为用例通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release --no-restore --verbosity minimal` | 219 个公共行为用例通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Debug --no-build --no-restore --verbosity minimal` | 41 个生成器用例通过 |
+| `dotnet test tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj -c Release --no-restore --verbosity minimal` | 620 个回归用例通过 |
+| `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Release --no-restore --verbosity minimal` | 298 个回归用例通过 |
+
+API 与提交规则见 [[architecture/someui/Composition|Composition]]，
+环境来源与版本检查见 [[architecture/someui/Dependencies|Dependencies]]。
+
+## 布局协议验收（#24）
+
+2026-10-04，代码验收提交 `f0894b6a41b718d667e5215209984426ff0e5a28`，
+已合入集成提交 `bf0a73c511b166ffdc1049f52d5c97ee70cd9442`。
+Windows x64，.NET SDK `10.0.112`。
+
+`LayoutTests` 通过公开视图构建、修饰、World、系统组与 `LayoutRect` 验证
+800×600 画布中的绝对定位、内边距的同帧更新、透明组合、用户稀疏环形布局与
+Absolute 嵌套、最小/最大尺寸、单轴自动尺寸、零尺寸、非均匀内边距和多个画布。
+`LayoutChecks` 由单元测试和 Views NativeAOT 入口共用，验证显式 `IView.Measure`、
+稀疏参数、缩放画布、嵌套坐标及画布尺寸更新。
+开发检查专用用例在 Debug 验证冲突的 Box 尺寸区间。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Debug --no-restore --nologo -v quiet` | 14 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Release --no-restore --nologo -v quiet` | 13 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug --no-restore --nologo -v quiet` | 246 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release --no-restore --nologo -v quiet` | 219 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Debug --no-restore --nologo -v quiet` | 41 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Release --no-restore --nologo -v quiet` | 41 通过 |
+| `dotnet test tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj --nologo -v quiet` | 635 通过 |
+| `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj --nologo -v quiet` | 298 通过 |
+| `just views-aot win-x64` | 原生发布、布局/Compose/视图检查、存档类型编号重映射和下一帧重建全部通过，退出码 0 |
+
+## 内容函数验收（#61）
+
+2026-10-04，实现提交 `c8255fdd`，源码验收提交
+`ac8086644c165fc53b34bf5695e8e6f47fcaedb1`，已对齐集成提交
+`25f49a66061e7f19882f1d0f52303c7abf2bfb95`。
+Windows x64，.NET SDK `10.0.112`。
+
+`ContentFunctionTests` 的 16 个公开编译与行为用例通过生成视图、World、
+`ElementTree`、`State<T>`、`BuildError` 和分析器诊断验收条件与循环调用、
+内容引用变化、static lambda 的子内容保留、泛型跨程序集转交、各行独立依赖、
+同步完成的 BuildTask 内容与错误恢复、自定义委托、命名与可选实参、局部及全局别名。
+info 验收同时覆盖 Compose 与 SwiftUI，内容委托形状由编译诊断验收。
+接口接入、引用刷新、捕获提示、声明错误和全局别名均按先红后绿流程完成。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj --verbosity minimal` | 57 个生成器用例通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj --no-restore --verbosity minimal` | 246 个公共行为用例通过 |
+| `dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained --verbosity minimal` | NativeAOT 原生发布成功 |
+| `tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe` | 原生执行成功，退出码 0；覆盖内容函数、Compose、节点身份、sparse 存储和用户布局 |
+
+原生内容验收从公共树读取多行结果，并验证父参数变化后相等行的保留与变化行的刷新。
+原生验收产物在执行后清理。接口与节点规则见
+[[architecture/someui/Compose-Frontend|Compose Frontend]]。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

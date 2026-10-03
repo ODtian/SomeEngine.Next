@@ -21,7 +21,7 @@ internal static class CompilerChecks
     internal static async Task<bool> Run(string source)
     {
         var (compilation, diagnostics) = Compile(source, true, null);
-        diagnostics = diagnostics.AddRange(await compilation.WithAnalyzers([new ViewAnalyzer(), new BuildWarningSuppressor()])
+        diagnostics = diagnostics.AddRange(await compilation.WithAnalyzers([new ViewAnalyzer(), new ComposeAnalyzer(), new BuildWarningSuppressor()])
             .GetAllDiagnosticsAsync());
         Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
         using var image = new MemoryStream();
@@ -42,7 +42,7 @@ internal static class CompilerChecks
             .Split(Path.PathSeparator).Select(path => MetadataReference.CreateFromFile(path));
         var input = CSharpCompilation.Create("Consumer", [CSharpSyntaxTree.ParseText(source, options, "Consumer.cs")],
             references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
-                nullableContextOptions: NullableContextOptions.Enable));
+                nullableContextOptions: NullableContextOptions.Enable, allowUnsafe: true));
         ISourceGenerator[] generators = additionalGenerator is null ? [new ViewGenerator().AsSourceGenerator()] :
             [new ViewGenerator().AsSourceGenerator(), additionalGenerator];
         GeneratorDriver driver = CSharpGeneratorDriver.Create(generators, parseOptions: options);

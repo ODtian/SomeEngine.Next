@@ -11,6 +11,8 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" PrivateAssets="all" />
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Views.Compose/SomeEngine.Views.Compose.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Views.SwiftUI/SomeEngine.Views.SwiftUI.csproj" />
     <Compile Include="../SomeEngine.Views.Tests/HeadlessFrameDriver.cs" Link="HeadlessFrameDriver.cs" />
     <Reference Include="SomeEngine.Views.Generators"
                HintPath="../../src/SomeEngine.Views.Generators/bin/$(Configuration)/netstandard2.0/SomeEngine.Views.Generators.dll" />

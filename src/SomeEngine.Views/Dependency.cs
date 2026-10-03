@@ -4,7 +4,7 @@ using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views;
 
-/// <summary>A component, presence result, or query membership observed by a view.</summary>
+/// <summary>A component value, presence result, query membership, or environment source observed by a view.</summary>
 public struct Dependency : IBufferElement
 {
     public DependencyKind Kind;
@@ -20,4 +20,5 @@ public enum DependencyKind : byte
     Component,
     Presence,
     Membership,
+    Environment,
 }

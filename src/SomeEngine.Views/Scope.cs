@@ -9,7 +9,7 @@ using SomeEngine.Core.Diagnostics;
 namespace SomeEngine.Views;
 
 /// <summary>The thread's active view build, restored as nested child builds return.</summary>
-public static class Scope
+public static partial class Scope
 {
     [ThreadStatic]
     private static Stack<ScopeData>? s_scopes;
@@ -81,7 +81,7 @@ public static class Scope
         }
 
         if (!current.World.Has<ObjectDependencies>(current.Entity))
-            current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList()));
+            current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList(current.Frame)));
         current.World.Read<ObjectDependencies>(current.Entity).Reads.Add(cell, version);
     }
 
@@ -104,6 +104,31 @@ public static class Scope
             RecordDependency(current, dependency);
         }
         return ref current.World.ReadComponentReference<T>(entity);
+    }
+
+    /// <summary>Reads the nearest environment component on this view or its ElementTree ancestors.</summary>
+    /// <remarks>Returns the default value when the component is absent. Consume stored references before structural changes.</remarks>
+    public static ref readonly T ReadUp<T>() where T : struct
+    {
+        ScopeData current = Current;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.ReadUp requires table or sparse component {typeof(T).Name}.");
+        ushort component = ComponentId<T>.Value;
+        Entity source = EnvironmentLookup.FindSource(current.World, current.Entity, component);
+        if (current.DependenciesEnabled)
+        {
+            var dependency = new Dependency
+            {
+                Entity = source,
+                Component = component,
+                Version = source == Entity.Null ? 0 : current.World.ComponentDataWriteVersion<T>(source),
+                Kind = DependencyKind.Environment,
+            };
+            RecordDependency(current, dependency);
+        }
+        if (source == Entity.Null)
+            return ref EnvironmentDefault<T>.Value;
+        return ref current.World.ReadComponentReference<T>(source);
     }
 
     /// <summary>Returns a component copy that is compared and committed when the build completes.</summary>
@@ -206,6 +231,11 @@ public static class Scope
         });
     }
 
+    private static class EnvironmentDefault<T> where T : struct
+    {
+        internal static readonly T Value;
+    }
+
     /// <summary>Declares a child whose call-site key is supplied by the view generator.</summary>
     /// <remarks>
     /// Equal parameters overwrite the stored value while preserving its write version.
@@ -249,14 +279,14 @@ public static class Scope
             }
             current.World.ReplaceComponentData(existing, in view);
             if (T.Mode == BuildMode.Rerun)
-                ViewRegistration<T>.Build(current.World, existing, current.Frame);
+                ViewRegistration<T>.Build(current.World, existing, current.Frame, firstBuild: false);
             return existing;
         }
         Entity child = Views.Create(current.World, in view, new ElementKey { Key = key, Occurrence = occurrence });
         current.Changes.RememberAddedChild(child);
         current.DeclaredChildren.Add(child);
         Hierarchy<ElementTree>.SetParent(current.World, child, current.Parent);
-        ViewRegistration<T>.Build(current.World, child, current.Frame);
+        ViewRegistration<T>.Build(current.World, child, current.Frame, firstBuild: true);
         return child;
     }
 
@@ -302,7 +332,7 @@ public static class Scope
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
         if (world.Has<ObjectDependencies>(entity))
-            world.Read<ObjectDependencies>(entity).Reads.Clear();
+            world.Read<ObjectDependencies>(entity).Reads.Clear(frame);
         ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
         var current = new ScopeData(world, entity, entity, frame, declaresChildren, dependenciesEnabled,
             parent?.World == world ? parent.Changes : null);
@@ -468,6 +498,7 @@ public static class Scope
         internal bool OutermostBuild { get; }
         internal bool Completed;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
+        internal Dictionary<ulong, int>? RememberOccurrences;
         internal ulong? KeyPrefix;
 #if DEBUG
         internal int BuildNumber;
