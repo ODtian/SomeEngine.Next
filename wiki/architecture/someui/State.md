@@ -70,4 +70,9 @@ NativeAOT 沿现有 `just ecs-aot win-x64` 发布与执行入口，
 通用状态、自定义版本单元、两种回调、跨线程更新与托管回收后的显示结果。
 
 ## Relations
+
+Compose 的 `MutableStateOf<T>(value)` 直接创建本页的 `State<T>`。
+局部值保存与状态提升的接缝、公开行为和 NativeAOT 验收由
+[[architecture/someui/Compose-Frontend|Compose Frontend]] 维护（#59）。
+
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Frontends|Frontends]]
