@@ -289,6 +289,7 @@ public sealed partial class ClusterPipelineSystem
                 _ = pass.Bind(
                     graph.CreateTextureSrv(
                         phaseOne ? frame.PreviousHiZ : frame.CurrentHiZ,
+                        format: Format.R32Float,
                         dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                         label: "Cluster tessellation HiZ"),
                     sync);
@@ -1227,20 +1228,20 @@ public sealed partial class ClusterPipelineSystem
         Update(ref edit, GraphData.Resources.RasterSlots, raster.BinIndices, raster.ChangedOffsets);
         Update(ref edit, GraphData.Resources.ShadeSlots, shade.BinIndices, shade.ChangedOffsets);
 
-        void Update(ref RenderGraphEdit graph, GraphBufferId buffer, ClusterUploadData values,
+        void Update(ref RenderGraphEdit graph, GraphBufferId buffer, ClusterBytes values,
             IReadOnlyList<int> addresses)
         {
             BufferRange[] changes = addresses.Select(address => new BufferRange(
                 checked((ulong)address * sizeof(uint)), sizeof(uint))).ToArray();
-            _uploads!.SetChangedValue(ref graph, buffer,
+            UpdateBufferData(ref graph, buffer,
                 values, changes);
         }
     }
 
     private void UpdateScalarBuffers(ref RenderGraphEdit edit, ClusterMaterialScalars scalars)
     {
-        _uploads!.SetChangedValue(ref edit, GraphData.ScalarBytes, scalars.Bytes, scalars.ByteChanges);
-        _uploads.SetChangedValue(ref edit, GraphData.ScalarOffsets,
+        UpdateBufferData(ref edit, GraphData.ScalarBytes, scalars.Bytes, scalars.ByteChanges);
+        UpdateBufferData(ref edit, GraphData.ScalarOffsets,
             scalars.Offsets, scalars.OffsetChanges);
     }
 

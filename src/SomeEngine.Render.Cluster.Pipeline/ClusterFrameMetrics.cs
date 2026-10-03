@@ -20,4 +20,7 @@ public readonly record struct ClusterFrameMetrics(
     uint CulledTessellationPatches,
     uint QualityLimitedTessellationPatches,
     uint SoftwareRasterDebugRecords,
-    uint VisibilityProbePixels);
+    uint VisibilityProbePixels)
+{
+    public ulong ResidencyEpoch { get; init; }
+}

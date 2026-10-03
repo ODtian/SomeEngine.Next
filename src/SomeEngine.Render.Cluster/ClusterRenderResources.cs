@@ -42,8 +42,6 @@ internal readonly ref struct ClusterRenderBinding
         ClusterEpochId readbackEpoch,
         RenderFrameUseLease frameUse)
     {
-        PageHeap = residency.PageHeap;
-        Bvh = residency.Bvh;
         PageFaultCapacity = residency.PageFaultCapacity;
         ResidentPageRanges = residency.ResidentPageRanges;
         BvhRange = residency.BvhRange;
@@ -59,10 +57,6 @@ internal readonly ref struct ClusterRenderBinding
     }
 
     private readonly RenderFrameUseLease _frameUse;
-
-    internal Buffer PageHeap { get; }
-
-    internal Buffer Bvh { get; }
 
     internal int PageFaultCapacity { get; }
 
@@ -120,8 +114,8 @@ public sealed class ClusterRenderResources : IDisposable
     private bool _streamStopped;
     private bool _residencyDestroyed;
     private bool _instanceBorrowerReleased;
-    private ulong _lastFaultFeedbackFrame;
-    private ulong _lastUsageFeedbackFrame;
+    private ulong _lastFaultFeedbackSequence;
+    private ulong _lastUsageFeedbackSequence;
 
     public ClusterRenderResources(
         IGraphicsBackend backend,
@@ -384,14 +378,14 @@ public sealed class ClusterRenderResources : IDisposable
         {
             lock (_feedbackGate)
             {
-                ValidateReadbackTicket(ticket, _lastFaultFeedbackFrame);
+                ValidateReadbackTicket(ticket, _lastFaultFeedbackSequence);
                 foreach (byte[] payload in payloads)
                 {
                     if (payload is null)
                         throw new ArgumentException("Cluster page-fault feedback contains a null payload.", nameof(payloads));
                     _residency.IngestFaults(payload);
                 }
-                _lastFaultFeedbackFrame = ticket.SubmittedFrame;
+                _lastFaultFeedbackSequence = ticket.FeedbackSequence;
             }
         }
         finally
@@ -422,9 +416,9 @@ public sealed class ClusterRenderResources : IDisposable
         {
             lock (_feedbackGate)
             {
-                ValidateReadbackTicket(ticket, _lastUsageFeedbackFrame);
+                ValidateReadbackTicket(ticket, _lastUsageFeedbackSequence);
                 _residency.ReportLeafUsage(leafNodeIndices);
-                _lastUsageFeedbackFrame = ticket.SubmittedFrame;
+                _lastUsageFeedbackSequence = ticket.FeedbackSequence;
             }
         }
         finally
@@ -693,7 +687,7 @@ public sealed class ClusterRenderResources : IDisposable
 
     private void ValidateReadbackTicket(
         ClusterReadbackTicket ticket,
-        ulong lastSubmittedFrame)
+        ulong lastFeedbackSequence)
     {
         if (!ticket.IsValid)
             throw new ArgumentException("The Cluster readback ticket is invalid.", nameof(ticket));
@@ -703,11 +697,11 @@ public sealed class ClusterRenderResources : IDisposable
                 $"The readback belongs to Cluster epoch {ticket.EpochId}, not {_epoch}.",
                 nameof(ticket));
         }
-        if (ticket.SubmittedFrame <= lastSubmittedFrame)
+        if (ticket.FeedbackSequence <= lastFeedbackSequence)
         {
             throw new ArgumentException(
-                $"Cluster feedback frame {ticket.SubmittedFrame} is not newer than " +
-                $"the consumed frame {lastSubmittedFrame}.",
+                $"Cluster feedback sequence {ticket.FeedbackSequence} is not newer than " +
+                $"the consumed sequence {lastFeedbackSequence}.",
                 nameof(ticket));
         }
     }

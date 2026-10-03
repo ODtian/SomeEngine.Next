@@ -141,10 +141,12 @@ public ref partial struct RenderGraphFrame
         State.Upload(byteCount, usages, data, write, label);
 
     /// <summary>
-    /// Writes a declared upload buffer for this frame. Each in-flight frame keeps its own
-    /// mapped buffer, so updating bytes does not replace the buffer used by its commands.
-    /// Data must cover the declaration; the GPU may only read this buffer.
+    /// Returns this frame's mapped bytes for a declared upload buffer. Fill the declaration
+    /// before execution; its storage remains with the frame until GPU work completes.
     /// </summary>
+    public Span<byte> GetBufferDataWriteSpan(GraphBufferId buffer) => State.GetBufferDataWriteSpan(buffer);
+
+    /// <summary>Copies bytes covering a declared upload buffer into this frame's mapped storage.</summary>
     public void SetBufferData(GraphBufferId buffer, scoped ReadOnlySpan<byte> data) =>
         State.SetBufferData(buffer, data);
 

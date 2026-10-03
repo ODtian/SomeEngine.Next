@@ -11,13 +11,23 @@ public sealed partial class ClusterPipelineSystem
     private ClusterGraphData? _editingGraphData;
     private ClusterGraphData GraphData => _editingGraphData ?? _graphData;
 
-    private enum FeedbackKind { PageFaults, Candidates, FrameMetrics }
+    private enum FeedbackKind { Candidates, FrameMetrics }
 
     // These identities address frame command data and completion delivery. Region maps hold
     // business keys; the RenderGraph tree supplies stage order and subtree membership.
     private sealed class ClusterGraphData
     {
-        internal GraphRegionId ResidencyUploads;
+        internal ImmutableDictionary<GraphBufferId, (BufferDesc Description, GraphPassId UploadPass)> BufferDescriptions =
+            ImmutableDictionary<GraphBufferId, (BufferDesc, GraphPassId)>.Empty;
+        internal ImmutableDictionary<GraphBufferId, ImmutableList<BufferWrite>> BufferWrites = ImmutableDictionary<GraphBufferId, ImmutableList<BufferWrite>>.Empty;
+        internal ImmutableDictionary<GraphBufferInput, ShaderParameters> Parameters = ImmutableDictionary<GraphBufferInput, ShaderParameters>.Empty;
+        internal GraphBufferId ShaderParameterBytes;
+        internal int ParameterByteCount;
+        internal ImmutableDictionary<int, ImmutableStack<int>> ParameterFreeOffsets = ImmutableDictionary<int, ImmutableStack<int>>.Empty;
+        internal GraphReadbackId PageFaultReadback;
+        internal GraphReadbackId FrameMetricsReadback;
+        internal GraphPassId PageUpload;
+        internal GraphPassId BvhUpload;
         internal GraphRegionId PrimaryGeometry;
         internal GraphRegionId HistoryInitialization;
         internal GraphRegionId SceneInitialization;
@@ -68,23 +78,15 @@ public sealed partial class ClusterPipelineSystem
 
     private void EditGraph(GraphEditWork update)
     {
-        ClusterFrameUploads uploads = _uploads!;
         RenderGraphEdit edit = _graph.BeginEdit();
         _editingGraphData = _graphData.Copy();
         try
         {
-            uploads.BeginDeclarations();
             update(ref edit);
             edit.Commit();
             AcceptMaterialTextures(_editingGraphData.MaterialTextures);
             _graphData = _editingGraphData;
         }
-        catch
-        {
-            uploads.CancelDeclarations();
-            throw;
-        }
         finally { edit.Dispose(); _editingGraphData = null; }
-        uploads.CompleteDeclarations(_graph);
     }
 }

@@ -101,6 +101,7 @@ public sealed class ClusterGeometryCapabilities
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
     private BufferRangeSet _lastResidentPageReads = BufferRangeSet.Empty;
     private BufferRange _bvhRange;
+    private BufferRangeSet _bvhReadRanges = BufferRangeSet.Empty;
 
     internal ClusterGeometryCapabilities(
         GraphBufferId packedViews,
@@ -178,6 +179,7 @@ public sealed class ClusterGeometryCapabilities
     internal BufferRangeSet ResidentPageReads => _residentPageReads;
 
     internal BufferRange BvhRange => _bvhRange;
+    internal BufferRangeSet BvhReadRanges => _bvhReadRanges;
 
     internal void SetFrameRanges(BufferRange[] pageRanges, in BufferRange bvhRange)
     {
@@ -188,6 +190,9 @@ public sealed class ClusterGeometryCapabilities
             _lastResidentPageReads = new BufferRangeSet(pageRanges);
         }
         _residentPageReads = _lastResidentPageReads;
+        if (bvhRange.Size == 0) _bvhReadRanges = BufferRangeSet.Empty;
+        else if (_bvhReadRanges.Count == 0 || _bvhReadRanges.Ranges[0] != bvhRange)
+            _bvhReadRanges = new BufferRangeSet([bvhRange]);
         _bvhRange = bvhRange;
     }
 

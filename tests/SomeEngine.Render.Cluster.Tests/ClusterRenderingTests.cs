@@ -24,7 +24,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
-public sealed class ClusterRenderingTests
+public sealed class ClusterRenderingTests(Xunit.Abstractions.ITestOutputHelper testOutput)
 {
     [Theory]
     [InlineData(false)]
@@ -81,6 +81,7 @@ public sealed class ClusterRenderingTests
         await RenderGeometryChanges(32, 32, true, true, vulkan, true, true, false,
             cameraMovement: true, cameraImages: withHistory);
         Assert.Equal(withoutHistory.Count, withHistory.Count);
+        testOutput.WriteLine($"Camera recovery: comparing {withHistory.Count - 24} moving-camera frames after {24} occluded frames.");
         for (int frame = 24; frame < withHistory.Count; frame++)
             Assert.True(withHistory[frame].AsSpan().SequenceEqual(withoutHistory[frame]),
                 $"Camera frame {frame} must match rendering without previous-frame occlusion.");
@@ -411,6 +412,15 @@ public sealed class ClusterRenderingTests
                     prepare.ApplyExtraction(update);
                     await cluster.PrepareMeshesAsync();
                     streaming.Pump();
+                    if (streamedGeometry)
+                    {
+                        ClusterStreamingFeedbackStatistics feedbackState = feedback.CaptureStatistics();
+                        Assert.Equal(feedbackState.ReceivedFrames, feedbackState.ConsumedFrames);
+                        Assert.Equal(feedbackState.ReportedPageFaults, feedbackState.ConsumedPageFaults);
+                        Assert.True(feedbackState.ConsumedFrames <= (ulong)renderIndex,
+                            "Streaming consumes completed feedback from an earlier frame.");
+                        if (feedbackState.ConsumedFrames != 0) Assert.True(feedbackState.LastEpoch > 0);
+                    }
                     prepare.Update(update, nextFrame);
                     update.Commit();
                 }
@@ -433,7 +443,6 @@ public sealed class ClusterRenderingTests
                 using (RenderGraphFrame commands = graph.BeginFrame(nextFrame))
                 {
                     frameSystems.Update(frame, commands);
-                    commands.ObserveExecution(streaming);
                     commands.SetTextureInput(outputInput, shadeColor ? outputs.MaterialColor : outputs.Visibility);
                     int submitted = commands.Execute(completions);
                     QueueCompletion[] accepted = completions.Where(value => value != default).ToArray();
@@ -447,6 +456,12 @@ public sealed class ClusterRenderingTests
                             $"Frame {renderIndex}, iteration {iteration}, queue {completion.Queue.Type} " +
                             $"finished with {status}.");
                     }
+                }
+                if (streamedGeometry)
+                {
+                    ClusterStreamingFeedbackStatistics feedbackState = feedback.CaptureStatistics();
+                    Assert.True(feedbackState.ReceivedFrames <= (ulong)renderIndex,
+                        "The producing frame remains GPU work until a later collection boundary.");
                 }
                 if (textureUpdate is not null)
                 {
@@ -557,6 +572,13 @@ public sealed class ClusterRenderingTests
         }
         finally
         {
+            if (streamedGeometry)
+            {
+                ClusterStreamingFeedbackStatistics feedbackState = feedback.CaptureStatistics();
+                Assert.True(feedbackState.ConsumedPageFaults > 0);
+                Assert.True(cluster.CaptureDiagnostics().Residency.ResidentPages > 0);
+                testOutput.WriteLine($"Feedback: received={feedbackState.ReceivedFrames}, consumed={feedbackState.ConsumedFrames}, faults={feedbackState.ConsumedPageFaults}, epoch={feedbackState.LastEpoch}, residentPages={cluster.CaptureDiagnostics().Residency.ResidentPages}.");
+            }
             graph.Dispose();
             frameSystems.Dispose();
             Assert.True(coordinator.TryBeginPrepare(out var shutdown));

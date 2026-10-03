@@ -168,7 +168,6 @@ public sealed class ClusterMaterialTextureTests
                 using (RenderGraphFrame commands = graph.BeginFrame(nextFrame))
                 {
                     frameSystems.Update(frame, commands);
-                    commands.ObserveExecution(streaming);
                     commands.SetTextureInput(output, outputs.MaterialColor);
                     commands.Execute(completions);
                     QueueCompletion[] used = completions.Where(static completion => completion != default).ToArray();

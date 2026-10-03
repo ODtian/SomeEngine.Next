@@ -30,7 +30,7 @@ public sealed partial class ClusterPipelineSystem
         foreach (ShadeGroup group in GraphData.ShadeGroups.Values)
             if (!desired.TryGetValue(group.Stage.BinIndex, out ShadeGroup? next) ||
                 !ShadeGroupComparer.Instance.Equals(group, next))
-                _uploads!.RemoveUniform(group.Uniforms);
+                RemoveParameters(group.Uniforms);
         GraphRegionMap<uint, ShadeGroup> groups = GraphData.ShadeGroups.Reconcile(ref graph, desired,
             (ref RenderGraphEdit edit, GraphRegionId region, uint bin, ShadeGroup value) =>
             {
@@ -52,7 +52,7 @@ public sealed partial class ClusterPipelineSystem
             foreach (ShadeGroup group in groups.Values)
             {
                 value[0] = ShadeUniforms(group.Stage.BinIndex, stages);
-                _uploads!.SetUniformValue(ref graph, group.Uniforms, MemoryMarshal.AsBytes(value));
+                UpdateParameters(ref graph, group.Uniforms, MemoryMarshal.AsBytes(value));
             }
         }
         return groups;
@@ -90,6 +90,6 @@ public sealed partial class ClusterPipelineSystem
             SlotCapacity = GraphData.Resources.SlotCapacity,
             BinItemCapacity = CalculateShadeBinItemCapacity(GraphData.Resources),
         };
-        _uploads!.SetUniformValue(ref graph, GraphData.ShadeBinUniforms, MemoryMarshal.AsBytes(value));
+        UpdateParameters(ref graph, GraphData.ShadeBinUniforms, MemoryMarshal.AsBytes(value));
     }
 }

@@ -25,8 +25,9 @@ GameWorld 下一轮 CPU 工作可以与已经交付给渲染侧的上一轮 CPU/
 ImGui 顶点、索引与变换常量通过 `RenderGraphFrame.Upload` 写入当帧映射空间，图负责
 这些字节的在途生命周期。详见 [[architecture/render-graph/Frame-Uploads]]。
 
-当前迁移按调用方分批推进：实例和 ImGui 已使用图的帧资源；Cluster 帧资源迁移接入后，
-应用开帧收拢到 `TryOpenNextFrame`，现有协调器使用方统一迁入 `RenderDataLock`。
+实例、ImGui 与 Cluster 使用图的帧资源。Cluster 的上传、回读和 HiZ 生命周期由图管理，
+应用通过 `TryOpenNextFrame` 选择并等待图帧资源。现有协调器的 CPU 访问使用方继续统一迁入
+`RenderDataLock`。
 
 ## Relations
 [[Extraction]] · [[Delayed-Feedback]] · [[RenderDevice]]

@@ -94,6 +94,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private readonly VirtualShadowFeature _shadows;
     private readonly ClusterPipelineSystem _pipeline;
     private readonly ClusterStreamingFeedbackConsumer _streaming;
+    private readonly ClusterStreamingFeedbackChannel _feedback;
     private readonly TemporalFeature _temporal;
     private readonly Buffer _readback;
     private readonly Buffer _depthReadback;
@@ -169,6 +170,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         var resources = new GraphResourceGroup();
         resources.Add(_lighting);
         var feedback = new ClusterStreamingFeedbackChannel();
+        _feedback = feedback;
         _streaming = new ClusterStreamingFeedbackConsumer(_cluster, feedback);
         _pipeline = new ClusterPipelineSystem(backend, device, _renderDevice, _cluster, instanceSystem,
             ClusterRenderFeature.InstanceLayout, assignments, clusterShaders, _graph,
@@ -369,6 +371,10 @@ internal sealed class FrameStageScene : IAsyncDisposable
         return material;
     }
 
+    internal string[] PassLabels { get; private set; } = [];
+    internal ClusterStreamingFeedbackStatistics FeedbackStatistics => _feedback.CaptureStatistics();
+    internal void SetUnlitTint(Vector4 color) => Assert.IsType<UnlitMaterial>(_unlit).BaseColorTint = color;
+
     internal IReadOnlyList<RenderGraphStatistics> ColorStatistics => _colorStatistics;
 
     internal void AddIndependentWork(int count)
@@ -444,10 +450,13 @@ internal sealed class FrameStageScene : IAsyncDisposable
         Assert.True(_coordinator.TryBeginFrame(out var frame));
         using (frame)
         using (RenderGraphFrame commands = _graph.BeginFrame(nextFrame, new RenderGraphFrameOptions(
-            Diagnostics: (in RenderGraphDiagnosticsView diagnostics) => _statistics = diagnostics.Statistics)))
+            Diagnostics: (in RenderGraphDiagnosticsView diagnostics) =>
+            {
+                _statistics = diagnostics.Statistics;
+                PassLabels = diagnostics.Passes.ToArray().Select(pass => pass.Label).ToArray();
+            })))
         {
             _frames.Update(frame, commands);
-            commands.ObserveExecution(_streaming);
             var temporalFrame = commands;
             _temporal.Record(ref temporalFrame, outputs.MaterialColor, outputs.Depth,
                 new MotionFeatureOutput(outputs.MotionVectors, Width, Height, 1),

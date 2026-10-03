@@ -49,10 +49,10 @@ public sealed partial class ClusterPipelineSystem
             new ClusterDispatchParameters(new DispatchArguments(1, 1, 1)), 0, ClusterDispatchParameters.Record, region: GraphData.SceneBoundsRegion);
         GraphData.SceneBounds = new ClusterLayerDispatch(bounds, 1, 1);
         GraphData.SceneInstances = graph.CreateBufferInput(BufferUsages.ShaderRead);
-        GraphData.SceneInstanceData = _uploads!.Declare(ref graph,
-            ClusterUploadData.Zero(_options.UseInstanceGroups ? checked((int)Math.Max(capacity, 1u) * sizeof(uint)) : sizeof(uint)),
+        GraphData.SceneInstanceData = CreateBufferData(ref graph,
+            ClusterBytes.Zero(_options.UseInstanceGroups ? checked((int)Math.Max(capacity, 1u) * sizeof(uint)) : sizeof(uint)),
             BufferUsages.ShaderRead, "Cluster spatial instance indices");
-        GraphData.SceneUniforms = _uploads.DeclareUniform(ref graph, new byte[16], "Cluster scene bounds parameters");
+        GraphData.SceneUniforms = CreateParameters(ref graph, new byte[16], "Cluster scene bounds parameters");
         PassDefinition pass = graph.GetPass(GraphData.SceneBounds.Pass);
         _ = pass.Bind(GraphData.SceneUniforms, PipelineSync.ComputeShading);
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
@@ -92,10 +92,7 @@ public sealed partial class ClusterPipelineSystem
                 _sceneInstances[_sceneRemap[index]] = index;
             if (count != 0)
             {
-                byte[] indices = MemoryMarshal.AsBytes(_sceneInstances.AsSpan()).ToArray();
-                int capacity = checked(_resources.InstanceResources.Options.RowCapacity * sizeof(uint));
-                ClusterUploadData value = ClusterUploadData.Zero(capacity).WithChanges(capacity, [(0, indices)]);
-                _uploads!.SetChangedValue(GraphData.SceneInstanceData, value, [new BufferRange(0, checked((ulong)indices.Length))]);
+                graph.WriteBuffer(GraphData.SceneInstanceData, 0, MemoryMarshal.AsBytes(_sceneInstances.AsSpan()));
             }
         }
         graph.SetBufferInput(GraphData.SceneInstances, new GraphBufferSlice(GraphData.SceneInstanceData,

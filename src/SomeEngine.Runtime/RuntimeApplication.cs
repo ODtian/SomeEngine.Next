@@ -694,36 +694,6 @@ internal static class RuntimeApplication
             {
                 long frameStarted = Stopwatch.GetTimestamp();
                 using var frameTrace = EngineTrace.BeginFrame(++traceFrameIndex);
-                bool readbackAdmitted = pipeline.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] readbackRetirementFences);
-                long admissionWaitStarted = Environment.TickCount64;
-                while (!readbackAdmitted)
-                {
-                    TimeSpan remaining = FrameTimeout -
-                        TimeSpan.FromMilliseconds(
-                            Environment.TickCount64 - admissionWaitStarted);
-                    if (remaining <= TimeSpan.Zero)
-                    {
-                        throw new TimeoutException(
-                            "Frame-resource admission did not become available before the runtime timeout.");
-                    }
-                    TimeSpan waitSlice = remaining > TimeSpan.FromMilliseconds(2)
-                        ? TimeSpan.FromMilliseconds(2)
-                        : remaining;
-
-                    QueueCompletion[] retirementFences = readbackRetirementFences;
-                    _ = WaitForAll(backend, retirementFences, waitSlice);
-
-                    _ = window.PumpMessages();
-                    if (!readbackAdmitted)
-                    {
-                        readbackAdmitted = pipeline.TryAdmitFrameResources(
-                            out _,
-                            out readbackRetirementFences);
-                    }
-
-                }
                 backend.CollectCompleted(device);
                 coordinator.AdmitFrameResources();
                 // Shared asset content can change only after the Game World extraction reader exits.
@@ -1195,7 +1165,6 @@ internal static class RuntimeApplication
                     presentation.Bind(ref graphFrame, image, graphicsQueue);
                     using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
                         systems.Update(frame, graphFrame);
-                    graphFrame.ObserveExecution(streamingConsumer);
                     var motion = new MotionFeatureOutput(
                         clusterOutputs.MotionVectors,
                         clusterOutputs.Width,

@@ -269,7 +269,6 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
                 using (RenderGraphFrame commands = graph.BeginFrame(nextFrame))
                 {
                     frames.Update(frame, commands);
-                    commands.ObserveExecution(streaming);
                     commands.SetTextureInput(colorInput, outputs.MaterialColor);
                     commands.Execute(completions);
                     QueueCompletion[] accepted = completions.Where(value => value != default).ToArray();

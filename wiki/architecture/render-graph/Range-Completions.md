@@ -1,7 +1,7 @@
 # Range Completions
 
 ## Definition
-给定 Buffer 与 BufferRange，可以取得当前已经提交且仍可能访问该范围的 queue completions；每条 queue 至多保留一个需要等待的最大值。
+给定 Buffer 或持久 GraphBufferId 与 BufferRange，可以取得当前已经提交且仍可能访问该范围的 queue completions；每条 queue 至多保留一个需要等待的最大值。
 
 ## Invariants
 - 不把不同 queue 的整数 completion 值互相比较。
@@ -20,7 +20,13 @@ Cluster page range 复用、Texture backing 回收、descriptor 回收和其它�
 需要尽早消费结果的 pass 可设置 `PassOptions.SubmitAfter`，在该 pass 后结束队列批次。
 持久图通过编辑接口或当帧 `SetPassOptions` 显式修改该边界，并增量维护受影响的批次。
 `OnRenderGraphFrameFinished` 汇总当帧已经接受的 GPU 使用，供资源复用及回收等待使用。
-几何页流送据此在复制完成后读取缺页数据，帧资源依据完整使用完成点复用。
+图持久回读依据完整帧资源完成点交付缺页数据；几何页回收通过持久缓冲身份查询
+各驻留范围的已提交使用。详见 [[architecture/rendering/Delayed-Feedback]]。
 
 ## Relations
 [[architecture/RHI/Queue/Completion-value-domain|Completion Value Domain]] · [[architecture/cluster-streaming/Page-Eviction]]
+
+## Behavior evidence
+
+`FrameBufferRangesTests.PersistentBufferIdentityReportsOnlyItsUsedRanges` 通过 WARP、持久缓冲
+身份与公开范围完成查询，验证写入范围获得实际提交完成点，其它范围保持空结果。
