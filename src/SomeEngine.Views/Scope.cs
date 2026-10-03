@@ -3,6 +3,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Queries;
 using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Views;
@@ -14,7 +15,7 @@ public static class Scope
     private static Stack<ScopeData>? s_scopes;
 #if DEBUG
     [ThreadStatic]
-    private static HashSet<Entity>? s_childDeclarations;
+    private static Dictionary<Entity, ScopeData>? s_childDeclarations;
 #endif
 
     /// <summary>The World containing the view being built.</summary>
@@ -56,21 +57,64 @@ public static class Scope
         {
             var dependency = new Dependency
             {
+                Kind = DependencyKind.Component,
                 Entity = entity,
                 Component = ComponentId<T>.Value,
                 Version = current.World.ComponentDataWriteVersion<T>(entity),
             };
-            if (!current.World.HasBuffer<Dependency>(current.Entity))
-                current.World.AddBuffer<Dependency>(current.Entity);
-            current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
-            {
-                foreach (Dependency existing in buffer.ReadSpan())
-                    if (existing.Entity == read.Entity && existing.Component == read.Component)
-                        return;
-                buffer.Add(read);
-            });
+            RecordDependency(current, dependency);
         }
         return ref current.World.ReadComponentReference<T>(entity);
+    }
+
+    /// <summary>Checks component presence and records the result as a dependency of a Rerun build.</summary>
+    public static bool Has<T>(Entity entity) where T : struct
+    {
+        ScopeData current = Current;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent or ITag or ISharedComponent,
+            $"Scope.Has requires a component or tag type, received {typeof(T).Name}.");
+        bool present = current.World.HasComponentData<T>(entity);
+        if (current.DependenciesEnabled)
+            RecordDependency(current, new Dependency
+            {
+                Kind = DependencyKind.Presence,
+                Entity = entity,
+                Component = ComponentId<T>.Value,
+                Version = present ? 1u : 0u,
+            });
+        return present;
+    }
+
+    /// <summary>Enumerates query entities and records membership as a dependency of a Rerun build.</summary>
+    /// <remarks>Each call captures the current structural membership in query order.</remarks>
+    public static QueryRows Each(QueryHandle query)
+    {
+        ScopeData current = Current;
+        ReadOnlySpan<Entity> entities = current.World.ReadQueryEntities(query, out uint version);
+        if (current.DependenciesEnabled)
+            RecordDependency(current, new Dependency
+            {
+                Kind = DependencyKind.Membership,
+                Query = query,
+                Version = version,
+            });
+        return new QueryRows(entities);
+    }
+
+    private static void RecordDependency(ScopeData current, Dependency dependency)
+    {
+        if (!current.World.HasBuffer<Dependency>(current.Entity))
+            current.World.AddBuffer<Dependency>(current.Entity);
+        current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
+        {
+            foreach (Dependency existing in buffer.ReadSpan())
+                if (existing.Kind == read.Kind &&
+                    (read.Kind == DependencyKind.Membership
+                        ? existing.Query.Equals(read.Query)
+                        : existing.Entity == read.Entity && existing.Component == read.Component))
+                    return;
+            buffer.Add(read);
+        });
     }
 
     /// <summary>Declares a child with key zero, or the surrounding Key scope's key.</summary>
@@ -137,6 +181,18 @@ public static class Scope
 
     internal static void RestoreKey(ulong? key) => Current.KeyPrefix = key;
 
+    /// <summary>Suspends dependency tracking until the returned scope is disposed.</summary>
+    /// <remarks>Nested view builds use their own build mode's dependency tracking.</remarks>
+    public static UntrackScope Untrack()
+    {
+        ScopeData current = Current;
+        var scope = new UntrackScope(current.DependenciesEnabled);
+        current.DependenciesEnabled = false;
+        return scope;
+    }
+
+    internal static void RestoreDependencyTracking(bool enabled) => Current.DependenciesEnabled = enabled;
+
     private static ulong CombineKeys(ulong prefix, ulong key) =>
         unchecked((prefix + 0x9E3779B97F4A7C15UL) * 0xBF58476D1CE4E5B9UL ^ key);
 
@@ -156,9 +212,12 @@ public static class Scope
         if (world.Has<ObjectDependencies>(entity))
             world.Read<ObjectDependencies>(entity).Reads.Clear();
         var current = new ScopeData(world, entity, entity, declaresChildren, dependenciesEnabled);
+#if DEBUG
+        current.Computation = current;
+#endif
         if (declaresChildren)
         {
-            CheckChildDeclaration(entity);
+            CheckChildDeclaration(current);
             CaptureSiblingCounts(current);
         }
         (s_scopes ??= new Stack<ScopeData>()).Push(current);
@@ -169,9 +228,12 @@ public static class Scope
     {
         ScopeData build = Current;
         ViewTypes.CheckContent(build.World, entity);
-        CheckChildDeclaration(entity);
         var current = new ScopeData(build.World, build.Entity, entity,
             declaresChildren: true, dependenciesEnabled: build.DependenciesEnabled);
+#if DEBUG
+        current.Computation = build.Computation;
+#endif
+        CheckChildDeclaration(current);
         CaptureSiblingCounts(current);
         s_scopes!.Push(current);
         return new ParentScope(entity, default);
@@ -181,17 +243,20 @@ public static class Scope
     internal static RebuildScope EnterRebuild()
     {
         var scope = new RebuildScope(s_childDeclarations);
-        s_childDeclarations = new HashSet<Entity>();
+        s_childDeclarations = new Dictionary<Entity, ScopeData>();
         return scope;
     }
 #endif
 
     [Conditional("DEBUG")]
-    private static void CheckChildDeclaration(Entity entity)
+    private static void CheckChildDeclaration(ScopeData current)
     {
 #if DEBUG
-        DevelopmentCheck.Require(s_childDeclarations!.Add(entity),
-            $"The children of {entity} were declared by two scopes in the same rebuild.");
+        ScopeData computation = current.Computation;
+        if (s_childDeclarations!.TryGetValue(current.Parent, out ScopeData? previous))
+            DevelopmentCheck.Require(previous.Entity == computation.Entity && !ReferenceEquals(previous, computation),
+                $"The children of {current.Parent} were declared by two scopes in the same rebuild.");
+        s_childDeclarations[current.Parent] = computation;
 #endif
     }
 
@@ -256,11 +321,12 @@ public static class Scope
         internal Entity Entity { get; } = entity;
         internal Entity Parent { get; } = parent;
         internal bool DeclaresChildren { get; } = declaresChildren;
-        internal bool DependenciesEnabled { get; } = dependenciesEnabled;
+        internal bool DependenciesEnabled { get; set; } = dependenciesEnabled;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal int ChildIndex;
         internal ulong? KeyPrefix;
 #if DEBUG
+        internal ScopeData Computation = null!;
         internal Dictionary<ulong, SiblingGroup> PreviousSiblings { get; } = new();
 #endif
     }
@@ -284,9 +350,9 @@ public static class Scope
 #if DEBUG
     internal readonly struct RebuildScope : IDisposable
     {
-        private readonly HashSet<Entity>? _previousDeclarations;
+        private readonly Dictionary<Entity, ScopeData>? _previousDeclarations;
 
-        internal RebuildScope(HashSet<Entity>? previousDeclarations) =>
+        internal RebuildScope(Dictionary<Entity, ScopeData>? previousDeclarations) =>
             _previousDeclarations = previousDeclarations;
 
         public void Dispose() => s_childDeclarations = _previousDeclarations;

@@ -8,6 +8,23 @@ namespace SomeEngine.Views.Tests;
 public sealed class StateTests
 {
     [Fact]
+    public void UntrackedStateReadsRefreshWhenTheTrackedSourceChanges()
+    {
+        using var frames = new HeadlessFrameDriver();
+        var tracked = new State<int>(3);
+        var untracked = new State<int>(5);
+        Entity root = Views.Spawn(frames.World, Entity.Null, new SampledStateDisplay(tracked, untracked));
+        frames.Frame();
+
+        untracked.Value = 7;
+        frames.Frame();
+        Assert.Equal("3+5", frames.World.Read<DisplayText>(root).Value);
+        tracked.Value = 11;
+        frames.Frame();
+        Assert.Equal("3+5;11+7", frames.World.Read<DisplayText>(root).Value);
+    }
+
+    [Fact]
     public void StateReadsInsideCallerContentRefreshTheDeclaredText()
     {
         using var frames = new HeadlessFrameDriver();
@@ -252,6 +269,19 @@ public sealed class StateTests
         public BuildTask Build()
         {
             AppendDisplay(Source.Value.ToString());
+            return default;
+        }
+    }
+
+    private readonly record struct SampledStateDisplay(State<int> Tracked, State<int> Untracked) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int tracked = Tracked.Value;
+            int untracked;
+            using (Scope.Untrack())
+                untracked = Untracked.Value;
+            AppendDisplay($"{tracked}+{untracked}");
             return default;
         }
     }
