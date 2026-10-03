@@ -119,7 +119,7 @@ public sealed partial class DurableSaveStore
                 return SlotInspection.Invalid(
                     path,
                     $"Generation {header.Generation} is below the configured anti-rollback floor " +
-                    $"{_options.MinimumAcceptedGeneration}.");
+                    $"{_options.MinimumAcceptedGeneration}.", SerializationError.GenerationRejected);
             }
 
             return SlotInspection.Valid(path, header.Generation, header.PayloadLength);
@@ -134,11 +134,11 @@ public sealed partial class DurableSaveStore
         }
         catch (InvalidDataException exception)
         {
-            return SlotInspection.Invalid(path, exception.Message);
+            return SlotInspection.Invalid(path, exception.Message, SerializationErrors.GetError(exception));
         }
         catch (EndOfStreamException exception)
         {
-            return SlotInspection.Invalid(path, exception.Message);
+            return SlotInspection.Invalid(path, exception.Message, SerializationError.IntegrityMismatch);
         }
     }
 
@@ -152,7 +152,9 @@ public sealed partial class DurableSaveStore
 
         uint version = BinaryPrimitives.ReadUInt32LittleEndian(header[8..12]);
         if (version != FormatVersion)
-            throw new InvalidDataException($"Unsupported durable-save envelope version {version}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.UnsupportedVersion,
+                $"Unsupported durable-save envelope version {version}.");
 
         ushort headerSize = BinaryPrimitives.ReadUInt16LittleEndian(header[12..14]);
         if (headerSize != HeaderSize)
@@ -169,12 +171,14 @@ public sealed partial class DurableSaveStore
             throw new InvalidDataException("The durable-save envelope reserved header byte is non-zero.");
         if (authenticationKind == EnvelopeAuthenticationKind.HmacSha256 && _authenticationKey is null)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
                 "The durable-save envelope requires an HMAC-SHA256 authentication key.");
         }
         if (authenticationKind == EnvelopeAuthenticationKind.Sha256 && _authenticationKey is not null)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
                 "The durable-save envelope is unauthenticated but this store requires HMAC-SHA256.");
         }
 
@@ -185,7 +189,8 @@ public sealed partial class DurableSaveStore
         long payloadLength = BinaryPrimitives.ReadInt64LittleEndian(header[24..32]);
         if (payloadLength < 0 || payloadLength > _options.MaximumPayloadBytes)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                payloadLength < 0 ? SerializationError.InvalidData : SerializationError.LimitExceeded,
                 $"Durable-save payload length {payloadLength} is outside the configured limit.");
         }
 
@@ -287,9 +292,11 @@ public sealed partial class DurableSaveStore
                 IncrementalHash.CreateHash(HashAlgorithmName.SHA256),
             EnvelopeAuthenticationKind.HmacSha256 when _authenticationKey is not null =>
                 IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256, _authenticationKey),
-            EnvelopeAuthenticationKind.HmacSha256 => throw new InvalidDataException(
+            EnvelopeAuthenticationKind.HmacSha256 => throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
                 "The durable-save envelope requires an HMAC-SHA256 authentication key."),
-            EnvelopeAuthenticationKind.Sha256 => throw new InvalidDataException(
+            EnvelopeAuthenticationKind.Sha256 => throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
                 "The durable-save envelope is unauthenticated but this store requires HMAC-SHA256."),
             _ => throw new InvalidDataException(
                 $"Unknown durable-save envelope authentication kind {(byte)authenticationKind}."),

@@ -56,7 +56,7 @@ public sealed class RangeSourceAndNativeBlockTests
         BinaryPrimitives.WriteUInt64LittleEndian(bytes.Span, proof.Fingerprint + 1);
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ReadNativeInts(bytes, proof));
-        Assert.Contains("layout fingerprint", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class RangeSourceAndNativeBlockTests
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ReadNativeInts(bytes, proof));
 
-        Assert.Contains("element size", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -88,7 +88,23 @@ public sealed class RangeSourceAndNativeBlockTests
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ReadNativeInts(bytes, proof));
 
-        Assert.Contains("ABI metadata", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(exception));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(3)]
+    public void NativeBlockReportsUnsupportedVersions(byte version)
+    {
+        NativeLayoutProof<GeneratedNativeInt32> proof = GeneratedNativeInt32.NativeLayoutProof;
+        OwnedTestEncoding bytes = OwnedTestEncoding.Allocate(256);
+        var writer = new BinaryDataWriter(bytes.Memory.Span);
+        NativeBlock.Write<GeneratedNativeInt32>(ref writer, Wrap([1, 2]), proof);
+        bytes.SetLength(writer.WrittenCount);
+        bytes[26] = version;
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() => ReadNativeInts(bytes, proof));
+        Assert.Equal(SerializationError.UnsupportedVersion, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -169,7 +185,7 @@ public sealed class RangeSourceAndNativeBlockTests
             _ = NativeBlock.Read<GeneratedNativeInt32>(ref reader, proof);
         });
 
-        Assert.Contains("padding", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     private static int[] ReadNativeInts(

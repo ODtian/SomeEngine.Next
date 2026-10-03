@@ -11,7 +11,6 @@ namespace SomeEngine.Serialization.Tests;
 public sealed class RegressionAcceptanceTests
 {
 
-
     [Theory]
     [InlineData("SEIDX001")]
     [InlineData("SEIDX002")]
@@ -26,7 +25,7 @@ public sealed class RegressionAcceptanceTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             BinaryDocument<TestRoot>.OpenAsync(source).AsTask());
 
-        Assert.Contains("magic", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -38,7 +37,7 @@ public sealed class RegressionAcceptanceTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             BinaryDocument<DifferentTypeWithMatchingSchema>.OpenAsync(source).AsTask());
 
-        Assert.Contains("root type id", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -53,8 +52,7 @@ public sealed class RegressionAcceptanceTests
 
         BinarySchemaMismatchException exception = await Assert.ThrowsAsync<BinarySchemaMismatchException>(() =>
             BinaryDocument<TestRoot>.OpenAsync(source).AsTask());
-
-        Assert.Contains("epoch", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -68,7 +66,7 @@ public sealed class RegressionAcceptanceTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             BinaryDocument<TestRoot>.OpenAsync(source).AsTask());
 
-        Assert.Contains("compatibility", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -84,7 +82,7 @@ public sealed class RegressionAcceptanceTests
             ownsSource: true);
         InvalidDataException entryError = await Assert.ThrowsAsync<InvalidDataException>(() =>
             document.AcquireChunkAsync(0xA1).AsTask());
-        Assert.Contains("reserved", entryError.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(entryError));
     }
 
     [Fact]
@@ -162,7 +160,7 @@ public sealed class RegressionAcceptanceTests
             TestRoot.Fingerprint ^ 1UL));
 
         Assert.Equal("schemaFingerprint", exception.ParamName);
-        Assert.Contains("does not match nested document", exception.Message, StringComparison.OrdinalIgnoreCase);
+
         Assert.Equal(0, builder.Count);
     }
 

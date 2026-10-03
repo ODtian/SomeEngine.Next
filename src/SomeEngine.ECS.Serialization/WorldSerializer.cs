@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 using System.Runtime.InteropServices;
 using System.Text;
 using SomeEngine.ECS;
@@ -64,7 +65,8 @@ public static partial class WorldSerializer
         SerializationTypeRuntime runtime = registry.ResolveExact(manifest[0]);
         PayloadFormat.ValidateReadContract(contract, runtime);
         if (runtime.ValueType != typeof(T))
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Component payload contains {runtime.ValueType.FullName}, not requested {typeof(T).FullName}.");
         if (runtime is not ValueSerializationRuntime<T> valueRuntime)
         {
@@ -819,7 +821,8 @@ public static partial class WorldSerializer
             new(
                 _reader.BaseStream,
                 _budget.Limits.MaxPayloadBytes,
-                limitExceeded: static (_, _, _) => new InvalidDataException(
+                limitExceeded: static (_, _, _) => SerializationErrors.CreateDataException(
+                    SerializationError.LimitExceeded,
                     "Serialized item payload exceeds the configured byte limit."));
 
         private static BinaryReader OpenReader(Stream payload) =>
@@ -893,5 +896,4 @@ public static partial class WorldSerializer
     }
 
 }
-
 

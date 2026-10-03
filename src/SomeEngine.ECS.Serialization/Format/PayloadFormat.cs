@@ -58,24 +58,6 @@ internal static class PayloadFormat
         return (kind, manifest, contract);
     }
 
-    internal static (
-        SnapshotPayloadKind Kind,
-        int ManifestCount,
-        SerializationContract Contract) ReadHeaderManifestCount(
-            BinaryReader reader,
-            SerializationReadBudget budget,
-            SerializationContract? requiredContract = null)
-    {
-        var (kind, contract, manifestCount) = ReadHeaderPrefix(
-            reader,
-            budget,
-            requiredContract);
-        SerializationTypeKey previous = default;
-        for (int i = 0; i < manifestCount; i++)
-            _ = ReadCanonicalManifestTypeKey(reader, budget, contract, i, ref previous);
-        return (kind, manifestCount, contract);
-    }
-
     private static (
         SnapshotPayloadKind Kind,
         SerializationContract Contract,
@@ -90,7 +72,9 @@ internal static class PayloadFormat
 
         ushort version = reader.ReadUInt16();
         if (version != Version)
-            throw new InvalidDataException($"Unsupported SomeEngine.ECS serialization format version {version}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.UnsupportedVersion,
+                $"Unsupported SomeEngine.ECS serialization format version {version}.");
 
         var contract = (SerializationContract)reader.ReadByte();
         if (contract != SerializationContract.RawCheckpoint &&
@@ -100,7 +84,8 @@ internal static class PayloadFormat
         }
         if (requiredContract is not null && contract != requiredContract.Value)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Serialized payload contract is {contract}, but the caller requires {requiredContract.Value}.");
         }
 
@@ -109,7 +94,8 @@ internal static class PayloadFormat
         if (contract == SerializationContract.RawCheckpoint &&
             checkpointIdentity != SerializationEnvironment.RawCheckpointIdentity)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 "Raw checkpoint build/ABI identity does not match the current process. " +
                 "Raw checkpoints are intentionally exact-build artifacts; use DurableSave for persistent data.");
         }
@@ -217,21 +203,24 @@ internal static class PayloadFormat
 
         if (runtime.Entry.CodecKind == ComponentCodecKind.Raw)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Durable save declares type '{runtime.Entry.TypeKey.StableName}' but the local registry " +
                 "only provides an ABI-dependent implicit raw codec.");
         }
 
         if (runtime.Entry.SchemaSource != SerializationSchemaSource.Explicit)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Durable save declares type '{runtime.Entry.TypeKey.StableName}' but the local registry " +
                 "uses a build-derived runtime schema identity instead of an explicit stable schema key.");
         }
 
         if (runtime.Entry.TypeKey.SchemaFingerprint == 0)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Durable save declares type '{runtime.Entry.TypeKey.StableName}' but the local registry " +
                 "does not provide an explicit 64-bit schema fingerprint.");
         }
@@ -243,7 +232,8 @@ internal static class PayloadFormat
     {
         if (key.SchemaFingerprint == 0)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Serialized type '{key.StableName}' does not declare a 64-bit schema fingerprint.");
         }
     }

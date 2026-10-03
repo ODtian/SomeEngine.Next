@@ -8,7 +8,6 @@
     <InternalsVisibleTo Include="SomeEngine.ECS.Serialization" />
     <InternalsVisibleTo Include="SomeEngine.ECS.Systems" />
     <InternalsVisibleTo Include="SomeEngine.ECS.Systems.Tests" />
-    <InternalsVisibleTo Include="SomeEngine.ECS.Serialization.Tests" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj" />

@@ -1,4 +1,5 @@
-using System.Reflection;
+using System.Collections.Concurrent;
+using SomeEngine.Serialization;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Serialization;
 
@@ -136,7 +137,7 @@ public sealed class DurableSaveStoreTests : IDisposable
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             store.ReadWorld(registry));
-        Assert.Contains("decoder consumed", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Theory]
@@ -191,9 +192,8 @@ public sealed class DurableSaveStoreTests : IDisposable
         DurableSaveStore store = CreateStore();
         Action<Stream> writer = AsyncWriter;
 
-        ArgumentException error = Assert.Throws<ArgumentException>(() => store.Write(writer));
+        Assert.Throws<ArgumentException>(() => store.Write(writer));
 
-        Assert.Contains("synchronous writer", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.False(File.Exists(store.PrimaryPath));
         Assert.False(File.Exists(store.PreviousPath));
 
@@ -311,7 +311,7 @@ public sealed class DurableSaveStoreTests : IDisposable
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             store.ReadWorld(new SerializationRegistry()));
-        Assert.Contains("Unsupported durable-save envelope version 3", error.Message);
+        Assert.Equal(SerializationError.UnsupportedVersion, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -331,7 +331,7 @@ public sealed class DurableSaveStoreTests : IDisposable
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             wrongKeyReader.ReadWorld(new SerializationRegistry()));
-        Assert.Contains("No valid durable-save generation", error.Message);
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -375,7 +375,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         File.Delete(newest.PublishedPath);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             floorReader.ReadWorld(new SerializationRegistry()));
-        Assert.Contains("anti-rollback floor", error.Message);
+        Assert.Equal(SerializationError.GenerationRejected, SerializationErrors.GetError(error));
         Assert.Throws<InvalidDataException>(() =>
             floorReader.Write(static stream => stream.Write("must-not-rebase"u8)));
     }
@@ -410,6 +410,7 @@ public sealed class DurableSaveStoreTests : IDisposable
     [Fact]
     public async Task DisposeWaitsForActiveWrite()
     {
+        var events = new ConcurrentQueue<string>();
         byte[] key = Enumerable.Repeat((byte)0x5C, 32).ToArray();
         var store = new DurableSaveStore(
             Path.Combine(_directory, "dispose-drain.save"),
@@ -422,15 +423,30 @@ public sealed class DurableSaveStoreTests : IDisposable
             entered.Set();
             Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
             stream.WriteByte(7);
+            events.Enqueue("write");
         }));
         Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
-        Task dispose = Task.Run(store.Dispose);
-        Task completed = await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromMilliseconds(200)));
-        Assert.NotSame(dispose, completed);
-
-        release.Set();
+        Task dispose = Task.Run(() =>
+        {
+            store.Dispose();
+            events.Enqueue("disposed");
+        });
+        try
+        {
+            await DisposalChecks.WaitForReadRejectionAsync(() =>
+            {
+                try { using World loaded = store.ReadWorld(new SerializationRegistry()); }
+                catch (FileNotFoundException) { }
+            });
+            Assert.False(dispose.IsCompleted);
+        }
+        finally
+        {
+            release.Set();
+        }
         await write.WaitAsync(TimeSpan.FromSeconds(10));
         await dispose.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(new[] { "write", "disposed" }, events);
     }
 
     [Fact]
@@ -451,6 +467,18 @@ public sealed class DurableSaveStoreTests : IDisposable
     }
 
     [Fact]
+    public void ReadWorldReportsTruncatedGenerationAsAnIntegrityFailure()
+    {
+        DurableSaveStore store = CreateStore();
+        WriteWorldWithEntityCount(store, 1);
+        byte[] bytes = File.ReadAllBytes(store.PrimaryPath);
+        File.WriteAllBytes(store.PrimaryPath, bytes[..16]);
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
+            store.ReadWorld(new SerializationRegistry()));
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(error));
+    }
+
+    [Fact]
     public void ReadWorld_WhenNoGenerationExists_ReportsMissingSave()
     {
         DurableSaveStore store = CreateStore();
@@ -468,15 +496,14 @@ public sealed class DurableSaveStoreTests : IDisposable
         var writeRegistry = new SerializationRegistry()
             .Register<SerPosition, SerPositionFullCodec>(key);
         WritePositionGenerations(store, writeRegistry);
+        var calls = new CodecCalls();
         var readRegistry = new SerializationRegistry()
-            .Register<SerPosition, CancelingPositionCodec>(key);
-        CancelingPositionCodec.Reset();
+            .RegisterCodec<SerPosition, CancelingPositionCodec>(key, new CancelingPositionCodec(calls));
 
-        OperationCanceledException error = Assert.Throws<OperationCanceledException>(
+        Assert.Throws<OperationCanceledException>(
             () => store.ReadWorld(readRegistry));
 
-        Assert.Contains("codec cancellation", error.Message);
-        Assert.Equal(1, CancelingPositionCodec.ReadCount);
+        Assert.Equal(1, calls.Reads);
         using World recovered = store.ReadWorld(writeRegistry);
         Assert.Equal(1, recovered.EntityCount);
     }
@@ -489,15 +516,14 @@ public sealed class DurableSaveStoreTests : IDisposable
         var writeRegistry = new SerializationRegistry()
             .Register<SerPosition, SerPositionFullCodec>(key);
         WritePositionGenerations(store, writeRegistry);
+        var calls = new CodecCalls();
         var readRegistry = new SerializationRegistry()
-            .Register<SerPosition, OutOfMemoryPositionCodec>(key);
-        OutOfMemoryPositionCodec.Reset();
+            .RegisterCodec<SerPosition, OutOfMemoryPositionCodec>(key, new OutOfMemoryPositionCodec(calls));
 
-        OutOfMemoryException error = Assert.Throws<OutOfMemoryException>(
+        Assert.Throws<OutOfMemoryException>(
             () => store.ReadWorld(readRegistry));
 
-        Assert.Contains("codec allocation", error.Message);
-        Assert.Equal(1, OutOfMemoryPositionCodec.ReadCount);
+        Assert.Equal(1, calls.Reads);
         using World recovered = store.ReadWorld(writeRegistry);
         Assert.Equal(1, recovered.EntityCount);
     }
@@ -552,40 +578,28 @@ public sealed class DurableSaveStoreTests : IDisposable
         }
     }
 
-    private struct CancelingPositionCodec : IComponentCodec<SerPosition>
+    private struct CancelingPositionCodec(CodecCalls calls) : IComponentCodec<SerPosition>
     {
-        private static int s_readCount;
-
-        internal static int ReadCount => Volatile.Read(ref s_readCount);
-
-        internal static void Reset() => Volatile.Write(ref s_readCount, 0);
-
         public void Write(ref DataWriter writer, in SerPosition value) =>
             throw new NotSupportedException();
 
         public void Read(ref DataReader reader, out SerPosition value)
         {
             _ = reader;
-            Interlocked.Increment(ref s_readCount);
+            Interlocked.Increment(ref calls.Reads);
             throw new OperationCanceledException("codec cancellation");
         }
     }
 
-    private struct OutOfMemoryPositionCodec : IComponentCodec<SerPosition>
+    private struct OutOfMemoryPositionCodec(CodecCalls calls) : IComponentCodec<SerPosition>
     {
-        private static int s_readCount;
-
-        internal static int ReadCount => Volatile.Read(ref s_readCount);
-
-        internal static void Reset() => Volatile.Write(ref s_readCount, 0);
-
         public void Write(ref DataWriter writer, in SerPosition value) =>
             throw new NotSupportedException();
 
         public void Read(ref DataReader reader, out SerPosition value)
         {
             _ = reader;
-            Interlocked.Increment(ref s_readCount);
+            Interlocked.Increment(ref calls.Reads);
             throw new OutOfMemoryException("codec allocation");
         }
     }
