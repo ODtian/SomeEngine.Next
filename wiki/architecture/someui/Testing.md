@@ -164,6 +164,8 @@ Absolute 嵌套、最小/最大尺寸、单轴自动尺寸、零尺寸、非均�
 `AssemblyBoundaryTests` 经编译程序集的公开属性读取访问边界。
 向 Views 临时加入 `[assembly: InternalsVisibleTo("SomeEngine.Elements")]` 后，
 架构用例报告该声明并以退出码 1 失败；移除该声明后的验收通过。
+SDK 项目项形式分别向 `SomeEngine.Elements.Render` 与外部消费者授予内部访问时，
+同一架构用例列出两个目标并以退出码 1 失败；项目内容随后恢复。
 访问边界规则由 [[architecture/someui/Assemblies|Assemblies]] 维护。
 
 ## 内容函数验收（#61）
