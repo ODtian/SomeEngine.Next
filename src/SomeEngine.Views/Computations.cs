@@ -52,16 +52,30 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
         {
             _run!();
             scope.Complete();
-            if (_error is not null && World.HasSparse<BuildError>(Entity) &&
-                ReferenceEquals(World.ReadSparse<BuildError>(Entity).Exception, _error))
-                World.RemoveSparse<BuildError>(Entity);
+            Exception? previousError = _error;
             _error = null;
+            RestoreError(previousError);
         }
         catch (Exception exception)
         {
             _error = exception;
             throw;
         }
+    }
+
+    private void RestoreError(Exception? previousError)
+    {
+        if (previousError is null || !World.HasSparse<BuildError>(Entity) ||
+            !ReferenceEquals(World.ReadSparse<BuildError>(Entity).Exception, previousError))
+            return;
+        Computation? failed = null;
+        foreach (Computation computation in World.ReadSparse<Computations>(Entity).List.Items)
+            if (computation.Error is not null && (failed is null || computation.Frame >= failed.Frame))
+                failed = computation;
+        if (failed is null)
+            World.RemoveSparse<BuildError>(Entity);
+        else
+            World.ReplaceSparse(Entity, new BuildError { Exception = failed.Error!, Frame = failed.Frame });
     }
 
     internal void Rebuild(ulong frame)

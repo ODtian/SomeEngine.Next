@@ -208,6 +208,42 @@ public sealed partial class ComputationTests
     }
 
     [Fact]
+    public void RecoveringOneBindingPreservesTheOtherBindingsError()
+    {
+        using var frames = new HeadlessFrameDriver();
+        var first = new State<bool>();
+        var second = new State<bool>();
+        var firstError = new InvalidOperationException("first binding failed");
+        var secondError = new InvalidOperationException("second binding failed");
+        Entity root = Views.Spawn(frames.World, Entity.Null, new CalculationView(() =>
+        {
+            Scope.Compute(() =>
+            {
+                if (first.Value)
+                    throw firstError;
+            });
+            Scope.Compute(() =>
+            {
+                if (second.Value)
+                    throw secondError;
+            });
+        }));
+        frames.Frame();
+        first.Value = true;
+        second.Value = true;
+        frames.Frame();
+        Assert.Same(secondError, frames.World.ReadSparse<BuildError>(root).Exception);
+
+        second.Value = false;
+        frames.Frame();
+        Assert.Same(firstError, frames.World.ReadSparse<BuildError>(root).Exception);
+
+        first.Value = false;
+        frames.Frame();
+        Assert.False(frames.World.HasSparse<BuildError>(root));
+    }
+
+    [Fact]
     public void ACalculationThatUpdatesItsReadPresentsTheCompletedValueInTheFrame()
     {
         using var frames = new HeadlessFrameDriver();
