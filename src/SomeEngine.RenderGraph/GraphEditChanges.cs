@@ -14,6 +14,7 @@ internal enum GraphStoreKind : ushort
     Accesses = 1 << 7,
     ExtensionPoints = 1 << 8,
     Orders = 1 << 9,
+    Regions = 1 << 10,
 }
 
 internal sealed class GraphEditChanges
@@ -29,6 +30,7 @@ internal sealed class GraphEditChanges
     internal readonly HashSet<GraphIdentity> AffectedPasses = [];
     internal readonly HashSet<GraphIdentity> Accesses = [];
     internal readonly HashSet<GraphIdentity> ExtensionPoints = [];
+    internal readonly HashSet<GraphIdentity> Regions = [];
     internal readonly HashSet<GraphIdentity> AffectedResources = [];
     internal readonly HashSet<GraphIdentity> OrderPasses = [];
     internal readonly HashSet<ExplicitPassOrder> Orders = [];
@@ -126,6 +128,12 @@ internal sealed class GraphEditChanges
         Stores |= GraphStoreKind.ExtensionPoints;
         ExtensionPoints.Add(identity);
         ResourceMembershipChanged |= membership;
+    }
+
+    internal void TouchRegion(in GraphIdentity identity)
+    {
+        Stores |= GraphStoreKind.Regions;
+        Regions.Add(identity);
     }
 
     internal void TouchOrder(in GraphIdentity predecessor, in GraphIdentity consumer)

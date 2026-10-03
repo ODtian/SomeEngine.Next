@@ -1,4 +1,4 @@
-namespace SomeEngine.RenderGraph;
+﻿namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
 {
@@ -526,6 +526,7 @@ internal sealed partial class FrameExecutor
             }
             if (_passOrderSearchStates[current] == PassOrderSearchState.Unvisited)
             {
+                _analyzedPasses.Add(current);
                 _passOrderSearchStates[current] = PassOrderSearchState.Searching;
                 ref ulong[] words = ref _passOrderAncestors[current];
                 if (words is null || words.Length < _passOrderWordCount)
@@ -577,7 +578,9 @@ internal sealed partial class FrameExecutor
         _resourceOrderRanks.Clear();
         _resourceOrderReady.Clear();
         foreach (int node in nodes)
+        {
             if (_resourceOrderRanks.TryAdd(node, _resourceOrderNodes.Count)) _resourceOrderNodes.Add(node);
+        }
         int count = _resourceOrderNodes.Count;
         EnsureCapacity(ref _resourceOrderPassWords, _passOrderWordCount);
         Array.Clear(_resourceOrderPassWords, 0, _passOrderWordCount);
@@ -1069,6 +1072,7 @@ internal sealed partial class FrameExecutor
 
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _changedAnalysisResources = [];
     private readonly HashSet<int> _changedAnalysisPasses = [];
+    private readonly HashSet<int> _analyzedPasses = [];
     private bool _analysisChanged = true;
     private bool _analysisReady;
     private bool _reuseAnalysis;
@@ -1232,6 +1236,7 @@ internal sealed partial class FrameExecutor
         _hasPassOrderCycle = false;
         foreach (int pass in _changedAnalysisPasses)
         {
+            if ((uint)pass < (uint)_passes.Count) _analyzedPasses.Add(pass);
             _livenessSeeds.Add(pass);
             MarkPassResources(pass, _changedAnalysisResources);
         }
@@ -1306,6 +1311,7 @@ internal sealed partial class FrameExecutor
 
     private void ResolveResourceValues((GraphAccessTargetKind Kind, int Index) resource)
     {
+        CountAnalyzedResourcePasses(resource);
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(ResourceValuesTrace);
         switch (resource.Kind)
         {
@@ -1318,6 +1324,7 @@ internal sealed partial class FrameExecutor
 
     private void ResolveResourceHazards((GraphAccessTargetKind Kind, int Index) resource)
     {
+        CountAnalyzedResourcePasses(resource);
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(ResourceHazardsTrace);
         switch (resource.Kind)
         {
@@ -1326,6 +1333,13 @@ internal sealed partial class FrameExecutor
             case GraphAccessTargetKind.QueryPool: ResolveQueryHazards(resource.Index); break;
             case GraphAccessTargetKind.RayTracingShaderTable: ResolveShaderTableHazards(resource.Index); break;
         }
+    }
+
+    private void CountAnalyzedResourcePasses((GraphAccessTargetKind Kind, int Index) resource)
+    {
+        if (_resourceAccessLists.TryGetValue(resource, out List<int>? accesses))
+            foreach (int index in accesses)
+                _analyzedPasses.Add(_accesses[index].PassIndex);
     }
 
     private void AddValueDependency(int consumer, int predecessor)
@@ -1445,6 +1459,7 @@ internal sealed partial class FrameExecutor
 
         void Push(int pass)
         {
+            _analyzedPasses.Add(pass);
             _livenessVisited.Add(pass);
             _livenessPath.Add(pass);
             _livenessPathOffsets.Add(0);

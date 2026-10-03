@@ -231,6 +231,7 @@ public ref partial struct RenderGraphEdit
         ValidateOwner(pass.Value);
         Changes.TouchPass(pass.Value, membership: true);
         GraphPass removed = Staging.Passes.Remove(pass.Value);
+        RemoveRegionEntry(removed.Region, pass.Value);
         Changes.ReleasedViews.UnionWith(removed.ViewReferences);
         foreach (GraphParameterResourceBinding binding in removed.ParameterBindings)
         {
@@ -260,6 +261,7 @@ public ref partial struct RenderGraphEdit
         ValidateOwner(point.Value);
         Changes.TouchExtensionPoint(point.Value, membership: true);
         _ = Staging.ExtensionPoints.Remove(point.Value);
+        RemoveRegionEntry(default, point.Value);
     }
 
     public GraphExtensionPointId AddExtensionPoint(string label)
@@ -268,8 +270,9 @@ public ref partial struct RenderGraphEdit
         GraphIdentity identity = Staging.ExtensionPoints.Add(
             Graph.Identity,
             new GraphExtensionPoint(
-                label,
-                checked(Staging.NextDeclarationOrdinal++)));
+                label, 0));
+        GraphRegionEntry entry = AddRegionEntry(default, identity);
+        Staging.ExtensionPoints.Set(identity, new GraphExtensionPoint(label, entry.Start));
         Changes.TouchExtensionPoint(identity, membership: true);
         return new GraphExtensionPointId(identity);
     }
@@ -438,7 +441,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        RasterPassCallback<TStatic, TFrame> callback)
+        RasterPassCallback<TStatic, TFrame> callback,
+        GraphRegionId region = default)
     {
         return AddPass(
             label,
@@ -447,7 +451,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new RasterPassCallbackStorage<TStatic, TFrame>(staticData, callback));
+            new RasterPassCallbackStorage<TStatic, TFrame>(staticData, callback), region);
     }
 
     public GraphPassId AddComputePass<TStatic, TFrame>(
@@ -456,7 +460,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        ComputePassCallback<TStatic, TFrame> callback)
+        ComputePassCallback<TStatic, TFrame> callback,
+        GraphRegionId region = default)
     {
         return AddPass(
             label,
@@ -465,7 +470,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new ComputePassCallbackStorage<TStatic, TFrame>(staticData, callback));
+            new ComputePassCallbackStorage<TStatic, TFrame>(staticData, callback), region);
     }
 
     public GraphPassId AddCopyPass<TStatic, TFrame>(
@@ -474,7 +479,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        CopyPassCallback<TStatic, TFrame> callback)
+        CopyPassCallback<TStatic, TFrame> callback,
+        GraphRegionId region = default)
     {
         return AddPass(
             label,
@@ -483,7 +489,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new CopyPassCallbackStorage<TStatic, TFrame>(staticData, callback));
+            new CopyPassCallbackStorage<TStatic, TFrame>(staticData, callback), region);
     }
 
     public GraphPassId AddGeneralPass<TStatic, TFrame>(
@@ -492,7 +498,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        GeneralPassCallback<TStatic, TFrame> callback)
+        GeneralPassCallback<TStatic, TFrame> callback,
+        GraphRegionId region = default)
     {
         return AddPass(
             label,
@@ -501,7 +508,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new GeneralPassCallbackStorage<TStatic, TFrame>(staticData, callback));
+            new GeneralPassCallbackStorage<TStatic, TFrame>(staticData, callback), region);
     }
 
     public GraphBufferCbvId CreateBufferCbv(GraphBufferId buffer, in BufferRange range, string? label = null) =>
@@ -626,7 +633,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        PassCallbackStorage callbackStorage)
+        PassCallbackStorage callbackStorage,
+        GraphRegionId region)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         ArgumentNullException.ThrowIfNull(declaration);
@@ -637,9 +645,9 @@ public ref partial struct RenderGraphEdit
             Queue = queue,
             Options = options,
             CallbackStorage = callbackStorage,
-            DeclarationOrdinal = checked(Staging.NextDeclarationOrdinal++),
         };
         GraphIdentity identity = Staging.Passes.Add(Graph.Identity, pass);
+        SetPassRegion(identity, region);
         Changes.TouchPass(identity, membership: true);
         TStatic mutable = staticData;
         try
@@ -653,6 +661,7 @@ public ref partial struct RenderGraphEdit
         {
             foreach (GraphIdentity access in pass.Accesses)
                 if (Structure.Accesses.Contains(access)) _ = Staging.Accesses.Remove(access);
+            RemoveRegionEntry(pass.Region, identity);
             _ = Staging.Passes.Remove(identity);
             throw;
         }
