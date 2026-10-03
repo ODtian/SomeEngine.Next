@@ -38,7 +38,7 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
     {
         var options = (CSharpParseOptions)compilation.SyntaxTrees.First().Options;
         var functions = new List<SyntaxTree>();
-        GenerateComposeViews(output, compilation, options, functions, composables);
+        GenerateComposeMethods(output, compilation, options, functions, composables);
         Compilation composeCompilation = compilation.AddSyntaxTrees(functions);
         foreach (SyntaxTree tree in functions)
         {
@@ -98,7 +98,7 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                     continue;
                 bool viewCall = ViewCalls.IsView(method);
                 bool namedCall = ViewCalls.IsViewFunction(method);
-                bool composeCall = ViewCalls.IsComposeView(method);
+                bool composeCall = ViewCalls.IsComposeView(method) || ViewCalls.IsComposeGroup(method);
                 bool rememberCall = ViewCalls.IsRemember(method);
                 if (!viewCall && !namedCall && !composeCall && !rememberCall)
                     continue;

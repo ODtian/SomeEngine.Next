@@ -295,7 +295,7 @@ public sealed class ComposeTests
     [Theory]
     [InlineData("int", "return 1;")]
     [InlineData("System.Threading.Tasks.Task", "return System.Threading.Tasks.Task.CompletedTask;")]
-    public async Task ComposeDeclarationsRequireVoidOrBuildTaskResults(string result, string body)
+    public async Task ValueProducingComposeDeclarationsFormCallSiteGroups(string result, string body)
     {
         var diagnostics = await CompilerChecks.Diagnostics($$"""
             using SomeEngine.Views.Compose;
@@ -305,8 +305,7 @@ public sealed class ComposeTests
             }
             """, true, new ComposeAnalyzer());
 
-        Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "SEV007" && diagnostic.Severity == DiagnosticSeverity.Error);
-        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error && diagnostic.Id != "SEV007");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]

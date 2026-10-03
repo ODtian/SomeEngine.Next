@@ -13,12 +13,8 @@ public sealed class ComposeAnalyzer : DiagnosticAnalyzer
         "SEV006", "Declare a static composable method", "Declare composable method '{0}' as static",
         "Views", DiagnosticSeverity.Error, true);
 
-    private static readonly DiagnosticDescriptor BuildResultRequired = new(
-        "SEV007", "Return void or BuildTask from a composable view", "Return void or BuildTask from composable method '{0}'; value-producing groups use Inline",
-        "Views", DiagnosticSeverity.Error, true);
-
     private static readonly DiagnosticDescriptor DirectCallRequired = new(
-        "SEV008", "Call composable methods directly", "Call composable method '{0}' directly in source so the compiler can declare its view",
+        "SEV008", "Call composable methods directly", "Call composable method '{0}' directly in source so the compiler can supply its call-site key",
         "Views", DiagnosticSeverity.Error, true);
 
     private static readonly DiagnosticDescriptor CapturedLambdaAllocation = new(
@@ -34,7 +30,7 @@ public sealed class ComposeAnalyzer : DiagnosticAnalyzer
         "Views", DiagnosticSeverity.Error, true);
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-        [StaticMethodRequired, BuildResultRequired, DirectCallRequired, RememberMethodRequired,
+        [StaticMethodRequired, DirectCallRequired, RememberMethodRequired,
             CapturedLambdaAllocation, ContentDelegateRequired];
 
     public override void Initialize(AnalysisContext context)
@@ -58,9 +54,6 @@ public sealed class ComposeAnalyzer : DiagnosticAnalyzer
                 return;
             if (!method.IsStatic)
                 analysis.ReportDiagnostic(Diagnostic.Create(StaticMethodRequired, method.Locations[0], method.Name));
-            if (!method.ReturnsVoid && method.ReturnType.ToDisplayString() != "SomeEngine.Views.BuildTask" &&
-                !method.GetAttributes().Any(attribute => attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Views.Compose.InlineAttribute"))
-                analysis.ReportDiagnostic(Diagnostic.Create(BuildResultRequired, method.Locations[0], method.Name));
         }, SymbolKind.Method);
         context.RegisterSyntaxNodeAction(static analysis =>
         {

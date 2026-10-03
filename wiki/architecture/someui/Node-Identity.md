@@ -14,6 +14,7 @@
 - 实际身份是 key 加该 key 在当前父节点下本次的出现次数，保存在子实体的 `ElementKey` 组件中。上次的子节点就是层级中的现有子节点，不另存组合记录。
 - 底层公开 `View<T>(in T view, ulong key)`；普通 `View<T>(in T view)` 与同名函数的调用位置常量由 #19 接入。显式 key 0 按出现顺序匹配；绕过拦截的单参数重载在 Debug 中通过 `DevelopmentCheck` 报告，在 shipping 中保留 key 0 的后备行为。
 - 一个产出带状态节点的辅助函数，在同一位置被有条件地多次调用时，需要 `Key` 或 `[Inline]` 分组。
+- `[Inline]` 与返回普通值的可组合函数以调用位置组成前缀，函数体内的 Remember 与节点声明沿此前缀匹配；同一行的不同列分别形成分组。
 - 同一父节点下重复 key 的兄弟数量变化且它们带有局部状态时，由开发检查报告。每项使用独立 `Key(id)` 的列表按各项身份增删。
 
 ## 身份与子节点匹配实现（#8）
@@ -83,6 +84,15 @@ key 在编译时从文件路径、行、列计算：路径中的反斜杠统一�
 公开行为验收覆盖同名函数与 `View(new ...)` 的参数、分支切换后的局部状态、
 同一行双调用删去一个后的实体与状态保留、lambda、泛型参数、可选参数及 sparse 默认。
 最小 NativeAOT 示例的发布入口为 `tools/SomeEngine.Views.AotSmoke`。
+
+## 可组合函数分组（#60）
+
+`Scope.GroupKeys(ulong key)` 返回 `GroupKeyScope`，供 Compose 生成入口在原函数体执行期间
+组合调用位置前缀。活动 key 前缀用于 Remember 与节点声明，调用分组前缀同时随 `.Content()` 继承，
+使多个分组在同一调用方视图上保存的值各自对应原调用位置。
+分组退出时恢复外层两种前缀；显式 `Key` 使用所在父节点的上下文，子视图自身构建使用自身上下文。
+节点 key 与出现次数、Remember key 与出现次数继续由各自既有路径维护。
+分组执行、值返回与跨程序集调用规则见 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
 
 ## Relations
 [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Compose-Frontend|Compose Frontend]] · ADR 0013

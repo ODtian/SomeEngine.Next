@@ -8,7 +8,12 @@ internal static class ViewCalls
         attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Views.Compose.ComposableAttribute");
 
     internal static bool IsComposeView(IMethodSymbol method) => IsComposable(method) && method.IsStatic &&
-        (method.ReturnsVoid || method.ReturnType.ToDisplayString() == "SomeEngine.Views.BuildTask");
+        !IsComposeGroup(method) && (method.ReturnsVoid || method.ReturnType.ToDisplayString() == "SomeEngine.Views.BuildTask");
+
+    internal static bool IsComposeGroup(IMethodSymbol method) => IsComposable(method) && method.IsStatic &&
+        ((!method.ReturnsVoid && method.ReturnType.ToDisplayString() != "SomeEngine.Views.BuildTask") ||
+            method.GetAttributes().Any(attribute =>
+                attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Views.Compose.InlineAttribute"));
 
     internal static bool IsContentParameter(IParameterSymbol parameter) =>
         IsContentDelegate(parameter.Type) && parameter.GetAttributes().Any(attribute =>
