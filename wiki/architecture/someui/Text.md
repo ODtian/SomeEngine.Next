@@ -92,7 +92,9 @@ GlyphAtlas loaded = GlyphAtlas.Load(contentStream, [font]);
 按资产摘要绑定字体，输入字体列表的顺序可变；加载后的查询复用已保存的位置，后续字形
 继续在可容纳它的页内放置或追加页。两种操作均保持调用方的流打开。
 
-使用错误通过 `DevelopmentCheck` 报告；文件头与版本决定二进制格式的读取方式。
+API 使用错误通过 `DevelopmentCheck` 报告；文件头与版本决定二进制格式的读取方式。
+`Load` 在文件边界检查栅格化配置：页宽高大于 2、字号为正数、距离范围为 2–32 像素；
+非法文件配置通过 `InvalidDataException` 报告，Debug、Release 与 NativeAOT 采用相同规则。
 CPU 数据沿 Game world 到 Rendering world 的既有提取路径交付，GPU 上传由 #34 承接。
 相较于 SomeUI 的 `FontAtlas` 参考，这里的基准字号采用像素/em，像素保存为单通道，
 字形查询消费 HarfBuzz 编号，并以追加固定页保持位置。

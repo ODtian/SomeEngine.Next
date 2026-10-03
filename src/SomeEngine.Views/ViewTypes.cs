@@ -97,6 +97,8 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
     {
         if (BuildQueue.For(world).Contains(entity))
             return;
+        if (world.Has<BuildRequest>(entity))
+            world.RemoveTag<BuildRequest>(entity);
         T view = world.ReadComponentData<T>(entity);
         uint? parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : null;
         bool suspended = false;

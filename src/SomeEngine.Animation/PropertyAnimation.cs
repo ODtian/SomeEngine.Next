@@ -31,7 +31,7 @@ public static class PropertyAnimation
     private static Entity Start<T>(World world, Entity target, Channel<T> channel, T value, Spec spec, byte layer, TrackEndpoints endpoints)
         where T : unmanaged
     {
-        T current = Unsafe.ReadUnaligned<T>(ref world.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>()));
+        T current = Unsafe.ReadUnaligned<T>(in world.ReadBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>()));
         bool inline = world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target);
         var matches = new FieldAnimations<T>
         {
@@ -153,7 +153,7 @@ public static class PropertyAnimation
                         continue;
                     ref Track<T> track = ref tracks[i];
                     Entity target = track.Target == Entity.Null ? destination.Animation : track.Target;
-                    T current = Unsafe.ReadUnaligned<T>(ref destination.World.WriteBytes(target, track.Channel.Component, track.Channel.Offset, Unsafe.SizeOf<T>()));
+                    T current = Unsafe.ReadUnaligned<T>(in destination.World.ReadBytes(target, track.Channel.Component, track.Channel.Offset, Unsafe.SizeOf<T>()));
                     track.From = track.Current = current;
                     track.To = destination.Value;
                     track.Endpoints = TrackEndpoints.Values;

@@ -14,6 +14,9 @@ internal static class ComponentBytesSmoke
         using var world = new World();
         Entity entity = world.CreateEntity(new ValueComponent { Number = 7, Opacity = 0.25f });
         uint before = world.WriteVersion<ValueComponent>(entity);
+        Require(Unsafe.ReadUnaligned<float>(in world.ReadBytes(entity, ComponentId<ValueComponent>.Value, sizeof(int), sizeof(float))) == 0.25f,
+            "Component byte reads must return the selected field.");
+        Require(before == world.WriteVersion<ValueComponent>(entity), "Component byte reads preserve the write version.");
         ref byte field = ref world.WriteBytes(entity, ComponentId<ValueComponent>.Value, sizeof(int), sizeof(float));
         Unsafe.WriteUnaligned(ref field, 0.75f);
         Require(world.Read<ValueComponent>(entity).Opacity == 0.75f, "Component field byte write must update its value.");
@@ -21,6 +24,9 @@ internal static class ComponentBytesSmoke
 
         world.AddSparse(entity, new SparseValue { Number = 11 });
         before = world.SparseWriteVersion<SparseValue>(entity);
+        Require(Unsafe.ReadUnaligned<int>(in world.ReadBytes(entity, ComponentId<SparseValue>.Value)) == 11,
+            "Sparse byte reads must return the component value.");
+        Require(before == world.SparseWriteVersion<SparseValue>(entity), "Sparse byte reads preserve the write version.");
         Unsafe.WriteUnaligned(ref world.WriteBytes(entity, ComponentId<SparseValue>.Value), 23);
         Require(world.ReadSparse<SparseValue>(entity).Number == 23, "Sparse byte write must update its value.");
         uint first = world.SparseWriteVersion<SparseValue>(entity);

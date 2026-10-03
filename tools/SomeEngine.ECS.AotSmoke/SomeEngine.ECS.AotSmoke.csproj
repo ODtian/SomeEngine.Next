@@ -19,6 +19,8 @@
              Link="StructureDependencyChecks.cs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.Animation/SomeEngine.Animation.csproj"
+                      GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.ECS/SomeEngine.ECS.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj"
