@@ -15,6 +15,32 @@ public sealed class PropertyAnimationTests
         static (ref Visual visual) => ref visual.Position);
 
     [Fact]
+    public void StartingAndRetargetingKeepThePresentedFieldAndItsWriteVersion()
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new Visual { Opacity = 0.25f });
+        PropertyAnimation.Declare<float>(world, target);
+        uint before = world.WriteVersion<Visual>(target);
+        uint typeBefore = world.ComponentWriteVersion<Visual>();
+
+        Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
+
+        Assert.Equal(0.25f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(before, world.WriteVersion<Visual>(target));
+        Assert.Equal(typeBefore, world.ComponentWriteVersion<Visual>());
+        PropertyAnimation.Pause(world, animation);
+        PropertyAnimation.Retarget(world, animation, Opacity, 2f);
+        Assert.Equal(0.25f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(before, world.WriteVersion<Visual>(target));
+        Assert.Equal(typeBefore, world.ComponentWriteVersion<Visual>());
+        PropertyAnimation.Resume(world, animation);
+        using var systems = FloatSystems(world);
+        Tick(systems, world, 0.5);
+        Assert.Equal(1.125f, world.Read<Visual>(target).Opacity);
+        Assert.NotEqual(before, world.WriteVersion<Visual>(target));
+    }
+
+    [Fact]
     public void TweenWritesTheSelectedFieldAndAdvancesItsVersionEveryFrame()
     {
         using var world = new World();
@@ -333,7 +359,7 @@ public sealed class PropertyAnimationTests
     }
 
     [Fact]
-    public void SteadyAnimationSystemCallbacksAllocateZeroManagedBytes()
+    public void SteadyDefaultAnimationFramesAllocateZeroManagedBytes()
     {
         using var world = new World();
         Entity inline = world.CreateEntity(new Visual());
@@ -341,41 +367,19 @@ public sealed class PropertyAnimationTests
         PropertyAnimation.Declare<float>(world, inline);
         PropertyAnimation.To(world, inline, Opacity, 1f, Spec.Tween(10000));
         PropertyAnimation.To(world, ordinary, Opacity, 1f, Spec.Tween(10000));
-        var clock = new TimelineSystem();
-        var tracks = new TrackSystem<float, FloatOps>();
-        var completion = new TimelineEndSystem();
-        var context = new ImmediateSystemContext(world, 0, 0, 1d / 60);
-        clock.OnCreate(ref context);
-        tracks.OnCreate(ref context);
-        completion.OnCreate(ref context);
-        try
-        {
-            for (int frame = 0; frame < 512; frame++)
-            {
-                clock.OnUpdate(ref context);
-                tracks.OnUpdate(ref context);
-                completion.OnUpdate(ref context);
-            }
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.AddDefaults(systems);
+        for (int frame = 0; frame < 512; frame++)
+            Tick(systems, world, 1d / 60);
 
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int frame = 0; frame < 128; frame++)
-            {
-                clock.OnUpdate(ref context);
-                tracks.OnUpdate(ref context);
-                completion.OnUpdate(ref context);
-            }
-            long after = GC.GetAllocatedBytesForCurrentThread();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int frame = 0; frame < 128; frame++)
+            Tick(systems, world, 1d / 60);
+        long after = GC.GetAllocatedBytesForCurrentThread();
 
-            Assert.Equal(0, after - before);
-            Assert.True(world.Read<Visual>(inline).Opacity > 0);
-            Assert.Equal(world.Read<Visual>(inline).Opacity, world.Read<Visual>(ordinary).Opacity);
-        }
-        finally
-        {
-            completion.OnDestroy(ref context);
-            tracks.OnDestroy(ref context);
-            clock.OnDestroy(ref context);
-        }
+        Assert.Equal(0, after - before);
+        Assert.True(world.Read<Visual>(inline).Opacity > 0);
+        Assert.Equal(world.Read<Visual>(inline).Opacity, world.Read<Visual>(ordinary).Opacity);
     }
 
     [Fact]
@@ -481,6 +485,44 @@ public sealed class PropertyAnimationTests
     }
 
     private static float Square(float value) => value * value;
+
+    [Theory]
+    [InlineData(0.15, 1.5f, true)]
+    [InlineData(0.25, 2f, false)]
+    public void CrossingDurationStagesPresentsTheReachedValueInTheSameFrame(double delta, float expected, bool playing)
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new Visual());
+        PropertyAnimation.Declare<float>(world, target);
+        world.AddBuffer<TimelineStage>(target);
+        world.ExecuteBufferWrite<TimelineStage>(target, static stages =>
+        {
+            stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
+            stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
+        });
+        PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(0.1f));
+        var next = new Track<float>
+        {
+            Channel = Opacity, From = 1, Current = 1, To = 2,
+            Duration = 0.1f, Curve = Spec.Tween(0.1f).Curve, Stage = 1,
+            StartId = world.Read<Timeline>(target).Starts,
+        };
+        world.ExecuteBufferWrite<Track<float>, Track<float>>(target, ref next,
+            static (DynamicBuffer<Track<float>> tracks, ref Track<float> track) => tracks.Add(track));
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.AddDefaults(systems);
+
+        Tick(systems, world, delta);
+
+        Assert.Equal(expected, world.Read<Visual>(target).Opacity, 5);
+        Assert.Equal(playing, world.IsEnabled<Timeline>(target));
+        Tick(systems, world, 0.25);
+        Assert.Equal(2, world.Read<Visual>(target).Opacity);
+        Assert.False(world.IsEnabled<Timeline>(target));
+        Assert.Equal(1u, world.Read<Timeline>(target).Completions);
+        Tick(systems, world, 0.25);
+        Assert.Equal(2, world.Read<Visual>(target).Opacity);
+    }
 
     [Fact]
     public void PublicTrackDataSamplesOnlyItsCurrentTimelineStage()
