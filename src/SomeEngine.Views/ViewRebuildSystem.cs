@@ -1,41 +1,67 @@
 using SomeEngine.ECS.Systems;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views;
 
-/// <summary>Builds requested root views in the current World's interface phase.</summary>
+/// <summary>Builds requested roots and views with changed parameters in the World's interface phase.</summary>
 public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 {
-    private readonly List<Entity> _roots = new();
-    private QueryHandle _buildRequests;
+    private readonly List<Entity> _views = new();
+    private readonly List<ViewDepth> _changedViews = new();
+    private QueryHandle _viewQuery;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
-        _buildRequests = context.World.Query(context.World.QueryDefinition().All<BuildRequest>().Read<ViewType>());
+        _viewQuery = context.World.Query(context.World.QueryDefinition().Read<ViewType>());
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
-        _roots.Clear();
-        List<Entity> roots = _roots;
-        context.World.ExecuteQuery(_buildRequests, ref roots, static (rows, ref requestedRoots) =>
+        _views.Clear();
+        _changedViews.Clear();
+        List<Entity> views = _views;
+        context.World.ExecuteQuery(_viewQuery, ref views, static (rows, ref viewEntities) =>
         {
             foreach (var row in rows.Rows)
-                requestedRoots.Add(row.Entity);
+                viewEntities.Add(row.Entity);
         });
 
-        foreach (Entity root in _roots)
+        foreach (Entity entity in _views)
         {
-            if (context.World.IsAlive(root))
+            if (context.World.Has<BuildRequest>(entity) || ViewTypes.HasParameterChanges(context.World, entity))
             {
-                context.World.RemoveTag<BuildRequest>(root);
-                ViewTypes.Build(context.World, root);
+                int depth = 0;
+                Entity ancestor = Hierarchy<ElementTree>.GetParent(context.World, entity);
+                while (ancestor != Entity.Null)
+                {
+                    depth++;
+                    ancestor = Hierarchy<ElementTree>.GetParent(context.World, ancestor);
+                }
+                _changedViews.Add(new ViewDepth(entity, depth));
             }
         }
-        _roots.Clear();
+        _changedViews.Sort(static (left, right) => left.Depth.CompareTo(right.Depth));
+
+        foreach (ViewDepth view in _changedViews)
+        {
+            Entity entity = view.Entity;
+            if (context.World.IsAlive(entity))
+            {
+                bool firstBuild = context.World.Has<BuildRequest>(entity);
+                if (firstBuild)
+                    context.World.RemoveTag<BuildRequest>(entity);
+                if (firstBuild || ViewTypes.HasParameterChanges(context.World, entity))
+                    ViewTypes.Build(context.World, entity);
+            }
+        }
+        _views.Clear();
+        _changedViews.Clear();
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_buildRequests);
+    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_viewQuery);
+
+    private readonly record struct ViewDepth(Entity Entity, int Depth);
 }
