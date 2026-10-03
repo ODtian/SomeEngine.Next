@@ -325,12 +325,24 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
         type.ToDisplayString().Replace('<', '_').Replace('>', '_').Replace(',', '_').Replace(' ', '_') + "." + suffix + ".g.cs";
 
     private static string GenerateParameters(ImmutableArray<IParameterSymbol> parameters) =>
-        string.Join(", ", parameters.Select(parameter =>
-            parameter.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
-                .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType | SymbolDisplayParameterOptions.IncludeName |
-                    SymbolDisplayParameterOptions.IncludeParamsRefOut | SymbolDisplayParameterOptions.IncludeDefaultValue)
-                .WithMiscellaneousOptions(SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions |
-                    SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier))));
+        string.Join(", ", parameters.Select(GenerateParameter));
+
+    private static string GenerateParameter(IParameterSymbol parameter)
+    {
+        bool enumDefault = parameter.Type.TypeKind == TypeKind.Enum && parameter.HasExplicitDefaultValue;
+        var options = SymbolDisplayParameterOptions.IncludeType | SymbolDisplayParameterOptions.IncludeName |
+            SymbolDisplayParameterOptions.IncludeParamsRefOut;
+        if (!enumDefault)
+            options |= SymbolDisplayParameterOptions.IncludeDefaultValue;
+        string declaration = parameter.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+            .WithParameterOptions(options)
+            .WithMiscellaneousOptions(SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions |
+                SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier));
+        if (enumDefault)
+            declaration += " = (" + parameter.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")" +
+                Convert.ToString(parameter.ExplicitDefaultValue, CultureInfo.InvariantCulture);
+        return declaration;
+    }
 
     private static string GenerateTypeParameters(ImmutableArray<ITypeParameterSymbol> parameters) =>
         parameters.Length == 0 ? "" : "<" + string.Join(", ", parameters.Select(parameter => "@" + parameter.Name)) + ">";

@@ -37,10 +37,11 @@ Require(frames.World.Read<Selection>(second[0]).Value == 0, "The second branch s
 Require(first[2] == second[2] && frames.World.Read<Selection>(second[2]).Value == 7,
     "The call on the same column preserves its local state.");
 LayoutChecks.Run();
+FlexChecks.Run();
 ComposeChecks.Run(frames);
 SwiftUIChecks.Run(frames);
 RememberChecks.Run(frames);
-Console.WriteLine("View functions, Compose content, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, and user layouts passed under NativeAOT.");
+Console.WriteLine("View functions, Compose content, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, and user layouts passed under NativeAOT.");
 
 static void Require(bool value, string message)
 {

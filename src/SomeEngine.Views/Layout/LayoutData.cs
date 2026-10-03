@@ -46,10 +46,14 @@ internal sealed class LayoutData(World world)
 
     internal Size Measure(Entity node, in Constraints constraints, int parentIndex)
     {
-        DevelopmentCheck.Require(!_indices.ContainsKey(node), "Measure each layout child once in its parent's measurement.");
-        int index = _nodes.Count;
-        _indices.Add(node, index);
-        _nodes.Add(new NodeLayout { Entity = node, ParentIndex = parentIndex });
+        // Flex measures a basis and then final constraints; both update the same node entry.
+        if (!_indices.TryGetValue(node, out int index))
+        {
+            index = _nodes.Count;
+            _indices.Add(node, index);
+            _nodes.Add(new NodeLayout { Entity = node, ParentIndex = parentIndex });
+        }
+        DevelopmentCheck.Require(_nodes[index].ParentIndex == parentIndex, "Measure requires this layout's child.");
         if (!World.Has<LayoutRect>(node))
             World.Add(node, new LayoutRect());
         Box box = World.Has<Box>(node) ? World.Read<Box>(node) : default;
