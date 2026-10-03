@@ -45,5 +45,14 @@ VSM 开关两种状态的 64×64 RGBA16F 输出逐字节比较迁移前的图像
 图复制命令与缓冲映射观察结果。迁移基线的提交、适配器与采样参数由
 `tests/SomeEngine.Render.Cluster.Tests/FrameStageImages/README.md` 记录。
 
+## Material inputs
+
+Cluster 按 `(Material, 属性编号)` 持有一个 `GraphParameterInput`。使用该属性的 pass
+绑定同一个输入，帧录制为每个输入设置一次值。参数绑定同时声明纹理和缓冲的真实访问；
+纹理上传与最终状态转换通过输入连接到它的全部使用者，连接关系由 RenderGraph 持有。
+
+材质箱的代表材质变化时，图编辑同时替换参数绑定和访问。细分组的共享 split pass
+沿用该方式切换到当前种子材质。编辑完成后，Cluster 按图中的实际参数绑定保留材质输入。
+
 ## Relations
 [[architecture/render-graph/Retained-Graph]] · [[architecture/render-graph/Regions]] · [[architecture/render-graph/Frame-Data]] · [[Cluster-Scope]]

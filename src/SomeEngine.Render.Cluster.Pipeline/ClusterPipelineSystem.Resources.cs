@@ -790,12 +790,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphFrame graph,
         in ClusterRenderBinding binding)
     {
-        foreach (GraphPassId passId in _pageHeapReaderPasses)
-        {
-            PassDefinition pass = graph.GetPass(passId);
-            pass.ReadRanges(_frameResources.PageHeap, _residentPageReads,
-                PipelineSync.AllShading, ResourceAccess.ShaderResource);
-        }
+        graph.SetBufferRanges(_frameResources.PageHeap, _residentPageReads);
 
         BufferRange bvhRange = binding.BvhRange;
         if (!bvhRange.IsWhole && bvhRange.Size != 0)

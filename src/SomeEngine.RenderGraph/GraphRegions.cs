@@ -22,7 +22,7 @@ internal sealed partial class GraphStructure
 
     internal GraphRegionEntry GetRegionInterval(GraphIdentity identity)
     {
-        if (!identity.IsValid) return new GraphRegionEntry(default, 0, long.MaxValue);
+        if (!identity.IsValid) return new GraphRegionEntry(default, 0, long.MaxValue / 2);
         GraphRegion region = Regions.Get(identity);
         GraphRegion parent = GetRegion(region.Parent);
         int index = parent.Children.FindIndex(child => child.Identity == identity);

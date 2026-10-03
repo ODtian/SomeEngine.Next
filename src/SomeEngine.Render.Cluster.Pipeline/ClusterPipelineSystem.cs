@@ -69,7 +69,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly List<GraphPassId> _historyInitializationPasses = [];
     private readonly List<ClusterLayerDispatch> _layerDispatches = [];
     private readonly List<GraphPassId> _winnerResolvePasses = [];
-    private System.Collections.Immutable.ImmutableHashSet<GraphPassId> _pageHeapReaderPasses = [];
     private ClusterViewUniforms[] _packedViews;
     private RenderView[] _stagedViews;
     private Entity[] _stagedViewEntities;
@@ -141,7 +140,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private int _pendingInstanceGeneration = -1;
     private ClusterResidencyPublication? _pendingResidencyPublication;
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
-    private bool _bindingScratchReadsPageHeap;
     private bool _hasPendingFrame;
     private bool _created;
 
@@ -525,8 +523,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _historyInitializationPasses.Clear();
             _layerDispatches.Clear();
             _winnerResolvePasses.Clear();
-            _pageHeapReaderPasses = _pageHeapReaderPasses.Clear();
-            _bindingScratchReadsPageHeap = false;
             _traversalSeedPass = default;
             _traversalPass = default;
             _traversalLevelPasses.Clear();
@@ -593,7 +589,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             "Cluster retained upload storage was not created.");
         var previousEpochs = _rasterEpochs;
         var previousMeshPasses = _meshRasterPasses;
-        var previousPageHeapReaders = _pageHeapReaderPasses;
         var previousMaterialInputs = _materialInputs;
         var previousShadeGroups = _shadeGroups;
         FrameResources previousFrameResources = _frameResources;
@@ -635,7 +630,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             uploads.CancelDeclarations();
             _rasterEpochs = previousEpochs;
             _meshRasterPasses = previousMeshPasses;
-            _pageHeapReaderPasses = previousPageHeapReaders;
             _materialInputs = previousMaterialInputs;
             _shadeGroups = previousShadeGroups;
             foreach (uint bin in shadeStages.ChangedBins)
@@ -1259,10 +1253,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _latestFrameMetrics = null;
         _historyInitializationPasses.Clear();
         _materialInputs = _materialInputs.Clear();
-        _materialInputGroups = [];
-        _materialInputSource = null;
-        _materialInputRaster = null;
-        _materialInputShade = null;
         _materialBuffers = _materialBuffers.Clear();
         AcceptMaterialTextures(_materialTextures.Clear());
         _materialScalars = ClusterMaterialScalars.Empty;

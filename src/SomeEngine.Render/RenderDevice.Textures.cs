@@ -111,11 +111,18 @@ public sealed partial class RenderDevice
         GraphPassId consumer,
         EngineTexture asset) => PrepareTexture(ref frame, [consumer], asset);
 
+    /// <summary>Prepares one texture for every pass bound to the parameter input.</summary>
+    public RhiTexture PrepareTexture(ref RenderGraphFrame frame, GraphParameterInput input, EngineTexture asset) =>
+        PrepareTexture(ref frame, [], asset, input);
+
     /// <summary>Prepares one texture and orders every supplied consumer after its uploads.</summary>
     public RhiTexture PrepareTexture(
         ref RenderGraphFrame frame,
         scoped ReadOnlySpan<GraphPassId> consumers,
-        EngineTexture asset)
+        EngineTexture asset) => PrepareTexture(ref frame, consumers, asset, null);
+
+    private RhiTexture PrepareTexture(ref RenderGraphFrame frame,
+        scoped ReadOnlySpan<GraphPassId> consumers, EngineTexture asset, GraphParameterInput? input)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(asset);
@@ -182,7 +189,7 @@ public sealed partial class RenderDevice
         }
 
         EnsureImported(ref frame, realization);
-        OrderTextureConsumers(ref frame, realization, consumers);
+        OrderTextureConsumers(ref frame, realization, consumers, input);
         return realization.Resource;
     }
 
@@ -190,10 +197,17 @@ public sealed partial class RenderDevice
         ref RenderGraphFrame frame,
         GraphPassId consumer) => PrepareMissingTexture(ref frame, [consumer]);
 
+    /// <summary>Prepares the fallback texture for every pass bound to the parameter input.</summary>
+    public RhiTexture PrepareMissingTexture(ref RenderGraphFrame frame, GraphParameterInput input) =>
+        PrepareMissingTexture(ref frame, [], input);
+
     /// <summary>Prepares the fallback texture and orders every supplied consumer after its upload.</summary>
     public RhiTexture PrepareMissingTexture(
         ref RenderGraphFrame frame,
-        scoped ReadOnlySpan<GraphPassId> consumers)
+        scoped ReadOnlySpan<GraphPassId> consumers) => PrepareMissingTexture(ref frame, consumers, null);
+
+    private RhiTexture PrepareMissingTexture(ref RenderGraphFrame frame,
+        scoped ReadOnlySpan<GraphPassId> consumers, GraphParameterInput? input)
     {
         ThrowIfDisposed();
         TextureRealization realization = RequireMissingTexture();
@@ -216,21 +230,23 @@ public sealed partial class RenderDevice
             realization.Initialized = true;
             realization.FirstResidentMip = 0;
         }
-        OrderTextureConsumers(ref frame, realization, consumers);
+        OrderTextureConsumers(ref frame, realization, consumers, input);
         return realization.Resource;
     }
 
     private void OrderTextureConsumers(ref RenderGraphFrame frame,
-        TextureRealization realization, scoped ReadOnlySpan<GraphPassId> consumers)
+        TextureRealization realization, scoped ReadOnlySpan<GraphPassId> consumers, GraphParameterInput? input)
     {
         if (realization.UploadPasses.Count == 0) return;
         EnsureFinalizationPass(ref frame, realization);
         foreach (GraphPassId upload in realization.UploadPasses)
         {
             foreach (GraphPassId consumer in consumers) frame.OrderAfter(consumer, upload);
+            if (input is not null) frame.OrderAfter(input, upload);
             frame.OrderAfter(realization.FinalizationPass, upload);
         }
         foreach (GraphPassId consumer in consumers) frame.OrderAfter(realization.FinalizationPass, consumer);
+        if (input is not null) frame.OrderAfter(realization.FinalizationPass, input);
     }
 
     private void CreateMissingTexture()
