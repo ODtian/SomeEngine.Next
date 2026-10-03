@@ -186,4 +186,34 @@ public class TestRuleScannerTests
     {
         Assert.Empty(TestRuleScanner.ReadCSharp("Library.cs", "Thread.Sleep(1);", false, "Example.Tests"));
     }
+
+    [Theory]
+    [InlineData("$(AssemblyName).Tests")]
+    [InlineData("$(MSBuildProjectName).Tests")]
+    public void ProjectNamePropertiesReportTestAssemblyAccess(string target)
+    {
+        string source = $"<Project><ItemGroup><InternalsVisibleTo Include=\"{target}\" /></ItemGroup></Project>";
+        Assert.Equal("TEST001", Assert.Single(TestRuleScanner.ReadBuildFile("src/Example.csproj", source, "Example.Tests")).Rule);
+    }
+
+    [Fact]
+    public void DeclaredAssemblyNamePropertiesReportTestAssemblyAccess()
+    {
+        string source = "<Project><PropertyGroup><AssemblyName>Example</AssemblyName></PropertyGroup><ItemGroup><InternalsVisibleTo Include=\"$(AssemblyName).Tests\" /></ItemGroup></Project>";
+        Assert.Single(TestRuleScanner.ReadBuildFile("src/Other.csproj", source, "Example.Tests"));
+    }
+
+    [Fact]
+    public void SharedPropertyExpressionsReportPossibleTestAssemblyAccess()
+    {
+        string source = "<Project><ItemGroup><InternalsVisibleTo Include=\"$(AssemblyName).Tests\" /></ItemGroup></Project>";
+        Assert.Single(TestRuleScanner.ReadBuildFile("Directory.Build.props", source, "Example.Tests"));
+    }
+
+    [Fact]
+    public void ProjectPropertiesForAnotherAssemblyPass()
+    {
+        string source = "<Project><ItemGroup><InternalsVisibleTo Include=\"$(AssemblyName).Tests\" /></ItemGroup></Project>";
+        Assert.Empty(TestRuleScanner.ReadBuildFile("src/Other.csproj", source, "Example.Tests"));
+    }
 }

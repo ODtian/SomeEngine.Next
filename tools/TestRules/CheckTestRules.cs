@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
@@ -142,6 +143,16 @@ namespace SomeEngine.TestRules
         {
             var result = new List<TestRuleViolation>();
             var document = XDocument.Parse(source, LoadOptions.SetLineInfo);
+            var properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (System.IO.Path.GetExtension(path) == ".csproj")
+            {
+                string projectName = System.IO.Path.GetFileNameWithoutExtension(path.Replace('\\', '/'));
+                properties["MSBuildProjectName"] = projectName;
+                properties["AssemblyName"] = projectName;
+            }
+            foreach (var group in document.Descendants().Where(element => element.Name.LocalName == "PropertyGroup"))
+                foreach (var property in group.Elements())
+                    properties[property.Name.LocalName] = property.Value.Trim();
             foreach (var item in document.Descendants())
             {
                 string? target = null;
@@ -150,13 +161,29 @@ namespace SomeEngine.TestRules
                 if (item.Name.LocalName == "AssemblyAttribute" &&
                     ((string?)item.Attribute("Include"))?.Replace("Attribute", "").EndsWith("InternalsVisibleTo", StringComparison.Ordinal) == true)
                     target = item.Elements().FirstOrDefault(e => e.Name.LocalName == "_Parameter1")?.Value;
-                if (target == null || !target.Split(';').Any(value => ReadAssemblyName(value) == testAssembly))
+                if (target == null || !target.Split(';').Any(value => TargetsTestAssembly(value, testAssembly, properties)))
                     continue;
                 var location = (IXmlLineInfo)item;
                 result.Add(new TestRuleViolation("TEST001", path, location.LineNumber, location.LinePosition,
                     "assembly", item.ToString(SaveOptions.DisableFormatting).Replace("\t", " ").Replace("\r", "").Replace("\n", "")));
             }
             return result;
+        }
+
+        private static bool TargetsTestAssembly(string value, string testAssembly, IReadOnlyDictionary<string, string> properties)
+        {
+            for (int pass = 0; pass <= properties.Count; pass++)
+            {
+                string expanded = Regex.Replace(value, @"\$\(([^)]+)\)", match =>
+                    properties.TryGetValue(match.Groups[1].Value, out string? property) ? property : match.Value);
+                if (expanded == value)
+                    break;
+                value = expanded;
+            }
+            string assembly = ReadAssemblyName(value);
+            string pattern = string.Concat(Regex.Split(assembly, @"(\$\([^)]+\))")
+                .Select(part => part.StartsWith("$(", StringComparison.Ordinal) ? ".+" : Regex.Escape(part)));
+            return Regex.IsMatch(testAssembly, "^" + pattern + "$", RegexOptions.CultureInvariant);
         }
 
         public static IReadOnlyList<TestRuleViolation> ReadProject(string root, string projectDirectory, string testAssembly)

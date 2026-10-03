@@ -21,7 +21,7 @@
 
 | 检查编号 | 检查内容 |
 | --- | --- |
-| TEST001 | 向测试程序集授予 `InternalsVisibleTo`：C# 程序集属性、项目或共享 `.props` / `.targets` 中的 `InternalsVisibleTo` 项、`AssemblyAttribute` 项 |
+| TEST001 | 向测试程序集授予 `InternalsVisibleTo`：C# 程序集属性、项目或共享 `.props` / `.targets` 中的 `InternalsVisibleTo` 项、`AssemblyAttribute` 项；识别当前文件属性及标准项目名称，未决属性按可能授权的测试程序集识别 |
 | TEST002 | 测试代码中的异常消息文本断言：`Assert` / `Xunit.Assert` 的参数读取 `.Message`，以及当前成员中由该文本计算的局部变量；`Assert.True` / `False` 的失败说明参数和 `Assert.Fail` 的诊断输出属于失败报告 |
 | TEST003 | 测试代码调用 `Thread.Sleep`，包括限定名称、类型别名和静态导入 |
 
