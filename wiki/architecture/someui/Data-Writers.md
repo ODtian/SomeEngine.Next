@@ -6,7 +6,7 @@
 | 数据 | 唯一写入方 |
 |---|---|
 | 视图参数（包括作为元素数据的 `Text`、`Flex`） | 调用方的 `View`，或 Solid 计算 |
-| 修饰数据（`Box`）与子节点的布局参数（`FlexItem`、`GridCell`、`AbsolutePosition`） | 调用方作用域 |
+| 修饰数据（`Box`、`Surface`）与子节点的布局参数（`FlexItem`、`GridCell`、`AbsolutePosition`） | 调用方作用域 |
 | 环境数据（用户定义的主题等组件） | 调用方通过 `Entity.Provide` 写入 |
 | `Clicks`、`Hover`、`Focused` | 输入与焦点系统；视图用 `Ensure<T>` 声明需要 |
 | 视图局部状态与 `Remember`/`[State]` 存储 | 该视图自己的构建 |

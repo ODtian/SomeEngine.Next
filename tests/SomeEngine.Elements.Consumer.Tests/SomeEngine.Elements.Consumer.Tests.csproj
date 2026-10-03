@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <Using Include="Xunit" />
+    <ProjectReference Include="../../src/SomeEngine.Elements/SomeEngine.Elements.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Layout/SomeEngine.Layout.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Animation/SomeEngine.Animation.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Typography/SomeEngine.Typography.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Views.Compose/SomeEngine.Views.Compose.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Views.SwiftUI/SomeEngine.Views.SwiftUI.csproj" />
+  </ItemGroup>
+</Project>
