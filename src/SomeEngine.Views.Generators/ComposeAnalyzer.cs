@@ -21,7 +21,12 @@ public sealed class ComposeAnalyzer : DiagnosticAnalyzer
         "SEV008", "Call composable methods directly", "Call composable method '{0}' directly in source so the compiler can declare its view",
         "Views", DiagnosticSeverity.Error, true);
 
-    public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => [StaticMethodRequired, BuildResultRequired, DirectCallRequired];
+    private static readonly DiagnosticDescriptor RememberMethodRequired = new(
+        "SEV009", "Remember values in composable methods", "Mark the method calling Remember with Composable",
+        "Views", DiagnosticSeverity.Error, true);
+
+    public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
+        [StaticMethodRequired, BuildResultRequired, DirectCallRequired, RememberMethodRequired];
 
     public override void Initialize(AnalysisContext context)
     {
@@ -41,12 +46,17 @@ public sealed class ComposeAnalyzer : DiagnosticAnalyzer
         context.RegisterSyntaxNodeAction(static analysis =>
         {
             var name = (SimpleNameSyntax)analysis.Node;
-            if (analysis.SemanticModel.GetSymbolInfo(name, analysis.CancellationToken).Symbol is not IMethodSymbol method ||
-                !ViewCalls.IsComposable(method))
+            if (analysis.SemanticModel.GetSymbolInfo(name, analysis.CancellationToken).Symbol is not IMethodSymbol method)
+                return;
+            bool remember = ViewCalls.IsRemember(method);
+            if (!remember && !ViewCalls.IsComposable(method))
                 return;
             ExpressionSyntax expression = name.Parent is MemberAccessExpressionSyntax member ? member : name;
             if (expression.Parent is InvocationExpressionSyntax call && call.Expression == expression)
             {
+                if (remember && (analysis.SemanticModel.GetEnclosingSymbol(call.SpanStart, analysis.CancellationToken) is not IMethodSymbol caller ||
+                    !ViewCalls.IsComposable(caller)))
+                    analysis.ReportDiagnostic(Diagnostic.Create(RememberMethodRequired, name.GetLocation()));
                 if (analysis.SemanticModel.GetEnclosingSymbol(call.SpanStart, analysis.CancellationToken) is IMethodSymbol enclosing &&
                     ViewCalls.IsComposeBuild(enclosing))
                     return;

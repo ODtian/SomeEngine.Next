@@ -83,7 +83,8 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 bool viewCall = ViewCalls.IsView(method);
                 bool namedCall = ViewCalls.IsViewFunction(method);
                 bool composeCall = ViewCalls.IsComposeView(method);
-                if (!viewCall && !namedCall && !composeCall)
+                bool rememberCall = ViewCalls.IsRemember(method);
+                if (!viewCall && !namedCall && !composeCall && !rememberCall)
                     continue;
                 if (composeCall && model.GetEnclosingSymbol(call.SpanStart, output.CancellationToken) is IMethodSymbol enclosingMethod &&
                     ViewCalls.IsComposeBuild(enclosingMethod))
@@ -95,6 +96,11 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                     continue;
                 SimpleNameSyntax name = GetMethodName(call);
                 ulong key = GetCallKey(name.GetLocation().GetMappedLineSpan());
+                if (rememberCall)
+                {
+                    GenerateRememberInterceptor(interceptors, location, key, count++);
+                    continue;
+                }
                 if (composeCall)
                 {
                     GenerateComposeInterceptor(interceptors, method, location, key, count++);

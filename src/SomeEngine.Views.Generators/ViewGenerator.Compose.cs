@@ -44,6 +44,7 @@ public sealed partial class ViewGenerator
                 .Append(GenerateArguments(method.Parameters)).AppendLine(");");
             if (method.ReturnsVoid)
                 text.AppendLine("            return default;\n        }");
+            GenerateComposeEquality(text, method, viewName);
             text.AppendLine("    }\n}");
             CloseContainingTypes(text, type);
             AddDeclarations(output, options, declarations, GetFileName(type, viewName), text.ToString());
@@ -71,6 +72,50 @@ public sealed partial class ViewGenerator
             text.AppendLine("            return default;");
         text.AppendLine("        }");
     }
+
+    private static void GenerateRememberInterceptor(StringBuilder text, InterceptableLocation location, ulong key, int number)
+    {
+        text.Append("        [global::System.Runtime.CompilerServices.InterceptsLocationAttribute(")
+            .Append(location.Version).Append(", ").Append(SymbolDisplay.FormatLiteral(location.Data, true)).AppendLine(")]")
+            .Append("        public static T RememberAt").Append(number).AppendLine("<T>(global::System.Func<T> init)")
+            .Append("            => global::SomeEngine.Views.Scope.Remember(init, ")
+            .Append(key.ToString(CultureInfo.InvariantCulture)).AppendLine("UL);");
+    }
+
+    private static void GenerateComposeEquality(StringBuilder text, IMethodSymbol method, string viewName)
+    {
+        IParameterSymbol[] parameters = method.Parameters.Where(parameter => IsContent(parameter) || !IsCallback(parameter.Type)).ToArray();
+        text.Append("        public bool Equals(@").Append(viewName).Append(GenerateTypeParameters(method.TypeParameters))
+            .Append(" other) => ");
+        text.Append(parameters.Length == 0 ? "true" : string.Join(" && ", parameters.Select(parameter =>
+            UsesReferenceEquality(parameter)
+                ? "global::System.Object.ReferenceEquals(this.@" + parameter.Name + ", other.@" + parameter.Name + ")"
+                : "global::System.Collections.Generic.EqualityComparer<" + parameter.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                    ">.Default.Equals(this.@" + parameter.Name + ", other.@" + parameter.Name + ")"))).AppendLine(";");
+        text.AppendLine("        public override int GetHashCode()\n        {\n            var hash = new global::System.HashCode();");
+        foreach (IParameterSymbol parameter in parameters)
+        {
+            text.Append("            hash.Add(");
+            if (UsesReferenceEquality(parameter))
+                text.Append("this.@").Append(parameter.Name).Append(" is null ? 0 : global::System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(this.@")
+                    .Append(parameter.Name).Append(')');
+            else
+                text.Append("this.@").Append(parameter.Name);
+            text.AppendLine(");");
+        }
+        text.AppendLine("            return hash.ToHashCode();\n        }");
+    }
+
+    private static bool UsesReferenceEquality(IParameterSymbol parameter) => IsContent(parameter) ||
+        parameter.Type.IsReferenceType && parameter.Type.SpecialType != SpecialType.System_String &&
+        parameter.Type is not INamedTypeSymbol { IsRecord: true };
+
+    private static bool IsContent(IParameterSymbol parameter) => parameter.GetAttributes().Any(attribute =>
+        attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Views.Compose.ComposableAttribute");
+
+    private static bool IsCallback(ITypeSymbol type) => type is INamedTypeSymbol named &&
+        named.TypeKind == TypeKind.Delegate && named.ContainingNamespace.ToDisplayString() == "System" &&
+        named.Name is "Action" or "Func";
 
     private static string GetComposeViewName(IMethodSymbol method)
     {
