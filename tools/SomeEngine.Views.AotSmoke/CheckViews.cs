@@ -38,7 +38,8 @@ Require(first[2] == second[2] && frames.World.Read<Selection>(second[2]).Value =
     "The call on the same column preserves its local state.");
 LayoutChecks.Run();
 ComposeChecks.Run(frames);
-Console.WriteLine("View functions, Compose views, identities, sparse storage, scaled canvases, and user layouts passed under NativeAOT.");
+SwiftUIChecks.Run(frames);
+Console.WriteLine("View functions, Compose views, SwiftUI state and bindings, identities, sparse storage, scaled canvases, and user layouts passed under NativeAOT.");
 
 static void Require(bool value, string message)
 {
