@@ -61,9 +61,8 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
             Entity entity = view.Entity;
             if (context.World.IsAlive(entity))
             {
-                bool firstBuild = context.World.Has<BuildRequest>(entity);
-                if (firstBuild || HasChanges(context.World, entity, recheck: true))
-                    ViewTypes.Build(context.World, entity, _frame, firstBuild);
+                if (context.World.Has<BuildRequest>(entity) || HasChanges(context.World, entity, recheck: true))
+                    ViewTypes.Build(context.World, entity, _frame);
             }
         }
         _views.Clear();

@@ -14,7 +14,7 @@ internal static unsafe class ViewTypes
     private static int s_count;
 
     internal static ushort Register(
-        delegate*<World, Entity, ulong, bool, void> buildFunction,
+        delegate*<World, Entity, ulong, void> buildFunction,
         delegate*<World, Entity, bool> parameterCheckFunction,
         ChildSource children)
     {
@@ -29,10 +29,10 @@ internal static unsafe class ViewTypes
         }
     }
 
-    internal static void Build(World world, Entity entity, ulong frame, bool firstBuild)
+    internal static void Build(World world, Entity entity, ulong frame)
     {
         ushort typeId = world.Read<ViewType>(entity).Id;
-        Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity, frame, firstBuild);
+        Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity, frame);
     }
 
     internal static bool HasParameterChanges(World world, Entity entity)
@@ -53,14 +53,14 @@ internal static unsafe class ViewTypes
 
     private readonly struct ViewFunctions
     {
-        internal readonly delegate*<World, Entity, ulong, bool, void> BuildFunction;
+        internal readonly delegate*<World, Entity, ulong, void> BuildFunction;
         internal readonly delegate*<World, Entity, bool> ParameterCheckFunction;
 #if DEBUG
         internal readonly ChildSource Children;
 #endif
 
         internal ViewFunctions(
-            delegate*<World, Entity, ulong, bool, void> buildFunction,
+            delegate*<World, Entity, ulong, void> buildFunction,
             delegate*<World, Entity, bool> parameterCheckFunction,
             ChildSource children)
         {
@@ -81,8 +81,11 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
     {
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"View {typeof(T).Name} requires IComponent or ISparseComponent storage.");
-        return ViewTypes.Register(&Build, &HasParameterChanges, T.Children);
+        return ViewTypes.Register(&BuildFromSystem, &HasParameterChanges, T.Children);
     }
+
+    private static void BuildFromSystem(World world, Entity entity, ulong frame) =>
+        Build(world, entity, frame, firstBuild: false);
 
     internal static void Build(World world, Entity entity, ulong frame, bool firstBuild)
     {

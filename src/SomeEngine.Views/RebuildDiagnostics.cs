@@ -30,7 +30,14 @@ public static class RebuildDiagnostics
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void BeginFrame(World world) => s_frames?.GetValue(world, static _ => new()).Clear();
+    internal static void BeginFrame(World world)
+    {
+        if (s_frames is { } frames)
+            ClearFrame(frames, world);
+    }
+
+    private static void ClearFrame(ConditionalWeakTable<World, List<RebuildRecord>> frames, World world) =>
+        frames.GetValue(world, static _ => new()).Clear();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void Record<T>(World world, Entity view, bool firstBuild, uint parameterVersion) where T : struct
