@@ -54,14 +54,22 @@ Entity root = Views.Spawn(world, Entity.Null, new Panel("Inventory"));
 
 ## 参数更新实现（#7）
 
-`Scope.View<T>(in T)` 复用同一父节点下对应调用序号的子实体，并使用
+`Scope.View<T>(in T)` 与显式 key 重载复用同一父节点下对应身份的子实体，并使用
 `IEquatable<T>.Equals` 比较旧参数与声明的参数。
-参数比较、构建模式、外部 ECS 写入的更新规则与本阶段的调用序号匹配范围由
+参数比较、构建模式与外部 ECS 写入的更新规则由
 [[architecture/someui/Build-Modes|Build Modes]] 维护。
 
 公开行为测试 `ParameterBuildTests.cs` 验证两种存储的版本、输出与嵌套节点复用。
 `FirstBuildChecks.cs` 同时在 ECS NativeAOT 冒烟工程验证相等参数保持、
 稀疏参数向表格子视图传播与 `Once` 内容保持。
+
+## 节点身份实现（#8）
+
+`ElementKey` 保存 key 和从 0 开始的出现次数，`Scope.View<T>(in T, ulong)`
+和 `Scope.Key(ulong)` 提供显式身份。匹配、重排、子树释放、类型替换、局部状态标记
+及开发检查由 [[architecture/someui/Node-Identity|Node Identity]] 维护。
+公开行为测试 `NodeIdentityTests.cs` 覆盖列表和默认 key 声明，
+`FirstBuildChecks.cs` 同时验证 NativeAOT 下的 keyed 节点生命周期。
 
 ## Relations
 [[architecture/someui/Build-Modes|Build Modes]] · [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Node-Identity|Node Identity]] · [[architecture/someui/Build-Scope|Build Scope]]

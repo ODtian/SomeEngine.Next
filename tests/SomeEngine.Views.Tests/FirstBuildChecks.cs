@@ -32,6 +32,7 @@ internal static class FirstBuildChecks
 
         VerifyParameterChanges(frames, root, children.ToArray(), grandchildren[0]);
         VerifyOnceParameters(frames);
+        VerifyKeyedChildren(frames);
         VerifyReadDependencies(frames);
     }
 
@@ -80,6 +81,41 @@ internal static class FirstBuildChecks
 
         Require(frames.World.Read<OnceText>(root).Value == "updated", "Once stores the latest parameters.");
         Require(frames.World.Read<TableText>(child).Value == "first", "Once retains its first content.");
+    }
+
+    private static void VerifyKeyedChildren(HeadlessFrameDriver frames)
+    {
+        Entity root = Views.Spawn(frames.World, Entity.Null, new KeyedGroup([11, 22, 33]));
+        frames.Frame();
+        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] leaves = rows.Select(row => Hierarchy<ElementTree>.GetChildren(frames.World, row)[0]).ToArray();
+        frames.World.Replace(rows[1], new Selection(7));
+        frames.World.Replace(root, new KeyedGroup([33, 11, 22]));
+
+        frames.Frame();
+
+        Require(Hierarchy<ElementTree>.GetChildren(frames.World, root).Span.SequenceEqual([rows[2], rows[0], rows[1]]),
+            "Key scopes preserve each row entity in the new declaration order.");
+        Require(frames.World.Read<Selection>(rows[1]).Value == 7, "Keyed rows preserve their local state.");
+        Require(frames.World.Read<ElementKey>(rows[1]).Key == 22, "The row retains its declared key.");
+        frames.World.Replace(root, new KeyedGroup([33, 22]));
+
+        frames.Frame();
+
+        Require(Hierarchy<ElementTree>.GetChildren(frames.World, root).Span.SequenceEqual([rows[2], rows[1]]),
+            "Deleting an item preserves the remaining keyed rows.");
+        Require(!frames.World.IsAlive(rows[0]) && !frames.World.IsAlive(leaves[0]),
+            "Deleting an item releases its row and subtree.");
+        frames.World.Replace(root, new KeyedGroup([33, 22], TextOnly: true));
+
+        frames.Frame();
+
+        Entity[] texts = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Require(texts.Length == 2 && frames.World.Read<TableText>(texts[0]).Value == "33" &&
+            frames.World.Read<TableText>(texts[1]).Value == "22", "Type changes create the declared replacement views.");
+        Require(!frames.World.IsAlive(rows[1]) && !frames.World.IsAlive(rows[2]) &&
+            !frames.World.IsAlive(leaves[1]) && !frames.World.IsAlive(leaves[2]),
+            "Type changes release the previous rows and their subtrees.");
     }
 
     private static void VerifyReadDependencies(HeadlessFrameDriver frames)
@@ -150,6 +186,40 @@ internal static class FirstBuildChecks
             return default;
         }
     }
+
+    private readonly record struct KeyedGroup(ulong[] Ids, bool TextOnly = false) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            foreach (ulong id in Ids)
+            {
+                using (Scope.Key(id))
+                {
+                    if (TextOnly)
+                        Scope.View(new TableText(id.ToString()));
+                    else
+                        Scope.View(new KeyedBranch(id));
+                }
+            }
+            return default;
+        }
+    }
+
+    private readonly record struct KeyedBranch(ulong Id) : IView, ISparseComponent
+    {
+        public BuildTask Build()
+        {
+            if (!Scope.World.Has<Selection>(Scope.Entity))
+            {
+                Scope.World.Add(Scope.Entity, new Selection(0));
+                Scope.World.AddTag<LocalState>(Scope.Entity);
+            }
+            Scope.View(new TableText(Id.ToString()));
+            return default;
+        }
+    }
+
+    private readonly record struct Selection(int Value) : IComponent;
 
     private readonly record struct OnceText(string Value) : IView, IComponent
     {

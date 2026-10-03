@@ -65,7 +65,7 @@
 依赖缓冲借用也在各次登记或比较完成后结束，构建继续通过 World 执行结构修改。
 
 `ReadDependencyTests.cs` 通过无头帧驱动、公开视图和组件数据显示历史验证父子顺序，
-并通过公开 `Hierarchy<ElementTree>.DestroySubtree` 验证父构建释放失效子视图后的帧结果。
+并通过父视图改为声明空内容，验证成功构建后的子树释放与后续帧结果。
 
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]

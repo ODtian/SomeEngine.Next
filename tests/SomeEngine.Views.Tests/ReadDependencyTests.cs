@@ -295,8 +295,6 @@ public sealed class ReadDependencyTests
             }
             else
             {
-                foreach (Entity child in Hierarchy<ElementTree>.GetChildren(Scope.World, Scope.Entity).ToArray())
-                    Hierarchy<ElementTree>.DestroySubtree(Scope.World, child);
                 AppendDisplay("empty");
             }
             return default;
