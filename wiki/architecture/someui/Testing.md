@@ -163,5 +163,30 @@ Absolute 嵌套、最小/最大尺寸、单轴自动尺寸、零尺寸、非均�
 架构用例报告该声明并以退出码 1 失败；移除该声明后的验收通过。
 访问边界规则由 [[architecture/someui/Assemblies|Assemblies]] 维护。
 
+## 内容函数验收（#61）
+
+2026-10-04，实现提交 `c8255fdd`，源码验收提交
+`ac8086644c165fc53b34bf5695e8e6f47fcaedb1`，已对齐集成提交
+`25f49a66061e7f19882f1d0f52303c7abf2bfb95`。
+Windows x64，.NET SDK `10.0.112`。
+
+`ContentFunctionTests` 的 16 个公开编译与行为用例通过生成视图、World、
+`ElementTree`、`State<T>`、`BuildError` 和分析器诊断验收条件与循环调用、
+内容引用变化、static lambda 的子内容保留、泛型跨程序集转交、各行独立依赖、
+同步完成的 BuildTask 内容与错误恢复、自定义委托、命名与可选实参、局部及全局别名。
+info 验收同时覆盖 Compose 与 SwiftUI，内容委托形状由编译诊断验收。
+接口接入、引用刷新、捕获提示、声明错误和全局别名均按先红后绿流程完成。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj --verbosity minimal` | 57 个生成器用例通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj --no-restore --verbosity minimal` | 246 个公共行为用例通过 |
+| `dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained --verbosity minimal` | NativeAOT 原生发布成功 |
+| `tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe` | 原生执行成功，退出码 0；覆盖内容函数、Compose、节点身份、sparse 存储和用户布局 |
+
+原生内容验收从公共树读取多行结果，并验证父参数变化后相等行的保留与变化行的刷新。
+原生验收产物在执行后清理。接口与节点规则见
+[[architecture/someui/Compose-Frontend|Compose Frontend]]。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
