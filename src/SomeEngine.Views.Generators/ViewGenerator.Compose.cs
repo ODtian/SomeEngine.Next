@@ -9,7 +9,7 @@ namespace SomeEngine.Views.Generators;
 
 public sealed partial class ViewGenerator
 {
-    private static void GenerateComposeViews(SourceProductionContext output, CSharpParseOptions options,
+    private static void GenerateComposeViews(SourceProductionContext output, Compilation compilation, CSharpParseOptions options,
         List<SyntaxTree> declarations, ImmutableArray<IMethodSymbol> methods)
     {
         foreach (IMethodSymbol method in methods)
@@ -27,24 +27,37 @@ public sealed partial class ViewGenerator
             }
 
             string viewName = GetComposeViewName(method);
+            bool hasContent = method.Parameters.Any(ViewCalls.IsContentParameter);
             string access = method.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
-            if (method.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)))
+            if (method.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)) ||
+                method.TypeParameters.Any(parameter => parameter.ConstraintTypes.Any(ContainsPrivateType)))
                 access = "private";
             var text = OpenContainingTypes(type).Append(GeneratePartialType(type)).AppendLine("\n{")
                 .Append("    ").Append(access).Append(" readonly record struct @").Append(viewName)
                 .Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
                 .Append(GenerateParameters(method.Parameters)).Append(')')
                 .Append(" : global::SomeEngine.Views.IView, global::SomeEngine.ECS.Components.ISparseComponent")
-                .AppendLine(GenerateConstraints(method.TypeParameters)).AppendLine("    {")
-                .AppendLine("        [global::System.CodeDom.Compiler.GeneratedCode(\"SomeEngine.Views.Generators.Compose\", \"1.0\")]")
+                .AppendLine(GenerateConstraints(method.TypeParameters)).AppendLine("    {");
+            if (hasContent)
+                GenerateContentEquality(text, "@" + viewName + GenerateTypeParameters(method.TypeParameters),
+                    method.Parameters.Select(parameter => (parameter.Name, parameter.Type, ViewCalls.IsContentParameter(parameter))));
+            text.AppendLine("        [global::System.CodeDom.Compiler.GeneratedCode(\"SomeEngine.Views.Generators.Compose\", \"1.0\")]")
                 .Append("        public global::SomeEngine.Views.BuildTask Build()")
                 .Append(method.ReturnsVoid ? "\n        {\n            " : " => ")
                 .Append(type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-                .Append(".@").Append(method.Name).Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
+                .Append(".@").Append(hasContent ? "Build" + viewName + "Content" : method.Name)
+                .Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
                 .Append(GenerateArguments(method.Parameters)).AppendLine(");");
             if (method.ReturnsVoid)
                 text.AppendLine("            return default;\n        }");
-            text.AppendLine("    }\n}");
+            GenerateComposeEquality(text, method, viewName);
+            text.AppendLine("    }");
+            if (hasContent)
+            {
+                GenerateContentViews(text, method);
+                GenerateContentBody(output, compilation, options, declarations, method);
+            }
+            text.AppendLine("}");
             CloseContainingTypes(text, type);
             AddDeclarations(output, options, declarations, GetFileName(type, viewName), text.ToString());
         }
@@ -71,6 +84,53 @@ public sealed partial class ViewGenerator
             text.AppendLine("            return default;");
         text.AppendLine("        }");
     }
+
+    private static void GenerateRememberInterceptor(StringBuilder text, InterceptableLocation location, ulong key, int number)
+    {
+        text.Append("        [global::System.Runtime.CompilerServices.InterceptsLocationAttribute(")
+            .Append(location.Version).Append(", ").Append(SymbolDisplay.FormatLiteral(location.Data, true)).AppendLine(")]")
+            .Append("        public static T RememberAt").Append(number).AppendLine("<T>(global::System.Func<T> init)")
+            .Append("            => global::SomeEngine.Views.Scope.Remember(init, ")
+            .Append(key.ToString(CultureInfo.InvariantCulture)).AppendLine("UL);");
+    }
+
+    private static void GenerateComposeEquality(StringBuilder text, IMethodSymbol method, string viewName)
+    {
+        IParameterSymbol[] parameters = method.Parameters.Where(parameter => IsContent(parameter) || !IsCallback(parameter.Type)).ToArray();
+        text.Append("        public bool Equals(@").Append(viewName).Append(GenerateTypeParameters(method.TypeParameters))
+            .Append(" other) => ");
+        text.Append(parameters.Length == 0 ? "true" : string.Join(" && ", parameters.Select(parameter =>
+            UsesReferenceEquality(parameter)
+                ? "global::System.Object.ReferenceEquals(this.@" + parameter.Name + ", other.@" + parameter.Name + ")"
+                : "global::System.Collections.Generic.EqualityComparer<" + parameter.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                    ">.Default.Equals(this.@" + parameter.Name + ", other.@" + parameter.Name + ")"))).AppendLine(";");
+        text.AppendLine("        public override int GetHashCode()\n        {\n            var hash = new global::System.HashCode();");
+        foreach (IParameterSymbol parameter in parameters)
+        {
+            text.Append("            hash.Add(");
+            if (UsesReferenceEquality(parameter))
+                text.Append("this.@").Append(parameter.Name).Append(" is null ? 0 : global::System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(this.@")
+                    .Append(parameter.Name).Append(')');
+            else
+                text.Append("this.@").Append(parameter.Name);
+            text.AppendLine(");");
+        }
+        text.AppendLine("            return hash.ToHashCode();\n        }");
+    }
+
+    private static bool UsesReferenceEquality(IParameterSymbol parameter) => IsContent(parameter) ||
+        parameter.Type.IsReferenceType && parameter.Type.SpecialType != SpecialType.System_String &&
+        !IsRecordParameter(parameter.Type);
+
+    private static bool IsRecordParameter(ITypeSymbol type) => type is INamedTypeSymbol { IsRecord: true } ||
+        type is ITypeParameterSymbol parameter && parameter.ConstraintTypes.Any(IsRecordParameter);
+
+    private static bool IsContent(IParameterSymbol parameter) => parameter.GetAttributes().Any(attribute =>
+        attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Views.Compose.ComposableAttribute");
+
+    private static bool IsCallback(ITypeSymbol type) => type is INamedTypeSymbol named &&
+        named.TypeKind == TypeKind.Delegate && named.ContainingNamespace.ToDisplayString() == "System" &&
+        named.Name is "Action" or "Func";
 
     private static string GetComposeViewName(IMethodSymbol method)
     {

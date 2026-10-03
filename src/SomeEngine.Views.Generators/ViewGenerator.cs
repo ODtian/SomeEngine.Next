@@ -38,7 +38,7 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
     {
         var options = (CSharpParseOptions)compilation.SyntaxTrees.First().Options;
         var functions = new List<SyntaxTree>();
-        GenerateComposeViews(output, options, functions, composables);
+        GenerateComposeViews(output, compilation, options, functions, composables);
         foreach (INamedTypeSymbol type in views.Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default))
         {
             INamedTypeSymbol[] containers = GetContainingTypes(type!).ToArray();
@@ -63,6 +63,9 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 CloseContainingTypes(storage, type);
                 AddDeclarations(output, options, functions, GetFileName(type, "Storage"), storage.ToString());
             }
+            string? stateProperties = GenerateStateProperties(type);
+            if (stateProperties is not null)
+                AddDeclarations(output, options, functions, GetFileName(type, "State"), stateProperties);
             string source = GenerateFunctions(type);
             string file = GetFileName(type, "Functions");
             AddDeclarations(output, options, functions, file, source);
@@ -83,7 +86,8 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 bool viewCall = ViewCalls.IsView(method);
                 bool namedCall = ViewCalls.IsViewFunction(method);
                 bool composeCall = ViewCalls.IsComposeView(method);
-                if (!viewCall && !namedCall && !composeCall)
+                bool rememberCall = ViewCalls.IsRemember(method);
+                if (!viewCall && !namedCall && !composeCall && !rememberCall)
                     continue;
                 if (composeCall && model.GetEnclosingSymbol(call.SpanStart, output.CancellationToken) is IMethodSymbol enclosingMethod &&
                     ViewCalls.IsComposeBuild(enclosingMethod))
@@ -94,7 +98,14 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 if (location is null)
                     continue;
                 SimpleNameSyntax name = GetMethodName(call);
-                ulong key = GetCallKey(name.GetLocation().GetMappedLineSpan());
+                string? sourceKey = call.GetAnnotations("ViewCallKey").FirstOrDefault()?.Data;
+                ulong key = sourceKey is null ? GetCallKey(name.GetLocation().GetMappedLineSpan()) :
+                    ulong.Parse(sourceKey, CultureInfo.InvariantCulture);
+                if (rememberCall)
+                {
+                    GenerateRememberInterceptor(interceptors, location, key, count++);
+                    continue;
+                }
                 if (composeCall)
                 {
                     GenerateComposeInterceptor(interceptors, method, location, key, count++);

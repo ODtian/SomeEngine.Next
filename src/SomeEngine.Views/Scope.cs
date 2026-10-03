@@ -9,7 +9,7 @@ using SomeEngine.Core.Diagnostics;
 namespace SomeEngine.Views;
 
 /// <summary>The thread's active view build, restored as nested child builds return.</summary>
-public static class Scope
+public static partial class Scope
 {
     [ThreadStatic]
     private static Stack<ScopeData>? s_scopes;
@@ -633,6 +633,7 @@ public static class Scope
         internal uint? ParameterVersion;
         internal bool Suspended;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
+        internal Dictionary<ulong, int>? RememberOccurrences;
         internal ulong? KeyPrefix;
 #if DEBUG
         internal int ContentVersion;
