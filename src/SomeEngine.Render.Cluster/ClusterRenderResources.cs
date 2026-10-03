@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using SomeEngine.Core.Diagnostics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -31,16 +32,14 @@ public sealed record ClusterRenderDiagnostics(
     ClusterMeshCacheDiagnostics Meshes);
 
 /// <summary>
-/// Non-cacheable assembly-local binding for one exact Cluster epoch. Constructing the binding is
-/// also registers Cluster residency use on the submitted render frame.
+/// Cluster residency and instance data bound during a shared render-data read.
 /// </summary>
 internal readonly ref struct ClusterRenderBinding
 {
     internal ClusterRenderBinding(
         ClusterResidencyBinding residency,
         RenderInstanceBatchView instanceProperties,
-        ClusterEpochId readbackEpoch,
-        RenderFrameUseLease frameUse)
+        ClusterEpochId readbackEpoch)
     {
         PageFaultCapacity = residency.PageFaultCapacity;
         ResidentPageRanges = residency.ResidentPageRanges;
@@ -53,10 +52,7 @@ internal readonly ref struct ClusterRenderBinding
             : throw new ArgumentException(
                 "A Cluster render binding requires a valid readback epoch.",
                 nameof(readbackEpoch));
-        _frameUse = frameUse;
     }
-
-    private readonly RenderFrameUseLease _frameUse;
 
     internal int PageFaultCapacity { get; }
 
@@ -71,9 +67,6 @@ internal readonly ref struct ClusterRenderBinding
     internal int DispatchExtent { get; }
 
     internal ClusterEpochId ReadbackEpoch { get; }
-
-    public void Dispose()
-        => _frameUse.Dispose();
 }
 
 /// <summary>
@@ -96,7 +89,6 @@ public sealed class ClusterRenderResources : IDisposable
     private readonly RenderWorld _renderWorld;
     private readonly ClusterMeshCache _meshes;
     private readonly ClusterMeshPrepareSystem _meshPrepare;
-    private readonly RenderTimeline _residencyTimeline;
     private readonly ClusterEpochId _epoch;
     private readonly ClusterWorldClaim _worldClaim;
     private readonly object _worldClaimToken = new();
@@ -120,14 +112,12 @@ public sealed class ClusterRenderResources : IDisposable
     public ClusterRenderResources(
         IGraphicsBackend backend,
         Device device,
-        RenderFrameCoordinator coordinator,
         RenderWorld renderWorld,
         RenderInstanceStorageSystem instances,
         ClusterRenderOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(coordinator);
         ArgumentNullException.ThrowIfNull(renderWorld);
         ArgumentNullException.ThrowIfNull(instances);
         if (!ReferenceEquals(renderWorld, instances.World))
@@ -156,17 +146,9 @@ public sealed class ClusterRenderResources : IDisposable
         ClusterMeshPrepareSystem? meshPrepare = null;
         try
         {
-            RenderTimeline residencyTimeline = coordinator.CreateTimeline(generationCount: 1);
-            if (!ReferenceEquals(residencyTimeline.Device, device))
-            {
-                throw new ArgumentException(
-                    "Cluster resources and their frame coordinator must use the same device domain.",
-                    nameof(coordinator));
-            }
             residency = new ClusterResidency(
                 backend,
                 device,
-                residencyTimeline,
                 selected.Residency);
             meshes = new ClusterMeshCache(residency);
             meshPrepare = new ClusterMeshPrepareSystem(renderWorld, meshes);
@@ -177,7 +159,6 @@ public sealed class ClusterRenderResources : IDisposable
             _renderWorld = renderWorld;
             _meshes = meshes;
             _meshPrepare = meshPrepare;
-            _residencyTimeline = residencyTimeline;
             _epoch = residency.EpochId;
             _worldClaim = worldClaim;
             _shutdownTimeout = selected.Residency.DisposeTimeout;
@@ -197,8 +178,6 @@ public sealed class ClusterRenderResources : IDisposable
     internal RenderWorld World => _renderWorld;
 
     internal RenderInstanceResources InstanceResources => _instances;
-
-    internal RenderTimeline ResidencyTimeline => _residencyTimeline;
 
     internal int PublishedMeshCount => _meshes.PublishedMeshCount;
 
@@ -252,7 +231,7 @@ public sealed class ClusterRenderResources : IDisposable
     internal ClusterPrepareResult Prepare(
         RenderPrepareScope scope)
     {
-        ArgumentNullException.ThrowIfNull(scope);
+        DevelopmentCheck.Require(scope is not null && !scope.IsClosed, "Cluster mutation requires an open prepare scope.");
         EnterActiveOperation();
         try
         {
@@ -266,9 +245,6 @@ public sealed class ClusterRenderResources : IDisposable
                 _aggregateMutationActive = true;
                 try
                 {
-                    using RenderTimelineLease residencyLease =
-                        scope.AcquireTimeline(_residencyTimeline);
-
                     bool prepared = _residency.PreparePublication();
                     return new ClusterPrepareResult(prepared);
                 }
@@ -332,36 +308,23 @@ public sealed class ClusterRenderResources : IDisposable
     /// compiled shader variant. Cluster does not inspect or reconstruct that variant's fields.
     /// </summary>
     internal ClusterRenderBinding Use(
-        RenderFrame frame,
+        RenderReadScope readScope,
         RenderInstanceBatch instanceProperties,
         RenderInstancePropertyLayout shaderContract)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UseTrace);
-        ArgumentNullException.ThrowIfNull(frame);
         ArgumentNullException.ThrowIfNull(instanceProperties);
         ArgumentNullException.ThrowIfNull(shaderContract);
         EnterActiveOperation();
-        RenderFrameUseLease? frameUse = null;
         try
         {
-            // Bind the live batch and shader layout before registering residency use.
+            DevelopmentCheck.Require(!readScope.IsClosed, "Cluster binding requires an open render-data read.");
             ClusterResidencyBinding residency = _residency.GetBinding();
-            RenderInstanceBatchView batch = _instances.GetBatchView(
-                instanceProperties,
-                shaderContract);
-            frameUse = frame.AcquireUse([_residencyTimeline]);
-            frameUse.RegisterGeneration(_residencyTimeline, 0);
-            ClusterRenderBinding binding = new(
-                residency,
-                batch,
-                _epoch,
-                frameUse);
-            frameUse = null;
-            return binding;
+            RenderInstanceBatchView batch = _instances.GetBatchView(instanceProperties, shaderContract);
+            return new ClusterRenderBinding(residency, batch, _epoch);
         }
         finally
         {
-            frameUse?.Dispose();
             ExitActiveOperation();
         }
     }
@@ -454,12 +417,11 @@ public sealed class ClusterRenderResources : IDisposable
     }
 
     /// <summary>
-    /// Stops Cluster contributors and destroys Cluster-owned residency while its exact timeline is
-    /// quiescent. Shared batch storage deliberately outlives this pipeline epoch.
+    /// Stops Cluster contributors and releases residency under exclusive render-data access.
     /// </summary>
     public void Shutdown(RenderPrepareScope scope)
     {
-        ArgumentNullException.ThrowIfNull(scope);
+        DevelopmentCheck.Require(scope is not null && !scope.IsClosed, "Cluster mutation requires an open prepare scope.");
         if (IsCurrentThreadInActiveOperation() || _residency.IsRegistrationOwner)
         {
             throw new InvalidOperationException(
@@ -470,7 +432,6 @@ public sealed class ClusterRenderResources : IDisposable
         {
             // Only Cluster residency is owned here. Shared instance storage has its own explicit
             // shutdown boundary and must not be retired by a pipeline.
-            using RenderTimelineLease residencyLease = scope.AcquireTimeline(_residencyTimeline);
             state = EnterStopping(state);
 
             long started = Stopwatch.GetTimestamp();
@@ -503,11 +464,6 @@ public sealed class ClusterRenderResources : IDisposable
                 _residency.StopStreaming(Remaining(started));
                 _streamStopped = true;
             }
-            if (!_residencyTimeline.WaitForGeneration(0, Remaining(started)))
-            {
-                throw new TimeoutException(
-                    "Cluster residency readers did not retire before resource shutdown.");
-            }
             if (!_residencyDestroyed)
             {
                 _residency.DestroyStorage();
@@ -525,7 +481,7 @@ public sealed class ClusterRenderResources : IDisposable
         }
     }
 
-    /// <summary>Disposal is valid only after an explicit, committed shutdown boundary.</summary>
+    /// <summary>Disposal follows shutdown and release of its prepare scope.</summary>
     public void Dispose()
     {
         lock (_lifecycleGate)
@@ -544,10 +500,10 @@ public sealed class ClusterRenderResources : IDisposable
                     throw new InvalidOperationException(
                         "Cluster resource shutdown has not completed.");
                 case LifecycleShutdown:
-                    if (_shutdownScope is null || !_shutdownScope.IsCommitted)
+                    if (_shutdownScope is null || !_shutdownScope.IsClosed)
                     {
                         throw new InvalidOperationException(
-                            "The prepare scope used for Cluster shutdown must commit before disposal.");
+                            "The prepare scope used for Cluster shutdown must be released before disposal.");
                     }
                     _lifecycleState = LifecycleDisposed;
                     ReleaseRenderWorld(_worldClaim, _worldClaimToken);

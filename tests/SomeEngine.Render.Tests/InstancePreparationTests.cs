@@ -180,7 +180,7 @@ public sealed class InstancePreparationTests
                     _device.Backend.GetQueue(_device.Device, QueueType.Compute),
                     _device.Backend.GetQueue(_device.Device, QueueType.Copy)],
                 new RenderGraphDesc(MaximumFramesInFlight: 2));
-            _instances = new(_device.Backend, _device.Device, _device.Coordinator, World,
+            _instances = new(_device.Backend, _device.Device, World,
                 RenderInstanceTransformProperties.Layout,
                 new RenderInstanceOptions { RowCapacity = capacity, BatchCapacity = 2 });
             _instances.Install(_graph);
@@ -207,11 +207,10 @@ public sealed class InstancePreparationTests
         internal RenderGraphNextFrame ComposeFrame()
         {
             Assert.True(_graph.TryOpenNextFrame(out var next, TimeSpan.FromSeconds(10)));
-            Assert.True(_device.Coordinator.TryBeginPrepare(out var prepare));
+            Assert.True(_device.DataLock.TryBeginPrepare(out var prepare));
             using (prepare)
             {
                 Prepare.Update(prepare, next);
-                prepare.Commit();
             }
             return next;
         }
@@ -220,7 +219,7 @@ public sealed class InstancePreparationTests
         {
             using var next = ComposeFrame();
             {
-                Assert.True(_device.Coordinator.TryBeginFrame(out var frame));
+                Assert.True(_device.DataLock.TryBeginRead(out var frame));
                 using (frame)
                 using (var commands = _graph.BeginFrame(next))
                 {
@@ -231,7 +230,8 @@ public sealed class InstancePreparationTests
                     _view = reader.View;
                     var completions = new QueueCompletion[_graph.MaximumQueueCompletionCount];
                     int count = commands.Execute(completions);
-                    frame.Complete(completions.AsSpan(0, count));
+                    _device.RenderDevice.TrackSubmission(completions.AsSpan(0, count));
+                    frame.Dispose();
                     foreach (var completion in completions.AsSpan(0, count))
                         Assert.Equal(WaitStatus.Completed, _device.Backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
                 }
@@ -257,12 +257,11 @@ public sealed class InstancePreparationTests
 
         public void Dispose()
         {
-            Assert.True(_device.Coordinator.TryBeginPrepare(out var scope));
+            Assert.True(_device.DataLock.TryBeginPrepare(out var scope));
             using (scope)
             {
                 Prepare.Shutdown(scope);
                 _instances.Shutdown(scope);
-                scope.Commit();
             }
             Prepare.Dispose();
             _instances.Dispose();

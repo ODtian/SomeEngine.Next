@@ -87,15 +87,6 @@ public sealed partial class RenderDevice : IDisposable
             CollectCompletedLocked();
     }
 
-    internal bool IsComplete(in QueueCompletion completion)
-        => _backend.IsComplete(completion);
-
-    internal bool WaitAll(ReadOnlySpan<QueueCompletion> completions, TimeSpan timeout)
-        => global::SomeEngine.Render.Frame.RenderQueueCompletions.WaitAll(
-            _backend,
-            completions,
-            timeout);
-
     internal QueueCompletion[] CaptureSubmittedCompletions()
     {
         lock (_completionGate)

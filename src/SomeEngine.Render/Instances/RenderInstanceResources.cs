@@ -308,6 +308,7 @@ internal sealed class RenderInstanceResources : IDisposable, IRenderGraphFrameEx
 
     internal RenderInstanceWriteScope BeginPrepare(RenderPrepareScope scope, RenderGraphNextFrame? nextFrame)
     {
+        DevelopmentCheck.Require(scope is not null && !scope.IsClosed, "Instance preparation requires an open write scope.");
         EnterOperation();
         try
         {
@@ -318,11 +319,11 @@ internal sealed class RenderInstanceResources : IDisposable, IRenderGraphFrameEx
         catch { ExitOperation(); throw; }
     }
 
-    public RenderInstanceStorageView OpenRead(RenderFrame frame, scoped ref RenderGraphFrame graph)
+    public RenderInstanceStorageView OpenRead(RenderReadScope readScope, scoped ref RenderGraphFrame graph)
     {
         ThrowIfNotActive();
         BindFrame(ref graph);
-        return new RenderInstanceStorageView(this, frame);
+        return new RenderInstanceStorageView(this, readScope);
     }
 
     internal RenderInstanceBatchView GetBatchView(
@@ -692,7 +693,7 @@ internal sealed class RenderInstanceResources : IDisposable, IRenderGraphFrameEx
 
     public void Shutdown(RenderPrepareScope scope)
     {
-        ArgumentNullException.ThrowIfNull(scope);
+        DevelopmentCheck.Require(scope is not null && !scope.IsClosed, "Instance shutdown requires an open write scope.");
         EnterOperation(allowShutdown: true);
         try
         {
@@ -1052,10 +1053,10 @@ internal sealed class RenderInstanceResources : IDisposable, IRenderGraphFrameEx
                 }
                 if (_operationActive != 0)
                     throw new InvalidOperationException("Batch instance shutdown is still active.");
-                if (_shutdownScope is null || !_shutdownScope.IsCommitted)
+                if (_shutdownScope is null || !_shutdownScope.IsClosed)
                 {
                     throw new InvalidOperationException(
-                        "The prepare scope used for batch instance shutdown must commit before disposal.");
+                        "The prepare scope used for batch instance shutdown must be released before disposal.");
                 }
                 if (_lifecycleState == LifecycleDisposed)
                     return;

@@ -513,8 +513,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         scoped ReadOnlySpan<Entity> viewEntities,
         int primaryViewCount)
     {
-        using ClusterRenderBinding binding = _resources.Use(
-            context.ActiveFrame,
+        ClusterRenderBinding binding = _resources.Use(
+            context.ReadScope,
             batch,
             _instanceLayout);
         ClusterCullingHistory history = _history ?? throw new InvalidOperationException(

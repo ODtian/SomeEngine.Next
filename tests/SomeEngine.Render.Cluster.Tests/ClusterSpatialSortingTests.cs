@@ -88,13 +88,13 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
             Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), 32, 32));
         using var extraction = new RenderExtractionSystems(world, new MeshRenderExtractor());
         using var renderDevice = new RenderDevice(backend, device);
-        using var coordinator = new RenderFrameCoordinator(renderDevice);
+        var dataLock = new RenderDataLock();
         using var graph = new global::SomeEngine.RenderGraph.RenderGraph(backend, device,
             [backend.GetQueue(device, QueueType.Graphics), backend.GetQueue(device, QueueType.Compute),
                 backend.GetQueue(device, QueueType.Copy)]);
-        var instances = new RenderInstanceStorageSystem(backend, device, coordinator, world,
+        var instances = new RenderInstanceStorageSystem(backend, device, world,
             ClusterRenderFeature.InstanceLayout, new RenderInstanceOptions { RowCapacity = 8, BatchCapacity = 2 });
-        var cluster = new ClusterRenderResources(backend, device, coordinator, world, instances,
+        var cluster = new ClusterRenderResources(backend, device, world, instances,
             new ClusterRenderOptions { Residency = new ClusterResidencyOptions { PageHeapCapacityBytes = 1048576 } });
         var assignments = new ClusterMaterialAssignments();
         var composition = new ClusterInstanceSystem<ClusterMaterialOffsetProducer>(cluster,
@@ -133,7 +133,7 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
                     throw new TimeoutException("Scene upload pages exceeded the wait time.");
                 using (next)
                 {
-                    if (!coordinator.TryBeginPrepare(out var scope))
+                    if (!dataLock.TryBeginPrepare(out var scope))
                         throw new InvalidOperationException("Scene preparation requires the write boundary.");
                     using (scope)
                     {
@@ -146,7 +146,6 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
                         await cluster.PrepareMeshesAsync();
                         streaming.Pump();
                         prepare.Update(scope, next);
-                        scope.Commit();
                     }
                     ClusterPipelineOutputs output = pipeline.ReconcileGraph();
                     if (frameIndex == 0)
@@ -169,7 +168,7 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
                         edit.AddReadback(pixels, BufferRange.Whole, receiver, "Spatially grouped pixels");
                         edit.Commit();
                     }
-                    if (!coordinator.TryBeginFrame(out var renderFrame))
+                    if (!dataLock.TryBeginRead(out var renderFrame))
                         throw new InvalidOperationException("Scene recording requires the read boundary.");
                     using (renderFrame)
                     using (var commands = graph.BeginFrame(next))
@@ -177,7 +176,8 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
                         frames.Update(renderFrame, commands);
                         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
                         int count = commands.Execute(completions);
-                        renderFrame.Complete(completions.AsSpan(0, count));
+                        renderDevice.TrackSubmission(completions.AsSpan(0, count));
+                        renderFrame.Dispose();
                         foreach (QueueCompletion completion in completions.AsSpan(0, count))
                             if (backend.WaitCpu(completion, TimeSpan.FromSeconds(20)) != WaitStatus.Completed)
                                 throw new TimeoutException("Scene output exceeded the GPU wait time.");
@@ -190,14 +190,13 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
         finally
         {
             frames.Dispose();
-            if (!coordinator.TryBeginPrepare(out var shutdown))
+            if (!dataLock.TryBeginPrepare(out var shutdown))
                 throw new InvalidOperationException("Scene shutdown requires the write boundary.");
             using (shutdown)
             {
                 prepare.Shutdown(shutdown);
                 cluster.Shutdown(shutdown);
                 instances.Shutdown(shutdown);
-                shutdown.Commit();
             }
             prepare.Dispose();
             cluster.Dispose();

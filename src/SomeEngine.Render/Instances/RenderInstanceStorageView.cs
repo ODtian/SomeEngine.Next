@@ -2,18 +2,18 @@ using SomeEngine.Render.Frame;
 
 namespace SomeEngine.Render.Instances;
 
-/// <summary>Read access to batch graph buffers during a render frame.</summary>
+/// <summary>Read access to batch graph buffers during a render read scope.</summary>
 public ref struct RenderInstanceStorageView
 {
     private RenderInstanceResources? _owner;
-    private RenderFrame? _frame;
+    private RenderReadScope? _readScope;
 
     internal RenderInstanceStorageView(
         RenderInstanceResources owner,
-        RenderFrame frame)
+        RenderReadScope readScope)
     {
         _owner = owner;
-        _frame = frame;
+        _readScope = readScope;
     }
 
     public RenderInstanceBatchView Bind(
@@ -27,12 +27,12 @@ public ref struct RenderInstanceStorageView
     public void Dispose()
     {
         _owner = null;
-        _frame = null;
+        _readScope = null;
     }
 
     private RenderInstanceResources RequireOwner()
     {
-        if (_owner is null || _frame is null || _frame.IsClosed)
+        if (_owner is null || _readScope is null || _readScope.IsClosed)
             throw new ObjectDisposedException(nameof(RenderInstanceStorageView));
         return _owner;
     }

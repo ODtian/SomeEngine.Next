@@ -495,11 +495,10 @@ internal static class RuntimeApplication
         Entity viewEntity = renderWorld.CreateEntity(initialView.View);
 
         using var renderDevice = new RenderDevice(backend, device, FrameTimeout);
-        using var coordinator = new RenderFrameCoordinator(renderDevice, FrameTimeout);
+        var dataLock = new RenderDataLock();
         var instances = new RenderInstanceStorageSystem(
             backend,
             device,
-            coordinator,
             renderWorld,
             ClusterRenderFeature.InstanceLayout,
             new RenderInstanceOptions
@@ -510,7 +509,6 @@ internal static class RuntimeApplication
         var cluster = new ClusterRenderResources(
             backend,
             device,
-            coordinator,
             renderWorld,
             instances,
             platform is null ? null : new ClusterRenderOptions
@@ -694,8 +692,6 @@ internal static class RuntimeApplication
             {
                 long frameStarted = Stopwatch.GetTimestamp();
                 using var frameTrace = EngineTrace.BeginFrame(++traceFrameIndex);
-                backend.CollectCompleted(device);
-                coordinator.AdmitFrameResources();
                 // Shared asset content can change only after the Game World extraction reader exits.
                 if (nextGameUpdate is not null)
                 {
@@ -808,6 +804,7 @@ internal static class RuntimeApplication
                 if (!renderGraph.TryOpenNextFrame(out RenderGraphNextFrame nextFrame, FrameTimeout))
                     throw new TimeoutException("The next rendering frame exceeded its resource wait timeout.");
                 using var nextFrameResources = nextFrame;
+                renderDevice.CollectCompleted();
                 long prepareStarted = Stopwatch.GetTimestamp();
                 if (platform?.ImageRequested == true)
                     outputVerifier ??= new FrameOutputVerifier(backend, device, width, height, PresentationFormat);
@@ -815,7 +812,7 @@ internal static class RuntimeApplication
                     prepareSystems,
                     cluster,
                     streamingConsumer,
-                    coordinator,
+                    dataLock,
                     nextFrame,
                     window,
                     reportMilestones);
@@ -860,7 +857,8 @@ internal static class RuntimeApplication
                     graphicsQueue,
                     graphCompletionSlots,
                     graphCompletions,
-                    coordinator,
+                    renderDevice,
+                    dataLock,
                     frameSystems,
                     pipeline,
                     streamingConsumer,
@@ -1049,13 +1047,13 @@ internal static class RuntimeApplication
         {
             if (nextGameUpdate is not null)
                 RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+            renderDevice.WaitForTrackedSubmissions(FrameTimeout);
             outputVerifier?.Dispose();
-            coordinator.WaitForTrackedSubmissions();
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();
             frameSystems.Dispose();
-            Shutdown(prepareSystems, cluster, instances, coordinator);
+            Shutdown(prepareSystems, cluster, instances, dataLock);
             scene.Dispose();
             if (device.Status == DeviceStatus.Active)
                 backend.CollectCompleted(device);
@@ -1066,13 +1064,13 @@ internal static class RuntimeApplication
         RenderPrepareSystems systems,
         ClusterRenderResources cluster,
         ClusterStreamingFeedbackConsumer streamingFeedback,
-        RenderFrameCoordinator coordinator,
+        RenderDataLock dataLock,
         RenderGraphNextFrame nextFrame,
         NativeWindow window,
         bool reportMilestones)
     {
         using var trace = EngineTrace.Begin(ApplicationTrace.Prepare);
-        if (!coordinator.TryBeginPrepare(out RenderPrepareScope? scope))
+        if (!dataLock.TryBeginPrepare(out RenderPrepareScope? scope))
             throw new InvalidOperationException("The render prepare boundary is not available.");
         using (scope)
         {
@@ -1101,8 +1099,6 @@ internal static class RuntimeApplication
                 Console.WriteLine("First frame: publishing prepare systems.");
             using (EngineTrace.Begin(ApplicationTrace.PrepareSystems))
                 systems.Update(scope, nextFrame);
-            using (EngineTrace.Begin(ApplicationTrace.PrepareCommit))
-                scope.Commit();
         }
     }
 
@@ -1113,7 +1109,8 @@ internal static class RuntimeApplication
         Queue graphicsQueue,
         QueueCompletion[] completionSlots,
         QueueCompletion[] completions,
-        RenderFrameCoordinator coordinator,
+        RenderDevice renderDevice,
+        RenderDataLock dataLock,
         RenderFrameSystems systems,
         ClusterPipelineSystem pipeline,
         ClusterStreamingFeedbackConsumer streamingConsumer,
@@ -1137,18 +1134,15 @@ internal static class RuntimeApplication
         Vector2 jitterPixels)
     {
         using var trace = EngineTrace.Begin(ApplicationTrace.Execute);
-        if (!coordinator.TryBeginFrame(out RenderFrame? frame))
+        if (!dataLock.TryBeginRead(out RenderReadScope? readScope))
         {
-            RenderFrameSynchronizationDiagnostics state = coordinator.CaptureDiagnostics();
+            RenderDataAccessDiagnostics state = dataLock.CaptureDiagnostics();
             throw new InvalidOperationException(
-                "The render frame boundary is not available: " +
-                $"prepareOpen={state.PrepareOpen}, frameOpen={state.FrameOpen}, " +
-                $"readers={state.OpenReaderCount}, retained={state.RetainedPositionCount}, " +
-                $"pendingTimelines={state.PendingTimelineCount}, " +
-                $"retryTimelines={state.RetryRequiredTimelineCount}.");
+                "Render-data reading conflicted with prepare: " +
+                $"prepareOpen={state.PrepareOpen}, readers={state.OpenReaderCount}.");
         }
 
-        using (frame)
+        using (readScope)
         {
             FrameOutputMetrics? frameOutput = null;
             completionSlots.AsSpan().Clear();
@@ -1164,7 +1158,7 @@ internal static class RuntimeApplication
                         Console.WriteLine("First frame: recording render systems.");
                     presentation.Bind(ref graphFrame, image, graphicsQueue);
                     using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
-                        systems.Update(frame, graphFrame);
+                        systems.Update(readScope, graphFrame);
                     var motion = new MotionFeatureOutput(
                         clusterOutputs.MotionVectors,
                         clusterOutputs.Width,
@@ -1192,8 +1186,8 @@ internal static class RuntimeApplication
                         completions,
                         submittedQueueCount);
                     ReadOnlySpan<QueueCompletion> execution = completions.AsSpan(0, completionCount);
-                    using (EngineTrace.Begin(ApplicationTrace.FrameCompletion))
-                        frame.Complete(execution);
+                    renderDevice.TrackSubmission(execution);
+                    readScope.Dispose();
                     if (synchronousFrames && outputVerifier is null)
                         Wait(backend, execution, window, synchronousFrames);
                     if (outputVerifier is not null)
@@ -1219,7 +1213,7 @@ internal static class RuntimeApplication
                     if (completionCount != 0)
                     {
                         ReadOnlySpan<QueueCompletion> accepted = completions.AsSpan(0, completionCount);
-                        if (!frame.IsClosed) frame.Complete(accepted);
+                        renderDevice.TrackSubmission(accepted);
                     }
                 }
                 catch (Exception cleanup)
@@ -1276,49 +1270,19 @@ internal static class RuntimeApplication
         if (eventDriven) _ = window.PumpMessages();
     }
 
-    private static bool WaitForAll(
-        IGraphicsBackend backend,
-        ReadOnlySpan<QueueCompletion> completions,
-        TimeSpan timeout)
-    {
-        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
-            throw new ArgumentOutOfRangeException(nameof(timeout));
-        if (timeout == TimeSpan.Zero)
-        {
-            foreach (ref readonly QueueCompletion completion in completions)
-                if (!backend.IsComplete(completion))
-                    return false;
-            return true;
-        }
-
-        long started = Environment.TickCount64;
-        foreach (ref readonly QueueCompletion completion in completions)
-        {
-            TimeSpan remaining = timeout == Timeout.InfiniteTimeSpan
-                ? Timeout.InfiniteTimeSpan
-                : timeout - TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
-            if (remaining < TimeSpan.Zero)
-                remaining = TimeSpan.Zero;
-            if (backend.WaitCpu(completion, remaining) != WaitStatus.Completed)
-                return false;
-        }
-        return true;
-    }
-
     private static void Shutdown(
         RenderPrepareSystems prepareSystems,
         ClusterRenderResources cluster,
         RenderInstanceStorageSystem instances,
-        RenderFrameCoordinator coordinator)
+        RenderDataLock dataLock)
     {
-        if (!coordinator.TryBeginPrepare(out RenderPrepareScope? scope))
+        if (!dataLock.TryBeginPrepare(out RenderPrepareScope? scope))
             throw new InvalidOperationException("The final render prepare boundary is not available.");
         using (scope)
         {
             prepareSystems.Shutdown(scope);
             cluster.Shutdown(scope);
             instances.Shutdown(scope);
-            scope.Commit();
         }
         prepareSystems.Dispose();
         cluster.Dispose();

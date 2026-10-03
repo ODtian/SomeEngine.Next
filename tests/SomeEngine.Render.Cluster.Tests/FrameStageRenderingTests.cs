@@ -84,7 +84,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private readonly RenderWorld _world = new();
     private readonly RenderExtractionSystems _extraction;
     private readonly RenderDevice _renderDevice;
-    private readonly RenderFrameCoordinator _coordinator;
+    private readonly RenderDataLock _dataLock;
     private readonly RenderInstanceStorageSystem _instances;
     private readonly ClusterRenderResources _cluster;
     private readonly RenderPrepareSystems _prepare;
@@ -134,10 +134,10 @@ internal sealed class FrameStageScene : IAsyncDisposable
             Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), Width, Height));
         _extraction = new RenderExtractionSystems(_world, new MeshRenderExtractor(), new LightRenderExtractor());
         _renderDevice = new RenderDevice(backend, device);
-        _coordinator = new RenderFrameCoordinator(_renderDevice);
-        _instances = new RenderInstanceStorageSystem(backend, device, _coordinator, _world,
+        _dataLock = new RenderDataLock();
+        _instances = new RenderInstanceStorageSystem(backend, device, _world,
             ClusterRenderFeature.InstanceLayout, new RenderInstanceOptions { RowCapacity = 16, BatchCapacity = 8 });
-        _cluster = new ClusterRenderResources(backend, device, _coordinator, _world, _instances,
+        _cluster = new ClusterRenderResources(backend, device, _world, _instances,
             new ClusterRenderOptions { Residency = new ClusterResidencyOptions
                 { PageHeapCapacityBytes = 1048576, BvhCapacityBytes = 65536, PageFaultCapacity = 16 } });
         var assignments = new ClusterMaterialAssignments();
@@ -416,17 +416,16 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _extraction.Extract(_gameWorld);
         Assert.True(_graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(20)));
         using var resources = nextFrame;
-        Assert.True(_coordinator.TryBeginPrepare(out var update));
+        Assert.True(_dataLock.TryBeginPrepare(out var update));
         using (update)
         {
             _prepare.ApplyExtraction(update);
             await _cluster.PrepareMeshesAsync();
             _streaming.Pump();
             _prepare.Update(update, nextFrame);
-            update.Commit();
         }
         _pipeline.ReconcileGraph();
-        Assert.True(_coordinator.TryBeginFrame(out var frame));
+        Assert.True(_dataLock.TryBeginRead(out var frame));
         using (frame)
         using (RenderGraphFrame commands = _graph.BeginFrame(nextFrame))
             _frames.Update(frame, commands);
@@ -437,17 +436,16 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _extraction.Extract(_gameWorld);
         Assert.True(_graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(20)));
         using var nextFrameResources = nextFrame;
-        Assert.True(_coordinator.TryBeginPrepare(out var update));
+        Assert.True(_dataLock.TryBeginPrepare(out var update));
         using (update)
         {
             _prepare.ApplyExtraction(update);
             await _cluster.PrepareMeshesAsync();
             _streaming.Pump();
             _prepare.Update(update, nextFrame);
-            update.Commit();
         }
         ClusterPipelineOutputs outputs = _pipeline.ReconcileGraph();
-        Assert.True(_coordinator.TryBeginFrame(out var frame));
+        Assert.True(_dataLock.TryBeginRead(out var frame));
         using (frame)
         using (RenderGraphFrame commands = _graph.BeginFrame(nextFrame, new RenderGraphFrameOptions(
             Diagnostics: (in RenderGraphDiagnosticsView diagnostics) =>
@@ -465,7 +463,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
             commands.SetTextureInput(_readbackColor, postProcessedColor ? _temporal.Output.ResolvedColor : outputs.MaterialColor);
             commands.Execute(_completions);
             QueueCompletion[] accepted = _completions.Where(value => value != default).ToArray();
-            frame.Complete(accepted);
+            _renderDevice.TrackSubmission(accepted);
+            frame.Dispose();
             foreach (QueueCompletion completion in accepted)
                 Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
         }
@@ -515,19 +514,18 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _lighting.Dispose();
         _readback.Dispose();
         _depthReadback.Dispose();
-        Assert.True(_coordinator.TryBeginPrepare(out var shutdown));
+        Assert.True(_dataLock.TryBeginPrepare(out var shutdown));
         using (shutdown)
         {
             _prepare.Shutdown(shutdown);
             _cluster.Shutdown(shutdown);
             _instances.Shutdown(shutdown);
-            shutdown.Commit();
         }
         _prepare.Dispose();
         _cluster.Dispose();
         _instances.Dispose();
         _extraction.Dispose();
-        _coordinator.Dispose();
+
         _renderDevice.Dispose();
         _world.Dispose();
         _gameWorld.Dispose();
