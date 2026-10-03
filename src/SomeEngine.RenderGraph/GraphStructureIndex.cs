@@ -338,8 +338,6 @@ internal sealed class GraphStructureIndex
             PassResourceAccess row = structure.Accesses.Rows[i];
             changes.TouchAccess(id, row.Pass, row.Target, membership: true);
         }
-        for (int i = 0; i < structure.ExtensionPoints.Count; i++)
-            changes.TouchExtensionPoint(structure.ExtensionPoints.IdentityAt(owner, i), membership: true);
         foreach (ExplicitPassOrder order in structure.Orders)
             changes.TouchOrder(order.Predecessor, order.Consumer);
     }

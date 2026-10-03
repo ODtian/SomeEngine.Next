@@ -1307,7 +1307,7 @@ public sealed class PersistentRenderGraphTests
     }
 
     [Fact]
-    public void FrameExtensionParticipatesInCullingAndScheduling()
+    public void FrameRegionParticipatesInCullingAndScheduling()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using Buffer source = support.Backend.CreateBuffer(
@@ -1323,7 +1323,7 @@ public sealed class PersistentRenderGraphTests
             support.Device,
             [support.GraphicsQueue, support.CopyQueue]);
 
-        GraphExtensionPointId point;
+        GraphRegionId point;
         GraphBufferId sourceId;
         GraphBufferId destinationId;
         using (RenderGraphEdit edit = graph.BeginEdit())
@@ -1332,31 +1332,30 @@ public sealed class PersistentRenderGraphTests
                 [Endpoint(source, support.CopyQueue, ResourceContentState.Defined)]);
             destinationId = edit.RegisterExternalBuffer(destination,
                 [Endpoint(destination, support.GraphicsQueue, ResourceContentState.Undefined)]);
-            point = edit.AddExtensionPoint("Dynamic work");
+            point = edit.AddFrameRegion("Dynamic work");
             edit.Commit();
         }
 
         QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using (RenderGraphFrame frame = graph.BeginFrame())
         {
-            using RenderGraphFrameExtension extension = frame.BeginExtension(point);
-            GraphBufferId transient = extension.CreateBuffer(new BufferDesc(
+            GraphBufferId transient = frame.CreateBuffer(new BufferDesc(
                 ByteCount,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
-            _ = extension.AddCopyPass(
-                "Extension upload",
+            _ = frame.AddCopyPass(
+                "Frame region upload",
                 PassQueueSelection.Exact(support.CopyQueue),
                 new CopyState(sourceId, transient, ByteCount),
                 default,
                 DeclareCopy,
-                RecordCopy);
-            _ = extension.AddCopyPass(
-                "Extension readback",
+                RecordCopy, point);
+            _ = frame.AddCopyPass(
+                "Frame region readback",
                 PassQueueSelection.Exact(support.GraphicsQueue),
                 new CopyState(transient, destinationId, ByteCount),
                 default,
                 DeclareCopy,
-                RecordCopy);
+                RecordCopy, point);
             _ = frame.Execute(completions);
         }
         support.Wait(completions);
@@ -1408,48 +1407,6 @@ public sealed class PersistentRenderGraphTests
         _ = second.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
         second.Dispose();
     }
-
-    [Fact]
-    public void StaleFrameExtensionCannotOperateOnReusedFrameSlot()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(
-            support.Backend,
-            support.Device,
-            [support.GraphicsQueue],
-            new RenderGraphDesc(MaximumFramesInFlight: 1));
-        GraphExtensionPointId point;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            point = edit.AddExtensionPoint("dynamic");
-            edit.Commit();
-        }
-        QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-
-        RenderGraphFrame first = graph.BeginFrame();
-        RenderGraphFrameExtension extension = first.BeginExtension(point);
-        RenderGraphFrameExtension stale = extension;
-        Assert.Equal(0, first.Execute(completions));
-
-        RenderGraphFrame second = graph.BeginFrame();
-        using RenderGraphFrameExtension current = second.BeginExtension(point);
-        bool rejected = false;
-        try
-        {
-            _ = stale.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
-        }
-        catch (InvalidOperationException)
-        {
-            rejected = true;
-        }
-        Assert.True(rejected, "A copied frame-extension lease must not revive with a new frame.");
-
-        stale.Dispose();
-        _ = current.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
-        second.Dispose();
-    }
-
-
 
     [Fact]
     public void ExplicitUndefinedResultRejectsSameFrameRead()

@@ -11,6 +11,8 @@
 ## Editing
 
 - `RenderGraphEdit.AddRegion(label, parent = default)` 在父区段末尾创建持久区段。
+- `RenderGraphEdit.AddFrameRegion(label, parent = default)` 在持久父区段末尾创建当帧区段，
+  其内容与跨帧分析规则见 [[Extension-Points|Frame Regions]]。
 - 编辑中的 `AddRasterPass`、`AddComputePass`、`AddCopyPass`、`AddGeneralPass` 以及对应
   `Add*FramePass` 重载接受末尾的可选 `region` 参数。
 - 后来加入已有区段的 pass 取得该区段内的声明序号，因此仍在该区段的位置执行。
@@ -26,6 +28,10 @@
 保留空隙。空隙用尽时，只重新分配该父区段子树的编号，分配宽度按后代所需位置计算。
 较小区段可利用相邻空隙扩大范围，祖先的区间边界随之更新。子树外 pass 的声明序号保持
 其既有值。序号变化通过 `GraphEditChanges` 的 pass 变化交给原有增量分析与调度。
+
+当帧区段在分配与重编时保留足以容纳 `int` 计数范围内当帧 pass 的编号宽度，深层区段
+据此为每个当帧 pass 分配独立序号。该宽度属于编号区间，实际行按当帧声明的数量创建。
+根区段为省略区段参数的当帧 pass 保留末尾编号空间，持久子树使用前面的空间。
 
 ## Frame enable state
 
@@ -55,4 +61,4 @@
 
 ## Relations
 
-[[Retained-Graph]] · [[Structural-Changes]] · [[Frame-Data]] · [[Graph-Versioning]] · [[Incremental-Scheduling]]
+[[Retained-Graph]] · [[Structural-Changes]] · [[Frame-Data]] · [[Graph-Versioning]] · [[Incremental-Scheduling]] · [[Extension-Points|Frame Regions]] · [[Region-Reconciliation]]

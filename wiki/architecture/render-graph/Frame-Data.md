@@ -11,6 +11,7 @@ Frame data 是在既有图结构中变化的值和绑定。
 - material values
 - instance values
 - frame-local resource accesses
+- 区段启用状态与 [[Extension-Points|Frame Regions]] 的当帧内容
 
 ## Invariants
 更新这些数据不得改变 graph identity，也不得触发结构重建。

@@ -256,27 +256,6 @@ public ref partial struct RenderGraphEdit
 
     public void Remove(GraphTextureAccessId access) => RemoveAccess(access.Value);
 
-    public void Remove(GraphExtensionPointId point)
-    {
-        ValidateOwner(point.Value);
-        Changes.TouchExtensionPoint(point.Value, membership: true);
-        _ = Staging.ExtensionPoints.Remove(point.Value);
-        RemoveRegionEntry(default, point.Value);
-    }
-
-    public GraphExtensionPointId AddExtensionPoint(string label)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(label);
-        GraphIdentity identity = Staging.ExtensionPoints.Add(
-            Graph.Identity,
-            new GraphExtensionPoint(
-                label, 0));
-        GraphRegionEntry entry = AddRegionEntry(default, identity);
-        Staging.ExtensionPoints.Set(identity, new GraphExtensionPoint(label, entry.Start));
-        Changes.TouchExtensionPoint(identity, membership: true);
-        return new GraphExtensionPointId(identity);
-    }
-
     public void OrderAfter(GraphPassId pass, GraphPassId predecessor)
     {
         ValidatePass(pass);

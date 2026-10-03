@@ -6,6 +6,7 @@ internal sealed class GraphRegion
 {
     internal required string Label;
     internal GraphIdentity Parent;
+    internal bool IsFrame;
     internal bool Enabled = true;
     internal ImmutableList<GraphRegionEntry> Children = [];
 
@@ -43,11 +44,22 @@ internal sealed partial class GraphStructure
 
 public ref partial struct RenderGraphEdit
 {
-    public GraphRegionId AddRegion(string label, GraphRegionId parent = default)
+    // Frame row counts determine the declaration space reserved for frame passes.
+    private const long FrameRegionMinimumWidth = (long)int.MaxValue + 1;
+
+    public GraphRegionId AddRegion(string label, GraphRegionId parent = default) =>
+        AddRegion(label, parent, isFrame: false);
+
+    public GraphRegionId AddFrameRegion(string label, GraphRegionId parent = default) =>
+        AddRegion(label, parent, isFrame: true);
+
+    private GraphRegionId AddRegion(string label, GraphRegionId parent, bool isFrame)
     {
         DevelopmentCheck.Require(!string.IsNullOrWhiteSpace(label), "A region requires a label.");
         ValidateRegion(parent);
-        var region = new GraphRegion { Label = label, Parent = parent.Value };
+        DevelopmentCheck.Require(!Structure.GetRegion(parent.Value).IsFrame,
+            "Child regions require a persistent parent region.");
+        var region = new GraphRegion { Label = label, Parent = parent.Value, IsFrame = isFrame };
         GraphIdentity identity = Staging.Regions.Add(Graph.Identity, region);
         _ = AddRegionEntry(parent.Value, identity);
         Changes.TouchRegion(identity);
@@ -74,22 +86,31 @@ public ref partial struct RenderGraphEdit
     private void SetPassRegion(GraphIdentity identity, GraphRegionId region)
     {
         ValidateRegion(region);
+        DevelopmentCheck.Require(!Structure.GetRegion(region.Value).IsFrame,
+            "Persistent passes require a persistent region.");
         GraphPass pass = Staging.Passes.GetMutable(identity);
         pass.Region = region.Value;
         pass.DeclarationOrdinal = AddRegionEntry(region.Value, identity).Start;
     }
 
+    private GraphRegionEntry GetDeclarationInterval(GraphIdentity identity)
+    {
+        GraphRegionEntry interval = Structure.GetRegionInterval(identity);
+        return identity.IsValid ? interval : interval with { End = interval.End - FrameRegionMinimumWidth };
+    }
+
     private GraphRegionEntry AddRegionEntry(GraphIdentity parent, GraphIdentity identity)
     {
         GraphRegion region = Staging.GetMutableRegion(parent);
-        GraphRegionEntry interval = Structure.GetRegionInterval(parent);
+        GraphRegionEntry interval = GetDeclarationInterval(parent);
         long previous = region.Children.Count == 0 ? interval.Start : region.Children[^1].End;
         long width = (interval.End - previous) / 4;
+        long minimumWidth = identity.Domain == GraphIdentityDomain.Region ? RegionPositionCount(identity) : 1;
         GraphRegionEntry entry;
         if (region.Children.Count == 0 && identity.Domain == GraphIdentityDomain.Region &&
-            interval.End - interval.Start > 3)
+            interval.End - interval.Start > minimumWidth + 2)
             entry = new GraphRegionEntry(identity, interval.Start + 1, interval.End - 1);
-        else if (width >= (identity.Domain == GraphIdentityDomain.Region ? 3 : 1))
+        else if (width >= minimumWidth)
             entry = new GraphRegionEntry(identity, previous + width, previous + width * 2);
         else
         {
@@ -106,6 +127,7 @@ public ref partial struct RenderGraphEdit
     {
         if (identity.Domain != GraphIdentityDomain.Region) return 1;
         GraphRegion region = Structure.Regions.Get(identity);
+        if (region.IsFrame) return FrameRegionMinimumWidth;
         long count = region.Children.Count + 1L;
         foreach (GraphRegionEntry child in region.Children)
             count = checked(count + RegionPositionCount(child.Identity));
@@ -121,7 +143,7 @@ public ref partial struct RenderGraphEdit
         if (end - start < count)
         {
             ExtendRegionInterval(identity, count);
-            GraphRegionEntry interval = Structure.GetRegionInterval(identity);
+            GraphRegionEntry interval = GetDeclarationInterval(identity);
             start = interval.Start;
             end = interval.End;
         }
@@ -144,12 +166,6 @@ public ref partial struct RenderGraphEdit
                     Changes.TouchPass(child.Identity);
                 }
             }
-            else
-            {
-                GraphExtensionPoint point = Structure.ExtensionPoints.Get(child.Identity);
-                Staging.ExtensionPoints.Set(child.Identity, point with { DeclarationOrdinal = childStart });
-                Changes.TouchExtensionPoint(child.Identity);
-            }
             position = childEnd;
         }
         region.Children = children.ToImmutable();
@@ -163,17 +179,13 @@ public ref partial struct RenderGraphEdit
         GraphRegion region = Staging.GetMutableRegion(identity);
         GraphRegion parent = Staging.GetMutableRegion(region.Parent);
         int index = parent.Children.FindIndex(child => child.Identity == identity);
-        GraphRegionEntry interval = Structure.GetRegionInterval(region.Parent);
+        GraphRegionEntry interval = GetDeclarationInterval(region.Parent);
         long start = index == 0 ? interval.Start + 1 : parent.Children[index - 1].End + 1;
         long end = index + 1 == parent.Children.Count ? interval.End - 1 : parent.Children[index + 1].Start - 1;
         if (end - start < count)
         {
-            ExtendRegionInterval(region.Parent, checked(interval.End - interval.Start + count - (end - start)));
-            interval = Structure.GetRegionInterval(region.Parent);
-            start = index == 0 ? interval.Start + 1 : parent.Children[index - 1].End + 1;
-            end = index + 1 == parent.Children.Count ? interval.End - 1 : parent.Children[index + 1].Start - 1;
-            if (end - start < count)
-                throw new InvalidOperationException("The region declaration sequence is exhausted.");
+            RecompileRegion(region.Parent, interval.Start, interval.End);
+            return;
         }
         parent.Children = parent.Children.SetItem(index, new GraphRegionEntry(identity, start, end));
         Changes.TouchRegion(identity);

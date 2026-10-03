@@ -464,23 +464,23 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _orderConsumerResources = [];
     private readonly HashSet<GraphIdentity> _changedOrderIdentities = [];
     private readonly HashSet<int> _fixedValuePasses = [];
-    private readonly Dictionary<ExplicitPassOrder, PassEdge> _dynamicValueEdges = [];
-    private readonly Dictionary<ExplicitPassOrder, bool> _dynamicOrderChanges = [];
-    private readonly Dictionary<GraphIdentity, HashSet<ExplicitPassOrder>> _dynamicOrdersByPass = [];
+    private readonly HashSet<PassEdge> _dynamicValueEdges = [];
+    private readonly HashSet<PassEdge> _currentDynamicEdges = [];
+    private readonly Dictionary<PassEdge, bool> _dynamicOrderChanges = [];
 
-    internal void ChangeDynamicOrder(ExplicitPassOrder order, bool exists)
+    private void PrepareDynamicOrders()
     {
-        if (_dynamicValueEdges.ContainsKey(order) == exists)
-            _dynamicOrderChanges.Remove(order);
-        else
-            _dynamicOrderChanges[order] = exists;
-    }
-
-    private void RefreshDynamicOrders(GraphIdentity identity)
-    {
-        if (!_dynamicOrdersByPass.TryGetValue(identity, out var orders)) return;
-        foreach (ExplicitPassOrder order in orders)
-            _dynamicOrderChanges.TryAdd(order, true);
+        _currentDynamicEdges.Clear();
+        _dynamicOrderChanges.Clear();
+        foreach (ExplicitPassOrder order in _frame.DynamicOrders)
+        {
+            var edge = new PassEdge(ResolvePass(order.Predecessor), ResolvePass(order.Consumer));
+            _currentDynamicEdges.Add(edge);
+            if (!_dynamicValueEdges.Contains(edge)) _dynamicOrderChanges[edge] = true;
+        }
+        foreach (PassEdge edge in _dynamicValueEdges)
+            if (!_currentDynamicEdges.Contains(edge)) _dynamicOrderChanges[edge] = false;
+        _analysisChanged |= _dynamicOrderChanges.Count != 0;
     }
 
     private void SetPassRow(int index, in FramePass row)
@@ -495,8 +495,6 @@ internal sealed partial class FrameExecutor
             (previous.Definition is not null || row.Definition is not null);
         if (identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal)
         {
-            RefreshDynamicOrders(previous.Identity);
-            RefreshDynamicOrders(row.Identity);
             RemoveValuePass(index);
         }
         if (!previous.Identity.IsValid || identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal ||
@@ -552,20 +550,9 @@ internal sealed partial class FrameExecutor
 
             foreach (var change in _dynamicOrderChanges)
             {
-                if (!_dynamicValueEdges.Remove(change.Key, out PassEdge previous)) continue;
-                SetValueOrderEdge(previous, 2, false);
-                RemoveReference(change.Key.Predecessor, change.Key);
-                RemoveReference(change.Key.Consumer, change.Key);
-            }
-            foreach (var change in _dynamicOrderChanges)
-            {
-                if (!change.Value) continue;
-                ExplicitPassOrder order = change.Key;
-                var edge = new PassEdge(ResolvePass(order.Predecessor), ResolvePass(order.Consumer));
-                _dynamicValueEdges.Add(order, edge);
-                AddReference(order.Predecessor, order);
-                AddReference(order.Consumer, order);
-                SetValueOrderEdge(edge, 2, true);
+                SetValueOrderEdge(change.Key, 2, change.Value);
+                if (change.Value) _dynamicValueEdges.Add(change.Key);
+                else _dynamicValueEdges.Remove(change.Key);
             }
             _dynamicOrderChanges.Clear();
 
@@ -594,26 +581,9 @@ internal sealed partial class FrameExecutor
             _orderEdgesByPass.Clear();
             _fixedValuePasses.Clear();
             _dynamicValueEdges.Clear();
-            _dynamicOrdersByPass.Clear();
-            _dynamicOrderChanges.Clear();
-            foreach (ExplicitPassOrder order in _frame.DynamicOrders)
-                _dynamicOrderChanges[order] = true;
+            PrepareDynamicOrders();
             for (int index = 0; index < _passes.Count; index++) _changedValuePasses.Add(index);
             throw;
-        }
-
-        void AddReference(GraphIdentity identity, ExplicitPassOrder order)
-        {
-            if (!_dynamicOrdersByPass.TryGetValue(identity, out var orders))
-                _dynamicOrdersByPass.Add(identity, orders = []);
-            orders.Add(order);
-        }
-
-        void RemoveReference(GraphIdentity identity, ExplicitPassOrder order)
-        {
-            if (!_dynamicOrdersByPass.TryGetValue(identity, out var orders)) return;
-            orders.Remove(order);
-            if (orders.Count == 0) _dynamicOrdersByPass.Remove(identity);
         }
     }
 
@@ -652,7 +622,10 @@ internal sealed partial class FrameExecutor
         if (!_orderEdgesByPass.TryGetValue(index, out HashSet<PassEdge>? removedEdges)) return;
         _changedExecutionEdges.UnionWith(removedEdges);
         foreach (PassEdge edge in removedEdges.ToArray())
+        {
+            _dynamicValueEdges.Remove(edge);
             SetValueOrderEdge(edge, 7, false);
+        }
         _orderEdgesByPass.Remove(index);
         _fixedValuePasses.Remove(index);
     }

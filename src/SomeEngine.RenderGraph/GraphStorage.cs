@@ -201,8 +201,6 @@ internal sealed partial class GraphStructure
         new(GraphIdentityDomain.Pass, static value => value.Clone());
     internal GraphRows<PassResourceAccess> Accesses { get; private init; } =
         new(GraphIdentityDomain.Access, static value => value.Clone());
-    internal GraphRows<GraphExtensionPoint> ExtensionPoints { get; private init; } =
-        new(GraphIdentityDomain.ExtensionPoint);
     internal GraphOrders Orders { get; private init; } = new();
     internal GraphRows<GraphRegion> Regions { get; private init; } =
         new(GraphIdentityDomain.Region, static value => value.Clone());
@@ -220,7 +218,6 @@ internal sealed partial class GraphStructure
             Views = Views.Fork(),
             Passes = Passes.Fork(),
             Accesses = Accesses.Fork(),
-            ExtensionPoints = ExtensionPoints.Fork(),
             Orders = Orders.Fork(),
             Regions = Regions.Fork(),
             RootRegion = RootRegion.Clone(),
@@ -238,7 +235,6 @@ internal sealed partial class GraphStructure
         if (ReferenceEquals(Views.BlockIdentity, other.Views.BlockIdentity)) count++;
         if (ReferenceEquals(Passes.BlockIdentity, other.Passes.BlockIdentity)) count++;
         if (ReferenceEquals(Accesses.BlockIdentity, other.Accesses.BlockIdentity)) count++;
-        if (ReferenceEquals(ExtensionPoints.BlockIdentity, other.ExtensionPoints.BlockIdentity)) count++;
         if (ReferenceEquals(Orders.BlockIdentity, other.Orders.BlockIdentity)) count++;
         if (ReferenceEquals(Regions.BlockIdentity, other.Regions.BlockIdentity)) count++;
         return count;
@@ -420,7 +416,6 @@ internal sealed class GraphView
 
 internal readonly record struct ExplicitPassOrder(GraphIdentity Predecessor, GraphIdentity Consumer);
 
-internal readonly record struct GraphExtensionPoint(string Label, long DeclarationOrdinal);
 
 internal sealed class GraphPass
 {
