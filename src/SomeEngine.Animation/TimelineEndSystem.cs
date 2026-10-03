@@ -24,7 +24,7 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
                 foreach (QueryRow row in chunk.Rows)
                 {
                     ref Timeline timeline = ref row.ReadWrite<Timeline>();
-                    if (hasStages && ContinueStages(ref timeline, row.ReadBuffer<TimelineStage>()))
+                    if (hasStages && ContinueStages(ref timeline, row.ReadBuffer<TimelineStage>().AsSpan()))
                         continue;
                     if (timeline.Running != 0)
                         continue;
@@ -34,10 +34,12 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
             }
         });
 
-    private static bool ContinueStages(ref Timeline timeline, BufferView<TimelineStage> stages)
+    internal static bool ContinueStages(ref Timeline timeline, ReadOnlySpan<TimelineStage> stages)
     {
-        DevelopmentCheck.Require(stages.Count <= ushort.MaxValue, "A timeline stage table must fit its stage index.");
-        while (timeline.Stage < stages.Count)
+        DevelopmentCheck.Require(stages.Length <= ushort.MaxValue, "A timeline stage table must fit its stage index.");
+        if (timeline.Paused && timeline.Stage < stages.Length)
+            return true;
+        while (timeline.Stage < stages.Length)
         {
             TimelineStage stage = stages[timeline.Stage];
             switch (stage.End)
@@ -45,11 +47,11 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
                 case StageEnd.External:
                     return true;
                 case StageEnd.Settled:
-                    if (timeline.Running != 0)
+                    if (timeline.Running != 0 || timeline.Time < stage.Duration)
                         return true;
                     timeline.Stage++;
                     timeline.Time = 0;
-                    return timeline.Stage < stages.Count;
+                    return timeline.Stage < stages.Length;
                 case StageEnd.Duration:
                     DevelopmentCheck.Require(float.IsFinite(stage.Duration) && stage.Duration >= 0, "Stage duration must be finite and nonnegative.");
                     if (timeline.Time < stage.Duration)
@@ -57,7 +59,7 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
                     timeline.Time -= stage.Duration;
                     timeline.Stage++;
                     timeline.Running = 0;
-                    if (timeline.Stage < stages.Count && stages[timeline.Stage].End == StageEnd.Settled)
+                    if (timeline.Stage < stages.Length && stages[timeline.Stage].End == StageEnd.Settled)
                         return true;
                     break;
                 default:

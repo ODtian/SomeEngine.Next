@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -9,18 +10,23 @@ namespace SomeEngine.Animation;
 public enum TrackFields : byte { Properties, LayerWeights }
 
 /// <summary>Samples property tracks with the value operations selected by the caller.</summary>
-public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) : ISystem<ImmediateSystemContext>
+public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) : ISystem<ImmediateSystemContext>
     where T : unmanaged
     where TOps : struct, IValueOps<T>
 {
     private readonly TrackFields _fields = fields;
     private QueryHandle _tracks;
+    private QueryHandle _fieldSources;
 
-    public void OnCreate(ref ImmediateSystemContext context) =>
+    public void OnCreate(ref ImmediateSystemContext context)
+    {
+        _fieldSources = context.World.Query(GraphTrackQueries<T>.Sources);
         _tracks = context.World.Query(context.World.QueryDefinition()
             .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<Track<T>>()
             .OptionalBuffer<Keyframe>(QueryAccess.Read)
-            .OptionalBuffer<TimelineStage>(QueryAccess.Read));
+            .OptionalBuffer<TimelineStage>(QueryAccess.Read)
+            .Optional<GraphInstance>(QueryAccess.Read).OptionalBuffer<GraphMotion>(QueryAccess.Write));
+    }
 
     public void OnUpdate(ref ImmediateSystemContext context) =>
         Evaluate(context.World, context.LastSystemVersion, _fields == TrackFields.LayerWeights);
@@ -55,6 +61,9 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
                         if (stage < lastStage)
                             time -= stages[stage].Duration;
                     }
+                    if (row.Has<GraphInstance>() && row.Read<GraphInstance>().Data is GraphData[] graph && graph[0].GroupCount > 0)
+                        SampleGraph(world, row.Entity, tracks, row.Buffer<GraphMotion>(), graph,
+                            timeline.Starts, timeline.Paused, evaluation.WeightChannels, keyframes);
                 }
             }
         });
@@ -83,7 +92,7 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
         for (int i = 0; i < tracks.Count; i++)
         {
             Track<T> previous = tracks.Read(i);
-            if (previous.Finished || previous.Stage != stage || previous.StartId != starts)
+            if (previous.GraphMotion != 0 || previous.Finished && !previous.FromGraph || previous.Stage != stage || previous.StartId != starts)
                 continue;
             bool weightChannel = previous.Channel.Component == ComponentId<AnimationLayers>.Value;
             if (weightChannel != weightChannels)
@@ -94,6 +103,11 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
                 tracks[i].Finished = true;
                 continue;
             }
+            if (time < previous.Start || paused && previous.CaptureStart)
+            {
+                running = true;
+                continue;
+            }
             if (paused)
             {
                 running = true;
@@ -102,27 +116,10 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
                 continue;
             }
             ref Track<T> track = ref tracks[i];
-            if (track.Endpoints == TrackEndpoints.Displacement)
-            {
-                T basis = track.From;
-                track.From = track.Current = TOps.Add(in basis, in track.To);
-                track.To = basis;
-                track.Endpoints = TrackEndpoints.DisplacementValues;
-            }
-            bool finished;
-            if (track.Curve.Kind == CurveKind.Spring)
-            {
-                finished = track.Curve.Step<T, TOps>(time - track.SampleTime, in track.To, ref track.Current, ref track.Velocity);
-            }
-            else
-            {
-                float progress = track.Duration == 0 ? 1 : Math.Clamp((time - track.Start) / track.Duration, 0, 1);
-                track.Current = progress == 1 ? track.To : TOps.Lerp(in track.From, in track.To, track.Curve.Sample(progress, keyframes));
-                finished = progress == 1;
-            }
-            track.SampleTime = time;
-            track.Finished = finished;
-            if (!HasLaterTrack(tracks, animation, target, in track, lastStage))
+            if (!track.Finished)
+                SampleValue(world, animation, target, tracks, i, ref track, stage, time, starts, keyframes);
+            bool finished = track.Finished;
+            if (!HasLaterTrack(tracks, i, animation, target, in track, lastStage, time))
             {
                 if (world.HasBuffer<Contribution<T>>(target))
                     Append(world, target, animation, (uint)i, in track);
@@ -134,16 +131,69 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
         return running;
     }
 
-    private static bool HasLaterTrack(DynamicBuffer<Track<T>> tracks, Entity animation, Entity target, in Track<T> track, int lastStage)
+    private static void SampleValue(World world, Entity animation, Entity target, DynamicBuffer<Track<T>> tracks,
+        int index, ref Track<T> track, int stage, float time, uint starts, ReadOnlySpan<Keyframe> keyframes)
     {
-        if (track.Stage == lastStage)
-            return false;
+        if (track.CaptureStart)
+        {
+            T current = Unsafe.ReadUnaligned<T>(
+                in world.ReadBytes(target, track.Channel.Component, track.Channel.Offset, Unsafe.SizeOf<T>()));
+            if (track.Channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target) &&
+                world.Read<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
+                PropertyAnimation.ReadBase(world, target, track.Channel, ref current);
+            for (int earlier = 0; earlier < index; earlier++)
+            {
+                Track<T> value = tracks.Read(earlier);
+                Entity valueTarget = value.Target == Entity.Null ? animation : value.Target;
+                int valueStage = value.GraphMotion == 0 ? value.Stage : value.MotionStage;
+                if (valueTarget == target && value.GraphMotion == track.GraphMotion && value.Channel == track.Channel && value.Layer == track.Layer &&
+                    value.StartId == starts && (valueStage < stage || valueStage == stage && value.Start + value.Duration <= track.Start))
+                    current = value.Current;
+            }
+            track.From = track.Current = current;
+            track.CaptureStart = false;
+        }
+        if (track.Endpoints == TrackEndpoints.Displacement)
+        {
+            track.Displacement = track.To;
+            T basis = track.From;
+            track.From = track.Current = TOps.Add(in basis, in track.To);
+            track.To = basis;
+            track.Endpoints = TrackEndpoints.DisplacementValues;
+        }
+        bool finished;
+        if (track.Curve.Kind == CurveKind.Spring)
+        {
+            finished = track.Curve.Step<T, TOps>(time - track.SampleTime, in track.To, ref track.Current, ref track.Velocity);
+        }
+        else
+        {
+            float progress = track.Duration == 0 ? 1 : Math.Clamp((time - track.Start) / track.Duration, 0, 1);
+            track.Current = progress == 1 ? track.To : TOps.Lerp(in track.From, in track.To, track.Curve.Sample(progress, keyframes));
+            finished = progress == 1;
+        }
+        track.SampleTime = time;
+        track.Finished = finished;
+    }
+
+    private static bool HasLaterTrack(DynamicBuffer<Track<T>> tracks, int index, Entity animation, Entity target, in Track<T> track, int lastStage, float time)
+    {
         for (int i = 0; i < tracks.Count; i++)
         {
             Track<T> later = tracks.Read(i);
-            if (later.Finished || later.StartId != track.StartId || later.Stage <= track.Stage || later.Stage > lastStage ||
+            if (later.GraphMotion != 0 || later.StartId != track.StartId || later.Stage < track.Stage || later.Stage > lastStage ||
                 later.Channel != track.Channel || later.Layer != track.Layer)
                 continue;
+            if (later.Stage == track.Stage)
+            {
+                if (!track.FromGraph || !later.FromGraph || later.Start > time)
+                    continue;
+                bool after = later.Start > track.Start;
+                bool replaces = later.Start == track.Start && later.Endpoints == TrackEndpoints.Values &&
+                    track.Endpoints == TrackEndpoints.Values && i > index;
+                if (!after && !replaces)
+                    continue;
+            }
             Entity laterTarget = later.Target == Entity.Null ? animation : later.Target;
             if (laterTarget == target)
                 return true;
@@ -180,5 +230,9 @@ public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) 
         return TOps.Add(in basis, in displacement);
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_tracks);
+    public void OnDestroy(ref ImmediateSystemContext context)
+    {
+        context.World.ReleaseQuery(_tracks);
+        context.World.ReleaseQuery(_fieldSources);
+    }
 }
