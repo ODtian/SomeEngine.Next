@@ -1,5 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views;
 
@@ -44,12 +45,20 @@ internal sealed class DependencyChanges
         return change.Changed || (recheck && world.ComponentWriteVersion(component) != change.Version);
     }
 
-    internal bool HasChanges(World world, Dependency read, bool recheck) =>
-        (read.Kind != DependencyKind.Component || HasComponentChanges(world, read.Component, recheck)) &&
-        HasChanges(world, read);
-
-    internal static bool HasChanges(World world, Dependency read) => read.Kind switch
+    internal bool HasChanges(World world, Entity entity, Dependency read, bool recheck) => read.Kind switch
     {
+        DependencyKind.Environment =>
+            (HasComponentChanges(world, read.Component, recheck) ||
+                HasComponentChanges(world, ComponentId<Parent<ElementTree>>.Value, recheck)) &&
+            EnvironmentLookup.HasChanges(world, entity, in read),
+        DependencyKind.Component => HasComponentChanges(world, read.Component, recheck) &&
+            HasChanges(world, entity, read),
+        _ => HasChanges(world, entity, read),
+    };
+
+    internal static bool HasChanges(World world, Entity entity, Dependency read) => read.Kind switch
+    {
+        DependencyKind.Environment => EnvironmentLookup.HasChanges(world, entity, in read),
         DependencyKind.Presence => world.HasComponentData(read.Entity, read.Component) != (read.Version != 0),
         DependencyKind.Membership => world.MembershipVersion(read.Query) != read.Version,
         _ => world.ComponentDataWriteVersion(read.Entity, read.Component) != read.Version,
@@ -62,14 +71,14 @@ internal sealed class DependencyChanges
         if (!world.HasBuffer<Dependency>(entity))
             return false;
 
-        var changes = (Checks: this, World: world, Recheck: recheck, Found: false);
+        var changes = (Checks: this, World: world, Entity: entity, Recheck: recheck, Found: false);
         world.ExecuteBufferRead<Dependency,
-            (DependencyChanges Checks, World World, bool Recheck, bool Found)>(
+            (DependencyChanges Checks, World World, Entity Entity, bool Recheck, bool Found)>(
             entity, ref changes, static (buffer, ref result) =>
         {
             foreach (Dependency read in buffer.AsSpan())
             {
-                if (result.Checks.HasChanges(result.World, read, result.Recheck))
+                if (result.Checks.HasChanges(result.World, result.Entity, read, result.Recheck))
                 {
                     result.Found = true;
                     return;

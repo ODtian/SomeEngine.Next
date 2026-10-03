@@ -37,6 +37,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
+        RebuildDiagnostics.BeginFrame(context.World);
         _frame++;
 #if DEBUG
         using var rebuild = Scope.EnterRebuild();
