@@ -36,5 +36,15 @@ public static class Scope
 - 在计算之外调用作用域函数由开发检查报告；`Depend` 在计算之外为空操作。
 - `Build` 不能跨越 `await` 持有 `ref`，由 C# 编译器保证。
 
+## 首次构建实现（#6）
+
+当前公开入口为 `Scope.World`、`Scope.Entity` 与 `Scope.View<T>(in T)`。
+线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
+返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
+
+`Scope` 在取出当前作用域时调用 `Core.Diagnostics.DevelopmentCheck.Require`，
+开发构建中的作用域外调用会报告需要活动构建。shipping 编译按统一开发检查规则移除该调用。
+其余读取、写入、依赖与异步入口按对应任务票继续实现。
+
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]

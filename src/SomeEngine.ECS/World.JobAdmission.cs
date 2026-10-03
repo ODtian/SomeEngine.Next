@@ -559,7 +559,7 @@ public partial class World
     }
 
     internal WorldJobAdmissionScope EnterJobSparse<T>(WorldStorageAccess access)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         return EnterJobAdmission(
             WorldJobAdmissionRequest.ForStorage(

@@ -27,7 +27,7 @@ internal readonly partial struct Components
 
 
     internal void Add<T>(Entity entity, in T value)
-        where T : struct, IComponent
+        where T : struct
     {
         Add(entity, ComponentMetadata<T>.Id, typeof(T).Name, in value);
     }
@@ -90,7 +90,7 @@ internal readonly partial struct Components
     }
 
     internal T Read<T>(Entity entity)
-        where T : struct, IComponent
+        where T : struct
     {
         EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
@@ -167,7 +167,7 @@ internal readonly partial struct Components
     }
 
     private void Add<T>(Entity entity, int componentId, string name, in T value)
-        where T : struct, IComponent
+        where T : struct
     {
         _iteration.Throw();
         EntityRecordWriter record = _entities.Row(entity);
@@ -188,7 +188,7 @@ internal readonly partial struct Components
         Archetypes.Archetype sourceArchetype,
         int componentId,
         in T value)
-        where T : struct, IComponent
+        where T : struct
     {
         var edge = _tables.Registry.AddEdge(sourceArchetype, componentId);
         _tables.MoveEntity(entity, record, edge);
@@ -245,7 +245,7 @@ internal readonly partial struct Components
         Archetypes.Chunk chunk,
         int columnIndex,
         int row)
-        where T : struct, IComponent
+        where T : struct
     {
         int componentId = ComponentMetadata<T>.Id;
         if (ComponentMetadata<T>.IsEnableable)
@@ -365,7 +365,7 @@ internal readonly partial struct Components
         int row,
         int columnIndex,
         in T value)
-        where T : struct, IComponent
+        where T : struct
     {
         _hierarchy.TrackParent<T>(entity);
         chunk.WriteComponent(columnIndex, row, value);

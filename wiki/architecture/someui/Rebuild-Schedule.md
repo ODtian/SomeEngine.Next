@@ -23,5 +23,20 @@
 - `Build` 抛出异常时，在视图实体上写入 `BuildError`，保留上一次完整的子节点，由开发检查报告，整帧继续。祖先读取 `BuildError` 即可显示后备内容。
 - 布局、排版与提取使用 Job 系统按块并行；构建先单线程执行，作用域与对象池按线程隔离，为互不相交子树的并行构建留出条件。
 
+## 首次构建实现（#6）
+
+`ViewRebuildSystem` 实现 `ISystem<ImmediateSystemContext>`，经
+`SystemGroup<ImmediateSystemContext>` 与 `ImmediateSystemDriver` 驱动。
+每个 World 的系统实例持有自己的请求查询与可复用实体列表。
+
+`Views.Spawn` 在根实体上加入内部的构建请求标记。系统先在公开查询回调中收集请求实体，
+结束借用后取出标记并执行类型表中的构建函数；构建中的实体创建、参数写入和层级维护
+沿 ECS World 的既有结构操作执行。同步子构建在父构建中完成，三层树在同一帧可见。
+后续帧继续使用已经生成的树。系统销毁时释放自己取得的查询。
+
+无头帧工具位于 `tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs`，
+使用普通 World 和系统组注册当前已有的 `ViewRebuildSystem`；`Frame()` 推进该阶段。
+输入、动画、排版、布局和提取任务增加系统时，按上面的帧顺序扩展这一工具。
+
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]

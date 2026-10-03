@@ -3,7 +3,7 @@
 ## Current design
 | 程序集 | 内容 | 依赖 |
 |---|---|---|
-| `SomeEngine.Views` | `IView`、`Scope`、`BuildTask`、`VersionCell`、`State<T>`、`ViewRebuildSystem`、`ElementTree` 层级域 | ECS、Job |
+| `SomeEngine.Views` | `IView`、`Scope`、`BuildTask`、`VersionCell`、`State<T>`、`ViewRebuildSystem`、`ElementTree` 层级域 | ECS、ECS.Systems、Job、Core（开发检查） |
 | `SomeEngine.Views.Generators` | 同名函数生成、`[Composable]` 拦截、`[State]`、`[Component]`、分析器、CS1998 屏蔽、视图类型序列化注册 | — |
 | `SomeEngine.Layout` | `ILayout`、`LayoutPass`、`Box`、`LayoutRect`、`LayoutCache`、`Canvas`、`Flex`、`Grid`、`Stack`、`Absolute` | Views |
 | `SomeEngine.Animation` | 引擎级动画核心与属性动画（见 [[architecture/Animation|Animation]]）；FLIP 与 `.Animate` 在 Elements 中 | ECS、Job |
