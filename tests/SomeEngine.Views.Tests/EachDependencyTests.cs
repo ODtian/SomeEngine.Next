@@ -200,9 +200,10 @@ public sealed class EachDependencyTests
             query = frames.World.Query(frames.World.QueryDefinition().All<Enemy>());
             frames.World.ReleaseQuery(query);
         }
-        Views.Spawn(frames.World, Entity.Null, new MembershipDisplay(query, heading));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new MembershipDisplay(query, heading));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
         Assert.Contains("active query handle", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 #endif

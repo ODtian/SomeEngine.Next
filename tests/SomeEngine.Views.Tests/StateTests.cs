@@ -8,6 +8,26 @@ namespace SomeEngine.Views.Tests;
 public sealed class StateTests
 {
     [Fact]
+    public void AFailedStateDisplayRecoversWhenTheStateChangesAgain()
+    {
+        using var frames = new HeadlessFrameDriver();
+        var state = new State<int>(3);
+        var failure = new InvalidOperationException("The state display failed.");
+        Entity root = Views.Spawn(frames.World, Entity.Null, new FailingStateDisplay(state, failure));
+        frames.Frame();
+
+        state.Value = 7;
+        frames.Frame();
+        Assert.Same(failure, frames.World.ReadSparse<BuildError>(root).Exception);
+        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        state.Value = 11;
+        frames.Frame();
+
+        Assert.False(frames.World.HasSparse<BuildError>(root));
+        Assert.Equal("3;11", frames.World.Read<DisplayText>(root).Value);
+    }
+
+    [Fact]
     public void UntrackedStateReadsRefreshWhenTheTrackedSourceChanges()
     {
         using var frames = new HeadlessFrameDriver();
@@ -269,6 +289,18 @@ public sealed class StateTests
         public BuildTask Build()
         {
             AppendDisplay(Source.Value.ToString());
+            return default;
+        }
+    }
+
+    private readonly record struct FailingStateDisplay(State<int> Source, Exception Failure) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int value = Source.Value;
+            if (value == 7)
+                throw Failure;
+            AppendDisplay(value.ToString());
             return default;
         }
     }
