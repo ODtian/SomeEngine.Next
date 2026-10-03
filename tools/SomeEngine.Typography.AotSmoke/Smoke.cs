@@ -23,7 +23,27 @@ internal static class Smoke
         Require(output.Shape.Glyphs[2].Font == cjk && MathF.Abs(output.Shape.Size.Width - 63.98f) < 0.001f,
             "Fallback fonts must supply the Chinese glyphs.");
 
-        Console.WriteLine("Typography NativeAOT passed: mixed text 7 glyphs / 89.12 px; wrapped Chinese 2 lines; font fallback 63.98 px.");
+        var atlas = new GlyphAtlas(pageWidth: 60, pageHeight: 60, fontSize: 32, distanceSpread: 4);
+        Glyph[] glyphs = output.Shape.Glyphs.ToArray();
+        GlyphLocation[] locations = glyphs.Select(glyph => atlas.Get(glyph.Font, glyph.Index)).ToArray();
+        Require(atlas.Pages.Length > 1, "Mixed glyphs must expand the SDF atlas to several pages.");
+        byte[] distancePixels = atlas.Pages[0].Pixels.ToArray();
+        Require(distancePixels.Any(pixel => pixel > 128) && distancePixels.Any(pixel => pixel is > 0 and < 128),
+            "The atlas must contain glyph distance data.");
+        using var content = new MemoryStream();
+        atlas.Save(content);
+        content.Position = 0;
+        GlyphAtlas loaded = GlyphAtlas.Load(content, [cjk, latin]);
+        loaded.ClearDirtyRegions();
+        for (int index = 0; index < glyphs.Length; index++)
+            Require(loaded.Get(glyphs[index].Font, glyphs[index].Index) == locations[index],
+                "Baked glyph queries must preserve their saved positions.");
+        Require(loaded.DirtyRegions.IsEmpty, "Baked glyphs must reuse the loaded page contents.");
+        GlyphLocation added = loaded.Get(cjk, 216);
+        Require(loaded.DirtyRegions.Length == 1 && loaded.DirtyRegions[0] == added.Region,
+            "A new glyph must expose its pixel region to extraction.");
+
+        Console.WriteLine("Typography NativeAOT passed: mixed text 7 glyphs / 89.12 px; wrapped Chinese 2 lines; font fallback 63.98 px; dynamic SDF pages; baked font loading and added regions.");
         return 0;
     }
 

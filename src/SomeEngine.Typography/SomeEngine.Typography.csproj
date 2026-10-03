@@ -15,15 +15,15 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
-    <Content Include="$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)freetype.$(TypographyLibraryExtension);$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)harfbuzz.$(TypographyLibraryExtension)"
-             Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="$(TypographyNativeRoot)/bin/$(TypographyRid)/FreeType-LICENSE.txt;$(TypographyNativeRoot)/bin/$(TypographyRid)/HarfBuzz-LICENSE.txt"
+    <TypographyFile Include="$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)freetype.$(TypographyLibraryExtension);$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)harfbuzz.$(TypographyLibraryExtension);$(TypographyNativeRoot)/bin/$(TypographyRid)/FreeType-LICENSE.txt;$(TypographyNativeRoot)/bin/$(TypographyRid)/HarfBuzz-LICENSE.txt" />
+    <Content Include="@(TypographyFile)"
              Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="BuildTypographyLibraries" BeforeTargets="PrepareForBuild"
-          Inputs="$(TypographyNativeRoot)/CMakeLists.txt"
-          Outputs="$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)freetype.$(TypographyLibraryExtension);$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)harfbuzz.$(TypographyLibraryExtension);$(TypographyNativeRoot)/bin/$(TypographyRid)/FreeType-LICENSE.txt;$(TypographyNativeRoot)/bin/$(TypographyRid)/HarfBuzz-LICENSE.txt">
+          Inputs="$(TypographyNativeRoot)/CMakeLists.txt;$(TypographyNativeRoot)/GlyphBitmap.c"
+          Outputs="@(TypographyFile)">
     <Exec Command="cmake -S &quot;$(TypographyNativeRoot)&quot; -B &quot;$(TypographyNativeRoot)/obj/$(TypographyRid)&quot; $(TypographyCmakeArchitecture) -DTYPOGRAPHY_RID=$(TypographyRid) -DCMAKE_BUILD_TYPE=Release" />
     <Exec Command="cmake --build &quot;$(TypographyNativeRoot)/obj/$(TypographyRid)&quot; --config Release --parallel" />
+    <Touch Files="@(TypographyFile)" />
   </Target>
 </Project>
