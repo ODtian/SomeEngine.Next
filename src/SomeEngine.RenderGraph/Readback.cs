@@ -95,10 +95,9 @@ internal sealed partial class RenderGraphFrameState
             if (!pass.Enabled || !structure.IsRegionEnabled(pass.Region) ||
                 pass.CallbackStorage is not ReadbackCommands commands) continue;
             FrameBufferTransfers transfers = Slot.GetBufferTransfers(Graph);
-            BufferRegion destination = transfers.ReserveReadback(commands.Description.Range.Size);
-            GraphBufferId buffer = Import(destination.Buffer,
-                [new BufferBoundaryState(BufferRange.Whole, destination.Buffer.InitialSync,
-                    destination.Buffer.InitialAccess, ResourceContentState.Undefined)]);
+            var allocation = transfers.ReserveReadback(commands.Description.Range.Size);
+            BufferRegion destination = allocation.Destination;
+            GraphBufferId buffer = Import(destination.Buffer, allocation.BoundaryStates);
             GraphPassId id = new(structure.Passes.IdentityAt(Graph.Identity, index));
             PassDefinition definition = GetPass(id);
             definition.Write(buffer, destination.Range, PipelineSync.Copy, ResourceAccess.CopyDestination,

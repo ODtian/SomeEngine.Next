@@ -138,9 +138,7 @@ internal sealed partial class RenderGraphFrameState
             foreach (FrameBufferTransfers.BufferUpload upload in group)
             {
                 Buffer resource = upload.Page.Buffer;
-                GraphBufferId source = Import(resource,
-                    [new BufferBoundaryState(BufferRange.Whole, resource.InitialSync,
-                        resource.InitialAccess, ResourceContentState.Defined)]);
+                GraphBufferId source = Import(resource, upload.Page.BoundaryStates);
                 copies.Add(new BufferUploadCopy(new GraphBufferSlice(source, upload.Range),
                     new BufferRange(upload.Offset, upload.Range.Size)));
             }

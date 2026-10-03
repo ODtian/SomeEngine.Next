@@ -105,8 +105,19 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
         prepare.Add(composition);
         var feedback = new ClusterStreamingFeedbackChannel();
         var streaming = new ClusterStreamingFeedbackConsumer(cluster, feedback);
+        GraphRegionId primary, target, shading, feedbackRegion, readbackRegion;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            primary = edit.AddRegion("Primary geometry");
+            target = edit.AddRegion("Target geometry");
+            shading = edit.AddRegion("Shading");
+            feedbackRegion = edit.AddRegion("Feedback");
+            readbackRegion = edit.AddRegion("Output readback");
+            edit.Commit();
+        }
         var pipeline = new ClusterPipelineSystem(backend, device, renderDevice, cluster, composition,
             ClusterRenderFeature.InstanceLayout, assignments, shaders, graph,
+            new ClusterGraphRegions(primary, target, shading, feedbackRegion),
             new ClusterPipelineOutputDescription(32, 32, 1), feedback,
             options: new ClusterPipelineOptions { UseInstanceGroups = true, ForceHardwareRaster = true });
         var frames = new RenderFrameSystems(world, instances);
@@ -154,8 +165,7 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
                             },
                             static (ref CopyPassCommandScope commands, in (GraphTextureId Color, GraphBufferId Pixels) data) =>
                                 commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Pixels), 0, 256, 32,
-                                    commands.GetTexture(data.Color), 0, 0, TextureAspects.Color, 0, 0, 0, 32, 32, 1)));
-                        edit.OrderAfter(copy, pipeline.ShadeCompletePass);
+                                    commands.GetTexture(data.Color), 0, 0, TextureAspects.Color, 0, 0, 0, 32, 32, 1)), region: readbackRegion);
                         edit.AddReadback(pixels, BufferRange.Whole, receiver, "Spatially grouped pixels");
                         edit.Commit();
                     }

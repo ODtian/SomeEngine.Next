@@ -11,6 +11,9 @@ internal sealed class FrameSlot : IDisposable
     internal FrameBufferTransfers GetBufferTransfers(RenderGraph graph) =>
         _bufferTransfers ??= new FrameBufferTransfers(graph.Backend, graph.Device, graph.HeapByteBudget);
 
+    internal void SaveBufferTransferStates(RenderGraphFrameResult result) =>
+        _bufferTransfers?.SaveBufferStates(result);
+
     internal void ApplyEdit(GraphEditChanges changes)
     {
         if (_state is not null) _edits.Add(changes);
