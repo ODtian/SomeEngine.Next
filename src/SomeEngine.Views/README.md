@@ -34,6 +34,21 @@ public readonly partial record struct Card(string Title) : IView
 需要显式身份的调用可以使用双参数 `Scope.View`。
 `IView.Build` 的 CS1998 由 suppressor 屏蔽，辅助异步方法保留编译器警告。
 
+界面节点使用 ECS 序列化注册表保存参数与有序层级：
+
+```csharp
+var registry = new SomeEngine.ECS.Serialization.SerializationRegistry();
+ViewSerialization.Register(registry);
+CardFunctions.RegisterSerialization(registry);
+GroupFunctions.RegisterSerialization(registry);
+```
+
+生成器提供固定字段 codec，也可通过 `RegisterSerialization<CardCodec>(registry)`
+接入应用 codec。泛型视图在注册时提供闭合类型自己的 `SerializationTypeKey`。
+`ViewType` 的序列化身份映射到当前进程的类型编号，读回后下一帧重建所有视图。
+整 World 保存沿用 ECS 的无托管引用数据边界；含引用参数通过组件或实体入口编码。
+完整字段支持与存档规则见仓库 Wiki `architecture/someui/Assemblies`。
+
 仓库验收入口：
 
 ```powershell

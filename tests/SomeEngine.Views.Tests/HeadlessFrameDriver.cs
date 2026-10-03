@@ -8,9 +8,11 @@ public sealed class HeadlessFrameDriver : IDisposable
 {
     private readonly SystemGroup<ImmediateSystemContext> _systems;
 
-    public HeadlessFrameDriver()
+    public HeadlessFrameDriver() : this(new World()) { }
+
+    public HeadlessFrameDriver(World world)
     {
-        World = new World();
+        World = world;
         _systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(World));
         _systems.Add(new ViewRebuildSystem());
     }

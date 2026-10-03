@@ -3,7 +3,7 @@
 ## Current design
 | 程序集 | 内容 | 依赖 |
 |---|---|---|
-| `SomeEngine.Views` | `IView`、`Scope`、`BuildTask`、`VersionCell`、`State<T>`、`ViewRebuildSystem`、`ElementTree` 层级域 | ECS、ECS.Systems、Job、Core（开发检查） |
+| `SomeEngine.Views` | `IView`、`Scope`、`BuildTask`、`VersionCell`、`State<T>`、`ViewRebuildSystem`、`ElementTree` 层级域 | ECS、ECS.Serialization、ECS.Systems、Job、Core（开发检查） |
 | `SomeEngine.Views.Generators` | 同名函数生成、`[Composable]` 拦截、`[State]`、`[Component]`、分析器、CS1998 屏蔽、视图类型序列化注册 | — |
 | `SomeEngine.Layout` | `ILayout`、`LayoutPass`、`Box`、`LayoutRect`、`LayoutCache`、`Canvas`、`Flex`、`Grid`、`Stack`、`Absolute` | Views |
 | `SomeEngine.Animation` | 引擎级动画核心与属性动画（见 [[architecture/Animation|Animation]]）；FLIP 与 `.Animate` 在 Elements 中 | ECS、Job |
@@ -25,6 +25,42 @@
 仓库内由 `Directory.Build.props` 与 `Directory.Build.targets` 接入引用 Views 的项目。
 视图函数的参数与可见范围见 [[architecture/someui/Views|Views]]；
 编译诊断见 [[architecture/someui/Checks|Checks]]。
+
+## 视图序列化（#66）
+
+界面节点参与 ECS 检查点和存档。应用先调用 `ViewSerialization.Register(registry)`，
+再调用每种视图对应的 `CardFunctions.RegisterSerialization(registry)`。
+每个视图类型均有注册入口；带主构造函数的视图还提供同名声明函数。
+`GroupFunctions.RegisterSerialization(registry)` 注册引擎提供的透明容器。
+其它应用组件沿用 ECS 注册入口。
+
+生成器为参数的 8–64 位整数、`float`、`double`、布尔、字符、枚举、`Guid`、`Entity` 和 `string`
+生成字段 codec，包含普通 struct 的私有字段和 record struct 的只读参数。
+字段按名称排序，类型身份由程序集名称与视图完整名称生成，字段名称、类型、枚举定义和存储方式形成 schema。
+字段读取通过编译期生成的 `UnsafeAccessor` 完成；`Entity` 参数同时生成引用重映射代码。
+带其它字段形状的视图通过 `CardFunctions.RegisterSerialization<CardCodec>(registry)`
+接入应用的 `IComponentCodec<Card>`。
+普通视图通过 `CardFunctions.SerializationType` 提供生成的类型数据；
+应用 codec 可向注册方法传入自定义 schema，保留该类型 GUID 并随存档编码版本更新 schema。
+泛型视图的每个闭合类型由应用提供独立的 `SerializationTypeKey`：
+`CardFunctions.RegisterSerialization<int, CardCodec>(registry, typeKey)`。
+闭合类型的字段满足生成条件时，也提供 `RegisterSerialization<T>(registry, typeKey)`。
+应用为同一种视图类型在各注册表中使用同一个类型身份。
+
+检查点保留节点实体、参数值、`ElementKey`、`LocalState` 和 `ElementTree` 有序层级。
+`ViewType` 写出视图参数类型的 GUID，读回时映射到当前进程的函数表编号；
+应用可以改变视图注册顺序。读回的每个视图在下一帧重建，覆盖 `Rerun`、`Once`
+和 `ChildSource.Caller`，并通过正常构建重新登记依赖。
+视图的计算列表、依赖与异步流程由新 World 中的构建重新建立。
+
+整 World 持久化沿用 [[architecture/ECS/Save-Contracts|ECS 存档边界]]：
+参与整 World 保存的参数和值组件采用无托管引用的数据。
+含 `string` 等托管引用的视图参数可经组件或实体序列化入口使用生成或应用 codec；
+长期存档使用显式 schema 与字段 codec。
+
+公开行为验收位于 `CheckpointTests`。`just views-aot win-x64` 发布并执行原生冒烟，
+随后以两个进程按相反顺序注册视图，检查检查点读回、下一帧结构与参数、
+`Once` 容器输出以及后续依赖变化。临时检查点文件随验收结束清理。
 
 ## Relations
 [[architecture/someui/Composition|Composition]] · ADR 0011 · ADR 0013

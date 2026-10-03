@@ -99,6 +99,8 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     private bool HasChanges(World world, Entity entity, bool recheck = false)
     {
+        if (world.Read<ViewType>(entity).RebuildRequired)
+            return true;
         if (ViewTypes.HasParameterChanges(world, entity))
             return true;
         if (world.Has<ObjectDependencies>(entity) && world.Read<ObjectDependencies>(entity).Reads.HasChanges())
