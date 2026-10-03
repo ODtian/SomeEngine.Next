@@ -92,13 +92,6 @@ public partial class World
         _components.Replace(entity, in value);
     }
 
-    [System.Diagnostics.Conditional("DEBUG")]
-    private static void CheckTableComponent<T>(string operation) where T : struct
-    {
-        if (default(T) is not IComponent)
-            DevelopmentCheck.Fail($"{operation} requires table component {typeof(T).Name}.");
-    }
-
     /// <summary>检查 entity 是否拥有指定组件/tag。</summary>
     public bool Has<T>(Entity entity)
         where T : struct

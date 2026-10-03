@@ -48,6 +48,9 @@ Compose 的视图生成、调用位置拦截与跨程序集类型复用由同一
 界面节点参与 ECS 检查点和存档。应用先调用 `ViewSerialization.Register(registry)`，
 再调用每种视图对应的 `CardFunctions.RegisterSerialization(registry)`。
 每个视图类型均有注册入口；带主构造函数的视图还提供同名声明函数。
+Compose 自动生成的视图与内容子视图进入同一注册生成流程，例如
+`SavedComposeViews.Hud_ViewFunctions.RegisterSerialization(registry)`；公开生成视图的注册入口可由引用程序集调用。
+含私有参数或泛型约束的生成入口保持相应的可见范围。
 `GroupFunctions.RegisterSerialization(registry)` 注册引擎提供的透明容器。
 其它应用组件沿用 ECS 注册入口。
 
@@ -78,6 +81,8 @@ Compose 的视图生成、调用位置拦截与跨程序集类型复用由同一
 公开行为验收位于 `CheckpointTests`。`just views-aot win-x64` 发布并执行原生冒烟，
 随后以两个进程按相反顺序注册视图，检查检查点读回、下一帧结构与参数、
 `Once` 容器输出以及后续依赖变化。临时检查点文件随验收结束清理。
+该检查点场景启用重建诊断，并从 `SomeEngine.Views.AotReference` 引用 Compose 视图，
+覆盖跨程序集生成 codec、相反注册顺序下的类型映射、恢复首帧与后续来源更新。
 
 ## Relations
 [[architecture/someui/Composition|Composition]] · ADR 0011 · ADR 0013

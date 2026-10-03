@@ -96,14 +96,30 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         {
             Track<T> track = tracks.Read(index);
             Entity target = track.Target == Entity.Null ? animation : track.Target;
-            if (track.FromGraph || track.GraphMotion != 0 || !track.Finished ||
-                track.Endpoints != TrackEndpoints.Values || track.StartId != starts ||
-                track.Stage > lastStage || track.Channel.Component == ComponentId<AnimationLayers>.Value ||
-                !world.IsAlive(target) || !world.Has<AnimationLayers>(target) ||
-                HasLaterTrack(tracks, index, animation, target, in track, lastStage, time))
+            bool previousRun = track.StartId != starts;
+            if (!PropertyAnimation.HoldsLayerValue(world, animation, in track) ||
+                !previousRun && track.Stage > lastStage ||
+                HasLaterTrack(tracks, index, animation, target, in track,
+                    previousRun ? ushort.MaxValue : lastStage, previousRun ? float.PositiveInfinity : time, previousRun) ||
+                previousRun && HasCurrentTrack(tracks, animation, target, in track, starts, lastStage, time))
                 continue;
             Submit(world, target, animation, (uint)index, in track);
         }
+    }
+
+    private static bool HasCurrentTrack(DynamicBuffer<Track<T>> tracks, Entity animation, Entity target,
+        in Track<T> track, uint starts, int lastStage, float time)
+    {
+        for (int index = 0; index < tracks.Count; index++)
+        {
+            Track<T> current = tracks.Read(index);
+            if (current.StartId == starts && current.Stage <= lastStage &&
+                (current.Stage < lastStage || current.Start <= time) &&
+                current.Channel == track.Channel && current.Layer == track.Layer &&
+                (current.Target == Entity.Null ? animation : current.Target) == target)
+                return true;
+        }
+        return false;
     }
 
     private static bool SampleTracks(World world, Entity animation, DynamicBuffer<Track<T>> tracks,
@@ -195,12 +211,14 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         track.Finished = finished;
     }
 
-    private static bool HasLaterTrack(DynamicBuffer<Track<T>> tracks, int index, Entity animation, Entity target, in Track<T> track, int lastStage, float time)
+    private static bool HasLaterTrack(DynamicBuffer<Track<T>> tracks, int index, Entity animation, Entity target,
+        in Track<T> track, int lastStage, float time, bool finishedValuesOnly = false)
     {
         for (int i = 0; i < tracks.Count; i++)
         {
             Track<T> later = tracks.Read(i);
-            if (later.GraphMotion != 0 || later.StartId != track.StartId || later.Stage < track.Stage || later.Stage > lastStage ||
+            if (finishedValuesOnly && !later.Finished || later.GraphMotion != 0 ||
+                later.StartId != track.StartId || later.Stage < track.Stage || later.Stage > lastStage ||
                 later.Channel != track.Channel || later.Layer != track.Layer)
                 continue;
             if (later.Stage == track.Stage)

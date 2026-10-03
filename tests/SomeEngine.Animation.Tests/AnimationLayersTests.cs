@@ -48,6 +48,33 @@ public sealed class AnimationLayersTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LayerWeightsCanStartChangingAfterTheValueTrackCompletes(bool inline)
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new Display { Value = 10 });
+        var layers = new AnimationLayers { Count = 2 };
+        layers.Items[0] = new AnimationLayer { Weight = 1 };
+        layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0.25f };
+        world.Add(target, layers);
+        PropertyAnimation.SetBase(world, target, Value, 10f);
+        if (inline)
+            PropertyAnimation.Declare<float>(world, target);
+        PropertyAnimation.To(world, target, Value, 16f, Spec.Tween(0.25f), layer: 1);
+        using var systems = Systems(world);
+        Tick(systems, world, 0.25);
+        Assert.Equal(11.5f, world.Read<Display>(target).Value);
+
+        PropertyAnimation.To(world, target, HoverWeight, 1f, Spec.Tween(0.75f));
+
+        Tick(systems, world, 0.25);
+        Assert.Equal(13f, world.Read<Display>(target).Value);
+        Tick(systems, world, 0.5);
+        Assert.Equal(16f, world.Read<Display>(target).Value);
+    }
+
+    [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, false)]
@@ -77,6 +104,34 @@ public sealed class AnimationLayersTests
         Assert.Equal(18f, world.Read<Display>(target).Value);
         Tick(systems, world, 0.5);
         Assert.Equal(20f, world.Read<Display>(target).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ToAfterCompletionKeepsContinuityAtPartialLayerWeight(bool inline)
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new Display { Value = 10 });
+        var layers = new AnimationLayers { Count = 1 };
+        layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0.5f };
+        world.Add(target, layers);
+        PropertyAnimation.SetBase(world, target, Value, 10f);
+        if (inline)
+            PropertyAnimation.Declare<float>(world, target);
+        PropertyAnimation.To(world, target, Value, 16f, Spec.Tween(1));
+        using var systems = Systems(world);
+        Tick(systems, world, 1);
+        Assert.Equal(13f, world.Read<Display>(target).Value);
+
+        PropertyAnimation.To(world, target, Value, 20f, Spec.Tween(1));
+
+        Tick(systems, world, 0);
+        Assert.Equal(13f, world.Read<Display>(target).Value);
+        Tick(systems, world, 0.5);
+        Assert.Equal(14f, world.Read<Display>(target).Value);
+        Tick(systems, world, 0.5);
+        Assert.Equal(15f, world.Read<Display>(target).Value);
     }
 
     [Theory]

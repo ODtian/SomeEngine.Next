@@ -38,7 +38,7 @@ public static partial class PropertyAnimation
             AnimationLayers layers = world.Read<AnimationLayers>(target);
             DevelopmentCheck.Require(layers.Count <= 8 && layer < layers.Count,
                 "A property track requires a defined animation layer.");
-            if (endpoints == TrackEndpoints.Displacement && layers.Items[layer].Mode == LayerMode.Additive)
+            if (layers.Items[layer].Mode == LayerMode.Additive)
                 ReadBase(world, target, channel, ref current);
         }
         bool inline = world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target);
@@ -55,19 +55,18 @@ public static partial class PropertyAnimation
             {
                 foreach (QueryRow row in rows.Rows)
                 {
-                    if (!matches.World.IsEnabled<Timeline>(row.Entity))
-                    {
-                        if (row.Has<PooledAnimation>() && matches.AvailableAnimation == Entity.Null)
-                            matches.AvailableAnimation = row.Entity;
-                        continue;
-                    }
+                    bool enabled = matches.World.IsEnabled<Timeline>(row.Entity);
+                    bool holdsValues = false;
                     DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
                     Timeline timeline = row.Read<Timeline>();
                     for (int i = 0; i < tracks.Count; i++)
                     {
                         Track<T> track = tracks.Read(i);
+                        bool holdsValue = HoldsLayerValue(matches.World, row.Entity, in track);
+                        holdsValues |= holdsValue;
                         Entity target = track.Target == Entity.Null ? row.Entity : track.Target;
-                        if (track.Finished || target != matches.Target || track.Channel != matches.Channel || track.StartId != timeline.Starts || track.Stage != timeline.Stage)
+                        if ((track.Finished ? !holdsValue : !enabled) || target != matches.Target || track.Channel != matches.Channel ||
+                            !holdsValue && (track.StartId != timeline.Starts || track.Stage != timeline.Stage))
                             continue;
                         if (track.Layer == matches.Layer && track.Endpoints == TrackEndpoints.Values && matches.Endpoints == TrackEndpoints.Values)
                         {
@@ -76,13 +75,15 @@ public static partial class PropertyAnimation
                             matches.Velocity = track.Velocity;
                             matches.Current = track.Current;
                             if (matches.InlineTarget != Entity.Null && row.Entity != matches.InlineTarget)
-                                tracks[i].Finished = true;
+                                tracks.SwapRemoveAt(i--);
                         }
                         else
                         {
                             matches.SharedField = true;
                         }
                     }
+                    if (!enabled && !holdsValues && row.Has<PooledAnimation>() && matches.AvailableAnimation == Entity.Null)
+                        matches.AvailableAnimation = row.Entity;
                 }
             });
         }
@@ -148,6 +149,15 @@ public static partial class PropertyAnimation
         world.Replace(animation, timeline);
         world.Enable<Timeline>(animation);
         return animation;
+    }
+
+    internal static bool HoldsLayerValue<T>(World world, Entity animation, in Track<T> track) where T : unmanaged
+    {
+        if (!track.Finished || track.FromGraph || track.GraphMotion != 0 || track.Endpoints != TrackEndpoints.Values ||
+            track.Channel.Component == ComponentId<AnimationLayers>.Value)
+            return false;
+        Entity target = track.Target == Entity.Null ? animation : track.Target;
+        return world.IsAlive(target) && world.Has<AnimationLayers>(target);
     }
 
     /// <summary>Retargets the current stage's active channel with its existing curve and duration.</summary>

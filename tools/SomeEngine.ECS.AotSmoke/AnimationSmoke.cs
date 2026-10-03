@@ -11,12 +11,17 @@ internal static class AnimationSmoke
 {
     private static readonly Channel<float> Opacity = Channel<float>.Of<Visual>(static (ref Visual value) => ref value.Opacity);
     private static readonly Channel<Vector2> Position = Channel<Vector2>.Of<Visual>(static (ref Visual value) => ref value.Position);
+    private static readonly Channel<float> HoverWeight = Channel<float>.Of<AnimationLayers>(
+        static (ref AnimationLayers layers) => ref layers.Items[1].Weight);
 
     internal static void Check()
     {
         CheckFieldReadsAndStages();
         CheckDefaultFrames();
         CheckCustomValues();
+        foreach (bool inline in new[] { false, true })
+            foreach (bool buffered in new[] { false, true })
+                CheckLayerValues(inline, buffered);
         CheckGraphs();
     }
 
@@ -68,6 +73,46 @@ internal static class AnimationSmoke
         Visual result = world.Read<Visual>(target);
         Require(result.Opacity == 2 && result.Position == new Vector2(2, 4) && !world.IsEnabled<Timeline>(target),
             "Crossed duration stages present the final values of every track type before completion.");
+    }
+
+    private static void CheckLayerValues(bool inline, bool buffered)
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new Visual { Opacity = 10 });
+        var layers = new AnimationLayers { Count = 2 };
+        layers.Items[0] = new AnimationLayer { Weight = 1 };
+        layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0.25f };
+        world.Add(target, layers);
+        PropertyAnimation.SetBase(world, target, Opacity, 10f);
+        if (inline)
+            PropertyAnimation.Declare<float>(world, target);
+        if (buffered)
+            world.AddBuffer<Contribution<float>>(target);
+        PropertyAnimation.To(world, target, Opacity, 16f, Spec.Tween(0.25f), layer: 1);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.AddDefaults(systems);
+        Tick(systems, world, 0.25);
+        Require(world.Read<Visual>(target).Opacity == 11.5f, "The finished value blends with its initial layer weight.");
+        PropertyAnimation.To(world, target, HoverWeight, 1f, Spec.Tween(0.75f));
+        Tick(systems, world, 0.25);
+        Require(world.Read<Visual>(target).Opacity == 13, "A later weight animation continues blending the finished value.");
+        Tick(systems, world, 0.5);
+        Require(world.Read<Visual>(target).Opacity == 16, "The finished value reaches full layer weight.");
+        PropertyAnimation.To(world, target, Opacity, 20f, Spec.Tween(1), layer: 1);
+        Tick(systems, world, 0);
+        Require(world.Read<Visual>(target).Opacity == 16, "A completed layer starts a new To continuously.");
+        Tick(systems, world, 0.5);
+        Require(world.Read<Visual>(target).Opacity == 18, "The new To advances from the completed layer value.");
+        Tick(systems, world, 0.5);
+        layers.Items[1].Weight = 0.5f;
+        world.Replace(target, layers);
+        Tick(systems, world, 0);
+        Require(world.Read<Visual>(target).Opacity == 15, "Completed values keep responding to explicit layer weight changes.");
+        PropertyAnimation.To(world, target, Opacity, 24f, Spec.Tween(1), layer: 1);
+        Tick(systems, world, 0);
+        Require(world.Read<Visual>(target).Opacity == 15, "Partial layer weight preserves the new To's initial presented value.");
+        Tick(systems, world, 0.5);
+        Require(world.Read<Visual>(target).Opacity == 16, "Partial layer weight preserves the new To's continuous progress.");
     }
 
     private static void CheckDefaultFrames()

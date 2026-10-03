@@ -173,7 +173,8 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
             value.DeclaringSyntaxReferences.Any(reference => reference.GetSyntax() is TypeDeclarationSyntax));
         var text = OpenContainingTypes(type);
         string access = type.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
-        if (constructor?.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)) == true)
+        if (constructor?.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)) == true ||
+            type.TypeParameters.Any(parameter => parameter.ConstraintTypes.Any(ContainsPrivateType)))
             access = "private";
         text.Append(access).Append(" static partial class ").Append(type.Name).AppendLine("Functions\n{");
         GenerateSerialization(text, type);
