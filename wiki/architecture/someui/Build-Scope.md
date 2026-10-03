@@ -38,9 +38,12 @@ public static class Scope
 
 ## 首次构建实现（#6）
 
-当前公开入口为 `Scope.World`、`Scope.Entity` 与 `Scope.View<T>(in T)`。
+当前公开入口为 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
+`Scope.View<T>(in T, ulong)` 与 `Scope.Key(ulong)`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
 返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
+成功构建结束时完成子节点匹配与释放；key 分组与节点身份规则见
+[[architecture/someui/Node-Identity|Node Identity]]。
 
 `Scope` 在取出当前作用域时调用 `Core.Diagnostics.DevelopmentCheck.Require`，
 开发构建中的作用域外调用会报告需要活动构建。shipping 编译按统一开发检查规则移除该调用。
