@@ -2,7 +2,7 @@
 
 ## Definition
 
-Unmanaged component data can be written by component number. The component's existing table row or sparse row holds the bytes and the write version. Property animation uses this entry point to write a channel's field.
+Unmanaged component data can be read and written by component number. The component's existing table row or sparse row holds the bytes and the write version. Property animation captures its starting value through the read entry point and writes sampled channel values through the write entry point.
 
 ```csharp
 public static class ComponentId<T> where T : struct
@@ -12,6 +12,8 @@ public static class ComponentId<T> where T : struct
 
 public partial class World
 {
+    public ref readonly byte ReadBytes(Entity entity, ushort component);
+    public ref readonly byte ReadBytes(Entity entity, ushort component, int offset, int length);
     public ref byte WriteBytes(Entity entity, ushort component);
     public ref byte WriteBytes(Entity entity, ushort component, int offset, int length);
 }
@@ -26,6 +28,7 @@ public readonly ref partial struct QueryChunkView
 
 - `ComponentId<T>.Value` uses the ECS component type number. Its value remains constant across Worlds throughout one process. Values are assigned at first type use, occupy the range `1..65535` for the byte API, and are checked when first converted to `ushort`. Persistent data identifies component types through the serialization APIs.
 - `World.WriteBytes` supports table and sparse components. Taking the reference advances that entity's component write version, including writes through the region overload. The whole-component overload returns its first byte; the region overload returns the byte at `offset`.
+- `World.ReadBytes` supports the same table and sparse data and returns a read-only reference. Reads preserve the entity and component type write versions and select read access at the existing World access boundary. The whole-component and region overloads return the first component byte and the byte at `offset`, respectively.
 - The region overload accepts nonnegative offsets and lengths whose sum fits within the component's size. `DevelopmentCheck` reports invalid ranges in development builds, including overflowing input values. Callers use a region's declared length when writing through its reference.
 - References are used before a structural change, sparse array growth, or another operation replaces the backing storage. The existing World access boundary selects table or sparse write access before returning the reference.
 - `QueryChunkView.WriteColumn` requires a query that declares write access to the requested table component and selects whole chunks. The returned span covers `Count * stride` bytes, and `stride` is the component size. Obtaining it publishes the query's `CurrentSystemVersion` for every row in the column; `Changed<T>` observes these writes within its usual version window.
@@ -39,6 +42,12 @@ A channel holds a component number and a byte offset calculated when the channel
 ```csharp
 ref byte field = ref world.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>());
 Unsafe.WriteUnaligned(ref field, value);
+```
+
+Starting and retargeting capture a typed field value through the corresponding read-only region:
+
+```csharp
+T current = Unsafe.ReadUnaligned<T>(in world.ReadBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>()));
 ```
 
 Closed generic buffer element types such as `Track<float>` and `Track<Vector2>` use the normal buffer APIs. Their storage and capacity rules are described in [[architecture/ECS/Dynamic-Buffers|Dynamic Buffers]].

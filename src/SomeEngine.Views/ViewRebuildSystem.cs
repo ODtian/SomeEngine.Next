@@ -50,10 +50,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
             Entity entity = view.Entity;
             if (context.World.IsAlive(entity))
             {
-                bool firstBuild = context.World.Has<BuildRequest>(entity);
-                if (firstBuild)
-                    context.World.RemoveTag<BuildRequest>(entity);
-                if (firstBuild || ViewTypes.HasParameterChanges(context.World, entity))
+                if (context.World.Has<BuildRequest>(entity) || ViewTypes.HasParameterChanges(context.World, entity))
                     ViewTypes.Build(context.World, entity);
             }
         }

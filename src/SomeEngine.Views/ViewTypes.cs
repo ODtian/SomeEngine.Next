@@ -60,6 +60,8 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
 
     internal static void Build(World world, Entity entity)
     {
+        if (world.Has<BuildRequest>(entity))
+            world.RemoveTag<BuildRequest>(entity);
         T view = world.ReadComponentData<T>(entity);
         uint parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
         using var scope = Scope.Enter(world, entity);

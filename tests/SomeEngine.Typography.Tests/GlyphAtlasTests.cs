@@ -5,6 +5,34 @@ namespace SomeEngine.Typography.Tests;
 
 public sealed class GlyphAtlasTests
 {
+    [Theory]
+    [InlineData(2, 1024, 48, 8)]
+    [InlineData(-1, 1024, 48, 8)]
+    [InlineData(1024, 2, 48, 8)]
+    [InlineData(1024, -1, 48, 8)]
+    [InlineData(1024, 1024, 0, 8)]
+    [InlineData(1024, 1024, -1, 8)]
+    [InlineData(1024, 1024, 48, 1)]
+    [InlineData(1024, 1024, 48, 33)]
+    public void LoadingInvalidFileConfigurationReportsInvalidData(int width, int height, int fontSize, int spread)
+    {
+        var atlas = new GlyphAtlas();
+        using var content = new MemoryStream();
+        atlas.Save(content);
+        content.Position = 2 * sizeof(int); // Signature and version precede the saved configuration.
+        using (var writer = new BinaryWriter(content, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(width);
+            writer.Write(height);
+            writer.Write(fontSize);
+            writer.Write(spread);
+        }
+        content.Position = 0;
+
+        Assert.Throws<InvalidDataException>(() => GlyphAtlas.Load(content, []));
+        Assert.True(content.CanRead);
+    }
+
     [Fact]
     public async Task TextAndGlyphPixelsRemainReadableDuringGarbageCollection()
     {
