@@ -104,16 +104,15 @@ internal readonly partial struct Components
     }
 
     internal ref readonly T ReadRef<T>(Entity entity)
-        where T : struct, IComponent
+        where T : struct
     {
         EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
         int componentId = ComponentMetadata<T>.Id;
 
-        if (!archetype.TryColumn(componentId, out int columnIndex))
-            throw new InvalidOperationException(
-                $"Entity {entity} does not have component {typeof(T).Name}.");
-
+        archetype.TryColumn(componentId, out int columnIndex);
+        DevelopmentCheck.Require(columnIndex >= 0,
+            $"Entity {entity} requires table component {typeof(T).Name} to read its reference.");
         return ref record.Chunk!.GetComponentReadOnlyRef<T>(columnIndex, record.RowInChunk);
     }
 
@@ -135,11 +134,14 @@ internal readonly partial struct Components
 
     internal uint WriteVersion<T>(Entity entity)
         where T : struct
+        => WriteVersion(entity, ComponentMetadata<T>.Id);
+
+    internal uint WriteVersion(Entity entity, int componentId)
     {
         EntityRecord record = _entities.ReadRow(entity);
-        record.Archetype!.TryColumn(ComponentMetadata<T>.Id, out int columnIndex);
+        record.Archetype!.TryColumn(componentId, out int columnIndex);
         DevelopmentCheck.Require(columnIndex >= 0,
-            $"Entity {entity} requires table component {typeof(T).Name} to read its write version.");
+            $"Entity {entity} requires table component {ComponentRegistry.Get(componentId).Type.Name} to read its write version.");
         return record.Chunk!.WriteVersionRows(columnIndex)[record.RowInChunk];
     }
 

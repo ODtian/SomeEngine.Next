@@ -11,6 +11,8 @@ internal interface ISparseSet
 
     ref readonly byte ReadBytes(Entity entity);
 
+    uint WriteVersion(Entity entity);
+
     ref byte WriteBytes(Entity entity, uint version);
 
     void AddCopy(Entity source, Entity target, uint version);
@@ -134,6 +136,8 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
 
         return storage.WriteVersions[denseIndex];
     }
+
+    uint ISparseSet.WriteVersion(Entity entity) => WriteVersion(entity);
 
     internal void Overwrite(Entity entity, in T value)
     {
@@ -261,12 +265,10 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
 
     internal ref readonly T ReadRef(Entity entity)
     {
-        ThrowInvalidEntity(entity);
-
         Storage storage = _storage;
-        if (!TryDenseIndex(storage, entity, out _, out int denseIndex))
-            throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
-
+        bool hasValue = TryDenseIndex(storage, entity, out _, out int denseIndex);
+        DevelopmentCheck.Require(hasValue,
+            $"Entity {entity} requires sparse component {typeof(T).Name} to read its reference.");
         return ref storage.DenseData[denseIndex];
     }
 

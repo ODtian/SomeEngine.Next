@@ -64,6 +64,15 @@ internal sealed partial class Sparse
         Set<T>().Overwrite(entity, in value);
     }
 
+    internal uint WriteVersion(Entity entity, int componentId)
+    {
+        _entities.ThrowDead(entity);
+        object?[] stores = Volatile.Read(ref _stores);
+        DevelopmentCheck.Require((uint)componentId < (uint)stores.Length && stores[componentId] is ISparseSet,
+            $"Entity {entity} requires sparse component {componentId} to read its write version.");
+        return ((ISparseSet)stores[componentId]!).WriteVersion(entity);
+    }
+
     internal void Remove<T>(Entity entity)
         where T : struct, ISparseComponent
     {
@@ -86,12 +95,12 @@ internal sealed partial class Sparse
     }
 
     internal ref readonly T ReadRef<T>(Entity entity)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _entities.ThrowDead(entity);
-        if (!TrySet<T>(out SparseSet<T> sparseSet))
-            throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
-
+        bool hasSet = TrySet<T>(out SparseSet<T> sparseSet);
+        DevelopmentCheck.Require(hasSet,
+            $"Entity {entity} requires sparse component {typeof(T).Name} to read its reference.");
         return ref sparseSet.ReadRef(entity);
     }
 
