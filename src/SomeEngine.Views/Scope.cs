@@ -88,12 +88,12 @@ public static class Scope
 
             current.World.ReplaceComponentData(existing, in view);
             if (T.Mode == BuildMode.Rerun)
-                ViewRegistration<T>.Build(current.World, existing);
+                ViewRegistration<T>.Build(current.World, existing, firstBuild: false);
             return existing;
         }
         Entity child = Views.Create(current.World, in view, new ElementKey { Key = key, Occurrence = occurrence });
         Hierarchy<ElementTree>.SetParent(current.World, child, current.Entity, childIndex);
-        ViewRegistration<T>.Build(current.World, child);
+        ViewRegistration<T>.Build(current.World, child, firstBuild: true);
         return child;
     }
 

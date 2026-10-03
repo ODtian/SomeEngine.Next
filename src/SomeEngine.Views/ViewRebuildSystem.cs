@@ -20,6 +20,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
+        RebuildDiagnostics.BeginFrame(context.World);
         _views.Clear();
         _changedViews.Clear();
         List<Entity> views = _views;
@@ -54,7 +55,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
                 if (firstBuild)
                     context.World.RemoveTag<BuildRequest>(entity);
                 if (firstBuild || HasChanges(context.World, entity))
-                    ViewTypes.Build(context.World, entity);
+                    ViewTypes.Build(context.World, entity, firstBuild);
             }
         }
         _views.Clear();

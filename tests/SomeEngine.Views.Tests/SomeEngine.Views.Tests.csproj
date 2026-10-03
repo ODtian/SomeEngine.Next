@@ -12,5 +12,6 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj" />
+    <ProjectReference Include="../../tools/SomeEngine.Trace/SomeEngine.Trace.csproj" />
   </ItemGroup>
 </Project>
