@@ -8,6 +8,7 @@ public sealed class QueryDefinition
     private readonly QueryTerm[] _terms;
     private readonly QueryAccessEntry[] _accesses;
     private readonly WorldJobStorageAccess[] _jobStorageAccesses;
+    private readonly WorldJobStorageAccess[] _membershipStorageAccesses;
     private readonly QueryDataAccess[] _dataAccesses;
 
     private QueryDefinition(QueryTerm[] ownedTerms)
@@ -42,6 +43,14 @@ public sealed class QueryDefinition
                     access.Access.CanWrite() ? WorldStorageAccess.Write : WorldStorageAccess.Read));
         }
         _jobStorageAccesses = jobStorage.ToArray();
+        var membershipStorage = new List<WorldJobStorageAccess>();
+        foreach (QueryDataAccess access in _dataAccesses)
+        {
+            if ((access.Filters & (QueryTermFilter.Enabled | QueryTermFilter.Disabled)) != 0)
+                membershipStorage.Add(new WorldJobStorageAccess(
+                    access.Storage, access.ComponentId, WorldStorageAccess.Read));
+        }
+        _membershipStorageAccesses = membershipStorage.ToArray();
     }
 
     public static QueryDefinition Empty { get; } = new(Array.Empty<QueryTerm>());
@@ -54,6 +63,9 @@ public sealed class QueryDefinition
 
     internal ReadOnlyMemory<WorldJobStorageAccess> JobStorageAccesses =>
         _jobStorageAccesses;
+
+    internal ReadOnlyMemory<WorldJobStorageAccess> MembershipStorageAccesses =>
+        _membershipStorageAccesses;
 
     internal ReadOnlySpan<QueryDataAccess> DataAccesses => _dataAccesses;
 

@@ -19,5 +19,26 @@
 - 依赖粒度是整个组件。需要更细的粒度时按变化频率拆分组件（例如点击计数 `Clicks` 与悬停状态 `Hover` 分开），不提供字段级依赖。
 - 列表的父计算只依赖 `Each` 的成员，每行是读取自身实体的子视图。
 
+## Query membership
+
+查询成员依赖通过公开 ECS 接口读取：
+
+```csharp
+public partial class World
+{
+    public uint MembershipVersion(QueryHandle query);
+}
+```
+
+- 每次读取观察查询当前遍历顺序中的实体序列。创建、销毁，以及组件增删引起的匹配变化推进版本；交换删除等操作引起的结果顺序变化同样推进版本。
+- `Enabled<T>` 与 `Disabled<T>` 参与成员匹配；它们选择的实体进入或离开结果时推进版本。组件值写入，以及保持实体序列的结构与启用修改，保留已有成员版本。
+- `Added<T>`、`Changed<T>` 与 `ChunkChanged<T>` 的时间窗口由查询执行提供。成员观察使用这些条件的组件存在要求，时间窗口仍由 `ExecuteQuery` 处理。
+- 版本是查询观察的 `uint`，使用 `!=` 比较以覆盖回绕。多次修改在下一次读取时按当前结果合并观察。
+- 相同查询定义的多次取得共用同一份成员观察。结构事务携带这份查询数据提交，失败回滚恢复原版本与原遍历顺序。
+- 成员观察按需建立。静态读取先比较 chunk 身份、实体行序版本与查询过滤掩码，变化后才比较实际实体序列。结果范围内保持顺序的表格迁移保留版本。
+- 调用方使用当前 World 的有效查询句柄；开发构建通过统一 `DevelopmentCheck` 报告无效或已释放的句柄。shipping 调用中的开发检查及其参数求值由条件编译移除。
+
+实现：[World 查询 API](../../../src/SomeEngine.ECS/World.Queries.cs)、[成员观察](../../../src/SomeEngine.ECS/Queries/QueryMembership.cs)、[公开行为测试](../../../tests/SomeEngine.ECS.Tests/QueryMembershipTests.cs)。
+
 ## Relations
 [[architecture/someui/State|State]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · ADR 0010
