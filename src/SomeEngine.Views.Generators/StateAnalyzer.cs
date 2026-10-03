@@ -8,7 +8,7 @@ namespace SomeEngine.Views.Generators;
 public sealed class StateAnalyzer : DiagnosticAnalyzer
 {
     private static readonly DiagnosticDescriptor PropertyRequired = new(
-        "SEV009", "Declare a view state property",
+        "SEV015", "Declare a view state property",
         "Declare '{0}' as an instance partial property with get and set on a partial struct view",
         "Views", DiagnosticSeverity.Error, true);
 

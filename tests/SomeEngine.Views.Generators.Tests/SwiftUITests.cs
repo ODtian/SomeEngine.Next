@@ -23,7 +23,7 @@ public sealed class SwiftUITests
             }
             """, true, new StateAnalyzer());
 
-        Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "SEV009" && diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "SEV015" && diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "CS8785");
     }
 }
