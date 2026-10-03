@@ -1,11 +1,50 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
 public sealed class StateTests
 {
+    [Fact]
+    public void StateReadsInsideCallerContentRefreshTheDeclaredText()
+    {
+        using var frames = new HeadlessFrameDriver();
+        var state = new State<int>(3);
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ContentStateDisplay(state));
+        frames.Frame();
+        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
+        Assert.Equal("3", frames.World.Read<DisplayText>(child).Value);
+
+        state.Value = 7;
+        frames.Frame();
+
+        Assert.Equal("3;7", frames.World.Read<DisplayText>(child).Value);
+        frames.Frame();
+        Assert.Equal("3;7", frames.World.Read<DisplayText>(child).Value);
+    }
+
+    [Fact]
+    public void ComponentAndStateChangesBothRefreshTheCombinedDisplay()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new Number(3));
+        var state = new State<int>(5);
+        Entity root = Views.Spawn(frames.World, Entity.Null, new StateAndComponentDisplay(source, state));
+        frames.Frame();
+
+        frames.World.Replace(source, new Number(7));
+        frames.Frame();
+        Assert.Equal("3+5;7+5", frames.World.Read<DisplayText>(root).Value);
+        state.Value = 9;
+        frames.Frame();
+        Assert.Equal("3+5;7+5;7+9", frames.World.Read<DisplayText>(root).Value);
+        frames.Frame();
+        Assert.Equal("3+5;7+5;7+9", frames.World.Read<DisplayText>(root).Value);
+    }
+
     [Fact]
     public void ReadingAroundACrossThreadChangeRefreshesTheCompleteDisplayOnTheNextFrame()
     {
@@ -217,6 +256,36 @@ public sealed class StateTests
         }
     }
 
+    private readonly record struct ContentStateDisplay(State<int> Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Entity group = Scope.View(new Group());
+            using (group.Content())
+                Scope.View(new NumberText(Source.Value));
+            return default;
+        }
+    }
+
+    private readonly record struct NumberText(int Number) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            AppendDisplay(Number.ToString());
+            return default;
+        }
+    }
+
+    private readonly record struct StateAndComponentDisplay(Entity Source, State<int> State) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int number = Scope.Read<Number>(Source).Value;
+            AppendDisplay($"{number}+{State.Value}");
+            return default;
+        }
+    }
+
     private readonly record struct RepeatedStateDisplay(State<int> Source, Action ChangeValue) : IView, IComponent
     {
         public BuildTask Build()
@@ -252,6 +321,7 @@ public sealed class StateTests
     }
 
     private readonly record struct DisplayText(string Value) : IComponent;
+    private readonly record struct Number(int Value) : IComponent;
 
     private readonly record struct CheckedValue(
         long Number, long Double, long Triple, long Complement,

@@ -63,5 +63,13 @@ public static class Scope
 对象读取通过 `Scope.Depend(VersionCell)` 接入相同的登记状态；`State<T>.Value` 自动登记读值对应的版本。
 计算之外的 `Depend` 为空操作。存储和版本规则见 [[architecture/someui/Dependencies|Dependencies]]。
 
+## 内容作用域实现（#17）
+
+活动构建支持 `Entity.Content()` 的 `ParentScope`。
+构建实体与子节点声明的父实体分别保存在上下文中，
+容器内容继承当前构建，并在块结束时恢复外层声明上下文。
+公开 API、子节点来源与收尾时机见
+[[architecture/someui/Child-Source|Child Source]]。
+
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]

@@ -73,6 +73,14 @@ internal sealed partial class Sparse
         return ((ISparseSet)stores[componentId]!).WriteVersion(entity);
     }
 
+    internal uint ComponentWriteVersion(int componentId)
+    {
+        object?[] stores = Volatile.Read(ref _stores);
+        return componentId < stores.Length && stores[componentId] is ISparseSet sparseSet
+            ? sparseSet.ComponentWriteVersion
+            : 0;
+    }
+
     internal void Remove<T>(Entity entity)
         where T : struct, ISparseComponent
     {
