@@ -43,7 +43,16 @@ internal static class Smoke
         Require(loaded.DirtyRegions.Length == 1 && loaded.DirtyRegions[0] == added.Region,
             "A new glyph must expose its pixel region to extraction.");
 
-        Console.WriteLine("Typography NativeAOT passed: mixed text 7 glyphs / 89.12 px; wrapped Chinese 2 lines; font fallback 63.98 px; dynamic SDF pages; baked font loading and added regions.");
+        content.Position = 4 * sizeof(int); // Signature, version, width and height precede the font size.
+        using (var writer = new BinaryWriter(content, System.Text.Encoding.UTF8, leaveOpen: true))
+            writer.Write(0);
+        content.Position = 0;
+        bool invalidConfiguration = false;
+        try { GlyphAtlas.Load(content, [cjk, latin]); }
+        catch (InvalidDataException) { invalidConfiguration = true; }
+        Require(invalidConfiguration, "Loading an invalid saved font size reports invalid data.");
+
+        Console.WriteLine("Typography NativeAOT passed: mixed text 7 glyphs / 89.12 px; wrapped Chinese 2 lines; font fallback 63.98 px; dynamic SDF pages; baked font loading and added regions; file configuration checks.");
         return 0;
     }
 
