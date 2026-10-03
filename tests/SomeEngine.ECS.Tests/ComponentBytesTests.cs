@@ -8,6 +8,39 @@ namespace SomeEngine.ECS.Tests;
 
 public sealed class ComponentBytesTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ByteReadsPreserveTheComponentValueAndWriteVersions(bool sparse)
+    {
+        using var world = new World();
+        Entity entity = world.CreateEntity();
+        ushort component;
+        if (sparse)
+        {
+            world.AddSparse(entity, new SparseByteComponent { Number = 13, Opacity = 0.25f });
+            component = ComponentId<SparseByteComponent>.Value;
+        }
+        else
+        {
+            world.Add(entity, new ByteComponent { Number = 13, Opacity = 0.25f });
+            component = ComponentId<ByteComponent>.Value;
+        }
+        uint version = sparse ? world.SparseWriteVersion<SparseByteComponent>(entity) : world.WriteVersion<ByteComponent>(entity);
+        uint typeVersion = sparse ? world.ComponentWriteVersion<SparseByteComponent>() : world.ComponentWriteVersion<ByteComponent>();
+
+        int number = Unsafe.ReadUnaligned<int>(in world.ReadBytes(entity, component));
+        float opacity = Unsafe.ReadUnaligned<float>(in world.ReadBytes(entity, component, sizeof(int), sizeof(float)));
+
+        Assert.Equal((13, 0.25f), (number, opacity));
+        Assert.Equal(version, sparse ? world.SparseWriteVersion<SparseByteComponent>(entity) : world.WriteVersion<ByteComponent>(entity));
+        Assert.Equal(typeVersion, sparse ? world.ComponentWriteVersion<SparseByteComponent>() : world.ComponentWriteVersion<ByteComponent>());
+        if (sparse)
+            Assert.Equal((13, 0.25f), (world.ReadSparse<SparseByteComponent>(entity).Number, world.ReadSparse<SparseByteComponent>(entity).Opacity));
+        else
+            Assert.Equal((13, 0.25f), (world.Read<ByteComponent>(entity).Number, world.Read<ByteComponent>(entity).Opacity));
+    }
+
     [Fact]
     public void ByteWriteUpdatesFieldAndEntityVersion()
     {
