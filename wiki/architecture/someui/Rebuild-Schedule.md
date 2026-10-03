@@ -67,5 +67,21 @@
 `ReadDependencyTests.cs` 通过无头帧驱动、公开视图和组件数据显示历史验证父子顺序，
 并通过父视图改为声明空内容，验证成功构建后的子树释放与后续帧结果。
 
+## 异步恢复实现（#20）
+
+`ViewRebuildSystem` 在收集失效视图前先执行该 World 的逐帧等待通知，并取出本次
+已就绪的异步状态机。恢复项按 `ElementTree` 深度、实体 `Index`、实体 `Generation`
+排序；每项执行前检查节点存活并设置它保存的构建作用域，结束后恢复线程作用域栈。
+恢复期间登记的就绪项进入下一次重建阶段，等待对象的完成顺序只影响就绪时机。
+
+挂起构建由每个 World 的构建队列持有，重建候选筛选及当场子构建继续使用这份构建。
+完成整个 `BuildTask` 时提交子节点清理及构建开始时的参数版本，随后照常收集参数与
+读取依赖变化。状态机、作用域、逐帧等待和异常传播的具体语义由
+[[architecture/someui/Async-Build|Async Build]] 维护。
+
+系统销毁时关闭该 World 的就绪队列并释放视图查询。其它 World 的系统各自消费自己的队列。
+`AsyncBuildTests.cs` 通过无头帧驱动与组件输出验证深度、实体排序和恢复线程。
+`FirstBuildChecks.cs` 将逐帧流程和异步加载纳入已有的 NativeAOT 冒烟入口。
+
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]

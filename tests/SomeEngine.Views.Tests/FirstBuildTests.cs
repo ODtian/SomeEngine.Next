@@ -136,16 +136,18 @@ public sealed class FirstBuildTests
     }
 
     [Fact]
-    public void SuspendedBuildReportsRequiredSynchronousCompletionAndReleasesItsScope()
+    public void SuspendedBuildRestoresTheSurroundingScopeAfterEachFrame()
     {
         using var frames = new HeadlessFrameDriver();
         var completion = new TaskCompletionSource();
         Views.Spawn(frames.World, Entity.Null, new SuspendedView(completion.Task));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
-
-        Assert.Contains("synchronously", error.Message, StringComparison.OrdinalIgnoreCase);
+        frames.Frame();
         var scopeError = Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
+        Assert.Contains("active view build", scopeError.Message, StringComparison.OrdinalIgnoreCase);
+        completion.SetResult();
+        frames.Frame();
+        scopeError = Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
         Assert.Contains("active view build", scopeError.Message, StringComparison.OrdinalIgnoreCase);
     }
 #endif

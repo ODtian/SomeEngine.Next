@@ -13,10 +13,18 @@ public static class Scope
     [ThreadStatic]
     private static Stack<ScopeData>? s_scopes;
 
+    [ThreadStatic]
+    private static Stack<ScopeData>? s_reusableData;
+
     /// <summary>The World containing the view being built.</summary>
     public static World World => Current.World;
     /// <summary>The entity of the view being built.</summary>
     public static Entity Entity => Current.Entity;
+
+    /// <summary>Waits until this World's next view rebuild phase.</summary>
+    public static FrameAwaitable NextFrame() => new(Current.Queue);
+
+    internal static ScopeData Data => Current;
 
     /// <summary>Reads a table or sparse component and records it as a dependency of a Rerun build.</summary>
     /// <remarks>Consume the reference before a structural change can move the component.</remarks>
@@ -124,10 +132,37 @@ public static class Scope
     {
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
-        var current = new ScopeData(world, entity, dependenciesEnabled);
+        ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
+            ? available : new();
+        current.World = world;
+        current.Entity = entity;
+        current.DependenciesEnabled = dependenciesEnabled;
+        current.Queue = BuildQueue.For(world);
         CaptureSiblingCounts(current);
         (s_scopes ??= new Stack<ScopeData>()).Push(current);
-        return default;
+        return new BuildScope(current, releaseOnExit: true);
+    }
+
+    internal static BuildScope Resume(ScopeData data)
+    {
+        (s_scopes ??= new Stack<ScopeData>()).Push(data);
+        return new BuildScope(data, releaseOnExit: false);
+    }
+
+    internal static void Release(ScopeData data)
+    {
+        data.World = null!;
+        data.Entity = default;
+        data.Queue = null!;
+        data.Task = default;
+        data.Suspended = false;
+        data.ChildIndex = 0;
+        data.KeyPrefix = null;
+        data.Occurrences.Clear();
+#if DEBUG
+        data.PreviousSiblings.Clear();
+#endif
+        (s_reusableData ??= new Stack<ScopeData>()).Push(data);
     }
 
     [Conditional("DEBUG")]
@@ -182,14 +217,18 @@ public static class Scope
         return false;
     }
 
-    private readonly record struct SiblingGroup(int Count, bool LocalState);
+    internal readonly record struct SiblingGroup(int Count, bool LocalState);
 #endif
 
-    private sealed class ScopeData(World world, Entity entity, bool dependenciesEnabled)
+    internal sealed class ScopeData
     {
-        internal World World { get; } = world;
-        internal Entity Entity { get; } = entity;
-        internal bool DependenciesEnabled { get; } = dependenciesEnabled;
+        internal World World = null!;
+        internal Entity Entity;
+        internal bool DependenciesEnabled;
+        internal BuildQueue Queue = null!;
+        internal BuildTask Task;
+        internal uint ParameterVersion;
+        internal bool Suspended;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal int ChildIndex;
         internal ulong? KeyPrefix;
@@ -198,17 +237,40 @@ public static class Scope
 #endif
     }
 
-    internal readonly struct BuildScope : IDisposable
+    internal readonly struct BuildScope(ScopeData data, bool releaseOnExit) : IDisposable
     {
+        internal void Finish(BuildTask task, uint parameterVersion)
+        {
+            data.Task = task;
+            data.ParameterVersion = parameterVersion;
+            if (task.IsCompleted)
+            {
+                task.Complete();
+                Complete();
+            }
+            else
+            {
+                data.Suspended = true;
+                data.Queue.Add(data);
+            }
+        }
+
         internal void Complete()
         {
             ScopeData current = Current;
             CheckSiblingCounts(current);
             var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Entity);
-            for (int index = current.ChildIndex; index < children.Count; index++)
+            for (int index = children.Count - 1; index >= current.ChildIndex; index--)
                 Hierarchy<ElementTree>.DestroySubtree(current.World, children[index]);
+            if (current.DependenciesEnabled)
+                current.World.Replace(current.Entity, new ParameterVersion(current.ParameterVersion));
         }
 
-        public void Dispose() => s_scopes!.Pop();
+        public void Dispose()
+        {
+            s_scopes!.Pop();
+            if (releaseOnExit && !data.Suspended)
+                Release(data);
+        }
     }
 }

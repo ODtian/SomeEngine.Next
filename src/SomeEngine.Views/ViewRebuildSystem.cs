@@ -12,14 +12,17 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private readonly List<Entity> _views = new();
     private readonly List<ViewDepth> _changedViews = new();
     private QueryHandle _viewQuery;
+    private BuildQueue _builds = null!;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
+        _builds = BuildQueue.For(context.World);
         _viewQuery = context.World.Query(context.World.QueryDefinition().Read<ViewType>());
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
+        _builds.Resume(context.World);
         _views.Clear();
         _changedViews.Clear();
         List<Entity> views = _views;
@@ -31,7 +34,8 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
         foreach (Entity entity in _views)
         {
-            if (context.World.Has<BuildRequest>(entity) || HasChanges(context.World, entity))
+            if (!_builds.Contains(entity) &&
+                (context.World.Has<BuildRequest>(entity) || HasChanges(context.World, entity)))
             {
                 int depth = 0;
                 Entity ancestor = Hierarchy<ElementTree>.GetParent(context.World, entity);
@@ -61,7 +65,11 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         _changedViews.Clear();
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_viewQuery);
+    public void OnDestroy(ref ImmediateSystemContext context)
+    {
+        _builds.Close(context.World);
+        context.World.ReleaseQuery(_viewQuery);
+    }
 
     private static bool HasChanges(World world, Entity entity)
     {

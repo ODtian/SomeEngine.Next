@@ -45,7 +45,7 @@ Entity root = Views.Spawn(world, Entity.Null, new Panel("Inventory"));
 - 每个视图节点的 `ElementTree` 子序列使用 `ChildOrderPolicy.Ordered`，顺序来自声明。
 - 类型编号由泛型静态缓存注册到托管函数指针表；相同视图类型在各 World 中共用编号。
   构建函数从当前 ECS 参数组件取值，因此首次帧之前对该组件的修改直接供构建使用。
-- `BuildTask` 的当前同步完成行为与阶段范围见
+- `BuildTask` 的同步完成、挂起与恢复行为见
   [[architecture/someui/Async-Build|Async Build]]。
 
 测试入口为 `tests/SomeEngine.Views.Tests/FirstBuildTests.cs`。
