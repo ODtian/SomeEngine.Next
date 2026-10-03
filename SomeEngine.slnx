@@ -82,6 +82,7 @@
     <Project Path="tools/TestRules/SomeEngine.TestRules.csproj" />
     <Project Path="tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj" />
     <Project Path="tools/SomeEngine.Job.Benchmarks/SomeEngine.Job.Benchmarks.csproj" />
+    <Project Path="tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />
     <Project Path="tools/SomeEngine.RenderScenarios/SomeEngine.RenderScenarios.csproj" />
     <Project Path="tools/RhiTypeGraph/RhiTypeGraph.csproj" />
     <Project Path="tools/SomeEngine.Assets.Benchmarks/SomeEngine.Assets.Benchmarks.csproj" />

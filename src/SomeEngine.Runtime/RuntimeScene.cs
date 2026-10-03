@@ -65,7 +65,7 @@ internal sealed class RuntimeScene : IDisposable
         MeshPositionMax = meshPositionMax;
     }
 
-    internal RuntimeCamera Camera { get; }
+    internal RuntimeCamera Camera { get; private set; }
 
     internal int MeshInstanceCount { get; }
 
@@ -260,6 +260,42 @@ internal sealed class RuntimeScene : IDisposable
         }
         finally { world.ReleaseQuery(query); }
     }
+
+    internal Entity[] GetMeshEntities() => Entities(_world, new QueryDefinitionBuilder().Read<MeshInstance>());
+
+    internal void SetCameraTransform(Vector3 position, Quaternion rotation) =>
+        Camera = new RuntimeCamera(position, position + Vector3.Transform(Vector3.UnitZ, rotation),
+            Vector3.Transform(Vector3.UnitY, rotation));
+
+    internal Material GetMaterial(Entity entity, int index)
+    {
+        Material? material = null;
+        _world.ExecuteBufferRead<MeshMaterialBinding>(entity, values => material = values[index].Material);
+        return material!;
+    }
+
+    internal void ReplaceMaterial(Entity entity, Material material, int index) =>
+        _world.ExecuteBufferWrite<MeshMaterialBinding>(entity, values => values[index] = new(material));
+
+    internal Entity AddEntity(Entity source, TransformQvvs transform)
+    {
+        MeshMaterialBinding[] bindings = [];
+        _world.ExecuteBufferRead<MeshMaterialBinding>(source, values => bindings = values.AsSpan().ToArray());
+        Entity entity = _world.CreateEntity(new WorldTransform { Qvvs = transform });
+        try
+        {
+            _world.Add(entity, _world.Read<MeshInstance>(source));
+            _world.AddBuffer<MeshMaterialBinding>(entity);
+            _world.ExecuteBufferWrite<MeshMaterialBinding>(entity, values =>
+            {
+                foreach (MeshMaterialBinding binding in bindings) values.Add(binding);
+            });
+            return entity;
+        }
+        catch { _world.DestroyEntity(entity); throw; }
+    }
+
+    internal void DeleteEntity(Entity entity) => _world.DestroyEntity(entity);
 
     internal Matrix4x4 Projection(int viewportWidth, int viewportHeight)
     {
