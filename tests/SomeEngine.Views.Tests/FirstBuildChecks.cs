@@ -34,6 +34,7 @@ internal static class FirstBuildChecks
         VerifyOnceParameters(frames);
         VerifyKeyedChildren(frames);
         VerifyReadDependencies(frames);
+        VerifyObjectState(frames);
     }
 
     private static int ReadNumber() => 41;
@@ -142,6 +143,38 @@ internal static class FirstBuildChecks
         Require(frames.World.WriteVersion<TableText>(child) == textVersion, "A later frame retains the displayed text version.");
     }
 
+    private static void VerifyObjectState(HeadlessFrameDriver frames)
+    {
+        var count = new State<int>(3);
+        var text = new TextData("first");
+        Entity root = Views.Spawn(frames.World, Entity.Null, new StateAndObjectText(count, text));
+        frames.Frame();
+        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Require(frames.World.Read<TableText>(child).Value == "first:3", "State and object reads supply the initial text.");
+
+        Task.Run(() =>
+        {
+            count.Update(static (ref int value) => value++);
+            count.Update(3, static (ref int value, int amount) => value += amount);
+            text.Value = "shared";
+            text.AdvanceShared();
+        }).GetAwaiter().GetResult();
+        frames.Frame();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+        Require(frames.World.Read<TableText>(child).Value == "shared:7", "Cross-thread writes update the next frame's text.");
+
+        uint version = count.Version;
+        count.Value = 7;
+        count.Update(static (ref int value) => value += 0);
+        frames.Frame();
+        Require(count.Version == version, "Equal changes retain the State version.");
+        Require(frames.World.Read<TableText>(child).Value == "shared:7", "Equal changes retain the displayed text.");
+        text.Value = "changed";
+        text.Advance();
+        frames.Frame();
+        Require(frames.World.Read<TableText>(child).Value == "changed:7", "A custom version cell updates the displayed text.");
+    }
+
     private static void Require(bool condition, string message)
     {
         if (!condition)
@@ -175,6 +208,21 @@ internal static class FirstBuildChecks
     }
 
     private readonly record struct SparseText(string Value) : ISparseComponent;
+
+    private sealed class TextData(string value) : VersionCell
+    {
+        internal string Value = value;
+    }
+
+    private readonly record struct StateAndObjectText(State<int> Count, TextData Text) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Depend(Text);
+            Scope.View(new TableText($"{Text.Value}:{Count.Value}"));
+            return default;
+        }
+    }
 
     private readonly record struct ComponentText(Entity Source) : IView, IComponent
     {
