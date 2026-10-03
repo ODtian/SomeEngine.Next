@@ -57,6 +57,36 @@ internal sealed class CommandDataList<T> : IComponentCommandList
     }
 }
 
+internal sealed class SparseCommandDataList<T> : IComponentCommandList
+    where T : struct, ISparseComponent
+{
+    private T[] _data = new T[8];
+    private int _count;
+
+    public int Append(in T value)
+    {
+        ArrayGrowthExtensions.EnsureCapacity(ref _data, _count + 1, 8);
+        _data[_count] = value;
+        return _count++;
+    }
+
+    public void PlaybackAdd(World world, Entity entity, int dataIndex) =>
+        world.AddSparse(entity, in _data[dataIndex]);
+
+    public void PlaybackReplace(World world, Entity entity, int dataIndex) =>
+        world.ReplaceSparse(entity, in _data[dataIndex]);
+
+    public void PlaybackRemove(World world, Entity entity) => world.RemoveSparse<T>(entity);
+
+    public void Clear()
+    {
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+            Array.Clear(_data, 0, _count);
+
+        _count = 0;
+    }
+}
+
 /// <summary>
 /// Command-owned packed buffer payloads. Recording copies each logical buffer into this flat
 /// typed arena so caller spans may expire without allocating one array per command.

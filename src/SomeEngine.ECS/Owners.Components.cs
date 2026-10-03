@@ -2,6 +2,7 @@ using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Registry;
+using SomeEngine.Core.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Owners;
@@ -119,7 +120,17 @@ internal readonly partial struct Components
     internal void Replace<T>(Entity entity, in T value)
         where T : struct, IComponent
     {
-        Replace(entity, in value, _clock.Tick);
+        Replace(entity, in value, unchecked(_clock.Acquire() + 1));
+    }
+
+    internal uint WriteVersion<T>(Entity entity)
+        where T : struct, IComponent
+    {
+        EntityRecord record = _entities.ReadRow(entity);
+        record.Archetype!.TryColumn(ComponentMetadata<T>.Id, out int columnIndex);
+        DevelopmentCheck.Require(columnIndex >= 0,
+            $"Entity {entity} requires table component {typeof(T).Name} to read its write version.");
+        return record.Chunk!.WriteVersionRows(columnIndex)[record.RowInChunk];
     }
 
     internal void Replace<T>(Entity entity, in T value, uint version)
@@ -390,7 +401,7 @@ internal readonly partial struct Components
             columnIndex,
             in oldValue,
             in newValue,
-            _clock.Tick);
+            unchecked(_clock.Acquire() + 1));
     }
 
     internal void WriteExisting<T>(
@@ -714,7 +725,7 @@ internal readonly partial struct Components
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void MarkAdd(Archetypes.Chunk chunk, int columnIndex, int row)
     {
-        chunk.MarkAdd(columnIndex, row, _clock.Tick);
+        chunk.MarkAdd(columnIndex, row, unchecked(_clock.Acquire() + 1));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -129,7 +129,8 @@ public sealed class CommandBufferAtomicityTests
             fixture.World.GetDirectedRelationEndpoints(fixture.Edge);
         Assert.Equal(fixture.Subject, endpoints.Source);
         Assert.Equal(fixture.TargetB, endpoints.Target);
-        Assert.Equal(tickBefore + 1, fixture.World.CurrentTick);
+        Assert.NotEqual(tickBefore, fixture.World.CurrentTick);
+        Assert.NotEqual(tickBefore, fixture.World.WriteVersion<AtomicValue>(fixture.Subject));
         Assert.Equal(publicationEpochBefore + 1, fixture.World.PublishedStructureEpoch);
     }
 

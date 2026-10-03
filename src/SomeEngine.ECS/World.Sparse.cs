@@ -38,6 +38,17 @@ public partial class World
         return _sparse.Read<T>(entity);
     }
 
+    /// <summary>读取实体上该 sparse 组件最近一次写入的版本。</summary>
+    /// <remarks>
+    /// 取得写引用或写入数组即记作写入。用 <c>!=</c> 比较前后版本，以支持版本回绕。
+    /// </remarks>
+    public uint SparseWriteVersion<T>(Entity entity)
+        where T : struct, ISparseComponent
+    {
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Read);
+        return _sparse.WriteVersion<T>(entity);
+    }
+
     /// <summary>Checks whether an entity has a sparse component.</summary>
     public bool HasSparse<T>(Entity entity)
         where T : struct, ISparseComponent
@@ -97,6 +108,7 @@ public partial class World
     /// <summary>
     /// Borrows compact sparse arrays for mutation. Value writes are intentionally not rolled back
     /// if the callback faults, matching writable table-query semantics.
+    /// The borrow records one write version for every exposed row before calling the callback.
     /// </summary>
     public void ExecuteSparseWrite<T>(SparseWriteExecution<T> execution)
         where T : struct, ISparseComponent
@@ -108,7 +120,8 @@ public partial class World
         {
             if (_sparse.TrySet<T>(out SparseSet<T> sparseSet))
             {
-                execution(sparseSet.DenseEntities, sparseSet.BorrowDenseWrite());
+                execution(sparseSet.DenseEntities,
+                    sparseSet.BorrowDenseWrite(unchecked(_clock.Acquire() + 1)));
             }
             else
             {
@@ -137,7 +150,8 @@ public partial class World
         {
             if (_sparse.TrySet<T>(out SparseSet<T> sparseSet))
             {
-                execution(sparseSet.DenseEntities, sparseSet.BorrowDenseWrite(), ref state);
+                execution(sparseSet.DenseEntities,
+                    sparseSet.BorrowDenseWrite(unchecked(_clock.Acquire() + 1)), ref state);
             }
             else
             {

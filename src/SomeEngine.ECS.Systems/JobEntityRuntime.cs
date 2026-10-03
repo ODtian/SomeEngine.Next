@@ -111,7 +111,7 @@ public ref struct JobEntityRow
             throw new InvalidOperationException(
                 $"Entity {Entity} does not have sparse component {typeof(T).Name}.");
         }
-        return ref set.Get(Entity);
+        return ref set.Get(Entity, _writeVersion);
     }
 
     private int Require<T>(bool read, bool write)
