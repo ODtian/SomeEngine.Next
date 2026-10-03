@@ -39,14 +39,14 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
     internal bool Released => _run is null;
     internal Exception? Error => _error;
     internal List<Dependency> Reads { get; } = new();
-    internal ObjectDependencyList ObjectReads { get; } = new();
+    internal ObjectDependencyList ObjectReads { get; } = new(frame);
 
     internal void Execute(ulong frame)
     {
         Frame = frame;
         World.ReadSparse<Computations>(Entity).List.ReleaseChildren(this);
         Reads.Clear();
-        ObjectReads.Clear();
+        ObjectReads.Clear(frame);
         using var scope = Scope.Enter(this, frame);
         try
         {
@@ -101,7 +101,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
     internal void Release()
     {
         Reads.Clear();
-        ObjectReads.Clear();
+        ObjectReads.Clear(Frame);
         _run = null;
         _parent = null;
         _error = null;

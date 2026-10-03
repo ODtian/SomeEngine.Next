@@ -81,7 +81,7 @@ public static class Scope
         }
 
         if (!current.World.Has<ObjectDependencies>(current.Entity))
-            current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList()));
+            current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList(current.Frame)));
         current.World.Read<ObjectDependencies>(current.Entity).Reads.Add(cell, version);
     }
 
@@ -302,7 +302,7 @@ public static class Scope
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
         if (world.Has<ObjectDependencies>(entity))
-            world.Read<ObjectDependencies>(entity).Reads.Clear();
+            world.Read<ObjectDependencies>(entity).Reads.Clear(frame);
         ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
         var current = new ScopeData(world, entity, entity, frame, declaresChildren, dependenciesEnabled,
             parent?.World == world ? parent.Changes : null);
