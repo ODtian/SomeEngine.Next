@@ -35,6 +35,8 @@ SomeUI 的使用错误通过 [[architecture/validation/Development-Checks|Develo
 | `SEV006` | error | Compose 视图方法声明为 static |
 | `SEV007` | error | Compose 视图方法返回 void 或 BuildTask；产生值的内联分组由 Inline 标记及 #60 接入 |
 | `SEV008` | error | Compose 调用应由编译器识别为视图拦截；方法组、委托、取地址与其它生成器产出的调用改为源码直接调用 |
+| `SEV013` | info | Compose 方法或 SwiftUI Build 中传入捕获外部变量的 lambda；提示“调用方每次重跑都会分配”，推荐 static lambda 加显式状态参数 |
+| `SEV014` | error | Composable 内容参数使用返回 void 或 BuildTask、实参按值传递的委托 |
 
 `DiagnosticSuppressor` 根据 `IView.Build` 的实际实现屏蔽 CS1998，包含显式接口实现。
 辅助方法的 CS1998 继续由编译器报告。

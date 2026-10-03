@@ -38,7 +38,7 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
     {
         var options = (CSharpParseOptions)compilation.SyntaxTrees.First().Options;
         var functions = new List<SyntaxTree>();
-        GenerateComposeViews(output, options, functions, composables);
+        GenerateComposeViews(output, compilation, options, functions, composables);
         foreach (INamedTypeSymbol type in views.Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default))
         {
             INamedTypeSymbol[] containers = GetContainingTypes(type!).ToArray();
@@ -94,7 +94,9 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 if (location is null)
                     continue;
                 SimpleNameSyntax name = GetMethodName(call);
-                ulong key = GetCallKey(name.GetLocation().GetMappedLineSpan());
+                string? sourceKey = call.GetAnnotations("ViewCallKey").FirstOrDefault()?.Data;
+                ulong key = sourceKey is null ? GetCallKey(name.GetLocation().GetMappedLineSpan()) :
+                    ulong.Parse(sourceKey, CultureInfo.InvariantCulture);
                 if (composeCall)
                 {
                     GenerateComposeInterceptor(interceptors, method, location, key, count++);

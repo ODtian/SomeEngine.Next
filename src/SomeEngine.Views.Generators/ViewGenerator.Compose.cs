@@ -9,7 +9,7 @@ namespace SomeEngine.Views.Generators;
 
 public sealed partial class ViewGenerator
 {
-    private static void GenerateComposeViews(SourceProductionContext output, CSharpParseOptions options,
+    private static void GenerateComposeViews(SourceProductionContext output, Compilation compilation, CSharpParseOptions options,
         List<SyntaxTree> declarations, ImmutableArray<IMethodSymbol> methods)
     {
         foreach (IMethodSymbol method in methods)
@@ -27,6 +27,7 @@ public sealed partial class ViewGenerator
             }
 
             string viewName = GetComposeViewName(method);
+            bool hasContent = method.Parameters.Any(ViewCalls.IsContentParameter);
             string access = method.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
             if (method.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)))
                 access = "private";
@@ -35,16 +36,26 @@ public sealed partial class ViewGenerator
                 .Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
                 .Append(GenerateParameters(method.Parameters)).Append(')')
                 .Append(" : global::SomeEngine.Views.IView, global::SomeEngine.ECS.Components.ISparseComponent")
-                .AppendLine(GenerateConstraints(method.TypeParameters)).AppendLine("    {")
-                .AppendLine("        [global::System.CodeDom.Compiler.GeneratedCode(\"SomeEngine.Views.Generators.Compose\", \"1.0\")]")
+                .AppendLine(GenerateConstraints(method.TypeParameters)).AppendLine("    {");
+            if (hasContent)
+                GenerateContentEquality(text, "@" + viewName + GenerateTypeParameters(method.TypeParameters),
+                    method.Parameters.Select(parameter => (parameter.Name, parameter.Type, ViewCalls.IsContentParameter(parameter))));
+            text.AppendLine("        [global::System.CodeDom.Compiler.GeneratedCode(\"SomeEngine.Views.Generators.Compose\", \"1.0\")]")
                 .Append("        public global::SomeEngine.Views.BuildTask Build()")
                 .Append(method.ReturnsVoid ? "\n        {\n            " : " => ")
                 .Append(type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-                .Append(".@").Append(method.Name).Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
+                .Append(".@").Append(hasContent ? "Build" + viewName + "Content" : method.Name)
+                .Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
                 .Append(GenerateArguments(method.Parameters)).AppendLine(");");
             if (method.ReturnsVoid)
                 text.AppendLine("            return default;\n        }");
-            text.AppendLine("    }\n}");
+            text.AppendLine("    }");
+            if (hasContent)
+            {
+                GenerateContentViews(text, method);
+                GenerateContentBody(output, compilation, options, declarations, method);
+            }
+            text.AppendLine("}");
             CloseContainingTypes(text, type);
             AddDeclarations(output, options, declarations, GetFileName(type, viewName), text.ToString());
         }

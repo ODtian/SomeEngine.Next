@@ -63,11 +63,50 @@ public static partial class Screens
   当前 record struct 的相等比较由共同构建路径消费；前端参数比较规则由 #59 接续。
 - 消费程序集直接引用定义程序集生成的视图类型。方法的泛型约束、命名参数及可选参数继续由 C# 绑定处理。
   节点的位置 key、出现次数及 `Key` 前缀按 [[architecture/someui/Node-Identity|Node Identity]] 组合。
-- `Remember` 与参数比较、内联分组、内容函数参数分别由 #59、#60、#61 接入。
+- `Remember` 与普通参数比较、内联分组分别由 #59、#60 接入。内容函数见下文 #61。
 
 公开编译与行为验收见 `tests/SomeEngine.Views.Generators.Tests/ComposeTests.cs`，
 通过生成视图的参数组件、`ElementTree` 子内容、局部状态和 `BuildError` 验证结果。
 NativeAOT 验收沿 `tools/SomeEngine.Views.AotSmoke` 使用同一公开入口。
+
+## 内容函数参数（#61）
+
+组件为委托参数标记 `[Composable]`，自行决定调用时机、次数和实参。
+
+```csharp
+[Composable]
+public static void LazyColumn<T>(IReadOnlyList<T> items, [Composable] Action<T> row)
+{
+    foreach (T item in items)
+        row(item);
+}
+
+// 调用方把数据作为显式参数传入，C# 缓存 static lambda 委托：
+LazyColumn(items, static item => ItemRow(item));
+```
+
+- 内容委托返回 `void` 或 `BuildTask`，实参按值传递；`Action`、`Action<T>`、
+  `Func<T, BuildTask>` 及相同形状的自定义委托都沿这一规则生成。
+- `row(...)` 和 `row.Invoke(...)` 在生成的构建方法中声明独立子视图。
+  该节点保存原内容委托和本次实参，以原源码调用位置与出现次数组合身份。
+  条件分支、循环、`Key` 前缀及节点释放沿共同的视图构建路径执行。
+- 内容委托在组件参数和内容节点参数中都按引用比较。相同委托与相等实参保留原内容；
+  委托引用或实参变化时更新同一节点。父参数变化后，各行继续分别比较自己的参数。
+- 生成的构建方法保留源码的命名空间、using、参数、泛型约束和控制流，
+  内容参数可以直接转交给另一个 `[Composable]` 组件的 `[Composable]` 参数。
+  跨程序集调用继续引用定义程序集生成的视图。
+- 内容体的依赖读取、局部状态和 `BuildError` 归内容子视图持有，
+  由共同重建路径消费 `BuildTask` 的结果并处理错误恢复。
+- Compose 方法和 SwiftUI `Build` 传入捕获外部变量的 lambda 时，`SEV013` 发出 info：
+  “调用方每次重跑都会分配”，并建议 `static` lambda 加显式状态参数。
+  静态 lambda、仅使用自身参数或常量的 lambda 沿直接表达的数据范围使用。
+  编译期可确定为 `Once` 的构建按首次构建处理。
+- 容器继续使用 `using (x.Content())`，作用域行为见
+  [[architecture/someui/Child-Source|Child Source]]。
+
+公开编译与行为验收见 `tests/SomeEngine.Views.Generators.Tests/ContentFunctionTests.cs`，
+以树上内容、参数变化、分支释放、独立依赖和构建错误验证行为。
+`tools/SomeEngine.Views.AotSmoke/ComposeChecks.cs` 同时覆盖 NativeAOT 下的内容声明与参数更新。
 
 ## Relations
 [[architecture/someui/Frontends|Frontends]] · [[architecture/someui/Node-Identity|Node Identity]] · ADR 0013
