@@ -52,6 +52,12 @@ ecs-aot-matrix rids evidence='artifacts/ecs-aot-evidence.json':
 ecs-aot-matrix-script-test:
     pwsh -NoProfile -File tools/SomeEngine.ECS.AotSmoke/Test-AotEvidenceDestination.ps1
 
+# Native text shaping with the same publish-and-run path as the ECS smoke.
+typography-aot rid:
+    dotnet restore tools/SomeEngine.Typography.AotSmoke/SomeEngine.Typography.AotSmoke.csproj -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} -p:PublishAot=true -p:_IsPublishing=true
+    dotnet publish tools/SomeEngine.Typography.AotSmoke/SomeEngine.Typography.AotSmoke.csproj -c Release -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} --self-contained true --no-restore -t:Rebuild -o tools/SomeEngine.Typography.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/native-publish -p:PublishAot=true -p:SelfContained=true -p:TrimmerSingleWarn=false
+    ./tools/SomeEngine.Typography.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/native-publish/SomeEngine.Typography.AotSmoke{{ aot_executable_extension }}
+
 
 # Each destructive category runs in its own test process and writes a separate result file.
 d3d12-device-loss:

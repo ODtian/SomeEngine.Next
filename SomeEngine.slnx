@@ -3,6 +3,9 @@
   <Project Path="tools\SomeEngine.Trace\SomeEngine.Trace.csproj" />
   <Project Path="tests\SomeEngine.Diagnostics.Tests\SomeEngine.Diagnostics.Tests.csproj" />
   <Project Path="src\SomeEngine.Core\SomeEngine.Core.csproj" />
+  <Project Path="src\SomeEngine.Typography\SomeEngine.Typography.csproj" />
+  <Project Path="tests\SomeEngine.Typography.Tests\SomeEngine.Typography.Tests.csproj" />
+  <Project Path="tools\SomeEngine.Typography.AotSmoke\SomeEngine.Typography.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
   <Project Path="src\SomeEngine.Resources\SomeEngine.Resources.csproj" />
   <Project Path="tests\SomeEngine.Resources.Tests\SomeEngine.Resources.Tests.csproj" />
