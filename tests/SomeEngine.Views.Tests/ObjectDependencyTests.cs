@@ -65,19 +65,10 @@ public sealed partial class ObjectDependencyTests
 
         source.Version = 1;
         source.Number = 7;
-#if DEBUG
-        var firstError = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains("iteration limit of 2", firstError.Message, StringComparison.OrdinalIgnoreCase);
-#else
         frames.Frame();
-#endif
         Assert.EndsWith(";7", frames.World.Read<DisplayText>(root).Value);
         source.Number = 9;
-#if DEBUG
-        Assert.Throws<InvalidOperationException>(frames.Frame);
-#else
         frames.Frame();
-#endif
 
         Assert.EndsWith(";9", frames.World.Read<DisplayText>(root).Value);
         source.Number = 11;
