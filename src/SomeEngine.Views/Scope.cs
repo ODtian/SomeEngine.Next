@@ -441,6 +441,7 @@ public static partial class Scope
         data.DeclaredChildren.Clear();
         data.Completed = false;
         data.KeyPrefix = null;
+        data.GroupPrefix = null;
         data.Occurrences.Clear();
 #if DEBUG
         data.PreviousSiblings.Clear();
