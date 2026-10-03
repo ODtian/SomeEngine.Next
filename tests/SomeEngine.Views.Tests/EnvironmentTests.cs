@@ -8,24 +8,40 @@ namespace SomeEngine.Views.Tests;
 public sealed class EnvironmentTests
 {
     [Fact]
-    public void ProvideStoresBothKindsAndReturnsTheProvidedEntity()
+    public void ProvideStoresTableAndSparseThemesAndReturnsTheNode()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity root = Views.Spawn(frames.World, Entity.Null, new ProvidingView(3, 0));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ThemePair(3, 5, 0));
 
         frames.Frame();
 
         Assert.Equal(new Theme(3), frames.World.Read<Theme>(root));
         Assert.Equal(new SparseTheme(5), frames.World.ReadSparse<SparseTheme>(root));
-        Assert.Equal(root, frames.World.Read<ProvidedEntity>(root).Value);
+        Assert.Equal(root, frames.World.Read<ThemeNode>(root).Value);
         uint tableVersion = frames.World.WriteVersion<Theme>(root);
         uint sparseVersion = frames.World.SparseWriteVersion<SparseTheme>(root);
-        frames.World.Replace(root, new ProvidingView(3, 1));
+        frames.World.Replace(root, new ThemePair(3, 5, 1));
         frames.Frame();
 
         Assert.Equal(tableVersion, frames.World.WriteVersion<Theme>(root));
         Assert.Equal(sparseVersion, frames.World.SparseWriteVersion<SparseTheme>(root));
     }
+
+#if DEBUG
+    [Fact]
+    public void ReadUpOutsideBuildReportsTheRequiredScope()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => Scope.ReadUp<Theme>());
+        Assert.Contains("active view build", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ProvideOutsideBuildReportsTheRequiredScope()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => Entity.Null.Provide(new Theme(3)));
+        Assert.Contains("active view build", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+#endif
 
     [Theory]
     [InlineData(false)]
@@ -309,20 +325,20 @@ public sealed class EnvironmentTests
         }
     }
 
-    private readonly record struct ProvidingView(int Color, int Refresh) : IView, IComponent
+    private readonly record struct ThemePair(int TableColor, int SparseColor, int Refresh) : IView, IComponent
     {
         public BuildTask Build()
         {
-            Entity provided = Scope.Entity.Provide(new Theme(Color)).Provide(new SparseTheme(Color + 2));
-            if (Scope.World.Has<ProvidedEntity>(Scope.Entity))
-                Scope.World.Replace(Scope.Entity, new ProvidedEntity(provided));
+            Entity node = Scope.Entity.Provide(new Theme(TableColor)).Provide(new SparseTheme(SparseColor));
+            if (Scope.World.Has<ThemeNode>(Scope.Entity))
+                Scope.World.Replace(Scope.Entity, new ThemeNode(node));
             else
-                Scope.World.Add(Scope.Entity, new ProvidedEntity(provided));
+                Scope.World.Add(Scope.Entity, new ThemeNode(node));
             return default;
         }
     }
 
-    private readonly record struct ProvidedEntity(Entity Value) : IComponent;
+    private readonly record struct ThemeNode(Entity Value) : IComponent;
     private readonly record struct Theme(int Color) : IComponent;
     private readonly record struct SparseTheme(int Color) : ISparseComponent;
     private readonly record struct DisplayText(string Value) : IComponent;
