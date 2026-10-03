@@ -49,5 +49,13 @@ public static class Scope
 开发构建中的作用域外调用会报告需要活动构建。shipping 编译按统一开发检查规则移除该调用。
 其余读取、写入、依赖与异步入口按对应任务票继续实现。
 
+## 内容作用域实现（#17）
+
+活动构建支持 `Entity.Content()` 的 `ParentScope`。
+构建实体与子节点声明的父实体分别保存在上下文中，
+容器内容继承当前构建，并在块结束时恢复外层声明上下文。
+公开 API、子节点来源与收尾时机见
+[[architecture/someui/Child-Source|Child Source]]。
+
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]

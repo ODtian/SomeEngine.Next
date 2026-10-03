@@ -33,6 +33,7 @@ internal static class FirstBuildChecks
         VerifyParameterChanges(frames, root, children.ToArray(), grandchildren[0]);
         VerifyOnceParameters(frames);
         VerifyKeyedChildren(frames);
+        VerifyCallerChildren(frames);
     }
 
     private static int ReadNumber() => 41;
@@ -121,6 +122,66 @@ internal static class FirstBuildChecks
     {
         if (!condition)
             throw new InvalidOperationException(message);
+    }
+
+    private static void VerifyCallerChildren(HeadlessFrameDriver frames)
+    {
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ContentGroup(3, 11, true));
+        frames.Frame();
+        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, container).ToArray();
+        Require(children.Length == 2, "Content declares both branches under its container.");
+        Entity firstLeaf = Hierarchy<ElementTree>.GetChildren(frames.World, children[0])[0];
+        Entity secondLeaf = Hierarchy<ElementTree>.GetChildren(frames.World, children[1])[0];
+        frames.World.Replace(container, new ContentContainer(7));
+
+        frames.Frame();
+
+        Require(frames.World.Read<Selection>(container).Value == 7,
+            "Caller containers rebuild their own data from changed parameters.");
+        Require(Hierarchy<ElementTree>.GetChildren(frames.World, container).Span.SequenceEqual(children),
+            "Caller container rebuilds preserve the declared children.");
+        uint displayVersion = frames.World.WriteVersion<Selection>(container);
+        frames.World.Replace(root, new ContentGroup(7, 33, false));
+
+        frames.Frame();
+
+        var content = Hierarchy<ElementTree>.GetChildren(frames.World, container);
+        Require(content.Count == 1 && content[0] == children[0], "Content keeps the remaining branch entity.");
+        Require(frames.World.WriteVersion<Selection>(container) == displayVersion,
+            "Equal container parameters preserve the container data version.");
+        Require(frames.World.Read<TableText>(firstLeaf).Value == "33",
+            "Caller changes update nested content while the container parameters stay equal.");
+        Require(!frames.World.IsAlive(children[1]) && !frames.World.IsAlive(secondLeaf),
+            "Content completion releases the removed branch and its subtree.");
+    }
+
+    private readonly record struct ContentGroup(int Value, ulong First, bool IncludeSecond) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Scope.View(new ContentContainer(Value)).Content())
+            {
+                Scope.View(new KeyedBranch(First), 11);
+                if (IncludeSecond)
+                    Scope.View(new KeyedBranch(22), 22);
+            }
+            return default;
+        }
+    }
+
+    private readonly record struct ContentContainer(int Value) : IView, IComponent
+    {
+        public static ChildSource Children => ChildSource.Caller;
+
+        public BuildTask Build()
+        {
+            if (Scope.World.Has<Selection>(Scope.Entity))
+                Scope.World.Replace(Scope.Entity, new Selection(Value));
+            else
+                Scope.World.Add(Scope.Entity, new Selection(Value));
+            return default;
+        }
     }
 
     private readonly record struct ReferenceGroup(string Name, Func<int> NumberCallback) : IView, ISparseComponent
