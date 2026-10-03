@@ -124,8 +124,8 @@ public readonly struct GraphParameterResourceBinding
             TextureLayout.Undefined, null, bufferContentScope: contentScope);
 
     /// <summary>
-    /// Binds a whole Buffer SRV descriptor without inferring a whole-buffer synchronization read.
-    /// The Pass must separately declare every range the shader can actually access.
+    /// Binds a Buffer SRV descriptor whose accessible bytes come from the frame's buffer ranges
+    /// or from ordinary range reads declared by the pass.
     /// </summary>
     public static GraphParameterResourceBinding ReadOnlyBufferDescriptor(
         GraphBufferSrvId view) =>

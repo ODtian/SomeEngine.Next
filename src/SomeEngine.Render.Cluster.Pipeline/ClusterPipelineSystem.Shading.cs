@@ -24,7 +24,6 @@ public sealed partial class ClusterPipelineSystem
     {
         var previousGroups = _shadeGroups;
         var previousInputs = _materialInputs;
-        var previousReaders = _pageHeapReaderPasses;
         FrameResources previousResources = _frameResources;
         RenderGraphEdit edit = _graph.BeginEdit();
         try
@@ -44,7 +43,6 @@ public sealed partial class ClusterPipelineSystem
             _uploads!.CancelDeclarations();
             _shadeGroups = previousGroups;
             _materialInputs = previousInputs;
-            _pageHeapReaderPasses = previousReaders;
             _frameResources = previousResources;
             foreach (uint bin in shadeStages.ChangedBins)
                 if (_shadeGroups.ContainsKey(bin)) _shadeGroupOrder.Add(bin);
@@ -62,7 +60,7 @@ public sealed partial class ClusterPipelineSystem
             if (!_shadeGroups.TryGetValue(bin, out ShadeGroup? group)) continue;
             if (stages.TryGetBin(bin, out ClusterShadeInvocation stage))
             {
-                if (group.Stage.Pipeline == stage.Pipeline &&
+                if (ReferenceEquals(group.Stage.Material, stage.Material) && group.Stage.Pipeline == stage.Pipeline &&
                     group.Stage.CommandBindings.Equals(stage.CommandBindings) &&
                     group.Stage.MaterialBindings.AsSpan().SequenceEqual(stage.MaterialBindings))
                     continue;
@@ -74,8 +72,6 @@ public sealed partial class ClusterPipelineSystem
             if (after != default) graph.OrderAfter(after, before);
             _shadeGroups = _shadeGroups.Remove(bin);
             _shadeGroupOrder.Remove(bin);
-            _materialInputs = _materialInputs.Remove(group.Pass);
-            _pageHeapReaderPasses = _pageHeapReaderPasses.Remove(group.Pass);
         }
         foreach (uint bin in stages.ChangedBins)
         {
