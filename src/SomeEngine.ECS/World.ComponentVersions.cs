@@ -23,4 +23,13 @@ public partial class World
         }
         return structure.ComponentWriteVersions.Read(ComponentMetadata<T>.Id);
     }
+
+    internal uint ComponentWriteVersion(ushort component)
+    {
+        ThrowIfUnavailable();
+        WorldStructureRoot structure = CurrentStructureRoot;
+        return ComponentRegistry.Get(component).Storage == StoragePath.Sparse
+            ? structure.Sparse.ComponentWriteVersion(component)
+            : structure.ComponentWriteVersions.Read(component);
+    }
 }

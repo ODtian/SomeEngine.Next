@@ -71,5 +71,11 @@ Entity root = Views.Spawn(world, Entity.Null, new Panel("Inventory"));
 公开行为测试 `NodeIdentityTests.cs` 覆盖列表和默认 key 声明，
 `FirstBuildChecks.cs` 同时验证 NativeAOT 下的 keyed 节点生命周期。
 
+## 调用方内容实现（#17）
+
+`ContentExtensions.Content(this Entity)` 返回用于 `using` 的 `ParentScope`，
+`Group` 是公开的透明容器视图。两种子节点来源的声明、收尾与重跑规则见
+[[architecture/someui/Child-Source|Child Source]]，公开行为测试为 `ChildSourceTests.cs`。
+
 ## Relations
 [[architecture/someui/Build-Modes|Build Modes]] · [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Node-Identity|Node Identity]] · [[architecture/someui/Build-Scope|Build Scope]]
