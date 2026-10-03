@@ -77,7 +77,8 @@ internal static partial class AsyncIntegrationChecks
         var type = new SerializationTypeKey(new Guid("02904d5f-dca0-4ab9-8d85-261c917db2a0"), "StoredAsyncView", 1);
         registry.Register<StoredAsyncView, StoredAsyncViewCodec>(type);
         ViewSerialization.RegisterType<StoredAsyncView>(type);
-        registry.Register<Number>();
+        registry.Register<Number, NumberCodec>(new SerializationTypeKey(
+            new Guid("74042e4b-afb6-4b5f-9bdf-6be03f660fc1"), "AsyncNumber", 1));
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new StoredAsyncView(17));
         frames.Frame();
@@ -110,6 +111,12 @@ internal static partial class AsyncIntegrationChecks
     {
         public void Write(ref DataWriter writer, in StoredAsyncView value) => writer.WriteInt32(value.Value);
         public void Read(ref DataReader reader, out StoredAsyncView value) => value = new StoredAsyncView(reader.ReadInt32());
+    }
+
+    private struct NumberCodec : IComponentCodec<Number>
+    {
+        public void Write(ref DataWriter writer, in Number value) => writer.WriteInt32(value.Value);
+        public void Read(ref DataReader reader, out Number value) => value = new Number(reader.ReadInt32());
     }
 
     private sealed class SharedText : VersionCell
