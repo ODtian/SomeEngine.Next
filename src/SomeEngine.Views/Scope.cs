@@ -242,7 +242,7 @@ public static class Scope
 #if DEBUG
     internal static RebuildScope EnterRebuild()
     {
-        var scope = new RebuildScope(s_childDeclarations);
+        var scope = new RebuildScope();
         s_childDeclarations = new Dictionary<Entity, ScopeData>();
         return scope;
     }
@@ -352,8 +352,7 @@ public static class Scope
     {
         private readonly Dictionary<Entity, ScopeData>? _previousDeclarations;
 
-        internal RebuildScope(Dictionary<Entity, ScopeData>? previousDeclarations) =>
-            _previousDeclarations = previousDeclarations;
+        public RebuildScope() => _previousDeclarations = s_childDeclarations;
 
         public void Dispose() => s_childDeclarations = _previousDeclarations;
     }
