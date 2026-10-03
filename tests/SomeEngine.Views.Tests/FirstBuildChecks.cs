@@ -59,7 +59,7 @@ internal static partial class FirstBuildChecks
     {
         public BuildTask Build()
         {
-            Scope.View(new HistoryText(Value));
+            Scope.View(new HistoryText(Value), 0);
             return default;
         }
     }
