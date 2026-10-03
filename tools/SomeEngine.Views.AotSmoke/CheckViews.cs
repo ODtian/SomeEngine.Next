@@ -40,6 +40,9 @@ LayoutChecks.Run();
 ComposeChecks.Run(frames);
 SwiftUIChecks.Run(frames);
 RememberChecks.Run(frames);
+SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(false);
+SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(true);
+Console.WriteLine("Surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
 Console.WriteLine("View functions, Compose content, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, and user layouts passed under NativeAOT.");
 
 static void Require(bool value, string message)

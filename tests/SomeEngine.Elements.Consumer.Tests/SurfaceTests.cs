@@ -15,6 +15,11 @@ public sealed partial class SurfaceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void SharedSurfaceChecksPass(bool rewritten) => SurfaceChecks.Run(rewritten);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void RebuildingWithEqualSurfaceValuesPreservesTheirWriteVersions(bool rewritten)
     {
         using var frames = new ElementFrames();

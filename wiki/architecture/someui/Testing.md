@@ -158,6 +158,9 @@ Absolute 嵌套、最小/最大尺寸、单轴自动尺寸、零尺寸、非均�
 尺寸变化后的重建保留相同 Surface 的节点写版本与类型写版本，填充色变化则推进两者。
 开发构建中的三种修饰共用 Core 的作用域检查。
 
+`SurfaceChecks` 与用户修饰示例源文件还由现有 Views NativeAOT 工程编译，
+使用相同公开 API 验证布局尺寸变化、相等值的写版本保留和填充色更新。
+
 `AssemblyBoundaryTests` 经编译程序集的公开属性读取访问边界。
 向 Views 临时加入 `[assembly: InternalsVisibleTo("SomeEngine.Elements")]` 后，
 架构用例报告该声明并以退出码 1 失败；移除该声明后的验收通过。
