@@ -22,7 +22,7 @@
 | RHI | [RHI/Index](../../wiki/architecture/RHI/Index.md) | `SomeEngine.Graphics`、具体 backend、`Graphics.Validation`；当前公共入口包含 CommandContext、RecordedCommands、QueueCompletion、固定 DescriptorTable 与 ValidationLayer。具体 backend/capability/lifetime 规则按实现核对 |
 | Assets 与 Shader | [Asset-Objects](../../wiki/architecture/Assets/Asset-Objects.md)、[Asset-Byte-Cache](../../wiki/architecture/Assets/Asset-Byte-Cache.md)、[Asset-Shaders](../../wiki/architecture/Assets/Asset-Shaders.md) | `Asset.cs`、`Asset.Blocks.cs`、`AssetByteCache.cs`、`Shader.cs`、`Shader.Slang.cs`；身份、Block、缓存与直接 Slang 数据持有 |
 | SomeUI | ADR 0008–0014、[SomeUI](../../wiki/architecture/SomeUI.md) 与 `someui/` 原子页、`docs/SomeUI-Requirements.md` | `SomeEngine.Views` 已实现视图首次构建，核对 `Scope`、`ViewRebuildSystem`、`World.ComponentData.cs` 与 `FirstBuildTests`；`SomeEngine.Typography` 的 `Font.Load`、`Shaper.Shape`、`ShapeBuffer` 提供公开字形与行结果。后续行为按对应 Wiki 页和任务票继续实现 |
-| 动画 | ADR 0014、[Animation](../../wiki/architecture/Animation.md) 与 `animation/` 原子页、`docs/Pose-Animation-Spec.md` | `SomeEngine.Animation` 的 `TimelineSystem` / `TimelineEndSystem`、`Animation.Advance`、`IValueOps<T>`、`Curve` / `Spec` 及公开行为测试；核心已实现，属性、层、图与姿势动画按对应任务继续推进 |
+| 动画 | ADR 0014、[Animation](../../wiki/architecture/Animation.md) 与 `animation/` 原子页、`docs/Pose-Animation-Spec.md` | `SomeEngine.Animation` 的时间线、值运算、曲线、属性通道与轨道；核对启用位、阶段运行位、按偏移写版本、播放控制与实体复用。层、图与姿势动画按目标设计读取 |
 | 验证与验收 | `wiki/architecture/validation/`、当前 harness 原子页 | Core.DevelopmentCheck、业务输入处理与 ValidationLayer；验收沿用根 AGENTS 的公共行为和统一渲染场景规则 |
 
 ## 已识别的文档差异

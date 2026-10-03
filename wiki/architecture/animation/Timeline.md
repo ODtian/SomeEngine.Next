@@ -11,8 +11,10 @@ public struct Timeline : IEnableableComponent
     public float Speed;
     public ushort Stage;
     public TimelineClock Clock;
+    public bool Paused;
     public uint Running;       // 本帧仍在运行的轨道类型位，由各求值系统设置
     public uint Completions;   // 完成计数，可作为依赖
+    public uint Starts;        // 属性动画的启动计数
 }
 public enum TimelineClock : byte { Game, Interface, Unscaled }
 
@@ -36,9 +38,11 @@ systems.Add(new TimelineEndSystem());
 
 ## Invariants
 - 启动、暂停、停止、调速只修改字段或启用位，不改变 archetype。
+- `Paused` 保留时间与速度配置，`TimelineSystem` 在恢复后继续按配置推进。属性动画每次从禁用状态启动时增加 `Starts`；轨道通过启动编号选择当前播放的数据。
 - `TimelineSystem` 按所选时钟推进时间，并清空 `Running`；各求值系统为本阶段仍在运行的工作设置自己的位；`TimelineEndSystem` 处理边界并完成已经结束的时间线：禁用该时间线，并增加 `Completions`。暂停时仍存续的求值工作同样设置运行位。
 - `Interface` 时钟不受游戏暂停与时间缩放影响；`Unscaled` 只不受时间缩放影响。
 - 阶段表（`DynamicBuffer<TimelineStage>`）记录边界，边界类型有三种：`Duration`、`Settled`（本阶段的运行位全部清空）、`External`（由 `Animation.Advance(world, entity)` 推进）。`Time` 相对当前阶段；固定时长边界在收尾时减去已经经过的时长，并把越界时间带入后续阶段；收敛与外部边界进入下一阶段时把时间归零。新的收敛阶段交给下一帧的求值系统运行。
+- 固定时长边界推进阶段时清空旧阶段的运行位；进入新的收敛阶段后，收尾系统把该阶段交给下一帧求值，再依据它自己的收敛结果完成。
 - 固定时长等待和外部等待都使时间线保持启用；阶段表耗尽且运行位清空后完成。使用阶段表时，其数量最多为 `ushort.MaxValue`。直接使用运行位的动画可以省去阶段缓冲。
 - 事件以计数表达（`DynamicBuffer<TimelineEvent>`：事件编号加次数）。调用方先声明事件缓冲，求值系统通过 `Animation.EmitEvent(world, entity, id)` 推进对应计数。读取方通过登记依赖或比较计数得知事件。
 - 阶段和事件缓冲使用 ECS 的内联缓冲机制；启用、完成、外部推进和已有事件计数的写入都保留实体的表格成员关系。
