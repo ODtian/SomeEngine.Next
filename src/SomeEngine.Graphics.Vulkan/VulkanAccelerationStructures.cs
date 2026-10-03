@@ -536,7 +536,7 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal VkAccelerationStructure Native => _native;
-        internal ulong DeviceAddress
+        public override ulong DeviceAddress
         {
             get
             {

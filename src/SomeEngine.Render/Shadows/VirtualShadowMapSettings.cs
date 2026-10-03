@@ -25,7 +25,9 @@ public sealed record VirtualShadowMapSettings
     public float DynamicResolutionMaxLocalLodBias { get; init; } = 2.0f;
     public bool DirectionalReceiverMask { get; init; } = true;
     public bool LocalReceiverMask { get; init; } = true;
-    public float DepthBias { get; init; } = 0.0005f;
+    // The receiver-plane comparison handles texel offsets. This remaining
+    // normalized-depth allowance is two centimeters over the default directional range.
+    public float DepthBias { get; init; } = 0.00002f;
     public float NormalBias { get; init; } = 0.01f;
     public float DirectionalLightDistance { get; init; } = 500.0f;
     public float DirectionalNearPlane { get; init; } = 0.1f;

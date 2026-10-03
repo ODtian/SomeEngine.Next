@@ -1,0 +1,164 @@
+struct RayShadowInputs
+{
+    float4x4 ClipToWorld;
+    float3 CameraPosition;
+    uint Width;
+    float3 LightDirection;
+    uint Height;
+    float3 LightPosition;
+    uint LightKind;
+    float NormalBias;
+    float NearPlane;
+    float FarPlane;
+    float Padding;
+};
+struct RayVertex
+{
+    float3 Position;
+    float3 Normal;
+    float4 Tangent;
+    float2 TexCoord;
+};
+struct RayGeometry
+{
+    uint VertexStart;
+    uint IndexStart;
+    uint AlphaStart;
+    uint AlphaWidth;
+    uint AlphaHeight;
+    uint NormalStart;
+    uint NormalWidth;
+    uint NormalHeight;
+    float AlphaCutoff;
+    float NormalScale;
+};
+ConstantBuffer<RayShadowInputs> Inputs;
+RaytracingAccelerationStructure Scene;
+ByteAddressBuffer Vertices;
+StructuredBuffer<uint> Indices;
+StructuredBuffer<RayGeometry> Geometries;
+ByteAddressBuffer Texels;
+RWStructuredBuffer<uint> Visibility;
+
+RayVertex ReadVertex(uint index)
+{
+    uint address = index * 48u;
+    RayVertex result;
+    result.Position = asfloat(Vertices.Load3(address));
+    result.Normal = asfloat(Vertices.Load3(address + 12u));
+    result.Tangent = asfloat(Vertices.Load4(address + 24u));
+    result.TexCoord = asfloat(Vertices.Load2(address + 40u));
+    return result;
+}
+
+float4 ReadTexel(uint start, uint width, uint height, int2 pixel)
+{
+    pixel = ((pixel % int2(width, height)) + int2(width, height)) % int2(width, height);
+    uint packed = Texels.Load((start + uint(pixel.y) * width + uint(pixel.x)) * 4u);
+    return float4(packed & 255u, (packed >> 8u) & 255u,
+        (packed >> 16u) & 255u, packed >> 24u) / 255.0;
+}
+
+float4 SampleTexels(uint start, uint width, uint height, float2 uv)
+{
+    float2 position = uv * float2(width, height) - 0.5;
+    int2 pixel = int2(floor(position));
+    float2 fraction = frac(position);
+    return lerp(lerp(ReadTexel(start, width, height, pixel),
+                     ReadTexel(start, width, height, pixel + int2(1, 0)), fraction.x),
+                lerp(ReadTexel(start, width, height, pixel + int2(0, 1)),
+                     ReadTexel(start, width, height, pixel + int2(1, 1)), fraction.x), fraction.y);
+}
+
+void ReadTriangle(RayGeometry geometry, uint primitive, out RayVertex a, out RayVertex b, out RayVertex c)
+{
+    uint first = geometry.IndexStart + primitive * 3u;
+    a = ReadVertex(geometry.VertexStart + Indices[first]);
+    b = ReadVertex(geometry.VertexStart + Indices[first + 1u]);
+    c = ReadVertex(geometry.VertexStart + Indices[first + 2u]);
+}
+
+bool AlphaAccepts(uint instance, uint geometryIndex, uint primitive, float2 bary)
+{
+    RayGeometry geometry = Geometries[instance + geometryIndex];
+    if (geometry.AlphaCutoff < 0.0) return true;
+    RayVertex a, b, c;
+    ReadTriangle(geometry, primitive, a, b, c);
+    float2 uv = a.TexCoord * (1.0 - bary.x - bary.y) + b.TexCoord * bary.x + c.TexCoord * bary.y;
+    return SampleTexels(geometry.AlphaStart, geometry.AlphaWidth, geometry.AlphaHeight, uv).a >= geometry.AlphaCutoff;
+}
+
+float3 TransformRayNormal(float3 normal, float3x3 worldToObject)
+{
+    return normalize(mul(normal, worldToObject));
+}
+
+float3 TransformRayTangent(float3 tangent, float3 normal, float3x3 objectToWorld)
+{
+    float3 transformed = mul(objectToWorld, tangent);
+    return normalize(transformed - normal * dot(normal, transformed));
+}
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
+{
+    if (pixel.x >= Inputs.Width || pixel.y >= Inputs.Height) return;
+    uint output = pixel.y * Inputs.Width + pixel.x;
+    Visibility[output] = 0xffffffffu;
+    float2 uv = (float2(pixel.xy) + 0.5) / float2(Inputs.Width, Inputs.Height);
+    float4 nearWorld = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.0, 1.0), Inputs.ClipToWorld);
+    RayDesc primary;
+    primary.Origin = Inputs.CameraPosition;
+    primary.Direction = normalize(nearWorld.xyz / nearWorld.w - primary.Origin);
+    primary.TMin = Inputs.NearPlane;
+    primary.TMax = Inputs.FarPlane;
+    RayQuery<RAY_FLAG_NONE> camera;
+    camera.TraceRayInline(Scene, RAY_FLAG_NONE, 255u, primary);
+    while (camera.Proceed())
+        if (camera.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+            AlphaAccepts(camera.CandidateInstanceID(), camera.CandidateGeometryIndex(),
+                camera.CandidatePrimitiveIndex(), camera.CandidateTriangleBarycentrics()))
+            camera.CommitNonOpaqueTriangleHit();
+    if (camera.CommittedStatus() != COMMITTED_TRIANGLE_HIT) return;
+
+    RayGeometry geometry = Geometries[camera.CommittedInstanceID() + camera.CommittedGeometryIndex()];
+    RayVertex a, b, c;
+    ReadTriangle(geometry, camera.CommittedPrimitiveIndex(), a, b, c);
+    float2 bary = camera.CommittedTriangleBarycentrics();
+    float3 weights = float3(1.0 - bary.x - bary.y, bary);
+    float3x3 worldToObject = (float3x3)camera.CommittedWorldToObject3x4();
+    float3x3 objectToWorld = (float3x3)camera.CommittedObjectToWorld3x4();
+    float3 normalA = TransformRayNormal(a.Normal, worldToObject);
+    float3 normalB = TransformRayNormal(b.Normal, worldToObject);
+    float3 normalC = TransformRayNormal(c.Normal, worldToObject);
+    float3 normal = normalize(normalA * weights.x + normalB * weights.y + normalC * weights.z);
+    float3 worldTangent = normalize(TransformRayTangent(a.Tangent.xyz, normalA, objectToWorld) * weights.x +
+        TransformRayTangent(b.Tangent.xyz, normalB, objectToWorld) * weights.y +
+        TransformRayTangent(c.Tangent.xyz, normalC, objectToWorld) * weights.z);
+    worldTangent = normalize(worldTangent - normal * dot(normal, worldTangent));
+    float handedness = a.Tangent.w * weights.x + b.Tangent.w * weights.y + c.Tangent.w * weights.z;
+    handedness = (handedness < 0.0 ? -1.0 : 1.0) * (determinant(objectToWorld) < 0.0 ? -1.0 : 1.0);
+    float2 texCoord = a.TexCoord * weights.x + b.TexCoord * weights.y + c.TexCoord * weights.z;
+    float3 normalTs = SampleTexels(geometry.NormalStart, geometry.NormalWidth, geometry.NormalHeight, texCoord).rgb * 2.0 - 1.0;
+    normalTs.xy *= geometry.NormalScale;
+    normal = normalize(worldTangent * normalTs.x + cross(normal, worldTangent) * handedness * normalTs.y + normal * normalTs.z);
+    float3 position = primary.Origin + primary.Direction * camera.CommittedRayT();
+    float3 toLight = Inputs.LightKind == 0u ? -Inputs.LightDirection : Inputs.LightPosition - position;
+    if (dot(normal, -primary.Direction) <= 0.0 || dot(normal, normalize(toLight)) < 0.15) return;
+
+    RayDesc shadow;
+    shadow.Origin = position + normal * Inputs.NormalBias;
+    toLight = Inputs.LightKind == 0u ? -Inputs.LightDirection : Inputs.LightPosition - shadow.Origin;
+    shadow.Direction = normalize(toLight);
+    shadow.TMin = 0.0001;
+    shadow.TMax = Inputs.LightKind == 0u ? 1000000.0 : length(toLight);
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> ray;
+    ray.TraceRayInline(Scene, RAY_FLAG_NONE, 255u, shadow);
+    while (ray.Proceed())
+        if (ray.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+            AlphaAccepts(ray.CandidateInstanceID(), ray.CandidateGeometryIndex(),
+                ray.CandidatePrimitiveIndex(), ray.CandidateTriangleBarycentrics()))
+            ray.CommitNonOpaqueTriangleHit();
+    Visibility[output] = ray.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0u : 1u;
+}

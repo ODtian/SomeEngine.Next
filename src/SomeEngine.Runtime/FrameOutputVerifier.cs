@@ -15,6 +15,7 @@ internal sealed class FrameOutputVerifier : IDisposable
     private readonly TextureCopyFootprint _footprint;
     private readonly Buffer _readback;
     private readonly byte[] _bytes;
+    private readonly GraphRegionId _imageReadbackRegion;
     private bool _disposed;
 
     internal FrameOutputVerifier(
@@ -22,7 +23,8 @@ internal sealed class FrameOutputVerifier : IDisposable
         Device device,
         int width,
         int height,
-        Format format)
+        Format format,
+        GraphRegionId imageReadbackRegion)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
@@ -33,6 +35,7 @@ internal sealed class FrameOutputVerifier : IDisposable
 
         _width = width;
         _height = height;
+        _imageReadbackRegion = imageReadbackRegion;
         TextureDesc description = new(
             TextureDimension.Texture2D,
             checked((uint)width),
@@ -131,7 +134,7 @@ internal sealed class FrameOutputVerifier : IDisposable
                     data.Width,
                     data.Height,
                     1));
-            });
+            }, region: _imageReadbackRegion);
     }
 
     internal FrameOutputMetrics Read()

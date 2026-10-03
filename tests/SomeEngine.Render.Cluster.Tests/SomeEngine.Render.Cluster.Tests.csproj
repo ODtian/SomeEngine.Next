@@ -59,6 +59,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../templates/DefaultProject/Game/Game.csproj" />
+    <ProjectReference Include="../../templates/DefaultProject/Game.App/Game.App.csproj" ReferenceOutputAssembly="false" />
     <Using Include="Game.Content" />
   </ItemGroup>
   <ItemGroup>

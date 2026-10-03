@@ -580,7 +580,11 @@ internal static class RuntimeApplication
         var lightSystem = new RenderLightSetSystem();
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
         var streamingConsumer = new ClusterStreamingFeedbackConsumer(cluster, streamingFeedback);
-        var shadowSettings = new VirtualShadowMapSettings { Enabled = options.VirtualShadows };
+        var shadowSettings = new VirtualShadowMapSettings
+        {
+            Enabled = options.VirtualShadows,
+            DynamicResolutionEnabled = true,
+        };
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
             metrics: options.VerifyFrameOutput);
@@ -667,7 +671,7 @@ internal static class RuntimeApplication
         {
             frameSystems.Initialize();
             outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
-                ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
+                ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat, uiRegion)
                 : null;
             ui = new RuntimeUiRenderer(
                 backend,
@@ -804,7 +808,7 @@ internal static class RuntimeApplication
                     height = clientHeight;
                     cameraCut = true;
                     outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
-                        ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
+                        ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat, uiRegion)
                         : null;
                 }
 
@@ -860,7 +864,7 @@ internal static class RuntimeApplication
                 }
                 long prepareStarted = Stopwatch.GetTimestamp();
                 if (platform?.ImageRequested == true)
-                    outputVerifier ??= new FrameOutputVerifier(backend, device, width, height, PresentationFormat);
+                    outputVerifier ??= new FrameOutputVerifier(backend, device, width, height, PresentationFormat, uiRegion);
                 Prepare(
                     prepareSystems,
                     cluster,

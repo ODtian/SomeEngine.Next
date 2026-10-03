@@ -30,6 +30,94 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
 {
     [Fact]
+    public Task MovingCasterRefreshesDirectionalFallbackShadows() => RenderDirectionalFallback(false, false);
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public Task DirectionalFallbackUpdatesMatchTriangleRays(bool vulkan, bool softwareRaster) =>
+        RenderDirectionalFallback(vulkan, softwareRaster);
+
+    private async Task RenderDirectionalFallback(bool vulkan, bool softwareRaster)
+    {
+        Shader shader = await CreateFallbackShader(vulkan ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil);
+        var cached = await RenderLightMovement(true, true, vulkan, softwareRaster,
+            coarseCasterMotion: true, coarseShadowShader: shader);
+        var refreshed = await RenderLightMovement(true, true, vulkan, softwareRaster,
+            refreshShadows: true, coarseCasterMotion: true, coarseShadowShader: shader);
+        var unshadowed = await RenderLightMovement(false, true, vulkan, softwareRaster,
+            coarseCasterMotion: true, coarseShadowShader: shader);
+        output.WriteLine($"Refreshed shadow relative color difference: {MaximumRelativeDifference(refreshed.Settled, unshadowed.Settled)}.");
+        float error = MaximumRelativeDifference(cached.Settled, refreshed.Settled);
+        float firstError = MaximumRelativeDifference(cached.First, refreshed.First);
+        output.WriteLine($"Directional fallback relative color error: {error}.");
+        var ambient = await RenderLightMovement(false, true, vulkan, softwareRaster,
+            coarseCasterMotion: true, illuminated: false, coarseShadowShader: shader);
+        string? evidence = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_EVIDENCE");
+        string directory = Path.Combine(evidence ?? Path.GetTempPath(),
+            $"directional-fallback-{(vulkan ? "vulkan" : "d3d12")}-{(softwareRaster ? "mixed" : "hardware")}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            WriteColor(directory, "shadowed.bmp", cached.Settled);
+            WriteColor(directory, "unshadowed.bmp", unshadowed.Settled);
+            WriteColor(directory, "ambient.bmp", ambient.Settled);
+            WriteColor(directory, "refreshed.bmp", refreshed.Settled);
+            WriteColor(directory, "first-shadowed.bmp", cached.First);
+            WriteColor(directory, "first-refreshed.bmp", refreshed.First);
+            var rays = new ShadowReferenceRays(Path.Combine(FindContentRoot(), "assets", "Models", "ico_sphere.glb"),
+                "directional", new Vector3(-1.5f, 0, -6), new Vector3(0, -.6f, -.8f));
+            // The 128-texel fallback covers 16 world units. Five screen pixels exclude
+            // one coarse texel at each shadow edge while retaining the interior ray checks.
+            ShadowReferenceComparison comparison = ShadowReferenceImage.Compare(directory, rays, "directional", 5);
+            File.WriteAllText(Path.Combine(directory, "comparison.json"), System.Text.Json.JsonSerializer.Serialize(
+                new { Comparison = comparison, EdgeExclusionPixels = 5,
+                    RelativeColorError = error, FirstFrameRelativeColorError = firstError },
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            output.WriteLine($"Directional fallback triangle comparison: {directory}; {comparison}");
+            Assert.True(MaximumRelativeDifference(refreshed.Settled, unshadowed.Settled) > .01f,
+                "The moved caster must cast a visible directional shadow through the fallback pages.");
+            Assert.True(error < .01f && firstError < .01f,
+                "Moving a caster must refresh the directional fallback shadow at its old and new positions in its first frame.");
+            Assert.True(comparison.ShadowedPixels >= 32 && comparison.LitPixels >= 512);
+            Assert.True(comparison.MismatchFraction <= .02f &&
+                comparison.MissedShadowPixels <= comparison.ShadowedPixels * .02f &&
+                comparison.FalseShadowPixels <= comparison.LitPixels * .02f,
+                "The updated directional fallback must match independent source-triangle rays.");
+        }
+        finally
+        {
+            if (evidence is null) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static void WriteColor(string directory, string name, float[] color)
+    {
+        Directory.CreateDirectory(directory);
+        const int width = 256, height = 256;
+        var bytes = new byte[54 + width * height * 4];
+        bytes[0] = (byte)'B'; bytes[1] = (byte)'M';
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(2), bytes.Length);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(10), 54);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(14), 40);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(18), width);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(22), -height);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(26), 1);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(28), 32);
+        for (int pixel = 0; pixel < width * height; pixel++)
+        {
+            for (int channel = 0; channel < 3; channel++)
+            {
+                float value = color[pixel * 3 + 2 - channel];
+                bytes[54 + pixel * 4 + channel] = (byte)Math.Clamp(MathF.Pow(value / (1 + value), 1f / 2.2f) * 255, 0, 255);
+            }
+            bytes[54 + pixel * 4 + 3] = 255;
+        }
+        File.WriteAllBytes(Path.Combine(directory, name), bytes);
+    }
+
+    [Fact]
     public async Task DirectionalShadowsAfterCameraScrollMatchRefreshedShadows()
     {
         var cached = await RenderLightMovement(true, true, false, false, cameraScroll: true);
@@ -92,7 +180,8 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
 
     private static async Task<(float[] First, float[] Settled)> RenderLightMovement(
         bool shadows, bool receiverMask, bool vulkan, bool softwareRaster, float normalBias = .01f,
-        bool cameraScroll = false, bool refreshShadows = false, bool meshShaders = false)
+        bool cameraScroll = false, bool refreshShadows = false, bool meshShaders = false,
+        bool coarseCasterMotion = false, bool illuminated = true, Shader? coarseShadowShader = null)
     {
         const int width = 256, height = 256, rowPitch = width * 8;
         string root = FindContentRoot();
@@ -137,17 +226,19 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
         await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
         using MaterialAsset materialFile = await MaterialAsset.OpenAsync(assets,
             new(manifest.List(MaterialAsset.FileType).First(item => item.Name == "Standard").AssetGuid));
-        using Material material = await materialFile.CreateAsync(
-            assets,
-            TestShaderLoading.Slang,
-            TestShaderLoading.CreateSessionDescription(shaderTarget));
+        Shader? fallbackShader = coarseShadowShader;
+        using Material material = fallbackShader is null
+            ? await materialFile.CreateAsync(assets, TestShaderLoading.Slang,
+                TestShaderLoading.CreateSessionDescription(shaderTarget))
+            : await materialFile.CreateAsync(assets, (_, _) => ValueTask.FromResult(fallbackShader), null);
         using var gameWorld = new World();
         using var world = new RenderWorld();
         Vector3 sceneOffset = cameraScroll ? new Vector3(8, 0, 0) : Vector3.Zero;
         AddMesh(new TransformQvvs(sceneOffset + new Vector3(0, 0, -8), Quaternion.Identity) { Stretch = new Vector3(4, 4, .1f) });
-        AddMesh(new TransformQvvs(sceneOffset + new Vector3(0, 0, -6), Quaternion.Identity, .6f));
-        Entity light = cameraScroll
-            ? gameWorld.CreateEntity(new DirectionalLight(Vector3.Normalize(new Vector3(0, -.2f, -1)), Vector3.One, 3))
+        Entity caster = AddMesh(new TransformQvvs(sceneOffset + new Vector3(0, 0, -6), Quaternion.Identity, .6f));
+        Entity light = !illuminated ? Entity.Null : cameraScroll || coarseCasterMotion
+            ? gameWorld.CreateEntity(new DirectionalLight(Vector3.Normalize(coarseCasterMotion
+                ? new Vector3(0, -.6f, -.8f) : new Vector3(0, -.2f, -1)), Vector3.One, 3))
             : gameWorld.CreateEntity(new PointLight(new Vector3(4, 2, -3), 20, Vector3.One, 30));
         Entity receiver = world.CreateEntity(new RenderView(Matrix4x4.CreateTranslation(-sceneOffset),
             Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), width, height));
@@ -199,8 +290,9 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
         using var shadow = new VirtualShadowFeature(backend, device, shadowShaders,
             new VirtualShadowMapSettings
             {
-                Enabled = shadows, VirtualResolution = 4096, AtlasSize = 2048,
+                Enabled = shadows, VirtualResolution = 4096, AtlasSize = coarseCasterMotion ? 512u : 2048u,
                 MaxShadowLights = 1, DirectionalClipmapLevels = cameraScroll ? 16u : 1u,
+                DirectionalFirstClipmapLevel = coarseCasterMotion ? 1 : -4,
                 DynamicResolutionEnabled = false, LocalReceiverMask = receiverMask,
                 NormalBias = normalBias,
             }, graph, pipeline, lighting, depthAfter, targetAfter, regions.Feedback);
@@ -223,7 +315,12 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
             {
                 if (iteration == 16)
                 {
-                    if (cameraScroll)
+                    if (coarseCasterMotion)
+                        gameWorld.Replace(caster, new WorldTransform
+                        {
+                            Qvvs = new TransformQvvs(new Vector3(-1.5f, 0, -6), Quaternion.Identity, .6f),
+                        });
+                    else if (cameraScroll)
                         world.Replace(receiver, world.Read<RenderView>(receiver) with
                         {
                             View = Matrix4x4.CreateLookAt(new Vector3(9, 0, 0), new Vector3(8, 0, -8), Vector3.UnitY),
@@ -307,7 +404,7 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
             instances.Dispose();
         }
 
-        void AddMesh(TransformQvvs transform)
+        Entity AddMesh(TransformQvvs transform)
         {
             Entity entity = gameWorld.CreateEntity(new MeshInstance { Mesh = mesh });
             gameWorld.Add(entity, new WorldTransform { Qvvs = transform });
@@ -315,7 +412,19 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
             Material value = material;
             gameWorld.ExecuteBufferWrite<MeshMaterialBinding, Material>(entity, ref value,
                 static (DynamicBuffer<MeshMaterialBinding> buffer, ref Material item) => buffer.Add(new MeshMaterialBinding(item)));
+            return entity;
         }
+    }
+
+    private static async ValueTask<Shader> CreateFallbackShader(SlangCompileTarget target)
+    {
+        string root = FindContentRoot();
+        string engine = Path.GetFullPath(Path.Combine(root, "..", ".."));
+        SessionDesc description = TestShaderLoading.CreateSessionDescription(target);
+        description.SearchPaths = [Path.Combine(engine, "tests", "SomeEngine.Render.Cluster.Tests", "Shaders"),
+            Path.Combine(root, "assets", "Shaders"), Path.Combine(engine, "assets", "Shaders")];
+        using var source = new ShaderSourceBlock { SourceNames = ["directional_fallback.slang"] };
+        return await source.CreateAsync(TestShaderLoading.Slang, description, "Directional fallback material");
     }
 
     private static string FindContentRoot()
