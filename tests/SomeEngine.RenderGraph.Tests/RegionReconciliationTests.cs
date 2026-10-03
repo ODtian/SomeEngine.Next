@@ -34,6 +34,8 @@ public sealed class RegionReconciliationTests
         Assert.True(result.TryGetRegion("first", out GraphRegionId first));
         Assert.True(result.TryGetRegion("second", out GraphRegionId second));
         Assert.NotEqual(first, second);
+        Assert.Equal(new uint[] { 23, 47 }, result.Values.Order().ToArray());
+        Assert.Empty(original.Values);
         Assert.Equal(new uint[] { 47, 47, 47, 47 }, data.Read());
     }
 

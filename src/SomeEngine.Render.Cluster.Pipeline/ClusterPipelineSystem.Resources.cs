@@ -701,29 +701,9 @@ public sealed partial class ClusterPipelineSystem
         GraphPassId previousBvhPass = AddUploads(ref graph, meshes.Bvh.Uploads,
             _frameResources.Bvh, "Patch Cluster BVH");
         if (pagePass != default) _residencyUploadPasses.Add(pagePass);
-        if (previousBvhPass != default)
-        {
-            _residencyUploadPasses.Add(previousBvhPass);
-            if (pagePass != default) graph.OrderAfter(previousBvhPass, pagePass);
-        }
-        if (previousBvhPass != default)
-        {
-            graph.OrderAfter(_sceneBoundsPass, previousBvhPass);
-            if (_traversalSeedPass != default)
-                graph.OrderAfter(_traversalSeedPass, previousBvhPass);
-            if (_continuationTraversalSeedPass != default)
-                graph.OrderAfter(_continuationTraversalSeedPass, previousBvhPass);
-            foreach (GraphPassId traversalLevel in _traversalLevelPasses)
-                graph.OrderAfter(traversalLevel, previousBvhPass);
-            foreach (GraphPassId traversalLevel in _primaryPostTraversalLevelPasses)
-                graph.OrderAfter(traversalLevel, previousBvhPass);
-            foreach (GraphPassId traversalLevel in _continuationTraversalLevelPasses)
-                graph.OrderAfter(traversalLevel, previousBvhPass);
-            foreach (GraphPassId traversalLevel in _continuationPostTraversalLevelPasses)
-                graph.OrderAfter(traversalLevel, previousBvhPass);
-        }
+        if (previousBvhPass != default) _residencyUploadPasses.Add(previousBvhPass);
 
-        static GraphPassId AddUploads(
+        GraphPassId AddUploads(
             ref RenderGraphFrame activeGraph,
             ReadOnlySpan<ClusterStagedUpload> uploads,
             GraphBufferId destination,
@@ -771,7 +751,7 @@ public sealed partial class ClusterPipelineSystem
                 {
                     foreach (ClusterBufferCopyParameters copy in values)
                         ClusterBufferCopyParameters.Record(ref commands, copy);
-                });
+                }, region: _residencyUploadRegion);
         }
     }
 
@@ -1159,7 +1139,7 @@ public sealed partial class ClusterPipelineSystem
         Span<byte> bytes = stackalloc byte[valueSize];
         MemoryMarshal.Write(bytes, in value);
         GraphBufferInput input = _uploads!.DeclareUniform(ref graph, bytes, name);
-        _rasterGroup?.Uniforms.Add(input);
+        _rasterInputs?.Uniforms.Add(input);
         return input;
     }
 
@@ -1216,7 +1196,7 @@ public sealed partial class ClusterPipelineSystem
         BufferUsages usages, string label)
     {
         GraphBufferId buffer = _uploads!.Declare(ref graph, bytes, usages, label);
-        _rasterGroup?.Uploads.Add(buffer);
+        _rasterInputs?.Buffers.Add(buffer);
         return buffer;
     }
 
@@ -1229,7 +1209,7 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferId buffer = (_uploads ?? throw new InvalidOperationException(
             "Cluster retained upload storage was not created."))
             .Declare(ref graph, bytes, usage, name);
-        _rasterGroup?.Uploads.Add(buffer);
+        _rasterInputs?.Buffers.Add(buffer);
         return buffer;
     }
 

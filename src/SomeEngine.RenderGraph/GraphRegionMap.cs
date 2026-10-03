@@ -26,6 +26,9 @@ public sealed class GraphRegionMap<TKey, TValue> where TKey : notnull
 
     public GraphRegionId Parent { get; }
 
+    /// <summary>Returns the business values retained by the child regions.</summary>
+    public IEnumerable<TValue> Values => _regions.Values.Select(static entry => entry.Value);
+
     /// <summary>Returns a new map for the caller to keep after committing the edit.</summary>
     public GraphRegionMap<TKey, TValue> Reconcile(ref RenderGraphEdit edit,
         IEnumerable<KeyValuePair<TKey, TValue>> desired, GraphRegionBuilder<TKey, TValue> build)

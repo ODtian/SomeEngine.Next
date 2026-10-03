@@ -20,6 +20,7 @@ GraphRegionBuilder<TKey, TValue> build)` 比较此父区段下的期望键值，
 新增及替代区段按期望序列中的顺序追加。已有且值相同的键保持原位置。
 值使用构造时给出的 `IEqualityComparer<TValue>` 比较，默认使用
 `EqualityComparer<TValue>.Default`。`TryGetRegion(key, out region)` 提供键对应的图身份。
+`Values` 枚举子区段当前保留的业务值，可用于更新该区段的帧输入和释放对应上传数据。
 
 构建回调接收编辑、子区段、键和值，通过普通编辑 API 安装该键的工作。它可继续在
 子区段中创建嵌套区段。变化沿现有 [[Incremental-Reconciliation]] 与资源依赖分析传播。
