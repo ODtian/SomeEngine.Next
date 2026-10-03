@@ -111,6 +111,7 @@ internal abstract class BuildStateMachine
     protected void Begin(Scope.ScopeData data)
     {
         Data = data;
+        Scope.RetainContent(data);
         Version++;
     }
 

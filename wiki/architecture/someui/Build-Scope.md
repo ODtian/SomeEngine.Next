@@ -39,7 +39,7 @@ public static class Scope
 ## 首次构建实现（#6）
 
 当前公开入口为 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
-`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)` 与 `Scope.NextFrame()`。
+`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)`、`Scope.Untrack()` 与 `Scope.NextFrame()`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
 返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
 成功构建结束时完成子节点匹配与释放；key 分组与节点身份规则见
@@ -62,14 +62,49 @@ public static class Scope
 
 ## 跨帧作用域（#20）
 
-每次构建保存一份作用域数据。构建挂起时通过 `Dispose` 恢复父作用域，
-重建阶段恢复状态机时重新压入该份数据。子声明位置、key 分组、key 的出现次数
+每个视图构建保存主作用域，并持有需跨帧保留的内容作用域。构建挂起时通过 `Dispose` 恢复父作用域，
+重建阶段恢复状态机时重新压入挂起时的声明上下文。子声明位置、key 分组、key 的出现次数
 与读取登记状态随构建延续；成功完成整个构建时统一完成子节点匹配与释放。
 作用域数据在完成后进入当前线程的复用池，下一次构建初始化为该次 World 和视图实体。
 
 `Scope.NextFrame()` 与异步辅助方法的公开行为见
 [[architecture/someui/Async-Build|Async Build]]，阶段顺序见
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
+
+## 内容作用域实现（#17）
+
+活动构建支持 `Entity.Content()` 的 `ParentScope`。
+构建实体与子节点声明的父实体分别保存在上下文中，
+容器内容继承当前构建，并在块结束时恢复外层声明上下文。
+公开 API、子节点来源与收尾时机见
+[[architecture/someui/Child-Source|Child Source]]。
+
+## 存在性与成员读取实现（#12）
+
+当前公开入口增加 `Scope.Has<T>(Entity)` 与 `Scope.Each(QueryHandle)`。
+两者共用作用域栈帧的登记状态，`Rerun` 构建记录观察值，`Once` 构建直接取值。
+`Each` 返回在当前同步构建中遍历的 `QueryRows`，枚举值为 `Entity`；
+每次调用在取得实体序列时完成成员依赖登记。
+失效与去重规则由 [[architecture/someui/Dependencies|Dependencies]] 维护，
+父列表与 keyed 行的组合见 [[architecture/someui/Lists|Lists]]。
+
+## 局部读取作用域（#15）
+
+`Scope.Untrack()` 返回实现 `IDisposable` 的 `readonly struct UntrackScope`，
+按 `using (Scope.Untrack()) { ... }` 使用。进入时保存当前构建的依赖登记状态，
+并将该构建切换为仅取值状态；退出时恢复进入前的状态，异常退出也沿 `Dispose` 恢复。
+
+嵌套 `Untrack` 块逐层恢复：内层结束后继续使用外层的仅取值状态，
+最外层结束后恢复视图构建原有的状态。`Rerun` 随后读取的数据重新作为依赖登记；
+`Once` 随后读取的数据继续使用仅取值状态。
+
+状态由当前作用域栈帧持有。块内当场构建的子视图按自己的 `BuildMode` 设置登记状态，
+子构建返回后父构建继续使用进入子构建前的状态。`Untrack` 的有效范围是当前构建，
+作用域外调用通过同一 `DevelopmentCheck.Require` 报告。
+
+实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
+[UntrackScope](../../../src/SomeEngine.Views/UntrackScope.cs)。
+公开行为验收见 [UntrackTests](../../../tests/SomeEngine.Views.Tests/UntrackTests.cs)。
 
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]

@@ -244,6 +244,54 @@ public sealed class AsyncBuildTests
         Assert.Equal("second world", second.World.Read<DisplayText>(secondRoot).Value);
     }
 
+    [Fact]
+    public void AsyncHelperRetainsItsContentParentUntilTheCallingBuildCompletes()
+    {
+        using var frames = new HeadlessFrameDriver();
+        var wait = new ManualWait();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ContentHelperView(wait));
+        frames.Frame();
+        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity before = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
+        Assert.Equal("before", frames.World.Read<TextView>(before).Value);
+        wait.Complete();
+
+        frames.Frame();
+
+        Assert.Equal(group, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
+        var content = Hierarchy<ElementTree>.GetChildren(frames.World, group);
+        Assert.Equal(2, content.Count);
+        Assert.Equal("result", frames.World.Read<TextView>(content[1]).Value);
+
+        frames.Frame();
+
+        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
+        Assert.Equal(2, children.Count);
+        Assert.Equal(group, children[0]);
+        Assert.Equal("done", frames.World.Read<TextView>(children[1]).Value);
+        Assert.Equal(2, Hierarchy<ElementTree>.GetChildren(frames.World, group).Count);
+    }
+
+    private readonly record struct ContentHelperView(ManualWait Wait) : IView, IComponent
+    {
+        public async BuildTask Build()
+        {
+            Entity group = Scope.View(new Group());
+            BuildTask content;
+            using (group.Content())
+                content = AddContent(Wait);
+            await content;
+            Scope.View(new TextView("done"));
+        }
+
+        private static async BuildTask AddContent(ManualWait wait)
+        {
+            Scope.View(new TextView("before"));
+            await wait;
+            Scope.View(new TextView("result"));
+        }
+    }
+
     private readonly record struct ResultView(Task<string> Result) : IView, IComponent
     {
         public static BuildMode Mode => BuildMode.Once;

@@ -85,6 +85,7 @@ internal sealed class BuildQueue
                 BuildDepth build = _depths[nextBuild++];
                 BuildStateMachine stateMachine = build.StateMachine;
                 Scope.ScopeData data = stateMachine.Data;
+                Scope.ScopeData view = data.ViewData;
                 if (!world.IsAlive(build.Entity))
                 {
                     _builds.Remove(build.Entity);
@@ -97,11 +98,11 @@ internal sealed class BuildQueue
                 {
                     using var scope = Scope.Resume(data);
                     stateMachine.Resume();
-                    if (data.Task.IsCompleted)
+                    if (view.Task.IsCompleted)
                     {
                         completed = true;
-                        data.Task.Complete();
-                        scope.Complete();
+                        view.Task.Complete();
+                        Scope.CompleteBuild(view);
                     }
                 }
                 finally
@@ -110,7 +111,7 @@ internal sealed class BuildQueue
                     if (completed)
                     {
                         _builds.Remove(build.Entity);
-                        Scope.Release(data);
+                        Scope.Release(view);
                     }
                 }
             }
