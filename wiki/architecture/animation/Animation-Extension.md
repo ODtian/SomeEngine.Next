@@ -3,6 +3,8 @@
 ## Definition
 动画系统是库：内置的值类型、曲线、节点和求值系统只是用公开 API 写成的其中一种实现，用户的扩展与它们地位相同。
 
+当前核心在 `SomeEngine.Animation` 中实现：时间线系统是公开 struct 系统，值运算通过 `IValueOps<T>` 和 `ValueOps<T, TOps>` 扩展，曲线接收数据与函数指针。属性求值、层与图的下述接缝由对应任务继续实现。
+
 | 扩展 | 方式 |
 |---|---|
 | 值类型 | 写一个实现 `IValueOps<T>` 的 struct，把 `TrackSystem<T, TOps>` 加入调度（需要合成时再加 `ComposeSystem<T, TOps>`） |
@@ -13,6 +15,7 @@
 
 ## Invariants
 - 没有注册表、管理类或内部入口。
+- 用户系统可以使用 `SystemGroup<ImmediateSystemContext>`，把自己的求值系统放在 `TimelineSystem` 与 `TimelineEndSystem` 之间，并为当前阶段仍在运行的工作设置 `Timeline.Running` 位。
 
 ## Relations
 [[architecture/animation/Value-Ops|Value Ops]] · [[architecture/animation/Timeline|Timeline]]
