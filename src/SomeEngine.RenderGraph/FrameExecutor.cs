@@ -373,7 +373,7 @@ internal sealed partial class FrameExecutor
             FramePass source = _frame.DynamicPasses[i];
             long insertion = source.ExtensionPointIndex >= 0
                 ? structureIndex.Structure.ExtensionPoints.Rows[source.ExtensionPointIndex].DeclarationOrdinal
-                : structureIndex.Structure.RootRegion.Children.LastOrDefault().End;
+                : structureIndex.Structure.GetRegionInterval(default).End;
             _extensionCounts.TryGetValue(insertion, out int ordinal);
             _extensionCounts[insertion] = ordinal + 1;
             long key = checked(insertion + ordinal + 1);

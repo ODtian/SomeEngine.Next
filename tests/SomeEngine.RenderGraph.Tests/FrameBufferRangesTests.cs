@@ -157,4 +157,50 @@ public sealed class FrameBufferRangesTests
         using MappedBuffer bytes = support.Backend.Map(result, MapType.Read, BufferRange.Whole);
         Assert.Equal(new byte[] { 42, 0, 0, 0, 42, 0, 0, 0 }, bytes.Bytes.ToArray());
     }
+
+    [Fact]
+    public void GrowingFrameCopyWorkKeepsEveryCopyResultAcrossFrames()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using Buffer result = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(20, BufferUsages.CopyDestination), MemoryType.Readback);
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue], new RenderGraphDesc(MaximumFramesInFlight: 1));
+        GraphBufferId destination;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.AddRegion("retained work position");
+            destination = edit.RegisterExternalBuffer(result,
+                [new BufferBoundaryState(BufferRange.Whole, result.InitialSync,
+                    result.InitialAccess, ResourceContentState.Undefined)]);
+            edit.Commit();
+        }
+        var submitted = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        foreach (int count in new[] { 3, 5 })
+        {
+            byte[] values = Enumerable.Range(1, count * 4).Select(static value => (byte)value).ToArray();
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                GraphBufferSlice upload = frame.Upload(values, BufferUsages.CopySource);
+                for (ulong offset = 0; offset < (ulong)values.Length; offset += 4)
+                    frame.AddCopyPass("copy a frame value", PassQueueSelection.Exact(support.GraphicsQueue),
+                        (upload, destination, offset), default,
+                        static (ref PassDefinition pass,
+                            ref (GraphBufferSlice Upload, GraphBufferId Destination, ulong Offset) data) =>
+                        {
+                            pass.Read(data.Upload.Buffer, new BufferRange(data.Upload.Range.Offset + data.Offset, 4),
+                                PipelineSync.Copy, ResourceAccess.CopySource);
+                            pass.Write(data.Destination, new BufferRange(data.Offset, 4), PipelineSync.Copy,
+                                ResourceAccess.CopyDestination, WriteCoverage.Complete);
+                        }, static (ref CopyPassCommandScope commands,
+                            in (GraphBufferSlice Upload, GraphBufferId Destination, ulong Offset) data) =>
+                            commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.Upload.Buffer),
+                                data.Upload.Range.Offset + data.Offset, commands.GetBuffer(data.Destination), data.Offset, 4)));
+                frame.Execute(submitted);
+                support.Wait(submitted);
+            }
+            using MappedBuffer bytes = support.Backend.Map(result, MapType.Read, BufferRange.Whole);
+            Assert.Equal(values, bytes.Bytes[..values.Length].ToArray());
+        }
+    }
 }
