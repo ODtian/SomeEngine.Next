@@ -25,7 +25,7 @@ public static class Scope
         ScopeData current = Current;
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"Scope.Read requires table or sparse component {typeof(T).Name}.");
-        if (current.TrackReads)
+        if (current.DependenciesEnabled)
         {
             var dependency = new Dependency
             {
@@ -120,11 +120,11 @@ public static class Scope
         }
     }
 
-    internal static BuildScope Enter(World world, Entity entity, bool trackReads)
+    internal static BuildScope Enter(World world, Entity entity, bool dependenciesEnabled)
     {
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
-        var current = new ScopeData(world, entity, trackReads);
+        var current = new ScopeData(world, entity, dependenciesEnabled);
         CaptureSiblingCounts(current);
         (s_scopes ??= new Stack<ScopeData>()).Push(current);
         return default;
@@ -185,11 +185,11 @@ public static class Scope
     private readonly record struct SiblingGroup(int Count, bool LocalState);
 #endif
 
-    private sealed class ScopeData(World world, Entity entity, bool trackReads)
+    private sealed class ScopeData(World world, Entity entity, bool dependenciesEnabled)
     {
         internal World World { get; } = world;
         internal Entity Entity { get; } = entity;
-        internal bool TrackReads { get; } = trackReads;
+        internal bool DependenciesEnabled { get; } = dependenciesEnabled;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal int ChildIndex;
         internal ulong? KeyPrefix;
