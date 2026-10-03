@@ -7,6 +7,23 @@ namespace SomeEngine.Views.Tests;
 
 public sealed class ParameterBuildTests
 {
+    [Fact]
+    public void ParentFirstBuildUpdatesAnExistingChildDisplayWithinTheFrame()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new HistoryGroup(7));
+        Entity child = Views.Spawn(frames.World, root, new HistoryDisplay(3));
+
+        frames.Frame();
+
+        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
+        Assert.Equal("7", frames.World.Read<DisplayedValues>(child).Text);
+        Assert.Equal("7", frames.World.Read<DisplayedValues>(root).Text);
+        uint displayVersion = frames.World.WriteVersion<DisplayedValues>(child);
+        frames.Frame();
+        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayedValues>(child));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

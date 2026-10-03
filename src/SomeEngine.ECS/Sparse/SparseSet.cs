@@ -11,6 +11,8 @@ internal interface ISparseSet
 
     bool Has(Entity entity);
 
+    ref readonly byte ReadBytes(Entity entity);
+
     uint WriteVersion(Entity entity);
 
     ref byte WriteBytes(Entity entity, uint version);
@@ -249,6 +251,9 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
 
     ref byte ISparseSet.WriteBytes(Entity entity, uint version) =>
         ref Unsafe.As<T, byte>(ref Get(entity, version));
+
+    ref readonly byte ISparseSet.ReadBytes(Entity entity) =>
+        ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in ReadRef(entity)));
 
     /// <summary>读取组件值（返回拷贝）。</summary>
     public T Read(Entity entity)

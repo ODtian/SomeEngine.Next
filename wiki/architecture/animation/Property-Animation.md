@@ -50,6 +50,7 @@ public static class PropertyAnimation
 - 使用者把 `Channel<T>.Of<TComponent>(field)` 的返回值保存为静态只读字段。创建时，在默认组件实例上调用字段引用函数一次，用 `Unsafe.ByteOffset` 得到偏移；求值消费组件编号与偏移数据。
 - `TrackSystem<T, TOps>` 是公开 struct 系统，与时间线系统使用相同的系统接口，使内置类型与用户类型通过相同的静态泛型路径求值。
 - 系统按块遍历带轨道缓冲和启用 `Timeline` 的实体，在块内处理选中的行。当前播放、当前阶段、持续求值的轨道采样线性、缓动、弹簧、关键帧或函数指针曲线，并设置属性求值运行位 `1`。
+- 一帧跨过固定时长阶段时，各类型求值系统按阶段顺序采样所经过的轨道。离开的阶段采样到边界，后续固定时长或外部阶段使用越界时间采样；新收敛阶段沿时间线规则交给下一帧。时间线的阶段与完成状态统一由收尾系统写回，完整跨过阶段表的帧先写完最终字段值再完成。
 - `SampleTime` 是弹簧上一次采样的阶段时间。弹簧步进使用本次时间与上次时间之差，暂停、游戏时钟暂停、时间缩放与速度变化均沿时间线产生效果。
 - tween 完成时写目标值；弹簧按 `TOps.Distance` 与曲线容差收敛并写目标值。`Finished` 表达轨道完成，随后字段可由调用方继续修改。
 - 关键帧存于动画实体的 `DynamicBuffer<Keyframe>`；调用方在初始化或配置实例时填充缓冲，`Spec.Keyframes` 选择其中的范围。
@@ -73,12 +74,12 @@ public static class PropertyAnimation
 
 ## ECS field writes
 
-`Channel<T>` stores the type number obtained from `ComponentId<TComponent>.Value`. Field updates use `World.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>())` and write the value with `Unsafe.WriteUnaligned`. Starting and retargeting also capture the field value through this byte reference. The public byte access, write versions and development range checks are defined by [[architecture/ECS/Component-Bytes|Component Bytes]]. Generic track storage uses the existing `BufferCapacity(4)` attribute defined by [[architecture/ECS/Dynamic-Buffers|Dynamic Buffers]].
+`Channel<T>` stores the type number obtained from `ComponentId<TComponent>.Value`. Field updates use `World.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>())` and write the value with `Unsafe.WriteUnaligned`. Starting and retargeting capture the field through `World.ReadBytes` and `Unsafe.ReadUnaligned`, preserving its write version until sampling writes a value. The public byte access, write versions and development range checks are defined by [[architecture/ECS/Component-Bytes|Component Bytes]]. Generic track storage uses the existing `BufferCapacity(4)` attribute defined by [[architecture/ECS/Dynamic-Buffers|Dynamic Buffers]].
 
 ## Verification
 `tests/SomeEngine.Animation.Tests/PropertyAnimationTests.cs` 经公开 API 覆盖 tween 与弹簧的字段值和逐帧写版本、100 次内联启动/重定/停止的表格成员关系与实体数量、池化与多目标复用、弹簧速度连续性、位移、播放控制、自定义值运算、关键帧、函数指针、阶段轨道、目标销毁与共享字段检查。
 
-稳态分配验收使用公开 `OnCreate`、`OnUpdate`、`OnDestroy` 回调组合时间推进、属性求值与收尾，覆盖内联和池化目标；预热 512 帧后连续采样 128 帧，托管分配为 0 字节。系统组调度自身的 Job 提交作用域属于通用调度路径：当前默认系统组测量为每帧 440 字节，源码入口是 `JobSubmissionTracker.Enter` 创建每个系统回调的 `Frame`。这里的零分配范围是动画系统回调。
+稳态分配验收通过 `AnimationSystems.AddDefaults` 注册完整默认系统组，覆盖内联和池化目标；经公开 `SystemGroup.Update` 预热 512 帧后连续采样 128 帧，托管分配为 0 字节。调度的提交观察者由线程持有可复用栈，系统回调沿同一提交与清理边界进入和退出。NativeAOT 的 ECS 验收程序同时覆盖完整默认帧、字段只读版本、多个轨道类型跨阶段、池化复用与自定义值运算。
 
 ## Relations
 [[architecture/animation/Value-Ops|Value Ops]] · [[architecture/animation/Animation-Layers|Animation Layers]] · [[architecture/someui/Animation|SomeUI Animation]]
