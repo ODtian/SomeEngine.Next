@@ -39,10 +39,11 @@ public static class Scope
 ## 首次构建实现（#6）
 
 当前公开入口为 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
-`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)` 与 `Scope.Untrack()`。
+`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)`、
+`Scope.Has<T>(Entity)`、`Scope.Each(QueryHandle)` 与 `Scope.Untrack()`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
 返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
-成功构建结束时完成子节点匹配与释放；key 分组与节点身份规则见
+成功构建结束时完成子节点匹配，外层构建完成后释放旧子树；key 分组与节点身份规则见
 [[architecture/someui/Node-Identity|Node Identity]]。
 
 `Scope` 在取出当前作用域时调用 `Core.Diagnostics.DevelopmentCheck.Require`，
@@ -99,6 +100,7 @@ public static class Scope
 `ChildSource.Caller` 的构建也在成功结束时提交自身数据。
 副本缓冲在当前计算首次取得写引用时建立，内容作用域使用该计算已有的缓冲。
 公开验收见 [ContentWriteTests](../../../tests/SomeEngine.Views.Tests/ContentWriteTests.cs)。
+内容块与外层构建共用当次子声明修改记录，外层失败时一同恢复。
 公开 API、子节点来源与收尾时机见
 [[architecture/someui/Child-Source|Child Source]]。
 

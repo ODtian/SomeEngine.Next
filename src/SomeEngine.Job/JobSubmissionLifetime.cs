@@ -24,21 +24,22 @@ internal interface IJobSubmissionObserver
 /// </summary>
 internal struct JobSubmissionScope : IDisposable
 {
-    private JobSubmissionTracker.Frame? _frame;
+    private int _depth;
+    private readonly int _threadId;
 
-    internal JobSubmissionScope(JobSubmissionTracker.Frame frame)
+    internal JobSubmissionScope(int depth, int threadId)
     {
-        _frame = frame;
+        _depth = depth;
+        _threadId = threadId;
     }
 
     public void Dispose()
     {
-        JobSubmissionTracker.Frame? frame = _frame;
-        if (frame is null)
+        if (_depth == 0)
             return;
 
-        JobSubmissionTracker.Exit(frame);
-        _frame = null;
+        JobSubmissionTracker.Exit(_depth, _threadId);
+        _depth = 0;
     }
 }
 
@@ -320,26 +321,25 @@ internal sealed class JobLifetime : IJobSubmissionObserver
 internal static class JobSubmissionTracker
 {
     [ThreadStatic]
-    private static Frame? s_current;
+    private static List<IJobSubmissionObserver>? s_observers;
 
     internal static JobSubmissionScope Enter(IJobSubmissionObserver observer)
     {
         ArgumentNullException.ThrowIfNull(observer);
-        var frame = new Frame(observer, s_current, Environment.CurrentManagedThreadId);
-        s_current = frame;
-        return new JobSubmissionScope(frame);
+        List<IJobSubmissionObserver> observers = s_observers ??= new();
+        observers.Add(observer);
+        return new JobSubmissionScope(observers.Count, Environment.CurrentManagedThreadId);
     }
 
-    internal static void Exit(Frame frame)
+    internal static void Exit(int depth, int threadId)
     {
-        if (!ReferenceEquals(s_current, frame) ||
-            frame.OwnerThreadId != Environment.CurrentManagedThreadId)
+        if (s_observers?.Count != depth || threadId != Environment.CurrentManagedThreadId)
         {
             throw new InvalidOperationException(
                 "Job submission scopes must be released in nesting order by their owning thread.");
         }
 
-        s_current = frame.Previous;
+        s_observers.RemoveAt(depth - 1);
     }
 
     internal static JobSubmissionReservation Begin(
@@ -350,8 +350,11 @@ internal static class JobSubmissionTracker
         var reservation = new JobSubmissionReservation();
         try
         {
-            for (Frame? frame = s_current; frame is not null; frame = frame.Previous)
-                reservation.Add(frame.Observer, currentScope);
+            if (s_observers is { } observers)
+            {
+                for (int i = observers.Count - 1; i >= 0; i--)
+                    reservation.Add(observers[i], currentScope);
+            }
 
             for (int i = 0; i < accesses.Length; i++)
             {
@@ -367,25 +370,6 @@ internal static class JobSubmissionTracker
             reservation.Rollback();
             throw;
         }
-    }
-
-    internal sealed class Frame
-    {
-        internal Frame(
-            IJobSubmissionObserver observer,
-            Frame? previous,
-            int ownerThreadId)
-        {
-            Observer = observer;
-            Previous = previous;
-            OwnerThreadId = ownerThreadId;
-        }
-
-        internal IJobSubmissionObserver Observer { get; }
-
-        internal Frame? Previous { get; }
-
-        internal int OwnerThreadId { get; }
     }
 }
 

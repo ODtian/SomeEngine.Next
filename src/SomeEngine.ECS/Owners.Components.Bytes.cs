@@ -5,6 +5,13 @@ namespace SomeEngine.ECS.Owners;
 
 internal readonly partial struct Components
 {
+    internal unsafe ref readonly byte ReadBytes(Entity entity, int component, in ComponentInfo info)
+    {
+        EntityRecord record = _entities.ReadRow(entity);
+        int column = record.Archetype!.Column(component);
+        return ref record.Chunk!.ComponentRowReference(column, record.RowInChunk, in info.Operations);
+    }
+
     internal unsafe ref byte WriteBytes(Entity entity, int component, in ComponentInfo info)
     {
         EntityRecord record = _entities.ReadRow(entity);

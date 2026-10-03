@@ -12,9 +12,9 @@ public enum ChildSource { Build, Caller }
 
 ## Invariants
 - 节点实体本身归创建它的构建；子节点归打开它的 `.Content()` 块。
-- `.Content()` 块结束时，块内声明的就是该节点的全部子节点，未声明的旧子节点被释放。
+- `.Content()` 块结束时，块内声明的就是该节点的全部子节点，外层构建成功后释放省略的旧子树；失败恢复该次声明，见 [[architecture/someui/Node-Identity|Node Identity]]。
 - 一个视图不会同时属于两种来源；不存在具名内容区或槽。
-- 对 `Build` 来源的视图调用 `.Content()`，或同一次重建中两个作用域声明同一节点的子节点，由开发检查报告。
+- 子节点声明由同一视图持有；每次该视图构建为父节点声明一次。来源使用错误、不同视图同时声明同一父节点，以及单次构建中的重复声明通过开发检查报告。
 
 ## Non-goals
 - 具名内容区（`Content<TArea>`）与区域标记类型。复合控件改用复合部件，见 [[architecture/someui/Composition|Composition]]。
@@ -47,7 +47,7 @@ public record struct Group : IView, IComponent
 块内的 `Scope.View` 将目标容器作为父节点，按
 [[architecture/someui/Node-Identity|Node Identity]] 的 key 加出现次数匹配，
 复用或新建节点并维护声明顺序。块结束时完成此次全部子节点声明，
-删除剩余旧节点及其整个子树；空块对应空的子节点序列。
+外层构建成功后释放剩余旧节点及其整个子树；空块对应空的子节点序列。
 
 `ChildSource.Build` 的构建在成功完成时执行同一子节点匹配收尾。
 `ChildSource.Caller` 的构建只更新自身数据，已有子树由调用方的内容作用域维护。
@@ -63,8 +63,9 @@ public record struct Group : IView, IComponent
 
 开发构建通过 Core `DevelopmentCheck` 报告子节点来源的使用错误：
 对 `ChildSource.Build` 调用 `Content()`、在 `ChildSource.Caller.Build` 中直接声明子视图，
-以及同次重建阶段中两个作用域声明同一实体的子节点。
+以及同次重建阶段中不同视图声明同一父节点、单次视图构建重复声明该父节点。
 声明记录覆盖 `ViewRebuildSystem` 的整个阶段及其中的嵌套构建，
+记录声明该父节点的视图与当次构建编号，使同一视图因新写入再次构建时能重新声明内容。
 在阶段退出时恢复；内容作用域通过 `finally` 恢复外层上下文。
 来源检查、阶段声明记录和重复 key 的局部状态检查由 `DEBUG` 条件编译控制。
 

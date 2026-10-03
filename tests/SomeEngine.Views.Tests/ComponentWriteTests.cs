@@ -252,14 +252,15 @@ public sealed class ComponentWriteTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new FailingWriter(source, true));
         uint version = frames.World.WriteVersion<Number>(source);
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        frames.Frame();
 
-        Assert.Equal("test build failure", error.Message);
+        Assert.Equal("test build failure", frames.World.ReadSparse<BuildError>(root).Exception.Message);
         Assert.Equal(3, frames.World.Read<Number>(source).Value);
         Assert.Equal(version, frames.World.WriteVersion<Number>(source));
         frames.World.Replace(root, new FailingWriter(source, false));
         frames.Frame();
         Assert.Equal(7, frames.World.Read<Number>(source).Value);
+        Assert.False(frames.World.HasSparse<BuildError>(root));
     }
 
 #if DEBUG

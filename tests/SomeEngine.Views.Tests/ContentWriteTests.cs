@@ -68,6 +68,41 @@ public sealed class ContentWriteTests
         Assert.Equal(new CopyValues(3, 3), frames.World.Read<CopyValues>(root));
     }
 
+    [Fact]
+    public void FailedContentPreservesStoredDataAndAllowsALaterSuccessfulBuild()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new Number(3));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new FailingContentNumber(source, true));
+        uint version = frames.World.WriteVersion<Number>(source);
+
+        frames.Frame();
+
+        Assert.Equal("content write failed", frames.World.ReadSparse<BuildError>(root).Exception.Message);
+        Assert.Equal(3, frames.World.Read<Number>(source).Value);
+        Assert.Equal(version, frames.World.WriteVersion<Number>(source));
+        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        frames.World.Replace(root, new FailingContentNumber(source, false));
+
+        frames.Frame();
+
+        Assert.Equal(7, frames.World.Read<Number>(source).Value);
+        Assert.False(frames.World.HasSparse<BuildError>(root));
+        Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+    }
+
+    private readonly record struct FailingContentNumber(Entity Source, bool Throw) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Scope.View(new Group()).Content())
+                Scope.Write<Number>(Source) = new Number(7);
+            if (Throw)
+                throw new InvalidOperationException("content write failed");
+            return default;
+        }
+    }
+
     private readonly record struct UntrackedContentNumber(Entity Source) : IView, IComponent
     {
         public BuildTask Build()

@@ -15,6 +15,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private readonly List<ushort> _dependencyTypes = new();
     private ComponentChange[] _componentChanges = new ComponentChange[16];
     private QueryHandle _viewQuery;
+    private ulong _frame;
     private int _iterationLimit = 8;
 
     /// <summary>The maximum number of rebuild rounds in one interface frame.</summary>
@@ -37,6 +38,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
+        _frame++;
 #if DEBUG
         using var rebuild = Scope.EnterRebuild();
 #endif
@@ -52,11 +54,8 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
                 Entity entity = view.Entity;
                 if (world.IsAlive(entity))
                 {
-                    bool firstBuild = world.Has<BuildRequest>(entity);
-                    if (firstBuild)
-                        world.RemoveTag<BuildRequest>(entity);
-                    if (firstBuild || HasChanges(world, entity, recheck: true))
-                        ViewTypes.Build(world, entity);
+                    if (world.Has<BuildRequest>(entity) || HasChanges(world, entity, recheck: true))
+                        ViewTypes.Build(world, entity, _frame);
                 }
             }
         }

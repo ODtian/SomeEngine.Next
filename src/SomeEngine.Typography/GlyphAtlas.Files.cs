@@ -58,7 +58,13 @@ public sealed partial class GlyphAtlas
         if (reader.ReadInt32() != FileSignature || reader.ReadInt32() != FileVersion)
             throw new InvalidDataException("The glyph atlas file needs a supported GSDF header and version.");
 
-        var atlas = new GlyphAtlas(reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32());
+        int pageWidth = reader.ReadInt32();
+        int pageHeight = reader.ReadInt32();
+        int fontSize = reader.ReadInt32();
+        int distanceSpread = reader.ReadInt32();
+        if (pageWidth <= 2 || pageHeight <= 2 || fontSize <= 0 || distanceSpread is < 2 or > 32)
+            throw new InvalidDataException("Atlas file configuration requires pages larger than two pixels, a positive font size, and a distance spread of 2–32 pixels.");
+        var atlas = new GlyphAtlas(pageWidth, pageHeight, fontSize, distanceSpread);
         int pageCount = ReadCount(reader);
         for (int index = 0; index < pageCount; index++)
         {
