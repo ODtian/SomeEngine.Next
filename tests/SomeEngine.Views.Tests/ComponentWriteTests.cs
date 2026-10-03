@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class ComponentWriteTests
+public sealed partial class ComponentWriteTests
 {
     [Fact]
     public void SharedComponentWriteChecksPass() => ComponentWriteChecks.Verify();

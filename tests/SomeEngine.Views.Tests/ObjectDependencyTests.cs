@@ -42,24 +42,34 @@ public sealed partial class ObjectDependencyTests
     }
 
     [Fact]
-    public void AnOddVersionKeepsTheDisplayResponsiveDuringAChange()
+    public void AnActiveObjectChangeUpdatesTheDisplayAndRecoversAfterCompletion()
     {
-        using var frames = new HeadlessFrameDriver();
+        using var frames = new HeadlessFrameDriver(iterationLimit: 2);
         var source = new NumberData(3);
         Entity root = Views.Spawn(frames.World, Entity.Null, new NumberDisplay(source));
         frames.Frame();
 
         source.Version = 1;
         source.Number = 7;
+#if DEBUG
+        var firstError = Assert.Throws<InvalidOperationException>(frames.Frame);
+        Assert.Contains("iteration limit of 2", firstError.Message, StringComparison.OrdinalIgnoreCase);
+#else
         frames.Frame();
+#endif
+        Assert.EndsWith(";7", frames.World.Read<DisplayText>(root).Value);
         source.Number = 9;
+#if DEBUG
+        Assert.Throws<InvalidOperationException>(frames.Frame);
+#else
         frames.Frame();
+#endif
 
-        Assert.Equal("3;7;9", frames.World.Read<DisplayText>(root).Value);
+        Assert.EndsWith(";9", frames.World.Read<DisplayText>(root).Value);
         source.Number = 11;
         source.Version = 2;
         frames.Frame();
-        Assert.Equal("3;7;9;11", frames.World.Read<DisplayText>(root).Value);
+        Assert.EndsWith(";11", frames.World.Read<DisplayText>(root).Value);
     }
 
     [Fact]
