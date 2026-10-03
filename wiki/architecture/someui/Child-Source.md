@@ -14,7 +14,7 @@ public enum ChildSource { Build, Caller }
 - 节点实体本身归创建它的构建；子节点归打开它的 `.Content()` 块。
 - `.Content()` 块结束时，块内声明的就是该节点的全部子节点，未声明的旧子节点被释放。
 - 一个视图不会同时属于两种来源；不存在具名内容区或槽。
-- 对 `Build` 来源的视图调用 `.Content()`，或同一次重建中两个作用域声明同一节点的子节点，由开发检查报告。
+- 子节点声明由同一视图持有；每次该视图构建为父节点声明一次。来源使用错误、不同视图同时声明同一父节点，以及单次构建中的重复声明通过开发检查报告。
 
 ## Non-goals
 - 具名内容区（`Content<TArea>`）与区域标记类型。复合控件改用复合部件，见 [[architecture/someui/Composition|Composition]]。
@@ -63,9 +63,10 @@ public record struct Group : IView, IComponent
 
 开发构建通过 Core `DevelopmentCheck` 报告子节点来源的使用错误：
 对 `ChildSource.Build` 调用 `Content()`、在 `ChildSource.Caller.Build` 中直接声明子视图，
-以及同次重建阶段中两个作用域声明同一实体的子节点。
-声明记录覆盖 `ViewRebuildSystem` 的整个阶段及其中的嵌套构建，
-在阶段退出时恢复；内容作用域通过 `finally` 恢复外层上下文。
+以及同次重建阶段中不同视图声明同一父节点、单次视图构建重复声明该父节点。
+声明记录覆盖 `ViewRebuildSystem` 的整个阶段及其中的嵌套构建，以视图实体与该次构建作用域记录声明。
+读取依赖在构建后变化时，同一视图的下一次构建可以再次声明自己的子节点。
+记录在阶段退出时恢复；内容作用域通过 `finally` 恢复外层上下文。
 来源检查、阶段声明记录和重复 key 的局部状态检查由 `DEBUG` 条件编译控制。
 
 公开行为测试为 `tests/SomeEngine.Views.Tests/ChildSourceTests.cs`，
