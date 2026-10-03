@@ -40,7 +40,7 @@ public static class Scope
 
 当前公开入口包括 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
 `Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)`、`Scope.Has<T>(Entity)`、
-`Scope.Each(QueryHandle)`、`Scope.ReadUp<T>()` 与 `Scope.Untrack()`。
+`Scope.Each(QueryHandle)`、`Scope.ReadUp<T>()`、`Scope.Depend(VersionCell)` 与 `Scope.Untrack()`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
 返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
 成功构建结束时完成子节点匹配，外层构建完成后释放旧子树；key 分组与节点身份规则见
@@ -63,6 +63,9 @@ public static class Scope
 
 `Scope.ReadUp<T>()` 使用当前视图实体作为环境查找起点，读取路径、缺省值和父链变化的处理见
 [[architecture/someui/Dependencies|Dependencies]] 的环境读取依赖。
+
+对象读取通过 `Scope.Depend(VersionCell)` 接入相同的登记状态；`State<T>.Value` 自动登记读值对应的版本。
+计算之外的 `Depend` 为空操作。存储和版本规则见 [[architecture/someui/Dependencies|Dependencies]]。
 
 ## 内容作用域实现（#17）
 

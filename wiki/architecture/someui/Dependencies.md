@@ -9,7 +9,7 @@
 | 实体结构 | `Has<T>(entity)` | 组件被添加或移除 |
 | 查询成员 | `Each(query)` | 结果集的实体增删或顺序变化，与组件值无关 |
 | 环境数据 | `ReadUp<T>()` | 找到的祖先组件变化，或树结构变化后重新查找 |
-| 对象 | `Depend(cell)`，或读取 `State<T>.Value` | `VersionCell.Version` 变化 |
+| 对象 | `Depend(cell)`，或读取 `State<T>.Value` | `VersionCell.Version` 变化，或观察到奇数版本 |
 
 ## Invariants
 - 只有带版本的数据能被依赖。外部数据通过持有 `VersionCell` 接入，不必进入 ECS。
@@ -85,6 +85,35 @@ public struct Dependency : IBufferElement
 [重建阶段](../../../src/SomeEngine.Views/ViewRebuildSystem.cs)。
 公开验收：[EnvironmentTests](../../../tests/SomeEngine.Views.Tests/EnvironmentTests.cs)，
 覆盖两种存储、最近提供者、自身提供、缺省值、祖先移动、相同值下的来源切换和提供者移除。
+
+## 对象读取依赖实现（#14）
+
+```csharp
+public static class Scope
+{
+    public static void Depend(VersionCell cell);
+}
+```
+
+`Scope.Depend` 在当前 `Rerun` 计算中登记 `(VersionCell 引用, 版本)`。
+计算之外和 `Once` 构建中的调用为空操作。同一次计算重复读取一个对象时，按引用身份合并，
+保留首次观察的版本。`State<T>.Value` 交给 Scope 的版本来自该次完整值读取。
+
+视图实体首次登记时添加包含托管对象的表格组件。该对象是此视图对象依赖的主要持有者，
+用池化数组保存对象引用与版本。每次构建开始清空有效元素的引用并复用数组，
+随后按新的读取路径登记。扩容时把旧数组清空并归还；组件生命周期结束后的托管回收归还其最后一份数组。
+父子计算沿现有作用域栈分别登记，子构建返回后继续使用父计算的登记状态。
+`Content()` 块沿用调用方计算的视图实体，块内对象读取继续登记到该计算，随调用方重建重新收集。
+
+重建检查通过 `Volatile.Read` 观察每个来源的版本，以 `!=` 比较已登记版本。
+奇数版本表示写入期间，在逐帧筛选与候选执行前复核中均视为变化。
+ECS 与对象依赖共用原有的候选列表和深度调度。
+
+实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
+[对象依赖](../../../src/SomeEngine.Views/ObjectDependencies.cs)、
+[重建系统](../../../src/SomeEngine.Views/ViewRebuildSystem.cs)。
+公开验收：[ObjectDependencyTests](../../../tests/SomeEngine.Views.Tests/ObjectDependencyTests.cs)，
+覆盖自定义来源、并发版本推进、奇数版本、条件读取、嵌套构建、`Once` 模式和托管回收后的读取。
 
 ## 存在性与查询成员依赖（#12）
 

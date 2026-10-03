@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);SomeEngine.Views.Generated</InterceptorsNamespaces>
     <_RequestedSlangToolchainVersion>$(SlangToolchainVersion)</_RequestedSlangToolchainVersion>
     <SlangToolchainVersion>2026.17.1</SlangToolchainVersion>
     <SlangShaderSharpPackageVersion>2026.17.1</SlangShaderSharpPackageVersion>

@@ -6,7 +6,7 @@ using SomeEngine.ECS.Hierarchy;
 namespace SomeEngine.Views.Tests;
 
 /// <summary>Public view behavior shared by the test runner and the ECS NativeAOT executable.</summary>
-internal static class FirstBuildChecks
+internal static partial class FirstBuildChecks
 {
     internal static void Verify()
     {
@@ -36,6 +36,7 @@ internal static class FirstBuildChecks
         VerifySpawnedChildParameters(frames);
         VerifyCallerChildren(frames);
         VerifyReadDependencies(frames);
+        VerifyObjectState(frames);
         VerifyBuildErrors();
         StructureDependencyChecks.Verify();
         VerifyUntrackedReads(frames);
@@ -181,6 +182,38 @@ internal static class FirstBuildChecks
         uint textVersion = frames.World.WriteVersion<TableText>(child);
         frames.Frame();
         Require(frames.World.WriteVersion<TableText>(child) == textVersion, "A later frame retains the displayed text version.");
+    }
+
+    private static void VerifyObjectState(HeadlessFrameDriver frames)
+    {
+        var count = new State<int>(3);
+        var text = new TextData("first");
+        Entity root = Views.Spawn(frames.World, Entity.Null, new StateAndObjectText(count, text));
+        frames.Frame();
+        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Require(frames.World.Read<TableText>(child).Value == "first:3", "State and object reads supply the initial text.");
+
+        Task.Run(() =>
+        {
+            count.Update(static (ref int value) => value++);
+            count.Update(3, static (ref int value, int amount) => value += amount);
+            text.Value = "shared";
+            text.AdvanceShared();
+        }).GetAwaiter().GetResult();
+        frames.Frame();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+        Require(frames.World.Read<TableText>(child).Value == "shared:7", "Cross-thread writes update the next frame's text.");
+
+        uint version = count.Version;
+        count.Value = 7;
+        count.Update(static (ref int value) => value += 0);
+        frames.Frame();
+        Require(count.Version == version, "Equal changes retain the State version.");
+        Require(frames.World.Read<TableText>(child).Value == "shared:7", "Equal changes retain the displayed text.");
+        text.Value = "changed";
+        text.Advance();
+        frames.Frame();
+        Require(frames.World.Read<TableText>(child).Value == "changed:7", "A custom version cell updates the displayed text.");
     }
 
     private static void VerifyUntrackedReads(HeadlessFrameDriver frames)
@@ -368,6 +401,21 @@ internal static class FirstBuildChecks
 
     private readonly record struct SparseText(string Value) : ISparseComponent;
 
+    private sealed class TextData(string value) : VersionCell
+    {
+        internal string Value = value;
+    }
+
+    private readonly record struct StateAndObjectText(State<int> Count, TextData Text) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Depend(Text);
+            Scope.View(new TableText($"{Text.Value}:{Count.Value}"));
+            return default;
+        }
+    }
+
     private readonly record struct ErrorContent(Entity Source) : IView, IComponent
     {
         public BuildTask Build()
@@ -440,9 +488,9 @@ internal static class FirstBuildChecks
                 using (Scope.Key(id))
                 {
                     if (TextOnly)
-                        Scope.View(new TableText(id.ToString()));
+                        Scope.View(new TableText(id.ToString()), 0);
                     else
-                        Scope.View(new KeyedBranch(id));
+                        Scope.View(new KeyedBranch(id), 0);
                 }
             }
             return default;

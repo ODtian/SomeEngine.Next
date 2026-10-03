@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class ReadDependencyTests
+public sealed partial class ReadDependencyTests
 {
     [Theory]
     [InlineData(false)]

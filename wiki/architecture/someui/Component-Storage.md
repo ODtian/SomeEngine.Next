@@ -40,5 +40,13 @@ ECS 的公开 `Add`、`Read`、`AddSparse` 和 `ReadSparse` 延续各自的组�
 并保留实体组件写版本与组件类型写版本。表格的已有索引在下次读取时取最新值。
 两种存储的写入都沿现有存储分离规则保持结构事务隔离。
 
+## 生成器的默认选择（#19）
+
+带主构造函数的 `partial IView` struct 省略存储接口时，
+生成器在该视图的 partial 声明中补充 `ISparseComponent`，并给出 `SEV002` info 提示。
+这份参数仍使用实际视图类型 `T`，通过同一 ECS sparse 路径存取。
+显式的 `IComponent` 或 `ISparseComponent` 声明供用户决定访问方式。
+声明与编译诊断的详细规则见 [[architecture/someui/Views|Views]] 与 [[architecture/someui/Checks|Checks]]。
+
 ## Relations
 [[architecture/someui/Views|Views]] · [[architecture/someui/Build-Scope|Build Scope]]
