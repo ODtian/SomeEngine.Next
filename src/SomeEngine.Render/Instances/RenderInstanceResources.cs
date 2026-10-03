@@ -473,7 +473,8 @@ internal sealed class RenderInstanceResources : IDisposable
         _batchMetadata[generation].StoreStates(metadata);
     }
 
-    internal RenderInstanceDataTransfer GetDataTransfer(global::SomeEngine.RenderGraph.RenderGraph graph)
+    internal RenderInstanceDataTransfer GetDataTransfer(global::SomeEngine.RenderGraph.RenderGraph graph,
+        GraphRegionId region = default)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ThrowIfNotActive();
@@ -486,7 +487,7 @@ internal sealed class RenderInstanceResources : IDisposable
             var edit = target.BeginEdit();
             try
             {
-                var transfer = new RenderInstanceDataTransfer(this, ref edit);
+                var transfer = new RenderInstanceDataTransfer(this, ref edit, region);
                 edit.Commit();
                 return transfer;
             }

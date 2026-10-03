@@ -155,7 +155,8 @@ public sealed partial class ClusterPipelineSystem
                 {
                     RecordTessellationBinning(ref graph, _frameResources, _frameResources.TessellationFinalPatches,
                         _frameResources.TessellationWorkPatches, _frameResources.TessellationSourceDispatchArgs,
-                        2u * sizeof(uint), data.PhaseOne ? "phase one final patches" : "phase two final patches");
+                        2u * sizeof(uint), data.PhaseOne ? "phase one final patches" : "phase two final patches",
+                        GetRasterRegion(data.PolicyTarget, data.PhaseOne));
                 }
                 finally { _rasterGroup = null; }
                 OrderRasterPasses(ref graph, patches, data.Work.Last);
@@ -171,7 +172,8 @@ public sealed partial class ClusterPipelineSystem
             _rasterGroup = reset;
             try
             {
-                RecordTessellationLevelReset(ref graph, _frameResources, stage.BinIndex, data.PhaseOne);
+                RecordTessellationLevelReset(ref graph, _frameResources, stage.BinIndex, data.PhaseOne,
+                    GetRasterRegion(data.PolicyTarget, data.PhaseOne));
                 _rasterGroup = split;
                 RecordTessellationSplit(ref graph, _frameResources, stage, reset.Last,
                     data.PhaseOne, data.PolicyTarget, false);

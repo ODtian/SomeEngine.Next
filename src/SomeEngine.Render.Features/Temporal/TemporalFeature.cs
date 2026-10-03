@@ -60,7 +60,8 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         int height,
         Shader shader,
         string vertexEntryPoint,
-        string pixelEntryPoint)
+        string pixelEntryPoint,
+        GraphRegionId region = default)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
@@ -114,7 +115,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 new TemporalInitializePassData(_history),
                 new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 static (ref PassDefinition pass, ref TemporalInitializePassData data) => data.Declare(ref pass),
-                TemporalInitializePassData.Record);
+                TemporalInitializePassData.Record, region: region);
             _resolvePass = edit.AddRasterFramePass(
                 "Temporal resolve",
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
@@ -124,7 +125,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 default,
                 TemporalResolvePassData.Declare,
-                TemporalResolvePassData.Record);
+                TemporalResolvePassData.Record, region: region);
             edit.OrderAfter(_resolvePass, _initializePass);
             PassDefinition resolve = edit.GetPass(_resolvePass);
             foreach (TemporalResource resource in _resourceOrder)

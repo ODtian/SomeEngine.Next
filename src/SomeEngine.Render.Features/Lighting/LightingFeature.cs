@@ -65,7 +65,8 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         uint viewCount,
         Shader shader,
         string entryPoint,
-        ClusteredLightGridSettings? settings = null)
+        ClusteredLightGridSettings? settings = null,
+        GraphRegionId region = default)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
@@ -147,7 +148,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                         commands.ClearTexture(
                             commands.GetTexture(texture),
                             new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
-                            System.Numerics.Vector4.One));
+                            System.Numerics.Vector4.One), region: region);
                 var clearData = new LightingBuildPassData(default);
                 _clearPass = edit.AddComputeFramePass(
                     "Clear lighting assignment",
@@ -158,7 +159,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                     clearPipeline.ParameterLayout,
                     default,
                     static (ref PassDefinition _, ref LightingBuildPassData _) => { },
-                    LightingBuildPassData.Record);
+                    LightingBuildPassData.Record, region: region);
                 var build = new LightingBuildPassData(default);
                 _buildPass = edit.AddComputeFramePass(
                     "Build lighting assignment",
@@ -169,7 +170,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                     pipeline.ParameterLayout,
                     default,
                     static (ref PassDefinition _, ref LightingBuildPassData _) => { },
-                    LightingBuildPassData.Record);
+                    LightingBuildPassData.Record, region: region);
                 for (int assignment = 0; assignment < 2; assignment++)
                 {
                     bool clear = assignment == 0;

@@ -159,7 +159,10 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
         VirtualShadowMapSettings settings,
         global::SomeEngine.RenderGraph.RenderGraph graph,
         ClusterPipelineSystem geometry,
-        LightingFeature lighting)
+        LightingFeature lighting,
+        GraphRegionId primaryDepthAfter,
+        GraphRegionId targetGeometryAfter,
+        GraphRegionId feedback)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
@@ -327,7 +330,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     "Reset virtual shadow frame data",
                     _shadowMap.FrameResetPipeline,
                     new VirtualShadowDispatchPassData(new DispatchArguments(
-                        Math.Min(resetGroups, 65535u), DivideRoundUp(resetGroups, 65535u), 1u)));
+                        Math.Min(resetGroups, 65535u), DivideRoundUp(resetGroups, 65535u), 1u)), region: primaryDepthAfter);
                 PassDefinition frameReset = edit.GetPass(_frameResetPass);
                 _ = frameReset.Bind(edit.CreateBufferUav(_activePageCount), PipelineSync.ComputeShading,
                     GraphAccessMode.Write, WriteCoverage.Complete);
@@ -363,7 +366,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                 _receiverMaskResetPass = AddIndirectPass(ref edit,
                     "Reset virtual shadow receiver masks",
                     _shadowMap.ReceiverMaskResetPipeline,
-                    _pageRequestDispatchArguments);
+                    _pageRequestDispatchArguments, region: targetGeometryAfter);
                 PassDefinition receiverMaskReset = edit.GetPass(_receiverMaskResetPass);
                 _ = receiverMaskReset.Bind(edit.CreateBufferSrv(_pageRequestDispatchArguments),
                     PipelineSync.ComputeShading);
@@ -378,7 +381,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     requestReset,
                     new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     VirtualShadowBufferResetPassData.Declare,
-                    VirtualShadowBufferResetPassData.Record);
+                    VirtualShadowBufferResetPassData.Record, region: primaryDepthAfter);
                 var dynamicResolutionReset = new VirtualShadowBufferResetPassData(
                     _dynamicResolutionBias);
                 _dynamicResolutionResetPass = edit.AddCopyFramePass(
@@ -387,7 +390,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     dynamicResolutionReset,
                     new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     VirtualShadowBufferResetPassData.Declare,
-                    VirtualShadowBufferResetPassData.Record);
+                    VirtualShadowBufferResetPassData.Record, region: primaryDepthAfter);
 
                 var atlasInitialize = new VirtualShadowAtlasInitializePassData(_atlas);
                 _atlasInitializePass = edit.AddCopyFramePass(
@@ -396,7 +399,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     atlasInitialize,
                     new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     VirtualShadowAtlasInitializePassData.Declare,
-                    VirtualShadowAtlasInitializePassData.Record);
+                    VirtualShadowAtlasInitializePassData.Record, region: primaryDepthAfter);
                 var pageHiZStorageInitialize = new VirtualShadowPageHiZStorageInitializePassData(
                     _pageHiZ,
                     new TextureSubresourceRange(
@@ -411,28 +414,28 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     pageHiZStorageInitialize,
                     new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     VirtualShadowPageHiZStorageInitializePassData.Declare,
-                    VirtualShadowPageHiZStorageInitializePassData.Record);
+                    VirtualShadowPageHiZStorageInitializePassData.Record, region: primaryDepthAfter);
 
                 _initializePass = AddComputePass(
                     ref edit,
                     "Initialize virtual shadow state",
                     _shadowMap.StateInitializePipeline,
-                    new VirtualShadowDispatchPassData(default));
+                    new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
                 _invalidatePass = AddComputePass(
                     ref edit,
                     "Invalidate moved virtual shadow casters",
                     _shadowMap.CasterInvalidationPipeline,
-                    new VirtualShadowDispatchPassData(default));
+                    new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
                 _coarseMarkPass = AddComputePass(
                     ref edit,
                     "Mark coarse virtual shadow pages",
                     _shadowMap.CoarsePageMarkPipeline,
-                    new VirtualShadowDispatchPassData(default));
+                    new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
                 _markPass = AddComputePass(
                     ref edit,
                     "Mark virtual shadow pages",
                     _shadowMap.PageMarkPipeline,
-                    new VirtualShadowDispatchPassData(default));
+                    new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
 
                 var poolReset = new VirtualShadowPoolResetPassData(
                     _freePageCount,
@@ -443,37 +446,37 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     poolReset,
                     new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     VirtualShadowPoolResetPassData.Declare,
-                    VirtualShadowPoolResetPassData.Record);
+                    VirtualShadowPoolResetPassData.Record, region: primaryDepthAfter);
                 _poolPass = AddComputePass(
                     ref edit,
                     "Build virtual shadow page pool",
                     _shadowMap.PagePoolPipeline,
-                    new VirtualShadowDispatchPassData(default));
+                    new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
                 _allocatePass = AddIndirectPass(
                     ref edit,
                     "Allocate virtual shadow pages",
                     _shadowMap.PageAllocatePipeline,
-                    _pageRequestDispatchArguments);
+                    _pageRequestDispatchArguments, region: primaryDepthAfter);
                 _clearPass = AddIndirectPass(
                     ref edit,
                     "Clear dirty virtual shadow pages",
                     _shadowMap.PageClearPipeline,
-                    _pageWorkDispatchArguments);
+                    _pageWorkDispatchArguments, region: primaryDepthAfter);
                 _compactViewsPass = AddComputePass(
                     ref edit,
                     "Compact virtual shadow raster views",
                     _shadowMap.ViewCompactPipeline,
-                    new VirtualShadowDispatchPassData(default));
+                    new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
                 _dynamicResolutionPass = AddComputePass(
                     ref edit,
                     "Update virtual shadow dynamic resolution",
                     _shadowMap.DynamicResolutionPipeline,
-                    new VirtualShadowDispatchPassData(new DispatchArguments(1u, 1u, 1u)));
+                    new VirtualShadowDispatchPassData(new DispatchArguments(1u, 1u, 1u)), region: feedback);
                 _pageHiZInitializePass = AddIndirectPass(
                     ref edit,
                     "Initialize virtual shadow physical-page HiZ",
                     _shadowMap.PageHiZInitializePipeline,
-                    _pageWorkDispatchArguments);
+                    _pageWorkDispatchArguments, region: _geometry.IntermediateOcclusionRegion);
                 _pageHiZReducePasses = new GraphPassId[(pageHiZMipCount - 1) / 4];
                 for (int mip = 4; mip < pageHiZMipCount; mip += 4)
                 {
@@ -482,13 +485,13 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                         $"Reduce virtual shadow physical-page HiZ mip {mip}",
                         _shadowMap.PageHiZReducePipeline,
                         _pageWorkDispatchArguments,
-                        checked((ulong)mip * DispatchStride));
+                        checked((ulong)mip * DispatchStride), region: _geometry.IntermediateOcclusionRegion);
                 }
                 _finalPageHiZInitializePass = AddIndirectPass(
                     ref edit,
                     "Finalize virtual shadow physical-page HiZ",
                     _shadowMap.PageHiZInitializePipeline,
-                    _pageWorkDispatchArguments);
+                    _pageWorkDispatchArguments, region: targetGeometryAfter);
                 _finalPageHiZReducePasses = new GraphPassId[(pageHiZMipCount - 1) / 4];
                 for (int mip = 4; mip < pageHiZMipCount; mip += 4)
                 {
@@ -497,7 +500,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                         $"Finalize virtual shadow physical-page HiZ mip {mip}",
                         _shadowMap.PageHiZReducePipeline,
                         _pageWorkDispatchArguments,
-                        checked((ulong)mip * DispatchStride));
+                        checked((ulong)mip * DispatchStride), region: targetGeometryAfter);
                 }
                 _rasterCompletePass = edit.AddCopyFramePass(
                     "Virtual shadow raster completion",
@@ -505,14 +508,14 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     0u,
                     new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     static (ref PassDefinition _, ref uint _) => { },
-                    static (ref CopyPassCommandScope _, in uint _) => { });
+                    static (ref CopyPassCommandScope _, in uint _) => { }, region: targetGeometryAfter);
                 _frameCompletePass = edit.AddGeneralFramePass(
                     "Finalize virtual shadow frame endpoints",
                     PassQueueSelection.AnyOfType(QueueType.Graphics),
                     0u,
                     new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     static (ref PassDefinition _, ref uint _) => { },
-                    static (ref GeneralPassCommandScope _, in uint _) => { });
+                    static (ref GeneralPassCommandScope _, in uint _) => { }, region: feedback);
 
                 edit.OrderAfter(_atlasInitializePass, _frameResetPass);
                 edit.OrderAfter(_pageHiZStorageInitializePass, _frameResetPass);
@@ -562,20 +565,8 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     sourceViewCapacity * settings.MipLevelCount,
                     checked(settings.PageSize * 8u),
                     checked(settings.PageSize * 8u),
-                    _clearPass,
-                    _pageHiZInitializePass,
-                    _pageHiZReducePasses.Length == 0 ? _pageHiZInitializePass : _pageHiZReducePasses[^1],
-                    _finalPageHiZInitializePass,
-                    _finalPageHiZReducePasses.Length == 0 ? _finalPageHiZInitializePass : _finalPageHiZReducePasses[^1],
                     checked((uint)pageHiZMipCount),
-                    Math.Max(settings.PageSize / 2u, 1u),
-                    _rasterCompletePass,
-                    BoundsConsumer: _invalidatePass));
-                _geometry.ConfigureShadeBeginAfter(_rasterCompletePass);
-                // Depth and light projections must come from the same frame. Shadow
-                // allocation consumes these requests before the continuation raster.
-                _geometry.ConfigureDepthCompleteBefore(_markPass);
-                _geometry.ConfigureShadeCompleteBefore(_dynamicResolutionPass);
+                    Math.Max(settings.PageSize / 2u, 1u)));
                 _framePageTable = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource);
                 _clusterSourceViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameShadowViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
@@ -1640,7 +1631,8 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
         ref RenderGraphEdit edit,
         string label,
         LinkedComputePipeline pipeline,
-        VirtualShadowDispatchPassData data) =>
+        VirtualShadowDispatchPassData data,
+        GraphRegionId region) =>
         edit.AddComputeFramePass(
             label,
             PassQueueSelection.AnyOfType(QueueType.Graphics),
@@ -1650,14 +1642,15 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             pipeline.ParameterLayout,
             default,
             static (ref PassDefinition _, ref VirtualShadowDispatchPassData _) => { },
-            VirtualShadowDispatchPassData.Record);
+            VirtualShadowDispatchPassData.Record, region: region);
 
     private GraphPassId AddIndirectPass(
         ref RenderGraphEdit edit,
         string label,
         LinkedComputePipeline pipeline,
         GraphBufferId arguments,
-        ulong offset = 0u)
+        ulong offset = 0u,
+        GraphRegionId region = default)
     {
         var data = new VirtualShadowIndirectPassData(_dispatchLayout, arguments, offset);
         // These passes update the exclusive atlas and HiZ between graphics raster passes.
@@ -1670,7 +1663,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             pipeline.ParameterLayout,
             default,
             VirtualShadowIndirectPassData.Declare,
-            VirtualShadowIndirectPassData.Record);
+            VirtualShadowIndirectPassData.Record, region: region);
     }
 
     private static GraphBufferId Counter(RenderGraphEdit edit, string label) =>
