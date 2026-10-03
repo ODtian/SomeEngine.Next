@@ -9,7 +9,7 @@ using SomeEngine.Trace;
 namespace SomeEngine.Views.Tests;
 
 [Collection("Rebuild diagnostics")]
-public sealed class RebuildDiagnosticsTests : IDisposable
+public sealed partial class RebuildDiagnosticsTests : IDisposable
 {
     public RebuildDiagnosticsTests() => RebuildDiagnostics.Enabled = true;
 

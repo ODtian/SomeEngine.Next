@@ -5,6 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
+[Collection("Rebuild diagnostics")]
 public sealed partial class EnvironmentTests
 {
     [Fact]
@@ -136,6 +137,36 @@ public sealed partial class EnvironmentTests
         frames.Frame();
         Assert.Equal("11", frames.World.Read<DisplayText>(reader).Value);
         Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(reader));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ThemeSourceMovesAreReportedInRebuildDiagnostics(bool sparse)
+    {
+        RebuildDiagnostics.Enabled = true;
+        try
+        {
+            using var frames = new HeadlessFrameDriver();
+            Entity first = frames.World.CreateEntity();
+            Entity second = frames.World.CreateEntity();
+            SetTheme(frames.World, first, sparse, 3);
+            SetTheme(frames.World, second, sparse, 3);
+            Entity reader = Views.Spawn(frames.World, first, new ThemeDisplay(sparse));
+            frames.Frame();
+
+            Hierarchy<ElementTree>.SetParent(frames.World, reader, second);
+            frames.Frame();
+
+            Assert.Equal("3;3", frames.World.Read<DisplayText>(reader).Value);
+            ushort component = sparse ? ComponentId<SparseTheme>.Value : ComponentId<Theme>.Value;
+            Assert.Contains(new RebuildRecord(reader, first, component),
+                RebuildDiagnostics.LastFrame(frames.World).ToArray());
+        }
+        finally
+        {
+            RebuildDiagnostics.Enabled = false;
+        }
     }
 
 #if DEBUG

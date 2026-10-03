@@ -73,6 +73,7 @@ public static class RebuildDiagnostics
                 {
                     bool changed = dependency.Kind switch
                     {
+                        DependencyKind.Environment => DependencyChanges.HasChanges(result.World, result.View, dependency),
                         DependencyKind.Presence => result.World.HasComponentData(dependency.Entity, dependency.Component) != (dependency.Version != 0),
                         DependencyKind.Membership => result.World.MembershipVersion(dependency.Query) != dependency.Version,
                         _ => !result.World.HasComponentData(dependency.Entity, dependency.Component) ||
