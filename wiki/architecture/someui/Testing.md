@@ -168,6 +168,25 @@ SDK 项目项形式分别向 `SomeEngine.Elements.Render` 与外部消费者授�
 同一架构用例列出两个目标并以退出码 1 失败；项目内容随后恢复。
 访问边界规则由 [[architecture/someui/Assemblies|Assemblies]] 维护。
 
+2026-10-04，独立实现验收基于集成提交
+`97c0deaddb6b2ede840b37ca77d2f1b1e20454b5`，Windows x64，.NET SDK `10.0.112`。
+以下测试命令均使用 `--nologo -v minimal -m:1 -p:BuildInParallel=false`。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Debug` | 13 通过 |
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Release` | 10 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Debug` | 14 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Release` | 13 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug` | 253 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release` | 224 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Debug` | 78 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Release` | 78 通过 |
+| `just views-aot win-x64` | 原生发布、Surface 与外部修饰、现有视图行为、存档写入与读回全部通过，退出码 0 |
+
+原生发布输出的 IL2026、IL3050 与 IL2070 位于现有 `TraceCapture` 与
+`JobStorageTypeShape` 路径。验收后的原生产物和临时友元声明已清理。
+
 ## 内容函数验收（#61）
 
 2026-10-04，实现提交 `c8255fdd`，源码验收提交
