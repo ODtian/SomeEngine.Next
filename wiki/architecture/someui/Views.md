@@ -119,5 +119,12 @@ public readonly partial record struct Card(string Title) : IView
 `Group` 是公开的透明容器视图。两种子节点来源的声明、收尾与重跑规则见
 [[architecture/someui/Child-Source|Child Source]]，公开行为测试为 `ChildSourceTests.cs`。
 
+## 测量类型登记（#24）
+
+`IView.Measure` 是泛型类型登记使用的默认测量接缝，`ILayout` 重申为必需实现。
+布局视图以公开 `Measure` 或显式 `IView.Measure` 提供测量方法；
+类型表记录它的测量函数指针。协议接口、单遍测量、透明组合与程序集拆分见
+[[architecture/someui/Layout|Layout]]。
+
 ## Relations
 [[architecture/someui/Build-Modes|Build Modes]] · [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Node-Identity|Node Identity]] · [[architecture/someui/Build-Scope|Build Scope]]
