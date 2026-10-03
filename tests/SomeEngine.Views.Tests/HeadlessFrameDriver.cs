@@ -8,9 +8,11 @@ public sealed class HeadlessFrameDriver : IDisposable
 {
     private readonly SystemGroup<ImmediateSystemContext> _systems;
 
-    public HeadlessFrameDriver(int iterationLimit = 8)
+    public HeadlessFrameDriver(int iterationLimit = 8) : this(new World(), iterationLimit) { }
+
+    public HeadlessFrameDriver(World world, int iterationLimit = 8)
     {
-        World = new World();
+        World = world;
         _systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(World));
         _systems.Add(new ViewRebuildSystem { IterationLimit = iterationLimit });
     }

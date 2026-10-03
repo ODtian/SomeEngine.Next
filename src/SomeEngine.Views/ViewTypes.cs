@@ -40,6 +40,45 @@ internal static unsafe class ViewTypes
         return Volatile.Read(ref s_functions)[typeId].ParameterCheckFunction(world, entity);
     }
 
+    internal static void RegisterSerializationId(ushort id, Guid serializationId)
+    {
+        lock (s_gate)
+        {
+            CheckSerializationId(id, serializationId);
+            s_functions[id].SerializationId = serializationId;
+        }
+    }
+
+    [Conditional("DEBUG")]
+    private static void CheckSerializationId(ushort id, Guid serializationId)
+    {
+        DevelopmentCheck.Require(serializationId != Guid.Empty, "A view serialization id must identify a type.");
+        DevelopmentCheck.Require(s_functions[id].SerializationId == Guid.Empty ||
+            s_functions[id].SerializationId == serializationId, "A view type keeps one serialization id.");
+        for (int index = 1; index <= s_count; index++)
+            DevelopmentCheck.Require(index == id || s_functions[index].SerializationId != serializationId,
+                "Each view type requires its own serialization id.");
+    }
+
+    internal static Guid GetSerializationId(ushort id)
+    {
+        Guid serializationId = Volatile.Read(ref s_functions)[id].SerializationId;
+        DevelopmentCheck.Require(serializationId != Guid.Empty,
+            "Register the view's generated serialization entry before writing its World.");
+        return serializationId;
+    }
+
+    internal static ushort GetTypeId(Guid serializationId)
+    {
+        lock (s_gate)
+        {
+            for (int index = 1; index <= s_count; index++)
+                if (s_functions[index].SerializationId == serializationId && serializationId != Guid.Empty)
+                    return (ushort)index;
+        }
+        throw new InvalidDataException($"Unknown serialized view type {serializationId}.");
+    }
+
     [Conditional("DEBUG")]
     internal static void CheckContent(World world, Entity entity)
     {
@@ -50,8 +89,9 @@ internal static unsafe class ViewTypes
 #endif
     }
 
-    private readonly struct ViewFunctions
+    private struct ViewFunctions
     {
+        internal Guid SerializationId;
         internal readonly delegate*<World, Entity, ulong, void> BuildFunction;
         internal readonly delegate*<World, Entity, bool> ParameterCheckFunction;
 #if DEBUG
@@ -63,6 +103,7 @@ internal static unsafe class ViewTypes
             delegate*<World, Entity, bool> parameterCheckFunction,
             ChildSource children)
         {
+            SerializationId = default;
             BuildFunction = buildFunction;
             ParameterCheckFunction = parameterCheckFunction;
 #if DEBUG
@@ -85,6 +126,12 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
 
     internal static void Build(World world, Entity entity, ulong frame)
     {
+        ViewType viewType = world.Read<ViewType>(entity);
+        if (viewType.RebuildRequired)
+        {
+            viewType.RebuildRequired = false;
+            world.OverwriteComponentData(entity, in viewType);
+        }
         if (world.Has<BuildRequest>(entity))
             world.RemoveTag<BuildRequest>(entity);
         T view = world.ReadComponentData<T>(entity);
@@ -103,7 +150,12 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
             BuildErrors.Record(world, entity, exception, frame, typeof(T));
         }
         if (T.Mode == BuildMode.Rerun)
-            world.Replace(entity, new ParameterVersion(parameterVersion));
+        {
+            if (world.Has<ParameterVersion>(entity))
+                world.Replace(entity, new ParameterVersion(parameterVersion));
+            else
+                world.Add(entity, new ParameterVersion(parameterVersion));
+        }
     }
 
     private static bool HasParameterChanges(World world, Entity entity) =>

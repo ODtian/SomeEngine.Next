@@ -120,7 +120,8 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     }
 
     private bool HasBuildChanges(World world, Entity entity, bool recheck = false) =>
-        ViewTypes.HasParameterChanges(world, entity) || _dependencyChanges.HasChanges(world, entity, recheck);
+        world.Read<ViewType>(entity).RebuildRequired || ViewTypes.HasParameterChanges(world, entity) ||
+        _dependencyChanges.HasChanges(world, entity, recheck);
 
     private void CollectComputations(World world, Entity entity)
     {
