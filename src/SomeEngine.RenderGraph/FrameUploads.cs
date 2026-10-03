@@ -161,7 +161,7 @@ internal sealed partial class RenderGraphFrameState
                         foreach (BufferUploadCopy copy in data.Copies)
                             commands.CopyBuffer(new BufferCopy(commands.GetBuffer(copy.Source.Buffer), copy.Source.Range.Offset,
                                 commands.GetBuffer(data.Buffer), copy.Destination.Offset, copy.Destination.Size));
-                    }, -1);
+                    }, default);
                 FramePass row = _dynamicPasses[^1];
                 row.IsBufferUpload = true;
                 _dynamicPasses[^1] = row;

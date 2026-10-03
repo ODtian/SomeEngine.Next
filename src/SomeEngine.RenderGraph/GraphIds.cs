@@ -11,7 +11,6 @@ internal enum GraphIdentityDomain : byte
     View = 6,
     Pass = 7,
     Access = 8,
-    ExtensionPoint = 9,
     Region = 10,
 }
 
@@ -70,18 +69,6 @@ public readonly struct GraphRegionId : IEquatable<GraphRegionId>
     public override int GetHashCode() => _value.GetHashCode();
     public static bool operator ==(GraphRegionId left, GraphRegionId right) => left.Equals(right);
     public static bool operator !=(GraphRegionId left, GraphRegionId right) => !left.Equals(right);
-}
-
-public readonly struct GraphExtensionPointId : IEquatable<GraphExtensionPointId>
-{
-    private readonly GraphIdentity _value;
-    internal GraphExtensionPointId(in GraphIdentity value) => _value = value;
-    internal GraphIdentity Value => _value;
-    public bool Equals(GraphExtensionPointId other) => _value.Equals(other._value);
-    public override bool Equals(object? value) => value is GraphExtensionPointId other && Equals(other);
-    public override int GetHashCode() => _value.GetHashCode();
-    public static bool operator ==(GraphExtensionPointId left, GraphExtensionPointId right) => left.Equals(right);
-    public static bool operator !=(GraphExtensionPointId left, GraphExtensionPointId right) => !left.Equals(right);
 }
 
 public readonly struct GraphBufferId : IEquatable<GraphBufferId>

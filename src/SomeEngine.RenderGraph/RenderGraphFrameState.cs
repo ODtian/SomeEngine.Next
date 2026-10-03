@@ -799,10 +799,10 @@ internal sealed partial class RenderGraphFrameState
         in PassOptions options,
         PassDeclaration<TState> declaration,
         RasterFrameCallback<TState> callback,
-        int extensionOrdinal) =>
+        GraphRegionId region) =>
         AddDynamicPass(label, GraphPassKind.Raster, queue, state, options,
             null, VariableLayoutReflection.Null, default,
-            declaration, GetRasterCallbackStore<TState>(), callback, extensionOrdinal);
+            declaration, GetRasterCallbackStore<TState>(), callback, region);
 
     internal GraphPassId AddRasterPass<TState>(
         string label,
@@ -814,10 +814,10 @@ internal sealed partial class RenderGraphFrameState
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         RasterFrameCallback<TState> callback,
-        int extensionOrdinal) =>
+        GraphRegionId region) =>
         AddDynamicPass(label, GraphPassKind.Raster, queue, state, options,
             pipeline, parameterLayout, parameterBindings,
-            declaration, GetRasterCallbackStore<TState>(), callback, extensionOrdinal);
+            declaration, GetRasterCallbackStore<TState>(), callback, region);
 
     internal GraphPassId AddComputePass<TState>(
         string label,
@@ -826,10 +826,10 @@ internal sealed partial class RenderGraphFrameState
         in PassOptions options,
         PassDeclaration<TState> declaration,
         ComputeFrameCallback<TState> callback,
-        int extensionOrdinal) =>
+        GraphRegionId region) =>
         AddDynamicPass(label, GraphPassKind.Compute, queue, state, options,
             null, VariableLayoutReflection.Null, default,
-            declaration, GetComputeCallbackStore<TState>(), callback, extensionOrdinal);
+            declaration, GetComputeCallbackStore<TState>(), callback, region);
 
     internal GraphPassId AddComputePass<TState>(
         string label,
@@ -841,10 +841,10 @@ internal sealed partial class RenderGraphFrameState
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         ComputeFrameCallback<TState> callback,
-        int extensionOrdinal) =>
+        GraphRegionId region) =>
         AddDynamicPass(label, GraphPassKind.Compute, queue, state, options,
             pipeline, parameterLayout, parameterBindings,
-            declaration, GetComputeCallbackStore<TState>(), callback, extensionOrdinal);
+            declaration, GetComputeCallbackStore<TState>(), callback, region);
 
     internal GraphPassId AddCopyPass<TState>(
         string label,
@@ -853,10 +853,10 @@ internal sealed partial class RenderGraphFrameState
         in PassOptions options,
         PassDeclaration<TState> declaration,
         CopyFrameCallback<TState> callback,
-        int extensionOrdinal) =>
+        GraphRegionId region) =>
         AddDynamicPass(label, GraphPassKind.Copy, queue, state, options,
             null, VariableLayoutReflection.Null, default,
-            declaration, GetCopyCallbackStore<TState>(), callback, extensionOrdinal);
+            declaration, GetCopyCallbackStore<TState>(), callback, region);
 
     internal GraphPassId AddGeneralPass<TState>(
         string label,
@@ -865,10 +865,10 @@ internal sealed partial class RenderGraphFrameState
         in PassOptions options,
         PassDeclaration<TState> declaration,
         GeneralFrameCallback<TState> callback,
-        int extensionOrdinal) =>
+        GraphRegionId region) =>
         AddDynamicPass(label, GraphPassKind.General, queue, state, options,
             null, VariableLayoutReflection.Null, default,
-            declaration, GetGeneralCallbackStore<TState>(), callback, extensionOrdinal);
+            declaration, GetGeneralCallbackStore<TState>(), callback, region);
 
     internal void SetPassPipeline(in GraphIdentity pass, Pipeline pipeline)
     {
@@ -938,7 +938,6 @@ internal sealed partial class RenderGraphFrameState
         ValidatePassIdentity(predecessor.Value);
         var order = new ExplicitPassOrder(predecessor.Value, pass.Value);
         _dynamicOrders.Add(order);
-        _executor.ChangeDynamicOrder(order, true);
     }
 
     internal void OrderAfter(GraphParameterInput input, GraphPassId pass, bool consumersAfter)
@@ -953,13 +952,6 @@ internal sealed partial class RenderGraphFrameState
             if (consumersAfter) OrderAfter(consumer, pass);
             else OrderAfter(pass, consumer);
         }
-    }
-
-    internal int ResolveExtensionPoint(GraphExtensionPointId point)
-    {
-        EnsureAuthoring();
-        ValidateStatic(point.Value, StructureIndex.Structure.ExtensionPoints);
-        return StructureIndex.Structure.ExtensionPoints.DenseIndex(point.Value);
     }
 
     internal void AddBufferRangeRead(
@@ -1237,7 +1229,7 @@ internal sealed partial class RenderGraphFrameState
         PassDeclaration<TState> declaration,
         FramePassCallbackStore callbackStore,
         TCallback callback,
-        int extensionOrdinal)
+        GraphRegionId region)
         where TCallback : Delegate
     {
         EnsureAuthoring();
@@ -1248,6 +1240,11 @@ internal sealed partial class RenderGraphFrameState
             throw new ArgumentException("The Pipeline belongs to another Device.", nameof(pipeline));
         if (pipeline is null && parameterLayout != VariableLayoutReflection.Null)
             throw new ArgumentException("A parameter layout requires a Pipeline.", nameof(parameterLayout));
+        DevelopmentCheck.Require(region == default ||
+            region.Value.Owner == Graph.Identity && StructureIndex.Structure.Regions.Contains(region.Value),
+            "The region must belong to this frame's graph structure.");
+        DevelopmentCheck.Require(region == default || StructureIndex.Structure.GetRegion(region.Value).IsFrame,
+            "Frame passes require a frame region or the root region.");
         GraphIdentity identity = NewIdentity(
             _dynamicPasses.Count,
             GraphIdentityDomain.Pass);
@@ -1266,7 +1263,7 @@ internal sealed partial class RenderGraphFrameState
             Enabled = true,
             FrameCallbacks = callbackStore,
             FrameCallbackIndex = -1,
-            ExtensionPointIndex = extensionOrdinal,
+            Region = region.Value,
         });
         TState mutable = state;
         try
@@ -1284,8 +1281,6 @@ internal sealed partial class RenderGraphFrameState
             };
             FramePass row = _dynamicPasses[passIndex];
             row.FrameCallbackIndex = item;
-            row.FirstAccess = firstAccess;
-            row.AccessCount = _dynamicAccesses.Count - firstAccess;
             _dynamicPasses[passIndex] = row;
             return new GraphPassId(identity);
         }
@@ -1517,8 +1512,6 @@ internal sealed partial class RenderGraphFrameState
         _dynamicAccesses.Clear();
         _bufferRangeReads.Clear();
         _bufferRanges.Clear();
-        foreach (ExplicitPassOrder order in _dynamicOrders)
-            _executor.ChangeDynamicOrder(order, false);
         _dynamicOrders.Clear();
         foreach (var image in _swapchainImages)
         {

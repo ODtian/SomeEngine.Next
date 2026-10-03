@@ -11,6 +11,8 @@
 ## Editing
 
 - `RenderGraphEdit.AddRegion(label, parent = default)` 在父区段末尾创建持久区段。
+- `RenderGraphEdit.AddFrameRegion(label, parent = default)` 在持久父区段末尾创建当帧区段，
+  其内容与跨帧分析规则见 [[Extension-Points|Frame Regions]]。
 - 编辑中的 `AddRasterPass`、`AddComputePass`、`AddCopyPass`、`AddGeneralPass` 以及对应
   `Add*FramePass` 重载接受末尾的可选 `region` 参数。
 - 后来加入已有区段的 pass 取得该区段内的声明序号，因此仍在该区段的位置执行。
@@ -22,14 +24,17 @@
 声明序号和区间端点使用 64 位整数。父区段的有序子项是编号范围的持有者，区段树通过
 持久列表和图行存储随结构版本复制。
 
-持久树使用非负 64 位编号空间的低半区。省略 extension point 的当帧 pass 从该区间终点
-之后按当帧顺序取号，使用高半区；持久区段增长和当帧上传工作增长各有编号空间。
-显式 extension point 的当帧工作继续使用其所在位置。
+区段树使用非负 64 位编号空间的低半区。省略区段参数的当帧 pass 从该区间终点
+之后按当帧顺序取号，使用高半区；区段树增长和根区段当帧工作增长各有编号空间。
+显式当帧区段的 pass 使用该区段的编号区间。
 
 首个子区段使用父区段的内部空间，以支持深层嵌套；后续子项在剩余空间中分配区间并
 保留空隙。空隙用尽时，只重新分配该父区段子树的编号，分配宽度按后代所需位置计算。
 较小区段可利用相邻空隙扩大范围，祖先的区间边界随之更新。子树外 pass 的声明序号保持
 其既有值。序号变化通过 `GraphEditChanges` 的 pass 变化交给原有增量分析与调度。
+
+当帧区段在分配与重编时保留足以容纳 `int` 计数范围内当帧 pass 的编号宽度，深层区段
+据此为每个当帧 pass 分配独立序号。该宽度属于编号区间，实际行按当帧声明的数量创建。
 
 ## Frame enable state
 
@@ -59,4 +64,4 @@
 
 ## Relations
 
-[[Retained-Graph]] · [[Structural-Changes]] · [[Frame-Data]] · [[Graph-Versioning]] · [[Incremental-Scheduling]]
+[[Retained-Graph]] · [[Structural-Changes]] · [[Frame-Data]] · [[Graph-Versioning]] · [[Incremental-Scheduling]] · [[Extension-Points|Frame Regions]] · [[Region-Reconciliation]]

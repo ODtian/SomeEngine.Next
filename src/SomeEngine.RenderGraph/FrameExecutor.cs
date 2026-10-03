@@ -20,7 +20,6 @@ internal sealed partial class FrameExecutor
     private readonly Dictionary<GraphIdentity, int> _viewIndices = [];
     private readonly Dictionary<GraphIdentity, int> _passIndices = [];
     private readonly Dictionary<GraphIdentity, int> _accessIndices = [];
-    private readonly Dictionary<long, int> _extensionCounts = [];
     private readonly List<int> _resourceAccessScratch = [];
     private readonly Stack<int> _livenessStack = new();
     private readonly List<int> _shaderReaderScratch = [];
@@ -155,8 +154,6 @@ internal sealed partial class FrameExecutor
         int staticQueryPoolCount = structureIndex.Structure.QueryPools.Count;
         int staticShaderTableCount = structureIndex.Structure.ShaderTables.Count;
         int staticViewCount = structureIndex.Structure.Views.Count;
-        int staticPassCount = structureIndex.Structure.Passes.Count;
-        int staticAccessCount = structureIndex.Structure.Accesses.Count;
 
         PrepareRows(_buffers, staticBufferCount + _frame.DynamicBuffers.Count);
         foreach (int i in ChangedRows(structureIndex.Structure.Buffers, _bufferIndices, _rowChanges.Buffers))
@@ -338,14 +335,13 @@ internal sealed partial class FrameExecutor
             SetViewRow(destination, source);
         }
 
-        for (int removed = staticPassCount + _frame.DynamicPasses.Count; removed < _passes.Count; removed++)
-            _changedValuePasses.Add(removed);
-        PrepareRows(_passes, staticPassCount + _frame.DynamicPasses.Count);
+        PreparePassRows();
         EnsureCapacity(ref _passAccesses, _passes.Count);
-        foreach (int i in ChangedRows(structureIndex.Structure.Passes, _passIndices, _rowChanges.Passes))
+        foreach (int sourceRow in CollectChangedRows(structureIndex.Structure.Passes, _rowChanges.Passes))
         {
-            GraphPass source = structureIndex.Structure.Passes.Rows[i];
-            GraphIdentity identity = structureIndex.PassIds[i];
+            GraphIdentity identity = structureIndex.PassIds[sourceRow];
+            GraphPass source = structureIndex.Structure.Passes.Get(identity);
+            int i = _passIndices[identity];
             SetPassRow(i, new FramePass
             {
                 Identity = identity,
@@ -363,38 +359,37 @@ internal sealed partial class FrameExecutor
                 Enabled = source.Enabled && structureIndex.Structure.IsRegionEnabled(source.Region) &&
                     _frame.HasBufferUploads(source.CallbackStorage),
                 PersistentCallbacks = source.CallbackStorage,
-                ExtensionPointIndex = -1,
+                Region = source.Region,
             });
-            _passIndices[identity] = i;
         }
 
-        _extensionCounts.Clear();
         for (int i = 0; i < _frame.DynamicPasses.Count; i++)
         {
             FramePass source = _frame.DynamicPasses[i];
-            long insertion = source.ExtensionPointIndex >= 0
-                ? structureIndex.Structure.ExtensionPoints.Rows[source.ExtensionPointIndex].DeclarationOrdinal
-                : structureIndex.Structure.GetRegionInterval(default).End;
-            _extensionCounts.TryGetValue(insertion, out int ordinal);
-            _extensionCounts[insertion] = ordinal + 1;
-            long key = checked(insertion + ordinal + 1);
-            if (source.IsBufferUpload) key = long.MinValue + i;
-            source.DeclarationOrdinal = key;
-            source.Enabled &= structureIndex.Structure.RootRegion.Enabled;
-            int destination = staticPassCount + i;
-            SetPassRow(destination, source);
+            int ordinal = _dynamicPassPositions[i].Ordinal;
+            GraphRegionEntry interval = structureIndex.Structure.GetRegionInterval(source.Region);
+            long insertion = source.Region.IsValid ? interval.Start :
+                interval.End;
+            source.DeclarationOrdinal = checked(insertion + ordinal + 1);
+            if (source.IsBufferUpload) source.DeclarationOrdinal = long.MinValue + i;
+            DevelopmentCheck.Require(!source.Region.IsValid || source.DeclarationOrdinal < interval.End,
+                "Frame passes must fit inside their region's declaration interval.");
+            source.Enabled &= structureIndex.Structure.IsRegionEnabled(source.Region);
+            SetPassRow(_dynamicPassRows[i], source);
         }
 
         int previousRangeStart = _rangeReadStart;
+        PrepareAccessRows();
         bool rangeReadsChanged = PrepareBufferRangeReads(
-            staticAccessCount + _frame.DynamicAccesses.Count, out int accessCount);
+            _accessRowCount, out int accessCount);
         if (rangeReadsChanged)
             for (int index = previousRangeStart; index < _accesses.Count; index++) DetachAccess(index);
         PrepareRows(_accesses, accessCount);
-        foreach (int i in ChangedRows(structureIndex.Structure.Accesses, _accessIndices, _rowChanges.Accesses))
+        foreach (int sourceRow in CollectChangedRows(structureIndex.Structure.Accesses, _rowChanges.Accesses))
         {
-            PassResourceAccess source = structureIndex.Structure.Accesses.Rows[i];
-            GraphIdentity identity = structureIndex.AccessIds[i];
+            GraphIdentity identity = structureIndex.AccessIds[sourceRow];
+            PassResourceAccess source = structureIndex.Structure.Accesses.Get(identity);
+            int i = _accessIndices[identity];
             BufferRange bufferRange = source.BufferRange;
             TextureSubresourceRange textureRange = source.TextureRange;
             GraphIdentity target = source.Target;
@@ -418,7 +413,6 @@ internal sealed partial class FrameExecutor
                 {
                     DetachAccess(i);
                     _accesses[i] = default;
-                    _accessIndices[identity] = i;
                     continue;
                 }
                 bufferRange = source.ParameterSecondary ? value.SecondaryBufferRange : value.BufferRange;
@@ -457,12 +451,11 @@ internal sealed partial class FrameExecutor
                 BufferContentScope = source.BufferContentScope,
                 UnorderedAccessHazards = source.UnorderedAccessHazards,
             });
-            _accessIndices[identity] = i;
         }
         for (int i = 0; i < _frame.DynamicAccesses.Count; i++)
         {
             FrameResourceAccess source = _frame.DynamicAccesses[i];
-            int destination = staticAccessCount + i;
+            int destination = _dynamicAccessRows[i];
             SetAccessRow(destination, source);
         }
 
@@ -532,8 +525,16 @@ internal sealed partial class FrameExecutor
     private bool TryResolvePass(in GraphIdentity identity, out int index) =>
         identity.Owner == _frame.Graph.Identity
             ? _passIndices.TryGetValue(identity, out index)
-            : TryResolveDynamicRow(identity, GraphIdentityDomain.Pass,
-                _frame.StructureIndex.Structure.Passes.Count, _frame.DynamicPasses.Count, out index);
+            : TryResolveFramePass(identity, out index);
+
+    private bool TryResolveFramePass(in GraphIdentity identity, out int index)
+    {
+        index = -1;
+        if (identity.Owner != _frame.Identity || identity.Domain != GraphIdentityDomain.Pass ||
+            identity.Generation != 1 || (uint)identity.Slot >= (uint)_frame.DynamicPasses.Count) return false;
+        index = _dynamicPassRows[identity.Slot];
+        return true;
+    }
 
     private bool TryResolveView(in GraphIdentity identity, out int index) =>
         identity.Owner == _frame.Graph.Identity
@@ -577,7 +578,7 @@ internal sealed partial class FrameExecutor
     private readonly List<int> _rowIndexScratch = [];
     private bool _rowsReady;
     private int _rebuiltRowCount;
-    private int _staticBufferCount, _staticTextureCount, _staticAccessCount;
+    private int _staticBufferCount, _staticTextureCount;
 
     internal void ChangeBuffer(GraphIdentity identity, bool refreshViews = true)
     {
@@ -633,7 +634,6 @@ internal sealed partial class FrameExecutor
         GraphStructure structure = _frame.StructureIndex.Structure;
         _analysisChanged |= _buffers.Count != structure.Buffers.Count + _frame.DynamicBuffers.Count ||
             _textures.Count != structure.Textures.Count + _frame.DynamicTextures.Count ||
-            _passes.Count != structure.Passes.Count + _frame.DynamicPasses.Count ||
             _queryPools.Count != structure.QueryPools.Count || _shaderTables.Count != structure.ShaderTables.Count;
 
         int retainedBuffers = _staticBufferCount == structure.Buffers.Count ? _frame.DynamicBuffers.Count : 0;
@@ -676,25 +676,15 @@ internal sealed partial class FrameExecutor
                 if (_textureIndices.TryGetValue(id, out int index) && _textures[index].Resource is { } resource)
                     _resourceRows.Remove(resource);
             }
-        foreach (GraphIdentity id in _rowChanges.Accesses)
-            if (_accessIndices.TryGetValue(id, out int index) && !structure.Accesses.Contains(id))
-            {
-                DetachAccess(index);
-            }
-        int detachedStart = structure.Accesses.Count == _staticAccessCount
-            ? structure.Accesses.Count + _frame.DynamicAccesses.Count
-            : Math.Min(structure.Accesses.Count, _staticAccessCount);
-        for (int index = detachedStart; index < _rangeReadStart; index++) DetachAccess(index);
     }
 
     private void EndRows()
     {
-        if (_dynamicOrderChanges.Count != 0) _analysisChanged = true;
+        PrepareDynamicOrders();
 
         GraphStructure structure = _frame.StructureIndex.Structure;
         _staticBufferCount = structure.Buffers.Count;
         _staticTextureCount = structure.Textures.Count;
-        _staticAccessCount = structure.Accesses.Count;
         _rowChanges.Buffers.Clear();
         _rowChanges.Textures.Clear();
         _rowChanges.QueryPools.Clear();

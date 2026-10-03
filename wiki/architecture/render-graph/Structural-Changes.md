@@ -21,8 +21,19 @@
 序号发生变化的 pass 通过原有 pass 变化记录交给增量分析与调度。编号与启用的完整规则
 见 [[Regions]]。
 
+## Local update methods
+
+显式编辑维护整棵持久树中的区段、资源和顺序关系。在一个持久父区段内部，
+[[Region-Reconciliation]] 用业务键决定哪些子区段需要添加、删除或替换，并把这些变化
+表达为同一个 `RenderGraphEdit` 中的普通编辑。值相同的键继续使用原区段身份。
+调用方在提交成功后替换映射，编辑丢弃后继续使用原映射。
+
+接近每帧刷新的工作使用 [[Extension-Points|Frame Regions]]，安装时保存其位置，
+帧内重建该位置的内容。持久树的全局修改、业务键的局部调和与当帧重建因此各有明确范围，
+共同使用既有资源访问和增量分析路径。
+
 ## Non-goals
 camera、材质值、instance 值、external resource 绑定、动态 range 和区段启用状态由帧接口更新。
 
 ## Relations
-[[Retained-Graph]] · [[Regions]] · [[Frame-Data]] · [[Incremental-Reconciliation]]
+[[Retained-Graph]] · [[Regions]] · [[Frame-Data]] · [[Incremental-Reconciliation]] · [[Region-Reconciliation]] · [[Extension-Points|Frame Regions]]

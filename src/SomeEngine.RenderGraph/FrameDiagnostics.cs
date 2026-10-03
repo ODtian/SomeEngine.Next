@@ -12,13 +12,14 @@ internal sealed partial class FrameExecutor
         int position = 0;
         foreach (int pass in _executionOrder.Nodes) positions[pass] = position++;
 
-        var passes = new RenderGraphPassDiagnostic[_passes.Count];
+        var passes = new List<RenderGraphPassDiagnostic>(_passIndices.Count + _regionPassRows.Count);
         int liveCount = 0;
         for (int index = 0; index < _passes.Count; index++)
         {
             FramePass pass = _passes[index];
+            if (!pass.Identity.IsValid) continue;
             if (_live[index]) liveCount++;
-            passes[index] = new RenderGraphPassDiagnostic(
+            passes.Add(new RenderGraphPassDiagnostic(
                 new GraphPassId(pass.Identity),
                 pass.Label,
                 pass.Kind,
@@ -26,7 +27,7 @@ internal sealed partial class FrameExecutor
                 _live[index],
                 pass.DeclarationOrdinal,
                 _live[index] ? positions[index] : -1,
-                pass.Queue);
+                pass.Queue));
         }
 
         var buffers = new RenderGraphBufferDiagnostic[_buffers.Count];
@@ -143,7 +144,7 @@ internal sealed partial class FrameExecutor
         }
 
         var statistics = new RenderGraphStatistics(
-            _passes.Count,
+            passes.Count,
             liveCount,
             _executionOrder.Count,
             _buffers.Count,
@@ -158,12 +159,12 @@ internal sealed partial class FrameExecutor
             _frame.Graph.HeapByteBudget.CommittedBytes)
         {
             AnalysisReused = _reuseAnalysis,
-            AnalyzedPassCount = _analyzedPasses.Count,
+            AnalyzedPassCount = _analyzedPasses.Count(index => _passes[index].Identity.IsValid),
             RebuiltRowCount = _rebuiltRowCount,
         };
         var view = new RenderGraphDiagnosticsView(
             _frame.StructureVersion,
-            passes,
+            CollectionsMarshal.AsSpan(passes),
             buffers,
             textures,
             CollectionsMarshal.AsSpan(accesses),

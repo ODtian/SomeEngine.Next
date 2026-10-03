@@ -275,8 +275,9 @@ public ref partial struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        RasterFrameCallback<TState> callback) =>
-        State.AddRasterPass(label, queue, state, options, declaration, callback, -1);
+        RasterFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
+        State.AddRasterPass(label, queue, state, options, declaration, callback, region);
 
     public GraphPassId AddRasterPass<TState>(
         string label,
@@ -287,9 +288,10 @@ public ref partial struct RenderGraphFrame
         VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
-        RasterFrameCallback<TState> callback) =>
+        RasterFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         State.AddRasterPass(label, queue, state, options, pipeline,
-            parameterLayout, parameterBindings, declaration, callback, -1);
+            parameterLayout, parameterBindings, declaration, callback, region);
 
     public GraphPassId AddComputePass<TState>(
         string label,
@@ -297,8 +299,9 @@ public ref partial struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        ComputeFrameCallback<TState> callback) =>
-        State.AddComputePass(label, queue, state, options, declaration, callback, -1);
+        ComputeFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
+        State.AddComputePass(label, queue, state, options, declaration, callback, region);
 
     public GraphPassId AddComputePass<TState>(
         string label,
@@ -309,9 +312,10 @@ public ref partial struct RenderGraphFrame
         VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
-        ComputeFrameCallback<TState> callback) =>
+        ComputeFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         State.AddComputePass(label, queue, state, options, pipeline,
-            parameterLayout, parameterBindings, declaration, callback, -1);
+            parameterLayout, parameterBindings, declaration, callback, region);
 
     public GraphPassId AddCopyPass<TState>(
         string label,
@@ -319,8 +323,9 @@ public ref partial struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        CopyFrameCallback<TState> callback) =>
-        State.AddCopyPass(label, queue, state, options, declaration, callback, -1);
+        CopyFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
+        State.AddCopyPass(label, queue, state, options, declaration, callback, region);
 
     public GraphPassId AddGeneralPass<TState>(
         string label,
@@ -328,8 +333,9 @@ public ref partial struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        GeneralFrameCallback<TState> callback) =>
-        State.AddGeneralPass(label, queue, state, options, declaration, callback, -1);
+        GeneralFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
+        State.AddGeneralPass(label, queue, state, options, declaration, callback, region);
 
     public void OrderAfter(GraphPassId pass, GraphPassId predecessor) => State.OrderAfter(pass, predecessor);
 
@@ -340,9 +346,6 @@ public ref partial struct RenderGraphFrame
     /// <summary>Orders the given pass after every pass bound to the input.</summary>
     public void OrderAfter(GraphPassId pass, GraphParameterInput input) =>
         State.OrderAfter(input, pass, consumersAfter: false);
-
-    public RenderGraphFrameExtension BeginExtension(GraphExtensionPointId point) =>
-        new(State, _identity, State.ResolveExtensionPoint(point));
 
     public int Execute(Span<QueueCompletion> destination)
     {
