@@ -17,11 +17,15 @@ public sealed class RenderPrepareScope : IDisposable
     private SmallList<RenderTimeline> _activeTimelines;
     private readonly object _gate = new();
     private RenderFrameCoordinator? _owner;
+    private RenderDataLock? _dataLock;
     private int _state;
     private int _activeOperations;
 
     internal RenderPrepareScope(RenderFrameCoordinator owner)
         => _owner = owner;
+
+    internal RenderPrepareScope(RenderDataLock dataLock)
+        => _dataLock = dataLock;
 
     public bool IsClosed
     {
@@ -127,6 +131,14 @@ public sealed class RenderPrepareScope : IDisposable
         {
             if (_state >= StateCommitted)
                 return;
+            if (_dataLock is not null)
+            {
+                ThrowIfLeaseActive();
+                _dataLock.EndPrepare();
+                _dataLock = null;
+                _state = StateCommitted;
+                return;
+            }
             if (_state != StateOpen)
                 throw new InvalidOperationException("Render prepare ownership is closing.");
             ThrowIfLeaseActive();
@@ -197,7 +209,7 @@ public sealed class RenderPrepareScope : IDisposable
 
     private void ThrowIfNotOpen()
     {
-        if (_state != StateOpen || _owner is null)
+        if (_state != StateOpen || (_owner is null && _dataLock is null))
             throw new ObjectDisposedException(nameof(RenderPrepareScope));
     }
 

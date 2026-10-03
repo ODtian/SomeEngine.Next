@@ -700,13 +700,9 @@ internal static class RuntimeApplication
                 bool readbackAdmitted = pipeline.TryAdmitFrameResources(
                     out _,
                     out QueueCompletion[] readbackRetirementFences);
-                bool uiAdmitted = ui.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] uiRetirementFences);
                 long admissionWaitStarted = Environment.TickCount64;
                 while (!instanceAdmitted ||
-                       !readbackAdmitted ||
-                       !uiAdmitted)
+                       !readbackAdmitted)
                 {
                     TimeSpan remaining = FrameTimeout -
                         TimeSpan.FromMilliseconds(
@@ -722,9 +718,7 @@ internal static class RuntimeApplication
 
                     QueueCompletion[] retirementFences = !instanceAdmitted
                         ? instanceRetirementFences
-                        : !readbackAdmitted
-                            ? readbackRetirementFences
-                            : uiRetirementFences;
+                        : readbackRetirementFences;
                     _ = WaitForAll(backend, retirementFences, waitSlice);
 
                     _ = window.PumpMessages();
@@ -740,12 +734,7 @@ internal static class RuntimeApplication
                             out _,
                             out readbackRetirementFences);
                     }
-                    if (!uiAdmitted)
-                    {
-                        uiAdmitted = ui.TryAdmitFrameResources(
-                            out _,
-                            out uiRetirementFences);
-                    }
+
                 }
                 backend.CollectCompleted(device);
                 coordinator.AdmitFrameResources();
