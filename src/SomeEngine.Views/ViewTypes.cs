@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using SomeEngine.Core.Diagnostics;
+using SomeEngine.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -121,10 +122,13 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
     {
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"View {typeof(T).Name} requires IComponent or ISparseComponent storage.");
-        return ViewTypes.Register(&Build, &HasParameterChanges, T.Children);
+        return ViewTypes.Register(&BuildFromSystem, &HasParameterChanges, T.Children);
     }
 
-    internal static void Build(World world, Entity entity, ulong frame)
+    private static void BuildFromSystem(World world, Entity entity, ulong frame) =>
+        Build(world, entity, frame, firstBuild: false);
+
+    internal static void Build(World world, Entity entity, ulong frame, bool firstBuild)
     {
         ViewType viewType = world.Read<ViewType>(entity);
         if (viewType.RebuildRequired)
@@ -133,9 +137,28 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
             world.OverwriteComponentData(entity, in viewType);
         }
         if (world.Has<BuildRequest>(entity))
+        {
+            firstBuild = true;
             world.RemoveTag<BuildRequest>(entity);
+        }
         T view = world.ReadComponentData<T>(entity);
         uint parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
+        RebuildDiagnostics.Record<T>(world, entity, firstBuild, parameterVersion);
+        if (Profiler.IsActive || EngineTrace.IsEnabled)
+            BuildWithTracing(world, entity, frame, in view, parameterVersion);
+        else
+            BuildContents(world, entity, frame, in view, parameterVersion);
+    }
+
+    private static void BuildWithTracing(World world, Entity entity, ulong frame, in T view, uint parameterVersion)
+    {
+        using var profiler = Profiler.BeginScope(ViewTrace.Name);
+        using var trace = EngineTrace.Begin(ViewTrace.Site);
+        BuildContents(world, entity, frame, in view, parameterVersion);
+    }
+
+    private static void BuildContents(World world, Entity entity, ulong frame, in T view, uint parameterVersion)
+    {
         try
         {
             using var scope = Scope.Enter(world, entity, frame,
@@ -161,4 +184,10 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
     private static bool HasParameterChanges(World world, Entity entity) =>
         T.Mode == BuildMode.Rerun &&
         world.ComponentDataWriteVersion<T>(entity) != world.Read<ParameterVersion>(entity).Value;
+
+    private static class ViewTrace
+    {
+        internal static readonly string Name = $"{typeof(T).FullName}.Build";
+        internal static readonly TraceSite Site = new("view", Name);
+    }
 }
