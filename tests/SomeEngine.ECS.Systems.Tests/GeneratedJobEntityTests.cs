@@ -12,6 +12,44 @@ namespace SomeEngine.ECS.Systems.Tests;
 
 public sealed class GeneratedJobEntityTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    public void ParallelSparseJobAdvancesComponentWriteVersionForEveryRow(int rowsPerPacket)
+    {
+        using var jobs = new JobRuntimeScope(workerCount: 4);
+        using World world = CreateMovingWorld(32, out Entity[] entities);
+        foreach (Entity entity in entities)
+            world.AddSparse(entity, new GeneratedSparse { Value = 3 });
+        uint sparseVersion = world.ComponentWriteVersion<GeneratedSparse>();
+        uint positionVersion = world.ComponentWriteVersion<GeneratedPosition>();
+
+        new GeneratedSparseJob().ScheduleParallel(
+            world, new JobEntityScheduleOptions(rowsPerPacket: rowsPerPacket)).Complete();
+
+        Assert.Equal(sparseVersion + 32, world.ComponentWriteVersion<GeneratedSparse>());
+        Assert.Equal(positionVersion, world.ComponentWriteVersion<GeneratedPosition>());
+        Assert.All(entities, entity => Assert.Equal(13, world.ReadSparse<GeneratedSparse>(entity).Value));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    public void ParallelTableJobAdvancesComponentWriteVersionForEveryRow(int rowsPerPacket)
+    {
+        using var jobs = new JobRuntimeScope(workerCount: 4);
+        using World world = CreateMovingWorld(128, out Entity[] entities);
+        uint positionVersion = world.ComponentWriteVersion<GeneratedPosition>();
+        uint velocityVersion = world.ComponentWriteVersion<GeneratedVelocity>();
+
+        new IntegrateGeneratedJob().ScheduleParallel(
+            world, new JobEntityScheduleOptions(rowsPerPacket: rowsPerPacket)).Complete();
+
+        Assert.Equal(positionVersion + 128, world.ComponentWriteVersion<GeneratedPosition>());
+        Assert.Equal(velocityVersion, world.ComponentWriteVersion<GeneratedVelocity>());
+        Assert.All(entities, entity => Assert.Equal(1, world.Read<GeneratedPosition>(entity).Value));
+    }
+
 
 
     [Fact]

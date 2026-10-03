@@ -325,6 +325,7 @@ internal readonly partial struct Components
         where T : struct, IComponent
     {
         int componentId = ComponentMetadata<T>.Id;
+        _structure.ComponentWriteVersions.Advance(componentId);
         if (_hooks.Any)
         {
             _hooks.Replace(entity, in oldValue);
@@ -337,6 +338,7 @@ internal readonly partial struct Components
         Entity entity,
         Array ownedOldValueSnapshot)
     {
+        _structure.ComponentWriteVersions.Advance(componentId);
         if (_hooks.Any)
         {
             ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentId);
@@ -358,7 +360,7 @@ internal readonly partial struct Components
     {
         _hierarchy.TrackParent<T>(entity);
         chunk.WriteComponent(columnIndex, row, value);
-        MarkAdd(chunk, columnIndex, row);
+        MarkAdd(chunk, columnIndex, row, ComponentMetadata<T>.Id, _clock.Tick);
         CommitAdd<T>(entity, archetype, chunk, columnIndex, row);
     }
 
@@ -405,7 +407,7 @@ internal readonly partial struct Components
     {
         _hierarchy.TrackParent<T>(entity);
         chunk.WriteComponent(columnIndex, row, newValue);
-        MarkWrite(chunk, columnIndex, row, version);
+        MarkWrite(chunk, columnIndex, row, ComponentMetadata<T>.Id, version);
         CommitReplace(entity, in oldValue, in newValue, version);
     }
 
@@ -433,7 +435,7 @@ internal readonly partial struct Components
             _world.RequireRelationshipWriteOwner();
         }
 
-        MarkWrite(chunk, columnIndex, row, version);
+        MarkWrite(chunk, columnIndex, row, ComponentMetadata<T>.Id, version);
         _hierarchy.TrackParent<T>(entity);
         _relationGraph.TrackEndpoint<T>(_world, entity);
         _indices.Dirty<T>();
@@ -484,6 +486,8 @@ internal readonly partial struct Components
             chunk.Entities[..chunk.Count],
             componentId);
         _indices.Dirty(componentId);
+        if (chunk.Count > 0)
+            _structure.ComponentWriteVersions.Advance(componentId);
     }
 
     internal bool IsEnabled<T>(Entity entity)
@@ -557,6 +561,7 @@ internal readonly partial struct Components
             for (int columnIndex = 0; columnIndex < archetype.TableComponentIds.Length; columnIndex++)
             {
                 int componentId = archetype.TableComponentIds[columnIndex];
+                _structure.ComponentWriteVersions.Advance(componentId);
                 _indices.Drop(entity, componentId, chunk, columnIndex, row);
             }
             return;
@@ -566,6 +571,7 @@ internal readonly partial struct Components
         for (int columnIndex = 0; columnIndex < archetype.TableComponentIds.Length; columnIndex++)
         {
             int componentId = archetype.TableComponentIds[columnIndex];
+            _structure.ComponentWriteVersions.Advance(componentId);
             try
             {
                 _indices.Drop(entity, componentId, chunk, columnIndex, row);
@@ -633,6 +639,7 @@ internal readonly partial struct Components
                 int componentId = archetype.TableComponentIds[columnIndex];
                 if (archetype.CleanupComponentIds.BinarySearch(componentId) >= 0)
                     continue;
+                _structure.ComponentWriteVersions.Advance(componentId);
                 _indices.Drop(entity, componentId, chunk, columnIndex, row);
             }
             return;
@@ -645,6 +652,7 @@ internal readonly partial struct Components
             if (archetype.CleanupComponentIds.BinarySearch(componentId) >= 0)
                 continue;
 
+            _structure.ComponentWriteVersions.Advance(componentId);
             try
             {
                 _indices.Drop(entity, componentId, chunk, columnIndex, row);
@@ -712,25 +720,45 @@ internal readonly partial struct Components
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void MarkAdd(Archetypes.Chunk chunk, int columnIndex, int row)
+    internal void MarkAdd(
+        Archetypes.Chunk chunk,
+        int columnIndex,
+        int row,
+        int componentId,
+        uint version)
     {
-        chunk.MarkAdd(columnIndex, row, _clock.Tick);
+        chunk.MarkAdd(columnIndex, row, version);
+        _structure.ComponentWriteVersions.Advance(componentId);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void MarkWrite(Archetypes.Chunk chunk, int columnIndex, int row)
     {
-        chunk.MarkWrite(columnIndex, row, _clock.Tick);
+        MarkWrite(chunk, columnIndex, row, _clock.Tick);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void MarkWrite(
+    internal void MarkWrite(
         Archetypes.Chunk chunk,
         int columnIndex,
         int row,
         uint version)
     {
+        int componentId = _entities.Store.GetRecordReadOnly(chunk.Entities[row])
+            .Archetype!.TableComponentIds[columnIndex];
+        MarkWrite(chunk, columnIndex, row, componentId, version);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void MarkWrite(
+        Archetypes.Chunk chunk,
+        int columnIndex,
+        int row,
+        int componentId,
+        uint version)
+    {
         chunk.MarkWrite(columnIndex, row, version);
+        _structure.ComponentWriteVersions.Advance(componentId);
     }
 
     private void WriteRemoved<T>(Entity entity, in T value)

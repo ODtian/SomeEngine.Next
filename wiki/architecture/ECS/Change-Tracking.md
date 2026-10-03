@@ -25,6 +25,10 @@
 
 `QueryRow.Read<T>()` 返回组件值；`Write<T>()` 和 `ReadWrite<T>()` 返回组件引用。查询对象及回调边界从当前 `QueryCursor`、`QueryRow` 和 `QueryChunkView` API 读取。
 
+## 组件类型写版本
+
+公开 `World.ComponentWriteVersion<T>()` 提供组件类型写版本，用于整批依赖检查。计数语义、数据持有和事务行为由 [[architecture/someui/Dependencies|Dependencies]] 维护。
+
 ## Job 与拓扑写入版本
 
 generated `IJobEntity` 在取得访问权限、完成 chunk/row 过滤并即将进入声明 World 写入的执行行时，惰性取得该次执行共享的版本。串行路径由 `GetExecutionVersion()` 保存版本，并行路径让匹配 packets 使用同一个共享版本对象。
