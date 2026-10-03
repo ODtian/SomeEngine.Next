@@ -10,6 +10,7 @@
     <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.Layout/SomeEngine.Layout.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/LayoutChecks.cs" Link="LayoutChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Layout.Tests/FlexChecks.cs" Link="FlexChecks.cs" />
     <ProjectReference Include="../../src/SomeEngine.Views.Compose/SomeEngine.Views.Compose.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs" Link="HeadlessFrameDriver.cs" />
   </ItemGroup>

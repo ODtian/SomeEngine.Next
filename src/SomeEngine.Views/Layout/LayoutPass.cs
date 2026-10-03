@@ -24,6 +24,7 @@ public ref struct LayoutPass
         _contentOrigin = contentOrigin;
     }
 
+    /// <summary>Measures a child; a later measurement replaces its size and descendant placements for this update.</summary>
     public Size Measure(Entity child, in Constraints constraints)
     {
         DevelopmentCheck.Require(Children.Contains(child), "Measure requires a child from this layout's Children.");
