@@ -7,7 +7,7 @@ public sealed class RenderGraphNextFrame : IDisposable
     private const int Started = 1;
     private const int Discarded = 2;
     private int _state;
-    internal RenderGraph Graph { get; }
+    public RenderGraph Graph { get; }
     internal FrameSlot FrameStorage { get; }
     internal ulong Identity { get; }
 
@@ -29,14 +29,26 @@ public sealed class RenderGraphNextFrame : IDisposable
     /// <summary>Returns mapped upload bytes for a range of a persistent device buffer.</summary>
     public Span<byte> GetWriteSpan(GraphBufferId buffer, ulong offset, int length)
     {
-        Graph.EnsureFrame(Identity);
-        DevelopmentCheck.Require(Volatile.Read(ref _state) == Open, "The next frame must be open for writing.");
+        EnsureOpen();
         Graph.ValidateBufferUpload(buffer, offset, length);
         return FrameStorage.GetBufferTransfers(Graph).GetWriteSpan(buffer, offset, length);
     }
 
     public void WriteBuffer(GraphBufferId buffer, ulong offset, scoped ReadOnlySpan<byte> data) =>
         data.CopyTo(GetWriteSpan(buffer, offset, data.Length));
+
+    /// <summary>Groups direct upload writes so they can be committed or discarded together.</summary>
+    public RenderGraphBufferWrites BeginBufferWrites()
+    {
+        EnsureOpen();
+        return new RenderGraphBufferWrites(this, FrameStorage.GetBufferTransfers(Graph));
+    }
+
+    internal void EnsureOpen()
+    {
+        Graph.EnsureFrame(Identity);
+        DevelopmentCheck.Require(Volatile.Read(ref _state) == Open, "The next frame must be open for writing.");
+    }
 
     public void Dispose()
     {

@@ -542,8 +542,6 @@ internal static class RuntimeApplication
             device,
             options.AsyncCompute ? [graphicsQueue, computeQueue, copyQueue] : [graphicsQueue, copyQueue],
             new RenderGraphDesc(
-                // Instance and readback storage already limit this renderer to two in-flight
-                // frames. Match that count instead of rotating a third copy of graph data.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
@@ -694,15 +692,11 @@ internal static class RuntimeApplication
             {
                 long frameStarted = Stopwatch.GetTimestamp();
                 using var frameTrace = EngineTrace.BeginFrame(++traceFrameIndex);
-                bool instanceAdmitted = instances.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] instanceRetirementFences);
                 bool readbackAdmitted = pipeline.TryAdmitFrameResources(
                     out _,
                     out QueueCompletion[] readbackRetirementFences);
                 long admissionWaitStarted = Environment.TickCount64;
-                while (!instanceAdmitted ||
-                       !readbackAdmitted)
+                while (!readbackAdmitted)
                 {
                     TimeSpan remaining = FrameTimeout -
                         TimeSpan.FromMilliseconds(
@@ -716,18 +710,10 @@ internal static class RuntimeApplication
                         ? TimeSpan.FromMilliseconds(2)
                         : remaining;
 
-                    QueueCompletion[] retirementFences = !instanceAdmitted
-                        ? instanceRetirementFences
-                        : readbackRetirementFences;
+                    QueueCompletion[] retirementFences = readbackRetirementFences;
                     _ = WaitForAll(backend, retirementFences, waitSlice);
 
                     _ = window.PumpMessages();
-                    if (!instanceAdmitted)
-                    {
-                        instanceAdmitted = instances.TryAdmitFrameResources(
-                            out _,
-                            out instanceRetirementFences);
-                    }
                     if (!readbackAdmitted)
                     {
                         readbackAdmitted = pipeline.TryAdmitFrameResources(
@@ -847,6 +833,9 @@ internal static class RuntimeApplication
                         scene.Update(sceneSeconds);
                     extraction.Extract(mainWorld);
                 }
+                if (!renderGraph.TryOpenNextFrame(out RenderGraphNextFrame nextFrame, FrameTimeout))
+                    throw new TimeoutException("The next rendering frame exceeded its resource wait timeout.");
+                using var nextFrameResources = nextFrame;
                 long prepareStarted = Stopwatch.GetTimestamp();
                 if (platform?.ImageRequested == true)
                     outputVerifier ??= new FrameOutputVerifier(backend, device, width, height, PresentationFormat);
@@ -855,6 +844,7 @@ internal static class RuntimeApplication
                     cluster,
                     streamingConsumer,
                     coordinator,
+                    nextFrame,
                     window,
                     reportMilestones);
                 double prepareMs = Stopwatch.GetElapsedTime(prepareStarted).TotalMilliseconds;
@@ -894,6 +884,7 @@ internal static class RuntimeApplication
                 FrameOutputMetrics? frameOutput = ExecuteFrame(
                     backend,
                     renderGraph,
+                    nextFrame,
                     graphicsQueue,
                     graphCompletionSlots,
                     graphCompletions,
@@ -1103,6 +1094,7 @@ internal static class RuntimeApplication
         ClusterRenderResources cluster,
         ClusterStreamingFeedbackConsumer streamingFeedback,
         RenderFrameCoordinator coordinator,
+        RenderGraphNextFrame nextFrame,
         NativeWindow window,
         bool reportMilestones)
     {
@@ -1135,7 +1127,7 @@ internal static class RuntimeApplication
             if (reportMilestones)
                 Console.WriteLine("First frame: publishing prepare systems.");
             using (EngineTrace.Begin(ApplicationTrace.PrepareSystems))
-                systems.Update(scope);
+                systems.Update(scope, nextFrame);
             using (EngineTrace.Begin(ApplicationTrace.PrepareCommit))
                 scope.Commit();
         }
@@ -1144,6 +1136,7 @@ internal static class RuntimeApplication
     private static FrameOutputMetrics? ExecuteFrame(
         IGraphicsBackend backend,
         global::SomeEngine.RenderGraph.RenderGraph graph,
+        RenderGraphNextFrame nextFrame,
         Queue graphicsQueue,
         QueueCompletion[] completionSlots,
         QueueCompletion[] completions,
@@ -1187,7 +1180,7 @@ internal static class RuntimeApplication
             completionSlots.AsSpan().Clear();
             try
             {
-                RenderGraphFrame graphFrame = graph.BeginFrame(
+                RenderGraphFrame graphFrame = graph.BeginFrame(nextFrame,
                     new RenderGraphFrameOptions(
                         SubmissionMode: FrameSubmissionMode.RecordAhead,
                         Diagnostics: graphDiagnostics));

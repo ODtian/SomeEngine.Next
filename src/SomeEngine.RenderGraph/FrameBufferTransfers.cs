@@ -40,6 +40,26 @@ internal sealed class FrameBufferTransfers : IDisposable
 
     internal Span<byte> GetWriteSpan(GraphBufferId buffer, ulong offset, int length)
     {
+        BufferUpload upload = ReserveUpload(buffer, offset, length);
+        _uploads.Value!.Add(upload);
+        return GetUploadSpan(upload);
+    }
+
+    internal void AddUploads(IEnumerable<BufferUpload> uploads) => _uploads.Value!.AddRange(uploads);
+
+    internal void AddUploadRanges(GraphBufferId buffer, List<BufferRange> ranges)
+    {
+        foreach (List<BufferUpload> uploads in _uploads.Values)
+            foreach (BufferUpload upload in uploads)
+                if (upload.Destination == buffer)
+                    ranges.Add(new BufferRange(upload.Offset, upload.Range.Size));
+    }
+
+    internal static Span<byte> GetUploadSpan(scoped in BufferUpload upload) =>
+        upload.Page.Mapping.Bytes.Slice(checked((int)upload.Range.Offset), checked((int)upload.Range.Size));
+
+    internal BufferUpload ReserveUpload(GraphBufferId buffer, ulong offset, int length)
+    {
         long size = ((long)length + 3) & ~3L;
         UploadPage? target = Volatile.Read(ref _uploadPage);
         ulong start;
@@ -63,8 +83,7 @@ internal sealed class FrameBufferTransfers : IDisposable
                 Volatile.Write(ref _uploadPage, target);
             }
         }
-        _uploads.Value!.Add(new BufferUpload(buffer, offset, target, new BufferRange(start, checked((ulong)length))));
-        return target.Mapping.Bytes.Slice(checked((int)start), length);
+        return new BufferUpload(buffer, offset, target, new BufferRange(start, checked((ulong)length)));
     }
 
     private UploadPage CreateUploadPage(ulong size)

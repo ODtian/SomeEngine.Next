@@ -32,7 +32,7 @@ public sealed record ClusterRenderDiagnostics(
 
 /// <summary>
 /// Non-cacheable assembly-local binding for one exact Cluster epoch. Constructing the binding is
-/// also the only operation that registers both Cluster timelines on a submitted render frame.
+/// also registers Cluster residency use on the submitted render frame.
 /// </summary>
 internal readonly ref struct ClusterRenderBinding
 {
@@ -48,16 +48,7 @@ internal readonly ref struct ClusterRenderBinding
         ResidentPageRanges = residency.ResidentPageRanges;
         BvhRange = residency.BvhRange;
         Publication = residency.Publication;
-        PropertyData = instanceProperties.PropertyData ??
-            throw new ArgumentException(
-                "Cluster rendering requires materialized instance-property data.",
-                nameof(instanceProperties));
-        InstancePropertyMetadata = instanceProperties.Metadata;
         InstancePropertyMetadataRange = instanceProperties.MetadataRange;
-        PropertyDataEndpoints = instanceProperties.PropertyDataEndpoints;
-        InstanceData = instanceProperties;
-        InstancePropertyMetadataEndpoints = instanceProperties.MetadataEndpoints;
-        InstanceGeneration = instanceProperties.Generation;
         DispatchExtent = instanceProperties.InstanceCount;
         ReadbackEpoch = readbackEpoch.IsValid
             ? readbackEpoch
@@ -81,19 +72,7 @@ internal readonly ref struct ClusterRenderBinding
 
     internal ClusterResidencyPublication? Publication { get; }
 
-    internal Buffer PropertyData { get; }
-
-    internal Buffer InstancePropertyMetadata { get; }
-
     internal BufferRange InstancePropertyMetadataRange { get; }
-
-    internal BufferBoundaryState[] PropertyDataEndpoints { get; }
-
-    internal RenderInstanceBatchView InstanceData { get; }
-
-    internal BufferBoundaryState[] InstancePropertyMetadataEndpoints { get; }
-
-    internal int InstanceGeneration { get; }
 
     internal int DispatchExtent { get; }
 
@@ -184,22 +163,12 @@ public sealed class ClusterRenderResources : IDisposable
         try
         {
             RenderTimeline residencyTimeline = coordinator.CreateTimeline(generationCount: 1);
-            if (!ReferenceEquals(residencyTimeline.Device, device) ||
-                !ReferenceEquals(instances.Timeline.Device, device))
+            if (!ReferenceEquals(residencyTimeline.Device, device))
             {
                 throw new ArgumentException(
                     "Cluster resources and their frame coordinator must use the same device domain.",
                     nameof(coordinator));
             }
-            if (!ReferenceEquals(instances.Timeline.Owner, residencyTimeline.Owner))
-            {
-                throw new ArgumentException(
-                    "Cluster residency and shared instance storage must use the same exact frame coordinator.",
-                    nameof(coordinator));
-            }
-            if (ReferenceEquals(residencyTimeline, instances.Timeline))
-                throw new InvalidOperationException("Cluster requires distinct residency and instance timelines.");
-
             residency = new ClusterResidency(
                 backend,
                 device,
@@ -236,8 +205,6 @@ public sealed class ClusterRenderResources : IDisposable
     internal RenderInstanceResources InstanceResources => _instances;
 
     internal RenderTimeline ResidencyTimeline => _residencyTimeline;
-
-    internal RenderTimeline InstanceTimeline => _instances.Timeline;
 
     internal int PublishedMeshCount => _meshes.PublishedMeshCount;
 
@@ -383,16 +350,13 @@ public sealed class ClusterRenderResources : IDisposable
         RenderFrameUseLease? frameUse = null;
         try
         {
-            // Validate the live batch and the exact shader ABI before registering either timeline
-            // with the frame. A rejected binding must not change frame submission state.
+            // Bind the live batch and shader layout before registering residency use.
             ClusterResidencyBinding residency = _residency.GetBinding();
             RenderInstanceBatchView batch = _instances.GetBatchView(
                 instanceProperties,
-                shaderContract,
-                frameUse);
-            frameUse = frame.AcquireUse([_residencyTimeline, _instances.Timeline]);
+                shaderContract);
+            frameUse = frame.AcquireUse([_residencyTimeline]);
             frameUse.RegisterGeneration(_residencyTimeline, 0);
-            frameUse.RegisterGeneration(_instances.Timeline, batch.Generation);
             ClusterRenderBinding binding = new(
                 residency,
                 batch,
@@ -407,10 +371,6 @@ public sealed class ClusterRenderResources : IDisposable
             ExitActiveOperation();
         }
     }
-
-    internal void StoreInstanceReadStates(int generation, ReadOnlySpan<BufferBoundaryState> properties,
-        ReadOnlySpan<BufferBoundaryState> metadata)
-        => _instances.StoreReadStates(generation, properties, metadata);
 
     /// <summary>Ingests all page-fault producers from one later host visit to a submitted frame.</summary>
     internal void IngestPageFaultReadbackBatch(
