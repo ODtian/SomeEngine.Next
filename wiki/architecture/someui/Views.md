@@ -123,7 +123,7 @@ public readonly partial record struct Card(string Title) : IView
 
 `IView.Measure` 是泛型类型登记使用的默认测量接缝，`ILayout` 重申为必需实现。
 布局视图以公开 `Measure` 或显式 `IView.Measure` 提供测量方法；
-类型表记录它的测量函数指针。协议接口、单遍测量、透明组合与程序集拆分见
+类型表记录它的测量函数指针。协议接口、测量与摆放、透明组合与程序集拆分见
 [[architecture/someui/Layout|Layout]]。
 
 ## Relations

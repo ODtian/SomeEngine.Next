@@ -5,7 +5,7 @@
 |---|---|---|
 | `SomeEngine.Views` | `IView`、`Scope`、`BuildTask`、`VersionCell`、`State<T>`、`ViewRebuildSystem`、`ElementTree` 层级域；共享布局协议、约束及节点数据 | ECS、ECS.Serialization、ECS.Systems、Job、Core（开发检查与几何） |
 | `SomeEngine.Views.Generators` | 同名函数生成、`[Composable]` 拦截、`[State]`、`[Component]`、分析器、CS1998 屏蔽、视图类型序列化注册 | — |
-| `SomeEngine.Layout` | `LayoutSystem`、`Absolute`、布局修饰；`Flex`、`Grid`、`Stack` 与缓存由后续票扩展 | Views |
+| `SomeEngine.Layout` | `LayoutSystem`、`Absolute`、`Flex`、`Grid`、`Stack` 与布局修饰；缓存由后续票扩展 | Views |
 | `SomeEngine.Animation` | 引擎级动画核心与属性动画（见 [[architecture/Animation|Animation]]）；FLIP 与 `.Animate` 在 Elements 中 | ECS、Job |
 | `SomeEngine.Typography` | 字形排版、字体、图集 | — |
 | `SomeEngine.Elements` | `Text`、`Image` 等元素、`Surface` 修饰，行为部件，内置控件与复合部件，输入与焦点系统，`.Animate` 衔接 | Views、Layout、Typography、Animation |
