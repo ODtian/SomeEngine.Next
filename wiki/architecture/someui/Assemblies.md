@@ -84,5 +84,33 @@ Compose 自动生成的视图与内容子视图进入同一注册生成流程，
 该检查点场景启用重建诊断，并从 `SomeEngine.Views.AotReference` 引用 Compose 视图，
 覆盖跨程序集生成 codec、相反注册顺序下的类型映射、恢复首帧与后续来源更新。
 
+## 评审修复验收（2026-10-04）
+
+本批起点为 `1af8f53d37842ad0ca7dce29e597093425dc0859`，合入集成分支的
+`220bca53e5941ae928d253d369c61f20e4c6837f`；最终实现提交为
+`74986cc7e84176fe1878ad1f33222aac908b0054`。
+公共行为覆盖父构建失败后的输出、依赖、计算与参数消费恢复，Once 读回首帧，
+State / VersionCell / Memo 来源诊断，Compose 的引用程序集注册，以及完成层值和新 To 的连续呈现。
+
+各测试项目执行 `dotnet test tests/<项目>/<项目>.csproj -c Debug --nologo -v quiet`
+和对应的 `-c Release` 命令。ECS、系统与存档回归在 `d8260d13` 执行；后续合入的视图变更
+覆盖 Views、生成器和布局的完整回归，动画查询修改后重复其两种配置回归。
+
+| 项目 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Views.Tests | 259 | 230 |
+| SomeEngine.Views.Generators.Tests | 92 | 92 |
+| SomeEngine.Animation.Tests | 125 | 117 |
+| SomeEngine.ECS.Tests | 635 | 620 |
+| SomeEngine.ECS.Systems.Tests | 298 | 298 |
+| SomeEngine.ECS.Serialization.Tests | 169 | 169 |
+| SomeEngine.Layout.Tests | 50 | 48 |
+
+Windows x64 原生验收沿 `just views-aot win-x64`、`just ecs-aot win-x64` 的发布与执行命令运行，
+两项均生成原生代码并成功退出。Views 的两个独立进程将面板编号从 1 映射为 5，
+检查点读回后的首帧结构、Once 输出、引用程序集 Compose 输出及后续依赖更新通过。
+ECS 原生场景同时验证完成层值、后启动的权重动画、新 To 的完整和部分权重连续性；
+完整默认动画系统预热 512 帧、采样 128 帧，当前线程托管分配为 0 字节。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · ADR 0011 · ADR 0013
