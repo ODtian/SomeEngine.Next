@@ -40,6 +40,8 @@ public record struct Flex(Axis Direction, float Gap = 0, Align MainAlign = Align
             FlexValidation.CheckItem(in item);
             Box box = pass.Has<Box>(child) ? pass.Read<Box>(child) : default;
             var available = new Constraints(default, ToSize(float.PositiveInfinity, CrossSize(constraints.Max)));
+            if (!float.IsNaN(item.Basis))
+                available = new Constraints(ToSize(item.Basis, 0), ToSize(item.Basis, CrossSize(constraints.Max)));
             Size size = pass.Measure(child, in available);
             float basis = float.IsNaN(item.Basis) ? MainSize(size) : Math.Clamp(item.Basis, MainSize(box.Min), MainSize(box.Max));
             items[index] = new MeasuredItem(child, item, box, size, basis);

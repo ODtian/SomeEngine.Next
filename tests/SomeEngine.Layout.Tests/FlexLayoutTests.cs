@@ -10,6 +10,20 @@ namespace SomeEngine.Layout.Tests;
 public sealed partial class FlexLayoutTests
 {
     [Fact]
+    public void ExplicitBasisProvidesFiniteConstraintsToAUserLayout()
+    {
+        using var frames = new LayoutFrames();
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(400, 100) });
+        Entity root = Views.Views.Spawn(frames.World, canvas, new BasisFillRow());
+        frames.Frame();
+        Entity row = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, row).ToArray();
+
+        Assert.Equal(new Rect(0, 0, 300, 100), frames.World.Read<LayoutRect>(children[0]).Value);
+        Assert.Equal(new Rect(300, 0, 100, 50), frames.World.Read<LayoutRect>(children[1]).Value);
+    }
+
+    [Fact]
     public void ShrinkingAChildUpdatesItsContentHeightAndTheAutomaticRowHeight()
     {
         using var frames = new LayoutFrames();
@@ -317,6 +331,25 @@ public sealed partial class FlexLayoutTests
             }
             return default;
         }
+    }
+
+    private readonly record struct BasisFillRow : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Row().Content())
+            {
+                Scope.View(new AvailableSize(), 1).Basis(0).Grow();
+                Scope.View(new Absolute(), 2).Size(100, 50);
+            }
+            return default;
+        }
+    }
+
+    private readonly record struct AvailableSize : ILayout, IComponent
+    {
+        public BuildTask Build() => default;
+        public Size Measure(ref LayoutPass pass, in Constraints constraints) => constraints.Max;
     }
 
     private readonly record struct ReflowRow : IView, IComponent
