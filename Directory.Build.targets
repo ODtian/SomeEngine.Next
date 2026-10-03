@@ -22,4 +22,15 @@
       <_Parameter2>$(EngineTestCategory)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
+  <Target Name="BuildTestRuleChecker">
+    <MSBuild Projects="$(SomeEngineRepositoryRoot)tools/TestRules/SomeEngine.TestRules.csproj"
+             Targets="Restore;Build" Properties="Configuration=$(Configuration)"
+             RemoveProperties="TargetFramework;TargetFrameworks;RuntimeIdentifier;SelfContained;PublishAot" />
+  </Target>
+  <Target Name="CheckTestRules" BeforeTargets="VSTest" DependsOnTargets="BuildTestRuleChecker" Condition="'$(IsTestProject)' == 'true'">
+    <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/TestRules/bin/$(Configuration)/net10.0/SomeEngine.TestRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(AssemblyName)&quot;" />
+  </Target>
+  <Target Name="ReportTestRuleViolations" DependsOnTargets="BuildTestRuleChecker" Condition="'$(IsTestProject)' == 'true'">
+    <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/TestRules/bin/$(Configuration)/net10.0/SomeEngine.TestRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(AssemblyName)&quot; --report" />
+  </Target>
 </Project>
