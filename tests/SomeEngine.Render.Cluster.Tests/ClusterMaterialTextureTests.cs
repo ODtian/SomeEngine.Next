@@ -73,10 +73,10 @@ public sealed class ClusterMaterialTextureTests
             Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), width, height));
         using var extraction = new RenderExtractionSystems(world, new MeshRenderExtractor());
         using var renderDevice = new RenderDevice(backend, device);
-        using var coordinator = new RenderFrameCoordinator(renderDevice);
-        var instances = new RenderInstanceStorageSystem(backend, device, coordinator, world,
+        var dataLock = new RenderDataLock();
+        var instances = new RenderInstanceStorageSystem(backend, device, world,
             ClusterRenderFeature.InstanceLayout, new RenderInstanceOptions { RowCapacity = 4, BatchCapacity = 4 });
-        var cluster = new ClusterRenderResources(backend, device, coordinator, world, instances,
+        var cluster = new ClusterRenderResources(backend, device, world, instances,
             new ClusterRenderOptions { Residency = new ClusterResidencyOptions
                 { PageHeapCapacityBytes = 1048576, BvhCapacityBytes = 65536, PageFaultCapacity = 16 } });
         var assignments = new ClusterMaterialAssignments();
@@ -110,8 +110,8 @@ public sealed class ClusterMaterialTextureTests
         {
             Assert.True(graph.TryOpenNextFrame(out var initializationFrame, TimeSpan.FromSeconds(10)));
             using var initializationResources = initializationFrame;
-            Assert.True(coordinator.TryBeginPrepare(out var initialize));
-            using (initialize) { prepare.Update(initialize, initializationFrame); initialize.Commit(); }
+            Assert.True(dataLock.TryBeginPrepare(out var initialize));
+            using (initialize) { prepare.Update(initialize, initializationFrame); }
             initializationFrame.Dispose();
             frameSystems.Initialize();
             GraphTextureInput output;
@@ -153,17 +153,16 @@ public sealed class ClusterMaterialTextureTests
                 extraction.Extract(game);
                 Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
                 using var nextFrameResources = nextFrame;
-                Assert.True(coordinator.TryBeginPrepare(out var update));
+                Assert.True(dataLock.TryBeginPrepare(out var update));
                 using (update)
                 {
                     prepare.ApplyExtraction(update);
                     await cluster.PrepareMeshesAsync();
                     streaming.Pump();
                     prepare.Update(update, nextFrame);
-                    update.Commit();
                 }
                 ClusterPipelineOutputs outputs = pipeline.ReconcileGraph();
-                Assert.True(coordinator.TryBeginFrame(out var frame));
+                Assert.True(dataLock.TryBeginRead(out var frame));
                 using (frame)
                 using (RenderGraphFrame commands = graph.BeginFrame(nextFrame))
                 {
@@ -171,7 +170,8 @@ public sealed class ClusterMaterialTextureTests
                     commands.SetTextureInput(output, outputs.MaterialColor);
                     commands.Execute(completions);
                     QueueCompletion[] used = completions.Where(static completion => completion != default).ToArray();
-                    frame.Complete(used);
+                    renderDevice.TrackSubmission(used);
+                    frame.Dispose();
                     foreach (QueueCompletion completion in used)
                         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
                 }
@@ -191,13 +191,12 @@ public sealed class ClusterMaterialTextureTests
         {
             graph.Dispose();
             frameSystems.Dispose();
-            Assert.True(coordinator.TryBeginPrepare(out var shutdown));
+            Assert.True(dataLock.TryBeginPrepare(out var shutdown));
             using (shutdown)
             {
                 prepare.Shutdown(shutdown);
                 cluster.Shutdown(shutdown);
                 instances.Shutdown(shutdown);
-                shutdown.Commit();
             }
             prepare.Dispose();
             cluster.Dispose();

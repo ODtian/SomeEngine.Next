@@ -200,12 +200,12 @@ public sealed class ClusterRenderingTests(Xunit.Abstractions.ITestOutputHelper t
             Matrix4x4.CreatePerspectiveFieldOfView(1, (float)width / height, 0.1f, 100), checked((uint)width), checked((uint)height)));
         using var extraction = new RenderExtractionSystems(world, new MeshRenderExtractor());
         using var renderDevice = new RenderDevice(backend, device);
-        using var coordinator = new RenderFrameCoordinator(renderDevice);
-        var instances = new RenderInstanceStorageSystem(backend, device, coordinator, world,
+        var dataLock = new RenderDataLock();
+        var instances = new RenderInstanceStorageSystem(backend, device, world,
             ClusterRenderFeature.InstanceLayout, new RenderInstanceOptions
             { RowCapacity = shadeColor ? Math.Max(16, (extraMaterialCount + 2) * 3) : 2,
                 BatchCapacity = shadeColor ? 16 : 2 });
-        var cluster = new ClusterRenderResources(backend, device, coordinator, world, instances,
+        var cluster = new ClusterRenderResources(backend, device, world, instances,
             new ClusterRenderOptions { Residency = new ClusterResidencyOptions
             { PageHeapCapacityBytes = streamedGeometry ? 262144u : 1048576u,
                 BvhCapacityBytes = 65536, PageFaultCapacity = 16 } });
@@ -241,8 +241,8 @@ public sealed class ClusterRenderingTests(Xunit.Abstractions.ITestOutputHelper t
         {
             Assert.True(graph.TryOpenNextFrame(out var initializationFrame, TimeSpan.FromSeconds(10)));
             using var initializationResources = initializationFrame;
-            Assert.True(coordinator.TryBeginPrepare(out var preparation));
-            using (preparation) { prepare.Update(preparation, initializationFrame); preparation.Commit(); }
+            Assert.True(dataLock.TryBeginPrepare(out var preparation));
+            using (preparation) { prepare.Update(preparation, initializationFrame); }
             frameSystems.Initialize();
             ClusterPipelineOutputs outputs = shadeColor ? default : pipeline.ReconcileGraph();
             GraphPassId readbackPass;
@@ -278,7 +278,7 @@ public sealed class ClusterRenderingTests(Xunit.Abstractions.ITestOutputHelper t
                 edit.OrderAfter(readbackPass, outputs.Geometry.CompletePass);
                 edit.Commit();
             }
-            Assert.True(coordinator.TryBeginFrame(out var canceled));
+            Assert.True(dataLock.TryBeginRead(out var canceled));
             using (canceled)
             using (RenderGraphFrame candidate = graph.BeginFrame(initializationFrame))
                 frameSystems.Update(canceled, candidate);
@@ -406,7 +406,7 @@ public sealed class ClusterRenderingTests(Xunit.Abstractions.ITestOutputHelper t
                 extraction.Extract(mainWorld);
                 Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
                 using var nextFrameResources = nextFrame;
-                Assert.True(coordinator.TryBeginPrepare(out var update));
+                Assert.True(dataLock.TryBeginPrepare(out var update));
                 using (update)
                 {
                     prepare.ApplyExtraction(update);
@@ -422,23 +422,22 @@ public sealed class ClusterRenderingTests(Xunit.Abstractions.ITestOutputHelper t
                         if (feedbackState.ConsumedFrames != 0) Assert.True(feedbackState.LastEpoch > 0);
                     }
                     prepare.Update(update, nextFrame);
-                    update.Commit();
                 }
                 ulong structureVersion = graph.StructureVersion;
                 pipeline.ReconcileGraph();
                 if (changeGeometry && iteration == 8) Assert.Equal(structureVersion, graph.StructureVersion);
                 if (applyChanges && shadeColor && iteration is 6 or 12)
                 {
-                    Assert.True(coordinator.TryBeginFrame(out var discarded));
+                    Assert.True(dataLock.TryBeginRead(out var discarded));
                     using (discarded)
                     using (RenderGraphFrame candidate = graph.BeginFrame(nextFrame))
                         frameSystems.Update(discarded, candidate);
                     Assert.True(graph.TryOpenNextFrame(out nextFrame, TimeSpan.FromSeconds(10)));
-                    Assert.True(coordinator.TryBeginPrepare(out var rewrite));
-                    using (rewrite) { prepare.Update(rewrite, nextFrame); rewrite.Commit(); }
+                    Assert.True(dataLock.TryBeginPrepare(out var rewrite));
+                    using (rewrite) { prepare.Update(rewrite, nextFrame); }
                 }
                 using var recordingResources = nextFrame;
-                Assert.True(coordinator.TryBeginFrame(out var frame));
+                Assert.True(dataLock.TryBeginRead(out var frame));
                 using (frame)
                 using (RenderGraphFrame commands = graph.BeginFrame(nextFrame))
                 {
@@ -447,7 +446,8 @@ public sealed class ClusterRenderingTests(Xunit.Abstractions.ITestOutputHelper t
                     int submitted = commands.Execute(completions);
                     QueueCompletion[] accepted = completions.Where(value => value != default).ToArray();
                     Assert.Equal(submitted, accepted.Length);
-                    frame.Complete(accepted);
+                    renderDevice.TrackSubmission(accepted);
+                    frame.Dispose();
                     foreach (QueueCompletion completion in accepted)
                     {
                         WaitStatus status = backend.WaitCpu(completion, TimeSpan.FromSeconds(20));
@@ -581,13 +581,12 @@ public sealed class ClusterRenderingTests(Xunit.Abstractions.ITestOutputHelper t
             }
             graph.Dispose();
             frameSystems.Dispose();
-            Assert.True(coordinator.TryBeginPrepare(out var shutdown));
+            Assert.True(dataLock.TryBeginPrepare(out var shutdown));
             using (shutdown)
             {
                 prepare.Shutdown(shutdown);
                 cluster.Shutdown(shutdown);
                 instances.Shutdown(shutdown);
-                shutdown.Commit();
             }
             prepare.Dispose();
             cluster.Dispose();

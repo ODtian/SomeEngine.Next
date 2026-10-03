@@ -65,7 +65,7 @@ public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixtu
 
         void Update()
         {
-            Assert.True(graphics.Coordinator.TryBeginFrame(out var frame));
+            Assert.True(graphics.DataLock.TryBeginRead(out var frame));
             using (frame)
             using (var commands = graph.BeginFrame()) systems.Update(frame, commands);
         }

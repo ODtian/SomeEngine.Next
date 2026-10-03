@@ -24,14 +24,12 @@ public sealed class RenderInstanceStorageSystem : IDisposable
     public RenderInstanceStorageSystem(
         IGraphicsBackend backend,
         Device device,
-        RenderFrameCoordinator coordinator,
         RenderWorld world,
         RenderInstancePropertyLayout layout,
         RenderInstanceOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(coordinator);
         _world = world ?? throw new ArgumentNullException(nameof(world));
         ArgumentNullException.ThrowIfNull(layout);
 
@@ -143,8 +141,8 @@ public sealed class RenderInstanceStorageSystem : IDisposable
         write.ReleaseBatch(batch);
     }
 
-    internal RenderInstanceStorageView OpenRead(RenderFrame frame, scoped ref RenderGraphFrame graph) =>
-        Storage.OpenRead(frame, ref graph);
+    internal RenderInstanceStorageView OpenRead(RenderReadScope readScope, scoped ref RenderGraphFrame graph) =>
+        Storage.OpenRead(readScope, ref graph);
 
     public RenderInstanceDiagnostics CaptureDiagnostics() => Storage.CaptureDiagnostics();
 

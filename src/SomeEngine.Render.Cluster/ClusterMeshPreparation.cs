@@ -26,8 +26,6 @@ internal sealed class ClusterMeshCache
 
     internal ClusterResidency Residency => _residency;
 
-    internal RenderTimeline Timeline => _residency.Timeline;
-
     internal ClusterEpochId EpochId => _residency.EpochId;
 
     internal int PublishedMeshCount => _residency.PublishedMeshCount;

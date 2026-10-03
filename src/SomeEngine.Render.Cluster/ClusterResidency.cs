@@ -81,18 +81,10 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     internal ClusterResidency(
         IGraphicsBackend backend,
         Device device,
-        RenderTimeline timeline,
         ClusterResidencyOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(timeline);
-        if (!ReferenceEquals(timeline.Device, device))
-        {
-            throw new ArgumentException(
-                "Cluster residency and its render timeline must use the same device domain.",
-                nameof(timeline));
-        }
         ClusterResidencyOptions selected = options ?? new ClusterResidencyOptions();
         selected.Validate();
 
@@ -125,7 +117,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             _faults = new PageFaults(meshes.EpochId, selected.PageFaultCapacity);
             _pageFaultCapacity = selected.PageFaultCapacity;
             _disposeTimeout = selected.DisposeTimeout;
-            Timeline = timeline;
         }
         catch
         {
@@ -160,8 +151,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             throw;
         }
     }
-
-    internal RenderTimeline Timeline { get; }
 
     internal ClusterEpochId EpochId => _meshes.EpochId;
 

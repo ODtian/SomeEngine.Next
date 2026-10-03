@@ -20,9 +20,12 @@ RenderDevice 是一个 Graphics.Device 对应的 render-side 长期设备状态�
 ## Submitted work and resource replacement
 
 `TrackSubmission` 登记实际提交的队列完成点，同一队列保留最大值。
+Runtime 在图执行成功后直接登记返回的完成点；部分提交的失败路径登记已接受的完成点。
 `RetireAfterTrackedSubmissions` 将替换资源关联到调用时已登记的提交；
 `CollectCompleted` 在相关队列完成后释放资源。调用方停止资源的后续使用，再登记其回收。
-关闭阶段使用 `WaitForTrackedSubmissions(timeout)` 排空设备上已登记的工作。
+正常帧在打开下一帧后调用 `CollectCompleted`，同时回收完成的替换资源。
+关闭阶段使用 `WaitForTrackedSubmissions(timeout)` 排空设备上已登记的工作，再取得 prepare
+写入权执行业务资源关闭；释放 prepare 后完成业务对象的销毁。
 
 CPU 数据访问由 [[Frame-CPU-Overlap]] 中的 `RenderDataLock` 表达；图的上传页、回读页与帧
 完成边界由 RenderGraph 持有。GPU 完成只控制资源复用与回收，CPU 读写权限只由作用域控制。
