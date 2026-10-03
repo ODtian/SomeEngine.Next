@@ -293,7 +293,6 @@ public class TransformSystemTests
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => TransformHierarchy.SetParentInPlace(_world.World, child, newParent));
 
-        Assert.Contains("cannot be represented by QVVS", error.Message);
         Assert.Equal(oldParent, Hierarchy.GetParent(_world.World, child));
         Assert.Equal(previousChildren, Hierarchy.GetChildren(_world.World, oldParent).ToArray());
         Assert.Empty(Hierarchy.GetChildren(_world.World, newParent));
@@ -341,7 +340,6 @@ public class TransformSystemTests
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => TransformHierarchy.SetParentInPlace(_world.World, child, newParent));
 
-        Assert.Equal("injected LocalTransform hook fault", error.Message);
         Assert.Equal(oldParent, Hierarchy.GetParent(_world.World, child));
         Assert.Equal(
             new[] { first, child, last },

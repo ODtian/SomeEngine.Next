@@ -3,7 +3,7 @@ namespace SomeEngine.Job.Tests;
 public sealed class CompletionNotificationTests
 {
     [Fact]
-    public async Task SynchronousReadProceedsAfterCpuWorkWhileChildFenceIsIncomplete()
+    public async Task ResourceReaderProceedsAfterCpuWorkWhileChildFenceIsIncomplete()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 1 });
         JobResource resource = JobSystem.CreateResource("CPU data with outstanding child fence");
@@ -14,14 +14,10 @@ public sealed class CompletionNotificationTests
         JobHandle producer = JobSystem.Schedule(new SubmitFence(fence, entered, release),
             JobResourceAccess.Write(resource));
         Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-        Task reader = Task.Run(() =>
-        {
-            using var access = JobSystem.AcquireSynchronousAccess(JobResourceAccess.Read(resource));
-            reading.Set();
-        });
+        int[] values = [0];
+        JobHandle reader = JobSystem.Schedule(new ReadValue(values, reading), JobResourceAccess.Read(resource));
         try
         {
-            Assert.False(reading.Wait(TimeSpan.FromMilliseconds(50)));
             release.Set();
             Assert.True(reading.Wait(TimeSpan.FromSeconds(5)));
             Assert.False(producer.IsCompleted);
@@ -31,9 +27,15 @@ public sealed class CompletionNotificationTests
             release.Set();
             fence.Signal();
             producer.Complete();
-            await reader.WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Run(reader.Complete).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(1, values[0]);
             JobSystem.ReleaseResource(resource);
         }
+    }
+
+    private readonly struct ReadValue(int[] values, ManualResetEventSlim reading) : IJob
+    {
+        public void Execute() { values[0] = 1; reading.Set(); }
     }
 
     [Theory]

@@ -120,9 +120,7 @@ public sealed class SlangIntegrationTests
         Assert.Equal(definition.Id, first.Id);
         Assert.Equal(first.Id, second.Id);
         Assert.NotNull(first.GetBlock<ShaderBlock>().ImportTrace);
-        Assert.Contains(
-            ShaderSourceBlock.SerializedSourceKey(0),
-            first.GetBlock<ShaderSourceBlock>().ContentKeys);
+        Assert.False((await first.GetBlock<ShaderSourceBlock>().ReadBytesAsync(ShaderSourceBlock.SerializedSourceKey(0))).IsEmpty);
         Assert.Equal(
             EntryHash(firstShader, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute),
             EntryHash(secondShader, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute));

@@ -2,30 +2,6 @@
 # Rules: wiki/harness/Behavior-Checks.md. Remove entries as each test project migrates.
 # Columns separated by TAB: rule, repository-relative path, member, source tokens.
 
-[SomeEngine.Assets.Consumer.Tests]
-TEST002	tests/SomeEngine.Assets.Consumer.Tests/AssetCapabilityBehaviorTests.cs	AssetCapabilityBehaviorTests.MissingConstructorServicesReportTheMicrosoftDiResolutionFailure	Assert . Contains ( nameof ( CapabilityDependency ) , error . Message )
-
-[SomeEngine.Assets.Tests]
-TEST001	src/SomeEngine.Assets.Importers/AssemblyInfo.cs	assembly	InternalsVisibleTo ( "SomeEngine.Assets.Tests" )
-TEST001	src/SomeEngine.Assets/AssemblyInfo.cs	assembly	InternalsVisibleTo ( "SomeEngine.Assets.Tests" )
-TEST002	tests/SomeEngine.Assets.Tests/AssetFileOperationsTests.cs	AssetFileOperationsTests.RebuildReportsDuplicateIdentityWithBothPathsAndKeepsThePreviousDirectory	Assert . Contains ( "first.asset" , error . Message )
-TEST002	tests/SomeEngine.Assets.Tests/AssetFileOperationsTests.cs	AssetFileOperationsTests.RebuildReportsDuplicateIdentityWithBothPathsAndKeepsThePreviousDirectory	Assert . Contains ( "second.asset" , error . Message )
-TEST002	tests/SomeEngine.Assets.Tests/AssetFileOperationsTests.cs	AssetFileOperationsTests.DuplicateSourceIdentityWithoutOutputsCannotReplaceThePreviousDirectory	Assert . Contains ( "first.gltf" , error . Message )
-TEST002	tests/SomeEngine.Assets.Tests/AssetFileOperationsTests.cs	AssetFileOperationsTests.DuplicateSourceIdentityWithoutOutputsCannotReplaceThePreviousDirectory	Assert . Contains ( "second.gltf" , error . Message )
-TEST002	tests/SomeEngine.Assets.Tests/Assets/ShaderDefinitionTests.cs	ShaderDefinitionTests.ExternalIncludesAreTrackedAndFailedBuildPreservesThePreviousOutput	Assert . Contains ( "Main.slang" , failure . Message )
-TEST002	tests/SomeEngine.Assets.Tests/Assets/TextureMipTileStreamingTests.cs	TextureMipTileStreamingTests.TextureCreationRejectsIncompleteBootstrapCoverage	Assert . Contains ( "missing layer 1" , error . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Assets.Tests/ImportContextTests.cs	ImportContextTests.CompetingBlockProducersAreRejectedBeforeEitherRuns	Assert . Contains ( "competing" , error . Message )
-TEST002	tests/SomeEngine.Assets.Tests/ImportContextTests.cs	ImportContextTests.BlockDependencyCycleFailsInsteadOfHanging	Assert . Contains ( "cycle" , error . Message )
-TEST002	tests/SomeEngine.Assets.Tests/ImportContextTests.cs	ImportContextTests.ParallelAssetRootsReportTheirCycleInsteadOfDeadlocking	Assert . Contains ( "cycle" , error . Message )
-
-[SomeEngine.Core.Tests]
-TEST002	tests/SomeEngine.Core.Tests/Collections/InlineListTests.cs	InlineListTests.InlineList_InvalidStorageWithoutInlineArray_FailsFast	Assert . Contains ( "InlineArrayAttribute" , ex . Message )
-TEST002	tests/SomeEngine.Core.Tests/Collections/InlineListTests.cs	InlineListTests.InlineList_ElementTypeMismatch_FailsFast	Assert . Contains ( "exactly one instance field" , ex . Message )
-TEST002	tests/SomeEngine.Core.Tests/ECS/GameWorldLifecycleTests.cs	GameWorldLifecycleTests.Dispose_StillClosesWorldWhenSystemDestroyFaults	Assert . Contains ( error . InnerExceptions , exception => exception . Message == "engine-destroy-fault" )
-TEST002	tests/SomeEngine.Core.Tests/ECS/GameWorldLifecycleTests.cs	GameWorldLifecycleTests.DisposeFromJobCallback_RejectsBeforeMutatingGameWorldState	Assert . Contains ( "Job callback" , error . Message , StringComparison . Ordinal )
-TEST002	tests/SomeEngine.Core.Tests/ECS/TransformSystemTests.cs	TransformSystemTests.SetParentInPlace_UnrepresentableShearLeavesAllPublishedStateUnchanged	Assert . Contains ( "cannot be represented by QVVS" , error . Message )
-TEST002	tests/SomeEngine.Core.Tests/ECS/TransformSystemTests.cs	TransformSystemTests.SetParentInPlace_ComponentFaultRestoresOrderedSiblingIndexAndTransforms	Assert . Equal ( "injected LocalTransform hook fault" , error . Message )
-
 [SomeEngine.Diagnostics.Tests]
 
 [SomeEngine.ECS.Benchmarks.Tests]
@@ -159,44 +135,11 @@ TEST002	tests/SomeEngine.Graphics.Direct3D12.Tests/WarpWorkGraphTests.cs	WarpWor
 
 [SomeEngine.Graphics.Vulkan.Tests]
 
-[SomeEngine.Job.Dots.Tests]
-TEST002	tests/SomeEngine.Job.Dots.Tests/DotsConsumerTests.cs	DotsConsumerTests.AsyncVoidJobForIsRejectedBeforeSchedulingOrExecution	Assert . Contains ( "async" , error . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Job.Dots.Tests/DotsConsumerTests.cs	DotsConsumerTests.AsyncVoidJobChunkIsRejectedBeforeReadingItsSource	Assert . Contains ( "async" , error . Message , StringComparison . OrdinalIgnoreCase )
-
-[SomeEngine.Job.Tests]
-TEST001	src/SomeEngine.Job/SomeEngine.Job.csproj	assembly	<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute"><_Parameter1>SomeEngine.Job.Tests</_Parameter1></AssemblyAttribute>
-TEST002	tests/SomeEngine.Job.Tests/AsyncJobRejectionTests.cs	AsyncJobRejectionTests.AsyncVoidJobIsRejectedBeforeResourceOrSchedulerMutation	Assert . Contains ( "async" , error . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Job.Tests/AsyncJobRejectionTests.cs	AsyncJobRejectionTests.AsyncVoidJobIsRejectedBeforeResourceOrSchedulerMutation	Assert . Contains ( "synchronously" , error . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Job.Tests/CurrentAccessCapabilityTests.cs	CurrentAccessCapabilityTests.SingleWorkItemRequirement_RejectsAMultiBatchParallelOwner	Assert . Contains ( "single-work-item" , error . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Job.Tests/DependencyTests.cs	DependencyTests.FaultedDependencyPreventsDependentExecutionAndPropagatesFault	Assert . Equal ( "dependency failed" , ex . Message )
-TEST002	tests/SomeEngine.Job.Tests/DependencyTests.cs	DependencyTests.CleanupRunsAfterFaultedDependencyAndCanRethrowIt	Assert . Equal ( "dependency failed" , ex . Message )
-TEST002	tests/SomeEngine.Job.Tests/DependencyTests.cs	DependencyTests.ObservingDependencyFailuresAllowsFurtherWorkAndCleanShutdown	Assert . Equal ( "dependency failed" , Assert . Throws < InvalidOperationException > ( output . Complete ) . Message )
-TEST002	tests/SomeEngine.Job.Tests/ExternalFenceBridgeTests.cs	ExternalFenceBridgeTests.ExternalContinuationRunsForFaultedHandle	Assert . Equal ( "external observer fault" , ex . Message )
-TEST002	tests/SomeEngine.Job.Tests/JobScopeTests.cs	JobScopeTests.ChildExceptionFaultsParentHandle	Assert . Equal ( "child failed" , ex . Message )
-TEST003	tests/SomeEngine.Job.Tests/JobSystemTests.cs	JobSystemTests.DependencyJob.Execute	Thread . Sleep ( 10 )
-TEST002	tests/SomeEngine.Job.Tests/ParallelDispatchTests.cs	ParallelDispatchTests.ParallelBatchCountExceedingQueueCapacityFailsBeforePreparingState	Assert . Contains ( "Job queue capacity exhausted" , ex . Message )
-TEST002	tests/SomeEngine.Job.Tests/PayloadLaneTests.cs	PayloadLaneTests.ManagedPayloadPolicyWarnsOrRejectsRefContainingJobs	Assert . Contains ( "managed payload policy" , ex . Message , StringComparison . OrdinalIgnoreCase )
-TEST002	tests/SomeEngine.Job.Tests/PerformanceHardeningTests.cs	PerformanceHardeningTests.QueueAndResourceCapacityExhaustionAreExplicit	Assert . Contains ( "queue capacity" , queueExhausted . Message )
-TEST002	tests/SomeEngine.Job.Tests/PerformanceHardeningTests.cs	PerformanceHardeningTests.QueueAndResourceCapacityExhaustionAreExplicit	Assert . Contains ( "Resource state capacity" , resourceExhausted . Message )
-TEST002	tests/SomeEngine.Job.Tests/PerformanceHardeningTests.cs	PerformanceHardeningTests.CompletionStateCapacityExhaustionIsExplicit	Assert . Contains ( "Completion state capacity" , exhausted . Message )
-TEST002	tests/SomeEngine.Job.Tests/PerformanceHardeningTests.cs	PerformanceHardeningTests.DependencyQueueCapacityFailureFaultsDependentHandleInsteadOfHanging	Assert . Contains ( "queue capacity" , ex . Message )
-TEST002	tests/SomeEngine.Job.Tests/PerformanceHardeningTests.cs	PerformanceHardeningTests.InvalidJobPriorityIsRejected	Assert . Contains ( "priority" , ex . Message )
-TEST002	tests/SomeEngine.Job.Tests/ResourceSafetyTests.cs	ResourceSafetyTests.FaultedExplicitDependencyCancelsDeferredResourceReservation	Assert . Equal ( "deferred dependency failed" , successorFault . Message )
-TEST002	tests/SomeEngine.Job.Tests/ResourceSafetyTests.cs	ResourceSafetyTests.FaultedExplicitDependencyCancelsDeferredResourceReservation	Assert . Equal ( "deferred dependency failed" , dependencyFault . Message )
-TEST002	tests/SomeEngine.Job.Tests/ResourceSafetyTests.cs	ResourceSafetyTests.FaultedResourceHazardOrdersButDoesNotCancelSuccessor	Assert . Equal ( "deferred dependency failed" , predecessorFault . Message )
-TEST003	tests/SomeEngine.Job.Tests/ResourceSafetyTests.cs	ResourceSafetyTests.ResourceJobs.NonAtomicIncrementJob.Execute	Thread . Sleep ( 1 )
-TEST002	tests/SomeEngine.Job.Tests/RuntimeSafetyTests.cs	RuntimeSafetyTests.RootAndChildFailuresAreObservableThroughTheirHandles	Assert . Equal ( "job failed" , Assert . Throws < InvalidOperationException > ( root . Complete ) . Message )
-TEST002	tests/SomeEngine.Job.Tests/RuntimeSafetyTests.cs	RuntimeSafetyTests.RootAndChildFailuresAreObservableThroughTheirHandles	Assert . Equal ( "job failed" , Assert . Throws < InvalidOperationException > ( parent . Complete ) . Message )
-TEST002	tests/SomeEngine.Job.Tests/RuntimeSafetyTests.cs	RuntimeSafetyTests.ShutdownReportsUnobservedFailuresAfterDrainingOtherWork	Assert . Contains ( error . InnerExceptions , exception => exception . Message == "job failed" )
-TEST002	tests/SomeEngine.Job.Tests/SynchronousResourceOwnerTests.cs	SynchronousResourceOwnerTests.RunningJobCannotAcquireANestedSynchronousOwner	Assert . Contains ( "running Job" , error . Message , StringComparison . Ordinal )
-
 [SomeEngine.Render.Cluster.Tests]
-TEST001	src/SomeEngine.Assets/AssemblyInfo.cs	assembly	InternalsVisibleTo ( "SomeEngine.Render.Cluster.Tests" )
 TEST002	tests/SomeEngine.Render.Cluster.Tests/ClusterAssetLoaderTests.cs	ClusterAssetLoaderTests.ClusterRenderAssetWithEmptyLastShaderReferenceFailsBeforeWriting	Assert . Contains ( "Asset" , error . Message , StringComparison . Ordinal )
 TEST002	tests/SomeEngine.Render.Cluster.Tests/ClusterAssetLoaderTests.cs	ClusterAssetLoaderTests.ClusterRenderAssetWithEmptyLastShaderReferenceFailsBeforeWriting	Assert . Contains ( "missing" , error . Message , StringComparison . OrdinalIgnoreCase )
 
 [SomeEngine.Render.Tests]
-TEST001	src/SomeEngine.Assets/AssemblyInfo.cs	assembly	InternalsVisibleTo ( "SomeEngine.Render.Tests" )
 TEST002	tests/SomeEngine.Render.Tests/RenderInstanceLayoutTests.cs	RenderInstanceLayoutTests.ComposeRejectsOnlyEncodingConflictsForTheSameKey	Assert . Contains ( "encoding" , conflict . Message , StringComparison . OrdinalIgnoreCase )
 TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_ApplyFaultKeepsPublishedRootUnchanged	Assert . Contains ( "intentional extraction apply fault" , error . Message , StringComparison . Ordinal )
 TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_LightModuleFaultRollsBackEarlierMeshModuleChanges	Assert . Contains ( "intentional light extraction fault" , error . Message , StringComparison . Ordinal )
@@ -209,7 +152,6 @@ TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldEx
 TEST002	tests/SomeEngine.Render.Tests/RenderWorldExtractorTests.cs	RenderWorldExtractorTests.Extract_RejectsAnotherRenderWorldAsTheMainWorld	Assert . Contains ( "requires a main World" , error . Message , StringComparison . Ordinal )
 
 [SomeEngine.RenderGraph.Tests]
-TEST001	src/SomeEngine.Assets/AssemblyInfo.cs	assembly	InternalsVisibleTo ( "SomeEngine.RenderGraph.Tests" )
 TEST002	tests/SomeEngine.RenderGraph.Tests/BufferRangeReadTests.cs	BufferRangeReadTests.SharedSparseReadsReuseAnalysisAndRetainUploadDependencies	Assert . Contains ( "RG4001" , failure )
 TEST002	tests/SomeEngine.RenderGraph.Tests/CountedBufferRangesTests.cs	CountedBufferRangesTests.DisjointRangesRequireReadersToRespectTheirBounds	Assert . Contains ( "RG4001" , failure )
 TEST002	tests/SomeEngine.RenderGraph.Tests/CountedBufferRangesTests.cs	CountedBufferRangesTests.DisjointRangesRequireReadersToRespectTheirBounds	Assert . Null ( failure )
