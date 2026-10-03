@@ -46,6 +46,48 @@ public static class Scope
         return ref current.World.ReadComponentReference<T>(entity);
     }
 
+    /// <summary>Returns a component copy that is compared and committed when the build completes.</summary>
+    /// <remarks>The reference remains valid through structural changes in this build.</remarks>
+    public static ref T Write<T>(Entity entity) where T : struct
+    {
+        ScopeData current = Current;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.Write requires table or sparse component {typeof(T).Name}.");
+        var key = (entity, ComponentId<T>.Value);
+        if (!current.ComponentCopies.TryGetValue(key, out ComponentCopy? copy))
+        {
+            T value = ComponentCopy<T>.HasComponent(current.World, entity)
+                ? current.World.ReadComponentData<T>(entity)
+                : default;
+            copy = new ComponentCopy<T>(entity, value);
+            current.ComponentCopies.Add(key, copy);
+        }
+        return ref ((ComponentCopy<T>)copy).Value;
+    }
+
+    /// <summary>Reads a component dependency and returns its copy for writing, adding default data when required.</summary>
+    public static ref T ReadWrite<T>(Entity entity) where T : struct
+    {
+        Ensure<T>(entity);
+        Read<T>(entity);
+        return ref Write<T>(entity);
+    }
+
+    /// <summary>Adds default component data when the entity first requires it.</summary>
+    public static void Ensure<T>(Entity entity) where T : struct
+    {
+        World world = Current.World;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.Ensure requires table or sparse component {typeof(T).Name}.");
+        if (ComponentCopy<T>.HasComponent(world, entity))
+            return;
+        T value = default;
+        if (default(T) is ISparseComponent)
+            world.AddSparse(entity, in value);
+        else
+            world.Add(entity, in value);
+    }
+
     /// <summary>Declares a child with key zero, or the surrounding Key scope's key.</summary>
     /// <remarks>
     /// Equal parameters overwrite the stored value while preserving its write version.
@@ -191,6 +233,7 @@ public static class Scope
         internal Entity Entity { get; } = entity;
         internal bool TrackReads { get; } = trackReads;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
+        internal Dictionary<(Entity Entity, ushort Component), ComponentCopy> ComponentCopies { get; } = new();
         internal int ChildIndex;
         internal ulong? KeyPrefix;
 #if DEBUG
@@ -207,6 +250,8 @@ public static class Scope
             var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Entity);
             for (int index = current.ChildIndex; index < children.Count; index++)
                 Hierarchy<ElementTree>.DestroySubtree(current.World, children[index]);
+            foreach (ComponentCopy copy in current.ComponentCopies.Values)
+                copy.Commit(current.World);
         }
 
         public void Dispose() => s_scopes!.Pop();

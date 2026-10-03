@@ -67,5 +67,27 @@
 `ReadDependencyTests.cs` 通过无头帧驱动、公开视图和组件数据显示历史验证父子顺序，
 并通过父视图改为声明空内容，验证成功构建后的子树释放与后续帧结果。
 
+## 同帧收敛实现（#10）
+
+`ViewRebuildSystem` 按轮次执行重建。每轮重新收集当前 World 的视图，
+筛选首次请求、参数或依赖版本变化的节点，按 `ElementTree` 深度从父到子执行。
+执行前继续复核存活状态与版本，所以父构建释放的节点自然退出，
+父构建中已消费最新参数和依赖版本的子构建保留结果。
+
+一轮中的提交推进 ECS 既有实体写版本。下一轮继续按读取时保存的版本拉取，
+因此自己读过的数据发生提交，以及两个计算互相改变来源，都能在当前帧继续重跑。
+候选为空时收敛；上一轮添加的节点与依赖也使用同一轮次规则。
+
+公开属性 `ViewRebuildSystem.IterationLimit` 配置每帧重建轮次上限，默认 `8`，
+开发检查要求正值。在最后一轮后再次比较版本，刚好收敛时正常完成；
+仍有失效节点时停止该帧重建，并通过 `Core.Diagnostics.DevelopmentCheck` 报告上限与节点。
+shipping 构建保留轮次上限，通过统一条件编译移除报告。
+下一帧使用已提交的数据和该次实际读取的依赖版本继续处理。
+
+公开验收：[BuildConvergenceTests](../../../tests/SomeEngine.Views.Tests/BuildConvergenceTests.cs)
+覆盖互相触发、配置上限、停止后的恢复与最后一轮收敛；
+[ComponentWriteTests](../../../tests/SomeEngine.Views.Tests/ComponentWriteTests.cs)
+通过计数按钮的显示数据验证 `Read` + `Write` 和 `ReadWrite` 的同帧结果。
+
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]

@@ -47,7 +47,7 @@ public static class Scope
 
 `Scope` 在取出当前作用域时调用 `Core.Diagnostics.DevelopmentCheck.Require`，
 开发构建中的作用域外调用会报告需要活动构建。shipping 编译按统一开发检查规则移除该调用。
-写入、其它依赖来源与异步入口按对应任务票继续实现。
+后续读取与写入实现见下文；其它依赖来源与异步入口按对应任务票继续实现。
 
 ## 读取作用域实现（#9）
 
@@ -59,6 +59,35 @@ public static class Scope
 `Scope.Read<T>(Entity)` 只约束 `struct`，按 `default(T) is ISparseComponent` 选择存储。
 它返回源组件的 `ref readonly T`，调用方在后续结构修改前消费这份引用。
 首次读取造成依赖缓冲添加时，先完成登记，再取得组件引用，使该次读取使用当前存储位置。
+
+## 组件写入实现（#10）
+
+`Scope.Write<T>(Entity)`、`Scope.ReadWrite<T>(Entity)` 与 `Scope.Ensure<T>(Entity)`
+均只约束 `struct`，按 `default(T) is ISparseComponent` 选择存储。
+
+`Write` 在当前计算中按实体和组件类型取得唯一的临时副本。已有组件复制当前值，
+缺失组件使用默认值；重复取得的引用指向同一副本。副本由当前作用域持有，
+所以表格迁移、sparse 数组扩展、继续取得其它写引用和嵌套子构建都保持引用有效。
+`Write` 的取值与写入保持仅取值状态，读取依赖通过 `Read` 或 `ReadWrite` 登记。
+
+成功构建完成子节点声明后，逐项与提交时的当前组件值比较。
+已有且相等的值保留实体写版本和组件类型写版本；不同值通过公开
+`World.Replace` / `ReplaceSparse` 提交，缺失组件通过 `World.Add` / `AddSparse` 添加，
+包括声明默认值的情况。每个计算单独完成自己的提交，嵌套子计算返回后恢复父计算的副本。
+构建抛出异常时释放该次副本，已有组件保持提交前的值。
+
+`ReadWrite` 先通过 `Ensure` 添加缺失组件，再执行 `Read` 登记当前版本，
+最后返回 `Write` 的副本引用。`Ensure` 即时添加缺失的默认组件，
+已有组件保留值与写版本。它适用于输入系统等其它系统持有数据的声明。
+
+现有 ECS 的 `Add`、`Replace`、`AddSparse`、`ReplaceSparse` 与 `HasSparse`
+接受 `struct` 泛型以支持这一存储选择；表格与 sparse 标记要求由统一开发检查报告。
+提交复用各公开入口的访问权限、组件约束、钩子和版本规则。
+
+实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
+[组件副本](../../../src/SomeEngine.Views/ComponentCopy.cs)。
+公开验收：[ComponentWriteTests](../../../tests/SomeEngine.Views.Tests/ComponentWriteTests.cs)、
+[共享写入验收](../../../tests/SomeEngine.Views.Tests/ComponentWriteChecks.cs)。
 
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]

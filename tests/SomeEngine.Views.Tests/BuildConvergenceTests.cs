@@ -1,0 +1,94 @@
+using SomeEngine.ECS;
+using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Entities;
+
+namespace SomeEngine.Views.Tests;
+
+public sealed class BuildConvergenceTests
+{
+    [Theory]
+    [InlineData(2)]
+    [InlineData(8)]
+    public void MutualComponentWritesStopAtTheConfiguredLimitAndCanRecover(int iterationLimit)
+    {
+        using var frames = new HeadlessFrameDriver(iterationLimit);
+        Entity enabled = frames.World.CreateEntity(new FeedbackEnabled(true));
+        Entity source = frames.World.CreateEntity(new Number(0));
+        frames.World.AddSparse(source, new SparseNumber(0));
+        Views.Spawn(frames.World, Entity.Null, new TableFeedback(source, enabled));
+        Views.Spawn(frames.World, Entity.Null, new SparseFeedback(source, enabled));
+
+#if DEBUG
+        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
+        Assert.Contains($"iteration limit of {iterationLimit}", error.Message, StringComparison.OrdinalIgnoreCase);
+#else
+        frames.Frame();
+#endif
+
+        int table = frames.World.Read<Number>(source).Value;
+        int sparse = frames.World.ReadSparse<SparseNumber>(source).Value;
+        Assert.True(table > 0);
+        Assert.True(sparse > 0);
+        uint tableVersion = frames.World.WriteVersion<Number>(source);
+        uint sparseVersion = frames.World.SparseWriteVersion<SparseNumber>(source);
+        frames.World.Replace(enabled, new FeedbackEnabled(false));
+
+        frames.Frame();
+        frames.Frame();
+
+        Assert.Equal(table, frames.World.Read<Number>(source).Value);
+        Assert.Equal(sparse, frames.World.ReadSparse<SparseNumber>(source).Value);
+        Assert.Equal(tableVersion, frames.World.WriteVersion<Number>(source));
+        Assert.Equal(sparseVersion, frames.World.SparseWriteVersion<SparseNumber>(source));
+    }
+
+    [Fact]
+    public void RebuildsCanConvergeOnTheLastAllowedRound()
+    {
+        using var frames = new HeadlessFrameDriver(iterationLimit: 2);
+        Entity source = frames.World.CreateEntity(new Number(0));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ConvergingDisplay(source));
+
+        frames.Frame();
+
+        Assert.Equal(1, frames.World.Read<Number>(source).Value);
+        Assert.Equal(1, frames.World.Read<DisplayedNumber>(root).Value);
+    }
+
+    private readonly record struct ConvergingDisplay(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            ref Number number = ref Scope.ReadWrite<Number>(Source);
+            Scope.Write<DisplayedNumber>(Scope.Entity) = new DisplayedNumber(number.Value);
+            if (number.Value == 0)
+                number = new Number(1);
+            return default;
+        }
+    }
+
+    private readonly record struct TableFeedback(Entity Source, Entity Enabled) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            if (Scope.Read<FeedbackEnabled>(Enabled).Value)
+                Scope.Write<Number>(Source) = new Number(Scope.Read<SparseNumber>(Source).Value + 1);
+            return default;
+        }
+    }
+
+    private readonly record struct SparseFeedback(Entity Source, Entity Enabled) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            if (Scope.Read<FeedbackEnabled>(Enabled).Value)
+                Scope.Write<SparseNumber>(Source) = new SparseNumber(Scope.Read<Number>(Source).Value + 1);
+            return default;
+        }
+    }
+
+    private readonly record struct Number(int Value) : IComponent;
+    private readonly record struct SparseNumber(int Value) : ISparseComponent;
+    private readonly record struct FeedbackEnabled(bool Value) : IComponent;
+    private readonly record struct DisplayedNumber(int Value) : IComponent;
+}
