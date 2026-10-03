@@ -15,6 +15,8 @@
   <Project Path="tools\SomeEngine.ECS.AotSmoke\SomeEngine.ECS.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
   <Project Path="src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
+  <Project Path="src/SomeEngine.Animation/SomeEngine.Animation.csproj" />
+  <Project Path="tests/SomeEngine.Animation.Tests/SomeEngine.Animation.Tests.csproj" />
   <Project Path="src\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
   <Project Path="src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj" />
   <Project Path="src\SomeEngine.Job.Contracts\SomeEngine.Job.Contracts.csproj" />

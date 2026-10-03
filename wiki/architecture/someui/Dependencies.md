@@ -5,7 +5,7 @@
 
 | 来源 | 登记方式 | 失效条件 |
 |---|---|---|
-| ECS 组件 | `Read<T>(entity)` | 该实体该组件的写版本变化 |
+| ECS 组件 | `Read<T>(entity)`；版本由 `World.WriteVersion<T>` / `SparseWriteVersion<T>` 读取 | 该实体该组件的写版本变化（见 [[architecture/ECS/Change-Tracking|Change Tracking]]） |
 | 实体结构 | `Has<T>(entity)` | 组件被添加或移除 |
 | 查询成员 | `Each(query)` | 结果集的实体增删或顺序变化，与组件值无关 |
 | 环境数据 | `ReadUp<T>()` | 找到的祖先组件变化，或树结构变化后重新查找 |

@@ -37,6 +37,20 @@ hierarchy propagation 在实际 `Write` 的关系、组件和访问检查通过�
 
 topology packet 将 Parent 修改写入暂存数据。后续 `ParentFinalizerJob` 在验证当前 preimages 并进入结构写入候选后取得一次提交版本，再用该版本完成这一批 Parent/Children 变更发布。
 
+## 实体组件写版本
+
+`World.WriteVersion<T>(entity)` 读取该实体上表格组件最近一次写入的版本；`World.SparseWriteVersion<T>(entity)` 为 sparse 组件提供相同的观察入口。调用方保存 `uint` 版本，再用 `!=` 判断变化，支持版本回绕。
+
+表格组件的读版本入口复用 chunk 中随行保存的写版本。sparse 组件在自己的 dense 存储中保存每行写版本，随数据扩容、交换移除及结构事务分离一起维护。两种存储的版本查询都采用对应组件的只读访问权限。
+
+直接 `Add`、`Replace`、bundle 值写入以及 `AddSparse`、`ReplaceSparse` 取得新 World 写版本。实体复制为一次复制取得新版本，表格与 sparse 目标行共同使用该版本。命令回放经这些值写入入口记录版本；成功提交使值与版本一起可见，失败回放保留原值与原版本。`World.CurrentTick` 记录已分配的写版本，一次批量回放可以随多次值写入推进。
+
+查询行和 chunk 的写引用、生成 Job 的表格与 sparse 写引用使用该次执行的共享版本。取得写引用即表示一次写访问；取得 sparse 写数组则为其中全部行记录该次版本。直接替换相等值仍记录写入。只读值、只读查询、只读 Job 和写版本查询保持原来的组件版本。
+
+实体版本读取沿用组件读取的实体守卫。组件缺失通过统一的 `DevelopmentCheck` 报告；shipping 调用方省略开发检查及其参数求值。版本读取的调用前提是实体与该组件存在。
+
+源码：[表格版本入口](../../../src/SomeEngine.ECS/World.Components.cs)、[sparse 版本入口](../../../src/SomeEngine.ECS/World.Sparse.cs)、[sparse 行存储](../../../src/SomeEngine.ECS/Sparse/SparseSet.cs)。公开行为验收：[组件版本](../../../tests/SomeEngine.ECS.Tests/ComponentWriteVersionTests.cs)、[Job 版本](../../../tests/SomeEngine.ECS.Systems.Tests/ComponentWriteVersionJobTests.cs)。
+
 ## 决策与实现位置
 
 用户在 2026-10-03 确定按当前系统级基线整理文档。此前查询级 `SystemChangeCheckpoints` 与异步 `QueryCheckpointHandle` 的描述属于更细粒度检查点的设计讨论；未来相关需求通过新的决策和验收要求记录。

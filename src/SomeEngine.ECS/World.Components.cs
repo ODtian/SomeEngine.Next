@@ -48,6 +48,17 @@ public partial class World
         return _components.Read<T>(entity);
     }
 
+    /// <summary>读取实体上该表格组件最近一次写入的版本。</summary>
+    /// <remarks>
+    /// 取得写引用即记作写入。用 <c>!=</c> 比较前后版本，以支持版本回绕。
+    /// </remarks>
+    public uint WriteVersion<T>(Entity entity)
+        where T : struct, IComponent
+    {
+        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Read);
+        return _components.WriteVersion<T>(entity);
+    }
+
     /// <summary>整值替换组件（不触发迁移）。</summary>
     public void Replace<T>(Entity entity, in T value)
         where T : struct, IComponent

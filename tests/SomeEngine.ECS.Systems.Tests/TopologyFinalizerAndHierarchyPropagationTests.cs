@@ -75,7 +75,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
             using var packetArrived = new CountdownEvent(1);
             using var releasePacket = new ManualResetEventSlim();
             PacketConcurrencyState.Configure(packetArrived, releasePacket);
-            uint tickBefore = world.CurrentTick;
 
             TopologyFinalization transaction = TopologyPacketFinalizer<Domain>.Schedule(
                 world,
@@ -87,6 +86,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
             // A no-op image must not register a late topology writer or validate a stale
             // preimage. The dependency-independent write can finish before the packet returns.
             Hierarchy<Domain>.SetParent(world, child, competingParent);
+            uint tickBefore = world.CurrentTick;
             releasePacket.Set();
             transaction.Handle.Complete();
 
