@@ -56,6 +56,9 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
                         return true;
                     timeline.Time -= stage.Duration;
                     timeline.Stage++;
+                    timeline.Running = 0;
+                    if (timeline.Stage < stages.Count && stages[timeline.Stage].End == StageEnd.Settled)
+                        return true;
                     break;
                 default:
                     DevelopmentCheck.Fail("A timeline stage requires a defined boundary type.");

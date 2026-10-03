@@ -29,7 +29,8 @@ public struct TimelineSystem(Entity time = default) : ISystem<ImmediateSystemCon
                 {
                     ref Timeline timeline = ref row.ReadWrite<Timeline>();
                     timeline.Running = 0;
-                    timeline.Time += time.For(timeline.Clock) * timeline.Speed;
+                    if (!timeline.Paused)
+                        timeline.Time += time.For(timeline.Clock) * timeline.Speed;
                 }
             });
     }

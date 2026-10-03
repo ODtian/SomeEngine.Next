@@ -12,8 +12,10 @@ public struct Timeline : IEnableableComponent
     public float Speed;
     public ushort Stage;
     public TimelineClock Clock;
+    public bool Paused;
     public uint Running;
     public uint Completions;
+    public uint Starts;
 }
 
 public enum TimelineClock : byte { Game, Interface, Unscaled }
