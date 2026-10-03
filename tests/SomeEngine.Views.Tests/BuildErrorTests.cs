@@ -9,6 +9,30 @@ namespace SomeEngine.Views.Tests;
 
 public sealed class BuildErrorTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedCallerContentRestoresTheContainerChildren(bool insideContent)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new Content(1));
+        var error = new InvalidOperationException("caller content failed");
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ChangingCallerContent(source, insideContent, error));
+        frames.Frame();
+        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray();
+        frames.World.Replace(source, new Content(2));
+
+        frames.Frame();
+
+        Assert.Same(error, frames.World.ReadSparse<BuildError>(root).Exception);
+        Assert.Equal(group, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
+        Assert.Equal(children, Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray());
+        Assert.Equal(new[] { "first", "second" }, children.Select(child => frames.World.Read<Text>(child).Value));
+        Entity tip = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, children[1]));
+        Assert.Equal("second", frames.World.Read<Tip>(tip).Value);
+    }
+
     [Fact]
     public void FailedParentRestoresThePreviousCallbackInEqualChildParameters()
     {
@@ -151,6 +175,32 @@ public sealed class BuildErrorTests
         Assert.Equal(2UL, frames.World.ReadSparse<BuildError>(branches[0]).Frame);
         Entity siblingText = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, branches[1]));
         Assert.Equal("2", frames.World.Read<Text>(siblingText).Value);
+    }
+
+    private readonly record struct ChangingCallerContent(Entity Source, bool InsideContent, Exception Error) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int value = Scope.Read<Content>(Source).Value;
+            using (Scope.View(new Group()).Content())
+            {
+                if (value == 2)
+                {
+                    Scope.View(new Text("changed second"), 2);
+                    Scope.View(new Text("added"), 3);
+                    if (InsideContent)
+                        throw Error;
+                }
+                else
+                {
+                    Scope.View(new Text("first"), 1);
+                    Scope.View(new Text("second"), 2);
+                }
+            }
+            if (value == 2)
+                throw Error;
+            return default;
+        }
     }
 
     private readonly record struct ErrorDisplay(Entity Source) : IView, IComponent

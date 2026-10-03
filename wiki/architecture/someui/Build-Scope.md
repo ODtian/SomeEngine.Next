@@ -65,5 +65,14 @@ public static class Scope
 错误组件的观察与后备内容示例见
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
 
+## 内容作用域实现（#17）
+
+活动构建支持 `Entity.Content()` 的 `ParentScope`。
+构建实体与子节点声明的父实体分别保存在上下文中，
+容器内容继承当前构建，并在块结束时恢复外层声明上下文。
+公开 API、子节点来源与收尾时机见
+[[architecture/someui/Child-Source|Child Source]]。
+内容块的子声明与外层构建共用当次修改记录，外层失败时一同恢复。
+
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]

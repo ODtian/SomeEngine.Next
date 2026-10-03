@@ -42,6 +42,7 @@ public static KeyScope Key(ulong key);
   匹配项的类型变化时，保留旧实体和后代，创建新视图并当场构建；
   新增声明同样创建并当场完成首次构建。
 - 本次作用域保存构建开始时的只读子集合与本次声明的子集合。
+  两种 [[architecture/someui/Child-Source|Child Source]] 共用这次子声明的恢复边界。
   构建成功时，通过 `Hierarchy<ElementTree>.SetParent(world, child, parent, insertIndex)`
   应用声明次序，外层构建成功后通过 `DestroySubtree` 释放被替换及省略的旧子树。
   嵌套构建共用当次子声明修改记录；失败作用域按倒序恢复子参数与已完成的后代声明，

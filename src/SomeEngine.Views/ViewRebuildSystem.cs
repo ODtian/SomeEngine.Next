@@ -22,6 +22,9 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         _frame++;
+#if DEBUG
+        using var rebuild = Scope.EnterRebuild();
+#endif
         _views.Clear();
         _changedViews.Clear();
         List<Entity> views = _views;
