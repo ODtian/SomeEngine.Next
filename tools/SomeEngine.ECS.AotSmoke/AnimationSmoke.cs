@@ -131,8 +131,9 @@ internal static class AnimationSmoke
         for (int frame = 0; frame < 512; frame++) Tick(systems, world, 1d / 60);
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int frame = 0; frame < 128; frame++) Tick(systems, world, 1d / 60);
-        Require(GC.GetAllocatedBytesForCurrentThread() == before,
-            "Steady default animation frames allocate zero managed bytes.");
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Require(allocated == 0,
+            $"Steady default animation frames allocate zero managed bytes; observed {allocated} bytes.");
         Require(world.Read<Visual>(inline).Opacity > 0 && world.Read<Visual>(inline).Opacity == world.Read<Visual>(ordinary).Opacity,
             "Inline and pooled targets advance through the same default systems.");
         Tick(systems, world, 10000);

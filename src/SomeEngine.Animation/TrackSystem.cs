@@ -16,26 +16,40 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
 {
     private readonly TrackFields _fields = fields;
     private QueryHandle _tracks;
+    private QueryHandle _finishedTracks;
     private QueryHandle _fieldSources;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _fieldSources = context.World.Query(GraphTrackQueries<T>.Sources);
-        _tracks = context.World.Query(context.World.QueryDefinition()
+        _tracks = CreateQuery(context.World, enabled: true);
+        if (_fields == TrackFields.Properties)
+            _finishedTracks = CreateQuery(context.World, enabled: false);
+    }
+
+    private static QueryHandle CreateQuery(World world, bool enabled)
+    {
+        var query = world.QueryDefinition()
             .ReadWrite<Timeline>().WriteBuffer<Track<T>>()
             .OptionalBuffer<Keyframe>(QueryAccess.Read)
             .OptionalBuffer<TimelineStage>(QueryAccess.Read)
-            .Optional<GraphInstance>(QueryAccess.Read).OptionalBuffer<GraphMotion>(QueryAccess.Write));
+            .Optional<GraphInstance>(QueryAccess.Read).OptionalBuffer<GraphMotion>(QueryAccess.Write);
+        return world.Query(enabled ? query.Enabled<Timeline>() : query.Disabled<Timeline>());
     }
 
-    public void OnUpdate(ref ImmediateSystemContext context) =>
-        Evaluate(context.World, context.LastSystemVersion, _fields == TrackFields.LayerWeights);
-
-    private void Evaluate(World world, uint lastVersion, bool weightChannels)
+    public void OnUpdate(ref ImmediateSystemContext context)
     {
-        var evaluation = (World: world, WeightChannels: weightChannels);
-        world.ExecuteQuery(_tracks, lastVersion, ref evaluation,
-            static (QueryCursor rows, ref (World World, bool WeightChannels) evaluation) =>
+        bool weightChannels = _fields == TrackFields.LayerWeights;
+        Evaluate(context.World, context.LastSystemVersion, _tracks, weightChannels, enabled: true);
+        if (!weightChannels)
+            Evaluate(context.World, context.LastSystemVersion, _finishedTracks, weightChannels, enabled: false);
+    }
+
+    private void Evaluate(World world, uint lastVersion, QueryHandle query, bool weightChannels, bool enabled)
+    {
+        var evaluation = (World: world, WeightChannels: weightChannels, Enabled: enabled);
+        world.ExecuteQuery(query, lastVersion, ref evaluation,
+            static (QueryCursor rows, ref (World World, bool WeightChannels, bool Enabled) evaluation) =>
         {
             World world = evaluation.World;
             foreach (QueryChunkView chunk in rows.Chunks)
@@ -50,7 +64,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
                     DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
                     int lastStage = FindLastSampledStage(stages, timeline.Stage, timeline.Time, timeline.Paused);
                     SubmitFinishedTracks(world, row.Entity, tracks, lastStage, timeline.Time, timeline.Starts, evaluation.WeightChannels);
-                    if (!world.IsEnabled<Timeline>(row.Entity))
+                    if (!evaluation.Enabled)
                         continue;
                     float time = timeline.Time;
                     for (int stage = timeline.Stage; stage <= lastStage; stage++)
@@ -278,6 +292,8 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
     public void OnDestroy(ref ImmediateSystemContext context)
     {
         context.World.ReleaseQuery(_tracks);
+        if (_fields == TrackFields.Properties)
+            context.World.ReleaseQuery(_finishedTracks);
         context.World.ReleaseQuery(_fieldSources);
     }
 }
