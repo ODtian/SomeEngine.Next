@@ -12,6 +12,7 @@ using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Registry;
+using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.ECS.Owners;
 
@@ -32,7 +33,7 @@ internal sealed partial class Sparse
     {
         _iteration.Throw();
         _entities.ThrowDead(entity);
-        Set<T>().Add(entity, value);
+        Set<T>().Add(entity, value, unchecked(_structure.Clock.Acquire() + 1));
     }
 
     internal void Replace<T>(Entity entity, in T value)
@@ -43,7 +44,18 @@ internal sealed partial class Sparse
         if (!TrySet<T>(out SparseSet<T> sparseSet))
             throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
 
-        sparseSet.Replace(entity, value);
+        sparseSet.Replace(entity, value, unchecked(_structure.Clock.Acquire() + 1));
+    }
+
+    internal uint WriteVersion<T>(Entity entity)
+        where T : struct, ISparseComponent
+    {
+        _entities.ThrowDead(entity);
+        bool hasSet = TrySet<T>(out SparseSet<T> sparseSet);
+        DevelopmentCheck.Require(hasSet,
+            $"Entity {entity} requires sparse component {typeof(T).Name} to read its write version.");
+
+        return sparseSet.WriteVersion(entity);
     }
 
     internal void Remove<T>(Entity entity)
@@ -150,9 +162,9 @@ internal sealed partial class Sparse
             {
                 bool targetHadValue = sparseSet.Has(target);
                 if (targetHadValue)
-                    sparseSet.ReplaceCopy(source, target);
+                    sparseSet.ReplaceCopy(source, target, _structure.Clock.Tick);
                 else
-                    sparseSet.AddCopy(source, target);
+                    sparseSet.AddCopy(source, target, _structure.Clock.Tick);
 
                 continue;
             }
