@@ -5,8 +5,55 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class StateTests
+public sealed partial class StateTests
 {
+    [Fact]
+    public void AStateChangeFromItsViewConvergesOnTheLastAllowedRound()
+    {
+        using var frames = new HeadlessFrameDriver(iterationLimit: 2);
+        var state = new State<int>(0);
+        Entity root = Views.Spawn(frames.World, Entity.Null, new IncrementingStateDisplay(state));
+
+        frames.Frame();
+
+        Assert.Equal(1, state.Value);
+        Assert.Equal("0;1", frames.World.Read<DisplayText>(root).Value);
+        frames.Frame();
+        Assert.Equal("0;1", frames.World.Read<DisplayText>(root).Value);
+    }
+
+    [Fact]
+    public async Task AViewShowsTheWritingStateAndThenTheCompletedValue()
+    {
+        using var frames = new HeadlessFrameDriver(iterationLimit: 2);
+        var state = new State<int>(3);
+        Entity root = Views.Spawn(frames.World, Entity.Null, new StateProgressDisplay(state));
+        frames.Frame();
+        using var started = new ManualResetEventSlim();
+        using var complete = new ManualResetEventSlim();
+        Task writer = Task.Factory.StartNew(() => state.Update((ref int value) =>
+        {
+            started.Set();
+            Assert.True(complete.Wait(TimeSpan.FromSeconds(30)));
+            value = 7;
+        }), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            Assert.True(started.Wait(TimeSpan.FromSeconds(30)));
+            frames.Frame();
+            Assert.Equal("3;writing", frames.World.Read<DisplayText>(root).Value);
+        }
+        finally
+        {
+            complete.Set();
+            await writer.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        frames.Frame();
+
+        Assert.Equal("3;writing;7", frames.World.Read<DisplayText>(root).Value);
+    }
+
     [Fact]
     public void AFailedStateDisplayRecoversWhenTheStateChangesAgain()
     {
@@ -83,7 +130,7 @@ public sealed class StateTests
     }
 
     [Fact]
-    public void ReadingAroundACrossThreadChangeRefreshesTheCompleteDisplayOnTheNextFrame()
+    public void ReadingAroundACrossThreadChangeRefreshesTheCompleteDisplayWithinTheFrame()
     {
         using var frames = new HeadlessFrameDriver();
         var state = new State<int>(3);
@@ -91,7 +138,7 @@ public sealed class StateTests
             new RepeatedStateDisplay(state, () => Task.Run(() => state.Value = 7).GetAwaiter().GetResult()));
 
         frames.Frame();
-        Assert.Equal("3+7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+7;7+7", frames.World.Read<DisplayText>(root).Value);
         frames.Frame();
         Assert.Equal("3+7;7+7", frames.World.Read<DisplayText>(root).Value);
         frames.Frame();
@@ -289,6 +336,28 @@ public sealed class StateTests
         public BuildTask Build()
         {
             AppendDisplay(Source.Value.ToString());
+            return default;
+        }
+    }
+
+    private readonly record struct IncrementingStateDisplay(State<int> Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int value = Source.Value;
+            AppendDisplay(value.ToString());
+            if (value == 0)
+                Source.Update(static (ref int number) => number++);
+            return default;
+        }
+    }
+
+    private readonly record struct StateProgressDisplay(State<int> Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Depend(Source);
+            AppendDisplay((Volatile.Read(ref Source.Version) & 1) != 0 ? "writing" : Source.Value.ToString());
             return default;
         }
     }

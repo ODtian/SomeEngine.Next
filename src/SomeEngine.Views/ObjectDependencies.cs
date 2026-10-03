@@ -11,7 +11,7 @@ internal sealed class ObjectDependencyList
     private ObjectDependency[] _reads = ArrayPool<ObjectDependency>.Shared.Rent(4);
     private int _count;
 
-    internal void Add(VersionCell cell, uint version)
+    internal void Add(VersionCell cell, uint version, ulong frame)
     {
         for (int index = 0; index < _count; index++)
             if (ReferenceEquals(_reads[index].Cell, cell))
@@ -24,7 +24,7 @@ internal sealed class ObjectDependencyList
             ArrayPool<ObjectDependency>.Shared.Return(_reads, clearArray: true);
             _reads = reads;
         }
-        _reads[_count++] = new ObjectDependency(cell, version);
+        _reads[_count++] = new ObjectDependency(cell, version, frame);
     }
 
     internal void Clear()
@@ -33,13 +33,13 @@ internal sealed class ObjectDependencyList
         _count = 0;
     }
 
-    internal bool HasChanges()
+    internal bool HasChanges(ulong frame)
     {
         for (int index = 0; index < _count; index++)
         {
             ObjectDependency read = _reads[index];
             uint version = Volatile.Read(ref read.Cell.Version);
-            if ((version & 1) != 0 || version != read.Version)
+            if (version != read.Version || ((version & 1) != 0 && read.Frame != frame))
                 return true;
         }
         return false;
@@ -49,5 +49,5 @@ internal sealed class ObjectDependencyList
     // Returning a cleared array here also covers direct entity and World disposal.
     ~ObjectDependencyList() => ArrayPool<ObjectDependency>.Shared.Return(_reads, clearArray: true);
 
-    private readonly record struct ObjectDependency(VersionCell Cell, uint Version);
+    private readonly record struct ObjectDependency(VersionCell Cell, uint Version, ulong Frame);
 }

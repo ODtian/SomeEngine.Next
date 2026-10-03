@@ -215,6 +215,19 @@ internal static partial class FirstBuildChecks
         text.Advance();
         frames.Frame();
         Require(frames.World.Read<TableText>(child).Value == "changed:7", "A custom version cell updates the displayed text.");
+
+        var writing = new TextData("writing") { Version = 1 };
+        Entity writingRoot = Views.Spawn(frames.World, Entity.Null, new StateAndObjectText(count, writing));
+        frames.Frame();
+        Entity writingChild = Hierarchy<ElementTree>.GetChildren(frames.World, writingRoot)[0];
+        Require(frames.World.Read<TableText>(writingChild).Value == "writing:7", "An odd version supplies this frame's text.");
+        writing.Value = "continuing";
+        frames.Frame();
+        Require(frames.World.Read<TableText>(writingChild).Value == "continuing:7", "An ongoing write updates the next frame's text.");
+        writing.Value = "completed";
+        writing.Version = 2;
+        frames.Frame();
+        Require(frames.World.Read<TableText>(writingChild).Value == "completed:7", "The completed version supplies its text.");
     }
 
     private static void VerifyUntrackedReads(HeadlessFrameDriver frames)

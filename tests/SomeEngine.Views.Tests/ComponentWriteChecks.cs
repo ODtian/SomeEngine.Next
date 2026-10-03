@@ -6,7 +6,7 @@ using SomeEngine.ECS.Hierarchy;
 namespace SomeEngine.Views.Tests;
 
 /// <summary>Component write behavior shared by the test runner and the NativeAOT executable.</summary>
-internal static class ComponentWriteChecks
+internal static partial class ComponentWriteChecks
 {
     internal static void Verify()
     {

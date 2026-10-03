@@ -5,8 +5,22 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class ObjectDependencyTests
+public sealed partial class ObjectDependencyTests
 {
+    [Fact]
+    public void CompletingAnObservedWriteRefreshesTheDisplayWithinTheFrame()
+    {
+        using var frames = new HeadlessFrameDriver(iterationLimit: 2);
+        var source = new NumberData(3) { Version = 1 };
+        Entity root = Views.Spawn(frames.World, Entity.Null, new CompletingNumberDisplay(source));
+
+        frames.Frame();
+
+        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+        frames.Frame();
+        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+    }
+
     [Fact]
     public void DependOutsideAComputationKeepsTheDataAvailable()
     {
@@ -173,6 +187,19 @@ public sealed class ObjectDependencyTests
         {
             Scope.Depend(Source);
             AppendDisplay(Source.Number.ToString());
+            return default;
+        }
+    }
+
+    private readonly record struct CompletingNumberDisplay(NumberData Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Depend(Source);
+            int number = Source.Number;
+            Source.Number = 7;
+            Volatile.Write(ref Source.Version, 2);
+            AppendDisplay(number.ToString());
             return default;
         }
     }

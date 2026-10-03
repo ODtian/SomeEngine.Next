@@ -45,7 +45,7 @@ public static class Scope
 
         if (!current.World.Has<ObjectDependencies>(current.Entity))
             current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList()));
-        current.World.Read<ObjectDependencies>(current.Entity).Reads.Add(cell, version);
+        current.World.Read<ObjectDependencies>(current.Entity).Reads.Add(cell, version, current.Frame);
     }
 
     /// <summary>Reads a table or sparse component and records it as a dependency of a Rerun build.</summary>
