@@ -62,5 +62,22 @@ public static class SurfaceModifiers
 数据写入方由 [[architecture/someui/Data-Writers|Data Writers]] 维护，
 公开行为与用户等价修饰的验收见 [[architecture/someui/Testing|Testing]]。
 
+## Flex 修饰（#25）
+
+`SomeEngine.Layout.FlexModifiers` 提供以下 `Entity` 扩展方法，每次返回传入实体：
+
+| 修饰 | 调用方写入的数据 |
+| --- | --- |
+| `Grow(value = 1)` | `FlexItem.Grow` |
+| `Shrink(value = 1)` | `FlexItem.Shrink` |
+| `Basis(value)` | `FlexItem.Basis` |
+| `AlignSelf(value)` | `FlexItem.Self` |
+| `Gap(value)` | `Flex.Gap` |
+| `Align(main, cross = Align.Stretch)` | `Flex.MainAlign` 与 `Flex.CrossAlign` |
+
+这些方法沿 `Scope.Write` 取得同一计算中的组件副本，计算成功后比较提交。
+`Gap` 与 `Align` 用于 Flex 视图，开发构建通过 Core 的 `DevelopmentCheck` 检查入口。
+默认值、伸缩分配、各轴支持的对齐与行间距规则见 [[architecture/someui/Layout|Layout]]。
+
 ## Relations
 [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Layout|Layout]]
