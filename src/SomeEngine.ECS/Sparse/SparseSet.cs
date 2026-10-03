@@ -7,6 +7,8 @@ namespace SomeEngine.ECS.Sparse;
 
 internal interface ISparseSet
 {
+    uint ComponentWriteVersion { get; }
+
     bool Has(Entity entity);
 
     uint WriteVersion(Entity entity);
@@ -62,6 +64,8 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     }
 
     internal uint ComponentWriteVersion => unchecked((uint)Volatile.Read(ref _componentWriteVersion));
+
+    uint ISparseSet.ComponentWriteVersion => ComponentWriteVersion;
 
     /// <summary>当前元素数。</summary>
     public int Count => _storage.Count;
