@@ -12,7 +12,7 @@ internal static unsafe class ViewTypes
     private static int s_count;
 
     internal static ushort Register(
-        delegate*<World, Entity, void> buildFunction,
+        delegate*<World, Entity, ulong, void> buildFunction,
         delegate*<World, Entity, bool> parameterCheckFunction)
     {
         lock (s_gate)
@@ -26,10 +26,10 @@ internal static unsafe class ViewTypes
         }
     }
 
-    internal static void Build(World world, Entity entity)
+    internal static void Build(World world, Entity entity, ulong frame)
     {
         ushort typeId = world.Read<ViewType>(entity).Id;
-        Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity);
+        Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity, frame);
     }
 
     internal static bool HasParameterChanges(World world, Entity entity)
@@ -39,10 +39,10 @@ internal static unsafe class ViewTypes
     }
 
     private readonly struct ViewFunctions(
-        delegate*<World, Entity, void> buildFunction,
+        delegate*<World, Entity, ulong, void> buildFunction,
         delegate*<World, Entity, bool> parameterCheckFunction)
     {
-        internal readonly delegate*<World, Entity, void> BuildFunction = buildFunction;
+        internal readonly delegate*<World, Entity, ulong, void> BuildFunction = buildFunction;
         internal readonly delegate*<World, Entity, bool> ParameterCheckFunction = parameterCheckFunction;
     }
 }
@@ -58,13 +58,27 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
         return ViewTypes.Register(&Build, &HasParameterChanges);
     }
 
-    internal static void Build(World world, Entity entity)
+    internal static void Build(World world, Entity entity, ulong frame)
     {
         T view = world.ReadComponentData<T>(entity);
         uint parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
-        using var scope = Scope.Enter(world, entity, T.Mode == BuildMode.Rerun);
-        view.Build().Complete();
-        scope.Complete();
+        try
+        {
+            using var scope = Scope.Enter(world, entity, frame, T.Mode == BuildMode.Rerun);
+            view.Build().Complete();
+            scope.Complete();
+            if (world.HasSparse<BuildError>(entity))
+                world.RemoveSparse<BuildError>(entity);
+        }
+        catch (Exception exception)
+        {
+            var error = new BuildError { Exception = exception, Frame = frame };
+            if (world.HasSparse<BuildError>(entity))
+                world.ReplaceSparse(entity, in error);
+            else
+                world.AddSparse(entity, in error);
+            DevelopmentCheck.Report($"View {typeof(T).Name} on {entity} failed to build in frame {frame}: {exception}");
+        }
         if (T.Mode == BuildMode.Rerun)
             world.Replace(entity, new ParameterVersion(parameterVersion));
     }

@@ -29,5 +29,26 @@ Release 沿统一开发检查规则编译；两个开发检查专用用例在 De
 NativeAOT 构建输出的 IL2026、IL3050 和 IL2070 来自现有 `TraceCapture` 与
 `JobStorageTypeShape` 诊断路径；本次原生结果覆盖视图首次构建与原有 ECS 冒烟行为。
 
+## 构建异常隔离验收（#18）
+
+2026-10-04，基于集成提交 `ece6c1f1f544139959271cba3ccd0a0367254a35`
+加本票实现，Windows x64，.NET SDK `10.0.112`。
+
+`BuildErrorTests` 经公开 World、视图、帧驱动与 `Trace` listeners 验证兄弟继续构建、
+失败声明的节点及后代恢复、相等参数中的回调恢复、原异常与帧号、首次失败、
+后备内容、依赖修复与同步完成的异步构建。
+`FirstBuildChecks` 将子声明恢复和祖先后备恢复一并用于测试运行器及 NativeAOT 冒烟。
+Core 的公开检查验收通过参数求值的可观察效果验证开发报告的编译边界。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug` | 57 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release` | 51 通过 |
+| `dotnet test tests/SomeEngine.Core.Tests/SomeEngine.Core.Tests.csproj -c Debug` | 59 通过 |
+| `dotnet test tests/SomeEngine.Core.Tests/SomeEngine.Core.Tests.csproj -c Release` | 59 通过 |
+| `dotnet test tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj -c Debug` | 633 通过 |
+| `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Debug` | 298 通过 |
+| `just ecs-aot win-x64` | 原生发布与执行成功，退出码 0，`viewsVerified: true` 与 `managedReferencesVerified: true` |
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

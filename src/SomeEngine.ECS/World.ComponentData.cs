@@ -6,6 +6,30 @@ namespace SomeEngine.ECS;
 
 public partial class World
 {
+    internal bool HasComponentData<T>(Entity entity) where T : struct
+    {
+        if (default(T) is ISparseComponent)
+        {
+            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Read);
+            return _sparse.Has<T>(entity);
+        }
+        using WorldJobAdmissionScope access = EnterJobTopologyRead();
+        return _components.Has<T>(entity);
+    }
+
+    internal bool HasComponentData(Entity entity, ushort component)
+    {
+        bool sparse = ComponentRegistry.Get(component).Storage == StoragePath.Sparse;
+        using WorldJobAdmissionScope access = sparse
+            ? EnterJobAdmission(WorldJobAdmissionRequest.ForStorage(WorldStorageKind.Sparse, component, WorldStorageAccess.Read))
+            : EnterJobTopologyRead();
+        if (!_entities.Store.IsAlive(entity))
+            return false;
+        return sparse
+            ? _sparse.HasValue(component, entity)
+            : _entities.Store.GetRecordReadOnly(entity).Archetype!.HasComponent(component);
+    }
+
     internal void AddComponentData<T>(Entity entity, in T value) where T : struct
     {
         if (default(T) is ISparseComponent)

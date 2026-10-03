@@ -5,6 +5,26 @@ namespace SomeEngine.Core.Tests.Diagnostics;
 public sealed class DevelopmentCheckTests
 {
     [Fact]
+    public void RecoveredFailureReportEvaluatesItsMessageOnlyInDevelopmentCallers()
+    {
+        bool argumentEvaluated = false;
+
+        DevelopmentCheck.Report(CreateMessage(ref argumentEvaluated));
+
+#if DEBUG
+        Assert.True(argumentEvaluated);
+#else
+        Assert.False(argumentEvaluated);
+#endif
+    }
+
+    private static string CreateMessage(ref bool argumentEvaluated)
+    {
+        argumentEvaluated = true;
+        return "recovered failure";
+    }
+
+    [Fact]
     public void RequireEvaluatesAndThrowsOnlyInDevelopmentCallers()
     {
         int evaluations = 0;

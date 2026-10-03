@@ -25,6 +25,7 @@
 public static class Scope
 {
     public static ref readonly T Read<T>(Entity entity) where T : struct;
+    public static bool Has<T>(Entity entity) where T : struct;
 }
 
 public struct Dependency : IBufferElement
@@ -32,7 +33,10 @@ public struct Dependency : IBufferElement
     public Entity Entity;
     public ushort Component;
     public uint Version;
+    public DependencyKind Kind;
 }
+
+public enum DependencyKind : byte { ComponentValue, ComponentPresence }
 ```
 
 `Scope.Read<T>` 从当前 World 的表格或 sparse 存储返回组件的只读引用。
@@ -42,6 +46,14 @@ public struct Dependency : IBufferElement
 视图实体首次登记时添加 `DynamicBuffer<Dependency>`。每次构建开始先清空已有缓冲，
 随后按该次构建实际走过的读取路径重新登记。嵌套子构建使用自己的作用域；
 子构建返回后，后续读取继续登记到父视图。`Once` 构建沿相同存储路径读取，作用域保持仅取值状态。
+
+`Scope.Has<T>` 观察当前 World 中表格、tag 或 sparse 组件的存在状态，
+以 `ComponentPresence` 登记 `(Entity, Component, 0/1)`。
+存在依赖与 `Read<T>` 的 `ComponentValue` 依赖分别去重；
+重建检查比较当前存在状态。存在依赖用于祖先观察 `BuildError` 的添加与移除。
+组件值依赖在来源组件移除后同样使视图失效，随后构建按实际路径重新登记。
+失败构建保留这次尝试已读取的依赖，恢复时机见
+[[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
 
 重建阶段逐条读取依赖来源的实体组件写版本，以 `!=` 比较登记版本。
 表格行与 sparse dense 行继续持有各自版本，视图依赖缓冲保存该次读取的观察值。

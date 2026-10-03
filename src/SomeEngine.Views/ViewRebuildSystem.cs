@@ -12,6 +12,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private readonly List<Entity> _views = new();
     private readonly List<ViewDepth> _changedViews = new();
     private QueryHandle _viewQuery;
+    private ulong _frame;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
@@ -20,6 +21,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
+        _frame++;
         _views.Clear();
         _changedViews.Clear();
         List<Entity> views = _views;
@@ -54,7 +56,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
                 if (firstBuild)
                     context.World.RemoveTag<BuildRequest>(entity);
                 if (firstBuild || HasChanges(context.World, entity))
-                    ViewTypes.Build(context.World, entity);
+                    ViewTypes.Build(context.World, entity, _frame);
             }
         }
         _views.Clear();
@@ -75,7 +77,11 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         {
             foreach (Dependency dependency in buffer.AsSpan())
             {
-                if (result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version)
+                bool present = result.World.HasComponentData(dependency.Entity, dependency.Component);
+                bool changed = dependency.Kind == DependencyKind.ComponentPresence
+                    ? present != (dependency.Version != 0)
+                    : !present || result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version;
+                if (changed)
                 {
                     result.Found = true;
                     return;
