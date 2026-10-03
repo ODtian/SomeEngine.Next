@@ -6,6 +6,7 @@ using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Views;
 using static SomeEngine.Layout.AbsoluteFunctions;
+using static SomeEngine.Layout.FlexFunctions;
 using UserSurface = SomeEngine.Elements.Consumer.Tests.Rewrites.SurfaceModifiers;
 
 namespace SomeEngine.Elements.Consumer.Tests;
@@ -71,7 +72,7 @@ internal static partial class SurfaceChecks
         {
             using (Absolute().Content())
             {
-                Entity panel = Absolute().Size(Width, 80);
+                Entity panel = Column().Size(Width, 80);
                 if (Rewritten)
                 {
                     UserSurface.Background(panel, Fill);

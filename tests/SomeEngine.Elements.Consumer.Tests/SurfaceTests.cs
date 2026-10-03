@@ -15,7 +15,7 @@ public sealed partial class SurfaceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void SharedSurfaceChecksPass(bool rewritten) => SurfaceChecks.Run(rewritten);
+    public void ColumnSurfaceValuesAndWriteVersionsMatchForBothModifiers(bool rewritten) => SurfaceChecks.Run(rewritten);
 
     [Theory]
     [InlineData(false)]
