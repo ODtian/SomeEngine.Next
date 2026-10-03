@@ -11,6 +11,7 @@ public static class AnimationSystems
     public static void AddDefaults(SystemGroup<ImmediateSystemContext> schedule, Entity time = default)
     {
         schedule.Add(new TimelineSystem(time));
+        schedule.Add(new GraphSystem());
         schedule.Add(new TrackSystem<float, FloatOps>(TrackFields.LayerWeights));
         schedule.Add(new ComposeSystem<float, FloatOps>(TrackFields.LayerWeights));
         schedule.Add(new TrackSystem<float, FloatOps>());
@@ -31,6 +32,7 @@ public static class AnimationSystems
         schedule.Add(new ComposeSystem<Thickness, ThicknessOps>());
         schedule.Add(new ComposeSystem<Rect, RectOps>());
         schedule.Add(new ComposeSystem<Matrix3x2, Matrix3x2Ops>());
+        schedule.Add(new GraphEndSystem());
         schedule.Add(new TimelineEndSystem());
     }
 }
