@@ -33,12 +33,49 @@ internal static class FirstBuildChecks
         VerifyParameterChanges(frames, root, children.ToArray(), grandchildren[0]);
         VerifyOnceParameters(frames);
         VerifyKeyedChildren(frames);
+        VerifySpawnedChildParameters(frames);
         VerifyCallerChildren(frames);
         VerifyReadDependencies(frames);
         VerifyBuildErrors();
         StructureDependencyChecks.Verify();
         VerifyUntrackedReads(frames);
     }
+
+    private static void VerifySpawnedChildParameters(HeadlessFrameDriver frames)
+    {
+        Entity root = Views.Spawn(frames.World, Entity.Null, new HistoryGroup(7));
+        Entity child = Views.Spawn(frames.World, root, new HistoryText(3));
+        frames.Frame();
+        Require(frames.World.Read<TextHistory>(child).Value == "7",
+            "The parent's first build presents the child's new parameters once.");
+        uint version = frames.World.WriteVersion<TextHistory>(child);
+        frames.Frame();
+        Require(frames.World.WriteVersion<TextHistory>(child) == version,
+            "The next frame preserves the completed child display.");
+    }
+
+    private readonly record struct HistoryGroup(int Value) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.View(new HistoryText(Value));
+            return default;
+        }
+    }
+
+    private readonly record struct HistoryText(int Value) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            if (Scope.World.Has<TextHistory>(Scope.Entity))
+                Scope.World.Replace(Scope.Entity, new TextHistory($"{Scope.World.Read<TextHistory>(Scope.Entity).Value},{Value}"));
+            else
+                Scope.World.Add(Scope.Entity, new TextHistory(Value.ToString()));
+            return default;
+        }
+    }
+
+    private readonly record struct TextHistory(string Value) : IComponent;
 
     private static int ReadNumber() => 41;
     private static int ReadChangedNumber() => 53;

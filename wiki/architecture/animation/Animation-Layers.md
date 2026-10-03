@@ -61,6 +61,7 @@ for 每个贡献（按层编号，再按来源和输出编号）:
 - 单来源目标经轨道存储直接更新字段，并应用相同的权重与遮罩。共享字段首次出现时，`To` / `By` 为目标声明 `Contribution<T>`；已声明的缓冲保留在目标上，逐帧刷新内容。外部求值系统通过 `world.AddBuffer<Contribution<T>>(target)` 声明合成输入，并用公开缓冲写入入口追加贡献。
 - `ComposeSystem<T, TOps>` 是与轨道系统相同的公开 struct 系统。它把贡献按 `(Component, Offset, Layer, Source.Index, Source.Generation, Output)` 排序，逐字段应用层规则，更新该字段一次，随后清空已消费的贡献并保留缓冲容量。同一字段同一层的 `(Source, Output)` 唯一；不同层可以使用相同来源编号。轨道系统使用动画实体与轨道输出编号，外部系统填写自己的编号。暂停轨道持续提交其当前采样值，使其它来源可以继续推进。
 - 相同层的多个覆盖贡献按来源顺序分别混合；完整权重时最后一个来源覆盖先前结果。叠加贡献按同样的来源顺序加和，浮点求和顺序也因此确定。
+- 一帧跨过多个固定时长阶段时，轨道按阶段边界推进采样状态；同一时间线、目标、通道和层由最后到达的对应阶段提交字段值或贡献。其它通道和层分别保留自身到达的值。单来源直接更新字段一次，多来源把最终阶段的贡献交给合成系统，随后由时间线收尾推进阶段与完成计数。
 - 字段求值与字段合成分别形成阶段，各阶段内的求值系统可以调整顺序。层权重作为控制数据先经过 `TrackFields.LayerWeights` 求值与合成，再处理 `TrackFields.Properties`；权重通道应用完整权重的覆盖规则。所有值类型均读取本帧更新后的层权重。
 - 使用错误由 Core `DevelopmentCheck` 报告，相关调用与参数求值在 shipping 调用方中消除。
 - 状态机的交叉淡入在图内部用两个分支加权实现；作用于整个目标的叠加效果（悬停、上半身覆盖、呼吸、IK 修正）使用层。
@@ -84,7 +85,9 @@ schedule.Add(new TimelineEndSystem());
 
 ## Verification
 
-`tests/SomeEngine.Animation.Tests/AnimationLayersTests.cs` 经公开 World 帧驱动覆盖三层合成、权重淡入、同层多位移与最新基准值、单来源存储、通道遮罩、外部贡献顺序、暂停与重定目标、跨类型权重更新、自定义值运算、默认系统组合以及来源编号开发检查。
+`tests/SomeEngine.Animation.Tests/AnimationLayersTests.cs` 经公开 World 帧驱动覆盖三层合成、权重淡入、同层多位移与最新基准值、单来源存储、通道遮罩、外部贡献顺序、暂停与重定目标、跨类型权重更新、自定义值运算、默认系统组合、跨阶段的最后字段与权重，以及来源编号开发检查。
+
+`PropertyAnimationTests.SteadyDefaultAnimationFramesAllocateZeroManagedBytes` 用完整 `AnimationSystems.AddDefaults` 帧预热 512 次并采样 128 次，覆盖内联、池化与八个并发叠加位移；托管分配为 0 字节。
 
 ## Relations
 [[architecture/animation/Property-Animation|Property Animation]] · [[architecture/animation/Pose-Animation|Pose Animation]] · [[architecture/animation/Animation-Graph|Animation Graph]]

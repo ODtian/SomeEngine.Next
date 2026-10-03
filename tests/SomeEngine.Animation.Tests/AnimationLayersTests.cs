@@ -355,6 +355,97 @@ public sealed class AnimationLayersTests
         Assert.Equal(13f, world.Read<Display>(target).Value);
     }
 
+    [Theory]
+    [InlineData(LayerMode.Override, false, 0.15, 7.5f)]
+    [InlineData(LayerMode.Override, false, 0.25, 10f)]
+    [InlineData(LayerMode.Override, true, 0.15, 7.5f)]
+    [InlineData(LayerMode.Override, true, 0.25, 10f)]
+    [InlineData(LayerMode.Additive, false, 0.15, 7.5f)]
+    [InlineData(LayerMode.Additive, false, 0.25, 10f)]
+    [InlineData(LayerMode.Additive, true, 0.15, 7.5f)]
+    [InlineData(LayerMode.Additive, true, 0.25, 10f)]
+    public void CrossingStagesBlendsTheLastReachedFieldValue(LayerMode mode, bool inline, double delta, float expected)
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new Display());
+        var layers = new AnimationLayers { Count = 1 };
+        layers.Items[0] = new AnimationLayer { Mode = mode, Weight = 0.5f };
+        world.Add(target, layers);
+        PropertyAnimation.SetBase(world, target, Value, 0f);
+        world.AddBuffer<Contribution<float>>(target);
+        if (inline)
+            PropertyAnimation.Declare<float>(world, target);
+        Entity animation = PropertyAnimation.To(world, target, Value, 10f, Spec.Tween(0.1f));
+        AddDurationStages(world, animation);
+        var next = new Track<float>
+        {
+            Target = inline ? Entity.Null : target,
+            Channel = Value, From = 10, Current = 10, To = 20,
+            Duration = 0.1f, Curve = Spec.Tween(0.1f).Curve, Stage = 1,
+            StartId = world.Read<Timeline>(animation).Starts,
+        };
+        world.ExecuteBufferWrite<Track<float>, Track<float>>(animation, ref next,
+            static (DynamicBuffer<Track<float>> tracks, ref Track<float> track) => tracks.Add(track));
+        using var systems = Systems(world);
+
+        Tick(systems, world, delta);
+        Assert.Equal(expected, world.Read<Display>(target).Value, 5);
+        Tick(systems, world, 0.25);
+        Assert.Equal(10f, world.Read<Display>(target).Value);
+        Assert.False(world.IsEnabled<Timeline>(animation));
+        Tick(systems, world, 0.25);
+        Assert.Equal(10f, world.Read<Display>(target).Value);
+    }
+
+    [Theory]
+    [InlineData(0.15, 7.5f)]
+    [InlineData(0.25, 0f)]
+    public void CrossingStagesUsesTheLastReachedLayerWeight(double delta, float expected)
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new Display());
+        var layers = new AnimationLayers { Count = 2 };
+        layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
+        layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0 };
+        world.Add(target, layers);
+        PropertyAnimation.SetBase(world, target, Value, 0f);
+        PropertyAnimation.Declare<float>(world, target);
+        world.AddBuffer<Contribution<float>>(target);
+        PropertyAnimation.To(world, target, Value, 10f, Spec.Tween(0.1f), layer: 1);
+        PropertyAnimation.To(world, target, HoverWeight, 1f, Spec.Tween(0.1f));
+        AddDurationStages(world, target);
+        uint starts = world.Read<Timeline>(target).Starts;
+        world.ExecuteBufferWrite<Track<float>, uint>(target, ref starts,
+            static (DynamicBuffer<Track<float>> tracks, ref uint starts) =>
+            {
+                tracks.Add(new Track<float>
+                {
+                    Channel = Value, From = 10, Current = 10, To = 20, Layer = 1,
+                    Duration = 0.1f, Curve = Spec.Tween(0.1f).Curve, Stage = 1, StartId = starts,
+                });
+                tracks.Add(new Track<float>
+                {
+                    Channel = HoverWeight, From = 1, Current = 1, To = 0,
+                    Duration = 0.1f, Curve = Spec.Tween(0.1f).Curve, Stage = 1, StartId = starts,
+                });
+            });
+        using var systems = Systems(world);
+
+        Tick(systems, world, delta);
+
+        Assert.Equal(expected, world.Read<Display>(target).Value, 5);
+    }
+
+    private static void AddDurationStages(World world, Entity animation)
+    {
+        world.AddBuffer<TimelineStage>(animation);
+        world.ExecuteBufferWrite<TimelineStage>(animation, static stages =>
+        {
+            stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
+            stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
+        });
+    }
+
 #if DEBUG
     [Fact]
     public void SameLayerSourcesRequireDistinctIds()
