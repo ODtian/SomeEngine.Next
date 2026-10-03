@@ -9,12 +9,12 @@ namespace SomeEngine.Views.Generators;
 
 public sealed partial class ViewGenerator
 {
-    private static void GenerateComposeViews(SourceProductionContext output, Compilation compilation, CSharpParseOptions options,
+    private static void GenerateComposeMethods(SourceProductionContext output, Compilation compilation, CSharpParseOptions options,
         List<SyntaxTree> declarations, ImmutableArray<IMethodSymbol> methods)
     {
         foreach (IMethodSymbol method in methods)
         {
-            if (!ViewCalls.IsComposeView(method))
+            if (!ViewCalls.IsComposeView(method) && !ViewCalls.IsComposeGroup(method))
                 continue;
             INamedTypeSymbol type = method.ContainingType;
             INamedTypeSymbol? enclosing = GetContainingTypes(type).Append(type).FirstOrDefault(value =>
@@ -23,6 +23,12 @@ public sealed partial class ViewGenerator
             if (enclosing is not null)
             {
                 output.ReportDiagnostic(Diagnostic.Create(ViewDiagnostics.PartialContainerRequired, enclosing.Locations[0], enclosing.Name));
+                continue;
+            }
+
+            if (ViewCalls.IsComposeGroup(method))
+            {
+                GenerateComposeGroup(output, compilation, options, declarations, method);
                 continue;
             }
 
@@ -81,8 +87,19 @@ public sealed partial class ViewGenerator
             .Append("        public static ").Append(method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
             .Append(" ComposeAt").Append(number)
             .Append(GenerateTypeParameters(typeParameters)).Append('(').Append(GenerateParameters(method.Parameters)).Append(')')
-            .AppendLine(GenerateConstraints(typeParameters)).AppendLine("        {")
-            .Append("            global::SomeEngine.Views.Scope.View(new ")
+            .AppendLine(GenerateConstraints(typeParameters)).AppendLine("        {");
+        if (ViewCalls.IsComposeGroup(method))
+        {
+            text.Append("            ").Append(method.ReturnsVoid ? "" : "return ")
+                .Append(method.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                .Append(".@").Append(GetComposeGroupName(method)).Append(GenerateTypeParameters(method.TypeParameters))
+                .Append('(').Append(key.ToString(CultureInfo.InvariantCulture)).Append("UL");
+            if (method.Parameters.Length > 0)
+                text.Append(", ").Append(GenerateArguments(method.Parameters));
+            text.AppendLine(");\n        }");
+            return;
+        }
+        text.Append("            global::SomeEngine.Views.Scope.View(new ")
             .Append(method.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
             .Append(".@").Append(GetComposeViewName(method)).Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
             .Append(GenerateArguments(method.Parameters)).Append("), ")
