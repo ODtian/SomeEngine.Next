@@ -131,8 +131,8 @@ void MarkVirtualShadowPages(
     {
         uint baseViewIndex = lightIndex * clipmapLevels;
         VirtualShadowMapParameters baseView = ShadowViews[baseViewIndex];
-        uint relativeLevel = VirtualShadowDirectionalLevelFromReceiverFootprint(
-            baseView, worldPosition, worldPositionDx, worldPositionDy, dynamicResolutionBias.x);
+        uint relativeLevel = SelectDirectionalVirtualShadowView(ShadowViews, baseViewIndex,
+            baseView.ClipmapLevelCount, worldPosition, worldPositionDx, worldPositionDy, dynamicResolutionBias.x);
         if (relativeLevel < baseView.ClipmapLevelCount &&
             baseViewIndex + relativeLevel < PageDemand.ViewCount)
         {

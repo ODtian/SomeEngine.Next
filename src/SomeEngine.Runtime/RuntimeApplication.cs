@@ -580,7 +580,11 @@ internal static class RuntimeApplication
         var lightSystem = new RenderLightSetSystem();
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
         var streamingConsumer = new ClusterStreamingFeedbackConsumer(cluster, streamingFeedback);
-        var shadowSettings = new VirtualShadowMapSettings { Enabled = options.VirtualShadows };
+        var shadowSettings = new VirtualShadowMapSettings
+        {
+            Enabled = options.VirtualShadows,
+            DynamicResolutionEnabled = true,
+        };
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
             metrics: options.VerifyFrameOutput);

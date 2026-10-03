@@ -164,6 +164,9 @@ public abstract class AccelerationStructure : Resource
     }
 
     public AccelerationStructureInfo Info { get; }
+
+    /// <summary>GPU address used when encoding instances of this structure.</summary>
+    public virtual ulong DeviceAddress => throw new NotSupportedException("This backend does not expose acceleration-structure device addresses.");
 }
 
 /// <remarks>

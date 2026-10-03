@@ -9,9 +9,16 @@ if (!File.Exists(manifestPath))
 }
 MaterialTypes.Register();
 ImportedScenes.SceneMaterialAsset.Register();
+if (args is ["--test-scene", var contentDirectory, .. var renderingArguments])
+{
+    var options = SomeEngine.Runtime.RuntimeStartupOptions.Parse(renderingArguments);
+    var testPlatform = new SomeEngine.Runtime.SceneTestPlatform(
+        [new("Shadow reference", Path.GetFullPath(contentDirectory))], options);
+    return await SomeEngine.Runtime.Application.RunAsync(renderingArguments, platform: testPlatform);
+}
 if (args.Length != 0)
 {
-    Console.Error.WriteLine("DefaultGame is configured in its in-game test panel (F1).");
+    Console.Error.WriteLine("Use F1 for interactive settings, or --test-scene <content directory> followed by rendering options for a reproducible capture.");
     return 1;
 }
 var scenes = System.Text.Json.JsonSerializer.Deserialize<SomeEngine.Runtime.TestScene[]>(

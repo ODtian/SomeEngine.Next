@@ -1658,6 +1658,7 @@ nativeDevice.Native, &native,
 
         internal ulong Address =>
         ResourceTrace.GetGPUVirtualAddress(_storage.Native) + Info.StorageRange.Offset;
+        public override ulong DeviceAddress => Address;
         internal D3D12Buffer Storage => _storage;
         internal NativeLease NativeLifetime => _storageLifetime;
 

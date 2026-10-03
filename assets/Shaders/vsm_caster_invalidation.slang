@@ -146,9 +146,9 @@ void InvalidateBoundsInView(
         return;
 
     uint firstMip = view.LightKind == VSM_LIGHT_DIRECTIONAL ? 0u : view.MinMipLevel;
-    uint mipCount = view.LightKind == VSM_LIGHT_DIRECTIONAL
-        ? 1u
-        : max(view.MipLevelCount, 1u);
+    // The last directional clipmap also retains a coarse mip for fallback.
+    // Casters affect every cached resolution of this light projection.
+    uint mipCount = max(view.MipLevelCount, 1u);
 
     [loop]
     for (uint mip = firstMip; mip < mipCount; mip++)

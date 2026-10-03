@@ -11,11 +11,11 @@ public sealed record TestScene(string Name, string ContentDirectory, bool Animat
 /// <summary>Shared scene selection and render settings for the interactive test application.</summary>
 public sealed class SceneTestPlatform
 {
-    public SceneTestPlatform(IReadOnlyList<TestScene> scenes)
+    public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions? options = null)
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
         Scenes = scenes.ToArray();
-        Options = RuntimeStartupOptions.Parse([]) with
+        Options = options ?? RuntimeStartupOptions.Parse([]) with
         {
             WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true,
         };
