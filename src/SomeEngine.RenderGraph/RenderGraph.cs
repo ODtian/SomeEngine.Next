@@ -153,39 +153,13 @@ public sealed partial class RenderGraph : IDisposable
         out RenderGraphFrame frame,
         in RenderGraphFrameOptions options = default)
     {
-        EnsureAvailable();
-        CollectCompleted();
-        lock (_structureGate)
+        if (!TryOpenNextFrame(out RenderGraphNextFrame next, TimeSpan.Zero))
         {
-            if (_frameToken != 0)
-                throw new InvalidOperationException("A CPU frame is already active.");
-            for (int probe = 0; probe < _frameSlots.Length; probe++)
-            {
-                int index = (_preferredFrameIndex + probe) % _frameSlots.Length;
-                FrameSlot slot = _frameSlots[index];
-                if (!slot.IsReady(_backend)) continue;
-                slot.Reset(_backend);
-                // Reuse completed execution storage before initializing another
-                // copy of its graph cache, heaps and recorded commands.
-                _preferredFrameIndex = index;
-                ulong identity = AllocateOwnerIdentity();
-                _frameToken = checked((long)identity);
-                try
-                {
-                    frame = new RenderGraphFrame(slot.BeginExecution(
-                        this, identity, options, _structureIndex, StructureVersion));
-                    return true;
-                }
-                catch
-                {
-                    _frameToken = 0;
-                    throw;
-                }
-            }
+            frame = default;
+            return false;
         }
-
-        frame = default;
-        return false;
+        using (next) frame = BeginFrame(next, options);
+        return true;
     }
 
     public RenderGraphFrame BeginFrame(in RenderGraphFrameOptions options = default)

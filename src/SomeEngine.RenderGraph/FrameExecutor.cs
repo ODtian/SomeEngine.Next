@@ -360,7 +360,8 @@ internal sealed partial class FrameExecutor
                 ParameterBindings = source.ParameterBindings,
                 PersistentBindings = source.PersistentBindings,
                 DeclarationOrdinal = source.DeclarationOrdinal,
-                Enabled = source.Enabled && structureIndex.Structure.IsRegionEnabled(source.Region),
+                Enabled = source.Enabled && structureIndex.Structure.IsRegionEnabled(source.Region) &&
+                    _frame.HasBufferUploads(source.CallbackStorage),
                 PersistentCallbacks = source.CallbackStorage,
                 ExtensionPointIndex = -1,
             });
@@ -377,6 +378,7 @@ internal sealed partial class FrameExecutor
             _extensionCounts.TryGetValue(insertion, out int ordinal);
             _extensionCounts[insertion] = ordinal + 1;
             long key = checked(insertion + ordinal + 1);
+            if (source.IsBufferUpload) key = long.MinValue + i;
             source.DeclarationOrdinal = key;
             source.Enabled &= structureIndex.Structure.RootRegion.Enabled;
             int destination = staticPassCount + i;
