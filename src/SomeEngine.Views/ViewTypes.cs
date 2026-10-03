@@ -14,7 +14,7 @@ internal static unsafe class ViewTypes
     private static int s_count;
 
     internal static ushort Register(
-        delegate*<World, Entity, bool, void> buildFunction,
+        delegate*<World, Entity, ulong, bool, void> buildFunction,
         delegate*<World, Entity, bool> parameterCheckFunction,
         ChildSource children)
     {
@@ -29,10 +29,10 @@ internal static unsafe class ViewTypes
         }
     }
 
-    internal static void Build(World world, Entity entity, bool firstBuild)
+    internal static void Build(World world, Entity entity, ulong frame, bool firstBuild)
     {
         ushort typeId = world.Read<ViewType>(entity).Id;
-        Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity, firstBuild);
+        Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity, frame, firstBuild);
     }
 
     internal static bool HasParameterChanges(World world, Entity entity)
@@ -53,14 +53,14 @@ internal static unsafe class ViewTypes
 
     private readonly struct ViewFunctions
     {
-        internal readonly delegate*<World, Entity, bool, void> BuildFunction;
+        internal readonly delegate*<World, Entity, ulong, bool, void> BuildFunction;
         internal readonly delegate*<World, Entity, bool> ParameterCheckFunction;
 #if DEBUG
         internal readonly ChildSource Children;
 #endif
 
         internal ViewFunctions(
-            delegate*<World, Entity, bool, void> buildFunction,
+            delegate*<World, Entity, ulong, bool, void> buildFunction,
             delegate*<World, Entity, bool> parameterCheckFunction,
             ChildSource children)
         {
@@ -84,30 +84,44 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
         return ViewTypes.Register(&Build, &HasParameterChanges, T.Children);
     }
 
-    internal static void Build(World world, Entity entity, bool firstBuild)
+    internal static void Build(World world, Entity entity, ulong frame, bool firstBuild)
     {
         T view = world.ReadComponentData<T>(entity);
         uint parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
         RebuildDiagnostics.Record<T>(world, entity, firstBuild, parameterVersion);
         if (Profiler.IsActive || EngineTrace.IsEnabled)
-            BuildWithTracing(world, entity, in view, parameterVersion);
+            BuildWithTracing(world, entity, frame, in view, parameterVersion);
         else
-            BuildContents(world, entity, in view, parameterVersion);
+            BuildContents(world, entity, frame, in view, parameterVersion);
     }
 
-    private static void BuildWithTracing(World world, Entity entity, in T view, uint parameterVersion)
+    private static void BuildWithTracing(World world, Entity entity, ulong frame, in T view, uint parameterVersion)
     {
         using var profiler = Profiler.BeginScope(ViewTrace.Name);
         using var trace = EngineTrace.Begin(ViewTrace.Site);
-        BuildContents(world, entity, in view, parameterVersion);
+        BuildContents(world, entity, frame, in view, parameterVersion);
     }
 
-    private static void BuildContents(World world, Entity entity, in T view, uint parameterVersion)
+    private static void BuildContents(World world, Entity entity, ulong frame, in T view, uint parameterVersion)
     {
-        using var scope = Scope.Enter(world, entity,
-            declaresChildren: T.Children == ChildSource.Build, dependenciesEnabled: T.Mode == BuildMode.Rerun);
-        view.Build().Complete();
-        scope.Complete();
+        try
+        {
+            using var scope = Scope.Enter(world, entity, frame,
+                declaresChildren: T.Children == ChildSource.Build, dependenciesEnabled: T.Mode == BuildMode.Rerun);
+            view.Build().Complete();
+            scope.Complete();
+            if (world.HasSparse<BuildError>(entity))
+                world.RemoveSparse<BuildError>(entity);
+        }
+        catch (Exception exception)
+        {
+            var error = new BuildError { Exception = exception, Frame = frame };
+            if (world.HasSparse<BuildError>(entity))
+                world.ReplaceSparse(entity, in error);
+            else
+                world.AddSparse(entity, in error);
+            DevelopmentCheck.Report($"View {typeof(T).Name} on {entity} failed to build in frame {frame}: {exception}");
+        }
         if (T.Mode == BuildMode.Rerun)
             world.Replace(entity, new ParameterVersion(parameterVersion));
     }

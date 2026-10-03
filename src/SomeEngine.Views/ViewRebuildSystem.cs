@@ -14,6 +14,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private readonly List<ushort> _dependencyTypes = new();
     private ComponentChange[] _componentChanges = new ComponentChange[16];
     private QueryHandle _viewQuery;
+    private ulong _frame;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
@@ -25,6 +26,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         RebuildDiagnostics.BeginFrame(context.World);
+        _frame++;
 #if DEBUG
         using var rebuild = Scope.EnterRebuild();
 #endif
@@ -63,7 +65,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
                 if (firstBuild)
                     context.World.RemoveTag<BuildRequest>(entity);
                 if (firstBuild || HasChanges(context.World, entity, recheck: true))
-                    ViewTypes.Build(context.World, entity, firstBuild);
+                    ViewTypes.Build(context.World, entity, _frame, firstBuild);
             }
         }
         _views.Clear();
