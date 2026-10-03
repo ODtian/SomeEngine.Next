@@ -26,5 +26,13 @@
 视图函数的参数与可见范围见 [[architecture/someui/Views|Views]]；
 编译诊断见 [[architecture/someui/Checks|Checks]]。
 
+`SomeEngine.Views.Compose`（#58）提供 `ComposableAttribute`，依赖 Views。
+直接引用 Compose 包时，生成器 DLL 与 buildTransitive props 随 Views 依赖接入，
+由 Views 包持有同一份生成器与拦截命名空间配置。
+仓库中直接引用 Compose 的项目同样由 `Directory.Build.targets` 接入生成器。
+Compose 的视图生成、调用位置拦截与跨程序集类型复用由同一个 `ViewGenerator` 提供，
+声明与调用诊断由 `ComposeAnalyzer` 提供，接口形状见
+[[architecture/someui/Compose-Frontend|Compose Frontend]]。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · ADR 0011 · ADR 0013
