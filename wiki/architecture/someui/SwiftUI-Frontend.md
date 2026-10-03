@@ -59,7 +59,7 @@ binding.Value = 7;
 `if` 与 `else` 中的同类视图使用各自调用位置的身份，各自的当前节点在重跑与参数更新时保持状态。
 分支切换后的旧子树释放与新节点创建沿共同的子树规则处理；重新创建的节点从初始值开始。
 
-`SEV009` 在编译期报告 `[State]` 的属性声明形状。
+`SEV015` 在编译期报告 `[State]` 的属性声明形状。
 活动构建、视图类型、`Rerun` 模式和 Binding 使用错误通过 Core `DevelopmentCheck` 报告，shipping 编译移除这些检查调用及参数求值。
 生成访问器通过 `StateProperties.Get<TView, T>` 进入实体存储；初始值的 Binding 投影沿编译期确定的字段访问器读取构造数据。
 
