@@ -25,6 +25,37 @@ public static class Scope
     /// <summary>The entity of the view being built.</summary>
     public static Entity Entity => Current.Entity;
 
+    internal static ulong Frame => s_scopes is { Count: > 0 } ? s_scopes.Peek().Frame : 0;
+
+    /// <summary>Runs a view-owned calculation now and again when its reads change.</summary>
+    public static void Compute(Action run)
+    {
+        DevelopmentCheck.Require(run is not null, "Scope.Compute requires a calculation.");
+        Computation computation = AddComputation(run);
+        computation.Execute(Current.Frame);
+    }
+
+    /// <summary>Creates a Memo whose result changes its version only when its value changes.</summary>
+    public static Memo<T> Memo<T>(Func<T> compute)
+    {
+        DevelopmentCheck.Require(compute is not null, "Scope.Memo requires a calculation.");
+        var memo = new Memo<T>(compute);
+        memo.Refresh(Current.Frame);
+        return memo;
+    }
+
+    internal static Computation AddComputation(Action run, bool evaluatesOnRead = false)
+    {
+        ScopeData current = Current;
+        if (!current.World.HasSparse<Computations>(current.Entity))
+            current.World.AddSparse(current.Entity, new Computations(new ComputationList()));
+        ComputationList list = current.World.ReadSparse<Computations>(current.Entity).List;
+        var computation = new Computation(current.World, current.Entity, current.Computation, run,
+            current.Frame, evaluatesOnRead);
+        list.Items.Add(computation);
+        return computation;
+    }
+
     /// <summary>Records an object source read by a Rerun build.</summary>
     /// <remarks>Calls outside a computation keep the source independent of any view.</remarks>
     public static void Depend(VersionCell cell)
@@ -42,6 +73,12 @@ public static class Scope
         ScopeData current = s_scopes.Peek();
         if (!current.DependenciesEnabled)
             return;
+
+        if (current.Computation is { } computation)
+        {
+            computation.ObjectReads.Add(cell, version);
+            return;
+        }
 
         if (!current.World.Has<ObjectDependencies>(current.Entity))
             current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList()));
@@ -107,6 +144,11 @@ public static class Scope
 
     private static void RecordDependency(ScopeData current, Dependency dependency)
     {
+        if (current.Computation is { } computation)
+        {
+            computation.Add(dependency);
+            return;
+        }
         if (!current.World.HasBuffer<Dependency>(current.Entity))
             current.World.AddBuffer<Dependency>(current.Entity);
         current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
@@ -212,6 +254,8 @@ public static class Scope
 
     internal static BuildScope Enter(World world, Entity entity, ulong frame, bool declaresChildren, bool dependenciesEnabled)
     {
+        if (world.HasSparse<Computations>(entity))
+            world.ReadSparse<Computations>(entity).List.ReleaseChildren();
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
         if (world.Has<ObjectDependencies>(entity))
@@ -231,12 +275,31 @@ public static class Scope
         return default;
     }
 
+    internal static BuildScope Enter(Computation computation, ulong frame)
+    {
+        ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
+        var current = new ScopeData(computation.World, computation.Entity, computation.Entity, frame,
+            declaresChildren: false, dependenciesEnabled: true,
+            parent?.World == computation.World ? parent.Changes : null)
+        {
+            Computation = computation,
+        };
+#if DEBUG
+        current.BuildNumber = ++s_buildNumber;
+#endif
+        (s_scopes ??= new Stack<ScopeData>()).Push(current);
+        return default;
+    }
+
     internal static ParentScope EnterContent(Entity entity)
     {
         ScopeData build = Current;
         ViewTypes.CheckContent(build.World, entity);
         var current = new ScopeData(build.World, build.Entity, entity, build.Frame,
-            declaresChildren: true, dependenciesEnabled: build.DependenciesEnabled, build.Changes);
+            declaresChildren: true, dependenciesEnabled: build.DependenciesEnabled, build.Changes)
+        {
+            Computation = build.Computation,
+        };
 #if DEBUG
         current.BuildNumber = build.BuildNumber;
 #endif
@@ -349,6 +412,7 @@ public static class Scope
         internal ulong Frame { get; }
         internal bool DeclaresChildren { get; }
         internal bool DependenciesEnabled { get; set; }
+        internal Computation? Computation { get; init; }
         internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren { get; }
         internal List<Entity> DeclaredChildren { get; } = new();
         internal ChildChanges Changes { get; }

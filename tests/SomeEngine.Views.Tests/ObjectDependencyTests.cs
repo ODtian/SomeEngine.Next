@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class ObjectDependencyTests
+public sealed partial class ObjectDependencyTests
 {
     [Fact]
     public void DependOutsideAComputationKeepsTheDataAvailable()

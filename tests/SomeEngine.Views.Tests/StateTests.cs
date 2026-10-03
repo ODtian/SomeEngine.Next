@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class StateTests
+public sealed partial class StateTests
 {
     [Fact]
     public void AFailedStateDisplayRecoversWhenTheStateChangesAgain()

@@ -14,7 +14,7 @@
 ## Invariants
 - 只有带版本的数据能被依赖。外部数据通过持有 `VersionCell` 接入，不必进入 ECS。
 - 写入只推进版本，不推送通知；跨线程写入无需派发，下一次重建阶段即可看到。
-- ECS 依赖存于节点的 `DynamicBuffer<Dependency>`；对象依赖存为 `(VersionCell 引用, 版本)` 数组，均不装箱。
+- 视图 `Build` 的 ECS 依赖存于节点的 `DynamicBuffer<Dependency>`；无节点计算的 ECS 读取存于其计算列表项。对象依赖使用池化的 `(VersionCell 引用, 版本)` 数组，均不装箱。
 - 按组件类型的全局写版本未变时，该类型的所有依赖整批跳过。
 - 依赖粒度是整个组件。需要更细的粒度时按变化频率拆分组件（例如点击计数 `Clicks` 与悬停状态 `Hover` 分开），不提供字段级依赖。
 - 列表的父计算只依赖 `Each` 的成员，每行是读取自身实体的子视图。
@@ -83,6 +83,10 @@ public static class Scope
 重建检查通过 `Volatile.Read` 观察每个来源的版本，以 `!=` 比较已登记版本。
 奇数版本表示写入期间，在逐帧筛选与候选执行前复核中均视为变化。
 ECS 与对象依赖共用原有的候选列表和深度调度。
+
+无节点计算使用同一依赖登记与检查入口，分别持有各自的读取数据。
+检查 Memo 来源时先刷新其值，再比较版本；失败与恢复观察及计算生命周期见
+[[architecture/someui/Computations|Computations]]。
 
 实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
 [对象依赖](../../../src/SomeEngine.Views/ObjectDependencies.cs)、
