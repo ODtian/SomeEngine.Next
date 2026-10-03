@@ -542,11 +542,11 @@ internal static class RuntimeApplication
             device,
             options.AsyncCompute ? [graphicsQueue, computeQueue, copyQueue] : [graphicsQueue, copyQueue],
             new RenderGraphDesc(
-                // Match the two frames used by Cluster feedback and UI.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
         GraphRegionId targetGeometryAfterRegion, shadingRegion, temporalRegion, presentationRegion, uiRegion, feedbackRegion;
+        GraphRegionId frameOutputRegion;
         using (RenderGraphEdit edit = renderGraph.BeginEdit())
         {
             _ = edit.AddRegion("Frame uploads");
@@ -560,6 +560,7 @@ internal static class RuntimeApplication
             temporalRegion = edit.AddRegion("Temporal", postProcessing);
             presentationRegion = edit.AddRegion("Presentation", postProcessing);
             uiRegion = edit.AddRegion("UI", postProcessing);
+            frameOutputRegion = edit.AddFrameRegion("Frame output", postProcessing);
             feedbackRegion = edit.AddRegion("Feedback");
             edit.Commit();
         }
@@ -696,12 +697,8 @@ internal static class RuntimeApplication
                 bool readbackAdmitted = pipeline.TryAdmitFrameResources(
                     out _,
                     out QueueCompletion[] readbackRetirementFences);
-                bool uiAdmitted = ui.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] uiRetirementFences);
                 long admissionWaitStarted = Environment.TickCount64;
-                while (!readbackAdmitted ||
-                       !uiAdmitted)
+                while (!readbackAdmitted)
                 {
                     TimeSpan remaining = FrameTimeout -
                         TimeSpan.FromMilliseconds(
@@ -715,9 +712,7 @@ internal static class RuntimeApplication
                         ? TimeSpan.FromMilliseconds(2)
                         : remaining;
 
-                    QueueCompletion[] retirementFences = !readbackAdmitted
-                        ? readbackRetirementFences
-                        : uiRetirementFences;
+                    QueueCompletion[] retirementFences = readbackRetirementFences;
                     _ = WaitForAll(backend, retirementFences, waitSlice);
 
                     _ = window.PumpMessages();
@@ -727,12 +722,7 @@ internal static class RuntimeApplication
                             out _,
                             out readbackRetirementFences);
                     }
-                    if (!uiAdmitted)
-                    {
-                        uiAdmitted = ui.TryAdmitFrameResources(
-                            out _,
-                            out uiRetirementFences);
-                    }
+
                 }
                 backend.CollectCompleted(device);
                 coordinator.AdmitFrameResources();
@@ -917,6 +907,7 @@ internal static class RuntimeApplication
                     cameraCut,
                     viewEntity,
                     outputVerifier,
+                    frameOutputRegion,
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
                     options.SynchronousFrames,
                     options.TemporalAntialiasing,
@@ -1169,6 +1160,7 @@ internal static class RuntimeApplication
         bool cameraCut,
         Entity viewEntity,
         FrameOutputVerifier? outputVerifier,
+        GraphRegionId frameOutputRegion,
         RenderGraphDiagnosticsHandler? graphDiagnostics,
         bool synchronousFrames,
         bool temporalAntialiasing,
@@ -1221,7 +1213,7 @@ internal static class RuntimeApplication
                             view: viewEntity,
                             jitterPixels: jitterPixels);
                     ui.Record(ref graphFrame, width, height);
-                    outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue);
+                    outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue, frameOutputRegion);
                     if (reportMilestones)
                         Console.WriteLine("First frame: analyzing and submitting render graph.");
 
