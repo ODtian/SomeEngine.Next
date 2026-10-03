@@ -21,4 +21,8 @@ public static class DevelopmentCheck
     [Conditional("DEBUG")]
     public static void Fail(string message) =>
         throw new InvalidOperationException(message);
+
+    /// <summary>Reports a recovered failure through the application's trace listeners.</summary>
+    [Conditional("DEBUG")]
+    public static void Report(string message) => Trace.TraceError(message);
 }
