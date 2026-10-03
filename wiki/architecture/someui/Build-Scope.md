@@ -39,8 +39,8 @@ public static class Scope
 ## 首次构建实现（#6）
 
 当前公开入口为 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
-`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)`、
-`Scope.Has<T>(Entity)`、`Scope.Each(QueryHandle)` 与 `Scope.Untrack()`。
+`Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)`、`Scope.Has<T>(Entity)`、
+`Scope.Each(QueryHandle)`、`Scope.Depend(VersionCell)` 与 `Scope.Untrack()`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
 返回或抛出异常时通过 `Dispose` 恢复父作用域。父构建在子构建返回后继续使用自身节点。
 成功构建结束时完成子节点匹配，外层构建完成后释放旧子树；key 分组与节点身份规则见
@@ -60,6 +60,9 @@ public static class Scope
 `Scope.Read<T>(Entity)` 只约束 `struct`，按 `default(T) is ISparseComponent` 选择存储。
 它返回源组件的 `ref readonly T`，调用方在后续结构修改前消费这份引用。
 首次读取造成依赖缓冲添加时，先完成登记，再取得组件引用，使该次读取使用当前存储位置。
+
+对象读取通过 `Scope.Depend(VersionCell)` 接入相同的登记状态；`State<T>.Value` 自动登记读值对应的版本。
+计算之外的 `Depend` 为空操作。存储和版本规则见 [[architecture/someui/Dependencies|Dependencies]]。
 
 ## 内容作用域实现（#17）
 

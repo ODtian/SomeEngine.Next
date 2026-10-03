@@ -25,6 +25,29 @@ public static class Scope
     /// <summary>The entity of the view being built.</summary>
     public static Entity Entity => Current.Entity;
 
+    /// <summary>Records an object source read by a Rerun build.</summary>
+    /// <remarks>Calls outside a computation keep the source independent of any view.</remarks>
+    public static void Depend(VersionCell cell)
+    {
+        if (s_scopes is not { Count: > 0 } || !s_scopes.Peek().DependenciesEnabled)
+            return;
+        DevelopmentCheck.Require(cell is not null, "Scope.Depend requires a version cell.");
+        Depend(cell, Volatile.Read(ref cell.Version));
+    }
+
+    internal static void Depend(VersionCell cell, uint version)
+    {
+        if (s_scopes is not { Count: > 0 })
+            return;
+        ScopeData current = s_scopes.Peek();
+        if (!current.DependenciesEnabled)
+            return;
+
+        if (!current.World.Has<ObjectDependencies>(current.Entity))
+            current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList()));
+        current.World.Read<ObjectDependencies>(current.Entity).Reads.Add(cell, version);
+    }
+
     /// <summary>Reads a table or sparse component and records it as a dependency of a Rerun build.</summary>
     /// <remarks>Consume the reference before a structural change can move the component.</remarks>
     public static ref readonly T Read<T>(Entity entity) where T : struct
@@ -191,6 +214,8 @@ public static class Scope
     {
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
+        if (world.Has<ObjectDependencies>(entity))
+            world.Read<ObjectDependencies>(entity).Reads.Clear();
         ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
         var current = new ScopeData(world, entity, entity, frame, declaresChildren, dependenciesEnabled,
             parent?.World == world ? parent.Changes : null);
