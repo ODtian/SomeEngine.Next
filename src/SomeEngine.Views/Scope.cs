@@ -212,12 +212,9 @@ public static class Scope
         if (world.Has<ObjectDependencies>(entity))
             world.Read<ObjectDependencies>(entity).Reads.Clear();
         var current = new ScopeData(world, entity, entity, declaresChildren, dependenciesEnabled);
-#if DEBUG
-        current.Computation = current;
-#endif
         if (declaresChildren)
         {
-            CheckChildDeclaration(current);
+            CheckChildDeclaration(entity, current);
             CaptureSiblingCounts(current);
         }
         (s_scopes ??= new Stack<ScopeData>()).Push(current);
@@ -231,9 +228,9 @@ public static class Scope
         var current = new ScopeData(build.World, build.Entity, entity,
             declaresChildren: true, dependenciesEnabled: build.DependenciesEnabled);
 #if DEBUG
-        current.Computation = build.Computation;
+        current.Calculation = build.Calculation ?? build;
 #endif
-        CheckChildDeclaration(current);
+        CheckChildDeclaration(entity, current);
         CaptureSiblingCounts(current);
         s_scopes!.Push(current);
         return new ParentScope(entity, default);
@@ -241,22 +238,19 @@ public static class Scope
 
 #if DEBUG
     internal static RebuildScope EnterRebuild()
-    {
-        var scope = new RebuildScope();
-        s_childDeclarations = new Dictionary<Entity, ScopeData>();
-        return scope;
-    }
+        => RebuildScope.Enter();
 #endif
 
     [Conditional("DEBUG")]
-    private static void CheckChildDeclaration(ScopeData current)
+    private static void CheckChildDeclaration(Entity entity, ScopeData current)
     {
 #if DEBUG
-        ScopeData computation = current.Computation;
-        if (s_childDeclarations!.TryGetValue(current.Parent, out ScopeData? previous))
-            DevelopmentCheck.Require(previous.Entity == computation.Entity && !ReferenceEquals(previous, computation),
-                $"The children of {current.Parent} were declared by two scopes in the same rebuild.");
-        s_childDeclarations[current.Parent] = computation;
+        ScopeData calculation = current.Calculation ?? current;
+        if (s_childDeclarations!.TryGetValue(entity, out ScopeData? previous))
+            DevelopmentCheck.Require(previous.Entity == calculation.Entity &&
+                !ReferenceEquals(previous, calculation),
+                $"The children of {entity} were declared by two scopes in the same rebuild.");
+        s_childDeclarations[entity] = calculation;
 #endif
     }
 
@@ -326,7 +320,7 @@ public static class Scope
         internal int ChildIndex;
         internal ulong? KeyPrefix;
 #if DEBUG
-        internal ScopeData Computation = null!;
+        internal ScopeData? Calculation;
         internal Dictionary<ulong, SiblingGroup> PreviousSiblings { get; } = new();
 #endif
     }
@@ -352,7 +346,15 @@ public static class Scope
     {
         private readonly Dictionary<Entity, ScopeData>? _previousDeclarations;
 
-        public RebuildScope() => _previousDeclarations = s_childDeclarations;
+        private RebuildScope(Dictionary<Entity, ScopeData>? previousDeclarations) =>
+            _previousDeclarations = previousDeclarations;
+
+        internal static RebuildScope Enter()
+        {
+            var scope = new RebuildScope(s_childDeclarations);
+            s_childDeclarations = new Dictionary<Entity, ScopeData>();
+            return scope;
+        }
 
         public void Dispose() => s_childDeclarations = _previousDeclarations;
     }
