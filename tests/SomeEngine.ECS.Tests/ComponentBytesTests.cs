@@ -14,16 +14,16 @@ public sealed class ComponentBytesTests
         using var world = new World();
         Entity entity = world.CreateEntity(new ByteComponent { Number = 7, Opacity = 0.25f });
         Entity other = world.CreateEntity(new ByteComponent { Number = 11, Opacity = 0.5f });
-        uint before = ReadVersion<ByteComponent>(world, entity);
-        uint otherBefore = ReadVersion<ByteComponent>(world, other);
+        uint before = world.WriteVersion<ByteComponent>(entity);
+        uint otherBefore = world.WriteVersion<ByteComponent>(other);
 
         ref byte bytes = ref world.WriteBytes(entity, ComponentId<ByteComponent>.Value);
         Unsafe.As<byte, float>(ref Unsafe.Add(ref bytes, sizeof(int))) = 0.75f;
 
         ByteComponent value = world.Read<ByteComponent>(entity);
         Assert.Equal((7, 0.75f), (value.Number, value.Opacity));
-        Assert.NotEqual(before, ReadVersion<ByteComponent>(world, entity));
-        Assert.Equal(otherBefore, ReadVersion<ByteComponent>(world, other));
+        Assert.NotEqual(before, world.WriteVersion<ByteComponent>(entity));
+        Assert.Equal(otherBefore, world.WriteVersion<ByteComponent>(other));
     }
 
     [Fact]
@@ -32,12 +32,14 @@ public sealed class ComponentBytesTests
         using var world = new World();
         Entity entity = world.CreateEntity();
         world.AddSparse(entity, new SparseByteComponent { Number = 13, Opacity = 0.25f });
+        uint before = world.SparseWriteVersion<SparseByteComponent>(entity);
 
         ref byte bytes = ref world.WriteBytes(entity, ComponentId<SparseByteComponent>.Value);
         Unsafe.As<byte, float>(ref Unsafe.Add(ref bytes, sizeof(int))) = 0.875f;
 
         SparseByteComponent value = world.ReadSparse<SparseByteComponent>(entity);
         Assert.Equal((13, 0.875f), (value.Number, value.Opacity));
+        Assert.NotEqual(before, world.SparseWriteVersion<SparseByteComponent>(entity));
     }
 
     [Fact]
@@ -122,6 +124,38 @@ public sealed class ComponentBytesTests
         Assert.Equal(23, second.Read<ByteComponent>(entity).Number);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void EachByteReferenceAdvancesComponentWriteVersion(bool sparse)
+    {
+        using var world = new World();
+        Entity entity = world.CreateEntity();
+        ushort component;
+        if (sparse)
+        {
+            world.AddSparse(entity, new SparseByteComponent { Number = 13 });
+            component = ComponentId<SparseByteComponent>.Value;
+        }
+        else
+        {
+            world.Add(entity, new ByteComponent { Number = 13 });
+            component = ComponentId<ByteComponent>.Value;
+        }
+
+        uint ReadVersion() => sparse
+            ? world.SparseWriteVersion<SparseByteComponent>(entity)
+            : world.WriteVersion<ByteComponent>(entity);
+        uint before = ReadVersion();
+        world.WriteBytes(entity, component);
+        uint first = ReadVersion();
+        world.WriteBytes(entity, component);
+        uint second = ReadVersion();
+
+        Assert.NotEqual(before, first);
+        Assert.NotEqual(first, second);
+    }
+
     [Fact]
     public void GenericTrackBuffersSupportFloatAndVectorValues()
     {
@@ -157,6 +191,16 @@ public sealed class ComponentBytesTests
     }
 
 #if DEBUG
+    [Fact]
+    public void ByteWriteReportsAbsentSparseComponent()
+    {
+        using var world = new World();
+        Entity entity = world.CreateEntity();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            world.WriteBytes(entity, ComponentId<SparseByteComponent>.Value));
+    }
+
     [Fact]
     public void ColumnWriteReportsReadOnlyQuery()
     {
@@ -230,24 +274,6 @@ public sealed class ComponentBytesTests
         Assert.Equal(0.25f, world.Read<ByteComponent>(entity).Opacity);
     }
 #endif
-
-    private static uint ReadVersion<T>(World world, Entity entity) where T : struct, IComponent
-    {
-        QueryHandle query = world.Query(world.QueryDefinition().Read<T>());
-        uint version = 0;
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (QueryChunkView chunk in cursor.Chunks)
-            {
-                for (int row = 0; row < chunk.Count; row++)
-                {
-                    if (chunk.GetEntity(row) == entity)
-                        version = chunk.ReadWriteVersions<T>()[row];
-                }
-            }
-        });
-        return version;
-    }
 
     public struct ByteComponent : IComponent
     {

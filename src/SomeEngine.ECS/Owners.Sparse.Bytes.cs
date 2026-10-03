@@ -1,3 +1,4 @@
+using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Sparse;
 
@@ -9,9 +10,9 @@ internal sealed partial class Sparse
     {
         _entities.ThrowDead(entity);
         object?[] stores = Volatile.Read(ref _stores);
-        if ((uint)component >= (uint)stores.Length || stores[component] is not ISparseSet sparseSet)
-            throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
-
-        return ref sparseSet.WriteBytes(entity);
+        DevelopmentCheck.Require((uint)component < (uint)stores.Length && stores[component] is ISparseSet,
+            $"Entity {entity} requires sparse component {component} for byte access.");
+        uint version = unchecked(_structure.Clock.Acquire() + 1);
+        return ref ((ISparseSet)stores[component]!).WriteBytes(entity, version);
     }
 }

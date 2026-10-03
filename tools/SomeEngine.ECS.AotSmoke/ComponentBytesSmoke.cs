@@ -13,13 +13,20 @@ internal static class ComponentBytesSmoke
     {
         using var world = new World();
         Entity entity = world.CreateEntity(new ValueComponent { Number = 7, Opacity = 0.25f });
+        uint before = world.WriteVersion<ValueComponent>(entity);
         ref byte field = ref world.WriteBytes(entity, ComponentId<ValueComponent>.Value, sizeof(int), sizeof(float));
         Unsafe.WriteUnaligned(ref field, 0.75f);
         Require(world.Read<ValueComponent>(entity).Opacity == 0.75f, "Component field byte write must update its value.");
+        Require(before != world.WriteVersion<ValueComponent>(entity), "Component field byte write must advance its write version.");
 
         world.AddSparse(entity, new SparseValue { Number = 11 });
+        before = world.SparseWriteVersion<SparseValue>(entity);
         Unsafe.WriteUnaligned(ref world.WriteBytes(entity, ComponentId<SparseValue>.Value), 23);
         Require(world.ReadSparse<SparseValue>(entity).Number == 23, "Sparse byte write must update its value.");
+        uint first = world.SparseWriteVersion<SparseValue>(entity);
+        world.WriteBytes(entity, ComponentId<SparseValue>.Value);
+        Require(before != first && first != world.SparseWriteVersion<SparseValue>(entity),
+            "Each sparse byte reference must advance its write version.");
 
         QueryHandle query = world.Query(world.QueryDefinition().Write<ValueComponent>());
         world.ExecuteQuery(query, static cursor =>
