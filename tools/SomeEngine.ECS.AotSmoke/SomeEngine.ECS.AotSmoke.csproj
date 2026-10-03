@@ -9,6 +9,10 @@
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../tests/SomeEngine.ECS.Tests/ManagedComponentChecks.cs"
+             Link="ManagedComponentChecks.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.ECS/SomeEngine.ECS.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj"
