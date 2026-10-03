@@ -42,7 +42,8 @@ StackGridChecks.Run();
 ComposeChecks.Run(frames);
 SwiftUIChecks.Run(frames);
 RememberChecks.Run(frames);
-Console.WriteLine("View functions, Compose content, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
+ComposeGroupChecks.Run(frames);
+Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
 
 static void Require(bool value, string message)
 {
