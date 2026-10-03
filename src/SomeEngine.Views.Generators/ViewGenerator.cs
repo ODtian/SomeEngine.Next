@@ -63,6 +63,9 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 CloseContainingTypes(storage, type);
                 AddDeclarations(output, options, functions, GetFileName(type, "Storage"), storage.ToString());
             }
+            string? stateProperties = GenerateStateProperties(type);
+            if (stateProperties is not null)
+                AddDeclarations(output, options, functions, GetFileName(type, "State"), stateProperties);
             string source = GenerateFunctions(type);
             string file = GetFileName(type, "Functions");
             AddDeclarations(output, options, functions, file, source);
