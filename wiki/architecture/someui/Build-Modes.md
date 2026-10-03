@@ -42,5 +42,16 @@
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
 公开行为测试位于 `tests/SomeEngine.Views.Tests/ParameterBuildTests.cs`。
 
+## 构建中的依赖登记（#9、#15）
+
+`ViewRegistration<T>` 按 `T.Mode` 设置每次构建的读取登记状态。
+`Once` 使用仅取值状态，表格与 sparse 组件读取均保留首次构建内容；
+`Rerun` 使用登记状态，并在依赖变化后的重建中读取最新值。
+
+`Scope.Untrack()` 在当前构建内暂时使用仅取值状态，结束后恢复进入前的状态。
+嵌套块与子构建的状态边界见 [[architecture/someui/Build-Scope|Build Scope]]。
+公开行为验收位于 `tests/SomeEngine.Views.Tests/ReadDependencyTests.cs` 与
+`tests/SomeEngine.Views.Tests/UntrackTests.cs`。
+
 ## Relations
 [[architecture/someui/Views|Views]] · [[architecture/someui/Frontends|Frontends]] · [[architecture/someui/Computations|Computations]]
