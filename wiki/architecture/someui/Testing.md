@@ -71,5 +71,59 @@ Core 的公开检查验收通过参数求值的可观察效果验证开发报告
 | `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Debug` | 298 通过 |
 | `just ecs-aot win-x64` | 原生发布与执行成功，退出码 0，`viewsVerified: true` 与 `managedReferencesVerified: true` |
 
+## 重建诊断验收（#65）
+
+2026-10-04，实现提交 `58bbfe003b1bd1a186ee755d8ebab80370e9b937`，
+已合入集成分支 `af3bd85e23b57804fd1c15ca85aa6e0fe7d16fb0`。
+Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+
+`RebuildDiagnosticsTests` 通过公开 World、视图、系统帧与 `LastFrame` 验证表格和 sparse 来源、
+参数、存在性、查询成员、多个同时变化的来源、同步子构建、首次构建、失败构建、
+World 隔离、逐帧替换、关闭与再次开启。开发构建通过公开诊断入口验证 World 使用错误。
+类型区段通过公开 EngineTrace 采集与 Trace 文件读取 API 验证，并以真实 Tracy 采集导出复核。
+采集关闭时的配对计时和分配数据见 [[architecture/someui/Performance|Performance]]。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug --no-restore --verbosity minimal` | 129 个公共行为用例通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release --no-restore --verbosity minimal` | 111 个公共行为用例通过 |
+| `dotnet test tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj -c Release --verbosity minimal` | 620 个回归用例通过 |
+| `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Release --no-restore --verbosity minimal` | 298 个回归用例通过 |
+| `dotnet test tests/SomeEngine.Core.Tests/SomeEngine.Core.Tests.csproj -c Debug --no-restore --verbosity minimal` | 59 个回归用例通过 |
+| `dotnet test tests/SomeEngine.Core.Tests/SomeEngine.Core.Tests.csproj -c Release --verbosity minimal` | 59 个回归用例通过 |
+| `dotnet test tests/SomeEngine.Diagnostics.Tests/SomeEngine.Diagnostics.Tests.csproj -c Debug --verbosity minimal` | 20 个回归用例通过 |
+| `just ecs-aot win-x64` | 原生发布与执行成功，退出码 0，`viewsVerified: true` 与 `managedReferencesVerified: true` |
+
+NativeAOT 构建的 IL2026、IL3050 与 IL2070 位于已有 `TraceCapture` 与
+`JobStorageTypeShape` 路径，本次原生执行覆盖合入后的视图、组件字节访问与动画冒烟行为。
+
+## 环境数据验收（#13）
+
+2026-10-04，源码验收提交 `99ada7094a4103680d023b5e1f10b014913586e7`，
+已对齐集成分支 `b259174a8f9f117bc5dedc2c3b69f5d494a248a5`。
+Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+
+[EnvironmentTests](../../../tests/SomeEngine.Views.Tests/EnvironmentTests.cs) 经公开 World、
+视图、`Provide`、`ReadUp` 与系统帧验证表格和 sparse 的最近来源、自身提供、完整默认值、
+祖先提供后的当帧更新、中间提供者、提供者增删、自身及祖先移动、相同值下的来源切换、
+其它后代的内容与写版本保留，以及 `Once` 的首次取值。
+绑定计算与 Memo 的验收验证所属视图移动、来源移除、恢复提供后的显示，
+诊断验收通过公开 `LastFrame` 读取相同主题值下的来源切换记录。
+环境组在 Debug 中包含 31 个用例，Release 中包含 29 个用例。
+
+公开接口与父链移动的验收采用先红后绿流程；联合回归同时覆盖已集成的组件副本提交、
+计算、状态、异常恢复、生成器与重建诊断。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug --no-restore --verbosity minimal` | 246 个公共行为用例通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release --no-restore --verbosity minimal` | 219 个公共行为用例通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Debug --no-build --no-restore --verbosity minimal` | 41 个生成器用例通过 |
+| `dotnet test tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj -c Release --no-restore --verbosity minimal` | 620 个回归用例通过 |
+| `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Release --no-restore --verbosity minimal` | 298 个回归用例通过 |
+
+API 与提交规则见 [[architecture/someui/Composition|Composition]]，
+环境来源与版本检查见 [[architecture/someui/Dependencies|Dependencies]]。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
