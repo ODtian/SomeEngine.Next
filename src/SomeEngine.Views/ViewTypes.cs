@@ -100,12 +100,7 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
         }
         catch (Exception exception)
         {
-            var error = new BuildError { Exception = exception, Frame = frame };
-            if (world.HasSparse<BuildError>(entity))
-                world.ReplaceSparse(entity, in error);
-            else
-                world.AddSparse(entity, in error);
-            DevelopmentCheck.Report($"View {typeof(T).Name} on {entity} failed to build in frame {frame}: {exception}");
+            BuildErrors.Record(world, entity, exception, frame, typeof(T));
         }
         if (T.Mode == BuildMode.Rerun)
             world.Replace(entity, new ParameterVersion(parameterVersion));

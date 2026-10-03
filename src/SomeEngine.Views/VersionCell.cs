@@ -11,4 +11,7 @@ public class VersionCell
 
     /// <summary>Atomically advances the version after a cross-thread write.</summary>
     public void AdvanceShared() => Interlocked.Add(ref Version, 2);
+
+    internal virtual void Refresh(ulong frame) { }
+    internal virtual Exception? Error => null;
 }

@@ -3,6 +3,11 @@
 视图是实现 `IView` 的 struct，参数作为 ECS 组件保存在节点实体上，`Build` 声明内容。
 `Views.Spawn` 创建根，`ViewRebuildSystem` 完成首次构建及参数、读取依赖变化后的重跑。
 
+`Scope.Compute(Action)` 在所属视图登记并立即执行无节点计算，依赖变化后单独重跑。
+`Scope.Memo<T>(Func<T>)` 返回版本单元 `Memo<T>`，读取 `Value` 当场复核并重算过期值，
+相等结果保留已有版本。计算随创建者重跑与所属视图释放，规则见
+[Computations](../../wiki/architecture/someui/Computations.md)。
+
 包附带 `SomeEngine.Views.Generators` 分析器和 buildTransitive props。
 生成器为带主构造函数的视图生成同名静态函数，每个视图对应一个函数类。
 
