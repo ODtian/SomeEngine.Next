@@ -11,7 +11,7 @@ using SomeEngine.Layout;
 namespace SomeEngine.Views.AotSmoke;
 
 /// <summary>Public layout behavior shared by unit tests and the NativeAOT executable.</summary>
-internal static class LayoutChecks
+internal static partial class LayoutChecks
 {
     internal static void Run()
     {
