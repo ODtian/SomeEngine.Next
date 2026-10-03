@@ -30,6 +30,46 @@ internal static partial class ComposeChecks
         frames.Frame();
         Require(Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == label &&
             frames.World.ReadSparse<Card>(card).Title == "second new", "Changed Compose parameters update the same node's content.");
+        CheckContent(frames);
+    }
+
+    private static void CheckContent(HeadlessFrameDriver frames)
+    {
+        s_decoration = " old";
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ContentPanel(2, 0));
+        frames.Frame();
+        Entity rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
+        Entity[] content = Hierarchy<ElementTree>.GetChildren(frames.World, rows).ToArray();
+        Entity[] cards = content.Select(child => Hierarchy<ElementTree>.GetChildren(frames.World, child).Single()).ToArray();
+        Require(cards.Select(card => frames.World.ReadSparse<Card>(card).Title).SequenceEqual(["2 old", "5 old"]),
+            "Content functions declare an independent child for each row.");
+
+        s_decoration = " new";
+        frames.World.Replace(root, new ContentPanel(2, 1));
+        frames.Frame();
+        Require(cards.Select(card => frames.World.ReadSparse<Card>(card).Title).SequenceEqual(["2 old", "5 old"]),
+            "Static content delegates preserve equal row content when the parent changes.");
+        frames.World.Replace(root, new ContentPanel(7, 2));
+        frames.Frame();
+        Require(content.SequenceEqual(Hierarchy<ElementTree>.GetChildren(frames.World, rows)) &&
+            cards.Select(card => frames.World.ReadSparse<Card>(card).Title).SequenceEqual(["7 new", "5 old"]),
+            "Changed content arguments refresh the corresponding row.");
+    }
+
+    [Composable]
+    private static void Rows<T>(IReadOnlyList<T> items, int tick, [Composable] Action<T> row)
+    {
+        foreach (T item in items)
+            row(item);
+    }
+
+    private readonly record struct ContentPanel(int First, int Tick) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Rows(new[] { First, 5 }, Tick, static item => Scope.View(new Card(item + s_decoration)));
+            return default;
+        }
     }
 
     [Composable]

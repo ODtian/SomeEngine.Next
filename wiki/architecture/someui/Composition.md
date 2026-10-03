@@ -39,5 +39,10 @@ using (Dialog().Content())
 当前底层组合入口是 `using (Scope.View(new Group()).Content()) { Scope.View(...); }`；
 内容作用域和公开行为证据见 [[architecture/someui/Child-Source|Child Source]]。
 
+Compose 组件通过 `[Composable] Action<T>` 等内容参数选择内容的放置时机和数据。
+内容调用形成独立子视图，委托按引用比较，推荐 `static` lambda 加显式状态参数。
+API、节点身份、跨程序集转交及公开行为验收见
+[[architecture/someui/Compose-Frontend|Compose Frontend]] 的内容函数参数章节。
+
 ## Relations
 ADR 0011 · [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Input-and-Behaviors|Input and Behaviors]]
