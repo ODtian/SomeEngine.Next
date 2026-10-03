@@ -47,6 +47,7 @@ internal static class Program
 
     private static AotSmokeResult Run()
     {
+        ComponentBytesSmoke.Check();
         var registry = new SerializationRegistry();
         GameSerializationModule.RegisterAll(registry);
         registry
