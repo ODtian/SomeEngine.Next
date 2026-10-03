@@ -24,20 +24,29 @@ public sealed partial class ViewGenerator
             string delegateParameter = parameter.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + " @" + delegateName;
             string parameters = GenerateParameters(call.Parameters);
             string arguments = GenerateArguments(call.Parameters);
+            var callbacks = call.Parameters.Where(parameter => IsCallback(parameter.Type)).ToArray();
             string separator = call.Parameters.Length > 0 ? ", " : "";
             text.Append("    private readonly record struct ").Append(contentType).Append('(')
                 .Append(delegateParameter).Append(separator).Append(parameters).Append(')')
                 .Append(" : global::SomeEngine.Views.IView, global::SomeEngine.ECS.Components.ISparseComponent")
                 .AppendLine(GenerateConstraints(method.TypeParameters)).AppendLine("    {");
-            GenerateContentEquality(text, contentType,
+            GenerateParameterEquality(text, contentType,
                 new[] { (delegateName, parameter.Type, true) }.Concat(call.Parameters.Select(value => (value.Name, value.Type, false))));
-            text.Append("        public global::SomeEngine.Views.BuildTask Build()")
-                .Append(call.ReturnsVoid ? "\n        {\n            " : " => ")
-                .Append('@').Append(delegateName).Append(".Invoke(").Append(arguments).AppendLine(");");
+            text.AppendLine("        public global::SomeEngine.Views.BuildTask Build()\n        {");
+            if (callbacks.Length > 0)
+                text.Append("            var callbacks = new @").Append(contentName).Append("Callbacks")
+                    .Append(GenerateTypeParameters(method.TypeParameters))
+                    .AppendLine("(global::SomeEngine.Views.Scope.World, global::SomeEngine.Views.Scope.Entity);");
+            text.Append(call.ReturnsVoid ? "            " : "            return ")
+                .Append("this.@").Append(delegateName).Append(".Invoke(")
+                .Append(string.Join(", ", call.Parameters.Select(parameter => IsCallback(parameter.Type)
+                    ? GenerateCallbackArgument(parameter.Name, parameter.Type) : "this.@" + parameter.Name))).AppendLine(");");
             if (call.ReturnsVoid)
-                text.AppendLine("            return default;\n        }");
-            text.AppendLine("    }")
-                .Append("    private static ").Append(call.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                text.AppendLine("            return default;");
+            text.AppendLine("        }\n    }");
+            if (callbacks.Length > 0)
+                GenerateCallbackFunctions(text, contentName, method, callbacks.Select(parameter => (parameter.Name, parameter.Type)));
+            text.Append("    private static ").Append(call.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
                 .Append(" @Declare").Append(contentName).Append(GenerateTypeParameters(method.TypeParameters))
                 .Append("(ulong @").Append(keyName).Append(", ").Append(delegateParameter).Append(separator).Append(parameters).Append(')')
                 .AppendLine(GenerateConstraints(method.TypeParameters)).AppendLine("    {")
@@ -49,19 +58,19 @@ public sealed partial class ViewGenerator
         }
     }
 
-    private static void GenerateContentEquality(StringBuilder text, string type,
+    private static void GenerateParameterEquality(StringBuilder text, string type,
         IEnumerable<(string Name, ITypeSymbol Type, bool Content)> parameters)
     {
-        var fields = parameters.ToArray();
+        var fields = parameters.Where(field => field.Content || !IsCallback(field.Type)).ToArray();
         text.Append("        public bool Equals(").Append(type).Append(" other) => ")
-            .Append(string.Join(" && ", fields.Select(field => field.Content
+            .Append(fields.Length == 0 ? "true" : string.Join(" && ", fields.Select(field => UsesReferenceEquality(field.Type, field.Content)
                 ? "global::System.Object.ReferenceEquals(this.@" + field.Name + ", other.@" + field.Name + ")"
                 : "global::System.Collections.Generic.EqualityComparer<" + field.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
                     ">.Default.Equals(this.@" + field.Name + ", other.@" + field.Name + ")")))
             .AppendLine(";")
             .AppendLine("        public override int GetHashCode()\n        {\n            var hash = new global::System.HashCode();");
         foreach (var field in fields)
-            text.Append("            hash.Add(").Append(field.Content
+            text.Append("            hash.Add(").Append(UsesReferenceEquality(field.Type, field.Content)
                 ? "this.@" + field.Name + " is null ? 0 : global::System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(this.@" + field.Name + ")"
                 : "this.@" + field.Name).AppendLine(");");
         text.AppendLine("            return hash.ToHashCode();\n        }");

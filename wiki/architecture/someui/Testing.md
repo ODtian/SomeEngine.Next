@@ -150,6 +150,47 @@ Absolute 嵌套、最小/最大尺寸、单轴自动尺寸、零尺寸、非均�
 | `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj --nologo -v quiet` | 298 通过 |
 | `just views-aot win-x64` | 原生发布、布局/Compose/视图检查、存档类型编号重映射和下一帧重建全部通过，退出码 0 |
 
+## Surface 与外部对等验收（#28）
+
+`SomeEngine.Elements.Consumer.Tests` 直接引用公开的 Views、Layout 与 Elements 项目。
+架构用例同时引用公开的 Animation、Typography、Compose 与 SwiftUI 项目。
+`Rewrites/SurfaceModifiers.cs` 提供用户的三个等价修饰，`SurfaceTests` 将同一组
+节点数据、返回实体、布局结果与写版本用例应用于内置修饰和用户修饰。
+尺寸变化后的重建保留相同 Surface 的节点写版本与类型写版本，填充色变化则推进两者。
+开发构建中的三种修饰共用 Core 的作用域检查。
+
+`SurfaceChecks` 与用户修饰示例源文件还由现有 Views NativeAOT 工程编译，
+在 `Column` 节点上使用相同公开 API 验证布局尺寸变化、相等值的写版本保留和填充色更新。
+
+`AssemblyBoundaryTests` 经编译程序集的公开属性读取访问边界。
+向 Views 临时加入 `[assembly: InternalsVisibleTo("SomeEngine.Elements")]` 后，
+架构用例报告该声明并以退出码 1 失败；移除该声明后的验收通过。
+SDK 项目项形式分别向 `SomeEngine.Elements.Render` 与外部消费者授予内部访问时，
+同一架构用例列出两个目标并以退出码 1 失败；项目内容随后恢复。
+在 Animation 临时加入指向 Elements 的友元声明时，扩展后的架构用例报告来源与目标，
+并以退出码 1 失败；临时声明随后清理。
+访问边界规则由 [[architecture/someui/Assemblies|Assemblies]] 维护。
+
+2026-10-04，验收基于集成提交
+`220bca53e5941ae928d253d369c61f20e4c6837f`，其中包含 #25 的 Column 交付。
+Windows x64，.NET SDK `10.0.112`。
+以下测试命令均使用 `--nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Debug` | 13 通过 |
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Release` | 10 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Debug` | 50 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Release` | 48 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug` | 253 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release` | 224 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Debug` | 85 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Release` | 85 通过 |
+| `just views-aot win-x64` | 原生发布、Column Surface 与外部修饰、现有视图行为、存档写入与读回全部通过，退出码 0 |
+
+原生发布输出的 IL2026、IL3050 与 IL2070 位于现有 `TraceCapture` 与
+`JobStorageTypeShape` 路径。验收后的原生产物和临时友元声明已清理。
+
 ## 内容函数验收（#61）
 
 2026-10-04，实现提交 `c8255fdd`，源码验收提交

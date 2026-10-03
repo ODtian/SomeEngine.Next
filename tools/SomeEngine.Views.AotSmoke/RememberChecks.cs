@@ -24,9 +24,9 @@ internal static partial class RememberChecks
         frames.Frame();
         Require(frames.World.ReadSparse<Text>(root).Value == "1" &&
             frames.World.ReadSparse<Text>(toggle).Value == "False old", "Equal values preserve child content across parent refreshes.");
-        var button = frames.World.ReadSparse<Toggle_View>(toggle);
-        Require(button.tooltip() == "tick 1", "Func parameters refresh with the stored view data.");
-        button.change(true);
+        var button = frames.World.ReadSparse<ToggleCallbacks>(toggle);
+        Require(button.Tooltip() == "tick 1", "Published Func callbacks use the current parameter data.");
+        button.Change(true);
         frames.Frame();
         Require(selectedTick.Value == 1 && frames.World.ReadSparse<Text>(toggle).Value == "True new",
             "The latest callback updates remembered state and displays its new value.");
@@ -71,6 +71,32 @@ internal static partial class RememberChecks
             !parameters.Equals(equal with { content = new Action(Draw) }), "Classes and composable content use reference equality.");
         var record = new Record_View<ScoreRecord>(new(3));
         Require(record.Equals(new Record_View<ScoreRecord>(new(3))), "Record constraints preserve value equality in generic views.");
+
+        s_decoration = " old";
+        Entity contentRoot = Views.Spawn(frames.World, Entity.Null, new ContentScreen_View(refresh, selectedTick));
+        frames.Frame();
+        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, contentRoot).Single();
+        Entity contentNode = Hierarchy<ElementTree>.GetChildren(frames.World, container).Single();
+        var contentButton = frames.World.ReadSparse<ContentButton<int>>(contentNode);
+        s_decoration = " new";
+        refresh.Value = 2;
+        frames.Frame();
+        Require(frames.World.ReadSparse<ContentButton<int>>(contentNode).Text == "3 old" &&
+            contentButton.Tooltip() == "tick 2", "Generic content preserves its display and calls the latest published Func.");
+        contentButton.Change(7);
+        Require(selectedTick.Value == 2, "Generic content calls the latest published Action.");
+
+        var selectedText = MutableStateOf("");
+        Entity genericRoot = Views.Spawn(frames.World, Entity.Null, new GenericCallbackChecks<string>.Display_View<int>(3,
+            (text, number) => selectedText.Value = text + number + " before", number => "before " + number));
+        frames.Frame();
+        var genericCallbacks = frames.World.ReadSparse<GenericCallbackChecks<string>.CallbackPair<int>>(genericRoot);
+        frames.World.ReplaceSparse(genericRoot, new GenericCallbackChecks<string>.Display_View<int>(3,
+            (text, number) => selectedText.Value = text + number + " after", number => "after " + number));
+        frames.Frame();
+        genericCallbacks.Change("chosen", 7);
+        Require(genericCallbacks.Text(5) == "after 5" && selectedText.Value == "chosen7 after",
+            "Published callbacks preserve generic type and method arguments and return the latest result.");
     }
 
     [Composable]
@@ -87,8 +113,21 @@ internal static partial class RememberChecks
     }
 
     [Composable]
-    private static void Toggle(bool value, Action<bool> change, Func<string> tooltip) =>
+    private static void Toggle(bool value, Action<bool> change, Func<string> tooltip)
+    {
         Scope.Write<Text>(Scope.Entity) = new(value + s_decoration);
+        Scope.Write<ToggleCallbacks>(Scope.Entity) = new(change, tooltip);
+    }
+
+    [Composable]
+    private static void ContentScreen(State<int> refresh, State<int> clicked) =>
+        ContentContainer(3, refresh.Value, clicked, static (value, change, tooltip) =>
+            Scope.Write<ContentButton<int>>(Scope.Entity) = new(value + s_decoration, change, tooltip));
+
+    [Composable]
+    private static void ContentContainer<T>(T value, int tick, State<int> clicked,
+        [Composable] Action<T, Action<T>, Func<string>> content) =>
+        content(value, _ => clicked.Value = tick, () => "tick " + tick);
 
     [Composable]
     private static void Branches(bool alternate)
@@ -132,6 +171,8 @@ internal static partial class RememberChecks
     }
 
     private readonly record struct Text(string Value) : ISparseComponent;
+    private readonly record struct ToggleCallbacks(Action<bool> Change, Func<string> Tooltip) : ISparseComponent;
+    private readonly record struct ContentButton<T>(string Text, Action<T> Change, Func<string> Tooltip) : ISparseComponent;
     private readonly record struct BranchValues(int Value, int Tail, Action<int> Change, Action<int> ChangeTail) : ISparseComponent;
     private record ScoreRecord(int Value);
     private sealed class Score(int value)
@@ -140,4 +181,13 @@ internal static partial class RememberChecks
         public override int GetHashCode() => Value;
         private int Value { get; } = value;
     }
+}
+
+internal static partial class GenericCallbackChecks<T> where T : class
+{
+    [Composable]
+    internal static void Display<TValue>(TValue value, Action<T, TValue> change, Func<TValue, T> text) where TValue : struct =>
+        Scope.Write<CallbackPair<TValue>>(Scope.Entity) = new(change, text);
+
+    internal readonly record struct CallbackPair<TValue>(Action<T, TValue> Change, Func<TValue, T> Text) : ISparseComponent;
 }

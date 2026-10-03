@@ -22,7 +22,9 @@ Compose 回调、引用与内容函数的具体比较规则由生成器生成的
 通用构建路径直接采用视图的相等判断结果。
 生成视图的值类型、record 与 `string` 参数使用 `EqualityComparer<T>.Default`；
 其它引用参数使用 `ReferenceEquals` 和引用哈希。`Action`/`Func` 回调字段在相等判断与哈希中省略，
-带 `[Composable]` 标记的内容字段使用引用判断。完整前端接缝见
+带 `[Composable]` 标记的内容字段使用引用判断。主视图和内容节点共用这些规则。
+构建写出的普通 Action/Func 通过生成的转发方法取得当前参数组件中的委托，
+参数相等时保留的行为组件也使用最新捕获值。完整前端接缝见
 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
 
 父视图每次构建按 key 与出现次数复用子实体。

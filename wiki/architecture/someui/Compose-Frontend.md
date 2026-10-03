@@ -89,7 +89,7 @@ public static class Compose
 状态存储自动加入 `LocalState` 标记，使带状态的同 key 兄弟数量变化沿现有开发检查处理。
 `MutableStateOf` 每次创建一个共用的 `State<T>`，读取跟踪与写入规则由
 [[architecture/someui/State|State]] 维护。推荐用 `Remember(static () => MutableStateOf(false))`
-保存局部状态；写入状态的事件回调通过最新视图参数读取。
+保存局部状态；写入状态的事件回调沿下面的委托转发读取最新视图参数。
 
 生成的 readonly record struct 显式实现 `Equals` 与匹配的 `GetHashCode`：
 值类型、record、`string` 沿其值相等规则；其它引用参数按对象引用比较并使用引用哈希；
@@ -97,6 +97,13 @@ record 类别沿参数声明及泛型约束识别；受 record 基类约束的�
 `System.Action`、`System.Func` 的各个泛型形态作为回调时省略比较及哈希；
 带 `[Composable]` 标记的内容参数按委托引用比较。`ComposableAttribute` 可用于方法和参数。
 参数相等时，通用构建路径仍以本次参数静默覆盖组件，系统读取到最新 Action/Func 和其捕获值。
+生成的 `Build` 为普通 Action/Func 参数传入委托转发方法。构建把这些委托写入行为组件、
+或把它们继续传给子视图后，事件调用沿视图实体的当前参数组件读取实际委托并传递实参和返回值。
+转发对象只持有 World 和实体地址，实际委托与其捕获值由该视图的参数组件持有。
+同一规则用于内容子视图收到的普通回调实参；内容委托本身继续按引用比较并执行内容。
+回调随视图实体的生命周期使用，父构建失败时，已有转发方法读取共同参数恢复路径恢复的值。
+原方法和生成的内容构建方法共用该入口，泛型类型与方法约束由静态生成代码保持，
+回调执行使用已生成视图类型的 `World.ReadSparse<T>`。
 父视图通过 `paused.Value` 传普通值时，状态变化使父视图刷新并送达子视图；
 直接传 `State<T>` 时，各视图在自己的读取发生处登记依赖。
 存储与版本、内容保留的完整规则见 [[architecture/someui/Build-Modes|Build Modes]]。
@@ -107,9 +114,11 @@ record 类别沿参数声明及泛型约束识别；受 record 基类约束的�
 shipping 使用显式 key 0 的后备路径。初始化器为空与作用域使用错误也沿 Core 开发检查处理。
 
 公开行为验收见 `RememberTests.cs`、`RememberValuesTests.cs`、`RememberErrorTests.cs`、`ComposeStateTests.cs`、
-`ComposeParameterTests.cs`，覆盖条件切换、循环出现次数、Key 重排、实体独立状态、状态提升、
+`ComposeParameterTests.cs`、`CallbackDispatchTests.cs`、`ContentCallbackTests.cs`，覆盖条件切换、循环出现次数、Key 重排、实体独立状态、状态提升、
 最新回调、State 读取范围及各类参数比较。`RememberChecks.cs` 在现有 `just views-aot win-x64`
 入口经公开帧驱动验证同一状态与比较行为。
+回调验收通过视图构建实际写出的 `ToggleCallbacks`、`ContentButton<T>` 与 `CallbackPair<TText, TValue>`
+调用委托，核对内容保留、最新捕获值、泛型实参与返回值，以及父错误后的回调恢复。
 
 公开编译与行为验收见 `tests/SomeEngine.Views.Generators.Tests/ComposeTests.cs`，
 通过生成视图的参数组件、`ElementTree` 子内容、局部状态和 `BuildError` 验证结果。
@@ -176,7 +185,8 @@ LazyColumn(items, static item => ItemRow(item));
 - `row(...)` 和 `row.Invoke(...)` 在生成的构建方法中声明独立子视图。
   该节点保存原内容委托和本次实参，以原源码调用位置与出现次数组合身份。
   条件分支、循环、`Key` 前缀及节点释放沿共同的视图构建路径执行。
-- 内容委托在组件参数和内容节点参数中都按引用比较。相同委托与相等实参保留原内容；
+- 内容委托在组件参数和内容节点参数中都按引用比较。普通实参使用上面的共享参数比较与回调转发。
+  相同内容委托与相等普通实参保留原内容；
   委托引用或实参变化时更新同一节点。父参数变化后，各行继续分别比较自己的参数。
 - 生成的构建方法保留源码的命名空间、using、参数、泛型约束和控制流，
   内容参数可以直接转交给另一个 `[Composable]` 组件的 `[Composable]` 参数。
