@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class FirstBuildTests
+public sealed partial class FirstBuildTests
 {
     [Fact]
     public void NativeConsumerBuildsAndUpdatesMixedStorageWithCompletedAwaits() => FirstBuildChecks.Verify();

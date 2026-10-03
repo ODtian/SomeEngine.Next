@@ -106,11 +106,13 @@ internal sealed class BuildQueue
                         view.Task.Complete();
                         Scope.CompleteBuild(view);
                     }
+                    else
+                        Scope.CommitWrites(view);
                 }
                 catch (Exception exception)
                 {
                     completed = true;
-                    ViewTypes.RecordError(world, build.Entity, exception, frame);
+                    BuildErrors.Record(world, build.Entity, exception, frame);
                 }
                 finally
                 {
@@ -119,7 +121,12 @@ internal sealed class BuildQueue
                     {
                         Scope.FinishChildren(view);
                         if (view.ParameterVersion is uint version)
-                            world.Replace(build.Entity, new ParameterVersion(version));
+                        {
+                            if (world.Has<ParameterVersion>(build.Entity))
+                                world.Replace(build.Entity, new ParameterVersion(version));
+                            else
+                                world.Add(build.Entity, new ParameterVersion(version));
+                        }
                         _builds.Remove(build.Entity);
                         Scope.Release(view);
                     }

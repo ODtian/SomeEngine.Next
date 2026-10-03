@@ -9,12 +9,12 @@
 | 实体结构 | `Has<T>(entity)` | 组件被添加或移除 |
 | 查询成员 | `Each(query)` | 结果集的实体增删或顺序变化，与组件值无关 |
 | 环境数据 | `ReadUp<T>()` | 找到的祖先组件变化，或树结构变化后重新查找 |
-| 对象 | `Depend(cell)`，或读取 `State<T>.Value` | `VersionCell.Version` 变化 |
+| 对象 | `Depend(cell)`，或读取 `State<T>.Value` | `VersionCell.Version` 变化，或观察到奇数版本 |
 
 ## Invariants
 - 只有带版本的数据能被依赖。外部数据通过持有 `VersionCell` 接入，不必进入 ECS。
 - 写入只推进版本，不推送通知；跨线程写入无需派发，下一次重建阶段即可看到。
-- ECS 依赖存于节点的 `DynamicBuffer<Dependency>`；对象依赖存为 `(VersionCell 引用, 版本)` 数组，均不装箱。
+- 视图 `Build` 的 ECS 依赖存于节点的 `DynamicBuffer<Dependency>`；无节点计算的 ECS 读取存于其计算列表项。对象依赖使用池化的 `(VersionCell 引用, 版本)` 数组，均不装箱。
 - 按组件类型的全局写版本未变时，该类型的所有依赖整批跳过。
 - 依赖粒度是整个组件。需要更细的粒度时按变化频率拆分组件（例如点击计数 `Clicks` 与悬停状态 `Hover` 分开），不提供字段级依赖。
 - 列表的父计算只依赖 `Each` 的成员，每行是读取自身实体的子视图。
@@ -61,6 +61,41 @@ public struct Dependency : IBufferElement
 失败构建保留这次尝试已读取的依赖，恢复时机见
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
 
+## 对象读取依赖实现（#14）
+
+```csharp
+public static class Scope
+{
+    public static void Depend(VersionCell cell);
+}
+```
+
+`Scope.Depend` 在当前 `Rerun` 计算中登记 `(VersionCell 引用, 版本)`。
+计算之外和 `Once` 构建中的调用为空操作。同一次计算重复读取一个对象时，按引用身份合并，
+保留首次观察的版本。`State<T>.Value` 交给 Scope 的版本来自该次完整值读取。
+
+视图实体首次登记时添加包含托管对象的表格组件。该对象是此视图对象依赖的主要持有者，
+用池化数组保存对象引用与版本。每次构建开始清空有效元素的引用并复用数组，
+随后按新的读取路径登记。扩容时把旧数组清空并归还；组件生命周期结束后的托管回收归还其最后一份数组。
+父子计算沿现有作用域栈分别登记，子构建返回后继续使用父计算的登记状态。
+`Content()` 块沿用调用方计算的视图实体，块内对象读取继续登记到该计算，随调用方重建重新收集。
+
+重建检查通过 `Volatile.Read` 观察每个来源的版本，以 `!=` 比较已登记版本。
+对象读取同时记录所属 World 的重建帧号。奇数版本表示写入期间，
+在新帧筛选与候选执行前复核中视为变化；本帧构建已登记相同奇数版本后，
+该来源在版本再次变化或下一帧时继续失效。写入发布偶数版本后，版本差异进入本帧的后续重建轮次。
+ECS 与对象依赖共用原有的候选列表和深度调度。
+
+无节点计算使用同一依赖登记与检查入口，分别持有各自的读取数据。
+检查 Memo 来源时先刷新其值，再比较版本；失败与恢复观察及计算生命周期见
+[[architecture/someui/Computations|Computations]]。
+
+实现：[Scope](../../../src/SomeEngine.Views/Scope.cs)、
+[对象依赖](../../../src/SomeEngine.Views/ObjectDependencies.cs)、
+[重建系统](../../../src/SomeEngine.Views/ViewRebuildSystem.cs)。
+公开验收：[ObjectDependencyTests](../../../tests/SomeEngine.Views.Tests/ObjectDependencyTests.cs)，
+覆盖自定义来源、并发版本推进、奇数版本、条件读取、嵌套构建、`Once` 模式和托管回收后的读取。
+
 ## 存在性与查询成员依赖（#12）
 
 ```csharp
@@ -70,7 +105,7 @@ public static QueryRows Each(QueryHandle query);
 
 `Scope.Has<T>` 按组件存储路径检查当前 World 中的实体，支持表格、sparse、tag 与 shared
 组件的存在性。`Rerun` 构建登记 `(Entity, Component, Presence, 结果)`，用 `Version` 的
-`0` / `1` 保存观察结果。每帧重新判断存在性，结果变化时使视图失效；组件值写入、
+`0` / `1` 保存观察结果。每轮重新判断存在性，结果变化时使视图失效；组件值写入、
 启用位变化和其它组件的结构修改保持已有存在结果。源实体销毁后，原实体身份的结果为 false。
 同帧增删在下一次检查时按最终存在结果观察。
 
@@ -113,18 +148,18 @@ public static QueryRows Each(QueryHandle query);
 
 ## 按组件类型检查依赖（#11）
 
-每个 World 的 `ViewRebuildSystem` 保存自己已经检查过的依赖组件类型与各类型上次帧开始的写计数。
-每帧开始，各类型读取一次当前 `ComponentWriteVersion`，以 `!=` 判断该类型是否变化。
+每个 World 的 `ViewRebuildSystem` 保存自己已经检查过的依赖组件类型与各类型上次候选收集时的写计数。
+每轮收集候选前，各类型读取一次当前 `ComponentWriteVersion`，以 `!=` 判断该类型是否变化。
 收集候选时，计数相等的类型直接跳过其依赖的实体组件版本读取；计数变化的类型继续逐条比较
 依赖登记的版本。一个类型的其它实体被写入时，同样进入逐条比较，由来源实体的版本决定视图是否变化。
 
-首次遇到某依赖类型时，先完成该类型的逐条比较，再让下一帧使用类型计数筛选。
+首次遇到某依赖类型时，先完成该类型的逐条比较，再让下一轮使用类型计数筛选。
 这覆盖第一次构建登记依赖后、同一帧后续构建又写入该来源的情况。
 系统只保存按类型编号索引的版本数据与类型列表，依赖来源继续由节点的 `DynamicBuffer<Dependency>` 持有。
 
-候选执行前再次检查参数与依赖。对于帧开始计数相等的类型，复核当前类型写计数；
+候选执行前再次检查参数与依赖。对于收集候选时计数相等的类型，复核当前类型写计数；
 父构建或此前的候选构建写入该类型时，继续比较来源实体的当前组件版本。
-帧开始记录的计数保留到下一帧，用来观察候选收集之后产生的写入。
+本轮记录的计数保留到下一次候选收集，用来观察收集之后产生的写入。
 新依赖类型、不同 World 和表格 / sparse 组件沿相同的检查规则处理。
 
 实现：[ViewRebuildSystem](../../../src/SomeEngine.Views/ViewRebuildSystem.cs)。

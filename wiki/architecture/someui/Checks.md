@@ -9,6 +9,7 @@ SomeUI 的使用错误通过 [[architecture/validation/Development-Checks|Develo
 - 一帧内计算重跑超过迭代上限。
 - 未经拦截的节点调用；同 key 兄弟数量变化且带局部状态。
 - 对 `Build` 来源的视图调用 `.Content()`，或两个作用域声明同一节点的子节点。
+- 同一视图的每次构建以本次计算作用域区分子节点声明，依赖变化引发的再次构建沿正常重跑规则处理。
 - 被取消的构建在 `finally` 中调用构建函数。
 - 返回 `Task` 的辅助方法在 `await` 之后调用作用域函数。
 - `State<T>.Update` 回调中访问同一状态。
@@ -21,6 +22,26 @@ SomeUI 的使用错误通过 [[architecture/validation/Development-Checks|Develo
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
 
 编译期：`[Composable]` 用法错误、未开启拦截命名空间、一个函数体混用多个前端的原语、调用 `Remember` 的函数未标记 `[Composable]`、`Build` 中 `ref` 跨越 `await`（编译器）。
+
+## 视图编译诊断（#19）
+
+| 编号 | 级别 | 条件与处理 |
+|---|---|---|
+| `SEV001` | error | 项目引用 Views 时启用 `InterceptorsNamespaces` 中的 `SomeEngine.Views.Generated`；包的 buildTransitive props 与仓库 props 提供该配置 |
+| `SEV002` | info | 省略存储声明时提示选择 `IComponent` 或 `ISparseComponent`，生成器为 partial 视图补充 sparse |
+| `SEV003` | error | 生成存储接口需要 partial 视图声明 |
+| `SEV004` | error | 普通节点调用应有编译器实际识别的拦截方法；方法组、委托转换或其它生成器产出的调用可改为源码直接调用或显式 key 重载 |
+| `SEV005` | error | 嵌套视图函数与 Compose 视图声明需要其包含类型声明为 partial |
+| `SEV006` | error | Compose 视图方法声明为 static |
+| `SEV007` | error | Compose 视图方法返回 void 或 BuildTask；产生值的内联分组由 Inline 标记及 #60 接入 |
+| `SEV008` | error | Compose 调用应由编译器识别为视图拦截；方法组、委托、取地址与其它生成器产出的调用改为源码直接调用 |
+
+`DiagnosticSuppressor` 根据 `IView.Build` 的实际实现屏蔽 CS1998，包含显式接口实现。
+辅助方法的 CS1998 继续由编译器报告。
+Compose 生成的 `Build` 直接执行原方法，用户的直接调用沿位置拦截声明子视图。
+生成入口的区分与跨程序集规则见 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
+绕过编译期拦截检查后直接进入单参数 `Scope.View`，由 Core 的 `DevelopmentCheck`
+报告调用位置接入要求；shipping 的条件编译移除该检查并使用 key 0 后备行为。
 
 ## Relations
 [[architecture/someui/Build-Scope|Build Scope]] · [[architecture/someui/Compose-Frontend|Compose Frontend]]

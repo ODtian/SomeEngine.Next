@@ -12,7 +12,7 @@
 
 ## Invariants
 - 实际身份是 key 加该 key 在当前父节点下本次的出现次数，保存在子实体的 `ElementKey` 组件中。上次的子节点就是层级中的现有子节点，不另存组合记录。
-- 底层公开 `View<T>(in T view, ulong key)`；未经拦截的 `View<T>(in T view)` 使用 key 0，等同于按出现顺序匹配。调用位置常量和未经拦截调用的诊断由 #19 接入。
+- 底层公开 `View<T>(in T view, ulong key)`；普通 `View<T>(in T view)` 与同名函数的调用位置常量由 #19 接入。显式 key 0 按出现顺序匹配；绕过拦截的单参数重载在 Debug 中通过 `DevelopmentCheck` 报告，在 shipping 中保留 key 0 的后备行为。
 - 一个产出带状态节点的辅助函数，在同一位置被有条件地多次调用时，需要 `Key` 或 `[Inline]` 分组。
 - 同一父节点下重复 key 的兄弟数量变化且它们带有局部状态时，由开发检查报告。每项使用独立 `Key(id)` 的列表按各项身份增删。
 
@@ -61,6 +61,26 @@ Core `DevelopmentCheck` 报告 key、前后数量与使用独立 `Key` 的提示
 
 公开行为测试见 `tests/SomeEngine.Views.Tests/NodeIdentityTests.cs`；
 `FirstBuildChecks.cs` 将 keyed 重排、状态保留、删除和类型替换同步纳入 ECS NativeAOT 冒烟。
+
+## 调用位置实现（#19）
+
+生成器使用 Roslyn `GetInterceptableLocation` 和版本 1 的 `InterceptsLocation`
+数据定位调用，编译器将其改写为显式 key 声明。
+key 在编译时从文件路径、行、列计算：路径中的反斜杠统一为斜杠，行列从 1 开始，
+沿 `#line` 映射后的调用方法名称位置取值，使用 UTF-8 文本的 64 位 FNV-1a。
+同一位置的循环调用由出现次数区分；同一行的不同列、不同分支的调用拥有各自的 key。
+`Key(id)` 前缀继续与位置 key 组合，列表重排时保留每项内各调用位置的身份。
+
+拦截器通过公开的 `Scope.View(in T, ulong)` 写入同一身份匹配路径。
+同名函数声明在生成器当前语义分析中加入编译上下文，使用户源码中的同名函数调用
+与该生成器自己的函数体都获得拦截位置；引用程序集提供的同名函数也沿同一入口处理。
+编译期诊断用 Roslyn 的实际拦截结果核对每个单参数节点调用；
+方法组、委托转换及其它生成器产出的普通节点调用由 `SEV004` 报告。
+其它生成器可以直接调用显式 key 重载。
+
+公开行为验收覆盖同名函数与 `View(new ...)` 的参数、分支切换后的局部状态、
+同一行双调用删去一个后的实体与状态保留、lambda、泛型参数、可选参数及 sparse 默认。
+最小 NativeAOT 示例的发布入口为 `tools/SomeEngine.Views.AotSmoke`。
 
 ## Relations
 [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Compose-Frontend|Compose Frontend]] · ADR 0013

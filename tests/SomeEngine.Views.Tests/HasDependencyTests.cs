@@ -4,7 +4,7 @@ using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class HasDependencyTests
+public sealed partial class HasDependencyTests
 {
     [Theory]
     [InlineData(false)]

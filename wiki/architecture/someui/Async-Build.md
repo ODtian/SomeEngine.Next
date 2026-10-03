@@ -52,6 +52,18 @@ C# 编译器在 Release 中生成 struct 状态机，Debug 中的 async 状态�
 读取登记状态保留到整个构建完成。挂起期间保持这次构建，完成后再沿既有版本检查处理变化。
 构建成功完成时统一清理主作用域及保留的内容作用域，并提交开始构建时的参数版本。
 
+`Scope.Write` 的副本由本次计算的主作用域持有，内容作用域与辅助方法共享它。
+初次挂起返回构建入口、每次恢复再挂起以及成功完成时，使用现有 `ComponentCopy.Commit`
+比较当前 ECS 值并提交本段写入，随后清空副本集合。下一段首次写入从当前 ECS 数据取值。
+子声明数据与读取依赖跨段保留，整个构建成功完成时统一执行子树收尾。
+异常发生的段释放自己的写入副本，之前已经提交的段保持其公开结果。
+
+恢复时推进对象依赖集合的读取帧，保留集合中已登记的版本，沿
+`DependencyChanges` 的轮次检查处理同帧收敛。挂起构建中的 `Compute` 与 `Memo`
+继续由同一个重建系统检查；恢复后的计算追加到该视图现有列表。
+从存档读取的 `ViewType.RebuildRequired` 通过现有构建入口消费，
+`Once` 视图也重新启动其异步构建；Rerun 参数版本在整个构建结束时建立或更新。
+
 `Scope.NextFrame()` 返回 `FrameAwaitable`。当前重建阶段内注册的回调在该 World
 下一次重建开始时登记就绪项，每次 await 推进一帧。同一帧恢复期间新就绪的
 `BuildTask` 调用者在后续帧恢复，因此挂起的辅助方法完成后，外层构建在下一次
@@ -70,6 +82,8 @@ C# 编译器在 Release 中生成 struct 状态机，Debug 中的 async 状态�
 公开行为验收：[AsyncBuildTests](../../../tests/SomeEngine.Views.Tests/AsyncBuildTests.cs)。
 共享公开检查 `FirstBuildChecks.cs` 同时覆盖 `NextFrame` 的 30 帧序列与
 工作线程完成 `ConfigureAwait(false)` 后的内容更新，经现有 `just ecs-aot win-x64` 入口运行。
+`AsyncIntegrationChecks.cs` 同时编入这一入口，覆盖 table/sparse 分段提交、
+挂起期间 Memo 绑定、对象读取帧与存档后的异步构建恢复。
 
 ## Relations
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · ADR 0012

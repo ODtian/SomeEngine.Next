@@ -13,6 +13,12 @@
              Link="ManagedComponentChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/FirstBuildChecks.cs"
              Link="FirstBuildChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/AsyncIntegrationChecks.cs"
+             Link="AsyncIntegrationChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/ComputationChecks.cs"
+             Link="ComputationChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/ComponentWriteChecks.cs"
+             Link="ComponentWriteChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs"
              Link="HeadlessFrameDriver.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/StructureDependencyChecks.cs"

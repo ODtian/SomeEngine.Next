@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class ChildSourceTests
+public sealed partial class ChildSourceTests
 {
     [Fact]
     public void ContentDeclaresAllChildrenAndReleasesTheRemovedSubtree()

@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class ReadDependencyTests
+public sealed partial class ReadDependencyTests
 {
     [Theory]
     [InlineData(false)]
@@ -65,7 +65,7 @@ public sealed class ReadDependencyTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ComponentWritesAfterFirstChildBuildUpdateTheNextFrameDisplay(bool sparse)
+    public void ComponentWritesAfterFirstChildBuildUpdateTheDisplayWithinTheFrame(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
         Entity source = frames.World.CreateEntity();
@@ -76,13 +76,12 @@ public sealed class ReadDependencyTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new InitialWriteGroup(source, sparse));
         frames.Frame();
         Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("3", frames.World.Read<DisplayText>(child).Value);
+        Assert.Equal("3;7", frames.World.Read<DisplayText>(child).Value);
+        uint displayVersion = frames.World.WriteVersion<DisplayText>(child);
 
         frames.Frame();
 
         Assert.Equal("3;7", frames.World.Read<DisplayText>(child).Value);
-        uint displayVersion = frames.World.WriteVersion<DisplayText>(child);
-        frames.Frame();
         Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(child));
     }
 

@@ -3,40 +3,80 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Queries;
+using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Views;
 
-/// <summary>Builds requested roots and views with changed parameters or dependencies in the World's interface phase.</summary>
+/// <summary>Runs requested view builds and changed calculations in the World's interface phase.</summary>
 public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 {
     private readonly List<Entity> _views = new();
     private readonly List<ViewDepth> _changedViews = new();
-    private readonly List<ushort> _dependencyTypes = new();
-    private ComponentChange[] _componentChanges = new ComponentChange[16];
+    private readonly List<Computation> _computations = new();
+    private readonly DependencyChanges _dependencyChanges = new();
     private QueryHandle _viewQuery;
-    private BuildQueue _builds = null!;
     private ulong _frame;
+    private int _iterationLimit = 8;
+    private BuildQueue _builds = null!;
+
+    /// <summary>The maximum number of rebuild rounds in one interface frame.</summary>
+    public int IterationLimit
+    {
+        get => _iterationLimit;
+        set
+        {
+            DevelopmentCheck.Require(value > 0, "The view rebuild iteration limit requires a positive value.");
+            _iterationLimit = value;
+        }
+    }
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _builds = BuildQueue.For(context.World);
-        _dependencyTypes.Clear();
-        Array.Clear(_componentChanges);
+        _dependencyChanges.Clear();
         _viewQuery = context.World.Query(context.World.QueryDefinition().Read<ViewType>());
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
+        RebuildDiagnostics.BeginFrame(context.World);
         _frame++;
 #if DEBUG
         using var rebuild = Scope.EnterRebuild();
 #endif
-        _builds.Resume(context.World, _frame);
-        RecordComponentChanges(context.World);
+        World world = context.World;
+        _builds.Resume(world, _frame);
+        for (int iteration = 0; iteration < IterationLimit; iteration++)
+        {
+            CollectChangedViews(world);
+            if (_changedViews.Count == 0)
+                return;
+
+            foreach (ViewDepth view in _changedViews)
+            {
+                Entity entity = view.Entity;
+                if (!world.IsAlive(entity))
+                    continue;
+                if (!_builds.Contains(entity) &&
+                    (world.Has<BuildRequest>(entity) || HasBuildChanges(world, entity, recheck: true)))
+                    ViewTypes.Build(world, entity, _frame);
+                if (world.IsAlive(entity) && world.HasSparse<Computations>(entity))
+                    RebuildComputations(world, entity);
+            }
+        }
+        CollectChangedViews(world);
+        if (_changedViews.Count > 0)
+            DevelopmentCheck.Fail($"View calculations exceeded the per-frame iteration limit of {IterationLimit}; " +
+                $"view {_changedViews[0].Entity} still has changed dependencies or parameters.");
+    }
+
+    private void CollectChangedViews(World world)
+    {
+        _dependencyChanges.Record(world, _frame);
         _views.Clear();
         _changedViews.Clear();
         List<Entity> views = _views;
-        context.World.ExecuteQuery(_viewQuery, ref views, static (rows, ref viewEntities) =>
+        world.ExecuteQuery(_viewQuery, ref views, static (rows, ref viewEntities) =>
         {
             foreach (var row in rows.Rows)
                 viewEntities.Add(row.Entity);
@@ -44,32 +84,19 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
         foreach (Entity entity in _views)
         {
-            if (!_builds.Contains(entity) &&
-                (context.World.Has<BuildRequest>(entity) || HasChanges(context.World, entity)))
+            if (world.Has<BuildRequest>(entity) || HasChanges(world, entity))
             {
                 int depth = 0;
-                Entity ancestor = Hierarchy<ElementTree>.GetParent(context.World, entity);
+                Entity ancestor = Hierarchy<ElementTree>.GetParent(world, entity);
                 while (ancestor != Entity.Null)
                 {
                     depth++;
-                    ancestor = Hierarchy<ElementTree>.GetParent(context.World, ancestor);
+                    ancestor = Hierarchy<ElementTree>.GetParent(world, ancestor);
                 }
                 _changedViews.Add(new ViewDepth(entity, depth));
             }
         }
         _changedViews.Sort(static (left, right) => left.Depth.CompareTo(right.Depth));
-
-        foreach (ViewDepth view in _changedViews)
-        {
-            Entity entity = view.Entity;
-            if (context.World.IsAlive(entity))
-            {
-                if (context.World.Has<BuildRequest>(entity) || HasChanges(context.World, entity, recheck: true))
-                    ViewTypes.Build(context.World, entity, _frame);
-            }
-        }
-        _views.Clear();
-        _changedViews.Clear();
     }
 
     public void OnDestroy(ref ImmediateSystemContext context)
@@ -78,70 +105,52 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         context.World.ReleaseQuery(_viewQuery);
     }
 
-    private void RecordComponentChanges(World world)
+    private bool HasChanges(World world, Entity entity)
     {
-        foreach (ushort component in _dependencyTypes)
-        {
-            ref ComponentChange change = ref _componentChanges[component];
-            uint version = world.ComponentWriteVersion(component);
-            change.Changed = version != change.Version;
-            change.Version = version;
-        }
-    }
-
-    private bool HasComponentChanges(World world, ushort component, bool recheck)
-    {
-        if (component >= _componentChanges.Length)
-            Array.Resize(ref _componentChanges, Math.Max(component + 1, _componentChanges.Length * 2));
-        ref ComponentChange change = ref _componentChanges[component];
-        if (!change.Recorded)
-        {
-            change.Version = world.ComponentWriteVersion(component);
-            change.Changed = true;
-            change.Recorded = true;
-            _dependencyTypes.Add(component);
-        }
-        // Builds can write a type after its version was recorded at the start of the frame.
-        return change.Changed || (recheck && world.ComponentWriteVersion(component) != change.Version);
-    }
-
-    private bool HasChanges(World world, Entity entity, bool recheck = false)
-    {
-        if (ViewTypes.HasParameterChanges(world, entity))
+        if (!_builds.Contains(entity) && HasBuildChanges(world, entity))
             return true;
-        if (!world.HasBuffer<Dependency>(entity))
-            return false;
-
-        var changes = (System: this, World: world, Recheck: recheck, Found: false);
-        world.ExecuteBufferRead<Dependency,
-            (ViewRebuildSystem System, World World, bool Recheck, bool Found)>(
-            entity, ref changes, static (buffer, ref result) =>
+        if (world.HasSparse<Computations>(entity))
         {
-            foreach (Dependency dependency in buffer.AsSpan())
+            CollectComputations(world, entity);
+            bool changed = false;
+            foreach (Computation computation in _computations)
             {
-                bool changed = dependency.Kind switch
+                if (!computation.Released && !computation.EvaluatesOnRead &&
+                    computation.HasChanges(_dependencyChanges))
                 {
-                    DependencyKind.Presence => result.World.HasComponentData(dependency.Entity, dependency.Component) != (dependency.Version != 0),
-                    DependencyKind.Membership => result.World.MembershipVersion(dependency.Query) != dependency.Version,
-                    _ => result.System.HasComponentChanges(result.World, dependency.Component, result.Recheck) &&
-                        result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version,
-                };
-                if (changed)
-                {
-                    result.Found = true;
-                    return;
+                    changed = true;
+                    break;
                 }
             }
-        });
-        return changes.Found;
+            _computations.Clear();
+            return changed;
+        }
+        return false;
+    }
+
+    private bool HasBuildChanges(World world, Entity entity, bool recheck = false) =>
+        world.Read<ViewType>(entity).RebuildRequired || ViewTypes.HasParameterChanges(world, entity) ||
+        _dependencyChanges.HasChanges(world, entity, recheck);
+
+    private void CollectComputations(World world, Entity entity)
+    {
+        _computations.Clear();
+        _computations.AddRange(world.ReadSparse<Computations>(entity).List.Items);
+    }
+
+    private void RebuildComputations(World world, Entity entity)
+    {
+        CollectComputations(world, entity);
+        foreach (Computation computation in _computations)
+        {
+            if (!world.IsAlive(entity))
+                break;
+            if (!computation.Released && !computation.EvaluatesOnRead &&
+                computation.HasChanges(_dependencyChanges, recheck: true))
+                computation.Rebuild(_frame);
+        }
+        _computations.Clear();
     }
 
     private readonly record struct ViewDepth(Entity Entity, int Depth);
-
-    private struct ComponentChange
-    {
-        internal uint Version;
-        internal bool Changed;
-        internal bool Recorded;
-    }
 }

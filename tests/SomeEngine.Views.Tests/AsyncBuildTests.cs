@@ -5,8 +5,24 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class AsyncBuildTests
+public sealed partial class AsyncBuildTests
 {
+    [Fact]
+    public void AsyncWritesCommitEachSegmentAndContentUsesTheCurrentComponentValues() =>
+        AsyncIntegrationChecks.VerifyWrites();
+
+    [Fact]
+    public void MemoBindingsRefreshDuringSuspensionAndCalculationsContinueAfterResumption() =>
+        AsyncIntegrationChecks.VerifyComputations();
+
+    [Fact]
+    public void ObjectReadsObserveTheResumedFrameAndSettleBeforeTheNextFrame() =>
+        AsyncIntegrationChecks.VerifyObjectFrames();
+
+    [Fact]
+    public void RestoredOnceViewsReconstructTheirAsynchronousBuildAndKeepTheResult() =>
+        AsyncIntegrationChecks.VerifyRestoredBuild();
+
     [Fact]
     public void LoadingContentIsVisibleUntilTheResultBuildsInTheNextFrame()
     {
@@ -309,7 +325,7 @@ public sealed class AsyncBuildTests
     {
         public BuildTask Build()
         {
-            Scope.View(new AsyncChangingGroup(Result, Fail, Error));
+            Scope.View(new AsyncChangingGroup(Result, Fail, Error), 0);
             return default;
         }
     }
@@ -335,19 +351,19 @@ public sealed class AsyncBuildTests
     {
         public async BuildTask Build()
         {
-            Entity group = Scope.View(new Group());
+            Entity group = Scope.View(new Group(), 0);
             BuildTask content;
             using (group.Content())
                 content = AddContent(Wait);
             await content;
-            Scope.View(new TextView("done"));
+            Scope.View(new TextView("done"), 0);
         }
 
         private static async BuildTask AddContent(ManualWait wait)
         {
-            Scope.View(new TextView("before"));
+            Scope.View(new TextView("before"), 0);
             await wait;
-            Scope.View(new TextView("result"));
+            Scope.View(new TextView("result"), 0);
         }
     }
 
@@ -396,7 +412,7 @@ public sealed class AsyncBuildTests
         private static async Task AddContent(Task result)
         {
             await result.ConfigureAwait(false);
-            Scope.View(new TextView("helper"));
+            Scope.View(new TextView("helper"), 0);
         }
     }
 
@@ -464,16 +480,16 @@ public sealed class AsyncBuildTests
         public async BuildTask Build()
         {
             await AddContent(Result);
-            Scope.View(new TextView("done"));
+            Scope.View(new TextView("done"), 0);
         }
 
         private static async BuildTask AddContent(Task<string> result)
         {
             using (Scope.Key(77))
             {
-                Scope.View(new TextView("before"));
+                Scope.View(new TextView("before"), 0);
                 string text = await result.ConfigureAwait(false);
-                Scope.View(new TextView(text));
+                Scope.View(new TextView(text), 0);
             }
         }
     }
@@ -482,7 +498,7 @@ public sealed class AsyncBuildTests
     {
         public async BuildTask Build()
         {
-            Scope.View(new OrderedView("child", ChildResult, History));
+            Scope.View(new OrderedView("child", ChildResult, History), 0);
             await Result;
             Append(History, "parent");
         }
@@ -511,7 +527,7 @@ public sealed class AsyncBuildTests
             string result = await Result.ConfigureAwait(false);
             Scope.World.Replace(Scope.Entity, new DisplayText(result));
             Scope.World.Add(Scope.Entity, new DisplayedThread(Environment.CurrentManagedThreadId));
-            Scope.View(new TextView(result));
+            Scope.View(new TextView(result), 0);
         }
     }
 
@@ -537,10 +553,10 @@ public sealed class AsyncBuildTests
         public async BuildTask Build()
         {
             Scope.World.Add(Scope.Entity, new DisplayText("加载中"));
-            Scope.View(new TextView("加载中"));
+            Scope.View(new TextView("加载中"), 0);
             string result = await Result;
             Scope.World.Replace(Scope.Entity, new DisplayText(result));
-            Scope.View(new TextView(result));
+            Scope.View(new TextView(result), 0);
         }
     }
 

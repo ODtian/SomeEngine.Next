@@ -7,7 +7,7 @@ using SomeEngine.ECS.Queries;
 namespace SomeEngine.Views.Tests;
 
 /// <summary>Public structure dependency behavior shared with the ECS NativeAOT executable.</summary>
-internal static class StructureDependencyChecks
+internal static partial class StructureDependencyChecks
 {
     internal static void Verify()
     {

@@ -33,6 +33,66 @@ public static class Scope
 
     internal static ScopeData Data => Current;
 
+    internal static ulong Frame => s_scopes is { Count: > 0 } ? s_scopes.Peek().Frame : 0;
+
+    /// <summary>Runs a view-owned calculation now and again when its reads change.</summary>
+    public static void Compute(Action run)
+    {
+        DevelopmentCheck.Require(run is not null, "Scope.Compute requires a calculation.");
+        Computation computation = AddComputation(run);
+        computation.Execute(Current.Frame);
+    }
+
+    /// <summary>Creates a Memo whose result changes its version only when its value changes.</summary>
+    public static Memo<T> Memo<T>(Func<T> compute)
+    {
+        DevelopmentCheck.Require(compute is not null, "Scope.Memo requires a calculation.");
+        var memo = new Memo<T>(compute);
+        memo.Refresh(Current.Frame);
+        return memo;
+    }
+
+    internal static Computation AddComputation(Action run, bool evaluatesOnRead = false)
+    {
+        ScopeData current = Current;
+        if (!current.World.HasSparse<Computations>(current.Entity))
+            current.World.AddSparse(current.Entity, new Computations(new ComputationList()));
+        ComputationList list = current.World.ReadSparse<Computations>(current.Entity).List;
+        var computation = new Computation(current.World, current.Entity, current.Computation, run,
+            current.Frame, evaluatesOnRead);
+        list.Items.Add(computation);
+        return computation;
+    }
+
+    /// <summary>Records an object source read by a Rerun build.</summary>
+    /// <remarks>Calls outside a computation keep the source independent of any view.</remarks>
+    public static void Depend(VersionCell cell)
+    {
+        if (s_scopes is not { Count: > 0 } || !s_scopes.Peek().DependenciesEnabled)
+            return;
+        DevelopmentCheck.Require(cell is not null, "Scope.Depend requires a version cell.");
+        Depend(cell, Volatile.Read(ref cell.Version));
+    }
+
+    internal static void Depend(VersionCell cell, uint version)
+    {
+        if (s_scopes is not { Count: > 0 })
+            return;
+        ScopeData current = s_scopes.Peek();
+        if (!current.DependenciesEnabled)
+            return;
+
+        if (current.Computation is { } computation)
+        {
+            computation.ObjectReads.Add(cell, version);
+            return;
+        }
+
+        if (!current.World.Has<ObjectDependencies>(current.Entity))
+            current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList(current.Frame)));
+        current.World.Read<ObjectDependencies>(current.Entity).Reads.Add(cell, version);
+    }
+
     /// <summary>Reads a table or sparse component and records it as a dependency of a Rerun build.</summary>
     /// <remarks>Consume the reference before a structural change can move the component.</remarks>
     public static ref readonly T Read<T>(Entity entity) where T : struct
@@ -52,6 +112,49 @@ public static class Scope
             RecordDependency(current, dependency);
         }
         return ref current.World.ReadComponentReference<T>(entity);
+    }
+
+    /// <summary>Returns a component copy that is compared and committed when the build completes.</summary>
+    /// <remarks>The reference remains valid through structural changes in this build.</remarks>
+    public static ref T Write<T>(Entity entity) where T : struct
+    {
+        ScopeData current = Current;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.Write requires table or sparse component {typeof(T).Name}.");
+        var key = (entity, ComponentId<T>.Value);
+        var copies = current.ViewData.ComponentCopies ??= new();
+        if (!copies.TryGetValue(key, out ComponentCopy? copy))
+        {
+            T value = ComponentCopy<T>.HasComponent(current.World, entity)
+                ? current.World.ReadComponentData<T>(entity)
+                : default;
+            copy = new ComponentCopy<T>(entity, value);
+            copies.Add(key, copy);
+        }
+        return ref ((ComponentCopy<T>)copy).Value;
+    }
+
+    /// <summary>Reads a component dependency and returns its copy for writing, adding default data when required.</summary>
+    public static ref T ReadWrite<T>(Entity entity) where T : struct
+    {
+        Ensure<T>(entity);
+        Read<T>(entity);
+        return ref Write<T>(entity);
+    }
+
+    /// <summary>Adds default component data when the entity first requires it.</summary>
+    public static void Ensure<T>(Entity entity) where T : struct
+    {
+        World world = Current.World;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.Ensure requires table or sparse component {typeof(T).Name}.");
+        if (ComponentCopy<T>.HasComponent(world, entity))
+            return;
+        T value = default;
+        if (default(T) is ISparseComponent)
+            world.AddSparse(entity, in value);
+        else
+            world.Add(entity, in value);
     }
 
     /// <summary>Checks component presence and records the result as a dependency of a Rerun build.</summary>
@@ -90,6 +193,11 @@ public static class Scope
 
     private static void RecordDependency(ScopeData current, Dependency dependency)
     {
+        if (current.Computation is { } computation)
+        {
+            computation.Add(dependency);
+            return;
+        }
         if (!current.World.HasBuffer<Dependency>(current.Entity))
             current.World.AddBuffer<Dependency>(current.Entity);
         current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
@@ -104,13 +212,17 @@ public static class Scope
         });
     }
 
-    /// <summary>Declares a child with key zero, or the surrounding Key scope's key.</summary>
+    /// <summary>Declares a child whose call-site key is supplied by the view generator.</summary>
     /// <remarks>
     /// Equal parameters overwrite the stored value while preserving its write version.
     /// Changed parameters rebuild Rerun views immediately. Each new child completes its first build.
     /// </remarks>
     public static Entity View<T>(in T view)
-        where T : struct, IView, IEquatable<T> => View(in view, 0);
+        where T : struct, IView, IEquatable<T>
+    {
+        DevelopmentCheck.Fail("View calls require source-generator interception. Use View(in T, ulong) for an explicit node identity.");
+        return View(in view, 0);
+    }
 
     /// <summary>Matches a child by key and occurrence and updates its parameters.</summary>
     public static Entity View<T>(in T view, ulong key)
@@ -144,14 +256,14 @@ public static class Scope
 
             current.World.ReplaceComponentData(existing, in view);
             if (T.Mode == BuildMode.Rerun)
-                ViewRegistration<T>.Build(current.World, existing, current.Frame);
+                ViewRegistration<T>.Build(current.World, existing, current.Frame, firstBuild: false);
             return existing;
         }
         Entity child = Views.Create(current.World, in view, new ElementKey { Key = key, Occurrence = occurrence });
         current.Changes.RememberAddedChild(child);
         current.DeclaredChildren.Add(child);
         Hierarchy<ElementTree>.SetParent(current.World, child, current.Parent);
-        ViewRegistration<T>.Build(current.World, child, current.Frame);
+        ViewRegistration<T>.Build(current.World, child, current.Frame, firstBuild: true);
         return child;
     }
 
@@ -192,8 +304,12 @@ public static class Scope
 
     internal static BuildScope Enter(World world, Entity entity, ulong frame, bool declaresChildren, bool dependenciesEnabled)
     {
+        if (world.HasSparse<Computations>(entity))
+            world.ReadSparse<Computations>(entity).List.ReleaseChildren();
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
+        if (world.Has<ObjectDependencies>(entity))
+            world.Read<ObjectDependencies>(entity).Reads.Clear(frame);
         ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
             ? available : new();
         current.World = world;
@@ -218,8 +334,31 @@ public static class Scope
         return new BuildScope(current, releaseOnExit: true);
     }
 
+    internal static BuildScope Enter(Computation computation, ulong frame)
+    {
+        ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
+            ? available : new();
+        current.World = computation.World;
+        current.Entity = computation.Entity;
+        current.Parent = computation.Entity;
+        current.ViewData = current;
+        current.Computation = computation;
+        current.DeclaresChildren = false;
+        current.DependenciesEnabled = true;
+        current.Queue = BuildQueue.For(computation.World);
+        ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
+        current.BeginChildren(frame, parent?.World == computation.World ? parent.Changes : null);
+#if DEBUG
+        current.BuildNumber = ++s_buildNumber;
+#endif
+        (s_scopes ??= new Stack<ScopeData>()).Push(current);
+        return new BuildScope(current, releaseOnExit: true);
+    }
+
     internal static BuildScope Resume(ScopeData data)
     {
+        if (data.World.Has<ObjectDependencies>(data.Entity))
+            data.World.Read<ObjectDependencies>(data.Entity).Reads.BeginFrame(data.Frame);
         if (data.DeclaresChildren)
             CheckChildDeclaration(data);
         (s_scopes ??= new Stack<ScopeData>()).Push(data);
@@ -242,6 +381,8 @@ public static class Scope
         data.ViewData = null!;
         data.Queue = null!;
         data.Task = default;
+        data.Computation = null;
+        data.ComponentCopies?.Clear();
         data.ParameterVersion = null;
         data.Suspended = false;
         if (data.OutermostBuild)
@@ -290,7 +431,8 @@ public static class Scope
             foreach (ScopeData declaration in content)
                 CompleteChildren(declaration);
         CompleteChildren(data);
-        if (data.World.HasSparse<BuildError>(data.Entity))
+        CommitWrites(data);
+        if (data.Computation is null && data.World.HasSparse<BuildError>(data.Entity))
             data.World.RemoveSparse<BuildError>(data.Entity);
     }
 
@@ -316,6 +458,16 @@ public static class Scope
         data.Completed = true;
     }
 
+    internal static void CommitWrites(ScopeData data)
+    {
+        if (data.ComponentCopies is { } copies)
+        {
+            foreach (ComponentCopy copy in copies.Values)
+                copy.Commit(data.World);
+            copies.Clear();
+        }
+    }
+
     internal static void FinishChildren(ScopeData data)
     {
         if (!data.Completed)
@@ -333,6 +485,7 @@ public static class Scope
         current.World = build.World;
         current.Entity = build.Entity;
         current.ViewData = build.ViewData;
+        current.Computation = build.Computation;
         current.Parent = entity;
         current.DeclaresChildren = true;
         current.DependenciesEnabled = build.DependenciesEnabled;
@@ -431,6 +584,8 @@ public static class Scope
         internal Entity Parent;
         internal ScopeData ViewData = null!;
         internal List<ScopeData>? ContentData;
+        internal Computation? Computation;
+        internal Dictionary<(Entity Entity, ushort Component), ComponentCopy>? ComponentCopies;
         internal ulong Frame;
         internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren;
         internal List<Entity> DeclaredChildren { get; } = new();
@@ -458,7 +613,7 @@ public static class Scope
         internal void BeginChildren(ulong frame, ChildChanges? changes)
         {
             Frame = frame;
-            PreviousChildren = Hierarchy<ElementTree>.GetChildren(World, Parent);
+            PreviousChildren = DeclaresChildren ? Hierarchy<ElementTree>.GetChildren(World, Parent) : default;
             OutermostBuild = changes is null;
             Changes = changes ?? (OwnChanges ??= new());
             FirstData = Changes.DataCount;
@@ -489,6 +644,7 @@ public static class Scope
             }
             else
             {
+                CommitWrites(data);
                 data.Suspended = true;
                 data.Queue.Add(data);
             }

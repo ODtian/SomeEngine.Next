@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views.Tests;
 
-public sealed class ParameterBuildTests
+public sealed partial class ParameterBuildTests
 {
     [Fact]
     public void ParentFirstBuildUpdatesAnExistingChildDisplayWithinTheFrame()
@@ -311,7 +311,7 @@ public sealed class ParameterBuildTests
     {
         public BuildTask Build()
         {
-            Entity child = Scope.View(new HistoryDisplay(Value));
+            Entity child = Scope.View(new HistoryDisplay(Value), 0);
             WriteDisplayedValues(Scope.World.Read<DisplayedValues>(child).Text);
             return default;
         }
