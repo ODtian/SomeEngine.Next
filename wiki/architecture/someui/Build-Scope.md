@@ -40,9 +40,9 @@ public static class Scope
 
 ## 首次构建实现（#6）
 
-当前公开入口为 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
+当前公开入口包括 `Scope.World`、`Scope.Entity`、`Scope.View<T>(in T)`、
 `Scope.View<T>(in T, ulong)`、`Scope.Key(ulong)`、`Scope.Read<T>(Entity)`、`Scope.Has<T>(Entity)`、
-`Scope.Each(QueryHandle)`、`Scope.Depend(VersionCell)`、`Scope.Compute(Action)`、
+`Scope.Each(QueryHandle)`、`Scope.ReadUp<T>()`、`Scope.Depend(VersionCell)`、`Scope.Compute(Action)`、
 `Scope.Memo<T>(Func<T>)`、`Scope.Write<T>(Entity)`、`Scope.ReadWrite<T>(Entity)`、
 `Scope.Ensure<T>(Entity)`、`Scope.Untrack()` 与 `Scope.NextFrame()`。
 线程静态的作用域栈保存正在构建的 World 和节点实体。每个构建入口在进入时压栈，
@@ -77,6 +77,9 @@ public static class Scope
 `Scope.NextFrame()` 与异步辅助方法的公开行为见
 [[architecture/someui/Async-Build|Async Build]]，阶段顺序见
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
+`Scope.ReadUp<T>()` 使用当前视图实体作为环境查找起点，读取路径、缺省值和父链变化的处理见
+[[architecture/someui/Dependencies|Dependencies]] 的环境读取依赖。
+
 对象读取通过 `Scope.Depend(VersionCell)` 接入相同的登记状态；`State<T>.Value` 自动登记读值对应的版本。
 计算之外的 `Depend` 为空操作。存储和版本规则见 [[architecture/someui/Dependencies|Dependencies]]。
 
