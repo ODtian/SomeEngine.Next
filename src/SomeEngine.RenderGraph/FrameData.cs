@@ -311,6 +311,7 @@ internal struct FramePass
     internal List<GraphParameterResourceBinding>? ParameterBindings;
     internal List<GraphIdentity>? PersistentBindings;
     internal long DeclarationOrdinal;
+    internal bool IsBufferUpload;
     internal bool Enabled;
     internal bool Live;
     internal Queue? Queue;
@@ -332,6 +333,8 @@ internal struct FrameResourceAccess
     internal ResourceAccess Access;
     internal BufferRange BufferRange;
     internal BufferRangeSet? SharedBufferRanges;
+    internal bool BufferDescriptor;
+    internal bool BufferDescriptorOnly;
     internal BufferAccessRanges BufferRanges => new(BufferRange, SharedBufferRanges);
     internal TextureSubresourceRange TextureRange;
     internal QueryRange QueryRange;

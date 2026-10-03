@@ -1311,13 +1311,10 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.ExecuteIndirect,
                     ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record);
-        _materialInputsAreShade = false;
-        _materialInputBin = invocation.BinIndex;
         PassDefinition seedDefinition = graph.GetPass(seedPass);
         BindTessellationResources(ref graph, ref seedDefinition, invocation,
             tessellation.SeedResources, uniforms, phaseOne, 0u,
             PipelineSync.ComputeShading, policyTarget);
-        _pageHeapReaderPasses = _pageHeapReaderPasses.Add(seedPass);
         graph.OrderAfter(seedPass, predecessor);
         return seedPass;
     }
@@ -1675,15 +1672,12 @@ public sealed partial class ClusterPipelineSystem
                         PipelineSync.ExecuteIndirect,
                         ResourceAccess.IndirectArgument),
                 ClusterIndirectDispatchParameters.Record);
-            _materialInputsAreShade = false;
-            _materialInputBin = invocation.BinIndex;
             PassDefinition splitDefinition = graph.GetPass(pass);
             BindTessellationResources(ref graph, ref splitDefinition, invocation,
                 tessellation.SplitResources, uniforms, phaseOne, level + 1u,
                 PipelineSync.ComputeShading, policyTarget);
             graph.OrderAfter(pass, predecessor);
             predecessor = pass;
-            _pageHeapReaderPasses = _pageHeapReaderPasses.Add(pass);
         }
     }
 
@@ -1730,15 +1724,12 @@ public sealed partial class ClusterPipelineSystem
                         ResourceAccess.IndirectArgument),
                 ClusterIndirectDispatchParameters.Record,
                 asyncCompute: true);
-            _materialInputsAreShade = false;
-            _materialInputBin = invocation.BinIndex;
             PassDefinition diceDefinition = graph.GetPass(dicePass);
             BindTessellationResources(ref graph, ref diceDefinition, invocation,
                 tessellation.DiceResources!, uniforms, phaseOne, 0u,
                 PipelineSync.ComputeShading, policyTarget);
             if (policyTarget && _renderContext.FinishBefore != default)
                 graph.OrderAfter(_renderContext.FinishBefore, dicePass);
-            _pageHeapReaderPasses = _pageHeapReaderPasses.Add(dicePass);
         }
     }
 
@@ -1858,13 +1849,10 @@ public sealed partial class ClusterPipelineSystem
                 ClusterTessellationRasterPassData.Record);
             if (pipeline.UsesMesh)
                 _meshRasterPasses = _meshRasterPasses.Add(hardwarePass, new MeshRaster(bin, indirectAccess, passData));
-            _materialInputsAreShade = false;
-            _materialInputBin = invocation.BinIndex;
             PassDefinition hardwareDefinition = graph.GetPass(hardwarePass);
             BindTessellationResources(ref graph, ref hardwareDefinition, invocation,
                 tessellation.HardwareResources!, uniforms, phaseOne, 0u,
                 PipelineSync.AllShading, policyTarget);
-            _pageHeapReaderPasses = _pageHeapReaderPasses.Add(hardwarePass);
             if (policyTarget && _renderContext.FinishBefore != default)
                 graph.OrderAfter(_renderContext.FinishBefore, hardwarePass);
         }
@@ -1919,14 +1907,11 @@ public sealed partial class ClusterPipelineSystem
                 bindingCount,
                 ClusterSoftwareRasterPassData.Declare,
                 ClusterSoftwareRasterPassData.Record);
-            _materialInputsAreShade = false;
-            _materialInputBin = invocation.BinIndex;
             PassDefinition softwareDefinition = graph.GetPass(softwarePass);
             BindSoftwareRasterResources(ref graph, ref softwareDefinition, invocation,
                 pushConstants, policyTarget);
             if (policyTarget && _renderContext.FinishBefore != default)
                 graph.OrderAfter(_renderContext.FinishBefore, softwarePass);
-            _pageHeapReaderPasses = _pageHeapReaderPasses.Add(softwarePass);
         }
     }
 
@@ -2189,12 +2174,9 @@ public sealed partial class ClusterPipelineSystem
                     : new PassOptions(
                         RasterWidth: checked((uint)rasterWidth),
                         RasterHeight: checked((uint)rasterHeight)));
-            _materialInputsAreShade = false;
-            _materialInputBin = invocation.BinIndex;
             PassDefinition hardwareDefinition = graph.GetPass(hardwarePass);
             BindHardwareRasterResources(ref graph, ref hardwareDefinition, invocation,
                 drawUniforms, dispatchUniforms, policyTarget);
-            _pageHeapReaderPasses = _pageHeapReaderPasses.Add(hardwarePass);
             if (policyTarget && _renderContext.FinishBefore != default)
                 graph.OrderAfter(_renderContext.FinishBefore, hardwarePass);
         }
@@ -2563,8 +2545,6 @@ public sealed partial class ClusterPipelineSystem
         RasterFrameCallback<TState> callback,
         PassOptions options = default)
     {
-        bool readsPageHeap = _bindingScratchReadsPageHeap;
-        _bindingScratchReadsPageHeap = false;
         Span<GraphParameterResourceBinding> bindings =
             _renderGraphBindings.AsSpan(0, bindingCount);
         try
@@ -2579,8 +2559,6 @@ public sealed partial class ClusterPipelineSystem
                 bindings,
                 declaration,
                 callback));
-            if (readsPageHeap)
-                _pageHeapReaderPasses = _pageHeapReaderPasses.Add(pass);
             return pass;
         }
         finally
@@ -2610,8 +2588,6 @@ public sealed partial class ClusterPipelineSystem
         ComputeFrameCallback<TState> callback,
         bool asyncCompute = false)
     {
-        bool readsPageHeap = _bindingScratchReadsPageHeap;
-        _bindingScratchReadsPageHeap = false;
         Span<GraphParameterResourceBinding> bindings =
             _renderGraphBindings.AsSpan(0, bindingCount);
         try
@@ -2630,8 +2606,6 @@ public sealed partial class ClusterPipelineSystem
                 bindings,
                 declaration,
                 callback));
-            if (readsPageHeap)
-                _pageHeapReaderPasses = _pageHeapReaderPasses.Add(pass);
             return pass;
         }
         finally
@@ -2660,9 +2634,6 @@ public sealed partial class ClusterPipelineSystem
 
     private void AddPageHeapBinding(ref int count, GraphBufferSrvId view)
     {
-        if (_bindingScratchReadsPageHeap)
-            throw new InvalidOperationException("A Cluster Pass cannot bind the page heap twice.");
-        _bindingScratchReadsPageHeap = true;
         AddBinding(
             ref count,
             GraphParameterResourceBinding.ReadOnlyBufferDescriptor(view));

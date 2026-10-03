@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
 namespace SomeEngine.RenderGraph;
 
 internal sealed partial class RenderGraphFrameState
@@ -9,6 +12,7 @@ internal sealed partial class RenderGraphFrameState
     private readonly List<FramePass> _dynamicPasses = [];
     private readonly List<FrameResourceAccess> _dynamicAccesses = [];
     private readonly List<BufferRangeRead> _bufferRangeReads = [];
+    private readonly Dictionary<GraphIdentity, BufferRangeSet> _bufferRanges = [];
     private readonly Dictionary<(GraphViewKind, GraphIdentity, BufferRange, Format?, uint, GraphIdentity, ulong, string?), GraphIdentity> _bufferViews = [];
     private readonly Dictionary<(GraphViewKind, GraphIdentity, TextureSubresourceRange, Format, TextureViewDimension, bool, bool, string?), GraphIdentity> _textureViews = [];
     private readonly List<ExplicitPassOrder> _dynamicOrders = [];
@@ -64,6 +68,7 @@ internal sealed partial class RenderGraphFrameState
     internal IReadOnlyList<FramePass> DynamicPasses => _dynamicPasses;
     internal IReadOnlyList<FrameResourceAccess> DynamicAccesses => _dynamicAccesses;
     internal IReadOnlyList<BufferRangeRead> BufferRangeReads => _bufferRangeReads;
+    internal IReadOnlyDictionary<GraphIdentity, BufferRangeSet> BufferRanges => _bufferRanges;
     internal IReadOnlyList<ExplicitPassOrder> DynamicOrders => _dynamicOrders;
     internal IReadOnlyList<(GraphIdentity Identity, SwapchainImage Image, Queue PresentQueue)> SwapchainImages => _swapchainImages;
     internal void ReleaseRecordingContexts() => _executor.ReleaseRecordingContexts();
@@ -253,6 +258,34 @@ internal sealed partial class RenderGraphFrameState
         definition.CurrentViewRange = range;
         foreach (GraphIdentity view in StructureIndex.ResourceViews.GetValueOrDefault(buffer.Value, []))
             Graph.PropertyChanged(view, GraphStoreKind.Views);
+    }
+
+    internal void SetBufferRanges(GraphBufferId buffer, BufferRangeSet ranges)
+    {
+        EnsureAuthoring();
+        ValidateResourceIdentity(buffer.Value, true);
+        DevelopmentCheck.Require(ranges is not null, "Buffer ranges must be supplied.");
+        ValidateBufferRanges(buffer, ranges);
+        _bufferRanges[buffer.Value] = ranges;
+    }
+
+    [Conditional("DEBUG")]
+    private void ValidateBufferRanges(GraphBufferId buffer, BufferRangeSet ranges)
+    {
+        ulong size = buffer.Value.Owner == Graph.Identity
+            ? StructureIndex.Structure.Buffers.Get(buffer.Value).Description.Size
+            : _dynamicBuffers[buffer.Value.Slot].Description.Size;
+        foreach (BufferRange range in ranges.Ranges)
+            DevelopmentCheck.Require(range.IsWhole ||
+                range.Size != 0 && range.Offset < size && range.Size <= size - range.Offset,
+                "A descriptor read range must fit within its buffer.");
+    }
+
+    internal void SetBufferDescriptorRead(GraphBufferAccessId access, bool descriptorOnly)
+    {
+        ref FrameResourceAccess row = ref CollectionsMarshal.AsSpan(_dynamicAccesses)[access.Value.Slot];
+        row.BufferDescriptor = true;
+        row.BufferDescriptorOnly = descriptorOnly;
     }
 
     internal void SetTextureRange(GraphTextureAccessId access, in TextureSubresourceRange range)
@@ -907,6 +940,20 @@ internal sealed partial class RenderGraphFrameState
         _dynamicOrders.Add(order);
     }
 
+    internal void OrderAfter(GraphParameterInput input, GraphPassId pass, bool consumersAfter)
+    {
+        EnsureAuthoring();
+        DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
+            "The parameter input must belong to this graph.");
+        ValidatePassIdentity(pass.Value);
+        foreach (GraphIdentity access in StructureIndex.ParameterInputAccesses.GetValueOrDefault(input, []))
+        {
+            GraphPassId consumer = new(StructureIndex.Structure.Accesses.Get(access).Pass);
+            if (consumersAfter) OrderAfter(consumer, pass);
+            else OrderAfter(pass, consumer);
+        }
+    }
+
     internal void AddBufferRangeRead(
         in GraphIdentity pass,
         GraphBufferId buffer,
@@ -1113,13 +1160,17 @@ internal sealed partial class RenderGraphFrameState
         if (destination.Length < Graph.MaximumQueueCompletionCount)
             throw new ArgumentException("The completion destination is too small.", nameof(destination));
         destination[..Graph.MaximumQueueCompletionCount].Clear();
-        _sealed = true;
         try
         {
             _executor.Reset();
+            PrepareBufferUploads();
+            PrepareReadbacks();
+            _sealed = true;
             Slot.TransientResources!.FlushUploads();
             _executorActive = true;
-            return _executor.Execute(destination);
+            int count = _executor.Execute(destination);
+            SaveReadbackResults();
+            return count;
         }
         catch (GraphicsException exception) when (exception.Error == GraphicsError.DeviceLost)
         {
@@ -1140,6 +1191,7 @@ internal sealed partial class RenderGraphFrameState
         if (_finished || Identity != identity) return;
         _finished = true;
         _executorActive = false;
+        Slot.GetBufferTransfers(Graph).ResetUploads();
         FinishFrame(null);
     }
 
@@ -1446,6 +1498,8 @@ internal sealed partial class RenderGraphFrameState
 
     private void ClearFrameData()
     {
+        ClearBufferUploads();
+        _readbacks.Clear();
         foreach (GraphIdentity id in _bufferData.Keys) _executor.ChangeBuffer(id, refreshViews: false);
         _bufferData.Clear();
         foreach (FramePassCallbackStore callbackStore in _callbackStores.Values) callbackStore.Reset();
@@ -1457,6 +1511,7 @@ internal sealed partial class RenderGraphFrameState
         _dynamicPasses.Clear();
         _dynamicAccesses.Clear();
         _bufferRangeReads.Clear();
+        _bufferRanges.Clear();
         _dynamicOrders.Clear();
         foreach (var image in _swapchainImages)
         {

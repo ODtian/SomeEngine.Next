@@ -78,6 +78,10 @@ public ref partial struct RenderGraphFrame
     public void SetBufferRange(GraphBufferId buffer, in BufferRange range) =>
         State.SetBufferViewRanges(buffer, range);
 
+    /// <summary>Sets the accessible ranges for every read descriptor bound to this buffer in this frame.</summary>
+    public void SetBufferRanges(GraphBufferId buffer, BufferRangeSet ranges) =>
+        State.SetBufferRanges(buffer, ranges);
+
     public void SetBufferRange(GraphBufferCbvId view, in BufferRange range) =>
         State.SetBufferRange(view.Value, GraphViewKind.BufferCbv, range);
 
@@ -334,6 +338,14 @@ public ref partial struct RenderGraphFrame
         State.AddGeneralPass(label, queue, state, options, declaration, callback, region);
 
     public void OrderAfter(GraphPassId pass, GraphPassId predecessor) => State.OrderAfter(pass, predecessor);
+
+    /// <summary>Orders every pass bound to the input after the given pass.</summary>
+    public void OrderAfter(GraphParameterInput input, GraphPassId predecessor) =>
+        State.OrderAfter(input, predecessor, consumersAfter: true);
+
+    /// <summary>Orders the given pass after every pass bound to the input.</summary>
+    public void OrderAfter(GraphPassId pass, GraphParameterInput input) =>
+        State.OrderAfter(input, pass, consumersAfter: false);
 
     public int Execute(Span<QueueCompletion> destination)
     {

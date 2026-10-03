@@ -23,7 +23,7 @@ internal sealed partial class GraphStructure
 
     internal GraphRegionEntry GetRegionInterval(GraphIdentity identity)
     {
-        if (!identity.IsValid) return new GraphRegionEntry(default, 0, long.MaxValue);
+        if (!identity.IsValid) return new GraphRegionEntry(default, 0, long.MaxValue / 2);
         GraphRegion region = Regions.Get(identity);
         GraphRegion parent = GetRegion(region.Parent);
         int index = parent.Children.FindIndex(child => child.Identity == identity);
@@ -93,16 +93,10 @@ public ref partial struct RenderGraphEdit
         pass.DeclarationOrdinal = AddRegionEntry(region.Value, identity).Start;
     }
 
-    private GraphRegionEntry GetDeclarationInterval(GraphIdentity identity)
-    {
-        GraphRegionEntry interval = Structure.GetRegionInterval(identity);
-        return identity.IsValid ? interval : interval with { End = interval.End - FrameRegionMinimumWidth };
-    }
-
     private GraphRegionEntry AddRegionEntry(GraphIdentity parent, GraphIdentity identity)
     {
         GraphRegion region = Staging.GetMutableRegion(parent);
-        GraphRegionEntry interval = GetDeclarationInterval(parent);
+        GraphRegionEntry interval = Structure.GetRegionInterval(parent);
         long previous = region.Children.Count == 0 ? interval.Start : region.Children[^1].End;
         long width = (interval.End - previous) / 4;
         long minimumWidth = identity.Domain == GraphIdentityDomain.Region ? RegionPositionCount(identity) : 1;
@@ -143,7 +137,7 @@ public ref partial struct RenderGraphEdit
         if (end - start < count)
         {
             ExtendRegionInterval(identity, count);
-            GraphRegionEntry interval = GetDeclarationInterval(identity);
+            GraphRegionEntry interval = Structure.GetRegionInterval(identity);
             start = interval.Start;
             end = interval.End;
         }
@@ -179,7 +173,7 @@ public ref partial struct RenderGraphEdit
         GraphRegion region = Staging.GetMutableRegion(identity);
         GraphRegion parent = Staging.GetMutableRegion(region.Parent);
         int index = parent.Children.FindIndex(child => child.Identity == identity);
-        GraphRegionEntry interval = GetDeclarationInterval(region.Parent);
+        GraphRegionEntry interval = Structure.GetRegionInterval(region.Parent);
         long start = index == 0 ? interval.Start + 1 : parent.Children[index - 1].End + 1;
         long end = index + 1 == parent.Children.Count ? interval.End - 1 : parent.Children[index + 1].Start - 1;
         if (end - start < count)

@@ -201,7 +201,12 @@ public ref partial struct PassDefinition
     private void DeclareParameterBinding(in GraphParameterResourceBinding binding)
     {
         if (binding.RequiresExplicitAccess)
+        {
+            if (binding.Type == ResourceBindingType.BufferSrv && binding.Value.IsValid)
+                _ = ReadBufferView(binding.Value, PipelineSync.AllShading,
+                    ResourceAccess.ShaderResource, descriptorOnly: true);
             return;
+        }
         switch (binding.Type)
         {
             case ResourceBindingType.ConstantBuffer:
@@ -557,16 +562,22 @@ public ref partial struct PassDefinition
         in GraphIdentity viewId,
         PipelineSync sync,
         ResourceAccess access,
-        BufferContentScope contentScope = BufferContentScope.FullRange)
+        BufferContentScope contentScope = BufferContentScope.FullRange,
+        bool descriptorOnly = false)
     {
         FrameView view = ResolveView(viewId);
         if (view.Kind is not (GraphViewKind.BufferCbv or GraphViewKind.BufferSrv))
             throw new ArgumentException("The view is not a readable Buffer view.");
-        if (view.BufferInput is not null)
-            return Read(view.BufferInput, view.BufferRange, sync, access, contentScope);
-        return AddBufferAccess(new GraphBufferId(view.Buffer), GraphAccessMode.Read,
-            WriteCoverage.Partial, sync, access, view.BufferRange, false,
-            contentScope: contentScope);
+        GraphBufferAccessId result = view.BufferInput is not null
+            ? Read(view.BufferInput, view.BufferRange, sync, access, contentScope)
+            : AddBufferAccess(new GraphBufferId(view.Buffer), GraphAccessMode.Read,
+                WriteCoverage.Partial, sync, access, view.BufferRange, false,
+                contentScope: contentScope);
+        if (_frame is null)
+            _edit.SetBufferDescriptorRead(result, descriptorOnly);
+        else
+            Frame.SetBufferDescriptorRead(result, descriptorOnly);
+        return result;
     }
 
     private GraphBufferAccessId WriteBufferView(

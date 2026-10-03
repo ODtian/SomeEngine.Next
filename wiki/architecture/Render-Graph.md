@@ -8,6 +8,8 @@ Compatibility entry for the RenderGraph domain. Current rules are atomic pages u
 - [[architecture/render-graph/Region-Reconciliation|Region Reconciliation]]
 - [[architecture/render-graph/Structural-Changes|Structural Changes]]
 - [[architecture/render-graph/Frame-Data|Frame Data]]
+- [[architecture/render-graph/Frame-Uploads|Frame Uploads]]
+- [[architecture/render-graph/Readback|Readback]]
 - [[architecture/render-graph/Graph-Identity|Graph Identity]]
 - [[architecture/render-graph/Graph-Versioning|Graph Versioning]]
 - [[architecture/render-graph/Resource-Access|Resource Access]]
