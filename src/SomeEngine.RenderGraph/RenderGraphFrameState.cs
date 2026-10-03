@@ -143,6 +143,30 @@ internal sealed partial class RenderGraphFrameState
         GraphDepthStencilViewId view) =>
         Executor.GetDepthStencilView(passIndex, view);
 
+    internal void SetRegionEnabled(GraphRegionId region, bool enabled)
+    {
+        EnsureAuthoring();
+        GraphStructure structure = StructureIndex.Structure;
+        DevelopmentCheck.Require(region == default ||
+            region.Value.Owner == Graph.Identity && structure.Regions.Contains(region.Value),
+            "The region must belong to this frame's graph structure.");
+        GraphRegion row = structure.GetRegion(region.Value);
+        if (row.Enabled == enabled) return;
+        row.Enabled = enabled;
+        ChangeRegionPasses(row);
+    }
+
+    private void ChangeRegionPasses(GraphRegion region)
+    {
+        foreach (GraphRegionEntry child in region.Children)
+        {
+            if (child.Identity.Domain == GraphIdentityDomain.Region)
+                ChangeRegionPasses(StructureIndex.Structure.Regions.Get(child.Identity));
+            else if (child.Identity.Domain == GraphIdentityDomain.Pass)
+                Graph.PropertyChanged(child.Identity, GraphStoreKind.Passes);
+        }
+    }
+
     internal void SetPassEnabled(GraphPassId pass, bool enabled)
     {
         EnsureAuthoring();

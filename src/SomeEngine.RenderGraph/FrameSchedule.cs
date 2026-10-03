@@ -485,6 +485,7 @@ internal sealed partial class FrameExecutor
 
     private void SetPassRow(int index, in FramePass row)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetPassRow);
         _passAccesses[index] ??= [];
         _parameterPassChanges.Add(index);

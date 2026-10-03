@@ -484,6 +484,10 @@ public sealed partial class RenderGraph : IDisposable
 
     private void CarryFrameValues(GraphStructure previous, GraphStructure next, GraphEditChanges changes)
     {
+        next.RootRegion.Enabled = previous.RootRegion.Enabled;
+        foreach (GraphIdentity identity in changes.Regions)
+            if (previous.Regions.Contains(identity) && next.Regions.Contains(identity))
+                next.Regions.Get(identity).Enabled = previous.Regions.Get(identity).Enabled;
         foreach (GraphIdentity identity in changes.Passes.Concat(changes.Labels))
             if (previous.Passes.Contains(identity) && next.Passes.Contains(identity))
                 next.Passes.Get(identity).Enabled = previous.Passes.Get(identity).Enabled;

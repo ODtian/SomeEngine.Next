@@ -20,7 +20,7 @@ internal sealed partial class FrameExecutor
     private readonly Dictionary<GraphIdentity, int> _viewIndices = [];
     private readonly Dictionary<GraphIdentity, int> _passIndices = [];
     private readonly Dictionary<GraphIdentity, int> _accessIndices = [];
-    private readonly Dictionary<int, int> _extensionCounts = [];
+    private readonly Dictionary<long, int> _extensionCounts = [];
     private readonly List<int> _resourceAccessScratch = [];
     private readonly Stack<int> _livenessStack = new();
     private readonly List<int> _shaderReaderScratch = [];
@@ -242,6 +242,7 @@ internal sealed partial class FrameExecutor
         {
             GraphQueryPool source = structureIndex.Structure.QueryPools.Rows[i];
             GraphIdentity identity = structureIndex.QueryPoolIds[i];
+            _rebuiltRowCount++;
             _queryPools[i] = new FrameQueryPool
             {
                 Identity = identity,
@@ -260,6 +261,7 @@ internal sealed partial class FrameExecutor
         {
             GraphRayTracingShaderTable source = structureIndex.Structure.ShaderTables.Rows[i];
             GraphIdentity identity = structureIndex.ShaderTableIds[i];
+            _rebuiltRowCount++;
             _shaderTables[i] = new FrameRayTracingShaderTable
             {
                 Identity = identity,
@@ -356,8 +358,8 @@ internal sealed partial class FrameExecutor
                 ParameterOrdinaryData = source.ParameterOrdinaryData,
                 ParameterBindings = source.ParameterBindings,
                 PersistentBindings = source.PersistentBindings,
-                DeclarationOrdinal = checked((long)source.DeclarationOrdinal << 32),
-                Enabled = source.Enabled,
+                DeclarationOrdinal = source.DeclarationOrdinal,
+                Enabled = source.Enabled && structureIndex.Structure.IsRegionEnabled(source.Region),
                 PersistentCallbacks = source.CallbackStorage,
                 ExtensionPointIndex = -1,
             });
@@ -368,13 +370,14 @@ internal sealed partial class FrameExecutor
         for (int i = 0; i < _frame.DynamicPasses.Count; i++)
         {
             FramePass source = _frame.DynamicPasses[i];
-            int insertion = source.ExtensionPointIndex >= 0
+            long insertion = source.ExtensionPointIndex >= 0
                 ? structureIndex.Structure.ExtensionPoints.Rows[source.ExtensionPointIndex].DeclarationOrdinal
-                : structureIndex.Structure.NextDeclarationOrdinal;
+                : structureIndex.Structure.RootRegion.Children.LastOrDefault().End;
             _extensionCounts.TryGetValue(insertion, out int ordinal);
             _extensionCounts[insertion] = ordinal + 1;
-            long key = checked(((long)insertion << 32) + ordinal + 1);
+            long key = checked(insertion + ordinal + 1);
             source.DeclarationOrdinal = key;
+            source.Enabled &= structureIndex.Structure.RootRegion.Enabled;
             int destination = staticPassCount + i;
             SetPassRow(destination, source);
         }
@@ -568,6 +571,7 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<int> _rowIndexSet = [];
     private readonly List<int> _rowIndexScratch = [];
     private bool _rowsReady;
+    private int _rebuiltRowCount;
     private int _staticBufferCount, _staticTextureCount, _staticAccessCount;
 
     internal void ChangeBuffer(GraphIdentity identity, bool refreshViews = true)
@@ -618,6 +622,8 @@ internal sealed partial class FrameExecutor
 
     private void BeginRows()
     {
+        _rebuiltRowCount = 0;
+        _analyzedPasses.Clear();
         FrameTransientResourceAllocator memory = _frame.Slot.TransientResources!;
         GraphStructure structure = _frame.StructureIndex.Structure;
         _analysisChanged |= _buffers.Count != structure.Buffers.Count + _frame.DynamicBuffers.Count ||
@@ -696,6 +702,7 @@ internal sealed partial class FrameExecutor
 
     private void SetBufferRow(int index, FrameBuffer row)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetBufferRow);
         FrameBuffer previous = _buffers[index];
         if (previous.Identity != row.Identity && (previous.Definition is not null || row.Definition is not null))
@@ -736,6 +743,7 @@ internal sealed partial class FrameExecutor
 
     private void SetTextureRow(int index, FrameTexture row)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetTextureRow);
         FrameTexture previous = _textures[index];
         if (previous.Identity != row.Identity && (previous.Definition is not null || row.Definition is not null))
@@ -779,6 +787,7 @@ internal sealed partial class FrameExecutor
 
     private void SetViewRow(int index, FrameView row)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetViewRow);
         ConnectViewResources(index, ref row);
         FrameView previous = _views[index];
@@ -807,6 +816,7 @@ internal sealed partial class FrameExecutor
 
     private void SetAccessRow(int index, FrameResourceAccess access)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetAccessRow);
         access.PassIndex = ResolvePass(access.Pass);
         DevelopmentCheck.Require(Enum.IsDefined(access.TargetKind), "The resource access target kind is invalid.");
