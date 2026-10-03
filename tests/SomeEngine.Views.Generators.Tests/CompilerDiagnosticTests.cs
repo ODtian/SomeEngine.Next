@@ -5,6 +5,26 @@ namespace SomeEngine.Views.Generators.Tests;
 public sealed class CompilerDiagnosticTests
 {
     [Fact]
+    public async Task EmptyPrimaryConstructorProducesAViewFunction()
+    {
+        var diagnostics = await CompilerChecks.Diagnostics("""
+            using SomeEngine.Views;
+            using SomeEngine.ECS;
+            public record struct Spacer() : IView, IComponent
+            {
+                public BuildTask Build() => default;
+            }
+            public record struct Panel(int Value) : IView, IComponent
+            {
+                public BuildTask Build() { SpacerFunctions.Spacer(); return default; }
+            }
+            """, true, new ViewAnalyzer());
+
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, value => value.Id == "CS8785");
+    }
+
+    [Fact]
     public async Task ReferencedViewFunctionsPreserveBranchIdentities()
     {
         bool separate = await CompilerChecks.Run("""
