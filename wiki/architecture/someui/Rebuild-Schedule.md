@@ -27,16 +27,30 @@
 
 `ViewRebuildSystem` 实现 `ISystem<ImmediateSystemContext>`，经
 `SystemGroup<ImmediateSystemContext>` 与 `ImmediateSystemDriver` 驱动。
-每个 World 的系统实例持有自己的请求查询与可复用实体列表。
+每个 World 的系统实例持有自己的视图查询与可复用实体列表。
 
-`Views.Spawn` 在根实体上加入内部的构建请求标记。系统先在公开查询回调中收集请求实体，
-结束借用后取出标记并执行类型表中的构建函数；构建中的实体创建、参数写入和层级维护
+`Views.Spawn` 在根实体上加入内部的构建请求标记。系统先在公开查询回调中收集视图实体，
+结束借用后筛出请求、取出标记并执行类型表中的构建函数；构建中的实体创建、参数写入和层级维护
 沿 ECS World 的既有结构操作执行。同步子构建在父构建中完成，三层树在同一帧可见。
 后续帧继续使用已经生成的树。系统销毁时释放自己取得的查询。
 
 无头帧工具位于 `tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs`，
 使用普通 World 和系统组注册当前已有的 `ViewRebuildSystem`；`Frame()` 推进该阶段。
 输入、动画、排版、布局和提取任务增加系统时，按上面的帧顺序扩展这一工具。
+
+## 参数重建实现（#7）
+
+系统通过 `ViewType` 查询收集当前视图实体，结束查询借用后筛出首次请求与
+参数写版本已经变化的 `Rerun` 节点。每帧的候选列表按 `ElementTree` 深度排序，
+先执行父节点，再执行子节点。World 保留唯一的参数组件与节点版本记录，
+系统列表在每帧复用，仅保存此次检查与执行所需的实体和深度。
+
+每个候选执行前再次检查当前参数版本。父构建中已经当场构建的子视图已消费新版本，
+后续检查保持这份结果；父参数相等时，子视图自己的外部参数写入仍由同一检查处理。
+版本记录对应构建开始时使用的参数，成功完成构建后写回节点。
+
+`ParameterBuildTests.cs` 经公开 World、视图与无头帧入口验证更新时机，
+并用视图写出的显示历史验证父子参数同帧变化时的结果。
 
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]

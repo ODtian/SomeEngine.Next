@@ -20,7 +20,7 @@ internal interface IIndexStore : IResettableIndex
 }
 
 internal interface IIndex<T>
-    where T : struct, IComponent
+    where T : struct
 {
     void Add(Entity entity, in T value);
     void Replace(Entity entity, in T oldValue, in T newValue);

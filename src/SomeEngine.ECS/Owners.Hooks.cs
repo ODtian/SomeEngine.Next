@@ -132,23 +132,15 @@ internal sealed class Hooks
     }
 
     internal void Insert<T>(Entity entity, in T value)
-        where T : struct, IComponent
+        where T : struct
     {
-        if (Try<T>(out var store) && store.HasInsertCallbacks)
-        {
-            using HookExecutionScope execution = EnterExecution();
-            store.RunInsert(new DeferredWorld(_world, execution.Token), entity, in value);
-        }
+        Insert(ComponentMetadata<T>.Id, entity, ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in value)));
     }
 
     internal void Replace<T>(Entity entity, in T value)
-        where T : struct, IComponent
+        where T : struct
     {
-        if (Try<T>(out var store) && store.HasReplaceCallbacks)
-        {
-            using HookExecutionScope execution = EnterExecution();
-            store.RunReplace(new DeferredWorld(_world, execution.Token), entity, in value);
-        }
+        Replace(ComponentMetadata<T>.Id, entity, ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in value)));
     }
 
     internal void Remove<T>(Entity entity, in T value)

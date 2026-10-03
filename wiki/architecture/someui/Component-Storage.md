@@ -32,5 +32,13 @@
 ECS 的公开 `Add`、`Read`、`AddSparse` 和 `ReadSparse` 延续各自的组件接口约束。
 视图构建从 ECS 取当前参数值，组件继续是参数数据的主要持有者。
 
+## 参数更新的存储接入（#7）
+
+同一组内部 struct 泛型入口扩展到实体组件写版本读取、整值替换与静默覆盖。
+它们沿相同的表格或 sparse 选择访问原有存储，参数的主要数据保持在 ECS 中。
+整值替换沿已有写版本、索引与 hooks 路径执行；相等参数的静默覆盖更新实际值，
+并保留实体组件写版本与组件类型写版本。表格的已有索引在下次读取时取最新值。
+两种存储的写入都沿现有存储分离规则保持结构事务隔离。
+
 ## Relations
 [[architecture/someui/Views|Views]] · [[architecture/someui/Build-Scope|Build Scope]]

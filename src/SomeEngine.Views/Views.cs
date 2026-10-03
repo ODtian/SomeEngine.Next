@@ -28,9 +28,13 @@ public static class Views
         ushort typeId = ViewRegistration<T>.Id;
         Entity entity = world.CreateEntity(new ViewType { Id = typeId });
         world.AddComponentData(entity, in view);
+        if (T.Mode == BuildMode.Rerun)
+            world.Add(entity, new ParameterVersion());
         Hierarchy<ElementTree>.SetChildOrderPolicy(world, entity, ChildOrderPolicy.Ordered);
         return entity;
     }
 }
 
 internal readonly struct BuildRequest : ITag;
+
+internal readonly record struct ParameterVersion(uint Value) : IComponent;
