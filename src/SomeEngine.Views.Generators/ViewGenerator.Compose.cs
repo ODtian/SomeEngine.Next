@@ -115,7 +115,7 @@ public sealed partial class ViewGenerator
         text.AppendLine("            return hash.ToHashCode();\n        }");
     }
 
-    private static bool UsesReferenceEquality(IParameterSymbol parameter) => IsContent(parameter) ||
+    private static bool UsesReferenceEquality(IParameterSymbol parameter) => IsContent(parameter) && parameter.Type.IsReferenceType ||
         parameter.Type.IsReferenceType && parameter.Type.SpecialType != SpecialType.System_String &&
         !IsRecordParameter(parameter.Type);
 
