@@ -29,6 +29,7 @@ public readonly record struct RebuildRecord(Entity View, Entity Source, ushort C
 记录在视图构建入口、读取依赖重新登记之前形成。每个变化来源对应一条记录；
 同次重建的参数和多个读取来源全部保留。父视图当场构建的子视图沿相同入口记录来源。
 候选在执行前完成存活与版本复核，因此本次记录对应实际发生的构建。
+失败的构建尝试同样保留来源，异常内容与帧号通过视图的公开 `BuildError` 读取。
 
 | 原因 | `View` | `Source` | `Component` |
 |---|---|---|---|
@@ -54,6 +55,32 @@ Tracy 经现有 `Profiler.BeginScope` 采集；`EngineTrace` 使用同名、类�
 [构建入口](../../../src/SomeEngine.Views/ViewTypes.cs)。
 公开验收：[RebuildDiagnosticsTests](../../../tests/SomeEngine.Views.Tests/RebuildDiagnosticsTests.cs)，
 经 World、视图、帧驱动、诊断 span 与公开 Trace 文件读取 API 验证来源与类型区段。
+
+### 关闭采集的本地对照（2026-10-04）
+
+基线为 `af3bd85e23b57804fd1c15ca85aa6e0fe7d16fb0` 的 Views 实现。
+本票实现为 `58bbfe003b1bd1a186ee755d8ebab80370e9b937`。
+两版在同一进程的各自加载上下文中使用相同的 ECS、Core 和 Job 程序集，
+每版建立一个无头 World，1024 个根视图读取一个共享来源组件，并把数值写到自己的显示组件。
+静止帧保留来源值，变化帧每帧写入新的来源值；末尾通过公开 World 读取验证显示结果。
+
+Windows x64，Intel Xeon E5-2698B v3 @ 2.00GHz，.NET SDK `10.0.112`、
+执行环境 `.NET 10.0.12`，Release，`DOTNET_TieredCompilation=0`，进程固定在逻辑处理器 31。
+每版预热 512 个变化帧，然后每种负载采集 20 个配对批次，每批每版 16 帧，
+逐帧交替两版并交替先后顺序。每个批次开始前完成 GC；计时覆盖 `SystemGroup.Update`，
+变化帧同时覆盖来源写入。使用 `Stopwatch` 计时和当前线程分配计数，配对差异采用 95% t 区间。
+本轮执行通过 `dotnet build -c Release` 构建临时公开 API 消费者，再由 `dotnet` 启动配对测量。
+
+| 负载 | 基线平均每帧（ms） | 本票平均每帧（ms） | 配对差异与 95% 区间 | 基线 / 本票每帧分配（字节） |
+|---|---:|---:|---|---:|
+| 静止 | 1.815388 | 1.820134 | +0.25%，[-0.83%，+1.33%] | 0 / 0 |
+| 全部视图随来源变化 | 9.912564 | 9.965794 | +0.56%，[-1.10%，+2.22%] | 450560 / 450560 |
+
+两组配对耗时差异的统计区间均包含零，关闭采集的额外分配为零。
+这些数据用于本票的诊断开关验收；DefaultGame 的 HUD、布局与提取预算沿统一场景平台测量。
+Tracy 区段另用真实原生桥接、`tracy-capture.exe -a 127.0.0.1 -s 2 -f -o <capture>`
+与 `tracy-csvexport.exe <capture>` 验证，导出结果包含根视图和同步子视图各自的类型区段。
+临时测量消费者、原生桥接构建目录、采集文件和导出结果在使用后清理。
 
 ## #11 本地无变化检查测量（2026-10-04）
 
