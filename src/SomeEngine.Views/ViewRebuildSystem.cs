@@ -75,7 +75,13 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         {
             foreach (Dependency dependency in buffer.AsSpan())
             {
-                if (result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version)
+                bool changed = dependency.Kind switch
+                {
+                    DependencyKind.Presence => result.World.HasComponentData(dependency.Entity, dependency.Component) != (dependency.Version != 0),
+                    DependencyKind.Membership => result.World.MembershipVersion(dependency.Query) != dependency.Version,
+                    _ => result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version,
+                };
+                if (changed)
                 {
                     result.Found = true;
                     return;

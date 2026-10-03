@@ -67,5 +67,14 @@
 `ReadDependencyTests.cs` 通过无头帧驱动、公开视图和组件数据显示历史验证父子顺序，
 并通过父视图改为声明空内容，验证成功构建后的子树释放与后续帧结果。
 
+## 结构依赖重建实现（#12）
+
+组件存在性与查询成员依赖进入同一个视图候选与复核路径。
+每帧检查 `Has` 的当前布尔结果以及 `Each` 的查询成员版本；
+源实体销毁或组件移除使组件读取依赖进入失效状态。
+父列表按既有深度顺序先声明当前成员，其后继续检查存活行的各自数据依赖。
+源实体销毁后，对应行由父列表在本帧释放；查询重排通过既有 key 匹配更新层级位置。
+公开验收由 `EachDependencyTests.cs` 覆盖列表增删、单行血量更新、查询顺序与启用过滤变化。
+
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]
