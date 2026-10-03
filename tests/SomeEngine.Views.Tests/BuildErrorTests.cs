@@ -58,14 +58,14 @@ public sealed class BuildErrorTests
         Entity source = frames.World.CreateEntity(new Content(2));
         Entity root = Views.Spawn(frames.World, Entity.Null, new AsyncContent(source, error));
         using var messages = new ErrorMessages();
-        Trace.Listeners.Add(messages);
+        System.Diagnostics.Trace.Listeners.Add(messages);
         try
         {
             frames.Frame();
         }
         finally
         {
-            Trace.Listeners.Remove(messages);
+            System.Diagnostics.Trace.Listeners.Remove(messages);
         }
 
         Assert.Same(error, frames.World.ReadSparse<BuildError>(root).Exception);

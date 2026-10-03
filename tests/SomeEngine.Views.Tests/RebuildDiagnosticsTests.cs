@@ -218,6 +218,25 @@ public sealed class RebuildDiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void FailedBuildsRetainTheirSourcesWhileOtherViewsBuild()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new Value(3));
+        Entity view = Views.Spawn(frames.World, Entity.Null, new ConditionalDisplay(source));
+        frames.Frame();
+        frames.World.Replace(source, new Value(7));
+        Entity other = Views.Spawn(frames.World, Entity.Null, new ParameterDisplay(19));
+
+        frames.Frame();
+
+        Assert.Equal(3, frames.World.Read<DisplayValue>(view).Number);
+        Assert.Equal("Value is seven.", frames.World.ReadSparse<BuildError>(view).Exception.Message);
+        Assert.Equal(19, frames.World.Read<DisplayValue>(other).Number);
+        Assert.Contains(new RebuildRecord(view, source, ComponentId<Value>.Value),
+            RebuildDiagnostics.LastFrame(frames.World).ToArray());
+    }
+
+    [Fact]
     public void FirstBuildsIdentifyEachViewWithAnEmptySource()
     {
         using var frames = new HeadlessFrameDriver();
@@ -315,6 +334,18 @@ public sealed class RebuildDiagnosticsTests : IDisposable
         public BuildTask Build()
         {
             int value = Sparse ? Scope.Read<SparseValue>(Source).Number : Scope.Read<Value>(Source).Number;
+            WriteDisplay(value);
+            return default;
+        }
+    }
+
+    private readonly record struct ConditionalDisplay(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int value = Scope.Read<Value>(Source).Number;
+            if (value == 7)
+                throw new InvalidOperationException("Value is seven.");
             WriteDisplay(value);
             return default;
         }
