@@ -52,7 +52,7 @@ public static partial class Screens
   这样视图的 `Build` 能直接使用私有静态方法。`SEV005` 提示该生成接缝。
   包含类型与参数类型的可见范围应允许拦截命名空间引用。
 - 单个 Compose 方法的视图名为 `<方法名>_View`，存储为 sparse。
-  公开方法生成公开视图，其它方法生成程序集内可用的视图；私有参数类型沿自己的可见范围保留声明。
+  公开方法生成公开视图，其它方法生成程序集内可用的视图；私有参数类型及泛型约束沿自己的可见范围保留声明。
   主构造函数保留参数名称、类型、默认值和泛型约束，参数由视图组件持有。
   重载方法的视图名添加参数类型签名的 64 位 FNV-1a 后缀，供源码与引用程序集一致定位。
 - `void` 方法的 `Build` 调用原方法后返回默认 `BuildTask`；`BuildTask` 方法的 `Build`
@@ -88,11 +88,12 @@ public static class Compose
 
 状态存储自动加入 `LocalState` 标记，使带状态的同 key 兄弟数量变化沿现有开发检查处理。
 `MutableStateOf` 每次创建一个共用的 `State<T>`，读取跟踪与写入规则由
-[[architecture/someui/State|State]] 维护。推荐用 `Remember(static () => MutableStateOf(value))`
+[[architecture/someui/State|State]] 维护。推荐用 `Remember(static () => MutableStateOf(false))`
 保存局部状态；写入状态的事件回调通过最新视图参数读取。
 
 生成的 readonly record struct 显式实现 `Equals` 与匹配的 `GetHashCode`：
 值类型、record、`string` 沿其值相等规则；其它引用参数按对象引用比较并使用引用哈希；
+record 类别沿参数声明及泛型约束识别；受 record 基类约束的类型参数继续使用值相等规则。
 `System.Action`、`System.Func` 的各个泛型形态作为回调时省略比较及哈希；
 带 `[Composable]` 标记的内容参数按委托引用比较。`ComposableAttribute` 可用于方法和参数。
 参数相等时，通用构建路径仍以本次参数静默覆盖组件，系统读取到最新 Action/Func 和其捕获值。
@@ -105,7 +106,7 @@ public static class Compose
 绕过编译诊断直接进入 `Compose.Remember`，开发构建通过 Core `DevelopmentCheck` 报告拦截要求；
 shipping 使用显式 key 0 的后备路径。初始化器为空与作用域使用错误也沿 Core 开发检查处理。
 
-公开行为验收见 `RememberTests.cs`、`RememberValuesTests.cs`、`ComposeStateTests.cs`、
+公开行为验收见 `RememberTests.cs`、`RememberValuesTests.cs`、`RememberErrorTests.cs`、`ComposeStateTests.cs`、
 `ComposeParameterTests.cs`，覆盖条件切换、循环出现次数、Key 重排、实体独立状态、状态提升、
 最新回调、State 读取范围及各类参数比较。`RememberChecks.cs` 在现有 `just views-aot win-x64`
 入口经公开帧驱动验证同一状态与比较行为。

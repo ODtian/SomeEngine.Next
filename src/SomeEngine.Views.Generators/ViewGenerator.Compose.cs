@@ -28,7 +28,8 @@ public sealed partial class ViewGenerator
 
             string viewName = GetComposeViewName(method);
             string access = method.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
-            if (method.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)))
+            if (method.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)) ||
+                method.TypeParameters.Any(parameter => parameter.ConstraintTypes.Any(ContainsPrivateType)))
                 access = "private";
             var text = OpenContainingTypes(type).Append(GeneratePartialType(type)).AppendLine("\n{")
                 .Append("    ").Append(access).Append(" readonly record struct @").Append(viewName)
@@ -108,7 +109,10 @@ public sealed partial class ViewGenerator
 
     private static bool UsesReferenceEquality(IParameterSymbol parameter) => IsContent(parameter) ||
         parameter.Type.IsReferenceType && parameter.Type.SpecialType != SpecialType.System_String &&
-        parameter.Type is not INamedTypeSymbol { IsRecord: true };
+        !IsRecordParameter(parameter.Type);
+
+    private static bool IsRecordParameter(ITypeSymbol type) => type is INamedTypeSymbol { IsRecord: true } ||
+        type is ITypeParameterSymbol parameter && parameter.ConstraintTypes.Any(IsRecordParameter);
 
     private static bool IsContent(IParameterSymbol parameter) => parameter.GetAttributes().Any(attribute =>
         attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Views.Compose.ComposableAttribute");

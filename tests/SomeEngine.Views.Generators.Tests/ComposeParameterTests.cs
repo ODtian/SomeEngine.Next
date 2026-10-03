@@ -5,6 +5,34 @@ namespace SomeEngine.Views.Generators.Tests;
 public sealed class ComposeParameterTests
 {
     [Fact]
+    public async Task PrivateRecordConstraintsCanBeUsedByTheContainingTypesGeneratedViews()
+    {
+        bool compared = await CompilerChecks.Run("""
+            using SomeEngine.Views.Compose;
+            public static partial class ReferenceChecks
+            {
+                private record Value(int Number);
+                [Composable] private static void Label<T>(T value) where T : Value { }
+
+                public static bool Check() => new Label_View<Value>(new(3)).Equals(new Label_View<Value>(new(3)));
+            }
+            """);
+
+        Assert.True(compared);
+    }
+
+    [Fact]
+    public void GenericRecordParametersUseTheirRecordsValueEquality()
+    {
+        var first = new ComparisonScreens.Record_View<ScoreRecord>(new(3));
+        var equal = new ComparisonScreens.Record_View<ScoreRecord>(new(3));
+
+        Assert.Equal(first, equal);
+        Assert.Contains(equal, new HashSet<ComparisonScreens.Record_View<ScoreRecord>> { first });
+        Assert.NotEqual(first, new ComparisonScreens.Record_View<ScoreRecord>(new(7)));
+    }
+
+    [Fact]
     public async Task ComposableContentUsesDelegateReferenceWhileCallbacksKeepEqualViewsInterchangeable()
     {
         bool compared = await CompilerChecks.Run("""
@@ -60,7 +88,7 @@ public sealed class ComposeParameterTests
 }
 
 public readonly record struct ScoreValue(int Value);
-public sealed record ScoreRecord(int Value);
+public record ScoreRecord(int Value);
 
 public sealed class Score(int value)
 {
@@ -71,6 +99,9 @@ public sealed class Score(int value)
 
 public static partial class ComparisonScreens
 {
+    [Composable]
+    public static void Record<T>(T record) where T : ScoreRecord { }
+
     [Composable]
     public static void Label(ScoreValue value, ScoreRecord? record, string? text, Score? score) { }
 }

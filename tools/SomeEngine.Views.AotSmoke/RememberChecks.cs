@@ -69,6 +69,8 @@ internal static partial class RememberChecks
             "Records use value equality and callbacks preserve equal parameter values and hashes.");
         Require(!parameters.Equals(equal with { score = new Score(3) }) &&
             !parameters.Equals(equal with { content = new Action(Draw) }), "Classes and composable content use reference equality.");
+        var record = new Record_View<ScoreRecord>(new(3));
+        Require(record.Equals(new Record_View<ScoreRecord>(new(3))), "Record constraints preserve value equality in generic views.");
     }
 
     [Composable]
@@ -118,6 +120,9 @@ internal static partial class RememberChecks
     [Composable]
     private static void Compare(ScoreRecord value, Score score, [Composable] Action content, Action changed) { }
 
+    [Composable]
+    private static void Record<T>(T record) where T : ScoreRecord { }
+
     private static void Draw() { }
 
     private static void Require(bool value, string message)
@@ -128,7 +133,7 @@ internal static partial class RememberChecks
 
     private readonly record struct Text(string Value) : ISparseComponent;
     private readonly record struct BranchValues(int Value, int Tail, Action<int> Change, Action<int> ChangeTail) : ISparseComponent;
-    private sealed record ScoreRecord(int Value);
+    private record ScoreRecord(int Value);
     private sealed class Score(int value)
     {
         public override bool Equals(object? other) => other is Score score && score.Value == Value;
