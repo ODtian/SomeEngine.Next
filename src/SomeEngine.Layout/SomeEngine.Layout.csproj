@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>Canvas layout systems, Absolute views, and caller-written layout modifiers.</Description>
+    <Description>Canvas layout systems, Absolute and Flex views, and caller-written layout modifiers.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Views/SomeEngine.Views.csproj" />
