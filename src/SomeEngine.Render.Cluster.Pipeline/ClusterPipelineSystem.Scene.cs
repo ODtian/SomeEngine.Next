@@ -18,14 +18,7 @@ public sealed partial class ClusterPipelineSystem
         internal uint UseInstanceGroups;
     }
 
-    private GraphBufferId _sceneChunks;
-    private GraphBufferId _instanceWorldBounds;
-    private GraphBufferId _sceneInstanceData;
-    private GraphBufferInput _frameSceneInstances = null!;
-    private GraphBufferInput _sceneUniforms = null!;
     private ClusterSceneUniforms _sceneValues;
-    private GraphPassId _sceneBoundsPass;
-    private GraphPassId _sceneInitializePass;
     private RenderInstanceBatch? _sceneBatch;
     private ulong _sceneInstanceRevision;
     private ulong _sceneGeometryRevision;
@@ -38,36 +31,38 @@ public sealed partial class ClusterPipelineSystem
     private void InstallSceneBounds(ref RenderGraphEdit graph)
     {
         uint capacity = checked((uint)_resources.InstanceResources.Options.RowCapacity);
-        _sceneChunks = graph.CreatePersistentBuffer(new BufferDesc(
+        GraphData.SceneChunks = graph.CreatePersistentBuffer(new BufferDesc(
             _options.UseInstanceGroups ? (ulong)((capacity + 63u) / 64u) * 32u : 32u, BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
             "Cluster spatial chunk bounds"));
-        _instanceWorldBounds = graph.CreatePersistentBuffer(new BufferDesc(
+        GraphData.InstanceWorldBounds = graph.CreatePersistentBuffer(new BufferDesc(
             (ulong)capacity * 64u, BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination,
             "Cluster current and previous instance bounds"));
-        var clear = new ClusterBufferClearParameters(_instanceWorldBounds);
-        _sceneInitializePass = graph.AddCopyFramePass("Initialize Cluster instance bounds",
+        var clear = new ClusterBufferClearParameters(GraphData.InstanceWorldBounds);
+        GraphData.SceneInitialization = graph.AddRegion("Cluster instance bounds initialization", _regions.PrimaryGeometry);
+        graph.AddCopyFramePass("Initialize Cluster instance bounds",
             PassQueueSelection.AnyOfType(QueueType.Copy), clear, default,
             static (ref PassDefinition pass, ref ClusterBufferClearParameters data) =>
                 _ = pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
-                    ResourceAccess.CopyDestination, WriteCoverage.Complete), ClusterBufferClearParameters.Record, region: _regions.PrimaryGeometry);
-        _sceneBoundsPass = AddComputePass(ref graph, "Update Cluster spatial scene bounds", _pipelines!.SceneBounds,
-            new ClusterDispatchParameters(new DispatchArguments(1, 1, 1)), 0, ClusterDispatchParameters.Record);
-        graph.OrderAfter(_sceneBoundsPass, _sceneInitializePass);
-        _frameSceneInstances = graph.CreateBufferInput(BufferUsages.ShaderRead);
-        _sceneInstanceData = _uploads!.Declare(ref graph,
+                    ResourceAccess.CopyDestination, WriteCoverage.Complete), ClusterBufferClearParameters.Record, region: GraphData.SceneInitialization);
+        GraphData.SceneBoundsRegion = graph.AddRegion("Cluster scene bounds", _regions.PrimaryGeometry);
+        GraphPassId bounds = AddComputePass(ref graph, "Update Cluster spatial scene bounds", _pipelines!.SceneBounds,
+            new ClusterDispatchParameters(new DispatchArguments(1, 1, 1)), 0, ClusterDispatchParameters.Record, region: GraphData.SceneBoundsRegion);
+        GraphData.SceneBounds = new ClusterLayerDispatch(bounds, 1, 1);
+        GraphData.SceneInstances = graph.CreateBufferInput(BufferUsages.ShaderRead);
+        GraphData.SceneInstanceData = _uploads!.Declare(ref graph,
             ClusterUploadData.Zero(_options.UseInstanceGroups ? checked((int)Math.Max(capacity, 1u) * sizeof(uint)) : sizeof(uint)),
             BufferUsages.ShaderRead, "Cluster spatial instance indices");
-        _sceneUniforms = _uploads.DeclareUniform(ref graph, new byte[16], "Cluster scene bounds parameters");
-        PassDefinition pass = graph.GetPass(_sceneBoundsPass);
-        _ = pass.Bind(_sceneUniforms, PipelineSync.ComputeShading);
+        GraphData.SceneUniforms = _uploads.DeclareUniform(ref graph, new byte[16], "Cluster scene bounds parameters");
+        PassDefinition pass = graph.GetPass(GraphData.SceneBounds.Pass);
+        _ = pass.Bind(GraphData.SceneUniforms, PipelineSync.ComputeShading);
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
-            graph.CreateBufferSrv(_frameResources.Bvh, structureStride: 64, label: "Cluster scene BVH")));
-        _ = pass.Bind(graph.CreateBufferSrv(_frameResources.InstanceData), PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferCbv(_frameResources.InstanceProperties, _frameResources.InstancePropertiesRange), PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(_frameSceneInstances, structureStride: 4), PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferUav(_sceneChunks, structureStride: 16), PipelineSync.ComputeShading,
+            graph.CreateBufferSrv(GraphData.Resources.Bvh, structureStride: 64, label: "Cluster scene BVH")));
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.InstanceData), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferCbv(GraphData.Resources.InstanceProperties, GraphData.Resources.InstancePropertiesRange), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.SceneInstances, structureStride: 4), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferUav(GraphData.SceneChunks, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.Write, WriteCoverage.Partial, ResourceContentState.Defined, BufferContentScope.CountBoundedPrefix);
-        _ = pass.Bind(graph.CreateBufferUav(_instanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading,
+        _ = pass.Bind(graph.CreateBufferUav(GraphData.InstanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
         _sceneBatch = null;
         _geometryPassesEnabled = null;
@@ -103,79 +98,40 @@ public sealed partial class ClusterPipelineSystem
                 byte[] indices = MemoryMarshal.AsBytes(_sceneInstances.AsSpan()).ToArray();
                 int capacity = checked(_resources.InstanceResources.Options.RowCapacity * sizeof(uint));
                 ClusterUploadData value = ClusterUploadData.Zero(capacity).WithChanges(capacity, [(0, indices)]);
-                _uploads!.SetChangedValue(_sceneInstanceData, value, [new BufferRange(0, checked((ulong)indices.Length))]);
+                _uploads!.SetChangedValue(GraphData.SceneInstanceData, value, [new BufferRange(0, checked((ulong)indices.Length))]);
             }
         }
-        graph.SetBufferInput(_frameSceneInstances, new GraphBufferSlice(_sceneInstanceData,
+        graph.SetBufferInput(GraphData.SceneInstances, new GraphBufferSlice(GraphData.SceneInstanceData,
             new BufferRange(0, _options.UseInstanceGroups ? checked((ulong)Math.Max(batch.InstanceCount, 1) * sizeof(uint)) : sizeof(uint))));
         _sceneValues = new ClusterSceneUniforms
         {
             InstanceCount = checked((uint)batch.InstanceCount), HasPreviousBounds = hasPrevious ? 1u : 0u,
             UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
         };
-        graph.SetPassData(_sceneBoundsPass, new ClusterDispatchParameters(new DispatchArguments(
+        graph.SetPassData(GraphData.SceneBounds.Pass, new ClusterDispatchParameters(new DispatchArguments(
             (checked((uint)batch.InstanceCount) + 63u) / 64u, 1, 1)));
-        bool hasGeometry = batch.InstanceCount != 0 && _outputs.Geometry.HasBvhData;
-        graph.SetPassEnabled(_sceneBoundsPass, changed && hasGeometry);
+        bool hasGeometry = batch.InstanceCount != 0 && GraphData.Outputs.Geometry.HasBvhData;
+        graph.SetRegionEnabled(GraphData.SceneBoundsRegion, changed && hasGeometry);
         SetGeometryPassesEnabled(ref graph, hasGeometry, hasGeometry && hasTargetViews);
-        graph.SetPassEnabled(_sceneInitializePass, _sceneBatch is null);
+        graph.SetRegionEnabled(GraphData.SceneInitialization, _sceneBatch is null);
     }
 
     private void SetGeometryPassesEnabled(ref RenderGraphFrame graph, bool hasGeometry, bool hasTargetGeometry)
     {
-        bool scatter = hasGeometry && CalculateShadeBinItemCapacity(_frameResources) == 0u;
+        bool scatter = hasGeometry && CalculateShadeBinItemCapacity(GraphData.Resources) == 0u;
         if (_geometryPassesEnabled == (hasGeometry, hasTargetGeometry, scatter)) return;
-        graph.SetPassEnabled(_traversalSeedPass, hasGeometry);
-        foreach (GraphPassId pass in _traversalLevelPasses)
-            graph.SetPassEnabled(pass, hasGeometry);
-        foreach (GraphPassId pass in _primaryPostTraversalLevelPasses)
-            graph.SetPassEnabled(pass, hasGeometry);
-        graph.SetPassEnabled(_primaryDeferredResumePass, hasGeometry);
-        graph.SetPassEnabled(_phaseOneCullPass, hasGeometry);
-        graph.SetPassEnabled(_phaseTwoCullPass, hasGeometry);
-        if (_continuationTraversalSeedPass != default)
-        {
-            graph.SetPassEnabled(_continuationResetPass, hasTargetGeometry);
-            graph.SetPassEnabled(_continuationDeferredResetPass, hasTargetGeometry);
-            graph.SetPassEnabled(_continuationTraversalSeedPass, hasTargetGeometry);
-            foreach (GraphPassId pass in _continuationTraversalLevelPasses)
-                graph.SetPassEnabled(pass, hasTargetGeometry);
-            foreach (GraphPassId pass in _continuationPostTraversalLevelPasses)
-                graph.SetPassEnabled(pass, hasTargetGeometry);
-            graph.SetPassEnabled(_continuationDeferredResumePass, hasTargetGeometry);
-            graph.SetPassEnabled(_continuationCullPass, hasTargetGeometry);
-            graph.SetPassEnabled(_continuationPostCullPass, hasTargetGeometry);
-        }
-        for (int index = 0; index < _rasterBinning.Length; index++)
-        {
-            RasterBinning? binning = _rasterBinning[index];
-            if (binning is null) continue;
-            bool enabled = index < 2 ? hasGeometry : hasTargetGeometry;
-            graph.SetRegionEnabled(binning.CountRegion, enabled);
-            graph.SetRegionEnabled(binning.ScatterRegion, enabled);
-        }
-        foreach (RasterPhase phase in _rasterPhases.Values)
-        {
-            if (phase.PolicyTarget)
-                graph.SetRegionEnabled(phase.Region, hasTargetGeometry);
-            else
-            {
-                graph.SetRegionEnabled(phase.Groups.Parent, hasGeometry);
-                graph.SetRegionEnabled(phase.Patches.Parent, hasGeometry);
-                graph.SetRegionEnabled(phase.Bins.Parent, hasGeometry);
-            }
-        }
-        graph.SetPassEnabled(_shadeCountPass, hasGeometry);
-        graph.SetPassEnabled(_shadeScatterPass, scatter);
-        foreach (ShadeGroup group in _shadeGroups.Values)
-            graph.SetPassEnabled(group.Pass, hasGeometry);
+        graph.SetRegionEnabled(GraphData.PrimaryGeometry, hasGeometry);
+        graph.SetRegionEnabled(_regions.TargetGeometry, hasTargetGeometry);
+        graph.SetRegionEnabled(GraphData.ShadeBinning, hasGeometry);
+        graph.SetRegionEnabled(GraphData.ShadeGroups.Parent, hasGeometry);
+        graph.SetRegionEnabled(GraphData.ShadeScatter, scatter);
         _geometryPassesEnabled = (hasGeometry, hasTargetGeometry, scatter);
     }
 
     private void BindSceneSeed(ref RenderGraphEdit graph, ref PassDefinition pass)
     {
-        _ = pass.Bind(graph.CreateBufferSrv(_frameSceneInstances, structureStride: 4), PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(_sceneChunks, structureStride: 16), PipelineSync.ComputeShading, BufferContentScope.CountBoundedPrefix);
-        _ = pass.Bind(graph.CreateBufferSrv(_instanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.SceneInstances, structureStride: 4), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.SceneChunks, structureStride: 16), PipelineSync.ComputeShading, BufferContentScope.CountBoundedPrefix);
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.InstanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading);
     }
 }

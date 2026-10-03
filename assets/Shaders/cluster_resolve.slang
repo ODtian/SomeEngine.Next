@@ -25,9 +25,11 @@ void CSResolve(uint3 dispatchThreadID : SV_DispatchThreadID)
         return;
 
     uint visData = VisBuffer[pixelCoord];
-    OutputMotionVectors[pixelCoord] = 0.0.xx;
 
     // 0 means no geometry (clear value)
     if (IsVisBufferEmpty(visData))
+    {
+        OutputMotionVectors[pixelCoord] = 0.0.xx;
         OutputColor[pixelCoord] = float4(0, 0, 0, 1);
+    }
 }

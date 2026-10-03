@@ -12,15 +12,13 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 public sealed partial class ClusterPipelineSystem
 {
     private readonly record struct MaterialBuffer(GraphBufferId Id, int References, bool RegisteredHere);
-    private ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> _materialBuffers =
-        ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer>.Empty;
 
     private (ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> Buffers,
         ImmutableDictionary<EngineTexture, MaterialTexture> Textures) UpdateMaterialResources(
         ref RenderGraphEdit edit, ClusterRasterStageSet rasterStages, ClusterShadeStageSet shadeStages)
     {
         HashSet<GraphParameterInput> inputs = edit.GetParameterInputs().ToHashSet();
-        _materialInputs = _materialInputs.RemoveRange(_materialInputs
+        GraphData.MaterialInputs = GraphData.MaterialInputs.RemoveRange(GraphData.MaterialInputs
             .Where(pair => !inputs.Contains(pair.Value.Input)).Select(static pair => pair.Key));
         // The installed shader bindings already retain the graph's resource references.
         // Count only changed bins; no copy of material properties is needed for removals.
@@ -45,7 +43,7 @@ public sealed partial class ClusterPipelineSystem
             foreach (SomeEngine.Graphics.Buffer buffer in resources)
                 changes[buffer] = changes.GetValueOrDefault(buffer) + change;
         }
-        var buffers = _materialBuffers;
+        var buffers = GraphData.MaterialBuffers;
         foreach ((SomeEngine.Graphics.Buffer buffer, int change) in changes)
         {
             if (change == 0) continue;
@@ -207,7 +205,7 @@ public sealed partial class ClusterPipelineSystem
         uint nextLevelArgument,
         PipelineSync sync)
     {
-        FrameResources frame = _frameResources;
+        FrameResources frame = GraphData.Resources;
         switch (resource)
         {
             case ClusterTessellationCoreResource.InstanceData:
@@ -561,7 +559,7 @@ public sealed partial class ClusterPipelineSystem
             case ("RasterTargetViews", ResourceBindingType.BufferSrv):
                 _ = pass.Bind(
                     graph.CreateBufferSrv(
-                        _frameResources.NeutralPolicyView,
+                        GraphData.Resources.NeutralPolicyView,
                         structureStride: ClusterRenderContext.TargetViewSizeInBytes,
                         label: "Cluster neutral raster target view"),
                     PipelineSync.AllShading);
@@ -577,7 +575,7 @@ public sealed partial class ClusterPipelineSystem
                 };
                 _ = pass.Bind(
                     graph.CreateBufferSrv(
-                        _frameResources.NeutralPolicyView,
+                        GraphData.Resources.NeutralPolicyView,
                         structureStride: stride,
                         label: $"Cluster neutral {resource.Name}"),
                     PipelineSync.AllShading);
@@ -585,7 +583,7 @@ public sealed partial class ClusterPipelineSystem
             case ("RasterTargetOutput", ResourceBindingType.TextureUav):
                 _ = pass.Bind(
                     graph.CreateTextureUav(
-                        _frameResources.NeutralPolicyOutput,
+                        GraphData.Resources.NeutralPolicyOutput,
                         new TextureSubresourceRange(
                             0,
                             1,
@@ -611,7 +609,7 @@ public sealed partial class ClusterPipelineSystem
         ClusterSoftwareRasterCoreResource resource,
         GraphBufferInput uniformBuffer)
     {
-        FrameResources frame = _frameResources;
+        FrameResources frame = GraphData.Resources;
         switch (resource)
         {
             case ClusterSoftwareRasterCoreResource.InstanceData:
@@ -737,7 +735,7 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferInput uniformBuffer,
         GraphBufferInput dispatchUniformBuffer)
     {
-        FrameResources frame = _frameResources;
+        FrameResources frame = GraphData.Resources;
         switch (resource)
         {
             case ClusterHardwareRasterCoreResource.InstanceData:
@@ -830,14 +828,14 @@ public sealed partial class ClusterPipelineSystem
         PipelineSync sync)
     {
         if (_visibilityMode != ClusterVisibilityMode.ImageAtomic64 ||
-            _frameResources.VisibilityWinnerImage == default)
+            GraphData.Resources.VisibilityWinnerImage == default)
         {
             throw new InvalidOperationException(
                 "An image-A64 material entry was selected without an image winner resource.");
         }
         _ = pass.Bind(
             graph.CreateTextureUav(
-                _frameResources.VisibilityWinnerImage,
+                GraphData.Resources.VisibilityWinnerImage,
                 format: Format.R64UInt,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Cluster visibility winner image"),
@@ -853,14 +851,14 @@ public sealed partial class ClusterPipelineSystem
         PipelineSync sync)
     {
         if (_visibilityMode != ClusterVisibilityMode.BufferAtomic64 ||
-            _frameResources.VisibilityWinnerBuffer == default)
+            GraphData.Resources.VisibilityWinnerBuffer == default)
         {
             throw new InvalidOperationException(
                 "A buffer-A64 material entry was selected without a buffer winner resource.");
         }
         _ = pass.Bind(
             graph.CreateBufferUav(
-                _frameResources.VisibilityWinnerBuffer,
+                GraphData.Resources.VisibilityWinnerBuffer,
                 label: "Cluster visibility winner buffer"),
             sync,
             GraphAccessMode.ReadWrite,
@@ -874,7 +872,7 @@ public sealed partial class ClusterPipelineSystem
         string label,
         PipelineSync sync)
     {
-        FrameResources frame = _frameResources;
+        FrameResources frame = GraphData.Resources;
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
             graph.CreateBufferSrv(frame.PageHeap, label: label)));
     }
@@ -883,8 +881,8 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph, GraphPassId passId, ClusterShadeInvocation invocation,
         ClusterShadeStageSet stages)
     {
-        _shadeScalarOffsetsInput ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
-        _shadeScalarsInput ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
+        GraphData.ShadeScalarOffsets ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
+        GraphData.ShadeScalars ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
         PassDefinition pass = graph.GetPass(passId);
         pass.SetParameterBlock(invocation.Pipeline.ParameterLayout);
         GraphBufferInput uniformBuffer = UploadUniform(ref graph,
@@ -908,8 +906,8 @@ public sealed partial class ClusterPipelineSystem
                     ref pass,
                     coreResource,
                     uniformBuffer,
-                    _shadeScalarsInput,
-                    _shadeScalarOffsetsInput);
+                    GraphData.ShadeScalars,
+                    GraphData.ShadeScalarOffsets);
                 continue;
             }
             if (invocation.FeatureResourceBinders[resourceIndex] is { } featureBinder)
@@ -942,7 +940,7 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferInput scalarBuffer,
         GraphBufferInput scalarOffsetBuffer)
     {
-        FrameResources frame = _frameResources;
+        FrameResources frame = GraphData.Resources;
         switch (resource)
         {
             case ClusterShadeCoreResource.InstanceData:
@@ -1092,14 +1090,14 @@ public sealed partial class ClusterPipelineSystem
         uint property, string name, ResourceBindingType type)
     {
         var key = (material, property);
-        if (_materialInputs.TryGetValue(key, out MaterialInput input))
+        if (GraphData.MaterialInputs.TryGetValue(key, out MaterialInput input))
         {
             DevelopmentCheck.Require(input.Input.Type == type,
                 "A material property must keep the same resource binding type.");
             return input;
         }
         input = new MaterialInput(graph.CreateParameterInput(type), name);
-        _materialInputs = _materialInputs.Add(key, input);
+        GraphData.MaterialInputs = GraphData.MaterialInputs.Add(key, input);
         return input;
     }
 
@@ -1220,20 +1218,14 @@ public sealed partial class ClusterPipelineSystem
     }
 
 
-    private ImmutableDictionary<(Material Material, uint Property), MaterialInput> _materialInputs =
-        ImmutableDictionary<(Material Material, uint Property), MaterialInput>.Empty;
-    private GraphBufferInput _shadeScalarOffsetsInput = null!;
-    private GraphBufferInput _shadeScalarsInput = null!;
 
     private ClusterMaterialScalars _materialScalars = ClusterMaterialScalars.Empty;
-    private GraphBufferId _scalarBytes;
-    private GraphBufferId _scalarOffsets;
 
     private void UpdateMaterialIndexBuffers(ref RenderGraphEdit edit,
         ClusterRasterStageSet raster, ClusterShadeStageSet shade)
     {
-        Update(ref edit, _frameResources.RasterSlots, raster.BinIndices, raster.ChangedOffsets);
-        Update(ref edit, _frameResources.ShadeSlots, shade.BinIndices, shade.ChangedOffsets);
+        Update(ref edit, GraphData.Resources.RasterSlots, raster.BinIndices, raster.ChangedOffsets);
+        Update(ref edit, GraphData.Resources.ShadeSlots, shade.BinIndices, shade.ChangedOffsets);
 
         void Update(ref RenderGraphEdit graph, GraphBufferId buffer, ClusterUploadData values,
             IReadOnlyList<int> addresses)
@@ -1247,8 +1239,8 @@ public sealed partial class ClusterPipelineSystem
 
     private void UpdateScalarBuffers(ref RenderGraphEdit edit, ClusterMaterialScalars scalars)
     {
-        _uploads!.SetChangedValue(ref edit, _scalarBytes, scalars.Bytes, scalars.ByteChanges);
-        _uploads.SetChangedValue(ref edit, _scalarOffsets,
+        _uploads!.SetChangedValue(ref edit, GraphData.ScalarBytes, scalars.Bytes, scalars.ByteChanges);
+        _uploads.SetChangedValue(ref edit, GraphData.ScalarOffsets,
             scalars.Offsets, scalars.OffsetChanges);
     }
 
@@ -1258,17 +1250,16 @@ public sealed partial class ClusterPipelineSystem
     {
         ClusterDispatchParameters binDispatch = new(new DispatchArguments(
             Math.Max(1u, (stages.BinCount + 127u) / 128u), 1, 1));
-        graph.SetPassData(_shadeClearPass, binDispatch);
-        graph.SetPassData(_shadeReservePass, binDispatch);
-        graph.SetBufferInput(_shadeScalarOffsetsInput, new GraphBufferSlice(_scalarOffsets,
+        foreach (ClusterLayerDispatch dispatch in GraphData.ShadeBinDispatches) graph.SetPassData(dispatch.Pass, binDispatch);
+        graph.SetBufferInput(GraphData.ShadeScalarOffsets, new GraphBufferSlice(GraphData.ScalarOffsets,
             new BufferRange(0, checked((ulong)_materialScalars.Offsets.Length))));
-        graph.SetBufferInput(_shadeScalarsInput, new GraphBufferSlice(_scalarBytes,
+        graph.SetBufferInput(GraphData.ShadeScalars, new GraphBufferSlice(GraphData.ScalarBytes,
             new BufferRange(0, checked((ulong)_materialScalars.Bytes.Length))));
     }
 
     private void UpdateMaterialInputs(ref RenderGraphFrame graph)
     {
-        foreach (((Material material, uint property), MaterialInput input) in _materialInputs)
+        foreach (((Material material, uint property), MaterialInput input) in GraphData.MaterialInputs)
         {
             ResourceBinding value = input.Input.Type switch
             {

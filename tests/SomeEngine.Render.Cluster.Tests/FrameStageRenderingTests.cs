@@ -317,6 +317,41 @@ internal sealed class FrameStageScene : IAsyncDisposable
         return entity;
     }
 
+    internal Entity AddGeometryMesh(Mesh mesh)
+    {
+        Entity entity = AddMesh(mesh, new TransformQvvs(new Vector3(1.3f, 0, -5), Quaternion.Identity, .5f));
+        SetEntityMaterial(entity, _unlit);
+        return entity;
+    }
+
+    internal void SetGeometryVisible(bool visible)
+    {
+        foreach (Entity mesh in _meshes)
+            if (visible) _gameWorld.Add(mesh, new MeshInstance { Mesh = _mesh });
+            else _gameWorld.Remove<MeshInstance>(mesh);
+    }
+
+    internal Material CreateShadeMaterial(Vector4 color)
+    {
+        byte[] pixel = [(byte)(color.X * 255), (byte)(color.Y * 255), (byte)(color.Z * 255), 255];
+        var texture = SomeEngine.Resources.Texture.Create(
+            new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,
+                TextureUsages.Sampled | TextureUsages.CopyDestination),
+            [new TexturePixels(new TextureMipTile { Width = 1, Height = 1, RowPitch = 4, SlicePitch = 4 }, pixel)],
+            TextureViewDimension.Texture2D);
+        var material = new Game.Content.UnlitMaterial
+            { Shader = _unlit.Shader, AlbedoMap = texture, BaseColorTint = Vector4.One };
+        _extraTextures.Add(texture);
+        _extraMaterials.Add(material);
+        return material;
+    }
+
+    internal async Task<RasterImage> ReadNextRasterImageAsync()
+    {
+        await RenderAsync();
+        return new RasterImage(ReadColor(), ReadDepth(), _pipeline.CaptureFrameMetrics());
+    }
+
     internal void RemoveMaterialMesh(Entity entity) => _gameWorld.DestroyEntity(entity);
 
     internal Material CreateRasterMaterial(RasterMaterialKind kind, Vector4 color)

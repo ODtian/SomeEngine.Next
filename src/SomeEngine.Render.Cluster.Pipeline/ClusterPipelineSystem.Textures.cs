@@ -9,8 +9,6 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 public sealed partial class ClusterPipelineSystem
 {
     private readonly record struct MaterialTexture(GraphTextureId Id, RhiTexture Texture, int References, bool RegisteredHere);
-    private ImmutableDictionary<EngineTexture, MaterialTexture> _materialTextures =
-        ImmutableDictionary<EngineTexture, MaterialTexture>.Empty;
     private int _materialTexturesChanged;
 
     private ImmutableDictionary<EngineTexture, MaterialTexture> UpdateMaterialTextures(
@@ -37,7 +35,7 @@ public sealed partial class ClusterPipelineSystem
             foreach (EngineTexture texture in resources)
                 changes[texture] = changes.GetValueOrDefault(texture) + change;
         }
-        var textures = _materialTextures;
+        var textures = _graphData.MaterialTextures;
         foreach ((EngineTexture texture, int change) in changes)
         {
             if (change == 0) continue;
@@ -66,11 +64,11 @@ public sealed partial class ClusterPipelineSystem
 
     private void AcceptMaterialTextures(ImmutableDictionary<EngineTexture, MaterialTexture> textures)
     {
-        foreach (EngineTexture texture in _materialTextures.Keys)
+        foreach (EngineTexture texture in _graphData.MaterialTextures.Keys)
             if (!textures.ContainsKey(texture)) texture.Changed -= MaterialTextureChanged;
         foreach (EngineTexture texture in textures.Keys)
-            if (!_materialTextures.ContainsKey(texture)) texture.Changed += MaterialTextureChanged;
-        _materialTextures = textures;
+            if (!_graphData.MaterialTextures.ContainsKey(texture)) texture.Changed += MaterialTextureChanged;
+        _graphData.MaterialTextures = textures;
     }
 
     private void MaterialTextureChanged(EngineTexture texture) => Volatile.Write(ref _materialTexturesChanged, 1);
@@ -78,18 +76,18 @@ public sealed partial class ClusterPipelineSystem
     private void RefreshMaterialTextures()
     {
         if (Interlocked.Exchange(ref _materialTexturesChanged, 0) == 0) return;
-        var textures = _materialTextures;
+        var textures = _graphData.MaterialTextures;
         RenderGraphEdit edit = _graph.BeginEdit();
         try
         {
-            foreach ((EngineTexture asset, MaterialTexture current) in _materialTextures)
+            foreach ((EngineTexture asset, MaterialTexture current) in _graphData.MaterialTextures)
             {
                 if (ReferenceEquals(_renderDevice.GetTexture(asset), current.Texture)) continue;
                 if (current.RegisteredHere) edit.Remove(current.Id);
                 textures = textures.SetItem(asset, RegisterMaterialTexture(ref edit, asset, current.References));
             }
             edit.Commit();
-            _materialTextures = textures;
+            _graphData.MaterialTextures = textures;
         }
         catch { Volatile.Write(ref _materialTexturesChanged, 1); throw; }
         finally { edit.Dispose(); }

@@ -51,6 +51,10 @@ finally
 `RegionReconciliationTests` 通过 WARP 缓冲回读、映射查询和公共分析统计，覆盖新增、
 删除、值变化、值相同、单键变化的身份与分析范围，以及丢弃编辑后继续使用原映射。
 
+Cluster 的遍历层与着色箱沿用该提交边界：层级编号和着色箱编号作为业务键，构建回调
+直接向对应区段添加 pass。多个映射与其资源输入组成当次编辑数据，提交成功后一起
+替换，参见 [[architecture/cluster/Cluster-Retained-Graph]]。
+
 ## Relations
 
 [[Regions]] · [[Structural-Changes]] · [[Retained-Graph]] · [[Incremental-Reconciliation]] · [[Graph-Versioning]]
