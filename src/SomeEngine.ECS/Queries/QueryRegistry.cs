@@ -1,3 +1,4 @@
+using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS.Archetypes;
 
 namespace SomeEngine.ECS.Queries;
@@ -106,6 +107,18 @@ internal sealed class QueryRegistry
         }
     }
 
+    internal QueryRecord GetMembershipRecord(QueryHandle handle)
+    {
+        QueryRecord[] records = Volatile.Read(ref _publishedRecords);
+        DevelopmentCheck.Require(
+            handle.IsValid &&
+            (uint)handle.Index < (uint)records.Length &&
+            records[handle.Index].Handle.Version == handle.Version &&
+            records[handle.Index].IsActive,
+            "MembershipVersion requires an active query handle from this World.");
+        return records[handle.Index];
+    }
+
     internal void Release(QueryHandle handle)
     {
         lock (_registrationGate)
@@ -171,7 +184,8 @@ internal sealed class QueryRegistry
                 source.Definition,
                 QueryState.Create(source.Definition, archetypes),
                 source.AcquisitionCount,
-                source.HasGeneratedPin);
+                source.HasGeneratedPin,
+                source.CopyMembership());
             clonedRecords[i] = record;
             clone._recordsByKey.Add(record.Definition.Key, record);
         }
@@ -208,7 +222,8 @@ internal sealed class QueryRegistry
                 source.Definition,
                 state,
                 source.AcquisitionCount,
-                source.HasGeneratedPin);
+                source.HasGeneratedPin,
+                source.CopyMembership());
             clonedRecords[i] = record;
             clone._recordsByKey.Add(record.Definition.Key, record);
             clonedMatchCount = checked(clonedMatchCount + state.Matches.Length);

@@ -2,6 +2,7 @@
 
 ## Current design
 - 父计算通过 `Each(query)` 只依赖查询成员；每行是按实体做 key 的子视图，读取自己实体的数据，某一行变化只重跑该行。
+- `Each(query)` 的成员依赖读取 `World.MembershipVersion(query)`，观察范围与版本比较见 [[architecture/someui/Dependencies|Dependencies]] 的 Query membership。
 - `VirtualList` 根据自身 `LayoutRect`、滚动偏移与固定或估计的行高给出可见范围：
 
 ```csharp

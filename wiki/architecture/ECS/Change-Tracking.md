@@ -25,6 +25,10 @@
 
 `QueryRow.Read<T>()` 返回组件值；`Write<T>()` 和 `ReadWrite<T>()` 返回组件引用。查询对象及回调边界从当前 `QueryCursor`、`QueryRow` 和 `QueryChunkView` API 读取。
 
+## 查询成员观察版本
+
+公开 `World.MembershipVersion(QueryHandle)` 提供查询成员观察版本，供列表拉取依赖。匹配、顺序、启用过滤与结构事务的语义见 [[architecture/someui/Dependencies|Dependencies]] 的 Query membership；公开行为由 `QueryMembershipTests` 验证。
+
 ## Job 与拓扑写入版本
 
 generated `IJobEntity` 在取得访问权限、完成 chunk/row 过滤并即将进入声明 World 写入的执行行时，惰性取得该次执行共享的版本。串行路径由 `GetExecutionVersion()` 保存版本，并行路径让匹配 packets 使用同一个共享版本对象。

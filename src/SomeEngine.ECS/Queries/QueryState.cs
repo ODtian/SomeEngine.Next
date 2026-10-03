@@ -513,7 +513,7 @@ public sealed class QueryArchetypeMatch
         return false;
     }
 
-    private UInt128 RowFilterMask(Chunk chunk)
+    internal UInt128 RowFilterMask(Chunk chunk)
     {
         UInt128 rows = LiveRowMask(chunk);
         if (rows == 0)
