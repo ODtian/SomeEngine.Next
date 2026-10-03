@@ -5,6 +5,51 @@ namespace SomeEngine.Views.Generators.Tests;
 public sealed class CompilerDiagnosticTests
 {
     [Fact]
+    public async Task ReferencedViewFunctionsPreserveBranchIdentities()
+    {
+        bool separate = await CompilerChecks.Run("""
+            using static SomeEngine.Views.Generators.Tests.CardFunctions;
+            using SomeEngine.Views.Generators.Tests;
+            using SomeEngine.Views.Tests;
+            using SomeEngine.Views;
+            using SomeEngine.ECS;
+            using SomeEngine.ECS.Entities;
+            using SomeEngine.ECS.Hierarchy;
+            using System.Linq;
+
+            public static class ReferenceChecks
+            {
+                public static bool Check()
+                {
+                    using var frames = new HeadlessFrameDriver();
+                    Entity root = Views.Spawn(frames.World, Entity.Null, new Group(false));
+                    frames.Frame();
+                    Entity first = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
+                    frames.World.Replace(first, new CardState(9));
+                    frames.World.Replace(root, new Group(true));
+                    frames.Frame();
+                    Entity second = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
+                    return first != second && frames.World.Read<CardState>(second).Value == 0;
+                }
+            }
+
+            public record struct Group(bool Alternate) : IView, IComponent
+            {
+                public BuildTask Build()
+                {
+                    if (Alternate)
+                        Card("same");
+                    else
+                        Card("same");
+                    return default;
+                }
+            }
+            """);
+
+        Assert.True(separate);
+    }
+
+    [Fact]
     public async Task AnotherGeneratorsViewCallRequiresAnExplicitKey()
     {
         var diagnostics = await CompilerChecks.Diagnostics("""

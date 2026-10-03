@@ -2,6 +2,8 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Struct views backed by ECS components, generated view functions, and call-site node identities.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.ECS/SomeEngine.ECS.csproj" />
@@ -14,6 +16,7 @@
   <ItemGroup>
     <None Include="../SomeEngine.Views.Generators/bin/$(Configuration)/netstandard2.0/SomeEngine.Views.Generators.dll"
           Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <None Update="buildTransitive/SomeEngine.Views.props" Pack="true" PackagePath="buildTransitive" />
+    <None Update="buildTransitive/SomeEngine.Views.props" Pack="true" PackagePath="buildTransitive/SomeEngine.Views.props" />
+    <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

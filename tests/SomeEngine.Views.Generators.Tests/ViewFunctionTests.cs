@@ -1,6 +1,7 @@
 global using static SomeEngine.Views.Generators.Tests.CardFunctions;
 global using static SomeEngine.Views.Generators.Tests.DefaultCardFunctions;
 global using static SomeEngine.Views.Generators.Tests.CaptionFunctions;
+global using static SomeEngine.Views.Generators.Tests.NumberFunctions;
 
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
@@ -12,6 +13,20 @@ namespace SomeEngine.Views.Generators.Tests;
 
 public sealed class ViewFunctionTests
 {
+    [Fact]
+    public void NamedFunctionPreservesConstructorReferenceParameters()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new Numbers(5));
+
+        frames.Frame();
+
+        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Assert.Equal(2, children.Length);
+        Assert.Equal(5, frames.World.Read<Number>(children[0]).Value);
+        Assert.Equal(6, frames.World.Read<Number>(children[1]).Value);
+    }
+
     [Fact]
     public void LambdaBranchesKeepTheirLocalStateSeparate()
     {
@@ -184,6 +199,24 @@ public readonly record struct Card(string Title) : IView, ISparseComponent
 }
 
 public readonly record struct CardState(int Value) : IComponent;
+
+public struct Number(ref int value) : IView, IComponent, IEquatable<Number>
+{
+    public int Value { get; } = value++;
+    public bool Equals(Number other) => Value == other.Value;
+    public BuildTask Build() => default;
+}
+
+public readonly record struct Numbers(int First) : IView, IComponent
+{
+    public BuildTask Build()
+    {
+        int value = First;
+        Number(ref value);
+        Number(ref value);
+        return default;
+    }
+}
 
 public readonly record struct LambdaCards(bool Alternate) : IView, IComponent
 {

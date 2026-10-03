@@ -80,6 +80,7 @@ Entity root = Views.Spawn(world, Entity.Null, new Panel("Inventory"));
 
 ```csharp
 global using static Inventory.CardFunctions;
+using SomeEngine.Views;
 
 namespace Inventory;
 

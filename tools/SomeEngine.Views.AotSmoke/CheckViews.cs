@@ -39,8 +39,11 @@ namespace SomeEngine.Views.AotSmoke
     {
         public async BuildTask Build()
         {
-            Scope.World.Add(Scope.Entity, new Selection(0));
-            Scope.World.AddTag<LocalState>(Scope.Entity);
+            if (!Scope.World.Has<Selection>(Scope.Entity))
+            {
+                Scope.World.Add(Scope.Entity, new Selection(0));
+                Scope.World.AddTag<LocalState>(Scope.Entity);
+            }
         }
     }
 
