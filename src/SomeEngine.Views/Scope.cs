@@ -158,6 +158,18 @@ public static class Scope
 
     internal static void RestoreKey(ulong? key) => Current.KeyPrefix = key;
 
+    /// <summary>Suspends dependency tracking until the returned scope is disposed.</summary>
+    /// <remarks>Nested view builds use their own build mode's dependency tracking.</remarks>
+    public static UntrackScope Untrack()
+    {
+        ScopeData current = Current;
+        var scope = new UntrackScope(current.DependenciesEnabled);
+        current.DependenciesEnabled = false;
+        return scope;
+    }
+
+    internal static void RestoreDependencyTracking(bool enabled) => Current.DependenciesEnabled = enabled;
+
     private static ulong CombineKeys(ulong prefix, ulong key) =>
         unchecked((prefix + 0x9E3779B97F4A7C15UL) * 0xBF58476D1CE4E5B9UL ^ key);
 
@@ -275,7 +287,7 @@ public static class Scope
         internal Entity Entity { get; } = entity;
         internal Entity Parent { get; } = parent;
         internal bool DeclaresChildren { get; } = declaresChildren;
-        internal bool DependenciesEnabled { get; } = dependenciesEnabled;
+        internal bool DependenciesEnabled { get; set; } = dependenciesEnabled;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal int ChildIndex;
         internal ulong? KeyPrefix;
