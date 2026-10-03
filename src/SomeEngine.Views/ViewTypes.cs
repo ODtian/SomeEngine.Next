@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
@@ -13,7 +14,8 @@ internal static unsafe class ViewTypes
 
     internal static ushort Register(
         delegate*<World, Entity, void> buildFunction,
-        delegate*<World, Entity, bool> parameterCheckFunction)
+        delegate*<World, Entity, bool> parameterCheckFunction,
+        ChildSource children)
     {
         lock (s_gate)
         {
@@ -21,7 +23,7 @@ internal static unsafe class ViewTypes
             int id = ++s_count;
             if (id == s_functions.Length)
                 Array.Resize(ref s_functions, s_functions.Length * 2);
-            s_functions[id] = new ViewFunctions(buildFunction, parameterCheckFunction);
+            s_functions[id] = new ViewFunctions(buildFunction, parameterCheckFunction, children);
             return (ushort)id;
         }
     }
@@ -38,12 +40,35 @@ internal static unsafe class ViewTypes
         return Volatile.Read(ref s_functions)[typeId].ParameterCheckFunction(world, entity);
     }
 
-    private readonly struct ViewFunctions(
-        delegate*<World, Entity, void> buildFunction,
-        delegate*<World, Entity, bool> parameterCheckFunction)
+    [Conditional("DEBUG")]
+    internal static void CheckContent(World world, Entity entity)
     {
-        internal readonly delegate*<World, Entity, void> BuildFunction = buildFunction;
-        internal readonly delegate*<World, Entity, bool> ParameterCheckFunction = parameterCheckFunction;
+#if DEBUG
+        ushort typeId = world.Read<ViewType>(entity).Id;
+        DevelopmentCheck.Require(Volatile.Read(ref s_functions)[typeId].Children == ChildSource.Caller,
+            "Content requires ChildSource.Caller; ChildSource.Build views declare children in their own Build.");
+#endif
+    }
+
+    private readonly struct ViewFunctions
+    {
+        internal readonly delegate*<World, Entity, void> BuildFunction;
+        internal readonly delegate*<World, Entity, bool> ParameterCheckFunction;
+#if DEBUG
+        internal readonly ChildSource Children;
+#endif
+
+        internal ViewFunctions(
+            delegate*<World, Entity, void> buildFunction,
+            delegate*<World, Entity, bool> parameterCheckFunction,
+            ChildSource children)
+        {
+            BuildFunction = buildFunction;
+            ParameterCheckFunction = parameterCheckFunction;
+#if DEBUG
+            Children = children;
+#endif
+        }
     }
 }
 
@@ -55,7 +80,7 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
     {
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"View {typeof(T).Name} requires IComponent or ISparseComponent storage.");
-        return ViewTypes.Register(&Build, &HasParameterChanges);
+        return ViewTypes.Register(&Build, &HasParameterChanges, T.Children);
     }
 
     internal static void Build(World world, Entity entity)
@@ -64,7 +89,8 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
             world.RemoveTag<BuildRequest>(entity);
         T view = world.ReadComponentData<T>(entity);
         uint parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
-        using var scope = Scope.Enter(world, entity, T.Mode == BuildMode.Rerun);
+        using var scope = Scope.Enter(world, entity,
+            declaresChildren: T.Children == ChildSource.Build, dependenciesEnabled: T.Mode == BuildMode.Rerun);
         view.Build().Complete();
         scope.Complete();
         if (T.Mode == BuildMode.Rerun)
