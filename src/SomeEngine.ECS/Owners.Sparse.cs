@@ -16,7 +16,7 @@ using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.ECS.Owners;
 
-internal sealed class Sparse
+internal sealed partial class Sparse
 {
     private readonly WorldStructureRoot _structure;
 

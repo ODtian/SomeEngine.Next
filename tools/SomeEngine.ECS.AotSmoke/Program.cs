@@ -47,6 +47,7 @@ internal static class Program
 
     private static AotSmokeResult Run()
     {
+        ComponentBytesSmoke.Check();
         global::SomeEngine.ECS.Tests.ManagedComponentChecks.VerifyAll();
 
         var registry = new SerializationRegistry();

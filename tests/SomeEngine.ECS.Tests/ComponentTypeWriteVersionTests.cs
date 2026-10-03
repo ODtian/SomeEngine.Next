@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -284,6 +285,76 @@ public sealed class ComponentTypeWriteVersionTests
 
         Assert.Equal(1u, firstWorld.ComponentWriteVersion<Position>());
         Assert.Equal(2u, secondWorld.ComponentWriteVersion<Position>());
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void WritingComponentBytesAdvancesRowAndTypeVersions(bool sparse, bool withRange)
+    {
+        using var world = new World();
+        var entity = world.CreateEntity();
+        if (sparse)
+        {
+            world.AddSparse(entity, new SparseValue { Value = 7 });
+            uint rowVersion = world.SparseWriteVersion<SparseValue>(entity);
+            uint typeVersion = world.ComponentWriteVersion<SparseValue>();
+            ushort componentId = ComponentId<SparseValue>.Value;
+
+            ref byte value = ref (withRange
+                ? ref world.WriteBytes(entity, componentId, 0, sizeof(int))
+                : ref world.WriteBytes(entity, componentId));
+            Unsafe.WriteUnaligned(ref value, 13);
+
+            Assert.NotEqual(rowVersion, world.SparseWriteVersion<SparseValue>(entity));
+            Assert.Equal(typeVersion + 1, world.ComponentWriteVersion<SparseValue>());
+            Assert.Equal(13, world.ReadSparse<SparseValue>(entity).Value);
+        }
+        else
+        {
+            world.Add(entity, new Position { X = 7 });
+            uint rowVersion = world.WriteVersion<Position>(entity);
+            uint typeVersion = world.ComponentWriteVersion<Position>();
+            ushort componentId = ComponentId<Position>.Value;
+
+            ref byte value = ref (withRange
+                ? ref world.WriteBytes(entity, componentId, 0, sizeof(float))
+                : ref world.WriteBytes(entity, componentId));
+            Unsafe.WriteUnaligned(ref value, 13f);
+
+            Assert.NotEqual(rowVersion, world.WriteVersion<Position>(entity));
+            Assert.Equal(typeVersion + 1, world.ComponentWriteVersion<Position>());
+            Assert.Equal(13f, world.Read<Position>(entity).X);
+        }
+    }
+
+    [Fact]
+    public void WritingColumnBytesAdvancesRowAndTypeVersions()
+    {
+        using var world = new World();
+        var first = world.CreateEntity(new Position { X = 1 });
+        var second = world.CreateEntity(new Position { X = 2 });
+        uint rowVersion = world.WriteVersion<Position>(first);
+        uint typeVersion = world.ComponentWriteVersion<Position>();
+        var query = world.Query(world.QueryDefinition().ReadWrite<Position>());
+
+        world.ExecuteQuery(query, static queryResult =>
+        {
+            foreach (QueryChunkView chunk in queryResult.Chunks)
+            {
+                Span<byte> values = chunk.WriteColumn(ComponentId<Position>.Value, out int stride);
+                for (int row = 0; row < chunk.Count; row++)
+                    Unsafe.WriteUnaligned(ref values[row * stride], 19f);
+            }
+        });
+
+        Assert.NotEqual(rowVersion, world.WriteVersion<Position>(first));
+        Assert.Equal(world.WriteVersion<Position>(first), world.WriteVersion<Position>(second));
+        Assert.Equal(typeVersion + 1, world.ComponentWriteVersion<Position>());
+        Assert.Equal(19f, world.Read<Position>(first).X);
+        Assert.Equal(19f, world.Read<Position>(second).X);
     }
 
     private struct SparseValue : ISparseComponent

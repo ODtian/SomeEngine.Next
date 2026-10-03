@@ -29,6 +29,10 @@
 
 公开 `World.ComponentWriteVersion<T>()` 提供组件类型写版本，用于整批依赖检查。计数语义、数据持有和事务行为由 [[architecture/someui/Dependencies|Dependencies]] 维护。
 
+## 查询成员观察版本
+
+公开 `World.MembershipVersion(QueryHandle)` 提供查询成员观察版本，供列表拉取依赖。匹配、顺序、启用过滤与结构事务的语义见 [[architecture/someui/Dependencies|Dependencies]] 的 Query membership；公开行为由 `QueryMembershipTests` 验证。
+
 ## Job 与拓扑写入版本
 
 generated `IJobEntity` 在取得访问权限、完成 chunk/row 过滤并即将进入声明 World 写入的执行行时，惰性取得该次执行共享的版本。串行路径由 `GetExecutionVersion()` 保存版本，并行路径让匹配 packets 使用同一个共享版本对象。
@@ -57,4 +61,4 @@ topology packet 将 Parent 修改写入暂存数据。后续 `ParentFinalizerJob
 
 源码：[SystemSlot](../../../src/SomeEngine.ECS.Systems/SystemSlot.cs)、[SystemGroup](../../../src/SomeEngine.ECS.Systems/SystemGroup.cs)、[ImmediateSystemDriver](../../../src/SomeEngine.ECS.Systems/ImmediateSystemDriver.cs)、[查询与 World 时钟](../../../src/SomeEngine.ECS/World.Queries.cs)、[QueryRow](../../../src/SomeEngine.ECS/Queries/QueryRow.cs)、[generated Job](../../../src/SomeEngine.ECS.Systems/JobEntityRuntime.cs)、[hierarchy propagation](../../../src/SomeEngine.ECS.Systems/HierarchyPropagationAdapter.cs)、[topology finalizer](../../../src/SomeEngine.ECS.Systems/TopologyPacketFinalizer.cs)。
 
-相关主题：[[Systems]] · [[Synchronous-Execute]] · [[Readiness-Admission]] · [[Hierarchy-Change-Tracking]] · [[Relation-Change-Tracking]]
+相关主题：[[Systems]] · [[Synchronous-Execute]] · [[Readiness-Admission]] · [[Hierarchy-Change-Tracking]] · [[Relation-Change-Tracking]] · [[architecture/ECS/Component-Bytes|Component Bytes]]

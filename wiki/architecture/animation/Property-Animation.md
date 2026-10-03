@@ -12,7 +12,7 @@ public readonly struct Channel<T> where T : unmanaged
 }
 public delegate ref TValue FieldRef<TComponent, TValue>(ref TComponent component);
 
-[InternalBufferCapacity(4)]
+[BufferCapacity(4)]
 public struct Track<T> : IBufferElement where T : unmanaged
 {
     public Entity Target;                 // Entity.Null：写本实体
@@ -43,6 +43,10 @@ public static class PropertyAnimation
 - 多个来源写同一字段时，各自的贡献追加到目标的 `Contribution<T>` 缓冲，由 `ComposeSystem<T, TOps>` 按动画层规则合成，每帧只写一次。叠加层需要的基准值存于目标的 `BaseValue<T>` 缓冲，唯一写入方是调用方。
 - 结构变化只发生在两处：首次声明（加 `Timeline`、`Track<T>` 等组件）和池化实体扩容。启动、停止、重定目标只修改缓冲元素和启用位。
 - 不建立反向索引，不使用管理类；所有入口都是作用于 `World` 的静态函数和普通系统。
+
+## ECS field writes
+
+`Channel<T>` stores the type number obtained from `ComponentId<TComponent>.Value`. Field updates use `World.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>())` and write the value with `Unsafe.WriteUnaligned`. The public byte access, write versions and development range checks are defined by [[architecture/ECS/Component-Bytes|Component Bytes]]. Generic track storage uses [[architecture/ECS/Dynamic-Buffers|Dynamic Buffers]].
 
 ## Relations
 [[architecture/animation/Value-Ops|Value Ops]] · [[architecture/animation/Animation-Layers|Animation Layers]] · [[architecture/someui/Animation|SomeUI Animation]]
