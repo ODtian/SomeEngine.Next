@@ -3,6 +3,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Queries;
 using SomeEngine.Trace;
 
 namespace SomeEngine.Views.Tests;
@@ -37,6 +38,68 @@ public sealed class RebuildDiagnosticsTests : IDisposable
         Assert.Equal(7, frames.World.Read<DisplayValue>(view).Number);
         ushort component = sparse ? ComponentId<SparseValue>.Value : ComponentId<Value>.Value;
         Assert.Contains(new RebuildRecord(view, source, component), RebuildDiagnostics.LastFrame(frames.World).ToArray());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ComponentRemovalReportsItsEntityAndType(bool sparse)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity();
+        if (sparse)
+            frames.World.AddSparse(source, new SparseValue(3));
+        else
+            frames.World.Add(source, new Value(3));
+        Entity view = Views.Spawn(frames.World, Entity.Null, new PresenceDisplay(source, sparse));
+        frames.Frame();
+
+        if (sparse)
+            frames.World.RemoveSparse<SparseValue>(source);
+        else
+            frames.World.Remove<Value>(source);
+        frames.Frame();
+
+        Assert.Equal(-1, frames.World.Read<DisplayValue>(view).Number);
+        ushort component = sparse ? ComponentId<SparseValue>.Value : ComponentId<Value>.Value;
+        Assert.Contains(new RebuildRecord(view, source, component), RebuildDiagnostics.LastFrame(frames.World).ToArray());
+    }
+
+    [Fact]
+    public void ParameterChangesReportOnlyChangedPresenceSources()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity();
+        frames.World.AddTag<Visible>(source);
+        Entity view = Views.Spawn(frames.World, Entity.Null, new TagPresenceDisplay(source, 3));
+        frames.Frame();
+
+        frames.World.Replace(view, new TagPresenceDisplay(source, 7));
+        frames.Frame();
+
+        Assert.Equal(7, frames.World.Read<DisplayValue>(view).Number);
+        RebuildRecord[] reasons = RebuildDiagnostics.LastFrame(frames.World).ToArray();
+        Assert.Contains(new RebuildRecord(view, view, ComponentId<TagPresenceDisplay>.Value), reasons);
+        Assert.DoesNotContain(new RebuildRecord(view, source, ComponentId<Visible>.Value), reasons);
+    }
+
+    [Fact]
+    public void QueryMembershipChangesReportTheQuerySource()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity first = frames.World.CreateEntity();
+        frames.World.AddTag<Visible>(first);
+        QueryHandle query = frames.World.Query(frames.World.QueryDefinition().All<Visible>());
+        Entity view = Views.Spawn(frames.World, Entity.Null, new MembershipDisplay(query));
+        frames.Frame();
+
+        Entity second = frames.World.CreateEntity();
+        frames.World.AddTag<Visible>(second);
+        frames.Frame();
+
+        Assert.Equal(2, frames.World.Read<DisplayValue>(view).Number);
+        Assert.Contains(new RebuildRecord(view, Entity.Null, 0) { Query = query },
+            RebuildDiagnostics.LastFrame(frames.World).ToArray());
     }
 
     [Theory]
@@ -257,6 +320,40 @@ public sealed class RebuildDiagnosticsTests : IDisposable
         }
     }
 
+    private readonly record struct PresenceDisplay(Entity Source, bool Sparse) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            bool present = Sparse ? Scope.Has<SparseValue>(Source) : Scope.Has<Value>(Source);
+            int value = present
+                ? (Sparse ? Scope.Read<SparseValue>(Source).Number : Scope.Read<Value>(Source).Number)
+                : -1;
+            WriteDisplay(value);
+            return default;
+        }
+    }
+
+    private readonly record struct TagPresenceDisplay(Entity Source, int Number) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            WriteDisplay(Scope.Has<Visible>(Source) ? Number : -1);
+            return default;
+        }
+    }
+
+    private readonly record struct MembershipDisplay(QueryHandle Query) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int count = 0;
+            foreach (Entity entity in Scope.Each(Query))
+                count++;
+            WriteDisplay(count);
+            return default;
+        }
+    }
+
     private static void WriteDisplay(int number)
     {
         if (Scope.World.Has<DisplayValue>(Scope.Entity))
@@ -268,6 +365,7 @@ public sealed class RebuildDiagnosticsTests : IDisposable
     private readonly record struct Value(int Number) : IComponent;
     private readonly record struct SparseValue(int Number) : ISparseComponent;
     private readonly record struct DisplayValue(int Number) : IComponent;
+    private readonly struct Visible : ITag;
 }
 
 [CollectionDefinition("Rebuild diagnostics", DisableParallelization = true)]

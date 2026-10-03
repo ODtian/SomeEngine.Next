@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views;
 
@@ -62,12 +63,25 @@ public static class RebuildDiagnostics
             view, ref changes, static (buffer, ref result) =>
             {
                 foreach (Dependency dependency in buffer.AsSpan())
-                    if (result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version)
-                        result.Records.Add(new RebuildRecord(result.View, dependency.Entity, dependency.Component));
+                {
+                    bool changed = dependency.Kind switch
+                    {
+                        DependencyKind.Presence => result.World.HasComponentData(dependency.Entity, dependency.Component) != (dependency.Version != 0),
+                        DependencyKind.Membership => result.World.MembershipVersion(dependency.Query) != dependency.Version,
+                        _ => !result.World.HasComponentData(dependency.Entity, dependency.Component) ||
+                            result.World.ComponentDataWriteVersion(dependency.Entity, dependency.Component) != dependency.Version,
+                    };
+                    if (changed)
+                        result.Records.Add(new RebuildRecord(result.View, dependency.Entity, dependency.Component) { Query = dependency.Query });
+                }
             });
     }
 }
 
 /// <summary>A rebuilt view and the entity component that caused its rebuild.</summary>
 /// <remarks>First builds use Entity.Null as Source and zero as Component. Parameter changes use the view as Source.</remarks>
-public readonly record struct RebuildRecord(Entity View, Entity Source, ushort Component);
+public readonly record struct RebuildRecord(Entity View, Entity Source, ushort Component)
+{
+    /// <summary>The query whose membership changed, or an invalid handle for entity sources and first builds.</summary>
+    public QueryHandle Query { get; init; }
+}

@@ -14,7 +14,10 @@ public static class RebuildDiagnostics
     public static ReadOnlySpan<RebuildRecord> LastFrame(World world);
 }
 
-public readonly record struct RebuildRecord(Entity View, Entity Source, ushort Component);
+public readonly record struct RebuildRecord(Entity View, Entity Source, ushort Component)
+{
+    public QueryHandle Query { get; init; }
+}
 ```
 
 `Enabled` 默认 `false`，在重建阶段之间切换，作用于所有 World。
@@ -30,8 +33,13 @@ public readonly record struct RebuildRecord(Entity View, Entity Source, ushort C
 | 原因 | `View` | `Source` | `Component` |
 |---|---|---|---|
 | 读取的表格或 sparse 组件写版本变化 | 构建的视图 | 被读取的实体 | `ComponentId<T>.Value` |
+| `Has<T>` 的存在性变化 | 构建的视图 | 被检查的实体 | `ComponentId<T>.Value` |
 | 参数写版本变化 | 构建的视图 | 视图自身 | 参数类型的 `ComponentId<T>.Value` |
+| `Each(query)` 的成员变化 | 构建的视图 | `Entity.Null` | `0` |
 | 首次构建 | 构建的视图 | `Entity.Null` | `0` |
+
+成员变化的记录通过 `Query` 保存触发重建的查询，其余记录的 `Query` 为默认句柄。
+保留票文中的三参数构造方式，并增加这个可选属性，使已集成的查询依赖也能返回具体来源。
 
 缓冲按 World 的生存期保存，唯一的诊断数据由 `RebuildDiagnostics` 持有。
 默认关闭路径只检查采集开关；缓冲与来源版本遍历在开启时执行。
