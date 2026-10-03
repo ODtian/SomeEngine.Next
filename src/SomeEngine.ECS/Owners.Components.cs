@@ -118,13 +118,23 @@ internal readonly partial struct Components
     }
 
     internal void Replace<T>(Entity entity, in T value)
-        where T : struct, IComponent
+        where T : struct
     {
         Replace(entity, in value, unchecked(_clock.Acquire() + 1));
     }
 
+    internal void Overwrite<T>(Entity entity, in T value) where T : struct
+    {
+        EntityRecord record = _entities.ReadRow(entity);
+        record.Archetype!.TryColumn(ComponentMetadata<T>.Id, out int columnIndex);
+        DevelopmentCheck.Require(columnIndex >= 0,
+            $"Entity {entity} requires table component {typeof(T).Name} to overwrite its value.");
+        record.Chunk!.WriteComponent(columnIndex, record.RowInChunk, in value);
+        _indices.Dirty<T>();
+    }
+
     internal uint WriteVersion<T>(Entity entity)
-        where T : struct, IComponent
+        where T : struct
     {
         EntityRecord record = _entities.ReadRow(entity);
         record.Archetype!.TryColumn(ComponentMetadata<T>.Id, out int columnIndex);
@@ -134,7 +144,7 @@ internal readonly partial struct Components
     }
 
     internal void Replace<T>(Entity entity, in T value, uint version)
-        where T : struct, IComponent
+        where T : struct
     {
         EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
@@ -288,7 +298,7 @@ internal readonly partial struct Components
     }
 
     internal void CommitReplace<T>(Entity entity, in T oldValue, in T newValue)
-        where T : struct, IComponent
+        where T : struct
     {
         CommitReplace(entity, in oldValue, in newValue, _clock.Tick);
     }
@@ -298,7 +308,7 @@ internal readonly partial struct Components
         in T oldValue,
         in T newValue,
         uint version)
-        where T : struct, IComponent
+        where T : struct
     {
         int componentId = ComponentMetadata<T>.Id;
         _indices.Fix(entity, in oldValue, in newValue);
@@ -381,7 +391,7 @@ internal readonly partial struct Components
         int row,
         int columnIndex,
         in T value)
-        where T : struct, IComponent
+        where T : struct
     {
         var currentValue = chunk.ReadComponent<T>(columnIndex, row);
         WriteExisting(entity, chunk, row, columnIndex, in currentValue, in value);
@@ -394,7 +404,7 @@ internal readonly partial struct Components
         int columnIndex,
         in T oldValue,
         in T newValue)
-        where T : struct, IComponent
+        where T : struct
     {
         WriteExisting(
             entity,
@@ -414,7 +424,7 @@ internal readonly partial struct Components
         in T oldValue,
         in T newValue,
         uint version)
-        where T : struct, IComponent
+        where T : struct
     {
         _hierarchy.TrackParent<T>(entity);
         chunk.WriteComponent(columnIndex, row, newValue);

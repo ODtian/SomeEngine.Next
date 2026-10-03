@@ -133,6 +133,14 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
         return storage.WriteVersions[denseIndex];
     }
 
+    internal void Overwrite(Entity entity, in T value)
+    {
+        bool hasValue = TryDenseIndex(_storage, entity, out _, out int denseIndex);
+        DevelopmentCheck.Require(hasValue,
+            $"Entity {entity} requires sparse component {typeof(T).Name} to overwrite its value.");
+        WritableStorage().DenseData[denseIndex] = value;
+    }
+
     /// <summary>移除组件。不存在时抛异常。</summary>
     public void Remove(Entity entity)
     {

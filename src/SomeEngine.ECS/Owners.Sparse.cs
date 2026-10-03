@@ -37,7 +37,7 @@ internal sealed partial class Sparse
     }
 
     internal void Replace<T>(Entity entity, in T value)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _iteration.Throw();
         _entities.ThrowDead(entity);
@@ -48,7 +48,7 @@ internal sealed partial class Sparse
     }
 
     internal uint WriteVersion<T>(Entity entity)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _entities.ThrowDead(entity);
         bool hasSet = TrySet<T>(out SparseSet<T> sparseSet);
@@ -56,6 +56,12 @@ internal sealed partial class Sparse
             $"Entity {entity} requires sparse component {typeof(T).Name} to read its write version.");
 
         return sparseSet.WriteVersion(entity);
+    }
+
+    internal void Overwrite<T>(Entity entity, in T value) where T : struct
+    {
+        _entities.ThrowDead(entity);
+        Set<T>().Overwrite(entity, in value);
     }
 
     internal void Remove<T>(Entity entity)

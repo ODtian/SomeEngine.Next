@@ -52,5 +52,16 @@ Entity root = Views.Spawn(world, Entity.Null, new Panel("Inventory"));
 共享公开行为检查 `FirstBuildChecks.cs` 同时编入正式 ECS NativeAOT 冒烟工程，
 通过 `just ecs-aot win-x64` 驱动含托管参数、两种存储和三层视图的同步构建。
 
+## 参数更新实现（#7）
+
+`Scope.View<T>(in T)` 复用同一父节点下对应调用序号的子实体，并使用
+`IEquatable<T>.Equals` 比较旧参数与声明的参数。
+参数比较、构建模式、外部 ECS 写入的更新规则与本阶段的调用序号匹配范围由
+[[architecture/someui/Build-Modes|Build Modes]] 维护。
+
+公开行为测试 `ParameterBuildTests.cs` 验证两种存储的版本、输出与嵌套节点复用。
+`FirstBuildChecks.cs` 同时在 ECS NativeAOT 冒烟工程验证相等参数保持、
+稀疏参数向表格子视图传播与 `Once` 内容保持。
+
 ## Relations
 [[architecture/someui/Build-Modes|Build Modes]] · [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Node-Identity|Node Identity]] · [[architecture/someui/Build-Scope|Build Scope]]
