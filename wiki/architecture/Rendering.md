@@ -88,10 +88,11 @@
 - [[architecture/features/Virtual-Shadow-Maps|Virtual Shadow Maps]]
 - [[architecture/features/Lighting|Lighting]]
 - [[architecture/features/Motion|Motion]]
-- [[architecture/features/Ray-Tracing-Bridge|Ray Tracing Bridge]]
-- [[architecture/features/Debug-Rendering|Debug Rendering]]
-- [[architecture/features/Translucency|Translucency]]
 - [[architecture/features/Streaming-Feedback|Streaming Feedback]]
+
+## 已删除功能的历史
+
+- [[history/Rendering/Removed-Code-2026-10-04|实例集合、CPU 队列、实体分类与 Feature 删除记录]]
 
 ## Performance and checking
 - [[architecture/validation/Validation|Validation]]
