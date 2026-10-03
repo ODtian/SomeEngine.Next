@@ -5,7 +5,7 @@ public sealed class ImportOutput
 {
     private readonly object _sync = new();
     private readonly HashSet<Guid> _declared = [];
-    private readonly Dictionary<Guid, AssetBlock> _blocks = [];
+    private readonly Dictionary<Guid, (AssetBlock Block, bool Persistent)> _blocks = [];
     private bool _finished;
 
     internal ImportOutput(Asset target, IEnumerable<Guid> declared)
@@ -28,12 +28,12 @@ public sealed class ImportOutput
             if (_finished) throw new InvalidOperationException("This conversion has already finished.");
             if (!_declared.Contains(T.BlockTypeId)) throw new InvalidOperationException($"Block {T.BlockTypeId} was not declared by this importer.");
             if (_blocks.ContainsKey(T.BlockTypeId)) throw new InvalidOperationException($"Block {T.BlockTypeId} was produced twice.");
-            _blocks[T.BlockTypeId] = block;
+            _blocks[T.BlockTypeId] = (block, T.Persistent);
         }
     }
 
     internal void Finish() { lock (_sync) _finished = true; }
-    internal IReadOnlyCollection<AssetBlock> Blocks => _blocks.Values.ToArray();
+    internal IReadOnlyCollection<(AssetBlock Block, bool Persistent)> Blocks => _blocks.Values.ToArray();
     internal void Transfer() { lock (_sync) _blocks.Clear(); }
 
     internal async ValueTask ReleaseAsync()
@@ -42,7 +42,7 @@ public sealed class ImportOutput
         lock (_sync)
         {
             _finished = true;
-            blocks = _blocks.Values.ToArray();
+            blocks = _blocks.Values.Select(static value => value.Block).ToArray();
             _blocks.Clear();
         }
         List<Exception> errors = [];

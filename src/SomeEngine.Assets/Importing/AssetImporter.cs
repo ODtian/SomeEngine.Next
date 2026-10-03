@@ -14,6 +14,7 @@ public interface IAssetImporterSettings<TSettings> where TSettings : notnull
 public interface IAssetImporter<TSource> where TSource : class
 {
     Guid Id { get; }
+    /// <summary>Block types this importer may produce; individual source elements can omit any of them.</summary>
     IReadOnlyList<Guid> ProducedBlocks { get; }
     ValueTask ImportAsync(TSource source, ImportContext context, ImportOutput output, CancellationToken cancellationToken = default);
 }

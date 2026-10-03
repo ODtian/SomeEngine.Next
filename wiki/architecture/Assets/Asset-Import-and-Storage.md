@@ -38,6 +38,10 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 `IClusterVertexEncoder` 由项目通过 Microsoft DI 明确提供，管线不据此引入默认顶点属性布局。替换只针对本次隔离的资产草稿，失败不登记输出。
 
+Importer 的 `ProducedBlocks` 声明可产出的类型，一个来源元素可以只交付其中适用的 Block。`context.TryGetBlockAsync<T>(Asset asset, CancellationToken cancellationToken = default)` 返回 `ValueTask<T?>`：先完成选中的生产者，再取得实际结果；省略输出或类型缺失时返回 `null`。导入失败、读取失败、依赖环与取消继续传播。需要必选数据的读者使用 `GetBlockAsync<T>`，缺失时得到 `KeyNotFoundException`。
+
+中间结果通过 `ImportOutput.SetBlock` 交付给同一 Asset，并由其它 Importer 通过 Context 请求。持久性按 [Block 类型声明](Asset-Objects.md) 参与保存。
+
 ## 完整流程与失败处理
 
 `IAssetSourceImporter<TSource, TSettings>` 连接格式读取及遍历。`AssetProject` 读取来源配置、创建 Context 并组织保存提交；`ImportContext` 通过 `ConfigureAssets`、`EnableImporter` 和 `GetAssetAsync` 维护子元素到语义 Asset 的对应、输出草稿和本次执行期限。局部 Importer 不自行保存文件。

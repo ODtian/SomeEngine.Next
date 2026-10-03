@@ -11,6 +11,8 @@ public sealed class AssetBlockAttribute(string? name = null) : Attribute
 public interface IAssetBlock<T> where T : AssetBlock, IAssetBlock<T>
 {
     static abstract Guid BlockTypeId { get; }
+    /// <summary>Whether this block is included when its asset is saved.</summary>
+    static virtual bool Persistent => true;
     static virtual ValueTask<T> ReadAsync(AssetBlockSource source, CancellationToken cancellationToken = default)
         => throw new NotSupportedException($"Block {T.BlockTypeId} has no persisted reader.");
 }

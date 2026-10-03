@@ -25,6 +25,10 @@ if (mesh.ContainsBlock<ClusterMeshBlock>())
 
 `ContainsBlock<T>()` 只查询类型是否存在。`GetBlock<T>()` 只返回已取得的 Block；不会把磁盘读取藏在同步 getter 内。`GetBlockAsync<T>()` 显式取得所需 Block；同一个打开对象内的并发取得合并，等待者取消互不取消。已发布的 Block 由 Asset 持有，调用方不能把借用结果当作独立实例释放；需要独立使用期限时建立其分支或保留所需数据。
 
+`TryGetBlockAsync<T>(CancellationToken cancellationToken = default)` 返回 `ValueTask<T?>`，类型缺失时返回 `null`；类型存在时使用相同的异步取得路径，读取错误与取消继续传播。`GetBlockAsync<T>()` 在类型缺失时抛出 `KeyNotFoundException`。导入期间，依赖方使用 [Context 的同名方法](Asset-Import-and-Storage.md) 先完成对应生产者。
+
+`IAssetBlock<T>.Persistent` 默认返回 `true`。只在导入进程内使用的 Block 声明 `public static bool Persistent => false;`，Asset 持有并复制其内容，保存时只写持久 Block 的元数据、字节与引用；持久 Block 沿用已有文件编码与目录格式。
+
 打开资产可取得少量元数据，但不保证所有 Block 或其全部负载驻留。已经取得一个 TextureBlock 也不等于已经解压所有 tile。未知 Block 的公共描述仍能被读取，未取得的内容可以原编码保存；真正请求它时才需要对应扩展的静态编解码能力。
 
 ## 数据、分支和释放
