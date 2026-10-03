@@ -81,7 +81,7 @@ public static class Scope
         }
 
         if (!current.World.Has<ObjectDependencies>(current.Entity))
-            current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList()));
+            current.World.Add(current.Entity, new ObjectDependencies(new ObjectDependencyList(current.Frame)));
         current.World.Read<ObjectDependencies>(current.Entity).Reads.Add(cell, version);
     }
 
@@ -249,14 +249,14 @@ public static class Scope
             }
             current.World.ReplaceComponentData(existing, in view);
             if (T.Mode == BuildMode.Rerun)
-                ViewRegistration<T>.Build(current.World, existing, current.Frame);
+                ViewRegistration<T>.Build(current.World, existing, current.Frame, firstBuild: false);
             return existing;
         }
         Entity child = Views.Create(current.World, in view, new ElementKey { Key = key, Occurrence = occurrence });
         current.Changes.RememberAddedChild(child);
         current.DeclaredChildren.Add(child);
         Hierarchy<ElementTree>.SetParent(current.World, child, current.Parent);
-        ViewRegistration<T>.Build(current.World, child, current.Frame);
+        ViewRegistration<T>.Build(current.World, child, current.Frame, firstBuild: true);
         return child;
     }
 
@@ -302,7 +302,7 @@ public static class Scope
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
         if (world.Has<ObjectDependencies>(entity))
-            world.Read<ObjectDependencies>(entity).Reads.Clear();
+            world.Read<ObjectDependencies>(entity).Reads.Clear(frame);
         ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
         var current = new ScopeData(world, entity, entity, frame, declaresChildren, dependenciesEnabled,
             parent?.World == world ? parent.Changes : null);

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using SomeEngine.Core.Diagnostics;
+using SomeEngine.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -49,6 +50,45 @@ internal static unsafe class ViewTypes
     internal static Size Measure(World world, Entity entity, ref LayoutPass pass, in Constraints constraints) =>
         Volatile.Read(ref s_functions)[world.Read<ViewType>(entity).Id].MeasureFunction(world, entity, ref pass, in constraints);
 
+    internal static void RegisterSerializationId(ushort id, Guid serializationId)
+    {
+        lock (s_gate)
+        {
+            CheckSerializationId(id, serializationId);
+            s_functions[id].SerializationId = serializationId;
+        }
+    }
+
+    [Conditional("DEBUG")]
+    private static void CheckSerializationId(ushort id, Guid serializationId)
+    {
+        DevelopmentCheck.Require(serializationId != Guid.Empty, "A view serialization id must identify a type.");
+        DevelopmentCheck.Require(s_functions[id].SerializationId == Guid.Empty ||
+            s_functions[id].SerializationId == serializationId, "A view type keeps one serialization id.");
+        for (int index = 1; index <= s_count; index++)
+            DevelopmentCheck.Require(index == id || s_functions[index].SerializationId != serializationId,
+                "Each view type requires its own serialization id.");
+    }
+
+    internal static Guid GetSerializationId(ushort id)
+    {
+        Guid serializationId = Volatile.Read(ref s_functions)[id].SerializationId;
+        DevelopmentCheck.Require(serializationId != Guid.Empty,
+            "Register the view's generated serialization entry before writing its World.");
+        return serializationId;
+    }
+
+    internal static ushort GetTypeId(Guid serializationId)
+    {
+        lock (s_gate)
+        {
+            for (int index = 1; index <= s_count; index++)
+                if (s_functions[index].SerializationId == serializationId && serializationId != Guid.Empty)
+                    return (ushort)index;
+        }
+        throw new InvalidDataException($"Unknown serialized view type {serializationId}.");
+    }
+
     [Conditional("DEBUG")]
     internal static void CheckContent(World world, Entity entity)
     {
@@ -59,8 +99,9 @@ internal static unsafe class ViewTypes
 #endif
     }
 
-    private readonly struct ViewFunctions
+    private struct ViewFunctions
     {
+        internal Guid SerializationId;
         internal readonly delegate*<World, Entity, ulong, void> BuildFunction;
         internal readonly delegate*<World, Entity, bool> ParameterCheckFunction;
         internal readonly delegate*<World, Entity, ref LayoutPass, in Constraints, Size> MeasureFunction;
@@ -74,6 +115,7 @@ internal static unsafe class ViewTypes
             delegate*<World, Entity, ref LayoutPass, in Constraints, Size> measureFunction,
             ChildSource children)
         {
+            SerializationId = default;
             BuildFunction = buildFunction;
             ParameterCheckFunction = parameterCheckFunction;
             MeasureFunction = measureFunction;
@@ -92,15 +134,43 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
     {
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"View {typeof(T).Name} requires IComponent or ISparseComponent storage.");
-        return ViewTypes.Register(&Build, &HasParameterChanges, default(T) is ILayout ? &Measure : null, T.Children);
+        return ViewTypes.Register(&BuildFromSystem, &HasParameterChanges, default(T) is ILayout ? &Measure : null, T.Children);
     }
 
-    internal static void Build(World world, Entity entity, ulong frame)
+    private static void BuildFromSystem(World world, Entity entity, ulong frame) =>
+        Build(world, entity, frame, firstBuild: false);
+
+    internal static void Build(World world, Entity entity, ulong frame, bool firstBuild)
     {
+        ViewType viewType = world.Read<ViewType>(entity);
+        if (viewType.RebuildRequired)
+        {
+            viewType.RebuildRequired = false;
+            world.OverwriteComponentData(entity, in viewType);
+        }
         if (world.Has<BuildRequest>(entity))
+        {
+            firstBuild = true;
             world.RemoveTag<BuildRequest>(entity);
+        }
         T view = world.ReadComponentData<T>(entity);
         uint parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
+        RebuildDiagnostics.Record<T>(world, entity, firstBuild, parameterVersion);
+        if (Profiler.IsActive || EngineTrace.IsEnabled)
+            BuildWithTracing(world, entity, frame, in view, parameterVersion);
+        else
+            BuildContents(world, entity, frame, in view, parameterVersion);
+    }
+
+    private static void BuildWithTracing(World world, Entity entity, ulong frame, in T view, uint parameterVersion)
+    {
+        using var profiler = Profiler.BeginScope(ViewTrace.Name);
+        using var trace = EngineTrace.Begin(ViewTrace.Site);
+        BuildContents(world, entity, frame, in view, parameterVersion);
+    }
+
+    private static void BuildContents(World world, Entity entity, ulong frame, in T view, uint parameterVersion)
+    {
         try
         {
             using var scope = Scope.Enter(world, entity, frame,
@@ -115,7 +185,12 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
             BuildErrors.Record(world, entity, exception, frame, typeof(T));
         }
         if (T.Mode == BuildMode.Rerun)
-            world.Replace(entity, new ParameterVersion(parameterVersion));
+        {
+            if (world.Has<ParameterVersion>(entity))
+                world.Replace(entity, new ParameterVersion(parameterVersion));
+            else
+                world.Add(entity, new ParameterVersion(parameterVersion));
+        }
     }
 
     private static bool HasParameterChanges(World world, Entity entity) =>
@@ -126,5 +201,11 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
     {
         T view = world.ReadComponentData<T>(entity);
         return view.Measure(ref pass, in constraints);
+    }
+
+    private static class ViewTrace
+    {
+        internal static readonly string Name = $"{typeof(T).FullName}.Build";
+        internal static readonly TraceSite Site = new("view", Name);
     }
 }

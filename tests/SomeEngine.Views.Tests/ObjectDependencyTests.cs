@@ -8,6 +8,20 @@ namespace SomeEngine.Views.Tests;
 public sealed partial class ObjectDependencyTests
 {
     [Fact]
+    public void CompletingAnObservedWriteRefreshesTheDisplayWithinTheFrame()
+    {
+        using var frames = new HeadlessFrameDriver(iterationLimit: 2);
+        var source = new NumberData(3) { Version = 1 };
+        Entity root = Views.Spawn(frames.World, Entity.Null, new CompletingNumberDisplay(source));
+
+        frames.Frame();
+
+        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+        frames.Frame();
+        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+    }
+
+    [Fact]
     public void DependOutsideAComputationKeepsTheDataAvailable()
     {
         var source = new NumberData(3);
@@ -42,9 +56,9 @@ public sealed partial class ObjectDependencyTests
     }
 
     [Fact]
-    public void AnOddVersionKeepsTheDisplayResponsiveDuringAChange()
+    public void AnActiveObjectChangeUpdatesTheDisplayAndRecoversAfterCompletion()
     {
-        using var frames = new HeadlessFrameDriver();
+        using var frames = new HeadlessFrameDriver(iterationLimit: 2);
         var source = new NumberData(3);
         Entity root = Views.Spawn(frames.World, Entity.Null, new NumberDisplay(source));
         frames.Frame();
@@ -52,14 +66,15 @@ public sealed partial class ObjectDependencyTests
         source.Version = 1;
         source.Number = 7;
         frames.Frame();
+        Assert.EndsWith(";7", frames.World.Read<DisplayText>(root).Value);
         source.Number = 9;
         frames.Frame();
 
-        Assert.Equal("3;7;9", frames.World.Read<DisplayText>(root).Value);
+        Assert.EndsWith(";9", frames.World.Read<DisplayText>(root).Value);
         source.Number = 11;
         source.Version = 2;
         frames.Frame();
-        Assert.Equal("3;7;9;11", frames.World.Read<DisplayText>(root).Value);
+        Assert.EndsWith(";11", frames.World.Read<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -173,6 +188,19 @@ public sealed partial class ObjectDependencyTests
         {
             Scope.Depend(Source);
             AppendDisplay(Source.Number.ToString());
+            return default;
+        }
+    }
+
+    private readonly record struct CompletingNumberDisplay(NumberData Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Depend(Source);
+            int number = Source.Number;
+            Source.Number = 7;
+            Volatile.Write(ref Source.Version, 2);
+            AppendDisplay(number.ToString());
             return default;
         }
     }

@@ -12,9 +12,10 @@ internal sealed class ObjectDependencyList
     private int _count;
     private ulong _readFrame;
 
+    internal ObjectDependencyList(ulong frame) => _readFrame = frame;
+
     internal void Add(VersionCell cell, uint version)
     {
-        _readFrame = Scope.Frame;
         for (int index = 0; index < _count; index++)
             if (ReferenceEquals(_reads[index].Cell, cell))
                 return;
@@ -29,10 +30,11 @@ internal sealed class ObjectDependencyList
         _reads[_count++] = new ObjectDependency(cell, version, cell.Error);
     }
 
-    internal void Clear()
+    internal void Clear(ulong frame)
     {
         _reads.AsSpan(0, _count).Clear();
         _count = 0;
+        _readFrame = frame;
     }
 
     internal bool HasChanges(ulong frame)

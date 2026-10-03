@@ -8,6 +8,17 @@ using SomeEngine.Views;
 using SomeEngine.Views.AotSmoke;
 using SomeEngine.Views.Tests;
 
+if (args is ["write-checkpoint", string writePath])
+{
+    CheckViewCheckpoint.Write(writePath);
+    return;
+}
+if (args is ["read-checkpoint", string readPath])
+{
+    CheckViewCheckpoint.Read(readPath);
+    return;
+}
+
 using var frames = new HeadlessFrameDriver();
 Entity root = Views.Spawn(frames.World, Entity.Null, new Cards(false));
 frames.Frame();
@@ -26,7 +37,8 @@ Require(frames.World.Read<Selection>(second[0]).Value == 0, "The second branch s
 Require(first[2] == second[2] && frames.World.Read<Selection>(second[2]).Value == 7,
     "The call on the same column preserves its local state.");
 LayoutChecks.Run();
-Console.WriteLine("View functions, identities, sparse storage, scaled canvases, and user layouts passed under NativeAOT.");
+ComposeChecks.Run(frames);
+Console.WriteLine("View functions, Compose views, identities, sparse storage, scaled canvases, and user layouts passed under NativeAOT.");
 
 static void Require(bool value, string message)
 {
