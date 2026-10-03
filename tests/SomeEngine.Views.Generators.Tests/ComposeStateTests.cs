@@ -47,9 +47,9 @@ public sealed class ComposeStateTests
 
         Assert.Equal("1", frames.World.ReadSparse<ComposeText>(root).Value);
         Assert.Equal("False old", frames.World.ReadSparse<ComposeText>(child).Value);
-        var button = frames.World.ReadSparse<LiftedScreens.Toggle_View>(child);
-        Assert.Equal("tick 1", button.tooltip());
-        button.change(true);
+        var button = frames.World.ReadSparse<ToggleCallbacks>(child);
+        Assert.Equal("tick 1", button.Tooltip());
+        button.Change(true);
         frames.Frame();
         Assert.Equal(1, selectedTick.Value);
         Assert.Equal("True new", frames.World.ReadSparse<ComposeText>(child).Value);
@@ -57,6 +57,7 @@ public sealed class ComposeStateTests
 }
 
 public readonly record struct ComposeText(string Value) : ISparseComponent;
+public readonly record struct ToggleCallbacks(Action<bool> Change, Func<string> Tooltip) : ISparseComponent;
 
 public static partial class LiftedScreens
 {
@@ -76,8 +77,11 @@ public static partial class LiftedScreens
     }
 
     [Composable]
-    public static void Toggle(bool value, Action<bool> change, Func<string> tooltip) =>
+    public static void Toggle(bool value, Action<bool> change, Func<string> tooltip)
+    {
         Scope.Write<ComposeText>(Scope.Entity) = new(value + Decoration);
+        Scope.Write<ToggleCallbacks>(Scope.Entity) = new(change, tooltip);
+    }
 }
 
 public static partial class StateScreens
