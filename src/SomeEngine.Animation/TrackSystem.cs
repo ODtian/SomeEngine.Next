@@ -35,6 +35,12 @@ public struct TrackSystem<T, TOps> : ISystem<ImmediateSystemContext>
                         Track<T> previous = tracks.Read(i);
                         if (previous.Finished || previous.Stage != timeline.Stage || previous.StartId != timeline.Starts)
                             continue;
+                        var target = previous.Target == default ? row.Entity : previous.Target;
+                        if (previous.Target != default && !world.IsAlive(target))
+                        {
+                            tracks[i].Finished = true;
+                            continue;
+                        }
                         if (timeline.Paused)
                         {
                             timeline.Running |= 1;
@@ -61,7 +67,6 @@ public struct TrackSystem<T, TOps> : ISystem<ImmediateSystemContext>
                         }
                         track.SampleTime = timeline.Time;
                         track.Finished = finished;
-                        var target = track.Target == default ? row.Entity : track.Target;
                         Unsafe.WriteUnaligned(ref world.WriteBytes(target, track.Channel.Component, track.Channel.Offset, Unsafe.SizeOf<T>()), track.Current);
                         if (!finished)
                             timeline.Running |= 1;

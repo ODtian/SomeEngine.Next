@@ -67,6 +67,7 @@ public static class PropertyAnimation
 - 显式暂停时，属性求值保留呈现值与轨道状态并设置运行位；首个衰减位移样本也在恢复后求值。
 - `Timeline.Starts` 是启动计数；`Track.StartId` 记录所属播放。禁用后再次启动时增加计数，以当前播放编号选择轨道。这使停止后启动一个值类型的字段时，其它值类型的字段保留停止时的值。
 - 多目标共用一个池化时间线时，可通过公开轨道缓冲添加目标明确的轨道，并令 `StartId` 对应 `Timeline.Starts`。手工阶段轨道还需填写 `Stage`、端点、曲线与起始时间。
+- 外部目标销毁后，对应轨道完成；其余轨道继续求值。时间线收尾后池化实体继续可供复用，后续创建的实体保留自身字段值。
 - 当前 #49 求值直接写字段。同一字段有不同层的活动来源时，最新的 `To` 或 `By` 接替字段，较早的来源完成。开发构建在新轨道安装后由 `DevelopmentCheck` 报告共享字段。多来源贡献与层合成的目标规则见 [[architecture/animation/Animation-Layers|Animation Layers]] 与 #50。
 - 启动、重定目标、暂停、停止、调速与缓冲元素变化保留实体的表格成员关系；存储声明与池扩容负责结构变化。
 
@@ -75,7 +76,7 @@ public static class PropertyAnimation
 `Channel<T>` stores the type number obtained from `ComponentId<TComponent>.Value`. Field updates use `World.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>())` and write the value with `Unsafe.WriteUnaligned`. Starting and retargeting also capture the field value through this byte reference. The public byte access, write versions and development range checks are defined by [[architecture/ECS/Component-Bytes|Component Bytes]]. Generic track storage uses the existing `BufferCapacity(4)` attribute defined by [[architecture/ECS/Dynamic-Buffers|Dynamic Buffers]].
 
 ## Verification
-`tests/SomeEngine.Animation.Tests/PropertyAnimationTests.cs` 经公开 API 覆盖 tween 与弹簧的字段值和逐帧写版本、100 次内联启动/重定/停止的表格成员关系与实体数量、池化与多目标复用、弹簧速度连续性、位移、播放控制、自定义值运算、关键帧、函数指针、阶段轨道与共享字段检查。
+`tests/SomeEngine.Animation.Tests/PropertyAnimationTests.cs` 经公开 API 覆盖 tween 与弹簧的字段值和逐帧写版本、100 次内联启动/重定/停止的表格成员关系与实体数量、池化与多目标复用、弹簧速度连续性、位移、播放控制、自定义值运算、关键帧、函数指针、阶段轨道、目标销毁与共享字段检查。
 
 稳态分配验收使用公开 `OnCreate`、`OnUpdate`、`OnDestroy` 回调组合时间推进、属性求值与收尾，覆盖内联和池化目标；预热 512 帧后连续采样 128 帧，托管分配为 0 字节。系统组调度自身的 Job 提交作用域属于通用调度路径：当前默认系统组测量为每帧 440 字节，源码入口是 `JobSubmissionTracker.Enter` 创建每个系统回调的 `Frame`。这里的零分配范围是动画系统回调。
 

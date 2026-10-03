@@ -676,6 +676,27 @@ public sealed class PropertyAnimationTests
         public float Opacity;
     }
 
+    [Fact]
+    public void DestroyingATargetCompletesItsPooledAnimationAndKeepsLaterEntitiesIntact()
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new Visual());
+        Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
+        world.DestroyEntity(target);
+        Entity replacement = world.CreateEntity(new Visual { Number = 42, Opacity = 7 });
+        using var systems = FloatSystems(world);
+
+        Tick(systems, world, 0.5);
+
+        Assert.Equal(7, world.Read<Visual>(replacement).Opacity);
+        Assert.Equal(42, world.Read<Visual>(replacement).Number);
+        Assert.True(world.IsAlive(animation));
+        Assert.False(world.IsEnabled<Timeline>(animation));
+        Assert.Equal(animation, PropertyAnimation.To(world, replacement, Opacity, 8f, Spec.Tween(1)));
+        Tick(systems, world, 1);
+        Assert.Equal(8, world.Read<Visual>(replacement).Opacity);
+    }
+
     public readonly record struct Meter(float Value);
 
     public struct Reading : IComponent
