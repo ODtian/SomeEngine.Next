@@ -94,6 +94,49 @@ public static class Scope
         return ref current.World.ReadComponentReference<T>(source);
     }
 
+    /// <summary>Returns a component copy that is compared and committed when the build completes.</summary>
+    /// <remarks>The reference remains valid through structural changes in this build.</remarks>
+    public static ref T Write<T>(Entity entity) where T : struct
+    {
+        ScopeData current = Current;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.Write requires table or sparse component {typeof(T).Name}.");
+        var key = (entity, ComponentId<T>.Value);
+        var copies = (current.Calculation ?? current).ComponentCopies ??= new();
+        if (!copies.TryGetValue(key, out ComponentCopy? copy))
+        {
+            T value = ComponentCopy<T>.HasComponent(current.World, entity)
+                ? current.World.ReadComponentData<T>(entity)
+                : default;
+            copy = new ComponentCopy<T>(entity, value);
+            copies.Add(key, copy);
+        }
+        return ref ((ComponentCopy<T>)copy).Value;
+    }
+
+    /// <summary>Reads a component dependency and returns its copy for writing, adding default data when required.</summary>
+    public static ref T ReadWrite<T>(Entity entity) where T : struct
+    {
+        Ensure<T>(entity);
+        Read<T>(entity);
+        return ref Write<T>(entity);
+    }
+
+    /// <summary>Adds default component data when the entity first requires it.</summary>
+    public static void Ensure<T>(Entity entity) where T : struct
+    {
+        World world = Current.World;
+        DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
+            $"Scope.Ensure requires table or sparse component {typeof(T).Name}.");
+        if (ComponentCopy<T>.HasComponent(world, entity))
+            return;
+        T value = default;
+        if (default(T) is ISparseComponent)
+            world.AddSparse(entity, in value);
+        else
+            world.Add(entity, in value);
+    }
+
     /// <summary>Observes component presence and records additions or removals as a dependency.</summary>
     public static bool Has<T>(Entity entity) where T : struct
     {
@@ -266,7 +309,8 @@ public static class Scope
         ScopeData build = Current;
         ViewTypes.CheckContent(build.World, entity);
         var current = new ScopeData(build.World, build.Entity, entity, build.Frame,
-            declaresChildren: true, dependenciesEnabled: build.DependenciesEnabled, build.Changes);
+            declaresChildren: true, dependenciesEnabled: build.DependenciesEnabled, build.Changes,
+            calculation: build.Calculation ?? build);
 #if DEBUG
         current.BuildNumber = build.BuildNumber;
 #endif
@@ -356,7 +400,7 @@ public static class Scope
     private sealed class ScopeData
     {
         internal ScopeData(World world, Entity entity, Entity parent, ulong frame,
-            bool declaresChildren, bool dependenciesEnabled, ChildChanges? changes)
+            bool declaresChildren, bool dependenciesEnabled, ChildChanges? changes, ScopeData? calculation = null)
         {
             World = world;
             Entity = entity;
@@ -364,6 +408,7 @@ public static class Scope
             Frame = frame;
             DeclaresChildren = declaresChildren;
             DependenciesEnabled = dependenciesEnabled;
+            Calculation = calculation;
             PreviousChildren = Hierarchy<ElementTree>.GetChildren(world, parent);
             OutermostBuild = changes is null;
             Changes = changes ?? new ChildChanges();
@@ -379,6 +424,8 @@ public static class Scope
         internal ulong Frame { get; }
         internal bool DeclaresChildren { get; }
         internal bool DependenciesEnabled { get; set; }
+        internal ScopeData? Calculation { get; }
+        internal Dictionary<(Entity Entity, ushort Component), ComponentCopy>? ComponentCopies;
         internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren { get; }
         internal List<Entity> DeclaredChildren { get; } = new();
         internal ChildChanges Changes { get; }
@@ -399,23 +446,24 @@ public static class Scope
         internal void Complete()
         {
             ScopeData current = Current;
-            if (!current.DeclaresChildren)
+            if (current.DeclaresChildren)
             {
-                current.Completed = true;
-                return;
+                CheckSiblingCounts(current);
+                var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Parent);
+                for (int index = 0; index < current.DeclaredChildren.Count; index++)
+                {
+                    if (children[index] == current.DeclaredChildren[index])
+                        continue;
+                    Hierarchy<ElementTree>.SetParent(current.World, current.DeclaredChildren[index], current.Parent, index);
+                    children = Hierarchy<ElementTree>.GetChildren(current.World, current.Parent);
+                }
+                foreach (Entity child in current.PreviousChildren)
+                    if (!current.DeclaredChildren.Contains(child))
+                        current.Changes.RemoveChild(child);
             }
-            CheckSiblingCounts(current);
-            var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Parent);
-            for (int index = 0; index < current.DeclaredChildren.Count; index++)
-            {
-                if (children[index] == current.DeclaredChildren[index])
-                    continue;
-                Hierarchy<ElementTree>.SetParent(current.World, current.DeclaredChildren[index], current.Parent, index);
-                children = Hierarchy<ElementTree>.GetChildren(current.World, current.Parent);
-            }
-            foreach (Entity child in current.PreviousChildren)
-                if (!current.DeclaredChildren.Contains(child))
-                    current.Changes.RemoveChild(child);
+            if (current.ComponentCopies is { } copies)
+                foreach (ComponentCopy copy in copies.Values)
+                    copy.Commit(current.World);
             current.Completed = true;
         }
 

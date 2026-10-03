@@ -22,5 +22,11 @@
 - 不存在多层数据按优先级合并。
 - 新增组件时必须写明它的唯一写入方。
 
+## 写入入口
+写入方在构建中通过 `Scope.Write<T>` 修改组件副本，成功计算结束时比较提交；
+修饰与属性绑定沿同一个入口写入。行为数据通过 `Scope.Ensure<T>` 声明，
+由对应系统继续持有写入职责。具体提交与版本规则见
+[[architecture/someui/Build-Scope|Build Scope]]。
+
 ## Relations
 [[architecture/someui/Modifiers|Modifiers]] · [[architecture/someui/Composition|Composition]]

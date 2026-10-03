@@ -38,6 +38,7 @@ internal static partial class FirstBuildChecks
         VerifyReadDependencies(frames);
         VerifyObjectState(frames);
         VerifyBuildErrors();
+        ComponentWriteChecks.Verify();
         StructureDependencyChecks.Verify();
         VerifyUntrackedReads(frames);
     }
