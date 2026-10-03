@@ -1,3 +1,5 @@
+using SomeEngine.ECS.Entities;
+
 namespace SomeEngine.ECS.Queries;
 
 internal sealed class QueryRecord
@@ -34,15 +36,22 @@ internal sealed class QueryRecord
 
     public QueryState State { get; } = null!;
 
-    internal uint ReadMembershipVersion()
+    internal uint ReadMembershipVersion() => Membership.ReadVersion(State);
+
+    internal ReadOnlySpan<Entity> ReadMembershipEntities(out uint version) => Membership.ReadEntities(State, out version);
+
+    private QueryMembership Membership
     {
-        QueryMembership? membership = Volatile.Read(ref _membership);
-        if (membership is null)
+        get
         {
-            var created = new QueryMembership();
-            membership = Interlocked.CompareExchange(ref _membership, created, null) ?? created;
+            QueryMembership? membership = Volatile.Read(ref _membership);
+            if (membership is null)
+            {
+                var created = new QueryMembership();
+                membership = Interlocked.CompareExchange(ref _membership, created, null) ?? created;
+            }
+            return membership;
         }
-        return membership.ReadVersion(State);
     }
 
     internal QueryMembership? CopyMembership() => Volatile.Read(ref _membership)?.Clone();
