@@ -9,6 +9,7 @@ SomeUI 的使用错误通过 [[architecture/validation/Development-Checks|Develo
 - 一帧内计算重跑超过迭代上限。
 - 未经拦截的节点调用；同 key 兄弟数量变化且带局部状态。
 - 对 `Build` 来源的视图调用 `.Content()`，或两个作用域声明同一节点的子节点。
+- 同一视图开始新一次构建时重置该视图的子节点声明记录，依赖变化引发的再次构建沿正常重跑规则处理。
 - 被取消的构建在 `finally` 中调用构建函数。
 - 返回 `Task` 的辅助方法在 `await` 之后调用作用域函数。
 - `State<T>.Update` 回调中访问同一状态。

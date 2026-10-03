@@ -42,7 +42,8 @@ public static KeyScope Key(ulong key);
   匹配项的类型变化时，使用 `Hierarchy<ElementTree>.DestroySubtree` 释放旧实体和后代，
   随后创建新视图；新增声明同样创建并当场完成首次构建。
 - 声明顺序由 `Hierarchy<ElementTree>.SetParent(world, child, parent, insertIndex)` 维护。
-  成功构建结束时，尚待匹配的旧子节点及其整个子树通过同一层级接口释放。
+  按 [[architecture/someui/Child-Source|Child Source]] 结束一次子节点声明时，
+  尚待匹配的旧子节点及其整个子树通过同一层级接口释放。
   视图参数、`ElementKey` 和 `ElementTree` 持有节点数据；出现次数只在本次构建期间计数。
 - `Views.Spawn` 创建的根也带有 `ElementKey`，其值为 key 0、出现次数 0。
 

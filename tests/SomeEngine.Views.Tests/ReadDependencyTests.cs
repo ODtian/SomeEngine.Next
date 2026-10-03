@@ -10,6 +10,131 @@ public sealed partial class ReadDependencyTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void ComponentTypeChangesUpdateOnlyTheirDependentDisplays(bool sparse)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity tableSource = frames.World.CreateEntity(new Value(3));
+        Entity sparseSource = frames.World.CreateEntity();
+        frames.World.AddSparse(sparseSource, new SparseValue(5));
+        Entity tableDisplay = Views.Spawn(frames.World, Entity.Null, new ValueDisplay(tableSource, Sparse: false));
+        Entity sparseDisplay = Views.Spawn(frames.World, Entity.Null, new ValueDisplay(sparseSource, Sparse: true));
+        frames.Frame();
+        frames.Frame();
+
+        if (sparse)
+            frames.World.ReplaceSparse(sparseSource, new SparseValue(7));
+        else
+            frames.World.Replace(tableSource, new Value(11));
+        frames.Frame();
+
+        Assert.Equal(sparse ? "3" : "3;11", frames.World.Read<DisplayText>(tableDisplay).Value);
+        Assert.Equal(sparse ? "5;7" : "5", frames.World.Read<DisplayText>(sparseDisplay).Value);
+        uint tableDisplayVersion = frames.World.WriteVersion<DisplayText>(tableDisplay);
+        uint sparseDisplayVersion = frames.World.WriteVersion<DisplayText>(sparseDisplay);
+        frames.Frame();
+        Assert.Equal(tableDisplayVersion, frames.World.WriteVersion<DisplayText>(tableDisplay));
+        Assert.Equal(sparseDisplayVersion, frames.World.WriteVersion<DisplayText>(sparseDisplay));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ParentWritesAfterBuildingAChildUpdateItsDisplayWithinTheFrame(bool sparse)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity trigger = frames.World.CreateEntity(new Value(3));
+        Entity source = frames.World.CreateEntity();
+        if (sparse)
+            frames.World.AddSparse(source, new SparseValue(5));
+        else
+            frames.World.Add(source, new OtherValue(5));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new RewritingGroup(trigger, source, sparse));
+        frames.Frame();
+        frames.Frame();
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+
+        frames.World.Replace(trigger, new Value(7));
+        frames.Frame();
+
+        Assert.Equal("30:3+5;70:7+5;70:7+11", frames.World.Read<DisplayText>(child).Value);
+        uint displayVersion = frames.World.WriteVersion<DisplayText>(child);
+        frames.Frame();
+        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(child));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ComponentWritesAfterFirstChildBuildUpdateTheNextFrameDisplay(bool sparse)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity();
+        if (sparse)
+            frames.World.AddSparse(source, new SparseValue(3));
+        else
+            frames.World.Add(source, new Value(3));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new InitialWriteGroup(source, sparse));
+        frames.Frame();
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Assert.Equal("3", frames.World.Read<DisplayText>(child).Value);
+
+        frames.Frame();
+
+        Assert.Equal("3;7", frames.World.Read<DisplayText>(child).Value);
+        uint displayVersion = frames.World.WriteVersion<DisplayText>(child);
+        frames.Frame();
+        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(child));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ComponentChangesKeepEachWorldsDisplayIndependent(bool sparse)
+    {
+        using var first = new HeadlessFrameDriver();
+        using var second = new HeadlessFrameDriver();
+        Entity firstSource = first.World.CreateEntity();
+        Entity secondSource = second.World.CreateEntity();
+        if (sparse)
+        {
+            first.World.AddSparse(firstSource, new SparseValue(3));
+            second.World.AddSparse(secondSource, new SparseValue(5));
+        }
+        else
+        {
+            first.World.Add(firstSource, new Value(3));
+            second.World.Add(secondSource, new Value(5));
+        }
+        Entity firstDisplay = Views.Spawn(first.World, Entity.Null, new ValueDisplay(firstSource, sparse));
+        Entity secondDisplay = Views.Spawn(second.World, Entity.Null, new ValueDisplay(secondSource, sparse));
+        first.Frame();
+        second.Frame();
+        first.Frame();
+        second.Frame();
+
+        if (sparse)
+            first.World.ReplaceSparse(firstSource, new SparseValue(7));
+        else
+            first.World.Replace(firstSource, new Value(7));
+        first.Frame();
+        second.Frame();
+        Assert.Equal("3;7", first.World.Read<DisplayText>(firstDisplay).Value);
+        Assert.Equal("5", second.World.Read<DisplayText>(secondDisplay).Value);
+        uint firstDisplayVersion = first.World.WriteVersion<DisplayText>(firstDisplay);
+
+        if (sparse)
+            second.World.ReplaceSparse(secondSource, new SparseValue(11));
+        else
+            second.World.Replace(secondSource, new Value(11));
+        second.Frame();
+        first.Frame();
+        Assert.Equal("5;11", second.World.Read<DisplayText>(secondDisplay).Value);
+        Assert.Equal(firstDisplayVersion, first.World.WriteVersion<DisplayText>(firstDisplay));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void ComponentWritesUpdateTheDisplayOnTheNextFrame(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
@@ -241,6 +366,49 @@ public sealed partial class ReadDependencyTests
         }
     }
 
+    private readonly record struct RewritingGroup(Entity Trigger, Entity Source, bool Sparse) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int value = Scope.Read<Value>(Trigger).Number;
+            Scope.View(new PairDisplay(Trigger, Source, Sparse, value * 10));
+            if (value == 7)
+            {
+                if (Sparse)
+                    Scope.World.ReplaceSparse(Source, new SparseValue(11));
+                else
+                    Scope.World.Replace(Source, new OtherValue(11));
+            }
+            return default;
+        }
+    }
+
+    private readonly record struct InitialWriteGroup(Entity Source, bool Sparse) : IView, IComponent
+    {
+        public static BuildMode Mode => BuildMode.Once;
+
+        public BuildTask Build()
+        {
+            Scope.View(new ValueDisplay(Source, Sparse));
+            if (Sparse)
+                Scope.World.ReplaceSparse(Source, new SparseValue(7));
+            else
+                Scope.World.Replace(Source, new Value(7));
+            return default;
+        }
+    }
+
+    private readonly record struct PairDisplay(Entity Trigger, Entity Source, bool Sparse, int Parameter) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int trigger = Scope.Read<Value>(Trigger).Number;
+            int value = Sparse ? Scope.Read<SparseValue>(Source).Number : Scope.Read<OtherValue>(Source).Number;
+            AppendDisplay($"{Parameter}:{trigger}+{value}");
+            return default;
+        }
+    }
+
 #if DEBUG
     [Fact]
     public void ReadOutsideBuildReportsTheRequiredScope()
@@ -361,6 +529,7 @@ public sealed partial class ReadDependencyTests
     }
 
     private readonly record struct Value(int Number) : IComponent;
+    private readonly record struct OtherValue(int Number) : IComponent;
     private readonly record struct Visibility(bool Shown) : IComponent;
     private readonly record struct SparseValue(int Number) : ISparseComponent;
     private readonly record struct DisplayText(string Value) : IComponent;

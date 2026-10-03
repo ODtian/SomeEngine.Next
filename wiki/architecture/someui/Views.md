@@ -113,5 +113,11 @@ public readonly partial record struct Card(string Title) : IView
 公开行为测试入口为 `tests/SomeEngine.Views.Generators.Tests`。
 `tools/SomeEngine.Views.AotSmoke` 通过 `win-x64` NativeAOT 发布并执行相同公开入口。
 
+## 调用方内容实现（#17）
+
+`ContentExtensions.Content(this Entity)` 返回用于 `using` 的 `ParentScope`，
+`Group` 是公开的透明容器视图。两种子节点来源的声明、收尾与重跑规则见
+[[architecture/someui/Child-Source|Child Source]]，公开行为测试为 `ChildSourceTests.cs`。
+
 ## Relations
 [[architecture/someui/Build-Modes|Build Modes]] · [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Node-Identity|Node Identity]] · [[architecture/someui/Build-Scope|Build Scope]]
