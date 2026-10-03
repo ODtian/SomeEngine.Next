@@ -100,6 +100,11 @@ public sealed class RenderPrepareScope : IDisposable
     {
         lock (_gate)
         {
+            if (_dataLock is not null)
+            {
+                Dispose();
+                return;
+            }
             ThrowIfNotOpen();
             ThrowIfLeaseActive();
             _state = StateClosing;

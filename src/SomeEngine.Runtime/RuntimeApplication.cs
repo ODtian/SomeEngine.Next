@@ -546,6 +546,7 @@ internal static class RuntimeApplication
                 Label: "SomeEngine Runtime Render Graph"));
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
         GraphRegionId targetGeometryAfterRegion, shadingRegion, temporalRegion, presentationRegion, uiRegion, feedbackRegion;
+        GraphRegionId frameOutputRegion;
         using (RenderGraphEdit edit = renderGraph.BeginEdit())
         {
             _ = edit.AddRegion("Frame uploads");
@@ -559,6 +560,7 @@ internal static class RuntimeApplication
             temporalRegion = edit.AddRegion("Temporal", postProcessing);
             presentationRegion = edit.AddRegion("Presentation", postProcessing);
             uiRegion = edit.AddRegion("UI", postProcessing);
+            frameOutputRegion = edit.AddFrameRegion("Frame output", postProcessing);
             feedbackRegion = edit.AddRegion("Feedback");
             edit.Commit();
         }
@@ -905,6 +907,7 @@ internal static class RuntimeApplication
                     cameraCut,
                     viewEntity,
                     outputVerifier,
+                    frameOutputRegion,
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
                     options.SynchronousFrames,
                     options.TemporalAntialiasing,
@@ -1157,6 +1160,7 @@ internal static class RuntimeApplication
         bool cameraCut,
         Entity viewEntity,
         FrameOutputVerifier? outputVerifier,
+        GraphRegionId frameOutputRegion,
         RenderGraphDiagnosticsHandler? graphDiagnostics,
         bool synchronousFrames,
         bool temporalAntialiasing,
@@ -1209,7 +1213,7 @@ internal static class RuntimeApplication
                             view: viewEntity,
                             jitterPixels: jitterPixels);
                     ui.Record(ref graphFrame, width, height);
-                    outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue);
+                    outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue, frameOutputRegion);
                     if (reportMilestones)
                         Console.WriteLine("First frame: analyzing and submitting render graph.");
 

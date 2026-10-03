@@ -73,7 +73,8 @@ internal sealed class FrameOutputVerifier : IDisposable
     internal void Record(
         ref RenderGraphFrame graph,
         GraphTextureId source,
-        Queue presentationQueue)
+        Queue presentationQueue,
+        GraphRegionId region)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(presentationQueue);
@@ -131,7 +132,7 @@ internal sealed class FrameOutputVerifier : IDisposable
                     data.Width,
                     data.Height,
                     1));
-            });
+            }, region: region);
     }
 
     internal FrameOutputMetrics Read()
