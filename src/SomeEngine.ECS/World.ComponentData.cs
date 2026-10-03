@@ -33,6 +33,19 @@ public partial class World
         return _components.Read<T>(entity);
     }
 
+    internal ref readonly T ReadComponentReference<T>(Entity entity) where T : struct
+    {
+        if (default(T) is ISparseComponent)
+        {
+            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Read);
+            return ref _sparse.ReadRef<T>(entity);
+        }
+
+        using WorldJobAdmissionScope access =
+            EnterJobComponent(ComponentMetadata<T>.Id, WorldStorageAccess.Read);
+        return ref _components.ReadRef<T>(entity);
+    }
+
     internal uint ComponentDataWriteVersion<T>(Entity entity) where T : struct
     {
         if (default(T) is ISparseComponent)
@@ -44,6 +57,14 @@ public partial class World
         using WorldJobAdmissionScope access =
             EnterJobComponent(ComponentMetadata<T>.Id, WorldStorageAccess.Read);
         return _components.WriteVersion<T>(entity);
+    }
+
+    internal uint ComponentDataWriteVersion(Entity entity, ushort component)
+    {
+        bool sparse = ComponentRegistry.Get(component).Storage == StoragePath.Sparse;
+        using WorldJobAdmissionScope access = EnterJobAdmission(WorldJobAdmissionRequest.ForStorage(
+            sparse ? WorldStorageKind.Sparse : WorldStorageKind.Table, component, WorldStorageAccess.Read));
+        return sparse ? _sparse.WriteVersion(entity, component) : _components.WriteVersion(entity, component);
     }
 
     /// <summary>Stores an equal value while preserving component write versions.</summary>
