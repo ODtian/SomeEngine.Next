@@ -125,5 +125,30 @@ Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
 API 与提交规则见 [[architecture/someui/Composition|Composition]]，
 环境来源与版本检查见 [[architecture/someui/Dependencies|Dependencies]]。
 
+## 布局协议验收（#24）
+
+2026-10-04，代码验收提交 `f0894b6a41b718d667e5215209984426ff0e5a28`，
+已合入集成提交 `bf0a73c511b166ffdc1049f52d5c97ee70cd9442`。
+Windows x64，.NET SDK `10.0.112`。
+
+`LayoutTests` 通过公开视图构建、修饰、World、系统组与 `LayoutRect` 验证
+800×600 画布中的绝对定位、内边距的同帧更新、透明组合、用户稀疏环形布局与
+Absolute 嵌套、最小/最大尺寸、单轴自动尺寸、零尺寸、非均匀内边距和多个画布。
+`LayoutChecks` 由单元测试和 Views NativeAOT 入口共用，验证显式 `IView.Measure`、
+稀疏参数、缩放画布、嵌套坐标及画布尺寸更新。
+开发检查专用用例在 Debug 验证冲突的 Box 尺寸区间。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Debug --no-restore --nologo -v quiet` | 14 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Release --no-restore --nologo -v quiet` | 13 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug --no-restore --nologo -v quiet` | 246 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release --no-restore --nologo -v quiet` | 219 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Debug --no-restore --nologo -v quiet` | 41 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Release --no-restore --nologo -v quiet` | 41 通过 |
+| `dotnet test tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj --nologo -v quiet` | 635 通过 |
+| `dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj --nologo -v quiet` | 298 通过 |
+| `just views-aot win-x64` | 原生发布、布局/Compose/视图检查、存档类型编号重映射和下一帧重建全部通过，退出码 0 |
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

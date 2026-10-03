@@ -6,6 +6,7 @@
     <Description>Struct views backed by ECS components, generated view functions, and call-site node identities.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="SomeEngine.Layout" />
     <ProjectReference Include="../SomeEngine.ECS/SomeEngine.ECS.csproj" />
     <ProjectReference Include="../SomeEngine.ECS.Serialization/SomeEngine.ECS.Serialization.csproj" />
     <ProjectReference Include="../SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
