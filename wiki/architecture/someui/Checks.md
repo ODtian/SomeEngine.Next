@@ -31,10 +31,9 @@ SomeUI 的使用错误通过 [[architecture/validation/Development-Checks|Develo
 | `SEV002` | info | 省略存储声明时提示选择 `IComponent` 或 `ISparseComponent`，生成器为 partial 视图补充 sparse |
 | `SEV003` | error | 生成存储接口需要 partial 视图声明 |
 | `SEV004` | error | 普通节点调用应有编译器实际识别的拦截方法；方法组、委托转换或其它生成器产出的调用可改为源码直接调用或显式 key 重载 |
-| `SEV005` | error | 嵌套视图函数与 Compose 视图声明需要其包含类型声明为 partial |
-| `SEV006` | error | Compose 视图方法声明为 static |
-| `SEV007` | error | Compose 视图方法返回 void 或 BuildTask；产生值的内联分组由 Inline 标记及 #60 接入 |
-| `SEV008` | error | Compose 视图与 Remember 调用应由编译器识别为位置拦截；方法组、委托、取地址与其它生成器产出的调用改为源码直接调用 |
+| `SEV005` | error | 嵌套视图函数与 Compose 方法的生成入口需要其包含类型声明为 partial |
+| `SEV006` | error | Compose 方法声明为 static |
+| `SEV008` | error | Compose 视图、调用位置分组与 Remember 调用应由编译器识别为位置拦截；方法组、委托、取地址与其它生成器产出的调用改为源码直接调用 |
 | `SEV009` | error | 调用 Remember 的方法或 lambda 使用自己的 Composable 标记 |
 | `SEV013` | info | Compose 方法或 SwiftUI Build 中传入捕获外部变量的 lambda；提示“调用方每次重跑都会分配”，推荐 static lambda 加显式状态参数 |
 | `SEV014` | error | Composable 内容参数使用返回 void 或 BuildTask、实参按值传递的委托 |

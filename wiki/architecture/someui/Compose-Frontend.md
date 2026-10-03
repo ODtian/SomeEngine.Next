@@ -1,7 +1,7 @@
 # Compose Frontend
 
 ## Definition
-Compose 写法使用 `[Composable] static` 方法。源生成器为返回 `void` 或 `BuildTask` 的方法生成视图 struct，拦截器把调用点改写为 `Scope.View(new X_View(...), 调用位置 key)`。
+Compose 写法使用 `[Composable] static` 方法。普通 `void` 与 `BuildTask` 方法生成视图 struct，拦截器把调用点改写为 `Scope.View(new X_View(...), 调用位置 key)`。标记 `[Inline]` 或返回普通值（例如 `int`、`State<T>`）的方法形成调用位置 key 分组，函数体在调用方视图中执行并返回原结果。
 
 ```csharp
 [Composable]
@@ -14,14 +14,14 @@ static void Game(Entity player)
 
 ## Invariants
 - 参数可以是普通值，也可以是 `State<T>`；比较规则见 [[architecture/someui/Build-Modes|Build Modes]]。
-- `[Inline]` 的 `[Composable]` 函数形成 key 前缀分组，可以有返回值；分组语义由 #60 接入。
+- `[Inline]` 与返回普通值的 `[Composable]` 函数形成 key 前缀分组；局部状态与读取依赖由调用方视图持有，函数体声明的节点沿当前父节点加入树。
 - `Remember` 的值保存在视图实体的状态存储中，按调用位置常量加出现次数识别；调用 `Remember` 的函数必须是 `[Composable]`。
 - `MutableStateOf` 产出 `State<T>`。
 - `[Composable]` 内容参数由组件调用，作为独立子视图执行，按引用比较；捕获变量的 lambda 允许使用，分析器提示每次调用方重跑都会分配。
 - 拦截覆盖 `[Composable]` 调用；函数体内产出节点的调用与其它写法一样获得调用位置常量。
 
 ## Current design
-分析器要求 `[Composable]` 以源码直接调用的形式使用，方法声明为 `static`，视图结果为 `void` 或 `BuildTask`。方法组、委托、取地址和其它生成器产出的调用由 `SEV008` 报告；声明诊断见 [[architecture/someui/Checks|Checks]]。项目的 `InterceptorsNamespaces` 由 Views 包内 buildTransitive props 和仓库 `Directory.Build.props` 设置。编译通过即每个视图调用都已拦截。
+分析器要求 `[Composable]` 以源码直接调用的形式使用，方法声明为 `static`。返回 `void` 或 `BuildTask` 的视图声明与产生普通值的内联分组由生成器分别接入。方法组、委托、取地址和其它生成器产出的调用由 `SEV008` 报告；声明诊断见 [[architecture/someui/Checks|Checks]]。项目的 `InterceptorsNamespaces` 由 Views 包内 buildTransitive props 和仓库 `Directory.Build.props` 设置。编译通过即每个视图与分组调用都已拦截。
 
 ## Compose 视图实现（#58）
 
@@ -63,7 +63,7 @@ public static partial class Screens
   生成器提供本页的参数比较实现，通用构建路径消费生成视图的 `Equals`。
 - 消费程序集直接引用定义程序集生成的视图类型。方法的泛型约束、命名参数及可选参数继续由 C# 绑定处理。
   节点的位置 key、出现次数及 `Key` 前缀按 [[architecture/someui/Node-Identity|Node Identity]] 组合。
-- 内联分组由 #60 接入。内容函数见下文 #61。
+- 内联分组见下文 #60。内容函数见下文 #61。
 
 ## 局部状态与参数比较实现（#59）
 
@@ -114,6 +114,46 @@ shipping 使用显式 key 0 的后备路径。初始化器为空与作用域使�
 公开编译与行为验收见 `tests/SomeEngine.Views.Generators.Tests/ComposeTests.cs`，
 通过生成视图的参数组件、`ElementTree` 子内容、局部状态和 `BuildError` 验证结果。
 NativeAOT 验收沿 `tools/SomeEngine.Views.AotSmoke` 使用同一公开入口。
+
+## 调用位置分组实现（#60）
+
+```csharp
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class InlineAttribute : Attribute;
+
+[Composable, Inline]
+static void Header(string text) { /* Remember 与节点声明 */ }
+
+[Composable]
+static int RememberCounter() => Remember(static () => MutableStateOf(0)).Value;
+```
+
+`InlineAttribute` 位于 `SomeEngine.Views.Compose`。`[Inline]` 将可组合方法作为分组执行；
+返回普通值的可组合方法自动使用相同路径。普通 `void` 与 `BuildTask` 方法继续声明独立视图。
+分组方法及其外层类型使用 `partial`，生成器在原类型中加入带显式 key 的执行方法，
+使私有辅助函数、泛型约束、重载、命名参数与可选参数沿原 C# 调用规则使用。
+公开方法的分组入口可供引用程序集的拦截器调用。
+
+拦截器将调用位置常量传给生成入口。入口以 `using (Scope.GroupKeys(key))` 执行原函数体，
+`GroupKeyScope.Dispose` 在返回或异常退出时恢复外层前缀。
+`Scope.GroupKeys(ulong)` 与 `GroupKeyScope` 位于 `SomeEngine.Views`，共用现有节点匹配和
+Remember 存储路径。嵌套分组与显式 `Key` 按进入顺序组合前缀；
+同一辅助函数内各 Remember 与节点位置继续分别计数出现次数。
+循环中的列表项使用 `Key(id)`，使重排与增删按各项身份匹配。
+
+分组自身以调用方的 `Scope.Entity` 执行，其 Remember 值和读取依赖归该视图的计算。
+函数体中的节点声明直接加入当前父节点；值返回到原表达式参与后续求值。
+`.Content()` 继承活动调用分组的前缀，内容块中的 Remember 继续保存在调用方视图上，
+节点由该内容容器持有。显式 Key 仍使用所在父节点的上下文；子视图自身构建从自身上下文开始。
+这些作用域的使用错误沿 Core `DevelopmentCheck` 的活动构建检查处理。
+
+分组方法的 `[Composable]` 内容参数沿下文 #61 的内容视图生成与参数比较路径执行，
+各次内容调用继续声明独立子视图并持有自己的读取依赖。
+
+公开行为验收见 `ComposeGroupTests.cs`、`ComposeGroupContentTests.cs` 与 `ComposeGroupScopeTests.cs`，
+覆盖同一行的条件调用、节点与 Remember 状态归属、返回值表达式、调用方依赖刷新、
+内容块状态、独立内容函数、跨程序集泛型与重载、Key 重排及捕获异常后的前缀恢复。
+NativeAOT 验收由 `ComposeGroupChecks.cs` 接入现有 `just views-aot win-x64`。
 
 ## 内容函数参数（#61）
 

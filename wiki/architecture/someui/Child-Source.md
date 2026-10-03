@@ -62,7 +62,7 @@ public record struct Group : IView, IComponent
 内容作用域继承当前构建的 World、构建实体和读取登记状态；
 `Scope.Entity` 继续表示正在构建的视图，`Scope.Read<T>` 的依赖归该视图的计算。
 整个构建中的内容块共用该视图的依赖缓冲，`Once` 构建沿仅取值状态读取。
-每个内容作用域从自身父节点的 key 上下文开始，
+每个内容作用域从自身父节点的显式 Key 上下文开始，并继承活动 Compose 调用分组的前缀，
 嵌套的内容块结束后恢复外层父节点、出现次数和 key 前缀。
 使用 `ParentScope.Entity` 可以向内容容器写入数据。
 

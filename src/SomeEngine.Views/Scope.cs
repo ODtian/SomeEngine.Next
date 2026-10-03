@@ -308,6 +308,24 @@ public static partial class Scope
 
     internal static void RestoreKey(ulong? key) => Current.KeyPrefix = key;
 
+    /// <summary>Groups remembered values and child keys through nested caller content scopes.</summary>
+    /// <remarks>The Compose generator supplies the call-site key for an inline composition.</remarks>
+    public static GroupKeyScope GroupKeys(ulong key)
+    {
+        ScopeData current = Current;
+        var scope = new GroupKeyScope(current.KeyPrefix, current.GroupPrefix);
+        current.KeyPrefix = current.KeyPrefix is ulong prefix ? CombineKeys(prefix, key) : key;
+        current.GroupPrefix = current.KeyPrefix;
+        return scope;
+    }
+
+    internal static void RestoreGroupKeys(ulong? keyPrefix, ulong? groupPrefix)
+    {
+        ScopeData current = Current;
+        current.KeyPrefix = keyPrefix;
+        current.GroupPrefix = groupPrefix;
+    }
+
     /// <summary>Suspends dependency tracking until the returned scope is disposed.</summary>
     /// <remarks>Nested view builds use their own build mode's dependency tracking.</remarks>
     public static UntrackScope Untrack()
@@ -521,6 +539,8 @@ public static partial class Scope
         current.DeclaresChildren = true;
         current.DependenciesEnabled = build.DependenciesEnabled;
         current.Queue = build.Queue;
+        current.KeyPrefix = build.GroupPrefix;
+        current.GroupPrefix = build.GroupPrefix;
         current.BeginChildren(build.Frame, build.Changes);
 #if DEBUG
         current.ContentVersion++;
@@ -636,6 +656,8 @@ public static partial class Scope
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal Dictionary<ulong, int>? RememberOccurrences;
         internal ulong? KeyPrefix;
+        // Caller content inherits the call group; explicit Key scopes belong to their parent.
+        internal ulong? GroupPrefix;
 #if DEBUG
         internal int ContentVersion;
         internal int BuildNumber;
