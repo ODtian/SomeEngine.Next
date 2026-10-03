@@ -56,5 +56,9 @@ ref readonly Theme theme = ref Scope.ReadUp<Theme>();
 ## Evidence
 对等由程序集边界保证，见 [[architecture/someui/Assemblies|Assemblies]]；外部重写测试见 [[architecture/someui/Testing|Testing]]。
 
+`Group` 是已实现的透明容器，用户视图也可声明 `ChildSource.Caller`。
+当前底层组合入口是 `using (Scope.View(new Group()).Content()) { Scope.View(...); }`；
+内容作用域和公开行为证据见 [[architecture/someui/Child-Source|Child Source]]。
+
 ## Relations
 ADR 0011 · [[architecture/someui/Child-Source|Child Source]] · [[architecture/someui/Input-and-Behaviors|Input and Behaviors]]

@@ -63,5 +63,13 @@ public static class Scope
 `Scope.ReadUp<T>()` 使用当前视图实体作为环境查找起点，读取路径、缺省值和父链变化的处理见
 [[architecture/someui/Dependencies|Dependencies]] 的环境读取依赖。
 
+## 内容作用域实现（#17）
+
+活动构建支持 `Entity.Content()` 的 `ParentScope`。
+构建实体与子节点声明的父实体分别保存在上下文中，
+容器内容继承当前构建，并在块结束时恢复外层声明上下文。
+公开 API、子节点来源与收尾时机见
+[[architecture/someui/Child-Source|Child Source]]。
+
 ## Relations
 [[architecture/someui/Dependencies|Dependencies]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · [[architecture/someui/Async-Build|Async Build]]
