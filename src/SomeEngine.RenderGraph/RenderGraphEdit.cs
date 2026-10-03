@@ -1178,6 +1178,42 @@ public ref partial struct RenderGraphEdit
         return new GraphParameterInput(Graph.Identity, type);
     }
 
+    /// <summary>Returns the parameter inputs bound by passes in this edit.</summary>
+    public GraphParameterInput[] GetParameterInputs() => Staging.Passes.Rows
+        .SelectMany(static pass => pass.ParameterBindings)
+        .Where(static binding => binding.ParameterInput is not null)
+        .Select(static binding => binding.ParameterInput!)
+        .Distinct().ToArray();
+
+    /// <summary>Replaces one input in both a pass's bindings and its resource accesses.</summary>
+    public void ReplaceParameterInput(GraphPassId pass, GraphParameterInput previous, GraphParameterInput input)
+    {
+        ValidatePass(pass);
+        DevelopmentCheck.Require(previous is not null && input is not null &&
+            previous.Graph == Graph.Identity && input.Graph == Graph.Identity && previous.Type == input.Type,
+            "Both parameter inputs must belong to this graph and have the same resource type.");
+        if (ReferenceEquals(previous, input)) return;
+        GraphPass row = Staging.Passes.GetMutable(pass.Value);
+        for (int index = 0; index < row.ParameterBindings.Count; index++)
+            if (ReferenceEquals(row.ParameterBindings[index].ParameterInput, previous))
+                row.ParameterBindings[index] = GraphParameterResourceBinding.FromInput(input);
+        foreach (GraphIdentity access in row.Accesses)
+        {
+            PassResourceAccess resource = Staging.Accesses.Get(access);
+            if (!ReferenceEquals(resource.ParameterInput, previous)) continue;
+            Staging.Accesses.GetMutable(access).ParameterInput = input;
+            Changes.TouchAccess(access, pass.Value, resource.Target);
+        }
+        Changes.TouchPass(pass.Value);
+    }
+
+    internal void SetBufferDescriptorRead(GraphBufferAccessId access, bool descriptorOnly)
+    {
+        PassResourceAccess row = Staging.Accesses.GetMutable(access.Value);
+        row.BufferDescriptor = true;
+        row.BufferDescriptorOnly = descriptorOnly;
+    }
+
     internal void AddParameterInput(GraphIdentity pass, GraphParameterInput input, PipelineSync sync)
     {
         DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
@@ -1203,6 +1239,7 @@ public ref partial struct RenderGraphEdit
                 TargetKind = texture ? GraphAccessTargetKind.Texture : GraphAccessTargetKind.Buffer,
                 ParameterInput = input,
                 ParameterSecondary = secondary,
+                BufferDescriptor = !texture && !writable,
                 Mode = writable && !sampled ? GraphAccessMode.ReadWrite : GraphAccessMode.Read,
                 Coverage = WriteCoverage.Partial,
                 Sync = sync,

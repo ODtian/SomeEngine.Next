@@ -335,6 +335,8 @@ internal struct FrameResourceAccess
     internal ResourceAccess Access;
     internal BufferRange BufferRange;
     internal BufferRangeSet? SharedBufferRanges;
+    internal bool BufferDescriptor;
+    internal bool BufferDescriptorOnly;
     internal BufferAccessRanges BufferRanges => new(BufferRange, SharedBufferRanges);
     internal TextureSubresourceRange TextureRange;
     internal QueryRange QueryRange;

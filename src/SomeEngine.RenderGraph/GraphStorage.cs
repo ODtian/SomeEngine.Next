@@ -479,6 +479,8 @@ internal sealed class PassResourceAccess
     internal GraphTextureInput? TextureInput;
     internal GraphParameterInput? ParameterInput;
     internal bool ParameterSecondary;
+    internal bool BufferDescriptor;
+    internal bool BufferDescriptorOnly;
     internal BufferRange? CurrentBufferRange;
     internal TextureSubresourceRange? CurrentTextureRange;
     internal required GraphAccessMode Mode;
