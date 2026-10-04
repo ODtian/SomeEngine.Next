@@ -10,7 +10,8 @@
 | `SomeEngine.Typography` | 字形排版、字体、图集 | — |
 | `SomeEngine.Elements` | `Surface` 修饰、`Text`、文本样式与排版系统、`Pressable`、`Draggable`、`Scrollable`、`Selectable`、`Pointer`、`HitTestSystem`、`Button`、`ButtonTheme`、`Focusable`、`Keyboard`、`Gamepad` 与 `FocusNavigationSystem`；`Image`、其它控件和 `.Animate` 按后续票扩展 | Views、Layout、Typography |
 | `SomeEngine.Elements.Render` | 提取系统、屏幕画布绘制、内置 Surface 材质 | Elements、Render、RenderGraph |
-| `SomeEngine.Views.Compose` / `.SwiftUI` / `.Solid` | 各前端的协调原语 | Views |
+| `SomeEngine.Views.Compose` / `.SwiftUI` | 各前端的协调原语 | Views |
+| `SomeEngine.Views.Solid` | Effect、Memo getter、Untrack、Text 与可响应字段修饰 | Views、Elements |
 
 ## Invariants
 - `SomeEngine.Elements` 及之后的程序集只使用底层公开 API，不使用 `InternalsVisibleTo` 或任何内部入口。
@@ -42,6 +43,13 @@ Layout 通过基础层内部入口驱动每个画布，共用当次尺寸与位�
 Compose 的视图生成、调用位置拦截与跨程序集类型复用由同一个 `ViewGenerator` 提供，
 声明与调用诊断由 `ComposeAnalyzer` 提供，接口形状见
 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
+
+## Solid 接入（#55）
+
+`SomeEngine.Views.Solid`（#55）通过 Views 与 Elements 的公开 API 接入共享计算、文本与修饰。
+仓库中直接引用 Solid 的工程由 `Directory.Build.targets` 接入同一 Views 生成器，
+包消费沿 Views 的生成器与 buildTransitive props 接入。
+接口和验收由 [[architecture/someui/Solid-Frontend|Solid Frontend]] 定义。
 
 ## Elements 接入（#28）
 

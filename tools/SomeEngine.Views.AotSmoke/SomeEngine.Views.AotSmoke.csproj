@@ -39,6 +39,8 @@
     <Compile Include="../../tests/SomeEngine.Layout.Tests/StackGridChecks.cs" Link="StackGridChecks.cs" />
     <ProjectReference Include="../../src/SomeEngine.Views.Compose/SomeEngine.Views.Compose.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.Views.SwiftUI/SomeEngine.Views.SwiftUI.csproj" GlobalPropertiesToRemove="PublishAot" />
+    <ProjectReference Include="../../src/SomeEngine.Views.Solid/SomeEngine.Views.Solid.csproj" GlobalPropertiesToRemove="PublishAot" />
+    <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/SolidChecks.cs" Link="SolidChecks.cs" />
     <ProjectReference Include="../SomeEngine.Views.AotReference/SomeEngine.Views.AotReference.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs" Link="HeadlessFrameDriver.cs" />
   </ItemGroup>

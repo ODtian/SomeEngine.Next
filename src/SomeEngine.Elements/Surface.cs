@@ -4,7 +4,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Elements;
 
 /// <summary>The caller's fill, rounded corners, and border on a layout node.</summary>
-public struct Surface : IComponent
+public record struct Surface : IComponent
 {
     public Color Fill;
     public float CornerRadius;
