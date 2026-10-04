@@ -31,6 +31,8 @@ public sealed partial record ClusterGeometry
     public SomeEngine.Resources.Vec3 PositionOrigin { get; init; } = new();
     public float PositionStep { get; init; }
     public ImmutableArray<byte> PositionData { get; init; } = [];
+    public SomeEngine.Resources.Vec3 BoundMin { get; init; } = new();
+    public SomeEngine.Resources.Vec3 BoundMax { get; init; } = new();
     public int Level { get; init; }
     public float Error { get; init; }
     public float ParentError { get; init; }
@@ -45,7 +47,7 @@ public sealed partial record ClusterGeometry
 
     public Vector3 DecodePosition(int vertex)
     {
-        ReadOnlySpan<byte> data = PositionData.AsSpan().Slice(checked(vertex * 6), 6);
+        ReadOnlySpan<byte> data = PositionData.AsSpan().Slice(checked(16 + vertex * 6), 6);
         return new Vector3(PositionOrigin.X, PositionOrigin.Y, PositionOrigin.Z) + new Vector3(BinaryPrimitives.ReadUInt16LittleEndian(data),
             BinaryPrimitives.ReadUInt16LittleEndian(data[2..]), BinaryPrimitives.ReadUInt16LittleEndian(data[4..])) * PositionStep;
     }

@@ -210,11 +210,12 @@ public sealed class AssetLoaderTests
         {
             Vertices = [new(0, 0, 0), new(0, 1, 1), new(0, 2, 2)],
             Clusters = [new() { Vertices = [0, 1, 2], Indices = [0, 1, 2], TriangleMaterials = [0], PositionStep = 1,
-                PositionData = [0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0], Group = -1, ParentGroup = -1,
+                PositionData = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,128,63, 0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0],
+                BoundMin = new(), BoundMax = new() { X = 1, Y = 1 }, Group = -1, ParentGroup = -1,
                 ParentError = float.MaxValue, Radius = 2, LodRadius = 2, SelfLodRadius = 2 }],
         };
         using var attributes = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity,
-            Clusters = [ClusterVertexAttributes.Encode([])] };
+            Clusters = [new ClusterVertexAttributes { Data = [.. new byte[16]] }] };
         asset.SetBlock(shape); asset.SetBlock(geometry); asset.SetBlock(attributes);
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);

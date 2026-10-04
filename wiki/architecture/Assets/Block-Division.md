@@ -37,7 +37,7 @@
 | 蒙皮影响 | 每个顶点的全部关节与权重，按该管线的顶点顺序 | 管线表示 |
 | 形变增量 | 逐目标、逐顶点增量，按该管线的顶点顺序 | 管线表示 |
 
-`SomeEngine.Animation.Pose` 的 `SkinBindingBlock` 由 `SkinBindingImporter` 在每个 skin 的骨架资产上产出，通过 `context.GetBlockAsync<SkeletonBlock>` 消费所选骨架生产者的 `JointBones`。来源逆绑定矩阵保持关节顺序与数值，省略时每个关节使用单位矩阵。同一 mesh 被多个 skin 的节点复用时，节点的 `SkeletonSource` 指向各自的绑定与骨架；网格资产继续共用。
+`SomeEngine.Animation.Pose` 的 `SkinBindingBlock` 由 `SkinBindingImporter` 在每个 skin 的骨架资产上产出，通过 `context.GetBlockAsync<SkeletonBlock>` 消费所选骨架生产者的 `JointBones`。来源逆绑定矩阵通过共享的 `GltfAccessorReader` 读取 meshopt 解压、稀疏和分量展开后的 MAT4，保持关节顺序与数值，省略时每个关节使用单位矩阵。同一 mesh 被多个 skin 的节点复用时，节点的 `SkeletonSource` 指向各自的绑定与骨架；网格资产继续共用。
 
 `SomeEngine.Assets.Schema.MorphTargetSetBlock` 由 `MorphTargetSetImporter` 在网格资产上产出。`Names` 来自 `mesh.extras.targetNames`，省略时为每个目标保留空名称；`DefaultWeights` 来自 `mesh.weights`，省略时为零。节点权重属于实例数据，网格 Block 保留 mesh 默认值。静态网格通过可选读取入口表达特性缺失。两个 Importer 随各自包的中立组合启用。
 

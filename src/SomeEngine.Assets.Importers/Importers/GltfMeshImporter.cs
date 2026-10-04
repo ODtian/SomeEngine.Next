@@ -23,9 +23,10 @@ public sealed class GltfMeshSettingsProvider : IAssetImporterSettings<GltfMeshSe
 [AssetImporter("334ba003-337f-4298-ae72-1a5ce4861591", typeof(MeshBlock), SettingsProvider = typeof(GltfMeshSettingsProvider), VersionInputs = new[] { typeof(SharpGLTF.Schema2.ModelRoot) })]
 public sealed class GltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshSettings>
 {
-    public ValueTask ImportAsync(GltfMesh source, GltfMeshSettings settings, ImportContext context, ImportOutput output,
+    public async ValueTask ImportAsync(GltfMesh source, GltfMeshSettings settings, ImportContext context, ImportOutput output,
         CancellationToken cancellationToken)
     {
+        VertexStreamsBlock streams = await context.GetBlockAsync<VertexStreamsBlock>(output.Target, cancellationToken).ConfigureAwait(false);
         var geometry = new MeshBlock();
         try
         {
@@ -35,15 +36,22 @@ public sealed class GltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshSettings
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var primitive = source.Primitives[index];
-                foreach (Vector3 position in primitive.GetVertexAccessor("POSITION").AsVector3Array())
+                geometry.Regions.Add(new() { Name = $"region_{index}" });
+                geometry.RegionSources.Add(new(source.LogicalIndex, index, primitive.Material?.LogicalIndex ?? -1,
+                    primitive.Material?.Name ?? $"{source.Name ?? "Mesh"} / primitive {index}"));
+            }
+            foreach (VertexPrimitive primitive in streams.Primitives)
+            {
+                if (!primitive.Attributes.TryGetValue("POSITION", out VertexStream? positions)) continue;
+                ReadOnlySpan<double> values = positions.Values.Span;
+                for (int vertex = 0; vertex < primitive.SourceVertices.Length; vertex++)
                 {
+                    int row = vertex * positions.ComponentCount;
+                    Vector3 position = new((float)values[row], (float)values[row + 1], (float)values[row + 2]);
                     minimum = Vector3.Min(minimum, position);
                     maximum = Vector3.Max(maximum, position);
                     hasPositions = true;
                 }
-                geometry.Regions.Add(new() { Name = $"region_{index}" });
-                geometry.RegionSources.Add(new(source.LogicalIndex, index, primitive.Material?.LogicalIndex ?? -1,
-                    primitive.Material?.Name ?? $"{source.Name ?? "Mesh"} / primitive {index}"));
             }
             if (hasPositions)
             {
@@ -53,7 +61,7 @@ public sealed class GltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshSettings
                     Radius = Math.Max(extent.X, Math.Max(extent.Y, extent.Z)) * 0.5f };
             }
             output.SetBlock(geometry);
-            return ValueTask.CompletedTask;
+            return;
         }
         catch { geometry.Dispose(); throw; }
     }

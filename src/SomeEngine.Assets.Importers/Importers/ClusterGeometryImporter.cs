@@ -13,6 +13,7 @@ public sealed class ClusterGeometryImporter : IAssetImporter<GltfMesh, GltfMeshS
         ImportOutput output, CancellationToken cancellationToken)
     {
         VertexStreamsBlock streams = await context.GetBlockAsync<VertexStreamsBlock>(output.Target, cancellationToken).ConfigureAwait(false);
+        if (!streams.Primitives.Any(primitive => !primitive.Indices.IsEmpty)) return;
         ClusterGeometryBlock geometry = ClusterBuilder.BuildGeometry(streams, cancellationToken);
         try { output.SetBlock(geometry); }
         catch { geometry.Dispose(); throw; }

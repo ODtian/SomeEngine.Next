@@ -40,7 +40,9 @@ public sealed class MeshAssetBehaviorTests
         ClusterVertexAttributesBlock attributes = asset.GetBlock<ClusterVertexAttributesBlock>();
         using var first = await geometry.OpenPayloadSourceAsync(attributes);
         byte[] original = (await first.ReadPageAsync(0)).ToArray();
-        geometry.Clusters[0] = geometry.Clusters[0] with { PositionOrigin = new() { X = 7 } };
+        byte[] data = geometry.Clusters[0].PositionData.ToArray();
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data, 7);
+        geometry.Clusters[0] = geometry.Clusters[0] with { PositionOrigin = new() { X = 7 }, PositionData = [.. data], BoundMin = new() { X = 7 }, BoundMax = new() { X = 8, Y = 1 } };
         using var changed = await geometry.OpenPayloadSourceAsync(attributes);
         Assert.Equal(original, (await first.ReadPageAsync(0)).ToArray());
         Assert.NotEqual(original, (await changed.ReadPageAsync(0)).ToArray());
@@ -87,7 +89,9 @@ public sealed class MeshAssetBehaviorTests
         Assert.True(source.Matches(mesh));
         using var changedAsset = CreateAsset();
         ClusterGeometryBlock changed = changedAsset.GetBlock<ClusterGeometryBlock>();
-        changed.Clusters[0] = changed.Clusters[0] with { PositionOrigin = new() { X = 8 } };
+        byte[] data = changed.Clusters[0].PositionData.ToArray();
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data, 8);
+        changed.Clusters[0] = changed.Clusters[0] with { PositionOrigin = new() { X = 8 }, PositionData = [.. data], BoundMin = new() { X = 8 }, BoundMax = new() { X = 9, Y = 1 } };
         var replacement = await changed.CreateAsync(changedAsset.GetBlock<MeshBlock>(), changedAsset.GetBlock<ClusterVertexAttributesBlock>(), "replacement");
         Assert.False(source.Matches(replacement));
         byte[] before = (await source.ReadPageAsync(0)).ToArray();
@@ -108,7 +112,7 @@ public sealed class MeshAssetBehaviorTests
             VertexComponentCounts = [64, 64, 64],
             Data = [.. new byte[3 * 64 * sizeof(double)]],
         }).ToArray();
-        attributes.Clusters[0] = ClusterVertexAttributes.Encode(streams);
+        attributes.Clusters[0] = new ClusterVertexAttributes { Attributes = [.. streams], Data = [.. streams.SelectMany(stream => stream.Data)] };
         var mesh = await geometry.CreateAsync(asset.GetBlock<MeshBlock>(), attributes, "large attributes");
         using var source = await geometry.OpenPayloadSourceAsync(attributes);
         Assert.True(mesh.TryGetPage(0, out var page));
@@ -116,6 +120,26 @@ public sealed class MeshAssetBehaviorTests
         Assert.Equal(page.ToArray(), (await source.ReadPageAsync(0)).ToArray());
         Assert.Equal(512, attributes.Clusters[0].Attributes.Length);
         Assert.All(attributes.Clusters[0].Attributes, stream => Assert.Equal(0, stream.ReadComponent(2, 63)));
+    }
+
+    [Fact]
+    public async Task CustomPositionBytesAndProducerBoundsReachTheRendererUnchanged()
+    {
+        using var asset = CreateAsset();
+        ClusterGeometryBlock geometry = asset.GetBlock<ClusterGeometryBlock>();
+        geometry.PositionEncoding = "example.positions.float32.v1";
+        float[] positions = [0,0,0, 1,0,0, 0,1,0];
+        byte[] bytes = System.Runtime.InteropServices.MemoryMarshal.AsBytes(positions.AsSpan()).ToArray();
+        geometry.Clusters[0] = geometry.Clusters[0] with { PositionData = [.. bytes], BoundMin = new(), BoundMax = new() { X = 1, Y = 1 } };
+        using var source = await geometry.OpenPayloadSourceAsync(asset.GetBlock<ClusterVertexAttributesBlock>());
+        ReadOnlyMemory<byte> page = await source.ReadPageAsync(0);
+        var header = System.Runtime.InteropServices.MemoryMarshal.Read<SomeEngine.Resources.Geometry.MeshPageHeader>(page.Span);
+        var cluster = System.Runtime.InteropServices.MemoryMarshal.Read<SomeEngine.Resources.Geometry.PackedCluster>(page.Span[(int)header.ClustersOffset..]);
+        Assert.Equal(Vector3.Zero, cluster.BoundMin);
+        Assert.Equal(new Vector3(1,1,0), cluster.BoundMax);
+        int descriptor = (int)(header.VertexBlobsOffset + cluster.VertexBlobOffset);
+        uint offset = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(page.Span[descriptor..]);
+        Assert.Equal(bytes, page.Slice(descriptor + (int)offset, bytes.Length).ToArray());
     }
 
     private static MeshAsset CreateAsset()
@@ -126,10 +150,11 @@ public sealed class MeshAssetBehaviorTests
         {
             Vertices = [new(0, 0, 0), new(0, 1, 1), new(0, 2, 2)],
             Clusters = [new() { Vertices = [0, 1, 2], Indices = [0, 1, 2], TriangleMaterials = [0], PositionStep = 1,
-                PositionData = [0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0], ParentError = float.MaxValue, Group = -1, ParentGroup = -1,
+                PositionData = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,128,63, 0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0],
+                BoundMin = new(), BoundMax = new() { X = 1, Y = 1 }, ParentError = float.MaxValue, Group = -1, ParentGroup = -1,
                 Radius = 2, LodRadius = 2, SelfLodRadius = 2 }],
         };
-        using var attributes = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity, Clusters = [ClusterVertexAttributes.Encode([])] };
+        using var attributes = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity, Clusters = [new ClusterVertexAttributes { Data = [.. new byte[16]] }] };
         asset.SetBlock(shape); asset.SetBlock(geometry); asset.SetBlock(attributes); return asset;
     }
     private sealed class MeshFiles : IDisposable

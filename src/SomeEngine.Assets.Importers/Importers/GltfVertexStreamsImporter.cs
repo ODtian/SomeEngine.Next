@@ -19,7 +19,7 @@ public sealed partial class GltfVertexStreamsImporter : IAssetImporter<GltfMesh,
         CancellationToken cancellationToken)
     {
         JsonNode document = JsonNode.Parse(source.LogicalParent.GetJsonPreview())!;
-        var accessors = new GltfAccessorStreams(source.LogicalParent, document);
+        var accessors = new GltfAccessorReader(source.LogicalParent, document, cancellationToken);
         List<VertexPrimitive> primitives = [];
         List<VertexImportDiagnostic> diagnostics = [];
         for (int index = 0; index < source.Primitives.Count; index++)
@@ -55,7 +55,7 @@ public sealed partial class GltfVertexStreamsImporter : IAssetImporter<GltfMesh,
         return ValueTask.CompletedTask;
     }
 
-    private static VertexPrimitive ReadPrimitive(MeshPrimitive source, int index, GltfAccessorStreams accessors,
+    private static VertexPrimitive ReadPrimitive(MeshPrimitive source, int index, GltfAccessorReader accessors,
         List<VertexImportDiagnostic> diagnostics, CancellationToken cancellationToken)
     {
         Dictionary<string, VertexStream> attributes = ReadAttributes(source.VertexAccessors, accessors);
@@ -112,10 +112,10 @@ public sealed partial class GltfVertexStreamsImporter : IAssetImporter<GltfMesh,
     }
 
     private static Dictionary<string, VertexStream> ReadAttributes(IReadOnlyDictionary<string, Accessor> source,
-        GltfAccessorStreams accessors, bool morph = false)
+        GltfAccessorReader accessors, bool morph = false)
         => source.ToDictionary(static pair => pair.Key, pair => accessors.Read(pair.Key, pair.Value, morph), StringComparer.Ordinal);
 
-    private static uint[] ReadTriangles(MeshPrimitive primitive, GltfAccessorStreams accessors, int count)
+    private static uint[] ReadTriangles(MeshPrimitive primitive, GltfAccessorReader accessors, int count)
     {
         uint[] source;
         if (primitive.IndexAccessor is Accessor indices)

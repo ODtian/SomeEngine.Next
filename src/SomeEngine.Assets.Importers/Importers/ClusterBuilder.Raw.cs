@@ -326,41 +326,20 @@ public static partial class ClusterBuilder
         foreach (BuilderMeshlet meshlet in build.Meshlets)
         {
             ReadOnlySpan<uint> triangles = CollectionsMarshal.AsSpan(build.GlobalIndices).Slice(meshlet.IndicesOffset, meshlet.IndicesCount);
-            Dictionary<uint, byte> local = [];
-            List<uint> vertices = [];
-            byte[] indices = new byte[triangles.Length];
-            for (int corner = 0; corner < triangles.Length; corner++)
-            {
-                if (!local.TryGetValue(triangles[corner], out byte vertex))
-                {
-                    vertex = (byte)vertices.Count; local.Add(triangles[corner], vertex); vertices.Add(triangles[corner]);
-                }
-                indices[corner] = vertex;
-            }
-            Vector3 min = new(float.MaxValue), max = new(float.MinValue);
-            foreach (uint vertex in vertices) { min = Vector3.Min(min, mesh.Positions[vertex]); max = Vector3.Max(max, mesh.Positions[vertex]); }
-            Vector3 extent = max - min;
-            float maximum = MathF.Max(extent.X, MathF.Max(extent.Y, extent.Z));
-            float step = maximum == 0 ? 1 : MathF.Max(MathF.Pow(2, MathF.Ceiling(MathF.Log2(maximum / 65535))), 1e-12f);
-            byte[] positions = new byte[vertices.Count * 6];
-            for (int vertex = 0; vertex < vertices.Count; vertex++)
-            {
-                Vector3 value = (mesh.Positions[vertices[vertex]] - min) / step;
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(positions.AsSpan(vertex * 6), (ushort)MathF.Round(value.X));
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(positions.AsSpan(vertex * 6 + 2), (ushort)MathF.Round(value.Y));
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(positions.AsSpan(vertex * 6 + 4), (ushort)MathF.Round(value.Z));
-            }
+            (List<uint> vertices, byte[] indices) = CreateLocalIndices(triangles);
+            EncodedClusterPositions position = StandardClusterPositionEncoder.Encode(mesh.Positions.AsSpan(0, mesh.VertexCount), CollectionsMarshal.AsSpan(vertices));
             int[] triangleMaterials = Enumerable.Range(0, indices.Length / 3).Select(triangle =>
                 triangle < meshlet.Range0End ? (int)meshlet.Mat0 : triangle < meshlet.Range1End ? meshlet.Mat1 : meshlet.Mat2).ToArray();
             geometry.Clusters.Add(new()
             {
                 Vertices = [.. vertices], Indices = [.. indices], TriangleMaterials = [.. triangleMaterials],
-                PositionOrigin = CreateVec3(min), PositionStep = step, PositionData = [.. positions],
+                PositionOrigin = CreateVec3(position.Origin), PositionStep = position.Step, PositionData = position.Data,
+                BoundMin = CreateVec3(position.BoundMin), BoundMax = CreateVec3(position.BoundMax),
                 Level = meshlet.Level, Error = meshlet.Error, ParentError = meshlet.ParentError,
                 Group = meshlet.GroupId, ParentGroup = meshlet.ParentGroupId,
-                Center = CreateVec3(meshlet.Center), Radius = meshlet.Radius + step,
-                LodCenter = CreateVec3(meshlet.LodCenter), LodRadius = meshlet.LodRadius + step,
-                SelfLodCenter = CreateVec3(meshlet.SelfLodCenter), SelfLodRadius = meshlet.SelfLodRadius + step,
+                Center = CreateVec3(meshlet.Center), Radius = meshlet.Radius + position.RadiusError,
+                LodCenter = CreateVec3(meshlet.LodCenter), LodRadius = meshlet.LodRadius + position.RadiusError,
+                SelfLodCenter = CreateVec3(meshlet.SelfLodCenter), SelfLodRadius = meshlet.SelfLodRadius + position.RadiusError,
             });
             if (encoder is not StandardClusterVertexEncoder)
             {
@@ -381,7 +360,7 @@ public static partial class ClusterBuilder
                 streams.Add(new() { Name = attribute.Name, ComponentCount = attribute.Dimension,
                     VertexComponentCounts = [.. Enumerable.Repeat(attribute.Dimension, vertices.Count)], Data = [.. bytes] });
             }
-            attributes.Clusters.Add(ClusterVertexAttributes.Encode(streams));
+            attributes.Clusters.Add(StandardClusterAttributesEncoder.Encode(streams));
         }
         using var shape = new MeshBlock { Bounds = CreateBounds(build.Bounds), Regions = CreateMeshRegions(materials.Count) };
         using var references = new MeshMaterialsBlock { Materials = materials.Select(material => new AssetId<MaterialAsset>(material.MaterialGuid)).ToArray() };

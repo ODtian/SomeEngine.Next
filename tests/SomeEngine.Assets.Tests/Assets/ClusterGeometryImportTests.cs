@@ -242,6 +242,51 @@ public sealed class ClusterGeometryImportTests
         finally { Directory.Delete(directory, true); }
     }
 
+    [Fact]
+    public async Task SharedVerticesRetainEachTriangleRegion()
+    {
+        var normal = new VertexStream(3, [0,0,1, 0,0,1, 0,0,1]);
+        VertexPrimitive first = new(0, 3, [0,1,2], [0,1,2], new Dictionary<string, VertexStream>
+            { ["POSITION"] = new(3, [0,0,0, 1,0,0, 0,1,0]), ["NORMAL"] = normal }, []);
+        VertexPrimitive second = new(1, 3, [0,1,2], [0,1,2], new Dictionary<string, VertexStream>
+            { ["POSITION"] = new(3, [0,0,0, 0,1,0, -1,0,0]), ["NORMAL"] = normal }, []);
+        await using ImportResult imported = await ImportAsync([first, second]);
+        Assert.Equal(4, imported.Geometry.Vertices.Count);
+        Assert.Equal([0,1], imported.Geometry.Clusters.Where(cluster => cluster.Level == 0).SelectMany(cluster => cluster.TriangleRegions).Order());
+        Assert.All(imported.Geometry.Clusters.SelectMany(cluster => cluster.TriangleMaterials), material => Assert.Equal(3, material));
+    }
+
+    [Fact]
+    public async Task ZeroTriangleStreamsSupplyOptionalClusterRepresentations()
+    {
+        await using ImportResult imported = await ImportAsync([]);
+        Assert.Null(await imported.Asset.TryGetBlockAsync<ClusterGeometryBlock>());
+        Assert.Null(await imported.Asset.TryGetBlockAsync<ClusterVertexAttributesBlock>());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(.0001f)]
+    [InlineData(10000)]
+    public async Task SourceAndProceduralEntrypointsUseTheSamePositionEncoding(float scale)
+    {
+        VertexPrimitive primitive = WithAttribute(Triangle(), "POSITION", new(3,
+            new double[] {0,0,0, scale,0,0, 0,scale,0}.AsSpan()));
+        await using ImportResult imported = await ImportAsync([primitive]);
+        using MeshAsset raw = ClusterBuilder.ProcessRaw([Vector3.Zero, new(scale,0,0), new(0,scale,0)],
+            [new RawAttribute("NORMAL", [0,0,1, 0,0,1, 0,0,1], 3, SomeEngine.Resources.Geometry.ValueType.Float32, 3, false)],
+            [0,1,2], ClusterBuilderTestMaterials.Slots(), "equivalent position encoding");
+        ClusterGeometry left = Assert.Single(imported.Geometry.Clusters);
+        ClusterGeometry right = Assert.Single(raw.GetBlock<ClusterGeometryBlock>().Clusters);
+        Assert.Equal(left.PositionStep, right.PositionStep);
+        Assert.Equal(left.PositionData.ToArray(), right.PositionData.ToArray());
+        Assert.Equal(left.BoundMin, right.BoundMin);
+        Assert.Equal(left.BoundMax, right.BoundMax);
+        Assert.Equal(left.Radius, right.Radius);
+        Assert.Equal(left.SelfLodRadius, right.SelfLodRadius);
+    }
+
     private static VertexPrimitive Triangle(int source = 0, ClusterDeform deform = ClusterDeform.Static)
     {
         var attributes = new Dictionary<string, VertexStream>

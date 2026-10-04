@@ -44,7 +44,7 @@ internal sealed class ClusterMeshData
         List<ClusterInfo> infos = [];
         List<ReadOnlyMemory<byte>> pages = [];
         List<PackedCluster> clusters = [];
-        List<byte[]> positions = [], attributeBytes = [];
+        List<ReadOnlyMemory<byte>> positions = [], attributeBytes = [];
         List<uint[]> materialNumbers = [];
         List<byte> indices = [];
         int size = MeshPageHeader.Size;
@@ -55,13 +55,8 @@ internal sealed class ClusterMeshData
         {
             ClusterGeometry input = geometry.Clusters[index];
             ClusterVertexAttributes values = attributes.Clusters[index];
-            byte[] position = new byte[(16 + input.PositionData.Length + 3) & ~3];
-            BinaryPrimitives.WriteSingleLittleEndian(position, input.PositionOrigin.X);
-            BinaryPrimitives.WriteSingleLittleEndian(position.AsSpan(4), input.PositionOrigin.Y);
-            BinaryPrimitives.WriteSingleLittleEndian(position.AsSpan(8), input.PositionOrigin.Z);
-            BinaryPrimitives.WriteSingleLittleEndian(position.AsSpan(12), input.PositionStep);
-            input.PositionData.AsSpan().CopyTo(position.AsSpan(16));
-            byte[] attribute = Pad(values.Data.ToArray());
+            ReadOnlyMemory<byte> position = input.PositionData.AsMemory();
+            ReadOnlyMemory<byte> attribute = values.Data.AsMemory();
             // The draw representation can contain multiple material ranges for the same geometric cluster.
             var triangleRegions = input.TriangleRegions.IsEmpty ? input.TriangleMaterials : input.TriangleRegions;
             int[] triangles = Enumerable.Range(0, input.Indices.Length / 3)
@@ -71,20 +66,15 @@ internal sealed class ClusterMeshData
             {
                 int[] selectedMaterials = materials.Skip(materialStart).Take(3).ToArray();
                 int[] selected = triangles.Where(triangle => Array.IndexOf(selectedMaterials, triangleRegions[triangle]) >= 0).ToArray();
-                int bytes = PackedCluster.SizeInBytes + 28 + position.Length + attribute.Length + selected.Length * 3;
+                int bytes = PackedCluster.SizeInBytes + 28 + AlignedSize(position.Length) + AlignedSize(attribute.Length) + selected.Length * 3;
                 if (clusters.Count > 0 && (size + bytes > 131072 || indices.Count + selected.Length * 3 > ushort.MaxValue)) Flush();
-                Vector3 boundMin = new(float.MaxValue), boundMax = new(float.MinValue);
-                for (int vertex = 0; vertex < input.Vertices.Length; vertex++)
-                {
-                    Vector3 value = input.DecodePosition(vertex);
-                    boundMin = Vector3.Min(boundMin, value);
-                    boundMax = Vector3.Max(boundMax, value);
-                }
+                Vector3 boundMin = Vector(input.BoundMin);
+                Vector3 boundMax = Vector(input.BoundMax);
                 min = Vector3.Min(min, boundMin);
                 max = Vector3.Max(max, boundMax);
                 var packed = new PackedCluster
                 {
-                    VertexBlobSize = checked((uint)(28 + position.Length)),
+                    VertexBlobSize = checked((uint)(28 + AlignedSize(position.Length))),
                     ExtensionOffset = uint.MaxValue,
                     LODCenter = Vector(input.SelfLodCenter),
                     LODRadius = input.SelfLodRadius,
@@ -106,7 +96,9 @@ internal sealed class ClusterMeshData
                     foreach (int triangle in selected.Where(triangle => triangleRegions[triangle] == selectedMaterials[range]))
                     {
                         byte a = input.Indices[triangle * 3], b = input.Indices[triangle * 3 + 1], c = input.Indices[triangle * 3 + 2];
-                        int extra = new[] { a, b, c }.Distinct().Count(vertex => !vertices.Contains(vertex));
+                        int extra = (vertices.Contains(a) ? 0 : 1)
+                            + (b != a && !vertices.Contains(b) ? 1 : 0)
+                            + (c != a && c != b && !vertices.Contains(c) ? 1 : 0);
                         if (count > 0 && (count == 32 || vertices.Count + extra > 32)) CloseBatch();
                         vertices.Add(a);
                         vertices.Add(b);
@@ -179,7 +171,7 @@ internal sealed class ClusterMeshData
         void Flush()
         {
             if (clusters.Count == 0) return;
-            int positionSize = positions.Sum(value => 28 + value.Length), attributeSize = attributeBytes.Sum(value => value.Length);
+            int positionSize = positions.Sum(value => 28 + AlignedSize(value.Length)), attributeSize = attributeBytes.Sum(value => AlignedSize(value.Length));
             int positionStart = MeshPageHeader.Size + clusters.Count * PackedCluster.SizeInBytes;
             int indexStart = positionStart + positionSize, attributeStart = indexStart + indices.Count;
             int attributePadding = ((attributeStart + 3) & ~3) - attributeStart;
@@ -203,18 +195,18 @@ internal sealed class ClusterMeshData
             {
                 PackedCluster packed = clusters[cluster];
                 packed.VertexBlobOffset = (uint)(positionOffset - positionStart);
-                packed.MaterialTableOffset = (uint)(positionOffset + 16 + positions[cluster].Length);
+                packed.MaterialTableOffset = (uint)(positionOffset + 16 + AlignedSize(positions[cluster].Length));
                 MemoryMarshal.Write(page.AsSpan(MeshPageHeader.Size + cluster * PackedCluster.SizeInBytes), in packed);
                 BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(positionOffset), 16);
                 BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(positionOffset + 4), (uint)positions[cluster].Length);
                 BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(positionOffset + 8), (uint)(attributeOffset - positionOffset));
                 BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(positionOffset + 12), (uint)attributeBytes[cluster].Length);
-                positions[cluster].CopyTo(page, positionOffset + 16);
+                positions[cluster].Span.CopyTo(page.AsSpan(positionOffset + 16));
                 for (int material = 0; material < 3; material++)
                     BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan((int)packed.MaterialTableOffset + material * 4), materialNumbers[cluster][material]);
-                attributeBytes[cluster].CopyTo(page, attributeOffset);
-                positionOffset += 28 + positions[cluster].Length;
-                attributeOffset += attributeBytes[cluster].Length;
+                attributeBytes[cluster].Span.CopyTo(page.AsSpan(attributeOffset));
+                positionOffset += 28 + AlignedSize(positions[cluster].Length);
+                attributeOffset += AlignedSize(attributeBytes[cluster].Length);
             }
             CollectionsMarshal.AsSpan(indices).CopyTo(page.AsSpan(indexStart));
             pages.Add(page);
@@ -226,7 +218,7 @@ internal sealed class ClusterMeshData
             size = MeshPageHeader.Size;
         }
     }
-    private static byte[] Pad(byte[] data) { Array.Resize(ref data, (data.Length + 3) & ~3); return data; }
+    private static int AlignedSize(int length) => checked((length + 3) & ~3);
     private static Vector3 Vector(Vec3 value) => new(value.X, value.Y, value.Z);
     private static float FiniteError(float value) => (float)(Half)MathF.Min(value, (float)Half.MaxValue);
     private static void PutBits(uint[] words, int offset, int count, uint value)

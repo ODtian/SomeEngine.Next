@@ -375,7 +375,67 @@ public sealed class GltfVertexStreamsTests
                 Assert.Equal(original[(int)result.SourceVertices.Span[vertex] * stream.ComponentCount + component], stream.Values.Span[vertex * stream.ComponentCount + component]);
     }
 
-    private static async Task<ImportResult> ImportAsync(string path)
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompressedPositionsSetSemanticAndRenderedBounds(bool binary)
+    {
+        using var file = new GltfFile();
+        JsonObject primitive = file.CreateTriangle();
+        byte[] positions = file.EncodeFloats([10,0,0, 11,0,0, 10,1,0]);
+        int view = file.AddCompressedView(Compress(positions, 3, 12, "ATTRIBUTES"), 3, 12, "ATTRIBUTES");
+        int accessor = file.AddAccessor("VEC3", 5126, 3, view);
+        file.Accessors[accessor]!["min"] = new JsonArray(10,0,0);
+        file.Accessors[accessor]!["max"] = new JsonArray(11,1,0);
+        primitive["attributes"]!["POSITION"] = accessor;
+        await using ImportResult result = await ImportAsync(file.WriteFile([primitive], binary), true);
+        MeshBlock shape = result.Asset.GetBlock<MeshBlock>();
+        Assert.Equal(10.5f, shape.Bounds!.Center.X);
+        Assert.Equal(.5f, shape.Bounds.Center.Y);
+        Assert.Equal(.5f, shape.Bounds.Radius);
+        ClusterGeometryBlock geometry = result.Asset.GetBlock<ClusterGeometryBlock>();
+        var rendered = await geometry.CreateAsync(shape, result.Asset.GetBlock<ClusterVertexAttributesBlock>(), "compressed bounds");
+        Assert.Equal(shape.Bounds, rendered.Bounds);
+        Assert.Contains(geometry.Clusters.SelectMany(cluster => Enumerable.Range(0, cluster.Vertices.Length).Select(cluster.DecodePosition)),
+            position => Vector3.Distance(position, new(10,0,0)) < .001f);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    public async Task SkippedPointAndLineObjectsLeaveDrawableSceneNodes(int mode, bool mixed)
+    {
+        using var file = new GltfFile();
+        JsonObject skipped = file.CreateTriangle();
+        skipped["mode"] = mode;
+        JsonObject[] primitives = mixed ? [skipped, file.CreateTriangle()] : [skipped];
+        file.Document["nodes"] = new JsonArray(new JsonObject { ["mesh"] = 0 });
+        file.Document["scenes"] = new JsonArray(new JsonObject { ["nodes"] = new JsonArray(0) });
+        file.Document["scene"] = 0;
+        string path = file.WriteFile(primitives);
+        await using ImportResult result = await ImportAsync(path, true);
+        Assert.Contains(result.Block.Diagnostics, diagnostic => diagnostic.Kind == VertexImportDiagnosticKind.UnsupportedTopology);
+        ClusterGeometryBlock? geometry = await result.Asset.TryGetBlockAsync<ClusterGeometryBlock>();
+        Assert.Equal(mixed, geometry is not null);
+        Assert.Equal(mixed, await result.Asset.TryGetBlockAsync<ClusterVertexAttributesBlock>() is not null);
+        SomeEngine.Assets.WorldAsset sceneAsset = await result.Imports.GetAssetAsync<SharpGLTF.Schema2.Scene, SomeEngine.Assets.WorldAsset>(result.Model.LogicalScenes[0]);
+        using var world = await sceneAsset.LoadAsync(SomeEngine.Render.SceneSerialization.CreateRegistry());
+        var query = world.Query(new SomeEngine.ECS.Queries.QueryDefinitionBuilder().Read<SomeEngine.Render.Components.MeshSource>());
+        int count = 0;
+        world.ExecuteQuery(query, rows => { foreach (var row in rows.Rows) count++; });
+        world.ReleaseQuery(query);
+        Assert.Equal(mixed ? 1 : 0, count);
+    }
+
+    private sealed class MeshSceneImporter : GltfSceneImporter
+    {
+        public override ValueTask ImportMaterialAsync(SharpGLTF.Schema2.Material source, ImportContext context,
+            ImportOutput output, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    }
+
+    private static async Task<ImportResult> ImportAsync(string path, bool renderable = false)
     {
         ModelRoot model = await new GltfSourceImporter(static _ => { }, "vertex-tests").ReadAsync(path, CancellationToken.None);
         var context = new ImportContext();
@@ -383,12 +443,30 @@ public sealed class GltfVertexStreamsTests
         {
             context.ConfigureAssets<SharpGLTF.Schema2.Mesh, MeshAsset>(mesh => $"mesh/{mesh.LogicalIndex}",
                 (_, id) => new MeshAsset(id), (_, id) => id + ".mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
+            if (renderable)
+            {
+        context.ConfigureAssets<SharpGLTF.Schema2.Scene, SomeEngine.Assets.WorldAsset>(scene => "scene/" + scene.LogicalIndex,
+            (_, id) => new SomeEngine.Assets.WorldAsset(id), (_, id) => id + ".scene.asset",
+            static (asset, destination, token) => asset.SaveAsync(destination, token));
+        context.EnableImporter<SharpGLTF.Schema2.Scene, SomeEngine.Assets.WorldAsset>(Guid.NewGuid(), [SomeEngine.Assets.WorldBlock.BlockTypeId],
+            (scene, imports, output, token) => new MeshSceneImporter().ImportAsync(scene, new(), imports, output, token));
+
+                context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(Guid.NewGuid(), [MeshBlock.BlockTypeId],
+                    (source, imports, output, token) => new GltfMeshImporter().ImportAsync(source, new(), imports, output, token));
+                context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(Guid.NewGuid(), [ClusterGeometryBlock.BlockTypeId],
+                    (source, imports, output, token) => new ClusterGeometryImporter().ImportAsync(source, new(), imports, output, token));
+                context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(Guid.NewGuid(), [ClusterVertexAttributesBlock.BlockTypeId],
+                    (source, imports, output, token) => new ClusterVertexAttributesImporter().ImportAsync(source, new(), imports, output, token));
+            }
+            else
+            {
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(Guid.NewGuid(), [MeshBlock.BlockTypeId],
                 async (_, imports, output, token) =>
                 {
                     VertexStreamsBlock streams = await imports.GetBlockAsync<VertexStreamsBlock>(output.Target, token);
                     output.SetBlock(new MeshBlock { Bounds = new() { Radius = streams.Primitives.Count } });
                 });
+            }
             var services = new ServiceCollection();
             ProjectAssetCapabilities.AddAssetCapabilities(services);
             ServiceProvider provider = services.BuildServiceProvider();
@@ -397,13 +475,15 @@ public sealed class GltfVertexStreamsTests
                 .Single(value => value.ImporterType == typeof(GltfVertexStreamsImporter));
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(capability.Bind<SharpGLTF.Schema2.Mesh>(provider));
             MeshAsset asset = await context.GetAssetAsync<SharpGLTF.Schema2.Mesh, MeshAsset>(model.LogicalMeshes[0]);
-            return new(context, asset);
+            return new(context, asset, model);
         }
         catch { await context.DisposeAsync(); throw; }
     }
 
-    private sealed class ImportResult(ImportContext context, MeshAsset asset) : IAsyncDisposable
+    private sealed class ImportResult(ImportContext context, MeshAsset asset, ModelRoot model) : IAsyncDisposable
     {
+        public ImportContext Imports => context;
+        public ModelRoot Model => model;
         public MeshAsset Asset { get; } = asset;
         public VertexStreamsBlock Block => Asset.GetBlock<VertexStreamsBlock>();
         public ValueTask DisposeAsync() => context.DisposeAsync();

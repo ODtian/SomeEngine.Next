@@ -14,7 +14,12 @@ public static partial class ClusterBuilder
         List<VertexRow> vertices = [];
         var vertexIndices = new Dictionary<VertexRow, uint>(VertexRowComparer.Instance);
         var triangles = new List<uint>[4];
-        for (int partition = 0; partition < triangles.Length; partition++) triangles[partition] = [];
+        var triangleSources = new List<ClusterTriangleSource>[4];
+        for (int partition = 0; partition < triangles.Length; partition++)
+        {
+            triangles[partition] = [];
+            triangleSources[partition] = [];
+        }
         foreach (VertexPrimitive primitive in streams.Primitives)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -22,7 +27,13 @@ public static partial class ClusterBuilder
             uint[] remap = new uint[primitive.SourceVertices.Length];
             Array.Fill(remap, uint.MaxValue);
             // Only referenced rows take part in the pipeline's vertex identity.
-            foreach (uint sourceVertex in primitive.Indices.Span)
+            for (int corner = 0; corner < primitive.Indices.Length; corner++)
+            {
+                uint sourceVertex = primitive.Indices.Span[corner];
+                if (corner % 3 == 0) triangleSources[(int)rows.Deform].Add(new(primitive.Material, primitive.SourcePrimitive));
+                AddCorner(sourceVertex);
+            }
+            void AddCorner(uint sourceVertex)
             {
                 uint vertex = remap[sourceVertex];
                 if (vertex == uint.MaxValue)
@@ -48,18 +59,49 @@ public static partial class ClusterBuilder
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (triangles[partition].Count == 0) continue;
+            // Working vertices distinguish triangle regions, while the persisted vertex identity stays welded.
+            var workingVertices = new Dictionary<(uint Vertex, int Region), uint>();
+            List<Vector3> workingPositions = [];
+            List<uint> workingIdentities = [];
+            List<ClusterTriangleSource> workingSources = [];
+            List<uint> workingTriangles = [];
+            List<byte> workingLocks = [];
+            Dictionary<uint, int> firstRegions = [];
+            HashSet<uint> regionBoundaries = [];
+            for (int triangle = 0; triangle < triangleSources[partition].Count; triangle++)
+            {
+                ClusterTriangleSource source = triangleSources[partition][triangle];
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    uint identity = triangles[partition][triangle * 3 + corner];
+                    if (firstRegions.TryGetValue(identity, out int region) && region != source.Region) regionBoundaries.Add(identity);
+                    else firstRegions.TryAdd(identity, source.Region);
+                    if (!workingVertices.TryGetValue((identity, source.Region), out uint vertex))
+                    {
+                        vertex = (uint)workingPositions.Count;
+                        workingVertices.Add((identity, source.Region), vertex);
+                        workingPositions.Add(positions[identity]);
+                        workingIdentities.Add(identity);
+                        workingSources.Add(source);
+                        workingLocks.Add(vertexLocks[identity]);
+                    }
+                    workingTriangles.Add(vertex);
+                }
+            }
+            for (int vertex = 0; vertex < workingIdentities.Count; vertex++)
+                if (regionBoundaries.Contains(workingIdentities[vertex])) workingLocks[vertex] |= SourceVertexLockBit;
+            Vector3[] partitionPositions = workingPositions.ToArray();
             List<BuilderMeshlet> meshlets = [];
             List<uint> indices = [];
-            // Triangle materials are encoded separately from the legacy builder's byte material IDs.
             BuildClusterLod(ClusterLodConfig.GetDefault() with
                 { ClusterSpatial = true, SimplifyPermissive = false, SimplifyFallbackSloppy = false },
-                positions, CollectionsMarshal.AsSpan(triangles[partition]), new float[positions.Length],
-                meshlets, indices, vertexLocks);
+                partitionPositions, CollectionsMarshal.AsSpan(workingTriangles), new float[partitionPositions.Length],
+                meshlets, indices, CollectionsMarshal.AsSpan(workingLocks));
             foreach (BuilderMeshlet meshlet in meshlets)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                clusters.Add(EncodeGeometry(meshlet, CollectionsMarshal.AsSpan(indices), vertices, positions,
-                    (ClusterDeform)partition, groupOffset));
+                clusters.Add(EncodeGeometry(meshlet, CollectionsMarshal.AsSpan(indices), workingIdentities,
+                    workingSources, partitionPositions, (ClusterDeform)partition, groupOffset));
             }
             groupOffset += meshlets.Max(meshlet => Math.Max(meshlet.GroupId, meshlet.ParentGroupId)) + 1;
         }
@@ -124,59 +166,52 @@ public static partial class ClusterBuilder
     }
 
     private static ClusterGeometry EncodeGeometry(BuilderMeshlet meshlet, ReadOnlySpan<uint> indices,
-        List<VertexRow> rows, Vector3[] positions, ClusterDeform deform, int groupOffset)
+        List<uint> identities, List<ClusterTriangleSource> sources, Vector3[] positions, ClusterDeform deform, int groupOffset)
     {
         ReadOnlySpan<uint> triangles = indices.Slice(meshlet.IndicesOffset, meshlet.IndicesCount);
-        var localVertices = new Dictionary<uint, byte>();
-        List<uint> vertices = [];
-        byte[] localIndices = new byte[triangles.Length];
+        (List<uint> vertices, byte[] localIndices) = CreateLocalIndices(triangles);
         int[] materials = new int[triangles.Length / 3];
         int[] regions = new int[triangles.Length / 3];
-        for (int corner = 0; corner < triangles.Length; corner++)
+        for (int triangle = 0; triangle < materials.Length; triangle++)
         {
-            uint vertex = triangles[corner];
-            if (!localVertices.TryGetValue(vertex, out byte local))
-            {
-                local = (byte)vertices.Count;
-                localVertices.Add(vertex, local);
-                vertices.Add(vertex);
-            }
-            localIndices[corner] = local;
-            if (corner % 3 == 0)
-            {
-                materials[corner / 3] = rows[(int)vertex].Rows.Primitive.Material;
-                regions[corner / 3] = rows[(int)vertex].Rows.Primitive.SourcePrimitive;
-            }
+            ClusterTriangleSource source = sources[(int)triangles[triangle * 3]];
+            materials[triangle] = source.Material;
+            regions[triangle] = source.Region;
         }
-        Vector3 min = new(float.MaxValue), max = new(float.MinValue);
-        foreach (uint vertex in vertices)
-        {
-            min = Vector3.Min(min, positions[vertex]);
-            max = Vector3.Max(max, positions[vertex]);
-        }
-        Vector3 extent = max - min;
-        float maximum = MathF.Max(extent.X, MathF.Max(extent.Y, extent.Z));
-        float step = maximum == 0 ? 1 : MathF.Max(MathF.Pow(2, MathF.Ceiling(MathF.Log2(maximum / 65535))), 1e-12f);
-        float quantizationRadius = maximum == 0 ? 0 : step;
-        byte[] data = new byte[vertices.Count * 6];
-        for (int local = 0; local < vertices.Count; local++)
-        {
-            Vector3 value = (positions[vertices[local]] - min) / step;
-            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(local * 6), checked((ushort)MathF.Round(value.X)));
-            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(local * 6 + 2), checked((ushort)MathF.Round(value.Y)));
-            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(local * 6 + 4), checked((ushort)MathF.Round(value.Z)));
-        }
+        EncodedClusterPositions encoded = StandardClusterPositionEncoder.Encode(positions, CollectionsMarshal.AsSpan(vertices));
         return new()
         {
-            Deform = deform, Vertices = [.. vertices], Indices = [.. localIndices], TriangleMaterials = [.. materials], TriangleRegions = [.. regions],
-            PositionOrigin = CreateVec3(min), PositionStep = step, PositionData = [.. data],
+            Deform = deform, Vertices = [.. vertices.Select(vertex => identities[(int)vertex])], Indices = [.. localIndices], TriangleMaterials = [.. materials], TriangleRegions = [.. regions],
+            PositionOrigin = CreateVec3(encoded.Origin), PositionStep = encoded.Step, PositionData = encoded.Data,
+            BoundMin = CreateVec3(encoded.BoundMin), BoundMax = CreateVec3(encoded.BoundMax),
             Level = meshlet.Level, Error = meshlet.Error, ParentError = meshlet.ParentError,
             Group = meshlet.GroupId + groupOffset, ParentGroup = meshlet.ParentGroupId < 0 ? -1 : meshlet.ParentGroupId + groupOffset,
-            Center = CreateVec3(meshlet.Center), Radius = meshlet.Radius + quantizationRadius,
-            LodCenter = CreateVec3(meshlet.LodCenter), LodRadius = meshlet.LodRadius + quantizationRadius,
-            SelfLodCenter = CreateVec3(meshlet.SelfLodCenter), SelfLodRadius = meshlet.SelfLodRadius + quantizationRadius,
+            Center = CreateVec3(meshlet.Center), Radius = meshlet.Radius + encoded.RadiusError,
+            LodCenter = CreateVec3(meshlet.LodCenter), LodRadius = meshlet.LodRadius + encoded.RadiusError,
+            SelfLodCenter = CreateVec3(meshlet.SelfLodCenter), SelfLodRadius = meshlet.SelfLodRadius + encoded.RadiusError,
         };
     }
+
+    private static (List<uint> Vertices, byte[] Indices) CreateLocalIndices(ReadOnlySpan<uint> triangles)
+    {
+        Dictionary<uint, byte> local = [];
+        List<uint> vertices = [];
+        byte[] indices = new byte[triangles.Length];
+        for (int corner = 0; corner < triangles.Length; corner++)
+        {
+            uint identity = triangles[corner];
+            if (!local.TryGetValue(identity, out byte vertex))
+            {
+                vertex = checked((byte)vertices.Count);
+                local.Add(identity, vertex);
+                vertices.Add(identity);
+            }
+            indices[corner] = vertex;
+        }
+        return (vertices, indices);
+    }
+
+    private readonly record struct ClusterTriangleSource(int Material, int Region);
 
     private sealed class PrimitiveRows
     {

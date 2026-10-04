@@ -104,7 +104,8 @@ internal sealed class RuntimeScene : IDisposable
                     using MeshAsset file = await MeshAsset.OpenAsync(assets, meshIds[index], cancellationToken)
                         .ConfigureAwait(false);
                     MeshBlock geometry = await file.GetBlockAsync<MeshBlock>(cancellationToken).ConfigureAwait(false);
-                    ClusterGeometryBlock clusters = await file.GetBlockAsync<ClusterGeometryBlock>(cancellationToken).ConfigureAwait(false);
+                    ClusterGeometryBlock? clusters = await file.TryGetBlockAsync<ClusterGeometryBlock>(cancellationToken).ConfigureAwait(false);
+                    if (clusters is null) return;
                     MeshMaterialsBlock references = await file.GetBlockAsync<MeshMaterialsBlock>(cancellationToken)
                         .ConfigureAwait(false);
                     ClusterVertexAttributesBlock attributes = await file.GetBlockAsync<ClusterVertexAttributesBlock>(cancellationToken).ConfigureAwait(false);
@@ -119,7 +120,7 @@ internal sealed class RuntimeScene : IDisposable
                 }).ConfigureAwait(false);
 
             AssetId<MaterialAsset>[] materialIds = loadedMeshes
-                .SelectMany(mesh => mesh!.MaterialIds)
+                .Where(mesh => mesh is not null).SelectMany(mesh => mesh!.MaterialIds)
                 .Distinct()
                 .ToArray();
             loadedMaterials = new Material?[materialIds.Length];
@@ -141,7 +142,7 @@ internal sealed class RuntimeScene : IDisposable
 
             for (int meshIndex = 0; meshIndex < meshIds.Length; meshIndex++)
             {
-                SceneMeshData data = loadedMeshes[meshIndex]!;
+                if (loadedMeshes[meshIndex] is not SceneMeshData data) continue;
                 Guid meshId = meshIds[meshIndex].Value;
                 meshes.Add(meshId, (data.Mesh, data.PageSource, []));
                 loadedMeshes[meshIndex] = null;
@@ -154,6 +155,7 @@ internal sealed class RuntimeScene : IDisposable
                 }
                 meshes[meshId] = (data.Mesh, data.PageSource, bindings);
             }
+            instances = instances.Where(entity => meshes.ContainsKey(world.Read<MeshSource>(entity).Mesh.Value)).ToArray();
 
             foreach (Entity entity in instances)
             {

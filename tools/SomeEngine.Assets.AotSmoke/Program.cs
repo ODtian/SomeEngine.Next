@@ -63,7 +63,9 @@ try
     ClusterGeometryBlock originalGeometry = mesh.GetBlock<ClusterGeometryBlock>();
     ClusterGeometry originalCluster = originalGeometry.Clusters[0];
     ClusterGeometryBlock copiedGeometry = meshCopy.GetBlock<ClusterGeometryBlock>();
-    copiedGeometry.Clusters[0] = copiedGeometry.Clusters[0] with { PositionOrigin = new() { X = 9 } };
+    byte[] editedPositions = copiedGeometry.Clusters[0].PositionData.ToArray();
+    System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(editedPositions, 9);
+    copiedGeometry.Clusters[0] = copiedGeometry.Clusters[0] with { PositionOrigin = new() { X = 9 }, PositionData = [.. editedPositions], BoundMin = new() { X = 9 }, BoundMax = new() { X = 10, Y = 1 } };
     if (originalCluster.DecodePosition(0).X != 1 || originalGeometry.Clusters[0].DecodePosition(0).X != 1
         || copiedGeometry.Clusters[0].DecodePosition(0).X != 9)
         throw new InvalidOperationException("A geometry edit changed another branch or reader.");
@@ -250,11 +252,12 @@ static MeshAsset CreateMesh()
         Vertices = [new(0, 0, 0), new(0, 1, 1), new(0, 2, 2)],
         Clusters = [new() { Vertices = [0, 1, 2], Indices = [0, 1, 2], TriangleMaterials = [0],
             PositionOrigin = new() { X = 1 }, PositionStep = 1,
-            PositionData = [0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0],
+            PositionData = [0,0,128,63, 0,0,0,0, 0,0,0,0, 0,0,128,63, 0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0],
+                BoundMin = new() { X = 1 }, BoundMax = new() { X = 2, Y = 1 },
             Group = -1, ParentGroup = -1, ParentError = float.MaxValue, Radius = 2, LodRadius = 2, SelfLodRadius = 2 }],
     };
     using var attributes = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity,
-        Clusters = [ClusterVertexAttributes.Encode([])] };
+        Clusters = [new ClusterVertexAttributes { Data = [.. new byte[16]] }] };
     try { result.SetBlock(shape); result.SetBlock(geometry); result.SetBlock(attributes); return result; }
     catch { result.Dispose(); throw; }
 }

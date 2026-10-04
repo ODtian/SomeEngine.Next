@@ -4,6 +4,8 @@
 glTF 网格导入的顺序与算法，目标是符合 glTF 规范，并让从 Blender 导出的模型导入后与 Blender 中看到的一致。坐标约定与 glTF 相同，不做转换（ADR 0017）。Block 划分见 [[architecture/Assets/Block-Division|Block Division]]。
 
 ## Current design
+中立网格边界与 Cluster 表示显式取得同一份已解码顶点流，压缩来源的 fallback 字节由解码生产者处理。纯线、点及全部跳过的网格通过可选 Cluster 输出表达，场景节点保留变换与层级，绘制来源按可用几何创建。
+
 来源级依赖按需拉取，不写死顺序；实际依赖链为：纹理 → 材质 → 骨架 → 网格 → 动画 → 场景组装。
 
 单个网格分阶段处理，每个阶段由一个 Importer 负责：
@@ -54,6 +56,8 @@ public sealed partial class VertexStreamsBlock : AssetBlock
 }
 ```
 
+顶点流与蒙皮绑定共用来源 accessor 解码入口 `GltfAccessorReader.ReadComponents`。该入口保持来源模型的资源路径，读取 meshopt 与稀疏数据，调用方按自己的数据类型组装值；Importer 在读取前后检查取消。
+
 实际名称按 AGENTS.md 的数据命名约定确定，替代票据提议中的 `PreparedVertexStreamsBlock` 与 `PreparedPrimitive`。
 
 - `VertexPrimitive.SourcePrimitive` 为来源图元编号，`Material` 为来源材质编号（无材质时为 −1）；`Indices` 为三角形列表；`SourceVertices` 将输出顶点映射到来源 accessor 的行。
@@ -71,7 +75,7 @@ public sealed partial class VertexStreamsBlock : AssetBlock
 
 中立组合包含 `GltfVertexStreamsImporter`；Cluster 组合包含 `ClusterGeometryImporter` 与 `ClusterVertexAttributesImporter`。Importer 通过无参构造与生成的能力描述注册，算法由 Importer 的实现持有。
 
-几何焊接逐位比较 double 中保存的全部基础属性、来源切线、各形变目标及来源形变切线，同时区分材质、属性名称与分量数、形变目标数量和 Deform 类别。只为被三角形引用的行建立顶点身份。`Vertices` 中每一项包含来源图元号、准备流的行号和原 accessor 行号，所有逐顶点 Importer 可使用这份映射。
+几何焊接逐位比较 double 中保存的全部基础属性、来源切线、各形变目标及来源形变切线，同时区分材质、属性名称与分量数、形变目标数量和 Deform 类别。只为被三角形引用的行建立顶点身份。三角形的材质与区域来源独立于焊接顶点持有；现有 Cluster/LOD 流程使用区域对应的工作拓扑保护区段边界，持久顶点身份继续共享。`Vertices` 中每一项包含来源图元号、准备流的行号和原 accessor 行号，所有逐顶点 Importer 可使用这份映射。
 
 cluster 构建按四种 Deform 类别分区。复用现有 meshoptimizer cluster 与 LOD DAG 构建流程，局部索引引用 cluster 顶点，逐三角形保留来源材质编号和网格区域编号，渲染按区域索引实例的材质绑定；不同分区的 LOD 组编号彼此独立。重合但身份不同的顶点受到简化锁保护，覆盖全部 UV 接缝、法线不连续和材质边界。蒙皮或形变流在边两端发生变化时，两端同样锁住：以变化为零的保守误差约束保留所有影响集和目标，适用于任意来源数量。新路径采用受锁约束的简化；静态及变形数据恒定区域可生成更粗 LOD。
 

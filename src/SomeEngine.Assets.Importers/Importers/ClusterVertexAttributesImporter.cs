@@ -14,7 +14,8 @@ public sealed class ClusterVertexAttributesImporter : IAssetImporter<GltfMesh, G
         ImportOutput output, CancellationToken cancellationToken)
     {
         VertexStreamsBlock streams = await context.GetBlockAsync<VertexStreamsBlock>(output.Target, cancellationToken).ConfigureAwait(false);
-        ClusterGeometryBlock geometry = await context.GetBlockAsync<ClusterGeometryBlock>(output.Target, cancellationToken).ConfigureAwait(false);
+        ClusterGeometryBlock? geometry = await context.TryGetBlockAsync<ClusterGeometryBlock>(output.Target, cancellationToken).ConfigureAwait(false);
+        if (geometry is null) return;
         Dictionary<int, VertexPrimitive> primitives = streams.Primitives.ToDictionary(primitive => primitive.SourcePrimitive);
         List<ClusterVertexAttributes> clusters = [];
         foreach (ClusterGeometry cluster in geometry.Clusters)
@@ -42,7 +43,7 @@ public sealed class ClusterVertexAttributesImporter : IAssetImporter<GltfMesh, G
                 }
                 attributes.Add(new() { Name = name, ComponentCount = components, VertexComponentCounts = [.. componentCounts], Data = [.. data] });
             }
-            clusters.Add(ClusterVertexAttributes.Encode(attributes));
+            clusters.Add(StandardClusterAttributesEncoder.Encode(attributes));
         }
         var block = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity, Clusters = clusters };
         try { output.SetBlock(block); }
