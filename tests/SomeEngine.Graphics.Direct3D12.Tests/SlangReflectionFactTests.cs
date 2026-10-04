@@ -537,7 +537,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID)
             {
-                outputValues[0] = combinedSampler.SampleLevel(float2(0.5), 0);
+                outputValues[0] = float4(combinedSampler.SampleLevel(float2(0.5), 0).x, 2.0, 3.0, 4.0);
             }
             """;
         D3D12TestShader shader = shaderCompiler.Compile(
@@ -583,7 +583,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             new BufferDesc(16, BufferUsages.ShaderWrite | BufferUsages.CopySource),
             MemoryType.DeviceLocal);
         using BufferUav outputUav = backend.CreateBufferUav(device,
-            new BufferUavDesc(output, BufferRange.Whole, Format.R32G32B32A32Float));
+            new BufferUavDesc(output, BufferRange.Whole, StructureStride: 16));
         using Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(16, BufferUsages.CopyDestination), MemoryType.Readback);
 
@@ -656,7 +656,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
         using MappedBuffer mapped = backend.Map(
             readback, MapType.Read, new BufferRange(0, 16));
         mapped.Invalidate(new BufferRange(0, 16));
-        Assert.Equal([1f, 0f, 0f, 0f],
+        Assert.Equal([1f, 2f, 3f, 4f],
             System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(
                 mapped.Bytes).ToArray());
     }

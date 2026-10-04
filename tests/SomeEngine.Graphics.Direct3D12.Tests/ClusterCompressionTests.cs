@@ -316,7 +316,7 @@ public sealed class ClusterCompressionTests(D3D12TestCompiler shaderCompiler)
         }
     }
 
-    [Theory]
+    [HardwareRowsTheory]
     [InlineData(false)]
     [InlineData(true)]
     public void Mesh_compaction_preserves_uint8_indices_and_partial_batches(bool hardware)

@@ -10,6 +10,8 @@ GitHub Actions 的 `Software adapter tests` 在任意分支推送、PR 和手动
 
 每个测试程序集通过 `Xunit.AssemblyTraitAttribute` 获得类别。普通库和 WARP 测试为 `Software`，Vulkan 项目为 `Hardware`，基准工具测试为 `Performance`。特定用例通过 `Trait("Category", ...)` 标记额外类别。
 
+同时提供软件、硬件参数的理论用例通过 `HardwareRowsTheory` 按数据行追加类别：Vulkan 原子缓冲用例和固定 WaveSize(32) 的网格压缩用例的 `true` 参数属于 `Hardware`，`false` 参数继续通过默认软件入口执行。两行分别保留独立的用例名称与断言。
+
 | 类别与入口 | 所需环境与执行范围 |
 | --- | --- |
 | `just test` | Windows，CPU 与 WARP；包含 ECS 固定种子短回归 |
@@ -39,7 +41,7 @@ GitHub Actions 的 `Software adapter tests` 在任意分支推送、PR 和手动
 | 同一方法 `(6, false)` | 同上 | 通过 | [#126](https://github.com/ODtian/SomeEngine.Next/issues/126) |
 | 同一方法 `(5, true)` | 同上 | 通过 | [#126](https://github.com/ODtian/SomeEngine.Next/issues/126) |
 
-完整默认命令为 `pwsh -NoProfile -File tools/Test.ps1 -NoBuild`；独立诊断命令为 `dotnet test tests/SomeEngine.Assets.Tests/SomeEngine.Assets.Tests.csproj -c Release --no-build --filter FullyQualifiedName~GltfVertexInputTests`，后者六项全部通过。三个参数化失败继续保留为 Software 类别，由 CI 的正常失败状态反映。
+完整默认命令为 `pwsh -NoProfile -File tools/Test.ps1 -NoBuild`；独立诊断命令为 `dotnet test tests/SomeEngine.Assets.Tests/SomeEngine.Assets.Tests.csproj -c Release --no-build --filter FullyQualifiedName~GltfVertexInputTests`。#126 的观察夹具已按有效顶点范围修正，六组参数各执行两个并行导入，Assets 全集 241 项通过。
 
 ## 现有功能覆盖
 | 功能 | 现有回归入口与观察结果 |
