@@ -10,6 +10,7 @@ public record struct ScrollView() : IView, ISparseComponent
 
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.Group, "");
         ScrollableFunctions.Scrollable(Scope.Entity);
         return default;
     }

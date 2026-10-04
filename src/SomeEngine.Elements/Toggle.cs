@@ -11,6 +11,7 @@ public record struct Toggle(bool On) : IView, ISparseComponent
 {
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.Toggle, "");
         PressableFunctions.Pressable(Scope.Entity);
         FocusFunctions.Focusable(Scope.Entity);
         bool focused = Scope.Entity.Focused();

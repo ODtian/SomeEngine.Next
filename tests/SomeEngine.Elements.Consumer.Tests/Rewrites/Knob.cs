@@ -12,6 +12,7 @@ public record struct Knob(float Value, float Minimum = 0, float Maximum = 1, flo
 {
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.Slider, "");
         var range = new ValueRange(Value, Minimum, Maximum, Step);
         ValueFunctions.ValueDraggable(Scope.Entity, in range, -Vector2.UnitY, 148);
         float angle = (135 + 270 * range.Ratio) * MathF.PI / 180;

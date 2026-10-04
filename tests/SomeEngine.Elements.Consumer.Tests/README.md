@@ -25,6 +25,14 @@ external Toggle and Knob are also compiled into the Views NativeAOT executable.
 `AssemblyBoundaryTests` checks the public assembly access rule owned by Wiki
 `architecture/someui/Assemblies`.
 
+`AccessibilityTests` reads `AccessibleRole` and `AccessibleName` after public
+World builds and frames. It covers every built-in control, the existing external
+rewrites, user modifiers, formatted names, placeholder updates, input edits,
+equal-value write versions, and development errors that retain earlier data.
+`ButtonChecks`, `LocalizationChecks`, and `TextFieldChecks` share role and name
+assertions with the Views NativeAOT executable. The defaults and writing rules
+live in Wiki `architecture/someui/Accessibility`.
+
 `TextTests` exercises text declarations, Column placement, Row reflow, theme
 changes, explicit style fields, line heights, text/shape/layout write versions,
 long numeric formats, zero-allocation numeric writes, and development errors.

@@ -42,6 +42,9 @@ internal static partial class LocalizationChecks
         systems.Update();
         Entity[] nodes = Hierarchy<ElementTree>.GetChildren(world, root).ToArray();
         Require(world.Read<TextContent>(nodes[0]).Value == "Start", "The key resolves to English text.");
+        Require(world.Read<AccessibleRole>(nodes[0]).Value == Role.Text &&
+            world.Read<AccessibleName>(nodes[0]).Value == "Start",
+            "A localized text exposes its resolved English accessibility name.");
         Require(world.Read<TextContent>(nodes[1]).Value == "1 item", "English integer one selects the singular form.");
         Require(world.Read<TextContent>(nodes[2]).Value == "SomeEngine", "Ordinary text retains its string.");
         uint ordinaryVersion = world.WriteVersion<TextContent>(nodes[2]);
@@ -49,15 +52,21 @@ internal static partial class LocalizationChecks
         world.Replace(language, new Locale { Name = "zh-CN" });
         systems.Update();
         Require(world.Read<TextContent>(nodes[0]).Value == "开始", "Language changes update the key's displayed text.");
+        Require(world.Read<AccessibleName>(nodes[0]).Value == "开始",
+            "A language change refreshes the text's accessibility name.");
         Require(world.Read<TextContent>(nodes[1]).Value == "1 件", "Chinese one selects the other form.");
         Require(world.WriteVersion<TextContent>(nodes[2]) == ordinaryVersion, "Ordinary text preserves its version.");
         world.Replace(root, new Example(2));
         systems.Update();
         Require(world.Read<TextContent>(nodes[1]).Value == "2 件", "Changed arguments update the displayed count.");
+        Require(world.Read<AccessibleName>(nodes[1]).Value == "2 件",
+            "Changed translation arguments refresh the accessibility name.");
         world.Replace(language, new Locale { Name = "de-DE" });
         systems.Update();
         Require(world.Read<TextContent>(nodes[3]).Value == "1.234,50 / Oktober", "Translation arguments use the current language.");
         Require(world.Read<TextContent>(nodes[4]).Value == "1.234,50", "Number declarations use the current language.");
+        Require(world.Read<AccessibleName>(nodes[4]).Value == "1.234,50",
+            "A formatted number exposes the string displayed in the current language.");
         Require(world.Read<TextContent>(nodes[5]).Value == "Oktober", "Date declarations use the current language.");
         Require(world.Read<TextContent>(nodes[6]).Value == "1234.50" &&
             world.WriteVersion<TextContent>(nodes[6]) == explicitCultureVersion, "An explicit culture controls its text.");

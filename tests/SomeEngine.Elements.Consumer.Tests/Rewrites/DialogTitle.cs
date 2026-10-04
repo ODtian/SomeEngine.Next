@@ -9,6 +9,7 @@ public record struct DialogTitle(string Text) : IView, ISparseComponent
 {
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.Heading, Text);
         DialogTheme theme = Scope.ReadUp<DialogTheme>();
         Entity label = TextFunctions.Text(Text);
         ref TextStyle style = ref Scope.Write<TextStyle>(label);

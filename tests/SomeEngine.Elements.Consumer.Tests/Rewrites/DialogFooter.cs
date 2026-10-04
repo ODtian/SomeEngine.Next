@@ -11,6 +11,7 @@ public record struct DialogFooter() : IView, ISparseComponent, ILayout
 
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.Group, "");
         DialogTheme theme = Scope.ReadUp<DialogTheme>();
         Scope.Write<Flex>(Scope.Entity) = new Flex(Axis.Horizontal, theme.ActionsGap,
             MainAlign: Align.End, CrossAlign: Align.Center);

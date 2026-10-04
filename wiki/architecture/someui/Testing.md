@@ -1085,5 +1085,59 @@ Views、Elements.Render、Layout 的完整回归在前一集成提交
 [Performance](Performance.md#首次预算校准与合并后复测2026-10-04) 保存。
 本次原始报告、trace、窗口图像、生成内容、构建和原生发布目录在使用后清理，源码与验收记录保存在 Git 中。
 
+## 无障碍数据验收（#54，2026-10-04）
+
+代码验收提交为 `115dd8e7bb7d39e578b9c9d912128f2db206c05b`，工作分支为
+`codex/someui-ticket-54`。交付前执行 `git merge --no-edit codex/someui`，
+本票包含当前集成提交 `e7ec3626d9abe873ef6ef7b4b88bc3ce718ea3a2`。
+Windows x64，.NET SDK `10.0.112`，测试进程使用 `.NET 10.0.12`。
+
+[AccessibilityTests](../../../tests/SomeEngine.Elements.Consumer.Tests/AccessibilityTests.cs)
+经公开 World、视图构建、输入、帧与组件读取验收角色和名称。新增 Debug 27 项、
+Release 24 项，覆盖全部内置元素与控件、现有用户重写版本、用户 `.Accessible`
+修饰的角色和名称更新及返回实体、Text 字符串与格式化更新、TextField 输入与占位
+提示更新、相等值的公开写版本、开发检查与失败构建后的数据保留。
+
+实现采用 TDD 逐项推进：先验证用户修饰公开接缝中缺少的类型，再为每个内置与用户
+控件加入公开角色和名称检查。各控件红测从公开读取报告缺少 AccessibleRole，
+随后通过其构建或内容解析计算调用 `.Accessible`，同组角色、名称和参数更新检查
+转为通过。Text 的名称跟随已解析的显示内容，TextField 的名称跟随 Placeholder。
+默认角色表、数据写入方和参考取舍见
+[[architecture/someui/Accessibility|Accessibility]]。
+
+所有测试命令从本票 managed 工作树执行。普通回归采用以下完整命令形状，工程名为
+`SomeEngine.Elements.Consumer.Tests`、`SomeEngine.Elements.Render.Tests` 与
+`SomeEngine.Runtime.Tests`，配置分别为 Debug 与 Release：
+
+```powershell
+$env:MSBUILDDISABLENODEREUSE = '1'
+dotnet test tests/<工程>/<工程>.csproj -c <Debug|Release> --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+```
+
+消费者两种配置的构建命令另带 `--no-restore`；合并后的最后一轮消费者 Debug 验收使用：
+
+```powershell
+dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Debug --no-build --no-restore --nologo -v quiet
+```
+
+| 工程 | Debug 通过 | Release 通过 |
+| --- | ---: | ---: |
+| SomeEngine.Elements.Consumer.Tests | 336 | 250 |
+| SomeEngine.Elements.Render.Tests | 36 | 34 |
+| SomeEngine.Runtime.Tests | 37 | 37 |
+
+Runtime 验收按仓库 gitlink 初始化 Alimer.Bindings：
+`git submodule update --init external/Alimer.Bindings`，提交为
+`8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4`。
+
+原生验收使用 `just views-aot win-x64`，退出码为 0。该命令完成 win-x64 原生重建、
+公开共享行为运行，以及 `Test-Checkpoint.ps1` 的跨进程写入、类型重映射、读回与后续
+重建。ButtonChecks、LocalizationChecks 和 TextFieldChecks 的新增角色与名称断言
+同时通过消费者测试与 NativeAOT，覆盖内置/用户 Button 与 IconButton、语言切换、
+翻译参数、数字格式、两种 TextField 的输入编辑与占位提示变化。
+发布日志沿用既有 TraceCapture 的 IL2026、IL3050 和 JobStorageTypeShape 的 IL2070。
+
+上述测试、原生发布与验证产物在验收结束后清理，代码和本次证据保存在 Git 中。
+
 ## Relations
-[[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
+[[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]] · [[architecture/someui/Accessibility|Accessibility]]

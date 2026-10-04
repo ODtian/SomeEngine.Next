@@ -14,7 +14,11 @@ public enum ImageFit : byte { Contain, Stretch, Cover }
 public record struct Image(AssetId<TextureAsset> Source, ImageFit Fit = ImageFit.Contain)
     : IView, IComponent, ILayout
 {
-    public BuildTask Build() => default;
+    public BuildTask Build()
+    {
+        Scope.Entity.Accessible(Role.Image, "");
+        return default;
+    }
 
     public Size Measure(ref LayoutPass pass, in Constraints constraints)
     {
