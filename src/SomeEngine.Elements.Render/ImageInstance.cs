@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -14,4 +15,8 @@ public readonly record struct ImageInstance(
     Rect ClipRectangle,
     int DrawOrder,
     uint Version,
-    ulong TextureRevision = 0) : IBufferElement;
+    ulong TextureRevision = 0) : IBufferElement
+{
+    public Matrix3x2 Matrix { get; init; } = Matrix3x2.Identity;
+    public float Alpha { get; init; } = 1;
+}

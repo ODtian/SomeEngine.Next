@@ -14,7 +14,7 @@ renderWorld.ExecuteBufferRead<SurfaceInstance>(canvasMirror, instances =>
 {
     foreach (SurfaceInstance instance in instances.AsSpan())
     {
-        // Consume the rectangle, fill, corners, border, clip, order, and version.
+        // Consume the rectangle, fill, corners, border, clip, presentation, order, and version.
     }
 });
 ```
@@ -47,6 +47,16 @@ extraction read window. The collected values reach the persistent ECS buffers
 through the RenderPrepare update boundary and its structural transaction.
 The ECS buffers hold the retained drawing data; extraction scratch belongs to the
 current collection. Static frames preserve the buffer values and write versions.
+
+Surface, Image and Glyph instances carry `Matrix` and `Alpha`, defaulting to the
+identity matrix and one. The extractors combine the node's `ElementTransform`
+around its LayoutRect origin with the canvas-coordinate `PresentationOffset`.
+The same source read window collects these values, and row write versions select
+presentation updates. Image fitting, glyph geometry, colors and atlas pixels keep
+their existing data rules. Each material encodes and reads its own instance bytes:
+112 bytes for Surface, 96 for Glyphs, and 80 for Image. Its shader transforms drawing
+points before canvas projection, clips in presented canvas coordinates, and applies
+the opacity multiplier to premultiplied alpha. All three share the existing canvas pass.
 
 The public behavior checks live in `tests/SomeEngine.Elements.Render.Tests`.
 The existing Elements consumer architecture check also loads this assembly and
