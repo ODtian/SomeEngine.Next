@@ -33,6 +33,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _builds = BuildQueue.For(context.World);
+        _builds.Open();
         _dependencyChanges.Clear();
         _viewQuery = context.World.Query(context.World.QueryDefinition().Read<ViewType>());
     }
@@ -45,6 +46,8 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         using var rebuild = Scope.EnterRebuild();
 #endif
         World world = context.World;
+        _dependencyChanges.Record(world, _frame);
+        _builds.CancelChanged(world, _dependencyChanges);
         _builds.Resume(world, _frame);
         for (int iteration = 0; iteration < IterationLimit; iteration++)
         {
@@ -57,8 +60,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
                 Entity entity = view.Entity;
                 if (!world.IsAlive(entity))
                     continue;
-                if (!_builds.Contains(entity) &&
-                    (world.Has<BuildRequest>(entity) || HasBuildChanges(world, entity, recheck: true)))
+                if (world.Has<BuildRequest>(entity) || HasBuildChanges(world, entity, recheck: true))
                     ViewTypes.Build(world, entity, _frame);
                 if (world.IsAlive(entity) && world.HasSparse<Computations>(entity))
                     RebuildComputations(world, entity);
@@ -101,13 +103,13 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     public void OnDestroy(ref ImmediateSystemContext context)
     {
-        _builds.Close(context.World);
+        _builds.Close(context.World, _frame);
         context.World.ReleaseQuery(_viewQuery);
     }
 
     private bool HasChanges(World world, Entity entity)
     {
-        if (!_builds.Contains(entity) && HasBuildChanges(world, entity))
+        if (HasBuildChanges(world, entity))
             return true;
         if (world.HasSparse<Computations>(entity))
         {
@@ -129,7 +131,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     }
 
     private bool HasBuildChanges(World world, Entity entity, bool recheck = false) =>
-        world.Read<ViewType>(entity).RebuildRequired || ViewTypes.HasParameterChanges(world, entity) ||
+        world.Read<ViewType>(entity).RebuildRequired || _builds.HasParameterChanges(world, entity) ||
         _dependencyChanges.HasChanges(world, entity, recheck);
 
     private void CollectComputations(World world, Entity entity)
