@@ -1,5 +1,46 @@
 # Testing
 
+## 同次测量的 LayoutCache 读取修复（#69）
+
+2026-10-05，修复起点 `cb66dd360ea9c6284faf8cef1b871847e7c652df`，
+修复提交 `e7d765e4a48facba320c5ad510f0ae64b2903f7e`。
+交付前合入集成提交 `1c634f8389f495f2af3b35514016c066030c4205`，
+最终行为复测基于合并提交 `95912b5b086cbba3772bb7b8fe7e796671951b34`。
+
+TDD 经公开 `LayoutPass.Measure`、`Read<LayoutCache>`、`Place` 和 World 读回矩形复现：
+子宽 20 → 40 后，修复前顺序模式的 X 为 40、并行模式为 20；修复后两种模式均为 40。
+同一 pass 的两次测量另外验证先读自然宽度、再读固定宽度 60，最终矩形为 `(40, 60, 60, 30)`。
+`ParallelLayoutTests` 的四个随机种子加入了根据子节点当前缓存尺寸摆放文字的自定义布局；
+文字与三材质实例缓冲、图集像素对照继续通过公开结果验证。
+`LayoutChecks` 在四个画布上运行同一 20 → 40 场景，供原生入口验收真实 Job 路径。
+
+四个工程分别执行 `dotnet test tests/<工程>/<工程>.csproj -c Debug` 和 `-c Release`，
+附加参数为 `-m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -v quiet`。
+各命令执行默认行为规则自动检查。
+
+| 工程 | Debug | Release |
+|---|---:|---:|
+| SomeEngine.Layout.Tests | 101 | 81 |
+| SomeEngine.Elements.Consumer.Tests | 354 | 268 |
+| SomeEngine.Elements.Render.Tests | 42 | 40 |
+| SomeEngine.Runtime.Tests | 37 | 37 |
+
+最终 NativeAOT 命令依次为：
+
+```powershell
+dotnet restore tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -r win-x64 -p:PublishAot=true -p:_IsPublishing=true -m:1 -nr:false -v quiet
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true --no-restore -t:Rebuild -o tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/native-publish -p:PublishAot=true -p:SelfContained=true -p:TrimmerSingleWarn=false -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -v quiet
+./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Views.AotSmoke.exe
+```
+
+原生运行及跨进程检查点的退出码均为 0，覆盖当次缓存读取、四前端、文字、输入、动画、
+TextField 视口，以及类型编号 1 → 5 的读回、重建和依赖更新。
+此前在修复提交源码上运行 `just views-aot win-x64` 同样通过。
+最终原生文件 SHA-256：`52511087d02bec97127774bb18f42f387a47ce2d8feea7db94db50272f1a10b2`。
+同配置三场景修复前后测量见 [Performance](Performance.md#同次测量缓存读取修复的三场景对照69)。
+临时测量目录、原生产物和检查点在使用后清理。
+
 ## TextField 长单行光标可见性修复（#46）
 
 2026-10-04，Windows x64，集成基线
