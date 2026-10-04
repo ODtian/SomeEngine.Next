@@ -7,12 +7,11 @@
 - 恢复只发生在 UI 线程的重建阶段，world 由该阶段独占；同一帧恢复的视图按层级深度与实体排序，结果不依赖线程时序。
 - 不依赖 `SynchronizationContext`；被等待的库内部使用 `ConfigureAwait(false)` 不影响恢复位置。
 - 同步完成零分配；首次挂起时状态机装箱一次，按状态机类型池化。
-- `await` 之前声明的节点立即可见；整个构建成功完成后统一清理剩余子节点。取消与重新开始的目标语义由 #21 实现：`Rerun` 构建挂起期间依赖变化，或视图被释放时，在恢复点抛出 `OperationCanceledException`，执行 `finally` 与 `using`，触发 `Scope.Cancel` 后重新开始。
+- `await` 之前声明的节点立即可见；整个构建成功完成后统一清理剩余子节点。`Rerun` 构建挂起期间参数或依赖变化时，触发这次构建的 `Scope.Cancel`，并在同一重建阶段重新开始。视图释放时同样触发取消；旧构建在等待对象就绪后的恢复点执行 `finally` 与 `using` 清理。
 - 调用作用域函数的异步辅助方法必须返回 `BuildTask`；返回 `Task` 的方法在 `await` 后调用作用域函数由开发检查报告。
 - 同步视图也写作 `async BuildTask Build()`，CS1998 由 `DiagnosticSuppressor` 屏蔽。
 
 ## 后续能力
-- #21 提供构建取消与依赖变化后的重启。
 - `Launch(key, static async (k) => ...)`：后台任务，key 变化时取消并重新开始。
 - `Resource<T>`：值、加载中、错误三部分组成的状态；来源变化时重新请求，期间保留旧值。
 
@@ -63,6 +62,7 @@ public readonly struct BuildTask
 
 public static class Scope
 {
+    public static CancellationToken Cancel { get; }
     public static FrameAwaitable NextFrame();
 }
 ```
@@ -84,7 +84,7 @@ C# 编译器在 Release 中生成 struct 状态机，Debug 中的 async 状态�
 回调可由任意线程执行，仅通过锁把状态机与它的视图作用域加入该 World 的就绪队列。
 恢复位置由 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] 定义。
 队列和挂起构建表由该 World 的重建阶段持有，作用域的子声明位置、key 分组和
-读取登记状态保留到整个构建完成。挂起期间保持这次构建，完成后再沿既有版本检查处理变化。
+读取登记状态保留到整个构建完成。挂起期间沿既有版本检查处理变化，失效时执行下文的取消与重启。
 构建成功完成时统一清理主作用域及保留的内容作用域，并提交开始构建时的参数版本。
 
 `Scope.Write` 的副本由本次计算的主作用域持有，内容作用域与辅助方法共享它。
@@ -117,6 +117,32 @@ C# 编译器在 Release 中生成 struct 状态机，Debug 中的 async 状态�
 视图构建异常沿 #18 的处理写入 `BuildError`，记录异常和当前重建帧，恢复该视图原有子声明。
 作用域在异常路径恢复，同帧其余就绪视图继续执行。嵌套子视图首次挂起时保留自己的
 子声明变更，以便在外层同步构建结束后独立完成或恢复。
+
+## 取消与重启（#21）
+
+每次视图构建的主作用域持有自己的取消源，在首次读取 `Scope.Cancel` 或触发取消时建立。
+内容作用域和返回 `BuildTask` 的异步辅助方法共用这份取消源。把 `Scope.Cancel` 传给
+I/O 的取消参数，或用 `task.WaitAsync(Scope.Cancel)` 等待外部任务，可在取消时使等待对象就绪。
+外部等待对象仍通过原有就绪回调安排恢复，清理继续由 World 的重建阶段执行。
+
+每帧恢复就绪项前先检查挂起构建的参数及读取依赖，同帧后续收敛轮次继续复核。
+取消时先恢复这次构建已提交的子声明、组件副本及原计算，再启动新构建。
+旧构建保留自己的状态机和作用域，直到等待对象就绪并完成清理；
+旧构建的最后收尾只消费自己的结果与作用域，新构建继续持有当前视图的输出及参数版本。
+旧清理中的读取按仅取值处理，暂存的组件副本随清理结束释放，当前构建继续维护自己的依赖和输出。
+
+`BuildTask` awaiter 在消费结果时观察所属构建的取消令牌，并抛出 `OperationCanceledException`；
+`Scope.NextFrame()` 的 awaiter 在逐帧恢复点执行同一取消检查。
+异步辅助方法成功返回后，等待它的已取消构建也由 `BuildTask` awaiter 抛出取消异常。
+方法内的 `finally` 和 `using` 沿 C# 状态机的正常异常路径执行。
+重建入口把已取消构建的 `OperationCanceledException` 作为结束消费，`BuildError` 继续表示构建失败。
+
+`Once` 构建按原有规则直接取值，依赖写入后继续等待；视图释放会触发它的取消令牌。
+World 的 `EntityDestroying` 通知在节点释放时立即发出取消，旧构建随后使用保存的作用域恢复清理。
+取消清理中再次声明视图、调用 `Compute`、`Memo` 或打开内容作用域时，
+通过 Core 的 `DevelopmentCheck` 报告；检查调用随 shipping 编译移除。
+
+公开行为验收：[BuildCancellationTests](../../../tests/SomeEngine.Views.Tests/BuildCancellationTests.cs)。
 
 实现：[BuildTask](../../../src/SomeEngine.Views/BuildTask.cs)、
 [逐帧等待](../../../src/SomeEngine.Views/FrameAwaitable.cs)、

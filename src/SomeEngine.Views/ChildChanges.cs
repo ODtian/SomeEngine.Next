@@ -116,14 +116,19 @@ internal sealed class ChildChanges
     internal void ReleaseChildren(World world)
     {
         CommitAnimations(world, 0);
+        Complete();
+        foreach (Entity entity in _removedChildren)
+            if (world.IsAlive(entity))
+                Hierarchy<ElementTree>.DestroySubtree(world, entity);
+    }
+
+    internal void Complete()
+    {
         if (_animationWrites is { } writes)
             foreach (ComponentCopy copy in writes)
                 copy.CompleteAnimations();
         foreach (IChildData data in _previousData)
             data.Complete();
-        foreach (Entity entity in _removedChildren)
-            if (world.IsAlive(entity))
-                Hierarchy<ElementTree>.DestroySubtree(world, entity);
     }
 
     internal interface IChildData

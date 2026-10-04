@@ -22,7 +22,7 @@ public sealed partial class AsyncBuildTests
         AsyncIntegrationChecks.VerifyFailureRecovery(nested);
 
     [Fact]
-    public void ObjectReadsObserveTheResumedFrameAndSettleBeforeTheNextFrame() =>
+    public void ObjectWritesRestartTheWaitingViewBeforeItsResumedReadSettles() =>
         AsyncIntegrationChecks.VerifyObjectFrames();
 
     [Fact]

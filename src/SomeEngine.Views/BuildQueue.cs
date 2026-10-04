@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
@@ -16,12 +17,46 @@ internal sealed class BuildQueue
     private List<Action> _nextFrame = new();
     private List<Action> _frameCallbacks = new();
     private readonly List<BuildDepth> _depths = new();
+    private readonly List<Scope.ScopeData> _changedBuilds = new();
     private bool _closed;
 
-    internal static BuildQueue For(World world) => s_worlds.GetValue(world, static _ => new());
+    internal static BuildQueue For(World world) => s_worlds.GetValue(world, static world =>
+    {
+        var queue = new BuildQueue();
+        world.EntityDestroying += (_, entity) => queue.Cancel(entity, restore: false);
+        return queue;
+    });
 
-    internal bool Contains(Entity entity) => _builds.ContainsKey(entity);
     internal void Add(Scope.ScopeData data) => _builds.Add(data.Entity, data);
+
+    internal void Open()
+    {
+        lock (_gate)
+            _closed = false;
+    }
+
+    internal bool HasParameterChanges(World world, Entity entity) =>
+        _builds.TryGetValue(entity, out Scope.ScopeData? data)
+            ? data.ParameterVersion is uint version &&
+                world.ComponentDataWriteVersion(entity, data.ParameterComponent) != version
+            : ViewTypes.HasParameterChanges(world, entity);
+
+    internal void Cancel(Entity entity, bool restore)
+    {
+        if (_builds.Remove(entity, out Scope.ScopeData? data))
+            Scope.CancelBuild(data, restore);
+    }
+
+    internal void CancelChanged(World world, DependencyChanges changes)
+    {
+        foreach (Scope.ScopeData data in _builds.Values)
+            if (!world.IsAlive(data.Entity) || world.Read<ViewType>(data.Entity).RebuildRequired ||
+                HasParameterChanges(world, data.Entity) || changes.HasChanges(world, data.Entity, recheck: true))
+                _changedBuilds.Add(data);
+        foreach (Scope.ScopeData data in _changedBuilds)
+            Cancel(data.Entity, restore: world.IsAlive(data.Entity));
+        _changedBuilds.Clear();
+    }
 
     internal void Enqueue(BuildStateMachine stateMachine)
     {
@@ -52,13 +87,8 @@ internal sealed class BuildQueue
         foreach (BuildStateMachine stateMachine in _resuming)
         {
             Entity entity = stateMachine.Data.Entity;
-            if (!world.IsAlive(entity))
-            {
-                _builds.Remove(entity);
-                continue;
-            }
             int depth = 0;
-            Entity ancestor = Hierarchy<ElementTree>.GetParent(world, entity);
+            Entity ancestor = world.IsAlive(entity) ? Hierarchy<ElementTree>.GetParent(world, entity) : Entity.Null;
             while (ancestor != Entity.Null)
             {
                 depth++;
@@ -86,12 +116,9 @@ internal sealed class BuildQueue
                 BuildStateMachine stateMachine = build.StateMachine;
                 Scope.ScopeData data = stateMachine.Data;
                 Scope.ScopeData view = data.ViewData;
-                if (!world.IsAlive(build.Entity))
-                {
-                    _builds.Remove(build.Entity);
-                    continue;
-                }
-                if (!_builds.ContainsKey(build.Entity))
+                if (!view.IsCanceled && !world.IsAlive(build.Entity))
+                    Cancel(build.Entity, restore: false);
+                if (!view.IsCanceled && !_builds.ContainsKey(build.Entity))
                     continue;
                 bool completed = false;
                 try
@@ -106,8 +133,17 @@ internal sealed class BuildQueue
                         view.Task.Complete();
                         Scope.CompleteBuild(view);
                     }
-                    else
+                    else if (!view.IsCanceled)
                         Scope.CommitWrites(view, submitAnimations: true);
+                }
+                catch (OperationCanceledException) when (view.IsCanceled)
+                {
+                    completed = true;
+                }
+                catch (Exception exception) when (view.IsCanceled)
+                {
+                    completed = true;
+                    DevelopmentCheck.Report($"A canceled build on {build.Entity} failed during cleanup: {exception}");
                 }
                 catch (Exception exception)
                 {
@@ -120,14 +156,15 @@ internal sealed class BuildQueue
                     if (completed)
                     {
                         Scope.FinishChildren(view);
-                        if (view.ParameterVersion is uint version)
+                        if (!view.IsCanceled && view.ParameterVersion is uint version)
                         {
                             if (world.Has<ParameterVersion>(build.Entity))
                                 world.Replace(build.Entity, new ParameterVersion(version));
                             else
                                 world.Add(build.Entity, new ParameterVersion(version));
                         }
-                        _builds.Remove(build.Entity);
+                        if (_builds.TryGetValue(build.Entity, out Scope.ScopeData? current) && current == view)
+                            _builds.Remove(build.Entity);
                         Scope.Release(view);
                     }
                 }
@@ -142,19 +179,27 @@ internal sealed class BuildQueue
         }
     }
 
-    internal void Close(World world)
+    internal void Close(World world, ulong frame)
     {
-        lock (_gate)
+        _changedBuilds.AddRange(_builds.Values);
+        foreach (Scope.ScopeData data in _changedBuilds)
+            Cancel(data.Entity, restore: false);
+        _changedBuilds.Clear();
+        while (true)
         {
-            _closed = true;
-            _ready.Clear();
-            _nextFrame.Clear();
+            Resume(world, frame);
+            lock (_gate)
+            {
+                if (_ready.Count > 0 || _nextFrame.Count > 0)
+                    continue;
+                _closed = true;
+                break;
+            }
         }
         _resuming.Clear();
         _frameCallbacks.Clear();
         _depths.Clear();
         _builds.Clear();
-        s_worlds.Remove(world);
     }
 
     private readonly record struct BuildDepth(BuildStateMachine StateMachine, Entity Entity, int Depth);
