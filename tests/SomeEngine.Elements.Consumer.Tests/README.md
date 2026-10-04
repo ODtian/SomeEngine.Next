@@ -32,6 +32,22 @@ presses, canvas isolation, and development errors. `PointerChecks` runs the same
 caller consumption example for the built-in and user-written `Pressable` and
 `Clicked` functions and shares those cases with the NativeAOT executable.
 
+`BehaviorTests` injects pointer input and observes drag fields, selection,
+scroll ranges, and layout rectangles. It covers event order, held and completed
+drags, button handling, transparent compositions, nested viewports, clickable
+content, content and viewport changes, repeated layout, and development errors.
+`ScrollTextTests` verifies natural text measurements inside a scroll viewport.
+`BehaviorChecks` runs the same composition for built-in declarations and the
+three public user equivalents under `Rewrites/`, in these tests and NativeAOT.
+
+`ScrollViewTests` checks caller content, scrolling ranges, content coordinates,
+and redeclarations. `VirtualListTests` checks 10,000 items, buffered ranges,
+keyed entity lifetimes, retained row data, item and viewport changes, padding,
+partial rows, and development errors. `ListChecks` shares row data updates and
+the built-in and public user ScrollView and VirtualList with the Views NativeAOT
+executable. Surface viewport clipping is checked by `ScrollClippingTests` in
+the Elements Render tests.
+
 `Rewrites/Button.cs` and `Rewrites/IconButton.cs` compose controls from public
 behavior, environment, layout, text, and surface APIs. `ButtonTests` applies
 the same appearance, pointer, subtree-theme, nearest-theme, and development

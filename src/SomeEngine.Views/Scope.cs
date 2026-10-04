@@ -28,16 +28,31 @@ public static partial class Scope
     /// <summary>The entity of the view being built.</summary>
     public static Entity Entity => Current.Entity;
 
+    /// <summary>Signals cancellation when this build's dependencies change or its view is released.</summary>
+    public static CancellationToken Cancel => Current.ViewData.CancellationToken;
+
     /// <summary>Waits until this World's next view rebuild phase.</summary>
-    public static FrameAwaitable NextFrame() => new(Current.Queue);
+    public static FrameAwaitable NextFrame() => new(Current.Queue, Cancel);
 
     internal static ScopeData Data => Current;
+
+    internal static void ThrowIfCanceled()
+    {
+        if (s_scopes is { Count: > 0 })
+            s_scopes.Peek().ViewData.Cancellation?.Token.ThrowIfCancellationRequested();
+    }
+
+    [Conditional("DEBUG")]
+    private static void CheckBuild(ScopeData data) =>
+        DevelopmentCheck.Require(!data.ViewData.IsCanceled,
+            "A canceled build must finish its cleanup before declaring view content.");
 
     internal static ulong Frame => s_scopes is { Count: > 0 } ? s_scopes.Peek().Frame : 0;
 
     /// <summary>Runs a view-owned calculation now and again when its reads change.</summary>
     public static void Compute(Action run)
     {
+        CheckBuild(Current);
         DevelopmentCheck.Require(run is not null, "Scope.Compute requires a calculation.");
         Computation computation = AddComputation(run);
         computation.Execute(Current.Frame);
@@ -46,6 +61,7 @@ public static partial class Scope
     /// <summary>Creates a Memo whose result changes its version only when its value changes.</summary>
     public static Memo<T> Memo<T>(Func<T> compute)
     {
+        CheckBuild(Current);
         DevelopmentCheck.Require(compute is not null, "Scope.Memo requires a calculation.");
         var memo = new Memo<T>(compute);
         memo.Refresh(Current.Frame);
@@ -156,6 +172,13 @@ public static partial class Scope
             copy = new ComponentCopy<T>(entity, value);
             copies.Add(key, copy);
         }
+        else if (!copy.Written)
+        {
+            ((ComponentCopy<T>)copy).Value = ComponentCopy<T>.HasComponent(current.World, entity)
+                ? current.World.ReadComponentData<T>(entity)
+                : default;
+            copy.Written = true;
+        }
         return ref ((ComponentCopy<T>)copy).Value;
     }
 
@@ -260,6 +283,7 @@ public static partial class Scope
         where T : struct, IView, IEquatable<T>
     {
         ScopeData current = Current;
+        CheckBuild(current);
         DevelopmentCheck.Require(current.DeclaresChildren,
             "ChildSource.Caller builds write their own data; declare their children through Content.");
         if (current.KeyPrefix is ulong prefix)
@@ -392,8 +416,7 @@ public static partial class Scope
 
     internal static BuildScope Enter(Computation computation, ulong frame)
     {
-        ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
-            ? available : new();
+        ScopeData current = computation.ScopeData ??= new();
         current.World = computation.World;
         current.Entity = computation.Entity;
         current.Parent = computation.Entity;
@@ -413,9 +436,9 @@ public static partial class Scope
 
     internal static BuildScope Resume(ScopeData data)
     {
-        if (data.World.Has<ObjectDependencies>(data.Entity))
+        if (!data.ViewData.IsCanceled && data.World.Has<ObjectDependencies>(data.Entity))
             data.World.Read<ObjectDependencies>(data.Entity).Reads.BeginFrame(data.Frame);
-        if (data.DeclaresChildren)
+        if (!data.ViewData.IsCanceled && data.DeclaresChildren)
             CheckChildDeclaration(data);
         (s_scopes ??= new Stack<ScopeData>()).Push(data);
         return new BuildScope(data, releaseOnExit: false);
@@ -431,14 +454,20 @@ public static partial class Scope
                 Release(declaration);
             content.Clear();
         }
+        bool calculation = ReferenceEquals(data.Computation?.ScopeData, data);
+        if (calculation)
+            data.ClearCalculationCopies();
+        else
+            data.ComponentCopies?.Clear();
         data.World = null!;
         data.Entity = default;
         data.Parent = default;
         data.ViewData = null!;
         data.Queue = null!;
         data.Task = default;
+        data.Cancellation?.Dispose();
+        data.Cancellation = null;
         data.Computation = null;
-        data.ComponentCopies?.Clear();
         data.RememberOccurrences?.Clear();
         data.ParameterVersion = null;
         data.Suspended = false;
@@ -454,7 +483,8 @@ public static partial class Scope
 #if DEBUG
         data.PreviousSiblings.Clear();
 #endif
-        (s_reusableData ??= new Stack<ScopeData>()).Push(data);
+        if (!calculation)
+            (s_reusableData ??= new Stack<ScopeData>()).Push(data);
     }
 
     internal static void RetainContent(ScopeData data)
@@ -521,22 +551,39 @@ public static partial class Scope
         if (data.ComponentCopies is { } copies)
         {
             foreach (ComponentCopy copy in copies.Values)
-                copy.Commit(data.World, data.Changes);
-            copies.Clear();
+                if (copy.Written)
+                    copy.Commit(data.World, data.Changes,
+                        reuseData: data.OutermostBuild && data.Computation is not null);
+            if (data.Computation is null)
+                copies.Clear();
         }
     }
 
     internal static void FinishChildren(ScopeData data)
     {
+        if (data.ViewData.IsCanceled)
+            return;
         if (!data.Completed)
             data.Changes.Restore(data.World, data.FirstData, data.FirstRemoval);
         else if (data.OutermostBuild)
             data.Changes.ReleaseChildren(data.World);
     }
 
+    internal static void CancelBuild(ScopeData data, bool restore)
+    {
+        (data.Cancellation ??= new()).Cancel();
+        if (restore)
+            data.Changes.Restore(data.World, data.FirstData, data.FirstRemoval);
+        else
+            data.Changes.Complete();
+        data.Changes.Clear();
+        data.ComponentCopies?.Clear();
+    }
+
     internal static ParentScope EnterContent(Entity entity)
     {
         ScopeData build = Current;
+        CheckBuild(build);
         ViewTypes.CheckContent(build.World, entity);
         ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
             ? available : new();
@@ -639,6 +686,7 @@ public static partial class Scope
 
     internal sealed class ScopeData
     {
+        private List<(Entity Entity, ushort Component)>? _unusedCopies;
         internal World World = null!;
         internal Entity Entity;
         internal Entity Parent;
@@ -657,10 +705,19 @@ public static partial class Scope
         internal bool Completed;
         internal int StateMachines;
         internal bool DeclaresChildren;
-        internal bool DependenciesEnabled;
+        private bool _dependenciesEnabled;
+        internal bool DependenciesEnabled
+        {
+            get => _dependenciesEnabled && !ViewData.IsCanceled;
+            set => _dependenciesEnabled = value;
+        }
         internal BuildQueue Queue = null!;
         internal BuildTask Task;
+        internal CancellationTokenSource? Cancellation;
+        internal CancellationToken CancellationToken => (Cancellation ??= new()).Token;
+        internal bool IsCanceled => Cancellation?.IsCancellationRequested == true;
         internal uint? ParameterVersion;
+        internal ushort ParameterComponent;
         internal bool Suspended;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal Dictionary<ulong, int>? RememberOccurrences;
@@ -691,15 +748,33 @@ public static partial class Scope
             FirstData -= firstData;
             FirstRemoval -= firstRemoval;
         }
+
+        internal void ClearCalculationCopies()
+        {
+            if (ComponentCopies is not { } copies)
+                return;
+            foreach (var (key, copy) in copies)
+                if (copy.Written)
+                    copy.Clear();
+                else
+                    (_unusedCopies ??= new()).Add(key);
+            if (_unusedCopies is { } unused)
+            {
+                foreach (var key in unused)
+                    copies.Remove(key);
+                unused.Clear();
+            }
+        }
     }
 
     internal readonly struct BuildScope(ScopeData data, bool releaseOnExit) : IDisposable
     {
         internal bool IsSuspended => data.Suspended;
-        internal void Finish(BuildTask task, uint? parameterVersion)
+        internal void Finish(BuildTask task, uint? parameterVersion, ushort parameterComponent)
         {
             data.Task = task;
             data.ParameterVersion = parameterVersion;
+            data.ParameterComponent = parameterComponent;
             if (task.IsCompleted)
             {
                 task.Complete();
@@ -715,6 +790,8 @@ public static partial class Scope
 
         internal void Complete()
         {
+            if (data.ViewData.IsCanceled)
+                return;
             if (data == data.ViewData)
                 CompleteBuild(data);
             else if (!data.Suspended)

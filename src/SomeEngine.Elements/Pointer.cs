@@ -102,4 +102,4 @@ internal struct PointerData : IComponent
     }
 }
 
-internal readonly record struct ButtonPress(bool Down, Entity Node);
+internal readonly record struct ButtonPress(bool Down, Entity Node, Entity DragNode, bool Dragged = false);

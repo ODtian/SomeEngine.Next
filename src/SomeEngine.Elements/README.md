@@ -52,6 +52,32 @@ that buffer and implement custom navigation and activation. The default system
 uses `World.EntityDestroying` to transfer focus to the nearest focusable
 ElementTree ancestor during node release. A parent-chain endpoint clears focus.
 
+`DraggableFunctions.Draggable(node)`, `ScrollableFunctions.Scrollable(node)`,
+and `SelectableFunctions.Selectable(node)` declare their components through
+`Scope.Ensure`. The pointer stage writes `Drag` and toggles `Selected` on each
+click. A primary-button drag starts with its first movement, reports the frame's
+`Delta`, and keeps the latest gesture's `Total` and its start `Count`.
+Wheel and drag input produce `ScrollInput`; layout writes the entire
+`ScrollOffset`, clamps it to the measured content range, and offsets children.
+Transparent compositions provide a viewport when they declare scrolling.
+Each function returns the original entity and preserves behavior data when
+declared again. See the Wiki Input-and-Behaviors and Layout pages for units,
+button handling, nested viewports, and the shared public user examples.
+
+`ScrollViewFunctions.ScrollView()` declares a sparse caller-content viewport with
+wheel and drag scrolling. Open its `Content()` to compose the content and set its
+outer size with the layout modifiers. Its descendants use the viewport bounds
+for pointer hit testing and Surface clipping.
+
+`VirtualListFunctions.VirtualList(rowHeight)` declares a sparse scrollable list.
+Within its caller's build, use `Visible(list, count)` to enumerate item indices and
+`Scope.Key(item.Id)` to preserve each row's entity. `VisibleRange` exposes Start,
+End, and Count for its half-open range, with one buffer row at each end. Each row
+supplies a layout root; the list places those roots using the shared row height
+and reports the entire item count's content height. The first layout establishes
+the viewport, and the next rebuild declares its visible rows. See Wiki
+`architecture/someui/Lists` for frame order, padding, and the public examples.
+
 `ButtonFunctions.Button(label)` declares a sparse `Button` view. Import
 `ButtonFunctions` statically to write `if (Button("OK").Clicked())` in a build.
 The button reads its own `Hover` and the nearest `ButtonTheme`, composes a Row

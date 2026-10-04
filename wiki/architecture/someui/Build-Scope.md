@@ -74,7 +74,9 @@ public static class Scope
 [[architecture/someui/Async-Build|Async Build]]。
 作用域数据在完成后进入当前线程的复用池，下一次构建初始化为该次 World 和视图实体。
 
-`Scope.NextFrame()` 与异步辅助方法的公开行为见
+`Scope.Cancel` 返回本次视图构建的取消令牌，内容作用域与异步辅助方法共享它。
+取消源按首次使用建立，由本次构建持有到状态机结果消费与清理结束。
+`Scope.NextFrame()`、构建取消与异步辅助方法的公开行为见
 [[architecture/someui/Async-Build|Async Build]]，阶段顺序见
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
 `Scope.ReadUp<T>()` 使用当前视图实体作为环境查找起点，读取路径、缺省值和父链变化的处理见
