@@ -8,6 +8,8 @@ using SomeEngine.Resources;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
+using SomeEngine.Layout;
+using SomeEngine.Views;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Elements.Render;
 using SomeEngine.Graphics;
@@ -474,6 +476,7 @@ internal static class RuntimeApplication
             new(Execution: new WorldJobs(JobSystem.Default))).AsTask(), window, FrameTimeout);
         using SurfacePanelExample? surfacePanel = options.SurfacePanel
             ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height) : null;
+        using SphereNameplates? nameplates = options.WorldNameplates ? new SphereNameplates(mainWorld) : null;
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor(),
             new SurfaceRenderExtractor());
@@ -483,11 +486,21 @@ internal static class RuntimeApplication
             window,
             FrameTimeout);
 
+        using SystemGroup<ImmediateSystemContext>? elementSystems = options.SurfacePanel || options.WorldNameplates
+            ? new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(mainWorld)) : null;
+        if (elementSystems is not null)
+        {
+            elementSystems.Add(new ViewRebuildSystem());
+            elementSystems.Add(new LayoutSystem());
+            elementSystems.Update();
+        }
+
         if (!options.SynchronousFrames)
         {
             if (options.ScenePlayback is not null)
                 scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
                     orbitCamera: options.ScenePlayback == "camera");
+            nameplates?.Update();
             extraction.Extract(mainWorld);
         }
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
@@ -550,7 +563,7 @@ internal static class RuntimeApplication
                 // frames. Match that count instead of rotating a third copy of graph data.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
-        using SurfaceMaterial? surfaceMaterial = options.SurfacePanel
+        using SurfaceMaterial? surfaceMaterial = options.SurfacePanel || options.WorldNameplates
             ? SurfaceMaterial.Create(device.Capabilities.CompileTarget) : null;
         using CanvasRenderer? surfaces = surfaceMaterial is null ? null
             : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat);
@@ -844,6 +857,8 @@ internal static class RuntimeApplication
                     if (animateScene && options.ScenePlayback is null)
                         scene.Update(sceneSeconds);
                     surfacePanel?.Resize(width, height);
+                    nameplates?.Update();
+                    elementSystems?.Update();
                     extraction.Extract(mainWorld);
                 }
                 long prepareStarted = Stopwatch.GetTimestamp();
@@ -906,7 +921,7 @@ internal static class RuntimeApplication
                     edit.Commit();
                     presentationReadback = pipeline.PageFaultReadbackPass;
                 }
-                surfaces?.ReconcileGraph(presentation.Target);
+                surfaces?.ReconcileGraph(presentation.Target, new WorldCanvasTarget(presentation.Target, clusterOutputs.Depth, viewEntity));
                 ui.InstallGraph(renderGraph, presentation.Target);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
@@ -981,6 +996,8 @@ internal static class RuntimeApplication
                         else if (updateScene)
                             scene.Update(nextSceneTime);
                         surfacePanel?.Resize(nextCanvasWidth, nextCanvasHeight);
+                        nameplates?.Update();
+                        elementSystems?.Update();
                         extraction.Extract(mainWorld);
                     });
                 }

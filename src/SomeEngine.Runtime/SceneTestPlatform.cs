@@ -17,7 +17,7 @@ public sealed class SceneTestPlatform
         Scenes = scenes.ToArray();
         Options = RuntimeStartupOptions.Parse([]) with
         {
-            WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true, SurfacePanel = true,
+            WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true, SurfacePanel = true, WorldNameplates = true,
         };
     }
 
@@ -208,6 +208,7 @@ public sealed class SceneTestPlatform
             Options.UseInstanceGroups, Options.FixedFrameSeconds,
             Options.SynchronousFrames, Options.ScenePlayback, Options.DisableMeshShaders, Options.DeviceValidation,
             Options.SurfacePanel,
+            Options.WorldNameplates,
             GeometryMemoryMegabytes,
             Scenes = _results,
         }, new JsonSerializerOptions { WriteIndented = true }));
@@ -267,6 +268,7 @@ public sealed class SceneTestPlatform
         bool synchronous = Options.SynchronousFrames;
         bool validation = Options.DeviceValidation;
         bool surfacePanel = Options.SurfacePanel;
+        bool worldNameplates = Options.WorldNameplates;
         string[] playbacks = ["Scene behavior", "Motion and lights", "Material changes", "Camera sweep"];
         int playback = Options.ScenePlayback switch { "motion" => 1, "materials" => 2, "camera" => 3, _ => 0 };
         bool changed = ImGui.Checkbox("Temporal antialiasing", ref taa);
@@ -279,6 +281,7 @@ public sealed class SceneTestPlatform
         changed |= ImGui.Checkbox("Wait for GPU each frame", ref synchronous);
         changed |= ImGui.Checkbox("Graphics validation", ref validation);
         changed |= ImGui.Checkbox("Surface panel", ref surfacePanel);
+        changed |= ImGui.Checkbox("World nameplates", ref worldNameplates);
         changed |= ImGui.Combo("Playback", ref playback, playbacks, playbacks.Length);
         if (changed)
         {
@@ -288,6 +291,7 @@ public sealed class SceneTestPlatform
                 ForceHardwareRaster = hardwareRaster, UseInstanceGroups = groups, WindowVSync = vsync,
                 DisableMeshShaders = !meshShaders, SynchronousFrames = synchronous, DeviceValidation = validation,
                 SurfacePanel = surfacePanel,
+                WorldNameplates = worldNameplates,
                 ScenePlayback = playback switch { 1 => "motion", 2 => "materials", 3 => "camera", _ => null },
             };
             ReloadRequested = true;
