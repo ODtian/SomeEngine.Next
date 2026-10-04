@@ -6,7 +6,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpCommandReuseTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Descriptor_storage_tracks_resource_changes_and_heap_replacement_while_constants_change()
@@ -20,7 +21,7 @@ public sealed class WarpCommandReuseTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) { output[id.x] = value + bias.value; }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "descriptor_content_reuse", source, [new("computeMain", SlangStage.Compute)], "sm_6_2");
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
         TypeLayoutReflection dataLayout = layout.TypeLayout.UnwrapArray();
@@ -107,7 +108,7 @@ public sealed class WarpCommandReuseTests
                 for (uint i = 0; i < {{count}}; i++) outputs[i][0] = value;
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             $"descriptor_array_{count}", source, [new("computeMain", SlangStage.Compute)], "sm_6_6");
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
         TypeLayoutReflection dataLayout = layout.TypeLayout.UnwrapArray();
@@ -269,8 +270,8 @@ public sealed class WarpCommandReuseTests
                 _ = backend.Submit(graphics, new([first], [], [], [], []));
                 graphicsDone = backend.Submit(graphics, new([second], [], [], [], []));
                 copyDone = backend.Submit(copy, new([first], [], [], [], []));
-                Assert.Equal(WaitStatus.Timeout, backend.WaitCpu(graphicsDone, TimeSpan.FromMilliseconds(10)));
-                Assert.Equal(WaitStatus.Timeout, backend.WaitCpu(copyDone, TimeSpan.FromMilliseconds(10)));
+                Assert.False(backend.IsComplete(graphicsDone));
+                Assert.False(backend.IsComplete(copyDone));
             }
             finally
             {
@@ -288,7 +289,7 @@ public sealed class WarpCommandReuseTests
                 try
                 {
                     completion = backend.Submit(graphics, new([], [new(gate, 1)], [], [], []));
-                    Assert.Equal(WaitStatus.Timeout, backend.WaitCpu(completion, TimeSpan.FromMilliseconds(10)));
+                    Assert.False(backend.IsComplete(completion));
                 }
                 finally
                 {

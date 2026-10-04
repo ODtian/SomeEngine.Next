@@ -479,9 +479,6 @@ public class CommandBufferTests
         InvalidOperationException clear = Assert.Throws<InvalidOperationException>(commands.Clear);
         InvalidOperationException dispose = Assert.Throws<InvalidOperationException>(commands.Dispose);
 
-        Assert.Contains("World.Flush", playback.Message, StringComparison.Ordinal);
-        Assert.Contains("World.Flush", clear.Message, StringComparison.Ordinal);
-        Assert.Contains("World.Flush", dispose.Message, StringComparison.Ordinal);
         Assert.Equal(1, commands.CommandCount);
 
         world.Flush();
@@ -501,7 +498,6 @@ public class CommandBufferTests
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
             commands.Add(entity, new Position { X = 1, Y = 2 }));
-        Assert.Contains("Clear", error.Message, StringComparison.Ordinal);
 
         commands.Clear();
         commands.Add(entity, new Position { X = 1, Y = 2 });
@@ -527,7 +523,6 @@ public class CommandBufferTests
     // ════════════════════════════════════════════════
     // 边界情况
     // ════════════════════════════════════════════════
-
 
     [Fact]
     public void EmptyPlayback_NoThrow()

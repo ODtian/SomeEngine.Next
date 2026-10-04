@@ -91,7 +91,8 @@ internal sealed class FrameOutputVerifier : IDisposable
             _footprint.RowPitch,
             _footprint.RowCount,
             checked((uint)_width),
-            checked((uint)_height));
+            checked((uint)_height),
+            _footprint.TotalSize);
         _ = graph.AddCopyPass(
             "Verify runtime frame output",
             PassQueueSelection.Exact(presentationQueue),
@@ -224,6 +225,18 @@ internal sealed class FrameOutputVerifier : IDisposable
             hash);
     }
 
+    internal SceneImage CopyImage(int frame)
+    {
+        int rowBytes = checked(_width * 4);
+        var pixels = new byte[checked(rowBytes * _height)];
+        for (int row = 0; row < _height; row++)
+        {
+            int offset = checked((int)(_footprint.Offset + (ulong)row * _footprint.RowPitch));
+            _bytes.AsSpan(offset, rowBytes).CopyTo(pixels.AsSpan(row * rowBytes, rowBytes));
+        }
+        return new SceneImage(frame, _width, _height, pixels);
+    }
+
     internal void SaveImage(string path)
     {
         // A top-down 32-bit bitmap preserves the readback pixels without a codec dependency.
@@ -275,10 +288,8 @@ internal sealed class FrameOutputVerifier : IDisposable
         uint RowPitch,
         uint RowCount,
         uint Width,
-        uint Height)
-    {
-        internal ulong TotalSize => checked((ulong)RowPitch * RowCount);
-    }
+        uint Height,
+        ulong TotalSize);
 }
 
 internal readonly record struct FrameOutputMetrics(

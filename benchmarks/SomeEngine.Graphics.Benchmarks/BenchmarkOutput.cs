@@ -3,7 +3,7 @@ using System.Text;
 
 namespace SomeEngine.Graphics.Benchmarks;
 
-internal static class BenchmarkOutput
+public static class BenchmarkOutput
 {
     internal static string FixedHash(GraphicsWorkload workload, string shaderManifestSha256)
     {
@@ -12,7 +12,7 @@ internal static class BenchmarkOutput
         return Convert.ToHexString(SHA256.HashData(bytes));
     }
 
-    internal static WorkloadRun Complete(
+    public static WorkloadRun Complete(
         GraphicsWorkload workload,
         BenchmarkProfile profile,
         int warmupFrames,

@@ -1,11 +1,12 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using Xunit;
 using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class ClusteredLightingTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class ClusteredLightingTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(0, false)]
@@ -63,7 +64,7 @@ public sealed class ClusteredLightingTests
         }
 
         uint[][] Dispatch(string entry, DispatchArguments dispatch, uint[] counts, uint[] output) =>
-            Execute("clustered_light_grid.slang", entry, dispatch,
+            new D3D12TestCompute(shaderCompiler).Execute("clustered_light_grid.slang", entry, dispatch,
             [
                 (parameters, ResourceBindingType.BufferSrv, 192), (lights, ResourceBindingType.BufferSrv, 144),
                 (counts, ResourceBindingType.BufferUav, 8), (output, ResourceBindingType.BufferUav, 4),

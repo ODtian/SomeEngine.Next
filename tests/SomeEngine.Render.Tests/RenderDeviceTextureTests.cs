@@ -188,7 +188,7 @@ public sealed class RenderDeviceTextureTests
     }
 
     [Fact]
-    public async Task BlockCompressedBootstrapUsesItsNativeCopyFootprint()
+    public async Task BlockCompressedBootstrapUsesItsNativeCopyFootprint_DoesNotThrow()
     {
         if (!OperatingSystem.IsWindows())
             return;

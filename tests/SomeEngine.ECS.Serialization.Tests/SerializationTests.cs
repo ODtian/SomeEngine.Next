@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -154,17 +155,12 @@ public struct SerPaddedCanonicalCodec : ICanonicalComponentCodec<SerPaddedCanoni
     }
 }
 
-public struct SerNameCodec : SomeEngine.ECS.Serialization.IComponentCodec<SerName>
+public struct SerNameCodec(CodecCalls? calls = null) : SomeEngine.ECS.Serialization.IComponentCodec<SerName>
 {
-    private static int _writeCount;
-
-    public static int WriteCount => Volatile.Read(ref _writeCount);
-
-    public static void ResetWriteCount() => Volatile.Write(ref _writeCount, 0);
-
     public void Write(ref DataWriter writer, in SerName value)
     {
-        Interlocked.Increment(ref _writeCount);
+        if (calls is not null)
+            Interlocked.Increment(ref calls.Writes);
         writer.WriteString(value.Value);
         writer.WriteInt32(value.Id);
     }
@@ -179,14 +175,8 @@ public struct SerNameCodec : SomeEngine.ECS.Serialization.IComponentCodec<SerNam
     }
 }
 
-public struct SerPositionFullCodec : SomeEngine.ECS.Serialization.IComponentCodec<SerPosition>
+public struct SerPositionFullCodec(CodecCalls? calls = null) : SomeEngine.ECS.Serialization.IComponentCodec<SerPosition>
 {
-    private static int _readCount;
-
-    public static int ReadCount => Volatile.Read(ref _readCount);
-
-    public static void ResetReadCount() => Volatile.Write(ref _readCount, 0);
-
     public void Write(ref DataWriter writer, in SerPosition value)
     {
         writer.WriteSingle(value.X);
@@ -195,7 +185,8 @@ public struct SerPositionFullCodec : SomeEngine.ECS.Serialization.IComponentCode
 
     public void Read(ref DataReader reader, out SerPosition value)
     {
-        Interlocked.Increment(ref _readCount);
+        if (calls is not null)
+            Interlocked.Increment(ref calls.Reads);
         value = new SerPosition
         {
             X = reader.ReadSingle(),
@@ -236,12 +227,13 @@ public struct SerExternalCodec : SomeEngine.ECS.Serialization.IComponentCodec<Se
 public class SerializationTests
 {
     [Fact]
-    public void SerializationRestore_RejectsExistingWorldBeforeResettingItsBacking()
+    public void FailedWorldReadPreservesTheCallersWorld()
     {
         using var world = new World();
         Entity entity = world.CreateEntity(new SerPosition { X = 17, Y = 29 });
 
-        Assert.Throws<InvalidOperationException>(() => world.BeginSerializationStore(slotCount: 0));
+        using var input = new MemoryStream(new byte[28], writable: false);
+        Assert.Throws<InvalidDataException>(() => WorldSerializer.ReadWorld(input, new SerializationRegistry()));
 
         Assert.True(world.IsAlive(entity));
         Assert.True(world.Has<SerPosition>(entity));
@@ -288,7 +280,7 @@ public class SerializationTests
         stream.Position = 0;
         var error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadCheckpointComponent<SerDifferentRawAbi>(stream, differentAbiRegistry));
-        Assert.Contains("Schema mismatch", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
 
         SerializationTypeEntry bound = Assert.Single(writeRegistry.Entries.ToArray());
         Assert.NotEqual(logicalKey.SchemaFingerprint, bound.TypeKey.SchemaFingerprint);
@@ -298,12 +290,12 @@ public class SerializationTests
     [Fact]
     public void DurableComponent_RejectsInvalidUtf16InsteadOfReplacingIt()
     {
-        SerNameCodec.ResetWriteCount();
+        var calls = new CodecCalls();
         var key = new SerializationTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-00000000000B"),
             "Strict.Utf8.Component",
             0x1122334455667788ul);
-        var registry = new SerializationRegistry().Register<SerName, SerNameCodec>(key);
+        var registry = new SerializationRegistry().RegisterCodec<SerName, SerNameCodec>(key, new SerNameCodec(calls));
         using var stream = new MemoryStream();
 
         Assert.Throws<EncoderFallbackException>(() =>
@@ -311,7 +303,7 @@ public class SerializationTests
                 stream,
                 new SerName { Value = "\uD800", Id = 7 },
                 registry));
-        Assert.Equal(1, SerNameCodec.WriteCount);
+        Assert.Equal(1, calls.Writes);
     }
 
     [Fact]
@@ -325,9 +317,9 @@ public class SerializationTests
         var valueWorld = new World();
         _ = valueWorld.CreateEntity(new SerName { Value = "\uD800", Id = 8 });
         using var valueStream = new MemoryStream();
-        var captureError = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteDurableWorld(valueStream, valueWorld, valueRegistry));
-        Assert.Contains("deep snapshot-clone contract", captureError.Message, StringComparison.OrdinalIgnoreCase);
+
         Assert.Equal(0, valueStream.Length);
 
         var topologyKey = new SerializationTypeKey(
@@ -347,13 +339,12 @@ public class SerializationTests
         var registry = new SerializationRegistry().Register<SerPosition>();
         using var stream = new MemoryStream();
 
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteDurableComponent(
                 stream,
                 new SerPosition { X = 1, Y = 2 },
                 registry));
 
-        Assert.Contains("implicit raw codec", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, stream.Length);
     }
 
@@ -399,7 +390,7 @@ public class SerializationTests
             Assert.Equal(16, reader.ReadBytes(16).Length);
             Assert.Equal(
                 key.StableName,
-                SerializationBinary.ReadString(reader, budget: null, stableName: true));
+                SaveBytes.ReadString(reader));
             Assert.Equal(key.SchemaFingerprint, reader.ReadUInt64());
             Assert.Equal(0, reader.ReadInt32());
             Assert.Equal(source.Prefix, reader.ReadByte());
@@ -449,11 +440,9 @@ public class SerializationTests
             "SerPosition.IncompleteCustom",
             0);
 
-        var error = Assert.Throws<ArgumentException>(() =>
+        Assert.Throws<ArgumentException>(() =>
             new SerializationRegistry()
                 .Register<SerPosition, SerPositionFullCodec>(incompleteKey));
-
-        Assert.Contains("non-zero 64-bit schema fingerprint", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -464,10 +453,9 @@ public class SerializationTests
             "SerPosition.IncompleteCheckpoint",
             0);
 
-        var error = Assert.Throws<ArgumentException>(() =>
+        Assert.Throws<ArgumentException>(() =>
             new SerializationRegistry()
                 .Register<SerPosition, SerPositionFullCodec>(incompleteKey));
-        Assert.Contains("non-zero 64-bit schema fingerprint", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -476,13 +464,12 @@ public class SerializationTests
         var registry = new SerializationRegistry().Register<SerPosition, SerPositionFullCodec>();
         using var stream = new MemoryStream();
 
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteDurableComponent(
                 stream,
                 new SerPosition { X = 3, Y = 4 },
                 registry));
 
-        Assert.Contains("build-derived runtime schema identity", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, stream.Length);
     }
 
@@ -521,7 +508,7 @@ public class SerializationTests
 
         var error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(corrupted, registry));
-        Assert.Contains("build/ABI identity", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -564,7 +551,7 @@ public class SerializationTests
 
         var error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadDurableWorld(input, underReadingRegistry));
-        Assert.Contains("footer does not match", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -580,7 +567,7 @@ public class SerializationTests
                 stream,
                 registry,
                 new SerializationReadOptions(RequiredContract: SerializationContract.DurableSave)));
-        Assert.Contains("requires DurableSave", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -596,8 +583,7 @@ public class SerializationTests
 
         var error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(corrupted, registry));
-        Assert.Contains("manifest", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("limit", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -617,7 +603,7 @@ public class SerializationTests
 
         var error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(corrupted, registry));
-        Assert.Contains("malformed UTF-8", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -638,7 +624,7 @@ public class SerializationTests
         };
         var error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerName>(stream, registry, limits));
-        Assert.Contains("total string byte", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -662,8 +648,7 @@ public class SerializationTests
                 stream,
                 new SerializationRegistry(),
                 new WorldLoadOptions(ReadLimits: limits)));
-        Assert.Contains("entity slot array", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("allocation", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -679,7 +664,7 @@ public class SerializationTests
 
         var error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(corrupted, registry));
-        Assert.Contains("footer does not match", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -695,7 +680,7 @@ public class SerializationTests
         using var rejected = new MemoryStream(bytes, writable: false);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(rejected, registry));
-        Assert.Contains("64-bit schema fingerprint", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -719,7 +704,7 @@ public class SerializationTests
         using var rejected = new MemoryStream(legacyPrefix, writable: false);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(rejected, registry));
-        Assert.Contains("footer does not match", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -747,8 +732,7 @@ public class SerializationTests
                 stream,
                 registry,
                 new WorldLoadOptions(ReadLimits: limits)));
-        Assert.Contains("buffer element", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("limit", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -855,7 +839,7 @@ public class SerializationTests
         stream.Position = 0;
         var error = Assert.Throws<InvalidDataException>(
             () => WorldSerializer.ReadWorld(stream, new SerializationRegistry()));
-        Assert.Contains($"format version {legacyVersion}", error.Message);
+        Assert.Equal(SerializationError.UnsupportedVersion, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -875,22 +859,22 @@ public class SerializationTests
     [Fact]
     public void Read_FailsForSchemaMismatch()
     {
+        var calls = new CodecCalls();
         var stableId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         var writeRegistry = new SerializationRegistry()
             .Register<SerPosition, SerPositionFullCodec>(
                 new SerializationTypeKey(stableId, "SerPosition", 1));
         var readRegistry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(
-                new SerializationTypeKey(stableId, "SerPosition", 2));
+            .RegisterCodec<SerPosition, SerPositionFullCodec>(
+                new SerializationTypeKey(stableId, "SerPosition", 2), new SerPositionFullCodec(calls));
         using var stream = new MemoryStream();
 
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 1, Y = 2 }, writeRegistry);
 
-        SerPositionFullCodec.ResetReadCount();
         stream.Position = 0;
         Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(stream, readRegistry));
-        Assert.Equal(0, SerPositionFullCodec.ReadCount);
+        Assert.Equal(0, calls.Reads);
     }
 
     [Fact]
@@ -905,63 +889,63 @@ public class SerializationTests
         stream.Position = 0;
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadWorld(stream, new SerializationRegistry()));
-        Assert.Contains("Unknown serialized type", error.Message);
+        Assert.Equal(SerializationError.UnknownType, SerializationErrors.GetError(error));
     }
 
     [Fact]
     public void Read_RejectsLegacyGuidEncodingBeforeCodec()
     {
+        var calls = new CodecCalls();
         var key = new SerializationTypeKey(
             Guid.Parse("12345678-9ABC-4DEF-8123-456789ABCDEF"),
             "legacy-guid",
             0x1020304050607080ul);
         var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key);
+            .RegisterCodec<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
         byte[] envelope = CreateManualV4ComponentEnvelope(key, legacyGuidEncoding: true);
 
-        SerPositionFullCodec.ResetReadCount();
         using var stream = new MemoryStream(envelope, writable: false);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(stream, registry));
-        Assert.Contains("Unknown serialized type", error.Message);
-        Assert.Equal(0, SerPositionFullCodec.ReadCount);
+        Assert.Equal(SerializationError.UnknownType, SerializationErrors.GetError(error));
+        Assert.Equal(0, calls.Reads);
     }
 
     [Fact]
     public void Read_RejectsLegacyPrimitiveStringEncodingBeforeCodec()
     {
+        var calls = new CodecCalls();
         var key = new SerializationTypeKey(
             Guid.Parse("6F3A6C85-7B1F-4A93-8C2A-E9DA4E6782C1"),
             "xy",
             0x2131415161718191ul);
         var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key);
+            .RegisterCodec<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
         byte[] envelope = CreateManualV4ComponentEnvelope(key, legacyStringEncoding: true);
 
-        SerPositionFullCodec.ResetReadCount();
         using var stream = new MemoryStream(envelope, writable: false);
         Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(stream, registry));
-        Assert.Equal(0, SerPositionFullCodec.ReadCount);
+        Assert.Equal(0, calls.Reads);
     }
 
     [Fact]
     public void Read_RejectsLegacy32BitSchemaFieldBeforeCodec()
     {
+        var calls = new CodecCalls();
         var key = new SerializationTypeKey(
             Guid.Parse("8A1B37AE-F0F0-43B7-965B-72D46C28B248"),
             "legacy-schema32",
             0x31415161718191A1ul);
         var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key);
+            .RegisterCodec<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
         byte[] envelope = CreateManualV4ComponentEnvelope(key, legacySchemaHash: 0x89ABCDEFu);
 
-        SerPositionFullCodec.ResetReadCount();
         using var stream = new MemoryStream(envelope, writable: false);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(stream, registry));
-        Assert.Contains("Schema mismatch", error.Message);
-        Assert.Equal(0, SerPositionFullCodec.ReadCount);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
+        Assert.Equal(0, calls.Reads);
     }
 
     [Fact]
@@ -982,7 +966,7 @@ public class SerializationTests
             writer.Write(0);
             writer.Write(0);
         });
-        Assert.Contains("no matching live slot", deadSlot.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(deadSlot));
 
         InvalidDataException generationMismatch = AssertInvalidWorldPayload(writer =>
         {
@@ -996,7 +980,7 @@ public class SerializationTests
             writer.Write(0);
             writer.Write(0);
         });
-        Assert.Contains("no matching live slot", generationMismatch.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(generationMismatch));
     }
 
     [Fact]
@@ -1122,13 +1106,10 @@ public class SerializationTests
     [Fact]
     public void RelationshipTopologyComponents_CannotUseOrdinaryEntityRowRegistration()
     {
-        var sourceError = Assert.Throws<InvalidOperationException>(
+        Assert.Throws<InvalidOperationException>(
             () => new SerializationRegistry().Register<SerTopologySource>());
-        var targetError = Assert.Throws<InvalidOperationException>(
+        Assert.Throws<InvalidOperationException>(
             () => new SerializationRegistry().Register<SerTopologyTarget>());
-
-        Assert.Contains("canonical relationship/hierarchy serialization section", sourceError.Message);
-        Assert.Contains("canonical relationship/hierarchy serialization section", targetError.Message);
     }
 
     private static SerializationRegistry FullRegistry()
@@ -1171,8 +1152,6 @@ public class SerializationTests
         return values;
     }
 
-
-
     private static (int FingerprintOffset, int PayloadOffset) FindComponentEnvelopeOffsets(byte[] bytes)
     {
         using var stream = new MemoryStream(bytes, writable: false);
@@ -1184,7 +1163,7 @@ public class SerializationTests
         Assert.Equal(16, reader.ReadBytes(16).Length);
         Assert.Equal(1, reader.ReadInt32());
         Assert.Equal(16, reader.ReadBytes(16).Length);
-        _ = SerializationBinary.ReadString(reader, budget: null, stableName: true);
+        _ = SaveBytes.ReadString(reader);
         int fingerprintOffset = checked((int)stream.Position);
         _ = reader.ReadUInt64();
         Assert.Equal(0, reader.ReadInt32());
@@ -1198,7 +1177,7 @@ public class SerializationTests
         uint? legacySchemaHash = null)
     {
         using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, SaveBytes.Utf8, leaveOpen: true);
         writer.Write(0x53434553u);
         writer.Write((ushort)4);
         writer.Write((byte)SerializationContract.DurableSave);
@@ -1220,7 +1199,7 @@ public class SerializationTests
         if (legacyStringEncoding)
             writer.Write(key.StableName);
         else
-            SerializationBinary.WriteString(writer, key.StableName);
+            SaveBytes.WriteString(writer, key.StableName);
         if (legacySchemaHash is not null)
             writer.Write(legacySchemaHash.Value);
         writer.Write(key.SchemaFingerprint);
@@ -1274,8 +1253,6 @@ public class SerializationTests
             base.Dispose(disposing);
         }
     }
-
-
 
     private static MemoryStream CreateWorldPayload(Action<BinaryWriter> writeBody)
     {

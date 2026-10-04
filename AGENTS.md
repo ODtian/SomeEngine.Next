@@ -13,7 +13,7 @@ Debug、优化时，先问是否是架构造成的，不要在错误的架构下
 临时运行、临时脚本、临时结果、临时探针，使用完成后立即删除，不要把临时内容保留在工作区内或者临时目录/
 
 # Testing
-测试范围仅覆盖行为与公共API，严禁针对内部具体实现进行测试
+测试按 [行为检查规则](wiki/harness/Behavior-Checks.md) 编写和评审；默认测试命令执行该页规定的自动检查。
 
 渲染性能优化必须使用 DefaultGame 的统一场景平台，同时测试 1024 小球、Sponza、Amazon Bistro。使用 tools/Measure-Scenes.ps1 执行一次不超过 60 秒的多场景反馈；内容构建另计。未收敛、失败、缺失场景的报告不能视为性能通过。对比必须保持分辨率、场景行为、渲染选项、JIT 配置和采样方式一致；带 trace 的定位结果与不带 trace 的性能结果分开记录。
 
@@ -23,3 +23,17 @@ Debug、优化时，先问是否是架构造成的，不要在错误的架构下
 
 
 RG 采用持久图，稳定拓扑和资源通过显式修改维护。按更新频率拆分：接近每帧刷新且重建更便宜的工作使用即时子图或当帧重建，不为这类工作强行维护增量拓扑，也不能因此每帧重建主体图。
+
+## Agent skills
+
+### Issue tracker
+
+需求规格与任务票使用 GitHub Issues：`ODtian/SomeEngine.Next`。执行相关技能前读取 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+任务角色与标签名称见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+领域文档采用根级 `GLOSSARY.md`、`docs/adr/` 与现有 Wiki。探索代码前读取 `docs/agents/domain.md`。当前行为以源码核对结果为准，已确认的需求和设计目标用于规划变更；Wiki/ADR 的引用范围按该文件中的筛选规则确定。

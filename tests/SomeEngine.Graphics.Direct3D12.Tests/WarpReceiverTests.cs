@@ -5,7 +5,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpReceiverTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Warp_copy_round_trips_upload_and_readback_memory()
@@ -528,7 +529,7 @@ public sealed class WarpReceiverTests
             new("vertexMain", SlangStage.Vertex),
             new("pixelMain", SlangStage.Fragment),
         ];
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_state_shadow_content_identity",
             source,
             entries);
@@ -675,7 +676,7 @@ public sealed class WarpReceiverTests
                 if (tint.x == id.x) { }
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_transient_constant_buffer_16",
             source,
             [new("computeMain", SlangStage.Compute)]);

@@ -29,11 +29,11 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\templates\DefaultProject\assets\Shaders\hello_triangle.shader.asset">
+    <Content Include="..\..\assets\Shaders\hello_triangle.shader.asset">
       <Link>Content\Shaders\hello_triangle.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\templates\DefaultProject\assets\Shaders\vsm_frame_reset.shader.asset">
+    <Content Include="..\..\assets\Shaders\vsm_frame_reset.shader.asset">
       <Link>Content\Shaders\vsm_frame_reset.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

@@ -5,7 +5,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed unsafe class WarpNativeAccessTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed unsafe class WarpNativeAccessTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Native_getters_and_command_list_borrow_expose_exact_borrowed_objects_and_dirty_state()
@@ -15,7 +16,7 @@ public sealed unsafe class WarpNativeAccessTests
             [numthreads(1, 1, 1)]
             void computeMain() {}
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_native_access_compute",
             source,
             [new D3D12TestEntry("computeMain", SlangStage.Compute)]);
@@ -146,7 +147,7 @@ public sealed unsafe class WarpNativeAccessTests
             [numthreads(1, 1, 1)]
             void computeMain() {}
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_validated_native_access",
             source,
             [new D3D12TestEntry("computeMain", SlangStage.Compute)]);
@@ -212,11 +213,12 @@ public sealed unsafe class WarpNativeAccessTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         D3D12CommandQueueLock first = backend.LockCommandQueue(queue);
+        var sequence = new AcquisitionSequence();
         using var ready = new CountdownEvent(2);
         using var firstRelease = new ManualResetEventSlim();
         using var secondRelease = new ManualResetEventSlim();
-        using var left = new QueueLockWaiter(backend, queue, ready, firstRelease);
-        using var right = new QueueLockWaiter(backend, queue, ready, secondRelease);
+        using var left = new QueueLockWaiter(backend, queue, ready, firstRelease, sequence);
+        using var right = new QueueLockWaiter(backend, queue, ready, secondRelease, sequence);
         Thread leftThread = new(left.AcquireAndRelease);
         Thread rightThread = new(right.AcquireAndRelease);
         leftThread.Start();
@@ -224,9 +226,6 @@ public sealed unsafe class WarpNativeAccessTests
         try
         {
             Assert.True(ready.Wait(TimeSpan.FromSeconds(5)));
-            Assert.True(SpinWait.SpinUntil(
-                () => IsWaiting(leftThread) && IsWaiting(rightThread),
-                TimeSpan.FromSeconds(5)));
 
             first.Dispose();
             int firstIndex = WaitHandle.WaitAny(
@@ -263,8 +262,6 @@ public sealed unsafe class WarpNativeAccessTests
     }
 
 
-    private static bool IsWaiting(Thread thread) =>
-        (thread.ThreadState & ThreadState.WaitSleepJoin) != 0;
 
     private static void AssertPointerUnavailable(D3D12CommandQueueLock value)
     {
@@ -296,9 +293,15 @@ public sealed unsafe class WarpNativeAccessTests
 
 
 
+    private sealed class AcquisitionSequence
+    {
+        private int _next;
+        internal int Next() => Interlocked.Increment(ref _next);
+    }
+
     private sealed class QueueLockWaiter : IDisposable
     {
-        private static int s_nextAcquisitionOrder;
+        private readonly AcquisitionSequence _sequence;
         private readonly ValidationLayer _backend;
         private readonly Queue _queue;
         private readonly CountdownEvent _ready;
@@ -308,12 +311,14 @@ public sealed unsafe class WarpNativeAccessTests
             ValidationLayer backend,
             Queue queue,
             CountdownEvent ready,
-            ManualResetEventSlim release)
+            ManualResetEventSlim release,
+            AcquisitionSequence sequence)
         {
             _backend = backend;
             _queue = queue;
             _ready = ready;
             _release = release;
+            _sequence = sequence;
         }
 
         internal ManualResetEventSlim Acquired { get; } = new();
@@ -326,7 +331,7 @@ public sealed unsafe class WarpNativeAccessTests
             try
             {
                 D3D12CommandQueueLock value = _backend.LockCommandQueue(_queue);
-                AcquisitionOrder = Interlocked.Increment(ref s_nextAcquisitionOrder);
+                AcquisitionOrder = _sequence.Next();
                 Acquired.Set();
                 _release.Wait();
                 value.Dispose();

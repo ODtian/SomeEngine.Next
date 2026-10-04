@@ -13,13 +13,19 @@ public sealed class TraceCaptureTests : IDisposable
     public void Dispose() => File.Delete(_path);
 
     [Fact]
-    public void DisabledScopesDoNotAllocateOrEstablishContext()
+    public void DisabledScopesLeaveContextEmpty()
+    {
+        using (EngineTrace.Begin(Work)) { }
+        Assert.Equal(default, EngineTrace.Context);
+    }
+
+    [Fact, Trait("Category", "Performance")]
+    public void DisabledScopesDoNotAllocate()
     {
         using (EngineTrace.Begin(Work)) { }
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1000; i++) using (EngineTrace.Begin(Work)) { }
         Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
-        Assert.Equal(default, EngineTrace.Context);
     }
 
     [Fact]
@@ -77,7 +83,7 @@ public sealed class TraceCaptureTests : IDisposable
         Assert.Equal(0, data.Misuse);
     }
 
-    [Fact]
+    [Fact, Trait("Category", "Performance")]
     public void EnabledScopesDoNotAllocateInsideAnExistingBlock()
     {
         long bytes;

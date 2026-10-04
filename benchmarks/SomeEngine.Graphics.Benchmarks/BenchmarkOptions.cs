@@ -2,15 +2,15 @@ using System.Globalization;
 
 namespace SomeEngine.Graphics.Benchmarks;
 
-internal sealed class BenchmarkUsageException(string message) : Exception(message);
+public sealed class BenchmarkUsageException(string message) : Exception(message);
 
-internal enum GraphicsBackendKind : byte
+public enum GraphicsBackendKind : byte
 {
     Direct3D12,
     Vulkan,
 }
 
-internal sealed record BenchmarkOptions(
+public sealed record BenchmarkOptions(
     BenchmarkCommand Command,
     BenchmarkProfile Profile,
     string OutputPath,
@@ -45,7 +45,7 @@ internal sealed record BenchmarkOptions(
           SomeEngine.Graphics.Benchmarks worker --profile <warp|probe|diagnose|representative> --variant <interface-receiver|direct-silk|direct-silk-default> --adapter <low>:<high> --process-index <n> --shader-dir <path> --output <path> [--direct-mode <optimized|default>] [internal count options]
         """;
 
-    internal static BenchmarkOptions Parse(string[] args)
+    public static BenchmarkOptions Parse(string[] args)
     {
         BenchmarkCommand command = ParseCommand(args.Length == 0 ? "warp" : args[0]);
         int start = args.Length == 0 ? 0 : 1;

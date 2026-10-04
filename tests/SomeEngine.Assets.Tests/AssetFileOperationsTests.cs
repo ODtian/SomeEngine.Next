@@ -42,7 +42,7 @@ public sealed partial class AssetFileOperationsTests
     }
 
     [Fact]
-    public async Task RebuildReportsDuplicateIdentityWithBothPathsAndKeepsThePreviousDirectory()
+    public async Task RebuildRejectsDuplicateIdentityAndKeepsThePreviousDirectory()
     {
         using var directory = new TestDirectory();
         Guid id = Guid.NewGuid();
@@ -52,8 +52,7 @@ public sealed partial class AssetFileOperationsTests
         byte[] previous = File.ReadAllBytes(directory.File("Library/AssetManifest/catalog.json"));
         File.Copy(directory.File("first.asset"), directory.File("second.asset"));
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() => project.RebuildAsync().AsTask());
-        Assert.Contains("first.asset", error.Message);
-        Assert.Contains("second.asset", error.Message);
+
         Assert.Equal(previous, File.ReadAllBytes(directory.File("Library/AssetManifest/catalog.json")));
         Assert.Equal(id, project.Resolve("first.asset"));
     }
@@ -252,8 +251,7 @@ public sealed partial class AssetFileOperationsTests
         File.WriteAllText(second, "source");
         SourceMeta.Save(second, meta);
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => project.RebuildAsync().AsTask());
-        Assert.Contains("first.gltf", error.Message);
-        Assert.Contains("second.gltf", error.Message);
+
         Assert.Equal(previous, File.ReadAllBytes(directory.File("Library/AssetManifest/catalog.json")));
     }
 

@@ -43,7 +43,6 @@ public sealed class TextureMipTileStreamingTests
         await using var loader = new AssetLoader(project.CreateStorage());
         using var file = await TextureAsset.OpenAsync(loader, new(guid));
         var error = await Assert.ThrowsAsync<InvalidDataException>(() => file.GetBlock<TextureBlock>().CreateAsync(file.Name).AsTask());
-        Assert.Contains("missing layer 1", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

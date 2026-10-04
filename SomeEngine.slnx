@@ -59,17 +59,32 @@
   <Project Path="templates/DefaultProject/Game.Importing/Game.Importing.csproj" />
   <Project Path="templates/DefaultProject/Game.App/Game.App.csproj" />
   <Project Path="benchmarks\SomeEngine.Graphics.Benchmarks\SomeEngine.Graphics.Benchmarks.csproj" />
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/SomeEngine.RenderGraph.Benchmarks/SomeEngine.RenderGraph.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/samples/" />
+  <Folder Name="/samples/ImportedScenes/" />
+  <Folder Name="/samples/ImportedScenes/Materials/">
+    <Project Path="samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
+  </Folder>
   <Folder Name="/src/" />
   <Folder Name="/templates/" />
   <Folder Name="/templates/DefaultProject/">
     <Project Path="templates/DefaultProject/Game.Build/Game.Build.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj" />
     <Project Path="tests/SomeEngine.Assets.Consumer.Tests/SomeEngine.Assets.Consumer.Tests.csproj" />
+    <Project Path="tests/SomeEngine.ECS.Benchmarks.Tests/SomeEngine.ECS.Benchmarks.Tests.csproj" />
+    <Project Path="tests/SomeEngine.Graphics.Benchmarks.Tests/SomeEngine.Graphics.Benchmarks.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/TestRules/SomeEngine.TestRules.csproj" />
     <Project Path="tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj" />
+    <Project Path="tools/SomeEngine.Job.Benchmarks/SomeEngine.Job.Benchmarks.csproj" />
+    <Project Path="tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />
     <Project Path="tools/SomeEngine.RenderScenarios/SomeEngine.RenderScenarios.csproj" />
+    <Project Path="tools/RhiTypeGraph/RhiTypeGraph.csproj" />
     <Project Path="tools/SomeEngine.Assets.Benchmarks/SomeEngine.Assets.Benchmarks.csproj" />
   </Folder>
   <Project Path="benchmarks\SomeEngine.ECS.Benchmarks\SomeEngine.ECS.Benchmarks.csproj" />

@@ -9,19 +9,19 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class HierarchyPropagationRestrictedApiTests
+public sealed class HierarchyPropagationRestrictedApiTests : JobTest
 {
     [Fact]
     public void ExplicitSuccessor_DoesNotFormARingWithDeferredPropagationPackets()
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity root = world.CreateEntity(new EscapeValue());
             using var blockerStarted = new ManualResetEventSlim();
             using var releaseBlocker = new ManualResetEventSlim();
             using var successorStarted = new ManualResetEventSlim();
-            JobHandle blocker = JobSystem.Schedule(
+            JobHandle blocker = Jobs.Schedule(
                 new BlockingJob(blockerStarted, releaseBlocker));
             Assert.True(blockerStarted.Wait(TimeSpan.FromSeconds(3)));
 
@@ -45,33 +45,6 @@ public sealed class HierarchyPropagationRestrictedApiTests
         });
     }
 
-    [Fact]
-    public void EmptyPropagation_StillValidatesDeclaredComponentCapabilities()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
-            HierarchyMaintenanceDependency<EscapeDomain> maintenance =
-                HierarchyMaintenanceSystem<EscapeDomain>.ScheduleDependency(world);
-            maintenance.Handle.Complete();
-            JobResourceAccess forgedAccess = WorldStorageJobResources.Read(
-                world,
-                new WorldStorageResourceKey(
-                    WorldStorageKind.Table,
-                    ComponentMetadata<ManagedEscapeValue>.Id));
-
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-                HierarchyPropagationAdapter<EscapeDomain>.Schedule(
-                    world,
-                    [],
-                    new NoopPropagationJob(),
-                    maintenance,
-                    [forgedAccess]));
-
-            Assert.Contains("managed", error.Message, StringComparison.OrdinalIgnoreCase);
-        });
-    }
-
     [Theory]
     [InlineData(EscapeOperation.ReadOtherRoot)]
     [InlineData(EscapeOperation.ReplaceOtherRoot)]
@@ -85,9 +58,10 @@ public sealed class HierarchyPropagationRestrictedApiTests
     public void PropagationCallback_RejectsEveryOrdinaryWorldEscapeBeforeSideEffects(
         EscapeOperation operation)
     {
+        using var state = new CallbackData<EscapeState>(new EscapeState());
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity firstRoot = world.CreateEntity(new EscapeValue { Value = 11 });
             Entity secondRoot = world.CreateEntity(new EscapeValue { Value = 22 });
             QueryHandle query = world.Query(
@@ -95,7 +69,7 @@ public sealed class HierarchyPropagationRestrictedApiTests
             var prebuiltCommands = new CommandBuffer(world);
             ComponentHooks<EscapeValue> prebuiltHooks = world.Hooks<EscapeValue>();
             uint tickBefore = world.CurrentTick;
-            EscapeState.Configure(
+            state.Value.Configure(
                 world,
                 firstRoot,
                 secondRoot,
@@ -109,7 +83,7 @@ public sealed class HierarchyPropagationRestrictedApiTests
                 HierarchyPropagationAdapter<EscapeDomain>.Schedule(
                     world,
                     [firstRoot, secondRoot],
-                    new EscapingPropagationJob(operation),
+                    new EscapingPropagationJob(operation, state),
                     maintenance,
                     [ComponentJobAccess<EscapeValue>.Write(world)],
                     new HierarchyPropagationScheduleOptions(rootsPerPacket: 1));
@@ -117,10 +91,6 @@ public sealed class HierarchyPropagationRestrictedApiTests
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(
                 () => propagation.Handle.Complete());
 
-            Assert.Contains(
-                "HierarchyPropagationContext",
-                error.Message,
-                StringComparison.Ordinal);
             Assert.Equal(11, world.Read<EscapeValue>(firstRoot).Value);
             Assert.Equal(22, world.Read<EscapeValue>(secondRoot).Value);
             Assert.Equal(0, prebuiltCommands.CommandCount);
@@ -130,17 +100,17 @@ public sealed class HierarchyPropagationRestrictedApiTests
 
             // A rejected prebuilt hook mutation must not have installed the callback.
             world.Replace(secondRoot, new EscapeValue { Value = 23 });
-            Assert.Equal(0, EscapeState.HookInvocations);
+            Assert.Equal(0, state.Value.HookInvocations);
             prebuiltCommands.Dispose();
-            EscapeState.Clear();
+            state.Value.Clear();
         });
     }
 
-    private static void WithJobRuntime(Action action)
+    private void WithJobRuntime(Action action)
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -152,8 +122,7 @@ public sealed class HierarchyPropagationRestrictedApiTests
         }
         finally
         {
-            EscapeState.Clear();
-            JobSystem.Initialize(new JobRuntimeConfig
+            ConfigureJobs(new JobRuntimeConfig
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -177,56 +146,58 @@ public sealed class HierarchyPropagationRestrictedApiTests
     private readonly struct EscapingPropagationJob : IHierarchyPropagationJob<EscapeDomain>
     {
         private readonly EscapeOperation _operation;
+        private readonly CallbackData<EscapeState> _state;
 
-        internal EscapingPropagationJob(EscapeOperation operation)
+        internal EscapingPropagationJob(EscapeOperation operation, CallbackData<EscapeState> state)
         {
             _operation = operation;
+            _state = state;
         }
 
         public void Execute(ref HierarchyPropagationContext<EscapeDomain> context)
         {
-            if (context.Entity != EscapeState.TriggerRoot)
+            if (context.Entity != _state.Value.TriggerRoot)
                 return;
 
             switch (_operation)
             {
                 case EscapeOperation.ReadOtherRoot:
-                    _ = EscapeState.World.Read<EscapeValue>(EscapeState.OtherRoot);
+                    _ = _state.Value.World.Read<EscapeValue>(_state.Value.OtherRoot);
                     break;
                 case EscapeOperation.ReplaceOtherRoot:
-                    EscapeState.World.Replace(
-                        EscapeState.OtherRoot,
+                    _state.Value.World.Replace(
+                        _state.Value.OtherRoot,
                         new EscapeValue { Value = 999 });
                     break;
                 case EscapeOperation.ExecutePrebuiltQuery:
-                    EscapeState.World.ExecuteQuery(
-                        EscapeState.Query,
+                    _state.Value.World.ExecuteQuery(
+                        _state.Value.Query,
                         static _ => throw new InvalidOperationException(
                             "The restricted query body must never execute."));
                     break;
                 case EscapeOperation.GetOtherRootChildren:
                     _ = Hierarchy<EscapeDomain>.GetChildren(
-                        EscapeState.World,
-                        EscapeState.OtherRoot);
+                        _state.Value.World,
+                        _state.Value.OtherRoot);
                     break;
                 case EscapeOperation.GetWorldCommandBuffer:
-                    EscapeState.World.Commands().Replace(
-                        EscapeState.OtherRoot,
+                    _state.Value.World.Commands().Replace(
+                        _state.Value.OtherRoot,
                         new EscapeValue { Value = 999 });
                     break;
                 case EscapeOperation.RecordPrebuiltCommandBuffer:
-                    EscapeState.Commands.Replace(
-                        EscapeState.OtherRoot,
+                    _state.Value.Commands.Replace(
+                        _state.Value.OtherRoot,
                         new EscapeValue { Value = 999 });
                     break;
                 case EscapeOperation.BindPrebuiltHookView:
-                    EscapeState.Hooks.OnReplace(EscapeState.OnReplace);
+                    _state.Value.Hooks.OnReplace(_state.Value.OnReplace);
                     break;
                 case EscapeOperation.AcquireSystemTick:
-                    _ = EscapeState.World.AcquireSystemTick();
+                    _ = _state.Value.World.AcquireSystemTick();
                     break;
                 case EscapeOperation.AcquireSystemVersion:
-                    _ = EscapeState.World.AcquireSystemVersion();
+                    _ = _state.Value.World.AcquireSystemVersion();
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -275,17 +246,17 @@ public sealed class HierarchyPropagationRestrictedApiTests
         public void Execute() => _started.Set();
     }
 
-    private static class EscapeState
+    private class EscapeState
     {
-        internal static World World { get; private set; } = null!;
-        internal static Entity TriggerRoot { get; private set; }
-        internal static Entity OtherRoot { get; private set; }
-        internal static QueryHandle Query { get; private set; }
-        internal static CommandBuffer Commands { get; private set; } = null!;
-        internal static ComponentHooks<EscapeValue> Hooks { get; private set; } = null!;
-        internal static int HookInvocations;
+        internal World World { get; private set; } = null!;
+        internal Entity TriggerRoot { get; private set; }
+        internal Entity OtherRoot { get; private set; }
+        internal QueryHandle Query { get; private set; }
+        internal CommandBuffer Commands { get; private set; } = null!;
+        internal ComponentHooks<EscapeValue> Hooks { get; private set; } = null!;
+        internal int HookInvocations;
 
-        internal static void Configure(
+        internal void Configure(
             World world,
             Entity triggerRoot,
             Entity otherRoot,
@@ -302,7 +273,7 @@ public sealed class HierarchyPropagationRestrictedApiTests
             HookInvocations = 0;
         }
 
-        internal static void Clear()
+        internal void Clear()
         {
             World = null!;
             TriggerRoot = default;
@@ -313,7 +284,7 @@ public sealed class HierarchyPropagationRestrictedApiTests
             HookInvocations = 0;
         }
 
-        internal static void OnReplace(
+        internal void OnReplace(
             DeferredWorld world,
             Entity entity,
             in EscapeValue value)

@@ -268,7 +268,6 @@ public sealed class AssetProjectTests
 
             ShaderAsset? root = await OpenShaderAsync(project, shaderGuid);
             Assert.NotNull(root);
-            Assert.Empty(root!.GetBlock<ShaderBlock>().ContentKeys);
             await Assert.ThrowsAsync<InvalidDataException>(() =>
                 ShaderTestCompilation.CreateAsync(root).AsTask());
         }

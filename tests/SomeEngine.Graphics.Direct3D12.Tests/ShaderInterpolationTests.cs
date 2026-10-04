@@ -4,7 +4,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class ShaderInterpolationTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class ShaderInterpolationTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(1.0f, false, false)]
@@ -21,7 +22,7 @@ public sealed class ShaderInterpolationTests
             new(768, 768 + thickness * 512, reverseWinding ? 1 : 0, 0),
         ];
         uint[] input = MemoryMarshal.Cast<Vector4, uint>(vertices).ToArray();
-        uint[] result = Assert.Single(D3D12TestCompute.ExecuteSource("""
+        uint[] result = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "cluster_common.slang"
             StructuredBuffer<float4> Vertices;
             RWStructuredBuffer<float4> Color;

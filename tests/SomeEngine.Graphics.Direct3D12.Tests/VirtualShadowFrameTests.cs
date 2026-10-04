@@ -3,7 +3,8 @@ using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class VirtualShadowFrameTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class VirtualShadowFrameTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(257)]
@@ -23,7 +24,7 @@ public sealed class VirtualShadowFrameTests
             new("AllocationFailures", Enumerable.Repeat(0xdeadbeefu, 7).ToArray(), ResourceBindingType.BufferUav, 0),
             new("PolicyRasterWorkCount", Enumerable.Repeat(0xdeadbeefu, 33).ToArray(), ResourceBindingType.BufferUav, 0),
         };
-        uint[][] result = Execute("vsm_frame_reset.slang", "ResetVirtualShadowFrame",
+        uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_frame_reset.slang", "ResetVirtualShadowFrame",
             new DispatchArguments((uint)(gridWords + 255) / 256, 1, 1), inputs);
         for (int buffer = 0; buffer < result.Length; buffer++)
             for (int word = 0; word < result[buffer].Length; word++)

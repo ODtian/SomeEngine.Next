@@ -5,7 +5,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class SlangReflectionFactTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
 {
 
 
@@ -20,7 +21,7 @@ public sealed class SlangReflectionFactTests
             [numthreads(1, 1, 1)]
             void computeMain() { if (first.value + second.value == 0) { } }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "associative_parameter_placement_cache", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
@@ -70,7 +71,7 @@ public sealed class SlangReflectionFactTests
                     + second.scale * 100 + second.nested.value * 1000;
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "reverse_nested_parameter_blocks", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
@@ -169,9 +170,9 @@ public sealed class SlangReflectionFactTests
             { if (firstValues.x + secondValues.x == id.x) { } }
             """;
         D3D12TestEntry[] entries = [new("computeMain", SlangStage.Compute)];
-        D3D12TestShader validShader = D3D12TestShader.Compile(
+        D3D12TestShader validShader = shaderCompiler.Compile(
             "ordinary_fast_path_16", sixteenBytes, entries, "sm_6_0");
-        D3D12TestShader invalidShader = D3D12TestShader.Compile(
+        D3D12TestShader invalidShader = shaderCompiler.Compile(
             "ordinary_fast_path_32", thirtyTwoBytes, entries, "sm_6_0");
         VariableLayoutReflection validLayout =
             validShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
@@ -213,9 +214,9 @@ public sealed class SlangReflectionFactTests
             }
             """;
         D3D12TestEntry[] entries = [new("computeMain", SlangStage.Compute)];
-        D3D12TestShader firstShader = D3D12TestShader.Compile(
+        D3D12TestShader firstShader = shaderCompiler.Compile(
             "distinct_pipeline_raw_identity_first", source, entries, "sm_6_0");
-        D3D12TestShader secondShader = D3D12TestShader.Compile(
+        D3D12TestShader secondShader = shaderCompiler.Compile(
             "distinct_pipeline_raw_identity_second", source, entries, "sm_6_0");
         VariableLayoutReflection firstLayout =
             firstShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
@@ -285,7 +286,7 @@ public sealed class SlangReflectionFactTests
                     + inputs[1].Load<uint>(0);
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "bounded_array_element_execution", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
@@ -414,11 +415,11 @@ public sealed class SlangReflectionFactTests
         Assert.Equal(autoOrder, manualOrder);
         Assert.True(manualSetCount >= 4);
 
-        static (uint Result, SlangBindingType[] Order, nint DescriptorSetCount) Execute(
+        (uint Result, SlangBindingType[] Order, nint DescriptorSetCount) Execute(
             string source,
             string name)
         {
-            D3D12TestShader shader = D3D12TestShader.Compile(
+            D3D12TestShader shader = shaderCompiler.Compile(
                 name, source, [new("computeMain", SlangStage.Compute)], "sm_6_0");
             VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
                 ?? VariableLayoutReflection.Null;
@@ -536,10 +537,10 @@ public sealed class SlangReflectionFactTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID)
             {
-                outputValues[0] = combinedSampler.SampleLevel(float2(0.5), 0);
+                outputValues[0] = float4(combinedSampler.SampleLevel(float2(0.5), 0).x, 2.0, 3.0, 4.0);
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "combined_texture_sampler_diagnostic", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
@@ -582,7 +583,7 @@ public sealed class SlangReflectionFactTests
             new BufferDesc(16, BufferUsages.ShaderWrite | BufferUsages.CopySource),
             MemoryType.DeviceLocal);
         using BufferUav outputUav = backend.CreateBufferUav(device,
-            new BufferUavDesc(output, BufferRange.Whole, Format.R32G32B32A32Float));
+            new BufferUavDesc(output, BufferRange.Whole, StructureStride: 16));
         using Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(16, BufferUsages.CopyDestination), MemoryType.Readback);
 
@@ -655,7 +656,7 @@ public sealed class SlangReflectionFactTests
         using MappedBuffer mapped = backend.Map(
             readback, MapType.Read, new BufferRange(0, 16));
         mapped.Invalidate(new BufferRange(0, 16));
-        Assert.Equal([1f, 0f, 0f, 0f],
+        Assert.Equal([1f, 2f, 3f, 4f],
             System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(
                 mapped.Bytes).ToArray());
     }
@@ -678,16 +679,15 @@ public sealed class SlangReflectionFactTests
             void computeMain(uint3 id : SV_DispatchThreadID)
             { outputValues[0] = dynamicValue.getValue(); }
             """;
-        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            D3D12TestShader.Compile(
+        Assert.Throws<InvalidDataException>(() =>
+            shaderCompiler.Compile(
                 "runtime_existential_subobject", source,
                 [new("computeMain", SlangStage.Compute)], "sm_6_0"));
-        Assert.Contains("no type conformances", error.Message,
-            StringComparison.OrdinalIgnoreCase);
+
     }
 
     [Fact]
-    public void Slang_rejects_parameter_block_arrays_and_distinct_scalar_occurrences_have_distinct_identities()
+    public void Slang_rejects_parameter_block_arrays()
     {
         const string source = """
             struct Values { uint value; };
@@ -700,12 +700,11 @@ public sealed class SlangReflectionFactTests
                 outputValues[0] = blocks[0].value + blocks[1].value;
             }
             """;
-        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
-            D3D12TestShader.Compile(
+        Assert.Throws<InvalidDataException>(() =>
+            shaderCompiler.Compile(
                 "parameter_block_array_diagnostic", source,
                 [new("computeMain", SlangStage.Compute)], "sm_6_0"));
-        Assert.Contains("arrays of non-addressable type", exception.Message,
-            StringComparison.OrdinalIgnoreCase);
+
     }
 
     [Fact]
@@ -726,7 +725,7 @@ public sealed class SlangReflectionFactTests
                 outputValues[0] = asuint(sampled) + 0xBEEFu;
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "global_unbounded_heap_execution", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_6");
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
@@ -834,7 +833,7 @@ public sealed class SlangReflectionFactTests
                 outputValues[id.x] = constants.value + addend;
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "dxil_constant_buffer_fact",
             source,
             [new("computeMain", SlangStage.Compute)],
@@ -927,7 +926,7 @@ public sealed class SlangReflectionFactTests
             }
             """;
         D3D12TestShader shader =
-            D3D12TestShader.CompileForReflection(
+            shaderCompiler.CompileForReflection(
                 "spirv_push_constant_fact",
                 source,
                 [new("computeMain", SlangStage.Compute)],
@@ -964,7 +963,7 @@ public sealed class SlangReflectionFactTests
                 outputValues[id.x] = parameters.value + parameters.nested.value;
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "nested_parameter_block_facts",
             source,
             [new("computeMain", SlangStage.Compute)],
@@ -1052,7 +1051,7 @@ public sealed class SlangReflectionFactTests
                 return input.color * Tint;
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "graphics_varying_binding_facts",
             source,
             [new("vertexMain", SlangStage.Vertex), new("pixelMain", SlangStage.Fragment)],

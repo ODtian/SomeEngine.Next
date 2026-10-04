@@ -17,7 +17,7 @@ public sealed class GltfVertexInputTests
     [InlineData(4, true)]
     [InlineData(5, true)]
     [InlineData(6, true)]
-    public void ImportConvertsSourceLayoutsBeforeCallingTheMaterialEncoder(int topology, bool binary)
+    public async Task ImportConvertsSourceLayoutsBeforeCallingTheMaterialEncoder(int topology, bool binary)
     {
         string directory = Path.Combine(Path.GetTempPath(), "someengine-gltf-input-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -87,13 +87,20 @@ public sealed class GltfVertexInputTests
                 writer.Write(data);
             }
             else File.WriteAllText(path, json);
-            ModelRoot model = ModelRoot.Load(path);
-            var encoder = new ObservingEncoder();
-            using MeshAsset asset = ClusterBuilder.ProcessMesh(model.LogicalMeshes[0], [], "Mixed source layouts",
-                new ClusterBuilderOptions { VertexEncoder = encoder });
-            Assert.True(encoder.SawNormalizedUv);
-            Assert.True(encoder.SawSparseUv);
-            Assert.Equal(encoder.Compatibility, asset.GetBlock<ClusterMeshBlock>().VertexEncoding);
+            ObservingEncoder[] encoders = [new(), new()];
+            Task[] imports = encoders.Select(encoder => Task.Run(() =>
+            {
+                ModelRoot model = ModelRoot.Load(path);
+                using MeshAsset asset = ClusterBuilder.ProcessMesh(model.LogicalMeshes[0], [], "Mixed source layouts",
+                    new ClusterBuilderOptions { VertexEncoder = encoder });
+                Assert.Equal(encoder.Compatibility, asset.GetBlock<ClusterMeshBlock>().VertexEncoding);
+            })).ToArray();
+            await Task.WhenAll(imports).WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.All(encoders, encoder =>
+            {
+                Assert.True(encoder.SawNormalizedUv);
+                Assert.True(encoder.SawSparseUv);
+            });
         }
         finally { Directory.Delete(directory, recursive: true); }
     }
@@ -113,14 +120,21 @@ public sealed class GltfVertexInputTests
         {
             RawAttribute uv0 = attributes.Single(x => x.Name == "TEXCOORD_0");
             RawAttribute uv1 = attributes.Single(x => x.Name == "TEXCOORD_1");
-            if (uv0.Data.Contains(1f) && uv0.Data.All(x => x is >= 0 and <= 1)) Interlocked.Exchange(ref _normalizedUv, 1);
-            if (uv1.Data.Contains(.25f) && uv1.Data.Contains(.75f)) Interlocked.Exchange(ref _sparseUv, 1);
+            Assert.Equal(2, uv0.Dimension);
+            Assert.Equal(2, uv1.Dimension);
             for (int index = 0; index < positions.Length; index++)
-                if (positions[index].X < 1.5f)
-                {
-                    Assert.Equal(0, uv1.Data[index * 2]);
-                    Assert.Equal(0, uv1.Data[index * 2 + 1]);
-                }
+            {
+                Vector3 position = positions[index];
+                Assert.Equal(position.X is 1 or 3 ? 1f : 0f, uv0.Data[index * 2]);
+                Assert.Equal(position.Y == 1 ? 1f : 0f, uv0.Data[index * 2 + 1]);
+                bool sparseVertex = position.X >= 2 && position.Y == 1;
+                Assert.Equal(sparseVertex ? .25f : 0f, uv1.Data[index * 2]);
+                Assert.Equal(sparseVertex ? .75f : 0f, uv1.Data[index * 2 + 1]);
+            }
+            ReadOnlySpan<float> normalizedUv = uv0.Data.AsSpan(0, positions.Length * uv0.Dimension);
+            ReadOnlySpan<float> sparseUv = uv1.Data.AsSpan(0, positions.Length * uv1.Dimension);
+            if (normalizedUv.Contains(1f)) Interlocked.Exchange(ref _normalizedUv, 1);
+            if (sparseUv.Contains(.25f) && sparseUv.Contains(.75f)) Interlocked.Exchange(ref _sparseUv, 1);
             return StandardClusterVertexEncoder.Instance.Encode(positions, attributes.Where(x => x.Name != "TEXCOORD_1").ToArray(), clusterVertices);
         }
     }

@@ -46,17 +46,10 @@ public sealed class BufferDataCommandsTests
                 bytes.AsSpan().Fill(255);
                 GraphBufferId destination = frame.Import(result,
                     [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
-                frame.AddCopyPass("copy written upload", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                    (Source: source, Destination: destination), new PassOptions(Culling: PassCullingMode.NeverCull),
-                    static (ref PassDefinition access, ref (GraphBufferSlice Source, GraphBufferId Destination) data) =>
-                    {
-                        access.Read(data.Source.Buffer, data.Source.Range, PipelineSync.Copy, ResourceAccess.CopySource);
-                        access.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy,
-                            ResourceAccess.CopyDestination, WriteCoverage.Complete);
-                    },
-                    static (ref CopyPassCommandScope commands, in (GraphBufferSlice Source, GraphBufferId Destination) data) =>
-                        commands.CopyBuffer(new(commands.GetBuffer(data.Source.Buffer), data.Source.Range.Offset,
-                            commands.GetBuffer(data.Destination), 0, 32)));
+                frame.DeclareBufferCopy("copy written upload", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                    source with { Range = new BufferRange(source.Range.Offset, 32) },
+                    new GraphBufferSlice(destination, new BufferRange(0, 32)),
+                    new PassOptions(Culling: PassCullingMode.NeverCull));
                 if (index == 3) continue;
                 frame.Execute(completions);
                 support.Wait(completions);

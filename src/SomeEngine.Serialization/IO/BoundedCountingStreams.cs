@@ -116,7 +116,8 @@ public sealed class BoundedCountingWriteStream : Stream
         Exception exception = _limitExceeded?.Invoke(
             BytesWritten,
             attemptedBytes,
-            _maximumBytes) ?? new InvalidDataException(
+            _maximumBytes) ?? SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Counted output exceeds the configured {_maximumBytes}-byte limit.");
         throw exception;
     }
@@ -234,7 +235,8 @@ public sealed class BoundedCountingReadStream : Stream
         Exception exception = _limitExceeded?.Invoke(
             BytesRead,
             attemptedBytes,
-            _maximumBytes) ?? new InvalidDataException(
+            _maximumBytes) ?? SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Counted input exceeds the configured {_maximumBytes}-byte limit.");
         throw exception;
     }

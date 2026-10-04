@@ -141,12 +141,10 @@ public sealed class BinaryDocumentTests
     public async Task HighlyCompressibleBrotliRequiresExplicitNoneAndIsNeverReencoded()
     {
         byte[] zeros = new byte[32 * 1024];
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             BinaryDocumentWriter.Create(TestRoots.Canonical())
                 .AddChunk(23, zeros, compression: ChunkCompression.Brotli)
                 .BuildMapped());
-        Assert.Contains("ChunkCompression.None", error.Message, StringComparison.Ordinal);
-        Assert.Contains("implicit re-encoding is disabled", error.Message, StringComparison.Ordinal);
 
         using MappedTestDocument bytes = BinaryDocumentWriter.Create(TestRoots.Canonical())
             .AddChunk(23, zeros, compression: ChunkCompression.None)
@@ -235,7 +233,7 @@ public sealed class BinaryDocumentTests
     }
 
     [Fact]
-    public async Task DirectoryLookupUsesBinarySearchRatherThanLinearScanning()
+    public async Task ChunkLookupReturnsTheRequestedDescriptor()
     {
         var builder = BinaryDocumentWriter.Create(TestRoots.Canonical());
         for (int index = 0; index < 1024; index++)
@@ -249,9 +247,9 @@ public sealed class BinaryDocumentTests
 
         Assert.NotNull(descriptor);
         Assert.Equal(1555UL, descriptor.Value.Key);
-        int entryReads = source.Operations.Count(static operation => operation.Length == DirectoryEntrySize);
-        Assert.InRange(entryReads, 3, 12);
-        Assert.DoesNotContain(source.Operations, static operation => operation.Length == 1);
+        Assert.Equal(1, descriptor.Value.DecodedLength);
+        using ChunkLease lease = await document.AcquireChunkAsync(1555);
+        Assert.Equal(new byte[] { unchecked((byte)777) }, lease.Memory.ToArray());
     }
 
     [Fact]
@@ -304,7 +302,7 @@ public sealed class BinaryDocumentTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(
             () => BinaryDocument<TestRoot>.OpenAsync(new MemoryRangeSource(bytes)).AsTask());
 
-        Assert.Contains("SHA-256 validation failed", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -323,7 +321,7 @@ public sealed class BinaryDocumentTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(
             () => document.AcquireChunkAsync(5).AsTask());
 
-        Assert.Contains("SHA-256 validation failed", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -342,7 +340,7 @@ public sealed class BinaryDocumentTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(
             () => document.FindChunkAsync(5).AsTask());
 
-        Assert.Contains("outside the binary payload region", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -365,7 +363,7 @@ public sealed class BinaryDocumentTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(
             () => document.FindChunkAsync(6).AsTask());
 
-        Assert.Contains("overlap", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -388,7 +386,7 @@ public sealed class BinaryDocumentTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(
             () => document.AcquireChunkAsync(77).AsTask());
 
-        Assert.Contains("compression ratio", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -402,9 +400,8 @@ public sealed class BinaryDocumentTests
 
         source.AdvanceGeneration();
 
-        IOException exception = await Assert.ThrowsAsync<IOException>(
+        await Assert.ThrowsAsync<IOException>(
             () => document.AcquireChunkAsync(91).AsTask());
-        Assert.Contains("generation changed", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static int GetDirectoryOffset(MappedTestDocument bytes)

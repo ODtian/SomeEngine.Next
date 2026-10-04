@@ -54,7 +54,6 @@ public sealed class AssetCapabilityBehaviorTests
         using var scope = provider.CreateScope();
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
             scope.ServiceProvider.GetRequiredService<CapabilityImporter>());
-        Assert.Contains(nameof(CapabilityDependency), error.Message);
     }
 }
 

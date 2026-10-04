@@ -20,8 +20,6 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         BenchmarkDefaults.RenderWidth * BenchmarkDefaults.RenderHeight * 4UL;
     private const ulong ConstantBufferAlignment = 256;
 
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static bool NormalizedFloatEquals(float left, float right) => left.Equals(right);
 
     internal static ProcessRun Run(in WorkerConfiguration configuration)
     {
@@ -123,9 +121,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
             ulong completion = context.Copy.SignalOnly();
             long stopped = Stopwatch.GetTimestamp();
             long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-            long events = AllocationEventCounter.AttributeIntervalEvents(
-                bytes,
-                allocations.Count - beforeEvents);
+            long events = allocations.Count - beforeEvents;
             context.Copy.WaitCpu(completion);
             long ticks = stopped - started;
             samples[frame] = new FrameSample(
@@ -370,9 +366,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         ulong completion = context.Graphics.Execute();
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-        long events = AllocationEventCounter.AttributeIntervalEvents(
-            bytes,
-            allocations.Count - beforeEvents);
+        long events = allocations.Count - beforeEvents;
         context.Graphics.WaitCpu(completion);
         (ulong gpuStart, ulong gpuEnd) = ReadTimestampPair(queryReadback);
         initialized = true;
@@ -635,9 +629,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         ulong completion = context.Compute.Execute();
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-        long events = AllocationEventCounter.AttributeIntervalEvents(
-            bytes,
-            allocations.Count - beforeEvents);
+        long events = allocations.Count - beforeEvents;
         context.Compute.WaitCpu(completion);
         (ulong gpuStart, ulong gpuEnd) = ReadTimestampPair(queryReadback);
         long ticks = stopped - started;
@@ -926,9 +918,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         swapchain.Present();
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-        long events = AllocationEventCounter.AttributeIntervalEvents(
-            bytes,
-            allocations.Count - beforeEvents);
+        long events = allocations.Count - beforeEvents;
         context.Graphics.WaitCpu(graphicsCompletion);
         ulong copyTick = ReadTimestamp(copyTimestamp);
         ulong graphicsTick = ReadTimestamp(graphicsTimestamp);
@@ -1120,12 +1110,8 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private static bool ViewportEquals(in NativeViewport left, in NativeViewport right) =>
-            NormalizedFloatEquals(left.TopLeftX, right.TopLeftX) &&
-            NormalizedFloatEquals(left.TopLeftY, right.TopLeftY) &&
-            NormalizedFloatEquals(left.Width, right.Width) &&
-            NormalizedFloatEquals(left.Height, right.Height) &&
-            NormalizedFloatEquals(left.MinDepth, right.MinDepth) &&
-            NormalizedFloatEquals(left.MaxDepth, right.MaxDepth);
+            new SomeEngine.Graphics.Viewport(left.TopLeftX, left.TopLeftY, left.Width, left.Height, left.MinDepth, left.MaxDepth)
+                .Equals(new SomeEngine.Graphics.Viewport(right.TopLeftX, right.TopLeftY, right.Width, right.Height, right.MinDepth, right.MaxDepth));
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private static bool ScissorBitsEqual(in Box2D<int> left, in Box2D<int> right)

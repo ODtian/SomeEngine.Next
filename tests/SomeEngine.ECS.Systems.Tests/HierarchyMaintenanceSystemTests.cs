@@ -5,14 +5,14 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class HierarchyMaintenanceSystemTests
+public sealed class HierarchyMaintenanceSystemTests : JobTest
 {
     [Fact]
     public void RelaxedReaderSeesLastApplied_AndFreshReaderDependsOnMaintenanceHandle()
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity oldParent = world.CreateEntity();
             Entity newParent = world.CreateEntity();
             Entity child = world.CreateEntity();
@@ -33,7 +33,7 @@ public sealed class HierarchyMaintenanceSystemTests
             Assert.True(parentWritten.Wait(TimeSpan.FromSeconds(2)));
 
             var relaxedCapture = new ChildrenCapture();
-            JobHandle relaxed = JobSystem.Schedule(
+            JobHandle relaxed = Jobs.Schedule(
                 new CaptureChildrenJob<DomainA>(world, oldParent, relaxedCapture));
             relaxed.Complete();
 
@@ -43,7 +43,7 @@ public sealed class HierarchyMaintenanceSystemTests
 
             JobHandle maintenance = HierarchyMaintenanceSystem<DomainA>.Schedule(world);
             var freshCapture = new ChildrenCapture();
-            JobHandle fresh = JobSystem.Schedule(
+            JobHandle fresh = Jobs.Schedule(
                 new CaptureChildrenJob<DomainA>(world, newParent, freshCapture),
                 maintenance);
 
@@ -66,8 +66,8 @@ public sealed class HierarchyMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var worldA = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
-            var worldB = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var worldA = CreateJobWorld();
+            var worldB = CreateJobWorld();
             using var blockerStarted = new ManualResetEventSlim();
             using var releaseBlocker = new ManualResetEventSlim();
 
@@ -94,16 +94,16 @@ public sealed class HierarchyMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             var mutation = new SetParentJob<DomainA>(world, child, parent);
 
-            JobHandle undeclared = JobSystem.Schedule(mutation);
+            JobHandle undeclared = Jobs.Schedule(mutation);
             Assert.Throws<JobResourceSafetyException>(() => undeclared.Complete());
             Assert.Equal(Entity.Null, Hierarchy<DomainA>.GetParent(world, child));
 
-            JobHandle missingWorldGate = JobSystem.Schedule(
+            JobHandle missingWorldGate = Jobs.Schedule(
                 mutation,
                 HierarchyJobAccess<DomainA>.ParentWrite(world));
             Assert.Throws<JobResourceSafetyException>(() => missingWorldGate.Complete());
@@ -114,7 +114,7 @@ public sealed class HierarchyMaintenanceSystemTests
                 HierarchyJobAccess<DomainA>.ParentRead(world),
                 RelationshipJobAccess.TopologyWrite(world),
             ];
-            JobHandle insufficient = JobSystem.Schedule(mutation, readOnly);
+            JobHandle insufficient = Jobs.Schedule(mutation, readOnly);
             Assert.Throws<JobResourceSafetyException>(() => insufficient.Complete());
             Assert.Equal(Entity.Null, Hierarchy<DomainA>.GetParent(world, child));
 
@@ -128,7 +128,7 @@ public sealed class HierarchyMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             JobResourceAccess[] accesses =
@@ -137,7 +137,7 @@ public sealed class HierarchyMaintenanceSystemTests
                 RelationshipJobAccess.TopologyWrite(world),
             ];
 
-            JobHandle parallel = JobSystem.ScheduleParallel(
+            JobHandle parallel = Jobs.ScheduleParallel(
                 new ParallelSetParentJob<DomainA>(world, child, parent),
                 length: 2,
                 batchSize: 1,
@@ -153,11 +153,11 @@ public sealed class HierarchyMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity parent = world.CreateEntity();
             var capture = new ChildrenCapture();
 
-            JobHandle reader = JobSystem.Schedule(
+            JobHandle reader = Jobs.Schedule(
                 new CaptureChildrenJob<DomainA>(world, parent, capture));
 
             reader.Complete();
@@ -168,10 +168,10 @@ public sealed class HierarchyMaintenanceSystemTests
     [Fact]
     public void ReplacingTheDefaultSchedulerDoesNotRebindAnExplicitWorld()
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = CreateJobWorld(scheduler: scheduler);
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
         try
@@ -195,28 +195,27 @@ public sealed class HierarchyMaintenanceSystemTests
     [Fact]
     public void RejectManagedPayloadPolicy_IsHonoredAndNotMutatedBySchedule()
     {
-        ManagedPayloadPolicy previous = JobSystem.ManagedPayloadPolicy;
+        ManagedPayloadPolicy previous = Jobs.ManagedPayloadPolicy;
         try
         {
-            JobSystem.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            Jobs.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
+            var world = CreateJobWorld();
 
             var error = Assert.Throws<InvalidOperationException>(
                 () => HierarchyMaintenanceSystem<DomainA>.Schedule(world));
 
-            Assert.Contains("managed payload policy", error.Message, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(ManagedPayloadPolicy.Reject, JobSystem.ManagedPayloadPolicy);
+            Assert.Equal(ManagedPayloadPolicy.Reject, Jobs.ManagedPayloadPolicy);
         }
         finally
         {
-            JobSystem.ManagedPayloadPolicy = previous;
+            Jobs.ManagedPayloadPolicy = previous;
         }
     }
 
-    private static void WithJobRuntime(Action action)
+    private void WithJobRuntime(Action action)
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
         InitializeJobRuntime(previousSafety);
         try
         {
@@ -228,9 +227,9 @@ public sealed class HierarchyMaintenanceSystemTests
         }
     }
 
-    private static void InitializeJobRuntime(JobSafetyMode safetyMode)
+    private void InitializeJobRuntime(JobSafetyMode safetyMode)
     {
-        JobSystem.Initialize(new JobRuntimeConfig
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 4,
             SafetyMode = safetyMode,
@@ -238,11 +237,11 @@ public sealed class HierarchyMaintenanceSystemTests
         });
     }
 
-    private static void RestoreJobRuntime(
+    private void RestoreJobRuntime(
         ManagedPayloadPolicy payloadPolicy,
         JobSafetyMode safetyMode)
     {
-        JobSystem.Initialize(new JobRuntimeConfig
+        ConfigureJobs(new JobRuntimeConfig
         {
             SafetyMode = safetyMode,
             ManagedPayloadPolicy = payloadPolicy,

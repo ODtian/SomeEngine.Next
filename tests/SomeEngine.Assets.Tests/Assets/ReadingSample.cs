@@ -6,9 +6,8 @@ namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class ReadingSample : IDisposable
 {
-    public static int Created;
     public ReadingSample() : this("sample", 0) { }
-    public ReadingSample(string name, int number) { Name = name; Number = number; Interlocked.Increment(ref Created); }
+    public ReadingSample(string name, int number) { Name = name; Number = number; }
     public string Name { get; set; } = "sample";
     public int Number { get; set; }
     public bool IsDisposed { get; private set; }

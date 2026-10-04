@@ -4,7 +4,8 @@ using SlangShaderSharp;
 using Xunit;
 using Xunit.Sdk;
 
-public sealed class VulkanPipelineTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
 {
     private const string Source = """
         float4 Tint;
@@ -37,7 +38,7 @@ public sealed class VulkanPipelineTests
     [Fact]
     public void Slang_spirv_creates_dynamic_rendering_graphics_and_compute_pipelines()
     {
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             Source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment),
@@ -86,7 +87,7 @@ public sealed class VulkanPipelineTests
             [numthreads(1, 1, 1)]
             void writeTwentyTwo(uint3 id : SV_DispatchThreadID) { Output[0] = 22; Output[1] = WaveGetLaneCount(); }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             requireWave32 ? source.Replace("[numthreads", "[WaveSize(32)] [numthreads", StringComparison.Ordinal) : source,
             ("writeEleven", SlangStage.Compute),
             ("writeTwentyTwo", SlangStage.Compute));
@@ -181,7 +182,7 @@ public sealed class VulkanPipelineTests
                 Output[0] = Input.SampleLevel(LinearSampler, float2(0.5, 0.5), 0);
             }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         VariableLayoutReflection global = shader.Reflection.GetGlobalParamsVarLayout()
@@ -232,7 +233,7 @@ public sealed class VulkanPipelineTests
                 outputValues[0] = asuint(sampled) + 0xBEEFu;
             }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
@@ -410,7 +411,7 @@ public sealed class VulkanPipelineTests
                 outputValues[outputIndex] = bindlessValues[descriptorIndex][0];
             }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
@@ -557,7 +558,7 @@ public sealed class VulkanPipelineTests
     [Fact]
     public void Conservative_rasterization_extension_creates_a_graphics_pipeline()
     {
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             Source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));
@@ -597,7 +598,7 @@ public sealed class VulkanPipelineTests
     [Fact]
     public void Vertex_attribute_divisor_extension_accepts_non_unit_instance_rates()
     {
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             Source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));
@@ -669,7 +670,7 @@ public sealed class VulkanPipelineTests
                 return value;
             }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));

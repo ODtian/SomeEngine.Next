@@ -5,19 +5,20 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class PersistentBindingReuseTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class PersistentBindingReuseTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void PersistentBindingsRemainCorrectAfterPartialTransientReplacement()
     {
-        D3D12TestShader pairShader = D3D12TestShader.Compile("binding_pair", """
+        D3D12TestShader pairShader = shaderCompiler.Compile("binding_pair", """
             RWBuffer<uint> first;
             RWBuffer<uint> second;
             [shader("compute")]
             [numthreads(1, 1, 1)]
             void computeMain() { first[0] = 11; second[0] = 22; }
             """, [new D3D12TestEntry("computeMain", SlangStage.Compute)], "sm_6_2");
-        D3D12TestShader singleShader = D3D12TestShader.Compile("binding_single", """
+        D3D12TestShader singleShader = shaderCompiler.Compile("binding_single", """
             RWBuffer<uint> value;
             [shader("compute")]
             [numthreads(1, 1, 1)]

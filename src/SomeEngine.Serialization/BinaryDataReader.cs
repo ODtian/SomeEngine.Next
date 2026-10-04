@@ -41,7 +41,9 @@ internal sealed class BinaryReadBudget
     {
         _depth = checked(_depth + 1);
         if (_depth > Limits.MaxObjectDepth)
-            throw new InvalidDataException($"Binary object depth exceeds configured limit {Limits.MaxObjectDepth}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"Binary object depth exceeds configured limit {Limits.MaxObjectDepth}.");
     }
 
     internal void ExitObject()
@@ -60,7 +62,9 @@ internal sealed class BinaryReadBudget
         if (value < 0)
             throw new InvalidDataException($"Negative {description} count.");
         if (value > Limits.MaxCollectionCount)
-            throw new InvalidDataException($"{description} count {value} exceeds {Limits.MaxCollectionCount}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} count {value} exceeds {Limits.MaxCollectionCount}.");
 
         if (elementAllocationBytes < 0)
             throw new ArgumentOutOfRangeException(nameof(elementAllocationBytes));
@@ -77,7 +81,9 @@ internal sealed class BinaryReadBudget
         if (value < 0)
             throw new InvalidDataException("Negative UTF-16 string code-unit count.");
         if (value > Limits.MaxStringBytes)
-            throw new InvalidDataException($"UTF-16 string code-unit count {value} exceeds {Limits.MaxStringBytes}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"UTF-16 string code-unit count {value} exceeds {Limits.MaxStringBytes}.");
         ReserveAllocation(checked(24L + (long)value * sizeof(char)), "UTF-16 string");
         return value;
     }
@@ -85,7 +91,9 @@ internal sealed class BinaryReadBudget
     internal void StringBytes(int value)
     {
         if (value > Limits.MaxStringBytes)
-            throw new InvalidDataException($"UTF-8 string length {value} exceeds {Limits.MaxStringBytes}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"UTF-8 string length {value} exceeds {Limits.MaxStringBytes}.");
         Consume(ref _stringBytes, value, Limits.MaxTotalStringBytes, "UTF-8 string bytes");
     }
 
@@ -94,7 +102,9 @@ internal sealed class BinaryReadBudget
         if (value < 0)
             throw new InvalidDataException("Negative byte payload length.");
         if (value > Limits.MaxBytePayloadBytes)
-            throw new InvalidDataException($"Byte payload length {value} exceeds {Limits.MaxBytePayloadBytes}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"Byte payload length {value} exceeds {Limits.MaxBytePayloadBytes}.");
         Consume(ref _decodedBytes, value, Limits.MaxTotalDecodedBytes, "decoded bytes");
         if (allocate)
             ReserveAllocation(checked(24L + value), "byte payload");
@@ -116,11 +126,15 @@ internal sealed class BinaryReadBudget
         }
         catch (OverflowException exception)
         {
-            throw new InvalidDataException($"{description} budget overflowed.", exception);
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} budget overflowed.", exception);
         }
 
         if (total > maximum)
-            throw new InvalidDataException($"Total {description} {total} exceeds configured limit {maximum}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"Total {description} {total} exceeds configured limit {maximum}.");
     }
 }
 

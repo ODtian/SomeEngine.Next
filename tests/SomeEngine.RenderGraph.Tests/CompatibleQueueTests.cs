@@ -131,10 +131,7 @@ public sealed class CompatibleQueueTests
         bool rejected = false;
         try
         {
-            edit.AddGeneralFramePass("general commands", PassQueueSelection.AnyCompatible(), 0,
-                new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition _, ref int _) => { },
-                static (ref GeneralPassCommandScope _, in int _) => { });
+            edit.DeclareGeneralPass("general commands", PassQueueSelection.AnyCompatible(), options: new PassOptions(Culling: PassCullingMode.NeverCull));
             edit.Commit();
             using RenderGraphFrame frame = graph.BeginFrame();
             frame.Execute(new QueueCompletion[graph.MaximumQueueCompletionCount]);

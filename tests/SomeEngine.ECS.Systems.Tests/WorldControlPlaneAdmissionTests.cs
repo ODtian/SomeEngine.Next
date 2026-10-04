@@ -1,3 +1,4 @@
+using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -7,18 +8,22 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class WorldControlPlaneAdmissionTests
+public sealed class WorldControlPlaneAdmissionTests : JobTest
 {
     [Fact]
     public void AcquireSystemTickWaitsForCandidatePublicationAndCannotBeLost()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        using var attempted = new ManualResetEventSlim();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         _ = RelationshipJobAccess.TopologyWrite(world);
         using var hookStarted = new ManualResetEventSlim();
         using var releaseHook = new ManualResetEventSlim();
+        releaseHook.WaitCallback = () => events.Enqueue("released");
         using var tickCompleted = new ManualResetEventSlim();
+        tickCompleted.SetCallback = () => events.Enqueue("tickCompleted");
         Exception? flushFault = null;
         Exception? tickFault = null;
         uint acquired = 0;
@@ -45,6 +50,7 @@ public sealed class WorldControlPlaneAdmissionTests
         });
         var tickThread = new Thread(() =>
         {
+            attempted.Set();
             try
             {
                 acquired = world.AcquireSystemTick();
@@ -64,8 +70,8 @@ public sealed class WorldControlPlaneAdmissionTests
             flushThread.Start();
             Assert.True(hookStarted.Wait(TimeSpan.FromSeconds(5)));
             tickThread.Start();
+            Assert.True(attempted.Wait(TimeSpan.FromSeconds(5)));
 
-            Assert.False(tickCompleted.Wait(TimeSpan.FromMilliseconds(150)));
             releaseHook.Set();
             Assert.True(flushThread.Join(TimeSpan.FromSeconds(5)));
             Assert.True(tickThread.Join(TimeSpan.FromSeconds(5)));
@@ -80,19 +86,28 @@ public sealed class WorldControlPlaneAdmissionTests
             flushThread.Join(TimeSpan.FromSeconds(5));
             tickThread.Join(TimeSpan.FromSeconds(5));
         }
+
+        string[] sequence = events.ToArray();
+        Assert.Contains("released", sequence);
+        Assert.Contains("tickCompleted", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "tickCompleted"));
     }
 
     [Fact]
     public void ConvenienceQueryCapturesCurrentTickFromItsAdmittedPublishedRoot()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        using var attempted = new ManualResetEventSlim();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         QueryHandle query = world.Query(world.QueryDefinition().Read<QueryTickTrigger>());
         _ = RelationshipJobAccess.TopologyWrite(world);
         using var hookStarted = new ManualResetEventSlim();
         using var releaseHook = new ManualResetEventSlim();
+        releaseHook.WaitCallback = () => events.Enqueue("released");
         using var queryCompleted = new ManualResetEventSlim();
+        queryCompleted.SetCallback = () => events.Enqueue("queryCompleted");
         Exception? flushFault = null;
         Exception? queryFault = null;
         uint cursorCurrentVersion = 0;
@@ -120,6 +135,7 @@ public sealed class WorldControlPlaneAdmissionTests
         });
         var queryThread = new Thread(() =>
         {
+            attempted.Set();
             try
             {
                 world.ExecuteQuery(
@@ -142,8 +158,8 @@ public sealed class WorldControlPlaneAdmissionTests
             flushThread.Start();
             Assert.True(hookStarted.Wait(TimeSpan.FromSeconds(5)));
             queryThread.Start();
+            Assert.True(attempted.Wait(TimeSpan.FromSeconds(5)));
 
-            Assert.False(queryCompleted.Wait(TimeSpan.FromMilliseconds(150)));
             releaseHook.Set();
             Assert.True(flushThread.Join(TimeSpan.FromSeconds(5)));
             Assert.True(queryThread.Join(TimeSpan.FromSeconds(5)));
@@ -158,31 +174,11 @@ public sealed class WorldControlPlaneAdmissionTests
             flushThread.Join(TimeSpan.FromSeconds(5));
             queryThread.Join(TimeSpan.FromSeconds(5));
         }
-    }
 
-    private sealed class JobRuntimeScope : IDisposable
-    {
-        private readonly JobSafetyMode _safety = JobSystem.SafetyMode;
-        private readonly ManagedPayloadPolicy _payload = JobSystem.ManagedPayloadPolicy;
-
-        internal JobRuntimeScope(int workerCount)
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                WorkerCount = workerCount,
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-            });
-        }
-
-        public void Dispose()
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = _payload,
-            });
-        }
+        string[] sequence = events.ToArray();
+        Assert.Contains("released", sequence);
+        Assert.Contains("queryCompleted", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "queryCompleted"));
     }
 
     private struct TickTrigger : IComponent;

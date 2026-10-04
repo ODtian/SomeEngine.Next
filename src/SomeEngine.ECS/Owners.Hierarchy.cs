@@ -337,7 +337,6 @@ internal sealed partial class HierarchyDomainStore<TDomain> : IHierarchyDomainSt
     private ulong _generation = 1;
     private long _deferredSequence;
     private long _inverseRevision = NextInverseRevision();
-    private long _canonicalParentFullScanCount;
     private long _dirtyParentIndexRebuildEntityVisits;
     private long _dirtyParentLookupCount;
     private long _dirtyParentLookupEntityVisits;
@@ -379,7 +378,6 @@ internal sealed partial class HierarchyDomainStore<TDomain> : IHierarchyDomainSt
         _generation = source._generation;
         _deferredSequence = source._deferredSequence;
         _inverseRevision = source._inverseRevision;
-        _canonicalParentFullScanCount = source._canonicalParentFullScanCount;
         _dirtyParentIndexRebuildEntityVisits = source._dirtyParentIndexRebuildEntityVisits;
         _dirtyParentLookupCount = source._dirtyParentLookupCount;
         _dirtyParentLookupEntityVisits = source._dirtyParentLookupEntityVisits;
@@ -411,7 +409,6 @@ internal sealed partial class HierarchyDomainStore<TDomain> : IHierarchyDomainSt
     /// Monotonic count of intentional complete Parent-column passes. The historical property
     /// name is retained for diagnostics compatibility; it does not count all-live-entity scans.
     /// </summary>
-    internal long CanonicalParentFullScanCount => _canonicalParentFullScanCount;
 
     internal long DirtyParentIndexRebuildEntityVisits =>
         _dirtyParentIndexRebuildEntityVisits;
@@ -1918,7 +1915,6 @@ internal sealed partial class HierarchyDomainStore<TDomain> : IHierarchyDomainSt
 
     private IEnumerable<(Entity Child, Entity Parent)> EnumerateCanonicalParents()
     {
-        _canonicalParentFullScanCount++;
         int componentId = ParentComponentId;
         for (int archetypeIndex = 0; archetypeIndex < _owner.ArchetypeCount; archetypeIndex++)
         {

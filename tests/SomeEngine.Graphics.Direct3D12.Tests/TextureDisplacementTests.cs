@@ -5,7 +5,8 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class TextureDisplacementTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Bounds_enclose_sampled_surfaces_and_converge_across_bilinear_cells_and_repeat_seams()
@@ -97,7 +98,7 @@ public sealed class TextureDisplacementTests
                     length(evaluated.Position - d.position(t,middle)));
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "displacement_bounds", source, [new("CheckDisplacement", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);

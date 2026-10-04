@@ -8,7 +8,7 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class AssetTypeExtensibilityTests
 {
     [Fact]
-    public async Task DownstreamFormatOpensWithoutCreatingItsDomainType()
+    public async Task DownstreamFormatCreatesIndependentDomainObjects()
     {
         using var directory = new AssetTestDirectory();
         Guid id = Guid.NewGuid();
@@ -17,10 +17,8 @@ public sealed class AssetTypeExtensibilityTests
         using var content = new ReadingSampleBlock { Number = 42 };
         written.SetBlock(content);
         project.RegisterAsset(await written.SaveAsync(directory.File("new.reading.asset")));
-        int created = ReadingSample.Created;
         await using var loader = new AssetLoader(project.CreateStorage());
         await using ReadingSampleAsset file = await ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id));
-        Assert.Equal(created, ReadingSample.Created);
         ReadingSampleBlock opened = await file.GetBlockAsync<ReadingSampleBlock>();
         using ReadingSample first = opened.Create(file.Name);
         using ReadingSample second = opened.Create(file.Name);

@@ -2,19 +2,19 @@ using System.Security.Cryptography;
 
 namespace SomeEngine.Graphics.Benchmarks;
 
-internal static class RepresentativeFrameProfile
+public static class RepresentativeFrameProfile
 {
     internal const string MaterialFileName = "representative-frame-materials.bin";
     internal const string MetadataFileName = "representative-frame-profile.json";
     internal const string MaterialSequenceSha256 =
         "4F69D660B527341D446A365853AA7FA8CCD853243853FE22CAB30D0608BB6AF0";
-    internal const int ObjectCount = 1_025;
+    public const int ObjectCount = 1_025;
     internal const int MaterialCount = 40;
-    internal const int WorkerCount = 3;
+    public const int WorkerCount = 3;
     internal const int CommandListCount = 9;
-    internal const int DrawCount = ObjectCount * 2;
-    internal const int BarrierCount = 4;
-    internal const int ObjectPacketSize = 16;
+    public const int DrawCount = ObjectCount * 2;
+    public const int BarrierCount = 4;
+    public const int ObjectPacketSize = 16;
     internal const int MaterialStride = 256;
 
 #if REPRESENTATIVE_LIFECYCLE_ONLY
@@ -101,7 +101,7 @@ internal static class RepresentativeFrameProfile
         }
     }
 
-    internal static CommandWorkloadEvidence CreateWorkloadEvidence() => new(
+    public static CommandWorkloadEvidence CreateWorkloadEvidence() => new(
         ObjectCount,
         LogicalDrawRequestCount,
         LogicalMaterialBindingRequestCount,
@@ -142,7 +142,7 @@ internal static class RepresentativeFrameProfile
         _ = LoadMaterials(directory);
     }
 
-    internal static (int Start, int Count) GetWorkerRange(int workerIndex)
+    public static (int Start, int Count) GetWorkerRange(int workerIndex)
     {
         if ((uint)workerIndex >= WorkerCount)
             throw new ArgumentOutOfRangeException(nameof(workerIndex));
@@ -153,7 +153,7 @@ internal static class RepresentativeFrameProfile
         return (start, count);
     }
 
-    internal static unsafe void WriteObjectPackets(Span<byte> destination, int frameIndex)
+    public static unsafe void WriteObjectPackets(Span<byte> destination, int frameIndex)
     {
         int required = ObjectCount * ObjectPacketSize;
         if (destination.Length < required)

@@ -131,11 +131,14 @@ public sealed class ClusterShaderDataTests
 
         foreach ((string entry, SlangStage stage) in entries)
         {
-            _ = RequireEntry(
+            EntryPointReflection reflection = RequireEntry(
                 shader,
                 SlangCompileTarget.Spirv,
                 entry,
                 stage);
+            int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(shader.GetSlangEntryBlob(targetIndex, reflection) is not null ||
+                !shader.GetSlangEntryBytes(targetIndex, reflection).IsEmpty);
         }
     }
 
@@ -227,11 +230,14 @@ public sealed class ClusterShaderDataTests
 
         foreach ((string entry, SlangStage stage) in entries)
         {
-            _ = RequireEntry(
+            EntryPointReflection reflection = RequireEntry(
                 shader,
                 SlangCompileTarget.Spirv,
                 entry,
                 stage);
+            int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(shader.GetSlangEntryBlob(targetIndex, reflection) is not null ||
+                !shader.GetSlangEntryBytes(targetIndex, reflection).IsEmpty);
         }
     }
 

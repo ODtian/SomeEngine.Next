@@ -8,11 +8,13 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpLifetimeTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
-    public void Validated_graphics_root_cross_thread_dispose_joins_the_single_receiver_release()
+    public async Task Validated_graphics_root_cross_thread_dispose_joins_the_single_receiver_release()
     {
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         int lifetimeMessages = 0;
@@ -25,18 +27,24 @@ public sealed class WarpLifetimeTests
             Interlocked.Increment(ref lifetimeMessages);
             validation!.Dispose();
             entered.Set();
-            release.Wait();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            events.Enqueue("receiver callback completed");
         });
         var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         validation = new ValidationLayer(
             backend,
             new ValidationOptions(sink, ReportLiveObjectsOnDispose: true));
         Device device = CreateWarpDevice(validation);
+        Task disposal = Task.CompletedTask;
+        Task contender = Task.CompletedTask;
 
         try
         {
-            var owner = new Thread(validation.Dispose);
-            owner.Start();
+            disposal = Task.Run(() =>
+            {
+                validation.Dispose();
+                events.Enqueue("first disposal completed");
+            });
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             Assert.Throws<ObjectDisposedException>(() => validation.TryEnumerateAdapters(
                 new AdapterEnumerationOptions(IncludeSoftware: true),
@@ -44,19 +52,21 @@ public sealed class WarpLifetimeTests
                 out _));
 
             using var contenderStarted = new ManualResetEventSlim();
-            using var contenderReturned = new ManualResetEventSlim();
-            var contender = new Thread(() =>
+            contender = Task.Run(() =>
             {
                 contenderStarted.Set();
                 validation.Dispose();
-                contenderReturned.Set();
+                Assert.Equal(DeviceStatus.Disposed, device.Status);
+                Assert.Throws<ObjectDisposedException>(() => backend.TryEnumerateAdapters(
+                    new AdapterEnumerationOptions(IncludeSoftware: true), [], out _));
+                events.Enqueue("second disposal completed");
             });
-            contender.Start();
             Assert.True(contenderStarted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.False(contenderReturned.Wait(TimeSpan.FromMilliseconds(100)));
             release.Set();
-            Assert.True(owner.Join(TimeSpan.FromSeconds(10)));
-            Assert.True(contender.Join(TimeSpan.FromSeconds(10)));
+            await Task.WhenAll(disposal, contender).WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal("receiver callback completed", events.First());
+            Assert.Contains("first disposal completed", events);
+            Assert.Contains("second disposal completed", events);
 
             Assert.Equal(1, Volatile.Read(ref lifetimeMessages));
             Assert.Equal(DeviceStatus.Disposed, device.Status);
@@ -68,41 +78,50 @@ public sealed class WarpLifetimeTests
         finally
         {
             release.Set();
-            validation.Dispose();
+            try { await Task.WhenAll(disposal, contender).WaitAsync(TimeSpan.FromSeconds(10)); }
+            finally { validation.Dispose(); }
         }
     }
 
     [Fact]
-    public void Validation_receiver_contenders_join_and_sink_failure_is_observational()
+    public async Task Validation_receiver_contenders_join_and_sink_failure_is_observational()
     {
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
-        var sink = new BlockingThrowingSink(entered, release);
+        var sink = new BlockingThrowingSink(entered, release, () => events.Enqueue("receiver callback completed"));
         var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         var validation = new ValidationLayer(
             backend,
             new ValidationOptions(sink, ReportLiveObjectsOnDispose: true));
         Device device = D3D12TestSupport.CreateWarpDevice(validation);
+        Task disposal = Task.CompletedTask;
+        Task contender = Task.CompletedTask;
 
         try
         {
-            var owner = new Thread(validation.Dispose);
-            owner.Start();
+            disposal = Task.Run(() =>
+            {
+                validation.Dispose();
+                events.Enqueue("first disposal completed");
+            });
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             using var contenderStarted = new ManualResetEventSlim();
-            using var contenderReturned = new ManualResetEventSlim();
-            var contender = new Thread(() =>
+            contender = Task.Run(() =>
             {
                 contenderStarted.Set();
                 validation.Dispose();
-                contenderReturned.Set();
+                Assert.Equal(DeviceStatus.Disposed, device.Status);
+                Assert.Throws<ObjectDisposedException>(() => backend.TryEnumerateAdapters(
+                    new AdapterEnumerationOptions(IncludeSoftware: true), [], out _));
+                events.Enqueue("second disposal completed");
             });
-            contender.Start();
             Assert.True(contenderStarted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.False(contenderReturned.Wait(TimeSpan.FromMilliseconds(100)));
             release.Set();
-            Assert.True(owner.Join(TimeSpan.FromSeconds(10)));
-            Assert.True(contender.Join(TimeSpan.FromSeconds(10)));
+            await Task.WhenAll(disposal, contender).WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal("receiver callback completed", events.First());
+            Assert.Contains("first disposal completed", events);
+            Assert.Contains("second disposal completed", events);
 
             Assert.Equal(1, sink.ReportCount);
             Assert.Equal(DeviceStatus.Disposed, device.Status);
@@ -118,25 +137,25 @@ public sealed class WarpLifetimeTests
         finally
         {
             release.Set();
-            validation.Dispose();
+            try { await Task.WhenAll(disposal, contender).WaitAsync(TimeSpan.FromSeconds(10)); }
+            finally { validation.Dispose(); }
         }
     }
 
 
 
     [Fact]
-    public void Backend_cross_thread_dispose_joins_while_real_queue_gate_is_held()
+    public async Task Backend_cross_thread_dispose_joins_while_real_queue_gate_is_held()
     {
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Copy);
         using var gateHeld = new ManualResetEventSlim();
         using var invalidationObserved = new ManualResetEventSlim();
         using var releaseGate = new ManualResetEventSlim();
-        using var ownerReturned = new ManualResetEventSlim();
         using var contenderStarted = new ManualResetEventSlim();
-        using var contenderReturned = new ManualResetEventSlim();
-        Thread holder = new(() =>
+        var holder = Task.Run(() =>
         {
             D3D12CommandQueueLock held = backend.LockCommandQueue(queue);
             try
@@ -145,55 +164,56 @@ public sealed class WarpLifetimeTests
                 Assert.True(SpinWait.SpinUntil(
                     () => device.Status == DeviceStatus.Disposed,
                     TimeSpan.FromSeconds(5)));
-                Assert.False(held.IsHeld);
+                WaitUntilQueueLockInvalidated(held);
                 AssertQueueLockPointerUnavailable(held);
                 invalidationObserved.Set();
-                releaseGate.Wait();
+                Assert.True(releaseGate.Wait(TimeSpan.FromSeconds(10)));
             }
             finally
             {
-                held.Dispose();
+                lock (events)
+                {
+                    held.Dispose();
+                    events.Enqueue("queue lock released");
+                }
             }
         });
-        Thread owner = new(() =>
-        {
-            backend.Dispose();
-            ownerReturned.Set();
-        });
-        Thread contender = new(() =>
-        {
-            contenderStarted.Set();
-            backend.Dispose();
-            contenderReturned.Set();
-        });
-
-        holder.Start();
+        Task disposal = Task.CompletedTask;
+        Task contender = Task.CompletedTask;
         try
         {
             Assert.True(gateHeld.Wait(TimeSpan.FromSeconds(5)));
-            owner.Start();
+            disposal = Task.Run(() =>
+            {
+                backend.Dispose();
+                lock (events) events.Enqueue("first disposal completed");
+            });
             Assert.True(SpinWait.SpinUntil(
                 () => device.Status == DeviceStatus.Disposed,
                 TimeSpan.FromSeconds(5)));
             Assert.True(invalidationObserved.Wait(TimeSpan.FromSeconds(5)));
-            contender.Start();
+            contender = Task.Run(() =>
+            {
+                contenderStarted.Set();
+                backend.Dispose();
+                lock (events)
+                {
+                    Assert.Contains("queue lock released", events);
+                    events.Enqueue("second disposal completed");
+                }
+            });
             Assert.True(contenderStarted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.False(ownerReturned.Wait(TimeSpan.FromMilliseconds(100)));
-            Assert.False(contenderReturned.Wait(TimeSpan.FromMilliseconds(100)));
             releaseGate.Set();
-            Assert.True(holder.Join(TimeSpan.FromSeconds(10)));
-            Assert.True(owner.Join(TimeSpan.FromSeconds(10)));
-            Assert.True(contender.Join(TimeSpan.FromSeconds(10)));
+            await Task.WhenAll(holder, disposal, contender).WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal("queue lock released", events.First());
+            Assert.Contains("first disposal completed", events);
+            Assert.Contains("second disposal completed", events);
         }
         finally
         {
             releaseGate.Set();
-            _ = holder.Join(TimeSpan.FromSeconds(5));
-            if (owner.ThreadState != ThreadState.Unstarted)
-                _ = owner.Join(TimeSpan.FromSeconds(5));
-            if (contender.ThreadState != ThreadState.Unstarted)
-                _ = contender.Join(TimeSpan.FromSeconds(5));
-            backend.Dispose();
+            try { await Task.WhenAll(holder, disposal, contender).WaitAsync(TimeSpan.FromSeconds(10)); }
+            finally { backend.Dispose(); }
         }
     }
 
@@ -237,7 +257,7 @@ public sealed class WarpLifetimeTests
 
 
     [Fact]
-    public void Structured_uav_retains_both_native_resources_without_owning_their_wrappers()
+    public void Structured_uav_retains_both_native_resources_without_owning_their_wrappers_DoesNotThrow()
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -319,7 +339,7 @@ public sealed class WarpLifetimeTests
 
 
     [Fact]
-    public void Validated_queue_lock_is_invalidated_before_parent_physical_release()
+    public async Task Validated_queue_lock_is_invalidated_before_parent_release()
     {
         var direct = D3D12GraphicsBackend.Create();
         var backend = new ValidationLayer(direct);
@@ -328,50 +348,54 @@ public sealed class WarpLifetimeTests
         using var held = new ManualResetEventSlim();
         using var invalidated = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
-        Exception? holderFailure = null;
-        Thread holder = new(() =>
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var holder = Task.Run(() =>
         {
+            D3D12CommandQueueLock value = backend.LockCommandQueue(queue);
             try
             {
-                D3D12CommandQueueLock value = backend.LockCommandQueue(queue);
                 held.Set();
                 Assert.True(SpinWait.SpinUntil(
                     () => device.Status == DeviceStatus.Disposed,
                     TimeSpan.FromSeconds(5)));
-                Assert.False(value.IsHeld);
+                WaitUntilQueueLockInvalidated(value);
                 AssertQueueLockPointerUnavailable(value);
                 invalidated.Set();
-                release.Wait();
-                value.Dispose();
+                Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
             }
-            catch (Exception exception)
+            finally
             {
-                holderFailure = exception;
-                invalidated.Set();
+                lock (events)
+                {
+                    value.Dispose();
+                    events.Enqueue("queue lock released");
+                }
             }
         });
-        Thread parent = new(backend.Dispose);
-
-        holder.Start();
+        Task parent = Task.CompletedTask;
         try
         {
             Assert.True(held.Wait(TimeSpan.FromSeconds(5)));
-            parent.Start();
+            parent = Task.Run(() =>
+            {
+                backend.Dispose();
+                lock (events)
+                {
+                    Assert.Contains("queue lock released", events);
+                    events.Enqueue("parent disposal completed");
+                }
+            });
             Assert.True(invalidated.Wait(TimeSpan.FromSeconds(5)));
-            Assert.Null(holderFailure);
-            Assert.True(parent.IsAlive);
             release.Set();
-            Assert.True(holder.Join(TimeSpan.FromSeconds(10)));
-            Assert.True(parent.Join(TimeSpan.FromSeconds(10)));
+            await Task.WhenAll(holder, parent).WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(["queue lock released", "parent disposal completed"], events);
             Assert.Equal(DeviceStatus.Disposed, device.Status);
         }
         finally
         {
             release.Set();
-            _ = holder.Join(TimeSpan.FromSeconds(5));
-            if (parent.ThreadState != ThreadState.Unstarted)
-                _ = parent.Join(TimeSpan.FromSeconds(5));
-            backend.Dispose();
+            try { await Task.WhenAll(holder, parent).WaitAsync(TimeSpan.FromSeconds(10)); }
+            finally { backend.Dispose(); }
         }
     }
 
@@ -391,13 +415,16 @@ public sealed class WarpLifetimeTests
     {
         private readonly ManualResetEventSlim _entered;
         private readonly ManualResetEventSlim _release;
+        private readonly Action _completed;
 
         internal BlockingThrowingSink(
             ManualResetEventSlim entered,
-            ManualResetEventSlim release)
+            ManualResetEventSlim release,
+            Action completed)
         {
             _entered = entered;
             _release = release;
+            _completed = completed;
         }
 
         internal int ReportCount { get; private set; }
@@ -409,7 +436,8 @@ public sealed class WarpLifetimeTests
 
             ReportCount++;
             _entered.Set();
-            _release.Wait();
+            Assert.True(_release.Wait(TimeSpan.FromSeconds(10)));
+            _completed();
             throw new InvalidOperationException("The diagnostic sink failed during teardown.");
         }
     }
@@ -468,7 +496,7 @@ public sealed class WarpLifetimeTests
         [
             new("computeMain", SlangStage.Compute),
         ];
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_lifetime_matrix",
             source,
             entries);
@@ -669,7 +697,7 @@ public sealed class WarpLifetimeTests
             [
                 new("rayGenerationMain", SlangStage.RayGeneration),
             ];
-            rayShader = D3D12TestShader.Compile(
+            rayShader = shaderCompiler.Compile(
                 "rhi_lifetime_ray_table",
                 raySource,
                 rayEntries);
@@ -873,7 +901,7 @@ public sealed class WarpLifetimeTests
     }
 
     [Fact]
-    public void View_retains_resource_native_state_exactly_until_view_disposal()
+    public void View_retains_resource_native_state_exactly_until_view_disposal_DoesNotThrow()
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -1029,6 +1057,17 @@ public sealed class WarpLifetimeTests
         }
         throw new Xunit.Sdk.XunitException(
             "An invalid D3D12 command-queue lock exposed its native pointer.");
+    }
+
+    private static void WaitUntilQueueLockInvalidated(D3D12CommandQueueLock value)
+    {
+        var limit = System.Diagnostics.Stopwatch.StartNew();
+        var spinner = new SpinWait();
+        while (value.IsHeld)
+        {
+            Assert.True(limit.Elapsed < TimeSpan.FromSeconds(5), "Queue lock invalidation exceeded the hang limit.");
+            spinner.SpinOnce();
+        }
     }
 
 

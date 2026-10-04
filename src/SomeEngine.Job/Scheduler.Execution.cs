@@ -100,8 +100,6 @@ public sealed partial class Scheduler
         {
             continuation.Invoke(callbacks.Fault);
         }
-
-        callbacks.Continuations.Clear();
     }
 
     private void TryCompleteState(JobHandle handle)
@@ -133,8 +131,8 @@ public sealed partial class Scheduler
 
     private void DispatchCompletedState(
         JobHandle handle,
-        List<DependencyContinuation>? continuations,
-        List<ExternalCompletionContinuation>? externalContinuations,
+        DependencyContinuation[]? continuations,
+        ExternalCompletionContinuation[]? externalContinuations,
         CompletionLease externalContinuationLease,
         ScopeToken parent,
         ExceptionDispatchInfo? fault)
@@ -145,8 +143,6 @@ public sealed partial class Scheduler
             {
                 continuation.Invoke(fault);
             }
-
-            continuations.Clear();
         }
 
         if (parent.Index != 0)
@@ -172,7 +168,6 @@ public sealed partial class Scheduler
             }
             finally
             {
-                externalContinuations.Clear();
                 _completion.EndWait(externalContinuationLease);
             }
         }
