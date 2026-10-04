@@ -117,5 +117,38 @@ Solid 分别通过 13／12 项。测试命令沿上面的单进程配置，追�
 原生发布中的 `AsyncAnimationChecks`、完整行为入口和 `Test-Checkpoint.ps1` 同时通过；
 临时发布目录在运行后清理。
 
+画布与异步计算适配的验收代码为 `c91f61a5cbaf72f6de079dd4f5f15eab86710bcf`，
+合入 `codex/someui` 的 `8c953fae65deb55d925043a1377ec48253744dc1`，其中包含指定的
+`55cfda50379cedd4a0726bc627d260a8f3d9ee7f` 及既有评审修复、Launch/Resource 和三材质画布实现。
+公开异步动画用例增至 10 项，与原有界面动画 10 项共同验收；新增画布呈现用例通过
+D3D12 WARP/Vulkan、屏幕/世界画布四种组合的像素读回。
+
+| 测试范围 | Debug | Release |
+| --- | ---: | ---: |
+| Views 完整测试 | 305 | 273 |
+| Elements.Consumer 完整测试 | 253 | 187 |
+| Solid 完整测试 | 50 | 46 |
+| Elements.Render 完整测试 | 34 | 32 |
+| RenderGraph 画布、字形、图片与世界画布绘制 | 31 | 31 |
+| Layout 完整测试 | 95 | 75 |
+| Animation 完整测试 | 125 | 117 |
+| 应用帧顺序与输入完整测试 | 30 | 30 |
+| 合计 | 923 | 791 |
+
+各测试项目使用 `dotnet test tests/<项目>/<项目>.csproj -c <配置> --nologo -v quiet -m:1
+-nodeReuse:false -p:UseSharedCompilation=false -- xUnit.MaxParallelThreads=1
+xUnit.ParallelizeTestCollections=false`。RenderGraph 在相同命令中追加
+`--filter 'FullyQualifiedName~Canvas|FullyQualifiedName~GlyphDrawingTests|FullyQualifiedName~ImageDrawingTests'`，
+范围包含静止帧、资源更新、取消帧、裁剪、透明叠加、世界投影与深度测试。
+应用项目的 MeshOptimizer 依赖按仓库子模块版本 `8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4`
+初始化后执行。
+
+原生发布使用 `dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj
+-c Release -r win-x64 -o artifacts/someui-ticket-52-aot --nologo -v quiet -m:1
+-nodeReuse:false -p:UseSharedCompilation=false`。
+发布后的 `SomeEngine.Views.AotSmoke.exe` 实际运行通过，包括 Launch 的跨段目标提交、
+失败恢复及取消后旧任务清理；`Test-Checkpoint.ps1 -Executable <原生程序>` 通过跨进程保存、
+类型编号重映射、下一帧重建与依赖验收。原生发布目录与发布生成的 RID 锁文件变化在运行后清理。
+
 ## Relations
 [[architecture/animation/Property-Animation|Property Animation]] · [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Render-Path|Render Path]]
