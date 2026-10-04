@@ -13,7 +13,7 @@ public static partial class Scope
         DevelopmentCheck.Require(init is not null, "Remember requires an initializer.");
         if (current.KeyPrefix is ulong prefix)
             key = CombineKeys(prefix, key);
-        var occurrences = (current.Calculation ?? current).RememberOccurrences ??= new();
+        var occurrences = current.ViewData.RememberOccurrences ??= new();
         occurrences.TryGetValue(key, out int occurrence);
         occurrences[key] = occurrence + 1;
 
