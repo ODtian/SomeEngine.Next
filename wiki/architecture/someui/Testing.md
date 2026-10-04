@@ -216,5 +216,23 @@ info 验收同时覆盖 Compose 与 SwiftUI，内容委托形状由编译诊断�
 原生验收产物在执行后清理。接口与节点规则见
 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
 
+## Button 与外部控件对等验收（#43）
+
+[ButtonTests](../../../tests/SomeEngine.Elements.Consumer.Tests/ButtonTests.cs)
+对内置 Button、[用户 Button](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs)
+和[用户 IconButton](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs)
+运行同一组公开行为用例。验收通过视图函数声明节点，通过 `Pointer` 注入输入并推进系统帧，
+读取公开的 Surface、Box、Text、ShapedText、Hover、Clicks 和调用方写出的点击显示数据。
+
+用例覆盖默认样式、标签与图标间距、非均匀内边距、子树主题更新、最近主题的完整默认值、
+显式透明颜色、零圆角与零内边距、悬停与按下颜色、按住后移出、区域外释放、连续读取点击、同帧多次
+点击的消费，以及修改标签与主题后的按下和点击保留。开发构建通过 Core 作用域检查报告
+构建使用错误。
+
+[ButtonChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs)
+和两个用户控件源文件由 Views NativeAOT 工程编译，点击消费、标签更新、主题与输入状态
+在测试运行器和原生入口执行同一份检查。API 与默认主题由
+[[architecture/someui/Composition|Composition]] 维护。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

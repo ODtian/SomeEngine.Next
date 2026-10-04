@@ -50,6 +50,10 @@ Console.WriteLine("Column surface values, layout sizes, write versions, and publ
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(true);
 Console.WriteLine("Canvas pointer input, click consumption, held presses, capture, and public user behaviors passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.BuiltIn);
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);
+Console.WriteLine("Button themes, held presses, click consumption, label updates, and public user Button and IconButton passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
 Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
 
