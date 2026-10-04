@@ -106,6 +106,21 @@ committed text on every read. Custom navigation systems can call
 `TextEditingSystem.HandleInput` and `CancelComposition` through the public API.
 See Wiki `architecture/someui/Input-and-Behaviors` for complete input rules.
 
+Declare `SingleLineText` with `Scope.Ensure` on an editor to filter CR and LF
+from committed and composition input. The composition caret follows the
+filtered string. An input containing only line breaks retains the editor's
+selection and text, following the existing empty-input rule.
+
+`TextFieldFunctions.TextField(text, placeholder)` composes a single-line editor
+from the public text editing, focus, Text, Surface, and layout APIs. Read
+`field.Edited(out string text)` and pass the accepted text back to the field.
+Equal accepted text retains the caret, selection, and IME candidates; a changed
+parameter replaces the editor's text and moves both selection ends to its end.
+The field displays a placeholder for empty text and draws the focused caret
+and selection using the nearest TextTheme. Its natural-width text shares the
+ScrollView viewport and clipping path. See Wiki Composition for the defaults
+and the external rewrite.
+
 `DraggableFunctions.Draggable(node)`, `ScrollableFunctions.Scrollable(node)`,
 and `SelectableFunctions.Selectable(node)` declare their components through
 `Scope.Ensure`. The pointer stage writes `Drag` and toggles `Selected` on each

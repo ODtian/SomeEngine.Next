@@ -170,6 +170,46 @@ Toggle 在自己的节点上声明 `Pressable` 与 `Focusable`，用 40 × 24 �
 以公开行为、普通视图和调用方数据写回表达这些能力；`Step = 0` 表示连续拖动，
 键盘采用范围的 5% 步进，符合本票确定的 Slider 默认参数。
 
+## TextField（#46）
+
+```csharp
+public record struct TextField(string Text, string Placeholder = "") : IView, ISparseComponent;
+// using static SomeEngine.Elements.TextFieldFunctions;
+Entity field = TextField(name, "姓名");
+if (field.Edited(out string text))
+    name = text;
+```
+
+TextField 是单行输入视图。它在自己的节点上声明公开的 `TextEditing` 和
+`SingleLineText`，其中 `TextEditing` 同时声明 `Focusable`；调用方沿既有
+`Edited(out string text)` 消费输入结果并写回自己的数据。
+
+视图采用 `BuildMode.Once`，用公开 `Memo<string>` 按 `Text` 字符串的变化同步
+调用方参数，用公开 `Scope.Compute` 提交文字变化。普通子视图读取编辑、焦点与
+占位参数后重建外观。首次参数使光标与选区锚点位于
+文字末尾；调用方传回当前编辑文字时保留光标、选区和输入法组合。传入其它文字
+时，编辑内容替换为该参数，两端移到末尾，组合显示结束。参数同步保留编辑计数，
+输入阶段继续负责递增计数。父视图重跑和占位文字更新沿字符串比较保留当前编辑。
+
+外观通过公开的 Text、Surface、Absolute 与 ScrollView 组合：160 单位宽的圆角
+底面带 8 单位内边距，字体、字号、行高和文字颜色从最近的 `TextTheme` 读取。
+空文字时显示半透明占位文字。已聚焦的视图显示 1 单位宽的光标，选区显示蓝色
+半透明底面。输入法候选替换选区的呈现内容，光标跟随 `CompositionCaret`。
+文字按自然宽度排版，长文字沿 ScrollView 的公开滚动与裁剪规则显示。
+几何按同一字体的字形簇 advance 计算，光标与选区随文字、组合和主题更新。
+
+`Text` 与 `Placeholder` 使用单行字符串。参数使用错误沿 Core `DevelopmentCheck`
+报告；文本输入中的 CR 与 LF 由 `SingleLineText` 的编辑规则过滤。
+编辑、组合及计数语义见 [[architecture/someui/Input-and-Behaviors|Input and Behaviors]]。
+
+独立 SomeUI 的 TextInput 提供了占位文字、焦点和光标的交互参考。本票依据
+ADR 0011，以公开行为、普通视图和修饰组合表达这些能力；已提交文字、选区与
+组合文字由同一份 `EditableText` 持有，应用通过编辑结果回传自己的参数。
+
+外部 [TextField](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/TextField.cs)
+在消费者程序集内通过相同公开部件重写，内置版本与重写版本共用
+[TextFieldChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/TextFieldChecks.cs)。
+
 ## Evidence
 对等由程序集边界保证，见 [[architecture/someui/Assemblies|Assemblies]]；外部重写测试见 [[architecture/someui/Testing|Testing]]。
 
