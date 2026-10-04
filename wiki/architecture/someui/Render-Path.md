@@ -89,6 +89,13 @@ shader 以圆角矩形的距离函数计算覆盖率；填充与内部描边分�
 填充与描边的 RGBA 值在 shader 中乘覆盖率并转成预乘 alpha，
 再以 `One` / `OneMinusSourceAlpha` 混合到已定义的目标颜色上。
 
+Surface 材质同时解释实例中的 DropShadow。顶点范围覆盖表面与偏移后的阴影，
+并包含模糊半径及一个目标像素的边缘余量。阴影沿同一圆角矩形距离函数计算：
+正模糊半径使用 `1 - smoothstep(-BlurRadius, BlurRadius, distance)` 柔化边缘，
+零半径使用一个目标像素的覆盖率过渡。shader 以表面剩余透明度合成阴影，
+填充与描边位于自身阴影前方；同一裁剪矩形作用于两者。
+实例字节布局由 Surface 材质与其 shader 共同解释。
+
 Runtime 的 `SurfacePanelExample` 使用公开视图修饰与布局系统构建画布和面板，
 沿同一 Game world → Rendering world 提取路径绘制。
 DefaultGame 的测试平台默认显示该面板，`Surface panel` 选项控制示例；
@@ -98,6 +105,8 @@ DefaultGame 的测试平台默认显示该面板，`Surface panel` 选项控制�
 `tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests` 经公开结构版本、pass 身份和
 GPU 像素读回验收画布成员修改、静态帧、改色、取消帧、透明树序叠加、裁剪与画布移除。
 相同像素用例分别使用 D3D12 WARP 和 Vulkan，并启用引擎图形验证层。
+`CanvasShadowTests` 同样通过两种后端的像素读回验收阴影半透明颜色、柔化边缘、
+正负偏移、裁剪、参数更新与清空，以及表面对自身阴影的覆盖。
 
 此前独立 SomeUI 的距离函数及填充/描边覆盖区域用于核对材质语义。
 本实现采用引擎的持久图与实例光栅绘制，实例数据由既有 RenderWorld 缓冲提供。

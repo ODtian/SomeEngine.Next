@@ -33,6 +33,10 @@ The `Shadow` init property carries the surface's `DropShadow` color, offset,
 and blur radius through the same extraction path. Creation, edits, and clearing
 to the transparent default update that same instance for the material to use.
 The existing nine-argument constructor and deconstruction remain available.
+The built-in Surface material expands its shader-generated rectangle to include
+the shifted shadow and blur radius, then composites the shadow behind the fill
+and border with the same clip rectangle. Positive blur radii use a smoothstep
+distance transition; zero radius retains the one-pixel edge coverage.
 
 Component write versions select changed chunks and rows. Surface and rectangle
 edits update their existing instances. Tree membership, child order, and canvas
