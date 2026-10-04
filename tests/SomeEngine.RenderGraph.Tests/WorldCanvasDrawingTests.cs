@@ -7,6 +7,8 @@ using SomeEngine.Graphics.Validation;
 using SomeEngine.Graphics.Vulkan;
 using SomeEngine.Layout;
 using SomeEngine.Render.Components;
+using SomeEngine.Render;
+using SomeEngine.Resources;
 using SomeEngine.Render.Systems;
 
 namespace SomeEngine.RenderGraph.Tests;
@@ -34,13 +36,42 @@ public sealed partial class CanvasDrawingTests
         }
     }
 
-    private static void CheckWorldCanvas(IGraphicsBackend backend, Device device, bool reversedDepth)
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void WorldImageUsesCanvasProjectionScaleAndSceneDepth(bool vulkan, bool reversedDepth)
+    {
+        if (vulkan)
+        {
+            using IGraphicsBackend backend = new ValidationLayer(VulkanGraphicsBackend.Create(),
+                new ValidationOptions(NativeValidationDisabled: true));
+            using Device device = backend.CreateDevice(new DeviceDesc(default, [new DeviceQueueDesc(QueueType.Graphics)]));
+            CheckWorldCanvas(backend, device, reversedDepth, image: true);
+        }
+        else
+        {
+            using WarpGraphTestSupport graphics = WarpGraphTestSupport.Create(enableValidation: true);
+            CheckWorldCanvas(graphics.Backend, graphics.Device, reversedDepth, image: true);
+        }
+    }
+
+    private static void CheckWorldCanvas(IGraphicsBackend backend, Device device, bool reversedDepth, bool image = false)
     {
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        using var renderDevice = new RenderDevice(backend, device);
         using var graph = new RenderGraph(backend, device, [queue]);
         using var world = new RenderWorld();
         using SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using var renderer = new CanvasRenderer(backend, device, graph, world, material, Format.R8G8B8A8UNorm);
+        using ImageMaterial? imageMaterial = image ? ImageMaterial.Create(device.Capabilities.CompileTarget) : null;
+        using SomeEngine.Resources.Texture texture = SomeEngine.Resources.Texture.Create(
+            new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,
+                TextureUsages.Sampled | TextureUsages.CopyDestination),
+            [new TexturePixels(new TextureMipTile { Width = 1, Height = 1, ChunkKey = 0, DecodedLength = 4,
+                RowPitch = 4, SlicePitch = 4 }, new byte[] { 255, 0, 0, 255 })], TextureViewDimension.Texture2D);
+        using var renderer = new CanvasRenderer(backend, device, graph, world, material, Format.R8G8B8A8UNorm,
+            imageMaterial, renderDevice);
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
         Entity view = world.CreateEntity(new RenderView(Matrix4x4.Identity, Matrix4x4.Identity, 64, 64));
@@ -50,7 +81,13 @@ public sealed partial class CanvasDrawingTests
         };
         Entity canvas = world.CreateEntity(canvasData);
         world.AddBuffer<SurfaceInstance>(canvas);
-        world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer =>
+        if (image)
+        {
+            world.AddBuffer<ImageInstance>(canvas);
+            world.ExecuteBufferWrite<ImageInstance>(canvas, buffer => buffer.Add(new(Entity.Null, texture,
+                new Rect(0, 0, 0.5f, 0.5f), new Rect(0, 0, 1, 1), new Rect(0, 0, 0.5f, 0.5f), 0, 1)));
+        }
+        else world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer =>
             buffer.Add(new(Entity.Null, new Rect(0, 0, 0.5f, 0.5f), new Color(1, 0, 0), 0,
                 default, 0, new Rect(0, 0, 0.5f, 0.5f), 0, 1)));
 
@@ -112,7 +149,11 @@ public sealed partial class CanvasDrawingTests
             if (index == 6)
             {
                 canvasData = canvasData with { Scale = 2 };
-                world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer => buffer[0] = buffer[0] with
+                if (image) world.ExecuteBufferWrite<ImageInstance>(canvas, buffer => buffer[0] = buffer[0] with
+                {
+                    Rectangle = new Rect(0, 0, 0.25f, 0.25f), ClipRectangle = new Rect(0, 0, 0.25f, 0.25f), Version = 2,
+                });
+                else world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer => buffer[0] = buffer[0] with
                 {
                     Rectangle = new Rect(0, 0, 0.25f, 0.25f), ClipRectangle = new Rect(0, 0, 0.25f, 0.25f), Version = 2,
                 });
@@ -138,6 +179,7 @@ public sealed partial class CanvasDrawingTests
                 renderer.UpdateFrame(ref frame);
                 var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
                 int count = frame.Execute(completions);
+                renderDevice.TrackSubmission(completions.AsSpan(0, count));
                 foreach (QueueCompletion completion in completions.AsSpan(0, count))
                     Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
             }

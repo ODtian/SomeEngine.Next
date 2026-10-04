@@ -29,6 +29,18 @@ layout and preserves a held UI press until release.
 The external examples and shared behavior checks live in
 `tests/SomeEngine.Elements.Consumer.Tests`.
 
+`Image(AssetId<TextureAsset> source, ImageFit fit = ImageFit.Contain)` is a layout
+view. Install `new ImageTextures(resolve)` in `LayoutSystem`; the resolver returns
+the application's ready `SomeEngine.Resources.Texture` for that asset identity.
+The application controls acquisition and texture lifetime. Image's natural size
+uses texture width and height. During acquisition it uses the unified missing
+texture's 1×1 size; a Box can supply a fixed drawing area. Ready resource changes
+enter the layout data stage and continue through the shared canvas extraction.
+`ImageFit` supports `Stretch`, `Contain` and `Cover`; fitting applies within Box
+padding, while `LayoutRect` retains the allocated outer rectangle.
+The material and fitting semantics live in the Wiki
+[`Render-Path`](../../wiki/architecture/someui/Render-Path.md).
+
 `FocusFunctions.Focusable(node)` declares the `Focusable` marker and `Clicks`.
 Read `node.Focused()` in a caller scope to observe focus through a presence
 dependency. Queue keys through `Keyboard.Key(world, key, pressed)`, directions

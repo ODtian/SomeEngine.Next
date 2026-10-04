@@ -94,6 +94,8 @@
 
 **图集页**（`AtlasPage`）：尺寸固定、每像素一字节的距离场数据，像素行从上到下排列。
 
+**图片**（`Image`）：以纹理资产身份声明的布局视图，通过 `ImageTextures` 取得应用已就绪的纹理，用固有尺寸测量。`ImageFit` 表达拉伸、等比适应与等比填充；绘制矩形和 UV 通过统一画布提取送达 Rendering world，规则见 [Render Path](wiki/architecture/someui/Render-Path.md)。
+
 **图集新增区域**（`AtlasDirtyRegion`）：供渲染提取读取的页编号与像素矩形，由图集调用方在提取完成后清空。
 
 **文字图集来源**（`TextAtlas`）：Game world 实体持有的 CPU 字形图集引用，供字形提取沿共享渲染边界复制像素。
