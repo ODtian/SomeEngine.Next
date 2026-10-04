@@ -80,11 +80,16 @@ internal sealed class ChildChanges
 
     internal void ReleaseChildren(World world)
     {
-        foreach (IChildData data in _previousData)
-            data.Complete();
+        Complete();
         foreach (Entity entity in _removedChildren)
             if (world.IsAlive(entity))
                 Hierarchy<ElementTree>.DestroySubtree(world, entity);
+    }
+
+    internal void Complete()
+    {
+        foreach (IChildData data in _previousData)
+            data.Complete();
     }
 
     private interface IChildData
