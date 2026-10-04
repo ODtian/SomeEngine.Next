@@ -39,6 +39,8 @@ internal sealed class ObjectDependencyList
         _readFrame = frame;
     }
 
+    internal void BeginFrame(ulong frame) => _readFrame = frame;
+
     internal bool HasChanges(ulong frame)
     {
         for (int index = 0; index < _count; index++)

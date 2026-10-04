@@ -17,6 +17,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private QueryHandle _viewQuery;
     private ulong _frame;
     private int _iterationLimit = 8;
+    private BuildQueue _builds = null!;
 
     /// <summary>The maximum number of rebuild rounds in one interface frame.</summary>
     public int IterationLimit
@@ -31,6 +32,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
+        _builds = BuildQueue.For(context.World);
         _dependencyChanges.Clear();
         _viewQuery = context.World.Query(context.World.QueryDefinition().Read<ViewType>());
     }
@@ -43,6 +45,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         using var rebuild = Scope.EnterRebuild();
 #endif
         World world = context.World;
+        _builds.Resume(world, _frame);
         for (int iteration = 0; iteration < IterationLimit; iteration++)
         {
             CollectChangedViews(world);
@@ -54,7 +57,8 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
                 Entity entity = view.Entity;
                 if (!world.IsAlive(entity))
                     continue;
-                if (world.Has<BuildRequest>(entity) || HasBuildChanges(world, entity, recheck: true))
+                if (!_builds.Contains(entity) &&
+                    (world.Has<BuildRequest>(entity) || HasBuildChanges(world, entity, recheck: true)))
                     ViewTypes.Build(world, entity, _frame);
                 if (world.IsAlive(entity) && world.HasSparse<Computations>(entity))
                     RebuildComputations(world, entity);
@@ -95,11 +99,15 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         _changedViews.Sort(static (left, right) => left.Depth.CompareTo(right.Depth));
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_viewQuery);
+    public void OnDestroy(ref ImmediateSystemContext context)
+    {
+        _builds.Close(context.World);
+        context.World.ReleaseQuery(_viewQuery);
+    }
 
     private bool HasChanges(World world, Entity entity)
     {
-        if (HasBuildChanges(world, entity))
+        if (!_builds.Contains(entity) && HasBuildChanges(world, entity))
             return true;
         if (world.HasSparse<Computations>(entity))
         {
