@@ -57,10 +57,11 @@ interpreted at import time. The Cluster importer's standard encoder writes the b
 consumed directly by its shader. No glTF vertex-layout table or accessor query
 is added to the renderer or GPU shader.
 
-For these two scenes all material channels use UV0. Until vertex attributes have
-their own Block, standard cluster encoding skips unsupported attributes such as
-UV1 and reports a warning. All source attributes still participate in welding.
-The input GLB retains them. Sources whose materials require other
+For these two scenes all material channels use UV0. The Cluster importer group
+also produces a geometry Block and an attributes Block containing every shading
+stream, including additional UV and color sets. The retained combined Block
+continues to supply this sample's shader. All source attributes participate in
+the new geometry's welding. Sources whose materials require other
 UV sets are explicitly rejected by this sample material integration; supporting
 them requires an appropriate import conversion and fixed shader representation.
 This is not a general implementation of every glTF material/animation extension.

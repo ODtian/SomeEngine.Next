@@ -11,8 +11,8 @@ glTF 网格导入的顺序与算法，目标是符合 glTF 规范，并让从 Bl
 | 阶段 | 产出 | 内容 |
 |---|---|---|
 | 1 准备 | `VertexStreamsBlock`（仅导入进程内） | 解压 meshopt 扩展；按解码库支持情况处理 Draco；反量化（`KHR_mesh_quantization`）与展开稀疏 accessor；三角带、三角扇转为三角形列表；线、点图元单独跳过并报告；无索引时生成顺序索引；缺 NORMAL 时生成平面法线（规范要求）；材质有法线贴图且缺 TANGENT 时用 MikkTSpace 生成，UV 集取材质 `normalTexture.texCoord`；颜色统一为线性 RGBA；其余属性保持来源数值 |
-| 2 几何 | 管线几何 Block | 合并图元为材质区段；对所有存在的顶点流（含蒙皮与形变增量）逐位比较后焊接，保留硬边与 UV 接缝；按 Deform 分区（静态、蒙皮、形变、蒙皮加形变），分区后才建 cluster；LOD 简化时锁住 UV 接缝、材质边界与法线不连续处，蒙皮分区把权重计入误差，形变分区计入增量 |
-| 3 顶点属性 | 管线顶点属性 Block | 全部法线、切线、UV 集、颜色与自定义属性，按该管线 Vertex 实现的编码，记录兼容性标识 |
+| 2 几何 | `ClusterGeometryBlock` | 合并图元为材质区段；对所有存在的顶点流（含蒙皮与形变增量）逐位比较后焊接，保留硬边与 UV 接缝；按 Deform 分区（静态、蒙皮、形变、蒙皮加形变），分区后才建 cluster；LOD 简化时锁住 UV 接缝、材质边界与法线不连续处，并保护蒙皮影响与形变增量的变化 |
+| 3 顶点属性 | `ClusterVertexAttributesBlock` | 全部法线、切线、UV 集、颜色与自定义属性，按 cluster 编码，记录兼容性标识 |
 | 4 蒙皮 | `SkinBindingBlock` + 管线蒙皮影响 | 逆绑定矩阵与关节到骨架的映射归属 skin 的 `SkeletonAsset`；每个顶点的全部 `JOINTS_n`/`WEIGHTS_n`，数量与数值照搬来源；规范要求权重和为 1，只检查并报告，不修改 |
 | 5 形变 | `MorphTargetSetBlock` + 管线形变增量 | 网格目标名称取 `mesh.extras.targetNames`，默认权重取 `mesh.weights`；逐目标增量 |
 
@@ -67,12 +67,22 @@ public sealed partial class VertexStreamsBlock : AssetBlock
 
 公共行为验收见 `tests/SomeEngine.Assets.Tests/Assets/GltfVertexStreamsTests.cs`。MikkTSpace 对照资产与固定参考数据见 `Content/Gltf/mikk-reference.json`，由独立的原始 C 参考实现生成，包含镜像 UV、平滑接缝和退化 UV。
 
+## Cluster geometry and attributes
+
+中立组合包含 `GltfVertexStreamsImporter`；Cluster 组合包含 `ClusterGeometryImporter`、`ClusterVertexAttributesImporter` 与扩展阶段保留的 `ClusterGltfMeshImporter`。Importer 通过无参构造与生成的能力描述注册，算法由 Importer 的实现持有。
+
+几何焊接逐位比较 double 中保存的全部基础属性、来源切线、各形变目标及来源形变切线，同时区分材质、属性名称与分量数、形变目标数量和 Deform 类别。只为被三角形引用的行建立顶点身份。`Vertices` 中每一项包含来源图元号、准备流的行号和原 accessor 行号，所有逐顶点 Importer 可使用这份映射。
+
+cluster 构建按四种 Deform 类别分区。复用现有 meshoptimizer cluster 与 LOD DAG 构建流程，局部索引引用 cluster 顶点，逐三角形保留来源材质编号；不同分区的 LOD 组编号彼此独立。重合但身份不同的顶点受到简化锁保护，覆盖全部 UV 接缝、法线不连续和材质边界。蒙皮或形变流在边两端发生变化时，两端同样锁住：以变化为零的保守误差约束保留所有影响集和目标，适用于任意来源数量。新路径采用受锁约束的简化；静态及变形数据恒定区域可生成更粗 LOD。
+
+位置按 cluster 以 uint16 XYZ 编码，使用与标准组合编码一致的二次幂量化步长；包围半径包含量化误差。属性按同一 cluster 顶点顺序以 little-endian float64 编码，完整保留来源数值（包括 uint32 精度与符号零）。每个属性保存语义名称、最大分量数和逐顶点的实际分量数，0 表示该来源图元省略该属性。基础位置与蒙皮影响分别属于几何及后续影响 Block；其余基础属性全部进入属性 Block。属性的布局信息属于构建产物，现有渲染仍消费既有固定着色器解释的组合编码。
+
+公开行为验收见 `ClusterGeometryImportTests`：位置对照、全部属性与保存重读、逐流位比较焊接、四种分区、LOD 接缝及材质、混合属性形状、包组合同时交付新旧 Block。
+
 ## 当前代码与目标的差异
 
-- Cluster 几何与模板编码器当前从原始 glTF 读取；后续几何任务把输入接到 `VertexStreamsBlock`，并按管线决定焊接、cluster 和编码。
-- 顶点属性 Block 迁移前，旧标准编码仍跳过颜色和 `TEXCOORD_0` 以外的 UV 并报告警告；全部来源属性参与顶点焊接。新顶点流保留这些属性供后续 Block 生产者编码。
+- 渲染读取在收缩阶段迁移到新 Block；现有组合 Block 的产出继续供该阶段前的渲染消费。
 - 蒙皮影响编码与形变增量编码由后续管线表示 Importer 实现。
-- LOD 简化与 Deform 分区按第 2 阶段的目标迁移。
 
 ## Relations
 [[architecture/Assets/Block-Division|Block Division]] · [[architecture/Assets/Asset-Meshes|Mesh]] · [[architecture/ECS/Coordinate-System|Coordinate System]] · ADR 0016 · ADR 0017

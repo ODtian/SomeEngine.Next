@@ -1,7 +1,7 @@
 namespace SomeEngine.Assets.Importers;
 
-[AssetImporterSet(NeutralId, "glTF shared data", typeof(GltfMeshImporter), typeof(GltfTextureImporter), typeof(MorphTargetSetImporter), Neutral = true)]
-[AssetImporterSet(ClusterId, "Cluster mesh", typeof(ClusterGltfMeshImporter))]
+[AssetImporterSet(NeutralId, "glTF shared data", typeof(GltfMeshImporter), typeof(GltfTextureImporter), typeof(GltfVertexStreamsImporter), typeof(MorphTargetSetImporter), Neutral = true)]
+[AssetImporterSet(ClusterId, "Cluster mesh", typeof(ClusterGltfMeshImporter), typeof(ClusterGeometryImporter), typeof(ClusterVertexAttributesImporter))]
 public static class GltfImporterSets
 {
     public const string NeutralId = "dd503c85-0b44-4e55-9aeb-806cebdc27c6";

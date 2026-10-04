@@ -924,13 +924,15 @@ public static partial class ClusterBuilder
         ReadOnlySpan<uint> indices,
         float[] materialIndicesArray,
         List<BuilderMeshlet> clusters,
-        List<uint> globalIndices
+        List<uint> globalIndices,
+        ReadOnlySpan<byte> vertexLocks = default
     )
     {
         var locks = ArrayPool<byte>.Shared.Rent(positions.Length);
         var remap = ArrayPool<uint>.Shared.Rent(positions.Length);
         try
         {
+            if (!vertexLocks.IsEmpty) vertexLocks.CopyTo(locks);
             GeneratePositionRemap(positions, remap.AsSpan(0, positions.Length));
             Clusterize(
                 config,
@@ -948,7 +950,7 @@ public static partial class ClusterBuilder
                 globalIndices,
                 locks.AsSpan(0, positions.Length),
                 remap.AsSpan(0, positions.Length),
-                nextGroupId);
+                nextGroupId, !vertexLocks.IsEmpty);
         }
         finally
         {
@@ -1011,7 +1013,7 @@ public static partial class ClusterBuilder
         List<uint> globalIndices,
         Span<byte> locks,
         ReadOnlySpan<uint> remap,
-        int nextGroupId)
+        int nextGroupId, bool sourceLocks)
     {
         List<int> pending = CreatePendingClusters(clusters.Count);
         var workspace = new LodWorkspace();
@@ -1029,7 +1031,7 @@ public static partial class ClusterBuilder
                 pending,
                 workspace,
                 ref nextGroupId,
-                depth++);
+                depth++, sourceLocks);
         }
 
         AssignRootParentError(clusters, pending);
@@ -1057,10 +1059,10 @@ public static partial class ClusterBuilder
         List<int> pending,
         LodWorkspace workspace,
         ref int nextGroupId,
-        int depth)
+        int depth, bool sourceLocks)
     {
         Partition(config, positions, clusters, globalIndices, pending, remap, workspace.GroupOffsets);
-        LockBoundary(locks, clusters, globalIndices, pending, workspace.GroupOffsets, remap);
+        LockBoundary(locks, clusters, globalIndices, pending, workspace.GroupOffsets, remap, sourceLocks);
         var nextPending = new List<int>();
         Span<int> pendingSpan = CollectionsMarshal.AsSpan(pending);
         for (int groupIndex = 0; groupIndex < workspace.GroupOffsets.Count - 1; groupIndex++)
@@ -2068,7 +2070,8 @@ public static partial class ClusterBuilder
         List<uint> globalIndices,
         List<int> pending,
         List<int> groupOffsets,
-        ReadOnlySpan<uint> remap
+        ReadOnlySpan<uint> remap,
+        bool sourceLocks
     )
     {
         const byte LockBit = 1 << 0;
@@ -2110,7 +2113,8 @@ public static partial class ClusterBuilder
 
         for (int i = 0; i < locks.Length; i++)
         {
-            locks[i] = (byte)((locks[i] & LockBit) | (locks[i] & SimplifyProtect));
+            byte sourceLock = sourceLocks ? (byte)(locks[i] & SourceVertexLockBit) : (byte)0;
+            locks[i] = (byte)((locks[i] & LockBit) | (locks[i] & SimplifyProtect) | sourceLock | (sourceLock != 0 ? LockBit : 0));
         }
     }
 

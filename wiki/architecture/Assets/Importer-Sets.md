@@ -24,7 +24,7 @@ public static partial class ProjectAssetCapabilities;
 
 单次 `GltfImportOverrides.Importers` 覆盖管线成员，同时沿用中立成员和场景选择；显式替换或关闭某一中立成员时，以该次逐项选择为准。保存的组合与逐项参数参与输入版本，来源复制保留组合选择、成员替换与参数。
 
-引擎包的 `GltfImporterSets` 声明 glTF 中立组合（`GltfMeshImporter`、`GltfTextureImporter`、`MorphTargetSetImporter`）与 Cluster 组合（`ClusterGltfMeshImporter`）。动画包的 `GltfSkeletonImporter` 另行声明中立骨架组合（`GltfSkeletonImporter`、`SkinBindingImporter`）；项目引用该包后按 skin 来源展开。绑定与形变集合的数据归属见 [Block Division](Block-Division.md)。默认项目通过 `[AssetCapabilities(GltfImporterSets.ClusterId)]` 选择 Cluster。
+引擎包的 `GltfImporterSets` 声明 glTF 中立组合（`GltfMeshImporter`、`GltfTextureImporter`、`GltfVertexStreamsImporter`、`MorphTargetSetImporter`）与 Cluster 组合（`ClusterGeometryImporter`、`ClusterVertexAttributesImporter`、扩展阶段保留的 `ClusterGltfMeshImporter`）。两份新表示及既有组合表示在同一次导入中产出，准备流保存为导入进程内 Block。动画包的 `GltfSkeletonImporter` 另行声明中立骨架组合（`GltfSkeletonImporter`、`SkinBindingImporter`）；项目引用该包后按 skin 来源展开。绑定与形变集合的数据归属见 [Block Division](Block-Division.md)。默认项目通过 `[AssetCapabilities(GltfImporterSets.ClusterId)]` 选择 Cluster。
 
 执行仍由导入上下文按需完成：来源集成为每种元素启用 `.meta` 中的 Importer；请求资产时，运行该元素启用的全部 Importer；Importer 调用 `GetBlockAsync` 时先运行对应的生产者，每个生产者在一次导入中只运行一次，并检查依赖环。
 

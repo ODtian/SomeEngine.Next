@@ -32,8 +32,8 @@
 | `SkinBindingBlock`（`SkeletonAsset`） | 按来源关节顺序保存逆绑定矩阵、关节到骨架的映射 | 中立 |
 | `MorphTargetSetBlock`（`MeshAsset`） | 按来源目标顺序保存名称、默认权重 | 中立 |
 | `VertexStreamsBlock` | 每个图元的材质、三角形索引、全部顶点流、形变目标与诊断，见 [[architecture/Assets/Gltf-Mesh-Import|glTF Mesh Import]] | 中立，仅导入进程内 |
-| 几何 | 顶点身份、位置、拓扑、LOD（Cluster：cluster 与 LOD DAG；普通管线：索引缓冲与离散 LOD） | 管线表示 |
-| 顶点属性 | 法线、切线、全部 UV 与颜色、自定义属性，按该管线 Vertex 实现的编码 | 管线表示 |
+| `ClusterGeometryBlock` | 顶点身份与来源顶点映射、逐 cluster 量化位置、局部三角形、材质编号、Deform 分区与 LOD DAG | Cluster 管线表示 |
+| `ClusterVertexAttributesBlock` | 法线、切线、全部 UV 与颜色、自定义属性，按几何 Block 的 cluster 与顶点顺序编码，携带编码兼容性标识 | Cluster 管线表示 |
 | 蒙皮影响 | 每个顶点的全部关节与权重，按该管线的顶点顺序 | 管线表示 |
 | 形变增量 | 逐目标、逐顶点增量，按该管线的顶点顺序 | 管线表示 |
 
@@ -43,7 +43,9 @@
 
 公开行为验收见 [DeformationBlockBehaviorTests](../../../tests/SomeEngine.Animation.Pose.Tests/DeformationBlockBehaviorTests.cs)：覆盖 `.gltf`、`.glb` 保存重开、共享 mesh 的不同 skin、来源关节重排、替换骨架生产者、省略值、静态网格与重新导入更新。
 
-当前代码与目标的差异：Cluster 管线只有一个 `ClusterMeshBlock`，位置与属性在同一段编码中；普通管线没有表示 Block；管线蒙皮影响与形变增量 Block 待实现。拆分 Cluster 的几何与属性会改变渲染侧读取 cluster 数据的方式。
+Cluster 组合同时产出上述两个 Block 与既有 `ClusterMeshBlock`。`ClusterGeometryImporter` 从 `VertexStreamsBlock` 决定顶点身份；`ClusterVertexAttributesImporter` 通过 `GetBlockAsync` 获取几何及顶点流，使用同一映射。两者的 `VertexIdentity` 关联该份顶点身份。准备数据属于中立组合，持久保存包含两份新表示；现有渲染继续读取 `ClusterMeshBlock`。
+
+当前代码与目标的差异：渲染读取迁移由收缩阶段完成；普通管线的表示 Block、管线蒙皮影响与形变增量由后续任务交付。
 
 ## Relations
 [[architecture/Assets/Asset-Meshes|Mesh]] · [[architecture/Assets/Gltf-Mesh-Import|glTF Mesh Import]] · [[architecture/Assets/Importer-Sets|Importer Sets]] · ADR 0016
