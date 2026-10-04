@@ -127,7 +127,12 @@ filtered string. An input containing only line breaks retains the editor's
 selection and text, following the existing empty-input rule.
 
 `TextFieldFunctions.TextField(text, placeholder)` composes a single-line editor
-from the public text editing, focus, Text, Surface, and layout APIs. Read
+whose focused caret requests visibility through `viewport.ScrollIntoView(region)`.
+The region uses content coordinates; layout applies the smallest scroll using
+the measured viewport, padding, and current range. A later caret or IME update
+issues a new request, while ordinary wheel input retains its chosen position.
+The editor is built from the public text editing, focus, Text, Surface, and
+layout APIs. Read
 `field.Edited(out string text)` and pass the accepted text back to the field.
 Equal accepted text retains the caret, selection, and IME candidates; a changed
 parameter replaces the editor's text and moves both selection ends to its end.
