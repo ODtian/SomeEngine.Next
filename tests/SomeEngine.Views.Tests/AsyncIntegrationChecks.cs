@@ -9,6 +9,115 @@ namespace SomeEngine.Views.Tests;
 /// <summary>Combined asynchronous view behavior used by managed and native consumers.</summary>
 internal static partial class AsyncIntegrationChecks
 {
+    internal static void VerifyRecoveredReads(bool cancel)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new Number(1));
+        frames.World.AddSparse(source, new SparseNumber(1));
+        var waiting = new State<bool>(true);
+        var completion = new TaskCompletionSource();
+        Entity writer = Views.Spawn(frames.World, Entity.Null,
+            new RecoverableWrites(source, waiting, completion.Task));
+        Entity reader = Views.Spawn(frames.World, Entity.Null, new ReadingNumbers(source));
+        frames.Frame();
+        frames.Frame();
+        Require(frames.World.Read<ReadNumbers>(reader) == new ReadNumbers(2, 2),
+            "The reader displays the table and sparse data exposed across frames.");
+
+        if (cancel)
+            waiting.Value = false;
+        else
+            completion.SetResult();
+        frames.Frame();
+        frames.Frame();
+
+        Require(frames.World.Read<Number>(source).Value == 1, "Recovery restores the table source.");
+        Require(frames.World.ReadSparse<SparseNumber>(source).Value == 1, "Recovery restores the sparse source.");
+        Require(frames.World.Read<ReadNumbers>(reader) == new ReadNumbers(1, 1),
+            "The reader follows the recovered table and sparse values.");
+        Require(frames.World.HasSparse<BuildError>(writer) == !cancel,
+            "The public error data distinguishes failure from cancellation.");
+        uint version = frames.World.WriteVersion<ReadNumbers>(reader);
+        frames.Frame();
+        Require(frames.World.WriteVersion<ReadNumbers>(reader) == version,
+            "An unchanged recovered result retains its write version.");
+    }
+
+    private readonly record struct RecoverableWrites(Entity Source, State<bool> Waiting, Task Result) : IView, IComponent
+    {
+        public async BuildTask Build()
+        {
+            if (!Waiting.Value)
+                return;
+            Scope.Write<Number>(Source) = new Number(2);
+            Scope.Write<SparseNumber>(Source) = new SparseNumber(2);
+            await Result.WaitAsync(Scope.Cancel);
+            throw new ApplicationException("failed after presenting data");
+        }
+    }
+
+    private readonly record struct ReadingNumbers(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Write<ReadNumbers>(Scope.Entity) = new ReadNumbers(
+                Scope.Read<Number>(Source).Value, Scope.Read<SparseNumber>(Source).Value);
+            return default;
+        }
+    }
+
+    private readonly record struct ReadNumbers(int Number, int Sparse) : IComponent;
+
+    internal static void VerifyRecoveredParameters(bool cancel)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity writer = Views.Spawn(frames.World, Entity.Null, new RecoverableDeclaration(1, null));
+        frames.Frame();
+        Entity source = Hierarchy<ElementTree>.GetChildren(frames.World, writer)[0];
+        Entity reader = Views.Spawn(frames.World, Entity.Null, new ReadingParameters(source));
+        var completion = new TaskCompletionSource();
+        frames.World.Replace(writer, new RecoverableDeclaration(2, completion.Task));
+        frames.Frame();
+        frames.Frame();
+        Require(frames.World.Read<Number>(reader).Value == 2, "The reader displays the presented child parameters.");
+
+        if (cancel)
+            frames.World.Replace(writer, new RecoverableDeclaration(1, null));
+        else
+            completion.SetResult();
+        frames.Frame();
+        frames.Frame();
+        Require(frames.World.Read<NumberLabel>(source).Value == 1, "Recovery restores the child's parameters.");
+        Require(frames.World.Read<Number>(reader).Value == 1, "The reader follows recovered child parameters.");
+        if (cancel)
+        {
+            completion.SetResult();
+            frames.Frame();
+            Require(frames.World.Read<Number>(reader).Value == 1, "Old cleanup preserves the current displayed parameters.");
+        }
+    }
+
+    private readonly record struct RecoverableDeclaration(int Value, Task? Result) : IView, IComponent
+    {
+        public async BuildTask Build()
+        {
+            Scope.View(new NumberLabel(Value), 1);
+            if (Result is null)
+                return;
+            await Result.WaitAsync(Scope.Cancel);
+            throw new ApplicationException("failed after presenting parameters");
+        }
+    }
+
+    private readonly record struct ReadingParameters(Entity Source) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Write<Number>(Scope.Entity) = new Number(Scope.Read<NumberLabel>(Source).Value);
+            return default;
+        }
+    }
+
     internal static void VerifyWrites()
     {
         using var frames = new HeadlessFrameDriver();

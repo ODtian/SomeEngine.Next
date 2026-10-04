@@ -12,8 +12,26 @@ using Size = SomeEngine.Layout.Size;
 
 namespace SomeEngine.Elements.Consumer.Tests;
 
+[Collection("Text allocations")]
 public sealed partial class TextTests
 {
+    [Fact]
+    public void ScopeAndWorldWritesKeepTextParametersAndDisplayedContentTogether() => TextChecks.VerifyTextSources();
+
+    [Fact]
+    public void RepeatedNumericDeclarationsAllocateTheSameBytesAsEqualStringDeclarations() =>
+        TextChecks.VerifyRepeatedDeclarations();
+
+    [Theory]
+    [InlineData("decimal")]
+    [InlineData("offset")]
+    [InlineData("kind")]
+    [InlineData("double")]
+    [InlineData("float")]
+    [InlineData("half")]
+    public void ChangedFormattingDataKeepsParametersAndDisplayTogether(string example) =>
+        TextChecks.VerifyChangedFormattingData(example);
+
     [Fact]
     public void ChangingTextColorKeepsTheShapeAndLayout()
     {
@@ -301,6 +319,9 @@ public sealed partial class TextTests
         }
     }
 }
+
+[CollectionDefinition("Text allocations", DisableParallelization = true)]
+public sealed class TextAllocationCollection { }
 
 internal sealed class TextFrames : IDisposable
 {
