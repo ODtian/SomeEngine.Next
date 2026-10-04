@@ -23,4 +23,8 @@ public readonly record struct RenderGlyphAtlas(ReadOnlyMemory<GlyphPagePixels> P
 /// <summary>A visible glyph in canvas coordinates. GlyphIndex refers to its shaped text position.</summary>
 public readonly record struct GlyphInstance(Entity Node, int GlyphIndex, Rect Rectangle,
     Vector2 UV0, Vector2 UV1, Color Color, Rect ClipRectangle, int PageIndex,
-    int DrawOrder, uint Version) : IBufferElement;
+    int DrawOrder, uint Version) : IBufferElement
+{
+    public Matrix3x2 Matrix { get; init; } = Matrix3x2.Identity;
+    public float Alpha { get; init; } = 1;
+}
