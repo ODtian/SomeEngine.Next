@@ -6,6 +6,7 @@ using SomeEngine.Layout;
 using SomeEngine.Typography;
 using SomeEngine.Views;
 using Size = SomeEngine.Layout.Size;
+using System.Numerics;
 
 namespace SomeEngine.Elements.Consumer.Tests;
 
@@ -117,7 +118,8 @@ public sealed partial class ParallelLayoutTests
         {
             if (depth == 0)
             {
-                Scope.View(new Text($"office {random.Next(1000)} AV"), key).Padding(2);
+                using (Scope.View(new CachedPlacement(), key).Content())
+                    Scope.View(new Text($"office {random.Next(1000)} AV"), 1).Padding(2);
                 return;
             }
             Entity node = Scope.View(new Flex((Axis)random.Next(2), random.Next(4), CrossAlign: Align.Start), key);
@@ -125,6 +127,24 @@ public sealed partial class ParallelLayoutTests
             if (depth == 1) node.Size(120, 80);
             using (node.Content())
                 for (ulong child = 1; child <= 4; child++) Branch(random, depth - 1, child);
+        }
+    }
+
+    private readonly record struct CachedPlacement : IView, IComponent, ILayout
+    {
+        public static ChildSource Children => ChildSource.Caller;
+        public BuildTask Build() => default;
+        public Size Measure(ref LayoutPass pass, in Constraints constraints)
+        {
+            Size extent = default;
+            foreach (Entity child in pass.Children)
+            {
+                pass.Measure(child, in constraints);
+                Size size = pass.Read<LayoutCache>(child).Size;
+                pass.Place(child, new Vector2(size.Width, 0));
+                extent = new Size(MathF.Max(extent.Width, size.Width * 2), MathF.Max(extent.Height, size.Height));
+            }
+            return constraints.Constrain(extent);
         }
     }
 }

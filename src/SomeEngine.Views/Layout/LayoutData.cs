@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.ExceptionServices;
+using System.Runtime.CompilerServices;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
@@ -118,6 +119,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
                 if (node.Parent == node.Canvas) AddSubtree(node, default, node.Canvas, true);
             if (coordinatesChanged) ChunkJobs.Run(new RectangleJob(this), _subtrees.Count, parallel, chunkSize: 1);
             foreach (NodeLayout node in _order) WriteRectangle(node.Entity, node.Rectangle);
+            CompleteCacheReads();
             foreach (var canvas in _canvases)
                 WriteRectangle(canvas.Entity, new Rect(0, 0, canvas.Size.Width, canvas.Size.Height));
             foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
@@ -166,7 +168,9 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         node.Canvas = canvas;
         node.Measurable = ViewTypes.HasMeasure(World, entity);
         node.CacheWritten = false;
-        if (World.Has<LayoutCache>(entity)) node.Cache = World.Read<LayoutCache>(entity);
+        node.CacheExists = World.Has<LayoutCache>(entity);
+        node.CacheVersion = node.CacheExists ? World.WriteVersion<LayoutCache>(entity) : 0;
+        if (node.CacheExists) node.Cache = World.Read<LayoutCache>(entity);
         else node.HasMeasurement = false;
         if (node.InputsChanged)
             for (int index = 0; index < dataUpdates.Length; index++)
@@ -219,7 +223,10 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 
         node.HasMeasurement = false;
         if (firstMeasurement)
+        {
             node.Reads.Clear();
+            node.CacheReads.Clear();
+        }
         Has<Box>(entity, entity);
         if (Has<Box>(entity, entity))
             Read<Box>(entity, entity);
@@ -243,6 +250,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         size = outerConstraints.Constrain(new Size(size.Width + padding.Width, size.Height + padding.Height));
         var measured = new LayoutCache { Constraints = constraints, Size = size, InputVersion = node.InputVersion };
         node.Cache = measured;
+        node.CacheExists = true;
         node.ResultFrame = _frame;
         node.CacheWritten = true;
         if (!_parallelMeasurement) WriteCache(node);
@@ -332,6 +340,23 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 
     internal ref readonly T Read<T>(Entity node, Entity entity) where T : struct
     {
+        if (typeof(T) == typeof(LayoutCache) && _nodes.TryGetValue(entity, out NodeLayout? result) && result.TreeFrame == _frame)
+        {
+            CheckCacheRead(node, result);
+            DevelopmentCheck.Require(result.CacheExists, "Layout cache reads require a measured node.");
+            RecordRead(node, new Dependency
+            {
+                Kind = DependencyKind.Component, Entity = entity, Component = ComponentId<LayoutCache>.Value,
+                Version = result.CacheVersion,
+            });
+            List<CacheRead> reads = _nodes[node].CacheReads;
+            int index = 0;
+            while (index < reads.Count && reads[index].Entity != entity) index++;
+            var value = new CacheRead(entity, result.Cache);
+            if (index < reads.Count) reads[index] = value;
+            else reads.Add(value);
+            return ref Unsafe.As<LayoutCache, T>(ref result.Cache);
+        }
         LayoutInput<T> input = ReadInput<T>(node, entity);
         DevelopmentCheck.Require(input.Exists, $"Layout input {typeof(T).Name} requires component data.");
         RecordRead(node, new Dependency
@@ -344,7 +369,13 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 
     internal bool Has<T>(Entity node, Entity entity) where T : struct
     {
-        bool exists = ReadInput<T>(node, entity).Exists;
+        bool exists;
+        if (typeof(T) == typeof(LayoutCache) && _nodes.TryGetValue(entity, out NodeLayout? result) && result.TreeFrame == _frame)
+        {
+            CheckCacheRead(node, result);
+            exists = result.CacheExists;
+        }
+        else exists = ReadInput<T>(node, entity).Exists;
         RecordRead(node, new Dependency
         {
             Kind = DependencyKind.Presence, Entity = entity, Component = ComponentId<T>.Value,
@@ -371,7 +402,35 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
     {
         if (World.Has<LayoutCache>(node.Entity)) World.Replace(node.Entity, node.Cache);
         else World.Add(node.Entity, node.Cache);
+        node.CacheVersion = World.WriteVersion<LayoutCache>(node.Entity);
         node.CacheWritten = false;
+    }
+
+    private void CheckCacheRead(Entity node, NodeLayout result)
+    {
+        if (_parallelMeasurement && result.MeasurementRoot != Entity.Null &&
+            result.MeasurementRoot != _nodes[node].MeasurementRoot)
+            throw new LayoutResultsConnected();
+    }
+
+    private void CompleteCacheReads()
+    {
+        foreach (NodeLayout node in _order)
+            foreach (CacheRead read in node.CacheReads)
+            {
+                if (!_nodes.TryGetValue(read.Entity, out NodeLayout? result) || result.TreeFrame != _frame) continue;
+                if (read.Value.Constraints != result.Cache.Constraints || read.Value.Size != result.Cache.Size ||
+                    read.Value.InputVersion != result.Cache.InputVersion) continue;
+                for (int index = 0; index < node.Reads.Count; index++)
+                {
+                    Dependency dependency = node.Reads[index];
+                    if (dependency.Entity != read.Entity || dependency.Component != ComponentId<LayoutCache>.Value ||
+                        dependency.Kind != DependencyKind.Component) continue;
+                    dependency.Version = result.CacheVersion;
+                    node.Reads[index] = dependency;
+                    break;
+                }
+            }
     }
 
     private void ReleaseUnusedInputs(NodeLayout node)
@@ -398,16 +457,42 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             Measure(subtree.Entity, in subtree.Constraints, subtree.Parent, subtree.ParentMeasurement);
             _subtrees.RemoveAt(index);
         }
+        foreach (Subtree subtree in _subtrees) SetMeasurementRoot(subtree.Entity, subtree.Entity);
         _parallelMeasurement = parallel;
         try { ChunkJobs.Run(new MeasureJob(this), _subtrees.Count, parallel, chunkSize: 1); }
         finally { _parallelMeasurement = false; }
+        if (_subtrees.Any(subtree => subtree.ResultsConnected || subtree.ReadsRequired))
+        {
+            foreach (Subtree subtree in _subtrees) RestoreMeasurements(subtree.Entity);
+            foreach (Subtree subtree in _subtrees)
+                Measure(subtree.Entity, in subtree.Constraints, subtree.Parent, subtree.ParentMeasurement);
+            foreach (Subtree subtree in _subtrees) SetMeasurementRoot(subtree.Entity, Entity.Null);
+            return;
+        }
         foreach (Subtree subtree in _subtrees)
         {
             if (subtree.Error is not null) ExceptionDispatchInfo.Capture(subtree.Error).Throw();
-            if (!subtree.ReadsRequired) continue;
-            RestartMeasurement(subtree.Entity);
-            Measure(subtree.Entity, in subtree.Constraints, subtree.Parent, subtree.ParentMeasurement);
         }
+        foreach (Subtree subtree in _subtrees) SetMeasurementRoot(subtree.Entity, Entity.Null);
+    }
+
+    private void SetMeasurementRoot(Entity entity, Entity root)
+    {
+        NodeLayout node = _nodes[entity];
+        node.MeasurementRoot = root;
+        foreach (Entity child in node.Children) SetMeasurementRoot(child, root);
+    }
+
+    private void RestoreMeasurements(Entity entity)
+    {
+        NodeLayout node = _nodes[entity];
+        node.MeasurementFrame = 0;
+        node.ResultFrame = 0;
+        node.HasMeasurement = false;
+        node.CacheWritten = false;
+        node.CacheExists = World.Has<LayoutCache>(entity);
+        node.Cache = node.CacheExists ? World.Read<LayoutCache>(entity) : default;
+        foreach (Entity child in node.Children) RestoreMeasurements(child);
     }
 
     private void AddSubtree(NodeLayout node, Constraints constraints, Entity parent, bool parentMeasurement)
@@ -417,16 +502,9 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         subtree.Parent = parent;
         subtree.ParentMeasurement = parentMeasurement;
         subtree.ReadsRequired = false;
+        subtree.ResultsConnected = false;
         subtree.Error = null;
         _subtrees.Add(subtree);
-    }
-
-    private void RestartMeasurement(Entity entity)
-    {
-        NodeLayout node = _nodes[entity];
-        node.MeasurementFrame = 0;
-        node.HasMeasurement = false;
-        foreach (Entity child in node.Children) RestartMeasurement(child);
     }
 
     private void CalculateRectangles(Entity entity, Vector2 origin)
@@ -446,6 +524,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
                 Subtree subtree = data._subtrees[index];
                 try { data.Measure(subtree.Entity, in subtree.Constraints, subtree.Parent, subtree.ParentMeasurement); }
                 catch (LayoutInputRequired) { subtree.ReadsRequired = true; }
+                catch (LayoutResultsConnected) { subtree.ResultsConnected = true; }
                 catch (Exception error) { subtree.Error = error; }
             }
         }
@@ -467,10 +546,14 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         internal Entity Parent;
         internal bool ParentMeasurement;
         internal bool ReadsRequired;
+        internal bool ResultsConnected;
         internal Exception? Error;
     }
 
     private sealed class LayoutInputRequired : Exception;
+    private sealed class LayoutResultsConnected : Exception;
+
+    private readonly record struct CacheRead(Entity Entity, LayoutCache Value);
 
     private abstract class LayoutInput
     {
@@ -530,6 +613,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         internal readonly Entity Entity = entity;
         internal readonly List<Entity> Children = new();
         internal readonly List<Dependency> Reads = new();
+        internal readonly List<CacheRead> CacheReads = new();
         internal readonly Dictionary<(Entity, ushort), LayoutInput> Inputs = new();
         internal readonly ILayoutContent?[] Content = new ILayoutContent?[contentCount];
         internal readonly Subtree Subtree = new(entity);
@@ -540,6 +624,9 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         internal Vector2 CanvasPosition;
         internal Size ContentSize;
         internal LayoutCache Cache;
+        internal uint CacheVersion;
+        internal bool CacheExists;
+        internal Entity MeasurementRoot;
         internal Rect Rectangle;
         internal Vector2 Scroll;
         internal bool CacheWritten;
