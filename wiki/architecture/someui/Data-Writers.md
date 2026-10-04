@@ -11,6 +11,9 @@
 | `Clicks`、`Hover` | `HitTestSystem`；视图用 `Ensure<T>` 声明需要 |
 | `Pressable` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
 | `ClickSeen` | 调用方作用域通过 `Clicked()` 的 `Write<T>` 提交 |
+| `Drag`、`Selected` | `HitTestSystem` 的行为阶段；调用方通过 `Ensure<T>` 声明 |
+| `ScrollInput` | `HitTestSystem`，记录当帧滚轮与拖动产生的实际位移及输入计数 |
+| `ScrollOffset` | 布局系统，按当前内容与视口写入范围、受限偏移及已应用的输入计数 |
 | 画布指针事件缓冲 | `Pointer` 的追加与领取入口 |
 | 画布的当前位置、各按钮按下状态与目标 | `HitTestSystem`；`Pointer` 首次输入时声明默认数据 |
 | `InputCapture` | 输入阶段；当前 `HitTestSystem` 写 `Pointer`，保留 `Keyboard` |

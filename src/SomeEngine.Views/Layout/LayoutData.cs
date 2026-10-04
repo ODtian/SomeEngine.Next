@@ -28,7 +28,14 @@ internal sealed class LayoutData(World world)
             {
                 NodeLayout node = _nodes[index];
                 if (node.ParentIndex >= 0)
+                {
                     node.Position += _nodes[node.ParentIndex].Position;
+                    Entity parent = _nodes[node.ParentIndex].Entity;
+                    if (World.Has<ScrollOffset>(parent))
+                        node.Position -= World.Read<ScrollOffset>(parent).Value;
+                }
+                if (World.Has<ScrollOffset>(node.Entity))
+                    UpdateScroll(in node);
                 _nodes[index] = node;
                 World.Replace(node.Entity, new LayoutRect
                 {
@@ -79,13 +86,52 @@ internal sealed class LayoutData(World world)
             new Size(MathF.Max(0, minimum.Width - padding.Width), MathF.Max(0, minimum.Height - padding.Height)),
             new Size(MathF.Max(0, maximum.Width - padding.Width), MathF.Max(0, maximum.Height - padding.Height)));
         var pass = new LayoutPass(this, node, index, Children(node), new Vector2(box.Padding.Left, box.Padding.Top));
-        Size size = ViewTypes.Measure(World, node, ref pass, in contentConstraints);
+        Constraints measuredConstraints = World.Has<ScrollOffset>(node)
+            ? new Constraints(default, Size.Unbounded) : contentConstraints;
+        Size size = ViewTypes.HasMeasure(World, node)
+            ? ViewTypes.Measure(World, node, ref pass, in measuredConstraints)
+            : MeasureScrollContent(ref pass, in measuredConstraints);
         LayoutValidation.CheckSize(size);
         NodeLayout measured = _nodes[index];
+        measured.ContentSize = size;
         size = contentConstraints.Constrain(size);
         measured.Size = outerConstraints.Constrain(new Size(size.Width + padding.Width, size.Height + padding.Height));
         _nodes[index] = measured;
         return measured.Size;
+    }
+
+    private void UpdateScroll(in NodeLayout node)
+    {
+        ScrollOffset previous = World.Read<ScrollOffset>(node.Entity);
+        ScrollOffset offset = previous;
+        Box box = World.Has<Box>(node.Entity) ? World.Read<Box>(node.Entity) : default;
+        Vector2 viewport = new(MathF.Max(0, node.Size.Width - box.Padding.Left - box.Padding.Right),
+            MathF.Max(0, node.Size.Height - box.Padding.Top - box.Padding.Bottom));
+        offset.Max = Vector2.Max(Vector2.Zero, new Vector2(node.ContentSize.Width, node.ContentSize.Height) - viewport);
+        if (World.Has<ScrollInput>(node.Entity))
+        {
+            ScrollInput input = World.Read<ScrollInput>(node.Entity);
+            if (input.Count != offset.InputCount)
+            {
+                offset.Value += input.Delta;
+                offset.InputCount = input.Count;
+            }
+        }
+        offset.Value = Vector2.Clamp(offset.Value, Vector2.Zero, offset.Max);
+        if (offset.Value != previous.Value || offset.Max != previous.Max || offset.InputCount != previous.InputCount)
+            World.Replace(node.Entity, offset);
+    }
+
+    private static Size MeasureScrollContent(ref LayoutPass pass, in Constraints constraints)
+    {
+        Size extent = default;
+        foreach (Entity child in pass.Children)
+        {
+            Size size = pass.Measure(child, in constraints);
+            pass.Place(child, Vector2.Zero);
+            extent = new Size(MathF.Max(extent.Width, size.Width), MathF.Max(extent.Height, size.Height));
+        }
+        return extent;
     }
 
     internal void Place(Entity child, Vector2 position, int parentIndex)
@@ -111,7 +157,7 @@ internal sealed class LayoutData(World world)
         {
             if (World.Has<Canvas>(child))
                 continue;
-            if (ViewTypes.HasMeasure(World, child))
+            if (ViewTypes.HasMeasure(World, child) || World.Has<ScrollOffset>(child))
                 children.Add(child);
             else
                 CollectChildren(child, children);
@@ -124,5 +170,6 @@ internal sealed class LayoutData(World world)
         internal int ParentIndex;
         internal Vector2 Position;
         internal Size Size;
+        internal Size ContentSize;
     }
 }

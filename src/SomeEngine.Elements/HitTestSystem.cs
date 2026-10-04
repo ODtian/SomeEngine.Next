@@ -12,7 +12,7 @@ using SomeEngine.Views;
 namespace SomeEngine.Elements;
 
 /// <summary>Processes pointer input before game input and view rebuilds using the previous layout.</summary>
-public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
+public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
 {
     private QueryHandle _canvasesQuery;
     private QueryHandle _hoverQuery;
@@ -28,6 +28,8 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
         World world = context.World;
         _canvasesQuery = world.Query(world.QueryDefinition().All<Canvas>().All<PointerData>());
         _hoverQuery = world.Query(world.QueryDefinition().All<Hover>());
+        _dragQuery = world.Query(world.QueryDefinition().All<Drag>());
+        _scrollQuery = world.Query(world.QueryDefinition().All<ScrollInput>());
         QueryHandle captureQuery = world.Query(world.QueryDefinition().All<InputCapture>());
         try
         {
@@ -45,6 +47,8 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
+        BeginDragFrame(world);
+        BeginScrollFrame(world);
         Collect(world, _canvasesQuery, _canvases);
         Collect(world, _hoverQuery, _nodes);
         _hover.Clear();
@@ -52,7 +56,7 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
         foreach (Entity canvas in _canvases)
         {
             _targets.Clear();
-            CollectTargets(world, canvas, Entity.Null);
+            CollectTargets(world, canvas, Entity.Null, null);
             Pointer.TakeEvents(world, canvas, _events);
             PointerData pointer = world.Read<PointerData>(canvas);
             pointer.PrimaryPress = RefreshPress(pointer.PrimaryPress);
@@ -62,6 +66,8 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
             {
                 if (input.Kind == PointerEventKind.Move)
                 {
+                    if (pointer.HasPosition)
+                        MoveDrag(world, ref pointer, input.Position - pointer.Position);
                     pointer.Position = input.Position;
                     pointer.HasPosition = true;
                 }
@@ -71,20 +77,32 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
                 if (input.Kind == PointerEventKind.Press)
                 {
                     if (!press.Down)
-                        pointer.SetPress(input.Button, new ButtonPress(true, hit));
+                    {
+                        Entity drag = input.Button == PointerButton.Primary ? FindDragTarget(world, hit) : Entity.Null;
+                        pointer.SetPress(input.Button, new ButtonPress(true, hit, drag));
+                    }
                 }
                 else if (input.Kind == PointerEventKind.Release)
                 {
                     capture |= press.Node != Entity.Null;
-                    if (press.Down && hit != Entity.Null && hit == press.Node)
+                    if (press.Down && !press.Dragged && hit != Entity.Null && hit == press.Node)
                     {
                         Clicks clicks = world.Read<Clicks>(hit);
                         clicks.Count = unchecked(clicks.Count + 1);
                         world.Replace(hit, clicks);
+                        if (world.Has<Selected>(hit))
+                        {
+                            Selected selected = world.Read<Selected>(hit);
+                            selected.Value = !selected.Value;
+                            world.Replace(hit, selected);
+                        }
                     }
                     pointer.SetPress(input.Button, default);
                 }
+                else if (input.Kind == PointerEventKind.Wheel)
+                    ScrollWheel(world, hit, input.Delta);
             }
+            KeepDragActive(pointer.PrimaryPress);
             world.Replace(canvas, pointer);
             Entity hovered = pointer.HasPosition ? Hit(pointer.Position) : Entity.Null;
             capture |= hovered != Entity.Null || pointer.PrimaryPress.Node != Entity.Null ||
@@ -94,6 +112,8 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
             MergeHover(pointer.SecondaryPress.Node, hovered: false, pressed: pointer.SecondaryPress.Down);
             MergeHover(pointer.MiddlePress.Node, hovered: false, pressed: pointer.MiddlePress.Down);
         }
+        CommitDrags(world);
+        CommitScrollInputs(world);
         foreach (Entity node in _nodes)
         {
             Hover value = _hover.GetValueOrDefault(node);
@@ -109,22 +129,38 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
         }
     }
 
-    private void CollectTargets(World world, Entity node, Entity pressable)
+    private void CollectTargets(World world, Entity node, Entity pressable, Rect? clip)
     {
         if (world.Has<Pressable>(node))
         {
             pressable = node;
             if (world.Has<LayoutRect>(node))
             {
-                _targets.Add(new HitTarget(node, world.Read<LayoutRect>(node).Value));
+                AddTarget(node, world.Read<LayoutRect>(node).Value, clip);
                 pressable = Entity.Null;
             }
         }
         else if (pressable != Entity.Null && world.Has<LayoutRect>(node))
-            _targets.Add(new HitTarget(pressable, world.Read<LayoutRect>(node).Value));
+            AddTarget(pressable, world.Read<LayoutRect>(node).Value, clip);
+        if (world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node))
+        {
+            Rect viewport = world.Read<LayoutRect>(node).Value;
+            clip = clip is { } bounds ? Intersect(viewport, bounds) : viewport;
+        }
         foreach (Entity child in Hierarchy<ElementTree>.GetChildren(world, node))
             if (!world.Has<Canvas>(child))
-                CollectTargets(world, child, pressable);
+                CollectTargets(world, child, pressable, clip);
+    }
+
+    private void AddTarget(Entity node, Rect rect, Rect? clip) =>
+        _targets.Add(new HitTarget(node, clip is { } bounds ? Intersect(rect, bounds) : rect));
+
+    private static Rect Intersect(Rect rect, Rect clip)
+    {
+        float left = MathF.Max(rect.X, clip.X);
+        float top = MathF.Max(rect.Y, clip.Y);
+        return new Rect(left, top, MathF.Max(0, MathF.Min(rect.X + rect.Width, clip.X + clip.Width) - left),
+            MathF.Max(0, MathF.Min(rect.Y + rect.Height, clip.Y + clip.Height) - top));
     }
 
     private Entity Hit(Vector2 position)
@@ -148,9 +184,14 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
         return false;
     }
 
-    private ButtonPress RefreshPress(ButtonPress press) => press.Node != Entity.Null && !HasTarget(press.Node)
-        ? press with { Node = Entity.Null }
-        : press;
+    private ButtonPress RefreshPress(ButtonPress press)
+    {
+        if (press.Node != Entity.Null && !HasTarget(press.Node))
+            return press with { Node = Entity.Null, DragNode = Entity.Null };
+        if (press.DragNode != Entity.Null && !HasTarget(press.DragNode))
+            return press with { DragNode = Entity.Null };
+        return press;
+    }
 
     private void MergeHover(Entity node, bool hovered, bool pressed)
     {
@@ -176,6 +217,8 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
     {
         context.World.ReleaseQuery(_canvasesQuery);
         context.World.ReleaseQuery(_hoverQuery);
+        context.World.ReleaseQuery(_dragQuery);
+        context.World.ReleaseQuery(_scrollQuery);
     }
 
     private readonly record struct HitTarget(Entity Node, Rect Rect);

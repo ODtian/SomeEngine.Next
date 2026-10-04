@@ -24,7 +24,7 @@ public ref struct LayoutPass
 
 ## Invariants
 - 多种布局并存且对等：内置 `Flex`、`Grid`、`Stack`、`Absolute`，叶子 `Text`、`Image` 在自己的 `Measure` 中测量内容；用户布局（例如环形布局）写法相同。`Row()`、`Column()` 是产出 `Flex` 的普通函数。
-- 分派经 `ViewType` 的类型表取得 `Measure` 函数指针，不装箱。没有实现 `ILayout` 的节点对布局透明，其子节点直接参与上一级布局。
+- 分派经 `ViewType` 的类型表取得 `Measure` 函数指针。透明组合的子节点直接参与上一级布局；ScrollOffset 为组合声明视口边界，规则见滚动布局章节。
 - 嵌套不受限制：父布局只调用 `pass.Measure(child, ...)`。
 - 子节点的布局参数由父布局类型定义（`FlexItem`、`GridCell`、`AbsolutePosition`），由调用方通过修饰写入。
 - `Box` 的尺寸限制与内边距由 `LayoutPass` 在每个节点自身 `Measure` 前后统一处理。
@@ -203,6 +203,27 @@ GridCell 的行列从零开始，默认位于 `(0, 0)`，两种跨度均默认�
 开发构建通过 Core 的 `DevelopmentCheck` 报告 Stack 对齐、轨道定义、Grid.Gap
 与单元格坐标/跨度错误。不可变轨道在创建时检查，可写参数在测量入口检查；
 这些检查调用随 shipping 编译消失。
+
+## 滚动布局（#40）
+
+`ScrollOffset` 与 `ScrollInput` 位于 Views 的共享布局数据层，使用 `SomeEngine.Layout`
+命名空间。声明滚动行为的公开入口见
+[[architecture/someui/Input-and-Behaviors|Input and Behaviors]]。
+
+带 ScrollOffset 的节点是视口。Box 和父约束确定它的外框，扣除内边距得到可见内容尺寸；
+该节点的布局协议在两轴无界、最小尺寸为零的约束下测量内容，得到自然内容尺寸。
+最大偏移为每轴的 `max(0, 内容尺寸 - 可见内容尺寸)`。
+当帧最后一次测量确定范围，因此 Flex、Grid 等父布局的重复测量共用同一份结果。
+
+布局系统在解析最终坐标时写入 ScrollOffset，按计数应用新的 ScrollInput 并限制 Value。
+子节点位置扣除父视口的 Value，再加上父节点画布坐标；后代沿普通树序继续累计。
+内边距仍由 LayoutPass.Place 加到内容原点。静止布局保留偏移；内容或外框变化同时更新
+Max 与 Value。重复布局按已经应用的输入计数保留位置。
+
+透明组合声明 ScrollOffset 后提供视口边界，用继承的 Box 和父约束测量外框。
+它的直接布局内容在视口内容原点叠放，取最大宽高作为自然内容尺寸。
+组合内的 Row、Column 或用户布局仍通过自己的布局协议摆放后代。
+嵌套视口分别持有范围与偏移，外层位移沿坐标解析叠加到内层及其后代。
 
 ## 公开行为验收
 
