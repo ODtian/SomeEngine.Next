@@ -9,10 +9,7 @@ public partial class World
     internal bool HasComponentData<T>(Entity entity) where T : struct
     {
         if (default(T) is ISparseComponent)
-        {
-            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Read);
-            return _sparse.Has<T>(entity);
-        }
+            return HasSparseComponentData<T>(entity);
 
         using WorldJobAdmissionScope access = EnterJobTopologyRead();
         return _components.Has<T>(entity);
@@ -34,15 +31,9 @@ public partial class World
     internal void AddComponentData<T>(Entity entity, in T value) where T : struct
     {
         if (default(T) is ISparseComponent)
-        {
-            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Write);
-            _sparse.Add(entity, in value);
-            return;
-        }
-
-        using WorldJobAdmissionScope access = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.Structural<T>(nameof(AddComponentData));
-        _components.Add(entity, in value);
+            AddSparseComponentData(entity, in value);
+        else
+            AddTableComponentData(entity, in value);
     }
 
     internal T ReadComponentData<T>(Entity entity) where T : struct
@@ -56,6 +47,21 @@ public partial class World
         using WorldJobAdmissionScope access =
             EnterJobComponent(ComponentMetadata<T>.Id, WorldStorageAccess.Read);
         return _components.Read<T>(entity);
+    }
+
+    /// <summary>Discards data introduced by a build that is restoring its previous result.</summary>
+    internal void DiscardComponentData<T>(Entity entity) where T : struct
+    {
+        if (default(T) is ISparseComponent)
+        {
+            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Write);
+            _sparse.Remove<T>(entity);
+            return;
+        }
+
+        using WorldJobAdmissionScope access = EnterJobTopologyWrite();
+        PublicComponentMutationGuard.Structural<T>(nameof(DiscardComponentData));
+        _components.Discard<T>(entity);
     }
 
     internal ref readonly T ReadComponentReference<T>(Entity entity) where T : struct
@@ -115,14 +121,8 @@ public partial class World
     internal void ReplaceComponentData<T>(Entity entity, in T value) where T : struct
     {
         if (default(T) is ISparseComponent)
-        {
-            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Write);
-            _sparse.Replace(entity, in value);
-            return;
-        }
-
-        using WorldJobAdmissionScope access = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.Value<T>(nameof(ReplaceComponentData));
-        _components.Replace(entity, in value);
+            ReplaceSparseComponentData(entity, in value);
+        else
+            ReplaceTableComponentData(entity, in value);
     }
 }

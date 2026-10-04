@@ -14,6 +14,8 @@ internal sealed class ObjectDependencyList
 
     internal ObjectDependencyList(ulong frame) => _readFrame = frame;
 
+    internal ReadOnlySpan<ObjectDependency> Reads => _reads.AsSpan(0, _count);
+
     internal void Add(VersionCell cell, uint version)
     {
         for (int index = 0; index < _count; index++)
@@ -40,27 +42,29 @@ internal sealed class ObjectDependencyList
     internal bool HasChanges(ulong frame)
     {
         for (int index = 0; index < _count; index++)
-        {
-            ObjectDependency read = _reads[index];
-            try
-            {
-                read.Cell.Refresh(frame);
-            }
-            catch (Exception exception) when (ReferenceEquals(exception, read.Cell.Error))
-            {
-                // The consuming calculation reports the failure when it reads the Memo.
-            }
-            uint version = Volatile.Read(ref read.Cell.Version);
-            if (((version & 1) != 0 && _readFrame != frame) || version != read.Version ||
-                !ReferenceEquals(read.Error, read.Cell.Error))
+            if (HasChanges(_reads[index], frame))
                 return true;
-        }
         return false;
+    }
+
+    internal bool HasChanges(ObjectDependency read, ulong frame)
+    {
+        try
+        {
+            read.Cell.Refresh(frame);
+        }
+        catch (Exception exception) when (ReferenceEquals(exception, read.Cell.Error))
+        {
+            // The consuming calculation reports the failure when it reads the Memo.
+        }
+        uint version = Volatile.Read(ref read.Cell.Version);
+        return ((version & 1) != 0 && _readFrame != frame) || version != read.Version ||
+            !ReferenceEquals(read.Error, read.Cell.Error);
     }
 
     // ECS retains this object for the component's lifetime, including component moves.
     // Returning a cleared array here also covers direct entity and World disposal.
     ~ObjectDependencyList() => ArrayPool<ObjectDependency>.Shared.Return(_reads, clearArray: true);
 
-    private readonly record struct ObjectDependency(VersionCell Cell, uint Version, Exception? Error);
+    internal readonly record struct ObjectDependency(VersionCell Cell, uint Version, Exception? Error);
 }
