@@ -54,7 +54,7 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext> { /* ... */ 
 这样组合视图可以在自己的实体上声明行为，布局结果继续由布局系统持有和写入。
 
 各按钮分别配对按下与释放。同一个按钮在已有按下期间保留原目标；在原目标上释放时，
-本次点击从该目标沿 `ElementTree` 向画布根路由，每个带 `Pressable` 的节点的
+保持点击手势时，本次点击从该目标沿 `ElementTree` 向画布根路由，每个带 `Pressable` 的节点的
 `Clicks.Count` 递增一次。路由包含画布根。节点带 `StopsPointer` 时，先处理该节点的
 点击计数，再结束冒泡；仅带停止标记的中间节点同样结束冒泡。
 重复释放保持当前计数。嵌套画布的点击在自身画布根结束。
@@ -171,6 +171,67 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext> { /*
 共享检查与外部重写位于同一消费者工程，覆盖网格导航、确认消费、焦点读取依赖、
 祖先转移、清空、父链移动、布局透明组合、最近中心与上一帧布局、画布内导航、输入顺序、
 捕获字段、开发检查和调度中的自定义导航。同一组行为检查接入 `just views-aot win-x64` 的原生验收。
+
+## 拖动、滚动与选择（#40）
+
+```csharp
+// SomeEngine.Elements
+public struct Drag : IComponent
+{
+    public bool Active;
+    public Vector2 Delta;
+    public Vector2 Total;
+    public uint Count;
+}
+public struct Selected : IComponent { public bool Value; }
+public static class DraggableFunctions { public static Entity Draggable(Entity node); }
+public static class ScrollableFunctions { public static Entity Scrollable(Entity node); }
+public static class SelectableFunctions { public static Entity Selectable(Entity node); }
+
+// SomeEngine.Layout，位于 Views 共享布局数据层
+public struct ScrollOffset : IComponent { public Vector2 Value; public Vector2 Max; }
+public struct ScrollInput : IComponent { public Vector2 Delta; public uint Count; }
+```
+
+三个行为函数在调用方作用域中以 `Ensure<T>` 声明数据，返回原节点。
+Draggable 组合 Pressable 与 Drag；Scrollable 组合 Draggable、ScrollInput 与 ScrollOffset；
+Selectable 组合 Pressable 与 Selected。重复构建保留系统写入的值。
+用户可以用相同的公开组件与作用域函数声明自己的行为版本。
+
+`HitTestSystem` 的拖动阶段在主按钮按下时，从命中节点及祖先中选取最近的 Drag 节点，
+将它保存在同一份画布按下数据中，后续移动继续使用这个目标。第一次非零位移开始拖动，
+`Count` 递增、`Total` 从零开始；`Active` 保持到释放或目标退出当前可交互树。
+`Delta` 是本帧全部拖动位移之和，每次输入阶段从零开始；`Total` 是当前或最近一次拖动的
+累计位移。静止帧保留 Active 和 Total。区域外的移动与释放继续送达原目标。
+完成拖动的释放结束这次手势；点击由保持点击配对的手势产生。
+
+滚轮增量使用画布单位，正值向内容末端移动。主按钮拖动以指针位移的反方向滚动。
+输入阶段按事件顺序在上一帧的滚动范围内限制位移，把当帧实际变化写到 ScrollInput；
+`Count` 记录接受的滚动输入次数。滚轮选择当前目标及祖先中最近的滚动节点。
+子内容的命中区域沿祖先视口外框逐层取交集；捕获后的拖动继续送达按下时选定的目标。
+布局阶段在内容的自然尺寸与当前视口之间计算 `Max`，将 `Value` 限制在 `[0, Max]`，
+随后从子节点坐标减去 Value。ScrollOffset 整个组件由布局阶段写入，ScrollInput 由输入阶段写入；
+布局记录已应用的输入计数，因此重复布局保留同一份输入的应用结果。
+这份消费记录由布局单独持有，ScrollOffset 的公开写版本只随 Value 与 Max 的变化推进。
+内容或视口缩小时，当前布局同时收紧范围和实际偏移。
+布局测量、内边距、透明组合视口和嵌套坐标规则见
+[[architecture/someui/Layout|Layout]] 的滚动布局章节。
+
+每个完成的路由点击切换沿途 Selectable 节点的 `Selected.Value` 一次，包括同帧的多次点击。
+`StopsPointer` 与画布边界按同一点击路由决定选择传播的范围。
+选择数据由输入阶段写入，读取 Selected 的计算沿现有依赖机制更新。
+这些行为共用 Pointer、画布命中与 InputCapture 的输入顺序。
+
+布局写入的 ScrollOffset 通过写版本使下一次重建阶段读取它的计算更新。
+独立 SomeUI 的 PanGestureRecognizer、GestureArena 与 ScrollSemantics 用于核对位移及范围语义；
+本票按组件数据和现有画布输入阶段表达行为，拖动从第一次非零画布位移开始。
+
+实现：[行为声明](../../../src/SomeEngine.Elements/ScrollableFunctions.cs)、
+[拖动阶段](../../../src/SomeEngine.Elements/HitTestSystem.Drag.cs)、
+[滚动输入](../../../src/SomeEngine.Elements/HitTestSystem.Scroll.cs)、
+[共享滚动数据](../../../src/SomeEngine.Views/Layout/ScrollOffset.cs)。
+公开验收：[BehaviorTests](../../../tests/SomeEngine.Elements.Consumer.Tests/BehaviorTests.cs)、
+[内置与用户重写共用检查](../../../tests/SomeEngine.Elements.Consumer.Tests/BehaviorChecks.cs)。
 
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]

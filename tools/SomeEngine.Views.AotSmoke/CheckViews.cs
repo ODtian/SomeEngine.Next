@@ -72,6 +72,10 @@ SomeEngine.Elements.Consumer.Tests.FocusChecks.RunReparentedRelease();
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunWorlds();
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunMixedInputs();
 Console.WriteLine("Keyboard and gamepad focus, confirmation, capture, ancestor transfer, layout geometry, public user behaviors, and scheduled navigation passed under NativeAOT.");
+
+SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(false);
+SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(true);
+Console.WriteLine("Drag, scroll, selection and external behavior declarations passed.");
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.BuiltIn);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);
