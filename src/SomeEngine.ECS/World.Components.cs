@@ -9,9 +9,10 @@ public partial class World
 {
     /// <summary>添加 Table 组件。已存在时抛异常。</summary>
     public void Add<T>(Entity entity, in T value)
-        where T : struct
+        where T : struct, IComponent => AddTableComponentData(entity, in value);
+
+    private void AddTableComponentData<T>(Entity entity, in T value) where T : struct
     {
-        CheckTableComponent<T>("World.Add");
         using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
         PublicComponentMutationGuard.Structural<T>("World.Add");
         _components.Add(entity, in value);
@@ -63,9 +64,10 @@ public partial class World
 
     /// <summary>整值替换组件（不触发迁移）。</summary>
     public void Replace<T>(Entity entity, in T value)
-        where T : struct
+        where T : struct, IComponent => ReplaceTableComponentData(entity, in value);
+
+    private void ReplaceTableComponentData<T>(Entity entity, in T value) where T : struct
     {
-        CheckTableComponent<T>("World.Replace");
         int componentId = ComponentMetadata<T>.Id;
         // OnReplace can observe the old value and OnInsert can observe the new value. Those are
         // the only callbacks CommitReplace executes, so hooks for another component or for an
@@ -88,13 +90,6 @@ public partial class World
         using WorldJobAdmissionScope topologyAdmission = EnterJobTopologyWrite();
         PublicComponentMutationGuard.Value<T>("World.Replace");
         _components.Replace(entity, in value);
-    }
-
-    [System.Diagnostics.Conditional("DEBUG")]
-    private static void CheckTableComponent<T>(string operation) where T : struct
-    {
-        if (default(T) is not IComponent)
-            DevelopmentCheck.Fail($"{operation} requires table component {typeof(T).Name}.");
     }
 
     /// <summary>检查 entity 是否拥有指定组件/tag。</summary>

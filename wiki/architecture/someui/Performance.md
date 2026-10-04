@@ -17,6 +17,7 @@ public static class RebuildDiagnostics
 public readonly record struct RebuildRecord(Entity View, Entity Source, ushort Component)
 {
     public QueryHandle Query { get; init; }
+    public VersionCell? SourceObject { get; init; }
 }
 ```
 
@@ -26,10 +27,16 @@ public readonly record struct RebuildRecord(Entity View, Entity Source, ushort C
 或开关变化之前消费返回的只读 span。首次运行阶段之前、静止帧以及关闭期间返回空 span。
 关闭会释放各 World 已收集的记录，再次开启从下一次重建阶段开始收集。
 
-记录在视图构建入口、读取依赖重新登记之前形成。每个变化来源对应一条记录；
+记录在视图构建与响应式计算入口、读取依赖重新登记之前形成。每个变化来源对应一条记录；
 同次重建的参数和多个读取来源全部保留。父视图当场构建的子视图沿相同入口记录来源。
 候选在执行前完成存活与版本复核，因此本次记录对应实际发生的构建。
 失败的构建尝试同样保留来源，异常内容与帧号通过视图的公开 `BuildError` 读取。
+
+对象读取通过 `SourceObject` 返回原 `State<T>`、`VersionCell` 或 `Memo<T>` 引用，实体来源字段使用
+`Entity.Null` 与组件编号 0。Memo 的来源变化与 Memo 值变化分别按其计算和消费者的实际读取记录。
+诊断与调度共用组件、存在性、查询成员、环境及对象的变化规则；对象的读取帧、奇数版本和错误变化沿同一规则比较。
+读取依赖的来源身份规则由依赖数据统一提供，视图与无节点计算使用同一规则去重。
+检查点读回后的视图按恢复后的首次构建记录；参数版本比较按 `BuildMode` 选择。
 
 | 原因 | `View` | `Source` | `Component` |
 |---|---|---|---|
