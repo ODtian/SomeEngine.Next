@@ -55,6 +55,8 @@ SomeEngine.Views.Solid.Tests.FrontendChecks.CheckComponent();
 SomeEngine.Views.Solid.Tests.FrontendChecks.CheckBuild();
 Console.WriteLine("Solid Insert parameters, exported Once views, inline component calls, and retained state and computations passed under NativeAOT.");
 Console.WriteLine("Solid text bindings, Memo getters, Effect, Untrack, reactive surfaces, and zero-allocation state changes passed under NativeAOT.");
+SomeEngine.Views.Solid.Tests.ControlFlowChecks.Run();
+Console.WriteLine("Solid Show, keyed values, nullable numbers, Switch/Match, Dynamic, and branch release passed under NativeAOT.");
 Console.WriteLine("Text shaping, Column measurements, style modifiers, formatted numbers, write versions, and zero-allocation integer writes passed under NativeAOT.");
 Console.WriteLine("Column surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);
