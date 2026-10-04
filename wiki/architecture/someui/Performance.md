@@ -108,7 +108,7 @@ TAA、VSM、异步计算、mesh shaders、计数面板和世界名牌开启。
 ## Job 并行平台对照（#69，2026-10-04）
 
 基线为 `e7ec3626d9abe873ef6ef7b4b88bc3ce718ea3a2` 的布局、排版与提取行为，
-对照为 `codex/someui-ticket-69` 的本票实现。双方使用 DefaultGame 与
+对照为本票功能提交 `571afa4f47d977ec60464115871fd706c41d62fb` 的并行实现。双方使用 DefaultGame 与
 `./tools/Measure-Scenes.ps1 -Hud`，Release，1280×720，RTX 3080，驱动 `32.0.16.1074`，
 .NET SDK `10.0.112`、.NET `10.0.12`，`TieredCompilation=false`。
 两份报告的设备、场景行为、HUD 负载、渲染选项、JIT 与采样配置逐项相同。
