@@ -7,6 +7,18 @@ namespace SomeEngine.Views.Tests;
 
 public sealed partial class AsyncBuildTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadersFollowPresentedWritesAfterFailureOrCancellation(bool cancel) =>
+        AsyncIntegrationChecks.VerifyRecoveredReads(cancel);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadersFollowPresentedChildParametersAfterFailureOrCancellation(bool cancel) =>
+        AsyncIntegrationChecks.VerifyRecoveredParameters(cancel);
+
     [Fact]
     public void AsyncWritesCommitEachSegmentAndContentUsesTheCurrentComponentValues() =>
         AsyncIntegrationChecks.VerifyWrites();

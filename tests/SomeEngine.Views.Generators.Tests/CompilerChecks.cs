@@ -21,7 +21,8 @@ internal static class CompilerChecks
     internal static async Task<bool> Run(string source)
     {
         var (compilation, diagnostics) = Compile(source, true, null);
-        diagnostics = diagnostics.AddRange(await compilation.WithAnalyzers([new ViewAnalyzer(), new ComposeAnalyzer(), new SolidAnalyzer(), new BuildWarningSuppressor()])
+        diagnostics = diagnostics.AddRange(await compilation.WithAnalyzers([new ViewAnalyzer(), new ComposeAnalyzer(),
+            new SolidAnalyzer(), new FrontendAnalyzer(), new BuildWarningSuppressor()])
             .GetAllDiagnosticsAsync());
         Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
         using var image = new MemoryStream();

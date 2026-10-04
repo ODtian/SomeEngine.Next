@@ -11,6 +11,10 @@ namespace SomeEngine.Layout.Tests;
 public sealed partial class LayoutCacheTests
 {
     [Fact]
+    public void RepeatedChildMeasurementsKeepConsecutiveLocalChangesEqualToFullLayout() =>
+        SomeEngine.Views.AotSmoke.LayoutChecks.VerifyRepeatedMeasurements();
+
+    [Fact]
     public void MovingAParentUpdatesEveryCachedDescendantInCanvasCoordinates()
     {
         using var frames = new LayoutFrames();
