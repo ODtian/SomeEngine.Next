@@ -84,5 +84,10 @@ Flip.Enable(row, Spec.Tween(0.2f));
 发布的原生程序通过共享行为检查；`Test-Checkpoint.ps1 -Executable <原生程序>`
 通过跨进程保存、类型编号重映射、下一帧重建与依赖验收。
 
+随后以代码提交 `4b73b87458e58d7db390bfb8b756db074ee828cc` 合入集成分支的
+`3da0051c0116fb962997fa40d3f3a0c12803c257`，再次执行受影响的 Elements.Consumer
+与 Elements.Render 完整测试：Debug 分别通过 64 与 11 项，Release 分别通过 48 与 11 项。
+更新后的原生发布程序及跨进程 checkpoint 验收同时通过。
+
 ## Relations
 [[architecture/animation/Property-Animation|Property Animation]] · [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Render-Path|Render Path]]
