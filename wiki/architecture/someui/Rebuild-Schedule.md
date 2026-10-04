@@ -23,6 +23,21 @@
 - `Build` 抛出异常时，在视图实体上写入 `BuildError`，保留上一次完整的子节点，由开发检查报告，整帧继续。祖先读取 `BuildError` 即可显示后备内容。
 - 布局、排版与提取使用 Job 系统按块并行；构建先单线程执行，作用域与对象池按线程隔离，为互不相交子树的并行构建留出条件。
 
+## 分块与子树 Job（#69）
+
+`TextShapingSystem` 在文本阶段按分块刷新已使用宽度的排版缓冲，布局随后通过内容约束
+测量新的宽度。`LayoutSystem` 按画布根和重排边界选择互不相交的子树，系统线程提交最终矩形。
+两个系统各自的 `Parallel` 属性默认 true，false 在相同分块和布局路径上顺序执行。
+`GameFrameSystems` 的默认注册使用这两个系统，帧阶段顺序沿上面的安排执行。
+
+`CanvasRenderExtractor` 与 `GlyphRenderExtractor` 在现有源读取窗口内取得数据，随后
+按分块计算绘制实例，等待 Job 完成后沿现有 Rendering world 更新边界提交。
+它们的 `Parallel` 属性同样默认 true。字形图集的首次位置按源顺序取得，实例合并按原树序完成。
+视图构建继续由 `ViewRebuildSystem` 在系统线程按层级深度执行。
+
+测量与内容接口见 [Layout](Layout.md#子树-job-测量69)，排版数据期限见 [Text](Text.md)，
+实例与图集语义见 [Render Path](Render-Path.md)。
+
 ## 首次构建实现（#6）
 
 `ViewRebuildSystem` 实现 `ISystem<ImmediateSystemContext>`，经

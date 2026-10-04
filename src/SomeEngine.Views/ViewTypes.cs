@@ -50,6 +50,9 @@ internal static unsafe class ViewTypes
     internal static Size Measure(World world, Entity entity, ref LayoutPass pass, in Constraints constraints) =>
         Volatile.Read(ref s_functions)[world.Read<ViewType>(entity).Id].MeasureFunction(world, entity, ref pass, in constraints);
 
+    internal static Size Measure(ushort typeId, World world, Entity entity, ref LayoutPass pass, in Constraints constraints) =>
+        Volatile.Read(ref s_functions)[typeId].MeasureFunction(world, entity, ref pass, in constraints);
+
     internal static void RegisterSerializationId(ushort id, Guid serializationId)
     {
         lock (s_gate)

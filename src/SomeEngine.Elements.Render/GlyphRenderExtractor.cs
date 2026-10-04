@@ -8,6 +8,8 @@ using SomeEngine.Layout;
 using SomeEngine.Render.Systems;
 using SomeEngine.Typography;
 using SomeEngine.Views;
+using SomeEngine.Job;
+using System.Numerics;
 
 namespace SomeEngine.Elements.Render;
 
@@ -23,6 +25,10 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
     private RenderGlyphAtlas _pixels = new(default, default, 8, 0);
     private Entity _atlasMirror;
     private bool _atlasChanged;
+    private readonly List<TextDrawing> _drawings = [];
+
+    /// <summary>Computes detached glyph instances with chunk jobs.</summary>
+    public bool Parallel { get; set; } = true;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
@@ -47,6 +53,7 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         _canvasGlyphs.Clear();
         _textGlyphs.Clear();
         _atlasChanged = false;
+        _drawings.Clear();
     }
 
     public void Collect(QueryChunkView chunk)
@@ -113,10 +120,19 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         {
             Entity canvas = FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasGlyphs.ContainsKey(canvas)) continue;
-            if (!_textGlyphs.TryGetValue(canvas, out var texts)) _textGlyphs.Add(canvas, texts = []);
-            texts.Add(node, ReadGlyphs(sourceWorld, node, FindClip(sourceWorld, canvas, node),
-                FindDrawOrder(sourceWorld, canvas, node)));
+            ReadGlyphs(sourceWorld, canvas, node, FindClip(sourceWorld, canvas, node),
+                FindDrawOrder(sourceWorld, canvas, node));
         }
+        ChunkJobs.Run(new GlyphJob(_drawings), _drawings.Count, Parallel);
+        foreach (TextDrawing drawing in _drawings)
+            if (_canvasGlyphs.TryGetValue(drawing.Canvas, out List<GlyphInstance>? glyphs))
+                glyphs.AddRange(drawing.Values);
+            else
+            {
+                if (!_textGlyphs.TryGetValue(drawing.Canvas, out var texts)) _textGlyphs.Add(drawing.Canvas, texts = []);
+                texts.Add(drawing.Node, drawing.Values);
+            }
+        _drawings.Clear();
         CopyAtlasPixels(atlasReplaced);
         return _canvasGlyphs.Count != 0 || _textGlyphs.Count != 0 || _atlasChanged;
     }
@@ -215,7 +231,7 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
             Entity node = entry.Node;
             if (node != canvas && world.Has<Canvas>(node)) continue;
             if (world.Has<ShapedText>(node) && world.Has<LayoutRect>(node))
-                instances.AddRange(ReadGlyphs(world, node, entry.Clip, order));
+                ReadGlyphs(world, canvas, node, entry.Clip, order);
             order++;
             Rect childClip = world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node)
                 ? Intersect(entry.Clip, world.Read<LayoutRect>(node).Value) : entry.Clip;
@@ -225,31 +241,57 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         return instances;
     }
 
-    private List<GlyphInstance> ReadGlyphs(World world, Entity node, Rect clip, int order)
+    private void ReadGlyphs(World world, Entity canvas, Entity node, Rect clip, int order)
     {
         ShapedText text = world.Read<ShapedText>(node);
         Rect rectangle = world.Read<LayoutRect>(node).Value;
-        var presentation = ElementPresentation.Read(world, node, rectangle);
         var padding = world.Has<Box>(node) ? world.Read<Box>(node).Padding : default;
         float scale = text.Style.Size / _atlas!.FontSize;
-        var values = new List<GlyphInstance>();
         ReadOnlySpan<Glyph> glyphs = text.Shape.Glyphs;
+        var locations = new GlyphLocation[glyphs.Length];
+        // First use determines atlas placement, so resolve in source order before the jobs run.
         for (int index = 0; index < glyphs.Length; index++)
+            locations[index] = _atlas.Get(glyphs[index].Font, glyphs[index].Index);
+        _drawings.Add(new TextDrawing(canvas, node, text.Shape, locations, rectangle, padding, scale,
+            text.Style.Color, clip, order,
+            world.Has<ElementTransform>(node) ? world.Read<ElementTransform>(node) : ElementTransform.Identity,
+            world.Has<PresentationOffset>(node) ? world.Read<PresentationOffset>(node) : PresentationOffset.Identity));
+    }
+
+    private sealed class TextDrawing(Entity canvas, Entity node, TextShape shape, GlyphLocation[] locations,
+        Rect rectangle, Thickness padding, float scale, Color color, Rect clip, int order,
+        ElementTransform transform, PresentationOffset offset)
+    {
+        internal readonly Entity Canvas = canvas;
+        internal readonly Entity Node = node;
+        internal readonly List<GlyphInstance> Values = new(locations.Length);
+
+        internal void CreateGlyphs()
         {
-            ref readonly Glyph glyph = ref glyphs[index];
-            GlyphLocation location = _atlas.Get(glyph.Font, glyph.Index);
-            AtlasDirtyRegion region = location.Region;
-            if (region.PageIndex < 0) continue;
-            values.Add(new(node, index,
-                new Rect(rectangle.X + padding.Left + glyph.Position.X + location.Offset.X * scale,
-                    rectangle.Y + padding.Top + glyph.Position.Y + location.Offset.Y * scale,
-                    region.Width * scale, region.Height * scale),
-                location.UV0, location.UV1, text.Style.Color, clip, region.PageIndex, order, 0)
+            var presentation = ElementPresentation.Calculate(rectangle, transform, offset);
+            ReadOnlySpan<Glyph> glyphs = shape.Glyphs;
+            for (int index = 0; index < glyphs.Length; index++)
             {
-                Matrix = presentation.Matrix, Alpha = presentation.Alpha,
-            });
+                ref readonly Glyph glyph = ref glyphs[index];
+                GlyphLocation location = locations[index];
+                AtlasDirtyRegion region = location.Region;
+                if (region.PageIndex < 0) continue;
+                Values.Add(new(Node, index,
+                    new Rect(rectangle.X + padding.Left + glyph.Position.X + location.Offset.X * scale,
+                        rectangle.Y + padding.Top + glyph.Position.Y + location.Offset.Y * scale,
+                        region.Width * scale, region.Height * scale),
+                    location.UV0, location.UV1, color, clip, region.PageIndex, order, 0)
+                { Matrix = presentation.Matrix, Alpha = presentation.Alpha });
+            }
         }
-        return values;
+    }
+
+    private readonly struct GlyphJob(List<TextDrawing> drawings) : IJobChunk
+    {
+        public void Execute(JobChunk chunk)
+        {
+            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++) drawings[index].CreateGlyphs();
+        }
     }
 
     public void Apply(RenderExtractionContext context)

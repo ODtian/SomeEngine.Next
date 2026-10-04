@@ -188,6 +188,19 @@ systems.Add(new LayoutSystem(shaping));
 应用在相关排版与图集使用结束后释放字体。
 字号、行高、字体与系统接入的使用错误通过 Core 的 `DevelopmentCheck` 报告。
 
+## 排版分块 Job（#69）
+
+`TextShapingSystem.Parallel` 默认 true。文本阶段复制变化的字符串、字体、字号和行高，
+以 32 个排版缓冲为一块，通过 `IJobChunk` 刷新上一帧使用过的宽度。
+每个缓冲分别持有原生 HarfBuzz 缓冲与结果数组，字体沿本页的多线程读取规则共享。
+false 使用同一分块回调顺序计算。
+
+系统实现 `ILayoutDataUpdate.SupportsParallel` 与 `ReadContent`，在系统线程取得对应节点
+的文字数据与可复用缓冲。子树测量通过 `ILayoutContent.Update` 选择当前约束宽度，
+Flex 的基础测量、伸缩与最终测量继续按顺序作用于同一节点。
+`Complete` 在全部画布完成后提交最终 `ShapedText`，相同的最终文字输入和宽度保持版本。
+应用在布局阶段结束后读取结果，字体和排版缓冲期限沿本页的原规则执行。
+
 ## 数字与格式化写入
 
 ```csharp

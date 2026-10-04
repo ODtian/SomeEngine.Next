@@ -95,7 +95,8 @@ public readonly record struct Constraints(Size Min, Size Max);
 `HasChanges` 将内容输入变化纳入节点布局输入版本；默认返回 true，数据更新者可按自己的输入版本缩小范围。
 Text 的更新者比较文本、样式与外观的公开 ECS 写版本，内容变化与布局约束共同决定重新测量。
 布局在每次测量前，把扣除 Box 内边距后的内容约束交给这些数据更新者；
-画布的测量、摆放与坐标写入完成后调用 `Complete` 提交最终内容结果。
+全部画布的测量、摆放与坐标写入完成后调用 `Complete` 提交最终内容结果。
+这个统一完成点使各子树按本次收集的数据计算约束，并在 Job 完成后一起提交整个布局阶段的内容结果。
 各布局继续通过同一 `ILayout` 类型分派和 `LayoutPass.Measure` 测量自己的子节点。
 
 文本系统通过这一入口按内容宽度写入字形结果，`Text.Measure` 读取结果尺寸；
@@ -204,6 +205,47 @@ Flex 的松约束基础测量仍贡献自然尺寸，因此内容变化继续影
 实际执行测量的布局仍通过 `Measure` 取得全部布局子节点尺寸，再通过 `Place` 摆放。
 `Place` 的使用错误与遗漏子测量通过 Core 的 `DevelopmentCheck` 报告，
 这些检查调用及遍历随 shipping 编译消失。
+
+## 子树 Job 测量（#69）
+
+`LayoutSystem.Parallel` 默认 true，false 使用顺序执行。画布根分别持有布局子树，
+嵌套 Canvas 继续使用自己的根、约束和原点。缓存父布局之下需要更新的内容，以最高的
+重排边界组成互不相交的子树；每轮完成后继续选择仍需测量的更深边界。
+同一子树的多次约束测量、子节点摆放、读取依赖与边界判断沿原布局协议执行。
+
+系统线程收集树、检查输入变化并更新已登记组件的类型化值副本。Job 通过 `LayoutPass`
+读取这些数据并计算尺寸和相对位置。首次测量与测量中新增的读取回到系统线程建立数据，
+随后完成该子树测量；表格、sparse、存在性与外部实体读取继续参与下一帧失效判断。
+布局节点在测量之前取得 `LayoutRect`，供公开 `LayoutPass.Has` 读取。
+最终缓存、滚动范围、画布坐标矩形和内容结果由系统线程提交。坐标累加也按画布根运行 Job，
+相同矩形继续保留 ECS 写版本。
+
+内容更新者可以提供以下公开接入，返回由对应节点持有的内容数据：
+
+```csharp
+public interface ILayoutDataUpdate
+{
+    bool SupportsParallel => false;
+    ILayoutContent? ReadContent(World world, Entity node) => null;
+    // HasChanges、Update、Complete 保留原接入。
+}
+public interface ILayoutContent
+{
+    void Update(in Constraints constraints);
+}
+```
+
+`ReadContent` 在系统线程读取 ECS，`ILayoutContent.Update` 使用该份节点数据按约束计算。
+同一节点的更新按测量顺序执行，不同子树分别更新自己的数据；返回 null 表示该节点由布局自身测量。
+`Complete` 在 Job 完成后写入最终 ECS 结果。已有的 `Update(World, Entity, ...)`
+内容更新者沿顺序测量继续接入，`TextShapingSystem` 提供上述并行内容更新能力。
+
+共享公开入口 `ChunkJobs.Run<T>(job, count, parallel, chunkSize = 32)` 对分离的元素数据调用
+`IJobChunk`，并在返回前等待完成。顺序模式使用同一分块回调，尺寸与布局分派共用同一算法。
+计数与分块大小的使用错误通过 Core `DevelopmentCheck` 报告。
+
+公开验收通过多个随机种子比较两种模式的 `LayoutRect` 与字形、行、尺寸和版本，
+并验证自定义布局切换到新的外部表格或 sparse 数据后取得对应矩形。
 
 ## Stack 与 Grid（#26）
 
