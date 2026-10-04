@@ -12,6 +12,7 @@
     <Compile Include="../../tests/SomeEngine.Layout.Tests/LayoutChecks.cs" Link="LayoutChecks.cs" />
     <ProjectReference Include="../../src/SomeEngine.Elements/SomeEngine.Elements.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/SurfaceChecks.cs" Link="SurfaceChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/InterfaceAnimationChecks.cs" Link="InterfaceAnimationChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextChecks.cs" Link="TextChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/LocalizationChecks.cs" Link="LocalizationChecks.cs" />
     <Content Include="../../tests/SomeEngine.Typography.Tests/Fonts/Latin.ttf" Link="Fonts/Latin.ttf"
@@ -44,6 +45,7 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/ScrollView.cs" Link="Rewrites/ScrollView.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/VirtualList.cs" Link="Rewrites/VirtualList.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs" Link="ButtonChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/InterfaceChecks.cs" Link="InterfaceChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs" Link="Rewrites/Button.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs" Link="Rewrites/IconButton.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ValueChecks.cs" Link="ValueChecks.cs" />

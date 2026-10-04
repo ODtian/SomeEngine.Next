@@ -170,19 +170,22 @@ public static partial class Scope
             $"Scope.Write requires table or sparse component {typeof(T).Name}.");
         var key = (entity, ComponentId<T>.Value);
         var copies = current.ViewData.ComponentCopies ??= new();
-        if (!copies.TryGetValue(key, out ComponentCopy? copy))
+        if (!copies.TryGetValue(key, out ComponentCopy? copy) || !copy.Written && !copy.CanReuse)
         {
             T value = ComponentCopy<T>.HasComponent(current.World, entity)
                 ? current.World.ReadComponentData<T>(entity)
                 : default;
+            AnimatedFields.RestoreBase(current.World, entity, ref value);
             copy = new ComponentCopy<T>(entity, value);
-            copies.Add(key, copy);
+            copies[key] = copy;
         }
         else if (!copy.Written)
         {
-            ((ComponentCopy<T>)copy).Value = ComponentCopy<T>.HasComponent(current.World, entity)
+            T value = ComponentCopy<T>.HasComponent(current.World, entity)
                 ? current.World.ReadComponentData<T>(entity)
                 : default;
+            AnimatedFields.RestoreBase(current.World, entity, ref value);
+            ((ComponentCopy<T>)copy).Value = value;
             copy.Written = true;
         }
         return ref ((ComponentCopy<T>)copy).Value;
@@ -310,13 +313,28 @@ public static partial class Scope
             T previous = current.World.ReadComponentData<T>(existing);
             T view = create(in value, in previous);
             current.Changes.RememberParameters(current.World, existing, in previous);
-            if (previous.Equals(view))
+            T previousTarget = previous;
+            AnimatedFields.RestoreBase(current.World, existing, ref previousTarget);
+            T parameters = view;
+            if (AnimatedFields.PreservePresentation(current.World, existing, ref parameters))
             {
-                current.World.OverwriteComponentData(existing, in view);
+                var copies = current.ViewData.ComponentCopies ??= new();
+                var component = (existing, ComponentId<T>.Value);
+                if (!copies.TryGetValue(component, out ComponentCopy? copy) || !copy.Written && !copy.CanReuse)
+                    copies[component] = copy = new ComponentCopy<T>(existing, view);
+                else
+                {
+                    ((ComponentCopy<T>)copy).Value = view;
+                    copy.Written = true;
+                }
+                current.Changes.WriteAnimation(copy);
+            }
+            if (previousTarget.Equals(view) || previous.Equals(parameters))
+            {
+                current.World.OverwriteComponentData(existing, in parameters);
                 return existing;
             }
-
-            current.World.ReplaceComponentData(existing, in view);
+            current.World.ReplaceComponentData(existing, in parameters);
             if (T.Mode == BuildMode.Rerun)
             {
                 current.Changes.RememberComponent<BuildError>(current.World, existing);
@@ -507,16 +525,17 @@ public static partial class Scope
         {
             int firstData = view.FirstData;
             int firstRemoval = view.FirstRemoval;
+            int firstAnimation = view.FirstAnimation;
             ChildChanges changes = view.OwnChanges ??= new();
-            view.Changes.CopyTo(changes, firstData, firstRemoval);
+            view.Changes.CopyTo(changes, firstData, firstRemoval, firstAnimation);
             if (s_scopes is { } scopes)
                 foreach (ScopeData scope in scopes)
                     if (scope.ViewData == view)
-                        scope.ReplaceChanges(changes, firstData, firstRemoval);
+                        scope.ReplaceChanges(changes, firstData, firstRemoval, firstAnimation);
             if (view.ContentData is { } content)
                 foreach (ScopeData scope in content)
                     if (scope.Changes != changes)
-                        scope.ReplaceChanges(changes, firstData, firstRemoval);
+                        scope.ReplaceChanges(changes, firstData, firstRemoval, firstAnimation);
             view.OutermostBuild = true;
         }
     }
@@ -554,17 +573,24 @@ public static partial class Scope
         data.Completed = true;
     }
 
-    internal static void CommitWrites(ScopeData data)
+    internal static void CommitWrites(ScopeData data, bool submitAnimations = false)
     {
         if (data.ComponentCopies is { } copies)
         {
+            bool asynchronousCalculation = data.Computation?.Async is not null;
             foreach (ComponentCopy copy in copies.Values)
                 if (copy.Written)
+                {
                     copy.Commit(data.World, data.Changes,
-                        reuseData: data.OutermostBuild && data.Computation is not null);
+                        reuseData: data.OutermostBuild && data.Computation is not null && !asynchronousCalculation);
+                    if (asynchronousCalculation)
+                        copy.Clear();
+                }
             if (data.Computation is null)
                 copies.Clear();
         }
+        if (submitAnimations)
+            data.Changes.CommitAnimations(data.World, data.FirstAnimation);
     }
 
     internal static void FinishChildren(ScopeData data)
@@ -572,7 +598,7 @@ public static partial class Scope
         if (data.ViewData.IsCanceled)
             return;
         if (!data.Completed)
-            data.Changes.Restore(data.World, data.FirstData, data.FirstRemoval);
+            data.Changes.Restore(data.World, data.FirstData, data.FirstRemoval, data.FirstAnimation);
         else if (data.OutermostBuild)
             data.Changes.ReleaseChildren(data.World);
     }
@@ -589,7 +615,7 @@ public static partial class Scope
             callbackError = error;
         }
         if (restore)
-            data.Changes.Restore(data.World, data.FirstData, data.FirstRemoval);
+            data.Changes.Restore(data.World, data.FirstData, data.FirstRemoval, data.FirstAnimation);
         else
             data.Changes.Complete();
         data.Changes.Clear();
@@ -722,6 +748,7 @@ public static partial class Scope
         internal ChildChanges? OwnChanges;
         internal int FirstData;
         internal int FirstRemoval;
+        internal int FirstAnimation;
         internal bool OutermostBuild;
         internal bool Completed;
         internal int StateMachines;
@@ -761,15 +788,17 @@ public static partial class Scope
             Changes = changes ?? (OwnChanges ??= new());
             FirstData = Changes.DataCount;
             FirstRemoval = Changes.RemovedCount;
+            FirstAnimation = Changes.AnimationCount;
             if (DeclaresChildren)
                 Changes.RememberOrder(Parent, PreviousChildren);
         }
 
-        internal void ReplaceChanges(ChildChanges changes, int firstData, int firstRemoval)
+        internal void ReplaceChanges(ChildChanges changes, int firstData, int firstRemoval, int firstAnimation)
         {
             Changes = changes;
             FirstData -= firstData;
             FirstRemoval -= firstRemoval;
+            FirstAnimation -= firstAnimation;
         }
 
         internal void ClearCalculationCopies()
@@ -805,7 +834,7 @@ public static partial class Scope
             }
             else
             {
-                CommitWrites(data);
+                CommitWrites(data, submitAnimations: true);
                 data.Suspended = true;
                 data.Queue.Add(data);
             }

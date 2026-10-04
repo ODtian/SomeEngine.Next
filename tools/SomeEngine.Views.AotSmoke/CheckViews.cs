@@ -19,6 +19,14 @@ if (args is ["read-checkpoint", string readPath])
     return;
 }
 
+foreach (bool jobs in new[] { false, true })
+{
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckStruct(jobs);
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckCompose(jobs);
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckSwiftUI(jobs);
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckSolid(jobs);
+}
+
 using var frames = new HeadlessFrameDriver();
 BuildResumeChecks.VerifyAll();
 Console.WriteLine("Canceled awaits, asynchronous cleanup, cancellation callbacks, and child computation error recovery passed under NativeAOT.");
@@ -46,6 +54,10 @@ SwiftUIChecks.Run(frames);
 RememberChecks.Run(frames);
 SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(true);
+SomeEngine.Elements.Consumer.Tests.InterfaceAnimationChecks.Run();
+AsyncAnimationChecks.Run();
+Console.WriteLine("Suspended and resumed animation targets, nested calculation recovery, and continuous presentation passed under NativeAOT.");
+Console.WriteLine("Interface color and user value animation, equal-target rebuilds, interrupted FLIP, and caller transforms passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.TextChecks.Run();
 SomeEngine.Elements.Consumer.Tests.LocalizationChecks.Run();
 Console.WriteLine("Localized keys, arguments, language changes, English and Chinese plurals, number and date cultures, and ordinary text versions passed under NativeAOT.");

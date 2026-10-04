@@ -12,7 +12,7 @@ namespace SomeEngine.Elements.Render;
 /// <summary>Glyphs' shader-specific pipeline and instance bytes.</summary>
 internal sealed class GlyphDrawing : IDisposable
 {
-    private const int InstanceByteCount = 64;
+    private const int InstanceByteCount = 96;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly Shader _shader;
@@ -87,12 +87,14 @@ internal sealed class GlyphDrawing : IDisposable
             for (int index = 0; index < glyphs.Length; index++)
             {
                 ref readonly GlyphInstance glyph = ref glyphs[index];
-                int start = index * 4;
+                int start = index * 6;
                 data[start] = new(glyph.Rectangle.X, glyph.Rectangle.Y, glyph.Rectangle.Width, glyph.Rectangle.Height);
                 data[start + 1] = new(glyph.UV0.X, glyph.UV0.Y, glyph.UV1.X, glyph.UV1.Y);
                 data[start + 2] = new(glyph.Color.R, glyph.Color.G, glyph.Color.B, glyph.Color.A);
                 data[start + 3] = new(glyph.ClipRectangle.X, glyph.ClipRectangle.Y,
                     glyph.ClipRectangle.Width, glyph.ClipRectangle.Height);
+                data[start + 4] = new(glyph.Matrix.M11, glyph.Matrix.M12, glyph.Matrix.M21, glyph.Matrix.M22);
+                data[start + 5] = new(glyph.Matrix.M31, glyph.Matrix.M32, glyph.Alpha, 0);
             }
             mapped.Flush(new BufferRange(0, byteCount));
             return InstanceBuffer.Create(_backend, _device, buffer, glyphs.Length, InstanceByteCount);

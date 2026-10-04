@@ -176,7 +176,7 @@ internal sealed class BuildQueue
                         view.Computation?.Complete();
                     }
                     else if (!view.IsCanceled)
-                        Scope.CommitWrites(view);
+                        Scope.CommitWrites(view, submitAnimations: true);
                 }
                 catch (OperationCanceledException) when (view.IsCanceled)
                 {

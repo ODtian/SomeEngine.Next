@@ -9,11 +9,23 @@ internal sealed class ChildChanges
 {
     private readonly List<IChildData> _previousData = new();
     private readonly List<Entity> _removedChildren = new();
+    private List<ComponentCopy>? _animationWrites;
 
     internal int DataCount => _previousData.Count;
     internal int RemovedCount => _removedChildren.Count;
+    internal int AnimationCount => _animationWrites?.Count ?? 0;
 
-    internal void CopyTo(ChildChanges changes, int firstData, int firstRemoval)
+    internal void WriteAnimation(ComponentCopy copy)
+    {
+        var writes = _animationWrites ??= new List<ComponentCopy>();
+        if (!writes.Contains(copy))
+        {
+            copy.RetainAnimations();
+            writes.Add(copy);
+        }
+    }
+
+    internal void CopyTo(ChildChanges changes, int firstData, int firstRemoval, int firstAnimation)
     {
         for (int index = firstData; index < _previousData.Count; index++)
         {
@@ -23,12 +35,18 @@ internal sealed class ChildChanges
         }
         for (int index = firstRemoval; index < _removedChildren.Count; index++)
             changes._removedChildren.Add(_removedChildren[index]);
+        if (_animationWrites is { } writes)
+            for (int index = firstAnimation; index < writes.Count; index++)
+            {
+                changes.WriteAnimation(writes[index]);
+            }
     }
 
     internal void Clear()
     {
         _previousData.Clear();
         _removedChildren.Clear();
+        _animationWrites?.Clear();
     }
 
     internal void RememberOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) =>
@@ -77,16 +95,28 @@ internal sealed class ChildChanges
 
     internal void RemoveChild(Entity entity) => _removedChildren.Add(entity);
 
-    internal void Restore(World world, int firstData, int firstRemoval)
+    internal void Restore(World world, int firstData, int firstRemoval, int firstAnimation)
     {
         for (int index = _previousData.Count - 1; index >= firstData; index--)
             _previousData[index].Restore(world);
+        if (_animationWrites is { } writes)
+            for (int index = writes.Count - 1; index >= firstAnimation; index--)
+                writes[index].RestoreAnimations(world);
         _previousData.RemoveRange(firstData, _previousData.Count - firstData);
         _removedChildren.RemoveRange(firstRemoval, _removedChildren.Count - firstRemoval);
+        _animationWrites?.RemoveRange(firstAnimation, AnimationCount - firstAnimation);
+    }
+
+    internal void CommitAnimations(World world, int firstAnimation)
+    {
+        if (_animationWrites is { } writes)
+            for (int index = firstAnimation; index < writes.Count; index++)
+                writes[index].CommitAnimations(world);
     }
 
     internal void ReleaseChildren(World world)
     {
+        CommitAnimations(world, 0);
         Complete();
         foreach (Entity entity in _removedChildren)
             if (world.IsAlive(entity))
@@ -95,6 +125,9 @@ internal sealed class ChildChanges
 
     internal void Complete()
     {
+        if (_animationWrites is { } writes)
+            foreach (ComponentCopy copy in writes)
+                copy.CompleteAnimations();
         foreach (IChildData data in _previousData)
             data.Complete();
     }
@@ -108,10 +141,12 @@ internal sealed class ChildChanges
 
     private static void RestoreValue<T>(World world, Entity entity, in T value) where T : struct
     {
-        if (EqualityComparer<T>.Default.Equals(world.ReadComponentData<T>(entity), value))
-            world.OverwriteComponentData(entity, in value);
+        T restored = value;
+        AnimatedFields.PreservePresentation(world, entity, ref restored);
+        if (EqualityComparer<T>.Default.Equals(world.ReadComponentData<T>(entity), restored))
+            world.OverwriteComponentData(entity, in restored);
         else
-            world.ReplaceComponentData(entity, in value);
+            world.ReplaceComponentData(entity, in restored);
     }
 
     private sealed class ChildOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) : IChildData

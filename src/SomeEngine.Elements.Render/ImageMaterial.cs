@@ -32,6 +32,7 @@ public sealed class ImageMaterial : Material
 /// <summary>Image's shader-specific pipeline, sampler and instance bytes.</summary>
 internal sealed class ImageDrawing : IDisposable
 {
+    private const int InstanceByteCount = 80;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly Shader _shader;
@@ -93,7 +94,7 @@ internal sealed class ImageDrawing : IDisposable
 
     internal InstanceBuffer CreateInstances(ReadOnlySpan<ImageInstance> instances)
     {
-        ulong byteCount = (ulong)Math.Max(1, instances.Length) * 48;
+        ulong byteCount = (ulong)Math.Max(1, instances.Length) * InstanceByteCount;
         Buffer buffer = _backend.CreateBuffer(_device, new BufferDesc(byteCount, BufferUsages.ShaderRead,
             "Image instances"), MemoryType.Upload);
         try
@@ -104,13 +105,16 @@ internal sealed class ImageDrawing : IDisposable
             for (int index = 0; index < instances.Length; index++)
             {
                 ref readonly ImageInstance image = ref instances[index];
-                data[index * 3] = new(image.Rectangle.X, image.Rectangle.Y, image.Rectangle.Width, image.Rectangle.Height);
-                data[index * 3 + 1] = new(image.Uv.X, image.Uv.Y, image.Uv.Width, image.Uv.Height);
-                data[index * 3 + 2] = new(image.ClipRectangle.X, image.ClipRectangle.Y,
+                int start = index * 5;
+                data[start] = new(image.Rectangle.X, image.Rectangle.Y, image.Rectangle.Width, image.Rectangle.Height);
+                data[start + 1] = new(image.Uv.X, image.Uv.Y, image.Uv.Width, image.Uv.Height);
+                data[start + 2] = new(image.ClipRectangle.X, image.ClipRectangle.Y,
                     image.ClipRectangle.Width, image.ClipRectangle.Height);
+                data[start + 3] = new(image.Matrix.M11, image.Matrix.M12, image.Matrix.M21, image.Matrix.M22);
+                data[start + 4] = new(image.Matrix.M31, image.Matrix.M32, image.Alpha, 0);
             }
             mapped.Flush(new BufferRange(0, byteCount));
-            return InstanceBuffer.Create(_backend, _device, buffer, instances.Length, 48);
+            return InstanceBuffer.Create(_backend, _device, buffer, instances.Length, InstanceByteCount);
         }
         catch { buffer.Dispose(); throw; }
     }
@@ -122,4 +126,3 @@ internal sealed class ImageDrawing : IDisposable
         foreach (Pipeline pipeline in _depthPipelines.Values) pipeline.Dispose();
     }
 }
-
