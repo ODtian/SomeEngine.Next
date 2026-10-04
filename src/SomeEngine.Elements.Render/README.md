@@ -93,6 +93,38 @@ Runtime applications using the argument entry point can enable it with `--surfac
 Graph structure and D3D12/Vulkan pixel behavior are covered by
 `tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests.cs`.
 
+Text uses a CPU atlas entity and the same extraction stage:
+
+```csharp
+Entity textAtlas = gameWorld.CreateEntity(new TextAtlas(new GlyphAtlas()));
+using var extraction = new RenderExtractionSystems(renderWorld,
+    new SurfaceRenderExtractor(), new GlyphRenderExtractor(textAtlas));
+using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
+    material, outputFormat, glyphs);
+```
+
+Register `TextShapingSystem` with the layout system before extraction. The canvas
+mirror receives `GlyphInstance` and `CanvasGlyphAtlas`; the atlas mirror receives
+`RenderGlyphAtlas`. Glyph rectangles combine the text node's rectangle, padding,
+shaped baseline and scaled atlas offset. Whitespace keeps its advance in shaping.
+
+Atlas pixels are detached during extraction. `RenderGlyphAtlas` holds immutable
+page data, the latest changed rectangles and a version. GPU textures retain one
+single-channel page each: initialize the whole page, then copy changed rectangles
+on successive versions. Whole page data also allows a renderer to catch up after
+several extractions. Keep caller-supplied page memories read-only while consumed.
+
+Surface and glyph draws share the persistent canvas pass and follow the tree's
+order. Glyphs sample an SDF and calculate coverage in target pixels, then use the
+same premultiplied alpha blend as Surface. A color edit keeps the shaped glyphs,
+layout rectangles, atlas pixels and atlas version; only drawing colors advance.
+The built-in shader resources are shared by name and target for the application's
+lifetime, while pipelines, instance buffers and GPU pages retire with graph work.
+
+`GlyphExtractionTests` drives public World frames and extraction; `GlyphDrawingTests`
+compares D3D12 WARP and Vulkan pixel readback against an independent glyph outline
+image. The screen panel example displays both English and Chinese text.
 For a world canvas, provide `CanvasTarget.WorldSpace(targetEntity)` and a target
 `WorldTransform` in the Game world. `Canvas.DepthTest` chooses scene depth testing.
 Extraction supplies `RenderCanvas.Transform` and `DepthTest` alongside the same

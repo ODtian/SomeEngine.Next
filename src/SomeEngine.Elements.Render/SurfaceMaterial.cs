@@ -18,57 +18,16 @@ public sealed class SurfaceMaterial : Material
     public override IReadOnlyList<MaterialPropertyDefinition> Properties => [];
 
     /// <summary>Compiles the built-in Slang shader once for the requested graphics target.</summary>
-    public static SurfaceMaterial Create(SlangCompileTarget target)
+    public static SurfaceMaterial Create(SlangCompileTarget target) => new()
     {
-        Require(Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession global), null);
-        var targetDescription = new TargetDesc
-        {
-            Format = target,
-            Profile = global.FindProfile(target == SlangCompileTarget.Spirv ? "glsl_460" : "sm_6_0"),
-            Flags = target == SlangCompileTarget.Spirv ? SlangTargetFlags.GenerateSpirvDirectly : 0,
-        };
-        var description = new SessionDesc
-        {
-            Targets = [targetDescription],
-            DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
-            CompilerOptionEntries =
-            [
-                new(CompilerOptionName.VulkanUseEntryPointName, CompilerOptionValue.FromInt(1)),
-                new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0)),
-            ],
-        };
-        Require(global.CreateSession(description, out ISession session), null);
-        using Stream source = typeof(SurfaceMaterial).Assembly.GetManifestResourceStream(
-            "SomeEngine.Elements.Render.Shaders.Surface.slang")!;
-        using var reader = new StreamReader(source);
-        IModule? shaderSource = session.LoadModuleFromSource("Surface", "Surface.slang",
-            Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
-        if (shaderSource is null) throw new InvalidDataException(DiagnosticText(diagnostics));
-        Require(shaderSource.FindEntryPointByName("vertexMain", out IEntryPoint vertex), null);
-        Require(shaderSource.FindEntryPointByName("pixelMain", out IEntryPoint pixel), null);
-        Require(session.CreateCompositeComponentType([shaderSource, vertex, pixel],
-            out IComponentType combined, out diagnostics), diagnostics);
-        Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
-        return new SurfaceMaterial
-        {
-            Shader = Shader.CreateFromSlang("Surface", global, session, [shaderSource], [vertex, pixel],
-                linked, [targetDescription]),
-        };
-    }
+        Shader = ElementShaders.Get("Surface", target),
+    };
 
     public override void ApplyParameter(MaterialValue parameter, Texture? texture) =>
         DevelopmentCheck.Fail("Surface drawing values are supplied by the canvas instance buffer.");
 
     protected override void CopyProperties(Material source) { }
     protected override Material CreateEmpty() => new SurfaceMaterial();
-
-    private static void Require(SlangResult result, ISlangBlob? diagnostics)
-    {
-        if (result.Failed) throw new InvalidDataException($"Surface shader compilation failed: {result}. {DiagnosticText(diagnostics)}");
-    }
-
-    private static string DiagnosticText(ISlangBlob? diagnostics) =>
-        diagnostics is null ? string.Empty : diagnostics.AsString;
 }
 
 /// <summary>Surface's shader-specific pipeline and instance encoding.</summary>
@@ -114,7 +73,7 @@ internal sealed class SurfaceDrawing : IDisposable
             pixelCodeBlob: _shader.GetSlangEntryBlob(target, pixel)));
     }
 
-    internal CanvasBuffers AddPass(RenderGraphEdit edit, CanvasPassTarget target)
+    internal CanvasBuffers AddPass(RenderGraphEdit edit, CanvasPassTarget target, bool glyphs = false)
     {
         GraphBufferInput instances = edit.CreateBufferInput(BufferUsages.ShaderRead);
         GraphBufferId canvas = edit.DeclareExternalBuffer(new BufferDesc(256, BufferUsages.Constant,
@@ -133,18 +92,23 @@ internal sealed class SurfaceDrawing : IDisposable
                 new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth), target.DepthFormat,
                 TextureViewDimension.Texture2D, readOnlyDepth: true, label: "Canvas scene depth");
         }
-        var data = new SurfacePassData(pipeline, _parameters, instancesView, canvasView, targetView, depthView, 0, 0, 0);
-        GraphPassId pass = edit.AddRasterFramePass(target.WorldSpace ? "World canvas surfaces" : "Screen canvas surfaces",
-            PassQueueSelection.AnyOfType(QueueType.Graphics),
-            data, default, SurfacePassData.Declare, SurfacePassData.Draw);
-        return new CanvasBuffers(pass, instances, instancesView, canvas, canvasView, targetView, depthView, target, data);
+        var data = new CanvasPassData(pipeline, _parameters, instancesView, canvasView, targetView, depthView, 0, 0, 0);
+        GraphPassId pass = edit.AddRasterFramePass("Canvas elements", PassQueueSelection.AnyOfType(QueueType.Graphics),
+            data, default, CanvasPassData.Declare, CanvasPassData.Draw);
+        var buffers = new CanvasBuffers(pass, instances, instancesView, canvas, canvasView, targetView, depthView, target, data);
+        if (glyphs)
+        {
+            buffers.GlyphInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+            buffers.GlyphView = edit.CreateBufferSrv(buffers.GlyphInput, label: "Glyph instances");
+        }
+        return buffers;
     }
 
     internal void SetCanvasData(ref RenderGraphFrame frame, CanvasBuffers buffers, in Matrix4x4 transform)
     {
         Span<Vector4> values = stackalloc Vector4[16];
         values.Clear();
-        values[0] = new(buffers.Canvas.Size.Width, buffers.Canvas.Size.Height, buffers.Canvas.Scale, 0);
+        values[0] = new(buffers.Canvas.Size.Width, buffers.Canvas.Size.Height, buffers.Canvas.Scale, buffers.DistanceSpread);
         MemoryMarshal.Cast<Vector4, Matrix4x4>(values[1..5])[0] = transform;
         frame.SetBufferData(buffers.CanvasBuffer, MemoryMarshal.AsBytes(values));
     }
@@ -179,6 +143,10 @@ internal sealed class SurfaceDrawing : IDisposable
         catch { buffer.Dispose(); throw; }
     }
 
+    internal GraphBufferSrvId CreateDrawView(ref RenderGraphFrame frame, GraphBufferId instances, CanvasDraw draw) =>
+        frame.CreateBufferSrv(instances, new BufferRange((ulong)draw.First * InstanceByteCount,
+            (ulong)draw.Count * InstanceByteCount), label: "Surface draw range");
+
     public void Dispose()
     {
         _pipeline.Dispose();
@@ -186,11 +154,12 @@ internal sealed class SurfaceDrawing : IDisposable
     }
 }
 
-internal readonly record struct SurfacePassData(Pipeline Pipeline, VariableLayoutReflection Parameters,
+internal readonly record struct CanvasPassData(Pipeline Pipeline, VariableLayoutReflection Parameters,
     GraphBufferSrvId Instances, GraphBufferCbvId Canvas, GraphColorAttachmentViewId Target, GraphDepthStencilViewId Depth,
-    int Width, int Height, int Count)
+    int Width, int Height, int Count, GraphBufferId CanvasBuffer = default,
+    GlyphPassData? Glyphs = null, CanvasDraw[]? Draws = null)
 {
-    internal static void Declare(ref PassDefinition pass, ref SurfacePassData data)
+    internal static void Declare(ref PassDefinition pass, ref CanvasPassData data)
     {
         pass.SetPipeline(data.Pipeline);
         pass.SetParameterBlock(data.Parameters);
@@ -202,10 +171,26 @@ internal readonly record struct SurfacePassData(Pipeline Pipeline, VariableLayou
                 LoadType.Discard, StoreType.Discard, WriteCoverage.Partial, 0);
     }
 
-    internal static void Draw(ref RasterPassCommandScope commands, in SurfacePassData data)
+    internal static void Draw(ref RasterPassCommandScope commands, in CanvasPassData data)
     {
         commands.SetViewports([new Viewport(0, 0, data.Width, data.Height)]);
         commands.SetScissors([new ScissorRect(0, 0, data.Width, data.Height)]);
-        commands.Draw(new DrawArguments(6, (uint)data.Count, 0, 0));
+        if (data.Glyphs is not { } glyphs)
+        {
+            commands.Draw(new DrawArguments(6, (uint)data.Count, 0, 0));
+            return;
+        }
+        foreach (CanvasDraw draw in data.Draws!)
+        {
+            if (draw.PageIndex >= 0) { glyphs.Draw(ref commands, draw); continue; }
+            commands.SetPipeline(data.Pipeline);
+            ResourceBinding[] resources =
+            [
+                ResourceBinding.ReadOnlyBuffer(commands.GetBufferSrv(draw.Instances)),
+                ResourceBinding.ConstantBuffer(commands.GetBuffer(data.CanvasBuffer), BufferRange.Whole),
+            ];
+            commands.SetTransientParameterBindings(new ParameterBlockBindings(data.Parameters, resources, default));
+            commands.Draw(new DrawArguments(6, (uint)draw.Count, 0, 0));
+        }
     }
 }
