@@ -145,6 +145,7 @@ public static partial class Scope
             T value = ComponentCopy<T>.HasComponent(current.World, entity)
                 ? current.World.ReadComponentData<T>(entity)
                 : default;
+            AnimatedFields.RestoreBase(current.World, entity, ref value);
             copy = new ComponentCopy<T>(entity, value);
             copies.Add(key, copy);
         }
@@ -268,12 +269,25 @@ public static partial class Scope
             current.DeclaredChildren.Add(existing);
             T previous = current.World.ReadComponentData<T>(existing);
             current.Changes.RememberParameters(current.World, existing, in previous);
-            if (previous.Equals(view))
+            T previousTarget = previous;
+            AnimatedFields.RestoreBase(current.World, existing, ref previousTarget);
+            T parameters = view;
+            if (AnimatedFields.PreservePresentation(current.World, existing, ref parameters))
             {
-                current.World.OverwriteComponentData(existing, in view);
+                var copies = (current.Calculation ?? current).ComponentCopies ??= new();
+                var component = (existing, ComponentId<T>.Value);
+                if (!copies.TryGetValue(component, out ComponentCopy? copy))
+                    copies.Add(component, copy = new ComponentCopy<T>(existing, view));
+                else
+                    ((ComponentCopy<T>)copy).Value = view;
+                current.Changes.WriteAnimation(copy);
+            }
+            if (previousTarget.Equals(view) || previous.Equals(parameters))
+            {
+                current.World.OverwriteComponentData(existing, in parameters);
                 return existing;
             }
-            current.World.ReplaceComponentData(existing, in view);
+            current.World.ReplaceComponentData(existing, in parameters);
             if (T.Mode == BuildMode.Rerun)
             {
                 current.Changes.RememberComponent<BuildError>(current.World, existing);
@@ -497,6 +511,7 @@ public static partial class Scope
             Changes = changes ?? new ChildChanges();
             FirstData = Changes.DataCount;
             FirstRemoval = Changes.RemovedCount;
+            FirstAnimation = Changes.AnimationCount;
             if (declaresChildren)
                 Changes.RememberOrder(parent, PreviousChildren);
         }
@@ -515,6 +530,7 @@ public static partial class Scope
         internal ChildChanges Changes { get; }
         internal int FirstData { get; }
         internal int FirstRemoval { get; }
+        internal int FirstAnimation { get; }
         internal bool OutermostBuild { get; }
         internal bool Completed;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
@@ -558,7 +574,7 @@ public static partial class Scope
         {
             ScopeData current = s_scopes!.Pop();
             if (!current.Completed)
-                current.Changes.Restore(current.World, current.FirstData, current.FirstRemoval);
+                current.Changes.Restore(current.World, current.FirstData, current.FirstRemoval, current.FirstAnimation);
             else if (current.OutermostBuild)
                 current.Changes.ReleaseChildren(current.World);
         }

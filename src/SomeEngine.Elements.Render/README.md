@@ -14,7 +14,7 @@ renderWorld.ExecuteBufferRead<SurfaceInstance>(canvasMirror, instances =>
 {
     foreach (SurfaceInstance instance in instances.AsSpan())
     {
-        // Consume the rectangle, fill, corners, border, clip, order, and version.
+        // Consume the rectangle, matrix, opacity, fill, corners, border, clip, order, and version.
     }
 });
 ```
@@ -23,6 +23,11 @@ Each canvas mirror holds `RenderCanvas` and one ECS buffer of `SurfaceInstance`.
 `RenderCanvas` carries the target, pixel size, and pixels per layout unit. Instance
 rectangles use canvas coordinates. The clip rectangle covers the canvas in layout
 units: `(0, 0, Size.Width / Scale, Size.Height / Scale)`.
+`Matrix` transforms the rectangle's canvas-coordinate points by the node-local
+`ElementTransform` around its layout origin and then `PresentationOffset` in
+canvas coordinates. `Alpha` combines their opacity multipliers. Both default to
+identity for nodes with ordinary layout and surface data. The coordinate rule
+lives in `wiki/architecture/someui/Render-Path.md`.
 
 The buffer follows the applied `ElementTree` children in depth-first preorder.
 `DrawOrder` is the node's ordinal in that traversal, starting with the canvas at
@@ -31,7 +36,7 @@ traversals. `Node` identifies the source entity; render consumers read the drawi
 values from this buffer.
 
 Component write versions select changed chunks and rows. Surface and rectangle
-edits update their existing instances. Tree membership, child order, and canvas
+edits, caller transforms, and presentation offsets update their existing instances. Tree membership, child order, and canvas
 changes reconcile the affected canvas. An instance starts at version one and
 advances only when its drawing values change; compare versions with `!=` to allow
 wraparound. Equal drawing values keep their instance and buffer write versions.

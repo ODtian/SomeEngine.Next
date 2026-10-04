@@ -17,8 +17,10 @@
 | 依赖缓冲、对象依赖数组 | 表格，所有视图共用 |
 | 复合与用户视图的参数（生成器默认）、计算列表、Compose/SwiftUI 状态存储 | sparse |
 | `Focused`、`BuildError` | sparse |
-| `Timeline`（可启用）、`Track<T>` 内联缓冲、`PresentationOffset` | 表格；首次声明时加入，之后只改缓冲元素与启用位 |
-| `Contribution<T>`、`BaseValue<T>` | 表格缓冲，仅在多来源合成的节点上存在 |
+| `Timeline`（可启用）、`Track<T>` 内联缓冲、`PresentationOffset`、`ElementTransform` | 表格；首次声明时加入，之后改组件值、缓冲元素与启用位 |
+| `.Animate` 字段声明、`BaseValue<T>` | 节点上的表格缓冲；字段声明保存通道位置与 Spec，基准值由属性动画缓冲持有 |
+| FLIP 运动设置与前帧数据（`FlipSettings`、`FlipFrame`） | 表格；调用方更新设置，FLIP 系统持有前帧数据 |
+| `Contribution<T>` | 表格缓冲，用于多来源合成 |
 
 ## 视图参数的存储接入（#6）
 

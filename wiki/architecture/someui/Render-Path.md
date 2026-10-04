@@ -15,13 +15,14 @@
 ## Surface 提取（#32）
 
 `SomeEngine.Elements.Render` 提供 `SurfaceRenderExtractor`，应用在首次提取前将它
-安装到 `RenderExtractionSystems`。它声明读取 `Canvas`、`Surface`、`LayoutRect`
+安装到 `RenderExtractionSystems`。它声明读取 `Canvas`、`Surface`、`LayoutRect`、
+可选的 `ElementTransform` 和 `PresentationOffset`
 及 `ElementTree` 的 Parent/Children 写版本，沿现有提取阶段收集数据。
 
 每个 Canvas 的 RenderWorld 镜像实体持有 `RenderCanvas` 与一份 ECS
 `SurfaceInstance` 缓冲。`RenderCanvas` 保存目标、像素尺寸与每布局单位像素数。
 `SurfaceInstance` 的公开成员为 `Node`、`Rectangle`、`Fill`、`CornerRadius`、
-`BorderColor`、`BorderWidth`、`ClipRectangle`、`DrawOrder` 与 `Version`。
+`BorderColor`、`BorderWidth`、`ClipRectangle`、`DrawOrder`、`Version`、`Matrix` 与 `Alpha`。
 `Node` 标识来源实体，渲染消费者从缓冲取得其绘制数据。
 
 矩形采用 `LayoutRect` 的画布坐标。当前裁剪范围为画布的布局单位边界：
@@ -30,7 +31,19 @@
 `DrawOrder` 是该节点在遍历中的序号，Canvas 从零开始，透明组合节点同样占一个序号。
 嵌套 Canvas 分别提取到自身缓冲。
 
-组件写版本先筛选变化的 chunk，再按行版本选择 Surface 与矩形更新。
+`ElementTransform.Matrix` 是节点局部矩阵，`Alpha` 是调用方透明度倍率；
+使用 `ElementTransform.Identity` 声明单位变换。缺省组件与缺省呈现偏移按单位值提取。
+`SurfaceInstance.Rectangle` 保留布局矩形的画布坐标；`Matrix` 作用于它的画布坐标点。
+行向量约定下，令 `origin` 为矩形左上角，组合矩阵为：
+
+```text
+Translation(-origin) * ElementTransform.Matrix * Translation(origin) * PresentationOffset.Matrix
+```
+
+实例 `Alpha` 为用户透明度与呈现透明度的乘积；填充及描边保留自己的 RGBA 数据。
+材质与 shader 消费实例矩阵和透明度。
+
+组件写版本先筛选变化的 chunk，再按行版本选择 Surface、矩形、用户变换与呈现偏移更新。
 树成员、子节点顺序和 Canvas 数据变化时，重新整理受影响画布的实例序列。
 实例从版本一开始，仅在绘制数据变化时推进，调用方以 `!=` 比较版本以支持回绕。
 相等绘制数据保留实例与缓冲写版本；静态帧保留缓冲值与写版本。
@@ -44,6 +57,8 @@ ECS 结构事务送入常驻缓冲。常驻绘制数据由 RenderWorld 的 ECS �
 `tests/SomeEngine.Elements.Render.Tests` 经公开 World、层级、视图修饰、布局系统、
 提取调度、帧协调器和缓冲读取验证单节点改色、静态帧、树序、释放、组件移除与恢复、
 跨画布移动、布局与缩放更新，以及提取后 Game world 继续修改时的值送达边界。
+`PresentationExtractionTests.cs` 同时验证局部用户矩阵与 FLIP 的画布偏移、透明度乘积、
+偏移的增量提取、提取后的来源变化，以及结束后静态帧的实例保持。
 
 此前独立 SomeUI 的 Scene、实例与 DrawOrderSystem 用于核对绘制数据及树序。
 这里的实例缓冲采用引擎 ECS 存储，增量依据来自 ECS 写版本，并通过既有提取边界应用。

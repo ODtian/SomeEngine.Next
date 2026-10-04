@@ -9,9 +9,17 @@ internal sealed class ChildChanges
 {
     private readonly List<IChildData> _previousData = new();
     private readonly List<Entity> _removedChildren = new();
+    private List<ComponentCopy>? _animationWrites;
 
     internal int DataCount => _previousData.Count;
     internal int RemovedCount => _removedChildren.Count;
+    internal int AnimationCount => _animationWrites?.Count ?? 0;
+
+    internal void WriteAnimation(ComponentCopy copy)
+    {
+        var writes = _animationWrites ??= new List<ComponentCopy>();
+        if (!writes.Contains(copy)) writes.Add(copy);
+    }
 
     internal void RememberOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) =>
         _previousData.Add(new ChildOrder(parent, children));
@@ -52,16 +60,20 @@ internal sealed class ChildChanges
 
     internal void RemoveChild(Entity entity) => _removedChildren.Add(entity);
 
-    internal void Restore(World world, int firstData, int firstRemoval)
+    internal void Restore(World world, int firstData, int firstRemoval, int firstAnimation)
     {
         for (int index = _previousData.Count - 1; index >= firstData; index--)
             _previousData[index].Restore(world);
         _previousData.RemoveRange(firstData, _previousData.Count - firstData);
         _removedChildren.RemoveRange(firstRemoval, _removedChildren.Count - firstRemoval);
+        _animationWrites?.RemoveRange(firstAnimation, AnimationCount - firstAnimation);
     }
 
     internal void ReleaseChildren(World world)
     {
+        if (_animationWrites is { } writes)
+            foreach (ComponentCopy copy in writes)
+                copy.CommitAnimations(world);
         foreach (IChildData data in _previousData)
             data.Complete();
         foreach (Entity entity in _removedChildren)

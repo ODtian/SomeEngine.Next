@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -22,6 +23,8 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
         query.ReadOptional<Canvas>();
         query.ReadOptional<Surface>();
         query.ReadOptional<LayoutRect>();
+        query.ReadOptional<ElementTransform>();
+        query.ReadOptional<PresentationOffset>();
         query.ReadOptional<Parent<ElementTree>>();
         query.ReadOptional<Children<ElementTree>>();
         query.Write<RenderCanvas>();
@@ -48,12 +51,17 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
             chunk.HasChangedSinceLastSystemVersion<Surface>();
         bool rectangleChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() &&
             chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
+        bool transformChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() && chunk.Has<ElementTransform>() &&
+            chunk.HasChangedSinceLastSystemVersion<ElementTransform>();
+        bool offsetChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() && chunk.Has<PresentationOffset>() &&
+            chunk.HasChangedSinceLastSystemVersion<PresentationOffset>();
         bool canvasChanged = chunk.Has<Canvas>() && chunk.HasChangedSinceLastSystemVersion<Canvas>();
         bool parentChanged = chunk.Has<Parent<ElementTree>>() &&
             chunk.HasChangedSinceLastSystemVersion<Parent<ElementTree>>();
         bool childrenChanged = chunk.Has<Children<ElementTree>>() &&
             chunk.HasChangedSinceLastSystemVersion<Children<ElementTree>>();
-        if (!surfaceChanged && !rectangleChanged && !canvasChanged && !parentChanged && !childrenChanged)
+        if (!surfaceChanged && !rectangleChanged && !transformChanged && !offsetChanged &&
+            !canvasChanged && !parentChanged && !childrenChanged)
             return false;
 
         for (int row = 0; row < chunk.Count; row++)
@@ -64,7 +72,9 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
                 (childrenChanged && chunk.RowChangedSinceLastSystemVersion<Children<ElementTree>>(row)))
                 _changedTreeNodes.Add(entity);
             if ((surfaceChanged && chunk.RowChangedSinceLastSystemVersion<Surface>(row)) ||
-                (rectangleChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)))
+                (rectangleChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
+                (transformChanged && chunk.RowChangedSinceLastSystemVersion<ElementTransform>(row)) ||
+                (offsetChanged && chunk.RowChangedSinceLastSystemVersion<PresentationOffset>(row)))
                 _changedSurfaceNodes.Add(entity);
         }
         // Source collection resolves the canvas and supplies the detached drawing values.
@@ -116,7 +126,10 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
             {
                 SurfaceValue value = ReadSurface(world, node);
                 surfaces.Add(new(node, value.Rectangle, value.Fill, value.CornerRadius,
-                    value.BorderColor, value.BorderWidth, clip, drawOrder, 0));
+                    value.BorderColor, value.BorderWidth, clip, drawOrder, 0)
+                {
+                    Matrix = value.Matrix, Alpha = value.Alpha,
+                });
             }
             drawOrder++;
             var children = Hierarchy<ElementTree>.GetChildren(world, node);
@@ -128,8 +141,15 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
     private static SurfaceValue ReadSurface(World world, Entity node)
     {
         Surface surface = world.Read<Surface>(node);
-        return new(world.Read<LayoutRect>(node).Value, surface.Fill, surface.CornerRadius,
-            surface.BorderColor, surface.BorderWidth);
+        Rect rectangle = world.Read<LayoutRect>(node).Value;
+        ElementTransform transform = world.Has<ElementTransform>(node)
+            ? world.Read<ElementTransform>(node) : ElementTransform.Identity;
+        PresentationOffset offset = world.Has<PresentationOffset>(node)
+            ? world.Read<PresentationOffset>(node) : PresentationOffset.Identity;
+        Matrix3x2 matrix = Matrix3x2.CreateTranslation(-rectangle.X, -rectangle.Y) * transform.Matrix
+            * Matrix3x2.CreateTranslation(rectangle.X, rectangle.Y) * offset.Matrix;
+        return new(rectangle, surface.Fill, surface.CornerRadius, surface.BorderColor, surface.BorderWidth,
+            matrix, transform.Alpha * offset.Alpha);
     }
 
     public void Apply(RenderExtractionContext context)
@@ -171,6 +191,7 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
                     {
                         Rectangle = value.Rectangle, Fill = value.Fill, CornerRadius = value.CornerRadius,
                         BorderColor = value.BorderColor, BorderWidth = value.BorderWidth,
+                        Matrix = value.Matrix, Alpha = value.Alpha,
                     };
                     if (before != after) buffer[index] = after with { Version = unchecked(before.Version + 1) };
                 }
@@ -209,5 +230,6 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
     }
 
     private readonly record struct CanvasSurfaces(RenderCanvas Canvas, List<SurfaceInstance> Instances);
-    private readonly record struct SurfaceValue(Rect Rectangle, Color Fill, float CornerRadius, Color BorderColor, float BorderWidth);
+    private readonly record struct SurfaceValue(Rect Rectangle, Color Fill, float CornerRadius, Color BorderColor,
+        float BorderWidth, Matrix3x2 Matrix, float Alpha);
 }
