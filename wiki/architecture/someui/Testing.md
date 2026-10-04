@@ -317,6 +317,10 @@ NativeAOT 的 IL2026、IL3050 与 IL2070 诊断位于已有 `TraceCapture` 和
 基础回归在合入布局缓存后的 `230c75a6409df68b4a0883044c2a854223099e29` 执行。
 随后合入指针冒泡集成提交 `3da0051c0116fb962997fa40d3f3a0c12803c257`，
 消费者完整回归与原生验收在行为提交 `78d1b341b873b1381bc95b89689d9734f37dc001` 执行。
+交付前继续合入异步构建与 Button 集成提交
+`e26a6d4bbcb0b5b3a544b7c5e06c216314dc4b85`，基础层完整回归在
+`f0398e176a9d6b0f3a20c964565605f36ea0815a` 执行，最终消费者回归与原生入口
+基于合并提交 `0d1dd5405f774c3f72944c3df1675b5b4d26c392`。
 
 本票新增的 20 项公开行为用例通过 Pointer、行为声明、World、ElementTree、
 系统组和组件读取验证 Drag 字段、静止帧、区域外释放、再次拖动、按钮配对、
@@ -332,9 +336,9 @@ NativeAOT 的 IL2026、IL3050 与 IL2070 诊断位于已有 `TraceCapture` 和
 
 | 项目 | Debug 通过 | Release 通过 |
 |---|---:|---:|
-| SomeEngine.Elements.Consumer.Tests | 74 | 55 |
+| SomeEngine.Elements.Consumer.Tests | 95 | 73 |
 | SomeEngine.Layout.Tests | 94 | 74 |
-| SomeEngine.Views.Tests | 259 | 230 |
+| SomeEngine.Views.Tests | 279 | 250 |
 | SomeEngine.Views.Generators.Tests | 95 | 95 |
 | SomeEngine.Elements.Render.Tests | 10 | 10 |
 
