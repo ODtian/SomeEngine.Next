@@ -9,7 +9,7 @@
 | `SomeEngine.Animation` | 引擎级动画核心与属性动画（见 [[architecture/Animation|Animation]]）；FLIP 与 `.Animate` 在 Elements 中 | ECS、Job |
 | `SomeEngine.Typography` | 字形排版、字体、图集 | — |
 | `SomeEngine.Elements` | `Surface` 修饰、`Text`、文本样式与排版系统、`Pressable`、`Pointer`、`HitTestSystem`、`Button` 与 `ButtonTheme`；`Image`、其它控件、焦点和 `.Animate` 按后续票扩展 | Views、Layout、Typography |
-| `SomeEngine.Elements.Render` | 提取系统、渲染功能、内置材质 | Elements、Render |
+| `SomeEngine.Elements.Render` | 提取系统、屏幕画布绘制、内置 Surface 材质 | Elements、Render、RenderGraph |
 | `SomeEngine.Views.Compose` / `.SwiftUI` / `.Solid` | 各前端的协调原语 | Views |
 
 ## Invariants
