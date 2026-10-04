@@ -18,7 +18,7 @@ using GltfTexture = SharpGLTF.Schema2.Texture;
 namespace Game.Build;
 
 [AssetImporter("a91c86d1-551d-48e3-8e33-a25e30e2c2f4", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
-public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) : GltfSceneImporter
+public sealed class ImportedSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("a91c86d1-551d-48e3-8e33-a25e30e2c2f4");
     private readonly Dictionary<float, Guid> _shaders = [];
@@ -36,6 +36,8 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
                 texture, cancellationToken).ConfigureAwait(false);
             textures.Add(texture, imported.Reference);
         }
+        GltfImporterSettings sourceSettings = context.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
         string templatePath = Path.IsPathRooted(sourceSettings.LitMaterialTemplate)
             ? Path.GetFullPath(sourceSettings.LitMaterialTemplate)
             : Path.GetFullPath(Path.Combine(context.ProjectRoot, sourceSettings.LitMaterialTemplate));

@@ -6,7 +6,9 @@
 
 ## 生产与查询
 
-通用 glTF 几何 Importer 只生产 MeshBlock；Cluster Importer 只生产 ClusterMeshBlock，并接收项目明确提供的顶点编码器。材质引用由独立 Importer 生产。无材质几何不被迫依赖 Standard 或 Unlit。
+通用 glTF 几何 Importer 只生产 MeshBlock；Cluster Importer 只生产 ClusterMeshBlock。材质引用由独立 Importer 生产。无材质几何不被迫依赖 Standard 或 Unlit。
+
+目标划分见 [Block Division](Block-Division.md) 与 [glTF Mesh Import](Gltf-Mesh-Import.md)：中立 Block（区段、蒙皮绑定、形变目标集合）由所有管线共用；每条管线有自己的几何、顶点属性、蒙皮影响与形变增量 Block。当前 Cluster Importer 无参构造，持有自己的顶点编码规则；位置与属性仍写在同一个 ClusterMeshBlock 中，按 Block 划分任务迁移。
 
 Importer 直接使用 glTF 库的 Mesh 对象；多个生产者在一次 Context 中写同一 Asset 的不同 Block。竞争同一种 Block 的生产者必须明确选择或报错，不依赖执行顺序覆盖。
 

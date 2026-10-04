@@ -9,6 +9,7 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
     private readonly object _sync = new();
     private readonly CancellationTokenSource _cancellation;
     private readonly SourceMeta _sourceMeta;
+    private readonly Dictionary<Guid, object?> _settings = [];
     private readonly Dictionary<(Type Source, Type Asset), object> _sourceTypes = [];
     private readonly Dictionary<Guid, AssetResult> _assets = [];
     private readonly List<IAsyncDisposable> _resources = [];
@@ -39,7 +40,21 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
 
     public T GetSettings<T>(Guid importerId, T defaults, JsonTypeInfo<T> typeInfo,
         AssetImportSettings<T>? overrides = null)
-        => overrides is null ? _sourceMeta.GetSettings(importerId, defaults, typeInfo) : overrides.Value;
+    {
+        lock (_sync)
+            return overrides is not null ? overrides.Value : _settings.TryGetValue(importerId, out object? settings)
+                ? (T)settings! : _sourceMeta.GetSettings(importerId, defaults, typeInfo);
+    }
+
+    /// <summary>Sets this import's effective settings before the first asset request.</summary>
+    public void ConfigureSettings<T>(Guid importerId, T settings)
+    {
+        lock (_sync)
+        {
+            RequireConfiguration();
+            _settings[importerId] = settings;
+        }
+    }
 
     /// <summary>Declares a native source type's identity, creation and saving rules, not individual results.</summary>
     public void ConfigureAssets<TSource, TAsset>(Func<TSource, string> elementKey,

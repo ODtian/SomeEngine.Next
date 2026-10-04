@@ -12,7 +12,7 @@ namespace Game.Importing;
 
 /// <summary>Builds project Standard and Unlit materials while the base importer assembles glTF nodes.</summary>
 [AssetImporter("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
-public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSettings) : GltfSceneImporter
+public sealed class StandardGltfSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b");
     public const string LitTemplate = "assets/Materials/Standard.material.asset";
@@ -43,6 +43,8 @@ public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSetting
                 texture, cancellationToken).ConfigureAwait(false);
             textures.Add(texture, imported.Reference);
         }
+        GltfImporterSettings sourceSettings = context.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
         string templatePath = source.Unlit ? sourceSettings.UnlitMaterialTemplate : sourceSettings.LitMaterialTemplate;
         string fullPath = Path.IsPathRooted(templatePath)
             ? Path.GetFullPath(templatePath) : Path.GetFullPath(Path.Combine(context.ProjectRoot, templatePath));

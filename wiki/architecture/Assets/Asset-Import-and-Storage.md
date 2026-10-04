@@ -20,6 +20,8 @@
 | 来源文件配置 | 实际启用的 Importer、各自参数、来源身份及输出身份对应关系 | 完整源文件名加 `.meta`，参与重新导入 |
 | 单次调用覆盖 | 本次调用选择或参数覆盖 | 只作用于本次执行，不自动改写持久设置 |
 
+来源集成通过 `context.ConfigureSettings<T>(Guid importerId, T settings)` 在首个资产请求前配置本次覆盖。局部 Importer 通过 `context.GetSettings<T>(Guid importerId, T defaults, JsonTypeInfo<T> typeInfo, AssetImportSettings<T>? overrides = null)` 读取设置，优先级为显式读取覆盖、本次上下文配置、`.meta` 与默认值。glTF 来源设置使用 `GltfSourceImporter.SourceImporterId`；场景 Importer 由该入口读取材质模板路径，实际产出与来源配置和单次调用一致。
+
 SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩展调用或执行顺序。编辑器读取生成的能力描述，向用户呈现可选能力；这些描述不是业务载荷的弱类型解释器。设置的 JSON 只是持久表达，经对应静态设置读取器成为强类型参数，再进入 Importer。
 
 新增来源、Importer 或 Block 不需要修改引擎中央类型分支。依赖服务通过普通 Microsoft DI 构造注入。每次导入使用明确的服务作用域，同一作用域解析到同一 Importer；作用域与来源内容的释放跟随该次导入。

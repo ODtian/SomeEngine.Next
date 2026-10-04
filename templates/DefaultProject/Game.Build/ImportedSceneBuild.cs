@@ -42,9 +42,7 @@ public static class ImportedSceneBuild
                     GltfSettingsJson.Default.GltfImporterSettings)));
             SourceMeta.Save(copiedSource, sourceMetadata);
         }
-        GltfImporterSettings sourceSettings = sourceMetadata.GetSettings(GltfSourceImporter.SourceImporterId,
-            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
-        var sceneImporter = new ImportedSceneImporter(sourceSettings);
+        var sceneImporter = new ImportedSceneImporter();
         var importer = new GltfSourceImporter(services =>
         {
             Game.Importing.ProjectAssetCapabilities.AddAssetCapabilities(services);

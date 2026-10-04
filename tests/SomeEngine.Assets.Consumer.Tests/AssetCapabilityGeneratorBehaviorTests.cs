@@ -23,12 +23,11 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
         public partial class Data : AssetBlock { public partial int Value { get; set; } }
         public sealed class Source;
         public sealed record Settings(int Value);
-        public sealed class Dependency { public int Number => 47; }
         [AssetImporter("bcc64662-e334-49b1-b559-55d89b06e351", typeof(Data))]
         public class Importer : IAssetImporter<Source, Settings>
         {
-            public Importer(Dependency dependency) { Number = dependency.Number; }
-            public int Number { get; }
+            public Importer() { }
+            public int Number => 47;
             public ValueTask ImportAsync(Source source, Settings settings, ImportContext context,
                 ImportOutput output, CancellationToken cancellationToken) => ValueTask.CompletedTask;
         }
@@ -73,7 +72,6 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
                 public static bool Execute()
                 {
                     var services = new ServiceCollection();
-                    services.AddSingleton(new Extension.Dependency());
                     ProjectAssets.AddAssetCapabilities(services);
                     using var provider = services.BuildServiceProvider();
                     using var scope = provider.CreateScope();
@@ -175,8 +173,7 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
     [InlineData("bcc64662-e334-49b1-b559-55d89b06e351", "not-an-identity")]
     [InlineData("typeof(Data)", "typeof(string)")]
     [InlineData("typeof(Data)", "typeof(Data), typeof(Data)")]
-    [InlineData("public Importer(Dependency dependency)", "private Importer(Dependency dependency)")]
-    [InlineData("public int Number { get; }", "public int Number { get; } public Importer() { }")]
+    [InlineData("public Importer()", "private Importer()")]
     public void UnavailableDeclarationsHaveActionableDiagnostics(string original, string replacement)
     {
         var result = Compile(ExtensionSource.Replace(original, replacement, StringComparison.Ordinal));
@@ -185,27 +182,42 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
         Assert.Contains("Importer", error.GetMessage());
     }
 
-    [Fact]
-    public void ExplicitConstructorSelectionIsUsedByGeneratedServices()
+    [Theory]
+    [InlineData("public Importer(int number) { }")]
+    [InlineData("public Importer(System.IServiceProvider services) { }")]
+    [InlineData("public Importer(int number = 47) { }")]
+    [InlineData("public Importer(ref int number) { }")]
+    [InlineData("public Importer() { } private Importer(int number) { }")]
+    [InlineData("public Importer() { } [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor] public Importer(int number) { }")]
+    public void ParameterizedImporterConstructorsProduceCompilationErrors(string constructor)
     {
-        string source = ExtensionSource.Replace("public Importer(Dependency dependency)",
-            "public Importer() { Number = -1; } [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor] public Importer(Dependency dependency)", StringComparison.Ordinal)
-            + """
+        var result = Compile(ExtensionSource.Replace("public Importer() { }", constructor, StringComparison.Ordinal));
+        Diagnostic error = Assert.Single(result.Diagnostics.Where(value => value.Id == "SEAC004"));
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+        Assert.Contains("Extension.Importer", error.GetMessage());
+        Assert.Contains("ImportContext", error.GetMessage());
+        Assert.True(error.Location.IsInSource);
+    }
 
-            [AssetCapabilities] public static partial class ProjectAssets;
-            public static class Consumer
-            {
-                public static bool Execute()
-                {
-                    var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
-                    Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton(services, new Dependency());
-                    ProjectAssets.AddAssetCapabilities(services);
-                    using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
-                    return Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Importer>(provider).Number == 47;
-                }
-            }
-            """;
-        Assert.True((bool)Execute(Emit(Compile(source)))!);
+    [Fact]
+    public void ReferencedParameterizedImporterProducesACompilationError()
+    {
+        byte[] extension = Emit(Compile(ExtensionSource.Replace("public Importer() { }",
+            "public Importer(System.IServiceProvider services) { }", StringComparison.Ordinal), capabilities: false));
+        var result = Compile("using SomeEngine.Assets; [AssetCapabilities] public static partial class ProjectAssets;",
+            dependencies: [MetadataReference.CreateFromImage(extension)]);
+        Diagnostic error = Assert.Single(result.Diagnostics.Where(value => value.Id == "SEAC004"));
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+        Assert.Contains("Extension.Importer", error.GetMessage());
+    }
+
+    [Fact]
+    public void PrimaryImporterConstructorProducesACompilationError()
+    {
+        string source = ExtensionSource.Replace("public class Importer :", "public class Importer(int number) :", StringComparison.Ordinal)
+            .Replace("public Importer() { }", "", StringComparison.Ordinal);
+        Diagnostic error = Assert.Single(Compile(source).Diagnostics.Where(value => value.Id == "SEAC004"));
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
     }
 
     [Fact]

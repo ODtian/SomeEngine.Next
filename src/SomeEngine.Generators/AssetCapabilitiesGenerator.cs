@@ -24,6 +24,8 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         "Asset capabilities '{0}' and '{1}' declare the same persistent identity '{2}'", "SomeEngine.Assets", DiagnosticSeverity.Error, true);
     private static readonly DiagnosticDescriptor InvalidRegistration = new("SEAC003", "Invalid asset capability registration",
         "Asset capability registration '{0}': {1}", "SomeEngine.Assets", DiagnosticSeverity.Error, true);
+    private static readonly DiagnosticDescriptor ImporterConstructorParameters = new("SEAC004", "Importer requires parameterless construction",
+        "Importer '{0}' requires parameterless constructors; read settings through ImportContext and keep algorithms in the importer", "SomeEngine.Assets", DiagnosticSeverity.Error, true);
     private static readonly SymbolDisplayFormat BlockNameFormat = new(
         globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted,
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
@@ -144,15 +146,16 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         if (blocks.Count == 0)
         { Error("declare at least one produced block"); return null; }
 
-        IMethodSymbol[] constructors = type.InstanceConstructors.Where(constructor => constructor.DeclaredAccessibility == Accessibility.Public).ToArray();
-        IMethodSymbol[] selected = constructors.Where(constructor => Attribute(constructor,
-            "Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructorAttribute") is not null).ToArray();
-        IMethodSymbol? constructor = selected.Length == 1 ? selected[0] : selected.Length == 0 && constructors.Length == 1 ? constructors[0] : null;
-        if (constructor is null)
-        { Error("provide one public constructor, or mark one public constructor with ActivatorUtilitiesConstructor"); return null; }
-        if (constructor.Parameters.Any(parameter => parameter.RefKind != RefKind.None || parameter.Type.IsRefLikeType
-            || parameter.Type.TypeKind == TypeKind.Pointer || parameter.Type.TypeKind == TypeKind.FunctionPointer))
-        { Error("constructor parameters must be ordinary service types passed by value"); return null; }
+        IMethodSymbol[] parameterizedConstructors = type.InstanceConstructors.Where(constructor => constructor.Parameters.Length != 0).ToArray();
+        if (parameterizedConstructors.Length != 0)
+        {
+            foreach (IMethodSymbol constructor in parameterizedConstructors)
+                output.ReportDiagnostic(Diagnostic.Create(ImporterConstructorParameters,
+                    constructor.Locations.FirstOrDefault(location => location.IsInSource) ?? Location(type), type.ToDisplayString()));
+            return null;
+        }
+        if (!type.InstanceConstructors.Any(constructor => constructor.DeclaredAccessibility == Accessibility.Public))
+        { Error("provide a public parameterless constructor"); return null; }
         INamedTypeSymbol? provider = attribute.NamedArguments.FirstOrDefault(argument => argument.Key == "SettingsProvider").Value.Value as INamedTypeSymbol;
         if (provider is not null && (!IsPublic(provider) || provider.IsAbstract || provider.Arity != 0
             || !provider.InstanceConstructors.Any(value => value.DeclaredAccessibility == Accessibility.Public && value.Parameters.Length == 0)
@@ -179,7 +182,7 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
             using SHA256 versionHash = SHA256.Create();
             version = BitConverter.ToString(versionHash.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", versions)))).Replace("-", "");
         }
-        return new Importer(type, id, interfaces[0], constructor, blocks.ToArray(), provider, version);
+        return new Importer(type, id, interfaces[0], blocks.ToArray(), provider, version);
     }
 
     private static string EmitRegistration(INamedTypeSymbol registration, INamedTypeSymbol[] blocks, Importer[] importers, string buildVersion)
@@ -236,16 +239,7 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         {
             code.Append("if (!installedImporters.ContainsKey(new global::System.Guid(").Append(Literal(importer.Id.ToString())).AppendLine("))) {");
             code.Append("global::Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAdd(services, global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Scoped<")
-                .Append(Type(importer.Type)).Append(">(static services => new ").Append(Type(importer.Type)).Append('(');
-            for (int index = 0; index < importer.Constructor.Parameters.Length; index++)
-            {
-                if (index != 0) code.Append(", ");
-                IParameterSymbol parameter = importer.Constructor.Parameters[index];
-                if (parameter.Type.ToDisplayString() == "System.IServiceProvider") code.Append("services");
-                else code.Append("global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<")
-                    .Append(Type(parameter.Type)).Append(">(services)");
-            }
-            code.AppendLine(")));");
+                .Append(Type(importer.Type)).Append(">(static services => new ").Append(Type(importer.Type)).AppendLine("()));");
             code.Append("services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Scoped<").Append(Type(importer.Service))
                 .Append(">(static services => global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<")
                 .Append(Type(importer.Type)).AppendLine(">(services)));");
@@ -402,12 +396,11 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
 
     private sealed class Importer
     {
-        public Importer(INamedTypeSymbol type, Guid id, INamedTypeSymbol service, IMethodSymbol constructor, INamedTypeSymbol[] blocks, INamedTypeSymbol? settingsProvider, string implementationVersion)
-        { Type = type; Id = id; Service = service; Constructor = constructor; Blocks = blocks; SettingsProvider = settingsProvider; ImplementationVersion = implementationVersion; }
+        public Importer(INamedTypeSymbol type, Guid id, INamedTypeSymbol service, INamedTypeSymbol[] blocks, INamedTypeSymbol? settingsProvider, string implementationVersion)
+        { Type = type; Id = id; Service = service; Blocks = blocks; SettingsProvider = settingsProvider; ImplementationVersion = implementationVersion; }
         public INamedTypeSymbol Type { get; }
         public Guid Id { get; }
         public INamedTypeSymbol Service { get; }
-        public IMethodSymbol Constructor { get; }
         public INamedTypeSymbol[] Blocks { get; }
         public INamedTypeSymbol? SettingsProvider { get; }
         public string ImplementationVersion { get; }

@@ -70,10 +70,9 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
     public async ValueTask ImportAsync(ModelRoot source, ImportContext context, AssetImportSettings<GltfImportOverrides>? overrides,
         CancellationToken cancellationToken)
     {
-        GltfImporterSettings settings = overrides?.Value.Settings
-            ?? context.GetSettings(SourceImporterId, new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+        if (overrides?.Value.Settings is { } sourceSettings) context.ConfigureSettings(SourceImporterId, sourceSettings);
+        GltfImporterSettings settings = context.GetSettings(SourceImporterId, new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
         var services = new ServiceCollection();
-        services.AddSingleton(settings);
         _configureServices(services);
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         context.Hold(provider);

@@ -17,11 +17,12 @@ Asset importer DI 是 Importer 的注册表，唯一用途是让一次来源导�
 - 导入上下文按导入范围管理 Importer 实例：同一次导入共用，上下文关闭时释放。
 
 ## Current design
-当前代码中的偏离（目标行为以本页为准，由资产重构任务移除）：
-- `GltfSourceImporter.ImportAsync` 把 `GltfImporterSettings` 注册进 DI，`StandardGltfSceneImporter` 通过构造函数取得它。
-- 生成的工厂对任意构造参数调用 `GetRequiredService`，并为 `IServiceProvider` 参数传入容器本身。
+`AssetCapabilitiesGenerator` 对带参数的 Importer 构造函数报告 `SEAC004` 编译错误，检查本项目与引用程序集的声明。公开无参构造函数通过直接工厂注册；按具体类型和强类型 Importer 接口解析时共用同一作用域的实例。
+
+`StandardGltfSceneImporter` 与默认场景构建工具的 `ImportedSceneImporter` 通过 `context.GetSettings(GltfSourceImporter.SourceImporterId, new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings)` 读取来源的材质模板路径。来源集成在请求资产前通过 `context.ConfigureSettings<T>(Guid importerId, T settings)` 设置单次覆盖；该覆盖只由本次上下文持有。持久设置继续从 `.meta` 读取。Importer 持有自己的编码资源，导入作用域保持到所有 Block 保存完成。
+
+当前代码与目标的差异：
 - `GltfSourceImporter.EnsureDefaultSelections` 写死 `GltfMeshImporter`、`ClusterGltfMeshImporter`、`GltfTextureImporter`。
-- 测试 `AssetCapabilityBehaviorTests`、`GltfExtensionBehaviorTests` 中把"向 Importer 注入依赖服务"当作公开行为验证。
 
 ## Relations
 [[architecture/Assets/Asset-Import-and-Storage|Import and Storage]] · [[architecture/Assets/Importer-Sets|Importer Sets]] · ADR 0015
