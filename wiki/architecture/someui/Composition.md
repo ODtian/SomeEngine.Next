@@ -221,6 +221,49 @@ Surface 的阴影数据与提取入口见 [[architecture/someui/Modifiers|Modifi
 [[architecture/someui/Render-Path|Render Path]]，公开行为验收见
 [[architecture/someui/Testing|Testing]]。
 
+## Toggle、Slider 与用户 Knob（#44）
+
+```csharp
+public record struct Toggle(bool On) : IView, ISparseComponent;
+public record struct Slider(float Value, float Minimum = 0, float Maximum = 1, float Step = 0)
+    : IView, ISparseComponent;
+public static class ValueFunctions
+{
+    public static bool Toggled(this Entity toggle);
+    public static bool Edited(this Entity node, out float value);
+    public static Entity ValueDraggable(Entity node, in ValueRange range, Vector2 direction, float distance);
+}
+```
+
+`ToggleFunctions.Toggle(on)` 与 `SliderFunctions.Slider(value, minimum, maximum, step)`
+是同名生成入口。参数由调用方提供，交互结果由调用方写回自己的数据。
+`Toggled()` 沿 `Clicked()` 消费新确认，调用方据此切换布尔值；`Edited()` 消费最新的数值编辑。
+同一帧的多次数值输入顺序应用，读取取得最终值；再次读取返回 false，out 值为当前参数。
+
+Toggle 在自己的节点上声明 `Pressable` 与 `Focusable`，用 40 × 24 的圆角外框和
+16 × 16 的圆形滑块显示布尔值。Slider 声明共享的 `ValueDraggable`，用 160 × 24 的
+外框、4 单位高的轨道和 12 × 12 的滑块显示数值，水平全程拖动距离为 148 画布单位。
+焦点边框由构建读取 `Focused` 后选择。输入数据、布局矩形与调用方数值分别由原来的
+输入阶段、布局阶段与应用持有。
+
+外部 [Knob](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Knob.cs)
+调用同一个 `ValueDraggable`，将增加方向设为向上，全程距离同为 148。
+它用自己的 48 × 48 圆形底面和沿圆周移动的指示点表达数值，颜色和子结构由用户定义。
+共享部件负责范围、步长、键盘步进和编辑消费，控件选择自己的方向、距离与呈现。
+外部 [Toggle](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Toggle.cs)
+同样通过公开指针、焦点、布局和 Surface 接口组合，并与内置 Toggle 共用确认用例。
+
+音量贯穿场景通过公开 ECS 查询的 `row.ReadWrite<AudioSettings>()` 取得 ref，游戏系统
+修改 `Volume`，视图读取这一份组件后声明 Slider、Knob 和数值文本。控件的 `Edited()`
+结果通过 `Scope.Write<AudioSettings>` 写回，依赖变化在同帧重建中更新其它控件。
+调用方先把 Volume 格式化为显示字符串，再传给 `Text(string)`；相同显示结果沿视图参数
+比较保留 Text、TextContent、排版与布局版本。
+共享的范围和输入语义见 [[architecture/someui/Input-and-Behaviors|Input and Behaviors]]。
+
+独立 SomeUI 的控件专用输入、预览与外观结构作为交互参考。本票依据 ADR 0011，
+以公开行为、普通视图和调用方数据写回表达这些能力；`Step = 0` 表示连续拖动，
+键盘采用范围的 5% 步进，符合本票确定的 Slider 默认参数。
+
 ## Evidence
 对等由程序集边界保证，见 [[architecture/someui/Assemblies|Assemblies]]；外部重写测试见 [[architecture/someui/Testing|Testing]]。
 

@@ -233,5 +233,49 @@ Selectable 组合 Pressable 与 Selected。重复构建保留系统写入的值�
 公开验收：[BehaviorTests](../../../tests/SomeEngine.Elements.Consumer.Tests/BehaviorTests.cs)、
 [内置与用户重写共用检查](../../../tests/SomeEngine.Elements.Consumer.Tests/BehaviorChecks.cs)。
 
+## 数值编辑行为（#44）
+
+```csharp
+public record struct ValueRange(float Value, float Minimum = 0, float Maximum = 1, float Step = 0)
+    : IComponent
+{
+    public readonly float Ratio { get; }
+}
+public record struct ValueDrag(Vector2 Direction, float Distance) : IComponent;
+public struct ValueEdit : IComponent { public float Value; public uint Count; }
+public struct ValueEditSeen : IComponent { public uint Count; }
+```
+
+`ValueFunctions.ValueDraggable(node, range, direction, distance)` 组合 `Draggable` 与
+`Focusable`，写入调用方的范围和拖动映射，并声明编辑数据。方向在声明时归一化；
+Distance 表示从 Minimum 到 Maximum 所需的画布位移。重复声明保留输入数据。
+Value、Minimum、Maximum 与 Step 均要求有限，Minimum ≤ Value ≤ Maximum，Step ≥ 0，
+方向有效且 Distance > 0；使用错误通过 Core `DevelopmentCheck` 报告。
+
+HitTestSystem 的拖动阶段按指针事件顺序保存当前手势的起始值，用累计 `Drag.Total` 在 Direction 上的
+投影计算候选值，再按范围和 Step 限制。小幅位移先累计，再量化，因此多次小移动可以
+跨过量化阈值；区域外释放保留同一个捕获手势的结果。新手势以调用方当前值或此前尚待
+领取的编辑值开始，同一输入帧中的多个手势按到达顺序应用。
+当前输入结果与调用方数值分开持有：输入系统写 ValueEdit，调用方通过 Edited 写回应用数据。
+
+当焦点节点声明 ValueRange 时，FocusNavigationSystem 将按下的 Right / Up 作为增加，
+Left / Down 作为减少；每次重复按下对应一次步进，释放保持当前值。
+Step > 0 时按 Step 步进，Step = 0 时按完整范围的 5% 步进。
+数值节点的方向键编辑当前值，Gamepad.Navigate 继续执行原有焦点导航。
+首次方向输入仍沿默认规则取得焦点，后续方向键编辑已聚焦节点。
+Enter、Space 与 Gamepad.Confirm 继续提供焦点确认，Toggle 通过 Toggled 消费它们。
+
+Step > 0 时，范围内候选值在以 Minimum 为原点的步长格点上取最近值，半步向增加方向取整；
+范围端点保持可达。Step = 0 保留连续候选值。相同结果保持编辑计数，发生变化时递增
+ValueEdit.Count。连续的键盘输入按缓冲顺序应用，并以本次尚待调用方领取的结果继续编辑。
+`Edited(out value)` 读取 ValueEdit 并登记依赖，以 ValueEditSeen 消费新计数；成功构建结束
+时按 Scope 的比较提交规则保存已读计数。读取 false 时，out 值为当前 ValueRange.Value。
+Ratio 是当前参数在范围内的比例，等值范围返回 0，供用户控件选择自己的呈现。
+
+实现：[ValueFunctions](../../../src/SomeEngine.Elements/ValueFunctions.cs)、
+[数值输入](../../../src/SomeEngine.Elements/ValueEditing.cs)。
+公开对等验收：[ValueChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/ValueChecks.cs)、
+[用户 Knob](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Knob.cs)。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]

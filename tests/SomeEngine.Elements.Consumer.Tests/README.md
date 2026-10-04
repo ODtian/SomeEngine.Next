@@ -14,6 +14,14 @@ first example rewrites `Background`, `Corner`, and `Border` with
 `SurfaceTests` observes node identity, Surface values, layout rectangles, write
 versions, and development errors. `SurfaceChecks` is compiled by these tests and
 the Views NativeAOT smoke executable to share the Column behavior checks.
+`ValueTests` and the shared `ValueChecks` exercise caller-controlled Toggle
+activation, Slider and user Knob keyboard steps, accumulated drag quantization,
+range endpoints, and ordered inputs. `ValueVolumeChecks` runs a game system's
+ref write to AudioSettings, accepts a slider edit back into that same component,
+and observes both controls and formatted text. Matching display strings retain
+the public text, content, shaping, and layout versions. The checks and the
+external Toggle and Knob are also compiled into the Views NativeAOT executable.
+
 `AssemblyBoundaryTests` checks the public assembly access rule owned by Wiki
 `architecture/someui/Assemblies`.
 

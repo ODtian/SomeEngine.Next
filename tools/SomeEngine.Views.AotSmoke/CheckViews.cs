@@ -48,6 +48,12 @@ SomeEngine.Elements.Consumer.Tests.TextChecks.Run();
 SomeEngine.Elements.Consumer.Tests.LocalizationChecks.Run();
 Console.WriteLine("Localized keys, arguments, language changes, English and Chinese plurals, number and date cultures, and ordinary text versions passed under NativeAOT.");
 SomeEngine.Views.Solid.Tests.SolidChecks.Run();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckInsert();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckInsertedBranches();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckInsertionRecovery();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckComponent();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckBuild();
+Console.WriteLine("Solid Insert parameters, exported Once views, inline component calls, and retained state and computations passed under NativeAOT.");
 Console.WriteLine("Solid text bindings, Memo getters, Effect, Untrack, reactive surfaces, and zero-allocation state changes passed under NativeAOT.");
 Console.WriteLine("Text shaping, Column measurements, style modifiers, formatted numbers, write versions, and zero-allocation integer writes passed under NativeAOT.");
 Console.WriteLine("Column surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
@@ -89,6 +95,9 @@ SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(false, false, false);
 SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(true, true, true);
 SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(false, false, true);
 Console.WriteLine("Dialog themes, title styles, caller geometry, and built-in and user Dialog, DialogTitle, and DialogFooter composition passed under NativeAOT.");
+
+SomeEngine.Elements.Consumer.Tests.ValueChecks.Run();
+Console.WriteLine("Toggle activation, Slider and user Knob range editing, keyboard steps, quantized dragging, and audio volume with equal text versions passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
 Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
 
