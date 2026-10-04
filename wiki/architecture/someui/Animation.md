@@ -100,5 +100,15 @@ Flip.Enable(row, Spec.Tween(0.2f));
 与 Elements.Render 完整测试：Debug 分别通过 64 与 11 项，Release 分别通过 48 与 11 项。
 更新后的原生发布程序及跨进程 checkpoint 验收同时通过。
 
+异步生命周期适配的验收代码为 `a72d918c9970d6e7ca23292a46c829658858d677`，
+包含 `codex/someui` 的 `5d3be07dc7e38c61783d85a5ad5d807d2c10f98b`。
+`AsyncAnimationTests` 经公开 API 通过 6 个挂起、恢复与失败场景，原有界面动画 10 项同时通过。
+Views 的完整 Debug／Release 分别通过 290／260 项，Elements.Consumer 分别通过 161／122 项，
+Solid 分别通过 13／12 项。测试命令沿上面的单进程配置，追加
+`-- xUnit.MaxParallelThreads=1 xUnit.ParallelizeTestCollections=false` 固定测试集合执行条件。
+动画、布局与提取的回归分别通过 125、94、11 项，提取 Release 通过 11 项。
+原生发布中的 `AsyncAnimationChecks`、完整行为入口和 `Test-Checkpoint.ps1` 同时通过；
+临时发布目录在运行后清理。
+
 ## Relations
 [[architecture/animation/Property-Animation|Property Animation]] · [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Render-Path|Render Path]]
