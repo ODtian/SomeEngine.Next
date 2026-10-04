@@ -20,7 +20,7 @@
 
 每个 Canvas 的 RenderWorld 镜像实体持有 `RenderCanvas` 与一份 ECS
 `SurfaceInstance` 缓冲。`RenderCanvas` 保存目标、像素尺寸与每布局单位像素数。
-`SurfaceInstance` 的公开字段为 `Node`、`Rectangle`、`Fill`、`CornerRadius`、
+`SurfaceInstance` 的公开成员为 `Node`、`Rectangle`、`Fill`、`CornerRadius`、
 `BorderColor`、`BorderWidth`、`ClipRectangle`、`DrawOrder` 与 `Version`。
 `Node` 标识来源实体，渲染消费者从缓冲取得其绘制数据。
 
