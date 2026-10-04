@@ -36,6 +36,7 @@ public struct Canvas : IComponent
 {
     public CanvasTarget Target;
     public Size Size;
+    public bool DepthTest;
     private float? _scale;
     public float Scale { readonly get => _scale ?? 1; set => _scale = value; }
 }
