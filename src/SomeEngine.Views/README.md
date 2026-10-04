@@ -8,6 +8,13 @@
 相等结果保留已有版本。计算随创建者重跑与所属视图释放，规则见
 [Computations](../../wiki/architecture/someui/Computations.md)。
 
+`Scope.Launch(key, run)` 声明随 key 变化重启的异步子任务。
+`Scope.Resource(source, fetch)` 返回 `Resource<T>`，请求期间保留旧值，读取
+`Value`、`Loading` 与 `Error` 登记依赖。两种原语共用视图重建队列和取消清理，
+生成器提供调用位置身份；`callKey` 重载支持显式身份，`Scope.Key` 支持列表分组。
+`Once` 视图通过 `Compute` 读取来源并重新声明资源，规则见
+[Async Build](../../wiki/architecture/someui/Async-Build.md)。
+
 包附带 `SomeEngine.Views.Generators` 分析器和 buildTransitive props。
 生成器为带主构造函数的视图生成同名静态函数，每个视图对应一个函数类。
 

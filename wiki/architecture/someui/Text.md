@@ -97,7 +97,8 @@ GlyphAtlas loaded = GlyphAtlas.Load(contentStream, [font]);
 API 使用错误通过 `DevelopmentCheck` 报告；文件头与版本决定二进制格式的读取方式。
 `Load` 在文件边界检查栅格化配置：页宽高大于 2、字号为正数、距离范围为 2–32 像素；
 非法文件配置通过 `InvalidDataException` 报告，Debug、Release 与 NativeAOT 采用相同规则。
-CPU 数据沿 Game world 到 Rendering world 的既有提取路径交付，GPU 上传由 #34 承接。
+CPU 数据沿 Game world 到 Rendering world 的既有提取路径交付，GPU 上传与字形绘制见
+[Render Path](Render-Path.md#文字提取与绘制34)。
 相较于 SomeUI 的 `FontAtlas` 参考，这里的基准字号采用像素/em，像素保存为单通道，
 字形查询消费 HarfBuzz 编号，并以追加固定页保持位置。
 
@@ -168,13 +169,18 @@ systems.Add(new LayoutSystem(shaping));
 `ShapedText.Size` 并按约束限制尺寸。Flex 与 Grid 的基础测量和最终测量沿同一入口，
 因此文本按当前分配宽度换行，父布局使用此次测量的高度摆放后续子节点。
 
-排版系统按显示字符串 `TextContent`、调用方样式与解析样式的组件版本复用字形结果。
-布局缓存通过 `ILayoutDataUpdate.HasChanges` 沿用这组三种版本，语言切换形成的
+排版系统按显示字符串 `TextContent` 的写版本及解析后的字体、字号、行高复用字形结果。
+布局缓存通过 `ILayoutDataUpdate.HasChanges` 沿用这些排版输入，语言切换形成的
 显示字符串变化会使对应文本的测量失效。每个节点持有可复用的
 各测量宽度缓冲；后续布局复用已经闲置的宽度缓冲，持续改变画布尺寸时存储按同时需要的
 测量宽度数保留。画布布局结束后，以最终宽度和数据版本比较、提交 `ShapedText`。
 相同文本、样式与最终约束保持 `ShapedText.Version` 及组件写版本；
 相同布局矩形也保持 `LayoutRect` 的写版本。
+
+单独修改颜色时，排版系统更新 `ShapedText.Style.Color` 并推进该组件的写版本，
+保留字形、行、尺寸与 `ShapedText.Version`。此版本表示字形布局的变化；
+组件写版本同时供渲染提取观察颜色变化。各宽度的字形缓冲按排版输入复用，
+颜色通过同一节点的样式送达字形实例。图集页与其版本保持原值。
 
 `ShapedText` 由排版系统写入，公开读取字形、行、尺寸、完整样式和版本。
 字形与行范围的读取期限为相关缓冲下一次复用或释放之前；应用在界面布局阶段结束后读取最终结果。
@@ -321,7 +327,8 @@ world.Replace(language, new Locale { Name = "zh-CN" });
 
 ## 后续文本能力
 
-文本绘制由 #34 沿既有 Game world 到 Rendering world 提取路径接入。
+文本绘制通过 `GlyphRenderExtractor` 与 `GlyphsMaterial` 沿既有 Game world 到
+Rendering world 提取路径接入，公开入口及像素语义见 [Render Path](Render-Path.md#文字提取与绘制34)。
 富文本继续按样式段扩展排版数据。
 
 ## Open questions
