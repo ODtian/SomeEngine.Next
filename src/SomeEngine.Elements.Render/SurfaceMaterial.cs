@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.Graphics;
-using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
 using Buffer = SomeEngine.Graphics.Buffer;
 using Texture = SomeEngine.Resources.Texture;
@@ -17,7 +16,7 @@ public sealed class SurfaceMaterial : Material
     public override Guid MaterialTypeId => TypeId;
     public override IReadOnlyList<MaterialPropertyDefinition> Properties => [];
 
-    /// <summary>Compiles the built-in Slang shader once for the requested graphics target.</summary>
+    /// <summary>Uses the shared built-in shader compiled for the requested graphics target.</summary>
     public static SurfaceMaterial Create(SlangCompileTarget target) => new()
     {
         Shader = ElementShaders.Get("Surface", target),
@@ -42,6 +41,9 @@ internal sealed class SurfaceDrawing : IDisposable
     private readonly Format _format;
     private readonly Dictionary<(Format Format, CompareOperation Comparison), Pipeline> _depthPipelines = [];
 
+    internal Pipeline Pipeline => _pipeline;
+    internal VariableLayoutReflection Parameters => _parameters;
+
     internal SurfaceDrawing(IGraphicsBackend backend, Device device, SurfaceMaterial material, Format format)
     {
         DevelopmentCheck.Require(material.Shader is not null, "A Surface material requires its shader.");
@@ -52,6 +54,15 @@ internal sealed class SurfaceDrawing : IDisposable
         _parameters = _shader.GetSlangReflection(_shader.RequireSlangTarget(device.Capabilities.CompileTarget))
             .GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
         _pipeline = CreatePipeline();
+    }
+
+    internal Pipeline GetPipeline(in CanvasPassTarget target)
+    {
+        if (target.Depth == default) return _pipeline;
+        var key = (target.DepthFormat, target.DepthComparison);
+        if (!_depthPipelines.TryGetValue(key, out Pipeline? pipeline))
+            _depthPipelines.Add(key, pipeline = CreatePipeline(target.DepthFormat, target.DepthComparison));
+        return pipeline;
     }
 
     private Pipeline CreatePipeline(Format? depthFormat = null, CompareOperation comparison = CompareOperation.LessOrEqual)
@@ -73,47 +84,7 @@ internal sealed class SurfaceDrawing : IDisposable
             pixelCodeBlob: _shader.GetSlangEntryBlob(target, pixel)));
     }
 
-    internal CanvasBuffers AddPass(RenderGraphEdit edit, CanvasPassTarget target, bool glyphs = false)
-    {
-        GraphBufferInput instances = edit.CreateBufferInput(BufferUsages.ShaderRead);
-        GraphBufferId canvas = edit.DeclareExternalBuffer(new BufferDesc(256, BufferUsages.Constant,
-            "Canvas size and scale"), MemoryType.Upload);
-        GraphBufferCbvId canvasView = edit.CreateBufferCbv(canvas);
-        GraphBufferSrvId instancesView = edit.CreateBufferSrv(instances, label: "Surface instances");
-        GraphColorAttachmentViewId targetView = edit.CreateColorAttachmentView(target.Color, label: "Canvas color");
-        GraphDepthStencilViewId depthView = default;
-        Pipeline pipeline = _pipeline;
-        if (target.Depth != default)
-        {
-            var key = (target.DepthFormat, target.DepthComparison);
-            if (!_depthPipelines.TryGetValue(key, out pipeline!))
-                _depthPipelines.Add(key, pipeline = CreatePipeline(target.DepthFormat, target.DepthComparison));
-            depthView = edit.CreateDepthStencilView(target.Depth,
-                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth), target.DepthFormat,
-                TextureViewDimension.Texture2D, readOnlyDepth: true, label: "Canvas scene depth");
-        }
-        var data = new CanvasPassData(pipeline, _parameters, instancesView, canvasView, targetView, depthView, 0, 0, 0);
-        GraphPassId pass = edit.AddRasterFramePass("Canvas elements", PassQueueSelection.AnyOfType(QueueType.Graphics),
-            data, default, CanvasPassData.Declare, CanvasPassData.Draw);
-        var buffers = new CanvasBuffers(pass, instances, instancesView, canvas, canvasView, targetView, depthView, target, data);
-        if (glyphs)
-        {
-            buffers.GlyphInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
-            buffers.GlyphView = edit.CreateBufferSrv(buffers.GlyphInput, label: "Glyph instances");
-        }
-        return buffers;
-    }
-
-    internal void SetCanvasData(ref RenderGraphFrame frame, CanvasBuffers buffers, in Matrix4x4 transform)
-    {
-        Span<Vector4> values = stackalloc Vector4[16];
-        values.Clear();
-        values[0] = new(buffers.Canvas.Size.Width, buffers.Canvas.Size.Height, buffers.Canvas.Scale, buffers.DistanceSpread);
-        MemoryMarshal.Cast<Vector4, Matrix4x4>(values[1..5])[0] = transform;
-        frame.SetBufferData(buffers.CanvasBuffer, MemoryMarshal.AsBytes(values));
-    }
-
-    internal Buffer CreateInstances(ReadOnlySpan<SurfaceInstance> instances)
+    internal InstanceBuffer CreateInstances(ReadOnlySpan<SurfaceInstance> instances)
     {
         ulong byteCount = (ulong)Math.Max(1, instances.Length) * InstanceByteCount;
         Buffer buffer = _backend.CreateBuffer(_device, new BufferDesc(byteCount, BufferUsages.ShaderRead,
@@ -138,59 +109,14 @@ internal sealed class SurfaceDrawing : IDisposable
                 data[start + 6] = new(instance.Shadow.Offset, instance.Shadow.BlurRadius, 0);
             }
             mapped.Flush(new BufferRange(0, byteCount));
-            return buffer;
+            return InstanceBuffer.Create(_backend, _device, buffer, instances.Length, InstanceByteCount);
         }
         catch { buffer.Dispose(); throw; }
     }
-
-    internal GraphBufferSrvId CreateDrawView(ref RenderGraphFrame frame, GraphBufferId instances, CanvasDraw draw) =>
-        frame.CreateBufferSrv(instances, new BufferRange((ulong)draw.First * InstanceByteCount,
-            (ulong)draw.Count * InstanceByteCount), label: "Surface draw range");
 
     public void Dispose()
     {
         _pipeline.Dispose();
         foreach (Pipeline pipeline in _depthPipelines.Values) pipeline.Dispose();
-    }
-}
-
-internal readonly record struct CanvasPassData(Pipeline Pipeline, VariableLayoutReflection Parameters,
-    GraphBufferSrvId Instances, GraphBufferCbvId Canvas, GraphColorAttachmentViewId Target, GraphDepthStencilViewId Depth,
-    int Width, int Height, int Count, GraphBufferId CanvasBuffer = default,
-    GlyphPassData? Glyphs = null, CanvasDraw[]? Draws = null)
-{
-    internal static void Declare(ref PassDefinition pass, ref CanvasPassData data)
-    {
-        pass.SetPipeline(data.Pipeline);
-        pass.SetParameterBlock(data.Parameters);
-        pass.Bind(data.Instances, PipelineSync.VertexShading | PipelineSync.PixelShading);
-        pass.Bind(data.Canvas, PipelineSync.VertexShading | PipelineSync.PixelShading);
-        pass.ColorAttachment(0, data.Target, LoadType.Load, StoreType.Store, WriteCoverage.Partial, default);
-        if (data.Depth != default)
-            pass.DepthStencilAttachment(data.Depth, LoadType.Load, StoreType.Store, WriteCoverage.Partial, 0,
-                LoadType.Discard, StoreType.Discard, WriteCoverage.Partial, 0);
-    }
-
-    internal static void Draw(ref RasterPassCommandScope commands, in CanvasPassData data)
-    {
-        commands.SetViewports([new Viewport(0, 0, data.Width, data.Height)]);
-        commands.SetScissors([new ScissorRect(0, 0, data.Width, data.Height)]);
-        if (data.Glyphs is not { } glyphs)
-        {
-            commands.Draw(new DrawArguments(6, (uint)data.Count, 0, 0));
-            return;
-        }
-        foreach (CanvasDraw draw in data.Draws!)
-        {
-            if (draw.PageIndex >= 0) { glyphs.Draw(ref commands, draw); continue; }
-            commands.SetPipeline(data.Pipeline);
-            ResourceBinding[] resources =
-            [
-                ResourceBinding.ReadOnlyBuffer(commands.GetBufferSrv(draw.Instances)),
-                ResourceBinding.ConstantBuffer(commands.GetBuffer(data.CanvasBuffer), BufferRange.Whole),
-            ];
-            commands.SetTransientParameterBindings(new ParameterBlockBindings(data.Parameters, resources, default));
-            commands.Draw(new DrawArguments(6, (uint)draw.Count, 0, 0));
-        }
     }
 }

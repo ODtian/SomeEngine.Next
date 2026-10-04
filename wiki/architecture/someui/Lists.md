@@ -51,6 +51,20 @@ public readonly record struct EnemyRow(Entity Source) : IView, IComponent
 
 公开验收：[EachDependencyTests](../../../tests/SomeEngine.Views.Tests/EachDependencyTests.cs)。
 
+## Solid 查询列表（#57）
+
+Solid 的 `For` 与 `Index` 可直接接收 `() => Scope.Each(query)`，行元素为 `Entity`。
+API、元素或位置身份、getter 读取和行生命周期由
+[[architecture/someui/Solid-Frontend|Solid Frontend]] 的 For 与 Index 节维护。
+
+```csharp
+For(() => Scope.Each(enemies), (enemy, index) =>
+{
+    Text(() => Scope.Read<Health>(enemy).Current);
+    Text(index);
+});
+```
+
 ## 滚动容器与可见行（#45）
 
 `SomeEngine.Elements` 提供 sparse 视图 `ScrollView` 与 `VirtualList(float RowHeight)`，

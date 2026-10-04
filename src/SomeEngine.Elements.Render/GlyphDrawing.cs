@@ -66,7 +66,7 @@ internal sealed class GlyphDrawing : IDisposable
         return pipeline;
     }
 
-    internal Buffer CreateInstances(ReadOnlySpan<GlyphInstance> glyphs)
+    internal InstanceBuffer CreateInstances(ReadOnlySpan<GlyphInstance> glyphs)
     {
         ulong byteCount = (ulong)Math.Max(1, glyphs.Length) * InstanceByteCount;
         Buffer buffer = _backend.CreateBuffer(_device, new BufferDesc(byteCount, BufferUsages.ShaderRead,
@@ -87,14 +87,10 @@ internal sealed class GlyphDrawing : IDisposable
                     glyph.ClipRectangle.Width, glyph.ClipRectangle.Height);
             }
             mapped.Flush(new BufferRange(0, byteCount));
-            return buffer;
+            return InstanceBuffer.Create(_backend, _device, buffer, glyphs.Length, InstanceByteCount);
         }
         catch { buffer.Dispose(); throw; }
     }
-
-    internal GraphBufferSrvId CreateDrawView(ref RenderGraphFrame frame, GraphBufferId instances, CanvasDraw draw) =>
-        frame.CreateBufferSrv(instances, new BufferRange((ulong)draw.First * InstanceByteCount,
-            (ulong)draw.Count * InstanceByteCount), label: "Glyph draw range");
 
     public void Dispose()
     {
@@ -103,23 +99,3 @@ internal sealed class GlyphDrawing : IDisposable
         foreach (Pipeline pipeline in _depthPipelines.Values) pipeline.Dispose();
     }
 }
-
-internal readonly record struct GlyphPassData(Pipeline Pipeline, VariableLayoutReflection Parameters,
-    Sampler Sampler, GraphBufferSrvId Instances, GraphBufferId Canvas, GraphTextureSrvId[] Pages, int DistanceSpread)
-{
-    internal void Draw(ref RasterPassCommandScope commands, CanvasDraw draw)
-    {
-        commands.SetPipeline(Pipeline);
-        ResourceBinding[] resources =
-        [
-            ResourceBinding.ReadOnlyBuffer(commands.GetBufferSrv(draw.Instances)),
-            ResourceBinding.ConstantBuffer(commands.GetBuffer(Canvas), BufferRange.Whole),
-            ResourceBinding.SampledTexture(commands.GetTextureSrv(Pages[draw.PageIndex])),
-            ResourceBinding.SampledWith(Sampler),
-        ];
-        commands.SetTransientParameterBindings(new ParameterBlockBindings(Parameters, resources, default));
-        commands.Draw(new DrawArguments(6, (uint)draw.Count, 0, 0));
-    }
-}
-
-internal readonly record struct CanvasDraw(int First, int Count, int PageIndex, GraphBufferSrvId Instances = default);

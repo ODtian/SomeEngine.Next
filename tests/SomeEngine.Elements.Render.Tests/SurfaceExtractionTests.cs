@@ -21,12 +21,15 @@ namespace SomeEngine.Elements.Render.Tests;
 
 public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graphics) : IClassFixture<SurfaceExtractionDevice>
 {
-    [Fact]
-    public void SurfaceShadowsReachRenderingOnCreationUpdateAndClear()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SurfaceShadowsReachRenderingOnCreationUpdateAndClear(bool sharedCanvas)
     {
         using var game = new World();
         using var render = new RenderWorld();
-        using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
+        using var extraction = new RenderExtractionSystems(render,
+            sharedCanvas ? new CanvasRenderExtractor() : new SurfaceRenderExtractor());
         Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
         Entity node = AddPanel(game, canvas, new Rect(10, 20, 120, 80), new Color(1, 0, 0));
         Surface surface = game.Read<Surface>(node);

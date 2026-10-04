@@ -1,12 +1,12 @@
 # SomeEngine.Elements.Render
 
-`SurfaceRenderExtractor` transfers layout nodes with `Surface` and `LayoutRect`
+`CanvasRenderExtractor` transfers layout nodes with `Surface`, `Image` and `LayoutRect`
 through `RenderExtractionSystems`. Install it with the other extractors before
 the first extraction:
 
 ```csharp
 using var extraction = new RenderExtractionSystems(
-    renderWorld, new SurfaceRenderExtractor());
+    renderWorld, new CanvasRenderExtractor());
 extraction.Extract(gameWorld);
 prepareSystems.ApplyExtraction(prepareScope);
 Entity canvasMirror = extraction.RequireMirror(canvas);
@@ -20,6 +20,8 @@ renderWorld.ExecuteBufferRead<SurfaceInstance>(canvasMirror, instances =>
 ```
 
 Each canvas mirror holds `RenderCanvas` and one ECS buffer of `SurfaceInstance`.
+Images occupy an `ImageInstance` buffer on the same mirror. `SurfaceRenderExtractor`
+keeps the original entry point for the shared canvas extractor.
 `RenderCanvas` carries the target, pixel size, and pixels per layout unit. Instance
 rectangles use canvas coordinates. The clip rectangle covers the canvas in layout
 units: `(0, 0, Size.Width / Scale, Size.Height / Scale)`, intersected with each
@@ -93,6 +95,26 @@ Runtime applications using the argument entry point can enable it with `--surfac
 Graph structure and D3D12/Vulkan pixel behavior are covered by
 `tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests.cs`.
 
+Image views refer to `AssetId<TextureAsset>` and use `ImageTextures` with
+`LayoutSystem` to receive ready application textures. Drawing includes the image
+material and the application's device resource manager:
+
+```csharp
+using ImageMaterial images = ImageMaterial.Create(device.Capabilities.CompileTarget);
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
+    material, outputFormat, images, renderDevice);
+```
+
+The canvas pass merges surfaces, glyphs and images by tree order. One node draws
+its surface, glyphs and image in that order. Each material interprets its own bytes and supplies
+the buffer range starting at each batch. Consecutive instances using the same
+material and texture draw together. Image textures use RenderDevice's normal
+upload and view methods; the unified missing texture covers acquisition time.
+Texture bindings belong to each graph frame and retain the canvas pass identity.
+
+`ImageTests` covers intrinsic size, fitted rectangles and UV through public APIs.
+`ImageDrawingTests` uses the complete view, layout, extraction and canvas path to
+read pixels on D3D12 WARP and Vulkan with graphics validation enabled.
 Text uses a CPU atlas entity and the same extraction stage:
 
 ```csharp
@@ -119,12 +141,23 @@ Surface and glyph draws share the persistent canvas pass and follow the tree's
 order. Glyphs sample an SDF and calculate coverage in target pixels, then use the
 same premultiplied alpha blend as Surface. A color edit keeps the shaped glyphs,
 layout rectangles, atlas pixels and atlas version; only drawing colors advance.
-The built-in shader resources are shared by name and target for the application's
+`ElementShaders` holds all three built-in shader resources by name and target for the application's
 lifetime, while pipelines, instance buffers and GPU pages retire with graph work.
 
 `GlyphExtractionTests` drives public World frames and extraction; `GlyphDrawingTests`
 compares D3D12 WARP and Vulkan pixel readback against an independent glyph outline
 image. The screen panel example displays both English and Chinese text.
+
+Provide both optional materials to compose surfaces, text and images in one canvas pass:
+
+```csharp
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
+    material, outputFormat, glyphs, images, renderDevice);
+```
+
+`CanvasCompositionTests` reads known colors after interleaved surface, glyph and
+image draws, concurrent atlas/texture updates, canceled frames and GC. The same
+cases run on screen and world canvases on D3D12 WARP and Vulkan, including depth.
 For a world canvas, provide `CanvasTarget.WorldSpace(targetEntity)` and a target
 `WorldTransform` in the Game world. `Canvas.DepthTest` chooses scene depth testing.
 Extraction supplies `RenderCanvas.Transform` and `DepthTest` alongside the same

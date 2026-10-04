@@ -24,4 +24,3 @@ public sealed class GlyphsMaterial : Material
     protected override void CopyProperties(Material source) { }
     protected override Material CreateEmpty() => new GlyphsMaterial();
 }
-
