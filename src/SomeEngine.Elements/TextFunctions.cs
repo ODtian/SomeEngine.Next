@@ -55,6 +55,15 @@ public static partial class TextFunctions
     }
 
     /// <summary>Formats into reusable temporary characters and creates a string only when the text changes.</summary>
+    public static Entity SetText<T>(this Entity node, T value, string format = "", IFormatProvider? provider = null)
+        where T : struct, ISpanFormattable
+    {
+        ref Text text = ref Scope.Write<Text>(node);
+        text.Value = TextFormatting.Format(value, text.Value, format, provider);
+        return node;
+    }
+
+    /// <summary>Formats into reusable temporary characters and creates a string only when the text changes.</summary>
     public static Entity SetText<T>(this Entity node, World world, T value, string format = "", IFormatProvider? provider = null)
         where T : struct, ISpanFormattable
     {

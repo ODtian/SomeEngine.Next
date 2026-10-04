@@ -24,6 +24,7 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         query.ReadOptional<Canvas>();
         query.ReadOptional<Surface>();
         query.ReadOptional<LayoutRect>();
+        query.ReadOptional<ScrollOffset>();
         query.ReadOptional<Image>();
         query.ReadOptional<ImageTexture>();
         query.ReadOptional<Box>();
@@ -55,6 +56,8 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
             chunk.HasChangedSinceLastSystemVersion<Surface>();
         bool rectangleChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() &&
             chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
+        bool viewportChanged = chunk.Has<ScrollOffset>() && chunk.Has<LayoutRect>() &&
+            chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
         bool canvasChanged = chunk.Has<Canvas>() && chunk.HasChangedSinceLastSystemVersion<Canvas>();
         bool parentChanged = chunk.Has<Parent<ElementTree>>() &&
             chunk.HasChangedSinceLastSystemVersion<Parent<ElementTree>>();
@@ -65,13 +68,14 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
              chunk.HasChangedSinceLastSystemVersion<LayoutRect>() ||
              (chunk.Has<ImageTexture>() && chunk.HasChangedSinceLastSystemVersion<ImageTexture>()) ||
              (chunk.Has<Box>() && chunk.HasChangedSinceLastSystemVersion<Box>()));
-        if (!surfaceChanged && !rectangleChanged && !canvasChanged && !parentChanged && !childrenChanged && !imageChanged)
+        if (!surfaceChanged && !rectangleChanged && !viewportChanged && !canvasChanged && !parentChanged && !childrenChanged && !imageChanged)
             return false;
 
         for (int row = 0; row < chunk.Count; row++)
         {
             Entity entity = chunk.Entities[row];
             if ((canvasChanged && chunk.RowChangedSinceLastSystemVersion<Canvas>(row)) ||
+                (viewportChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
                 (parentChanged && chunk.RowChangedSinceLastSystemVersion<Parent<ElementTree>>(row)) ||
                 (childrenChanged && chunk.RowChangedSinceLastSystemVersion<Children<ElementTree>>(row)))
                 _changedTreeNodes.Add(entity);
@@ -132,23 +136,26 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         var clip = new Rect(0, 0, canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale);
         var surfaces = new List<SurfaceInstance>();
         var images = new List<ImageInstance>();
-        var nodes = new Stack<Entity>();
-        nodes.Push(canvasEntity);
+        var nodes = new Stack<(Entity Node, Rect Clip)>();
+        nodes.Push((canvasEntity, clip));
         int drawOrder = 0;
-        while (nodes.TryPop(out Entity node))
+        while (nodes.TryPop(out var entry))
         {
+            Entity node = entry.Node;
             if (node != canvasEntity && world.Has<Canvas>(node)) continue;
             if (world.Has<Surface>(node) && world.Has<LayoutRect>(node))
             {
                 SurfaceValue value = ReadSurface(world, node);
                 surfaces.Add(new(node, value.Rectangle, value.Fill, value.CornerRadius,
-                    value.BorderColor, value.BorderWidth, clip, drawOrder, 0));
+                    value.BorderColor, value.BorderWidth, entry.Clip, drawOrder, 0));
             }
             if (world.Has<Image>(node) && world.Has<LayoutRect>(node))
-                images.Add(ReadImage(world, node) with { ClipRectangle = clip, DrawOrder = drawOrder });
+                images.Add(ReadImage(world, node) with { ClipRectangle = entry.Clip, DrawOrder = drawOrder });
             drawOrder++;
+            Rect childClip = world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node)
+                ? Intersect(entry.Clip, world.Read<LayoutRect>(node).Value) : entry.Clip;
             var children = Hierarchy<ElementTree>.GetChildren(world, node);
-            for (int index = children.Count - 1; index >= 0; index--) nodes.Push(children[index]);
+            for (int index = children.Count - 1; index >= 0; index--) nodes.Push((children[index], childClip));
         }
         return new(new RenderCanvas(canvas.Target, canvas.Size, canvas.Scale), surfaces, images);
     }
@@ -158,6 +165,15 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         Surface surface = world.Read<Surface>(node);
         return new(world.Read<LayoutRect>(node).Value, surface.Fill, surface.CornerRadius,
             surface.BorderColor, surface.BorderWidth);
+    }
+
+    private static Rect Intersect(Rect first, Rect second)
+    {
+        float left = MathF.Max(first.X, second.X);
+        float top = MathF.Max(first.Y, second.Y);
+        float right = MathF.Min(first.X + first.Width, second.X + second.Width);
+        float bottom = MathF.Min(first.Y + first.Height, second.Y + second.Height);
+        return new(left, top, MathF.Max(0, right - left), MathF.Max(0, bottom - top));
     }
 
     private static ImageInstance ReadImage(World world, Entity node)

@@ -106,10 +106,13 @@ internal static partial class AsyncIntegrationChecks
         Entity root = Views.Spawn(frames.World, Entity.Null, new ObjectContent(text));
         frames.Frame();
         Require(frames.World.Read<Number>(root).Value == 0, "The first segment presents loading data.");
+        text.Version = 2;
+        frames.Frame();
+        Require(frames.World.Read<Number>(root).Value == 0, "A published object write restarts the waiting view.");
         frames.Frame();
         Require(frames.World.Read<Number>(root).Value == 7, "The resumed read settles within its own frame.");
         text.Value = 11;
-        text.Version = 2;
+        text.Version = 4;
         frames.Frame();
         frames.Frame();
         Require(frames.World.Read<Number>(root).Value == 11, "A later object version refreshes the asynchronous view.");

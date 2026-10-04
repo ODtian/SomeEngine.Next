@@ -20,12 +20,13 @@ internal sealed class DependencyChanges
 
     internal void Record(World world, ulong frame)
     {
+        bool sameFrame = Frame == frame;
         Frame = frame;
         foreach (ushort component in _types)
         {
             ref ComponentChange change = ref _changes[component];
             uint version = world.ComponentWriteVersion(component);
-            change.Changed = version != change.Version;
+            change.Changed = version != change.Version || (sameFrame && change.Changed);
             change.Version = version;
         }
     }

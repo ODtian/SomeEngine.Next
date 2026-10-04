@@ -40,6 +40,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
     internal Exception? Error => _error;
     internal List<Dependency> Reads { get; } = new();
     internal ObjectDependencyList ObjectReads { get; } = new(frame);
+    internal Scope.ScopeData? ScopeData;
 
     internal void Execute(ulong frame)
     {
@@ -106,6 +107,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
         _run = null;
         _parent = null;
         _error = null;
+        ScopeData = null;
     }
 
     internal bool HasChanges(DependencyChanges changes, bool recheck = false)

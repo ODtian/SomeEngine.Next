@@ -15,7 +15,7 @@
 ## Surface 提取（#32）
 
 `SomeEngine.Elements.Render` 提供 `SurfaceRenderExtractor`，应用在首次提取前将它
-安装到 `RenderExtractionSystems`。它声明读取 `Canvas`、`Surface`、`LayoutRect`
+安装到 `RenderExtractionSystems`。它声明读取 `Canvas`、`Surface`、`LayoutRect`、`ScrollOffset`
 及 `ElementTree` 的 Parent/Children 写版本，沿现有提取阶段收集数据。
 
 每个 Canvas 的 RenderWorld 镜像实体持有 `RenderCanvas` 与一份 ECS
@@ -24,14 +24,17 @@
 `BorderColor`、`BorderWidth`、`ClipRectangle`、`DrawOrder` 与 `Version`。
 `Node` 标识来源实体，渲染消费者从缓冲取得其绘制数据。
 
-矩形采用 `LayoutRect` 的画布坐标。当前裁剪范围为画布的布局单位边界：
+矩形采用 `LayoutRect` 的画布坐标。基础裁剪范围为画布的布局单位边界：
 `(0, 0, Canvas.Size.Width / Canvas.Scale, Canvas.Size.Height / Canvas.Scale)`。
+祖先带有 ScrollOffset 时，后代的裁剪矩形进一步与其 LayoutRect 外框取交集；
+嵌套视口逐层取交集，空交集给出零宽或零高的裁剪矩形。
 树序采用 `ElementTree` 已应用的有序子节点做深度优先前序遍历。
 `DrawOrder` 是该节点在遍历中的序号，Canvas 从零开始，透明组合节点同样占一个序号。
 嵌套 Canvas 分别提取到自身缓冲。
 
 组件写版本先筛选变化的 chunk，再按行版本选择 Surface 与矩形更新。
 树成员、子节点顺序和 Canvas 数据变化时，重新整理受影响画布的实例序列。
+视口外框变化，以及 ScrollOffset 的添加或移除，同样刷新后代的裁剪矩形。
 实例从版本一开始，仅在绘制数据变化时推进，调用方以 `!=` 比较版本以支持回绕。
 相等绘制数据保留实例与缓冲写版本；静态帧保留缓冲值与写版本。
 节点释放、Surface 移除或 LayoutRect 移除后，缓冲移除对应实例。
@@ -44,6 +47,7 @@ ECS 结构事务送入常驻缓冲。常驻绘制数据由 RenderWorld 的 ECS �
 `tests/SomeEngine.Elements.Render.Tests` 经公开 World、层级、视图修饰、布局系统、
 提取调度、帧协调器和缓冲读取验证单节点改色、静态帧、树序、释放、组件移除与恢复、
 跨画布移动、布局与缩放更新，以及提取后 Game world 继续修改时的值送达边界。
+`ScrollClippingTests` 覆盖嵌套视口、外框变化、滚动声明增删与静止帧的裁剪数据。
 
 此前独立 SomeUI 的 Scene、实例与 DrawOrderSystem 用于核对绘制数据及树序。
 这里的实例缓冲采用引擎 ECS 存储，增量依据来自 ECS 写版本，并通过既有提取边界应用。
@@ -136,6 +140,7 @@ Slang 的全局对象由这一份数据保持有效，其派生对象按
 按树序组合 Surface 与 Image。同一节点先绘制 Surface，再绘制 Image。
 shader 从 `SV_VertexID` 生成矩形，以纹理 RGBA 转成预乘 alpha 后混合到目标。
 纹理使用线性过滤与边界夹取，裁剪采用画布布局坐标。
+Image 与 Surface 在同一次画布遍历中继承滚动视口的裁剪交集，视口外框变化更新对应实例。
 每个批次绑定由材质给出的实例缓冲读取范围，从该范围的首条实例开始。
 连续同材质、同纹理的实例使用批绘；范围视图与实例缓冲一起沿图的完成边界回收。
 

@@ -24,7 +24,10 @@ Images occupy an `ImageInstance` buffer on the same mirror. `SurfaceRenderExtrac
 keeps the original entry point for the shared canvas extractor.
 `RenderCanvas` carries the target, pixel size, and pixels per layout unit. Instance
 rectangles use canvas coordinates. The clip rectangle covers the canvas in layout
-units: `(0, 0, Size.Width / Scale, Size.Height / Scale)`.
+units: `(0, 0, Size.Width / Scale, Size.Height / Scale)`, intersected with each
+ancestor scroll viewport's LayoutRect. Nested viewports intersect their bounds
+in tree order. Viewport rectangle changes and scrolling declaration changes
+refresh descendant clip rectangles through the same extraction stage.
 
 The buffer follows the applied `ElementTree` children in depth-first preorder.
 `DrawOrder` is the node's ordinal in that traversal, starting with the canvas at

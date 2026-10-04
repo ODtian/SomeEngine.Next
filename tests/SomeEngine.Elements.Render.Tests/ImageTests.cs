@@ -192,6 +192,34 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
     }
 #endif
 
+    [Fact]
+    public void ImagesInheritScrollViewportClipsAndRefreshWithTheViewport()
+    {
+        using Texture texture = CreateTexture(80, 40);
+        using var world = new World();
+        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
+        Entity viewport = world.CreateEntity(new LayoutRect { Value = new Rect(20, 10, 100, 60) });
+        world.Add(viewport, new ScrollOffset());
+        Hierarchy<ElementTree>.SetParent(world, viewport, canvas);
+        Entity image = world.CreateEntity(new Image(default, ImageFit.Stretch));
+        world.Add(image, new ImageTexture(texture, new Size(80, 40), texture.Revision));
+        world.Add(image, new LayoutRect { Value = new Rect(20, 10, 180, 100) });
+        Hierarchy<ElementTree>.SetParent(world, image, viewport);
+        using var render = new RenderWorld();
+        using var extraction = new RenderExtractionSystems(render, new CanvasRenderExtractor());
+        extraction.Extract(world);
+        graphics.Apply(extraction, render);
+        Entity mirror = extraction.RequireMirror(canvas);
+        Assert.Equal(new Rect(20, 10, 100, 60), Assert.Single(ReadImages(render, mirror)).ClipRectangle);
+
+        world.Replace(viewport, new LayoutRect { Value = new Rect(20, 10, 60, 40) });
+        extraction.Extract(world);
+        graphics.Apply(extraction, render);
+        ImageInstance clipped = Assert.Single(ReadImages(render, mirror));
+        Assert.Equal(new Rect(20, 10, 60, 40), clipped.ClipRectangle);
+        Assert.Equal(new Rect(20, 10, 180, 100), clipped.Rectangle);
+    }
+
     private record struct ImageContent(AssetId<TextureAsset> Source) : IView, IComponent
     {
         public BuildTask Build()
