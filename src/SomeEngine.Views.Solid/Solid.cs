@@ -26,6 +26,13 @@ public static partial class Solid
             return read();
     }
 
+    /// <summary>Rebuilds inserted content when its reads change, reusing children by their node identities.</summary>
+    public static void Insert(Action content)
+    {
+        DevelopmentCheck.Require(content is not null, "Insert requires content.");
+        Scope.View(new InsertedContent(content), 0);
+    }
+
     /// <summary>Creates a text node with its initial value.</summary>
     public static Entity Text(string value) => Scope.View(new TextData(value), 0);
 

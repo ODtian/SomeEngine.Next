@@ -26,7 +26,7 @@ static void Counter(string label, Entity player)
 - `Insert` 是 `Rerun` 模式的子视图，用于动态插入与跨前端传值。
 - 可响应的属性提供 `T` 与 `Func<T>` 两个重载；lambda 不能隐式转换为自定义包装类型（实测 CS1660）。
 - 写入 `State<T>` 立即可读；Effect 在重建阶段执行，按帧合并；Memo 读取时当场重算。
-- 导出给其它前端使用的组件标记 `[Component]`：只有来自 Compose 或 SwiftUI 函数体的调用被拦截为 `Once` 模式的视图；Solid 组件之间的调用保持内联。
+- 导出给其它前端使用的组件标记 `[Component]`：来自 `[Composable]` 方法体或普通视图 `Build` 实现体的调用被拦截为 `Once` 模式的视图；Solid 组件之间的调用保持内联。
 - 闭包只在组件运行时分配一次，计算重跑调用同一委托。
 
 ## Effect、Memo 与可响应属性（#55）
@@ -165,6 +165,63 @@ nullable 数值、Switch 首个分支与 span 数据、Dynamic 函数切换、�
 [ControlFlowChecks](../../../tests/SomeEngine.Views.Solid.Tests/ControlFlowChecks.cs)
 在托管测试和 `just views-aot win-x64` 中复用 Show、keyed 值、nullable 数值、
 Switch/Match、Dynamic 与分支释放的公开行为。
+
+## Insert 与组件导出（#63）
+
+```csharp
+namespace SomeEngine.Views.Solid;
+
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class ComponentAttribute : Attribute;
+
+public static class Solid
+{
+    public static void Insert(Action content);
+}
+
+public static partial class Components
+{
+    [Component]
+    public static void Counter(State<int> count)
+    {
+        Text(() => count.Value);
+        Insert(() => ComposeCounter(count.Value));
+    }
+
+    [Composable]
+    private static void ComposeCounter(int value) { /* 普通参数随 Insert 更新 */ }
+}
+```
+
+`Insert` 按创建次序声明一个 `Rerun` 子视图，由该节点持有内容委托和读取依赖。
+首次声明立即执行内容；读取的 State、ECS 数据或其它来源变化后，在重建阶段再次执行。
+内容中的 Compose、普通视图声明沿各自的调用位置 key、出现次数与显式 Key 复用节点，
+相等参数保留已有内容，变化参数更新原节点，省略的节点沿共同的子树释放路径处理。
+构建失败时，`BuildError` 记录在插入节点上，原有子内容沿共同恢复边界保留；
+依赖再次变化后执行内容并恢复。
+空内容及作用域使用错误沿 Core `DevelopmentCheck` 报告。
+
+导出组件使用 `[Component] static void` 或 `[Component] static BuildTask` 方法，
+参数按值传递，方法的包含类型使用 `partial`。
+生成器在包含类型内生成 readonly record struct `<Name>_View`，使用 sparse 存储与
+`BuildMode.Once`，字段对应原方法参数，首次 `Build` 执行原函数。
+泛型约束、命名参数和可选参数沿 C# 绑定处理；重载视图通过参数签名后缀区分。
+公开方法的生成视图可供引用程序集直接使用。
+
+来自 `[Composable]` 方法体或 `IView.Build` 实现体的直接调用，
+由拦截器使用调用位置 key 声明生成视图；Compose 的内容体和内联分组也沿这一边界处理。
+带自身 `[Composable]` 标记的 lambda 沿其方法标记声明 Solid 子视图。
+Solid 组件函数之间的调用保持普通函数内联，共享调用方的节点和计算作用域。
+生成视图的 `Build` 执行原函数后保留其局部 State、Memo、Effect 和内容，
+宿主刷新继续更新同一视图的参数组件。
+参数比较与回调转发共用 [[architecture/someui/Build-Modes|Build Modes]] 的生成路径，
+内部计算通过 State、getter 或 `Scope.Read` 观察变化来源。
+
+公开行为验收由 `tests/SomeEngine.Views.Solid.Tests/FrontendChecks.cs` 与
+`tests/SomeEngine.Views.Generators.Tests/ComponentTests.cs` 提供，
+覆盖跨前端参数送达、动态分支释放与错误恢复、宿主刷新后的局部状态和计算、
+函数调用边界、编译诊断与引用程序集消费。
+同一组前端行为接入 `just views-aot win-x64`。
 
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Frontends|Frontends]]

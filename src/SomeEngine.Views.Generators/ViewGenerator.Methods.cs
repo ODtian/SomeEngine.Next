@@ -9,12 +9,14 @@ namespace SomeEngine.Views.Generators;
 
 public sealed partial class ViewGenerator
 {
-    private static void GenerateComposeMethods(SourceProductionContext output, Compilation compilation, CSharpParseOptions options,
+    // Compose and Solid functions share view parameters, equality, and callback forwarding.
+    private static void GenerateMethodViews(SourceProductionContext output, Compilation compilation, CSharpParseOptions options,
         List<SyntaxTree> declarations, ImmutableArray<IMethodSymbol> methods)
     {
-        foreach (IMethodSymbol method in methods)
+        foreach (IMethodSymbol method in methods.Distinct<IMethodSymbol>(SymbolEqualityComparer.Default))
         {
-            if (!ViewCalls.IsComposeView(method) && !ViewCalls.IsComposeGroup(method))
+            bool component = ViewCalls.IsSolidComponent(method);
+            if (!component && !ViewCalls.IsComposeView(method) && !ViewCalls.IsComposeGroup(method))
                 continue;
             INamedTypeSymbol type = method.ContainingType;
             INamedTypeSymbol? enclosing = GetContainingTypes(type).Append(type).FirstOrDefault(value =>
@@ -32,8 +34,8 @@ public sealed partial class ViewGenerator
                 continue;
             }
 
-            string viewName = GetComposeViewName(method);
-            bool hasContent = method.Parameters.Any(ViewCalls.IsContentParameter);
+            string viewName = GetMethodViewName(method);
+            bool hasContent = !component && method.Parameters.Any(ViewCalls.IsContentParameter);
             var callbacks = method.Parameters.Where(parameter => !IsContent(parameter) && IsCallback(parameter.Type)).ToArray();
             string access = method.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
             if (method.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)) ||
@@ -45,7 +47,10 @@ public sealed partial class ViewGenerator
                 .Append(GenerateParameters(method.Parameters)).Append(')')
                 .Append(" : global::SomeEngine.Views.IView, global::SomeEngine.ECS.Components.ISparseComponent")
                 .AppendLine(GenerateConstraints(method.TypeParameters)).AppendLine("    {");
-            text.AppendLine("        [global::System.CodeDom.Compiler.GeneratedCode(\"SomeEngine.Views.Generators.Compose\", \"1.0\")]")
+            if (component)
+                text.AppendLine("        public static global::SomeEngine.Views.BuildMode Mode => global::SomeEngine.Views.BuildMode.Once;");
+            text.Append("        [global::System.CodeDom.Compiler.GeneratedCode(\"SomeEngine.Views.Generators.")
+                .Append(component ? "Solid" : "Compose").AppendLine("\", \"1.0\")]")
                 .AppendLine("        public global::SomeEngine.Views.BuildTask Build()\n        {");
             if (callbacks.Length > 0)
                 text.Append("            var callbacks = new @").Append(viewName).Append("Callbacks")
@@ -61,7 +66,7 @@ public sealed partial class ViewGenerator
             if (method.ReturnsVoid)
                 text.AppendLine("            return default;");
             text.AppendLine("        }");
-            GenerateComposeEquality(text, method, viewName);
+            GenerateMethodEquality(text, method, viewName);
             text.AppendLine("    }");
             if (callbacks.Length > 0)
                 GenerateCallbackFunctions(text, viewName, method, callbacks.Select(parameter => (parameter.Name, parameter.Type)));
@@ -76,7 +81,7 @@ public sealed partial class ViewGenerator
         }
     }
 
-    private static void GenerateComposeInterceptor(StringBuilder text, IMethodSymbol method,
+    private static void GenerateMethodInterceptor(StringBuilder text, IMethodSymbol method,
         InterceptableLocation location, ulong key, int number)
     {
         method = method.OriginalDefinition;
@@ -85,7 +90,7 @@ public sealed partial class ViewGenerator
         text.Append("        [global::System.Runtime.CompilerServices.InterceptsLocationAttribute(")
             .Append(location.Version).Append(", ").Append(SymbolDisplay.FormatLiteral(location.Data, true)).AppendLine(")]")
             .Append("        public static ").Append(method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-            .Append(" ComposeAt").Append(number)
+            .Append(" ComponentAt").Append(number)
             .Append(GenerateTypeParameters(typeParameters)).Append('(').Append(GenerateParameters(method.Parameters)).Append(')')
             .AppendLine(GenerateConstraints(typeParameters)).AppendLine("        {");
         if (ViewCalls.IsComposeGroup(method))
@@ -101,7 +106,7 @@ public sealed partial class ViewGenerator
         }
         text.Append("            global::SomeEngine.Views.Scope.View(new ")
             .Append(method.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-            .Append(".@").Append(GetComposeViewName(method)).Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
+            .Append(".@").Append(GetMethodViewName(method)).Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
             .Append(GenerateArguments(method.Parameters)).Append("), ")
             .Append(key.ToString(CultureInfo.InvariantCulture)).AppendLine("UL);");
         if (!method.ReturnsVoid)
@@ -118,7 +123,7 @@ public sealed partial class ViewGenerator
             .Append(key.ToString(CultureInfo.InvariantCulture)).AppendLine("UL);");
     }
 
-    private static void GenerateComposeEquality(StringBuilder text, IMethodSymbol method, string viewName)
+    private static void GenerateMethodEquality(StringBuilder text, IMethodSymbol method, string viewName)
         => GenerateParameterEquality(text, "@" + viewName + GenerateTypeParameters(method.TypeParameters),
             method.Parameters.Select(parameter => (parameter.Name, parameter.Type, IsContent(parameter))));
 
@@ -135,13 +140,14 @@ public sealed partial class ViewGenerator
         named.TypeKind == TypeKind.Delegate && named.ContainingNamespace.ToDisplayString() == "System" &&
         named.Name is "Action" or "Func";
 
-    private static string GetComposeViewName(IMethodSymbol method)
+    private static string GetMethodViewName(IMethodSymbol method)
     {
         method = method.OriginalDefinition;
         string name = method.Name + "_View";
         if (method.Locations.Any(location => location.IsInSource))
         {
-            if (method.ContainingType.GetMembers(method.Name).OfType<IMethodSymbol>().Count(ViewCalls.IsComposeView) == 1)
+            if (method.ContainingType.GetMembers(method.Name).OfType<IMethodSymbol>()
+                .Count(value => ViewCalls.IsComposeView(value) || ViewCalls.IsSolidComponent(value)) == 1)
                 return name;
         }
         else if (method.ContainingType.GetTypeMembers(name, method.Arity).Length > 0)

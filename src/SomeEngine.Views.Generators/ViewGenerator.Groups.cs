@@ -29,7 +29,7 @@ public sealed partial class ViewGenerator
             .AppendLine("        {")
             .Append("            ").Append(method.ReturnsVoid ? "" : "return ")
             .Append(type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)).Append(".@")
-            .Append(hasContent ? "Build" + GetComposeViewName(method) + "Content" : method.Name)
+            .Append(hasContent ? "Build" + GetMethodViewName(method) + "Content" : method.Name)
             .Append(GenerateTypeParameters(method.TypeParameters)).Append('(')
             .Append(GenerateArguments(method.Parameters)).AppendLine(");")
             .AppendLine("        }\n    }");

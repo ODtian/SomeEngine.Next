@@ -47,4 +47,27 @@ Switch(
 `Dynamic(Func<Action>)` 在选中的组件函数变化时重新构建。
 分支释放与嵌套内容沿共享视图的节点身份和生命周期规则处理。
 
+`Insert(Action)` 声明一个 `Rerun` 子视图，内容读取变化后重新执行，
+Compose 和普通视图沿共同的身份与参数规则更新原节点。
+
+```csharp
+public static partial class Components
+{
+    [Component]
+    public static void Counter(State<int> count)
+    {
+        Text(() => count.Value);
+        Insert(() => ComposeCounter(count.Value));
+    }
+
+    [SomeEngine.Views.Compose.Composable]
+    private static void ComposeCounter(int value) { /* 以最新普通参数构建 */ }
+}
+```
+
+`[Component]` 为 static void 或 static BuildTask 方法生成 sparse 的 Once 视图。
+包含类型使用 partial；Compose 方法体和 IView.Build 中的调用按调用位置声明该视图，
+Solid 函数之间的调用继续内联。宿主刷新保留 Solid 局部状态与计算，
+泛型、可选参数、公开组件的跨程序集使用共用静态生成入口。
+
 完整 API 与验收入口见仓库 Wiki `architecture/someui/Solid-Frontend`。
