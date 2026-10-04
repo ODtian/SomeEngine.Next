@@ -60,9 +60,9 @@ public sealed partial class CanvasDrawingTests
     private static void CheckWorldCanvas(IGraphicsBackend backend, Device device, bool reversedDepth, bool image = false)
     {
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        using var renderDevice = new RenderDevice(backend, device);
         using var graph = new RenderGraph(backend, device, [queue]);
         using var world = new RenderWorld();
-        using var renderDevice = new RenderDevice(backend, device);
         using SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
         using ImageMaterial? imageMaterial = image ? ImageMaterial.Create(device.Capabilities.CompileTarget) : null;
         using SomeEngine.Resources.Texture texture = SomeEngine.Resources.Texture.Create(
