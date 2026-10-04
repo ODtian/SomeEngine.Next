@@ -4,8 +4,8 @@
 
 2026-10-04，Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
 派发基线为 `55cfda50379cedd4a0726bc627d260a8f3d9ee7f`，实现提交为
-`646a66b5`，已合入集成提交 `975f5dcf97e8a3e8d81f9e17c452986cb680b106`。
-消费者的最终回归基于合并提交 `9d6f129623c1f82a01163281474049aa7927f1da`。
+`646a66b5`，已合入集成提交 `4d50853955d2bc830012947e270969529c741bfc`。
+最终回归基于合并提交 `dc45f4daa4a90624159c800bde105fe256095065`。
 
 TDD 的公开接缝为 TextField 的声明、`Edited(out string text)`、Keyboard / Gamepad
 输入与帧推进后的 TextContent、ShapedText、Surface、LayoutRect。
@@ -19,24 +19,26 @@ TDD 的公开接缝为 TextField 的声明、`Edited(out string text)`、Keyboar
 及主题变化。开发构建另外验证参数使用错误与作用域错误通过 DevelopmentCheck 报告。
 本票新增 Debug 24 个、Release 14 个用例。
 
-六个工程分别执行 `dotnet test <工程路径> -c Debug` 与 `-c Release`，附加参数为
+七个工程分别执行 `dotnet test <工程路径> -c Debug` 与 `-c Release`，附加参数为
 `--nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`。
-Release 以及最终消费者重跑使用 `--no-restore`。运行层依赖按仓库固定提交
+较早的 Release 与消费者重跑使用 `--no-restore`；最终表格对应两个配置的完整命令。
+运行层依赖按仓库固定提交
 `8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4` 初始化 Alimer.Bindings。
 
 | 工程 | Debug | Release |
 |---|---:|---:|
-| SomeEngine.Elements.Consumer.Tests | 265 | 189 |
+| SomeEngine.Elements.Consumer.Tests | 285 | 209 |
+| SomeEngine.Elements.Render.Tests | 34 | 32 |
 | SomeEngine.Layout.Tests | 95 | 75 |
 | SomeEngine.Views.Tests | 305 | 273 |
 | SomeEngine.Views.Generators.Tests | 162 | 162 |
 | SomeEngine.Typography.Tests | 45 | 42 |
 | SomeEngine.Runtime.Tests | 30 | 30 |
 
-布局、Views、生成器、Typography 与运行层在合并提交 `67430495` 上完成验证；
-后续集成增量增加消费者与原生入口检查，消费者在 `9d6f1296` 上重新执行。
+最新集成增量包含动画、作用域写入与画布呈现。上述七个工程均在 `dc45f4da`
+上重新执行，覆盖 TextField 与这些公开接缝的组合。
 
-`just views-aot win-x64` 在 `9d6f1296` 上完成原生重建与运行，退出码为 0。
+`just views-aot win-x64` 在 `dc45f4da` 上完成原生重建与运行，退出码为 0。
 原生入口执行两个 TextField 版本的全部共享检查，并完成既有跨进程存档写入、
 类型映射读回、下一帧重建与依赖验收。发布的 IL2026 / IL3050 诊断来自
 既有 TraceCapture，IL2070 来自 JobStorageTypeShape。
