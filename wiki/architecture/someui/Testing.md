@@ -408,5 +408,57 @@ StopsPointer、子树悬停、文本、布局、视图与各前端检查。
 发布中的既有 IL2026、IL3050、IL2070 诊断分别来自 TraceCapture 与 JobStorageTypeShape。
 临时构建输出、原生产物与检查点验收文件随验证完成清理。
 
+## Toggle、Slider、Knob 与音量贯穿场景验收（#44）
+
+2026-10-04，Windows x64，.NET SDK `10.0.112`。
+本票实现提交 `e767e985`，派发基线 `f7df93dc`；合入集成提交
+`5d3be07d` 后形成 `8a5d4ce9`，首轮验收代码与取消用例修订为 `03fed94e`。
+
+Toggle、数值键盘、累计拖动、范围端点、外部 Toggle 和同帧多个拖动手势
+分别沿公开接缝完成红测与实现。既有能力继续通过新增的连续值、等值范围和半步量化用例核对。
+本票新增 17 项行为用例和 9 项 Debug 开发检查；Slider 与用户圆形 Knob
+共用键盘、拖动、量化、输入顺序与边界用例，内置与外部 Toggle 共用指针与焦点确认用例。
+检查从 Pointer、Keyboard、Gamepad、视图函数、Toggled、Edited、World 和 ElementTree
+进入，通过应用数据、节点参数、Surface、LayoutRect 与公开写版本观察结果。
+
+音量贯穿检查由游戏系统在公开查询回调中用 `ref AudioSettings` 修改 Volume，
+观察 Slider、Knob 的参数与可见位置及文本更新；随后接受 Slider 的拖动值写回同一组件，
+再观察 Knob 与文本更新。Volume 从 `0.75` 变为 `0.754`，显示字符串仍为 `0.75` 时，
+Text、TextContent、ShapedText 与 LayoutRect 的公开写版本均保留。
+共享检查位于 [ValueChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/ValueChecks.cs)、
+[范围检查](../../../tests/SomeEngine.Elements.Consumer.Tests/ValueRangeChecks.cs) 与
+[贯穿场景](../../../tests/SomeEngine.Elements.Consumer.Tests/ValueVolumeChecks.cs)。
+
+集成回归中的异步取消用例按公开的 finally、using 清理结果和文本输出等待 Task.WaitAsync
+回调就绪，再推进重建阶段；依据见 [[architecture/someui/Async-Build|Async Build]]。
+这一验收修订提交为 `03fed94e`，Views Debug 的 290 项用例连续四轮通过。
+Elements Debug 在 `8a5d4ce9` 执行，其余表中回归基于 `03fed94e`；两提交间的产品源码一致。
+
+各工程执行
+`dotnet test tests/<项目>/<项目>.csproj -c <Debug|Release> --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`。
+Views 的时序复核采用 `-v minimal`，编译后的重复验证另加 `--no-build --no-restore`。
+
+| 项目 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 171 | 123 |
+| SomeEngine.Views.Tests | 290 | 260 |
+| SomeEngine.Layout.Tests | 94 | 74 |
+| SomeEngine.Views.Generators.Tests | 95 | 95 |
+| SomeEngine.Elements.Render.Tests | 10 | 10 |
+
+基于 `03fed94e`，以下三个命令均成功，退出码 0：
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+```
+
+原生入口执行本票全部 17 项共享行为检查，随后两进程检查点验收完成写入、
+ViewType.Id 重映射、读回、下一帧重建和依赖更新。
+发布中的既有 IL2026、IL3050 与 IL2070 诊断分别来自 TraceCapture 与 JobStorageTypeShape。
+字体原生依赖复用 #27 的同版本产物，复用前以 SHA-256 核对 CMakeLists.txt、
+GlyphBitmap.c 与 Typography 项目文件三个构建输入一致。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
