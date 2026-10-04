@@ -283,9 +283,8 @@ public sealed partial class BuildCancellationTests
         Assert.True(SpinWait.SpinUntil(() =>
         {
             frames.Frame();
-            return previous.Finally;
-        }, TimeSpan.FromSeconds(5)));
-        Assert.True(previous.Disposed);
+            return previous.Finally && previous.Disposed;
+        }, TimeSpan.FromSeconds(5)), "The canceled external wait completes cleanup in following rebuild frames.");
         Assert.False(current.Cancel.IsCancellationRequested);
         var worker = new Thread(second.SetResult);
         worker.Start();

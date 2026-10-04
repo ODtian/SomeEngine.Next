@@ -3,6 +3,7 @@ struct CanvasData
     float2 Size;
     float Scale;
     float Padding;
+    float4x4 ClipTransform;
 };
 
 ByteAddressBuffer Instances;
@@ -34,10 +35,8 @@ SurfaceVertex vertexMain(uint vertex : SV_VertexID, uint instance : SV_InstanceI
         maximum = max(maximum, rectangle.xy + rectangle.zw + shadowShape.xy + blur + margin);
     }
     float2 position = lerp(minimum, maximum, corners[vertex]);
-    float2 pixels = position * Canvas.Scale;
     SurfaceVertex result;
-    result.Position = float4(pixels.x * 2 / Canvas.Size.x - 1,
-        1 - pixels.y * 2 / Canvas.Size.y, 0, 1);
+    result.Position = mul(float4(position, 0, 1), Canvas.ClipTransform);
     result.CanvasPosition = position;
     result.Instance = instance;
     return result;
@@ -68,8 +67,9 @@ float4 pixelMain(SurfaceVertex vertex) : SV_Target0
     float2 halfSize = rectangle.zw * 0.5;
     float radius = clamp(shape.x, 0, min(halfSize.x, halfSize.y));
     float distance = measureRectangleDistance(position, rectangle, radius);
-    float outer = saturate(0.5 - distance * Canvas.Scale);
-    float inner = saturate(0.5 - (distance + max(shape.y, 0)) * Canvas.Scale);
+    float pixelWidth = max(fwidth(distance), 0.000001);
+    float outer = saturate(0.5 - distance / pixelWidth);
+    float inner = saturate(0.5 - (distance + max(shape.y, 0)) / pixelWidth);
     float fillAlpha = fill.a * inner;
     float borderAlpha = border.a * (outer - inner);
     float surfaceAlpha = fillAlpha + borderAlpha;
@@ -77,9 +77,10 @@ float4 pixelMain(SurfaceVertex vertex) : SV_Target0
     if (shadow.a > 0)
     {
         float shadowDistance = measureRectangleDistance(position - shadowShape.xy, rectangle, radius);
+        float shadowPixelWidth = max(fwidth(shadowDistance), 0.000001);
         float coverage = shadowShape.z > 0
             ? 1 - smoothstep(-shadowShape.z, shadowShape.z, shadowDistance)
-            : saturate(0.5 - shadowDistance * Canvas.Scale);
+            : saturate(0.5 - shadowDistance / shadowPixelWidth);
         shadowAlpha = shadow.a * coverage * (1 - surfaceAlpha);
     }
     return float4(fill.rgb * fillAlpha + border.rgb * borderAlpha + shadow.rgb * shadowAlpha,

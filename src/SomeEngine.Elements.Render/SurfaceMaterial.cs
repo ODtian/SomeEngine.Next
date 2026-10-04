@@ -80,6 +80,8 @@ internal sealed class SurfaceDrawing : IDisposable
     private readonly Shader _shader;
     private readonly Pipeline _pipeline;
     private readonly VariableLayoutReflection _parameters;
+    private readonly Format _format;
+    private readonly Dictionary<(Format Format, CompareOperation Comparison), Pipeline> _depthPipelines = [];
 
     internal SurfaceDrawing(IGraphicsBackend backend, Device device, SurfaceMaterial material, Format format)
     {
@@ -87,42 +89,63 @@ internal sealed class SurfaceDrawing : IDisposable
         _backend = backend;
         _device = device;
         _shader = material.Shader!;
-        int target = _shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+        _format = format;
+        _parameters = _shader.GetSlangReflection(_shader.RequireSlangTarget(device.Capabilities.CompileTarget))
+            .GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        _pipeline = CreatePipeline();
+    }
+
+    private Pipeline CreatePipeline(Format? depthFormat = null, CompareOperation comparison = CompareOperation.LessOrEqual)
+    {
+        int target = _shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
         ShaderReflection reflection = _shader.GetSlangReflection(target);
         EntryPointReflection vertex = _shader.RequireSlangEntry(target, "vertexMain", SlangStage.Vertex);
         EntryPointReflection pixel = _shader.RequireSlangEntry(target, "pixelMain", SlangStage.Fragment);
-        _parameters = reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        _pipeline = backend.CreateGraphicsPipeline(device, new GraphicsPipelineDesc(
+        return _backend.CreateGraphicsPipeline(_device, new GraphicsPipelineDesc(
             _shader.SlangCode, reflection, vertex, _shader.GetSlangEntryBytes(target, vertex),
             pixel, _shader.GetSlangEntryBytes(target, pixel), [], [], PrimitiveTopology.TriangleList,
             StripCut.Disabled, new RasterizerState(Cull: CullType.None), new MultisampleState(),
-            new DepthStencilState(), new BlendState([new BlendAttachmentState(
+            new DepthStencilState(DepthTest: depthFormat.HasValue, DepthWrite: false, DepthComparison: comparison),
+            new BlendState([new BlendAttachmentState(
                 Enabled: true, SourceColor: BlendFactor.One, DestinationColor: BlendFactor.OneMinusSourceAlpha,
                 SourceAlpha: BlendFactor.One, DestinationAlpha: BlendFactor.OneMinusSourceAlpha)]),
-            new AttachmentFormatSignature([format], null), DynamicStates.Viewport | DynamicStates.Scissor,
+            new AttachmentFormatSignature([_format], depthFormat), DynamicStates.Viewport | DynamicStates.Scissor,
             "Surface", vertexCodeBlob: _shader.GetSlangEntryBlob(target, vertex),
             pixelCodeBlob: _shader.GetSlangEntryBlob(target, pixel)));
     }
 
-    internal CanvasBuffers AddPass(RenderGraphEdit edit, GraphTextureId target)
+    internal CanvasBuffers AddPass(RenderGraphEdit edit, CanvasPassTarget target)
     {
         GraphBufferInput instances = edit.CreateBufferInput(BufferUsages.ShaderRead);
         GraphBufferId canvas = edit.DeclareExternalBuffer(new BufferDesc(256, BufferUsages.Constant,
             "Canvas size and scale"), MemoryType.Upload);
         GraphBufferCbvId canvasView = edit.CreateBufferCbv(canvas);
         GraphBufferSrvId instancesView = edit.CreateBufferSrv(instances, label: "Surface instances");
-        GraphColorAttachmentViewId targetView = edit.CreateColorAttachmentView(target, label: "Canvas color");
-        var data = new SurfacePassData(_pipeline, _parameters, instancesView, canvasView, targetView, 0, 0, 0);
-        GraphPassId pass = edit.AddRasterFramePass("Canvas surfaces", PassQueueSelection.AnyOfType(QueueType.Graphics),
+        GraphColorAttachmentViewId targetView = edit.CreateColorAttachmentView(target.Color, label: "Canvas color");
+        GraphDepthStencilViewId depthView = default;
+        Pipeline pipeline = _pipeline;
+        if (target.Depth != default)
+        {
+            var key = (target.DepthFormat, target.DepthComparison);
+            if (!_depthPipelines.TryGetValue(key, out pipeline!))
+                _depthPipelines.Add(key, pipeline = CreatePipeline(target.DepthFormat, target.DepthComparison));
+            depthView = edit.CreateDepthStencilView(target.Depth,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth), target.DepthFormat,
+                TextureViewDimension.Texture2D, readOnlyDepth: true, label: "Canvas scene depth");
+        }
+        var data = new SurfacePassData(pipeline, _parameters, instancesView, canvasView, targetView, depthView, 0, 0, 0);
+        GraphPassId pass = edit.AddRasterFramePass(target.WorldSpace ? "World canvas surfaces" : "Screen canvas surfaces",
+            PassQueueSelection.AnyOfType(QueueType.Graphics),
             data, default, SurfacePassData.Declare, SurfacePassData.Draw);
-        return new CanvasBuffers(pass, instances, instancesView, canvas, canvasView, targetView, data);
+        return new CanvasBuffers(pass, instances, instancesView, canvas, canvasView, targetView, depthView, target, data);
     }
 
-    internal void SetCanvasData(ref RenderGraphFrame frame, CanvasBuffers buffers)
+    internal void SetCanvasData(ref RenderGraphFrame frame, CanvasBuffers buffers, in Matrix4x4 transform)
     {
         Span<Vector4> values = stackalloc Vector4[16];
         values.Clear();
         values[0] = new(buffers.Canvas.Size.Width, buffers.Canvas.Size.Height, buffers.Canvas.Scale, 0);
+        MemoryMarshal.Cast<Vector4, Matrix4x4>(values[1..5])[0] = transform;
         frame.SetBufferData(buffers.CanvasBuffer, MemoryMarshal.AsBytes(values));
     }
 
@@ -156,11 +179,15 @@ internal sealed class SurfaceDrawing : IDisposable
         catch { buffer.Dispose(); throw; }
     }
 
-    public void Dispose() => _pipeline.Dispose();
+    public void Dispose()
+    {
+        _pipeline.Dispose();
+        foreach (Pipeline pipeline in _depthPipelines.Values) pipeline.Dispose();
+    }
 }
 
 internal readonly record struct SurfacePassData(Pipeline Pipeline, VariableLayoutReflection Parameters,
-    GraphBufferSrvId Instances, GraphBufferCbvId Canvas, GraphColorAttachmentViewId Target,
+    GraphBufferSrvId Instances, GraphBufferCbvId Canvas, GraphColorAttachmentViewId Target, GraphDepthStencilViewId Depth,
     int Width, int Height, int Count)
 {
     internal static void Declare(ref PassDefinition pass, ref SurfacePassData data)
@@ -170,6 +197,9 @@ internal readonly record struct SurfacePassData(Pipeline Pipeline, VariableLayou
         pass.Bind(data.Instances, PipelineSync.VertexShading | PipelineSync.PixelShading);
         pass.Bind(data.Canvas, PipelineSync.VertexShading | PipelineSync.PixelShading);
         pass.ColorAttachment(0, data.Target, LoadType.Load, StoreType.Store, WriteCoverage.Partial, default);
+        if (data.Depth != default)
+            pass.DepthStencilAttachment(data.Depth, LoadType.Load, StoreType.Store, WriteCoverage.Partial, 0,
+                LoadType.Discard, StoreType.Discard, WriteCoverage.Partial, 0);
     }
 
     internal static void Draw(ref RasterPassCommandScope commands, in SurfacePassData data)

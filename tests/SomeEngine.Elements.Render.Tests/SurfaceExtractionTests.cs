@@ -1,4 +1,5 @@
 using System.Numerics;
+using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -51,6 +52,44 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Assert.Equal(default, Assert.Single(ReadInstances(render, mirror)).Shadow);
+    }
+
+    [Fact]
+    public void WorldCanvasFollowsItsTargetTransformThroughExtraction()
+    {
+        using var game = new World();
+        using var render = new RenderWorld();
+        using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
+        Entity target = game.CreateEntity(new WorldTransform
+        {
+            Qvvs = new TransformQvvs(new Vector3(3, 4, 5), Quaternion.Identity, 2),
+        });
+        Entity canvas = game.CreateEntity(new Canvas
+        {
+            Target = CanvasTarget.WorldSpace(target), Size = new Size(80, 40), DepthTest = true,
+        });
+        AddPanel(game, canvas, new Rect(0, 0, 20, 10), new Color(1, 0, 0));
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+        Entity mirror = extraction.RequireMirror(canvas);
+        RenderCanvas before = render.Read<RenderCanvas>(mirror);
+        Assert.Equal(new Vector3(5, 8, 5), Vector3.Transform(new Vector3(1, 2, 0), before.Transform));
+        Assert.True(before.DepthTest);
+
+        game.Replace(target, new WorldTransform
+        {
+            Qvvs = new TransformQvvs(new Vector3(10, 20, 30),
+                Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), 3)
+            { Stretch = new Vector3(2, 1, 1) },
+        });
+        extraction.Extract(game);
+        Assert.Equal(before, render.Read<RenderCanvas>(mirror));
+        graphics.Apply(extraction, render);
+        Vector3 after = Vector3.Transform(new Vector3(1, 2, 0), render.Read<RenderCanvas>(mirror).Transform);
+        Assert.InRange(after.X, 3.999f, 4.001f);
+        Assert.InRange(after.Y, 25.999f, 26.001f);
+        Assert.Equal(30, after.Z);
+        Assert.Equal(new Rect(0, 0, 20, 10), Assert.Single(ReadInstances(render, mirror)).Rectangle);
     }
 
     [Fact]

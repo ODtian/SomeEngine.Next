@@ -1,3 +1,6 @@
+using System.Numerics;
+using SomeEngine.Core.Diagnostics;
+using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -16,12 +19,17 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
     private readonly HashSet<Entity> _changedSurfaceNodes = [];
     private readonly Dictionary<Entity, CanvasSurfaces> _canvasSurfaces = [];
     private readonly Dictionary<Entity, Dictionary<Entity, SurfaceValue>> _surfaceValuesByCanvas = [];
+    private readonly Dictionary<Entity, Entity> _worldTargets = [];
+    private readonly HashSet<Entity> _changedTargets = [];
+    private readonly Dictionary<Entity, RenderCanvas> _canvasChanges = [];
 
     public void DeclareReads(RenderExtractionQuery query)
     {
         query.ReadOptional<Canvas>();
+        query.ReadOptional<WorldTransform>();
         query.ReadOptional<Surface>();
         query.ReadOptional<LayoutRect>();
+        query.ReadOptional<ScrollOffset>();
         query.ReadOptional<Parent<ElementTree>>();
         query.ReadOptional<Children<ElementTree>>();
         query.Write<RenderCanvas>();
@@ -33,6 +41,8 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
         _changedSurfaceNodes.Clear();
         _canvasSurfaces.Clear();
         _surfaceValuesByCanvas.Clear();
+        _changedTargets.Clear();
+        _canvasChanges.Clear();
     }
 
     public void Collect(QueryChunkView chunk)
@@ -48,18 +58,26 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
             chunk.HasChangedSinceLastSystemVersion<Surface>();
         bool rectangleChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() &&
             chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
+        bool viewportChanged = chunk.Has<ScrollOffset>() && chunk.Has<LayoutRect>() &&
+            chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
         bool canvasChanged = chunk.Has<Canvas>() && chunk.HasChangedSinceLastSystemVersion<Canvas>();
         bool parentChanged = chunk.Has<Parent<ElementTree>>() &&
             chunk.HasChangedSinceLastSystemVersion<Parent<ElementTree>>();
         bool childrenChanged = chunk.Has<Children<ElementTree>>() &&
             chunk.HasChangedSinceLastSystemVersion<Children<ElementTree>>();
-        if (!surfaceChanged && !rectangleChanged && !canvasChanged && !parentChanged && !childrenChanged)
+        bool transformChanged = chunk.Has<WorldTransform>() &&
+            chunk.HasChangedSinceLastSystemVersion<WorldTransform>();
+        if (!surfaceChanged && !rectangleChanged && !viewportChanged && !canvasChanged &&
+            !parentChanged && !childrenChanged && !transformChanged)
             return false;
 
         for (int row = 0; row < chunk.Count; row++)
         {
             Entity entity = chunk.Entities[row];
+            if (transformChanged && chunk.RowChangedSinceLastSystemVersion<WorldTransform>(row))
+                _changedTargets.Add(entity);
             if ((canvasChanged && chunk.RowChangedSinceLastSystemVersion<Canvas>(row)) ||
+                (viewportChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
                 (parentChanged && chunk.RowChangedSinceLastSystemVersion<Parent<ElementTree>>(row)) ||
                 (childrenChanged && chunk.RowChangedSinceLastSystemVersion<Children<ElementTree>>(row)))
                 _changedTreeNodes.Add(entity);
@@ -73,6 +91,7 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
 
     public bool CompleteSourceCollection(World sourceWorld, bool fullCollection)
     {
+        if (fullCollection) _worldTargets.Clear();
         foreach (Entity node in _changedTreeNodes)
         {
             Entity canvas = FindCanvas(sourceWorld, node);
@@ -87,7 +106,10 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
                 _surfaceValuesByCanvas.Add(canvas, surfaces = []);
             surfaces.Add(node, ReadSurface(sourceWorld, node));
         }
-        return _canvasSurfaces.Count != 0 || _surfaceValuesByCanvas.Count != 0;
+        foreach ((Entity canvas, Entity target) in _worldTargets)
+            if (_changedTargets.Contains(target) && !_canvasSurfaces.ContainsKey(canvas))
+                _canvasChanges.Add(canvas, ReadCanvas(sourceWorld, canvas));
+        return _canvasSurfaces.Count != 0 || _surfaceValuesByCanvas.Count != 0 || _canvasChanges.Count != 0;
     }
 
     private static Entity FindCanvas(World world, Entity node)
@@ -101,28 +123,59 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
         return Entity.Null;
     }
 
-    private static CanvasSurfaces CollectCanvas(World world, Entity canvasEntity)
+    private CanvasSurfaces CollectCanvas(World world, Entity canvasEntity)
     {
         Canvas canvas = world.Read<Canvas>(canvasEntity);
         var clip = new Rect(0, 0, canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale);
         var surfaces = new List<SurfaceInstance>();
-        var nodes = new Stack<Entity>();
-        nodes.Push(canvasEntity);
+        var nodes = new Stack<(Entity Node, Rect Clip)>();
+        nodes.Push((canvasEntity, clip));
         int drawOrder = 0;
-        while (nodes.TryPop(out Entity node))
+        while (nodes.TryPop(out var entry))
         {
+            Entity node = entry.Node;
             if (node != canvasEntity && world.Has<Canvas>(node)) continue;
             if (world.Has<Surface>(node) && world.Has<LayoutRect>(node))
             {
                 SurfaceValue value = ReadSurface(world, node);
                 surfaces.Add(new(node, value.Rectangle, value.Fill, value.CornerRadius,
-                    value.BorderColor, value.BorderWidth, clip, drawOrder, 0) { Shadow = value.Shadow });
+                    value.BorderColor, value.BorderWidth, entry.Clip, drawOrder, 0) { Shadow = value.Shadow });
             }
             drawOrder++;
+            Rect childClip = world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node)
+                ? Intersect(entry.Clip, world.Read<LayoutRect>(node).Value) : entry.Clip;
             var children = Hierarchy<ElementTree>.GetChildren(world, node);
-            for (int index = children.Count - 1; index >= 0; index--) nodes.Push(children[index]);
+            for (int index = children.Count - 1; index >= 0; index--) nodes.Push((children[index], childClip));
         }
-        return new(new RenderCanvas(canvas.Target, canvas.Size, canvas.Scale), surfaces);
+        if (canvas.Target.Kind == CanvasTargetKind.WorldSpace)
+            _worldTargets[canvasEntity] = canvas.Target.Entity;
+        else _worldTargets.Remove(canvasEntity);
+        return new(ReadCanvas(world, canvasEntity), surfaces);
+    }
+
+    private static RenderCanvas ReadCanvas(World world, Entity entity)
+    {
+        Canvas canvas = world.Read<Canvas>(entity);
+        Matrix4x4 transform = Matrix4x4.Identity;
+        if (canvas.Target.Kind == CanvasTargetKind.WorldSpace)
+        {
+            DevelopmentCheck.Require(world.IsAlive(canvas.Target.Entity) && world.Has<WorldTransform>(canvas.Target.Entity),
+                "A world canvas target requires WorldTransform before extraction.");
+            transform = world.Read<WorldTransform>(canvas.Target.Entity).Qvvs.ToMatrix();
+        }
+        return new RenderCanvas(canvas.Target, canvas.Size, canvas.Scale)
+        {
+            Transform = transform, DepthTest = canvas.DepthTest,
+        };
+    }
+
+    private static Rect Intersect(Rect first, Rect second)
+    {
+        float left = MathF.Max(first.X, second.X);
+        float top = MathF.Max(first.Y, second.Y);
+        float right = MathF.Min(first.X + first.Width, second.X + second.Width);
+        float bottom = MathF.Min(first.Y + first.Height, second.Y + second.Height);
+        return new(left, top, MathF.Max(0, right - left), MathF.Max(0, bottom - top));
     }
 
     private static SurfaceValue ReadSurface(World world, Entity node)
@@ -152,6 +205,8 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
 
     public void ApplyChanges(RenderExtractionContext context)
     {
+        foreach ((Entity source, RenderCanvas canvas) in _canvasChanges)
+            context.UpdateExisting(context.RequireMirror(source), canvas);
         foreach ((Entity source, CanvasSurfaces canvas) in _canvasSurfaces)
         {
             Entity entity = context.RequireMirror(source);

@@ -40,6 +40,14 @@ content, content and viewport changes, repeated layout, and development errors.
 `BehaviorChecks` runs the same composition for built-in declarations and the
 three public user equivalents under `Rewrites/`, in these tests and NativeAOT.
 
+`ScrollViewTests` checks caller content, scrolling ranges, content coordinates,
+and redeclarations. `VirtualListTests` checks 10,000 items, buffered ranges,
+keyed entity lifetimes, retained row data, item and viewport changes, padding,
+partial rows, and development errors. `ListChecks` shares row data updates and
+the built-in and public user ScrollView and VirtualList with the Views NativeAOT
+executable. Surface viewport clipping is checked by `ScrollClippingTests` in
+the Elements Render tests.
+
 `Rewrites/Button.cs` and `Rewrites/IconButton.cs` compose controls from public
 behavior, environment, layout, text, and surface APIs. `ButtonTests` applies
 the same appearance, pointer, subtree-theme, nearest-theme, and development
