@@ -29,7 +29,7 @@ internal sealed class ObjectDependencyList
             ArrayPool<ObjectDependency>.Shared.Return(_reads, clearArray: true);
             _reads = reads;
         }
-        _reads[_count++] = new ObjectDependency(cell, version, cell.Error);
+        _reads[_count++] = new ObjectDependency(cell, version, cell.ReadError);
     }
 
     internal void Clear(ulong frame)
@@ -55,13 +55,13 @@ internal sealed class ObjectDependencyList
         {
             read.Cell.Refresh(frame);
         }
-        catch (Exception exception) when (ReferenceEquals(exception, read.Cell.Error))
+        catch (Exception exception) when (ReferenceEquals(exception, read.Cell.ReadError))
         {
             // The consuming calculation reports the failure when it reads the Memo.
         }
         uint version = Volatile.Read(ref read.Cell.Version);
         return ((version & 1) != 0 && _readFrame != frame) || version != read.Version ||
-            !ReferenceEquals(read.Error, read.Cell.Error);
+            !ReferenceEquals(read.Error, read.Cell.ReadError);
     }
 
     // ECS retains this object for the component's lifetime, including component moves.

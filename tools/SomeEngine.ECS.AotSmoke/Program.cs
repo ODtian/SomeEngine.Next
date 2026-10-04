@@ -51,6 +51,8 @@ internal static class Program
         AnimationSmoke.Check();
         global::SomeEngine.ECS.Tests.ManagedComponentChecks.VerifyAll();
         global::SomeEngine.Views.Tests.FirstBuildChecks.Verify();
+        global::SomeEngine.Views.Tests.AsyncPrimitiveChecks.VerifyConcurrentBuild();
+        global::SomeEngine.Views.Tests.AsyncPrimitiveChecks.VerifyResourceRecovery();
 
         var registry = new SerializationRegistry();
         GameSerializationModule.RegisterAll(registry);
