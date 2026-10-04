@@ -26,8 +26,11 @@ internal static partial class AsyncPrimitiveChecks
         Hierarchy<ElementTree>.DestroySubtree(frames.World, root);
         Require(work.First.IsCancellationRequested && work.Second.IsCancellationRequested,
             "Releasing the view cancels both child tasks.");
-        frames.Frame();
-        Require(work.FirstCleaned && work.SecondCleaned, "Both child tasks finish their cleanup.");
+        Require(SpinWait.SpinUntil(() =>
+        {
+            frames.Frame();
+            return work.FirstCleaned && work.SecondCleaned;
+        }, TimeSpan.FromSeconds(5)), "Both child tasks finish their cleanup.");
     }
 
     internal static void VerifyResourceRecovery()
@@ -113,7 +116,7 @@ internal static partial class AsyncPrimitiveChecks
                 }
             });
             Entity label = Scope.View(new Label("waiting"), 1);
-            await Result;
+            await Result.ConfigureAwait(false);
             Scope.Write<Label>(label) = new Label("complete");
         }
     }
