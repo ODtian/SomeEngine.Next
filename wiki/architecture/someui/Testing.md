@@ -220,8 +220,8 @@ info 验收同时覆盖 Compose 与 SwiftUI，内容委托形状由编译诊断�
 
 2026-10-04，Windows x64，.NET SDK `10.0.112`。
 实现提交 `ff3b3fa5044ac34e0058e3028d3c824c8945c34f`，
-验收源码提交 `6d9d1c068540d28be8799754572fd5ec370cebb5`，
-包含集成提交 `75a739c5b8ee829934486f8d7f3651ea0dfc662a`。
+验收源码提交 `a60aeb638f55f114bf5d63a05c4d19ec5b69713d`，
+包含集成提交 `f72a355041cdecced3cb0778e50ed7fa08c987b3`。
 
 点击冒泡、停止边界与子树悬停三个行为切片均先运行红测，再完成实现并转绿。
 `PointerTests` 从公开指针入口和节点组件验证父子点击计数、目标及祖先的停止边界、
@@ -238,13 +238,15 @@ info 验收同时覆盖 Compose 与 SwiftUI，内容委托形状由编译诊断�
 | `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Debug` | 54 通过 |
 | `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Release` | 38 通过 |
 | `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug` | 259 通过 |
-| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Debug` | 83 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Debug` | 94 通过 |
 | `dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false` | NativeAOT 原生发布成功 |
 | `tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe` | 原生冒烟通过，退出码 0；包含内置与用户重写的冒泡、停止标记与子树悬停 |
 | `pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe` | 存档写入、类型编号重映射、读回和下一帧重建通过，退出码 0 |
 
 原生发布输出的 IL2026、IL3050 与 IL2070 位于既有 `TraceCapture` 与
 `JobStorageTypeShape` 路径。验收运行产物在执行后清理。
+最终回归的字体原生依赖复用 #27 工作树的同版产物；复用前以 SHA-256 核对
+`CMakeLists.txt`、`GlyphBitmap.c` 与 Typography 项目文件的构建输入一致。
 
 路由行为与数据写入范围由
 [[architecture/someui/Input-and-Behaviors|Input and Behaviors]] 维护。
