@@ -16,26 +16,40 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
 {
     private readonly TrackFields _fields = fields;
     private QueryHandle _tracks;
+    private QueryHandle _finishedTracks;
     private QueryHandle _fieldSources;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _fieldSources = context.World.Query(GraphTrackQueries<T>.Sources);
-        _tracks = context.World.Query(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<Track<T>>()
-            .OptionalBuffer<Keyframe>(QueryAccess.Read)
-            .OptionalBuffer<TimelineStage>(QueryAccess.Read)
-            .Optional<GraphInstance>(QueryAccess.Read).OptionalBuffer<GraphMotion>(QueryAccess.Write));
+        _tracks = CreateQuery(context.World, enabled: true);
+        if (_fields == TrackFields.Properties)
+            _finishedTracks = CreateQuery(context.World, enabled: false);
     }
 
-    public void OnUpdate(ref ImmediateSystemContext context) =>
-        Evaluate(context.World, context.LastSystemVersion, _fields == TrackFields.LayerWeights);
-
-    private void Evaluate(World world, uint lastVersion, bool weightChannels)
+    private static QueryHandle CreateQuery(World world, bool enabled)
     {
-        var evaluation = (World: world, WeightChannels: weightChannels);
-        world.ExecuteQuery(_tracks, lastVersion, ref evaluation,
-            static (QueryCursor rows, ref (World World, bool WeightChannels) evaluation) =>
+        var query = world.QueryDefinition()
+            .ReadWrite<Timeline>().WriteBuffer<Track<T>>()
+            .OptionalBuffer<Keyframe>(QueryAccess.Read)
+            .OptionalBuffer<TimelineStage>(QueryAccess.Read)
+            .Optional<GraphInstance>(QueryAccess.Read).OptionalBuffer<GraphMotion>(QueryAccess.Write);
+        return world.Query(enabled ? query.Enabled<Timeline>() : query.Disabled<Timeline>());
+    }
+
+    public void OnUpdate(ref ImmediateSystemContext context)
+    {
+        bool weightChannels = _fields == TrackFields.LayerWeights;
+        Evaluate(context.World, context.LastSystemVersion, _tracks, weightChannels, enabled: true);
+        if (!weightChannels)
+            Evaluate(context.World, context.LastSystemVersion, _finishedTracks, weightChannels, enabled: false);
+    }
+
+    private void Evaluate(World world, uint lastVersion, QueryHandle query, bool weightChannels, bool enabled)
+    {
+        var evaluation = (World: world, WeightChannels: weightChannels, Enabled: enabled);
+        world.ExecuteQuery(query, lastVersion, ref evaluation,
+            static (QueryCursor rows, ref (World World, bool WeightChannels, bool Enabled) evaluation) =>
         {
             World world = evaluation.World;
             foreach (QueryChunkView chunk in rows.Chunks)
@@ -49,6 +63,9 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
                     ref Timeline timeline = ref row.ReadWrite<Timeline>();
                     DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
                     int lastStage = FindLastSampledStage(stages, timeline.Stage, timeline.Time, timeline.Paused);
+                    SubmitFinishedTracks(world, row.Entity, tracks, lastStage, timeline.Time, timeline.Starts, evaluation.WeightChannels);
+                    if (!evaluation.Enabled)
+                        continue;
                     float time = timeline.Time;
                     for (int stage = timeline.Stage; stage <= lastStage; stage++)
                     {
@@ -82,6 +99,41 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
             stage = next;
         }
         return stage;
+    }
+
+    private static void SubmitFinishedTracks(World world, Entity animation, DynamicBuffer<Track<T>> tracks,
+        int lastStage, float time, uint starts, bool weightChannels)
+    {
+        if (weightChannels)
+            return;
+        for (int index = 0; index < tracks.Count; index++)
+        {
+            Track<T> track = tracks.Read(index);
+            Entity target = track.Target == Entity.Null ? animation : track.Target;
+            bool previousRun = track.StartId != starts;
+            if (!PropertyAnimation.HoldsLayerValue(world, animation, in track) ||
+                !previousRun && track.Stage > lastStage ||
+                HasLaterTrack(tracks, index, animation, target, in track,
+                    previousRun ? ushort.MaxValue : lastStage, previousRun ? float.PositiveInfinity : time, previousRun) ||
+                previousRun && HasCurrentTrack(tracks, animation, target, in track, starts, lastStage, time))
+                continue;
+            Submit(world, target, animation, (uint)index, in track);
+        }
+    }
+
+    private static bool HasCurrentTrack(DynamicBuffer<Track<T>> tracks, Entity animation, Entity target,
+        in Track<T> track, uint starts, int lastStage, float time)
+    {
+        for (int index = 0; index < tracks.Count; index++)
+        {
+            Track<T> current = tracks.Read(index);
+            if (current.StartId == starts && current.Stage <= lastStage &&
+                (current.Stage < lastStage || current.Start <= time) &&
+                current.Channel == track.Channel && current.Layer == track.Layer &&
+                (current.Target == Entity.Null ? animation : current.Target) == target)
+                return true;
+        }
+        return false;
     }
 
     private static bool SampleTracks(World world, Entity animation, DynamicBuffer<Track<T>> tracks,
@@ -121,10 +173,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
             bool finished = track.Finished;
             if (!HasLaterTrack(tracks, i, animation, target, in track, lastStage, time))
             {
-                if (world.HasBuffer<Contribution<T>>(target))
-                    Append(world, target, animation, (uint)i, in track);
-                else
-                    PropertyAnimation.WriteSingle<T, TOps>(world, target, track.Channel, track.Layer, ReadValue(world, target, in track));
+                Submit(world, target, animation, (uint)i, in track);
             }
             running |= !finished;
         }
@@ -176,12 +225,14 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         track.Finished = finished;
     }
 
-    private static bool HasLaterTrack(DynamicBuffer<Track<T>> tracks, int index, Entity animation, Entity target, in Track<T> track, int lastStage, float time)
+    private static bool HasLaterTrack(DynamicBuffer<Track<T>> tracks, int index, Entity animation, Entity target,
+        in Track<T> track, int lastStage, float time, bool finishedValuesOnly = false)
     {
         for (int i = 0; i < tracks.Count; i++)
         {
             Track<T> later = tracks.Read(i);
-            if (later.GraphMotion != 0 || later.StartId != track.StartId || later.Stage < track.Stage || later.Stage > lastStage ||
+            if (finishedValuesOnly && !later.Finished || later.GraphMotion != 0 ||
+                later.StartId != track.StartId || later.Stage < track.Stage || later.Stage > lastStage ||
                 later.Channel != track.Channel || later.Layer != track.Layer)
                 continue;
             if (later.Stage == track.Stage)
@@ -199,6 +250,14 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
                 return true;
         }
         return false;
+    }
+
+    private static void Submit(World world, Entity target, Entity animation, uint output, in Track<T> track)
+    {
+        if (world.HasBuffer<Contribution<T>>(target))
+            Append(world, target, animation, output, in track);
+        else
+            PropertyAnimation.WriteSingle<T, TOps>(world, target, track.Channel, track.Layer, ReadValue(world, target, in track));
     }
 
     private static void Append(World world, Entity target, Entity source, uint output, in Track<T> track)
@@ -233,6 +292,8 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
     public void OnDestroy(ref ImmediateSystemContext context)
     {
         context.World.ReleaseQuery(_tracks);
+        if (_fields == TrackFields.Properties)
+            context.World.ReleaseQuery(_finishedTracks);
         context.World.ReleaseQuery(_fieldSources);
     }
 }
