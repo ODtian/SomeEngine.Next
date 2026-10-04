@@ -2,7 +2,6 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Systems;
 using SomeEngine.Elements;
 using SomeEngine.Elements.Render;
 using SomeEngine.Layout;
@@ -21,7 +20,6 @@ internal sealed partial class SurfacePanelExample : IDisposable
     private readonly World _world;
     private readonly Entity _canvas;
     private readonly Entity _view;
-    private readonly SystemGroup<ImmediateSystemContext> _systems;
     private readonly Font _font;
     internal Entity AtlasSource { get; }
 
@@ -36,12 +34,6 @@ internal sealed partial class SurfacePanelExample : IDisposable
         AtlasSource = world.CreateEntity(new TextAtlas(new GlyphAtlas()));
         _canvas = world.CreateEntity(new Canvas { Size = new Size(width, height) });
         _view = Views.Views.Spawn(world, _canvas, new PanelView(width, height, _font));
-        _systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        _systems.Add(new ViewRebuildSystem());
-        var shaping = new TextShapingSystem();
-        _systems.Add(shaping);
-        _systems.Add(new LayoutSystem(shaping));
-        _systems.Update();
     }
 
     internal void Resize(int width, int height)
@@ -50,12 +42,10 @@ internal sealed partial class SurfacePanelExample : IDisposable
         if (_world.Read<Canvas>(_canvas).Size == size) return;
         _world.Replace(_canvas, new Canvas { Size = size });
         _world.Replace(_view, new PanelView(width, height, _font));
-        _systems.Update();
     }
 
     public void Dispose()
     {
-        _systems.Dispose();
         Hierarchy<ElementTree>.DestroySubtree(_world, _canvas);
         _world.DestroyEntity(AtlasSource);
         _font.Dispose();

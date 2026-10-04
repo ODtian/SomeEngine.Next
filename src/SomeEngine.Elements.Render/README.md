@@ -117,3 +117,26 @@ lifetime, while pipelines, instance buffers and GPU pages retire with graph work
 `GlyphExtractionTests` drives public World frames and extraction; `GlyphDrawingTests`
 compares D3D12 WARP and Vulkan pixel readback against an independent glyph outline
 image. The screen panel example displays both English and Chinese text.
+For a world canvas, provide `CanvasTarget.WorldSpace(targetEntity)` and a target
+`WorldTransform` in the Game world. `Canvas.DepthTest` chooses scene depth testing.
+Extraction supplies `RenderCanvas.Transform` and `DepthTest` alongside the same
+Surface instance buffer. The target transform places the canvas origin and controls
+world size; layout X follows local +X and layout Y follows local -Y. `Scale` converts
+layout units to target pixels before the world transform is applied.
+
+Pass the scene resources and its RenderWorld `RenderView` entity when reconciling:
+
+```csharp
+canvases.ReconcileGraph(screenTarget, new WorldCanvasTarget(sceneColor, sceneDepth, viewEntity));
+```
+
+World canvases use the view's viewport and projection. The default depth format is
+D32Float with LessOrEqual to match the current scene pipeline. Configure `DepthFormat` and
+`DepthComparison` on `WorldCanvasTarget` to match the scene. Frame updates carry
+target and view matrices through the existing graph constants. Screen canvases
+sharing the color target compose after world canvases.
+
+DefaultGame's `World nameplates` option adds numbered Surface plates to selected
+moving spheres. Runtime's argument entry point enables it with `--world-nameplates`.
+`WorldCanvasDrawingTests.cs` checks the projected and depth-tested pixels on D3D12
+WARP and Vulkan.

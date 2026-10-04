@@ -5,7 +5,7 @@
 
 ## Invariants
 - 视觉都是材质加用户 shader。`Surface`（填充、圆角、描边，由 `Background`/`Corner`/`Border` 修饰写在参与布局的节点上）、`Image`、`Glyphs` 使用引擎自带的普通材质；渲染管线不识别控件，也不预设顶点布局。
-- 界面 pass 的拓扑只在增删 `Canvas` 或改变渲染目标时变化，放在持久 RenderGraph 中通过显式修改维护。
+- 界面 pass 的拓扑在增删 `Canvas`、改变渲染目标或深度测试配置时通过显式修改维护，放在持久 RenderGraph 中。
 - 实例数据按 ECS 写版本以块为单位增量提取，更新 Rendering world 中常驻的实例缓冲；静态界面不重新提取。
 - 节点的最终呈现为布局结果、用户变换与 `PresentationOffset` 的叠加。
 - 绘制顺序取树序；裁剪矩形位于实例数据中。
@@ -83,7 +83,7 @@ shader 以 `SV_VertexID` 生成矩形的三角形顶点，以 `SV_InstanceID` �
 矩形、圆角、描边和裁剪采用画布布局单位，`RenderCanvas.Scale` 将其转换为目标像素。
 圆角半径约束到短边的一半，描边位于矩形内部。
 shader 以圆角矩形的距离函数计算覆盖率；填充与内部描边分别覆盖形状的内部与环带，
-边缘覆盖率的过渡宽度为一个目标像素。
+边缘覆盖率采用距离函数的屏幕导数，过渡宽度随投影取得一个目标像素。
 裁剪矩形采用包含左上边界、排除右下边界的范围。
 填充与描边的 RGBA 值在 shader 中乘覆盖率并转成预乘 alpha，
 再以 `One` / `OneMinusSourceAlpha` 混合到已定义的目标颜色上。
@@ -154,6 +154,7 @@ using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
 
 Glyphs 以线性采样读取单通道 SDF：`(sample * 255 - 128) * DistanceSpread / 128`
 还原图集像素距离，按字形大小与画布缩放转换到目标像素，
+转换比例从插值 UV 的屏幕导数取得，随画布的屏幕变换与世界投影变化；
 `saturate(0.5 + distance)` 形成一个目标像素宽的抗锯齿覆盖率。
 裁剪采用包含左上、排除右下的画布矩形；颜色乘覆盖率并转成预乘 alpha，
 与 Surface 使用相同的 `One` / `OneMinusSourceAlpha` 混合。
@@ -164,6 +165,37 @@ Runtime 的屏幕面板使用随资产提供的 Noto 字体子集显示 `Hello S
 `中文你好世界`，字体及许可证位于 `assets/Fonts/`。
 公开 World 验收位于 `GlyphExtractionTests`；D3D12 WARP 与 Vulkan 的覆盖图读回
 位于 `GlyphDrawingTests`，参考图从字体轮廓独立生成，生成方式与容差位于测试图像目录。
+## 世界空间画布（#36）
+
+`CanvasTarget.WorldSpace(entity)` 指向 Game world 中持有 `WorldTransform` 的目标。
+`SurfaceRenderExtractor` 在同一提取读取窗口内取得目标变换，写入画布镜像的
+`RenderCanvas.Transform`，并提取 `Canvas.DepthTest`。目标的变换写版本单独选择
+画布常量更新；实例矩形仍在画布坐标中，沿同一 Surface 缓冲和材质送达。
+目标平移、旋转、缩放与拉伸按 [[architecture/someui/Layout|Layout]] 的坐标约定生效。
+
+绘制调用为 `ReconcileGraph(screenTarget, new WorldCanvasTarget(color, depth, view))`。
+`view` 是 RenderWorld 中的 `RenderView` 实体；场景颜色和深度均为现有图资源。
+世界画布使用视图的 viewport，材质把画布坐标经 Scale、目标变换、View 与 Projection
+转换到裁剪空间。屏幕画布由同一材质使用像素到裁剪空间的矩阵。
+矩阵与 viewport 经当帧数据接口更新，目标变换与视图移动保留 pass 身份和图结构版本。
+
+`DepthTest` 为 true 时，pass 读取场景深度附件，以 `WorldCanvasTarget.DepthFormat`
+与 `DepthComparison` 创建材质管线；默认 D32Float / LessOrEqual，匹配当前场景管线。
+使用反向深度的场景可以显式选择 GreaterOrEqual。
+附件按只读深度声明，场景深度值继续供后续消费者使用。
+画布成员、目标与深度配置变化只维护对应画布 pass；其它画布继续使用原有 pass。
+同一颜色目标上的屏幕画布显式排序在世界画布之后。
+应用可通过独立的世界颜色目标将画布放在所需场景阶段，默认示例在呈现后叠加。
+
+Runtime 的 `SphereNameplates` 在 1024 小球场景中选择若干运动实体，为它们建立
+世界画布。编号名牌由普通布局与 Surface 数字段组合，画布目标变换在 Game world
+随小球更新，然后进入已有提取阶段。每个 World 的示例共用一次视图重建与布局阶段。
+DefaultGame 默认启用 `World nameplates`，结果文件记录 `WorldNameplates`；
+Runtime 参数入口通过 `--world-nameplates` 启用。
+
+公开提取测试验证目标的平移、旋转、缩放、拉伸与值送达边界。
+`WorldCanvasDrawingTests` 在 D3D12 WARP 与 Vulkan 开启图形验证层，读回像素验证
+投影位置、两种深度约定下的可选遮挡、前后位置变化、视图移动、透视投影、画布缩放与结构版本保持。
 
 ## Relations
 [[architecture/rendering/Extraction|Extraction]] · [[architecture/Render-Graph|Render Graph]] · [[architecture/someui/Layout|Layout]]

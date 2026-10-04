@@ -15,6 +15,9 @@ internal sealed class GlyphDrawing : IDisposable
     private const int InstanceByteCount = 64;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
+    private readonly Shader _shader;
+    private readonly Format _format;
+    private readonly Dictionary<(Format Format, CompareOperation Comparison), Pipeline> _depthPipelines = [];
     internal Pipeline Pipeline { get; }
     internal VariableLayoutReflection Parameters { get; }
     internal Sampler Sampler { get; }
@@ -24,25 +27,43 @@ internal sealed class GlyphDrawing : IDisposable
         DevelopmentCheck.Require(material.Shader is not null, "A Glyphs material requires its shader.");
         _backend = backend;
         _device = device;
-        Shader shader = material.Shader!;
-        int target = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
-        ShaderReflection reflection = shader.GetSlangReflection(target);
-        EntryPointReflection vertex = shader.RequireSlangEntry(target, "vertexMain", SlangStage.Vertex);
-        EntryPointReflection pixel = shader.RequireSlangEntry(target, "pixelMain", SlangStage.Fragment);
-        Parameters = reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        Pipeline = backend.CreateGraphicsPipeline(device, new GraphicsPipelineDesc(
-            shader.SlangCode, reflection, vertex, shader.GetSlangEntryBytes(target, vertex),
-            pixel, shader.GetSlangEntryBytes(target, pixel), [], [], PrimitiveTopology.TriangleList,
-            StripCut.Disabled, new RasterizerState(Cull: CullType.None), new MultisampleState(),
-            new DepthStencilState(), new BlendState([new BlendAttachmentState(
-                Enabled: true, SourceColor: BlendFactor.One, DestinationColor: BlendFactor.OneMinusSourceAlpha,
-                SourceAlpha: BlendFactor.One, DestinationAlpha: BlendFactor.OneMinusSourceAlpha)]),
-            new AttachmentFormatSignature([format], null), DynamicStates.Viewport | DynamicStates.Scissor,
-            "Glyphs", vertexCodeBlob: shader.GetSlangEntryBlob(target, vertex),
-            pixelCodeBlob: shader.GetSlangEntryBlob(target, pixel)));
+        _shader = material.Shader!;
+        _format = format;
+        Parameters = _shader.GetSlangReflection(_shader.RequireSlangTarget(device.Capabilities.CompileTarget))
+            .GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        Pipeline = CreatePipeline();
         Sampler = backend.CreateSampler(device, new SamplerDesc(FilterType.Linear, FilterType.Linear,
             FilterType.Nearest, AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge,
             Label: "Glyph atlas sampler"));
+    }
+
+    private Pipeline CreatePipeline(Format? depthFormat = null, CompareOperation comparison = CompareOperation.LessOrEqual)
+    {
+        Shader shader = _shader;
+        int target = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
+        ShaderReflection reflection = shader.GetSlangReflection(target);
+        EntryPointReflection vertex = shader.RequireSlangEntry(target, "vertexMain", SlangStage.Vertex);
+        EntryPointReflection pixel = shader.RequireSlangEntry(target, "pixelMain", SlangStage.Fragment);
+        return _backend.CreateGraphicsPipeline(_device, new GraphicsPipelineDesc(
+            shader.SlangCode, reflection, vertex, shader.GetSlangEntryBytes(target, vertex),
+            pixel, shader.GetSlangEntryBytes(target, pixel), [], [], PrimitiveTopology.TriangleList,
+            StripCut.Disabled, new RasterizerState(Cull: CullType.None), new MultisampleState(),
+            new DepthStencilState(DepthTest: depthFormat.HasValue, DepthWrite: false, DepthComparison: comparison),
+            new BlendState([new BlendAttachmentState(
+                Enabled: true, SourceColor: BlendFactor.One, DestinationColor: BlendFactor.OneMinusSourceAlpha,
+                SourceAlpha: BlendFactor.One, DestinationAlpha: BlendFactor.OneMinusSourceAlpha)]),
+            new AttachmentFormatSignature([_format], depthFormat), DynamicStates.Viewport | DynamicStates.Scissor,
+            "Glyphs", vertexCodeBlob: shader.GetSlangEntryBlob(target, vertex),
+            pixelCodeBlob: shader.GetSlangEntryBlob(target, pixel)));
+    }
+
+    internal Pipeline GetPipeline(CanvasPassTarget target)
+    {
+        if (target.Depth == default) return Pipeline;
+        var key = (target.DepthFormat, target.DepthComparison);
+        if (!_depthPipelines.TryGetValue(key, out Pipeline? pipeline))
+            _depthPipelines.Add(key, pipeline = CreatePipeline(target.DepthFormat, target.DepthComparison));
+        return pipeline;
     }
 
     internal Buffer CreateInstances(ReadOnlySpan<GlyphInstance> glyphs)
@@ -79,6 +100,7 @@ internal sealed class GlyphDrawing : IDisposable
     {
         Sampler.Dispose();
         Pipeline.Dispose();
+        foreach (Pipeline pipeline in _depthPipelines.Values) pipeline.Dispose();
     }
 }
 

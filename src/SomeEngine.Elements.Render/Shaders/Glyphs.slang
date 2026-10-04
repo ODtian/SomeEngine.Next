@@ -3,6 +3,7 @@ struct CanvasData
     float2 Size;
     float Scale;
     float DistanceSpread;
+    float4x4 ClipTransform;
 };
 
 ByteAddressBuffer Instances;
@@ -26,10 +27,8 @@ GlyphVertex vertexMain(uint vertex : SV_VertexID, uint instance : SV_InstanceID)
     float4 rectangle = asfloat(Instances.Load4(instance * 64));
     float4 uv = asfloat(Instances.Load4(instance * 64 + 16));
     float2 position = rectangle.xy + corners[vertex] * rectangle.zw;
-    float2 pixels = position * Canvas.Scale;
     GlyphVertex result;
-    result.Position = float4(pixels.x * 2 / Canvas.Size.x - 1,
-        1 - pixels.y * 2 / Canvas.Size.y, 0, 1);
+    result.Position = mul(float4(position, 0, 1), Canvas.ClipTransform);
     result.CanvasPosition = position;
     result.UV = lerp(uv.xy, uv.zw, corners[vertex]);
     result.Instance = instance;
@@ -47,8 +46,10 @@ float4 pixelMain(GlyphVertex vertex) : SV_Target0
     float4 color = asfloat(Instances.Load4(start + 32));
     uint width, height;
     Atlas.GetDimensions(width, height);
-    float texelHeight = (uv.w - uv.y) * height;
-    float pixelsPerTexel = rectangle.w * Canvas.Scale / texelHeight;
+    float2 texelPosition = vertex.UV * float2(width, height);
+    float2 horizontal = ddx(texelPosition);
+    float2 vertical = ddy(texelPosition);
+    float pixelsPerTexel = rsqrt(max(max(dot(horizontal, horizontal), dot(vertical, vertical)), 0.000001));
     float distance = (Atlas.SampleLevel(AtlasSampler, vertex.UV, 0) * 255 - 128)
         * Canvas.DistanceSpread / 128 * pixelsPerTexel;
     float coverage = saturate(0.5 + distance);
