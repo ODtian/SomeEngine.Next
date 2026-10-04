@@ -5,8 +5,9 @@ public sealed class JobConsumerTests
     [Fact]
     public void ScheduledJobCompletesAndPublishesResult()
     {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
         int[] counts = [0];
-        JobSystem.Schedule(new CounterJob(counts)).Complete();
+        scheduler.Schedule(new CounterJob(counts)).Complete();
         Assert.Equal(1, counts[0]);
     }
 
