@@ -19,6 +19,12 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private int _iterationLimit = 8;
     private BuildQueue _builds = null!;
 
+    /// <summary>View Build entries, including synchronous children, during the latest rebuild phase.</summary>
+    public int BuildCount => _builds is null ? 0 : _builds.BuildCount;
+
+    /// <summary>Reactive calculation entries during the latest rebuild phase.</summary>
+    public int ComputationCount => _builds is null ? 0 : _builds.ComputationCount;
+
     /// <summary>The maximum number of rebuild rounds in one interface frame.</summary>
     public int IterationLimit
     {
@@ -40,6 +46,7 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
+        _builds.BeginFrame();
         RebuildDiagnostics.BeginFrame(context.World);
         _frame++;
 #if DEBUG

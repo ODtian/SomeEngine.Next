@@ -20,6 +20,12 @@ internal sealed class BuildQueue
     private readonly List<BuildDepth> _depths = new();
     private readonly List<Scope.ScopeData> _changedBuilds = new();
     private bool _closed;
+    internal int BuildCount { get; private set; }
+    internal int ComputationCount { get; private set; }
+
+    internal void BeginFrame() => (BuildCount, ComputationCount) = (0, 0);
+    internal void CountBuild() => BuildCount++;
+    internal void CountComputation() => ComputationCount++;
 
     internal static BuildQueue For(World world) => s_worlds.GetValue(world, static world =>
     {

@@ -1,9 +1,47 @@
 # Performance
 
 ## Current design
-- 在 DefaultGame 统一场景平台加入标准 HUD 叠加层选项（约 1000 个元素、每帧变化的数字、一个长列表），在 1024 小球、Sponza、Bistro 三个场景中一起测量，记录重建次数、布局耗时与提取耗时。对比时该选项与其它渲染选项保持一致。
+- DefaultGame 统一场景平台提供标准 HUD 叠加层选项（约 1000 个元素、每帧变化的数字、一个长列表），在 1024 小球、Sponza、Bistro 三个场景中一起测量，记录重建次数、布局耗时、提取耗时与帧时间。每组对照记录相同的其它渲染选项、分辨率、场景行为、JIT 和采样协议。
 - 诊断：重建原因（视图与变化的依赖）写入诊断缓冲，默认关闭；每种视图类型对应一个 Tracy 区段。
-- 初始预算，以首次实测结果校准：稳态（只有数值变化）每帧 0 分配；1000 个元素无变化时的依赖检查 ≤ 0.1 ms；100 个元素变化时重建加布局 ≤ 0.5 ms。
+- 本机首次三场景实测校准的复测预算：静止 HUD 的界面更新线程每帧 0 字节分配，动态 HUD 平均每帧 ≤ 100 KiB；约 1000 个节点静止时，完整重建阶段的依赖与参数检查平均每帧 ≤ 17 ms；100 组数字变化时，重建加布局平均每帧 ≤ 140 ms。配置、范围和实测值见下方 #68 校准记录。
+
+## 标准 HUD 与统一测量（#68）
+
+`SceneTestPlatform.SetHudOverlay(enabled, changeNumbers: true)` 选择标准 HUD，保留当前场景选择并请求重载。
+DefaultGame 的 F6 和 `HUD overlay` 复选框使用同一选项；`Update HUD numbers` 控制数字变化。
+启动参数 `--hud` 选择每帧变化，`--hud-static` 选择静止数字。
+
+`HudOverlay` 用公开视图、布局与文字部件声明 800 个静态标签、100 个读取帧号的数字视图及其文字子节点，
+并加入 10000 项、24 行高、264×240 视口的 `VirtualList`。标准 1280×720 下总计 1017 个视图节点，
+列表初始保留 11 行，滚动沿 `Visible` 与 `Key` 更新。HUD 的尺寸、帧号更新与释放通过公开实例方法完成。
+场景中的计数面板和 HUD 共用一份字体与字形图集，沿既有 Game world → Rendering world 提取与持久画布 pass 绘制。
+
+```powershell
+./tools/Measure-Scenes.ps1
+./tools/Measure-Scenes.ps1 -Hud
+./tools/Measure-Scenes.ps1 -Hud -FreezeHud
+./tools/Measure-Scenes.ps1 -Hud -Trace
+```
+
+每个命令完成一次 60 秒内的三场景反馈，内容构建另计。三种 HUD 负载和 trace 使用同一采样协议：
+连续 16 帧流送就绪、至少 16 个渲染帧、首个渲染帧后至少 3 秒预热，然后采集至少 2 秒。
+场景流送重新开始时重新预热；测量总时限为 45 秒，剩余时间按剩余场景分配。
+时间型预热为不同 HUD 帧率提供共同的预热时长，帧数下限覆盖连续的提取与 GPU 完成边界。
+原平台的 128 帧下限在本票中按 HUD 和一分钟反馈要求校准为 16；本票的全部对照使用此处的新协议。
+
+结果记录分辨率、动画、渲染选项、固定步长、JIT、设备、采样条件和 HUD 负载。
+`Performance/timing/` 保存常规结果，`Performance/trace/` 保存 trace 结果和逐场景采集。
+脚本检查三场景的完整性、收敛状态、所选负载以及各测量值，并在反馈期限内结束应用。
+
+`GameFrameSystems.MeasureViews` 运行相同的公开帧阶段，返回 `ViewTiming`。
+`ViewRebuildSystem.BuildCount` 统计本阶段实际进入的视图 `Build`，包括同步子视图和失败尝试；
+`ComputationCount` 单独统计响应式计算。异步续执行沿原构建继续，新的构建入口推进构建计数。
+报告中的 `Rebuilds`、`Computations` 为采样合计，`*PerFrame` 为平均值。
+`RebuildMs` 覆盖重建阶段的依赖检查、视图构建和响应式计算；`TextMs` 覆盖排版刷新阶段，
+`LayoutMs` 覆盖完整布局及其文字测量；`ViewMs` 覆盖游戏世界的界面更新，`ExtractionMs` 覆盖同一世界的完整渲染提取。
+`ViewAllocatedBytes` 与 `ExtractionAllocatedBytes` 为对应更新线程的平均每帧托管分配。
+异步游戏更新把计时作为任务结果返回，呈现帧读取其对应的更新结果。
+trace 通过 `Views.Rebuild`、`Views.TextMeasurement`、`Views.Layout` 和 `GameWorld.Extract` 定位同一阶段。
 
 ## 布局缓存（#27）
 
