@@ -9,7 +9,7 @@ using SomeEngine.Render.Systems;
 
 namespace SomeEngine.RenderGraph.Tests;
 
-public sealed class CanvasDrawingTests
+public sealed partial class CanvasDrawingTests
 {
     [Theory]
     [InlineData(false)]

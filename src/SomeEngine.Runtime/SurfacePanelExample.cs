@@ -2,7 +2,6 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Systems;
 using SomeEngine.Elements;
 using SomeEngine.Layout;
 using SomeEngine.Views;
@@ -17,17 +16,12 @@ internal sealed partial class SurfacePanelExample : IDisposable
     private readonly World _world;
     private readonly Entity _canvas;
     private readonly Entity _view;
-    private readonly SystemGroup<ImmediateSystemContext> _systems;
 
     internal SurfacePanelExample(World world, int width, int height)
     {
         _world = world;
         _canvas = world.CreateEntity(new Canvas { Size = new Size(width, height) });
         _view = Views.Views.Spawn(world, _canvas, new PanelView(width, height));
-        _systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        _systems.Add(new ViewRebuildSystem());
-        _systems.Add(new LayoutSystem());
-        _systems.Update();
     }
 
     internal void Resize(int width, int height)
@@ -36,12 +30,10 @@ internal sealed partial class SurfacePanelExample : IDisposable
         if (_world.Read<Canvas>(_canvas).Size == size) return;
         _world.Replace(_canvas, new Canvas { Size = size });
         _world.Replace(_view, new PanelView(width, height));
-        _systems.Update();
     }
 
     public void Dispose()
     {
-        _systems.Dispose();
         Hierarchy<ElementTree>.DestroySubtree(_world, _canvas);
     }
 
