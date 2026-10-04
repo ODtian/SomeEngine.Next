@@ -76,6 +76,21 @@ properties are `Fill`, `HoverFill`, `PressedFill`, `TextColor`, `Padding`, and
 use the button defaults and explicit transparent colors and zero spacing remain
 caller data. See Wiki `architecture/someui/Composition` for values and examples.
 
+`ToggleFunctions.Toggle(on)` composes pointer and focus activation with a switch
+surface. Use `Toggled()` to consume a new activation and change the caller's
+boolean. `SliderFunctions.Slider(value, minimum, maximum, step)` composes a
+horizontal track with the public `ValueDraggable` behavior. Use `Edited(out value)`
+to consume a changed number and save it in application data.
+
+Call `ValueFunctions.ValueDraggable(node, range, direction, distance)` in a user
+control's build to share range editing while choosing its own drag direction,
+canvas distance, structure, and appearance. `ValueRange.Ratio` supplies the
+display fraction. The external Knob example uses upward dragging and a round
+surface. Step zero gives continuous dragging and 5% keyboard steps; positive
+steps quantize edits relative to Minimum. Right and Up increase a focused value;
+Left and Down decrease it. Gamepad directions retain focus navigation.
+See Wiki Composition and Input-and-Behaviors for data writers and examples.
+
 `Text(string)` declares a text view. `Font`, `FontSize`, `TextColor`, and
 `LineHeight` write its caller-chosen `TextStyle` fields. The text view reads
 omitted fields from the nearest `TextTheme` through the public environment API.
