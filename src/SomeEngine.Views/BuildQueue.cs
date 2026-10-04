@@ -23,8 +23,7 @@ internal sealed class BuildQueue
     internal static BuildQueue For(World world) => s_worlds.GetValue(world, static world =>
     {
         var queue = new BuildQueue();
-        world.Hooks<ViewType>().OnDespawn((SomeEngine.ECS.Hooks.DeferredWorld _, Entity entity, in ViewType value) =>
-            queue.Cancel(entity, restore: false));
+        world.EntityDestroying += (_, entity) => queue.Cancel(entity, restore: false);
         return queue;
     });
 

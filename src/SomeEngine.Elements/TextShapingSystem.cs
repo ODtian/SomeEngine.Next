@@ -42,7 +42,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
     }
 
     private static TextVersions ReadVersions(World world, Entity node) => new(
-        world.WriteVersion<Text>(node),
+        world.WriteVersion<TextContent>(node),
         world.Has<TextStyle>(node) ? world.WriteVersion<TextStyle>(node) : 0,
         world.WriteVersion<TextAppearance>(node));
 
@@ -61,7 +61,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         TextShapeBuffer shape = measurement.GetBuffer(width);
         if (!shape.HasShape || shape.Versions != versions)
         {
-            Shaper.Shape(world.Read<Text>(node).Value, new TextStyleData(style.Font!, style.Size, LineHeight: style.LineHeight),
+            Shaper.Shape(world.Read<TextContent>(node).Value, new TextStyleData(style.Font!, style.Size, LineHeight: style.LineHeight),
                 width, shape.Buffer);
             shape.Versions = versions;
             shape.HasShape = true;
@@ -148,5 +148,5 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         internal bool Used;
     }
 
-    internal readonly record struct TextVersions(uint Text, uint Style, uint Appearance);
+    internal readonly record struct TextVersions(uint Content, uint Style, uint Appearance);
 }

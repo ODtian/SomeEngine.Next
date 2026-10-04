@@ -1,6 +1,6 @@
 using D3D = Silk.NET.Direct3D12;
 using Native = Silk.NET.Core.Native;
-using Core = Silk.NET.Core;
+using SilkCore = Silk.NET.Core;
 using Maths = Silk.NET.Maths;
 using Dxgi = Silk.NET.DXGI;
 using Silk.NET.Direct3D12;
@@ -193,7 +193,7 @@ internal sealed unsafe partial class NativeCommandData
                     {
                         uint @NumRenderTargetDescriptors = reader.Read<uint>();
                         D3D.CpuDescriptorHandle* @pRenderTargetDescriptors = (D3D.CpuDescriptorHandle*)reader.ReadArray();
-                        Core.Bool32 @RTsSingleHandleToDescriptorRange = reader.Read<Core.Bool32>();
+                        SilkCore.Bool32 @RTsSingleHandleToDescriptorRange = reader.Read<SilkCore.Bool32>();
                         D3D.CpuDescriptorHandle* @pDepthStencilDescriptor = (D3D.CpuDescriptorHandle*)reader.ReadArray();
                         CommandBindingTrace.OMSetRenderTargets(target, @NumRenderTargetDescriptors, @pRenderTargetDescriptors, @RTsSingleHandleToDescriptorRange, @pDepthStencilDescriptor);
                         break;

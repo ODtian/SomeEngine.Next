@@ -48,5 +48,54 @@ ECS 结构事务送入常驻缓冲。常驻绘制数据由 RenderWorld 的 ECS �
 此前独立 SomeUI 的 Scene、实例与 DrawOrderSystem 用于核对绘制数据及树序。
 这里的实例缓冲采用引擎 ECS 存储，增量依据来自 ECS 写版本，并通过既有提取边界应用。
 
+## 屏幕画布绘制（#33）
+
+`SomeEngine.Elements.Render.CanvasRenderer` 从 RenderWorld 消费 `RenderCanvas` 与
+`SurfaceInstance` 缓冲。应用在 RenderPrepare 已提交之后调用
+`ReconcileGraph(screenTarget)`：每个屏幕画布持有一个持久 raster pass 及其视图。
+画布成员或屏幕目标改变时，通过一个显式 RenderGraph 编辑添加、删除或重接对应 pass。
+其它 pass 的身份继续有效。`TryGetPass` 提供画布 pass 的身份，供应用声明额外排序关系。
+
+取得图帧后，`UpdateFrame(ref frame)` 通过 `SetBufferInput` 提供实例缓冲，
+通过 `SetBufferData` 写画布尺寸与缩放，并通过 `SetPassDataIfChanged` 更新绘制数量和 viewport。
+画布常量采用图管理的独立逐帧上传缓冲；这些缓冲只由本画布的 graphics pass 消费，
+与场景呈现一起满足交换链 acquisition 的单次提交边界。
+Runtime 将呈现排序在 Cluster 的 page-fault 读回之后，使呈现、界面与图像导出位于
+流送反馈提交边界之后，共同完成该次交换链图像使用。
+Canvas 尺寸、缩放与实例值属于当帧数据，保留图的结构版本。
+实例更新由 ECS 缓冲写版本筛选；静态帧复用已有的 GPU 实例缓冲。
+变化时，Surface 将当前实例编码为 GPU 缓冲，旧缓冲交由图的
+`RetireAfterSubmittedFrames` 在已提交帧完成后回收。
+帧执行回调保存图返回的实际缓冲状态及完成点，供后续帧导入同一缓冲。
+取消图帧后，该次编码的数据仍可供下一帧绘制。
+画布绘制器释放时，通过显式编辑删除自身 pass 与视图，缓冲和管线沿同一完成边界回收。
+
+`SurfaceMaterial` 是普通 `Material`。`Create` 编译内嵌 `Surface.slang`，生成与
+图设备对应的 DXIL 或 SPIR-V。材质的 Surface 绘制实现负责实例编码和 shader 接口。
+shader 以 `SV_VertexID` 生成矩形的三角形顶点，以 `SV_InstanceID` 读取自己的实例字节；
+管线的顶点缓冲布局和顶点属性声明为空。图只声明实际缓冲读取和颜色目标访问。
+绘制顺序采用提取缓冲的树序。
+
+矩形、圆角、描边和裁剪采用画布布局单位，`RenderCanvas.Scale` 将其转换为目标像素。
+圆角半径约束到短边的一半，描边位于矩形内部。
+shader 以圆角矩形的距离函数计算覆盖率；填充与内部描边分别覆盖形状的内部与环带，
+边缘覆盖率的过渡宽度为一个目标像素。
+裁剪矩形采用包含左上边界、排除右下边界的范围。
+填充与描边的 RGBA 值在 shader 中乘覆盖率并转成预乘 alpha，
+再以 `One` / `OneMinusSourceAlpha` 混合到已定义的目标颜色上。
+
+Runtime 的 `SurfacePanelExample` 使用公开视图修饰与布局系统构建画布和面板，
+沿同一 Game world → Rendering world 提取路径绘制。
+DefaultGame 的测试平台默认显示该面板，`Surface panel` 选项控制示例；
+调用 Runtime 参数入口时可使用 `--surface-panel`。
+场景平台的结果文件记录该选项，供相同渲染条件的比较使用。
+
+`tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests` 经公开结构版本、pass 身份和
+GPU 像素读回验收画布成员修改、静态帧、改色、取消帧、透明树序叠加、裁剪与画布移除。
+相同像素用例分别使用 D3D12 WARP 和 Vulkan，并启用引擎图形验证层。
+
+此前独立 SomeUI 的距离函数及填充/描边覆盖区域用于核对材质语义。
+本实现采用引擎的持久图与实例光栅绘制，实例数据由既有 RenderWorld 缓冲提供。
+
 ## Relations
 [[architecture/rendering/Extraction|Extraction]] · [[architecture/Render-Graph|Render Graph]] · [[architecture/someui/Layout|Layout]]

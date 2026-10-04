@@ -9,6 +9,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 using SomeEngine.ECS.Entities;
+using SomeEngine.Elements.Render;
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Vulkan;
@@ -471,8 +472,11 @@ internal static class RuntimeApplication
     {
         using World mainWorld = RuntimeWait.Task(sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
             new(Execution: new WorldJobs(JobSystem.Default))).AsTask(), window, FrameTimeout);
+        using SurfacePanelExample? surfacePanel = options.SurfacePanel
+            ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height) : null;
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
-        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor(),
+            new SurfaceRenderExtractor());
 
         RuntimeScene scene = RuntimeWait.Task(
             RuntimeScene.CreateAsync(mainWorld, assets, loadShader).AsTask(),
@@ -546,6 +550,10 @@ internal static class RuntimeApplication
                 // frames. Match that count instead of rotating a third copy of graph data.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
+        using SurfaceMaterial? surfaceMaterial = options.SurfacePanel
+            ? SurfaceMaterial.Create(device.Capabilities.CompileTarget) : null;
+        using CanvasRenderer? surfaces = surfaceMaterial is null ? null
+            : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat);
         var outputDescription = new ClusterPipelineOutputDescription(boot.Width, boot.Height, 1);
         using var lighting = new LightingFeature(
             backend,
@@ -584,6 +592,7 @@ internal static class RuntimeApplication
         RuntimePresentationPipeline? presentation = null;
         TemporalFeature? temporal = null;
         GraphPassId temporalProducer = default;
+        GraphPassId presentationReadback = default;
         Task? nextGameUpdate = null;
         var input = new RuntimeInput();
         int width = boot.Width;
@@ -834,6 +843,7 @@ internal static class RuntimeApplication
                 {
                     if (animateScene && options.ScenePlayback is null)
                         scene.Update(sceneSeconds);
+                    surfacePanel?.Resize(width, height);
                     extraction.Extract(mainWorld);
                 }
                 long prepareStarted = Stopwatch.GetTimestamp();
@@ -889,6 +899,14 @@ internal static class RuntimeApplication
                     boot.PresentationVertexEntry,
                     boot.PresentationPixelEntry,
                     PresentationFormat);
+                if (presentationReadback != pipeline.PageFaultReadbackPass)
+                {
+                    using RenderGraphEdit edit = renderGraph.BeginEdit();
+                    presentation.OrderAfter(edit, pipeline.PageFaultReadbackPass);
+                    edit.Commit();
+                    presentationReadback = pipeline.PageFaultReadbackPass;
+                }
+                surfaces?.ReconcileGraph(presentation.Target);
                 ui.InstallGraph(renderGraph, presentation.Target);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
@@ -909,6 +927,7 @@ internal static class RuntimeApplication
                     temporal,
                     presentation,
                     ui,
+                    surfaces,
                     image,
                     width,
                     height,
@@ -948,6 +967,8 @@ internal static class RuntimeApplication
                         runtimeStarted,
                         Stopwatch.GetTimestamp()).TotalSeconds;
                     TraceContext gameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
+                    int nextCanvasWidth = width;
+                    int nextCanvasHeight = height;
                     nextGameUpdate = Task.Run(() =>
                     {
                         using var association = EngineTrace.Associate(gameTrace);
@@ -959,6 +980,7 @@ internal static class RuntimeApplication
                                 orbitCamera: options.ScenePlayback == "camera");
                         else if (updateScene)
                             scene.Update(nextSceneTime);
+                        surfacePanel?.Resize(nextCanvasWidth, nextCanvasHeight);
                         extraction.Extract(mainWorld);
                     });
                 }
@@ -1159,6 +1181,7 @@ internal static class RuntimeApplication
         TemporalFeature temporal,
         RuntimePresentationPipeline presentation,
         RuntimeUiRenderer ui,
+        CanvasRenderer? surfaces,
         SwapchainImage image,
         int width,
         int height,
@@ -1218,6 +1241,7 @@ internal static class RuntimeApplication
                             cameraCut: cameraCut,
                             view: viewEntity,
                             jitterPixels: jitterPixels);
+                    surfaces?.UpdateFrame(ref graphFrame);
                     ui.Record(ref graphFrame, width, height);
                     outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue);
                     if (reportMilestones)

@@ -130,13 +130,16 @@ public readonly struct ShapedText : IComponent
 使加载的字体与排版、图集共用一份字体资源。
 
 `.Font(font)`、`.FontSize(size)`、`.TextColor(color)` 和 `.LineHeight(height)`
-通过 `Scope.Write<TextStyle>` 写入调用方选择的字段。`Text.Build` 读取这些字段；
+通过 `Scope.Write<TextStyle>` 写入调用方选择的字段。`Text` 采用 `BuildMode.Once`，
+`Text.Build` 登记一次样式计算，计算读取这些字段；
 其余字段通过 `Scope.ReadUp<TextTheme>()` 取得最近祖先提供的默认样式，并登记环境依赖。
 默认字号为 16 像素/em、颜色为线性白色、行高为零；字体由应用加载并提供。
 显式零颜色保留 RGBA 零值；显式零行高选择字体行指标。
-构建把此次解析的样式写入自身的 `TextAppearance` 数据，排版系统消费这份结果。
+样式计算把此次解析的样式写入自身的 `TextAppearance` 数据，排版系统消费这份结果。
 祖先主题变化时，继承相应字段的文本在当前重建阶段更新；显式字段继续采用调用方的值。
 `ShapedText.Style` 提供此次排版使用的完整样式。
+文字字段变化由排版系统观察，样式与主题变化由这个计算观察，使文字持续改变时
+保留节点、样式计算及其委托。
 
 ```csharp
 using static SomeEngine.Elements.TextFunctions;
@@ -165,7 +168,9 @@ systems.Add(new LayoutSystem(shaping));
 `ShapedText.Size` 并按约束限制尺寸。Flex 与 Grid 的基础测量和最终测量沿同一入口，
 因此文本按当前分配宽度换行，父布局使用此次测量的高度摆放后续子节点。
 
-排版系统按文本、调用方样式与解析样式的组件版本复用字形结果。每个节点持有可复用的
+排版系统按显示字符串 `TextContent`、调用方样式与解析样式的组件版本复用字形结果。
+布局缓存通过 `ILayoutDataUpdate.HasChanges` 沿用这组三种版本，语言切换形成的
+显示字符串变化会使对应文本的测量失效。每个节点持有可复用的
 各测量宽度缓冲；后续布局复用已经闲置的宽度缓冲，持续改变画布尺寸时存储按同时需要的
 测量宽度数保留。画布布局结束后，以最终宽度和数据版本比较、提交 `ShapedText`。
 相同文本、样式与最终约束保持 `ShapedText.Version` 及组件写版本；
@@ -187,6 +192,8 @@ public static Entity DeclareText<T>(ulong callKey, T value, string format = "", 
     where T : struct, ISpanFormattable;
 public static Entity SetText<T>(this Entity node, World world, T value,
     string format = "", IFormatProvider? provider = null) where T : struct, ISpanFormattable;
+public static Entity SetText<T>(this Entity node, T value,
+    string format = "", IFormatProvider? provider = null) where T : struct, ISpanFormattable;
 public static Entity SetText(this Entity node, World world, string value);
 ```
 
@@ -194,9 +201,17 @@ public static Entity SetText(this Entity node, World world, string value);
 `Scope.View<T, TValue>(in value, create, key)` 在匹配节点后取得旧文本。
 参数工厂把格式化字符与旧字符串比较，相等时复用旧字符串；变化时创建新的文本参数。
 `SetText` 供调用方直接写入已存在的文本节点，遵循相同的字符比较和版本规则。
+带 World 的重载即时写入文本；作用域重载写入 `Scope.Write<Text>` 返回的组件副本，
+并在当前计算完成时按同一提交规则写入。Solid 的数字属性绑定使用作用域重载。
 值、格式与格式提供者形成的文本保持相等时，数字写入保持托管分配为零与文本写版本。
 短格式使用栈上的字符范围；较长格式使用可复用字符池。格式提供者沿用 .NET 的格式化规则，
-默认采用当前文化。新格式首次使用时建立需要的字符池容量。
+省略格式提供者时，声明的文本在自己的 `Build` 中读取当前 `Locale`，
+按该语言格式化并登记组件依赖；提供格式提供者时采用调用方指定的格式规则。
+应用在声明界面之前创建语言单例；沿用纯数字写入的应用也可采用 .NET 当前文化。
+`SetText` 按调用时的语言格式化并写入字符串参数，配置语言后的相同数字写入仍保持零分配。
+单例定位保存实体、Locale 类型写计数及该版本对应的只读格式提供者；
+`Locale.Name` 持有当前语言，版本变化后重新取得格式提供者。
+新格式首次使用时建立需要的字符池容量。
 
 `TextTests` 经公开 API 验证 Column 高度排列、文字与主题变化、显式样式、行高、
 Row 伸缩后的换行和最终版本、格式变化、长格式、数字稳态分配及开发错误。
@@ -205,10 +220,100 @@ Row 伸缩后的换行和最终版本、格式变化、长格式、数字稳态�
 参考 SomeUI 的 `TextContent`、`Text` 和 `Label` 用于核对字体、字号与颜色语义；
 本实现采用本页的视图参数、独立样式、排版系统写入与布局协议。
 
+## 本地化文本（#53）
+
+```csharp
+public readonly record struct LocalizedText(string Key, ReadOnlyMemory<object?> Arguments);
+public struct Locale : IComponent { public string Name; }
+public readonly struct Translations : IComponent
+{
+    public static void Build(Stream source, Stream destination);
+    public static Translations Load(Stream source);
+}
+public readonly record struct TextContent(string Value) : IComponent;
+public static partial class TextFunctions
+{
+    public static Entity Text(in LocalizedText text);
+    public static Entity DeclareText(ulong callKey, in LocalizedText text);
+}
+```
+
+`Loc.Key("menu.start")` 创建本地化参数，`Loc.Key("items", count)` 同时提供位置参数。
+`Text(in LocalizedText)` 与 `Scope.View(new Text(localized))` 创建同一种 `Text` 节点，
+继续使用视图调用位置、参数比较、样式修饰和测量协议。
+`Text.LocalizedValue` 保存 key 与参数；参数按 key 及每个参数的值比较，
+比较同时包含会影响格式的 decimal 小数精度、日期 Kind / 时区偏移和浮点符号。
+调用方在参数被视图使用期间保持其只读内存和引用参数内容，变化时提供新的参数值。
+
+每个 World 的一个实体持有 `Locale` 与 `Translations`。应用在声明视图之前创建它：
+
+```csharp
+using var content = File.OpenRead("menu.texts");
+Entity language = world.CreateEntity(new Locale { Name = "en-US" });
+world.Add(language, Translations.Load(content));
+// Build 中声明：
+Text(Loc.Key("menu.start"));
+Text(Loc.Key("items", 2));
+// 在界面重建阶段之前切换语言：
+world.Replace(language, new Locale { Name = "zh-CN" });
+```
+
+本地化文本在自己的 `Build` 中通过 `Scope.Read` 读取语言和翻译目录，
+登记现有 ECS 组件依赖。语言切换和目录替换都沿 `ViewRebuildSystem` 更新对应文本。
+普通字符串文本只读取自己的样式与主题；数字和日期声明在采用默认格式提供者时
+读取语言，显式格式提供者继续控制对应节点的格式。
+
+`Text.Value` 保留字符串声明参数，数字声明保留声明时的字符串及原始格式化值，
+本地化声明以 `LocalizedValue` 表达输入。`TextContent.Value` 是该节点当前显示的
+字符串，由 `Text.Build` 写入并由排版系统消费。字符串保持相等时，内容组件与
+排版结果保持其版本；文本与布局继续沿现有 Game world 到 Rendering world 路径提取。
+`SetText(world, string)` 把该节点的参数切换为调用方提供的普通字符串，包括空字符串。
+
+### 内容构建与复数
+
+内容构建阶段调用 `Translations.Build(jsonStream, contentStream)`。源 JSON 以语言名
+分组，每组以 key 保存普通复合格式字符串或复数条目：
+
+```json
+{
+  "en-US": {
+    "menu.start": "Start",
+    "items": { "argument": 0, "one": "{0} item", "other": "{0} items" },
+    "summary": "{0:N2} / {1:MMMM}"
+  },
+  "zh-CN": {
+    "menu.start": "开始",
+    "items": { "argument": 0, "other": "{0} 件" },
+    "summary": "{0:N2} / {1:MMMM}"
+  }
+}
+```
+
+构建器检查语言名与复合格式，按语言生成复数规则表，写出带版本的二进制内容。
+加载阶段读取该表并解析复合格式；文本构建直接选择条目和格式化参数。
+构建与加载都保持调用方的流打开。
+
+中英文基数规则依据 [Unicode CLDR 49](https://unicode.org/cldr/charts/49/supplemental/language_plural_rules.html)：
+英文在绝对值的整数部分为 1 且可见小数位为 0 时采用 `one`，其余采用 `other`；
+中文统一采用 `other`。复数参数支持 C# 整数类型、`float`、`double` 与 `decimal`，
+其中 `decimal` 的小数位数来自值保留的精度，所以 `1m` 与 `1.0m` 分别选择英文
+`one` 与 `other`。`one` 可省略，此时使用 `other`。规则根据原始参数选择，
+条目中的格式字符串控制该参数的呈现。
+
+普通条目支持 .NET 文化名；复数条目当前接受英文和中文，构建器在内容边界
+报告其它语言的规则表需求。语言目录按文化名匹配，key 按序号区分大小写。
+数字与日期参数采用 `Locale.Name` 的格式规则；位置参数支持 .NET 复合格式、
+对齐、转义花括号与 `IFormattable` 值。
+
+单例、翻译目录、key 和参数的使用错误通过 Core `DevelopmentCheck` 报告，
+视图上的公开 `BuildError` 提供错误信息。shipping 编译移除开发检查及其参数求值。
+验收使用外部消费者的 `LocalizationTests` 和 Views NativeAOT 的公共行为场景，
+覆盖语言切换、普通文本版本、复数、文化格式、参数更新和目录替换。
+
 ## 后续文本能力
 
 文本绘制由 #34 沿既有 Game world 到 Rendering world 提取路径接入。
-本地化 key、语言依赖与复数规则由 #53 接入；富文本继续按样式段扩展排版数据。
+富文本继续按样式段扩展排版数据。
 
 ## Open questions
 - 双向文字放到二期。
