@@ -8,7 +8,6 @@ public struct ScrollOffset : IComponent
 {
     public Vector2 Value;
     public Vector2 Max;
-    internal uint InputCount;
 }
 
 /// <summary>Frame displacement and input count supplied by the pointer input stage.</summary>
@@ -16,4 +15,10 @@ public struct ScrollInput : IComponent
 {
     public Vector2 Delta;
     public uint Count;
+}
+
+/// <summary>The scroll input count already applied by the layout stage.</summary>
+internal struct ScrollSeen : IComponent
+{
+    internal uint Count;
 }

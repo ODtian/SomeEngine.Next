@@ -120,6 +120,7 @@ Selectable 组合 Pressable 与 Selected。重复构建保留系统写入的值�
 布局阶段在内容的自然尺寸与当前视口之间计算 `Max`，将 `Value` 限制在 `[0, Max]`，
 随后从子节点坐标减去 Value。ScrollOffset 整个组件由布局阶段写入，ScrollInput 由输入阶段写入；
 布局记录已应用的输入计数，因此重复布局保留同一份输入的应用结果。
+这份消费记录由布局单独持有，ScrollOffset 的公开写版本只随 Value 与 Max 的变化推进。
 内容或视口缩小时，当前布局同时收紧范围和实际偏移。
 布局测量、内边距、透明组合视口和嵌套坐标规则见
 [[architecture/someui/Layout|Layout]] 的滚动布局章节。

@@ -118,14 +118,20 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         if (World.Has<ScrollInput>(node.Entity))
         {
             ScrollInput input = World.Read<ScrollInput>(node.Entity);
-            if (input.Count != offset.InputCount)
+            bool hasSeen = World.Has<ScrollSeen>(node.Entity);
+            ScrollSeen seen = hasSeen ? World.Read<ScrollSeen>(node.Entity) : default;
+            if (input.Count != seen.Count)
             {
                 offset.Value += input.Delta;
-                offset.InputCount = input.Count;
+                seen.Count = input.Count;
+                if (hasSeen)
+                    World.Replace(node.Entity, seen);
+                else
+                    World.Add(node.Entity, seen);
             }
         }
         offset.Value = Vector2.Clamp(offset.Value, Vector2.Zero, offset.Max);
-        if (offset.Value != previous.Value || offset.Max != previous.Max || offset.InputCount != previous.InputCount)
+        if (offset.Value != previous.Value || offset.Max != previous.Max)
             World.Replace(node.Entity, offset);
     }
 

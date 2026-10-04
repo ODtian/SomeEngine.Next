@@ -12,6 +12,25 @@ namespace SomeEngine.Elements.Consumer.Tests;
 
 public sealed partial class BehaviorTests
 {
+    [Fact]
+    public void WheelAtTheContentBoundaryPreservesThePublicOffsetWriteVersion()
+    {
+        using var frames = new PointerFrames();
+        Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ScrollScene(new Size(240, 180)));
+        frames.Frame();
+        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity scroll = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
+        Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 30));
+        Pointer.Wheel(frames.World, frames.Canvas, new Vector2(1000, 1000));
+        frames.Frame();
+        uint version = frames.World.WriteVersion<ScrollOffset>(scroll);
+
+        Pointer.Wheel(frames.World, frames.Canvas, new Vector2(5, 5));
+        frames.Frame();
+        Assert.Equal(new Vector2(160, 140), frames.World.Read<ScrollOffset>(scroll).Value);
+        Assert.Equal(version, frames.World.WriteVersion<ScrollOffset>(scroll));
+    }
+
 #if DEBUG
     [Theory]
     [InlineData(0)]
