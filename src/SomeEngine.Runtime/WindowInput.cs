@@ -15,6 +15,7 @@ public sealed class WindowInput : IDisposable
     private readonly QueryHandle _canvasQuery;
     private readonly QueryHandle _captureQuery;
     private readonly List<ScreenCanvas> _canvases = [];
+    private char _highSurrogate;
 
     public WindowInput(World world)
     {
@@ -70,7 +71,9 @@ public sealed class WindowInput : IDisposable
     /// <summary>Ends held presses outside the canvas and forwards key releases when the window loses focus.</summary>
     public void ReleaseInput()
     {
+        _highSurrogate = default;
         LeavePointer();
+        Keyboard.Composition(_world, "", 0);
         foreach (ScreenCanvas canvas in _canvases)
         {
             Pointer.Release(_world, canvas.Entity, PointerButton.Primary);
@@ -92,10 +95,42 @@ public sealed class WindowInput : IDisposable
             RuntimeInput.KeyDown => Key.Down,
             RuntimeInput.KeyEnter => Key.Enter,
             RuntimeInput.KeySpace => Key.Space,
+            RuntimeInput.KeyHome => Key.Home,
+            RuntimeInput.KeyEnd => Key.End,
+            RuntimeInput.KeyShift or RuntimeInput.KeyLeftShift or RuntimeInput.KeyRightShift => Key.Shift,
+            RuntimeInput.KeyBackspace => Key.Backspace,
+            RuntimeInput.KeyDelete => Key.Delete,
             _ => null,
         };
         if (key is { } value) Keyboard.Key(_world, value, pressed);
     }
+
+    public void EnterText(string text)
+    {
+        _highSurrogate = default;
+        Keyboard.Text(_world, text);
+    }
+
+    /// <summary>Decodes window UTF-16 characters before sending complete text to the editor.</summary>
+    public void EnterCharacter(char character)
+    {
+        if (char.IsControl(character)) return;
+        if (_highSurrogate != default)
+        {
+            char high = _highSurrogate;
+            _highSurrogate = default;
+            if (char.IsLowSurrogate(character))
+            {
+                EnterText(new string([high, character]));
+                return;
+            }
+            Keyboard.Text(_world, "\uFFFD");
+        }
+        if (char.IsHighSurrogate(character)) _highSurrogate = character;
+        else EnterText(char.IsLowSurrogate(character) ? "\uFFFD" : character.ToString());
+    }
+
+    public void ChangeComposition(string text, int caret) => Keyboard.Composition(_world, text, caret);
 
     private void ReadCanvases()
     {

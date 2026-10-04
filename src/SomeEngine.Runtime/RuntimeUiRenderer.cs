@@ -174,6 +174,10 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
             case NativeWindowEventKind.TextInput:
                 io.AddInputCharacterUTF16(windowEvent.Utf16Character);
                 break;
+            case NativeWindowEventKind.TextCommitted:
+                foreach (char character in windowEvent.Text!)
+                    io.AddInputCharacterUTF16(character);
+                break;
             case NativeWindowEventKind.MouseMoved:
             case NativeWindowEventKind.MouseButtonChanged:
             case NativeWindowEventKind.MouseWheel:

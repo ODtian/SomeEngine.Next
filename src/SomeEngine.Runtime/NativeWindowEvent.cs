@@ -9,6 +9,8 @@ internal enum NativeWindowEventKind : byte
     FocusChanged,
     KeyChanged,
     TextInput,
+    TextCommitted,
+    CompositionChanged,
     MouseMoved,
     MouseLeft,
     MouseButtonChanged,
@@ -42,6 +44,8 @@ internal readonly record struct NativeWindowEvent
     internal bool IsRepeat { get; init; }
     internal bool IsExtended { get; init; }
     internal char Utf16Character { get; init; }
+    internal string? Text { get; init; }
+    internal int CompositionCaret { get; init; }
     internal Vector2 MousePosition { get; init; }
     internal NativeMouseButton MouseButton { get; init; }
     internal Vector2 Wheel { get; init; }
@@ -72,6 +76,12 @@ internal readonly record struct NativeWindowEvent
 
     internal static NativeWindowEvent TextInput(char character) =>
         new(NativeWindowEventKind.TextInput) { Utf16Character = character };
+
+    internal static NativeWindowEvent TextCommitted(string text) =>
+        new(NativeWindowEventKind.TextCommitted) { Text = text };
+
+    internal static NativeWindowEvent CompositionChanged(string text, int caret) =>
+        new(NativeWindowEventKind.CompositionChanged) { Text = text, CompositionCaret = caret };
 
     internal static NativeWindowEvent MouseMoved(float x, float y) =>
         new(NativeWindowEventKind.MouseMoved) { MousePosition = new Vector2(x, y) };

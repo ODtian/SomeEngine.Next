@@ -77,7 +77,18 @@ internal sealed class RuntimeInput(WindowInput? elements = null)
                 break;
             case NativeWindowEventKind.KeyChanged:
                 SetKey(windowEvent.VirtualKey, windowEvent.IsDown);
-                elements?.ChangeKey(windowEvent.VirtualKey, windowEvent.IsDown);
+                if (windowEvent.VirtualKey is KeyShift or KeyLeftShift or KeyRightShift)
+                    elements?.ChangeKey(KeyShift, IsKeyDown(KeyShift) || IsKeyDown(KeyLeftShift) || IsKeyDown(KeyRightShift));
+                else elements?.ChangeKey(windowEvent.VirtualKey, windowEvent.IsDown);
+                break;
+            case NativeWindowEventKind.TextInput:
+                elements?.EnterCharacter(windowEvent.Utf16Character);
+                break;
+            case NativeWindowEventKind.TextCommitted:
+                elements?.EnterText(windowEvent.Text!);
+                break;
+            case NativeWindowEventKind.CompositionChanged:
+                elements?.ChangeComposition(windowEvent.Text!, windowEvent.CompositionCaret);
                 break;
             case NativeWindowEventKind.MouseMoved:
                 SetMousePosition(windowEvent.MousePosition);

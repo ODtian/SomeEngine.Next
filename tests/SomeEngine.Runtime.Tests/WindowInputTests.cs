@@ -3,7 +3,9 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Elements;
+using SomeEngine.Job;
 using SomeEngine.Layout;
 using SomeEngine.Views;
 
@@ -102,6 +104,65 @@ public sealed class WindowInputTests
         Assert.Equal(new Vector2(1, 2), world.Read<ScrollInput>(node).Delta);
         Assert.Equal(1u, world.Read<Clicks>(node).Count);
         Assert.Equal(0u, world.Read<Clicks>(worldButton).Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Window_text_selection_deletion_and_composition_reach_the_focused_editor(bool jobs)
+    {
+        using var world = new World(execution: jobs ? new WorldJobs(JobSystem.Default) : null);
+        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity editor = CreateButton(world, canvas);
+        world.Add(editor, new Focusable());
+        world.Add(editor, new EditableText { Text = "", Composition = "" });
+        using var frames = new GameFrameSystems(world);
+        using var input = new WindowInput(world);
+        input.ChangeKey(0x28, true);
+        input.EnterText("AB");
+        input.ChangeKey(0x10, true);
+        input.ChangeKey(0x25, true);
+        input.ChangeKey(0x10, false);
+        input.EnterText("中");
+        input.ChangeKey(0x23, true);
+        input.ChangeKey(0x08, true);
+        frames.UpdateInput();
+        Assert.Equal("A", world.Read<EditableText>(editor).Text);
+        Assert.Equal(1, world.Read<EditableText>(editor).Caret);
+
+        input.ChangeComposition("你好", 1);
+        frames.UpdateInput();
+        Assert.Equal("A", world.Read<EditableText>(editor).Text);
+        Assert.Equal("你好", world.Read<EditableText>(editor).Composition);
+        Assert.Equal(1, world.Read<EditableText>(editor).CompositionCaret);
+        input.EnterText("你好");
+        input.ChangeComposition("", 0);
+        frames.UpdateInput();
+        Assert.Equal("A你好", world.Read<EditableText>(editor).Text);
+        Assert.Equal("", world.Read<EditableText>(editor).Composition);
+        Assert.True(input.InputCapture.Keyboard);
+    }
+
+    [Fact]
+    public void Window_utf16_characters_form_complete_text_and_control_characters_preserve_it()
+    {
+        using var world = new World();
+        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity editor = CreateButton(world, canvas);
+        world.Add(editor, new Focusable());
+        world.Add(editor, new EditableText { Text = "", Composition = "" });
+        using var frames = new GameFrameSystems(world);
+        using var input = new WindowInput(world);
+        input.ChangeKey(0x28, true);
+        input.EnterCharacter('\uD83D');
+        frames.UpdateInput();
+        Assert.Equal("", world.Read<EditableText>(editor).Text);
+        input.EnterCharacter('\uDE00');
+        input.EnterCharacter('\b');
+        input.EnterCharacter('\r');
+        frames.UpdateInput();
+        Assert.Equal("😀", world.Read<EditableText>(editor).Text);
+        Assert.Equal(2, world.Read<EditableText>(editor).Caret);
     }
 
     private static Entity CreateButton(World world, Entity canvas)

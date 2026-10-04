@@ -377,8 +377,18 @@ Ratio 是当前参数在范围内的比例，等值范围返回 0，供用户控
 窗口失焦时在画布外释放各按钮，并送出键盘释放事件；已捕获的按下随释放结束。
 `CanvasTarget.WorldSpace` 与纹理画布由各自的交互来源供给指针数据。
 
-虚拟键 Left、Right、Up、Down、Enter 和 Space 对应 `Keyboard.Key`，
-按下、释放及平台重复按下分别转接。文本与输入法的转接随 #41 公开入口交付接入。
+虚拟键 Left、Right、Up、Down、Enter、Space、Home、End、Shift、Backspace 与 Delete
+对应 `Keyboard.Key`，按下、释放及平台重复按下分别转接。
+`RuntimeInput` 从原有按键数据合并两侧 Shift，随后送出同一份选择状态。
+`EnterCharacter` 组合窗口的 UTF-16 代理项，完整字符交给 `EnterText` → `Keyboard.Text`；
+编辑控制字符沿键盘入口处理。`ChangeComposition` 将候选字符串与 UTF-16 光标位置交给
+`Keyboard.Composition`，窗口失焦结束当前组合。
+
+`NativeWindow` 接收 `WM_IME_STARTCOMPOSITION`、`WM_IME_COMPOSITION` 与
+`WM_IME_ENDCOMPOSITION`，使用 IMM 读取预览、光标及确认字符串，按原有窗口事件队列转接。
+确认字符串作为一个文本事件送到 SomeUI 与 ImGui。
+该处理依据 [Microsoft 的 IMM 字符串读取说明](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immgetcompositionstringw)
+及 [组合字符串确认路径](https://learn.microsoft.com/en-us/windows/win32/controls/em-setimestatus)。
 `WindowInput.InputCapture` 从 World 单例读取当前捕获数据；在 `GameFrameSystems.UpdateInput`
 之后，游戏摄像机将其与 ImGui 的捕获合并，分别控制键盘移动和鼠标旋转。
 
