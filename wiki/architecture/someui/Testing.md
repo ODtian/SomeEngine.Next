@@ -712,6 +712,37 @@ pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Execu
 字体原生依赖复用 #27 的同版本产物，复用前以 SHA-256 核对 CMakeLists.txt、
 GlyphBitmap.c 与 Typography 项目文件三个构建输入一致。
 
+### 交付前应用输入与帧调度集成
+
+随后合入集成提交 `8c953fae65deb55d925043a1377ec48253744dc1`，
+形成代码提交 `27be30b7dfd0f6feb5faaee5157167217de7a229`。
+该集成将依赖来源收集与版本比较分为两个读取窗口，并接入窗口输入及应用帧阶段。
+Views、消费者、Runtime 和系统工程按上文完整工程命令重新执行两种配置；
+系统 Debug 还通过独立进程完成完整的并发与关闭验收：
+
+```powershell
+dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Debug --no-build --no-restore --blame-hang --blame-hang-timeout 60s --blame-hang-dump-type none --results-directory TestResults/SystemDiagnostics --logger 'console;verbosity=normal' --nologo -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+```
+
+| 工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Elements.Consumer.Tests | 257 | 184 |
+| SomeEngine.Runtime.Tests | 30 | 30 |
+| SomeEngine.ECS.Systems.Tests | 298 | 298 |
+
+Runtime 的公开检查同时使用普通 World 与 Job World，观察输入、计数文本和布局更新。
+图形、Elements、Solid、Layout 与生成器产品源码及对应的图形、布局、生成器用例
+与本节前轮验收保持相同，继续关联上述相同源码的两种配置结果。
+运行时依赖 Alimer.Bindings 按仓库锁定提交 `8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4` 就位。
+
+基于 `27be30b7` 再次执行上述 NativeAOT 发布、入口运行与跨进程检查点命令，
+三个命令均退出码 0。共享入口再次通过内置、用户和混合 Dialog 组合，
+检查点完成类型编号 1 → 5 的重映射、下一帧重建与依赖更新。
+验证完成后逐一核对绝对路径和 Git 跟踪文件，清理本工作树内 92 个生成目录，
+包含 bin、obj、测试诊断目录、原生产物与复用的排版依赖；检查点文件由脚本清理。
+工作树保留源码、锁定构建输入和完整 Git 记录。
+
 ## 应用接入功能验收（#42，2026-10-04）
 
 派发基线为 `f7f66815c02d0f46a577fe7f8ce06d4f8147e97a`。

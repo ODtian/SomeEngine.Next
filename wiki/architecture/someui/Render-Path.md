@@ -4,7 +4,7 @@
 界面渲染数据沿 Game world 到 Rendering world 的既有提取路径流动，并按更新频率区分持久部分与随变化更新的部分。
 
 ## Invariants
-- 视觉都是材质加用户 shader。`Surface`（填充、圆角、描边、阴影，由 `Background`/`Corner`/`Border`/`Shadow` 修饰或复合容器 Build 写在参与布局的节点上）、`Image`、`Glyphs` 使用引擎自带的普通材质；渲染管线不识别控件，也不预设顶点布局。
+- 视觉都是材质加用户 shader。`Surface`（填充、圆角、描边、阴影，由 `Background`/`Corner`/`Border`/`Shadow` 修饰或复合容器 Build 写在参与布局的节点上）、`Image`、`Glyphs` 使用引擎自带的普通材质；渲染管线依赖用户 shader 解释绘制数据与顶点布局。
 - 界面 pass 的拓扑在增删 `Canvas`、改变渲染目标或深度测试配置时通过显式修改维护，放在持久 RenderGraph 中。
 - 实例数据按 ECS 写版本以块为单位增量提取，更新 Rendering world 中常驻的实例缓冲；静态界面不重新提取。
 - 节点的最终呈现为布局结果、用户变换与 `PresentationOffset` 的叠加。
