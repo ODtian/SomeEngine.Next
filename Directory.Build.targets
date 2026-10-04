@@ -3,6 +3,7 @@
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views'))" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views.Compose'))" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views.SwiftUI'))" />
+    <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views.Solid'))" />
     <ProjectReference Include="$(SomeEngineRepositoryRoot)src/SomeEngine.Views.Generators/SomeEngine.Views.Generators.csproj"
                       Condition="'@(_ViewsReference)' != ''"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="PublishAot" />

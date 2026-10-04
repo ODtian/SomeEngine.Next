@@ -9,6 +9,8 @@ namespace SomeEngine.Elements;
 /// <summary>Caller-written text whose measured content comes from the text shaping system.</summary>
 public record struct Text(string Value) : IView, IComponent, ILayout
 {
+    public static BuildMode Mode => BuildMode.Once;
+
     public LocalizedText? LocalizedValue { get; init; }
     internal IFormattedText? FormattedValue { get; init; }
 
@@ -16,9 +18,17 @@ public record struct Text(string Value) : IView, IComponent, ILayout
 
     public BuildTask Build()
     {
+        Scope.Compute(ResolveContent);
+        Scope.Compute(ResolveStyle);
+        return default;
+    }
+
+    private static void ResolveContent()
+    {
+        Text text = Scope.Read<Text>(Scope.Entity);
         ref TextContent content = ref Scope.Write<TextContent>(Scope.Entity);
-        string value = Value;
-        if (LocalizedValue is { } localized)
+        string value = text.Value;
+        if (text.LocalizedValue is { } localized)
         {
             Entity source = Locale.Find(Scope.World);
             string language = Scope.Read<Locale>(source).Name;
@@ -27,16 +37,19 @@ public record struct Text(string Value) : IView, IComponent, ILayout
             Translations translations = Scope.Read<Translations>(source);
             value = translations.Resolve(language, in localized);
         }
-        else if (FormattedValue is { } formatted)
+        else if (text.FormattedValue is { } formatted)
         {
             IFormatProvider? provider = formatted.Provider ?? Locale.ReadCulture(Scope.World, track: true);
             value = formatted.Format(content.Value, provider);
         }
         content = new TextContent(value);
+    }
+
+    private static void ResolveStyle()
+    {
         TextStyle style = Scope.Has<TextStyle>(Scope.Entity) ? Scope.Read<TextStyle>(Scope.Entity) : default;
         TextStyle defaults = style.NeedsDefaults ? Scope.ReadUp<TextTheme>().Style : default;
         Scope.Write<TextAppearance>(Scope.Entity) = new TextAppearance(style.WithDefaults(in defaults));
-        return default;
     }
 
     public Size Measure(ref LayoutPass pass, in Constraints constraints)
