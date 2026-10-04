@@ -189,6 +189,7 @@ public struct EditableText : IComponent
     public uint Edits;
 }
 public struct EditSeen : IComponent { public uint Count; }
+public struct SingleLineText : IComponent { }
 public static class Keyboard
 {
     public static void Text(World world, string text);
@@ -254,6 +255,13 @@ public static class TextEditingSystem
 要求通过 Core `DevelopmentCheck` 报告，shipping 构建沿统一条件编译移除这些诊断。
 参考独立 SomeUI 的完整文本元素移动与删除；本票按公开 `EditableText` 保存选区、独立组合
 字符串与编辑计数，并通过公开作用域声明行为数据。
+
+TextField 和用户单行控件通过 `Scope.Ensure<SingleLineText>(node)` 声明单行输入。
+`TextEditingSystem` 在该节点上过滤字符事件和组合事件的 CR、LF，随后沿原来的
+插入与选区规则应用剩余文字。组合光标减去原位置之前被移除的换行字符数量。
+过滤后为空的字符事件沿空输入规则保留文字、选区和组合；空组合事件结束候选显示。
+其它可编辑节点继续使用上面的显式换行编辑行为。TextField 的参数同步与显示见
+[[architecture/someui/Composition|Composition]]。
 
 实现：[EditableText](../../../src/SomeEngine.Elements/EditableText.cs)、
 [TextEditingFunctions](../../../src/SomeEngine.Elements/TextEditingFunctions.cs)、
