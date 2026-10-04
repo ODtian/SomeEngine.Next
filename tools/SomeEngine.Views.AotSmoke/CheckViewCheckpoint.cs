@@ -4,6 +4,7 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Serialization;
 using SomeEngine.Views.Tests;
+using SomeEngine.Views.AotReference;
 
 namespace SomeEngine.Views.AotSmoke;
 
@@ -14,6 +15,7 @@ internal static class CheckViewCheckpoint
         SerializationRegistry registry = CreateRegistry(reading: false);
         using var frames = new HeadlessFrameDriver();
         Entity source = frames.World.CreateEntity(new CheckpointNumber(7));
+        frames.World.Add(source, new SavedCount(7));
         Entity root = Views.Spawn(frames.World, Entity.Null, new SavedPanel(source));
         frames.Frame();
         using var stream = File.Create(path);
@@ -23,6 +25,7 @@ internal static class CheckViewCheckpoint
 
     internal static void Read(string path)
     {
+        RebuildDiagnostics.Enabled = true;
         SerializationRegistry registry = CreateRegistry(reading: true);
         using var stream = File.OpenRead(path);
         using var frames = new HeadlessFrameDriver(WorldCheckpointCodec.Read(stream, registry));
@@ -36,10 +39,11 @@ internal static class CheckViewCheckpoint
         frames.World.ReleaseQuery(query);
         Entity source = frames.World.Read<SavedPanel>(root).Source;
         Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        Require(children.Length == 2, "The checkpoint restores the two ordered children.");
+        Require(children.Length == 3, "The checkpoint restores the three ordered children.");
         Entity[] descendants = Hierarchy<ElementTree>.GetChildren(frames.World, children[1]).ToArray();
         Require(descendants.Length == 1, "The caller container keeps its declared child.");
         frames.World.Replace(source, new CheckpointNumber(13));
+        frames.World.Replace(source, new SavedCount(13));
 
         frames.Frame();
 
@@ -51,12 +55,18 @@ internal static class CheckViewCheckpoint
             "The remapped panel rebuilds from its restored source parameters.");
         Require(frames.World.Read<CheckpointNumber>(children[1]).Value == 13,
             "The Once caller container rebuilds in the first frame.");
+        Entity composeValue = Hierarchy<ElementTree>.GetChildren(frames.World, children[2]).Single();
+        Require(frames.World.ReadSparse<SavedValue>(composeValue).Value == 13,
+            "The referenced Compose view restores its generated codec and rebuilds its output.");
         frames.World.Replace(source, new CheckpointNumber(19));
+        frames.World.Replace(source, new SavedCount(19));
         frames.Frame();
         Require(frames.World.ReadSparse<SavedNumber>(children[0]).Value == 19,
             "The first frame reestablishes ECS dependencies for subsequent updates.");
         Require(frames.World.Read<CheckpointNumber>(children[1]).Value == 13,
             "The Once container retains its first rebuilt output on subsequent frames.");
+        Require(frames.World.ReadSparse<SavedValue>(composeValue).Value == 19,
+            "The referenced Compose view reestablishes its source dependency.");
         Console.WriteLine($"Checkpoint read, type remapping, next-frame rebuilding, and dependencies passed; panel ViewType.Id={frames.World.Read<ViewType>(root).Id}.");
     }
 
@@ -66,6 +76,8 @@ internal static class CheckViewCheckpoint
         ViewSerialization.Register(registry);
         if (reading)
         {
+            SavedComposeViews.Hud_ViewFunctions.RegisterSerialization(registry);
+            SavedValueFunctions.RegisterSerialization(registry);
             SavedContainerFunctions.RegisterSerialization(registry);
             SavedNumberFunctions.RegisterSerialization(registry);
             SavedPanelFunctions.RegisterSerialization(registry);
@@ -75,9 +87,13 @@ internal static class CheckViewCheckpoint
             SavedPanelFunctions.RegisterSerialization(registry);
             SavedNumberFunctions.RegisterSerialization(registry);
             SavedContainerFunctions.RegisterSerialization(registry);
+            SavedValueFunctions.RegisterSerialization(registry);
+            SavedComposeViews.Hud_ViewFunctions.RegisterSerialization(registry);
         }
         registry.Register<CheckpointNumber, CheckpointNumberCodec>(new SerializationTypeKey(
             new Guid("13e7b0ed-8321-44d2-97ec-6ea4f78db7f2"), "CheckpointNumber", 1));
+        registry.Register<SavedCount, SavedCountCodec>(new SerializationTypeKey(
+            new Guid("b008e42d-c732-48b0-a4d8-e957ec51dfe9"), "SavedCount", 1));
         return registry;
     }
 
@@ -105,6 +121,7 @@ public readonly record struct SavedPanel(Entity Source) : IView, IComponent
         Entity container = Scope.View(new SavedContainer(Source), 2);
         using (container.Content())
             Scope.View(new SavedNumber(5), 3);
+        SavedComposeViews.Hud(Source);
         return default;
     }
 }

@@ -63,6 +63,18 @@ internal readonly partial struct Components
         Remove<T>(entity, ComponentMetadata<T>.Id, typeof(T).Name);
     }
 
+    /// <summary>Discards data added by a build whose changes are being restored.</summary>
+    internal void Discard<T>(Entity entity) where T : struct
+    {
+        _iteration.Throw();
+        EntityRecord record = _entities.ReadRow(entity);
+        int component = ComponentMetadata<T>.Id;
+        int column = record.Archetype!.Column(component);
+        _indices.Drop(entity, component, record.Chunk!, column, record.RowInChunk);
+        _structure.ComponentWriteVersions.Advance(component);
+        RemoveTag(entity, component);
+    }
+
     internal void RemoveTag<T>(Entity entity)
         where T : struct, ITag
     {

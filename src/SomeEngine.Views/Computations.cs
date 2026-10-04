@@ -43,6 +43,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
 
     internal void Execute(ulong frame)
     {
+        RebuildDiagnostics.Record(this, frame);
         Frame = frame;
         World.ReadSparse<Computations>(Entity).List.ReleaseChildren(this);
         Reads.Clear();
@@ -130,10 +131,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
     internal void Add(Dependency read)
     {
         foreach (Dependency existing in Reads)
-            if (existing.Kind == read.Kind &&
-                (read.Kind == DependencyKind.Membership
-                    ? existing.Query.Equals(read.Query)
-                    : existing.Entity == read.Entity && existing.Component == read.Component))
+            if (existing.HasSameSource(in read))
                 return;
         Reads.Add(read);
     }
