@@ -247,6 +247,9 @@ public static class TextEditingSystem
 使用 `!=`。返回 true 表示有新编辑，一次读取消费当时的全部新计数；out 参数始终返回当前
 已提交文本。同一作用域中的多次读取共用写入副本，成功计算结束时提交。
 
+文本与值控件共享 `Edited` 名称时，通过 `out string text` 或 `out float value` 选择对应
+行为；只消费计数时，分别写 `Edited(out string _)` 与 `Edited(out float _)`。
+
 有效 World、非 null 输入字符串、组合光标范围，以及初始 `EditableText` 的文本元素位置
 要求通过 Core `DevelopmentCheck` 报告，shipping 构建沿统一条件编译移除这些诊断。
 参考独立 SomeUI 的完整文本元素移动与删除；本票按公开 `EditableText` 保存选区、独立组合

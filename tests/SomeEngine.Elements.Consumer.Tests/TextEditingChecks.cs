@@ -77,7 +77,7 @@ internal static partial class TextEditingChecks
             bool edited = Rewritten ? Rewrites.TextEditingFunctions.Edited(node, out string text) : node.Edited(out text);
             if (edited)
                 count.Value++;
-            bool secondEdit = Rewritten ? Rewrites.TextEditingFunctions.Edited(node, out _) : node.Edited(out _);
+            bool secondEdit = Rewritten ? Rewrites.TextEditingFunctions.Edited(node, out _) : node.Edited(out string _);
             string committed = value.Text ?? string.Empty;
             string composition = value.Composition ?? string.Empty;
             int start = Math.Min(value.Caret, value.SelectionStart);

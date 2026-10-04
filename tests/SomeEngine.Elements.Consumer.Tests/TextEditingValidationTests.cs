@@ -68,7 +68,7 @@ public sealed partial class TextEditingTests
         var error = Assert.Throws<InvalidOperationException>(() =>
         {
             if (read)
-                Entity.Null.Edited(out _);
+                Entity.Null.Edited(out string _);
             else
                 TextEditingFunctions.TextEditing(Entity.Null);
         });
