@@ -31,6 +31,15 @@ display, draw order, transparent compositions, previous-frame layout, per-button
 presses, canvas isolation, and development errors. `PointerChecks` runs the same
 caller consumption example for the built-in and user-written `Pressable` and
 `Clicked` functions and shares those cases with the NativeAOT executable.
+
+`Rewrites/Button.cs` and `Rewrites/IconButton.cs` compose controls from public
+behavior, environment, layout, text, and surface APIs. `ButtonTests` applies
+the same appearance, pointer, subtree-theme, nearest-theme, and development
+scope cases to the library Button, user Button, and user IconButton. The glyph
+and label use the same text theme and color, with four layout units between them.
+`ButtonChecks` shares click consumption, held presses, label changes, and
+provided appearance updates with the Views NativeAOT executable.
+
 `PointerRoutingChecks` shares child-to-card click bubbling, `StopsPointer`
 changes, subtree entry and exit, sibling hover changes, held presses, and caller
 output updates across the built-in and user-written behaviors. `PointerTests`
