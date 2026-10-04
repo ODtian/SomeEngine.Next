@@ -18,6 +18,9 @@
 - 从 Solid 组件向其它前端组件传普通值只求值一次；需要随数据更新时使用 `Insert(() => ...)` 或传 `State<T>`。
 - 结构嵌套统一使用 `using (entity.Content())`。
 
+`[Component]` 的 Once 视图导出与 `Insert(Action)` 的 Rerun 子视图实现见
+[[architecture/someui/Solid-Frontend|Solid Frontend]]。
+
 ## 混用规则分析器（#64）
 
 `SomeEngine.Views.Generators.FrontendAnalyzer` 按独立函数体确定前端：
@@ -29,14 +32,14 @@ lambda、匿名委托和局部函数分别检查自己的函数体。
 SwiftUI 的 `[State]` 属性，以及 Solid 的协调原语、getter 文本和可响应修饰参与混用检查。
 组件通过 `[Composable]` 方法、生成的同名视图函数与 `Scope.View` 组合；
 共享的 `State<T>`、`Binding<T>`、作用域函数、普通元素和修饰继续按各自公开 API 使用。
-函数体使用其它前端原语时，`SEV016` 在该原语的源码位置报告 error。
+函数体使用其它前端原语时，`SEV019` 在该原语的源码位置报告 error。
 
 Solid 向 Compose 组件或编译期可确定为 `Rerun` 的视图传递普通值时，分析器追踪
 `State<T>.Value`、`Memo<T>.Value` 与 `Solid.Memo` getter 的读取。
 局部值与函数参数、算术与转换、赋值、分支和循环沿编译器控制流传递数据来源。
 同名函数的参数、`Scope.View` 中视图的构造参数与对象初始化器字段均在公开调用处检查，
 包括命名实参和显式 key 重载。
-来源包含这些读取的普通值由 `SEV017` 发出 info，建议在组件调用外使用
+来源包含这些读取的普通值由 `SEV020` 发出 info，建议在组件调用外使用
 `Insert(() => ...)`，把读取放在该内容函数中；也可直接传递 `State<T>`。
 状态引用、getter 参数和响应式计算中的读取沿各自的更新方式使用。
 

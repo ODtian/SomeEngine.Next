@@ -23,7 +23,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV017");
+        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV020");
         Assert.Equal(DiagnosticSeverity.Info, hint.Severity);
         Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
     }
@@ -47,7 +47,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Assert.DoesNotContain(diagnostics, value => value.Id == "SEV017" || value.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, value => value.Id == "SEV020" || value.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -72,11 +72,11 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV016");
+        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV019");
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
         Assert.Contains("Compose", error.GetMessage());
         Assert.Contains("Show", error.GetMessage());
-        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV016");
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV019");
     }
 
     [Theory]
@@ -96,9 +96,9 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV016");
+        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV019");
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
-        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV016");
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV019");
     }
 
     [Theory]
@@ -138,7 +138,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Assert.DoesNotContain(diagnostics, value => value.Id is "SEV016" or "SEV017" || value.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, value => value.Id is "SEV019" or "SEV020" || value.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer(), new ComposeAnalyzer(), new StateAnalyzer(), new ViewAnalyzer());
 
-        Assert.DoesNotContain(diagnostics, value => value.Id is "SEV016" or "SEV017" || value.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, value => value.Id is "SEV019" or "SEV020" || value.Severity == DiagnosticSeverity.Error);
     }
 
     [Theory]
@@ -201,7 +201,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV017");
+        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV020");
         Assert.Equal(DiagnosticSeverity.Info, hint.Severity);
         Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
     }
@@ -224,7 +224,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Assert.DoesNotContain(diagnostics, value => value.Id == "SEV017" || value.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, value => value.Id == "SEV020" || value.Severity == DiagnosticSeverity.Error);
     }
 
     [Theory]
@@ -248,7 +248,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV017");
+        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV020");
         Assert.Equal(DiagnosticSeverity.Info, hint.Severity);
         Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
     }
@@ -272,7 +272,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Assert.DoesNotContain(diagnostics, value => value.Id == "SEV016" || value.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, value => value.Id == "SEV019" || value.Severity == DiagnosticSeverity.Error);
     }
 
     [Theory]
@@ -304,7 +304,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV017");
+        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV020");
         Assert.Equal(DiagnosticSeverity.Info, hint.Severity);
         Assert.Contains("Insert", hint.GetMessage());
         Assert.Contains("State", hint.GetMessage());
@@ -334,7 +334,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV017");
+        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV020");
         Assert.Equal(DiagnosticSeverity.Info, hint.Severity);
         Assert.Contains("Insert", hint.GetMessage());
         Assert.Contains("State", hint.GetMessage());
@@ -361,7 +361,7 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV017");
+        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV020");
         Assert.Equal(DiagnosticSeverity.Info, hint.Severity);
         Assert.Contains("Insert", hint.GetMessage());
         Assert.Contains("State", hint.GetMessage());
@@ -386,11 +386,11 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV016");
+        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV019");
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
         Assert.Contains("Remember", error.GetMessage());
         Assert.Contains("Solid", error.GetMessage());
-        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV016");
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV019");
     }
 
     [Fact]
@@ -409,10 +409,10 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV016");
+        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV019");
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
         Assert.Contains("Compose", error.GetMessage());
-        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV016");
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV019");
     }
 
     [Theory]
@@ -432,11 +432,11 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV016");
+        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV019");
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
         Assert.Contains("SwiftUI", error.GetMessage());
         Assert.Contains("Memo", error.GetMessage());
-        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV016");
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV019");
     }
 
     [Theory]
@@ -458,11 +458,11 @@ public sealed class FrontendTests
             public static partial class Screens { {{declaration}} }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV016");
+        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV019");
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
         Assert.Contains("Count", error.GetMessage());
         Assert.Contains("SwiftUI", error.GetMessage());
-        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV016");
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV019");
     }
 
     [Theory]
@@ -479,11 +479,11 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV016");
+        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV019");
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
         Assert.Contains("Remember", error.GetMessage());
         Assert.Contains("Solid", error.GetMessage());
-        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV016");
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV019");
     }
 
     [Fact]
@@ -499,11 +499,11 @@ public sealed class FrontendTests
             }
             """, true, new FrontendAnalyzer());
 
-        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV016");
+        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV019");
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
         Assert.Contains("Compose", error.GetMessage());
         Assert.Contains("Solid", error.GetMessage());
         Assert.Equal("Solid.Effect(static () => { })", error.Location.SourceTree!.GetText().ToString(error.Location.SourceSpan));
-        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV016");
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV019");
     }
 }

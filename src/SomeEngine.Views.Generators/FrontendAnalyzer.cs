@@ -13,12 +13,12 @@ public sealed partial class FrontendAnalyzer : DiagnosticAnalyzer
     private enum Frontend { None, Compose, SwiftUI, Solid }
 
     private static readonly DiagnosticDescriptor MixedPrimitives = new(
-        "SEV016", "Use one frontend per function body",
+        "SEV019", "Use one frontend per function body",
         "Use {0} primitives in this function body; '{1}' belongs to {2}",
         "Views", DiagnosticSeverity.Error, true);
 
     private static readonly DiagnosticDescriptor ReactiveValueArgument = new(
-        "SEV017", "Keep cross-frontend values reactive",
+        "SEV020", "Keep cross-frontend values reactive",
         "This Solid component evaluates '{0}' once; use Insert(() => ...) around the component call or pass State<T> directly",
         "Views", DiagnosticSeverity.Info, true);
 
