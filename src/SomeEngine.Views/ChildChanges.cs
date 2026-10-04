@@ -105,6 +105,14 @@ internal sealed class ChildChanges
         void Complete() { }
     }
 
+    private static void RestoreValue<T>(World world, Entity entity, in T value) where T : struct
+    {
+        if (EqualityComparer<T>.Default.Equals(world.ReadComponentData<T>(entity), value))
+            world.OverwriteComponentData(entity, in value);
+        else
+            world.ReplaceComponentData(entity, in value);
+    }
+
     private sealed class ChildOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) : IChildData
     {
         public void Restore(World world)
@@ -129,7 +137,7 @@ internal sealed class ChildChanges
 
         public void Restore(World world)
         {
-            world.OverwriteComponentData(entity, in value);
+            RestoreValue(world, entity, in value);
             world.OverwriteComponentData(entity, in _viewType);
             if (_buildRequested && !world.Has<BuildRequest>(entity))
                 world.AddTag<BuildRequest>(entity);
@@ -161,7 +169,7 @@ internal sealed class ChildChanges
         public void Restore(World world)
         {
             if (_exists)
-                world.OverwriteComponentData(entity, in _value);
+                RestoreValue(world, entity, in _value);
             else if (world.HasComponentData<T>(entity))
                 world.DiscardComponentData<T>(entity);
         }
