@@ -11,11 +11,19 @@ aot_rid_list_pattern := '^(win-(x64|arm64)|linux-(x64|arm64)|linux-musl-(x64|arm
 
 default: test
 
-# Compile and execute view functions and node identities through NativeAOT.
-views-aot rid:
-    dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false
-    ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/publish/SomeEngine.Views.AotSmoke{{ aot_executable_extension }}
-    pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/publish/SomeEngine.Views.AotSmoke{{ aot_executable_extension }}
+# Restore and rebuild the NativeAOT interface executable.
+views-aot-build rid:
+    dotnet restore tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} -p:PublishAot=true -p:_IsPublishing=true
+    dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} --self-contained true --no-restore -t:Rebuild -o tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/native-publish -p:PublishAot=true -p:SelfContained=true -p:TrimmerSingleWarn=false
+
+# Native build followed by interface input checks and cross-process checkpoint checks.
+views-aot rid: (views-aot-build rid)
+    ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/native-publish/SomeEngine.Views.AotSmoke{{ aot_executable_extension }}
+    pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/native-publish/SomeEngine.Views.AotSmoke{{ aot_executable_extension }}
+
+# Execute the interface smoke for every requested host RID and record the native file hashes.
+views-aot-matrix rids evidence='artifacts/views-aot-evidence.json':
+    pwsh -NoProfile -File tools/SomeEngine.ECS.AotSmoke/Invoke-AotMatrix.ps1 -Project Views -Rids '{{ if rids =~ aot_rid_list_pattern { rids } else { error("RIDs must be a non-empty comma-separated supported list") } }}' -Evidence '{{ if evidence =~ single_quoted_argument_pattern { evidence } else { error("evidence path may not contain a quote or line break") } }}'
 
 test *args:
     dotnet test SomeEngine.slnx {{ args }}

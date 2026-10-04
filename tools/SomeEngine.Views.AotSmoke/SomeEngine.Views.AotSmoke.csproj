@@ -44,6 +44,7 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/ScrollView.cs" Link="Rewrites/ScrollView.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/VirtualList.cs" Link="Rewrites/VirtualList.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs" Link="ButtonChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/InterfaceChecks.cs" Link="InterfaceChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs" Link="Rewrites/Button.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs" Link="Rewrites/IconButton.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ValueChecks.cs" Link="ValueChecks.cs" />
