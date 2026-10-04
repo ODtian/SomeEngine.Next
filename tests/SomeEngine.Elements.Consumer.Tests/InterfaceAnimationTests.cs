@@ -18,6 +18,39 @@ public sealed partial class InterfaceAnimationTests
     private static readonly Channel<Color> ParameterFill = Channel<Color>.Of<ColorNode>(static (ref ColorNode node) => ref node.Fill);
 
     [Fact]
+    public void FlipContinuesAcrossBoundsTransformAndOpacityChanges()
+    {
+        using var frames = new InterfaceFrames();
+        Entity node = frames.World.CreateEntity(new LayoutRect { Value = new Rect(10, 20, 80, 20) });
+        frames.World.Add(node, new ElementTransform { Matrix = Matrix3x2.CreateTranslation(3, 4), Alpha = 0.8f });
+        Flip.Enable(frames.World, node, Spec.Tween(1));
+        frames.Frame(0);
+
+        frames.World.Replace(node, new LayoutRect { Value = new Rect(100, 50, 160, 40) });
+        var user = new ElementTransform { Matrix = Matrix3x2.CreateScale(2), Alpha = 0.4f };
+        frames.World.Replace(node, user);
+        frames.Frame(0);
+        Assert.Equal(new Vector2(13, 24), Present(Vector2.Zero));
+        Assert.Equal(new Vector2(93, 44), Present(new Vector2(160, 40)));
+        Assert.Equal(0.8f, Opacity());
+
+        frames.Frame(0.5f);
+        Assert.Equal(new Vector2(56.5f, 37), Present(Vector2.Zero));
+        Assert.Equal(new Vector2(256.5f, 87), Present(new Vector2(160, 40)));
+        Assert.Equal(0.6f, Opacity(), precision: 6);
+        frames.Frame(0.5f);
+        Assert.Equal(PresentationOffset.Identity, frames.World.Read<PresentationOffset>(node));
+        Assert.Equal(user, frames.World.Read<ElementTransform>(node));
+        Assert.Equal(new Vector2(100, 50), Present(Vector2.Zero));
+        Assert.Equal(0.4f, Opacity());
+
+        Vector2 Present(Vector2 local) => Vector2.Transform(
+            Vector2.Transform(local, frames.World.Read<ElementTransform>(node).Matrix) + new Vector2(100, 50),
+            frames.World.Read<PresentationOffset>(node).Matrix);
+        float Opacity() => frames.World.Read<ElementTransform>(node).Alpha * frames.World.Read<PresentationOffset>(node).Alpha;
+    }
+
+    [Fact]
     public void ChangingAnAnimatedParameterPreservesItsPresentedValueAndWriteVersion()
     {
         using var world = new World();
