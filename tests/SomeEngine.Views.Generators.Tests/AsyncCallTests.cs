@@ -7,7 +7,7 @@ public sealed class AsyncCallTests
     [Fact]
     public async Task ASolidComponentUsesTheSharedResourceWhenItsSourceChanges()
     {
-        bool updated = await CompilerChecks.Run("""
+        int[] values = await CompilerChecks.Run<int[]>("""
             using System.Threading.Tasks;
             using SomeEngine.ECS;
             using SomeEngine.ECS.Entities;
@@ -17,17 +17,17 @@ public sealed class AsyncCallTests
 
             public static class ReferenceChecks
             {
-                public static bool Check()
+                public static int[] Check()
                 {
                     using var frames = new HeadlessFrameDriver();
                     var source = new State<int>(1);
                     Entity target = frames.World.CreateEntity(new Output(0));
                     Views.Spawn(frames.World, Entity.Null, new Host(source, target));
                     frames.Frame();
-                    bool first = frames.World.Read<Output>(target).Value == 10;
+                    int first = frames.World.Read<Output>(target).Value;
                     source.Value = 2;
                     frames.Frame();
-                    return first && frames.World.Read<Output>(target).Value == 20;
+                    return [first, frames.World.Read<Output>(target).Value];
                 }
             }
 
@@ -53,7 +53,7 @@ public sealed class AsyncCallTests
             public readonly record struct Output(int Value) : IComponent;
             """);
 
-        Assert.True(updated);
+        Assert.Equal([10, 20], values);
     }
 
     [Theory]

@@ -15,7 +15,9 @@
 `Once` 视图通过 `Compute` 读取来源并重新声明资源，规则见
 [Async Build](../../wiki/architecture/someui/Async-Build.md)。
 
-包附带 `SomeEngine.Views.Generators` 分析器和 buildTransitive props。
+包附带 `SomeEngine.Views.Generators` 分析器和 buildTransitive props/targets。
+编译工具在 C# 编译完成后补齐 `BuildTask` 的 await 取消边界，使普通 Task、ValueTask
+和用户等待类型在继续业务代码前进入取消清理。finally 内的后续异步清理沿同一状态机完成。
 生成器为带主构造函数的视图生成同名静态函数，每个视图对应一个函数类。
 
 ```csharp

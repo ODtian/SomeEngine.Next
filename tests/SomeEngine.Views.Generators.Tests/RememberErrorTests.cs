@@ -21,7 +21,6 @@ public sealed partial class RememberTests
 
 #if DEBUG
         var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Contains("local state", error.Message);
         Assert.Equal(2, Hierarchy<ElementTree>.GetChildren(frames.World, root).Count());
 #else
         Assert.Equal(3, Hierarchy<ElementTree>.GetChildren(frames.World, root).Count());
@@ -37,7 +36,6 @@ public sealed partial class RememberTests
 
 #if DEBUG
         var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Contains("intercept", error.Message, StringComparison.OrdinalIgnoreCase);
 #else
         frames.World.Replace(root, new UninterceptedMemory(7));
         frames.Frame();

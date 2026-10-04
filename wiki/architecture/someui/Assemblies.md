@@ -5,6 +5,7 @@
 |---|---|---|
 | `SomeEngine.Views` | `IView`、`Scope`、`BuildTask`、`VersionCell`、`State<T>`、`ViewRebuildSystem`、`ElementTree` 层级域；共享布局协议、约束、节点数据及分块 Job 入口 | ECS、ECS.Serialization、ECS.Systems、Job、Job.Dots、Core（开发检查与几何） |
 | `SomeEngine.Views.Generators` | 同名函数生成、`[Composable]` 拦截、`[State]`、`[Component]`、分析器、CS1998 屏蔽、视图类型序列化注册 | — |
+| `SomeEngine.Views.Compiler` | 编译时补齐 `BuildTask` 的 await 取消边界 | MSBuild、Mono.Cecil（构建工具） |
 | `SomeEngine.Layout` | `LayoutSystem`、`Absolute`、`Flex`、`Grid`、`Stack` 与布局修饰；缓存由后续票扩展 | Views |
 | `SomeEngine.Animation` | 引擎级动画核心与属性动画（见 [[architecture/Animation|Animation]]）；FLIP 与 `.Animate` 在 Elements 中 | ECS、Job |
 | `SomeEngine.Typography` | 字形排版、字体、图集 | — |
@@ -35,6 +36,19 @@ Layout 通过基础层内部入口驱动每个画布，共用当次尺寸与位�
 仓库内由 `Directory.Build.props` 与 `Directory.Build.targets` 接入引用 Views 的项目。
 视图函数的参数与可见范围见 [[architecture/someui/Views|Views]]；
 编译诊断见 [[architecture/someui/Checks|Checks]]。
+
+`SomeEngine.Views.Compiler` 在 `CoreCompile` 之后处理 C# 编译器生成的 `BuildTask`
+状态机，在每个 await 的结果消费处加入方法构建器的取消观察与检查。
+这一阶段沿编译入口维护，运行时继续使用既有 World 重建队列和类型化状态机。
+NuGet 包通过 `buildTransitive/SomeEngine.Views.targets` 接入，工具及其 CIL 处理依赖
+位于包的 `tools/`。仓库引用按已解析的 Views 程序集接入同一阶段。
+运行时与 NativeAOT 镜像依赖 Views，构建工具在编译完成后结束使用。
+
+编译任务沿用 C# 编译器生成的方法构建器字段引用，保留泛型状态机的类型参数。
+重复编译时复用同一 await 边界，并将较早编译任务写入的字段引用更新为该状态机的
+泛型引用。同步完成的 `Resource<int>` 在普通 World 与 Job World 中经组件副本提交
+当前结果，公开检查见 `ResourceResultChecks` 与生成器的 `AsyncCallTests`；
+生成器消费者连续执行两次编译处理后运行生成的 API。
 
 `SomeEngine.Views.Compose`（#58）提供 `ComposableAttribute`，依赖 Views。
 直接引用 Compose 包时，生成器 DLL 与 buildTransitive props 随 Views 依赖接入，

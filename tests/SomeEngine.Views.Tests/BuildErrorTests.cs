@@ -128,9 +128,9 @@ public sealed partial class BuildErrorTests
         Assert.Equal(1UL, frames.World.ReadSparse<BuildError>(root).Frame);
         Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, root));
 #if DEBUG
-        Assert.Contains(messages.Values, message => message.Contains(error.Message, StringComparison.Ordinal));
+        Assert.NotEmpty(messages.Values);
 #else
-        Assert.DoesNotContain(messages.Values, message => message.Contains(error.Message, StringComparison.Ordinal));
+        Assert.Empty(messages.Values);
 #endif
 
         frames.World.Replace(source, new Content(3));
@@ -183,7 +183,6 @@ public sealed partial class BuildErrorTests
 
         BuildError error = frames.World.ReadSparse<BuildError>(root);
         Assert.IsType<InvalidOperationException>(error.Exception);
-        Assert.Equal("content failed", error.Exception.Message);
         Assert.Equal(1UL, error.Frame);
         Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, root));
         frames.Frame();

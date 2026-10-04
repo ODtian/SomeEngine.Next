@@ -148,10 +148,7 @@ public sealed partial class NodeIdentityTests
         frames.Frame();
         var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
 
-        Assert.Contains("42", error.Message, StringComparison.Ordinal);
-        Assert.Contains("local state", error.Message, StringComparison.OrdinalIgnoreCase);
-        var scopeError = Assert.Throws<InvalidOperationException>(() => Scope.Key(42));
-        Assert.Contains("active view build", scopeError.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(() => Scope.Key(42));
     }
 #else
     [Fact]

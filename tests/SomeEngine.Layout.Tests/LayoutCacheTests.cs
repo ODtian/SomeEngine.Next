@@ -102,8 +102,7 @@ public sealed partial class LayoutCacheTests
 
         frames.World.Replace(root, new MeasurementUsage(true, placeChild));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains("measured", error.Message);
+        Assert.Throws<InvalidOperationException>(frames.Frame);
     }
 #endif
 

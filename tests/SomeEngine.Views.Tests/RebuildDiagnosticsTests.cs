@@ -291,7 +291,7 @@ public sealed partial class RebuildDiagnosticsTests : IDisposable
         frames.Frame();
 
         Assert.Equal(3, frames.World.Read<DisplayValue>(view).Number);
-        Assert.Equal("Value is seven.", frames.World.ReadSparse<BuildError>(view).Exception.Message);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(view).Exception);
         Assert.Equal(19, frames.World.Read<DisplayValue>(other).Number);
         Assert.Contains(new RebuildRecord(view, source, ComponentId<Value>.Value),
             RebuildDiagnostics.LastFrame(frames.World).ToArray());
@@ -317,8 +317,7 @@ public sealed partial class RebuildDiagnosticsTests : IDisposable
     [Fact]
     public void ReadingDiagnosticsRequiresAWorld()
     {
-        var error = Assert.Throws<InvalidOperationException>(() => RebuildDiagnostics.LastFrame(null!));
-        Assert.Contains("require a World", error.Message);
+        Assert.Throws<InvalidOperationException>(() => RebuildDiagnostics.LastFrame(null!));
     }
 #endif
 

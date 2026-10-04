@@ -35,6 +35,7 @@ public static partial class Scope
     public static FrameAwaitable NextFrame() => new(Current.Queue, Cancel);
 
     internal static ScopeData Data => Current;
+    internal static bool IsCanceled => s_scopes is { Count: > 0 } && s_scopes.Peek().ViewData.IsCanceled;
 
     internal static void ThrowIfCanceled()
     {
@@ -604,13 +605,26 @@ public static partial class Scope
 
     internal static void CancelBuild(ScopeData data, bool restore)
     {
-        (data.Cancellation ??= new()).Cancel();
+        Exception? callbackError = null;
+        try
+        {
+            (data.Cancellation ??= new()).Cancel();
+        }
+        catch (Exception error)
+        {
+            callbackError = error;
+        }
         if (restore)
             data.Changes.Restore(data.World, data.FirstData, data.FirstRemoval, data.FirstAnimation);
         else
             data.Changes.Complete();
         data.Changes.Clear();
         data.ComponentCopies?.Clear();
+        if (callbackError is not null && data.World.IsAlive(data.Entity))
+        {
+            data.Computation?.Fail(callbackError, data.Frame);
+            BuildErrors.Record(data.World, data.Entity, callbackError, data.Frame);
+        }
     }
 
     internal static ParentScope EnterContent(Entity entity)

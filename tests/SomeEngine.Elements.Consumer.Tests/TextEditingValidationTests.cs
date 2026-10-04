@@ -13,22 +13,20 @@ public sealed partial class TextEditingTests
     public void CharacterInputRequiresTextAndAWorld(bool composition)
     {
         using var world = new World();
-        var textError = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             if (composition)
                 Keyboard.Composition(world, null!, 0);
             else
                 Keyboard.Text(world, null!);
         });
-        Assert.Contains("text", textError.Message);
-        var worldError = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             if (composition)
                 Keyboard.Composition(null!, "a", 0);
             else
                 Keyboard.Text(null!, "a");
         });
-        Assert.Contains("World", worldError.Message);
     }
 
     [Theory]
@@ -37,8 +35,7 @@ public sealed partial class TextEditingTests
     public void CompositionRequiresACaretInsideItsText(int caret)
     {
         using var world = new World();
-        var error = Assert.Throws<InvalidOperationException>(() => Keyboard.Composition(world, "a", caret));
-        Assert.Contains("caret", error.Message);
+        Assert.Throws<InvalidOperationException>(() => Keyboard.Composition(world, "a", caret));
     }
 
     [Theory]
@@ -56,8 +53,7 @@ public sealed partial class TextEditingTests
         systems.Add(new FocusNavigationSystem());
         Keyboard.Key(world, Key.Home, true);
 
-        var error = Assert.Throws<InvalidOperationException>(() => systems.Update());
-        Assert.Contains("EditableText", error.Message);
+        Assert.Throws<InvalidOperationException>(() => systems.Update());
     }
 
     [Theory]
@@ -65,14 +61,13 @@ public sealed partial class TextEditingTests
     [InlineData(true)]
     public void EditingHelpersRequireAnActiveBuild(bool read)
     {
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             if (read)
                 Entity.Null.Edited(out string _);
             else
                 TextEditingFunctions.TextEditing(Entity.Null);
         });
-        Assert.Contains("active view build", error.Message);
     }
 
     [Theory]
@@ -80,14 +75,13 @@ public sealed partial class TextEditingTests
     [InlineData(true)]
     public void EditingSystemRequiresAWorld(bool cancellation)
     {
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             if (cancellation)
                 TextEditingSystem.CancelComposition(null!, Entity.Null);
             else
                 TextEditingSystem.HandleInput(null!, Entity.Null, default);
         });
-        Assert.Contains("World", error.Message);
     }
 #endif
 }

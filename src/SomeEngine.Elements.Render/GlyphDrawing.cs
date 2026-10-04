@@ -32,9 +32,17 @@ internal sealed class GlyphDrawing : IDisposable
         Parameters = _shader.GetSlangReflection(_shader.RequireSlangTarget(device.Capabilities.CompileTarget))
             .GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
         Pipeline = CreatePipeline();
-        Sampler = backend.CreateSampler(device, new SamplerDesc(FilterType.Linear, FilterType.Linear,
-            FilterType.Nearest, AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge,
-            Label: "Glyph atlas sampler"));
+        try
+        {
+            Sampler = backend.CreateSampler(device, new SamplerDesc(FilterType.Linear, FilterType.Linear,
+                FilterType.Nearest, AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge,
+                Label: "Glyph atlas sampler"));
+        }
+        catch
+        {
+            Pipeline.Dispose();
+            throw;
+        }
     }
 
     private Pipeline CreatePipeline(Format? depthFormat = null, CompareOperation comparison = CompareOperation.LessOrEqual)

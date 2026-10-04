@@ -16,6 +16,58 @@ namespace SomeEngine.Elements.Render.Tests;
 
 public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphics) : IClassFixture<SurfaceExtractionDevice>
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanvasViewportClipsAllMaterialsAcrossFullAndColorOnlyExtraction(bool jobWorld)
+    {
+        using Font font = LoadFont();
+        using var game = new World(execution: jobWorld ? new WorldJobs(SomeEngine.Job.JobSystem.Default) : null);
+        using var render = new RenderWorld(execution: jobWorld ? new WorldJobs(SomeEngine.Job.JobSystem.Default) : null);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(game));
+        var shaping = new TextShapingSystem();
+        systems.Add(new ViewRebuildSystem());
+        systems.Add(shaping);
+        int layout = systems.Add(new LayoutSystem(shaping));
+        Entity atlasSource = game.CreateEntity(new TextAtlas(new GlyphAtlas(128, 128)));
+        using var extraction = new RenderExtractionSystems(render,
+            new SurfaceRenderExtractor(), new GlyphRenderExtractor(atlasSource));
+        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        var clip = new Rect(10, 5, 100, 60);
+        game.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 48 }));
+        Entity node = Views.Views.Spawn(game, canvas, new Text("A"));
+        game.Add(node, new TextStyle { Color = new Color(1, 1, 1) });
+        systems.Update();
+        systems.Disable(layout);
+        game.Add(canvas, new ScrollOffset());
+        game.Replace(canvas, new LayoutRect { Value = clip });
+        game.Replace(node, new LayoutRect { Value = clip });
+        game.Add(node, new Surface { Fill = new Color(1, 1, 1) });
+        game.Add(node, new Image(default, ImageFit.Stretch));
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+        Entity mirror = extraction.RequireMirror(canvas);
+        GlyphInstance glyph = Assert.Single(ReadGlyphs(render, mirror));
+        SurfaceInstance[] surfaces = [];
+        ImageInstance[] images = [];
+        render.ExecuteBufferRead<SurfaceInstance>(mirror, buffer => surfaces = buffer.AsSpan().ToArray());
+        render.ExecuteBufferRead<ImageInstance>(mirror, buffer => images = buffer.AsSpan().ToArray());
+        Assert.Equal(clip, glyph.ClipRectangle);
+        Assert.Equal(glyph.ClipRectangle, Assert.Single(surfaces).ClipRectangle);
+        Assert.Equal(glyph.ClipRectangle, Assert.Single(images).ClipRectangle);
+        Assert.Equal(glyph.DrawOrder, surfaces[0].DrawOrder);
+        Assert.Equal(glyph.DrawOrder, images[0].DrawOrder);
+
+        game.Replace(node, new TextStyle { Color = new Color(0, 1, 0) });
+        systems.Update();
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+        GlyphInstance changed = Assert.Single(ReadGlyphs(render, mirror));
+        Assert.Equal(new Color(0, 1, 0), changed.Color);
+        Assert.Equal(clip, changed.ClipRectangle);
+        Assert.Equal(glyph.DrawOrder, changed.DrawOrder);
+    }
+
     [Fact]
     public void TextReachesRenderingWithGlyphGeometryAndAtlasPixels()
     {

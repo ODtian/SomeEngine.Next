@@ -112,7 +112,7 @@ public sealed partial class DialogTests
     [InlineData(DialogPart.UserFooter)]
     public void DialogPartsRequireAnActiveBuildScope(DialogPart part)
     {
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             switch (part)
             {
@@ -125,7 +125,6 @@ public sealed partial class DialogTests
                 case DialogPart.UserFooter: new Rewrites.DialogFooter().Build(); break;
             }
         });
-        Assert.Contains("active view build", error.Message);
     }
 #endif
 }

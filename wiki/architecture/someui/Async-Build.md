@@ -187,11 +187,19 @@ I/O 的取消参数，或用 `task.WaitAsync(Scope.Cancel)` 等待外部任务�
 旧构建的最后收尾只消费自己的结果与作用域，新构建继续持有当前视图的输出及参数版本。
 旧清理中的读取按仅取值处理，暂存的组件副本随清理结束释放，当前构建继续维护自己的依赖和输出。
 
-`BuildTask` awaiter 在消费结果时观察所属构建的取消令牌，并抛出 `OperationCanceledException`；
+`BuildTask` 方法由 [[architecture/someui/Assemblies|Assemblies]] 中的编译阶段补齐 await 取消边界。
+方法构建器在消费等待结果前观察取消，在消费后、继续业务代码前抛出 `OperationCanceledException`。
+这条路径覆盖任意 `Task`、`ValueTask`、`JobHandle` 和用户等待类型，等待结果的正常消费
+同时完成可复用等待来源的释放。每个方法构建器记录已经观察的取消，`finally` 中后续
+`Task`/`ValueTask` await 可以继续完成清理；等待对象自身抛出取消异常时也建立该记录。
+`BuildTask` awaiter 在消费辅助方法结果时观察所属构建的取消令牌，并抛出 `OperationCanceledException`；
 `Scope.NextFrame()` 的 awaiter 在逐帧恢复点执行同一取消检查。
 异步辅助方法成功返回后，等待它的已取消构建也由 `BuildTask` awaiter 抛出取消异常。
 方法内的 `finally` 和 `using` 沿 C# 状态机的正常异常路径执行。
 重建入口把已取消构建的 `OperationCanceledException` 作为结束消费，`BuildError` 继续表示构建失败。
+
+取消源汇总的回调异常由取消入口交给既有 `BuildError` 与开发报告边界消费。
+构建恢复记录完成还原，新构建立即开始，同帧其余视图和计算继续更新。
 
 `Once` 构建按原有规则直接取值，依赖写入后继续等待；视图释放会触发它的取消令牌。
 World 的 `EntityDestroying` 通知在节点释放时立即发出取消，旧构建随后使用保存的作用域恢复清理。
@@ -208,6 +216,12 @@ World 的 `EntityDestroying` 通知在节点释放时立即发出取消，旧构
 工作线程完成 `ConfigureAwait(false)` 后的内容更新，经现有 `just ecs-aot win-x64` 入口运行。
 `AsyncIntegrationChecks.cs` 同时编入这一入口，覆盖 table/sparse 分段提交、
 挂起期间 Memo 绑定、跨段失败时的组件与原计算恢复、对象读取帧与存档后的异步构建恢复。
+`BuildAwaitChecks.cs` 分别验证普通与配置等待的 Task、ValueTask、异步辅助方法和
+用户等待类型。异步清理用独立的完成源挂起 finally，显式完成后继续清理并保留新结果。
+`BuildResumeChecks.cs` 在两种 World 上验证取消异常、
+finally/using 与异步清理、回调异常隔离和 Launch 错误恢复，并同时编入 Views 与 ECS NativeAOT 入口。
+`ResourceResultChecks.cs` 在相同入口验证同步 Resource 的首次结果及来源改变后的结果，
+两次结果通过同一计算的组件写入呈现。
 
 ## Relations
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · ADR 0012

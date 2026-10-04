@@ -50,6 +50,9 @@ Canvas 数据移除时释放它的实例缓冲，镜像上的其它渲染数据�
 有序层级读取在同一个提取读取窗口内完成；收集值经 RenderPrepare 更新边界及
 ECS 结构事务送入常驻缓冲。常驻绘制数据由 RenderWorld 的 ECS 缓冲持有，
 当次收集数据供该次提取应用。
+`CanvasTree` 集中读取嵌套画布边界、深度优先树序与继承裁剪。
+Surface、Image 和 Glyphs 的完整提取，以及字形的局部更新，共用这一入口；
+画布自身的滚动视口同样参与后代裁剪。各提取者继续持有自己的实例数据与图集像素。
 
 `tests/SomeEngine.Elements.Render.Tests` 经公开 World、层级、视图修饰、布局系统、
 提取调度、帧协调器和缓冲读取验证单节点改色、静态帧、树序、释放、组件移除与恢复、
@@ -149,6 +152,9 @@ DefaultGame 的标准 HUD、共享文字资源和三场景测量由 [Performance
 `tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests` 经公开结构版本、pass 身份和
 GPU 像素读回验收画布成员修改、静态帧、改色、取消帧、透明树序叠加、裁剪与画布移除。
 相同像素用例分别使用 D3D12 WARP 和 Vulkan，并启用引擎图形验证层。
+字形绘制构造先创建管线再创建采样器。采样器构造失败时由该绘制构造方立即释放
+已创建管线，公开 `GlyphDrawingTests` 在 WARP 与 Vulkan 上验证连续失败后的资源释放
+及同一设备再次成功创建绘制器。
 `CanvasShadowTests` 同样通过两种后端的像素读回验收阴影半透明颜色、柔化边缘、
 正负偏移、裁剪、参数更新与清空，以及表面对自身阴影的覆盖。
 

@@ -49,11 +49,23 @@ public sealed partial class FrontendAnalyzer : DiagnosticAnalyzer
                 if (frontend != Frontend.None)
                     primitives.Add((call, frontend, primitive.Name));
             }
-            else if (node is SimpleNameSyntax name &&
-                analysis.SemanticModel.GetSymbolInfo(name, analysis.CancellationToken).Symbol is IPropertySymbol property &&
-                StatePropertyDeclarations.HasStateAttribute(property) && !name.Ancestors().OfType<InvocationExpressionSyntax>()
-                    .Any(call => analysis.SemanticModel.GetOperation(call, analysis.CancellationToken) is INameOfOperation))
-                primitives.Add((name, Frontend.SwiftUI, property.Name));
+            else if (node is SimpleNameSyntax name && !name.Ancestors().OfType<InvocationExpressionSyntax>()
+                .Any(call => analysis.SemanticModel.GetOperation(call, analysis.CancellationToken) is INameOfOperation))
+            {
+                ISymbol? symbol = analysis.SemanticModel.GetSymbolInfo(name, analysis.CancellationToken).Symbol;
+                if (symbol is IPropertySymbol property && StatePropertyDeclarations.HasStateAttribute(property))
+                    primitives.Add((name, Frontend.SwiftUI, property.Name));
+                else if (symbol is IMethodSymbol reference)
+                {
+                    SyntaxNode expression = name.Parent is MemberAccessExpressionSyntax or MemberBindingExpressionSyntax
+                        ? name.Parent : name;
+                    if (expression.Parent is InvocationExpressionSyntax directCall && directCall.Expression == expression)
+                        continue;
+                    Frontend frontend = GetPrimitiveFrontend(reference);
+                    if (frontend != Frontend.None)
+                        primitives.Add((name, frontend, reference.Name));
+                }
+            }
         }
 
         Frontend bodyFrontend = GetDeclaredFrontend(method, analysis.Compilation);
@@ -113,9 +125,14 @@ public sealed partial class FrontendAnalyzer : DiagnosticAnalyzer
             return false;
         ExpressionSyntax? expression = declaration.ExpressionBody?.Expression ?? declaration.AccessorList?.Accessors
             .FirstOrDefault(accessor => accessor.IsKind(SyntaxKind.GetAccessorDeclaration))?.ExpressionBody?.Expression;
-        if (expression is null || expression.SyntaxTree != model.SyntaxTree)
+        if (expression is null)
             return false;
-        Optional<object?> constant = model.GetConstantValue(expression, cancellation);
+        // Explicit view modes can be declared in a different file from the component call.
+#pragma warning disable RS1030
+        SemanticModel declarationModel = expression.SyntaxTree == model.SyntaxTree ? model :
+            model.Compilation.GetSemanticModel(expression.SyntaxTree);
+#pragma warning restore RS1030
+        Optional<object?> constant = declarationModel.GetConstantValue(expression, cancellation);
         return constant.HasValue && Convert.ToInt32(constant.Value, System.Globalization.CultureInfo.InvariantCulture) == 0;
     }
 

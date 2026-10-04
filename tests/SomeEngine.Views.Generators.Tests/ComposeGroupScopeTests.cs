@@ -41,11 +41,11 @@ public sealed class ComposeGroupScopeTests
 
         Assert.Equal(child, Hierarchy<ElementTree>.GetChildren(frames.World, root).Single());
         Assert.Equal(22, frames.World.ReadSparse<CounterNumber<int>>(child).Value);
-        Assert.Equal("group failed", frames.World.ReadSparse<FailureText>(root).Text);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<FailureError>(root).Value);
     }
 }
 
-public readonly record struct FailureText(string Text) : ISparseComponent;
+public readonly record struct FailureError(Exception? Value) : ISparseComponent;
 
 public static partial class GroupedComposition
 {
@@ -62,13 +62,13 @@ public static partial class GroupedComposition
     [Composable]
     public static void Recovery(bool throwGroup)
     {
-        string failure = "";
+        Exception? failure = null;
         if (throwGroup)
         {
             try { ThrowGroup(); }
-            catch (InvalidOperationException error) { failure = error.Message; }
+            catch (InvalidOperationException error) { failure = error; }
         }
-        Scope.Write<FailureText>(Scope.Entity) = new(failure);
+        Scope.Write<FailureError>(Scope.Entity) = new(failure);
         var value = Remember(static () => MutableStateOf(20));
         Scope.View(new CounterLabel<int>("tail", value));
     }

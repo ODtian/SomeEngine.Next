@@ -16,6 +16,57 @@ public sealed class GlyphDrawingTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void SamplerCreationFailureReleasesTheGlyphPipelineWhileTheDeviceStaysUsable(bool vulkan)
+    {
+        if (vulkan)
+        {
+            using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+            using Device device = backend.CreateDevice(new DeviceDesc(default, [new DeviceQueueDesc(QueueType.Graphics)]));
+            CheckFailedSampler(backend, device);
+        }
+        else
+        {
+            using WarpGraphTestSupport graphics = WarpGraphTestSupport.Create();
+            CheckFailedSampler(graphics.Backend, graphics.Device);
+        }
+    }
+
+    private static void CheckFailedSampler(IGraphicsBackend backend, Device device)
+    {
+        using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
+        using var world = new RenderWorld();
+        using SurfaceMaterial surface = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+        using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
+        using CommandContext commands = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Graphics, 0, 1));
+        var allocation = new SamplerFailureBackend(backend);
+        backend.Begin(commands);
+        try
+        {
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                Assert.Same(allocation.Error, Assert.Throws<InvalidOperationException>(() =>
+                    new CanvasRenderer(allocation, device, graph, world, surface, Format.R8G8B8A8UNorm, glyphs)));
+                Pipeline pipeline = Assert.IsAssignableFrom<Pipeline>(allocation.GlyphPipeline);
+                try
+                {
+                    Assert.Throws<ObjectDisposedException>(() => backend.SetPipeline(commands, pipeline));
+                }
+                finally
+                {
+                    pipeline.Dispose();
+                }
+            }
+        }
+        finally
+        {
+            backend.Discard(commands);
+        }
+        using var renderer = new CanvasRenderer(backend, device, graph, world, surface, Format.R8G8B8A8UNorm, glyphs);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void GlyphCoverageMatchesTheOutlineReferenceAndColorUpdatesKeepItsMask(bool vulkan)
     {
         if (vulkan)

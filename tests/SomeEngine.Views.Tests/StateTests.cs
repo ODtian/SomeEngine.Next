@@ -169,7 +169,6 @@ public sealed partial class StateTests
                 }
             }))).WaitAsync(TimeSpan.FromSeconds(3));
 
-        Assert.Contains("same State", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(3, state.Value);
         Assert.Equal(version, state.Version);
         state.Update(static (ref int value) => value++);

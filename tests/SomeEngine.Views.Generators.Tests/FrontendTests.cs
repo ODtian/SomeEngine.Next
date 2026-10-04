@@ -4,6 +4,60 @@ namespace SomeEngine.Views.Generators.Tests;
 
 public sealed class FrontendTests
 {
+    [Theory]
+    [InlineData("public static BuildMode Mode => BuildMode.Rerun;")]
+    [InlineData("static BuildMode IView.Mode => BuildMode.Rerun;")]
+    public async Task SolidComponentsSuggestReactiveValuesForRerunViewsInAnotherFile(string mode)
+    {
+        var diagnostics = await CompilerChecks.Diagnostics(
+            [
+                ("Label.cs", $$"""
+                    using SomeEngine.ECS;
+                    using SomeEngine.Views;
+                    public readonly record struct Label(int Value) : IView, IComponent
+                    {
+                        {{mode}}
+                        public BuildTask Build() => default;
+                    }
+                    """),
+                ("Screens.cs", """
+                    using SomeEngine.Views;
+                    using SomeEngine.Views.Solid;
+                    public static partial class Screens
+                    {
+                        [Component] public static void Screen(State<int> state) => Scope.View(new Label(state.Value));
+                    }
+                    """)
+            ], new FrontendAnalyzer());
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
+        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV020");
+        Assert.Equal(DiagnosticSeverity.Info, hint.Severity);
+        Assert.Equal("Screens.cs", hint.Location.SourceTree!.FilePath);
+        Assert.Equal("state.Value", hint.Location.SourceTree.GetText().ToString(hint.Location.SourceSpan));
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData("Action<Action> effect = Solid.Effect; effect(static () => { });")]
+    [InlineData("Use(Solid.Effect);")]
+    public async Task ComposeBodiesReportSolidPrimitiveMethodGroups(string body)
+    {
+        var diagnostics = await CompilerChecks.Diagnostics($$"""
+            using System;
+            using SomeEngine.Views.Compose;
+            using SomeEngine.Views.Solid;
+            public static partial class Screens
+            {
+                private static void Use(Action<Action> effect) => effect(static () => { });
+                [Composable] public static void Screen() { {{body}} }
+            }
+            """, true, new FrontendAnalyzer());
+        Diagnostic error = Assert.Single(diagnostics, value => value.Id == "SEV019");
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+        Assert.Contains("Effect", error.GetMessage());
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV019");
+    }
+
     [Fact]
     public async Task ExportedSolidComponentsSuggestReactiveDeliveryForStateValues()
     {

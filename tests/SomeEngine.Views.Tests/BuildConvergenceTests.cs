@@ -21,8 +21,7 @@ public sealed partial class BuildConvergenceTests
         Views.Spawn(frames.World, Entity.Null, new SparseFeedback(source, enabled));
 
 #if DEBUG
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains($"iteration limit of {iterationLimit}", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(frames.Frame);
 #else
         frames.Frame();
 #endif

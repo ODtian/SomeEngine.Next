@@ -6,6 +6,24 @@ namespace SomeEngine.Views.Tests;
 
 public sealed partial class LaunchTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SuccessfulAsynchronousChildClearsItsCancellationCallbackError(bool jobWorld) =>
+        BuildResumeChecks.VerifyLaunchCallbackRecovery(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SuccessfulAsynchronousChildrenPreserveOtherChildErrors(bool jobWorld) =>
+        BuildResumeChecks.VerifyLaunchErrors(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SuccessfulAsynchronousChildClearsItsPreviousError(bool jobWorld) =>
+        BuildResumeChecks.VerifyLaunchRecovery(jobWorld);
+
     [Fact]
     public void AnUnchangedKeyKeepsItsTaskUntilTheViewIsReleased()
     {
@@ -64,9 +82,11 @@ public sealed partial class LaunchTests
         {
             Cancellation[key] = cancel;
             Status.Value = $"running {key}";
+            var completion = new TaskCompletionSource();
+            using var registration = cancel.Register(() => completion.TrySetCanceled(cancel));
             try
             {
-                await Task.Delay(Timeout.Infinite, cancel);
+                await completion.Task.ConfigureAwait(false);
             }
             finally
             {

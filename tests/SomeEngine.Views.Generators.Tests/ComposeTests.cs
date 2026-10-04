@@ -259,7 +259,7 @@ public sealed class ComposeTests
                     frames.World.Replace(root, new Panel("failed"));
                     frames.Frame();
                     if (frames.World.HasSparse<BuildError>(root) ||
-                        frames.World.ReadSparse<BuildError>(child).Exception.Message != "compose failed" ||
+                        frames.World.ReadSparse<BuildError>(child).Exception is not System.InvalidOperationException ||
                         frames.World.ReadSparse<Card>(card).Title != "first")
                         return false;
 

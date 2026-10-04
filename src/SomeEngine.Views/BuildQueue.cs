@@ -95,7 +95,10 @@ internal sealed class BuildQueue
                 HasParameterChanges(world, data.Entity) || changes.HasChanges(world, data.Entity, recheck: true))
                 _changedBuilds.Add(data);
         foreach (Scope.ScopeData data in _changedBuilds)
+        {
+            data.Frame = changes.Frame;
             Cancel(data.Entity, restore: world.IsAlive(data.Entity));
+        }
         _changedBuilds.Clear();
     }
 
@@ -176,6 +179,7 @@ internal sealed class BuildQueue
                         completed = true;
                         view.Task.Complete();
                         Scope.CompleteBuild(view);
+                        view.Computation?.Complete();
                     }
                     else if (!view.IsCanceled)
                         Scope.CommitWrites(view, submitAnimations: true);
@@ -192,6 +196,7 @@ internal sealed class BuildQueue
                 catch (Exception exception)
                 {
                     completed = true;
+                    view.Computation?.Fail(exception, frame);
                     BuildErrors.Record(world, build.Entity, exception, frame);
                 }
                 finally

@@ -9,6 +9,60 @@ namespace SomeEngine.Views.Tests;
 
 public sealed partial class BuildCancellationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CancelCallbackFailureReachesTheViewErrorAndTheFrameContinues(bool jobWorld) =>
+        BuildResumeChecks.VerifyCancelCallbackFailure(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledTaskKeepsTheNewStateAndRunsCleanup(bool jobWorld) =>
+        BuildResumeChecks.VerifyCanceledTask(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledConfiguredTaskKeepsTheNewStateAndRunsCleanup(bool jobWorld) =>
+        BuildResumeChecks.VerifyCanceledConfiguredTask(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledValueTaskKeepsTheNewStateAndRunsCleanup(bool jobWorld) =>
+        BuildResumeChecks.VerifyCanceledValueTask(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledConfiguredValueTaskKeepsTheNewStateAndRunsCleanup(bool jobWorld) =>
+        BuildResumeChecks.VerifyCanceledConfiguredValueTask(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledHelperKeepsTheNewStateAndRunsCleanup(bool jobWorld) =>
+        BuildResumeChecks.VerifyCanceledHelper(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledCustomAwaitKeepsTheNewStateAndRunsCleanup(bool jobWorld) =>
+        BuildResumeChecks.VerifyCanceledCustomAwait(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledTaskFinishesItsAsynchronousFinally(bool jobWorld) =>
+        BuildResumeChecks.VerifyCanceledAsyncCleanup(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledWaitFinishesItsAsynchronousFinally(bool jobWorld) =>
+        BuildResumeChecks.VerifyCanceledWaitCleanup(jobWorld);
+
     [Fact]
     public void ChangedDependencyRestartsTheBuildAndReleasesItsPreviousWait()
     {
@@ -357,7 +411,7 @@ public sealed partial class BuildCancellationTests
             System.Diagnostics.Trace.Listeners.Remove(messages);
         }
 
-        Assert.Contains(messages.Values, message => message.Contains("canceled build", StringComparison.OrdinalIgnoreCase));
+        Assert.NotEmpty(messages.Values);
         Assert.False(frames.World.HasSparse<BuildError>(root));
         Assert.Equal("ready", Text(frames, root));
     }

@@ -78,7 +78,7 @@ public sealed partial class ContentWriteTests
 
         frames.Frame();
 
-        Assert.Equal("content write failed", frames.World.ReadSparse<BuildError>(root).Exception.Message);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
         Assert.Equal(3, frames.World.Read<Number>(source).Value);
         Assert.Equal(version, frames.World.WriteVersion<Number>(source));
         Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, root));

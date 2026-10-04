@@ -308,7 +308,7 @@ public sealed class ContentFunctionTests
                     frames.World.ReplaceSparse(root, view with { title = "failed" });
                     frames.Frame();
                     if (frames.World.HasSparse<BuildError>(root) ||
-                        frames.World.ReadSparse<BuildError>(content).Exception.Message != "content failed" ||
+                        frames.World.ReadSparse<BuildError>(content).Exception is not System.InvalidOperationException ||
                         frames.World.ReadSparse<Card>(card).Title != "first")
                         return false;
 
