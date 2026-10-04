@@ -29,6 +29,29 @@ layout and preserves a held UI press until release.
 The external examples and shared behavior checks live in
 `tests/SomeEngine.Elements.Consumer.Tests`.
 
+`FocusFunctions.Focusable(node)` declares the `Focusable` marker and `Clicks`.
+Read `node.Focused()` in a caller scope to observe focus through a presence
+dependency. Queue keys through `Keyboard.Key(world, key, pressed)`, directions
+through `Gamepad.Navigate(world, direction)`, and activation through
+`Gamepad.Confirm(world)`. Arrow keys navigate; Enter and Space activate. Each key
+press is one action, including platform repeats; releases preserve focus and
+click counts.
+
+Register `FocusNavigationSystem` beside `HitTestSystem`, before game input and
+view rebuilds. It uses the previous layout to choose the nearest rectangle
+center in the requested direction within the focused canvas. The first
+direction selects the top-left center; direction boundaries retain focus.
+Transparent compositions use their layout content's bounding rectangle.
+Confirmation increments the focused node's `Clicks`; `Clicked()` consumes those
+clicks through the existing caller scope. The World has one sparse `Focused`
+marker, and `InputCapture.Keyboard` indicates focus consumption.
+
+`FocusInput` is a public event buffer on the World's `InputCapture` entity.
+Disable the default navigation system and schedule a user system to consume
+that buffer and implement custom navigation and activation. The default system
+uses `World.EntityDestroying` to transfer focus to the nearest focusable
+ElementTree ancestor during node release. A parent-chain endpoint clears focus.
+
 `ButtonFunctions.Button(label)` declares a sparse `Button` view. Import
 `ButtonFunctions` statically to write `if (Button("OK").Clicked())` in a build.
 The button reads its own `Hover` and the nearest `ButtonTheme`, composes a Row

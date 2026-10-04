@@ -106,6 +106,7 @@ public partial class World
 
     private void ReleasePublishedStorage()
     {
+        EntityDestroying = null;
         WorldStructureRoot empty = WorldStructureRoot.Create(
             this,
             initialEntityCapacity: 1,

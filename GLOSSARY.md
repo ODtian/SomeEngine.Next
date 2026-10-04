@@ -50,6 +50,8 @@
 
 **行为部件**：可挂到任意节点上的公开行为，例如 `Pressable`、`Draggable`、`Focusable`。行为部件声明所需数据，由对应系统处理。
 
+**焦点**：当前 World 接收键盘和手柄确认输入的界面节点，状态以节点上的 `Focused` sparse 标记表达。候选节点通过 `Focusable` 行为部件声明；导航与释放规则见 [Input and Behaviors](wiki/architecture/someui/Input-and-Behaviors.md)。
+
 **复合部件**：组成复合控件的一组公开视图，由调用方拼装，例如 `Dialog`、`DialogTitle`、`DialogActions`。
 
 **通道**（`Channel<T>`）：以组件编号加字节偏移定位的组件字段，属性动画通过它写目标字段。

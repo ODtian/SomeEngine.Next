@@ -45,3 +45,9 @@ changes, subtree entry and exit, sibling hover changes, held presses, and caller
 output updates across the built-in and user-written behaviors. `PointerTests`
 also verifies stopping at the target or an ancestor and keeping nested canvas
 clicks and subtree hover inside their own tree.
+
+`FocusTests` injects keyboard and gamepad input and observes focus-dependent
+display and click consumption. `FocusChecks` shares the Grid and transparent
+composition cases, node-release behavior, and a scheduled user navigation
+system with the NativeAOT executable. The Grid runs with both the built-in
+focus functions and the public user equivalent under `Rewrites/`.

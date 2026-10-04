@@ -19,6 +19,13 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerChecks.cs" Link="PointerChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerRoutingChecks.cs" Link="PointerRoutingChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/PressableFunctions.cs" Link="Rewrites/PressableFunctions.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusChecks.cs" Link="FocusChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusReleaseChecks.cs" Link="FocusReleaseChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusNavigationChecks.cs" Link="FocusNavigationChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusCompositionChecks.cs" Link="FocusCompositionChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusLayoutChecks.cs" Link="FocusLayoutChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusPointerChecks.cs" Link="FocusPointerChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/FocusFunctions.cs" Link="Rewrites/FocusFunctions.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs" Link="ButtonChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs" Link="Rewrites/Button.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs" Link="Rewrites/IconButton.cs" />

@@ -216,6 +216,65 @@ info 验收同时覆盖 Compose 与 SwiftUI，内容委托形状由编译诊断�
 原生验收产物在执行后清理。接口与节点规则见
 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
 
+## 焦点与键盘、手柄导航验收（#39）
+
+2026-10-04，实现提交 `8f36fdd4509faa095cc6cc787195a4143a104ae1`，源码验收提交
+`cb50ddb56e5d902932e1fecc20ea938419b116dd`，已合入集成提交
+`f72a355041cdecced3cb0778e50ed7fa08c987b3`。
+Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+
+`FocusTests` 通过公开输入、World、视图、布局与系统调度验证 3×3 网格、确认消费、焦点读取依赖、
+祖先转移与清空、整枝释放、父链移动、焦点资格变化、布局透明组合、最近中心与上一帧布局、
+画布内导航、World 隔离、输入顺序和捕获字段。内置与外部重写共用网格检查；
+自定义系统通过调度禁用默认导航，从公开事件缓冲领取输入并执行自己的规则。
+Debug 的 25 项焦点检查包含 9 项统一开发检查；Release 与原生入口共用 16 项行为检查。
+
+各测试项目的路径为 `tests/<项目>/<项目>.csproj`，执行两种配置：
+
+```text
+dotnet test <项目路径> -c Debug --nologo -v quiet -m:1 -p:UseSharedCompilation=false
+dotnet test <项目路径> -c Release --nologo -v quiet -m:1 -p:UseSharedCompilation=false
+```
+
+ECS、系统、存档与提取的 Release 回归加入 `-nr:false -p:BuildInParallel=false`。
+系统 Release 完整验收使用以下命令完成：
+
+```text
+dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Release --no-build --nologo -m:1 --logger "console;verbosity=normal" --blame-hang-timeout 60s --blame-hang-dump-type none --results-directory .focus-validation
+```
+
+| 项目 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 72 | 47 |
+| SomeEngine.Views.Tests | 259 | 230 |
+| SomeEngine.Layout.Tests | 94 | 74 |
+| SomeEngine.ECS.Tests | 635 | 620 |
+| SomeEngine.ECS.Systems.Tests | 298 | 298 |
+| SomeEngine.ECS.Serialization.Tests | 169 | 169 |
+| SomeEngine.Elements.Render.Tests | 10 | 10 |
+
+`just views-aot win-x64` 成功发布并执行原生入口，退出码 0，覆盖全部共享焦点检查与
+已有视图、文本、指针、布局和检查点行为。检查点在独立进程中完成类型编号重映射、读回首帧
+与后续依赖更新。诊断目录、检查点文件及原生验收产物在使用后清理。
+行为与接口见 [[architecture/someui/Input-and-Behaviors|Input and Behaviors]]。
+
+随后对齐 #38：源码验收提交 `a2d5d364961f6fdcddc1c22bb40f12f82ab33793`，
+包含集成提交 `3da0051c0116fb962997fa40d3f3a0c12803c257`。
+消费者工程重新执行 Debug 与 Release，均使用
+`--nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`，
+结果分别为 80 与 55 通过。新增组合检查验证指针点击和焦点确认共用节点上的 `Clicks`，
+调用方消费计数后继续接收下一次键盘确认；当前焦点检查为 Debug 26 项、Release 17 项。
+`just views-aot win-x64` 再次成功发布、执行全部 17 项共享焦点检查与指针冒泡检查，
+并完成检查点写入与读回，退出码 0。原生验收产物在执行后清理。
+
+最终源码验收提交 `f36b17ca54aada9b827751c014e782f0efde5b92`，包含集成提交
+`e26a6d4bbcb0b5b3a544b7c5e06c216314dc4b85`，覆盖已合入的异步构建与 Button 交付。
+按上一段命令参数重新执行消费者、Views 与 Layout 的 Debug / Release 回归：
+消费者 101 / 73 通过，Views 279 / 250 通过，Layout 94 / 74 通过。
+`just views-aot win-x64` 在该源码提交成功发布并执行共享焦点、指针路由、Button 与
+现有视图检查，随后完成两个独立进程的检查点写入、类型编号重映射和读回，退出码 0。
+焦点公共行为保持 Debug 26 项与 Release / NativeAOT 17 项；原生验收产物在使用后清理。
+
 ## Button 与外部控件对等验收（#43）
 
 [ButtonTests](../../../tests/SomeEngine.Elements.Consumer.Tests/ButtonTests.cs)
