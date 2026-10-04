@@ -52,6 +52,8 @@
 
 **焦点**：当前 World 接收键盘和手柄确认输入的界面节点，状态以节点上的 `Focused` sparse 标记表达。候选节点通过 `Focusable` 行为部件声明；导航与释放规则见 [Input and Behaviors](wiki/architecture/someui/Input-and-Behaviors.md)。
 
+**可编辑文本**（`EditableText`）：节点上由输入阶段写入的已提交文字、光标、选区锚点、独立输入法组合文字与编辑计数。`TextEditing` 行为声明这些数据与焦点数据，调用方通过 `Edited(out text)` 消费新编辑；规则见 [Input and Behaviors](wiki/architecture/someui/Input-and-Behaviors.md)。
+
 **复合部件**：组成复合控件的一组公开视图，由调用方拼装，例如 `Dialog`、`DialogTitle`、`DialogActions`。
 
 **通道**（`Channel<T>`）：以组件编号加字节偏移定位的组件字段，属性动画通过它写目标字段。

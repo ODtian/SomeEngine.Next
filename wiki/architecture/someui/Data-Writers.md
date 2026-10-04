@@ -19,8 +19,10 @@
 | 画布的当前位置、各按钮按下状态与目标 | `HitTestSystem`；`Pointer` 首次输入时声明默认数据 |
 | `InputCapture` | 输入阶段；`HitTestSystem` 写 `Pointer`，焦点系统写 `Keyboard` |
 | `Focusable` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
-| `FocusInput` 缓冲 | `Keyboard` / `Gamepad` 追加，调度中的焦点系统领取 |
+| `FocusInput` 缓冲 | `Keyboard` / `Gamepad` 追加键盘、字符、组合与手柄输入，调度中的焦点系统按顺序领取 |
 | `Focused` | 调度中的焦点系统，默认由 `FocusNavigationSystem` 写入和转移 |
+| `EditableText` | 输入阶段的 `TextEditingSystem`；调用方通过 `Ensure<T>` 声明并读取 |
+| `EditSeen` | 调用方作用域通过 `Edited(out text)` 的 `Write<T>` 提交 |
 | 视图局部状态与 `Remember`/`[State]` 存储 | 该视图自己的构建 |
 | `LayoutRect`、`LayoutCache` | 布局系统 |
 | `Canvas`（目标、尺寸、缩放） | 应用 |
