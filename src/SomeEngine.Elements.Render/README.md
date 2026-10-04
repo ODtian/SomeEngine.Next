@@ -22,7 +22,10 @@ renderWorld.ExecuteBufferRead<SurfaceInstance>(canvasMirror, instances =>
 Each canvas mirror holds `RenderCanvas` and one ECS buffer of `SurfaceInstance`.
 `RenderCanvas` carries the target, pixel size, and pixels per layout unit. Instance
 rectangles use canvas coordinates. The clip rectangle covers the canvas in layout
-units: `(0, 0, Size.Width / Scale, Size.Height / Scale)`.
+units: `(0, 0, Size.Width / Scale, Size.Height / Scale)`, intersected with each
+ancestor scroll viewport's LayoutRect. Nested viewports intersect their bounds
+in tree order. Viewport rectangle changes and scrolling declaration changes
+refresh descendant clip rectangles through the same extraction stage.
 
 The buffer follows the applied `ElementTree` children in depth-first preorder.
 `DrawOrder` is the node's ordinal in that traversal, starting with the canvas at
@@ -81,3 +84,27 @@ DefaultGame shows the panel through the test platform's `Surface panel` option.
 Runtime applications using the argument entry point can enable it with `--surface-panel`.
 Graph structure and D3D12/Vulkan pixel behavior are covered by
 `tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests.cs`.
+
+For a world canvas, provide `CanvasTarget.WorldSpace(targetEntity)` and a target
+`WorldTransform` in the Game world. `Canvas.DepthTest` chooses scene depth testing.
+Extraction supplies `RenderCanvas.Transform` and `DepthTest` alongside the same
+Surface instance buffer. The target transform places the canvas origin and controls
+world size; layout X follows local +X and layout Y follows local -Y. `Scale` converts
+layout units to target pixels before the world transform is applied.
+
+Pass the scene resources and its RenderWorld `RenderView` entity when reconciling:
+
+```csharp
+canvases.ReconcileGraph(screenTarget, new WorldCanvasTarget(sceneColor, sceneDepth, viewEntity));
+```
+
+World canvases use the view's viewport and projection. The default depth format is
+D32Float with LessOrEqual to match the current scene pipeline. Configure `DepthFormat` and
+`DepthComparison` on `WorldCanvasTarget` to match the scene. Frame updates carry
+target and view matrices through the existing graph constants. Screen canvases
+sharing the color target compose after world canvases.
+
+DefaultGame's `World nameplates` option adds numbered Surface plates to selected
+moving spheres. Runtime's argument entry point enables it with `--world-nameplates`.
+`WorldCanvasDrawingTests.cs` checks the projected and depth-tested pixels on D3D12
+WARP and Vulkan.

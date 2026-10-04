@@ -64,6 +64,20 @@ Each function returns the original entity and preserves behavior data when
 declared again. See the Wiki Input-and-Behaviors and Layout pages for units,
 button handling, nested viewports, and the shared public user examples.
 
+`ScrollViewFunctions.ScrollView()` declares a sparse caller-content viewport with
+wheel and drag scrolling. Open its `Content()` to compose the content and set its
+outer size with the layout modifiers. Its descendants use the viewport bounds
+for pointer hit testing and Surface clipping.
+
+`VirtualListFunctions.VirtualList(rowHeight)` declares a sparse scrollable list.
+Within its caller's build, use `Visible(list, count)` to enumerate item indices and
+`Scope.Key(item.Id)` to preserve each row's entity. `VisibleRange` exposes Start,
+End, and Count for its half-open range, with one buffer row at each end. Each row
+supplies a layout root; the list places those roots using the shared row height
+and reports the entire item count's content height. The first layout establishes
+the viewport, and the next rebuild declares its visible rows. See Wiki
+`architecture/someui/Lists` for frame order, padding, and the public examples.
+
 `ButtonFunctions.Button(label)` declares a sparse `Button` view. Import
 `ButtonFunctions` statically to write `if (Button("OK").Clicked())` in a build.
 The button reads its own `Hover` and the nearest `ButtonTheme`, composes a Row
@@ -75,6 +89,21 @@ properties are `Fill`, `HoverFill`, `PressedFill`, `TextColor`, `Padding`, and
 `CornerRadius`. The default value supplies a complete style; omitted properties
 use the button defaults and explicit transparent colors and zero spacing remain
 caller data. See Wiki `architecture/someui/Composition` for values and examples.
+
+`ToggleFunctions.Toggle(on)` composes pointer and focus activation with a switch
+surface. Use `Toggled()` to consume a new activation and change the caller's
+boolean. `SliderFunctions.Slider(value, minimum, maximum, step)` composes a
+horizontal track with the public `ValueDraggable` behavior. Use `Edited(out value)`
+to consume a changed number and save it in application data.
+
+Call `ValueFunctions.ValueDraggable(node, range, direction, distance)` in a user
+control's build to share range editing while choosing its own drag direction,
+canvas distance, structure, and appearance. `ValueRange.Ratio` supplies the
+display fraction. The external Knob example uses upward dragging and a round
+surface. Step zero gives continuous dragging and 5% keyboard steps; positive
+steps quantize edits relative to Minimum. Right and Up increase a focused value;
+Left and Down decrease it. Gamepad directions retain focus navigation.
+See Wiki Composition and Input-and-Behaviors for data writers and examples.
 
 `Text(string)` declares a text view. `Font`, `FontSize`, `TextColor`, and
 `LineHeight` write its caller-chosen `TextStyle` fields. The text view reads
