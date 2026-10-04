@@ -2,6 +2,12 @@ using System.Buffers;
 
 namespace SomeEngine.Elements;
 
+internal interface IFormattedText
+{
+    IFormatProvider? Provider { get; }
+    string Format(string? previous, IFormatProvider? provider);
+}
+
 internal static class TextFormatting
 {
     internal static string Format<T>(T value, string? previous, ReadOnlySpan<char> format, IFormatProvider? provider)
