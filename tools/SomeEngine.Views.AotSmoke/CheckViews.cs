@@ -130,6 +130,8 @@ foreach (bool rewritten in new[] { false, true })
     SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunTheme(rewritten);
 }
 Console.WriteLine("TextField feedback, parameter replacement, caret and selection, placeholders, IME display, single-line input, themes, and public user rewrites passed under NativeAOT.");
+TextFieldViewportChecks.Run();
+Console.WriteLine("TextField long-input scrolling, caret navigation, selection, IME updates, parameter feedback, placeholders, accessibility, and public rewrites passed under NativeAOT.");
 
 
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(false);

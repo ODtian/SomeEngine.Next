@@ -70,9 +70,12 @@ public partial record struct TextField(string Text, string Placeholder = "") : I
         int caretPosition = hasComposition ? start + value.CompositionCaret : value.Caret;
         float caret = empty ? 0 : MeasurePosition(shape, text.Length, caretPosition);
         float anchor = empty ? 0 : MeasurePosition(shape, text.Length, value.SelectionStart);
-        using (ScrollViewFunctions.ScrollView().Size(160, height + 16).Padding(8)
+        Entity viewport = ScrollViewFunctions.ScrollView().Size(160, height + 16).Padding(8)
             .Background(new Color(0.2f, 0.2f, 0.2f)).Corner(4)
-            .Border(new Color(0.15f, 0.45f, 0.85f), focused ? 1 : 0).Content())
+            .Border(new Color(0.15f, 0.45f, 0.85f), focused ? 1 : 0);
+        if (focused)
+            viewport.ScrollIntoView(new Rect(caret, 0, 1, height));
+        using (viewport.Content())
         using (Absolute().MinSize(width + 1, height).Content())
         {
             if (focused && !hasComposition && value.Caret != value.SelectionStart)
