@@ -94,5 +94,76 @@ Release 用例预热 1000 帧后采样 4096 帧：数字结果相等时分配为
 `just views-aot win-x64` 中复用同一组公开行为，覆盖 Memo、Effect、Untrack、
 数字文本、背景字段与连续状态变化的分配。
 
+## Show、Switch/Match 与 Dynamic（#56）
+
+控制流声明使用共享视图构建与依赖调度：选择条件由 `Rerun` 子视图读取，
+选中的内容由 `Once` 子视图执行。内容中的普通读取取得构建时的值；
+在内容中声明的 Text getter、Effect、Memo 和嵌套控制流各自登记依赖，继续独立更新。
+
+```csharp
+namespace SomeEngine.Views.Solid;
+public static partial class Solid
+{
+    public static void Show(Func<bool> when, Action children, Action? fallback = null);
+    public static void Show<T>(Func<T?> when, Action<Func<T>> children,
+        Action? fallback = null, bool keyed = false);
+    public static void Switch(params ReadOnlySpan<Match> cases);
+    public static Match Match(Func<bool> when, Action children);
+    public static void Dynamic(Func<Action> component);
+}
+
+public readonly struct Match
+{
+    public Func<bool> When { get; }
+    public Action Children { get; }
+}
+```
+
+| 原语 | 分支选择与身份 |
+|---|---|
+| `Show(Func<bool>, Action, Action?)` | `true` 选择 children，`false` 选择 fallback；真假相同时保留分支 |
+| `Show<T>`，`keyed: false` | 值存在时选择 children，`null` 选择 fallback；存在值之间的变化保留分支 |
+| `Show<T>`，`keyed: true` | 按 `EqualityComparer<T>.Default` 比较条件值；值变化时创建新分支 |
+| `Switch` | 按声明顺序求条件，首个 `true` 的 Match 生效；Match 的位置决定身份，切换位置时创建新分支 |
+| `Dynamic` | 求得的 `Action` 决定内容；以 .NET 委托的相等性比较目标与方法，函数变化时创建新分支 |
+
+带值 `Show` 使用 C# 的存在值语义，数值 `0`、空字符串和其它存在值都选择 children。
+布尔条件使用 `Func<bool>` 重载。对于 nullable 值类型，可令泛型参数本身为 nullable，
+例如 `State<int?>` 的 getter 推导出 `T = int?`，children 收到 `Func<int?>`。
+条件 getter 在选择节点的追踪状态下执行；传给 children 的 getter 每次调用读取最新条件值，
+因此 `Text(value)` 会更新已有文本，`Text(value())` 保留首次内容。
+
+```csharp
+var name = new State<string?>("first");
+Show(() => name.Value, value => Text(value), fallback: () => Text("empty"));
+Show(() => name.Value, value => Text(value()), keyed: true);
+
+Switch(
+    Match(() => status.Value == "loading", () => Text("loading")),
+    Match(() => status.Value == "ready", Ready));
+Dynamic(() => expanded.Value ? Expanded : Collapsed);
+```
+
+`Match` 通过同名工厂形成条件与内容数据，可在声明 Switch 前创建。
+`Switch` 在声明时复制 span 中的 Match，随后按该次声明的条件求值；
+首个条件成立后完成选择。全部条件为假或 cases 为空时，内容为空。
+`Show` 的 fallback 省略且条件为假时也形成空内容。
+
+选择数据由现有分支的视图参数持有，身份由该分支的 `ElementKey` 持有。
+控制节点沿 `ElementTree` 取得前次分支，通过公开的 `Scope.View(in T, ulong)`
+声明保留或新建的内容。成功构建后由共享子声明收尾释放旧分支及整个子树，
+释放后的计算随所属节点退出重建调度。再次选中之前的条件或函数时创建新实体。
+构建、内容作用域与失败恢复的统一边界见
+[[architecture/someui/Node-Identity|Node Identity]] 与 [[architecture/someui/Build-Scope|Build Scope]]。
+
+作用域、条件 getter、内容委托、默认 Match 以及 Dynamic getter 返回的空组件，
+均沿 Core 的 `DevelopmentCheck` 报告使用错误；shipping 构建移除这些检查调用。
+公开验收见 [ControlFlowTests](../../../tests/SomeEngine.Views.Solid.Tests/ControlFlowTests.cs)，
+覆盖条件与内容的独立更新、完整子树释放、getter 绑定、keyed 相等值与哈希碰撞、
+nullable 数值、Switch 首个分支与 span 数据、Dynamic 函数切换、周围内容和开发检查。
+[ControlFlowChecks](../../../tests/SomeEngine.Views.Solid.Tests/ControlFlowChecks.cs)
+在托管测试和 `just views-aot win-x64` 中复用 Show、keyed 值、nullable 数值、
+Switch/Match、Dynamic 与分支释放的公开行为。
+
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Frontends|Frontends]]

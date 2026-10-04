@@ -49,6 +49,8 @@ SomeEngine.Elements.Consumer.Tests.LocalizationChecks.Run();
 Console.WriteLine("Localized keys, arguments, language changes, English and Chinese plurals, number and date cultures, and ordinary text versions passed under NativeAOT.");
 SomeEngine.Views.Solid.Tests.SolidChecks.Run();
 Console.WriteLine("Solid text bindings, Memo getters, Effect, Untrack, reactive surfaces, and zero-allocation state changes passed under NativeAOT.");
+SomeEngine.Views.Solid.Tests.ControlFlowChecks.Run();
+Console.WriteLine("Solid Show, keyed values, nullable numbers, Switch/Match, Dynamic, and branch release passed under NativeAOT.");
 Console.WriteLine("Text shaping, Column measurements, style modifiers, formatted numbers, write versions, and zero-allocation integer writes passed under NativeAOT.");
 Console.WriteLine("Column surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);

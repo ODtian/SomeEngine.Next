@@ -31,4 +31,20 @@ static void Counter(State<int> count)
 数字重载使用共享格式化写入，格式化字符相等时复用已有字符串与写版本。
 响应式修饰写入各自的目标字段，并保留节点上的其它字段。
 
+`Show` 追踪条件，每个分支只构建一次。布尔条件切换真假时创建新分支；
+带值条件在 `null` 与存在值之间切换时创建新分支，`keyed: true` 按值相等性切换。
+children 中的普通读取取得首次值，getter 绑定独立更新已有节点。
+
+```csharp
+var name = new State<string?>("first");
+Show(() => name.Value, value => Text(value), fallback: () => Text("empty"));
+Switch(
+    Match(() => count.Value > 10, () => Text("many")),
+    Match(() => count.Value > 0, () => Text("some")));
+```
+
+`Switch` 选择首个条件成立的 Match，分支切换时重新构建；
+`Dynamic(Func<Action>)` 在选中的组件函数变化时重新构建。
+分支释放与嵌套内容沿共享视图的节点身份和生命周期规则处理。
+
 完整 API 与验收入口见仓库 Wiki `architecture/someui/Solid-Frontend`。
