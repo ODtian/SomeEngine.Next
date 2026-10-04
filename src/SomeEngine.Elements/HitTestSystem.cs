@@ -77,11 +77,7 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
                 {
                     capture |= press.Node != Entity.Null;
                     if (press.Down && hit != Entity.Null && hit == press.Node)
-                    {
-                        Clicks clicks = world.Read<Clicks>(hit);
-                        clicks.Count = unchecked(clicks.Count + 1);
-                        world.Replace(hit, clicks);
-                    }
+                        RouteClick(world, canvas, hit);
                     pointer.SetPress(input.Button, default);
                 }
             }
@@ -89,7 +85,7 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
             Entity hovered = pointer.HasPosition ? Hit(pointer.Position) : Entity.Null;
             capture |= hovered != Entity.Null || pointer.PrimaryPress.Node != Entity.Null ||
                 pointer.SecondaryPress.Node != Entity.Null || pointer.MiddlePress.Node != Entity.Null;
-            MergeHover(hovered, hovered: true, pressed: false);
+            MergeSubtreeHover(world, canvas, hovered);
             MergeHover(pointer.PrimaryPress.Node, hovered: false, pressed: pointer.PrimaryPress.Down);
             MergeHover(pointer.SecondaryPress.Node, hovered: false, pressed: pointer.SecondaryPress.Down);
             MergeHover(pointer.MiddlePress.Node, hovered: false, pressed: pointer.MiddlePress.Down);
@@ -98,7 +94,7 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
         {
             Hover value = _hover.GetValueOrDefault(node);
             Hover previous = world.Read<Hover>(node);
-            if (value.Hovered != previous.Hovered || value.Pressed != previous.Pressed)
+            if (value.Hovered != previous.Hovered || value.Pressed != previous.Pressed || value.Within != previous.Within)
                 world.Replace(node, value);
         }
         InputCapture inputCapture = world.Read<InputCapture>(_capture);
@@ -127,6 +123,21 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
                 CollectTargets(world, child, pressable);
     }
 
+    private static void RouteClick(World world, Entity canvas, Entity target)
+    {
+        for (Entity node = target; node != Entity.Null; node = Hierarchy<ElementTree>.GetParent(world, node))
+        {
+            if (world.Has<Pressable>(node))
+            {
+                Clicks clicks = world.Read<Clicks>(node);
+                clicks.Count = unchecked(clicks.Count + 1);
+                world.Replace(node, clicks);
+            }
+            if (node == canvas || world.Has<StopsPointer>(node))
+                break;
+        }
+    }
+
     private Entity Hit(Vector2 position)
     {
         for (int index = _targets.Count - 1; index >= 0; index--)
@@ -152,13 +163,25 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext>
         ? press with { Node = Entity.Null }
         : press;
 
-    private void MergeHover(Entity node, bool hovered, bool pressed)
+    private void MergeSubtreeHover(World world, Entity canvas, Entity target)
+    {
+        for (Entity node = target; node != Entity.Null; node = Hierarchy<ElementTree>.GetParent(world, node))
+        {
+            if (world.Has<Hover>(node))
+                MergeHover(node, hovered: node == target, pressed: false, within: true);
+            if (node == canvas)
+                break;
+        }
+    }
+
+    private void MergeHover(Entity node, bool hovered, bool pressed, bool within = false)
     {
         if (node == Entity.Null)
             return;
         Hover value = _hover.GetValueOrDefault(node);
         value.Hovered |= hovered;
         value.Pressed |= pressed;
+        value.Within |= within;
         _hover[node] = value;
     }
 
