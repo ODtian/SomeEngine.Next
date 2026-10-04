@@ -12,6 +12,35 @@ namespace SomeEngine.Elements.Consumer.Tests;
 
 public sealed partial class BehaviorTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoutedClicksToggleSelectableAncestorsThroughTheStoppingBoundary(bool stop)
+    {
+        using var frames = new PointerFrames();
+        Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new SelectionTree(stop));
+        frames.Frame();
+        Entity parent = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, parent)[0];
+        Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
+        Click(frames);
+        frames.Frame();
+        Assert.True(frames.World.Read<Selected>(child).Value);
+        Assert.Equal(!stop, frames.World.Read<Selected>(parent).Value);
+
+        Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
+        Pointer.Move(frames.World, frames.Canvas, new Vector2(12, 12));
+        Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
+        frames.Frame();
+        Assert.True(frames.World.Read<Selected>(child).Value);
+        Assert.Equal(!stop, frames.World.Read<Selected>(parent).Value);
+
+        Click(frames);
+        frames.Frame();
+        Assert.False(frames.World.Read<Selected>(child).Value);
+        Assert.False(frames.World.Read<Selected>(parent).Value);
+    }
+
     [Fact]
     public void WheelAtTheContentBoundaryPreservesThePublicOffsetWriteVersion()
     {
@@ -417,6 +446,22 @@ public sealed partial class BehaviorTests
             using (Absolute().Content())
             using (ScrollableFunctions.Scrollable(Absolute().Size(100, 60).Padding(10).Position(20, 10)).Content())
                 DraggableFunctions.Draggable(SelectableFunctions.Selectable(Absolute().Size(240, 180)));
+            return default;
+        }
+    }
+
+    private readonly record struct SelectionTree(bool Stop) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Entity parent = SelectableFunctions.Selectable(Absolute());
+            DraggableFunctions.Draggable(parent);
+            using (parent.Content())
+            {
+                Entity child = SelectableFunctions.Selectable(Absolute().Size(100, 50));
+                if (Stop)
+                    Scope.Ensure<StopsPointer>(child);
+            }
             return default;
         }
     }

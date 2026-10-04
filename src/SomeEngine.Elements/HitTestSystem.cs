@@ -86,15 +86,7 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
                 {
                     capture |= press.Node != Entity.Null;
                     if (press.Down && !press.Dragged && hit != Entity.Null && hit == press.Node)
-                    {
                         RouteClick(world, canvas, hit);
-                        if (world.Has<Selected>(hit))
-                        {
-                            Selected selected = world.Read<Selected>(hit);
-                            selected.Value = !selected.Value;
-                            world.Replace(hit, selected);
-                        }
-                    }
                     pointer.SetPress(input.Button, default);
                 }
                 else if (input.Kind == PointerEventKind.Wheel)
@@ -170,6 +162,12 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
                 Clicks clicks = world.Read<Clicks>(node);
                 clicks.Count = unchecked(clicks.Count + 1);
                 world.Replace(node, clicks);
+                if (world.Has<Selected>(node))
+                {
+                    Selected selected = world.Read<Selected>(node);
+                    selected.Value = !selected.Value;
+                    world.Replace(node, selected);
+                }
             }
             if (node == canvas || world.Has<StopsPointer>(node))
                 break;

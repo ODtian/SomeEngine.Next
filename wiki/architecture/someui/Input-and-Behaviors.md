@@ -137,7 +137,8 @@ Selectable 组合 Pressable 与 Selected。重复构建保留系统写入的值�
 布局测量、内边距、透明组合视口和嵌套坐标规则见
 [[architecture/someui/Layout|Layout]] 的滚动布局章节。
 
-每个完成的点击切换 `Selected.Value` 一次，包括同帧的多次点击。
+每个完成的路由点击切换沿途 Selectable 节点的 `Selected.Value` 一次，包括同帧的多次点击。
+`StopsPointer` 与画布边界按同一点击路由决定选择传播的范围。
 选择数据由输入阶段写入，读取 Selected 的计算沿现有依赖机制更新。
 这些行为共用 Pointer、画布命中与 InputCapture 的输入顺序。
 
