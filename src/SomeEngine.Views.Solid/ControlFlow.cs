@@ -59,7 +59,7 @@ public static partial class Solid
         }
     }
 
-    private static void DeclareBranch<T>(T value, Action? children)
+    private static void DeclareBranch<T>(T value, Action? children, bool keyed = true)
     {
         if (children is null)
             return;
@@ -70,7 +70,11 @@ public static partial class Solid
         {
             Entity branch = previous[0];
             key = Scope.World.Read<ElementKey>(branch).Key;
-            if (!EqualityComparer<T>.Default.Equals(Scope.World.Read<BranchContent<T>>(branch).Value, value))
+            T previousValue = Scope.World.Read<BranchContent<T>>(branch).Value;
+            bool changed = keyed
+                ? !EqualityComparer<T>.Default.Equals(previousValue, value)
+                : (previousValue is null) != (value is null);
+            if (changed)
                 key = unchecked(key + 1);
         }
         Scope.View(new BranchContent<T>(value, children), key);
@@ -93,10 +97,7 @@ public static partial class Solid
             T? value = When();
             bool present = value is not null;
             Action? content = present ? Children : Fallback;
-            if (Keyed)
-                DeclareBranch(value, content);
-            else
-                DeclareBranch(present, content);
+            DeclareBranch(value, content, Keyed);
             return default;
         }
     }

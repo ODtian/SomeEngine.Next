@@ -150,6 +150,7 @@ Dynamic(() => expanded.Value ? Expanded : Collapsed);
 `Show` 的 fallback 省略且条件为假时也形成空内容。
 
 选择数据由现有分支的视图参数持有，身份由该分支的 `ElementKey` 持有。
+带值分支保存这次的条件值；调用方更新 keyed 选项后，继续按现有条件值与选项比较。
 控制节点沿 `ElementTree` 取得前次分支，通过公开的 `Scope.View(in T, ulong)`
 声明保留或新建的内容。成功构建后由共享子声明收尾释放旧分支及整个子树，
 释放后的计算随所属节点退出重建调度。再次选中之前的条件或函数时创建新实体。

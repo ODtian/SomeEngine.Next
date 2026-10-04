@@ -153,6 +153,44 @@ public sealed partial class SolidTests
     }
 
     [Fact]
+    public void ShowAppliesUpdatedKeyedOptionsToTheCurrentConditionValue()
+    {
+        using var frames = new SolidFrames();
+        var name = new State<string?>("first");
+        var keyed = new State<bool>();
+        Entity label = Entity.Null;
+        Views.Spawn(frames.World, Entity.Null, new RepeatedView(() => Show(() => name.Value,
+            value => label = Text(value()), keyed: keyed.Value)));
+        frames.Frame();
+        Entity first = label;
+
+        keyed.Value = true;
+        frames.Frame();
+        Assert.Equal(first, label);
+        Assert.Equal("first", frames.World.Read<Elements.Text>(label).Value);
+
+        name.Value = "second";
+        frames.Frame();
+        Assert.False(frames.World.IsAlive(first));
+        Assert.NotEqual(first, label);
+        Assert.Equal("second", frames.World.Read<Elements.Text>(label).Value);
+        Entity second = label;
+
+        keyed.Value = false;
+        name.Value = "third";
+        frames.Frame();
+        Assert.Equal(second, label);
+        Assert.Equal("second", frames.World.Read<Elements.Text>(label).Value);
+
+        keyed.Value = true;
+        name.Value = "fourth";
+        frames.Frame();
+        Assert.False(frames.World.IsAlive(second));
+        Assert.NotEqual(second, label);
+        Assert.Equal("fourth", frames.World.Read<Elements.Text>(label).Value);
+    }
+
+    [Fact]
     public void SwitchSelectsTheFirstMatchAndRecreatesContentWhenTheSelectedMatchChanges()
     {
         using var frames = new SolidFrames();
@@ -423,14 +461,14 @@ public sealed partial class SolidTests
         Assert.Throws<InvalidOperationException>(() => Show(() => "value", _ => { }));
         Assert.Throws<InvalidOperationException>(() => Switch());
         Assert.Throws<InvalidOperationException>(() => Dynamic(() => () => { }));
-        Assert.Throws<InvalidOperationException>(() => Show(null!, () => { }));
-        Assert.Throws<InvalidOperationException>(() => Show(() => true, (Action)null!));
-        Assert.Throws<InvalidOperationException>(() => Show<string>(null!, _ => { }));
-        Assert.Throws<InvalidOperationException>(() => Show<string>(() => "value", null!));
-        Assert.Throws<InvalidOperationException>(() => Match(null!, () => { }));
-        Assert.Throws<InvalidOperationException>(() => Match(() => true, null!));
-        Assert.Throws<InvalidOperationException>(() => Switch(default(SomeEngine.Views.Solid.Match)));
-        Assert.Throws<InvalidOperationException>(() => Dynamic(null!));
+        Assert.Contains("condition getter", Assert.Throws<InvalidOperationException>(() => Show(null!, () => { })).Message);
+        Assert.Contains("branch content", Assert.Throws<InvalidOperationException>(() => Show(() => true, (Action)null!)).Message);
+        Assert.Contains("value getter", Assert.Throws<InvalidOperationException>(() => Show<string>(null!, _ => { })).Message);
+        Assert.Contains("branch content", Assert.Throws<InvalidOperationException>(() => Show<string>(() => "value", null!)).Message);
+        Assert.Contains("condition getter", Assert.Throws<InvalidOperationException>(() => Match(null!, () => { })).Message);
+        Assert.Contains("branch content", Assert.Throws<InvalidOperationException>(() => Match(() => true, null!)).Message);
+        Assert.Contains("condition getter", Assert.Throws<InvalidOperationException>(() => Switch(default(SomeEngine.Views.Solid.Match))).Message);
+        Assert.Contains("component getter", Assert.Throws<InvalidOperationException>(() => Dynamic(null!)).Message);
     }
 
     [Fact]
@@ -449,5 +487,14 @@ public sealed partial class SolidTests
     private sealed record DisplayValue(string Text)
     {
         public override int GetHashCode() => 1;
+    }
+
+    private readonly record struct RepeatedView(Action Content) : IView, SomeEngine.ECS.IComponent
+    {
+        public BuildTask Build()
+        {
+            Content();
+            return default;
+        }
     }
 }
