@@ -69,9 +69,20 @@ Flip.Enable(row, Spec.Tween(0.2f));
 `tests/SomeEngine.Elements.Consumer.Tests/InterfaceAnimationTests.cs` 经公开 API 验证悬停颜色、
 中途反向、参数与修饰的相同目标重跑、实体表格成员关系、构建失败后的目标恢复、
 列表重排、用户变换、上一帧实体匹配及游戏暂停。
+尺寸、局部矩阵与透明度同时变化时，两个矩形角点与透明度保持呈现连续，并回到新布局的单位偏移。
 `InterfaceAnimationChecks.cs` 将用户自定义值运算、内联颜色轨道与中断 FLIP 的相同
 行为检查复用于 `SomeEngine.Views.AotSmoke`。
 渲染提取的呈现行为见 `PresentationExtractionTests.cs`。
+
+2026-10-04 的验收代码提交为 `8f35d86b8d6a2faead6f8469b1fb802d5ccd9d91`，
+包含集成分支 `f72a355041cdecced3cb0778e50ed7fa08c987b3`。以
+`dotnet test tests/<项目>/<项目>.csproj --nologo -v quiet -m:1 -nodeReuse:false -p:UseSharedCompilation=false`
+运行 Views、Animation、Layout、Elements.Consumer 与 Elements.Render 的完整 Debug 测试，
+分别通过 259、125、94、57、11 项，共 546 项。
+后两组增加 `-c Release` 分别通过 41 与 11 项。
+`dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64`
+发布的原生程序通过共享行为检查；`Test-Checkpoint.ps1 -Executable <原生程序>`
+通过跨进程保存、类型编号重映射、下一帧重建与依赖验收。
 
 ## Relations
 [[architecture/animation/Property-Animation|Property Animation]] · [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Render-Path|Render Path]]
