@@ -76,6 +76,13 @@ public readonly record struct Constraints(Size Min, Size Max);
 `CanvasTarget.Screen` 表示屏幕，`RenderTexture(entity)` 与 `WorldSpace(entity)`
 分别保存纹理实体与世界实体。Canvas 配置由应用写入。
 
+世界空间画布的目标实体持有 `WorldTransform`，应用在提取前完成其更新。
+画布原点为该实体的原点，布局 X 沿实体的局部 +X，布局 Y 沿局部 -Y；
+目标的平移、旋转、缩放与拉伸共同定位画布。布局尺寸与屏幕画布采用同一约束协议。
+绘制先以 `Scale` 将布局单位转换为目标局部像素，再应用目标的世界变换。
+`Canvas.DepthTest` 由应用选择场景深度测试，默认 false。
+独立偏移和世界尺寸通过目标实体的变换表达。
+
 帧顺序为 `ViewRebuildSystem` → `LayoutSystem`。
 开发构建通过 Core 的 `DevelopmentCheck` 报告尺寸、约束、缩放及测量/摆放使用错误，
 这些检查调用随 shipping 编译消失。

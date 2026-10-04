@@ -36,6 +36,7 @@ public sealed record RuntimeStartupOptions(
     public string? FrameOutputPath { get; init; }
     public bool HideDebugUi { get; init; }
     public bool SurfacePanel { get; init; }
+    public bool WorldNameplates { get; init; }
     public bool TemporalAntialiasing { get; init; } = true;
     public bool VirtualShadows { get; init; } = true;
 
@@ -123,6 +124,7 @@ public sealed record RuntimeStartupOptions(
             FrameOutputPath = frameOutputPath,
             HideDebugUi = args.Contains("--no-debug-ui", StringComparer.OrdinalIgnoreCase),
             SurfacePanel = args.Contains("--surface-panel", StringComparer.OrdinalIgnoreCase),
+            WorldNameplates = args.Contains("--world-nameplates", StringComparer.OrdinalIgnoreCase),
             TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
             VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
         };

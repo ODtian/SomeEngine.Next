@@ -38,6 +38,8 @@ internal sealed class SurfaceDrawing : IDisposable
     private readonly Shader _shader;
     private readonly Pipeline _pipeline;
     private readonly VariableLayoutReflection _parameters;
+    private readonly Format _format;
+    private readonly Dictionary<(Format Format, CompareOperation Comparison), Pipeline> _depthPipelines = [];
 
     internal Pipeline Pipeline => _pipeline;
     internal VariableLayoutReflection Parameters => _parameters;
@@ -48,19 +50,36 @@ internal sealed class SurfaceDrawing : IDisposable
         _backend = backend;
         _device = device;
         _shader = material.Shader!;
-        int target = _shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+        _format = format;
+        _parameters = _shader.GetSlangReflection(_shader.RequireSlangTarget(device.Capabilities.CompileTarget))
+            .GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        _pipeline = CreatePipeline();
+    }
+
+    internal Pipeline GetPipeline(in CanvasPassTarget target)
+    {
+        if (target.Depth == default) return _pipeline;
+        var key = (target.DepthFormat, target.DepthComparison);
+        if (!_depthPipelines.TryGetValue(key, out Pipeline? pipeline))
+            _depthPipelines.Add(key, pipeline = CreatePipeline(target.DepthFormat, target.DepthComparison));
+        return pipeline;
+    }
+
+    private Pipeline CreatePipeline(Format? depthFormat = null, CompareOperation comparison = CompareOperation.LessOrEqual)
+    {
+        int target = _shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
         ShaderReflection reflection = _shader.GetSlangReflection(target);
         EntryPointReflection vertex = _shader.RequireSlangEntry(target, "vertexMain", SlangStage.Vertex);
         EntryPointReflection pixel = _shader.RequireSlangEntry(target, "pixelMain", SlangStage.Fragment);
-        _parameters = reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        _pipeline = backend.CreateGraphicsPipeline(device, new GraphicsPipelineDesc(
+        return _backend.CreateGraphicsPipeline(_device, new GraphicsPipelineDesc(
             _shader.SlangCode, reflection, vertex, _shader.GetSlangEntryBytes(target, vertex),
             pixel, _shader.GetSlangEntryBytes(target, pixel), [], [], PrimitiveTopology.TriangleList,
             StripCut.Disabled, new RasterizerState(Cull: CullType.None), new MultisampleState(),
-            new DepthStencilState(), new BlendState([new BlendAttachmentState(
+            new DepthStencilState(DepthTest: depthFormat.HasValue, DepthWrite: false, DepthComparison: comparison),
+            new BlendState([new BlendAttachmentState(
                 Enabled: true, SourceColor: BlendFactor.One, DestinationColor: BlendFactor.OneMinusSourceAlpha,
                 SourceAlpha: BlendFactor.One, DestinationAlpha: BlendFactor.OneMinusSourceAlpha)]),
-            new AttachmentFormatSignature([format], null), DynamicStates.Viewport | DynamicStates.Scissor,
+            new AttachmentFormatSignature([_format], depthFormat), DynamicStates.Viewport | DynamicStates.Scissor,
             "Surface", vertexCodeBlob: _shader.GetSlangEntryBlob(target, vertex),
             pixelCodeBlob: _shader.GetSlangEntryBlob(target, pixel)));
     }
@@ -92,5 +111,9 @@ internal sealed class SurfaceDrawing : IDisposable
         catch { buffer.Dispose(); throw; }
     }
 
-    public void Dispose() => _pipeline.Dispose();
+    public void Dispose()
+    {
+        _pipeline.Dispose();
+        foreach (Pipeline pipeline in _depthPipelines.Values) pipeline.Dispose();
+    }
 }
