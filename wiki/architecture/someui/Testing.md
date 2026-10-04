@@ -1298,8 +1298,8 @@ IL2070 位于 JobStorageTypeMetadata.cs:59；上述原生运行同时验证最�
 最终 Spec 评审的固定范围为 `8c953fae` →
 `663c9ea4`。本次沿原票工作树从 `cb66dd360ea9c6284faf8cef1b871847e7c652df`
 接续两项公开失败，修复提交为 `633ce897`，交付前合入当前集成
-`1c634f8389f495f2af3b35514016c066030c4205`，合并提交为
-`59d610bf3c53fb5036e46e57d5e470deb0daaaaa`。
+`69abcfc6489a55001ecb411c1f3974e1129c4ee8`，合并提交为
+`c61d5798fe76f334d168c2662375f7642d22bfde`。
 
 `InheritedAwaiterChecks` 通过 IView、State、TaskCompletionSource、自定义
 INotifyCompletion awaiter 与无头帧入口复现。继承的 GetResult 位于基类，
@@ -1326,9 +1326,9 @@ Launch、错误恢复及前端消费者通过完整工程回归。相关默认�
 | SomeEngine.Views.Generators.Tests | 166 | 166 |
 | SomeEngine.Views.Solid.Tests | 53 | 49 |
 | SomeEngine.Elements.Consumer.Tests | 354 | 268 |
-| SomeEngine.Layout.Tests | 97 | 77 |
+| SomeEngine.Layout.Tests | 101 | 81 |
 
-五工程共 1,868 项通过，Debug 1,005 项、Release 863 项。
+五工程共 1,876 项通过，Debug 1,009 项、Release 867 项。
 消费者与布局的最终结果来自当前集成合并后的源码。消费者使用串行测试集合运行，
 零分配数字文本与语言格式化回归通过；Launch 清理用例按公开完成结果推进帧。
 
@@ -1338,9 +1338,11 @@ dotnet test tests/<工程>/<工程>.csproj -c Release --nologo -v quiet -m:1 -nr
 ```
 
 消费者附加 `-- xUnit.MaxParallelThreads=1 xUnit.ParallelizeTestCollections=false`。
-初次回归在 `cb66dd36` 源码上运行，其后对合并影响的消费者与布局执行两个配置复验。
+初次回归在 `cb66dd36` 源码上运行，其后对合并影响的消费者与布局执行两个配置复验，
+覆盖 `1c634f83` 的长文本光标、滚动与布局更新，以及 `69abcfc6` 的并行布局缓存读取修复。
 
-Views 与 ECS 的 win-x64 NativeAOT 完成发布、实际启动，退出码均为 0。
+在最终合并提交 `c61d5798` 上，Views 与 ECS 的 win-x64 NativeAOT
+完成发布、实际启动，退出码均为 0。
 两套入口通过 BuildResumeChecks.VerifyAll 实际执行上述继承 awaiter 与 BuildTask
 清理辅助方法检查，同时执行同步 Resource 与既有异步回归。Views 的四种写法、
 普通 World / Job World、输入、动画及当前长文本光标场景通过。ECS 输出为
