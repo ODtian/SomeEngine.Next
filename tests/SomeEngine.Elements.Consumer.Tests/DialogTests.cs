@@ -82,6 +82,7 @@ public sealed partial class DialogTests
         Entity[] first = Hierarchy<ElementTree>.GetChildren(frames.World, dialog).ToArray();
         Entity title = first[0];
         Entity body = first[1];
+        Entity actions = first[2];
         Assert.Equal("Settings", frames.World.ReadSparse<DialogTitle>(title).Text);
         Entity text = Assert.Single(ButtonChecks.DescendantsWith<Text>(frames.World, title));
         Assert.Equal("Settings", frames.World.Read<Text>(text).Value);
@@ -91,14 +92,15 @@ public sealed partial class DialogTests
 
         frames.World.Replace(root, new DialogWithTitle(TitlePosition.Last));
         frames.Frame();
-        Assert.Equal(new[] { body, title }, Hierarchy<ElementTree>.GetChildren(frames.World, dialog).ToArray());
+        Assert.Equal(new[] { body, actions, title }, Hierarchy<ElementTree>.GetChildren(frames.World, dialog).ToArray());
         Assert.True(frames.World.Read<LayoutRect>(body).Value.Y < frames.World.Read<LayoutRect>(text).Value.Y);
 
         frames.World.Replace(root, new DialogWithTitle(TitlePosition.Omitted));
         frames.Frame();
-        Assert.Equal(body, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, dialog)));
+        Assert.Equal(new[] { body, actions }, Hierarchy<ElementTree>.GetChildren(frames.World, dialog).ToArray());
         Assert.Empty(ButtonChecks.DescendantsWith<Text>(frames.World, dialog));
         Assert.Equal(new Rect(24, 24, 152, 20), frames.World.Read<LayoutRect>(body).Value);
+        Assert.Equal(new Rect(24, 60, 152, 10), frames.World.Read<LayoutRect>(actions).Value);
     }
 
     [Fact]
@@ -169,6 +171,8 @@ public sealed partial class DialogTests
                 if (Position == TitlePosition.First)
                     Scope.View(new DialogTitle("Settings"), 11);
                 Scope.View(new DialogContent("body", 20), 12);
+                using (DialogActions().Content())
+                    Scope.View(new DialogContent("action", 10), 13);
                 if (Position == TitlePosition.Last)
                     Scope.View(new DialogTitle("Settings"), 11);
             }
