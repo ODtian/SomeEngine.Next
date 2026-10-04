@@ -37,6 +37,12 @@ SomeUI 的使用错误通过 [[architecture/validation/Development-Checks|Develo
 | `SEV009` | error | 调用 Remember 的方法或 lambda 使用自己的 Composable 标记 |
 | `SEV013` | info | Compose 方法或 SwiftUI Build 中传入捕获外部变量的 lambda；提示“调用方每次重跑都会分配”，推荐 static lambda 加显式状态参数 |
 | `SEV014` | error | Composable 内容参数使用返回 void 或 BuildTask、实参按值传递的委托 |
+| `SEV015` | error | SwiftUI 的 State 属性使用实例 partial get/set 属性，位于 partial struct 视图中 |
+| `SEV016` | error | 按独立函数体确定 Compose、SwiftUI 或 Solid；在其它前端的原语处报告混用错误，组件按视图边界组合 |
+| `SEV017` | info | Solid 向其它前端组件传递来自 State 或 Memo 读取的普通值；建议使用 Insert 内容函数或直接传 State |
+
+前端识别、普通值来源与公共编译验收由
+[[architecture/someui/Frontends|Frontends]] 维护。
 
 `DiagnosticSuppressor` 根据 `IView.Build` 的实际实现屏蔽 CS1998，包含显式接口实现。
 辅助方法的 CS1998 继续由编译器报告。
