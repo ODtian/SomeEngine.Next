@@ -32,6 +32,9 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DraggableFunctions.cs" Link="Rewrites/DraggableFunctions.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/ScrollableFunctions.cs" Link="Rewrites/ScrollableFunctions.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/SelectableFunctions.cs" Link="Rewrites/SelectableFunctions.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ListChecks.cs" Link="ListChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/ScrollView.cs" Link="Rewrites/ScrollView.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/VirtualList.cs" Link="Rewrites/VirtualList.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs" Link="ButtonChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs" Link="Rewrites/Button.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs" Link="Rewrites/IconButton.cs" />
