@@ -8,7 +8,7 @@ param(
     [ValidateNotNullOrEmpty()]
     [string] $Evidence,
 
-    [ValidateSet('ECS', 'Views')]
+    [ValidateSet('ECS', 'Views', IgnoreCase = $false)]
     [string] $Project = 'ECS'
 )
 
