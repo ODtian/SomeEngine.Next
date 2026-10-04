@@ -10,12 +10,13 @@ public sealed class CheckBuildAwaits : Microsoft.Build.Utilities.Task
 {
     [Required]
     public string AssemblyPath { get; set; } = "";
+    public ITaskItem[] References { get; set; } = [];
 
     public override bool Execute()
     {
         try
         {
-            BuildAwaitChecks.Apply(AssemblyPath);
+            BuildAwaitChecks.Apply(AssemblyPath, References.Select(reference => reference.ItemSpec));
             return true;
         }
         catch (Exception error)
@@ -29,20 +30,22 @@ public sealed class CheckBuildAwaits : Microsoft.Build.Utilities.Task
 /// <summary>Completes compilation of BuildTask methods before managed or native execution.</summary>
 public static class BuildAwaitChecks
 {
-    public static void Apply(string assemblyPath)
+    public static void Apply(string assemblyPath, IEnumerable<string>? references = null)
     {
         bool symbols = File.Exists(Path.ChangeExtension(assemblyPath, ".pdb"));
+        using var resolver = ResolveReferences(references);
         using var assembly = AssemblyDefinition.ReadAssembly(assemblyPath,
-            new ReaderParameters { ReadWrite = true, ReadSymbols = symbols });
+            new ReaderParameters { ReadWrite = true, ReadSymbols = symbols, AssemblyResolver = resolver });
         if (Apply(assembly))
             assembly.Write(new WriterParameters { WriteSymbols = symbols });
     }
 
-    public static void Apply(Stream assemblyImage)
+    public static void Apply(Stream assemblyImage, IEnumerable<string>? references = null)
     {
         assemblyImage.Position = 0;
+        using var resolver = ResolveReferences(references);
         using var assembly = AssemblyDefinition.ReadAssembly(assemblyImage,
-            new ReaderParameters { ReadingMode = ReadingMode.Immediate });
+            new ReaderParameters { ReadingMode = ReadingMode.Immediate, AssemblyResolver = resolver });
         if (!Apply(assembly))
             return;
         using var result = new MemoryStream();
@@ -50,6 +53,16 @@ public static class BuildAwaitChecks
         assemblyImage.SetLength(0);
         result.Position = 0;
         result.CopyTo(assemblyImage);
+    }
+
+    private static DefaultAssemblyResolver ResolveReferences(IEnumerable<string>? references)
+    {
+        var resolver = new DefaultAssemblyResolver();
+        foreach (string directory in (references ?? []).Select(Path.GetDirectoryName).Distinct())
+            if (!string.IsNullOrEmpty(directory))
+                resolver.AddSearchDirectory(directory);
+        resolver.AddSearchDirectory(Path.GetDirectoryName(typeof(object).Assembly.Location));
+        return resolver;
     }
 
     private static bool Apply(AssemblyDefinition assembly)

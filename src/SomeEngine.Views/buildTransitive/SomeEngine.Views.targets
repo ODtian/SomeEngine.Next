@@ -9,6 +9,7 @@
       <_SomeEngineViewsAssembly Include="@(ReferencePath)" Condition="'%(Filename)' == 'SomeEngine.Views'" />
     </ItemGroup>
     <SomeEngine.Views.Compiler.CheckBuildAwaits AssemblyPath="@(IntermediateAssembly)"
+        References="@(ReferencePath)"
         Condition="'@(_SomeEngineViewsAssembly)' != '' or '$(MSBuildProjectName)' == 'SomeEngine.Views'" />
   </Target>
 </Project>

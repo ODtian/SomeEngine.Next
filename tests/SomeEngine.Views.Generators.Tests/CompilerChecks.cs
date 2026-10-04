@@ -35,7 +35,7 @@ internal static class CompilerChecks
         using var image = new MemoryStream();
         var result = compilation.Emit(image);
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
-        Compiler.BuildAwaitChecks.Apply(image);
+        Compiler.BuildAwaitChecks.Apply(image, ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator));
         var assembly = System.Reflection.Assembly.Load(image.ToArray());
         var check = (Func<bool>)assembly.GetType("ReferenceChecks")!.GetMethod("Check")!.CreateDelegate(typeof(Func<bool>));
         return check();
