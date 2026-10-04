@@ -36,7 +36,7 @@ Box 的处理顺序和默认值见 [[architecture/someui/Layout|Layout]]。
 `SomeEngine.Elements.Surface` 是布局节点上的表格组件，颜色使用 Core 的线性 RGBA `Color`：
 
 ```csharp
-public struct Surface : IComponent
+public record struct Surface : IComponent
 {
     public Color Fill;
     public float CornerRadius;
@@ -62,6 +62,7 @@ Column().Background(fill).Corner(4).Border(borderColor, 2);
 
 这些方法沿用 `Scope.Write<Surface>` 的组件副本，成功计算结束时比较提交。
 重建写入相等的四个字段时，节点与类型的写版本均保留；值变化时按 ECS 写入规则推进版本。
+Surface 使用四个字段的类型化相等比较，供响应式字段计算比较并提交其副本。
 调用所需的构建或计算作用域由 Core `DevelopmentCheck` 的开发构建检查报告。
 数据写入方由 [[architecture/someui/Data-Writers|Data Writers]] 维护，
 公开行为与用户等价修饰的验收见 [[architecture/someui/Testing|Testing]]。

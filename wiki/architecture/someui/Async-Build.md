@@ -13,9 +13,44 @@
 
 ## 后续能力
 - #21 提供构建取消与依赖变化后的重启。
-- #22 提供 `JobHandle.GetAwaiter()`，基于 `JobSystem.OnCompleted`，放在 Job 程序集，作为通用能力。
 - `Launch(key, static async (k) => ...)`：后台任务，key 变化时取消并重新开始。
 - `Resource<T>`：值、加载中、错误三部分组成的状态；来源变化时重新请求，期间保留旧值。
+
+## 等待 Job（#22）
+
+`SomeEngine.Job` 提供通用的 `JobHandle` await 扩展：
+
+```csharp
+public static class JobHandleAwaitExtensions
+{
+    public static JobHandleAwaiter GetAwaiter(this JobHandle handle);
+}
+
+public readonly struct JobHandleAwaiter : ICriticalNotifyCompletion
+{
+    public bool IsCompleted { get; }
+    public void GetResult();
+    public void OnCompleted(Action continuation);
+    public void UnsafeOnCompleted(Action continuation);
+}
+```
+
+`IsCompleted` 读取 `JobHandle.IsCompleted`，已完成的 Job 和默认句柄在当前调用位置继续。
+挂起等待通过 `JobSystem.OnCompleted` 登记回调，回调按已有语义在登记、完成或外部信号线程
+内联执行。`GetResult` 调用 `JobHandle.Complete()`，沿其既有的首次错误观察语义取得结果。
+调度、依赖、资源访问和句柄完成状态继续由 Job 系统持有。
+
+`Build` 中的 `await handle` 由 `BuildTaskBuilder` 接管恢复：Job 完成回调将状态机放入
+该 World 的重建队列，重建阶段设置原构建作用域后继续读取 Job 写入的数据，并提交界面输出。
+已完成的 Job 沿同步 await 路径在当前重建阶段继续执行。
+
+实现：[JobHandleAwaitExtensions](../../../src/SomeEngine.Job/JobHandleAwaitExtensions.cs)。
+公开行为验收：[JobHandleAwaitTests](../../../tests/SomeEngine.Job.Tests/JobHandleAwaitTests.cs)
+覆盖已完成与挂起 Job 的结果读取、完成线程上的异步恢复、默认句柄、Job 错误传播，以及
+完成发生于判断和登记之间时在登记线程恢复的行为。
+[JobBuildTests](../../../tests/SomeEngine.Views.Tests/JobBuildTests.cs) 通过公开视图、World 和
+无头帧入口显示 Job 写入的值，验证加载值保留到重建阶段，以及同步与挂起等待的恢复线程。
+共享场景 `JobBuildChecks.cs` 同时编入现有 `just ecs-aot win-x64` 入口。
 
 ## 方法构建器与恢复（#6、#20）
 

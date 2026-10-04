@@ -148,14 +148,23 @@ public static partial class Scope
             $"Scope.Write requires table or sparse component {typeof(T).Name}.");
         var key = (entity, ComponentId<T>.Value);
         var copies = current.ViewData.ComponentCopies ??= new();
-        if (!copies.TryGetValue(key, out ComponentCopy? copy))
+        if (!copies.TryGetValue(key, out ComponentCopy? copy) || !copy.Written && !copy.CanReuse)
         {
             T value = ComponentCopy<T>.HasComponent(current.World, entity)
                 ? current.World.ReadComponentData<T>(entity)
                 : default;
             AnimatedFields.RestoreBase(current.World, entity, ref value);
             copy = new ComponentCopy<T>(entity, value);
-            copies.Add(key, copy);
+            copies[key] = copy;
+        }
+        else if (!copy.Written)
+        {
+            T value = ComponentCopy<T>.HasComponent(current.World, entity)
+                ? current.World.ReadComponentData<T>(entity)
+                : default;
+            AnimatedFields.RestoreBase(current.World, entity, ref value);
+            ((ComponentCopy<T>)copy).Value = value;
+            copy.Written = true;
         }
         return ref ((ComponentCopy<T>)copy).Value;
     }
@@ -405,8 +414,7 @@ public static partial class Scope
 
     internal static BuildScope Enter(Computation computation, ulong frame)
     {
-        ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
-            ? available : new();
+        ScopeData current = computation.ScopeData ??= new();
         current.World = computation.World;
         current.Entity = computation.Entity;
         current.Parent = computation.Entity;
@@ -444,6 +452,11 @@ public static partial class Scope
                 Release(declaration);
             content.Clear();
         }
+        bool calculation = ReferenceEquals(data.Computation?.ScopeData, data);
+        if (calculation)
+            data.ClearCalculationCopies();
+        else
+            data.ComponentCopies?.Clear();
         data.World = null!;
         data.Entity = default;
         data.Parent = default;
@@ -451,7 +464,6 @@ public static partial class Scope
         data.Queue = null!;
         data.Task = default;
         data.Computation = null;
-        data.ComponentCopies?.Clear();
         data.RememberOccurrences?.Clear();
         data.ParameterVersion = null;
         data.Suspended = false;
@@ -467,7 +479,8 @@ public static partial class Scope
 #if DEBUG
         data.PreviousSiblings.Clear();
 #endif
-        (s_reusableData ??= new Stack<ScopeData>()).Push(data);
+        if (!calculation)
+            (s_reusableData ??= new Stack<ScopeData>()).Push(data);
     }
 
     internal static void RetainContent(ScopeData data)
@@ -535,8 +548,11 @@ public static partial class Scope
         if (data.ComponentCopies is { } copies)
         {
             foreach (ComponentCopy copy in copies.Values)
-                copy.Commit(data.World, data.Changes);
-            copies.Clear();
+                if (copy.Written)
+                    copy.Commit(data.World, data.Changes,
+                        reuseData: data.OutermostBuild && data.Computation is not null);
+            if (data.Computation is null)
+                copies.Clear();
         }
         if (submitAnimations)
             data.Changes.CommitAnimations(data.World, data.FirstAnimation);
@@ -655,6 +671,7 @@ public static partial class Scope
 
     internal sealed class ScopeData
     {
+        private List<(Entity Entity, ushort Component)>? _unusedCopies;
         internal World World = null!;
         internal Entity Entity;
         internal Entity Parent;
@@ -709,6 +726,23 @@ public static partial class Scope
             FirstData -= firstData;
             FirstRemoval -= firstRemoval;
             FirstAnimation -= firstAnimation;
+        }
+
+        internal void ClearCalculationCopies()
+        {
+            if (ComponentCopies is not { } copies)
+                return;
+            foreach (var (key, copy) in copies)
+                if (copy.Written)
+                    copy.Clear();
+                else
+                    (_unusedCopies ??= new()).Add(key);
+            if (_unusedCopies is { } unused)
+            {
+                foreach (var key in unused)
+                    copies.Remove(key);
+                unused.Clear();
+            }
         }
     }
 

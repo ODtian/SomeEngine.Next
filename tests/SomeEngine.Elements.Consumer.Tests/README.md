@@ -32,6 +32,14 @@ presses, canvas isolation, and development errors. `PointerChecks` runs the same
 caller consumption example for the built-in and user-written `Pressable` and
 `Clicked` functions and shares those cases with the NativeAOT executable.
 
+`BehaviorTests` injects pointer input and observes drag fields, selection,
+scroll ranges, and layout rectangles. It covers event order, held and completed
+drags, button handling, transparent compositions, nested viewports, clickable
+content, content and viewport changes, repeated layout, and development errors.
+`ScrollTextTests` verifies natural text measurements inside a scroll viewport.
+`BehaviorChecks` runs the same composition for built-in declarations and the
+three public user equivalents under `Rewrites/`, in these tests and NativeAOT.
+
 `Rewrites/Button.cs` and `Rewrites/IconButton.cs` compose controls from public
 behavior, environment, layout, text, and surface APIs. `ButtonTests` applies
 the same appearance, pointer, subtree-theme, nearest-theme, and development
@@ -45,3 +53,9 @@ changes, subtree entry and exit, sibling hover changes, held presses, and caller
 output updates across the built-in and user-written behaviors. `PointerTests`
 also verifies stopping at the target or an ancestor and keeping nested canvas
 clicks and subtree hover inside their own tree.
+
+`FocusTests` injects keyboard and gamepad input and observes focus-dependent
+display and click consumption. `FocusChecks` shares the Grid and transparent
+composition cases, node-release behavior, and a scheduled user navigation
+system with the NativeAOT executable. The Grid runs with both the built-in
+focus functions and the public user equivalent under `Rewrites/`.

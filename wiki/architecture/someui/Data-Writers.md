@@ -11,13 +11,20 @@
 | `TextAppearance`（文本此次构建解析的完整样式） | `Text.Build` |
 | 环境数据（用户定义的主题等组件） | 调用方通过 `Entity.Provide` 写入 |
 | `ButtonTheme` | 调用方通过 `Entity.Provide` 写入，Button 读取最近提供者 |
-| `Clicks`、`Hover` | `HitTestSystem`；视图用 `Ensure<T>` 声明需要 |
+| `Clicks` | 输入阶段：`HitTestSystem` 的指针点击与 `FocusNavigationSystem` 的焦点确认；视图用 `Ensure<T>` 声明需要 |
+| `Hover` | `HitTestSystem`；视图用 `Ensure<T>` 声明需要 |
 | `Pressable`、`StopsPointer` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
 | `ClickSeen` | 调用方作用域通过 `Clicked()` 的 `Write<T>` 提交 |
+| `Drag`、`Selected` | `HitTestSystem` 的行为阶段；调用方通过 `Ensure<T>` 声明 |
+| `ScrollInput` | `HitTestSystem`，记录当帧滚轮与拖动产生的实际位移及输入计数 |
+| `ScrollOffset` | 布局系统，按当前内容与视口写入范围和受限偏移 |
+| `ScrollSeen` | 布局系统，记录已应用的输入计数，保持公开偏移数据的写版本只随值和范围变化 |
 | 画布指针事件缓冲 | `Pointer` 的追加与领取入口 |
 | 画布的当前位置、各按钮按下状态与目标 | `HitTestSystem`；`Pointer` 首次输入时声明默认数据 |
-| `InputCapture` | 输入阶段；当前 `HitTestSystem` 写 `Pointer`，保留 `Keyboard` |
-| `Focused` | 焦点系统；视图用 `Ensure<T>` 声明需要 |
+| `InputCapture` | 输入阶段；`HitTestSystem` 写 `Pointer`，焦点系统写 `Keyboard` |
+| `Focusable` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
+| `FocusInput` 缓冲 | `Keyboard` / `Gamepad` 追加，调度中的焦点系统领取 |
+| `Focused` | 调度中的焦点系统，默认由 `FocusNavigationSystem` 写入和转移 |
 | 视图局部状态与 `Remember`/`[State]` 存储 | 该视图自己的构建 |
 | `LayoutRect`、`LayoutCache` | 布局系统 |
 | `Canvas`（目标、尺寸、缩放） | 应用 |

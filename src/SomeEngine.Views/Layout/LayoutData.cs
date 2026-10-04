@@ -75,8 +75,14 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             {
                 node.CanvasPosition = node.Position;
                 if (node.Parent != canvas && _nodes.TryGetValue(node.Parent, out NodeLayout? parent))
+                {
                     node.CanvasPosition += parent.CanvasPosition;
+                    if (World.Has<ScrollOffset>(parent.Entity))
+                        node.CanvasPosition -= World.Read<ScrollOffset>(parent.Entity).Value;
+                }
                 Size measured = World.Read<LayoutCache>(node.Entity).Size;
+                if (World.Has<ScrollOffset>(node.Entity))
+                    UpdateScroll(node, measured);
                 WriteRectangle(node.Entity, new Rect(node.CanvasPosition.X, node.CanvasPosition.Y,
                     measured.Width, measured.Height));
             }
@@ -169,16 +175,21 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         Has<Box>(entity, entity);
         if (World.Has<Box>(entity))
             Read<Box>(entity, entity);
+        bool scrolling = Has<ScrollOffset>(entity, entity);
         Size padding = new(box.Padding.Left + box.Padding.Right, box.Padding.Top + box.Padding.Bottom);
         var contentConstraints = new Constraints(
             new Size(MathF.Max(0, outerConstraints.Min.Width - padding.Width), MathF.Max(0, outerConstraints.Min.Height - padding.Height)),
             new Size(MathF.Max(0, outerConstraints.Max.Width - padding.Width), MathF.Max(0, outerConstraints.Max.Height - padding.Height)));
         var pass = new LayoutPass(this, entity, new LayoutChildren(node.Children), new Vector2(box.Padding.Left, box.Padding.Top));
+        Constraints measuredConstraints = scrolling ? new Constraints(default, Size.Unbounded) : contentConstraints;
         foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
-            dataUpdate.Update(World, entity, in contentConstraints);
-        Size size = ViewTypes.Measure(World, entity, ref pass, in contentConstraints);
+            dataUpdate.Update(World, entity, in measuredConstraints);
+        Size size = ViewTypes.HasMeasure(World, entity)
+            ? ViewTypes.Measure(World, entity, ref pass, in measuredConstraints)
+            : MeasureScrollContent(ref pass, in measuredConstraints);
         CheckMeasuredChildren(node);
         LayoutValidation.CheckSize(size);
+        node.ContentSize = size;
         size = contentConstraints.Constrain(size);
         size = outerConstraints.Constrain(new Size(size.Width + padding.Width, size.Height + padding.Height));
         var measured = new LayoutCache { Constraints = constraints, Size = size, InputVersion = node.InputVersion };
@@ -188,6 +199,46 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             World.Add(entity, in measured);
         node.HasMeasurement = true;
         return size;
+    }
+
+    private void UpdateScroll(NodeLayout node, Size size)
+    {
+        ScrollOffset previous = World.Read<ScrollOffset>(node.Entity);
+        ScrollOffset offset = previous;
+        Box box = World.Has<Box>(node.Entity) ? World.Read<Box>(node.Entity) : default;
+        Vector2 viewport = new(MathF.Max(0, size.Width - box.Padding.Left - box.Padding.Right),
+            MathF.Max(0, size.Height - box.Padding.Top - box.Padding.Bottom));
+        offset.Max = Vector2.Max(Vector2.Zero, new Vector2(node.ContentSize.Width, node.ContentSize.Height) - viewport);
+        if (World.Has<ScrollInput>(node.Entity))
+        {
+            ScrollInput input = World.Read<ScrollInput>(node.Entity);
+            bool hasSeen = World.Has<ScrollSeen>(node.Entity);
+            ScrollSeen seen = hasSeen ? World.Read<ScrollSeen>(node.Entity) : default;
+            if (input.Count != seen.Count)
+            {
+                offset.Value += input.Delta;
+                seen.Count = input.Count;
+                if (hasSeen)
+                    World.Replace(node.Entity, seen);
+                else
+                    World.Add(node.Entity, seen);
+            }
+        }
+        offset.Value = Vector2.Clamp(offset.Value, Vector2.Zero, offset.Max);
+        if (offset.Value != previous.Value || offset.Max != previous.Max)
+            World.Replace(node.Entity, offset);
+    }
+
+    private static Size MeasureScrollContent(ref LayoutPass pass, in Constraints constraints)
+    {
+        Size extent = default;
+        foreach (Entity child in pass.Children)
+        {
+            Size size = pass.Measure(child, in constraints);
+            pass.Place(child, Vector2.Zero);
+            extent = new Size(MathF.Max(extent.Width, size.Width), MathF.Max(extent.Height, size.Height));
+        }
+        return extent;
     }
 
     private static Constraints ConstrainBox(in Box box, in Constraints constraints)
@@ -279,7 +330,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         {
             if (World.Has<Canvas>(child))
                 continue;
-            if (ViewTypes.HasMeasure(World, child))
+            if (ViewTypes.HasMeasure(World, child) || World.Has<ScrollOffset>(child))
                 children.Add(child);
             else
                 CollectChildren(child, children);
@@ -295,6 +346,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         internal ushort ViewType;
         internal Vector2 Position;
         internal Vector2 CanvasPosition;
+        internal Size ContentSize;
         internal uint InputVersion;
         internal ulong TreeFrame;
         internal ulong MeasurementFrame;

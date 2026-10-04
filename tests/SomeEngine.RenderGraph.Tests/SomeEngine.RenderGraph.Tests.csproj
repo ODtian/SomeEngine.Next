@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="../../tools/SomeEngine.Trace/SomeEngine.Trace.csproj" />
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Elements.Render/SomeEngine.Elements.Render.csproj" />
     <ProjectReference Include="../../src/SomeEngine.RenderGraph.Diagnostics/SomeEngine.RenderGraph.Diagnostics.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Vulkan/SomeEngine.Graphics.Vulkan.csproj" />

@@ -50,6 +50,8 @@
 
 **行为部件**：可挂到任意节点上的公开行为，例如 `Pressable`、`Draggable`、`Focusable`。行为部件声明所需数据，由对应系统处理。
 
+**焦点**：当前 World 接收键盘和手柄确认输入的界面节点，状态以节点上的 `Focused` sparse 标记表达。候选节点通过 `Focusable` 行为部件声明；导航与释放规则见 [Input and Behaviors](wiki/architecture/someui/Input-and-Behaviors.md)。
+
 **复合部件**：组成复合控件的一组公开视图，由调用方拼装，例如 `Dialog`、`DialogTitle`、`DialogActions`。
 
 **通道**（`Channel<T>`）：以组件编号加字节偏移定位的组件字段，属性动画通过它写目标字段。
@@ -87,6 +89,12 @@
 **重排边界**：父布局传入的约束经 Box 限制后固定两轴的布局节点，其内部尺寸变化在该节点止步；多次测量的约束共同决定边界。
 
 **字形图集**（`GlyphAtlas`）：按字体与字形编号保存 SDF 的 CPU 图集。字形位置包含页编号、像素矩形、UV 和相对基线的偏移。
+
+**本地化文本**（`LocalizedText`）：由翻译 key 和位置参数组成的文本输入。视图构建读取当前语言与翻译目录，并把显示字符串写入 `TextContent`。
+
+**当前语言**（`Locale`）：一个 World 的单例组件，以 .NET 文化名指定文字、数字与日期的语言规则。
+
+**翻译目录**（`Translations`）：内容构建生成并加载的语言、key、复合格式与复数规则数据，与 `Locale` 放在同一个实体上。
 
 **图集页**（`AtlasPage`）：尺寸固定、每像素一字节的距离场数据，像素行从上到下排列。
 

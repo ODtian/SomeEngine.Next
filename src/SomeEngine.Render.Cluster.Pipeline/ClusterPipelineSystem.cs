@@ -332,6 +332,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _shadeBeginAfter = pass;
     }
 
+    /// <summary>The page-fault readback pass, for ordering presentation after streaming submissions.</summary>
+    public GraphPassId PageFaultReadbackPass => _pageFaultReadbackPass;
+
     public GraphPassId ShadeCompletePass => _shadeGroups.Count != 0
         ? _shadeGroups[_shadeGroupOrder.Max].Pass
         : _shadeResolvePass;
