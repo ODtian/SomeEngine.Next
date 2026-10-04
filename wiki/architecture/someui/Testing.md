@@ -487,7 +487,7 @@ Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
 
 修复提交为 `72e63d013bbcb7aed4be7cdb65c58ae6406d6fbc`。
 交付前两次合入集成分支：先形成 `642724cacd290d97a5d1f2e7275e0740ff470ebd`，
-再合入 `f7f66815c02d0f46a577fe7f8ce06d4f8147e97a`，形成最终验收代码提交
+再合入 `f7f66815c02d0f46a577fe7f8ce06d4f8147e97a`，形成本轮完整验收代码提交
 `118953eb17d50b9046fbdcb57c1cd7342ecd2704`。以下完整结果基于该代码提交。
 
 | 修复 | 公开复现与结果 |
@@ -559,7 +559,32 @@ FirstBuildChecks 调用共享的跨帧组件与子参数恢复检查，实际执
 两次原生实际运行与共享行为结果由上述入口确认。
 验证完成后核对并清理工作树内 88 个 bin / obj 输出目录，包含排版原生依赖、
 两个原生发布目录与测试产物。跨进程检查点文件由验收脚本清理。
-本节记录与测试文件的空行整理形成交付记录提交，产品源码对应上文的最终验收代码提交。
+本节记录与测试文件的空行整理形成 `1ee15a5c015f9f7d948c13ade9d7b6fbff9dfb32`。
+
+### 交付前 Solid 控制流集成
+
+随后合入当时集成提交 `72d1409e23ea75102b5a247cd8cf757b44dd14d8`，
+形成交付代码提交 `82f959cb7e38a0281319501c118bc6ea9c75d9c8`。
+该次集成增加 Solid Show、Switch/Match 与 Dynamic；本批 Views、Layout、Elements、
+Elements.Render、生成器、Typography、Job、ECS 及 ECS 原生入口源码与
+`118953eb` 相同，对应完整回归与 ECS 原生结果继续关联同一份产品源码。
+
+关联的两个工程按上文相同的两种配置命令执行完整回归：
+
+| 工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Views.Solid.Tests | 35 | 32 |
+| SomeEngine.Elements.Consumer.Tests | 193 | 139 |
+
+其它七个接缝采用上表已确认的相同产品源码结果，交付覆盖计数为 Debug 819、Release 707。
+字体原生依赖复用前核对 CMakeLists.txt、GlyphBitmap.c 和 Typography 项目文件的
+SHA-256 与既有同版本构建相等。Views 原生发布、启动与跨进程检查点再按上文命令执行，
+三个命令均退出码 0；共享检查同时覆盖本批全部相关行为与新增 Solid 控制流。
+检查点继续在两个进程间将面板类型编号从 1 映射为 5，并完成重建与依赖更新。
+该次 Views 原生文件的 SHA-256 为
+`9C40CF3DA86BC1CB80CED683BC8FE0CAC66A6220C90C9AC0229E6F67F56993AF`。
+最后一轮复核完成后清理 59 个已核对的生成目录，包含复用的字体依赖、测试和 Views 原生产物。
+检查点临时文件由脚本清理，交付工作树保留源码与完整 Git 记录。
 
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
