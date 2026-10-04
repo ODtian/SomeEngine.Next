@@ -39,3 +39,9 @@ content, content and viewport changes, repeated layout, and development errors.
 `ScrollTextTests` verifies natural text measurements inside a scroll viewport.
 `BehaviorChecks` runs the same composition for built-in declarations and the
 three public user equivalents under `Rewrites/`, in these tests and NativeAOT.
+
+`PointerRoutingChecks` shares child-to-card click bubbling, `StopsPointer`
+changes, subtree entry and exit, sibling hover changes, held presses, and caller
+output updates across the built-in and user-written behaviors. `PointerTests`
+also verifies stopping at the target or an ancestor and keeping nested canvas
+clicks and subtree hover inside their own tree.

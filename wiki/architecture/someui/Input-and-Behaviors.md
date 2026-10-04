@@ -5,13 +5,14 @@
 
 ## Invariants
 - 点击是单调递增的计数 `Clicks`，与悬停、按下状态 `Hover` 分开存放，避免悬停变化使读取点击的计算重跑。`entity.Clicked()` 比较计数与该节点记录的已读值。
-- 冒泡：路由系统把事件计数写到目标及其祖先，遇到 `StopsPointer` 标记停止，不使用回调链。
+- 冒泡：路由系统沿 `ElementTree` 把点击计数写到目标及同一画布内带 `Pressable` 的祖先，处理带 `StopsPointer` 标记的节点后停止。
+- 悬停：`Hover.Hovered` 表示命中目标；`Hover.Within` 表示指针命中该节点或同一画布内的后代。
 - 输入归属：命中测试在游戏输入之前运行，结果写入单例 `InputCapture`，游戏系统据此决定是否处理本次输入。
 - 焦点：全局一个实体带 `Focused`；`Focusable` 为标记；键盘与手柄导航由可通过系统调度替换的 `FocusNavigationSystem` 根据布局结果计算。
 - 文本输入：平台把字符与输入法组合文本写入 `TextInput`，编辑逻辑由 `TextEditing` 行为对应的系统处理。
 - 行为部件（`Pressable`、`Draggable`、`Focusable`、`Scrollable`、`TextEditing`、`Selectable`）用 `Ensure<T>` 声明数据，可挂到任意节点。
 
-## 指针输入实现（#37）
+## 指针输入与冒泡实现（#37、#38）
 
 以下公开类型位于 `SomeEngine.Elements`：
 
@@ -24,10 +25,11 @@ public static class Pointer
     public static void Wheel(World world, Entity canvas, Vector2 delta);
 }
 public enum PointerButton : byte { Primary, Secondary, Middle }
-public struct Hover : IComponent { public bool Hovered; public bool Pressed; }
+public struct Hover : IComponent { public bool Hovered; public bool Pressed; public bool Within; }
 public struct Clicks : IComponent { public uint Count; }
 public struct ClickSeen : IComponent { public uint Count; }
 public struct Pressable : IComponent { }
+public struct StopsPointer : IComponent { }
 public struct InputCapture : IComponent { public bool Pointer; public bool Keyboard; }
 public static class PressableFunctions
 {
@@ -52,14 +54,23 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext> { /* ... */ 
 这样组合视图可以在自己的实体上声明行为，布局结果继续由布局系统持有和写入。
 
 各按钮分别配对按下与释放。同一个按钮在已有按下期间保留原目标；在原目标上释放时，
-保持点击手势时，该目标的 `Clicks.Count` 递增一次。重复释放保持当前计数。
+保持点击手势时，本次点击从该目标沿 `ElementTree` 向画布根路由，每个带 `Pressable` 的节点的
+`Clicks.Count` 递增一次。路由包含画布根。节点带 `StopsPointer` 时，先处理该节点的
+点击计数，再结束冒泡；仅带停止标记的中间节点同样结束冒泡。
+重复释放保持当前计数。嵌套画布的点击在自身画布根结束。
 `Hover.Hovered` 表示当前命中目标，`Hover.Pressed` 表示该节点持有至少一个按钮的按下，
 移动到区域外时继续保留按下，直到释放。目标退出当前画布的可交互树后，按下目标清空。
-下一帧按新布局重新判断悬停，因此静止指针也能观察布局移动。
+`Hover.Within` 在命中目标及同一画布内声明了 `Hover` 的祖先上为 true，其余节点为 false。
+因此祖先可以读取子树悬停，`Hovered` 与 `Pressed` 分别继续表达命中目标与按下目标。
+`Within` 随当前命中子树变化，`StopsPointer` 约束点击计数的传播。
+下一帧按新布局重新判断悬停与 `Within`，因此静止指针也能观察布局移动。
 滚轮事件经过相同命中与输入捕获阶段，当前指针路径消费它的事件缓冲。
 
 `PressableFunctions.Pressable(node)` 用 `Scope.Ensure` 声明 `Hover`、`Clicks` 与标记，
 并返回原节点。调用方可以用相同公开组件和作用域函数实现自己的版本。
+祖先只需观察子树悬停时，通过 `Scope.Ensure<Hover>(node)` 声明数据。
+调用方通过 `Scope.Ensure<StopsPointer>(node)` 声明点击冒泡边界；公开 ECS 的标记增删
+在下一次命中阶段生效。点击计数与所有 `Hover` 字段继续由 `HitTestSystem` 写入。
 `node.Clicked()` 通过 `Scope.Read<Clicks>` 登记点击计数依赖，通过 `Scope.Write<ClickSeen>`
 比较和保存该节点已经读过的计数；首次声明由正常写入提交完成。同一计算中的多次读取
 使用同一份写入副本，成功计算结束时提交。返回值表示存在新点击，一次读取消费当时的全部
@@ -78,6 +89,7 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext> { /* ... */ 
 [PressableFunctions](../../../src/SomeEngine.Elements/PressableFunctions.cs)。
 验收：[PointerTests](../../../tests/SomeEngine.Elements.Consumer.Tests/PointerTests.cs)、
 [公开行为与 NativeAOT 共用检查](../../../tests/SomeEngine.Elements.Consumer.Tests/PointerChecks.cs)、
+[冒泡与子树悬停共用检查](../../../tests/SomeEngine.Elements.Consumer.Tests/PointerRoutingChecks.cs)、
 [用户重写](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/PressableFunctions.cs)。
 
 ## 拖动、滚动与选择（#40）

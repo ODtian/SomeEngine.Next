@@ -49,7 +49,9 @@ Console.WriteLine("Text shaping, Column measurements, style modifiers, formatted
 Console.WriteLine("Column surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(true);
-Console.WriteLine("Canvas pointer input, click consumption, held presses, capture, and public user behaviors passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.PointerChecks.RunRouting(false);
+SomeEngine.Elements.Consumer.Tests.PointerChecks.RunRouting(true);
+Console.WriteLine("Canvas pointer input, click bubbling, StopsPointer, subtree hover, held presses, capture, and public user behaviors passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(true);
 Console.WriteLine("Drag, scroll, selection and external behavior declarations passed.");
