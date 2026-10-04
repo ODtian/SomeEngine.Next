@@ -84,7 +84,9 @@ public readonly record struct Constraints(Size Min, Size Max);
 
 `LayoutSystem` 接受 `params ILayoutDataUpdate[]`，保留公开无参构造函数。
 `ILayoutDataUpdate` 位于共享布局协议层，提供
-`Update(World, Entity, in Constraints)` 与默认空实现的 `Complete(World)`。
+`HasChanges(World, Entity)`、`Update(World, Entity, in Constraints)` 与默认空实现的 `Complete(World)`。
+`HasChanges` 将内容输入变化纳入节点布局输入版本；默认返回 true，数据更新者可按自己的输入版本缩小范围。
+Text 的更新者比较文本、样式与外观的公开 ECS 写版本，内容变化与布局约束共同决定重新测量。
 布局在每次测量前，把扣除 Box 内边距后的内容约束交给这些数据更新者；
 画布的测量、摆放与坐标写入完成后调用 `Complete` 提交最终内容结果。
 各布局继续通过同一 `ILayout` 类型分派和 `LayoutPass.Measure` 测量自己的子节点。
