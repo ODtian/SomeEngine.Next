@@ -29,6 +29,7 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
         query.ReadOptional<WorldTransform>();
         query.ReadOptional<Surface>();
         query.ReadOptional<LayoutRect>();
+        query.ReadOptional<ScrollOffset>();
         query.ReadOptional<Parent<ElementTree>>();
         query.ReadOptional<Children<ElementTree>>();
         query.Write<RenderCanvas>();
@@ -57,6 +58,8 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
             chunk.HasChangedSinceLastSystemVersion<Surface>();
         bool rectangleChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() &&
             chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
+        bool viewportChanged = chunk.Has<ScrollOffset>() && chunk.Has<LayoutRect>() &&
+            chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
         bool canvasChanged = chunk.Has<Canvas>() && chunk.HasChangedSinceLastSystemVersion<Canvas>();
         bool parentChanged = chunk.Has<Parent<ElementTree>>() &&
             chunk.HasChangedSinceLastSystemVersion<Parent<ElementTree>>();
@@ -64,7 +67,8 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
             chunk.HasChangedSinceLastSystemVersion<Children<ElementTree>>();
         bool transformChanged = chunk.Has<WorldTransform>() &&
             chunk.HasChangedSinceLastSystemVersion<WorldTransform>();
-        if (!surfaceChanged && !rectangleChanged && !canvasChanged && !parentChanged && !childrenChanged && !transformChanged)
+        if (!surfaceChanged && !rectangleChanged && !viewportChanged && !canvasChanged &&
+            !parentChanged && !childrenChanged && !transformChanged)
             return false;
 
         for (int row = 0; row < chunk.Count; row++)
@@ -73,6 +77,7 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
             if (transformChanged && chunk.RowChangedSinceLastSystemVersion<WorldTransform>(row))
                 _changedTargets.Add(entity);
             if ((canvasChanged && chunk.RowChangedSinceLastSystemVersion<Canvas>(row)) ||
+                (viewportChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
                 (parentChanged && chunk.RowChangedSinceLastSystemVersion<Parent<ElementTree>>(row)) ||
                 (childrenChanged && chunk.RowChangedSinceLastSystemVersion<Children<ElementTree>>(row)))
                 _changedTreeNodes.Add(entity);
@@ -123,21 +128,24 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
         Canvas canvas = world.Read<Canvas>(canvasEntity);
         var clip = new Rect(0, 0, canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale);
         var surfaces = new List<SurfaceInstance>();
-        var nodes = new Stack<Entity>();
-        nodes.Push(canvasEntity);
+        var nodes = new Stack<(Entity Node, Rect Clip)>();
+        nodes.Push((canvasEntity, clip));
         int drawOrder = 0;
-        while (nodes.TryPop(out Entity node))
+        while (nodes.TryPop(out var entry))
         {
+            Entity node = entry.Node;
             if (node != canvasEntity && world.Has<Canvas>(node)) continue;
             if (world.Has<Surface>(node) && world.Has<LayoutRect>(node))
             {
                 SurfaceValue value = ReadSurface(world, node);
                 surfaces.Add(new(node, value.Rectangle, value.Fill, value.CornerRadius,
-                    value.BorderColor, value.BorderWidth, clip, drawOrder, 0));
+                    value.BorderColor, value.BorderWidth, entry.Clip, drawOrder, 0));
             }
             drawOrder++;
+            Rect childClip = world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node)
+                ? Intersect(entry.Clip, world.Read<LayoutRect>(node).Value) : entry.Clip;
             var children = Hierarchy<ElementTree>.GetChildren(world, node);
-            for (int index = children.Count - 1; index >= 0; index--) nodes.Push(children[index]);
+            for (int index = children.Count - 1; index >= 0; index--) nodes.Push((children[index], childClip));
         }
         if (canvas.Target.Kind == CanvasTargetKind.WorldSpace)
             _worldTargets[canvasEntity] = canvas.Target.Entity;
@@ -159,6 +167,15 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
         {
             Transform = transform, DepthTest = canvas.DepthTest,
         };
+    }
+
+    private static Rect Intersect(Rect first, Rect second)
+    {
+        float left = MathF.Max(first.X, second.X);
+        float top = MathF.Max(first.Y, second.Y);
+        float right = MathF.Min(first.X + first.Width, second.X + second.Width);
+        float bottom = MathF.Min(first.Y + first.Height, second.Y + second.Height);
+        return new(left, top, MathF.Max(0, right - left), MathF.Max(0, bottom - top));
     }
 
     private static SurfaceValue ReadSurface(World world, Entity node)
