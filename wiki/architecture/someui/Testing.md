@@ -460,5 +460,21 @@ ViewType.Id 重映射、读回、下一帧重建和依赖更新。
 字体原生依赖复用 #27 的同版本产物，复用前以 SHA-256 核对 CMakeLists.txt、
 GlyphBitmap.c 与 Typography 项目文件三个构建输入一致。
 
+交付前继续合入集成提交 `b51b1cf1` 的 ScrollView、VirtualList 与滚动裁剪，
+合并提交为 `258f0c87`。取消用例沿已验证的公开结果就绪等待完成合并。
+基于该合并提交，消费者、渲染提取与 Views 再次执行相同命令的两种配置：
+
+| 项目 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 184 | 130 |
+| SomeEngine.Elements.Render.Tests | 12 | 12 |
+| SomeEngine.Views.Tests | 290 | 260 |
+
+Views、Layout 与生成器产品源码相对于 `03fed94e` 保持一致，Layout 与生成器沿用
+上表首轮完整回归结果。以最新合并源码再次执行上述原生发布、入口运行与检查点命令，
+三者均退出码 0；入口同时包含列表控件与本票全部 17 项共享行为。
+验证完成后清理本工作树内 69 个已核对的 bin / obj 构建输出目录，
+包含原生发布产物与复用的字体依赖，检查点临时文件由验收脚本完成清理。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
