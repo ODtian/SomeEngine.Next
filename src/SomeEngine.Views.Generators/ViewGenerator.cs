@@ -39,6 +39,19 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
         var options = (CSharpParseOptions)compilation.SyntaxTrees.First().Options;
         var functions = new List<SyntaxTree>();
         GenerateComposeMethods(output, compilation, options, functions, composables);
+        Compilation composeCompilation = compilation.AddSyntaxTrees(functions);
+        foreach (SyntaxTree tree in functions)
+        {
+            SemanticModel model = composeCompilation.GetSemanticModel(tree);
+            foreach (TypeDeclarationSyntax declaration in tree.GetRoot(output.CancellationToken)
+                .DescendantNodes().OfType<TypeDeclarationSyntax>())
+            {
+                if (declaration.BaseList is not null &&
+                    model.GetDeclaredSymbol(declaration, output.CancellationToken) is INamedTypeSymbol { TypeKind: TypeKind.Struct } type &&
+                    type.AllInterfaces.Any(value => value.ToDisplayString() == "SomeEngine.Views.IView"))
+                    views = views.Add(type);
+            }
+        }
         foreach (INamedTypeSymbol type in views.Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default))
         {
             INamedTypeSymbol[] containers = GetContainingTypes(type!).ToArray();
@@ -160,7 +173,8 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
             value.DeclaringSyntaxReferences.Any(reference => reference.GetSyntax() is TypeDeclarationSyntax));
         var text = OpenContainingTypes(type);
         string access = type.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
-        if (constructor?.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)) == true)
+        if (constructor?.Parameters.Any(parameter => ContainsPrivateType(parameter.Type)) == true ||
+            type.TypeParameters.Any(parameter => parameter.ConstraintTypes.Any(ContainsPrivateType)))
             access = "private";
         text.Append(access).Append(" static partial class ").Append(type.Name).AppendLine("Functions\n{");
         GenerateSerialization(text, type);

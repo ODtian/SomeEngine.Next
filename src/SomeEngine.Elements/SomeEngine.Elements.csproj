@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Elements and caller-written visual data composed through public view and layout APIs.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SomeEngine.Views/SomeEngine.Views.csproj" />
+    <ProjectReference Include="../SomeEngine.Layout/SomeEngine.Layout.csproj" />
+    <ProjectReference Include="../SomeEngine.Typography/SomeEngine.Typography.csproj" />
+    <None Update="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

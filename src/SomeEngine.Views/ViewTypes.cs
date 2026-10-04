@@ -147,6 +147,7 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
         ViewType viewType = world.Read<ViewType>(entity);
         if (viewType.RebuildRequired)
         {
+            firstBuild = true;
             viewType.RebuildRequired = false;
             world.OverwriteComponentData(entity, in viewType);
         }
@@ -157,7 +158,7 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
         }
         T view = world.ReadComponentData<T>(entity);
         uint parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
-        RebuildDiagnostics.Record<T>(world, entity, firstBuild, parameterVersion);
+        RebuildDiagnostics.Record<T>(world, entity, frame, firstBuild, parameterVersion);
         if (Profiler.IsActive || EngineTrace.IsEnabled)
             BuildWithTracing(world, entity, frame, in view, parameterVersion);
         else
@@ -200,7 +201,7 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
 
     private static Size Measure(World world, Entity entity, ref LayoutPass pass, in Constraints constraints)
     {
-        T view = world.ReadComponentData<T>(entity);
+        T view = pass.Read<T>(entity);
         return view.Measure(ref pass, in constraints);
     }
 

@@ -6,9 +6,17 @@
 | 数据 | 唯一写入方 |
 |---|---|
 | 视图参数（包括作为元素数据的 `Text`、`Flex`） | 调用方的 `View`，或 Solid 计算 |
-| 修饰数据（`Box`）与子节点的布局参数（`FlexItem`、`GridCell`、`AbsolutePosition`） | 调用方作用域 |
+| 修饰数据（`Box`、`Surface`）与子节点的布局参数（`FlexItem`、`GridCell`、`AbsolutePosition`） | 调用方作用域 |
+| `TextStyle` 的显式样式字段 | 调用方作用域 |
+| `TextAppearance`（文本此次构建解析的完整样式） | `Text.Build` |
 | 环境数据（用户定义的主题等组件） | 调用方通过 `Entity.Provide` 写入 |
-| `Clicks`、`Hover`、`Focused` | 输入与焦点系统；视图用 `Ensure<T>` 声明需要 |
+| `Clicks`、`Hover` | `HitTestSystem`；视图用 `Ensure<T>` 声明需要 |
+| `Pressable` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
+| `ClickSeen` | 调用方作用域通过 `Clicked()` 的 `Write<T>` 提交 |
+| 画布指针事件缓冲 | `Pointer` 的追加与领取入口 |
+| 画布的当前位置、各按钮按下状态与目标 | `HitTestSystem`；`Pointer` 首次输入时声明默认数据 |
+| `InputCapture` | 输入阶段；当前 `HitTestSystem` 写 `Pointer`，保留 `Keyboard` |
+| `Focused` | 焦点系统；视图用 `Ensure<T>` 声明需要 |
 | 视图局部状态与 `Remember`/`[State]` 存储 | 该视图自己的构建 |
 | `LayoutRect`、`LayoutCache` | 布局系统 |
 | `Canvas`（目标、尺寸、缩放） | 应用 |
@@ -28,6 +36,10 @@
 修饰与属性绑定沿同一个入口写入。行为数据通过 `Scope.Ensure<T>` 声明，
 由对应系统继续持有写入职责。具体提交与版本规则见
 [[architecture/someui/Build-Scope|Build Scope]]。
+
+文本样式默认字段通过最近祖先的 `TextTheme` 环境读取取得，
+排版系统沿布局测量约束维护 `ShapedText`；具体读取、提交和版本规则见
+[[architecture/someui/Text|Text]]。
 
 ## Relations
 [[architecture/someui/Modifiers|Modifiers]] · [[architecture/someui/Composition|Composition]]

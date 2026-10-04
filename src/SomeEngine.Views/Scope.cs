@@ -170,16 +170,15 @@ public static partial class Scope
     /// <summary>Adds default component data when the entity first requires it.</summary>
     public static void Ensure<T>(Entity entity) where T : struct
     {
-        World world = Current.World;
+        ScopeData current = Current;
+        World world = current.World;
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"Scope.Ensure requires table or sparse component {typeof(T).Name}.");
         if (ComponentCopy<T>.HasComponent(world, entity))
             return;
+        current.Changes.RememberComponent<T>(world, entity);
         T value = default;
-        if (default(T) is ISparseComponent)
-            world.AddSparse(entity, in value);
-        else
-            world.Add(entity, in value);
+        world.AddComponentData(entity, in value);
     }
 
     /// <summary>Checks component presence and records the result as a dependency of a Rerun build.</summary>
@@ -228,10 +227,7 @@ public static partial class Scope
         current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
         {
             foreach (Dependency existing in buffer.ReadSpan())
-                if (existing.Kind == read.Kind &&
-                    (read.Kind == DependencyKind.Membership
-                        ? existing.Query.Equals(read.Query)
-                        : existing.Entity == read.Entity && existing.Component == read.Component))
+                if (existing.HasSameSource(in read))
                     return;
             buffer.Add(read);
         });
@@ -257,6 +253,11 @@ public static partial class Scope
     /// <summary>Matches a child by key and occurrence and updates its parameters.</summary>
     public static Entity View<T>(in T view, ulong key)
         where T : struct, IView, IEquatable<T>
+        => View<T, T>(in view, static (in T value, in T previous) => value, key);
+
+    /// <summary>Creates parameters after matching the child, allowing unchanged formatted data to reuse its string.</summary>
+    public static Entity View<T, TValue>(in TValue value, CreateView<T, TValue> create, ulong key)
+        where T : struct, IView, IEquatable<T>
     {
         ScopeData current = Current;
         DevelopmentCheck.Require(current.DeclaresChildren,
@@ -277,7 +278,8 @@ public static partial class Scope
                 break;
             current.DeclaredChildren.Add(existing);
             T previous = current.World.ReadComponentData<T>(existing);
-            current.Changes.RememberParameters(existing, in previous);
+            T view = create(in value, in previous);
+            current.Changes.RememberParameters(current.World, existing, in previous);
             if (previous.Equals(view))
             {
                 current.World.OverwriteComponentData(existing, in view);
@@ -286,10 +288,15 @@ public static partial class Scope
 
             current.World.ReplaceComponentData(existing, in view);
             if (T.Mode == BuildMode.Rerun)
+            {
+                current.Changes.RememberComponent<BuildError>(current.World, existing);
                 ViewRegistration<T>.Build(current.World, existing, current.Frame, firstBuild: false);
+            }
             return existing;
         }
-        Entity child = Views.Create(current.World, in view, new ElementKey { Key = key, Occurrence = occurrence });
+        T initial = default;
+        T created = create(in value, in initial);
+        Entity child = Views.Create(current.World, in created, new ElementKey { Key = key, Occurrence = occurrence });
         current.Changes.RememberAddedChild(child);
         current.DeclaredChildren.Add(child);
         Hierarchy<ElementTree>.SetParent(current.World, child, current.Parent);
@@ -352,8 +359,9 @@ public static partial class Scope
 
     internal static BuildScope Enter(World world, Entity entity, ulong frame, bool declaresChildren, bool dependenciesEnabled)
     {
-        if (world.HasSparse<Computations>(entity))
-            world.ReadSparse<Computations>(entity).List.ReleaseChildren();
+        ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
+        if (parent?.World == world)
+            parent.Changes.RememberReads(world, entity);
         if (world.HasBuffer<Dependency>(entity))
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
         if (world.Has<ObjectDependencies>(entity))
@@ -367,8 +375,8 @@ public static partial class Scope
         current.DeclaresChildren = declaresChildren;
         current.DependenciesEnabled = dependenciesEnabled;
         current.Queue = BuildQueue.For(world);
-        ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
         current.BeginChildren(frame, parent?.World == world ? parent.Changes : null);
+        current.Changes.RememberComputations(world, entity);
 #if DEBUG
         current.ContentVersion++;
         current.BuildNumber = ++s_buildNumber;
@@ -513,7 +521,7 @@ public static partial class Scope
         if (data.ComponentCopies is { } copies)
         {
             foreach (ComponentCopy copy in copies.Values)
-                copy.Commit(data.World);
+                copy.Commit(data.World, data.Changes);
             copies.Clear();
         }
     }

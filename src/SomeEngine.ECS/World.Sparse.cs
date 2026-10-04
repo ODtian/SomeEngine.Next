@@ -9,20 +9,20 @@ public partial class World
 {
     /// <summary>Adds a sparse component without changing archetype identity.</summary>
     public void AddSparse<T>(Entity entity, in T value)
-        where T : struct
+        where T : struct, ISparseComponent => AddSparseComponentData(entity, in value);
+
+    private void AddSparseComponentData<T>(Entity entity, in T value) where T : struct
     {
-        DevelopmentCheck.Require(default(T) is ISparseComponent,
-            $"World.AddSparse requires sparse component {typeof(T).Name}.");
         using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Write);
         _sparse.Add(entity, value);
     }
 
     /// <summary>Replaces an existing sparse component without changing archetype identity.</summary>
     public void ReplaceSparse<T>(Entity entity, in T value)
-        where T : struct
+        where T : struct, ISparseComponent => ReplaceSparseComponentData(entity, in value);
+
+    private void ReplaceSparseComponentData<T>(Entity entity, in T value) where T : struct
     {
-        DevelopmentCheck.Require(default(T) is ISparseComponent,
-            $"World.ReplaceSparse requires sparse component {typeof(T).Name}.");
         using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Write);
         _sparse.Replace(entity, value);
     }
@@ -56,10 +56,10 @@ public partial class World
 
     /// <summary>Checks whether an entity has a sparse component.</summary>
     public bool HasSparse<T>(Entity entity)
-        where T : struct
+        where T : struct, ISparseComponent => HasSparseComponentData<T>(entity);
+
+    private bool HasSparseComponentData<T>(Entity entity) where T : struct
     {
-        DevelopmentCheck.Require(default(T) is ISparseComponent,
-            $"World.HasSparse requires sparse component {typeof(T).Name}.");
         using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Read);
         return _sparse.Has<T>(entity);
     }

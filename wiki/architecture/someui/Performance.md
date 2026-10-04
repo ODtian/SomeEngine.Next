@@ -5,6 +5,17 @@
 - 诊断：重建原因（视图与变化的依赖）写入诊断缓冲，默认关闭；每种视图类型对应一个 Tracy 区段。
 - 初始预算，以首次实测结果校准：稳态（只有数值变化）每帧 0 分配；1000 个元素无变化时的依赖检查 ≤ 0.1 ms；100 个元素变化时重建加布局 ≤ 0.5 ms。
 
+## 布局缓存（#27）
+
+布局系统按节点保存上次测量与相对位置，约束和布局输入版本相同时复用。
+每帧的版本与布局层级检查复用系统持有的集合；实际测量在输入或约束变化时执行。
+固定尺寸子树内部的尺寸变化在重排边界处止步，父节点移动时从相对位置更新画布坐标。
+`LayoutRect` 的写版本随实际矩形变化推进，供后续提取与动画使用。
+Flex 的基础尺寸与最终尺寸测量共同参与失效判断，使局部更新保持全量布局的结果。
+
+接口、缓存清除与验收依据由 [Layout](Layout.md#布局缓存与重排边界27) 维护。
+DefaultGame 的 HUD、布局和提取预算按本页的统一场景平台测量。
+
 ## 重建诊断（#65）
 
 ```csharp
@@ -17,6 +28,7 @@ public static class RebuildDiagnostics
 public readonly record struct RebuildRecord(Entity View, Entity Source, ushort Component)
 {
     public QueryHandle Query { get; init; }
+    public VersionCell? SourceObject { get; init; }
 }
 ```
 
@@ -26,10 +38,16 @@ public readonly record struct RebuildRecord(Entity View, Entity Source, ushort C
 或开关变化之前消费返回的只读 span。首次运行阶段之前、静止帧以及关闭期间返回空 span。
 关闭会释放各 World 已收集的记录，再次开启从下一次重建阶段开始收集。
 
-记录在视图构建入口、读取依赖重新登记之前形成。每个变化来源对应一条记录；
+记录在视图构建与响应式计算入口、读取依赖重新登记之前形成。每个变化来源对应一条记录；
 同次重建的参数和多个读取来源全部保留。父视图当场构建的子视图沿相同入口记录来源。
 候选在执行前完成存活与版本复核，因此本次记录对应实际发生的构建。
 失败的构建尝试同样保留来源，异常内容与帧号通过视图的公开 `BuildError` 读取。
+
+对象读取通过 `SourceObject` 返回原 `State<T>`、`VersionCell` 或 `Memo<T>` 引用，实体来源字段使用
+`Entity.Null` 与组件编号 0。Memo 的来源变化与 Memo 值变化分别按其计算和消费者的实际读取记录。
+诊断与调度共用组件、存在性、查询成员、环境及对象的变化规则；对象的读取帧、奇数版本和错误变化沿同一规则比较。
+读取依赖的来源身份规则由依赖数据统一提供，视图与无节点计算使用同一规则去重。
+检查点读回后的视图按恢复后的首次构建记录；参数版本比较按 `BuildMode` 选择。
 
 | 原因 | `View` | `Source` | `Component` |
 |---|---|---|---|

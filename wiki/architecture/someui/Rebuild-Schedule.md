@@ -156,6 +156,11 @@ public struct BuildError : ISparseComponent
 开发报告通过 [[architecture/someui/Checks|Checks]] 的统一入口送出，兄弟和本帧后续视图继续构建。
 子声明的恢复与释放边界见 [[architecture/someui/Node-Identity|Node Identity]]。
 
+父构建失败时，当场完成的子构建也恢复为父构建开始时的结果：参数、已提交的 table 与 sparse 输出、
+后代、依赖和响应式计算一起恢复。随后帧继续观察旧结果对应的来源；旧来源再次变化时，恢复的构建或计算
+更新原节点。构建中的 `Ensure` 新增数据随同撤回，组件版本检查继续使用 ECS 的统一入口。
+子视图的参数消费状态和构建请求随参数恢复；构建前已收到的独立参数更新继续触发该子视图构建。
+
 每次构建尝试消费开始时的参数版本，并保留本次实际读取的依赖。
 这些数据再次变化后，普通失效检查触发重建；成功构建移除该视图的 `BuildError`。
 首次构建失败时，视图实体仍在树上，子内容恢复到空集合。
@@ -167,7 +172,7 @@ public struct BuildError : ISparseComponent
 
 公开验收见 [BuildErrorTests](../../../tests/SomeEngine.Views.Tests/BuildErrorTests.cs)：
 覆盖系统调度与当场子构建、key 重排、类型替换、新增声明回滚、嵌套后代参数恢复、
-首次失败、后备内容恢复、同步完成的异步异常及开发报告。
+输出与依赖恢复、计算生命周期、`Ensure` 新增数据、首次失败、后备内容恢复、同步完成的异步异常及开发报告。
 
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]
