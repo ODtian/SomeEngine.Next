@@ -16,6 +16,7 @@ internal static partial class LayoutChecks
     internal static void Run()
     {
         VerifyRepeatedMeasurements();
+        VerifyMeasuredCacheReads();
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
@@ -53,6 +54,51 @@ internal static partial class LayoutChecks
         world.Replace(canvas, new Canvas { Size = new Size(600, 400), Scale = 2 });
         systems.Update();
         Require(world.Read<LayoutRect>(absolute).Value == new Rect(0, 0, 300, 200), "Changing canvas size updates its layout roots.");
+    }
+
+    private static void VerifyMeasuredCacheReads()
+    {
+        using var world = new World();
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        systems.Add(new ViewRebuildSystem());
+        systems.Add(new LayoutSystem { Parallel = true });
+        Entity[] roots = new Entity[4];
+        for (int index = 0; index < roots.Length; index++)
+        {
+            Entity canvas = world.CreateEntity(new Canvas { Size = new Size(320, 240) });
+            roots[index] = Views.Spawn(world, canvas, new CachePlacement());
+        }
+        systems.Update();
+        foreach (Entity root in roots)
+        {
+            Entity child = Child(world, root);
+            Require(world.Read<LayoutRect>(child).Value == new Rect(20, 0, 20, 30),
+                "Initial placement reads this measurement's child size.");
+            world.Replace(child, new MeasuredSize(new Size(40, 30)));
+        }
+        systems.Update();
+        foreach (Entity root in roots)
+            Require(world.Read<LayoutRect>(Child(world, root)).Value == new Rect(40, 0, 40, 30),
+                "Parallel placement reads the changed child's current measured size.");
+    }
+
+    private readonly record struct CachePlacement : ILayout, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.View(new MeasuredSize(new Size(20, 30)), 1);
+            return default;
+        }
+        public Size Measure(ref LayoutPass pass, in Constraints constraints)
+        {
+            foreach (Entity child in pass.Children)
+            {
+                pass.Measure(child, new Constraints(default, constraints.Max));
+                float width = pass.Read<LayoutCache>(child).Size.Width;
+                pass.Place(child, new Vector2(width, 0));
+            }
+            return constraints.Max;
+        }
     }
 
     internal static void VerifyRepeatedMeasurements()
