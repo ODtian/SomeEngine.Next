@@ -24,8 +24,9 @@
 | 数值手势起始值 | HitTestSystem 的数值拖动阶段，跟随该节点当前 Drag.Count |
 | `Drag`、`Selected` | `HitTestSystem` 的行为阶段；调用方通过 `Ensure<T>` 声明 |
 | `ScrollInput` | `HitTestSystem`，记录当帧滚轮与拖动产生的实际位移及输入计数 |
+| `ScrollTarget` | 调用方构建通过 `ScrollIntoView` 写入内容区域与可见性请求计数 |
 | `ScrollOffset` | 布局系统，按当前内容与视口写入范围和受限偏移 |
-| `ScrollSeen` | 布局系统，记录已应用的输入计数，保持公开偏移数据的写版本只随值和范围变化 |
+| `ScrollSeen` | 布局系统，记录已应用的指针输入与区域请求计数，保持公开偏移数据的写版本只随值和范围变化 |
 | 画布指针事件缓冲 | `Pointer` 的追加与领取入口 |
 | 画布的当前位置、各按钮按下状态与目标 | `HitTestSystem`；`Pointer` 首次输入时声明默认数据 |
 | `InputCapture` | 输入阶段；`HitTestSystem` 写 `Pointer`，焦点系统写 `Keyboard` |
