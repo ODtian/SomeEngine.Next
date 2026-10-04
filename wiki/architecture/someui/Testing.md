@@ -936,5 +936,66 @@ ECS 矩阵的原生文件 SHA-256 为
 交付前按已核对的 30 个构建工程清理 60 个 bin / obj 生成目录，包含字体原生依赖、
 两种配置的测试结果及两个 NativeAOT 发布目录，验收记录和源码保存在本页与 Git 中。
 
+## Dialog 阴影与界面呈现集成验收（#47、#52）
+
+2026-10-04，Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+合入集成提交 `4d50853955d2bc830012947e270969529c741bfc`，形成代码提交
+`cb5f93897c8c1c85a39dffb8baac4bb86ea00426`。
+随后合入 `e5b481042212b475d80d0bae5ad9a71c229a4845` 的 TextField 与默认 FLIP 调度，
+形成最终代码验收提交 `4791c89ee2f1fcdd96e0eb22e284280e2ae5d186`。
+
+SurfaceInstance 同时保存 DropShadow、Matrix 与 Alpha，保留九参数构造和解构。
+CanvasRenderExtractor 在同一画布收集和增量更新中送达这些数据，SurfaceRenderExtractor
+继续作为同一提取者的公开入口。世界投影、场景深度与滚动裁剪沿既有路径维护。
+Surface、Glyphs、Image 分别由自己的材质和 shader 解释实例数据；对应实例字节数为
+144、96、80。Surface 先以自身覆盖率合成填充、描边及后方阴影，然后将完整预乘 RGBA
+乘呈现透明度；表面及扩展阴影范围共同应用呈现矩阵。
+数据规则见 [[architecture/someui/Render-Path|Render Path]]。
+
+`PresentationTransformsAndOpacityReachAllCanvasMaterials` 增加阴影与三种材质的组合像素。
+红测的四种后端/画布组合在 `(40, 8)` 读到黑色，预期为 `[128, 0, 0, 255]`；
+合并材质编码及 shader 后，同组全部通过。像素同时验证旋转后的阴影为半透明绿色，
+填充遮挡自身阴影、呈现透明度及静止/取消帧后的保留。
+
+[CanvasShadowAnimationTests](../../../tests/SomeEngine.RenderGraph.Tests/CanvasShadowAnimationTests.cs)
+从公开视图、`.Animate`、Flip.Enable、系统帧、Game world → Rendering world 提取、
+持久图与 RGBA 读回验证真实颜色动画、位置与透明度 FLIP、用户变换、滚动视口裁剪和世界深度。
+游戏暂停时，开始、重定目标、半程及完成四帧分别采样可见表面与阴影；
+世界画布再验证场景深度遮挡。两个后端和两种画布共四项用例，使用字面预期像素值。
+
+各完整工程两种配置采用以下命令，图形专项采用同一筛选范围：
+
+```powershell
+dotnet test tests/<工程>/<工程>.csproj -c <Debug|Release> --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj -c <Debug|Release> --filter 'FullyQualifiedName~CanvasDrawingTests|FullyQualifiedName~CanvasShadowTests|FullyQualifiedName~GlyphDrawingTests|FullyQualifiedName~ImageDrawingTests|FullyQualifiedName~CanvasCompositionTests' --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+```
+
+| 工程 / 接缝 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Render.Tests | 36 | 34 |
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Elements.Consumer.Tests | 309 | 226 |
+| SomeEngine.Runtime.Tests | 32 | 32 |
+| 画布、阴影、字形、图片、呈现与动画组合像素 | 37 | 37 |
+
+渲染提取与 Views 的完整结果基于 `cb5f9389`，这两个工程的产品源码及用例在
+`4791c89e` 保持相同。消费者、应用与全部图形专项在最终代码提交重新完成两种配置验收。
+原生发布、运行和跨进程检查点均基于 `4791c89e`，三个命令退出码均为 0：
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+```
+
+原生入口同时通过 Dialog 内置/用户组合、界面颜色与用户值动画、相同目标保留、
+中断 FLIP、用户变换、挂起/恢复的动画目标、四种前端的普通 World/Job World 输入及 TextField。
+检查点完成类型编号 1 → 5 重映射、读回、下一帧重建与依赖更新。
+本轮字体原生库由同一构建输入在本工作树生成。
+
+验证完成后按绝对路径和 Git 跟踪文件逐一核对，清理本工作树内 84 个生成目录，
+包含测试 bin/obj、原生产物、字体原生构建目录和依赖输出。跨进程检查点文件由脚本清理。
+工作树保留本轮代码、文档、锁定构建输入与 Git 提交记录。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
