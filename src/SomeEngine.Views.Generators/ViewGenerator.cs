@@ -100,7 +100,8 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 bool namedCall = ViewCalls.IsViewFunction(method);
                 bool composeCall = ViewCalls.IsComposeView(method) || ViewCalls.IsComposeGroup(method);
                 bool rememberCall = ViewCalls.IsRemember(method);
-                if (!viewCall && !namedCall && !composeCall && !rememberCall)
+                bool asyncCall = ViewCalls.IsAsync(method);
+                if (!viewCall && !namedCall && !composeCall && !rememberCall && !asyncCall)
                     continue;
                 if (composeCall && model.GetEnclosingSymbol(call.SpanStart, output.CancellationToken) is IMethodSymbol enclosingMethod &&
                     ViewCalls.IsComposeBuild(enclosingMethod))
@@ -114,6 +115,11 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 string? sourceKey = call.GetAnnotations("ViewCallKey").FirstOrDefault()?.Data;
                 ulong key = sourceKey is null ? GetCallKey(name.GetLocation().GetMappedLineSpan()) :
                     ulong.Parse(sourceKey, CultureInfo.InvariantCulture);
+                if (asyncCall)
+                {
+                    GenerateAsyncInterceptor(interceptors, method, location, key, count++);
+                    continue;
+                }
                 if (rememberCall)
                 {
                     GenerateRememberInterceptor(interceptors, location, key, count++);

@@ -65,13 +65,14 @@ internal sealed class ChildChanges
             world.Remove<ObjectDependencies>(entity);
     }
 
-    internal void RememberComputations(World world, Entity entity)
+    internal ComputationList? RememberComputations(World world, Entity entity)
     {
         ComputationList? computations = world.HasSparse<Computations>(entity)
             ? world.ReadSparse<Computations>(entity).List : null;
-        _previousData.Add(new ChildComputations(entity, computations));
+        _previousData.Add(new ChildComputations(world, entity, computations));
         if (computations is not null)
             world.RemoveSparse<Computations>(entity);
+        return computations;
     }
 
     internal void RemoveChild(Entity entity) => _removedChildren.Add(entity);
@@ -167,7 +168,7 @@ internal sealed class ChildChanges
         }
     }
 
-    private sealed class ChildComputations(Entity entity, ComputationList? computations) : IChildData
+    private sealed class ChildComputations(World world, Entity entity, ComputationList? computations) : IChildData
     {
         private int _buildCount = 1;
         private bool _restored;
@@ -180,7 +181,7 @@ internal sealed class ChildChanges
             {
                 ComputationList current = world.ReadSparse<Computations>(entity).List;
                 if (!ReferenceEquals(current, computations))
-                    current.ReleaseChildren();
+                    current.ReleaseChildren(retained: computations);
                 if (computations is not null)
                     world.ReplaceSparse(entity, new Computations(computations));
                 else
@@ -195,7 +196,8 @@ internal sealed class ChildChanges
         public void Complete()
         {
             if (--_buildCount == 0 && !_restored)
-                computations?.ReleaseChildren();
+                computations?.ReleaseChildren(retained: world.IsAlive(entity) && world.HasSparse<Computations>(entity)
+                    ? world.ReadSparse<Computations>(entity).List : null);
         }
     }
 

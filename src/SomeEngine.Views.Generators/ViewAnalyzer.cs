@@ -14,7 +14,7 @@ public sealed class ViewAnalyzer : DiagnosticAnalyzer
         "Views", DiagnosticSeverity.Error, true, customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
     private static readonly DiagnosticDescriptor DirectCallRequired = new(
-        "SEV004", "Use intercepted view calls", "Call '{0}' directly in source so the compiler can provide its node identity; use View(in T, ulong) for an explicit identity",
+        "SEV004", "Use intercepted scope calls", "Call '{0}' directly in source so the compiler can provide its call-site identity; use an overload with a call key for an explicit identity",
         "Views", DiagnosticSeverity.Error, true);
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => [NamespaceRequired, DirectCallRequired];
@@ -39,7 +39,7 @@ public sealed class ViewAnalyzer : DiagnosticAnalyzer
         {
             var name = (SimpleNameSyntax)analysis.Node;
             if (analysis.SemanticModel.GetSymbolInfo(name, analysis.CancellationToken).Symbol is not IMethodSymbol method ||
-                (!ViewCalls.IsView(method) && !ViewCalls.IsViewFunction(method)))
+                (!ViewCalls.IsView(method) && !ViewCalls.IsViewFunction(method) && !ViewCalls.IsAsync(method)))
                 return;
             ExpressionSyntax expression = name.Parent is MemberAccessExpressionSyntax member ? member : name;
             if (expression.Parent is InvocationExpressionSyntax call && call.Expression == expression)
