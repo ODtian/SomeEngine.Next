@@ -4,7 +4,7 @@
 Vertex encoding 由属性 Importer 与材质 Shader 对应实现。Cluster 维护不透明的几何和属性字节地址、长度，以及共同的局部顶点编号。
 
 ## Standard implementation
-`ClusterGeometryBlock` 使用 `someengine.cluster.positions.uint16.v1`：每个 cluster 的 origin、二次幂 step 与 little-endian uint16 XYZ。位置 Importer 交付完整编码字节及独立的保守 AABB，量化继续使用原有规则。几何 Block 保存顶点身份、来源映射、拓扑、区域、变形分区和 LOD；页组合直接搬运编码和边界。默认 CPU 解码入口用于标准编码的公开数据读取，运行时页组合按不透明字节工作。
+`ClusterGeometryBlock` 使用 `someengine.cluster.positions.uint16.v1`：每个 cluster 的 origin、二次幂 step 与 little-endian uint16 XYZ。位置 Importer 交付完整编码字节及独立的保守 AABB，量化继续使用原有规则。几何 Block 保存顶点身份、来源映射、拓扑、区域、变形分区和 LOD；页组合直接搬运编码和边界。默认 CPU 解码入口和 PositionOrigin、PositionStep 读取同一份 PositionData 头部；保存重开保留这份编码字节，运行时页组合按不透明字节工作。
 
 `ClusterVertexAttributesBlock` 的公开属性记录完整保留来源流：名称、分量数、逐顶点实际分量数和 little-endian float64 数值，包含全部 UV、颜色与自定义属性。保存重开后可通过 `ReadComponent` 读取来源数值、uint32 精度与符号零。
 

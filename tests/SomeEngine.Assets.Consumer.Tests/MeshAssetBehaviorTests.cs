@@ -42,11 +42,42 @@ public sealed class MeshAssetBehaviorTests
         byte[] original = (await first.ReadPageAsync(0)).ToArray();
         byte[] data = geometry.Clusters[0].PositionData.ToArray();
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data, 7);
-        geometry.Clusters[0] = geometry.Clusters[0] with { PositionOrigin = new() { X = 7 }, PositionData = [.. data], BoundMin = new() { X = 7 }, BoundMax = new() { X = 8, Y = 1 } };
+        geometry.Clusters[0] = geometry.Clusters[0] with { PositionData = [.. data], BoundMin = new() { X = 7 }, BoundMax = new() { X = 8, Y = 1 } };
         using var changed = await geometry.OpenPayloadSourceAsync(attributes);
         Assert.Equal(original, (await first.ReadPageAsync(0)).ToArray());
         Assert.NotEqual(original, (await changed.ReadPageAsync(0)).ToArray());
         Assert.Equal(7, geometry.Clusters[0].DecodePosition(0).X);
+    }
+
+    [Fact]
+    public async Task PositionHeaderEditsReachCpuPagesAndReopenedAssets()
+    {
+        using var files = new MeshFiles();
+        using var created = CreateAsset();
+        ClusterGeometryBlock geometry = created.GetBlock<ClusterGeometryBlock>();
+        byte[] data = geometry.Clusters[0].PositionData.ToArray();
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data, 7);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(12), 2);
+        geometry.Clusters[0] = geometry.Clusters[0] with { PositionData = [.. data] };
+        await created.SaveAsync(files.Path);
+        using var reopened = await MeshAsset.OpenAsync(files.Path);
+        foreach (MeshAsset asset in new[] { created, reopened })
+        {
+            ClusterGeometryBlock block = await asset.GetBlockAsync<ClusterGeometryBlock>();
+            ClusterGeometry cluster = Assert.Single(block.Clusters);
+            Assert.Equal(7, cluster.PositionOrigin.X);
+            Assert.Equal(2, cluster.PositionStep);
+            Assert.Equal(new Vector3(7, 0, 0), cluster.DecodePosition(0));
+            Assert.Equal(new Vector3(9, 0, 0), cluster.DecodePosition(1));
+            Assert.Equal(new Vector3(7, 2, 0), cluster.DecodePosition(2));
+            using var source = await block.OpenPayloadSourceAsync(await asset.GetBlockAsync<ClusterVertexAttributesBlock>());
+            ReadOnlyMemory<byte> page = await source.ReadPageAsync(0);
+            var header = System.Runtime.InteropServices.MemoryMarshal.Read<SomeEngine.Resources.Geometry.MeshPageHeader>(page.Span);
+            var packed = System.Runtime.InteropServices.MemoryMarshal.Read<SomeEngine.Resources.Geometry.PackedCluster>(page.Span[(int)header.ClustersOffset..]);
+            int descriptor = (int)(header.VertexBlobsOffset + packed.VertexBlobOffset);
+            uint offset = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(page.Span[descriptor..]);
+            Assert.Equal(data, page.Slice(descriptor + (int)offset, data.Length).ToArray());
+        }
     }
 
     [Fact]
@@ -91,7 +122,7 @@ public sealed class MeshAssetBehaviorTests
         ClusterGeometryBlock changed = changedAsset.GetBlock<ClusterGeometryBlock>();
         byte[] data = changed.Clusters[0].PositionData.ToArray();
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data, 8);
-        changed.Clusters[0] = changed.Clusters[0] with { PositionOrigin = new() { X = 8 }, PositionData = [.. data], BoundMin = new() { X = 8 }, BoundMax = new() { X = 9, Y = 1 } };
+        changed.Clusters[0] = changed.Clusters[0] with { PositionData = [.. data], BoundMin = new() { X = 8 }, BoundMax = new() { X = 9, Y = 1 } };
         var replacement = await changed.CreateAsync(changedAsset.GetBlock<MeshBlock>(), changedAsset.GetBlock<ClusterVertexAttributesBlock>(), "replacement");
         Assert.False(source.Matches(replacement));
         byte[] before = (await source.ReadPageAsync(0)).ToArray();
@@ -149,7 +180,7 @@ public sealed class MeshAssetBehaviorTests
         using var geometry = new ClusterGeometryBlock
         {
             Vertices = [new(0, 0, 0), new(0, 1, 1), new(0, 2, 2)],
-            Clusters = [new() { Vertices = [0, 1, 2], Indices = [0, 1, 2], TriangleMaterials = [0], PositionStep = 1,
+            Clusters = [new() { Vertices = [0, 1, 2], Indices = [0, 1, 2], TriangleMaterials = [0],
                 PositionData = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,128,63, 0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0],
                 BoundMin = new(), BoundMax = new() { X = 1, Y = 1 }, ParentError = float.MaxValue, Group = -1, ParentGroup = -1,
                 Radius = 2, LodRadius = 2, SelfLodRadius = 2 }],

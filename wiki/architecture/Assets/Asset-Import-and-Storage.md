@@ -58,7 +58,7 @@ Importer 的 `ProducedBlocks` 声明可产出的类型，一个来源元素可�
 
 ## 当前 glTF 项目集成
 
-通用 `GltfMeshImporter` 只生产 `MeshBlock`，`ClusterGeometryImporter`、`ClusterVertexAttributesImporter` 分别生产 Cluster 几何与属性，`GltfTextureImporter` 生产 `TextureBlock`。选中的项目 `GltfSceneImporter` 遍历 primitive，直接请求纹理、生成或复用材质，并按 primitive 顺序组成 `MeshMaterialsBlock`。各 Mesh 分支在 `MeshAsset` 汇合；节点结构、变换和 Mesh 引用在 `WorldAsset` 汇合。
+通用 `GltfMeshImporter` 只生产 `MeshBlock`，`ClusterGeometryImporter`、`ClusterVertexAttributesImporter` 分别生产 Cluster 几何与属性，`GltfTextureImporter` 生产 `TextureBlock`。选中的项目 `GltfSceneImporter` 根据共享顶点流中的三角形区域请求材质，并按原始 primitive 顺序组成 `MeshMaterialsBlock`。跳过区域保留空引用，默认场景加载只读取 Cluster 三角形实际使用的区域材质，绑定保持原始区域编号。场景 Mesh 引用根据共享流的可绘制几何建立；MeshBlock.Bounds 是可选的中立包围描述。各 Mesh 分支在 `MeshAsset` 汇合；节点结构、变换和 Mesh 引用在 `WorldAsset` 汇合。
 
 `GltfSourceImporter` 只读取原生 glTF `ModelRoot`、建立来源元素身份并选择一个 `IAssetImporter<Scene, GltfSceneSettings>`。同一来源 Mesh、材质和纹理由 `ImportContext` 按各自的来源元素身份复用。`GltfSceneImporter` 给出节点遍历、层级、变换、Mesh 请求以及默认相机和灯光的公共组装；项目的具体场景 importer 只实现项目材质资产及必要的场景内容替换。不存在独立的材质选择器、材质转换接口或 importer 工厂。Scene 最终引用 `MeshAsset`；增加其他几何表示不改写 Scene 引用。图中的分支表达数据依赖，不承诺同时执行。
 

@@ -182,7 +182,7 @@ public static partial class ClusterBuilder
         return new()
         {
             Deform = deform, Vertices = [.. vertices.Select(vertex => identities[(int)vertex])], Indices = [.. localIndices], TriangleMaterials = [.. materials], TriangleRegions = [.. regions],
-            PositionOrigin = CreateVec3(encoded.Origin), PositionStep = encoded.Step, PositionData = encoded.Data,
+            PositionData = encoded.Data,
             BoundMin = CreateVec3(encoded.BoundMin), BoundMax = CreateVec3(encoded.BoundMax),
             Level = meshlet.Level, Error = meshlet.Error, ParentError = meshlet.ParentError,
             Group = meshlet.GroupId + groupOffset, ParentGroup = meshlet.ParentGroupId < 0 ? -1 : meshlet.ParentGroupId + groupOffset,

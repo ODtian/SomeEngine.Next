@@ -4,7 +4,7 @@ using System.Numerics;
 
 namespace SomeEngine.Assets.Importers;
 
-internal readonly record struct EncodedClusterPositions(Vector3 Origin, float Step, ImmutableArray<byte> Data,
+internal readonly record struct EncodedClusterPositions(ImmutableArray<byte> Data,
     Vector3 BoundMin, Vector3 BoundMax, float RadiusError);
 
 internal static class StandardClusterPositionEncoder
@@ -39,6 +39,6 @@ internal static class StandardClusterPositionEncoder
             decodedMinimum = Vector3.Min(decodedMinimum, decoded);
             decodedMaximum = Vector3.Max(decodedMaximum, decoded);
         }
-        return new(minimum, step, [.. data], decodedMinimum, decodedMaximum, range == 0 ? 0 : step);
+        return new([.. data], decodedMinimum, decodedMaximum, range == 0 ? 0 : step);
     }
 }

@@ -333,7 +333,7 @@ public static partial class ClusterBuilder
             geometry.Clusters.Add(new()
             {
                 Vertices = [.. vertices], Indices = [.. indices], TriangleMaterials = [.. triangleMaterials],
-                PositionOrigin = CreateVec3(position.Origin), PositionStep = position.Step, PositionData = position.Data,
+                PositionData = position.Data,
                 BoundMin = CreateVec3(position.BoundMin), BoundMax = CreateVec3(position.BoundMax),
                 Level = meshlet.Level, Error = meshlet.Error, ParentError = meshlet.ParentError,
                 Group = meshlet.GroupId, ParentGroup = meshlet.ParentGroupId,

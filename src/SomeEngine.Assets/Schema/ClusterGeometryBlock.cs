@@ -28,8 +28,13 @@ public sealed partial record ClusterGeometry
     public ImmutableArray<byte> Indices { get; init; } = [];
     public ImmutableArray<int> TriangleMaterials { get; init; } = [];
     public ImmutableArray<int> TriangleRegions { get; init; } = [];
-    public SomeEngine.Resources.Vec3 PositionOrigin { get; init; } = new();
-    public float PositionStep { get; init; }
+    [BinaryIgnore] public SomeEngine.Resources.Vec3 PositionOrigin => new()
+    {
+        X = BinaryPrimitives.ReadSingleLittleEndian(PositionData.AsSpan()),
+        Y = BinaryPrimitives.ReadSingleLittleEndian(PositionData.AsSpan()[4..]),
+        Z = BinaryPrimitives.ReadSingleLittleEndian(PositionData.AsSpan()[8..]),
+    };
+    [BinaryIgnore] public float PositionStep => BinaryPrimitives.ReadSingleLittleEndian(PositionData.AsSpan()[12..]);
     public ImmutableArray<byte> PositionData { get; init; } = [];
     public SomeEngine.Resources.Vec3 BoundMin { get; init; } = new();
     public SomeEngine.Resources.Vec3 BoundMax { get; init; } = new();
@@ -48,7 +53,10 @@ public sealed partial record ClusterGeometry
     public Vector3 DecodePosition(int vertex)
     {
         ReadOnlySpan<byte> data = PositionData.AsSpan().Slice(checked(16 + vertex * 6), 6);
-        return new Vector3(PositionOrigin.X, PositionOrigin.Y, PositionOrigin.Z) + new Vector3(BinaryPrimitives.ReadUInt16LittleEndian(data),
+        ReadOnlySpan<byte> header = PositionData.AsSpan();
+        Vector3 origin = new(BinaryPrimitives.ReadSingleLittleEndian(header),
+            BinaryPrimitives.ReadSingleLittleEndian(header[4..]), BinaryPrimitives.ReadSingleLittleEndian(header[8..]));
+        return origin + new Vector3(BinaryPrimitives.ReadUInt16LittleEndian(data),
             BinaryPrimitives.ReadUInt16LittleEndian(data[2..]), BinaryPrimitives.ReadUInt16LittleEndian(data[4..])) * PositionStep;
     }
 }

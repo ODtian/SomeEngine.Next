@@ -65,9 +65,10 @@ try
     ClusterGeometryBlock copiedGeometry = meshCopy.GetBlock<ClusterGeometryBlock>();
     byte[] editedPositions = copiedGeometry.Clusters[0].PositionData.ToArray();
     System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(editedPositions, 9);
-    copiedGeometry.Clusters[0] = copiedGeometry.Clusters[0] with { PositionOrigin = new() { X = 9 }, PositionData = [.. editedPositions], BoundMin = new() { X = 9 }, BoundMax = new() { X = 10, Y = 1 } };
+    System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(editedPositions.AsSpan(12), 2);
+    copiedGeometry.Clusters[0] = copiedGeometry.Clusters[0] with { PositionData = [.. editedPositions], BoundMin = new() { X = 9 }, BoundMax = new() { X = 11, Y = 2 } };
     if (originalCluster.DecodePosition(0).X != 1 || originalGeometry.Clusters[0].DecodePosition(0).X != 1
-        || copiedGeometry.Clusters[0].DecodePosition(0).X != 9)
+        || copiedGeometry.Clusters[0].DecodePosition(0).X != 9 || copiedGeometry.Clusters[0].DecodePosition(1).X != 11)
         throw new InvalidOperationException("A geometry edit changed another branch or reader.");
     AssetEntry meshEntry = await meshCopy.SaveAsync(Path.Combine(directory, "mesh.mesh.asset"));
     using var meshFile = await MeshAsset.OpenAsync(meshEntry.Path);
@@ -78,7 +79,8 @@ try
         throw new InvalidOperationException("Mesh creation must acquire minimum drawable geometry.");
     await loadedGeometry.LoadPagesAsync(readyMesh, loadedAttributes, [0]);
     using var pages = await loadedGeometry.OpenPayloadSourceAsync(loadedAttributes);
-    if (loadedGeometry.Clusters[0].DecodePosition(0).X != 9)
+    if (loadedGeometry.Clusters[0].DecodePosition(0).X != 9 || loadedGeometry.Clusters[0].PositionStep != 2
+        || loadedGeometry.Clusters[0].DecodePosition(1).X != 11)
         throw new InvalidOperationException("Saved geometry must retain the branch edit.");
     meshFile.Dispose();
     byte[] page = new byte[readyMesh.GetPageByteLength(0)];
@@ -251,7 +253,7 @@ static MeshAsset CreateMesh()
     {
         Vertices = [new(0, 0, 0), new(0, 1, 1), new(0, 2, 2)],
         Clusters = [new() { Vertices = [0, 1, 2], Indices = [0, 1, 2], TriangleMaterials = [0],
-            PositionOrigin = new() { X = 1 }, PositionStep = 1,
+
             PositionData = [0,0,128,63, 0,0,0,0, 0,0,0,0, 0,0,128,63, 0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0],
                 BoundMin = new() { X = 1 }, BoundMax = new() { X = 2, Y = 1 },
             Group = -1, ParentGroup = -1, ParentError = float.MaxValue, Radius = 2, LodRadius = 2, SelfLodRadius = 2 }],

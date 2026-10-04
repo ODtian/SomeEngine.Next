@@ -17,7 +17,8 @@ internal sealed class RuntimeScene : IDisposable
     private sealed record SceneMeshData(
         Mesh Mesh,
         MeshPayloadSource PageSource,
-        AssetId<MaterialAsset>[] MaterialIds);
+        RegionMaterial[] Materials);
+    private readonly record struct RegionMaterial(int Region, AssetId<MaterialAsset> Material);
 
     private readonly World _world;
     private (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings)[] _meshes = [];
@@ -114,13 +115,21 @@ internal sealed class RuntimeScene : IDisposable
                     try
                     {
                         pages = await clusters.OpenPayloadSourceAsync(attributes, cancellationToken).ConfigureAwait(false);
-                        loadedMeshes[index] = new SceneMeshData(mesh, pages, references.Materials.ToArray());
+                        int[] regions = clusters.Clusters.SelectMany(cluster => cluster.TriangleRegions.IsEmpty
+                                ? cluster.TriangleMaterials : cluster.TriangleRegions)
+                            .Select(region => Math.Max(0, region)).Distinct().Order().ToArray();
+                        RegionMaterial[] regionMaterials = regions
+                            .Select(region => new RegionMaterial(region, references.Materials[region])).ToArray();
+                        foreach (RegionMaterial value in regionMaterials)
+                            if (value.Material.IsEmpty)
+                                throw new InvalidDataException($"Mesh {file.Id} region {value.Region} requires a material.");
+                        loadedMeshes[index] = new SceneMeshData(mesh, pages, regionMaterials);
                     }
-                    catch { try { pages?.Dispose(); } finally {  } throw; }
+                    catch { pages?.Dispose(); throw; }
                 }).ConfigureAwait(false);
 
             AssetId<MaterialAsset>[] materialIds = loadedMeshes
-                .Where(mesh => mesh is not null).SelectMany(mesh => mesh!.MaterialIds)
+                .Where(mesh => mesh is not null).SelectMany(mesh => mesh!.Materials.Select(value => value.Material))
                 .Distinct()
                 .ToArray();
             loadedMaterials = new Material?[materialIds.Length];
@@ -146,13 +155,11 @@ internal sealed class RuntimeScene : IDisposable
                 Guid meshId = meshIds[meshIndex].Value;
                 meshes.Add(meshId, (data.Mesh, data.PageSource, []));
                 loadedMeshes[meshIndex] = null;
-                var bindings = new MeshMaterialBinding[data.MaterialIds.Length];
-                for (int index = 0; index < bindings.Length; index++)
-                {
-                    AssetId<MaterialAsset> id = data.MaterialIds[index];
-                    if (id.IsEmpty) throw new InvalidDataException($"Mesh {meshId} has a primitive without a material.");
-                    bindings[index] = new(materials[id.Value]);
-                }
+                var bindings = new MeshMaterialBinding[data.Materials[^1].Region + 1];
+                // Gaps keep original region indices and share one valid binding; only retained regions draw.
+                Array.Fill(bindings, new MeshMaterialBinding(materials[data.Materials[0].Material.Value]));
+                foreach (RegionMaterial value in data.Materials)
+                    bindings[value.Region] = new(materials[value.Material.Value]);
                 meshes[meshId] = (data.Mesh, data.PageSource, bindings);
             }
             instances = instances.Where(entity => meshes.ContainsKey(world.Read<MeshSource>(entity).Mesh.Value)).ToArray();
