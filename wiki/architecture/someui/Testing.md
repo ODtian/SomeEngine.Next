@@ -645,5 +645,72 @@ SHA-256 与既有同版本构建相等。Views 原生发布、启动与跨进程
 最后一轮复核完成后清理 59 个已核对的生成目录，包含复用的字体依赖、测试和 Views 原生产物。
 检查点临时文件由脚本清理，交付工作树保留源码与完整 Git 记录。
 
+## Dialog 复合部件与阴影验收（#47）
+
+2026-10-04，Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+画布集成验收提交 `e86d06122a163e29be7f2e6ae954a26107f2035e` 已合入集成提交
+`55cfda50379cedd4a0726bc627d260a8f3d9ee7f`。
+
+Dialog、DialogTitle、DialogActions、DialogTheme 与 TitledDialog 沿公开接口完成
+逐项红测与实现。`DialogTests` 通过公开视图声明、主题提供、World、ElementTree、
+Surface、ShapedText 与 LayoutRect 验证任意部件顺序、用户内容插入、标题省略、
+右对齐操作区、辅助函数与手写组合的一致性，以及返回作用域的父节点恢复。
+最近主题、完整默认值、显式透明颜色和零间距在同帧主题更新中共同验收。
+该组包含 Debug 24 项、Release 17 项，开发检查使用 Core 的统一作用域入口。
+
+[DialogChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/DialogChecks.cs) 将相同的
+主题、文本样式与布局结果应用于内置和用户 Dialog、DialogTitle、DialogFooter 的八种组合。
+用户版本位于外部消费者程序集，使用公开的视图、主题、Surface、Text 与 ILayout 接缝。
+调用方提供 Box 尺寸与内边距，容器 Build 写入自身的 Surface 和排列结果；
+该写入职责随主题更新、相同内容保留和内置/用户部件混合一起验收。
+组合语义与默认值见 [[architecture/someui/Composition|Composition]]，
+数据写入职责见 [[architecture/someui/Data-Writers|Data Writers]]。
+
+阴影像素用例先以预期半透明绿色像素完成红测，再实现 Surface 材质与 shader 绘制。
+集成统一画布提取者时，既有阴影送达用例再次报告红测；阴影数据随后接入
+CanvasRenderExtractor 的首次收集和增量更新，同一组创建、修改与清空验收对
+CanvasRenderExtractor、SurfaceRenderExtractor 两个公开入口均通过。
+`CanvasShadowTests` 在 D3D12 WARP 与 Vulkan 上启用引擎图形验证层并读回 RGBA，
+覆盖半透明颜色、柔化边缘、正负偏移、画布裁剪、参数更新、清空及表面对自身阴影的覆盖。
+混合绘制回归同时覆盖 Surface、文字、图片、世界空间投影和深度测试。
+渲染数据与材质语义见 [[architecture/someui/Render-Path|Render Path]]。
+
+各完整工程采用以下命令，两种配置分别执行：
+
+```powershell
+dotnet test tests/<项目>/<项目>.csproj -c <Debug|Release> --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj -c <Debug|Release> --filter 'FullyQualifiedName~CanvasDrawingTests|FullyQualifiedName~CanvasShadowTests|FullyQualifiedName~WorldCanvasDrawingTests|FullyQualifiedName~GlyphDrawingTests|FullyQualifiedName~ImageDrawingTests|FullyQualifiedName~CanvasCompositionTests' --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+```
+
+| 项目 / 接缝 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 257 | 184 |
+| SomeEngine.Elements.Render.Tests | 34 | 32 |
+| SomeEngine.Views.Solid.Tests | 50 | 46 |
+| 画布、阴影、世界空间、字形、图片与混合绘制 | 29 | 29 |
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Layout.Tests | 95 | 75 |
+| SomeEngine.Views.Generators.Tests | 162 | 162 |
+
+前四项完整结果基于 `e86d0612`。Views、Layout 与生成器的结果关联
+`a2ae537f750e50bb96c3c844ec6b64bf03a87689`；这三个工程的产品源码及用例与
+`e86d0612` 相同，保留相同源码对应的完整两种配置验收。
+
+原生共享入口执行内置、全用户版本及混合 Footer 三种 Dialog 组合，
+并沿现有 Views 冒烟入口运行已集成的视图、布局、文本、输入和各前端检查。
+原生验收命令为：
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+```
+
+上述三个原生命令基于 `e86d0612` 执行，退出码均为 0。检查点在第一个进程写入
+面板 ViewType.Id 1，第二个进程映射为 5，完成读回、下一帧重建与依赖更新。
+发布中的 IL2026、IL3050 与 IL2070 诊断位于 TraceCapture 与 JobStorageTypeShape。
+字体原生依赖复用 #27 的同版本产物，复用前以 SHA-256 核对 CMakeLists.txt、
+GlyphBitmap.c 与 Typography 项目文件三个构建输入一致。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

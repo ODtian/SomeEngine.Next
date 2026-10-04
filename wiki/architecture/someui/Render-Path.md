@@ -14,9 +14,10 @@
 
 ## Surface 提取（#32）
 
-`SomeEngine.Elements.Render` 提供 `SurfaceRenderExtractor`，应用在首次提取前将它
-安装到 `RenderExtractionSystems`。它声明读取 `Canvas`、`Surface`、`LayoutRect`、`ScrollOffset`
-及 `ElementTree` 的 Parent/Children 写版本，沿现有提取阶段收集数据。
+`SomeEngine.Elements.Render` 的 `CanvasRenderExtractor` 统一收集画布上的 Surface 与 Image，
+`SurfaceRenderExtractor` 保留原有调用入口。应用在首次提取前将其中一个
+安装到 `RenderExtractionSystems`。Surface 数据读取 `Canvas`、`Surface`、`LayoutRect`、
+`ScrollOffset` 及 `ElementTree` 的 Parent/Children 写版本，沿现有提取阶段收集。
 
 每个 Canvas 的 RenderWorld 镜像实体持有 `RenderCanvas` 与一份 ECS
 `SurfaceInstance` 缓冲。`RenderCanvas` 保存目标、像素尺寸与每布局单位像素数。
@@ -53,6 +54,8 @@ ECS 结构事务送入常驻缓冲。常驻绘制数据由 RenderWorld 的 ECS �
 提取调度、帧协调器和缓冲读取验证单节点改色、静态帧、树序、释放、组件移除与恢复、
 跨画布移动、布局与缩放更新，以及提取后 Game world 继续修改时的值送达边界。
 `ScrollClippingTests` 覆盖嵌套视口、外框变化、滚动声明增删与静止帧的裁剪数据。
+`SurfaceShadowsReachRenderingOnCreationUpdateAndClear` 对两个公开提取入口应用同一组
+阴影创建、更新与清空检查，观察 Rendering world 中的 SurfaceInstance 值。
 
 此前独立 SomeUI 的 Scene、实例与 DrawOrderSystem 用于核对绘制数据及树序。
 这里的实例缓冲采用引擎 ECS 存储，增量依据来自 ECS 写版本，并通过既有提取边界应用。
