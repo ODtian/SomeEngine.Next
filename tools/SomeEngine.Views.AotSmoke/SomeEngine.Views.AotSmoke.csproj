@@ -14,6 +14,7 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/SurfaceChecks.cs" Link="SurfaceChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/SurfaceModifiers.cs" Link="Rewrites/SurfaceModifiers.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerChecks.cs" Link="PointerChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerRoutingChecks.cs" Link="PointerRoutingChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/PressableFunctions.cs" Link="Rewrites/PressableFunctions.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/FlexChecks.cs" Link="FlexChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/StackGridChecks.cs" Link="StackGridChecks.cs" />
