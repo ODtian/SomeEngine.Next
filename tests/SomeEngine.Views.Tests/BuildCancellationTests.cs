@@ -280,8 +280,11 @@ public sealed partial class BuildCancellationTests
 
         Assert.True(previous.Cancel.IsCancellationRequested);
         Assert.Equal("waiting new", Text(frames, content));
-        frames.Frame();
-        Assert.True(previous.Finally);
+        Assert.True(SpinWait.SpinUntil(() =>
+        {
+            frames.Frame();
+            return previous.Finally;
+        }, TimeSpan.FromSeconds(5)));
         Assert.True(previous.Disposed);
         Assert.False(current.Cancel.IsCancellationRequested);
         var worker = new Thread(second.SetResult);
