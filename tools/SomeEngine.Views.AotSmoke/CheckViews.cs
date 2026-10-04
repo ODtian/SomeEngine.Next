@@ -68,6 +68,7 @@ SomeEngine.Elements.Consumer.Tests.FocusChecks.RunBranchRelease(false);
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunBranchRelease(true);
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunReparentedRelease();
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunWorlds();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunMixedInputs();
 Console.WriteLine("Keyboard and gamepad focus, confirmation, capture, ancestor transfer, layout geometry, public user behaviors, and scheduled navigation passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
 Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");

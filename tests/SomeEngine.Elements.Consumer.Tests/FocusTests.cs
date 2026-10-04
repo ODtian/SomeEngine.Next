@@ -44,4 +44,7 @@ public sealed partial class FocusTests
 
     [Fact]
     public void WorldsNavigateTheirOwnFocusIndependently() => FocusChecks.RunWorlds();
+
+    [Fact]
+    public void PointerClicksAndFocusConfirmationShareTheNodeClickCount() => FocusChecks.RunMixedInputs();
 }

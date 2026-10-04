@@ -24,6 +24,7 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusNavigationChecks.cs" Link="FocusNavigationChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusCompositionChecks.cs" Link="FocusCompositionChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusLayoutChecks.cs" Link="FocusLayoutChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusPointerChecks.cs" Link="FocusPointerChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/FocusFunctions.cs" Link="Rewrites/FocusFunctions.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/FlexChecks.cs" Link="FlexChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/StackGridChecks.cs" Link="StackGridChecks.cs" />
