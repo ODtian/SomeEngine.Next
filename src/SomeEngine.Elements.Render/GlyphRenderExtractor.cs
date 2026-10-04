@@ -30,6 +30,7 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         query.ReadOptional<Canvas>();
         query.ReadOptional<ShapedText>();
         query.ReadOptional<LayoutRect>();
+        query.ReadOptional<ScrollOffset>();
         query.ReadOptional<Box>();
         query.ReadOptional<Parent<ElementTree>>();
         query.ReadOptional<Children<ElementTree>>();
@@ -63,6 +64,8 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         bool shapeChanged = text && chunk.HasChangedSinceLastSystemVersion<ShapedText>();
         bool rectChanged = text && chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
         bool boxChanged = text && chunk.Has<Box>() && chunk.HasChangedSinceLastSystemVersion<Box>();
+        bool viewportChanged = chunk.Has<ScrollOffset>() && chunk.Has<LayoutRect>() &&
+            chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
         bool canvasChanged = chunk.Has<Canvas>() && chunk.HasChangedSinceLastSystemVersion<Canvas>();
         bool parentChanged = chunk.Has<Parent<ElementTree>>() && chunk.HasChangedSinceLastSystemVersion<Parent<ElementTree>>();
         bool childrenChanged = chunk.Has<Children<ElementTree>>() && chunk.HasChangedSinceLastSystemVersion<Children<ElementTree>>();
@@ -70,6 +73,7 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         {
             Entity node = chunk.Entities[row];
             if ((canvasChanged && chunk.RowChangedSinceLastSystemVersion<Canvas>(row)) ||
+                (viewportChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
                 (parentChanged && chunk.RowChangedSinceLastSystemVersion<Parent<ElementTree>>(row)) ||
                 (childrenChanged && chunk.RowChangedSinceLastSystemVersion<Children<ElementTree>>(row)))
                 _changedTreeNodes.Add(node);
@@ -102,7 +106,7 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
             Entity canvas = FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasGlyphs.ContainsKey(canvas)) continue;
             if (!_textGlyphs.TryGetValue(canvas, out var texts)) _textGlyphs.Add(canvas, texts = []);
-            texts.Add(node, ReadGlyphs(sourceWorld, node, Clip(sourceWorld.Read<Canvas>(canvas)),
+            texts.Add(node, ReadGlyphs(sourceWorld, node, FindClip(sourceWorld, canvas, node),
                 FindDrawOrder(sourceWorld, canvas, node)));
         }
         CopyAtlasPixels(atlasReplaced);
@@ -153,6 +157,28 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
 
     private static Rect Clip(Canvas canvas) => new(0, 0, canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale);
 
+    private static Rect Intersect(Rect first, Rect second)
+    {
+        float left = MathF.Max(first.X, second.X);
+        float top = MathF.Max(first.Y, second.Y);
+        float right = MathF.Min(first.X + first.Width, second.X + second.Width);
+        float bottom = MathF.Min(first.Y + first.Height, second.Y + second.Height);
+        return new(left, top, MathF.Max(0, right - left), MathF.Max(0, bottom - top));
+    }
+
+    private static Rect FindClip(World world, Entity canvas, Entity node)
+    {
+        Rect clip = Clip(world.Read<Canvas>(canvas));
+        while (world.Has<Parent<ElementTree>>(node))
+        {
+            node = world.Read<Parent<ElementTree>>(node).Value;
+            if (node == canvas) break;
+            if (world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node))
+                clip = Intersect(clip, world.Read<LayoutRect>(node).Value);
+        }
+        return clip;
+    }
+
     private static int FindDrawOrder(World world, Entity canvas, Entity target)
     {
         var nodes = new Stack<Entity>();
@@ -173,17 +199,20 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
     {
         Rect clip = Clip(world.Read<Canvas>(canvas));
         var instances = new List<GlyphInstance>();
-        var nodes = new Stack<Entity>();
-        nodes.Push(canvas);
+        var nodes = new Stack<(Entity Node, Rect Clip)>();
+        nodes.Push((canvas, clip));
         int order = 0;
-        while (nodes.TryPop(out Entity node))
+        while (nodes.TryPop(out var entry))
         {
+            Entity node = entry.Node;
             if (node != canvas && world.Has<Canvas>(node)) continue;
             if (world.Has<ShapedText>(node) && world.Has<LayoutRect>(node))
-                instances.AddRange(ReadGlyphs(world, node, clip, order));
+                instances.AddRange(ReadGlyphs(world, node, entry.Clip, order));
             order++;
+            Rect childClip = world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node)
+                ? Intersect(entry.Clip, world.Read<LayoutRect>(node).Value) : entry.Clip;
             var children = Hierarchy<ElementTree>.GetChildren(world, node);
-            for (int index = children.Count - 1; index >= 0; index--) nodes.Push(children[index]);
+            for (int index = children.Count - 1; index >= 0; index--) nodes.Push((children[index], childClip));
         }
         return instances;
     }

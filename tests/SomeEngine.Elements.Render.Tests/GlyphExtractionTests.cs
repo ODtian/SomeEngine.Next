@@ -1,16 +1,20 @@
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Render.Systems;
 using SomeEngine.Typography;
 using SomeEngine.Views;
 using Size = SomeEngine.Layout.Size;
+using static SomeEngine.Elements.ScrollViewFunctions;
+using static SomeEngine.Layout.AbsoluteFunctions;
+using static SomeEngine.Elements.TextFunctions;
 
 namespace SomeEngine.Elements.Render.Tests;
 
-public sealed class GlyphExtractionTests(SurfaceExtractionDevice graphics) : IClassFixture<SurfaceExtractionDevice>
+public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphics) : IClassFixture<SurfaceExtractionDevice>
 {
     [Fact]
     public void TextReachesRenderingWithGlyphGeometryAndAtlasPixels()
@@ -55,6 +59,53 @@ public sealed class GlyphExtractionTests(SurfaceExtractionDevice graphics) : ICl
     }
 
     private static Font LoadFont() => Font.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "Latin.ttf")));
+
+    [Fact]
+    public void NestedScrollViewportsClipGlyphsAndRefreshTheirIntersections()
+    {
+        using Font font = LoadFont();
+        using var game = new World();
+        using var render = new RenderWorld();
+        using var systems = TextSystems(game);
+        Entity atlasSource = game.CreateEntity(new TextAtlas(new GlyphAtlas(128, 128)));
+        using var extraction = new RenderExtractionSystems(render,
+            new SurfaceRenderExtractor(), new GlyphRenderExtractor(atlasSource));
+        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        game.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 48 }));
+        Entity root = Views.Views.Spawn(game, canvas, new ScrollText());
+        systems.Update();
+        Entity panel = Hierarchy<ElementTree>.GetChildren(game, root)[0];
+        Entity outer = Hierarchy<ElementTree>.GetChildren(game, panel)[0];
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+        Entity mirror = extraction.RequireMirror(canvas);
+        GlyphInstance before = Assert.Single(ReadGlyphs(render, mirror));
+        Assert.Equal(new Rect(90, 40, 30, 30), before.ClipRectangle);
+
+        Box box = game.Read<Box>(outer);
+        box.Fixed = new Size(120, 80);
+        game.Replace(outer, box);
+        systems.Update();
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+
+        GlyphInstance after = Assert.Single(ReadGlyphs(render, mirror));
+        Assert.Equal(before.Rectangle, after.Rectangle);
+        Assert.Equal(new Rect(90, 40, 50, 50), after.ClipRectangle);
+    }
+
+    private readonly record struct ScrollText() : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Absolute().Content())
+            using (ScrollView().Size(100, 60).Position(20, 10).Content())
+            using (Absolute().Size(240, 180).Content())
+            using (ScrollView().Size(80, 50).Position(70, 30).Content())
+                Text("A");
+            return default;
+        }
+    }
 
     [Fact]
     public void ColorChangesKeepTheShapeAndAtlasAndUpdateOnlyGlyphColors()

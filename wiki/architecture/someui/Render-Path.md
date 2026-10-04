@@ -124,6 +124,7 @@ using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
 `ClipRectangle`、`PageIndex`、`DrawOrder` 与 `Version`。
 `GlyphIndex` 是排版字形序列的位置。空白字形保留排版推进，绘制实例只包含有图集矩形的字形。
 树序、画布坐标与裁剪规则沿用 Surface 提取；同节点的背景先于文字。
+祖先滚动视口的矩形逐层取交集；视口尺寸变化时重算后代字形的裁剪。
 字形布局及矩形按 chunk 与行的写版本筛选；实例数据相等时保留 ECS 缓冲写版本。
 文字由空变为可见、树重排、嵌套画布及节点释放沿同一提取入口更新。
 

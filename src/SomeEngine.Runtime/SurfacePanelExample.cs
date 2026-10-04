@@ -4,6 +4,7 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Elements;
+using SomeEngine.Elements.Render;
 using SomeEngine.Layout;
 using SomeEngine.Typography;
 using SomeEngine.Views;
