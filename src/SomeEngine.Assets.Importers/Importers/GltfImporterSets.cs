@@ -1,6 +1,6 @@
 namespace SomeEngine.Assets.Importers;
 
-[AssetImporterSet(NeutralId, "glTF shared data", typeof(GltfMeshImporter), typeof(GltfTextureImporter), Neutral = true)]
+[AssetImporterSet(NeutralId, "glTF shared data", typeof(GltfMeshImporter), typeof(GltfTextureImporter), typeof(MorphTargetSetImporter), Neutral = true)]
 [AssetImporterSet(ClusterId, "Cluster mesh", typeof(ClusterGltfMeshImporter))]
 public static class GltfImporterSets
 {

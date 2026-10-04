@@ -29,15 +29,21 @@
 | Block | 内容 | 类别 |
 |---|---|---|
 | `MeshBlock` | 区段（材质槽）、包围盒、来源映射 | 中立 |
-| 蒙皮绑定 | 逆绑定矩阵、关节到骨架的映射 | 中立 |
-| 形变目标集合 | 目标名称、默认权重 | 中立 |
+| `SkinBindingBlock`（`SkeletonAsset`） | 按来源关节顺序保存逆绑定矩阵、关节到骨架的映射 | 中立 |
+| `MorphTargetSetBlock`（`MeshAsset`） | 按来源目标顺序保存名称、默认权重 | 中立 |
 | `VertexStreamsBlock` | 每个图元的材质、三角形索引、全部顶点流、形变目标与诊断，见 [[architecture/Assets/Gltf-Mesh-Import|glTF Mesh Import]] | 中立，仅导入进程内 |
 | 几何 | 顶点身份、位置、拓扑、LOD（Cluster：cluster 与 LOD DAG；普通管线：索引缓冲与离散 LOD） | 管线表示 |
 | 顶点属性 | 法线、切线、全部 UV 与颜色、自定义属性，按该管线 Vertex 实现的编码 | 管线表示 |
 | 蒙皮影响 | 每个顶点的全部关节与权重，按该管线的顶点顺序 | 管线表示 |
 | 形变增量 | 逐目标、逐顶点增量，按该管线的顶点顺序 | 管线表示 |
 
-当前代码与目标的差异：Cluster 管线只有一个 `ClusterMeshBlock`，位置与属性在同一段编码中；普通管线没有表示 Block；没有蒙皮、形变的 Block。拆分 Cluster 的几何与属性会改变渲染侧读取 cluster 数据的方式。
+`SomeEngine.Animation.Pose` 的 `SkinBindingBlock` 由 `SkinBindingImporter` 在每个 skin 的骨架资产上产出，通过 `context.GetBlockAsync<SkeletonBlock>` 消费所选骨架生产者的 `JointBones`。来源逆绑定矩阵保持关节顺序与数值，省略时每个关节使用单位矩阵。同一 mesh 被多个 skin 的节点复用时，节点的 `SkeletonSource` 指向各自的绑定与骨架；网格资产继续共用。
+
+`SomeEngine.Assets.Schema.MorphTargetSetBlock` 由 `MorphTargetSetImporter` 在网格资产上产出。`Names` 来自 `mesh.extras.targetNames`，省略时为每个目标保留空名称；`DefaultWeights` 来自 `mesh.weights`，省略时为零。节点权重属于实例数据，网格 Block 保留 mesh 默认值。静态网格通过可选读取入口表达特性缺失。两个 Importer 随各自包的中立组合启用。
+
+公开行为验收见 [DeformationBlockBehaviorTests](../../../tests/SomeEngine.Animation.Pose.Tests/DeformationBlockBehaviorTests.cs)：覆盖 `.gltf`、`.glb` 保存重开、共享 mesh 的不同 skin、来源关节重排、替换骨架生产者、省略值、静态网格与重新导入更新。
+
+当前代码与目标的差异：Cluster 管线只有一个 `ClusterMeshBlock`，位置与属性在同一段编码中；普通管线没有表示 Block；管线蒙皮影响与形变增量 Block 待实现。拆分 Cluster 的几何与属性会改变渲染侧读取 cluster 数据的方式。
 
 ## Relations
 [[architecture/Assets/Asset-Meshes|Mesh]] · [[architecture/Assets/Gltf-Mesh-Import|glTF Mesh Import]] · [[architecture/Assets/Importer-Sets|Importer Sets]] · ADR 0016

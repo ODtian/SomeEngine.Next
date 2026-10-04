@@ -13,8 +13,8 @@ glTF 网格导入的顺序与算法，目标是符合 glTF 规范，并让从 Bl
 | 1 准备 | `VertexStreamsBlock`（仅导入进程内） | 解压 meshopt 扩展；按解码库支持情况处理 Draco；反量化（`KHR_mesh_quantization`）与展开稀疏 accessor；三角带、三角扇转为三角形列表；线、点图元单独跳过并报告；无索引时生成顺序索引；缺 NORMAL 时生成平面法线（规范要求）；材质有法线贴图且缺 TANGENT 时用 MikkTSpace 生成，UV 集取材质 `normalTexture.texCoord`；颜色统一为线性 RGBA；其余属性保持来源数值 |
 | 2 几何 | 管线几何 Block | 合并图元为材质区段；对所有存在的顶点流（含蒙皮与形变增量）逐位比较后焊接，保留硬边与 UV 接缝；按 Deform 分区（静态、蒙皮、形变、蒙皮加形变），分区后才建 cluster；LOD 简化时锁住 UV 接缝、材质边界与法线不连续处，蒙皮分区把权重计入误差，形变分区计入增量 |
 | 3 顶点属性 | 管线顶点属性 Block | 全部法线、切线、UV 集、颜色与自定义属性，按该管线 Vertex 实现的编码，记录兼容性标识 |
-| 4 蒙皮 | 中立蒙皮绑定 + 管线蒙皮影响 | 逆绑定矩阵与关节到骨架的映射；每个顶点的全部 `JOINTS_n`/`WEIGHTS_n`，数量与数值照搬来源；规范要求权重和为 1，只检查并报告，不修改 |
-| 5 形变 | 中立形变目标集合 + 管线形变增量 | 名称取 `mesh.extras.targetNames`，默认权重取 `mesh.weights`；逐目标增量 |
+| 4 蒙皮 | `SkinBindingBlock` + 管线蒙皮影响 | 逆绑定矩阵与关节到骨架的映射归属 skin 的 `SkeletonAsset`；每个顶点的全部 `JOINTS_n`/`WEIGHTS_n`，数量与数值照搬来源；规范要求权重和为 1，只检查并报告，不修改 |
+| 5 形变 | `MorphTargetSetBlock` + 管线形变增量 | 网格目标名称取 `mesh.extras.targetNames`，默认权重取 `mesh.weights`；逐目标增量 |
 
 ## Invariants
 - 引擎不设阈值：骨骼影响数量、UV 集、颜色集照搬来源；如何使用由着色器决定。
@@ -71,7 +71,7 @@ public sealed partial class VertexStreamsBlock : AssetBlock
 
 - Cluster 几何与模板编码器当前从原始 glTF 读取；后续几何任务把输入接到 `VertexStreamsBlock`，并按管线决定焊接、cluster 和编码。
 - 顶点属性 Block 迁移前，旧标准编码仍跳过颜色和 `TEXCOORD_0` 以外的 UV 并报告警告；全部来源属性参与顶点焊接。新顶点流保留这些属性供后续 Block 生产者编码。
-- 蒙皮绑定、影响编码、形变目标集合与增量编码由后续对应 Importer 实现。
+- 蒙皮影响编码与形变增量编码由后续管线表示 Importer 实现。
 - LOD 简化与 Deform 分区按第 2 阶段的目标迁移。
 
 ## Relations

@@ -22,7 +22,7 @@ The constructor accepts spans for the four arrays and copies them. Copies and as
 
 The importer visits joints in `skin.joints` order, adding each unvisited ancestor chain from root to child. It retains the joints and all their ancestors, including nodes between joints and above `skin.skeleton`. Each bone keeps its source local transform. This preserves the model-space transform when parents are propagated, and lets future clip import address intermediate nodes directly. Ancestor transforms participate in skinning under the [glTF joint hierarchy rules](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#joint-hierarchy). Other branches remain scene data.
 
-The bone count therefore includes the retained ancestor nodes. `JointBones.Length` equals `skin.joints.Length`. `JointBones[joint]` identifies the reordered bone associated with that original joint; a later skin binding producer obtains the Block with `context.GetBlockAsync<SkeletonBlock>(output.Target, token)` and reads this mapping. It can combine the mapping with the source inverse bind matrices in their original joint order.
+The bone count therefore includes the retained ancestor nodes. `JointBones.Length` equals `skin.joints.Length`. `JointBones[joint]` identifies the reordered bone associated with that original joint. `SkinBindingImporter` obtains the Block with `context.GetBlockAsync<SkeletonBlock>(output.Target, token)` and combines this mapping with the source inverse bind matrices in their original joint order. The neutral skeleton group includes both producers. Binding data and its public behavior evidence are described in [Block Division](../Assets/Block-Division.md).
 
 ## Persistence and verification
 
