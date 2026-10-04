@@ -7,8 +7,42 @@ using SomeEngine.Views.Tests;
 
 namespace SomeEngine.Views.Generators.Tests;
 
+[Collection("Checkpoint diagnostics")]
 public sealed class CheckpointTests
 {
+    [Fact]
+    public void DiagnosticsAllowOnceViewsToRebuildAfterCheckpointLoad()
+    {
+        RebuildDiagnostics.Enabled = true;
+        try
+        {
+            var registry = new SerializationRegistry();
+            ViewSerialization.Register(registry);
+            CheckpointContainerFunctions.RegisterSerialization(registry);
+            registry.Register<CheckpointValue>();
+            CheckpointContainer.Number.Value = 7;
+            using var frames = new HeadlessFrameDriver();
+            Entity root = Views.Spawn(frames.World, Entity.Null, new CheckpointContainer());
+            frames.Frame();
+            using var checkpoint = new MemoryStream();
+            WorldCheckpointCodec.Write(checkpoint, frames.World, registry);
+            checkpoint.Position = 0;
+            using var restored = new HeadlessFrameDriver(WorldCheckpointCodec.Read(checkpoint, registry));
+            CheckpointContainer.Number.Value = 13;
+
+            restored.Frame();
+
+            Assert.Equal(13, restored.World.Read<CheckpointValue>(root).Value);
+            CheckpointContainer.Number.Value = 19;
+            restored.Frame();
+            Assert.Equal(13, restored.World.Read<CheckpointValue>(root).Value);
+        }
+        finally
+        {
+            RebuildDiagnostics.Enabled = false;
+        }
+    }
+
     [Fact]
     public void ClosedGenericViewsKeepTheirParametersAcrossCheckpointLoad()
     {
@@ -184,6 +218,9 @@ public sealed class CheckpointTests
         Assert.Equal(new CheckpointLabel(23), restored.World.ReadSparse<CheckpointLabel>(label));
     }
 }
+
+[CollectionDefinition("Checkpoint diagnostics", DisableParallelization = true)]
+public sealed class CheckpointDiagnosticsCollection;
 
 public struct CheckpointCardCodec : IComponentCodec<Card>
 {

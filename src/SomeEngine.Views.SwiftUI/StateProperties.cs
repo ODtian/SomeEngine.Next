@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
@@ -16,8 +17,7 @@ public static class StateProperties
         var entity = Scope.Entity;
         DevelopmentCheck.Require(propertyNumber >= 0, "State properties require a nonnegative property number.");
         DevelopmentCheck.Require(TView.Mode == BuildMode.Rerun, "State properties require a Rerun view.");
-        DevelopmentCheck.Require(default(TView) is ISparseComponent ? world.HasSparse<TView>(entity) : world.Has<TView>(entity),
-            $"State properties of {typeof(TView).Name} require that view's active build.");
+        CheckView<TView>();
         if (!world.HasSparse<StateValues>(entity))
         {
             world.AddSparse(entity, new StateValues(new List<object?>()));
@@ -32,6 +32,14 @@ public static class StateProperties
         var state = new State<T>(initial);
         values[propertyNumber] = state;
         return state;
+    }
+
+    [Conditional("DEBUG")]
+    private static void CheckView<TView>() where TView : struct, IView
+    {
+        using var untrack = Scope.Untrack();
+        DevelopmentCheck.Require(Scope.Has<TView>(Scope.Entity),
+            $"State properties of {typeof(TView).Name} require that view's active build.");
     }
 }
 

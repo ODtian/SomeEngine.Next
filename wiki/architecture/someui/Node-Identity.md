@@ -46,8 +46,10 @@ public static KeyScope Key(ulong key);
   两种 [[architecture/someui/Child-Source|Child Source]] 共用这次子声明的恢复边界。
   构建成功时，通过 `Hierarchy<ElementTree>.SetParent(world, child, parent, insertIndex)`
   应用声明次序，外层构建成功后通过 `DestroySubtree` 释放被替换及省略的旧子树。
-  嵌套构建共用当次子声明修改记录；失败作用域按倒序恢复子参数与已完成的后代声明，
-  释放新增子树并恢复原次序。原有节点身份、类型、参数及原有后代由 ECS 继续持有。
+  嵌套构建共用当次构建修改记录；失败作用域按倒序恢复子参数、`Scope.Write` 提交的输出、
+  `Ensure` 引入的数据、读取依赖、计算列表与已完成的后代声明，释放新增子树并恢复原次序。
+  子构建的旧计算保留到外层构建成功后再释放；外层失败时恢复旧计算，释放本次创建的计算。
+  原有节点身份、类型、参数及原有后代由 ECS 继续持有。
   参数相等时仍保存原值，使自定义 `Equals` 忽略的回调字段也能随失败声明恢复。
   视图参数、`ElementKey` 和 `ElementTree` 持有节点数据；出现次数只在本次构建期间计数。
 - `Views.Spawn` 创建的根也带有 `ElementKey`，其值为 key 0、出现次数 0。
