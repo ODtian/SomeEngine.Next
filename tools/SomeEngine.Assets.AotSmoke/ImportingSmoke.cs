@@ -32,6 +32,10 @@ internal static class ImportingSmoke
             Check(capabilities.All(value => !string.IsNullOrWhiteSpace(value.ImplementationVersion)), "Missing implementation versions.");
             Check(provider.GetServices<AssetBlockCapability>().Any(value => value.BlockType == typeof(TextureBlock)
                 && value.Id == TextureBlock.BlockTypeId), "A referenced block was not discovered.");
+            AssetImporterSetCapability set = provider.GetServices<AssetImporterSetCapability>()
+                .Single(value => value.Id == new Guid(SmokeImporterSets.Id));
+            Check(set.Default && set.Importers.Contains(capabilities.Single(value => value.ImporterType == typeof(SmokeNumberImporter)).Id)
+                && set.Importers.Count == 2, "Importer set members or project defaults changed.");
             await using (var scope = provider.CreateAsyncScope())
             {
                 var number = scope.ServiceProvider.GetRequiredService<SmokeNumberImporter>();
@@ -124,8 +128,14 @@ internal static class ImportingSmoke
     }
 }
 
-[AssetCapabilities]
+[AssetCapabilities(SmokeImporterSets.Id)]
 public static partial class ImportingCapabilities;
+
+[AssetImporterSet(Id, "Smoke conversions", typeof(SmokeNumberImporter), typeof(SmokeLabelImporter))]
+public static class SmokeImporterSets
+{
+    public const string Id = "e9eea46a-8b7d-41bd-a9f2-2f184c33947a";
+}
 
 [AssetBlock("SmokeNumberBlock"), BinarySerializable, BinaryFields(nameof(Value))]
 public sealed partial class SmokeNumberBlock : AssetBlock

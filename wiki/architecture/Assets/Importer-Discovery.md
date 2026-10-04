@@ -21,8 +21,7 @@ Asset importer DI 是 Importer 的注册表，唯一用途是让一次来源导�
 
 `StandardGltfSceneImporter` 与默认场景构建工具的 `ImportedSceneImporter` 通过 `context.GetSettings(GltfSourceImporter.SourceImporterId, new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings)` 读取来源的材质模板路径。来源集成在请求资产前通过 `context.ConfigureSettings<T>(Guid importerId, T settings)` 设置单次覆盖；该覆盖只由本次上下文持有。持久设置继续从 `.meta` 读取。Importer 持有自己的编码资源，导入作用域保持到所有 Block 保存完成。
 
-当前代码与目标的差异：
-- `GltfSourceImporter.EnsureDefaultSelections` 写死 `GltfMeshImporter`、`ClusterGltfMeshImporter`、`GltfTextureImporter`。
+导入组合由 `[AssetImporterSet]` 声明，项目通过 `[AssetCapabilities]` 的组合 ID 参数指定默认管线。生成的组合描述与 Importer 能力注册到同一容器；来源集成按能力的来源类型展开成员。成员替换、保存与多管线行为见 [Importer Sets](Importer-Sets.md)。
 
 ## Relations
 [[architecture/Assets/Asset-Import-and-Storage|Import and Storage]] · [[architecture/Assets/Importer-Sets|Importer Sets]] · ADR 0015

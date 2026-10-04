@@ -12,6 +12,23 @@ namespace SomeEngine.Animation.Pose.Tests;
 
 public sealed class SkeletonBehaviorTests
 {
+    [Fact]
+    public async Task ReferencedNeutralGroupImportsSkeletonsFromTheProjectsDefaultChoices()
+    {
+        using var files = new SkeletonFiles(false);
+        SourceMeta metadata = SourceMeta.Load(files.Source);
+        metadata.Importers.RemoveAll(value => value.ImporterId == GltfSkeletonImporter.Id);
+        SourceMeta.Save(files.Source, metadata);
+        var project = new AssetProject(files.Directory, []);
+        await project.ImportAsync(files.Source, SourceImporter());
+        AssetEntry entry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == SkeletonAsset.FileType);
+        using SkeletonAsset asset = await SkeletonAsset.OpenAsync(Path.Combine(files.Directory, entry.Path));
+        SkeletonBlock skeleton = await asset.GetBlockAsync<SkeletonBlock>();
+        Assert.Equal(4, skeleton.BoneCount);
+        Assert.Equal(new short[] { 2, 0, 1, 3 }, skeleton.JointBones.ToArray());
+        Assert.Equal(new Vector3(7, 8, 9), skeleton.ReferencePose[skeleton.JointBones[0]].Translation);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

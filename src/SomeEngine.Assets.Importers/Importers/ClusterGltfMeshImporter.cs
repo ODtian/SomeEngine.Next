@@ -15,7 +15,8 @@ public sealed class ClusterGltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshS
         using MeshAsset built = ClusterBuilder.ProcessMesh(source, [], source.Name ?? "Mesh",
             new ClusterBuilderOptions
             {
-                GenerateMissingTangents = settings.GenerateTangents,
+                GenerateMissingTangents = settings.GenerateTangents || context.GetSettings(GltfSourceImporter.SourceImporterId,
+                    new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings).GenerateTangents,
                 VertexEncoder = StandardClusterVertexEncoder.Instance,
             });
         cancellationToken.ThrowIfCancellationRequested();

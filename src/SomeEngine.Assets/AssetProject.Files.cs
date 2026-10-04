@@ -249,8 +249,9 @@ public sealed partial class AssetProject
             SourceMeta previous = SourceMeta.Load(source);
             var metadata = new SourceMeta
             {
-            SourceGuid = SourceGuid.New(),
-                Importers = previous.Importers.ToList(), UseDefaultImporters = previous.UseDefaultImporters,
+                SourceGuid = SourceGuid.New(),
+                Importers = previous.Importers.ToList(), ImporterSets = previous.ImporterSets?.ToList(),
+                UseDefaultImporters = previous.UseDefaultImporters,
                 ElementIds = previous.ElementIds.ToDictionary(static item => item.Key, static _ => Guid.NewGuid(), StringComparer.Ordinal),
             };
             files = new AssetImportFiles();

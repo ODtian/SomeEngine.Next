@@ -13,14 +13,16 @@
       "settings": {
         "generate_tangents": false
       },
-      "enabled": true
+      "enabled": true,
+      "set_member_id": "334ba003-337f-4298-ae72-1a5ce4861591"
     },
     {
       "importer_id": "548d394b-5600-49e0-b04a-9c9d0d53b4b0",
       "settings": {
         "generate_tangents": false
       },
-      "enabled": true
+      "enabled": true,
+      "set_member_id": "548d394b-5600-49e0-b04a-9c9d0d53b4b0"
     },
     {
       "importer_id": "9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b",
@@ -30,8 +32,12 @@
     {
       "importer_id": "451b3ab1-e318-4ed8-aebf-9b9e11219120",
       "settings": {},
-      "enabled": true
+      "enabled": true,
+      "set_member_id": "451b3ab1-e318-4ed8-aebf-9b9e11219120"
     }
+  ],
+  "importer_sets": [
+    "04bf0353-5bf3-4824-a87a-3868d3b5a441"
   ],
   "use_default_importers": true,
   "element_ids": {

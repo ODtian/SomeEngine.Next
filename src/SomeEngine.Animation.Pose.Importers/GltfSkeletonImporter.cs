@@ -20,6 +20,7 @@ public sealed class GltfSkeletonSettingsProvider : IAssetImporterSettings<GltfSk
 /// <summary>Imports each skin's joints and ancestors in parent-before-child order.</summary>
 [AssetImporter("b82962a0-6277-45c8-9bc7-145592010a87", typeof(SkeletonBlock),
     SettingsProvider = typeof(GltfSkeletonSettingsProvider), VersionInputs = new[] { typeof(ModelRoot) })]
+[AssetImporterSet("e5d35dcd-c292-4514-85cb-2c9d8ad0e403", "glTF skeleton", typeof(GltfSkeletonImporter), Neutral = true)]
 public sealed class GltfSkeletonImporter : IAssetImporter<Skin, GltfSkeletonSettings>
 {
     public static readonly Guid Id = new("b82962a0-6277-45c8-9bc7-145592010a87");

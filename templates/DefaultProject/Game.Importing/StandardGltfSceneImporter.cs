@@ -84,5 +84,5 @@ public sealed class StandardGltfSceneImporter : GltfSceneImporter
     }
 }
 
-[AssetCapabilities]
+[AssetCapabilities(GltfImporterSets.ClusterId)]
 public static partial class ProjectAssetCapabilities;

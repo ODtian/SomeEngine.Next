@@ -425,6 +425,80 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
         }
         """;
 
+    [Fact]
+    public void ReferencedImporterSetsAreRegisteredAndProjectDefaultsMergeInEitherOrder()
+    {
+        const string set = """
+
+            [AssetImporterSet("96c30d2f-6b98-4a48-a9f1-d2451d48b917", "Extension data", typeof(Importer), Neutral = true)]
+            [AssetImporterSet("05f5a0d7-a030-48e9-b775-b07ed72b55ab", "Extension pipeline", typeof(Importer))]
+            public static class Sets;
+            """;
+        byte[] extension = Emit(Compile(ExtensionSource + set, capabilities: false));
+        const string source = """
+            using System;
+            using System.Linq;
+            using Microsoft.Extensions.DependencyInjection;
+            using SomeEngine.Assets;
+            [AssetCapabilities("05f5a0d7-a030-48e9-b775-b07ed72b55ab")] public static partial class ProjectAssets;
+            [AssetCapabilities] public static partial class LibraryAssets;
+            public static class Consumer
+            {
+                public static bool Execute()
+                {
+                    foreach (bool projectFirst in new[] { false, true })
+                    {
+                        var services = new ServiceCollection();
+                        if (projectFirst) ProjectAssets.AddAssetCapabilities(services);
+                        LibraryAssets.AddAssetCapabilities(services);
+                        ProjectAssets.AddAssetCapabilities(services);
+                        ProjectAssets.AddAssetCapabilities(services);
+                        using var provider = services.BuildServiceProvider();
+                        var sets = provider.GetServices<AssetImporterSetCapability>().Where(value =>
+                            value.Importers.Contains(new Guid("bcc64662-e334-49b1-b559-55d89b06e351"))).ToArray();
+                        if (sets.Length != 2 || sets.Single(value => value.Neutral).Name != "Extension data"
+                            || !sets.Single(value => !value.Neutral).Default) return false;
+                    }
+                    return true;
+                }
+            }
+            """;
+        Assert.True((bool)Execute(Emit(Compile(source, dependencies: [MetadataReference.CreateFromImage(extension)])), extension)!);
+    }
+
+    [Theory]
+    [InlineData("bad-id", "typeof(Importer)")]
+    [InlineData("96c30d2f-6b98-4a48-a9f1-d2451d48b917", "typeof(string)")]
+    [InlineData("96c30d2f-6b98-4a48-a9f1-d2451d48b917", "typeof(Importer), typeof(Importer)")]
+    public void InvalidImporterSetsProduceActionableCompilationErrors(string id, string members)
+    {
+        string declaration = $"\n[AssetImporterSet(\"{id}\", \"Extension data\", {members})] public static class Sets;";
+        Assert.Contains(Compile(ExtensionSource + declaration).Diagnostics, value => value.Id == "SEAC001"
+            && value.Severity == DiagnosticSeverity.Error && value.GetMessage().Contains("Sets", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DuplicateImporterSetIdentityProducesACompilationError()
+    {
+        const string source = """
+
+            [AssetImporterSet("96c30d2f-6b98-4a48-a9f1-d2451d48b917", "First", typeof(Importer))]
+            [AssetImporterSet("96c30d2f-6b98-4a48-a9f1-d2451d48b917", "Second", typeof(Importer))]
+            public static class Sets;
+            """;
+        Assert.Contains(Compile(ExtensionSource + source).Diagnostics, value => value.Id == "SEAC002");
+    }
+
+    [Fact]
+    public void UnavailableDefaultImporterSetProducesACompilationError()
+    {
+        Assert.Contains(Compile(ExtensionSource + """
+
+            [AssetCapabilities("96c30d2f-6b98-4a48-a9f1-d2451d48b917")] public static partial class ProjectAssets;
+            """).Diagnostics, value => value.Id == "SEAC003"
+            && value.GetMessage().Contains("96c30d2f-6b98-4a48-a9f1-d2451d48b917", StringComparison.Ordinal));
+    }
+
     private static object? Execute(byte[] bytes, params byte[][] dependencies)
     {
         var load = new AssemblyLoadContext("AssetConsumer-" + Guid.NewGuid(), isCollectible: true);

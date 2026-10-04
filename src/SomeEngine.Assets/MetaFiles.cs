@@ -11,6 +11,8 @@ public sealed partial class SourceMeta
     public required SourceGuid SourceGuid { get; init; }
     /// <summary>Persistent importer selections and settings, independent of any one build.</summary>
     public List<SourceImporterSettings> Importers { get; init; } = [];
+    /// <summary>Selected groups. Null initializes project defaults; an empty list selects only neutral groups.</summary>
+    public List<Guid>? ImporterSets { get; set; }
     public bool UseDefaultImporters { get; init; } = true;
     /// <summary>Persistent source element identities. Keys come from source identity, never display names.</summary>
     public Dictionary<string, Guid> ElementIds { get; init; } = new(StringComparer.Ordinal);
@@ -73,7 +75,8 @@ public sealed record SourceOutput
 }
 
 public sealed record SourceImporterSettings(Guid ImporterId,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] JsonElement Settings, bool Enabled = true);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] JsonElement Settings, bool Enabled = true,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SetMemberId = null);
 
 /// <summary>Replaceable results of a completed import. These never contain editable source settings.</summary>
 public sealed class SourceBuildRecord
@@ -126,7 +129,7 @@ public sealed partial class SourceMeta
         var result = new SourceMeta
         {
             SourceGuid = SourceGuid.Parse(data.SourceGuid),
-            Importers = data.Importers, UseDefaultImporters = data.UseDefaultImporters,
+            Importers = data.Importers, ImporterSets = data.ImporterSets, UseDefaultImporters = data.UseDefaultImporters,
             ElementIds = data.ElementIds, Build = build,
         };
         return result;
@@ -145,7 +148,7 @@ public sealed partial class SourceMeta
         var data = new SourceMetaDocument
         {
             SourceGuid = meta.SourceGuid.ToString(),
-            Importers = meta.Importers, UseDefaultImporters = meta.UseDefaultImporters, ElementIds = meta.ElementIds,
+            Importers = meta.Importers, ImporterSets = meta.ImporterSets, UseDefaultImporters = meta.UseDefaultImporters, ElementIds = meta.ElementIds,
         };
         var build = new SourceBuildRecord
         {
@@ -170,11 +173,16 @@ public sealed partial class SourceMeta
         {
             writer.WriteStartArray();
             writer.WriteBooleanValue(UseDefaultImporters);
+            writer.WriteStartArray();
+            foreach (Guid set in (ImporterSets ?? []).Order()) writer.WriteStringValue(set);
+            writer.WriteEndArray();
             foreach (SourceImporterSettings settings in Importers.OrderBy(static item => item.ImporterId))
             {
                 writer.WriteStartArray();
                 writer.WriteStringValue(settings.ImporterId);
                 writer.WriteBooleanValue(settings.Enabled);
+                if (settings.SetMemberId is { } member) writer.WriteStringValue(member);
+                else writer.WriteNullValue();
                 if (settings.Settings.ValueKind == JsonValueKind.Undefined) writer.WriteNullValue();
                 else settings.Settings.WriteTo(writer);
                 writer.WriteEndArray();
@@ -189,6 +197,7 @@ internal sealed class SourceMetaDocument
 {
     public string SourceGuid { get; set; } = "";
     public List<SourceImporterSettings> Importers { get; set; } = [];
+    public List<Guid>? ImporterSets { get; set; }
     public bool UseDefaultImporters { get; set; } = true;
     public Dictionary<string, Guid> ElementIds { get; set; } = new(StringComparer.Ordinal);
 }

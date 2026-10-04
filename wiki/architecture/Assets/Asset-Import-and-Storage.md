@@ -16,8 +16,8 @@
 
 | 作用域 | 保存的事实 | 生效位置 |
 | --- | --- | --- |
-| 项目引用与能力 | 当前项目有哪些 Block、Importer、依赖服务和编解码能力 | 编译时发现，生成 Microsoft DI 注册及能力描述 |
-| 来源文件配置 | 实际启用的 Importer、各自参数、来源身份及输出身份对应关系 | 完整源文件名加 `.meta`，参与重新导入 |
+| 项目引用与能力 | 当前项目有哪些 Block、Importer、导入组合和编解码能力 | 编译时发现，生成 Microsoft DI 注册及能力描述；DI 只用于 Importer 互相发现（[Importer Discovery](Importer-Discovery.md)） |
+| 来源文件配置 | 导入组合、展开后的 Importer 与原始成员 ID、各自参数、来源身份及输出身份对应关系 | 完整源文件名加 `.meta`，参与重新导入 |
 | 单次调用覆盖 | 本次调用选择或参数覆盖 | 只作用于本次执行，不自动改写持久设置 |
 
 来源集成通过 `context.ConfigureSettings<T>(Guid importerId, T settings)` 在首个资产请求前配置本次覆盖。局部 Importer 通过 `context.GetSettings<T>(Guid importerId, T defaults, JsonTypeInfo<T> typeInfo, AssetImportSettings<T>? overrides = null)` 读取设置，优先级为显式读取覆盖、本次上下文配置、`.meta` 与默认值。glTF 来源设置使用 `GltfSourceImporter.SourceImporterId`；场景 Importer 由该入口读取材质模板路径，实际产出与来源配置和单次调用一致。
@@ -50,7 +50,7 @@ Importer 的 `ProducedBlocks` 声明可产出的类型，一个来源元素可�
 
 `AssetProject.ImportAsync` 选择来源及配置，读取来源，执行遍历和递归依赖，检查实际输入仍与本次读取一致，然后保存全部草稿。实现位于该 partial 类型的 `Importing/AssetImportProject.cs`。来源、设置、工具或扩展版本变化均参与重新导入判断。实际读取产生的依赖与构建记录分开保存，失败任务的依赖不冒充成功构建结果。
 
-`.meta` 仅保存人工来源身份、Importer 选择、参数和元素 ID 映射；`.import.json` 保存可丢弃的输入及输出验证记录。删除或损坏后者不得改变来源或已保存元素身份，也不得从构建输出补回人工身份。目录重建从 .meta 的 ElementIds 恢复产物归属；来源保存直接维护主要身份映射。每个被选择的 Importer 都由本项目已注册能力解析。设置必须不可变，并以完整导入语义实现值相等。
+`.meta` 仅保存人工来源身份、导入组合、展开后的 Importer 选择与成员 ID、参数和元素 ID 映射；`.import.json` 保存可丢弃的输入及输出验证记录。删除或损坏后者不得改变来源或已保存元素身份，也不得从构建输出补回人工身份。目录重建从 .meta 的 ElementIds 恢复产物归属；来源保存直接维护主要身份映射。每个被选择的 Importer 都由本项目已注册能力解析。设置必须不可变，并以完整导入语义实现值相等。
 
 输出、来源描述、构建记录和目录先在临时位置生成，检查身份与冲突，再沿现有文件替换流程提交。失败或取消会回退本次已经替换的文件，旧的有效目录保持可用。该保证覆盖进程内可观察的失败；不声称多个独立文件在断电或并发外部写入下具有文件系统整体原子性。
 
