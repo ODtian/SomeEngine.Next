@@ -19,7 +19,7 @@ try {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         $NoBuild = $true
     }
-    $arguments = @('test', $Project, '-c', $Configuration,
+    $arguments = @('test', $Project, '-c', $Configuration, '-maxcpucount:2',
         '--logger', 'trx', '--results-directory', $results,
         '--blame-crash', '--blame-hang', '--blame-hang-timeout', '5m')
     if ($NoBuild) { $arguments += '--no-build' }

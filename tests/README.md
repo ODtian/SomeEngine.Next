@@ -4,6 +4,8 @@
 
 GitHub Actions 的 `Software adapter tests` 在任意分支推送、PR 和手动触发时执行同一入口。PR 可以直接查看构建和测试状态。`Directory.Build.targets` 持有唯一的默认过滤条件；完成内容构建后，`dotnet test SomeEngine.slnx -c Release --no-build` 使用同一条件。显式 `--filter` 可选择独立类别。
 
+`tools/Test.ps1` 将跨项目执行限制为最多两个 MSBuild 节点，各测试项目继续使用自身的并行设置与全部默认用例。固定的项目并发负载使公共同步点的挂起保护在 CI 和本地拥有一致的执行条件。
+
 ```text
 (Category=Software)&(Category!=Hardware)&(Category!=LongFuzz)&(Category!=Performance)&(Isolation!=PresentationProcess)&(Isolation!=DeviceLossProcess)
 ```
