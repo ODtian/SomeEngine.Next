@@ -180,5 +180,29 @@ public struct BuildError : ISparseComponent
 覆盖系统调度与当场子构建、key 重排、类型替换、新增声明回滚、嵌套后代参数恢复、
 输出与依赖恢复、计算生命周期、`Ensure` 新增数据、首次失败、后备内容恢复、同步完成的异步异常及开发报告。
 
+## 应用帧接入（#42）
+
+`SomeEngine.Runtime.GameFrameSystems` 将每个 Game world 的输入与视图系统按上述阶段注册。
+`Describe()` 从实际系统组生成阶段和系统类型描述，供应用及公共调度验收读取。
+平台输入、游戏输入与模拟、提取在描述中标明应用调用边界。
+
+应用先转接窗口事件，再调用 `UpdateInput()` 执行 `HitTestSystem` 与
+`FocusNavigationSystem`；游戏输入随后读取同一 World 的 `InputCapture`。
+模拟之后调用 `UpdateViews(deltaSeconds)`，依次执行重建、用户界面系统、
+`AnimationSystems.AddDefaults` 注册的动画、`TextShapingSystem`、`LayoutSystem`
+和布局后的 FLIP 系统。文本系统同时作为布局测量的 `ILayoutDataUpdate`，
+在布局给出内容宽度时完成对应排版。最后沿既有 `RenderExtractionSystems.Extract`
+将数据提取到 Rendering world。
+
+`AddInterfaceSystem` 在重建之后、动画之前加入用户系统；`AddFlipSystem` 在布局之后、
+提取之前加入系统。FLIP 的实现由 #52 提供，该扩展阶段随实现交付安装。
+
+同步帧在当前呈现前完成视图更新和提取。重叠帧在取得前次 Game world 工作结果后
+处理当前平台输入，并在当前帧的 CPU 渲染读取结束后执行模拟、视图更新和提取；
+下一次呈现消费这份数据。初始化先构建并布局，首轮命中测试取得已完成的布局。
+
+公开验收位于 `tests/SomeEngine.Runtime.Tests/GameFrameTests.cs`，使用调度描述、
+World 数据和应用输入入口检查阶段顺序及交互结果。
+
 ## Relations
 [[architecture/someui/Computations|Computations]] · [[architecture/someui/Async-Build|Async Build]] · [[architecture/someui/Render-Path|Render Path]]

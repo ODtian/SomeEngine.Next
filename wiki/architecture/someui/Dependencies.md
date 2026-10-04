@@ -50,6 +50,12 @@ public struct Dependency : IBufferElement
 源组件与版本通过 ECS 既有只读访问权限取得。调度顺序与候选执行前的复核见
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
 
+应用接入（#42）将依赖比较拆成两个读取窗口：先从节点的依赖缓冲复制本次来源数据，
+结束缓冲借用，再读取各来源的组件、存在性、查询成员或环境版本。
+每个重建系统复用自己的当次依赖列表，依赖记录继续由节点缓冲持有。
+这一边界使带 `WorldJobs` 执行配置的 Game world 沿 ECS 的存储权限检查完成重建。
+公开验收由 `CounterPanelTests` 使用普通 World 与应用相同的 Job World 验证点击显示和尺寸更新。
+
 调用方在当前计算所在 World 中使用有效实体及其已有组件，并在可能移动数据的结构修改前消费返回的引用。
 作用域和组件使用错误沿统一的 `DevelopmentCheck` 开发检查报告。
 
