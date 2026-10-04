@@ -19,9 +19,12 @@ GitHub Actions 的 `Software adapter tests` 在任意分支推送、PR 和手动
 | `just test` | Windows，CPU 与 WARP；包含 ECS 固定种子短回归 |
 | `just test-hardware` | GPU 与系统 Vulkan 驱动；Vulkan、Intel 适配器、Sampler Feedback、WaveSize(32)、Cluster 完整场景和 VSM |
 | `just test-long-fuzz` | `SOMEENGINE_ECS_FUZZ_SEED` 与 `SOMEENGINE_ECS_FUZZ_STEPS`；可提供 `SOMEENGINE_ECS_FUZZ_TRACE` 重放 |
+| `just test-performance` | 独立分配预算及基准工具类别；可指定 `-Project` 选择项目 |
 | `just render-perf` | 已构建 DefaultGame 与三个场景；统一测量 1024 小球、Sponza、Amazon Bistro |
 
 硬件类别对应源码中的明确要求：Vulkan 选择系统默认适配器，Intel 和 Sampler Feedback 用例选择具有指定能力的硬件，Dice 寄存器用例要求 WaveSize(32)，Cluster 与 VSM 场景选择硬件适配器。Temporal 与 Cluster 资源加载用例继续通过默认软件入口执行。
+
+Diagnostics 的两处分配预算属于 `Performance`；默认软件集合继续验证禁用 Trace scope 后的上下文状态、事件内容和生命周期。分配预算通过 `just test-performance -Project tests/SomeEngine.Diagnostics.Tests/SomeEngine.Diagnostics.Tests.csproj` 独立执行。
 
 硬件和性能工作流由手动操作触发，使用带 `self-hosted`、`Windows`、`X64`、`gpu` 标签的运行器。运行器提供 GPU、Vulkan 驱动、Python、可创建窗口的 Windows 会话以及支持所选 Actions 版本的 runner。性能工作流先调用现有场景下载和构建脚本，再执行 `tools/Measure-Scenes.ps1`；该入口对完整性、三个场景和 60 秒时限进行核对。长模糊工作流支持手动输入种子和操作数，每周日北京时间 04:00 自动执行 10000 次操作的模型对照。
 

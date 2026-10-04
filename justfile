@@ -69,6 +69,10 @@ test-hardware *args:
 test-long-fuzz *args:
     pwsh -NoProfile -File tools/Test.ps1 -Category LongFuzz {{ args }}
 
+# Allocation and benchmark contracts use the independent performance category.
+test-performance *args:
+    pwsh -NoProfile -File tools/Test.ps1 -Category Performance {{ args }}
+
 # DefaultGame supplies all three scenes; this runner enforces complete results within 60 seconds.
 render-perf *args:
     pwsh -NoProfile -File tools/Measure-Scenes.ps1 {{ args }}

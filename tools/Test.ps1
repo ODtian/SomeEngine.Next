@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Software', 'Hardware', 'LongFuzz')]
+    [ValidateSet('Software', 'Hardware', 'LongFuzz', 'Performance')]
     [string] $Category = 'Software',
     [string] $Project = 'SomeEngine.slnx',
     [string] $Configuration = 'Release',
