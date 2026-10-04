@@ -41,9 +41,15 @@ internal sealed class ChildChanges
 
     internal void RememberComponent<T>(World world, Entity entity) where T : struct
     {
-        bool exists = world.HasComponentData<T>(entity);
-        _previousData.Add(new ChildComponent<T>(entity, exists,
-            exists ? world.ReadComponentData<T>(entity) : default));
+        ChildComponent<T>? data = null;
+        RememberComponent(world, entity, ref data);
+    }
+
+    internal void RememberComponent<T>(World world, Entity entity, ref ChildComponent<T>? data) where T : struct
+    {
+        data ??= new ChildComponent<T>(entity);
+        data.Capture(world);
+        _previousData.Add(data);
     }
 
     internal void RememberReads(World world, Entity entity)
@@ -80,14 +86,19 @@ internal sealed class ChildChanges
 
     internal void ReleaseChildren(World world)
     {
-        foreach (IChildData data in _previousData)
-            data.Complete();
+        Complete();
         foreach (Entity entity in _removedChildren)
             if (world.IsAlive(entity))
                 Hierarchy<ElementTree>.DestroySubtree(world, entity);
     }
 
-    private interface IChildData
+    internal void Complete()
+    {
+        foreach (IChildData data in _previousData)
+            data.Complete();
+    }
+
+    internal interface IChildData
     {
         void Retain() { }
         void Restore(World world);
@@ -134,12 +145,23 @@ internal sealed class ChildChanges
         }
     }
 
-    private sealed class ChildComponent<T>(Entity entity, bool exists, T value) : IChildData where T : struct
+    internal sealed class ChildComponent<T>(Entity entity) : IChildData where T : struct
     {
+        private bool _exists;
+        private T _value;
+
+        internal void Capture(World world)
+        {
+            _exists = world.HasComponentData<T>(entity);
+            _value = _exists ? world.ReadComponentData<T>(entity) : default;
+        }
+
+        internal void Clear() => _value = default;
+
         public void Restore(World world)
         {
-            if (exists)
-                world.OverwriteComponentData(entity, in value);
+            if (_exists)
+                world.OverwriteComponentData(entity, in _value);
             else if (world.HasComponentData<T>(entity))
                 world.DiscardComponentData<T>(entity);
         }

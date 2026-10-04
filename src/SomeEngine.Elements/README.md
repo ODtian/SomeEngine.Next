@@ -78,6 +78,18 @@ committed text on every read. Custom navigation systems can call
 `TextEditingSystem.HandleInput` and `CancelComposition` through the public API.
 See Wiki `architecture/someui/Input-and-Behaviors` for complete input rules.
 
+`DraggableFunctions.Draggable(node)`, `ScrollableFunctions.Scrollable(node)`,
+and `SelectableFunctions.Selectable(node)` declare their components through
+`Scope.Ensure`. The pointer stage writes `Drag` and toggles `Selected` on each
+click. A primary-button drag starts with its first movement, reports the frame's
+`Delta`, and keeps the latest gesture's `Total` and its start `Count`.
+Wheel and drag input produce `ScrollInput`; layout writes the entire
+`ScrollOffset`, clamps it to the measured content range, and offsets children.
+Transparent compositions provide a viewport when they declare scrolling.
+Each function returns the original entity and preserves behavior data when
+declared again. See the Wiki Input-and-Behaviors and Layout pages for units,
+button handling, nested viewports, and the shared public user examples.
+
 `ButtonFunctions.Button(label)` declares a sparse `Button` view. Import
 `ButtonFunctions` statically to write `if (Button("OK").Clicked())` in a build.
 The button reads its own `Hover` and the nearest `ButtonTheme`, composes a Row
