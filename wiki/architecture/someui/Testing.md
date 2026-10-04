@@ -251,5 +251,40 @@ info 验收同时覆盖 Compose 与 SwiftUI，内容委托形状由编译诊断�
 路由行为与数据写入范围由
 [[architecture/someui/Input-and-Behaviors|Input and Behaviors]] 维护。
 
+## 拖动、滚动与选择验收（#40）
+
+2026-10-04，Windows x64，.NET SDK `10.0.112`。
+本票实现从 `98238b412da5532204744472a3da86f48888305f` 开始，
+基础回归在合入布局缓存后的 `230c75a6409df68b4a0883044c2a854223099e29` 执行。
+随后合入指针冒泡集成提交 `3da0051c0116fb962997fa40d3f3a0c12803c257`，
+消费者完整回归与原生验收在行为提交 `78d1b341b873b1381bc95b89689d9734f37dc001` 执行。
+
+本票新增的 20 项公开行为用例通过 Pointer、行为声明、World、ElementTree、
+系统组和组件读取验证 Drag 字段、静止帧、区域外释放、再次拖动、按钮配对、
+目标退出交互树、选择依赖输出、同帧点击、冒泡停止边界、滚轮事件顺序、
+透明组合视口、可点击内容、嵌套滚动、内边距、内容与视口收缩、重复布局、
+范围边界的公开写版本以及真实文本的自然测量。
+其中三项使用错误验收在 Debug 通过共用 Core 开发检查执行。
+每个行为的外部用户重写使用相同公开组件与 Scope.Ensure，并与内置声明共用行为检查。
+
+以下工程分别执行
+`dotnet test tests/<项目>/<项目>.csproj -c Debug --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`
+及对应的 `-c Release` 命令。依赖还原完成后的重复验证加 `--no-restore`。
+
+| 项目 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 74 | 55 |
+| SomeEngine.Layout.Tests | 94 | 74 |
+| SomeEngine.Views.Tests | 259 | 230 |
+| SomeEngine.Views.Generators.Tests | 95 | 95 |
+| SomeEngine.Elements.Render.Tests | 10 | 10 |
+
+`just views-aot win-x64` 完成原生发布、执行和两进程检查点验收，退出码 0。
+原生入口同时执行内置与用户重写的拖动、滚动、选择，及已交付的指针冒泡、
+StopsPointer、子树悬停、文本、布局、视图与各前端检查。
+检查点第二进程将面板 ViewType.Id 从 1 映射为 5，读回后的重建与依赖更新通过。
+发布中的既有 IL2026、IL3050、IL2070 诊断分别来自 TraceCapture 与 JobStorageTypeShape。
+临时构建输出、原生产物与检查点验收文件随验证完成清理。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
