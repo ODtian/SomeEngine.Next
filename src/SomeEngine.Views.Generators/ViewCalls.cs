@@ -62,6 +62,10 @@ internal static class ViewCalls
         method.ContainingType.ToDisplayString() == "SomeEngine.Views.Compose.Compose" &&
         method.Name == "Remember" && method.Parameters.Length == 1;
 
+    internal static bool IsAsync(IMethodSymbol method) =>
+        method.ContainingType.ToDisplayString() == "SomeEngine.Views.Scope" &&
+        method.Name is "Launch" or "Resource" && method.Parameters.Length == 2;
+
     internal static bool IsViewFunction(IMethodSymbol method) => method.GetAttributes().Any(attribute =>
         attribute.AttributeClass?.ToDisplayString() == "System.CodeDom.Compiler.GeneratedCodeAttribute" &&
         attribute.ConstructorArguments.FirstOrDefault().Value as string == "SomeEngine.Views.Generators");

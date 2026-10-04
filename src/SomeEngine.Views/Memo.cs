@@ -37,7 +37,7 @@ public sealed class Memo<T> : VersionCell
         }
     }
 
-    internal override Exception? Error => _computation.Error;
+    internal override Exception? ReadError => _computation.Error;
 
     internal override void Refresh(ulong frame)
     {
@@ -61,9 +61,9 @@ public sealed class Memo<T> : VersionCell
 
     private void RefreshValue(ulong frame)
     {
-        if ((!_hasValue && Error is null) || _computation.HasChanges(frame))
+        if ((!_hasValue && ReadError is null) || _computation.HasChanges(frame))
             _computation.Execute(frame == 0 ? _computation.Frame : frame);
-        else if (Error is { } error)
+        else if (ReadError is { } error)
             ExceptionDispatchInfo.Throw(error);
     }
 

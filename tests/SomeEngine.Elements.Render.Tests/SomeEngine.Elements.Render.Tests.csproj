@@ -14,4 +14,8 @@
     <ProjectReference Include="../../src/SomeEngine.Layout/SomeEngine.Layout.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Vulkan/SomeEngine.Graphics.Vulkan.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="../SomeEngine.Typography.Tests/Fonts/*.ttf;../SomeEngine.Typography.Tests/Fonts/*.otf"
+             Link="Fonts/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
