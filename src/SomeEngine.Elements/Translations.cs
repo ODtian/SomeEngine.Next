@@ -97,6 +97,7 @@ public readonly struct Translations : IComponent
 
     internal string Resolve(string language, in LocalizedText text)
     {
+        DevelopmentCheck.Require(language is not null, "Locale requires a culture name.");
         DevelopmentCheck.Require(!string.IsNullOrEmpty(text.Key), "Localized text requires a translation key.");
         DevelopmentCheck.Require(_languages is not null, "Localized text requires loaded Translations beside Locale.");
         bool hasLanguage = _languages.TryGetValue(language, out LanguageTexts texts);

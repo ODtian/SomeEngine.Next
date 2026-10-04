@@ -17,6 +17,30 @@ public sealed partial class LocalizationTests
     public void PublicLocalizationChecksPass() => LocalizationChecks.Run();
 
     [Fact]
+    public void RepeatedNumberWritesUseTheWorldsLanguageAndKeepZeroAllocations()
+    {
+        using var world = new World();
+        Entity language = world.CreateEntity(new Locale { Name = "en-US" });
+        Entity node = world.CreateEntity(new Text(""));
+        for (int index = 0; index < 1000; index++)
+            node.SetText(world, 1234.5m, "N2");
+        uint version = world.WriteVersion<Text>(node);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < 10000; index++)
+            node.SetText(world, 1234.5m, "N2");
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal("1,234.50", world.Read<Text>(node).Value);
+        Assert.Equal(0, allocated);
+        Assert.Equal(version, world.WriteVersion<Text>(node));
+        world.DestroyEntity(language);
+        world.CreateEntity(new Locale { Name = "de-DE" });
+        node.SetText(world, 1234.5m, "N2");
+        Assert.Equal("1.234,50", world.Read<Text>(node).Value);
+    }
+
+    [Fact]
     public void ChangingLanguageUpdatesLocalizedTextAndPreservesOrdinaryText()
     {
         using Font font = Font.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "Latin.ttf")));
@@ -258,6 +282,7 @@ public sealed partial class LocalizationTests
 #if DEBUG
     [Theory]
     [InlineData("locale", "Locale")]
+    [InlineData("name", "culture name")]
     [InlineData("catalog", "Translations")]
     [InlineData("key", "key")]
     [InlineData("arguments", "format arguments")]
@@ -267,7 +292,7 @@ public sealed partial class LocalizationTests
         using var frames = new TextFrames();
         if (example != "locale")
         {
-            Entity language = frames.World.CreateEntity(new Locale { Name = "en-US" });
+            Entity language = frames.World.CreateEntity(new Locale { Name = example == "name" ? null! : "en-US" });
             if (example != "catalog")
                 frames.World.Add(language, BuildTranslations("""
                     { "en-US": { "greeting": "Hello, {0}" } }

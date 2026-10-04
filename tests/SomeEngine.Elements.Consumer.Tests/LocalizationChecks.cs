@@ -61,6 +61,14 @@ internal static partial class LocalizationChecks
         Require(world.Read<TextContent>(nodes[5]).Value == "Oktober", "Date declarations use the current language.");
         Require(world.Read<TextContent>(nodes[6]).Value == "1234.50" &&
             world.WriteVersion<TextContent>(nodes[6]) == explicitCultureVersion, "An explicit culture controls its text.");
+        for (int index = 0; index < 1000; index++)
+            nodes[4].SetText(world, 1234.5m, "N2");
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < 10000; index++)
+            nodes[4].SetText(world, 1234.5m, "N2");
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Require(allocated == 0 && world.Read<Text>(nodes[4]).Value == "1.234,50",
+            "Number writes with a configured language retain zero allocations.");
         world.Replace(language, new Locale { Name = "en-US" });
         Entity fraction = Views.Views.Spawn(world, Entity.Null, new Text(Loc.Key("items", 1.0m)));
         systems.Update();
