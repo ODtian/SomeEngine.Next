@@ -23,6 +23,14 @@ public struct LayoutRect : IComponent
     public Rect Value;
 }
 
+/// <summary>The last measurement and its layout input version, written by the layout system.</summary>
+public struct LayoutCache : IComponent
+{
+    public Constraints Constraints;
+    public Size Size;
+    public uint InputVersion;
+}
+
 /// <summary>Application-written target, target size, and pixels per canvas unit.</summary>
 public struct Canvas : IComponent
 {

@@ -136,15 +136,17 @@ public sealed partial class PointerTests
 
         frames.Frame();
         Assert.False(frames.World.Read<Hover>(button).Hovered);
+        Assert.False(frames.World.Read<Hover>(button).Within);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(160, 10));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
         Assert.Equal(2u, frames.World.Read<Clicks>(button).Count);
+        Assert.True(frames.World.Read<Hover>(button).Within);
     }
 
     [Fact]
-    public void DrawOrderHitsTheMarkedDescendantAboveItsMarkedAncestors()
+    public void DrawOrderSelectsTheDescendantAndClicksReachItsMarkedAncestors()
     {
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new NestedButtons());
@@ -159,9 +161,43 @@ public sealed partial class PointerTests
         frames.Frame();
 
         Assert.Equal(1u, frames.World.Read<Clicks>(button).Count);
-        Assert.Equal(0u, frames.World.Read<Clicks>(parent).Count);
-        Assert.Equal(0u, frames.World.Read<Clicks>(branch).Count);
+        Assert.Equal(1u, frames.World.Read<Clicks>(parent).Count);
+        Assert.Equal(1u, frames.World.Read<Clicks>(branch).Count);
         Assert.Equal(0u, frames.World.Read<Clicks>(children[0]).Count);
+        Assert.True(frames.World.Read<Hover>(button).Hovered);
+        Assert.False(frames.World.Read<Hover>(parent).Hovered);
+        Assert.False(frames.World.Read<Hover>(branch).Hovered);
+        Assert.True(frames.World.Read<Hover>(parent).Within);
+        Assert.True(frames.World.Read<Hover>(branch).Within);
+    }
+
+    [Theory]
+    [InlineData(0, true, 0u, 0u)]
+    [InlineData(1, true, 1u, 0u)]
+    [InlineData(1, false, 0u, 0u)]
+    [InlineData(2, true, 1u, 1u)]
+    public void ClicksEndAtStopsPointer(int stopIndex, bool pressable, uint branchClicks, uint parentClicks)
+    {
+        using var frames = new PointerFrames();
+        Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new NestedButtons());
+        frames.Frame();
+        Entity parent = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity branch = Hierarchy<ElementTree>.GetChildren(frames.World, parent)[1];
+        Entity button = Hierarchy<ElementTree>.GetChildren(frames.World, branch)[0];
+        Entity[] path = [button, branch, parent];
+        Entity stop = path[stopIndex];
+        frames.World.Add(stop, new StopsPointer());
+        if (!pressable)
+            frames.World.Remove<Pressable>(stop);
+
+        Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
+        Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
+        Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
+        frames.Frame();
+
+        Assert.Equal(1u, frames.World.Read<Clicks>(button).Count);
+        Assert.Equal(branchClicks, frames.World.Read<Clicks>(branch).Count);
+        Assert.Equal(parentClicks, frames.World.Read<Clicks>(parent).Count);
     }
 
     [Fact]
@@ -189,6 +225,44 @@ public sealed partial class PointerTests
     [InlineData(false)]
     [InlineData(true)]
     public void CallerConsumesClicksThroughPublicComponents(bool rewritten) => PointerChecks.Run(rewritten);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CallerConsumesBubbledClicksAndReadsSubtreeHover(bool rewritten) => PointerChecks.RunRouting(rewritten);
+
+    [Fact]
+    public void NestedCanvasKeepsBubbledClicksAndSubtreeHoverInsideItsOwnTree()
+    {
+        using var frames = new PointerFrames();
+        Entity outerRoot = Views.Views.Spawn(frames.World, frames.Canvas, new NestedButtons());
+        frames.Frame();
+        Entity outerCard = Hierarchy<ElementTree>.GetChildren(frames.World, outerRoot)[0];
+        Entity outerBranch = Hierarchy<ElementTree>.GetChildren(frames.World, outerCard)[1];
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(400, 300) });
+        frames.World.Add(canvas, new Hover());
+        Hierarchy<ElementTree>.SetParent(frames.World, canvas, outerBranch);
+        Entity root = Views.Views.Spawn(frames.World, canvas, new NestedButtons());
+        frames.Frame();
+        Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity branch = Hierarchy<ElementTree>.GetChildren(frames.World, card)[1];
+        Entity button = Hierarchy<ElementTree>.GetChildren(frames.World, branch)[0];
+
+        Pointer.Move(frames.World, canvas, new Vector2(10, 10));
+        Pointer.Press(frames.World, canvas, PointerButton.Primary);
+        Pointer.Release(frames.World, canvas, PointerButton.Primary);
+        frames.Frame();
+
+        Assert.Equal(1u, frames.World.Read<Clicks>(button).Count);
+        Assert.Equal(1u, frames.World.Read<Clicks>(branch).Count);
+        Assert.Equal(1u, frames.World.Read<Clicks>(card).Count);
+        Assert.True(frames.World.Read<Hover>(canvas).Within);
+        Assert.True(frames.World.Read<Hover>(card).Within);
+        Assert.Equal(0u, frames.World.Read<Clicks>(outerBranch).Count);
+        Assert.Equal(0u, frames.World.Read<Clicks>(outerCard).Count);
+        Assert.Equal(default, frames.World.Read<Hover>(outerBranch));
+        Assert.Equal(default, frames.World.Read<Hover>(outerCard));
+    }
 
     [Theory]
     [InlineData(PointerButton.Primary, PointerButton.Secondary)]

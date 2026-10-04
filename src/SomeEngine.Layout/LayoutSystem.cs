@@ -29,15 +29,21 @@ public sealed class LayoutSystem(params ILayoutDataUpdate[] dataUpdates) : ISyst
             foreach (var row in rows.Rows)
                 entities.Add(row.Entity);
         });
-        foreach (Entity entity in _canvases)
+        _data.BeginUpdate();
+        try
         {
-            Canvas canvas = context.World.Read<Canvas>(entity);
-            LayoutValidation.CheckCanvas(in canvas);
-            if (!context.World.Has<LayoutRect>(entity))
-                context.World.Add(entity, new LayoutRect());
-            _data.Update(entity, new Size(canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale));
+            foreach (Entity entity in _canvases)
+            {
+                Canvas canvas = context.World.Read<Canvas>(entity);
+                LayoutValidation.CheckCanvas(in canvas);
+                _data.Update(entity, new Size(canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale));
+            }
+            _data.EndUpdate();
         }
-        _canvases.Clear();
+        finally
+        {
+            _canvases.Clear();
+        }
     }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_canvasQuery);
