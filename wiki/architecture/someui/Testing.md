@@ -649,9 +649,10 @@ SHA-256 与既有同版本构建相等。Views 原生发布、启动与跨进程
 
 派发基线为 `f7f66815c02d0f46a577fe7f8ce06d4f8147e97a`。
 实现提交为 `6301cf4c`，公开数据名称整理为 `fabc038d`；
-交付前合入集成提交 `1fbce9ce094995af979e06b83da069d3f4e8cdde`，
-本节最终 Runtime 公共 API 与示例构建验证的源码提交为
-`c8ad9ed18f72dd44f4eb61941eaaa2c273c2808b`。
+交付前依次合入集成提交 `1fbce9ce094995af979e06b83da069d3f4e8cdde` 与
+`55cfda50379cedd4a0726bc627d260a8f3d9ee7f`，后者包含 #35 画布绘制与 #41 文本编辑。
+本节最终 Runtime、元素、画布及示例验证的源码提交为
+`ebc3527b788cab70a3897b001528455068ecd75e`。
 
 公开接缝为 `WindowInput`、`GameFrameSystems.Describe/UpdateInput/UpdateViews`、
 `FrameStageDescription.SystemTypes`、`SurfacePanelExample.ClickCount/Resize`，
@@ -674,7 +675,7 @@ SHA-256 与既有同版本构建相等。Views 原生发布、启动与跨进程
 
 以下命令在本票工作树逐个工程执行。`Debug` 的四项视图相关回归及 `Release` 的
 Views、系统回归采用 `f04382e8` 的源码；该范围内本票触及的产品源码与上述最终提交相同。
-Runtime 的两种配置在公开数据命名整理与最后一次集成后重新执行。
+Runtime 的两种配置，以及元素、提取与画布像素专项在最后一次集成后重新执行。
 
 ```powershell
 dotnet test tests/<工程>/<工程>.csproj -c <配置> --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false
@@ -682,12 +683,23 @@ dotnet test tests/<工程>/<工程>.csproj -c <配置> --nologo -v quiet -m:1 -n
 
 | 工程 | Debug 通过 | Release 通过 |
 |---|---:|---:|
-| SomeEngine.Runtime.Tests | 27 | 27 |
+| SomeEngine.Runtime.Tests | 30 | 30 |
 | SomeEngine.Views.Tests | 305 | 273 |
 | SomeEngine.Layout.Tests | 95 | — |
-| SomeEngine.Elements.Consumer.Tests | 193 | — |
-| SomeEngine.Elements.Render.Tests | 17 | — |
+| SomeEngine.Elements.Consumer.Tests | 233 | — |
+| SomeEngine.Elements.Render.Tests | 32 | — |
 | SomeEngine.ECS.Systems.Tests | 298 | 298 |
+
+画布像素专项通过 27 项，实际覆盖 D3D12 WARP 与 Vulkan 上的 Surface、Glyphs、Image
+组合及世界画布绘制。执行命令为：
+
+```powershell
+dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj --filter 'FullyQualifiedName~CanvasDrawingTests|FullyQualifiedName~GlyphDrawingTests|FullyQualifiedName~CanvasCompositionTests|FullyQualifiedName~ImageDrawingTests|FullyQualifiedName~WorldCanvasDrawingTests' --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false
+```
+
+平台文本接缝覆盖普通 World 与 Job World 下的 Shift 选区、End、删除、
+组合预览与确认，并验证跨帧 UTF-16 代理项组合及编辑控制字符的处理。
+默认 FocusNavigationSystem 按输入顺序调用 TextEditingSystem，调度描述继续对应实际系统组。
 
 系统工程的既有 CS4014 诊断位于 `LifecycleClosureTests.cs:585`；两种配置均完成系统回归。
 
@@ -699,11 +711,12 @@ git diff --check
 ```
 
 内容构建从本项目源文件生成 67 项资产。最终示例构建退出码为 0，诊断为 0 个警告、0 个错误。
-真实窗口功能验收使用 `f04382e8eca29f12ae2d488e662cdab1a5400a68` 的 Release 示例，
+真实窗口功能验收使用 `ebc3527b788cab70a3897b001528455068ecd75e` 的 Release 示例，
 分辨率为 1280×720、DPI 为 1，默认 1024 小球场景。
 通过窗口消息注入鼠标移动、按下与释放，点击位置为 `(1100, 610)`，计数由 0 变为 1。
 F1 关闭调试窗口后，Down 与 Enter 将按钮计数变为 2；再次 F1 打开 ImGui，
-点击 `(41, 583)` 切换 `Animate scene` 复选框。应用完成 14606 帧后正常关闭，退出码为 0。
+点击 `(41, 583)` 切换 `Animate scene` 复选框。窗口另接收 IME 开始、组合、结束与
+确认消息，以及 UTF-16 代理项字符消息，运行路径完成处理。应用完成 393 帧后正常关闭，退出码为 0。
 截图通过平台的 F8 捕获入口取得，转换为保留像素的 PNG；本节记录这些操作的功能结果。
 
 ### 界面证据
@@ -717,7 +730,7 @@ F1 关闭调试窗口后，Down 与 Enter 将按钮计数变为 2；再次 F1 �
 [F1 重新打开 ImGui，Animate scene 已切换，计数保留为 2](images/someui-42-debug.png)。
 
 截图文件与本节一同提交，供统一 PR 引用。
-验收结束后清理 98 个生成目录、67 个生成资产和原始 BMP 捕获文件；
+两轮验收后分别清理 98／94 个生成目录、各 67 个生成资产及原始 BMP 捕获文件；
 源码、构建输入与上述四张 PNG 交付证据保留在工作树中。
 
 ## Relations
