@@ -19,7 +19,7 @@ using (Column().Padding(16).Background(fill).Content()) { ... }
 - 修饰不是视图，不创建实体，也不参与子视图的参数比较。
 - 影响布局的特殊包装（宽高比、偏移等）写成只有一个子节点的布局视图，不做修饰链。
 - 用户的修饰与内置修饰写法相同。
-- 修饰在计算之外调用由开发检查报告；游戏代码直接使用 `World.Write`。
+- 修饰在计算之外调用由开发检查报告；游戏代码使用 `World.Read` 与 `World.Replace` 读写组件。
 
 ## 布局修饰实现（#24）
 
@@ -82,6 +82,12 @@ Column().Background(fill).Corner(4).Border(borderColor, 2);
 这些方法沿 `Scope.Write` 取得同一计算中的组件副本，计算成功后比较提交。
 `Gap` 与 `Align` 用于 Flex 视图，开发构建通过 Core 的 `DevelopmentCheck` 检查入口。
 默认值、伸缩分配、各轴支持的对齐与行间距规则见 [[architecture/someui/Layout|Layout]]。
+
+## Grid 修饰（#26）
+
+`SomeEngine.Layout.GridModifiers.Cell(row, column, rowSpan = 1, columnSpan = 1)`
+通过 `Scope.Write<GridCell>` 写入四项单元格数据，并返回传入实体。
+默认值、显式行列定义、跨度尺寸与测量规则见 [[architecture/someui/Layout|Layout]]。
 
 ## Relations
 [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Layout|Layout]]
