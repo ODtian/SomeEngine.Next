@@ -200,7 +200,7 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
 
     private static Size Measure(World world, Entity entity, ref LayoutPass pass, in Constraints constraints)
     {
-        T view = world.ReadComponentData<T>(entity);
+        T view = pass.Read<T>(entity);
         return view.Measure(ref pass, in constraints);
     }
 

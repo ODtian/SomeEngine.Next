@@ -31,6 +31,24 @@ internal static partial class LayoutChecks
         Require(world.Read<LayoutRect>(nested).Value == new Rect(19, 31, 20, 30), "The user layout places nested Absolute content.");
         Require(world.Read<LayoutRect>(leaf).Value == new Rect(21, 34, 8, 9), "Nested placements resolve in canvas coordinates.");
 
+        uint canvasVersion = world.WriteVersion<LayoutRect>(canvas);
+        uint absoluteVersion = world.WriteVersion<LayoutRect>(absolute);
+        uint customVersion = world.WriteVersion<LayoutRect>(custom);
+        uint nestedVersion = world.WriteVersion<LayoutRect>(nested);
+        world.Replace(leaf, new Box { Fixed = new Size(6, 7) });
+        systems.Update();
+        Require(world.Read<LayoutRect>(leaf).Value == new Rect(21, 34, 6, 7), "A local size change updates the leaf inside fixed-size layouts.");
+        Require(world.WriteVersion<LayoutRect>(canvas) == canvasVersion &&
+            world.WriteVersion<LayoutRect>(absolute) == absoluteVersion &&
+            world.WriteVersion<LayoutRect>(custom) == customVersion &&
+            world.WriteVersion<LayoutRect>(nested) == nestedVersion,
+            "The surrounding rectangle versions remain equal after the local size change.");
+
+        foreach (Entity entity in new[] { absolute, custom, nested, leaf })
+            world.Remove<LayoutCache>(entity);
+        systems.Update();
+        Require(world.Read<LayoutRect>(leaf).Value == new Rect(21, 34, 6, 7), "Full measurement after clearing caches preserves the leaf rectangle.");
+
         world.Replace(canvas, new Canvas { Size = new Size(600, 400), Scale = 2 });
         systems.Update();
         Require(world.Read<LayoutRect>(absolute).Value == new Rect(0, 0, 300, 200), "Changing canvas size updates its layout roots.");
