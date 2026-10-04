@@ -258,6 +258,15 @@ dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.cspr
 与后续依赖更新。诊断目录、检查点文件及原生验收产物在使用后清理。
 行为与接口见 [[architecture/someui/Input-and-Behaviors|Input and Behaviors]]。
 
+最终再对齐 #38：源码验收提交 `a2d5d364961f6fdcddc1c22bb40f12f82ab33793`，
+包含集成提交 `3da0051c0116fb962997fa40d3f3a0c12803c257`。
+消费者工程重新执行 Debug 与 Release，均使用
+`--nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`，
+结果分别为 80 与 55 通过。新增组合检查验证指针点击和焦点确认共用节点上的 `Clicks`，
+调用方消费计数后继续接收下一次键盘确认；当前焦点检查为 Debug 26 项、Release 17 项。
+`just views-aot win-x64` 再次成功发布、执行全部 17 项共享焦点检查与指针冒泡检查，
+并完成检查点写入与读回，退出码 0。原生验收产物在执行后清理。
+
 ## 指针冒泡与子树悬停验收（#38）
 
 2026-10-04，Windows x64，.NET SDK `10.0.112`。
