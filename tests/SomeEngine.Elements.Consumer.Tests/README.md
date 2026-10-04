@@ -16,3 +16,10 @@ versions, and development errors. `SurfaceChecks` is compiled by these tests and
 the Views NativeAOT smoke executable to share the Column behavior checks.
 `AssemblyBoundaryTests` checks the public assembly access rule owned by Wiki
 `architecture/someui/Assemblies`.
+
+`PointerTests` injects input through `Pointer`, advances the hit-test, game input,
+view, and layout stages, and observes public node data. It covers click-dependent
+display, draw order, transparent compositions, previous-frame layout, per-button
+presses, canvas isolation, and development errors. `PointerChecks` runs the same
+caller consumption example for the built-in and user-written `Pressable` and
+`Clicked` functions and shares those cases with the NativeAOT executable.
