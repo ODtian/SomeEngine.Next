@@ -137,6 +137,73 @@ Box 固定主轴尺寸提供自动 Basis，最终伸缩尺寸作为固定主轴�
 本实现使用 ILayout 类型协议与统一 Box 约束，伸缩下限由显式 `Box.Min` 表达，默认零。
 为保证伸缩后的嵌套布局正确，本票将 #24 的单次子测量限制改为同一节点数据上的重复测量。
 
+## Stack 与 Grid（#26）
+
+```csharp
+public record struct Stack(Align Horizontal = Align.Start, Align Vertical = Align.Start)
+    : IView, IComponent, ILayout;
+public record struct Grid(GridTracks Rows, GridTracks Columns, float Gap = 0)
+    : IView, IComponent, ILayout;
+public enum GridTrackKind : byte { Fixed, Auto, Fraction }
+public readonly record struct GridTrack(GridTrackKind Kind, float Value = 0)
+{
+    public static GridTrack Fixed(float size);
+    public static GridTrack Auto { get; }
+    public static GridTrack Fraction(float weight = 1);
+}
+public readonly struct GridTracks : IEquatable<GridTracks>
+{
+    public GridTracks(params ReadOnlySpan<GridTrack> tracks);
+    public int Count { get; }
+    public GridTrack this[int index] { get; }
+}
+public struct GridCell : IComponent
+{
+    public int Row, Column;
+    public int RowSpan { get; set; }     // 默认 1
+    public int ColumnSpan { get; set; }  // 默认 1
+}
+```
+
+两种视图的 `Children` 为 `Caller`，调用方通过生成的 `Stack(...)`、`Grid(...)`
+同名函数或 `Scope.View(new ...)` 声明容器，使用 `.Content()` 声明子节点。
+布局沿同一 `ILayout` 测量协议处理透明组合、Box 和嵌套布局。
+
+Stack 叠放子节点，内容尺寸取所有子节点外框的最大宽度和最大高度，再遵循父约束。
+水平与垂直方向独立支持 `Start`、`Center`、`End`、`Stretch`。
+起点、居中和终点对齐按容器内容尺寸与子节点外框尺寸计算位置。
+`Stretch` 将子节点的自动轴拉伸到容器内容尺寸，并遵循 Box 与父约束；固定轴保持测量尺寸。
+拉伸后的子节点按最终约束重新测量，使其后代取得分配后的尺寸。
+`new Stack()` 与生成的 `Stack()` 均默认两轴 `Start`。
+此前独立 SomeUI 的 `StackLayout` 表达按方向依次排列；本票按规格实现叠放式 Stack，
+按方向依次排列由 Flex、Row 和 Column 提供。
+
+GridTracks 复制输入定义并按轨道值比较相等，支持集合表达式，默认值为空序列。
+`Fixed(size)` 定义有限非负长度，`Auto` 从内容测量尺寸，`Fraction(weight)` 定义有限正权重。
+Grid 先测量子节点外框并确定列宽，再按列宽重新测量子节点以确定行高，
+最后按单元格尺寸测量并摆放全部子节点。
+
+自适应轨道按跨度从小到大处理内容，同一跨度按子节点声明顺序处理。
+单轨道取最大内容尺寸；跨轨道内容超过当前轨道与内部 Gap 的总长度时，
+多出的长度平均加到覆盖范围内的 Auto 轨道，固定轨道保持其定义长度。
+存在有限轴上限时，比例轨道按权重分配扣除固定、自适应轨道和 Gap 后的非负剩余空间。
+轴上限为无界时，覆盖比例轨道的内容确定所需的比例单位，全部比例轨道使用最大的单位，
+保持轨道间的权重比例。父布局随后分配有限尺寸时，Grid 按新约束再次测量。
+Grid 内容尺寸为轨道长度与轨道间 Gap 的总和，再遵循父约束；固定和自适应轨道保留内容长度，
+比例轨道在剩余空间为零时采用零长度。
+
+GridCell 的行列从零开始，默认位于 `(0, 0)`，两种跨度均默认为 1。
+每个单元格及跨度覆盖范围须落在显式行列定义内；调用方通过
+`.Cell(row, column, rowSpan = 1, columnSpan = 1)` 写入 GridCell。
+同一单元格允许叠放多个子节点。
+跨度尺寸包含所跨轨道之间的 Gap，位置从对应行列的起点开始。
+子节点的自动轴填满单元格并遵循 Box.Max，固定轴按 Box 与单元格约束测量；
+子节点摆放在单元格起点，内边距沿统一 Box 路径处理。
+
+开发构建通过 Core 的 `DevelopmentCheck` 报告 Stack 对齐、轨道定义、Grid.Gap
+与单元格坐标/跨度错误。不可变轨道在创建时检查，可写参数在测量入口检查；
+这些检查调用随 shipping 编译消失。
+
 ## 公开行为验收
 
 `tests/SomeEngine.Layout.Tests` 通过 World、视图构建、修饰、系统组与 `LayoutRect`
@@ -148,6 +215,11 @@ Box 固定主轴尺寸提供自动 Basis，最终伸缩尺寸作为固定主轴�
 自身对齐、分隔条、换行、嵌套 Row/Column 与同帧修饰更新。
 `FlexChecks.cs` 在单元测试与 NativeAOT 中共用，验证生成的 Flex 同名函数、
 Row/Column、按行 Grow、Basis、Gap 与画布尺寸更新。
+`StackLayoutTests.cs` 验证叠放尺寸、两轴对齐、自动轴拉伸与 Box 尺寸限制。
+`GridLayoutTests.cs` 验证固定、自适应和比例轨道、Gap、跨度、轨道值比较、
+同帧参数更新、Grid/Flex 双向嵌套及宽度变化后的换行高度。
+`StackGridChecks.cs` 在单元测试与 NativeAOT 中共用，验证生成的 Stack/Grid 同名函数、
+默认 Stack、嵌套 Flex 与画布尺寸更新。
 
 此前独立 SomeUI 的布局源码用于核对内边距和内容边界；本实现采用本页的类型协议，
 测量和子节点摆放都由布局视图负责。
