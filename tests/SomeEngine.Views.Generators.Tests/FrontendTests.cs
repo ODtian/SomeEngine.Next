@@ -5,6 +5,42 @@ namespace SomeEngine.Views.Generators.Tests;
 public sealed class FrontendTests
 {
     [Fact]
+    public async Task ExportedSolidComponentsSuggestReactiveDeliveryForStateValues()
+    {
+        var diagnostics = await CompilerChecks.Diagnostics("""
+            using SomeEngine.Views;
+            using SomeEngine.Views.Compose;
+            using SomeEngine.Views.Solid;
+            public static partial class Screens
+            {
+                [Composable] public static void Label(int value) { }
+                [Component] public static void Screen(State<int> value) => Label(value.Value);
+            }
+            """, true, new FrontendAnalyzer(), new SolidAnalyzer());
+
+        Diagnostic hint = Assert.Single(diagnostics, value => value.Id == "SEV020");
+        Assert.Equal(DiagnosticSeverity.Info, hint.Severity);
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public async Task InsertContentDeliversStateValuesToOtherFrontendComponents()
+    {
+        var diagnostics = await CompilerChecks.Diagnostics("""
+            using SomeEngine.Views;
+            using SomeEngine.Views.Compose;
+            using SomeEngine.Views.Solid;
+            public static partial class Screens
+            {
+                [Composable] public static void Label(int value) { }
+                [Component] public static void Screen(State<int> value) => Solid.Insert(() => Label(value.Value));
+            }
+            """, true, new FrontendAnalyzer(), new SolidAnalyzer(), new ComposeAnalyzer());
+
+        Assert.DoesNotContain(diagnostics, value => value.Id is "SEV019" or "SEV020" || value.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public async Task SolidParameterValuesReadFromStateSuggestReactiveDelivery()
     {
         var diagnostics = await CompilerChecks.Diagnostics("""

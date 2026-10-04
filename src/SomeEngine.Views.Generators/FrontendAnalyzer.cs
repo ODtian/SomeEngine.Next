@@ -176,6 +176,8 @@ public sealed partial class FrontendAnalyzer : DiagnosticAnalyzer
     {
         if (ViewCalls.IsComposable(method))
             return Frontend.Compose;
+        if (ViewCalls.IsSolidComponent(method))
+            return Frontend.Solid;
         ISymbol? build = compilation.GetTypeByMetadataName("SomeEngine.Views.IView")?.GetMembers("Build").FirstOrDefault();
         if (build is not null && SymbolEqualityComparer.Default.Equals(method,
             method.ContainingType.FindImplementationForInterfaceMember(build)) &&

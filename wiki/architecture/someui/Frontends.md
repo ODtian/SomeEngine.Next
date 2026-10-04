@@ -25,7 +25,8 @@
 
 `SomeEngine.Views.Generators.FrontendAnalyzer` 按独立函数体确定前端：
 方法或 lambda 的 `[Composable]` 标记选择 Compose；带 `[State]` 属性的视图实际实现的
-`IView.Build` 选择 SwiftUI，包含显式接口实现；函数体直接调用 Solid 原语时选择 Solid。
+`IView.Build` 选择 SwiftUI，包含显式接口实现；函数体直接调用 Solid 原语，
+或通过 `[Component]` 导出 Once 视图时选择 Solid。
 lambda、匿名委托和局部函数分别检查自己的函数体。
 
 原语按编译器绑定到的类型与成员识别。Compose 的 `Remember`、`MutableStateOf`，
