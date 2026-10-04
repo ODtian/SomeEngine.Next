@@ -5,13 +5,14 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Graphics;
 using SomeEngine.Layout;
+using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Elements.Render;
 
-/// <summary>Maintains one persistent raster pass per extracted screen canvas.</summary>
+/// <summary>Maintains one persistent raster pass per extracted screen or world canvas.</summary>
 public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObserver
 {
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
@@ -21,7 +22,7 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
     private readonly Dictionary<Entity, CanvasBuffers> _canvases = [];
     private readonly List<CanvasData> _canvasData = [];
     private readonly HashSet<Entity> _canvasEntities = [];
-    private GraphTextureId _target;
+    private Entity _view;
     private uint _lastVersion;
     private bool _disposed;
 
@@ -36,13 +37,13 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         _query = world.Query(new QueryDefinitionBuilder().Read<RenderCanvas>().ReadBuffer<SurfaceInstance>());
     }
 
-    /// <summary>Explicitly adds/removes screen canvas passes or reconnects their color target.</summary>
-    public void ReconcileGraph(GraphTextureId screenTarget)
+    /// <summary>Explicitly maintains canvas passes, their targets, and depth testing.</summary>
+    public void ReconcileGraph(GraphTextureId screenTarget, WorldCanvasTarget worldTarget = default)
     {
         DevelopmentCheck.Require(!_disposed, "Canvas drawing must be active.");
         _canvasData.Clear();
         _canvasEntities.Clear();
-        CanvasRenderer receiver = this;
+        var receiver = (Renderer: this, Screen: screenTarget, World: worldTarget);
         _world.ExecuteQuery(_query, _lastVersion, ref receiver, static (rows, ref renderer) =>
         {
             foreach (QueryChunkView chunk in rows.Chunks)
@@ -50,17 +51,27 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
                 ReadOnlySpan<RenderCanvas> values = chunk.Read<RenderCanvas>();
                 for (int row = 0; row < chunk.Count; row++)
                 {
-                    if (values[row].Target.Kind != CanvasTargetKind.Screen) continue;
+                    RenderCanvas canvas = values[row];
+                    if (canvas.Target.Kind == CanvasTargetKind.RenderTexture) continue;
+                    bool worldSpace = canvas.Target.Kind == CanvasTargetKind.WorldSpace;
+                    GraphTextureId color = worldSpace ? renderer.World.Color : renderer.Screen;
+                    GraphTextureId depth = worldSpace && canvas.DepthTest ? renderer.World.Depth : default;
+                    DevelopmentCheck.Require(color != default, "Canvas drawing requires its color target.");
+                    DevelopmentCheck.Require(!worldSpace || !canvas.DepthTest || depth != default,
+                        "World canvas depth testing requires the scene depth target.");
                     Entity entity = chunk.Entities[row];
-                    renderer._canvasEntities.Add(entity);
-                    renderer._canvasData.Add(new(entity, values[row], chunk.RowBufferChangedSinceLastSystemVersion<SurfaceInstance>(row)));
+                    renderer.Renderer._canvasEntities.Add(entity);
+                    renderer.Renderer._canvasData.Add(new(entity, canvas,
+                        chunk.RowBufferChangedSinceLastSystemVersion<SurfaceInstance>(row),
+                        new(color, depth, depth == default ? default : renderer.World.DepthFormat,
+                            depth == default ? default : renderer.World.DepthComparison, worldSpace)));
                 }
             }
         });
-        bool targetChanged = _target != screenTarget;
-        bool editRequired = targetChanged && _canvases.Count != 0;
+        bool editRequired = false;
         foreach (Entity entity in _canvases.Keys) editRequired |= !_canvasEntities.Contains(entity);
-        foreach (CanvasData data in _canvasData) editRequired |= !_canvases.ContainsKey(data.Entity);
+        foreach (CanvasData data in _canvasData)
+            editRequired |= !_canvases.TryGetValue(data.Entity, out CanvasBuffers? buffers) || buffers.Target != data.Target;
         if (editRequired)
         {
             var additions = new Dictionary<Entity, CanvasBuffers>();
@@ -68,14 +79,29 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
             using (RenderGraphEdit edit = _graph.BeginEdit())
             {
                 foreach ((Entity entity, CanvasBuffers buffers) in _canvases)
-                    if (targetChanged || !_canvasEntities.Contains(entity))
+                    if (!_canvasEntities.Contains(entity))
                     {
                         RemovePass(edit, buffers);
                         removals.Add(entity);
                     }
                 foreach (CanvasData data in _canvasData)
-                    if (targetChanged || !_canvases.ContainsKey(data.Entity))
-                        additions.Add(data.Entity, _drawing.AddPass(edit, screenTarget));
+                    if (!_canvases.TryGetValue(data.Entity, out CanvasBuffers? buffers) || buffers.Target != data.Target)
+                    {
+                        if (buffers is not null)
+                        {
+                            RemovePass(edit, buffers);
+                            removals.Add(data.Entity);
+                        }
+                        additions.Add(data.Entity, _drawing.AddPass(edit, data.Target));
+                    }
+                // Shared color targets compose world canvases before the screen overlay.
+                CanvasBuffers[] passes = _canvases.Where(pair => !removals.Contains(pair.Key))
+                    .Select(pair => pair.Value).Concat(additions.Values).ToArray();
+                foreach (CanvasBuffers screen in passes)
+                    if (!screen.Target.WorldSpace)
+                        foreach (CanvasBuffers world in passes)
+                            if (world.Target.WorldSpace && world.Target.Color == screen.Target.Color)
+                                edit.OrderAfter(screen.Pass, world.Pass);
                 edit.Commit();
             }
             foreach (Entity entity in removals)
@@ -85,7 +111,7 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
             }
             foreach ((Entity entity, CanvasBuffers buffers) in additions) _canvases.Add(entity, buffers);
         }
-        _target = screenTarget;
+        _view = worldTarget.View;
         foreach (CanvasData data in _canvasData)
         {
             CanvasBuffers buffers = _canvases[data.Entity];
@@ -128,15 +154,28 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
             Buffer buffer = buffers.Instances!;
             frame.SetBufferInput(buffers.Input, new GraphBufferSlice(frame.Import(buffer,
                 buffers.Boundaries), BufferRange.Whole));
-            Vector4 canvas = new(buffers.Canvas.Size.Width, buffers.Canvas.Size.Height, buffers.Canvas.Scale, 0);
-            _drawing.SetCanvasData(ref frame, buffers);
+            int width = (int)buffers.Canvas.Size.Width;
+            int height = (int)buffers.Canvas.Size.Height;
+            Matrix4x4 transform;
+            if (buffers.Target.WorldSpace)
+            {
+                DevelopmentCheck.Require(_world.Has<RenderView>(_view), "World canvas drawing requires a RenderWorld view.");
+                RenderView view = _world.Read<RenderView>(_view);
+                width = (int)view.ViewportWidth;
+                height = (int)view.ViewportHeight;
+                float scale = buffers.Canvas.Scale;
+                transform = Matrix4x4.CreateScale(scale, -scale, 1) * buffers.Canvas.Transform * view.View * view.Projection;
+            }
+            else transform = Matrix4x4.CreateScale(2 * buffers.Canvas.Scale / width, -2 * buffers.Canvas.Scale / height, 1)
+                * Matrix4x4.CreateTranslation(-1, 1, 0);
+            _drawing.SetCanvasData(ref frame, buffers, transform);
             frame.SetPassDataIfChanged(buffers.Pass, buffers.Data with
             {
-                Width = (int)buffers.Canvas.Size.Width,
-                Height = (int)buffers.Canvas.Size.Height,
+                Width = width,
+                Height = height,
                 Count = buffers.Count,
             });
-            frame.SetPassEnabled(buffers.Pass, buffers.Count > 0 && canvas.X > 0 && canvas.Y > 0);
+            frame.SetPassEnabled(buffers.Pass, buffers.Count > 0 && width > 0 && height > 0);
         }
     }
 
@@ -176,14 +215,15 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         edit.Remove(buffers.CanvasView);
         edit.Remove(buffers.CanvasBuffer);
         edit.Remove(buffers.TargetView);
+        if (buffers.DepthView != default) edit.Remove(buffers.DepthView);
     }
 
-    private readonly record struct CanvasData(Entity Entity, RenderCanvas Canvas, bool InstancesChanged);
+    private readonly record struct CanvasData(Entity Entity, RenderCanvas Canvas, bool InstancesChanged, CanvasPassTarget Target);
 }
 
 internal sealed class CanvasBuffers(GraphPassId pass, GraphBufferInput input,
     GraphBufferSrvId instancesView, GraphBufferId canvasBuffer, GraphBufferCbvId canvasView,
-    GraphColorAttachmentViewId targetView, SurfacePassData data)
+    GraphColorAttachmentViewId targetView, GraphDepthStencilViewId depthView, CanvasPassTarget target, SurfacePassData data)
 {
     internal GraphPassId Pass { get; } = pass;
     internal GraphBufferInput Input { get; } = input;
@@ -191,6 +231,8 @@ internal sealed class CanvasBuffers(GraphPassId pass, GraphBufferInput input,
     internal GraphBufferId CanvasBuffer { get; } = canvasBuffer;
     internal GraphBufferCbvId CanvasView { get; } = canvasView;
     internal GraphColorAttachmentViewId TargetView { get; } = targetView;
+    internal GraphDepthStencilViewId DepthView { get; } = depthView;
+    internal CanvasPassTarget Target { get; } = target;
     internal SurfacePassData Data { get; } = data;
     internal RenderCanvas Canvas { get; set; }
     internal Buffer? Instances { get; set; }
