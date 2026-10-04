@@ -59,3 +59,12 @@ display and click consumption. `FocusChecks` shares the Grid and transparent
 composition cases, node-release behavior, and a scheduled user navigation
 system with the NativeAOT executable. The Grid runs with both the built-in
 focus functions and the public user equivalent under `Rewrites/`.
+
+`TextEditingTests` injects committed characters, IME candidates, and editor keys
+through `Keyboard`, then observes editable text and caller-produced display data.
+It covers whole-character movement and deletion, both selection directions,
+multiline positions, composition presentation and confirmation, inactive input,
+event order, repeated declarations, World isolation, and development errors.
+The shared `TextEditingChecks` partial files run all behavior cases with both
+the built-in functions and `Rewrites/TextEditingFunctions.cs`, and compile into
+the Views NativeAOT executable.

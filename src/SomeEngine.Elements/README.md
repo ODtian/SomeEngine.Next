@@ -33,7 +33,8 @@ The external examples and shared behavior checks live in
 Read `node.Focused()` in a caller scope to observe focus through a presence
 dependency. Queue keys through `Keyboard.Key(world, key, pressed)`, directions
 through `Gamepad.Navigate(world, direction)`, and activation through
-`Gamepad.Confirm(world)`. Arrow keys navigate; Enter and Space activate. Each key
+`Gamepad.Confirm(world)`. On ordinary focusable nodes, arrow keys navigate;
+Enter and Space activate. Each key
 press is one action, including platform repeats; releases preserve focus and
 click counts.
 
