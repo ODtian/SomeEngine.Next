@@ -91,9 +91,8 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
                 _run!();
                 scope.Complete();
             }
-            Exception? previousError = _error;
-            _error = null;
-            RestoreError(previousError);
+            if (!scope.IsSuspended)
+                Complete();
         }
         catch (Exception exception)
         {
@@ -104,6 +103,19 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
         {
             previous?.ReleaseChildren(retained: calculations);
         }
+    }
+
+    internal void Complete()
+    {
+        Exception? previousError = _error;
+        _error = null;
+        RestoreError(previousError);
+    }
+
+    internal void Fail(Exception error, ulong frame)
+    {
+        Frame = frame;
+        _error = error;
     }
 
     private void RestoreError(Exception? previousError)

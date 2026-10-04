@@ -13,6 +13,7 @@
              Link="ManagedComponentChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/FirstBuildChecks.cs"
              Link="FirstBuildChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/BuildResumeChecks.cs" Link="BuildResumeChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/AsyncIntegrationChecks.cs"
              Link="AsyncIntegrationChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/AsyncPrimitiveChecks.cs"

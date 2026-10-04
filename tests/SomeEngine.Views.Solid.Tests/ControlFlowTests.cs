@@ -9,6 +9,15 @@ namespace SomeEngine.Views.Solid.Tests;
 public sealed partial class SolidTests
 {
     [Fact]
+    public void ShowValueGetterReadsTheLatestConditionOnEachCall() => ControlFlowChecks.LatestValueGetter();
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ShowGettersFollowTheCurrentConditionSourceWhileRetainingTheirBranch(bool jobWorld) =>
+        ControlFlowChecks.ChangedValueSource(jobWorld);
+
+    [Fact]
     public void ManagedAndNativeConsumersShareTheControlFlowBehavior() => ControlFlowChecks.Run();
 
     [Fact]

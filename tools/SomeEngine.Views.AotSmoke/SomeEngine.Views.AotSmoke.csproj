@@ -62,5 +62,6 @@
     <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/FrontendChecks.cs" Link="FrontendChecks.cs" />
     <ProjectReference Include="../SomeEngine.Views.AotReference/SomeEngine.Views.AotReference.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs" Link="HeadlessFrameDriver.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/BuildResumeChecks.cs" Link="BuildResumeChecks.cs" />
   </ItemGroup>
 </Project>

@@ -22,9 +22,7 @@ public static partial class Solid
     {
         DevelopmentCheck.Require(when is not null, "Show requires a value getter.");
         DevelopmentCheck.Require(children is not null, "Show requires branch content.");
-        Func<T> value = () => when()!;
-        Action content = () => children(value);
-        Scope.View(new ShowValue<T>(when, content, fallback, keyed), 0);
+        Scope.View(new ShowValue<T>(when, children, fallback, keyed), 0);
     }
 
     /// <summary>Declares the first matching branch, tracking conditions in their declaration order.</summary>
@@ -90,13 +88,19 @@ public static partial class Solid
         }
     }
 
-    private readonly record struct ShowValue<T>(Func<T?> When, Action Children, Action? Fallback, bool Keyed) : IView, IComponent
+    private readonly record struct ShowValue<T>(Func<T?> When, Action<Func<T>> Children, Action? Fallback, bool Keyed) : IView, IComponent
     {
         public BuildTask Build()
         {
             T? value = When();
             bool present = value is not null;
-            Action? content = present ? Children : Fallback;
+            Entity condition = Scope.Entity;
+            Action<Func<T>> children = Children;
+            Action? content = present ? () =>
+            {
+                Func<Func<T?>> current = Memo(() => Scope.Read<ShowValue<T>>(condition).When);
+                children(() => current()()!);
+            } : Fallback;
             DeclareBranch(value, content, Keyed);
             return default;
         }

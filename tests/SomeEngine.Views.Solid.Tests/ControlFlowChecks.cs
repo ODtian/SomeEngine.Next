@@ -1,4 +1,5 @@
 using SomeEngine.ECS;
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Elements;
 using static SomeEngine.Views.Solid.Solid;
@@ -9,8 +10,68 @@ namespace SomeEngine.Views.Solid.Tests;
 /// <summary>Public control-flow behavior shared by managed and NativeAOT consumers.</summary>
 public static partial class ControlFlowChecks
 {
+    public static void LatestValueGetter()
+    {
+        using var frames = new SolidFrames();
+        var text = new ValueText { Current = "first" };
+        Views.Spawn(frames.World, Entity.Null, new OnceView(() => Show(() => text.Current, value => text.Value = value)));
+        frames.Frame();
+        text.Current = "second";
+        Require(text.Value!() == "second", "Each Show getter call reads the condition's latest value.");
+    }
+
+    public static void ChangedValueSource(bool jobWorld)
+    {
+        using var frames = new SolidFrames(new World(execution:
+            jobWorld ? new SomeEngine.ECS.Systems.WorldJobs(SomeEngine.Job.JobSystem.Default) : null));
+        var first = new State<string>("first");
+        var second = new State<string>("second");
+        var text = new ValueText();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ValueSource(first, text));
+        frames.Frame();
+        Entity sample = text.Sample;
+        Entity binding = text.Binding;
+        frames.World.Replace(root, new ValueSource(second, text));
+        frames.Frame();
+        Require(text.Sample == sample && text.Binding == binding, "Show retains its selected branch and text nodes.");
+        Require(frames.World.Read<Elements.Text>(binding).Value == "second", "The retained getter follows the current condition source.");
+        Require(frames.World.Read<Elements.Text>(sample).Value == "first", "The branch keeps its initial sampled text.");
+        Require(text.Value!() == "second", "The getter reads the latest condition when called outside a build.");
+        first.Value = "previous source";
+        second.Value = "third";
+        frames.Frame();
+        Require(frames.World.Read<Elements.Text>(binding).Value == "third", "The retained binding tracks the new source's updates.");
+    }
+
+    private sealed class ValueText
+    {
+        internal Entity Sample;
+        internal Entity Binding;
+        internal Func<string>? Value;
+        internal string Current = "";
+    }
+
+    private readonly record struct ValueSource(State<string> Source, ValueText Text) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            State<string> source = Source;
+            ValueText text = Text;
+            Show(() => source.Value, value =>
+            {
+                text.Value = value;
+                text.Sample = Solid.Text(value());
+                text.Binding = Solid.Text(value);
+            });
+            return default;
+        }
+    }
+
     public static void Run()
     {
+        LatestValueGetter();
+        ChangedValueSource(false);
+        ChangedValueSource(true);
         ShowBranches();
         ValueBranches(false);
         ValueBranches(true);

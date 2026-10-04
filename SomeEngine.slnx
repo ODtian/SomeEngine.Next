@@ -32,6 +32,7 @@
   <Project Path="src\SomeEngine.Views.SwiftUI\SomeEngine.Views.SwiftUI.csproj" />
   <Project Path="src\SomeEngine.Views.Solid\SomeEngine.Views.Solid.csproj" />
   <Project Path="src\SomeEngine.Views.Generators\SomeEngine.Views.Generators.csproj" />
+  <Project Path="src/SomeEngine.Views.Compiler/SomeEngine.Views.Compiler.csproj" />
   <Project Path="src\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
   <Project Path="src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj" />
   <Project Path="src\SomeEngine.Job.Contracts\SomeEngine.Job.Contracts.csproj" />

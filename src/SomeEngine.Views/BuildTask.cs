@@ -57,8 +57,28 @@ public struct BuildTaskBuilder
 {
     private BuildStateMachine? _stateMachine;
     private ExceptionDispatchInfo? _error;
+    private bool _cancellationObserved;
+    private bool _canceledAwait;
 
     public static BuildTaskBuilder Create() => default;
+    /// <summary>Observes cancellation before consuming this awaiter's result.</summary>
+    public void BeginAwait()
+    {
+        _canceledAwait = !_cancellationObserved && Scope.IsCanceled;
+        _cancellationObserved |= _canceledAwait;
+    }
+
+    /// <summary>Checks the current build after an await result has been consumed.</summary>
+    /// <remarks>The SomeEngine.Views compiler task inserts this call at await recovery points.</remarks>
+    public void CheckCancellation()
+    {
+        if (_canceledAwait)
+        {
+            _canceledAwait = false;
+            Scope.ThrowIfCanceled();
+        }
+    }
+
     public BuildTask Task => _stateMachine is { } stateMachine ? new(stateMachine) :
         _error is { } error ? new(error) : default;
 

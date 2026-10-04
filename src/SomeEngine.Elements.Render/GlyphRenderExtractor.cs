@@ -97,17 +97,17 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         if (atlasReplaced) _changedTreeNodes.UnionWith(_canvasEntities);
         foreach (Entity node in _changedTreeNodes)
         {
-            Entity canvas = FindCanvas(sourceWorld, node);
+            Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas != Entity.Null && !_canvasGlyphs.ContainsKey(canvas))
                 _canvasGlyphs.Add(canvas, CollectCanvas(sourceWorld, canvas));
         }
         foreach (Entity node in _changedTextNodes)
         {
-            Entity canvas = FindCanvas(sourceWorld, node);
+            Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasGlyphs.ContainsKey(canvas)) continue;
             if (!_textGlyphs.TryGetValue(canvas, out var texts)) _textGlyphs.Add(canvas, texts = []);
-            texts.Add(node, ReadGlyphs(sourceWorld, node, FindClip(sourceWorld, canvas, node),
-                FindDrawOrder(sourceWorld, canvas, node)));
+            CanvasNode entry = new CanvasTree(sourceWorld, canvas).ReadNode(node);
+            texts.Add(node, ReadGlyphs(sourceWorld, node, entry.Clip, entry.DrawOrder));
         }
         CopyAtlasPixels(atlasReplaced);
         return _canvasGlyphs.Count != 0 || _textGlyphs.Count != 0 || _atlasChanged;
@@ -144,75 +144,15 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         _atlasChanged = true;
     }
 
-    private static Entity FindCanvas(World world, Entity node)
-    {
-        while (node != Entity.Null)
-        {
-            if (world.Has<Canvas>(node)) return node;
-            if (!world.Has<Parent<ElementTree>>(node)) return Entity.Null;
-            node = world.Read<Parent<ElementTree>>(node).Value;
-        }
-        return Entity.Null;
-    }
-
-    private static Rect Clip(Canvas canvas) => new(0, 0, canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale);
-
-    private static Rect Intersect(Rect first, Rect second)
-    {
-        float left = MathF.Max(first.X, second.X);
-        float top = MathF.Max(first.Y, second.Y);
-        float right = MathF.Min(first.X + first.Width, second.X + second.Width);
-        float bottom = MathF.Min(first.Y + first.Height, second.Y + second.Height);
-        return new(left, top, MathF.Max(0, right - left), MathF.Max(0, bottom - top));
-    }
-
-    private static Rect FindClip(World world, Entity canvas, Entity node)
-    {
-        Rect clip = Clip(world.Read<Canvas>(canvas));
-        while (world.Has<Parent<ElementTree>>(node))
-        {
-            node = world.Read<Parent<ElementTree>>(node).Value;
-            if (node == canvas) break;
-            if (world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node))
-                clip = Intersect(clip, world.Read<LayoutRect>(node).Value);
-        }
-        return clip;
-    }
-
-    private static int FindDrawOrder(World world, Entity canvas, Entity target)
-    {
-        var nodes = new Stack<Entity>();
-        nodes.Push(canvas);
-        int order = 0;
-        while (nodes.TryPop(out Entity node))
-        {
-            if (node != canvas && world.Has<Canvas>(node)) continue;
-            if (node == target) return order;
-            order++;
-            var children = Hierarchy<ElementTree>.GetChildren(world, node);
-            for (int index = children.Count - 1; index >= 0; index--) nodes.Push(children[index]);
-        }
-        return order;
-    }
-
     private List<GlyphInstance> CollectCanvas(World world, Entity canvas)
     {
-        Rect clip = Clip(world.Read<Canvas>(canvas));
         var instances = new List<GlyphInstance>();
-        var nodes = new Stack<(Entity Node, Rect Clip)>();
-        nodes.Push((canvas, clip));
-        int order = 0;
-        while (nodes.TryPop(out var entry))
+        var tree = new CanvasTree(world, canvas);
+        while (tree.TryRead(out CanvasNode entry))
         {
             Entity node = entry.Node;
-            if (node != canvas && world.Has<Canvas>(node)) continue;
             if (world.Has<ShapedText>(node) && world.Has<LayoutRect>(node))
-                instances.AddRange(ReadGlyphs(world, node, entry.Clip, order));
-            order++;
-            Rect childClip = world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node)
-                ? Intersect(entry.Clip, world.Read<LayoutRect>(node).Value) : entry.Clip;
-            var children = Hierarchy<ElementTree>.GetChildren(world, node);
-            for (int index = children.Count - 1; index >= 0; index--) nodes.Push((children[index], childClip));
+                instances.AddRange(ReadGlyphs(world, node, entry.Clip, entry.DrawOrder));
         }
         return instances;
     }

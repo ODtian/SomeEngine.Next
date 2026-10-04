@@ -13,6 +13,7 @@ internal abstract class AsyncComputation(ulong key, int occurrence)
     {
         if (Computation.ScopeData is { Suspended: true } previous)
         {
+            previous.Frame = Scope.Frame;
             previous.Queue.Cancel(previous, restore: true);
             Computation.ScopeData = null;
         }

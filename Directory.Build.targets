@@ -8,6 +8,10 @@
                       Condition="'@(_ViewsReference)' != ''"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="PublishAot" />
   </ItemGroup>
+  <PropertyGroup>
+    <SomeEngineViewsCompilerPath>$(SomeEngineRepositoryRoot)src/SomeEngine.Views.Compiler/bin/$(Configuration)/netstandard2.0/SomeEngine.Views.Compiler.dll</SomeEngineViewsCompilerPath>
+  </PropertyGroup>
+  <Import Project="$(SomeEngineRepositoryRoot)src/SomeEngine.Views/buildTransitive/SomeEngine.Views.targets" />
   <Target Name="ValidateSlangToolchainIdentity" BeforeTargets="PrepareForBuild" Condition="'$(MSBuildProjectName)' == 'SomeEngine.Graphics' or '$(MSBuildProjectName)' == 'SomeEngine.Graphics.Direct3D12.Tests'">
     <Error Condition="'$(_RequestedSlangToolchainVersion)' != '' and '$(_RequestedSlangToolchainVersion)' != '$(SlangToolchainVersion)'"
            Text="SlangToolchainVersion is pinned by the product and cannot be overridden (requested '$(_RequestedSlangToolchainVersion)', pinned '$(SlangToolchainVersion)')." />

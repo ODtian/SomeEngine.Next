@@ -9,6 +9,32 @@ namespace SomeEngine.Views.Tests;
 
 public sealed partial class BuildCancellationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CancelCallbackFailureReachesTheViewErrorAndTheFrameContinues(bool jobWorld) =>
+        BuildResumeChecks.VerifyCancelCallbackFailure(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledTaskKeepsTheNewStateAndRunsCleanup(bool jobWorld) =>
+        BuildResumeChecks.VerifyCanceledTask(jobWorld);
+
+    [Theory]
+    [InlineData(BuildWait.ConfiguredTask)]
+    [InlineData(BuildWait.ValueTask)]
+    [InlineData(BuildWait.ConfiguredValueTask)]
+    [InlineData(BuildWait.Helper)]
+    [InlineData(BuildWait.Custom)]
+    [InlineData(BuildWait.AsyncCleanup)]
+    [InlineData(BuildWait.CanceledWaitCleanup)]
+    public void CanceledAwaitsKeepTheNewStateAndRunCleanup(BuildWait wait)
+    {
+        BuildResumeChecks.VerifyCanceledTask(false, wait);
+        BuildResumeChecks.VerifyCanceledTask(true, wait);
+    }
+
     [Fact]
     public void ChangedDependencyRestartsTheBuildAndReleasesItsPreviousWait()
     {

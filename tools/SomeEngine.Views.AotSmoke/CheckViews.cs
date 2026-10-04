@@ -20,6 +20,8 @@ if (args is ["read-checkpoint", string readPath])
 }
 
 using var frames = new HeadlessFrameDriver();
+BuildResumeChecks.VerifyAll();
+Console.WriteLine("Canceled awaits, asynchronous cleanup, cancellation callbacks, and child computation error recovery passed under NativeAOT.");
 Entity root = Views.Spawn(frames.World, Entity.Null, new Cards(false));
 frames.Frame();
 Entity[] first = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();

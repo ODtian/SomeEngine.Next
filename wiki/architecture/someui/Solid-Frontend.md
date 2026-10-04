@@ -135,6 +135,9 @@ public readonly struct Match
 例如 `State<int?>` 的 getter 推导出 `T = int?`，children 收到 `Func<int?>`。
 条件 getter 在选择节点的追踪状态下执行；传给 children 的 getter 每次调用读取最新条件值，
 因此 `Text(value)` 会更新已有文本，`Text(value())` 保留首次内容。
+分支内的 Memo 读取当前选择节点上的条件委托，getter 每次调用再执行该委托。
+宿主替换 State 或条件来源后，保留的分支继续取得新来源；普通字段 getter 也在调用时取最新值。
+这份 Memo 与分支计算一同释放，条件参数继续由选择节点的 ECS 组件持有。
 
 ```csharp
 var name = new State<string?>("first");

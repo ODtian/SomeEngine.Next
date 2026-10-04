@@ -6,6 +6,24 @@ namespace SomeEngine.Views.Tests;
 
 public sealed partial class LaunchTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SuccessfulAsynchronousChildClearsItsCancellationCallbackError(bool jobWorld) =>
+        BuildResumeChecks.VerifyLaunchCallbackRecovery(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SuccessfulAsynchronousChildrenPreserveOtherChildErrors(bool jobWorld) =>
+        BuildResumeChecks.VerifyLaunchErrors(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SuccessfulAsynchronousChildClearsItsPreviousError(bool jobWorld) =>
+        BuildResumeChecks.VerifyLaunchRecovery(jobWorld);
+
     [Fact]
     public void AnUnchangedKeyKeepsItsTaskUntilTheViewIsReleased()
     {

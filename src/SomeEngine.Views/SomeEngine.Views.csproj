@@ -12,6 +12,8 @@
     <ProjectReference Include="../SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="../SomeEngine.Job/SomeEngine.Job.csproj" />
     <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
+    <ProjectReference Include="../SomeEngine.Views.Compiler/SomeEngine.Views.Compiler.csproj"
+                      ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../SomeEngine.Views.Generators/SomeEngine.Views.Generators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="PublishAot" />
   </ItemGroup>
@@ -19,6 +21,9 @@
     <None Include="../SomeEngine.Views.Generators/bin/$(Configuration)/netstandard2.0/SomeEngine.Views.Generators.dll"
           Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     <None Update="buildTransitive/SomeEngine.Views.props" Pack="true" PackagePath="buildTransitive/SomeEngine.Views.props" />
+    <None Update="buildTransitive/SomeEngine.Views.targets" Pack="true" PackagePath="buildTransitive/SomeEngine.Views.targets" />
+    <None Include="../SomeEngine.Views.Compiler/bin/$(Configuration)/netstandard2.0/SomeEngine.Views.Compiler.dll;../SomeEngine.Views.Compiler/bin/$(Configuration)/netstandard2.0/Mono.Cecil.dll;../SomeEngine.Views.Compiler/bin/$(Configuration)/netstandard2.0/Mono.Cecil.Rocks.dll"
+          Pack="true" PackagePath="tools" Visible="false" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

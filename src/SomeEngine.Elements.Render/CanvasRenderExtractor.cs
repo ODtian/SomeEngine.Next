@@ -111,13 +111,13 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         if (fullCollection) _worldTargets.Clear();
         foreach (Entity node in _changedTreeNodes)
         {
-            Entity canvas = FindCanvas(sourceWorld, node);
+            Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas != Entity.Null && !_canvasInstances.ContainsKey(canvas))
                 _canvasInstances.Add(canvas, CollectCanvas(sourceWorld, canvas));
         }
         foreach (Entity node in _changedSurfaceNodes)
         {
-            Entity canvas = FindCanvas(sourceWorld, node);
+            Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasInstances.ContainsKey(canvas)) continue;
             if (!_surfaceValuesByCanvas.TryGetValue(canvas, out var surfaces))
                 _surfaceValuesByCanvas.Add(canvas, surfaces = []);
@@ -125,7 +125,7 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         }
         foreach (Entity node in _changedImageNodes)
         {
-            Entity canvas = FindCanvas(sourceWorld, node);
+            Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasInstances.ContainsKey(canvas)) continue;
             if (!_imageValuesByCanvas.TryGetValue(canvas, out var images))
                 _imageValuesByCanvas.Add(canvas, images = []);
@@ -138,43 +138,23 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
             _imageValuesByCanvas.Count != 0 || _canvasChanges.Count != 0;
     }
 
-    private static Entity FindCanvas(World world, Entity node)
-    {
-        while (node != Entity.Null)
-        {
-            if (world.Has<Canvas>(node)) return node;
-            if (!world.Has<Parent<ElementTree>>(node)) return Entity.Null;
-            node = world.Read<Parent<ElementTree>>(node).Value;
-        }
-        return Entity.Null;
-    }
-
     private CanvasInstances CollectCanvas(World world, Entity canvasEntity)
     {
         Canvas canvas = world.Read<Canvas>(canvasEntity);
-        var clip = new Rect(0, 0, canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale);
         var surfaces = new List<SurfaceInstance>();
         var images = new List<ImageInstance>();
-        var nodes = new Stack<(Entity Node, Rect Clip)>();
-        nodes.Push((canvasEntity, clip));
-        int drawOrder = 0;
-        while (nodes.TryPop(out var entry))
+        var tree = new CanvasTree(world, canvasEntity);
+        while (tree.TryRead(out CanvasNode entry))
         {
             Entity node = entry.Node;
-            if (node != canvasEntity && world.Has<Canvas>(node)) continue;
             if (world.Has<Surface>(node) && world.Has<LayoutRect>(node))
             {
                 SurfaceValue value = ReadSurface(world, node);
                 surfaces.Add(new(node, value.Rectangle, value.Fill, value.CornerRadius,
-                    value.BorderColor, value.BorderWidth, entry.Clip, drawOrder, 0));
+                    value.BorderColor, value.BorderWidth, entry.Clip, entry.DrawOrder, 0));
             }
             if (world.Has<Image>(node) && world.Has<LayoutRect>(node))
-                images.Add(ReadImage(world, node) with { ClipRectangle = entry.Clip, DrawOrder = drawOrder });
-            drawOrder++;
-            Rect childClip = world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node)
-                ? Intersect(entry.Clip, world.Read<LayoutRect>(node).Value) : entry.Clip;
-            var children = Hierarchy<ElementTree>.GetChildren(world, node);
-            for (int index = children.Count - 1; index >= 0; index--) nodes.Push((children[index], childClip));
+                images.Add(ReadImage(world, node) with { ClipRectangle = entry.Clip, DrawOrder = entry.DrawOrder });
         }
         if (canvas.Target.Kind == CanvasTargetKind.WorldSpace)
             _worldTargets[canvasEntity] = canvas.Target.Entity;
@@ -203,15 +183,6 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         Surface surface = world.Read<Surface>(node);
         return new(world.Read<LayoutRect>(node).Value, surface.Fill, surface.CornerRadius,
             surface.BorderColor, surface.BorderWidth);
-    }
-
-    private static Rect Intersect(Rect first, Rect second)
-    {
-        float left = MathF.Max(first.X, second.X);
-        float top = MathF.Max(first.Y, second.Y);
-        float right = MathF.Min(first.X + first.Width, second.X + second.Width);
-        float bottom = MathF.Min(first.Y + first.Height, second.Y + second.Height);
-        return new(left, top, MathF.Max(0, right - left), MathF.Max(0, bottom - top));
     }
 
     private static ImageInstance ReadImage(World world, Entity node)
