@@ -15,6 +15,9 @@ namespace SomeEngine.Elements.Consumer.Tests;
 public sealed partial class TextTests
 {
     [Fact]
+    public void SharedTextBehaviorChecksPass() => TextChecks.Run();
+
+    [Fact]
     public void ColumnPlacesTextAfterThePreviousTextsMeasuredHeight()
     {
         using Font font = LoadFont();
@@ -203,7 +206,44 @@ public sealed partial class TextTests
         }
     }
 
+    [Fact]
+    public void LargeNumericFormatsReuseCharactersAndPreserveTextVersions()
+    {
+        using var world = new World();
+        Entity node = world.CreateEntity(new Text(""));
+        node.SetText(world, 42, "D700");
+        string text = world.Read<Text>(node).Value;
+        Assert.Equal(700, text.Length);
+        Assert.Equal(new string('0', 698) + "42", text);
+        uint version = world.WriteVersion<Text>(node);
+        for (int index = 0; index < 1000; index++)
+            node.SetText(world, 42, "D700");
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < 1000; index++)
+            node.SetText(world, 42, "D700");
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(0, allocated);
+        Assert.Equal(version, world.WriteVersion<Text>(node));
+        node.SetText(world, 42, "D4");
+        Assert.Equal("0042", world.Read<Text>(node).Value);
+        Assert.NotEqual(version, world.WriteVersion<Text>(node));
+    }
+
 #if DEBUG
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(float.PositiveInfinity)]
+    public void InvalidFontSizesProduceABuildError(float size)
+    {
+        using var frames = new TextFrames();
+        Entity root = Views.Views.Spawn(frames.World, Entity.Null, new StyledLabel(size, 0, default));
+
+        frames.Frame();
+
+        Assert.Contains("Font size", frames.World.ReadSparse<BuildError>(root).Exception.Message);
+    }
+
     [Fact]
     public void TextMeasurementReportsTheRequiredShapingSystem()
     {

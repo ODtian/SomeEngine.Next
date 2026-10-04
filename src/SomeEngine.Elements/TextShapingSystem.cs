@@ -20,7 +20,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         {
             if (!context.World.IsAlive(node) || !context.World.Has<Text>(node))
                 _removed.Add(node);
-            foreach (TextWidth shape in measurement.Widths)
+            foreach (TextShapeBuffer shape in measurement.Buffers)
                 shape.Used = false;
         }
         foreach (Entity node in _removed)
@@ -49,7 +49,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         var versions = new TextVersions(textVersion, styleVersion, appearanceVersion);
         float width = constraints.Max.Width;
         TextStyle style = world.Read<TextAppearance>(node).Style;
-        TextWidth shape = measurement.GetWidth(width);
+        TextShapeBuffer shape = measurement.GetBuffer(width);
         if (!shape.HasShape || shape.Versions != versions)
         {
             Shaper.Shape(world.Read<Text>(node).Value, new TextStyleData(style.Font!, style.Size, LineHeight: style.LineHeight),
@@ -70,7 +70,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         foreach (Entity node in _measured)
         {
             TextMeasurement measurement = _measurements[node];
-            TextWidth shape = measurement.Current;
+            TextShapeBuffer shape = measurement.Current;
             if (measurement.HasResult && measurement.ResultWidth == shape.Width && measurement.ResultVersions == shape.Versions)
                 continue;
             measurement.ResultWidth = shape.Width;
@@ -96,20 +96,20 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
 
     internal sealed class TextMeasurement : IDisposable
     {
-        internal readonly List<TextWidth> Widths = new();
-        internal TextWidth Current = null!;
+        internal readonly List<TextShapeBuffer> Buffers = new();
+        internal TextShapeBuffer Current = null!;
         internal TextStyle Style;
         internal float ResultWidth;
         internal TextVersions ResultVersions;
         internal bool HasResult;
         internal uint Version;
 
-        internal TextWidth GetWidth(float width)
+        internal TextShapeBuffer GetBuffer(float width)
         {
-            foreach (TextWidth shape in Widths)
+            foreach (TextShapeBuffer shape in Buffers)
                 if (shape.Width == width)
                     return shape;
-            foreach (TextWidth shape in Widths)
+            foreach (TextShapeBuffer shape in Buffers)
             {
                 if (shape.Used)
                     continue;
@@ -117,20 +117,20 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
                 shape.HasShape = false;
                 return shape;
             }
-            var added = new TextWidth { Width = width };
-            Widths.Add(added);
+            var added = new TextShapeBuffer { Width = width };
+            Buffers.Add(added);
             return added;
         }
 
         public void Dispose()
         {
-            foreach (TextWidth shape in Widths)
+            foreach (TextShapeBuffer shape in Buffers)
                 shape.Buffer.Dispose();
-            Widths.Clear();
+            Buffers.Clear();
         }
     }
 
-    internal sealed class TextWidth
+    internal sealed class TextShapeBuffer
     {
         internal readonly ShapeBuffer Buffer = new();
         internal float Width;

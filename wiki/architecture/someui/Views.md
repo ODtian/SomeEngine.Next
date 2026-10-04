@@ -11,7 +11,7 @@ public interface IView
     static virtual ChildSource Children => ChildSource.Build;
 }
 
-public record struct Text(string Value) : IView, IComponent
+public record struct Greeting(string Name) : IView, IComponent
 {
     public BuildTask Build() => default;
 }
@@ -62,6 +62,12 @@ Entity root = Views.Spawn(world, Entity.Null, new Panel("Inventory"));
 公开行为测试 `ParameterBuildTests.cs` 验证两种存储的版本、输出与嵌套节点复用。
 `FirstBuildChecks.cs` 同时在 ECS NativeAOT 冒烟工程验证相等参数保持、
 稀疏参数向表格子视图传播与 `Once` 内容保持。
+
+`Scope.View<T, TValue>(in TValue value, CreateView<T, TValue> create, ulong key)`
+在匹配节点后生成参数。`CreateView` 接收调用方数据与匹配节点的旧参数；
+新节点传入 `default(T)`。返回的参数继续使用同一比较、构建与失败恢复入口。
+数字文本用这一公开入口比较字符并复用旧字符串，具体函数见
+[[architecture/someui/Text|Text]]。
 
 ## 节点身份实现（#8）
 

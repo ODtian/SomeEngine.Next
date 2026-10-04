@@ -45,9 +45,11 @@ Compose 的视图生成、调用位置拦截与跨程序集类型复用由同一
 
 ## Elements 接入（#28）
 
-`SomeEngine.Elements` 提供 `Surface` 和 `SurfaceModifiers`，当前引用 Views 与 Layout。
+`SomeEngine.Elements` 提供 `Surface`、`SurfaceModifiers`、`Text`、`TextStyle`、
+`TextTheme`、`ShapedText`、`TextModifiers` 与 `TextShapingSystem`，当前引用 Views、Layout 与 Typography。
 Surface 的字段、默认值和调用方写入规则见 [[architecture/someui/Modifiers|Modifiers]]。
-后续元素按实际使用的公开能力接入 Typography 与 Animation。
+文本接口、主题默认值与测量顺序见 [[architecture/someui/Text|Text]]。
+后续元素按实际使用的公开能力接入 Animation。
 
 `SomeEngine.Elements.Consumer.Tests` 是外部重写工程，直接引用 Views、Layout 与 Elements
 的公开项目，用户示例位于 `Rewrites/`。每个内置控件的等价重写在这一工程中接入同一组
