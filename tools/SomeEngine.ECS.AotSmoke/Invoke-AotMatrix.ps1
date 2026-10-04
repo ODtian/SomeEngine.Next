@@ -6,7 +6,10 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string] $Evidence
+    [string] $Evidence,
+
+    [ValidateSet('ECS', 'Views')]
+    [string] $Project = 'ECS'
 )
 
 Set-StrictMode -Version Latest
@@ -25,16 +28,18 @@ $evidencePath = Resolve-AotEvidenceDestination `
     -RepositoryRoot $repositoryRoot `
     -Evidence $Evidence
 
+$recipe = $Project.ToLowerInvariant() + '-aot'
+$projectName = "SomeEngine.$Project.AotSmoke"
 $results = @(
     foreach ($rid in $ridList) {
         # Preserve the child command's console log without adding its strings to pipeline results.
-        & just ecs-aot $rid | Out-Host
+        & just $recipe $rid | Out-Host
         if ($LASTEXITCODE -ne 0) {
             throw "NativeAOT execution failed for $rid with exit code $LASTEXITCODE."
         }
 
         $extension = if ($rid.StartsWith('win-', [StringComparison]::Ordinal)) { '.exe' } else { '' }
-        $executable = Join-Path $repositoryRoot "tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/$rid/native-publish/SomeEngine.ECS.AotSmoke$extension"
+        $executable = Join-Path $repositoryRoot "tools/$projectName/bin/Release/net10.0/$rid/native-publish/$projectName$extension"
         if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
             throw "Native executable is missing for ${rid}: $executable"
         }
@@ -49,6 +54,7 @@ $results = @(
 )
 
 $manifest = [ordered]@{
+    project = $Project
     createdUtc = [DateTimeOffset]::UtcNow.ToString('O')
     sdkVersion = (& dotnet --version).Trim()
     machineName = [Environment]::MachineName

@@ -19,6 +19,14 @@ if (args is ["read-checkpoint", string readPath])
     return;
 }
 
+foreach (bool jobs in new[] { false, true })
+{
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckStruct(jobs);
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckCompose(jobs);
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckSwiftUI(jobs);
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckSolid(jobs);
+}
+
 using var frames = new HeadlessFrameDriver();
 Entity root = Views.Spawn(frames.World, Entity.Null, new Cards(false));
 frames.Frame();
