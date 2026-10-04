@@ -109,6 +109,13 @@ DefaultGame 的测试平台默认显示该面板，`Surface panel` 选项控制�
 调用 Runtime 参数入口时可使用 `--surface-panel`。
 场景平台的结果文件记录该选项，供相同渲染条件的比较使用。
 
+#42 将该面板扩展为公开 `SurfacePanelExample`：`Add one` 使用普通 `Button`、
+`Focusable` 和 `Clicked()`，计数由同一份 `State<int>` 持有并显示为 `Clicks: N`。
+窗口尺寸改变后通过视图参数与 Canvas 数据更新位置，计数继续由原状态持有。
+方向键取得按钮焦点，Enter 与 Space 确认同一按钮。面板与 ImGui 调试界面共用当前
+呈现目标；F1 控制 ImGui，`Surface panel` 控制 SomeUI 示例。
+公开验收：[CounterPanelTests](../../../tests/SomeEngine.Runtime.Tests/CounterPanelTests.cs)。
+
 `tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests` 经公开结构版本、pass 身份和
 GPU 像素读回验收画布成员修改、静态帧、改色、取消帧、透明树序叠加、裁剪与画布移除。
 相同像素用例分别使用 D3D12 WARP 和 Vulkan，并启用引擎图形验证层。

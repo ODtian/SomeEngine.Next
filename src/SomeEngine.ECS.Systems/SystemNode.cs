@@ -3,6 +3,8 @@ namespace SomeEngine.ECS.Systems;
 internal abstract class SystemNode<TContext>
     where TContext : allows ref struct
 {
+    public abstract Type SystemType { get; }
+
     public abstract void OnCreate(ref TContext context);
 
     public abstract void OnUpdate(ref TContext context);
@@ -20,6 +22,8 @@ internal sealed class SystemNode<TSystem, TContext> : SystemNode<TContext>
     {
         _system = system;
     }
+
+    public override Type SystemType => typeof(TSystem);
 
     public override void OnCreate(ref TContext context)
     {
