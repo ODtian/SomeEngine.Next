@@ -4,7 +4,7 @@
 - 只测试公开行为：创建 world，生成根视图，通过公开输入入口注入事件，推进若干帧，断言节点组件（例如 `Text`、`LayoutRect`）的值。不断言内部记录、缓存命中或执行次数。
 - 每个内置控件在外部程序集中有一个只用公开 API 重写的等价版本，用同一组行为测试证明二者一致。
 - 生成器测试编译并执行生成的 API，包括 `[Composable]` 拦截后的行为与分析器的错误诊断。
-- NativeAOT 发布与启动沿用现有 `just ecs-aot` 方式加入界面冒烟场景。
+- NativeAOT 发布与启动沿用现有 `just ecs-aot` 方式。`just views-aot <rid>` 重建并执行界面冒烟与跨进程检查点；`just views-aot-matrix <rids> [evidence]` 复用 ECS 矩阵脚本，记录每个 RID 的执行结果与原生文件 SHA-256。
 
 ## 首次构建验收（#6）
 
@@ -732,6 +732,68 @@ F1 关闭调试窗口后，Down 与 Enter 将按钮计数变为 2；再次 F1 �
 截图文件与本节一同提交，供统一 PR 引用。
 两轮验收后分别清理 98／94 个生成目录、各 67 个生成资产及原始 BMP 捕获文件；
 源码、构建输入与上述四张 PNG 交付证据保留在工作树中。
+
+## NativeAOT 界面冒烟验收（#67，2026-10-04）
+
+集成基线为 `8c953fae65deb55d925043a1377ec48253744dc1`，实现提交为
+`8ace4af5d6d73daad55187dab2078418941330e4`。
+Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+
+[InterfaceChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/InterfaceChecks.cs)
+由托管消费者测试和 [Views 原生入口](../../../tools/SomeEngine.Views.AotSmoke/CheckViews.cs)
+编译同一份源码，每种写法分别运行普通 World 与 `WorldJobs(JobSystem.Default)`。
+
+| 写法 | 小界面的公开 API |
+|---|---|
+| 普通 struct | `IView.Build`、`Scope.ReadWrite<CounterValue>`、Button、Column、Text |
+| Compose | `[Composable]` 生成的根视图、`Remember`、`MutableStateOf` |
+| SwiftUI | `[State]` partial 属性、生成的 `CountBinding`、子视图 `Binding<int>.Value` |
+| Solid | `[Component]` 生成的 Once 根视图、`State<int>`、Effect 与 Text getter |
+
+四种计数面板都通过 `Views.Spawn` 建立，使用 Pointer、Keyboard 与 Gamepad 注入输入。
+帧工具通过公开系统组依次执行 HitTestSystem、FocusNavigationSystem、ViewRebuildSystem、
+TextShapingSystem 与 LayoutSystem，顺序对应
+[[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]。
+
+首帧显示 `Clicks: 0`；鼠标按住时保持 0，释放后显示 1；Down 与 Enter 后显示 2，
+手柄确认后显示 3；空闲帧与画布尺寸从 320×240 变为 480×320 后继续显示 3。
+验收读取公开的 Hover、Clicks、Focused、Text、TextContent 与 LayoutRect，
+确认按下、焦点、输入计数、显示值和完成测量的矩形。
+测试接缝和期望值先加入用例，经首次编译失败后逐项实现，最终共享 8 个公共行为场景。
+
+`views-aot-build` 按 ECS 入口执行 RID restore 与 `-t:Rebuild` 原生发布，输出到
+`tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/<rid>/native-publish`。
+`views-aot` 执行该原生文件及原有的跨进程检查点。
+`views-aot-matrix` 为现有 `Invoke-AotMatrix.ps1` 传入 `-Project Views`；
+脚本的默认项目为 ECS，证据中的 `project` 标明本次选择。
+项目参数使用目录中的固定拼写 `ECS` 与 `Views`，以对应大小写敏感文件系统中的工程和产物路径。
+矩阵逐个执行请求的 RID，成功后记录 SDK、主机信息、`rid`、`executed`、
+`exitCode` 与 `executableSha256`，通过同目录临时文件提交 JSON。
+证据目标沿现有路径检查保护仓库中的跟踪文件。
+本次命令进程设置 `$env:MSBUILDDISABLENODEREUSE = '1'`，使 CMake 子构建的节点随进程关闭。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Debug --no-restore --filter FullyQualifiedName~InterfaceTests --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false` | 8 个界面公共行为用例通过 |
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Debug --no-build --no-restore --nologo -v quiet` | 完整消费者回归 241 项通过 |
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Release --no-restore --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false` | 完整消费者回归 175 项通过，包含同一组 8 个界面场景 |
+| `just views-aot-matrix win-x64 artifacts/views-aot-evidence.json` | 内部执行 `just views-aot win-x64`，原生发布、8 个计数面板场景、原有共享检查与检查点通过，退出码 0；证据为 `project: Views`、`executed: true`、`exitCode: 0` |
+| `just ecs-aot-matrix win-x64 artifacts/ecs-aot-evidence.json` | ECS 默认矩阵回归通过，退出码 0；证据为 `project: ECS`、`executed: true`、`exitCode: 0`，原生输出的 `managedReferencesVerified` 与 `viewsVerified` 均为 true |
+| `just ecs-aot-matrix-script-test` | 跟踪文件、仓库内生成路径与外部证据路径检查通过 |
+
+Views 原生文件的 SHA-256 为
+`E50E66FA1AAAD1CDE39C289BE94A43B5ED3DAA8007F0CC5270737DACD04EC046`。
+发布日志中的裁剪与 AOT 诊断集合与修改前的原生基线一致：TraceCapture 的 IL2026、
+IL3050，以及 JobStorageTypeShape 的 IL2070，位置分别为
+`src/SomeEngine.Diagnostics/TraceCapture.cs:54` 和
+`src/SomeEngine.ECS/Registry/JobStorageTypeMetadata.cs:59`。
+基线原生程序及检查点同样执行成功，SHA-256 为
+`403B2503223346A3A44BFA1170BCF0F04F769CE362B577BF50BD0A8FA83C3854`。
+ECS 矩阵的原生文件 SHA-256 为
+`3FED4C29119728A3D08B95B779CDFE4A9409C1709EBDC82C71457E64810E2875`。
+本次发布日志与矩阵 JSON 在结果读取后清理；跨进程检查点由验证脚本在结束时清理。
+交付前按已核对的 30 个构建工程清理 60 个 bin / obj 生成目录，包含字体原生依赖、
+两种配置的测试结果及两个 NativeAOT 发布目录，验收记录和源码保存在本页与 Git 中。
 
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

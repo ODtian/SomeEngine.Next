@@ -30,6 +30,8 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         query.ReadOptional<Canvas>();
         query.ReadOptional<ShapedText>();
         query.ReadOptional<LayoutRect>();
+        query.ReadOptional<ElementTransform>();
+        query.ReadOptional<PresentationOffset>();
         query.ReadOptional<ScrollOffset>();
         query.ReadOptional<Box>();
         query.ReadOptional<Parent<ElementTree>>();
@@ -64,6 +66,10 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         bool shapeChanged = text && chunk.HasChangedSinceLastSystemVersion<ShapedText>();
         bool rectChanged = text && chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
         bool boxChanged = text && chunk.Has<Box>() && chunk.HasChangedSinceLastSystemVersion<Box>();
+        bool transformChanged = text && chunk.Has<ElementTransform>() &&
+            chunk.HasChangedSinceLastSystemVersion<ElementTransform>();
+        bool offsetChanged = text && chunk.Has<PresentationOffset>() &&
+            chunk.HasChangedSinceLastSystemVersion<PresentationOffset>();
         bool viewportChanged = chunk.Has<ScrollOffset>() && chunk.Has<LayoutRect>() &&
             chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
         bool canvasChanged = chunk.Has<Canvas>() && chunk.HasChangedSinceLastSystemVersion<Canvas>();
@@ -79,7 +85,9 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
                 _changedTreeNodes.Add(node);
             if ((shapeChanged && chunk.RowChangedSinceLastSystemVersion<ShapedText>(row)) ||
                 (rectChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
-                (boxChanged && chunk.RowChangedSinceLastSystemVersion<Box>(row)))
+                (boxChanged && chunk.RowChangedSinceLastSystemVersion<Box>(row)) ||
+                (transformChanged && chunk.RowChangedSinceLastSystemVersion<ElementTransform>(row)) ||
+                (offsetChanged && chunk.RowChangedSinceLastSystemVersion<PresentationOffset>(row)))
                 _changedTextNodes.Add(node);
         }
         return false;
@@ -221,6 +229,7 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
     {
         ShapedText text = world.Read<ShapedText>(node);
         Rect rectangle = world.Read<LayoutRect>(node).Value;
+        var presentation = ElementPresentation.Read(world, node, rectangle);
         var padding = world.Has<Box>(node) ? world.Read<Box>(node).Padding : default;
         float scale = text.Style.Size / _atlas!.FontSize;
         var values = new List<GlyphInstance>();
@@ -235,7 +244,10 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
                 new Rect(rectangle.X + padding.Left + glyph.Position.X + location.Offset.X * scale,
                     rectangle.Y + padding.Top + glyph.Position.Y + location.Offset.Y * scale,
                     region.Width * scale, region.Height * scale),
-                location.UV0, location.UV1, text.Style.Color, clip, region.PageIndex, order, 0));
+                location.UV0, location.UV1, text.Style.Color, clip, region.PageIndex, order, 0)
+            {
+                Matrix = presentation.Matrix, Alpha = presentation.Alpha,
+            });
         }
         return values;
     }

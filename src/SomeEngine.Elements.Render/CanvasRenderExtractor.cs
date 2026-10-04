@@ -31,6 +31,8 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         query.ReadOptional<WorldTransform>();
         query.ReadOptional<Surface>();
         query.ReadOptional<LayoutRect>();
+        query.ReadOptional<ElementTransform>();
+        query.ReadOptional<PresentationOffset>();
         query.ReadOptional<ScrollOffset>();
         query.ReadOptional<Image>();
         query.ReadOptional<ImageTexture>();
@@ -79,13 +81,19 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
              chunk.HasChangedSinceLastSystemVersion<LayoutRect>() ||
              (chunk.Has<ImageTexture>() && chunk.HasChangedSinceLastSystemVersion<ImageTexture>()) ||
              (chunk.Has<Box>() && chunk.HasChangedSinceLastSystemVersion<Box>()));
+        bool presentationChanged = chunk.Has<LayoutRect>() &&
+            ((chunk.Has<ElementTransform>() && chunk.HasChangedSinceLastSystemVersion<ElementTransform>()) ||
+             (chunk.Has<PresentationOffset>() && chunk.HasChangedSinceLastSystemVersion<PresentationOffset>()));
         if (!surfaceChanged && !rectangleChanged && !viewportChanged && !canvasChanged &&
-            !parentChanged && !childrenChanged && !imageChanged && !transformChanged)
+            !parentChanged && !childrenChanged && !imageChanged && !transformChanged && !presentationChanged)
             return false;
 
         for (int row = 0; row < chunk.Count; row++)
         {
             Entity entity = chunk.Entities[row];
+            bool presentation = presentationChanged &&
+                ((chunk.Has<ElementTransform>() && chunk.RowChangedSinceLastSystemVersion<ElementTransform>(row)) ||
+                 (chunk.Has<PresentationOffset>() && chunk.RowChangedSinceLastSystemVersion<PresentationOffset>(row)));
             if (transformChanged && chunk.RowChangedSinceLastSystemVersion<WorldTransform>(row))
                 _changedTargets.Add(entity);
             if ((canvasChanged && chunk.RowChangedSinceLastSystemVersion<Canvas>(row)) ||
@@ -94,12 +102,14 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
                 (childrenChanged && chunk.RowChangedSinceLastSystemVersion<Children<ElementTree>>(row)))
                 _changedTreeNodes.Add(entity);
             if ((surfaceChanged && chunk.RowChangedSinceLastSystemVersion<Surface>(row)) ||
-                (rectangleChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)))
+                (rectangleChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
+                (presentation && chunk.Has<Surface>()))
                 _changedSurfaceNodes.Add(entity);
-            if (imageChanged && (chunk.RowChangedSinceLastSystemVersion<Image>(row) ||
+            if ((imageChanged && (chunk.RowChangedSinceLastSystemVersion<Image>(row) ||
                 chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row) ||
                 (chunk.Has<ImageTexture>() && chunk.RowChangedSinceLastSystemVersion<ImageTexture>(row)) ||
-                (chunk.Has<Box>() && chunk.RowChangedSinceLastSystemVersion<Box>(row))))
+                (chunk.Has<Box>() && chunk.RowChangedSinceLastSystemVersion<Box>(row)))) ||
+                (presentation && chunk.Has<Image>()))
                 _changedImageNodes.Add(entity);
         }
         // Source collection resolves the canvas and supplies the detached drawing values.
@@ -166,7 +176,10 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
             {
                 SurfaceValue value = ReadSurface(world, node);
                 surfaces.Add(new(node, value.Rectangle, value.Fill, value.CornerRadius,
-                    value.BorderColor, value.BorderWidth, entry.Clip, drawOrder, 0));
+                    value.BorderColor, value.BorderWidth, entry.Clip, drawOrder, 0)
+                {
+                    Matrix = value.Matrix, Alpha = value.Alpha,
+                });
             }
             if (world.Has<Image>(node) && world.Has<LayoutRect>(node))
                 images.Add(ReadImage(world, node) with { ClipRectangle = entry.Clip, DrawOrder = drawOrder });
@@ -201,8 +214,10 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
     private static SurfaceValue ReadSurface(World world, Entity node)
     {
         Surface surface = world.Read<Surface>(node);
-        return new(world.Read<LayoutRect>(node).Value, surface.Fill, surface.CornerRadius,
-            surface.BorderColor, surface.BorderWidth);
+        Rect rectangle = world.Read<LayoutRect>(node).Value;
+        var presentation = ElementPresentation.Read(world, node, rectangle);
+        return new(rectangle, surface.Fill, surface.CornerRadius,
+            surface.BorderColor, surface.BorderWidth, presentation.Matrix, presentation.Alpha);
     }
 
     private static Rect Intersect(Rect first, Rect second)
@@ -220,6 +235,7 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         ImageTexture texture = world.Has<ImageTexture>(node) ? world.Read<ImageTexture>(node) :
             new(null, new Size(1, 1), 0);
         Rect rectangle = world.Read<LayoutRect>(node).Value;
+        var presentation = ElementPresentation.Read(world, node, rectangle);
         Thickness padding = world.Has<Box>(node) ? world.Read<Box>(node).Padding : default;
         rectangle = new(rectangle.X + padding.Left, rectangle.Y + padding.Top,
             MathF.Max(0, rectangle.Width - padding.Left - padding.Right),
@@ -239,7 +255,10 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
                 uv = new((1 - rectangle.Width / width) * 0.5f, (1 - rectangle.Height / height) * 0.5f,
                     rectangle.Width / width, rectangle.Height / height);
         }
-        return new(node, texture.Value, rectangle, uv, default, 0, 0, texture.Revision);
+        return new(node, texture.Value, rectangle, uv, default, 0, 0, texture.Revision)
+        {
+            Matrix = presentation.Matrix, Alpha = presentation.Alpha,
+        };
     }
 
     public void Apply(RenderExtractionContext context)
@@ -288,6 +307,7 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
                     {
                         Rectangle = value.Rectangle, Fill = value.Fill, CornerRadius = value.CornerRadius,
                         BorderColor = value.BorderColor, BorderWidth = value.BorderWidth,
+                        Matrix = value.Matrix, Alpha = value.Alpha,
                     };
                     if (before != after) buffer[index] = after with { Version = unchecked(before.Version + 1) };
                 }
@@ -373,5 +393,6 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
     }
 
     private readonly record struct CanvasInstances(RenderCanvas Canvas, List<SurfaceInstance> Surfaces, List<ImageInstance> Images);
-    private readonly record struct SurfaceValue(Rect Rectangle, Color Fill, float CornerRadius, Color BorderColor, float BorderWidth);
+    private readonly record struct SurfaceValue(Rect Rectangle, Color Fill, float CornerRadius, Color BorderColor,
+        float BorderWidth, Matrix3x2 Matrix, float Alpha);
 }

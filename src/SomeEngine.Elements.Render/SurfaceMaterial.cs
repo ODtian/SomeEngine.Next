@@ -32,7 +32,7 @@ public sealed class SurfaceMaterial : Material
 /// <summary>Surface's shader-specific pipeline and instance encoding.</summary>
 internal sealed class SurfaceDrawing : IDisposable
 {
-    private const int InstanceByteCount = 80;
+    private const int InstanceByteCount = 112;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly Shader _shader;
@@ -97,13 +97,15 @@ internal sealed class SurfaceDrawing : IDisposable
             for (int index = 0; index < instances.Length; index++)
             {
                 ref readonly SurfaceInstance instance = ref instances[index];
-                int start = index * 5;
+                int start = index * 7;
                 data[start] = new(instance.Rectangle.X, instance.Rectangle.Y, instance.Rectangle.Width, instance.Rectangle.Height);
                 data[start + 1] = new(instance.Fill.R, instance.Fill.G, instance.Fill.B, instance.Fill.A);
                 data[start + 2] = new(instance.BorderColor.R, instance.BorderColor.G, instance.BorderColor.B, instance.BorderColor.A);
                 data[start + 3] = new(instance.ClipRectangle.X, instance.ClipRectangle.Y,
                     instance.ClipRectangle.Width, instance.ClipRectangle.Height);
                 data[start + 4] = new(instance.CornerRadius, instance.BorderWidth, 0, 0);
+                data[start + 5] = new(instance.Matrix.M11, instance.Matrix.M12, instance.Matrix.M21, instance.Matrix.M22);
+                data[start + 6] = new(instance.Matrix.M31, instance.Matrix.M32, instance.Alpha, 0);
             }
             mapped.Flush(new BufferRange(0, byteCount));
             return InstanceBuffer.Create(_backend, _device, buffer, instances.Length, InstanceByteCount);
