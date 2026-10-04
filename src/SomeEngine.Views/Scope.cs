@@ -148,6 +148,13 @@ public static partial class Scope
             copy = new ComponentCopy<T>(entity, value);
             copies.Add(key, copy);
         }
+        else if (!copy.Written)
+        {
+            ((ComponentCopy<T>)copy).Value = ComponentCopy<T>.HasComponent(current.World, entity)
+                ? current.World.ReadComponentData<T>(entity)
+                : default;
+            copy.Written = true;
+        }
         return ref ((ComponentCopy<T>)copy).Value;
     }
 
@@ -377,12 +384,22 @@ public static partial class Scope
     internal static BuildScope Enter(Computation computation, ulong frame)
     {
         ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
-        var current = new ScopeData(computation.World, computation.Entity, computation.Entity, frame,
-            declaresChildren: false, dependenciesEnabled: true,
-            parent?.World == computation.World ? parent.Changes : null)
+        ChildChanges? changes = parent?.World == computation.World ? parent.Changes : null;
+        ScopeData current;
+        if (computation.ScopeData is { } previous)
         {
-            Computation = computation,
-        };
+            current = previous;
+            current.Restart(frame, changes);
+        }
+        else
+        {
+            current = new ScopeData(computation.World, computation.Entity, computation.Entity, frame,
+                declaresChildren: false, dependenciesEnabled: true, changes)
+            {
+                Computation = computation,
+            };
+            computation.ScopeData = current;
+        }
 #if DEBUG
         current.BuildNumber = ++s_buildNumber;
 #endif
@@ -484,12 +501,15 @@ public static partial class Scope
         return false;
     }
 
-    private readonly record struct SiblingGroup(int Count, bool LocalState);
+    internal readonly record struct SiblingGroup(int Count, bool LocalState);
     internal readonly record struct ChildDeclaration(Entity Entity, int BuildNumber);
 #endif
 
-    private sealed class ScopeData
+    internal sealed class ScopeData
     {
+        private ChildChanges? _calculationChanges;
+        private List<(Entity Entity, ushort Component)>? _unusedCopies;
+
         internal ScopeData(World world, Entity entity, Entity parent, ulong frame,
             bool declaresChildren, bool dependenciesEnabled, ChildChanges? changes, ScopeData? calculation = null)
         {
@@ -503,16 +523,53 @@ public static partial class Scope
             PreviousChildren = declaresChildren ? Hierarchy<ElementTree>.GetChildren(world, parent) : default;
             OutermostBuild = changes is null;
             Changes = changes ?? new ChildChanges();
+            _calculationChanges = changes is null ? Changes : null;
             FirstData = Changes.DataCount;
             FirstRemoval = Changes.RemovedCount;
             if (declaresChildren)
                 Changes.RememberOrder(parent, PreviousChildren);
         }
 
+        internal void Restart(ulong frame, ChildChanges? changes)
+        {
+            Frame = frame;
+            DependenciesEnabled = true;
+            Completed = false;
+            KeyPrefix = null;
+            GroupPrefix = null;
+            RememberOccurrences?.Clear();
+            OutermostBuild = changes is null;
+            Changes = changes ?? (_calculationChanges ??= new ChildChanges());
+            FirstData = Changes.DataCount;
+            FirstRemoval = Changes.RemovedCount;
+        }
+
+        internal void ReleaseCalculation()
+        {
+            if (ComponentCopies is { } copies)
+            {
+                foreach (var (key, copy) in copies)
+                    if (copy.Written)
+                        copy.Clear();
+                    else
+                        (_unusedCopies ??= new()).Add(key);
+                if (_unusedCopies is { } unused)
+                {
+                    foreach (var key in unused)
+                        copies.Remove(key);
+                    unused.Clear();
+                }
+            }
+            if (OutermostBuild)
+                Changes.Clear();
+            // Nested calculations share the caller's change record only while executing.
+            Changes = null!;
+        }
+
         internal World World { get; }
         internal Entity Entity { get; }
         internal Entity Parent { get; }
-        internal ulong Frame { get; }
+        internal ulong Frame { get; private set; }
         internal bool DeclaresChildren { get; }
         internal bool DependenciesEnabled { get; set; }
         internal Computation? Computation { get; init; }
@@ -520,10 +577,10 @@ public static partial class Scope
         internal Dictionary<(Entity Entity, ushort Component), ComponentCopy>? ComponentCopies;
         internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren { get; }
         internal List<Entity> DeclaredChildren { get; } = new();
-        internal ChildChanges Changes { get; }
-        internal int FirstData { get; }
-        internal int FirstRemoval { get; }
-        internal bool OutermostBuild { get; }
+        internal ChildChanges Changes { get; private set; }
+        internal int FirstData { get; private set; }
+        internal int FirstRemoval { get; private set; }
+        internal bool OutermostBuild { get; private set; }
         internal bool Completed;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal Dictionary<ulong, int>? RememberOccurrences;
@@ -558,17 +615,27 @@ public static partial class Scope
             }
             if (current.ComponentCopies is { } copies)
                 foreach (ComponentCopy copy in copies.Values)
-                    copy.Commit(current.World, current.Changes);
+                    if (copy.Written)
+                        copy.Commit(current.World, current.Changes,
+                            reuseData: current.OutermostBuild && current.Computation is not null);
             current.Completed = true;
         }
 
         public void Dispose()
         {
             ScopeData current = s_scopes!.Pop();
-            if (!current.Completed)
-                current.Changes.Restore(current.World, current.FirstData, current.FirstRemoval);
-            else if (current.OutermostBuild)
-                current.Changes.ReleaseChildren(current.World);
+            try
+            {
+                if (!current.Completed)
+                    current.Changes.Restore(current.World, current.FirstData, current.FirstRemoval);
+                else if (current.OutermostBuild)
+                    current.Changes.ReleaseChildren(current.World);
+            }
+            finally
+            {
+                if (ReferenceEquals(current.Computation?.ScopeData, current))
+                    current.ReleaseCalculation();
+            }
         }
     }
 

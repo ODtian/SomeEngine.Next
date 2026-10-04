@@ -56,6 +56,7 @@ public sealed class AssemblyBoundaryTests
         remaining.Enqueue(Assembly.Load("SomeEngine.Typography"));
         remaining.Enqueue(Assembly.Load("SomeEngine.Views.Compose"));
         remaining.Enqueue(Assembly.Load("SomeEngine.Views.SwiftUI"));
+        remaining.Enqueue(Assembly.Load("SomeEngine.Views.Solid"));
         while (remaining.TryDequeue(out Assembly? assembly))
         {
             if (!assemblies.TryAdd(assembly.GetName().Name!, assembly))

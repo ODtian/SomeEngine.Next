@@ -13,6 +13,12 @@ internal sealed class ChildChanges
     internal int DataCount => _previousData.Count;
     internal int RemovedCount => _removedChildren.Count;
 
+    internal void Clear()
+    {
+        _previousData.Clear();
+        _removedChildren.Clear();
+    }
+
     internal void RememberOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) =>
         _previousData.Add(new ChildOrder(parent, children));
 
@@ -23,9 +29,15 @@ internal sealed class ChildChanges
 
     internal void RememberComponent<T>(World world, Entity entity) where T : struct
     {
-        bool exists = world.HasComponentData<T>(entity);
-        _previousData.Add(new ChildComponent<T>(entity, exists,
-            exists ? world.ReadComponentData<T>(entity) : default));
+        ChildComponent<T>? data = null;
+        RememberComponent(world, entity, ref data);
+    }
+
+    internal void RememberComponent<T>(World world, Entity entity, ref ChildComponent<T>? data) where T : struct
+    {
+        data ??= new ChildComponent<T>(entity);
+        data.Capture(world);
+        _previousData.Add(data);
     }
 
     internal void RememberReads(World world, Entity entity)
@@ -69,7 +81,7 @@ internal sealed class ChildChanges
                 Hierarchy<ElementTree>.DestroySubtree(world, entity);
     }
 
-    private interface IChildData
+    internal interface IChildData
     {
         void Restore(World world);
         void Complete() { }
@@ -115,12 +127,23 @@ internal sealed class ChildChanges
         }
     }
 
-    private sealed class ChildComponent<T>(Entity entity, bool exists, T value) : IChildData where T : struct
+    internal sealed class ChildComponent<T>(Entity entity) : IChildData where T : struct
     {
+        private bool _exists;
+        private T _value;
+
+        internal void Capture(World world)
+        {
+            _exists = world.HasComponentData<T>(entity);
+            _value = _exists ? world.ReadComponentData<T>(entity) : default;
+        }
+
+        internal void Clear() => _value = default;
+
         public void Restore(World world)
         {
-            if (exists)
-                world.OverwriteComponentData(entity, in value);
+            if (_exists)
+                world.OverwriteComponentData(entity, in _value);
             else if (world.HasComponentData<T>(entity))
                 world.DiscardComponentData<T>(entity);
         }

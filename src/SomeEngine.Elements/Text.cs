@@ -8,12 +8,19 @@ namespace SomeEngine.Elements;
 /// <summary>Caller-written text whose measured content comes from the text shaping system.</summary>
 public record struct Text(string Value) : IView, IComponent, ILayout
 {
+    public static BuildMode Mode => BuildMode.Once;
+
     public BuildTask Build()
+    {
+        Scope.Compute(ResolveStyle);
+        return default;
+    }
+
+    private static void ResolveStyle()
     {
         TextStyle style = Scope.Has<TextStyle>(Scope.Entity) ? Scope.Read<TextStyle>(Scope.Entity) : default;
         TextStyle defaults = style.NeedsDefaults ? Scope.ReadUp<TextTheme>().Style : default;
         Scope.Write<TextAppearance>(Scope.Entity) = new TextAppearance(style.WithDefaults(in defaults));
-        return default;
     }
 
     public Size Measure(ref LayoutPass pass, in Constraints constraints)
