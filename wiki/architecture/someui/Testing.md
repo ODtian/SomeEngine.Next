@@ -1,5 +1,43 @@
 # Testing
 
+## TextField 长单行光标可见性修复（#46）
+
+2026-10-04，Windows x64，集成基线
+`cb66dd360ea9c6284faf8cef1b871847e7c652df`，修复提交
+`0728781f622631c56882238468b645245f847ee5`。
+最终 Spec 的公开复现使用 320 × 240 Canvas、Latin 字体、字号 20 和空 TextField。
+获得焦点后输入 30 个 A，修复前两种实现的光标 X 都为 391.4，可见内容右缘为 312。
+新增用例先得到两个 InRange 失败，随后通过公开滚动入口修复并转绿。
+
+`ScrollIntoView` 由调用方写内容区域请求，布局阶段根据当帧测量、内边距与范围
+更新原来的 ScrollOffset。公开行为验收位于
+[TextFieldVisibilityTests](../../../tests/SomeEngine.Elements.Consumer.Tests/TextFieldVisibilityTests.cs)：
+每个用例直接表达输入与期望，控件选择只用于创建夹具，读回仅使用公开布局与语义数据。
+内置与外部版本共用相同动作，10 个新增用例覆盖长输入、方向键、Home / End、
+正反选区活动端、IME 更新与确认、父视图参数回传、占位文字、可访问名称及滚轮位置保留。
+相关 TextField、滚动与 Accessibility 的筛选回归为 69 个通过。
+
+四个工程分别执行 `dotnet test <工程路径> -c Debug` 与 `-c Release`，统一参数：
+`--nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`。
+消费者、布局与渲染提取的 Release 采用本页既有文本分配验收配置
+`DOTNET_TieredCompilation=0`；Views 的 Debug / Release 使用默认配置。
+Views 的最终 Release 复测使用 `--no-build --no-restore`，默认入口继续执行规则检查。
+
+| 工程 | Debug | Release |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 354 | 268 |
+| SomeEngine.Layout.Tests | 97 | 77 |
+| SomeEngine.Views.Tests | 331 | 299 |
+| SomeEngine.Elements.Render.Tests | 42 | 40 |
+
+各次默认入口都报告 `Test rules: ...; 0 violations`。
+
+`just views-aot win-x64` 在修复提交上完成原生发布与运行，退出码 0。
+新增的 TextFieldViewportChecks 通过同样的公开部件声明两种控件，验证长输入、
+Home / End、选区、IME 更新、参数回传、占位提示与可访问名称，并完成既有跨进程检查点。
+原生输出包含 `TextField long-input scrolling ... passed under NativeAOT`。
+发布中的 IL2026 / IL3050 来自既有 TraceCapture，IL2070 来自 JobStorageTypeShape。
+
 ## 布局、排版与提取的 Job 并行（#69）
 
 2026-10-04，Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
