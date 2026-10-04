@@ -43,6 +43,8 @@ internal static partial class FirstBuildChecks
         AsyncIntegrationChecks.VerifyFailureRecovery(nested: true);
         AsyncIntegrationChecks.VerifyObjectFrames();
         AsyncIntegrationChecks.VerifyRestoredBuild();
+        JobBuildChecks.VerifyResult(completed: false);
+        JobBuildChecks.VerifyResult(completed: true);
         VerifyObjectState(frames);
         ComputationChecks.Verify();
         VerifyBuildErrors();
