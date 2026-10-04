@@ -108,6 +108,63 @@ GPU 像素读回验收画布成员修改、静态帧、改色、取消帧、透�
 此前独立 SomeUI 的距离函数及填充/描边覆盖区域用于核对材质语义。
 本实现采用引擎的持久图与实例光栅绘制，实例数据由既有 RenderWorld 缓冲提供。
 
+## Image（#35）
+
+```csharp
+public enum ImageFit : byte { Contain, Stretch, Cover }
+public record struct Image(AssetId<TextureAsset> Source, ImageFit Fit = ImageFit.Contain)
+    : IView, IComponent, ILayout;
+public sealed class ImageTextures(Func<AssetId<TextureAsset>, Texture?> resolve)
+    : ILayoutDataUpdate;
+```
+
+`Source` 采用资产层当前的强类型身份 `AssetId<TextureAsset>`。应用通过 `ImageTextures`
+提供已就绪的 `SomeEngine.Resources.Texture`，并把它注册到 `LayoutSystem` 的内容更新入口。
+纹理的异步取得与使用期限由应用的资产加载流程持有。这个入口将就绪纹理、尺寸和内容版本
+送入 Game world，随后布局与渲染提取消费同一份节点数据。
+
+Image 的自然尺寸为纹理宽高，父约束与 Box 沿统一布局协议限制它。
+资源尚在取得时，自然尺寸采用统一缺失纹理的 1×1；Box 可指定显示区域。
+纹理就绪、替换或内容版本更新会触发布局输入更新，并在同一帧送达提取。
+
+`LayoutRect` 保存布局分配的外框。绘制区域扣除 Box 内边距。
+Stretch 使用整个内容区域和 `(0, 0, 1, 1)` UV；Contain 保持纹理比例，
+把完整图片居中放入内容区域；Cover 使用整个内容区域，居中裁剪纹理 UV。
+零尺寸区域保留零面积绘制数据。
+
+`CanvasRenderExtractor` 通过既有 Game world → Rendering world 提取阶段，
+统一维护 Canvas 镜像及 `SurfaceInstance`、`ImageInstance` 缓冲。
+`SurfaceRenderExtractor` 保留为同一提取者的原有调用入口。实例包含来源节点、就绪纹理、绘制矩形、
+UV 矩形、画布裁剪、树序和绘制版本。数据更新与结构更新沿 ECS 写版本处理。
+
+`ImageMaterial` 编译自身的 Slang shader，并解释自己的实例字节。
+Surface、Glyphs 与 Image 的内嵌 shader 由 ElementShaders 统一持有，每个图形目标各编译一份。
+这些不可变 shader 供材质与管线引用，使用期限覆盖进程中的画布绘制。
+Slang 的全局对象由这一份数据保持有效，其派生对象按
+[Slang 生命周期规则](https://github.com/shader-slang/slang/blob/master/docs/user-guide/08-compiling.md)
+保持在全局对象的使用期限内。
+`CanvasRenderer` 接受 Image 材质与应用的 `RenderDevice`，在现有画布 pass 中
+按树序组合 Surface、Glyphs 与 Image。同一节点依次绘制 Surface、Glyphs、Image。
+shader 从 `SV_VertexID` 生成矩形，以纹理 RGBA 转成预乘 alpha 后混合到目标。
+纹理使用线性过滤与边界夹取，裁剪采用画布布局坐标。
+Image 与 Surface 在同一次画布遍历中继承滚动视口的裁剪交集，视口外框变化更新对应实例。
+图片沿同一画布变换应用屏幕坐标或世界空间投影，并采用画布选择的场景深度测试。
+每个批次绑定由材质给出的实例缓冲读取范围，从该范围的首条实例开始。
+连续同材质、同纹理的实例使用批绘；范围视图与实例缓冲一起沿图的完成边界回收。
+
+纹理上传与设备视图采用 `RenderDevice.PrepareTexture` / `GetTextureSrv`；
+取得期间采用 `PrepareMissingTexture` / `MissingTextureSrv` 的统一紫色纹理。
+纹理绑定和上传属于当帧数据；画布成员与目标通过显式编辑维护持久图。
+正常纹理流送以已驻留的 Bootstrap 表示进行绘制。
+
+`tests/SomeEngine.Elements.Render.Tests/ImageTests` 经公开视图函数、World、布局、
+提取及实例缓冲验证固有尺寸、横图/竖图的三种填充、纹理就绪、内边距、零尺寸与开发检查。
+`tests/SomeEngine.RenderGraph.Tests/ImageDrawingTests` 经完整视图到画布路径，在
+D3D12 WARP 与 Vulkan 上读回图片、缺失纹理、透明叠加和混合树序的像素，
+并验证取消首用帧与 GC 后继续绘制。
+
+此前独立 SomeUI 的 ImageSource 和 Image 视图作为元素构成参考。
+本票使用引擎的强类型资产身份、布局协议、提取阶段与统一纹理设备资源。
 ## 文字提取与绘制（#34）
 
 应用创建一个持有 CPU 图集的 `TextAtlas` 实体，并把该实体交给
@@ -151,12 +208,23 @@ using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
 取消帧后，已收集像素继续供下一帧上传；已提交的复制决定 GPU 图集版本。
 
 `GlyphsMaterial` 是普通 Material；内嵌 `Glyphs.slang` 以 `SV_VertexID` 生成矩形，
-以 `SV_InstanceID` 读取自身实例字节。Surface 与 Glyphs 在同一个画布 pass 中，
+以 `SV_InstanceID` 读取自身实例字节。Surface、Glyphs 与 Image 在同一个画布 pass 中，
 按树序及图集页形成连续绘制范围，分别绑定各自的 shader 和参数。
 材质按自己的实例字节大小建立各绘制范围的缓冲视图，shader 使用相对的 `SV_InstanceID`。
 这与 [Slang 的 SPIR-V 实例编号规则](https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/a2-01-spirv-target-specific.html)
 及当前 D3D12 编译目标采用同一套实例寻址，连续范围从对应缓冲视图的起点开始。
 内置 shader 编译结果由 `ElementShaders` 按名称与目标统一持有，供应用生命周期内的材质共用。
+原有 Surface、Surface/Glyphs 与 Surface/Image 构造入口继续接入这一份画布绘制器。
+同时绘制三种材质时，调用方传入 GlyphsMaterial、ImageMaterial 和 RenderDevice：
+
+```csharp
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
+    surfaces, outputFormat, glyphs, images, renderDevice);
+```
+
+实例按节点树序排列，同一节点依次绘制 Surface、Glyphs、Image；
+每个材质用自己的实例范围、纹理或图集页形成连续批次。
+字形图集与图片纹理的上传均属于当帧图工作，消费它们的画布 pass 保持持久身份。
 管线顶点布局沿用 shader 自己解释实例的规则。
 
 Glyphs 以线性采样读取单通道 SDF：`(sample * 255 - 128) * DistanceSpread / 128`
@@ -172,6 +240,9 @@ Runtime 的屏幕面板使用随资产提供的 Noto 字体子集显示 `Hello S
 `中文你好世界`，字体及许可证位于 `assets/Fonts/`。
 公开 World 验收位于 `GlyphExtractionTests`；D3D12 WARP 与 Vulkan 的覆盖图读回
 位于 `GlyphDrawingTests`，参考图从字体轮廓独立生成，生成方式与容差位于测试图像目录。
+`CanvasCompositionTests` 通过公开 RenderWorld、实例缓冲、图集页和纹理数据，
+在 D3D12 WARP 与 Vulkan 的屏幕/世界画布上读回交错的 Surface、文字与图片。
+用例同时修改图集区域和图片纹理，取消更新帧后重新绘制，并验证 GC、裁剪、深度与图结构保持。
 ## 世界空间画布（#36）
 
 `CanvasTarget.WorldSpace(entity)` 指向 Game world 中持有 `WorldTransform` 的目标。

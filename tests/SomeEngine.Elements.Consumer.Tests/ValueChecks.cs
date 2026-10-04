@@ -142,7 +142,7 @@ internal static partial class ValueChecks
                 Slider(volume, Minimum, Maximum, Step);
             if (control.Edited(out float value))
                 Scope.Write<AudioSettings>(Settings).Volume = value;
-            Scope.Write<ValueDisplay>(Scope.Entity) = new ValueDisplay(control, control.Edited(out _));
+            Scope.Write<ValueDisplay>(Scope.Entity) = new ValueDisplay(control, control.Edited(out float _));
             return default;
         }
     }

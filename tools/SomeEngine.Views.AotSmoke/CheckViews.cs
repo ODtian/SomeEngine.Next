@@ -84,6 +84,25 @@ SomeEngine.Elements.Consumer.Tests.FocusChecks.RunReparentedRelease();
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunWorlds();
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunMixedInputs();
 Console.WriteLine("Keyboard and gamepad focus, confirmation, capture, ancestor transfer, layout geometry, public user behaviors, and scheduled navigation passed under NativeAOT.");
+foreach (bool rewritten in new[] { false, true })
+{
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunInsertion(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunMovement(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunSelection(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunDeletion(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunComposition(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunCompositionKeys(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunInputOrder(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunVerticalMovement(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunJoinedCharacters(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunEmptyInput(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunInactive(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunRepeatedDeclaration(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunWorlds(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunFocusabilityRemoval(rewritten);
+}
+Console.WriteLine("Text editing, selections, whole-character movement and deletion, IME composition, focused input order, World isolation, and public user text behaviors passed under NativeAOT.");
+
 
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(true);
