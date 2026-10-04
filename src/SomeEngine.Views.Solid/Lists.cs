@@ -97,7 +97,8 @@ public static partial class Solid
         public BuildTask Build()
         {
             Entity entity = Scope.Entity;
-            Row(Item, () => Scope.Read<ItemRow<T>>(entity).Index);
+            Func<int> index = Memo(() => Scope.Read<ItemRow<T>>(entity).Index);
+            Row(Item, index);
             return default;
         }
     }
@@ -126,7 +127,8 @@ public static partial class Solid
         public BuildTask Build()
         {
             Entity entity = Scope.Entity;
-            Row(() => Scope.Read<PositionRow<T>>(entity).Item, Index);
+            Func<T> item = Memo(() => Scope.Read<PositionRow<T>>(entity).Item);
+            Row(item, Index);
             return default;
         }
     }

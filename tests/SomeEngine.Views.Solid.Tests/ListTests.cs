@@ -316,6 +316,45 @@ public sealed partial class SolidTests
         Assert.Equal("edited first", frames.World.Read<Elements.Text>(label).Value);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RowGettersProvideCurrentValuesOutsideABuildAfterTheListChanges(bool byPosition)
+    {
+        using var frames = new SolidFrames();
+        var items = new State<IReadOnlyList<int>>([10, 20]);
+        Func<int> value = null!;
+        Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
+        {
+            if (byPosition)
+                Index(() => items.Value, (item, index) =>
+                {
+                    if (index == 0)
+                        value = item;
+                    Text(item);
+                });
+            else
+                For(() => items.Value, (item, index) =>
+                {
+                    if (item == 10)
+                        value = index;
+                    Text(index);
+                });
+        }));
+        frames.Frame();
+        Assert.Equal(byPosition ? 10 : 0, value());
+
+        items.Value = [20, 10];
+        frames.Frame();
+        Assert.Equal(byPosition ? 20 : 1, value());
+
+#if DEBUG
+        items.Value = [];
+        frames.Frame();
+        Assert.Throws<InvalidOperationException>(() => value());
+#endif
+    }
+
 #if DEBUG
     [Fact]
     public void ListsReportTheirRequiredScopeAndCallbacksThroughDevelopmentChecks()

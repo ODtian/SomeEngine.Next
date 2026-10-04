@@ -63,7 +63,8 @@ For(() => names.Value, (name, index) =>
 });
 ```
 
-行 getter 在活动构建或计算作用域中读取行参数，列表增删与释放使用共享视图生命周期。
+行 getter 使用共享 Memo 读取行参数，计算与事件回调都能取得当前结果，
+列表增删与释放使用共享视图生命周期。
 列表 API 与查询用法见 Wiki `architecture/someui/Solid-Frontend` 的 For 与 Index 节。
 
 `Insert(Action)` 声明一个 `Rerun` 子视图，内容读取变化后重新执行，

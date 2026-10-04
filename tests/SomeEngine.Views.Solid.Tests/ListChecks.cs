@@ -24,11 +24,14 @@ public static partial class ListChecks
         using var frames = new SolidFrames();
         var items = new State<IReadOnlyList<int>>([1, 2, 3]);
         var sample = new State<string>("first");
+        Func<int> firstIndex = null!;
         Entity[] outputs = [frames.World.CreateEntity(new Display("")), frames.World.CreateEntity(new Display("")),
             frames.World.CreateEntity(new Display(""))];
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             For(() => items.Value, (item, index) =>
             {
+                if (item == 1)
+                    firstIndex = index;
                 Text($"{item}:{sample.Value}");
                 Text(index);
                 Effect(() => Scope.Write<Display>(outputs[item - 1]).Value = sample.Value);
@@ -36,6 +39,7 @@ public static partial class ListChecks
         frames.Frame();
         Entity list = GetList(frames.World, root);
         Entity[] rows = GetRows(frames.World, list);
+        Require(firstIndex() == 0, "For index getters can be read outside a build.");
 
         sample.Value = "second";
         items.Value = [3, 1, 2];
@@ -46,6 +50,7 @@ public static partial class ListChecks
             ReadText(frames.World, reordered[1], 0) == "1:first", "For retains initial row content.");
         Require(ReadText(frames.World, reordered[0], 1) == "0" &&
             ReadText(frames.World, reordered[1], 1) == "1", "For index getters follow the new order.");
+        Require(firstIndex() == 1, "For index getters expose the moved row's position to callbacks.");
 
         Entity removedText = Hierarchy<ElementTree>.GetChildren(frames.World, rows[1])[0];
         items.Value = [3, 1];
@@ -60,15 +65,19 @@ public static partial class ListChecks
     {
         using var frames = new SolidFrames();
         var items = new State<IReadOnlyList<string>>(["first", "second"]);
+        Func<string> firstItem = null!;
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             Index(() => items.Value, (item, index) =>
             {
+                if (index == 0)
+                    firstItem = item;
                 Text(item());
                 Text(item);
             })));
         frames.Frame();
         Entity list = GetList(frames.World, root);
         Entity[] rows = GetRows(frames.World, list);
+        Require(firstItem() == "first", "Index item getters can be read outside a build.");
         Entity firstText = Hierarchy<ElementTree>.GetChildren(frames.World, rows[0])[1];
         firstText.SetText(frames.World, "edited first");
 
@@ -83,6 +92,7 @@ public static partial class ListChecks
         frames.Frame();
         Require(GetRows(frames.World, list).SequenceEqual(rows) && ReadText(frames.World, rows[0], 1) == "changed" &&
             ReadText(frames.World, rows[1], 1) == "first", "Reordered items update getters on the same positions.");
+        Require(firstItem() == "changed", "Index item getters expose the current position's value to callbacks.");
         items.Value = ["changed"];
         frames.Frame();
         Require(!frames.World.IsAlive(rows[1]) && GetRows(frames.World, list).Single() == rows[0],

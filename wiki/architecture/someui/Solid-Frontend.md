@@ -200,7 +200,8 @@ public static partial class Solid
 行参数按元素与位置比较，宿主再次声明时将行内容委托覆盖为最新；
 元素与位置相等时保持参数版本和已有 getter 计算结果。
 
-传给行的 getter 在活动构建或计算作用域中使用，通过 `Scope.Read` 读取该行的视图参数。
+传给行的 getter 通过共享 `Memo` 和 `Scope.Read` 读取该行的视图参数。
+计算内读取登记这个 Memo，事件回调也可直接取得当前结果；Memo 的相等结果与释放检查沿共享规则处理。
 `For` 的位置变化使读取 `index` 的计算更新，`Index` 的元素变化使读取 `item` 的计算更新。
 各行的参数、依赖和生命周期沿共享视图管理；构建修改的恢复、子树释放及所属计算释放见
 [[architecture/someui/Node-Identity|Node Identity]] 与 [[architecture/someui/Computations|Computations]]。
@@ -216,7 +217,7 @@ For(() => Scope.Each(enemies), (enemy, index) =>
 });
 ```
 
-`Each(query)` 返回栈上的 `QueryRows`。两个查询重载在列表 getter 的追踪作用域中调用它，
+`Each(query)` 返回 `ref struct QueryRows`。两个查询重载在列表 getter 的追踪作用域中调用它，
 先把当次实体序列收集为只读列表，再沿通用列表声明路径构建行。
 这使 `For(() => Each(query), ...)` 和 `Index(() => Each(query), ...)` 直接使用实体，
 查询成员依赖与各行组件读取依赖沿 [[architecture/someui/Lists|Lists]] 和
@@ -226,7 +227,7 @@ For(() => Scope.Each(enemies), (enemy, index) =>
 报告使用错误；shipping 构建移除这些检查调用。
 公开验收见 [ListTests](../../../tests/SomeEngine.Views.Solid.Tests/ListTests.cs)，
 通过有序层级、实体、显示数据和用户计算验证行重排、索引更新、单行元素更新、首次内容、
-相等元素与重复元素、宿主刷新、查询成员、子树与计算释放以及异常恢复。
+相等元素与重复元素、宿主刷新、计算外 getter 读取、查询成员、子树与计算释放以及异常恢复。
 [ListChecks](../../../tests/SomeEngine.Views.Solid.Tests/ListChecks.cs) 在托管测试和
 `just views-aot win-x64` 中共享 For、Index、Each 查询与行释放行为。
 
