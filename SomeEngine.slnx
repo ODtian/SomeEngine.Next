@@ -30,6 +30,7 @@
   <Project Path="tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj" />
   <Project Path="src\SomeEngine.Views.Compose\SomeEngine.Views.Compose.csproj" />
   <Project Path="src\SomeEngine.Views.SwiftUI\SomeEngine.Views.SwiftUI.csproj" />
+  <Project Path="src\SomeEngine.Views.Solid\SomeEngine.Views.Solid.csproj" />
   <Project Path="src\SomeEngine.Views.Generators\SomeEngine.Views.Generators.csproj" />
   <Project Path="src\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
   <Project Path="src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj" />
@@ -47,6 +48,7 @@
   <Project Path="tests\SomeEngine.ECS.Tests\SomeEngine.ECS.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Systems.Tests\SomeEngine.ECS.Systems.Tests.csproj" />
   <Project Path="tests\SomeEngine.Views.Tests\SomeEngine.Views.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Views.Solid.Tests\SomeEngine.Views.Solid.Tests.csproj" />
   <Project Path="tests\SomeEngine.Views.Generators.Tests\SomeEngine.Views.Generators.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Serialization.Tests\SomeEngine.ECS.Serialization.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Fuzz.Tests\SomeEngine.ECS.Fuzz.Tests.csproj" />

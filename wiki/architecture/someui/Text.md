@@ -130,13 +130,16 @@ public readonly struct ShapedText : IComponent
 使加载的字体与排版、图集共用一份字体资源。
 
 `.Font(font)`、`.FontSize(size)`、`.TextColor(color)` 和 `.LineHeight(height)`
-通过 `Scope.Write<TextStyle>` 写入调用方选择的字段。`Text.Build` 读取这些字段；
+通过 `Scope.Write<TextStyle>` 写入调用方选择的字段。`Text` 采用 `BuildMode.Once`，
+`Text.Build` 登记一次样式计算，计算读取这些字段；
 其余字段通过 `Scope.ReadUp<TextTheme>()` 取得最近祖先提供的默认样式，并登记环境依赖。
 默认字号为 16 像素/em、颜色为线性白色、行高为零；字体由应用加载并提供。
 显式零颜色保留 RGBA 零值；显式零行高选择字体行指标。
-构建把此次解析的样式写入自身的 `TextAppearance` 数据，排版系统消费这份结果。
+样式计算把此次解析的样式写入自身的 `TextAppearance` 数据，排版系统消费这份结果。
 祖先主题变化时，继承相应字段的文本在当前重建阶段更新；显式字段继续采用调用方的值。
 `ShapedText.Style` 提供此次排版使用的完整样式。
+文字字段变化由排版系统观察，样式与主题变化由这个计算观察，使文字持续改变时
+保留节点、样式计算及其委托。
 
 ```csharp
 using static SomeEngine.Elements.TextFunctions;
@@ -189,6 +192,8 @@ public static Entity DeclareText<T>(ulong callKey, T value, string format = "", 
     where T : struct, ISpanFormattable;
 public static Entity SetText<T>(this Entity node, World world, T value,
     string format = "", IFormatProvider? provider = null) where T : struct, ISpanFormattable;
+public static Entity SetText<T>(this Entity node, T value,
+    string format = "", IFormatProvider? provider = null) where T : struct, ISpanFormattable;
 public static Entity SetText(this Entity node, World world, string value);
 ```
 
@@ -196,6 +201,8 @@ public static Entity SetText(this Entity node, World world, string value);
 `Scope.View<T, TValue>(in value, create, key)` 在匹配节点后取得旧文本。
 参数工厂把格式化字符与旧字符串比较，相等时复用旧字符串；变化时创建新的文本参数。
 `SetText` 供调用方直接写入已存在的文本节点，遵循相同的字符比较和版本规则。
+带 World 的重载即时写入文本；作用域重载写入 `Scope.Write<Text>` 返回的组件副本，
+并在当前计算完成时按同一提交规则写入。Solid 的数字属性绑定使用作用域重载。
 值、格式与格式提供者形成的文本保持相等时，数字写入保持托管分配为零与文本写版本。
 短格式使用栈上的字符范围；较长格式使用可复用字符池。格式提供者沿用 .NET 的格式化规则，
 省略格式提供者时，声明的文本在自己的 `Build` 中读取当前 `Locale`，
