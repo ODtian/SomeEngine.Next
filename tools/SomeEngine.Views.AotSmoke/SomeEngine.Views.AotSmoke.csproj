@@ -48,6 +48,11 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/InterfaceChecks.cs" Link="InterfaceChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs" Link="Rewrites/Button.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs" Link="Rewrites/IconButton.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/DialogChecks.cs" Link="DialogChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Dialog.cs" Link="Rewrites/Dialog.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DialogTitle.cs" Link="Rewrites/DialogTitle.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DialogFooter.cs" Link="Rewrites/DialogFooter.cs" />
+
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextFieldChecks.cs" Link="TextFieldChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/TextField.cs" Link="Rewrites/TextField.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ValueChecks.cs" Link="ValueChecks.cs" />

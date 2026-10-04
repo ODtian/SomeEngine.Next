@@ -5,12 +5,14 @@
 
 | 数据 | 唯一写入方 |
 |---|---|
-| 视图参数（包括作为元素数据的 `Text`、`Flex`） | 调用方的 `View`，或 Solid 计算 |
-| 修饰数据（`Box`、`Surface`）与子节点的布局参数（`FlexItem`、`GridCell`、`AbsolutePosition`） | 调用方作用域 |
+| 节点实际视图类型的参数（包括 `Text`、`Flex`） | 调用方的 `View`，或 Solid 计算 |
+| `Box`、普通布局节点的 `Surface` 与子节点布局参数（`FlexItem`、`GridCell`、`AbsolutePosition`） | 调用方作用域 |
+| Dialog 节点的 `Surface`、Dialog/DialogActions 节点解析后的 `Flex` | 该复合容器的 Build |
 | `TextStyle` 的显式样式字段 | 调用方作用域 |
 | `TextAppearance`（文本此次构建解析的完整样式） | `Text.Build` |
 | 环境数据（用户定义的主题等组件） | 调用方通过 `Entity.Provide` 写入 |
 | `ButtonTheme` | 调用方通过 `Entity.Provide` 写入，Button 读取最近提供者 |
+| `DialogTheme` | 调用方通过 `Entity.Provide` 写入，各复合部件读取最近提供者 |
 | `Clicks` | 输入阶段：`HitTestSystem` 的指针点击与 `FocusNavigationSystem` 的焦点确认；视图用 `Ensure<T>` 声明需要 |
 | `Hover` | `HitTestSystem`；视图用 `Ensure<T>` 声明需要 |
 | `Pressable`、`StopsPointer` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
@@ -65,6 +67,11 @@
 Button 的构建作为子 Row 和 Text 的调用方，写入 Row 的 `Surface`、`Box.Padding`
 以及 Text 的显式颜色。主题、布局、悬停和点击继续由表格中各自的写入方维护，
 组合规则与默认主题见 [[architecture/someui/Composition|Composition]]。
+
+Dialog 与 DialogActions 是调用方提供内容的布局节点，Build 从 DialogTheme 写入自身的
+排列输出；Dialog 同时写入自身的 Surface。调用方通过主题提供外观和排列参数，
+通过 Box 修饰提供尺寸限制与内边距。DialogTitle 是子 Text 的调用方，写入其显式
+字号和颜色。用户复合部件采用相同的写入职责，组合规则见 Composition。
 
 ## Relations
 [[architecture/someui/Modifiers|Modifiers]] · [[architecture/someui/Composition|Composition]]

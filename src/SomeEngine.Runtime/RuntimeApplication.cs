@@ -474,31 +474,62 @@ internal static class RuntimeApplication
     {
         using World mainWorld = RuntimeWait.Task(sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
             new(Execution: new WorldJobs(JobSystem.Default))).AsTask(), window, FrameTimeout);
+        using ScreenText? screenText = options.SurfacePanel || options.HudOverlay ? new ScreenText(mainWorld) : null;
         using SurfacePanelExample? surfacePanel = options.SurfacePanel
-            ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height) : null;
+            ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height, screenText!) : null;
+        using HudOverlay? hud = options.HudOverlay ? new HudOverlay(mainWorld, boot.Width, boot.Height, screenText!) : null;
         using SphereNameplates? nameplates = options.WorldNameplates ? new SphereNameplates(mainWorld) : null;
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor(),
             new SurfaceRenderExtractor());
-        if (surfacePanel is not null) extraction.Add(new GlyphRenderExtractor(surfacePanel.AtlasSource));
+        if (screenText is not null) extraction.Add(new GlyphRenderExtractor(screenText.AtlasSource));
 
         RuntimeScene scene = RuntimeWait.Task(
             RuntimeScene.CreateAsync(mainWorld, assets, loadShader).AsTask(),
             window,
             FrameTimeout);
 
-        using GameFrameSystems? elementSystems = options.SurfacePanel || options.WorldNameplates
+        using GameFrameSystems? elementSystems = options.SurfacePanel || options.WorldNameplates || options.HudOverlay
             ? new GameFrameSystems(mainWorld) : null;
         using WindowInput? elementInput = elementSystems is null ? null : new WindowInput(mainWorld);
         elementSystems?.UpdateViews(0);
+        bool measure = platform?.IsMeasuring == true;
+        GameUpdateTiming gameTiming = default;
+
+        GameUpdateTiming UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds)
+        {
+            long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
+            long started = measure ? Stopwatch.GetTimestamp() : 0;
+            surfacePanel?.Resize(canvasWidth, canvasHeight);
+            hud?.Resize(canvasWidth, canvasHeight);
+            if (options.HudNumbersChange) hud?.Update(frameNumber);
+            nameplates?.Update();
+            if (!measure)
+            {
+                elementSystems?.UpdateViews(deltaSeconds);
+                extraction.Extract(mainWorld);
+                return default;
+            }
+            ViewTiming views = elementSystems?.MeasureViews(deltaSeconds) ?? default;
+            views = views with
+            {
+                TotalMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                AllocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocated,
+            };
+            allocated = GC.GetAllocatedBytesForCurrentThread();
+            started = Stopwatch.GetTimestamp();
+            using var trace = EngineTrace.Begin(ApplicationTrace.Extraction);
+            extraction.Extract(mainWorld);
+            return new GameUpdateTiming(views, Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                GC.GetAllocatedBytesForCurrentThread() - allocated);
+        }
 
         if (!options.SynchronousFrames)
         {
             if (options.ScenePlayback is not null)
                 scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
                     orbitCamera: options.ScenePlayback == "camera");
-            nameplates?.Update();
-            extraction.Extract(mainWorld);
+            gameTiming = UpdateInterface(0, boot.Width, boot.Height, 0);
         }
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
             scene.Camera.View,
@@ -560,9 +591,9 @@ internal static class RuntimeApplication
                 // frames. Match that count instead of rotating a third copy of graph data.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
-        using SurfaceMaterial? surfaceMaterial = options.SurfacePanel || options.WorldNameplates
+        using SurfaceMaterial? surfaceMaterial = options.SurfacePanel || options.WorldNameplates || options.HudOverlay
             ? SurfaceMaterial.Create(device.Capabilities.CompileTarget) : null;
-        using GlyphsMaterial? glyphMaterial = options.SurfacePanel
+        using GlyphsMaterial? glyphMaterial = screenText is not null
             ? GlyphsMaterial.Create(device.Capabilities.CompileTarget) : null;
         using CanvasRenderer? surfaces = surfaceMaterial is null ? null
             : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat, glyphMaterial);
@@ -605,7 +636,7 @@ internal static class RuntimeApplication
         TemporalFeature? temporal = null;
         GraphPassId temporalProducer = default;
         GraphPassId presentationReadback = default;
-        Task? nextGameUpdate = null;
+        Task<GameUpdateTiming>? nextGameUpdate = null;
         var input = new RuntimeInput(elementInput);
         int width = boot.Width;
         int height = boot.Height;
@@ -751,7 +782,7 @@ internal static class RuntimeApplication
                 // Shared asset content can change only after the Game World extraction reader exits.
                 if (nextGameUpdate is not null)
                 {
-                    RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+                    gameTiming = RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
                     nextGameUpdate = null;
                 }
                 input.BeginFrame();
@@ -773,6 +804,7 @@ internal static class RuntimeApplication
                     for (int index = 0; index < Math.Min(platform.Scenes.Count, 3); index++)
                         if (input.WasKeyPressed(0x71 + index)) platform.SelectScene(index);
                     if (input.WasKeyPressed(0x77)) platform.CaptureImage();
+                    if (input.WasKeyPressed(0x75)) platform.SetHudOverlay(!platform.HudOverlayEnabled, platform.HudNumbersChange);
                     if (input.WasKeyPressed(0x78)) platform.StartMeasurements();
                     if (input.WasKeyPressed(0x79)) platform.StartMeasurements(recordTrace: true);
                 }
@@ -857,10 +889,7 @@ internal static class RuntimeApplication
                 {
                     if (animateScene && options.ScenePlayback is null)
                         scene.Update(sceneSeconds);
-                    surfacePanel?.Resize(width, height);
-                    nameplates?.Update();
-                    elementSystems?.UpdateViews(deltaSeconds);
-                    extraction.Extract(mainWorld);
+                    gameTiming = UpdateInterface(frameIndex, width, height, deltaSeconds);
                 }
                 long prepareStarted = Stopwatch.GetTimestamp();
                 if (platform?.ImageRequested == true)
@@ -985,6 +1014,7 @@ internal static class RuntimeApplication
                     TraceContext gameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
                     int nextCanvasWidth = width;
                     int nextCanvasHeight = height;
+                    int nextFrameNumber = frameIndex + 1;
                     nextGameUpdate = Task.Run(() =>
                     {
                         using var association = EngineTrace.Associate(gameTrace);
@@ -996,10 +1026,7 @@ internal static class RuntimeApplication
                                 orbitCamera: options.ScenePlayback == "camera");
                         else if (updateScene)
                             scene.Update(nextSceneTime);
-                        surfacePanel?.Resize(nextCanvasWidth, nextCanvasHeight);
-                        nameplates?.Update();
-                        elementSystems?.UpdateViews(deltaSeconds);
-                        extraction.Extract(mainWorld);
+                        return UpdateInterface(nextFrameNumber, nextCanvasWidth, nextCanvasHeight, deltaSeconds);
                     });
                 }
 
@@ -1021,7 +1048,8 @@ internal static class RuntimeApplication
 
                 if (platform?.IsMeasuring == true && !platform.ReloadRequested)
                     platform.RecordFrame(new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
-                        prepareMs, reconcileMs, executeMs), cluster.CaptureDiagnostics());
+                        prepareMs, reconcileMs, executeMs, gameTiming.Views, gameTiming.ExtractionMs,
+                        gameTiming.ExtractionAllocatedBytes), cluster.CaptureDiagnostics());
                 frameIndex++;
                 if (platform?.ReloadRequested == true) break;
             }
@@ -1140,6 +1168,8 @@ internal static class RuntimeApplication
                 backend.CollectCompleted(device);
         }
     }
+
+    private readonly record struct GameUpdateTiming(ViewTiming Views, double ExtractionMs, long ExtractionAllocatedBytes);
 
     private static void Prepare(
         RenderPrepareSystems systems,

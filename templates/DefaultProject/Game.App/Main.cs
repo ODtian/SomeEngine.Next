@@ -9,9 +9,9 @@ if (!File.Exists(manifestPath))
 }
 MaterialTypes.Register();
 ImportedScenes.SceneMaterialAsset.Register();
-if (args.Length != 0)
+if (args.Any(static argument => argument is not ("--hud" or "--hud-static")))
 {
-    Console.Error.WriteLine("DefaultGame is configured in its in-game test panel (F1).");
+    Console.Error.WriteLine("DefaultGame accepts --hud or --hud-static. Scene settings are available in the test panel (F1).");
     return 1;
 }
 var scenes = System.Text.Json.JsonSerializer.Deserialize<SomeEngine.Runtime.TestScene[]>(
@@ -20,6 +20,8 @@ var platform = new SomeEngine.Runtime.SceneTestPlatform(scenes.Select(scene => s
 {
     ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
 }).ToArray());
+var startup = SomeEngine.Runtime.RuntimeStartupOptions.Parse(args);
+platform.SetHudOverlay(startup.HudOverlay, startup.HudNumbersChange);
 return await SomeEngine.Runtime.Application.RunAsync([], static (material, seconds) =>
 {
     float roughness = 0.5f + MathF.Sin(seconds) * 0.2f;

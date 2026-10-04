@@ -8,6 +8,7 @@ internal static class ApplicationTrace
     internal static readonly TraceSite Playback = new("app", "Scene.Playback");
     internal static readonly TraceSite Prepare = new("app", "Prepare");
     internal static readonly TraceSite ExtractionApply = new("app", "ExtractionApply");
+    internal static readonly TraceSite Extraction = new("someui", "GameWorld.Extract");
     internal static readonly TraceSite PrepareSystems = new("app", "PrepareSystems");
     internal static readonly TraceSite PrepareCommit = new("app", "PrepareCommit");
     internal static readonly TraceSite Reconcile = new("app", "ReconcileGraph");

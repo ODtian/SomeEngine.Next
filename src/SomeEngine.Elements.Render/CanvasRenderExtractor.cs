@@ -163,7 +163,7 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
                 surfaces.Add(new(node, value.Rectangle, value.Fill, value.CornerRadius,
                     value.BorderColor, value.BorderWidth, entry.Clip, entry.DrawOrder, 0)
                 {
-                    Matrix = value.Matrix, Alpha = value.Alpha,
+                    Shadow = value.Shadow, Matrix = value.Matrix, Alpha = value.Alpha,
                 });
             }
             if (world.Has<Image>(node) && world.Has<LayoutRect>(node))
@@ -197,7 +197,7 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         Rect rectangle = world.Read<LayoutRect>(node).Value;
         var presentation = ElementPresentation.Read(world, node, rectangle);
         return new(rectangle, surface.Fill, surface.CornerRadius,
-            surface.BorderColor, surface.BorderWidth, presentation.Matrix, presentation.Alpha);
+            surface.BorderColor, surface.BorderWidth, surface.Shadow, presentation.Matrix, presentation.Alpha);
     }
 
     private static ImageInstance ReadImage(World world, Entity node)
@@ -278,6 +278,7 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
                     {
                         Rectangle = value.Rectangle, Fill = value.Fill, CornerRadius = value.CornerRadius,
                         BorderColor = value.BorderColor, BorderWidth = value.BorderWidth,
+                        Shadow = value.Shadow,
                         Matrix = value.Matrix, Alpha = value.Alpha,
                     };
                     if (before != after) buffer[index] = after with { Version = unchecked(before.Version + 1) };
@@ -364,6 +365,6 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
     }
 
     private readonly record struct CanvasInstances(RenderCanvas Canvas, List<SurfaceInstance> Surfaces, List<ImageInstance> Images);
-    private readonly record struct SurfaceValue(Rect Rectangle, Color Fill, float CornerRadius, Color BorderColor,
-        float BorderWidth, Matrix3x2 Matrix, float Alpha);
+    private readonly record struct SurfaceValue(Rect Rectangle, Color Fill, float CornerRadius,
+        Color BorderColor, float BorderWidth, DropShadow Shadow, Matrix3x2 Matrix, float Alpha);
 }

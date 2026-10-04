@@ -139,6 +139,11 @@ SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);
 Console.WriteLine("Button themes, held presses, click consumption, label updates, and public user Button and IconButton passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(false, false, false);
+SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(true, true, true);
+SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(false, false, true);
+Console.WriteLine("Dialog themes, title styles, caller geometry, and built-in and user Dialog, DialogTitle, and DialogFooter composition passed under NativeAOT.");
+
 SomeEngine.Elements.Consumer.Tests.ValueChecks.Run();
 Console.WriteLine("Toggle activation, Slider and user Knob range editing, keyboard steps, quantized dragging, and audio volume with equal text versions passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
