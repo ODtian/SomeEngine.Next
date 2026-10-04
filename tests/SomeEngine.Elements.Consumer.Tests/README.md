@@ -24,3 +24,10 @@ The linked font fixtures and their reference values come from the Typography
 tests. `TextChecks` shares public string, integer, and culture-specific generic
 formatting checks with the Views NativeAOT executable, including 10,000 equal
 integer writes measured with `GC.GetAllocatedBytesForCurrentThread`.
+
+`PointerTests` injects input through `Pointer`, advances the hit-test, game input,
+view, and layout stages, and observes public node data. It covers click-dependent
+display, draw order, transparent compositions, previous-frame layout, per-button
+presses, canvas isolation, and development errors. `PointerChecks` runs the same
+caller consumption example for the built-in and user-written `Pressable` and
+`Clicked` functions and shares those cases with the NativeAOT executable.
