@@ -12,6 +12,18 @@ public sealed partial class BuildCancellationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void CanceledBuildFinishesItsBuildTaskHelperAndTheRemainingFinally(bool jobWorld) =>
+        BuildResumeChecks.VerifyCleanupHelper(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanceledInheritedAwaiterKeepsTheCurrentResultAndCompletesCleanup(bool jobWorld) =>
+        BuildResumeChecks.VerifyInheritedAwaiter(jobWorld);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void CancelCallbackFailureReachesTheViewErrorAndTheFrameContinues(bool jobWorld) =>
         BuildResumeChecks.VerifyCancelCallbackFailure(jobWorld);
 

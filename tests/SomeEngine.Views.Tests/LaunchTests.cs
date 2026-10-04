@@ -41,7 +41,11 @@ public sealed partial class LaunchTests
         Assert.False(cancel.IsCancellationRequested);
         Hierarchy<ElementTree>.DestroySubtree(frames.World, root);
         Assert.True(cancel.IsCancellationRequested);
-        frames.Frame();
+        Assert.True(SpinWait.SpinUntil(() =>
+        {
+            frames.Frame();
+            return work.Finished.Contains(1);
+        }, TimeSpan.FromSeconds(5)));
         Assert.Contains(1, work.Finished);
     }
 
@@ -65,7 +69,11 @@ public sealed partial class LaunchTests
 
         Assert.True(first.IsCancellationRequested);
         Assert.Equal("running 2", Text(frames, root));
-        frames.Frame();
+        Assert.True(SpinWait.SpinUntil(() =>
+        {
+            frames.Frame();
+            return work.Finished.Contains(1);
+        }, TimeSpan.FromSeconds(5)));
         Assert.Contains(1, work.Finished);
     }
 

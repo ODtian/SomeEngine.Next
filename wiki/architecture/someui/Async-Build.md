@@ -192,11 +192,17 @@ I/O 的取消参数，或用 `task.WaitAsync(Scope.Cancel)` 等待外部任务�
 这条路径覆盖任意 `Task`、`ValueTask`、`JobHandle` 和用户等待类型，等待结果的正常消费
 同时完成可复用等待来源的释放。每个方法构建器记录已经观察的取消，`finally` 中后续
 `Task`/`ValueTask` await 可以继续完成清理；等待对象自身抛出取消异常时也建立该记录。
-`BuildTask` awaiter 在消费辅助方法结果时观察所属构建的取消令牌，并抛出 `OperationCanceledException`；
+`BuildTask` awaiter 消费辅助方法的结果与异常，方法构建器在调用方的 await 消费点交付取消；
 `Scope.NextFrame()` 的 awaiter 在逐帧恢复点执行同一取消检查。
-异步辅助方法成功返回后，等待它的已取消构建也由 `BuildTask` awaiter 抛出取消异常。
+异步辅助方法成功返回后，等待它的原构建由该构建自己的方法构建器抛出取消异常。
 方法内的 `finally` 和 `using` 沿 C# 状态机的正常异常路径执行。
 重建入口把已取消构建的 `OperationCanceledException` 作为结束消费，`BuildError` 继续表示构建失败。
+
+在已取消作用域中开始的 `BuildTask` 辅助方法继承调用方的清理阶段，继续完成自己的
+Task / ValueTask 等待、清理尾部及调用方后续 finally 语句。结果消费负责释放该方法
+的状态机与引用，取消交付由原方法的 await 边界负责。重建队列统一判断当前构建状态，
+活动构建完成后提交输出，取消构建完成后释放清理副本；新构建继续持有当前组件结果。
+公共验证见 `InheritedAwaiterChecks` 与 `CleanupHelperChecks`，同时编入两套 NativeAOT 入口。
 
 取消源汇总的回调异常由取消入口交给既有 `BuildError` 与开发报告边界消费。
 构建恢复记录完成还原，新构建立即开始，同帧其余视图和计算继续更新。
