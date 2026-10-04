@@ -23,3 +23,9 @@ display, draw order, transparent compositions, previous-frame layout, per-button
 presses, canvas isolation, and development errors. `PointerChecks` runs the same
 caller consumption example for the built-in and user-written `Pressable` and
 `Clicked` functions and shares those cases with the NativeAOT executable.
+
+`FocusTests` injects keyboard and gamepad input and observes focus-dependent
+display and click consumption. `FocusChecks` shares the Grid and transparent
+composition cases, node-release behavior, and a scheduled user navigation
+system with the NativeAOT executable. The Grid runs with both the built-in
+focus functions and the public user equivalent under `Rewrites/`.

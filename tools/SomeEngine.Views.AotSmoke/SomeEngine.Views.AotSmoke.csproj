@@ -15,6 +15,12 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/SurfaceModifiers.cs" Link="Rewrites/SurfaceModifiers.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerChecks.cs" Link="PointerChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/PressableFunctions.cs" Link="Rewrites/PressableFunctions.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusChecks.cs" Link="FocusChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusReleaseChecks.cs" Link="FocusReleaseChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusNavigationChecks.cs" Link="FocusNavigationChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusCompositionChecks.cs" Link="FocusCompositionChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusLayoutChecks.cs" Link="FocusLayoutChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/FocusFunctions.cs" Link="Rewrites/FocusFunctions.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/FlexChecks.cs" Link="FlexChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/StackGridChecks.cs" Link="StackGridChecks.cs" />
     <ProjectReference Include="../../src/SomeEngine.Views.Compose/SomeEngine.Views.Compose.csproj" GlobalPropertiesToRemove="PublishAot" />

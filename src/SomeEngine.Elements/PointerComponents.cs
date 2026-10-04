@@ -9,7 +9,7 @@ public struct Hover : IComponent
     public bool Pressed;
 }
 
-/// <summary>The number of completed pointer clicks written by HitTestSystem.</summary>
+/// <summary>The number of pointer clicks and focus confirmations written by the input stage.</summary>
 public struct Clicks : IComponent
 {
     public uint Count;

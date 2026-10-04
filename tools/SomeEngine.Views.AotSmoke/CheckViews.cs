@@ -48,6 +48,23 @@ Console.WriteLine("Column surface values, layout sizes, write versions, and publ
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(true);
 Console.WriteLine("Canvas pointer input, click consumption, held presses, capture, and public user behaviors passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunGrid(false);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunGrid(true);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunRelease(false, false);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunRelease(false, true);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunRelease(true, false);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunRelease(true, true);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunCustomNavigation();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunCompositions();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunFocusabilityRemoval();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunInputOrder();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunMovingLayout();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunCanvasNavigation();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunBranchRelease(false);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunBranchRelease(true);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunReparentedRelease();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunWorlds();
+Console.WriteLine("Keyboard and gamepad focus, confirmation, capture, ancestor transfer, layout geometry, public user behaviors, and scheduled navigation passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
 Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
 
