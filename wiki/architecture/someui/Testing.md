@@ -258,7 +258,7 @@ dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.cspr
 与后续依赖更新。诊断目录、检查点文件及原生验收产物在使用后清理。
 行为与接口见 [[architecture/someui/Input-and-Behaviors|Input and Behaviors]]。
 
-最终再对齐 #38：源码验收提交 `a2d5d364961f6fdcddc1c22bb40f12f82ab33793`，
+随后对齐 #38：源码验收提交 `a2d5d364961f6fdcddc1c22bb40f12f82ab33793`，
 包含集成提交 `3da0051c0116fb962997fa40d3f3a0c12803c257`。
 消费者工程重新执行 Debug 与 Release，均使用
 `--nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`，
@@ -266,6 +266,14 @@ dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.cspr
 调用方消费计数后继续接收下一次键盘确认；当前焦点检查为 Debug 26 项、Release 17 项。
 `just views-aot win-x64` 再次成功发布、执行全部 17 项共享焦点检查与指针冒泡检查，
 并完成检查点写入与读回，退出码 0。原生验收产物在执行后清理。
+
+最终源码验收提交 `f36b17ca54aada9b827751c014e782f0efde5b92`，包含集成提交
+`e26a6d4bbcb0b5b3a544b7c5e06c216314dc4b85`，覆盖已合入的异步构建与 Button 交付。
+按上一段命令参数重新执行消费者、Views 与 Layout 的 Debug / Release 回归：
+消费者 101 / 73 通过，Views 279 / 250 通过，Layout 94 / 74 通过。
+`just views-aot win-x64` 在该源码提交成功发布并执行共享焦点、指针路由、Button 与
+现有视图检查，随后完成两个独立进程的检查点写入、类型编号重映射和读回，退出码 0。
+焦点公共行为保持 Debug 26 项与 Release / NativeAOT 17 项；原生验收产物在使用后清理。
 
 ## Button 与外部控件对等验收（#43）
 
