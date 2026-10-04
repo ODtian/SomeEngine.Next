@@ -17,12 +17,13 @@
 `SomeEngine.Elements.Render` 的 `CanvasRenderExtractor` 统一收集画布上的 Surface 与 Image，
 `SurfaceRenderExtractor` 保留原有调用入口。应用在首次提取前将其中一个
 安装到 `RenderExtractionSystems`。Surface 数据读取 `Canvas`、`Surface`、`LayoutRect`、
-`ScrollOffset` 及 `ElementTree` 的 Parent/Children 写版本，沿现有提取阶段收集。
+`ScrollOffset`、`ElementTransform`、`PresentationOffset` 及 `ElementTree` 的 Parent/Children
+写版本，沿现有提取阶段收集。
 
 每个 Canvas 的 RenderWorld 镜像实体持有 `RenderCanvas` 与一份 ECS
 `SurfaceInstance` 缓冲。`RenderCanvas` 保存目标、像素尺寸与每布局单位像素数。
 `SurfaceInstance` 的公开成员为 `Node`、`Rectangle`、`Fill`、`CornerRadius`、
-`BorderColor`、`BorderWidth`、`ClipRectangle`、`DrawOrder` 与 `Version`。
+`BorderColor`、`BorderWidth`、`ClipRectangle`、`DrawOrder`、`Version`、`Matrix` 与 `Alpha`。
 `Shadow` 是附加的可初始化 DropShadow 属性，保留原有九参数构造与解构写法。
 `Node` 标识来源实体，渲染消费者从缓冲取得其绘制数据。
 
@@ -38,7 +39,7 @@
 `DrawOrder` 是该节点在遍历中的序号，Canvas 从零开始，透明组合节点同样占一个序号。
 嵌套 Canvas 分别提取到自身缓冲。
 
-组件写版本先筛选变化的 chunk，再按行版本选择 Surface 与矩形更新。
+组件写版本先筛选变化的 chunk，再按行版本选择 Surface、矩形与呈现数据更新。
 树成员、子节点顺序和 Canvas 数据变化时，重新整理受影响画布的实例序列。
 视口外框变化，以及 ScrollOffset 的添加或移除，同样刷新后代的裁剪矩形。
 实例从版本一开始，仅在绘制数据变化时推进，调用方以 `!=` 比较版本以支持回绕。
@@ -59,6 +60,32 @@ ECS 结构事务送入常驻缓冲。常驻绘制数据由 RenderWorld 的 ECS �
 
 此前独立 SomeUI 的 Scene、实例与 DrawOrderSystem 用于核对绘制数据及树序。
 这里的实例缓冲采用引擎 ECS 存储，增量依据来自 ECS 写版本，并通过既有提取边界应用。
+
+## 节点呈现（#52）
+
+`CanvasRenderExtractor` 为 Surface 与 Image 读取呈现数据，`GlyphRenderExtractor`
+在自己的字形提取路径读取同一节点数据。三个实例缓冲均保存 `Matrix` 与 `Alpha`，
+缺省值分别为单位矩阵和一。原始布局矩形、图片适配区域、UV、字形颜色和图集数据
+继续沿各自的数据规则维护。
+
+用户变换以节点 `LayoutRect` 左上角为局部原点，`PresentationOffset` 使用画布坐标。
+最终矩阵为 `Translation(-origin) * ElementTransform.Matrix * Translation(origin) * PresentationOffset.Matrix`，
+透明度倍率为 `ElementTransform.Alpha * PresentationOffset.Alpha`。
+图片扣除内边距并适配尺寸之后、字形按字形偏移得到矩形之后，仍使用节点外框作为用户变换原点。
+呈现写版本按行选择实例更新；改变呈现数据保留布局、图片 UV 和字形图集的既有值。
+
+Surface、Glyphs 与 Image 各自编码实例及解释 shader 字节，实例大小分别为
+144、96、80 字节。Surface 在填充、描边、裁剪、形状和阴影数据之后保存矩阵与透明度；
+Glyphs、Image 在各自的原有字段之后保存呈现数据。
+shader 先把矩形点转换到呈现的画布坐标，再应用屏幕或世界画布的裁剪空间矩阵。
+裁剪使用呈现的画布坐标；Surface 的圆角与描边覆盖率使用原矩形局部坐标。
+Surface 先按自身覆盖率合成填充、描边及其后方阴影，再将完整预乘 RGBA 乘呈现透明度。
+Glyphs、Image 分别将呈现透明度乘入字形覆盖率和纹理 alpha，并采用既有预乘混合规则。
+同一画布的持久 pass 按原树序消费这些材质。
+
+`PresentationExtractionTests` 经公开 World、提取与缓冲读取验证三种视觉的矩阵、透明度、
+增量版本及提取后的值送达边界。`CanvasPresentationTests` 在 D3D12 WARP 和 Vulkan
+的屏幕与世界画布上读回旋转、透明度、画布裁剪、静止帧和取消帧后的像素。
 
 ## 屏幕画布绘制（#33）
 
@@ -100,7 +127,8 @@ Surface 材质同时解释实例中的 DropShadow。顶点范围覆盖表面与�
 并包含模糊半径及一个目标像素的边缘余量。阴影沿同一圆角矩形距离函数计算：
 正模糊半径使用 `1 - smoothstep(-BlurRadius, BlurRadius, distance)` 柔化边缘，
 零半径使用一个目标像素的覆盖率过渡。shader 以表面剩余透明度合成阴影，
-填充与描边位于自身阴影前方；同一裁剪矩形作用于两者。
+填充与描边位于自身阴影前方。表面与扩展的阴影范围共同应用呈现矩阵，再投影到画布目标；
+同一裁剪矩形作用于两者呈现后的画布坐标，完整组合通过呈现透明度一起淡出。
 实例字节布局由 Surface 材质与其 shader 共同解释。
 
 Runtime 的 `SurfacePanelExample` 使用公开视图修饰与布局系统构建画布和面板，
@@ -263,7 +291,7 @@ Runtime 的屏幕面板使用随资产提供的 Noto 字体子集显示 `Hello S
 ## 世界空间画布（#36）
 
 `CanvasTarget.WorldSpace(entity)` 指向 Game world 中持有 `WorldTransform` 的目标。
-`SurfaceRenderExtractor` 在同一提取读取窗口内取得目标变换，写入画布镜像的
+`CanvasRenderExtractor` 在同一提取读取窗口内取得目标变换，写入画布镜像的
 `RenderCanvas.Transform`，并提取 `Canvas.DepthTest`。目标的变换写版本单独选择
 画布常量更新；实例矩形仍在画布坐标中，沿同一 Surface 缓冲和材质送达。
 目标平移、旋转、缩放与拉伸按 [[architecture/someui/Layout|Layout]] 的坐标约定生效。

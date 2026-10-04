@@ -16,7 +16,7 @@ using Size = SomeEngine.Layout.Size;
 
 namespace SomeEngine.RenderGraph.Tests;
 
-public sealed class CanvasCompositionTests
+public sealed partial class CanvasCompositionTests
 {
     [Theory]
     [InlineData(false, false)]

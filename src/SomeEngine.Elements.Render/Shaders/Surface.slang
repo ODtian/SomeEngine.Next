@@ -14,6 +14,7 @@ struct SurfaceVertex
     float4 Position : SV_Position;
     float2 CanvasPosition : TEXCOORD0;
     nointerpolation uint Instance : TEXCOORD1;
+    float2 LocalPosition : TEXCOORD2;
 };
 
 [shader("vertex")]
@@ -21,7 +22,7 @@ SurfaceVertex vertexMain(uint vertex : SV_VertexID, uint instance : SV_InstanceI
 {
     const float2 corners[6] = { float2(0, 0), float2(1, 0), float2(0, 1),
         float2(0, 1), float2(1, 0), float2(1, 1) };
-    uint start = instance * 112;
+    uint start = instance * 144;
     float4 rectangle = asfloat(Instances.Load4(start));
     float4 shadow = asfloat(Instances.Load4(start + 80));
     float3 shadowShape = asfloat(Instances.Load3(start + 96));
@@ -35,9 +36,13 @@ SurfaceVertex vertexMain(uint vertex : SV_VertexID, uint instance : SV_InstanceI
         maximum = max(maximum, rectangle.xy + rectangle.zw + shadowShape.xy + blur + margin);
     }
     float2 position = lerp(minimum, maximum, corners[vertex]);
+    float4 matrix = asfloat(Instances.Load4(start + 112));
+    float2 translation = asfloat(Instances.Load2(start + 128));
+    float2 presented = position.x * matrix.xy + position.y * matrix.zw + translation;
     SurfaceVertex result;
-    result.Position = mul(float4(position, 0, 1), Canvas.ClipTransform);
-    result.CanvasPosition = position;
+    result.Position = mul(float4(presented, 0, 1), Canvas.ClipTransform);
+    result.CanvasPosition = presented;
+    result.LocalPosition = position;
     result.Instance = instance;
     return result;
 }
@@ -52,7 +57,7 @@ float measureRectangleDistance(float2 position, float4 rectangle, float radius)
 [shader("fragment")]
 float4 pixelMain(SurfaceVertex vertex) : SV_Target0
 {
-    uint start = vertex.Instance * 112;
+    uint start = vertex.Instance * 144;
     float4 rectangle = asfloat(Instances.Load4(start));
     float4 fill = asfloat(Instances.Load4(start + 16));
     float4 border = asfloat(Instances.Load4(start + 32));
@@ -60,8 +65,9 @@ float4 pixelMain(SurfaceVertex vertex) : SV_Target0
     float2 shape = asfloat(Instances.Load2(start + 64));
     float4 shadow = asfloat(Instances.Load4(start + 80));
     float3 shadowShape = asfloat(Instances.Load3(start + 96));
-    float2 position = vertex.CanvasPosition;
-    if (any(position < clipRectangle.xy) || any(position >= clipRectangle.xy + clipRectangle.zw) ||
+    float2 position = vertex.LocalPosition;
+    if (any(vertex.CanvasPosition < clipRectangle.xy) ||
+        any(vertex.CanvasPosition >= clipRectangle.xy + clipRectangle.zw) ||
         any(rectangle.zw <= 0)) discard;
 
     float2 halfSize = rectangle.zw * 0.5;
@@ -83,6 +89,7 @@ float4 pixelMain(SurfaceVertex vertex) : SV_Target0
             : saturate(0.5 - shadowDistance / shadowPixelWidth);
         shadowAlpha = shadow.a * coverage * (1 - surfaceAlpha);
     }
+    float alpha = asfloat(Instances.Load(start + 136));
     return float4(fill.rgb * fillAlpha + border.rgb * borderAlpha + shadow.rgb * shadowAlpha,
-        surfaceAlpha + shadowAlpha);
+        surfaceAlpha + shadowAlpha) * alpha;
 }

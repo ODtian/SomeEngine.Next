@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -17,4 +18,7 @@ public readonly record struct SurfaceInstance(
     uint Version) : IBufferElement
 {
     public DropShadow Shadow { get; init; }
+    /// <summary>Transforms canvas-coordinate rectangle points by the caller transform and presentation offset.</summary>
+    public Matrix3x2 Matrix { get; init; } = Matrix3x2.Identity;
+    public float Alpha { get; init; } = 1;
 }

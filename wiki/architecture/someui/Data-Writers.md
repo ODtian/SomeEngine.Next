@@ -38,8 +38,11 @@
 | `Canvas`（目标、尺寸、缩放） | 应用 |
 | `ShapedText` | 排版系统 |
 | `BuildError` | 视图重建系统 |
-| 动画通道的基准值（`BaseValue<T>`） | 调用方（经 `.Animate` 或 `PropertyAnimation.To`） |
-| 动画通道的呈现值、`PresentationOffset` | 属性动画的求值或合成系统 |
+| `ElementTransform`、FLIP 的运动设置（`FlipSettings`） | 调用方作用域，或应用经 `Flip.Enable(World, ...)` 声明 |
+| FLIP 的前帧布局、用户矩阵与透明度（`FlipFrame`） | `FlipSystem` |
+| 动画通道的基准值（`BaseValue<T>`） | 调用方；声明式提交经 `.Animate`，直接驱动经 `PropertyAnimation.SetBase` |
+| 动画通道的呈现值 | 属性动画的求值或合成系统 |
+| `PresentationOffset` | FLIP 与属性动画共同执行的呈现阶段：FLIP 写反向初值，属性动画将它求值回单位值 |
 | `Timeline`、`Track<T>`、`Contribution<T>` | 属性动画 API 与系统 |
 | `AnimationLayers` 的权重 | 调用方，或动画它的属性动画系统 |
 
@@ -52,6 +55,9 @@
 修饰与属性绑定沿同一个入口写入。行为数据通过 `Scope.Ensure<T>` 声明，
 由对应系统继续持有写入职责。具体提交与版本规则见
 [[architecture/someui/Build-Scope|Build Scope]]。
+
+动画字段的基准值和呈现值在提交接缝分开；其它字段沿普通比较提交。
+声明、目标提交与失败构建的行为见 [[architecture/someui/Animation|SomeUI Animation]]。
 
 文本样式默认字段通过最近祖先的 `TextTheme` 环境读取取得，
 排版系统沿布局测量约束维护 `ShapedText`；具体读取、提交和版本规则见
