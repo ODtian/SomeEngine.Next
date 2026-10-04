@@ -253,6 +253,57 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
     }
 
     [Theory]
+    [InlineData(-.1f, 0.0f, 1.0f)]
+    [InlineData(.1f, 0.0f, 1.0f)]
+    [InlineData(-.1f, .0001f, 0.0f)]
+    [InlineData(.1f, .0001f, 0.0f)]
+    public void SlopedReceiversPreserveVisibilityAcrossMissingFinePages(
+        float depthGradient, float occluderSeparation, float expectedVisibility)
+    {
+        uint[] view = CreateView(0);
+        uint[] pages = new uint[21 * 4];
+        pages[0] = 1;
+        pages[3] = 7;
+        pages[20 * 4] = 2;
+        pages[20 * 4 + 3] = 7;
+        uint[] pixels = new uint[512 * 128];
+        for (int y = 0; y < 128; y++)
+        for (int x = 0; x < 128; x++)
+        {
+            float fineDepth = .5f + (((x + .5f) / 512) - .25f) * depthGradient - occluderSeparation;
+            float coarseDepth = .5f + (((x + .5f) / 128) - .25f) * depthGradient - occluderSeparation;
+            pixels[y * 512 + x] = BitConverter.SingleToUInt32Bits(1 - fineDepth);
+            pixels[y * 512 + 128 + x] = BitConverter.SingleToUInt32Bits(1 - coarseDepth);
+        }
+        uint[][] result = ExecuteSource("""
+            #include "vsm_sampling.slang"
+            StructuredBuffer<VirtualShadowMapParameters> Views;
+            StructuredBuffer<uint4> Pages;
+            Texture2D<uint> Atlas;
+            StructuredBuffer<float> Gradient;
+            RWStructuredBuffer<float> Result;
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void SampleSlopedReceiver()
+            {
+                VirtualShadowMapParameters view = Views[0];
+                view.VirtualResolution = 512u;
+                view.MipLevelCount = 3u;
+                view.DepthBias = 0.00002;
+                float2 uv = float2(127.75 / 512.0, 64.5 / 512.0);
+                float depth = 0.5 + (uv.x - 0.25) * Gradient[0];
+                float3 world = float3(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth);
+                Result[0] = SampleVirtualShadowMapFiltered(view, Pages, Atlas, world,
+                    0u, 8u, 16u, 4.0, 8.0, float2(Gradient[0], 0.0));
+            }
+            """, "SampleSlopedReceiver", new(1, 1, 1),
+            [(view, ResourceBindingType.BufferSrv, 176), (pages, ResourceBindingType.BufferSrv, 16),
+             ([BitConverter.SingleToUInt32Bits(depthGradient)], ResourceBindingType.BufferSrv, 4),
+             (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2));
+        Assert.Equal(expectedVisibility, BitConverter.UInt32BitsToSingle(result[0][0]));
+    }
+
+    [Theory]
     [InlineData(1u)]
     [InlineData(2u)]
     public void LocalLightFallbackCoversAllProjectionCorners(uint lightKind)

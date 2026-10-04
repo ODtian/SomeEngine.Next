@@ -7,7 +7,7 @@ struct RayShadowInputs
     uint Height;
     float3 LightPosition;
     uint LightKind;
-    float NormalBias;
+    float Padding0;
     float NearPlane;
     float FarPlane;
     float Padding;
@@ -99,6 +99,22 @@ float3 TransformRayTangent(float3 tangent, float3 normal, float3x3 objectToWorld
     return normalize(transformed - normal * dot(normal, transformed));
 }
 
+float OffsetRayCoordinate(float position, float normal)
+{
+    // Ray Tracing Gems, chapter 6, section 6.2.2: geometric-normal ULP offset.
+    // https://github.com/Apress/ray-tracing-gems/tree/master/Ch_06_A_Fast_and_Robust_Method_for_Avoiding_Self-Intersection
+    if (abs(position) < 0.03125)
+        return position + normal * 0.0000152587890625;
+    int steps = int(normal * 256.0);
+    return asfloat(asint(position) + (position < 0.0 ? -steps : steps));
+}
+
+float3 OffsetRayPosition(float3 position, float3 normal)
+{
+    return float3(OffsetRayCoordinate(position.x, normal.x),
+        OffsetRayCoordinate(position.y, normal.y), OffsetRayCoordinate(position.z, normal.z));
+}
+
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
@@ -111,8 +127,9 @@ void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
     RayDesc primary;
     primary.Origin = Inputs.CameraPosition;
     primary.Direction = normalize(nearWorld.xyz / nearWorld.w - primary.Origin);
-    primary.TMin = Inputs.NearPlane;
-    primary.TMax = Inputs.FarPlane;
+    primary.TMin = length(nearWorld.xyz / nearWorld.w - primary.Origin);
+    float4 farWorld = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 1.0, 1.0), Inputs.ClipToWorld);
+    primary.TMax = length(farWorld.xyz / farWorld.w - primary.Origin);
     RayQuery<RAY_FLAG_NONE> camera;
     camera.TraceRayInline(Scene, RAY_FLAG_NONE, 255u, primary);
     while (camera.Proceed())
@@ -129,6 +146,11 @@ void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
     float3 weights = float3(1.0 - bary.x - bary.y, bary);
     float3x3 worldToObject = (float3x3)camera.CommittedWorldToObject3x4();
     float3x3 objectToWorld = (float3x3)camera.CommittedObjectToWorld3x4();
+    float3 position = mul(camera.CommittedObjectToWorld3x4(),
+        float4(a.Position + bary.x * (b.Position - a.Position) + bary.y * (c.Position - a.Position), 1.0));
+    float3 geometricNormal = normalize(cross(mul(objectToWorld, b.Position - a.Position),
+        mul(objectToWorld, c.Position - a.Position)));
+    if (dot(geometricNormal, -primary.Direction) < 0.0) geometricNormal = -geometricNormal;
     float3 normalA = TransformRayNormal(a.Normal, worldToObject);
     float3 normalB = TransformRayNormal(b.Normal, worldToObject);
     float3 normalC = TransformRayNormal(c.Normal, worldToObject);
@@ -143,15 +165,20 @@ void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
     float3 normalTs = SampleTexels(geometry.NormalStart, geometry.NormalWidth, geometry.NormalHeight, texCoord).rgb * 2.0 - 1.0;
     normalTs.xy *= geometry.NormalScale;
     normal = normalize(worldTangent * normalTs.x + cross(normal, worldTangent) * handedness * normalTs.y + normal * normalTs.z);
-    float3 position = primary.Origin + primary.Direction * camera.CommittedRayT();
     float3 toLight = Inputs.LightKind == 0u ? -Inputs.LightDirection : Inputs.LightPosition - position;
-    if (dot(normal, -primary.Direction) <= 0.0 || dot(normal, normalize(toLight)) < 0.15) return;
+    uint shadingRejected = all(isfinite(normal)) && dot(normal, -primary.Direction) > 0.0 &&
+        dot(normal, normalize(toLight)) >= 0.15 ? 0u : 4u;
+    if (dot(geometricNormal, normalize(toLight)) < 0.15)
+    {
+        Visibility[output] = 2u | shadingRejected;
+        return;
+    }
 
     RayDesc shadow;
-    shadow.Origin = position + normal * Inputs.NormalBias;
+    shadow.Origin = OffsetRayPosition(position, geometricNormal);
     toLight = Inputs.LightKind == 0u ? -Inputs.LightDirection : Inputs.LightPosition - shadow.Origin;
     shadow.Direction = normalize(toLight);
-    shadow.TMin = 0.0001;
+    shadow.TMin = 0.0;
     shadow.TMax = Inputs.LightKind == 0u ? 1000000.0 : length(toLight);
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> ray;
     ray.TraceRayInline(Scene, RAY_FLAG_NONE, 255u, shadow);
@@ -160,5 +187,9 @@ void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
             AlphaAccepts(ray.CandidateInstanceID(), ray.CandidateGeometryIndex(),
                 ray.CandidatePrimitiveIndex(), ray.CandidateTriangleBarycentrics()))
             ray.CommitNonOpaqueTriangleHit();
-    Visibility[output] = ray.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0u : 1u;
+    bool blocked = ray.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
+    bool selfHit = blocked && ray.CommittedInstanceID() == camera.CommittedInstanceID() &&
+        ray.CommittedGeometryIndex() == camera.CommittedGeometryIndex() &&
+        ray.CommittedPrimitiveIndex() == camera.CommittedPrimitiveIndex();
+    Visibility[output] = (blocked ? 0u : 1u) | shadingRejected | (selfHit ? 8u : 0u);
 }

@@ -28,6 +28,11 @@ internal sealed class RayShadowScene
     internal Instance[] Instances { get; }
 
     internal RayShadowScene(string source, bool sphereGrid)
+        : this(source, sphereGrid ? ShadowReferenceScene.Meshes("directional-grid", true)
+            .Select(value => Matrix4x4.CreateScale(value.Scale) * Matrix4x4.CreateTranslation(value.Position)).ToArray() : null)
+    { }
+
+    internal RayShadowScene(string source, Matrix4x4[]? transforms)
     {
         ModelRoot model = ModelRoot.Load(source);
         var vertices = new List<Vertex>();
@@ -58,12 +63,12 @@ internal sealed class RayShadowScene
                 var alpha = primitive.Material?.FindChannel("BaseColor");
                 var normal = primitive.Material?.FindChannel("Normal");
                 var alphaImage = ReadImage(alpha?.Texture?.PrimaryImage, (1u, 1u, 1u));
-                var normalImage = sphereGrid ? (0u, 1u, 1u) : ReadImage(normal?.Texture?.PrimaryImage, (0u, 1u, 1u));
+                var normalImage = transforms is not null ? (0u, 1u, 1u) : ReadImage(normal?.Texture?.PrimaryImage, (0u, 1u, 1u));
                 float cutoff = primitive.Material?.Alpha == AlphaMode.MASK
                     ? primitive.Material.AlphaCutoff / Math.Max(alpha?.Color.W ?? 1, 1e-8f) : -1;
                 geometries.Add(new(vertexStart, indexStart, alphaImage.Item1, alphaImage.Item2, alphaImage.Item3,
                     normalImage.Item1, normalImage.Item2, normalImage.Item3, cutoff,
-                    sphereGrid ? 1 : normal?.GetFactor("NormalScale") ?? 1));
+                    transforms is not null ? 1 : normal?.GetFactor("NormalScale") ?? 1));
                 ranges.Add(new(vertexStart, (uint)positions.Count, indexStart,
                     (uint)indices.Count - indexStart, cutoff < 0));
             }
@@ -75,9 +80,8 @@ internal sealed class RayShadowScene
         Indices = indices.ToArray();
         Geometries = geometries.ToArray();
         Texels = texels.ToArray();
-        Instances = sphereGrid
-            ? ShadowReferenceScene.Meshes("directional-grid", true).Select(value => new Instance(0,
-                Matrix4x4.CreateScale(value.Scale) * Matrix4x4.CreateTranslation(value.Position), meshStarts[0])).ToArray()
+        Instances = transforms is not null
+            ? transforms.Select(value => new Instance(0, value, meshStarts[0])).ToArray()
             : Node.Flatten(model.DefaultScene).Where(node => node.Mesh is not null).Select(node =>
             {
                 // The scene importer expresses each source node through QVVS.

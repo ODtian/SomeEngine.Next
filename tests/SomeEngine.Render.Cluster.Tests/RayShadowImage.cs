@@ -24,7 +24,7 @@ internal static class RayShadowImage
         internal uint Height;
         internal Vector3 LightPosition;
         internal uint LightKind;
-        internal float NormalBias;
+        internal float Padding0;
         internal float NearPlane;
         internal float FarPlane;
         internal float Padding;

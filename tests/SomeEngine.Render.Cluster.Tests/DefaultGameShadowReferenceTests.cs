@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using Xunit.Abstractions;
 
@@ -75,35 +74,13 @@ public sealed class DefaultGameShadowReferenceTests(ITestOutputHelper output)
 
     private async Task CaptureAsync(string application, string content, string image, bool shadows, string light)
     {
-        var start = new ProcessStartInfo(application)
-        {
-            UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardOutput = true, RedirectStandardError = true,
-        };
         List<string> arguments = ["--test-scene", content, "--frames", "64", "--hidden-window", "--no-vsync",
             ShadowReferenceScene.HasMotion(light) ? "--dynamic-scene" : "--static-scene",
             "--fixed-step", "0.016666667", "--synchronous-frames", "--no-debug-ui",
             "--no-taa", "--no-async-compute", "--no-mesh-shaders",
             shadows ? "--vsm" : "--no-vsm", "--frame-output", image];
         if (!ShadowReferenceScene.UsesSoftwareRaster(light)) arguments.Add("--hardware-raster");
-        foreach (string argument in arguments) start.ArgumentList.Add(argument);
-        string command = application + " " + string.Join(" ", arguments.Select(argument => '"' + argument + '"'));
-        output.WriteLine(command);
-        using Process process = Process.Start(start)!;
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-        Task<string> stderr = process.StandardError.ReadToEndAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        try { await process.WaitForExitAsync(timeout.Token); }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync();
-            throw new TimeoutException($"DefaultGame exceeded the 60 second capture limit: {command}");
-        }
-        string text = $"{command}\nExitCode: {process.ExitCode}\n{await stdout}\n{await stderr}";
-        await File.WriteAllTextAsync(Path.ChangeExtension(image, ".log"), text);
-        Assert.True(process.ExitCode == 0, text);
-        Assert.True(File.Exists(image), $"DefaultGame must deliver the requested image: {image}");
+        await DefaultGameCapture.RunAsync(application, arguments, image, output);
     }
 
     private static string FindEngineDirectory()

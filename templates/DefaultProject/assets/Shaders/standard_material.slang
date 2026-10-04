@@ -4,7 +4,7 @@
 #include "material_interfaces.slang"
 #include "render_lighting.slang"
 #include "brdf.slang"
-#include "vsm_sampling.slang"
+#include "vsm_material.slang"
 #include "vsm_receiver_pixel.slang"
 
 StructuredBuffer<ClusteredLightGridParameters> LightingViews;
@@ -12,30 +12,6 @@ StructuredBuffer<GPULight> LightBuffer;
 StructuredBuffer<uint2> ClusteredLightGrid;
 StructuredBuffer<uint> LightIndexList;
 Texture2DArray<float4> LightingCookieAtlas;
-
-struct VirtualShadowSamplingUniforms
-{
-    uint ViewCount;
-    uint DirectionalLightCount;
-    uint DirectionalClipmapLevels;
-    uint PointLightCount;
-    uint PointLightBufferOffset;
-    uint PointViewOffset;
-    uint SpotLightCount;
-    uint SpotLightBufferOffset;
-    uint SpotViewOffset;
-    uint BlockerSampleCount;
-    uint FilterSampleCount;
-    float BlockerSearchRadiusTexels;
-    float MaxFilterRadiusTexels;
-    float NormalBias;
-};
-
-StructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;
-StructuredBuffer<uint4> VirtualShadowPageTable;
-Texture2D<uint> VirtualShadowAtlas;
-ConstantBuffer<VirtualShadowSamplingUniforms> VirtualShadowSampling;
-StructuredBuffer<float2> VirtualShadowDynamicResolutionBias;
 
 float EvaluateLightingCookie(GPULight light, float3 worldPosition)
 {

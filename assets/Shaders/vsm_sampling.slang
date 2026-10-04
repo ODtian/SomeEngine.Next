@@ -540,10 +540,12 @@ bool TryReadVirtualShadowDepthCached(
     Texture2D<uint> atlas,
     VirtualShadowFilterContext context,
     float2 uv,
-    out float storedDepth)
+    out float storedDepth,
+    out float2 texelCenter)
 {
     uint resolution = VirtualShadowMipResolution(parameters, context.MipLevel);
     uint2 pixel = min((uint2)(uv * float(resolution)), resolution - 1u);
+    texelCenter = (float2(pixel) + 0.5) / float(resolution);
     uint2 localPage = pixel >> firstbithigh(parameters.PageSize);
     if (context.Resident && all(localPage == context.LocalPage))
     {
@@ -555,7 +557,7 @@ bool TryReadVirtualShadowDepthCached(
         return true;
     }
     uint resolvedMip;
-    return TryReadVirtualShadowDepthAtOrCoarser(
+    bool resident = TryReadVirtualShadowDepthAtOrCoarser(
         parameters,
         pageTable,
         atlas,
@@ -563,6 +565,47 @@ bool TryReadVirtualShadowDepthCached(
         uv,
         storedDepth,
         resolvedMip);
+    resolution = VirtualShadowMipResolution(parameters, resolvedMip);
+    pixel = min((uint2)(uv * float(resolution)), resolution - 1u);
+    texelCenter = (float2(pixel) + 0.5) / float(resolution);
+    return resident;
+}
+
+bool TryReadVirtualShadowDepthCached(
+    VirtualShadowMapParameters parameters,
+    StructuredBuffer<uint4> pageTable,
+    Texture2D<uint> atlas,
+    VirtualShadowFilterContext context,
+    float2 uv,
+    out float storedDepth)
+{
+    float2 texelCenter;
+    return TryReadVirtualShadowDepthCached(parameters, pageTable, atlas,
+        context, uv, storedDepth, texelCenter);
+}
+
+bool TryReadVirtualShadowFilterDepth(
+    VirtualShadowMapParameters parameters,
+    StructuredBuffer<uint4> pageTable,
+    Texture2D<uint> atlas,
+    VirtualShadowFilterContext context,
+    uint2 pixel,
+    uint resolution,
+    bool insidePage,
+    uint2 atlasOrigin,
+    out float storedDepth,
+    out float2 texelCenter)
+{
+    if (insidePage)
+    {
+        uint2 atlasPixel = atlasOrigin + (pixel & (parameters.PageSize - 1u));
+        storedDepth = 1.0 - asfloat(atlas.Load(int3(atlasPixel, 0)));
+        texelCenter = (float2(pixel) + 0.5) / float(resolution);
+        return true;
+    }
+    return TryReadVirtualShadowDepthCached(
+        parameters, pageTable, atlas, context,
+        (float2(pixel) + 0.5) / float(resolution), storedDepth, texelCenter);
 }
 
 bool TryReadVirtualShadowFilterDepth(
@@ -576,14 +619,9 @@ bool TryReadVirtualShadowFilterDepth(
     uint2 atlasOrigin,
     out float storedDepth)
 {
-    if (insidePage)
-    {
-        uint2 atlasPixel = atlasOrigin + (pixel & (parameters.PageSize - 1u));
-        storedDepth = 1.0 - asfloat(atlas.Load(int3(atlasPixel, 0)));
-        return true;
-    }
-    return TryReadVirtualShadowDepthCached(
-        parameters, pageTable, atlas, context, float2(pixel) / float(resolution), storedDepth);
+    float2 texelCenter;
+    return TryReadVirtualShadowFilterDepth(parameters, pageTable, atlas, context,
+        pixel, resolution, insidePage, atlasOrigin, storedDepth, texelCenter);
 }
 
 float2 CalculateVirtualShadowReceiverDepthGradient(
@@ -668,16 +706,17 @@ float FilterVirtualShadowPage(
             0.0,
             float(filterResolution - 1u));
         float storedDepth;
+        float2 sampleCenter;
         bool resident = TryReadVirtualShadowFilterDepth(
             parameters, pageTable, atlas, context, samplePixel, filterResolution,
-            insidePage, atlasOrigin, storedDepth);
+            insidePage, atlasOrigin, storedDepth, sampleCenter);
         if (!resident)
         {
             blockerCount++;
             blockerDepthSum += max(ndc.z - max(parameters.DepthBias, 1e-5), 0.0);
         }
-        else if (VirtualShadowReceiverDepthAtTexel(ndc.z, uv, receiverDepthGradient,
-            samplePixel, filterResolution) > storedDepth + parameters.DepthBias)
+        else if (ndc.z + dot(sampleCenter - uv, receiverDepthGradient) >
+            storedDepth + parameters.DepthBias)
         {
             blockerCount++;
             blockerDepthSum += storedDepth;
@@ -704,12 +743,13 @@ float FilterVirtualShadowPage(
             0.0,
             float(filterResolution - 1u));
         float storedDepth;
+        float2 sampleCenter;
         if (TryReadVirtualShadowFilterDepth(
                 parameters, pageTable, atlas, context, samplePixel, filterResolution,
-                insidePage, atlasOrigin, storedDepth))
+                insidePage, atlasOrigin, storedDepth, sampleCenter))
         {
-            visibility += VirtualShadowReceiverDepthAtTexel(ndc.z, uv, receiverDepthGradient,
-                samplePixel, filterResolution) <= storedDepth + parameters.DepthBias ? 1.0 : 0.0;
+            visibility += ndc.z + dot(sampleCenter - uv, receiverDepthGradient) <=
+                storedDepth + parameters.DepthBias ? 1.0 : 0.0;
         }
     }
     return visibility / float(max(sampleCount, 1u));
