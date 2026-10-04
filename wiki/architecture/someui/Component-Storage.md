@@ -29,7 +29,8 @@
 声明 `IComponent` 或 `ISparseComponent`。
 
 参数新增和读取所需的内部泛型辅助方法采用 `struct` 约束，以支持这一编译期存储选择；
-ECS 的公开 `Add`、`Read`、`AddSparse` 和 `ReadSparse` 延续各自的组件接口约束。
+ECS 的公开 `Add`、`Replace`、`Read` 保留 `IComponent` 约束；`AddSparse`、`ReplaceSparse`、
+`ReadSparse`、`HasSparse` 保留 `ISparseComponent` 约束。
 视图构建从 ECS 取当前参数值，组件继续是参数数据的主要持有者。
 
 ## 参数更新的存储接入（#7）
@@ -39,6 +40,12 @@ ECS 的公开 `Add`、`Read`、`AddSparse` 和 `ReadSparse` 延续各自的组�
 整值替换沿已有写版本、索引与 hooks 路径执行；相等参数的静默覆盖更新实际值，
 并保留实体组件写版本与组件类型写版本。表格的已有索引在下次读取时取最新值。
 两种存储的写入都沿现有存储分离规则保持结构事务隔离。
+
+`Scope.Read`、`Write`、`ReadWrite`、`Ensure` 的公开 `struct` API 经 Views 使用这组可信内部入口。
+World 的公开入口与内部入口共用同一份 table 或 sparse 操作实现，包含既有写版本、访问范围、索引与 hooks。
+成功构建提交比较后的值；失败构建通过内部恢复入口还原旧值并撤回本次新增的数据。
+SwiftUI 的生成访问器通过公开 Scope API 核对视图，开发检查中的读取使用 `Untrack`。
+Elements 及之后的程序集继续从公开 Scope 或有组件接口约束的 World API 接入。
 
 ## 生成器的默认选择（#19）
 

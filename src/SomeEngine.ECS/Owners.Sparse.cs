@@ -82,7 +82,7 @@ internal sealed partial class Sparse
     }
 
     internal void Remove<T>(Entity entity)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _iteration.Throw();
         _entities.ThrowDead(entity);

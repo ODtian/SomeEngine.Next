@@ -9,6 +9,62 @@ namespace SomeEngine.Views.Tests;
 
 public sealed partial class BuildErrorTests
 {
+    [Fact]
+    public void FailedParentPreservesTheChildsUnconsumedParameterChange()
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new Content(1));
+        var first = new State<int>(3);
+        var second = new State<int>(7);
+        Entity root = Views.Spawn(frames.World, Entity.Null, new OutputGroup(source, first, second, false));
+        frames.Frame();
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        frames.World.Replace(child, new OutputChild(3, first, second, false));
+        frames.World.Replace(source, new Content(2));
+
+        frames.Frame();
+
+        Assert.Equal(3, frames.World.Read<OutputChild>(child).Value);
+        Assert.Equal(7, frames.World.Read<Display>(child).Value);
+        frames.Frame();
+        Assert.Equal(7, frames.World.Read<Display>(child).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedParentRestoresChildOutputAndItsPreviousDependencies(bool calculation)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity source = frames.World.CreateEntity(new Content(1));
+        var first = new State<int>(3);
+        var second = new State<int>(7);
+        Entity root = Views.Spawn(frames.World, Entity.Null, new OutputGroup(source, first, second, calculation));
+        frames.Frame();
+        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        frames.World.Replace(source, new Content(2));
+
+        frames.Frame();
+
+        Assert.Equal(1, frames.World.Read<OutputChild>(child).Value);
+        Assert.Equal(3, frames.World.Read<Display>(child).Value);
+        Assert.Equal(3, frames.World.ReadSparse<SparseDisplay>(child).Value);
+        Assert.False(frames.World.Has<AddedDisplay>(child));
+        Assert.False(frames.World.HasSparse<AddedSparseDisplay>(child));
+        Entity tip = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, child));
+        Assert.Equal("3", frames.World.Read<Text>(tip).Value);
+        frames.Frame();
+        Assert.Equal(3, frames.World.Read<Display>(child).Value);
+
+        first.Value = 9;
+        frames.Frame();
+
+        Assert.Equal(1, frames.World.Read<OutputChild>(child).Value);
+        Assert.Equal(9, frames.World.Read<Display>(child).Value);
+        Assert.Equal(9, frames.World.ReadSparse<SparseDisplay>(child).Value);
+        Assert.Equal("9", frames.World.Read<Text>(tip).Value);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -324,4 +380,48 @@ public sealed partial class BuildErrorTests
     }
 
     private readonly record struct Content(int Value) : IComponent;
+
+    private readonly record struct Display(int Value) : IComponent;
+    private readonly record struct SparseDisplay(int Value) : ISparseComponent;
+    private readonly record struct AddedDisplay(int Value) : IComponent;
+    private readonly record struct AddedSparseDisplay(int Value) : ISparseComponent;
+
+    private readonly record struct OutputGroup(Entity Source, State<int> First, State<int> Second, bool Calculation) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            int value = Scope.Read<Content>(Source).Value;
+            Scope.View(new OutputChild(value, First, Second, Calculation), 1);
+            if (value == 2)
+                throw new InvalidOperationException("output group failed");
+            return default;
+        }
+    }
+
+    private readonly record struct OutputChild(int Value, State<int> First, State<int> Second, bool Calculation) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            if (Value == 2)
+            {
+                Scope.Ensure<AddedDisplay>(Scope.Entity);
+                Scope.Ensure<AddedSparseDisplay>(Scope.Entity);
+            }
+            State<int> number = Value == 1 ? First : Second;
+            Entity text = Scope.View(new Text(""), 1);
+            if (Calculation)
+                Scope.Compute(() => Show(number, text));
+            else
+                Show(number, text);
+            return default;
+        }
+
+        private static void Show(State<int> number, Entity text)
+        {
+            int value = number.Value;
+            Scope.Write<Display>(Scope.Entity) = new Display(value);
+            Scope.Write<SparseDisplay>(Scope.Entity) = new SparseDisplay(value);
+            Scope.Write<Text>(text) = new Text(value.ToString());
+        }
+    }
 }
