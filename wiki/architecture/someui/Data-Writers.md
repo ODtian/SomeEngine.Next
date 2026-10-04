@@ -13,6 +13,7 @@
 | 环境数据（用户定义的主题等组件） | 调用方通过 `Entity.Provide` 写入 |
 | `ButtonTheme` | 调用方通过 `Entity.Provide` 写入，Button 读取最近提供者 |
 | `DialogTheme` | 调用方通过 `Entity.Provide` 写入，各复合部件读取最近提供者 |
+| `AccessibleRole`、`AccessibleName` | 内置节点由该视图的构建或内容解析计算写入；用户节点由声明 `.Accessible` 的计算写入，默认值与业务标签规则见 Accessibility |
 | `Clicks` | 输入阶段：`HitTestSystem` 的指针点击与 `FocusNavigationSystem` 的焦点确认；视图用 `Ensure<T>` 声明需要 |
 | `Hover` | `HitTestSystem`；视图用 `Ensure<T>` 声明需要 |
 | `Pressable`、`StopsPointer` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |

@@ -13,6 +13,7 @@ public record struct Button(string Label) : IView, ISparseComponent
 {
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.Button, Label);
         PressableFunctions.Pressable(Scope.Entity);
         ButtonTheme theme = Scope.ReadUp<ButtonTheme>();
         Hover hover = Scope.Read<Hover>(Scope.Entity);
