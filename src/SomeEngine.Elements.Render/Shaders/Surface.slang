@@ -3,6 +3,7 @@ struct CanvasData
     float2 Size;
     float Scale;
     float Padding;
+    float4x4 ClipTransform;
 };
 
 ByteAddressBuffer Instances;
@@ -23,10 +24,8 @@ SurfaceVertex vertexMain(uint vertex : SV_VertexID, uint instance : SV_InstanceI
     float4 rectangle = asfloat(Instances.Load4(instance * 80));
     float margin = 1 / Canvas.Scale;
     float2 position = rectangle.xy - margin + corners[vertex] * (rectangle.zw + 2 * margin);
-    float2 pixels = position * Canvas.Scale;
     SurfaceVertex result;
-    result.Position = float4(pixels.x * 2 / Canvas.Size.x - 1,
-        1 - pixels.y * 2 / Canvas.Size.y, 0, 1);
+    result.Position = mul(float4(position, 0, 1), Canvas.ClipTransform);
     result.CanvasPosition = position;
     result.Instance = instance;
     return result;
@@ -49,8 +48,9 @@ float4 pixelMain(SurfaceVertex vertex) : SV_Target0
     float radius = clamp(shape.x, 0, min(halfSize.x, halfSize.y));
     float2 corner = abs(position - rectangle.xy - halfSize) - halfSize + radius;
     float distance = length(max(corner, 0)) + min(max(corner.x, corner.y), 0) - radius;
-    float outer = saturate(0.5 - distance * Canvas.Scale);
-    float inner = saturate(0.5 - (distance + max(shape.y, 0)) * Canvas.Scale);
+    float pixelWidth = max(fwidth(distance), 0.000001);
+    float outer = saturate(0.5 - distance / pixelWidth);
+    float inner = saturate(0.5 - (distance + max(shape.y, 0)) / pixelWidth);
     float fillAlpha = fill.a * inner;
     float borderAlpha = border.a * (outer - inner);
     return float4(fill.rgb * fillAlpha + border.rgb * borderAlpha, fillAlpha + borderAlpha);
