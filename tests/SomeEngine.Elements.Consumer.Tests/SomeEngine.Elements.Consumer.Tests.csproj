@@ -10,6 +10,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/SomeEngine.Elements/SomeEngine.Elements.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Elements.Render/SomeEngine.Elements.Render.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Layout/SomeEngine.Layout.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Animation/SomeEngine.Animation.csproj" />

@@ -63,6 +63,14 @@ Surface 的字段、默认值和调用方写入规则见 [[architecture/someui/M
 以及引用这些层的消费者。带公钥的友元名称按程序集名称识别。
 发现向这些公开层授予内部访问的声明时，架构验收失败并列出声明来源与目标程序集。
 
+## Elements.Render 接入（#32）
+
+`SomeEngine.Elements.Render` 引用 Elements 与 Render，并通过底层公开 API 提供
+`SurfaceRenderExtractor`、`RenderCanvas` 与 `SurfaceInstance`。
+实例数据和增量提取规则由 [[architecture/someui/Render-Path|Render Path]] 维护。
+`SomeEngine.Elements.Render.Tests` 通过公开 API 验证其提取与缓冲行为。
+Elements 的外部消费者工程引用此程序集，现有程序集边界验收同时覆盖它及其传递依赖。
+
 ## 视图序列化（#66）
 
 界面节点参与 ECS 检查点和存档。应用先调用 `ViewSerialization.Register(registry)`，
