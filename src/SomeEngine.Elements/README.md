@@ -44,6 +44,18 @@ layout and preserves a held UI press until release.
 The external examples and shared behavior checks live in
 `tests/SomeEngine.Elements.Consumer.Tests`.
 
+`ButtonFunctions.Button(label)` declares a sparse `Button` view. Import
+`ButtonFunctions` statically to write `if (Button("OK").Clicked())` in a build.
+The button reads its own `Hover` and the nearest `ButtonTheme`, composes a Row
+with Surface and padding, and gives its Text the theme's text color. Font,
+size, and line height continue to come from `TextTheme`.
+
+Provide a `ButtonTheme` on an ancestor to style its entire subtree. Its writable
+properties are `Fill`, `HoverFill`, `PressedFill`, `TextColor`, `Padding`, and
+`CornerRadius`. The default value supplies a complete style; omitted properties
+use the button defaults and explicit transparent colors and zero spacing remain
+caller data. See Wiki `architecture/someui/Composition` for values and examples.
+
 `Text(string)` declares a text view. `Font`, `FontSize`, `TextColor`, and
 `LineHeight` write its caller-chosen `TextStyle` fields. The text view reads
 omitted fields from the nearest `TextTheme` through the public environment API.

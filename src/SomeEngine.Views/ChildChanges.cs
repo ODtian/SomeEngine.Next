@@ -21,6 +21,31 @@ internal sealed class ChildChanges
         if (!writes.Contains(copy)) writes.Add(copy);
     }
 
+    internal void CopyTo(ChildChanges changes, int firstData, int firstRemoval, int firstAnimation)
+    {
+        for (int index = firstData; index < _previousData.Count; index++)
+        {
+            IChildData data = _previousData[index];
+            data.Retain();
+            changes._previousData.Add(data);
+        }
+        for (int index = firstRemoval; index < _removedChildren.Count; index++)
+            changes._removedChildren.Add(_removedChildren[index]);
+        if (_animationWrites is { } writes)
+            for (int index = firstAnimation; index < writes.Count; index++)
+            {
+                writes[index].RetainAnimations();
+                changes.WriteAnimation(writes[index]);
+            }
+    }
+
+    internal void Clear()
+    {
+        _previousData.Clear();
+        _removedChildren.Clear();
+        _animationWrites?.Clear();
+    }
+
     internal void RememberOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) =>
         _previousData.Add(new ChildOrder(parent, children));
 
@@ -64,16 +89,27 @@ internal sealed class ChildChanges
     {
         for (int index = _previousData.Count - 1; index >= firstData; index--)
             _previousData[index].Restore(world);
+        if (_animationWrites is { } writes)
+            for (int index = writes.Count - 1; index >= firstAnimation; index--)
+                writes[index].RestoreAnimations(world);
         _previousData.RemoveRange(firstData, _previousData.Count - firstData);
         _removedChildren.RemoveRange(firstRemoval, _removedChildren.Count - firstRemoval);
         _animationWrites?.RemoveRange(firstAnimation, AnimationCount - firstAnimation);
     }
 
-    internal void ReleaseChildren(World world)
+    internal void CommitAnimations(World world, int firstAnimation)
     {
         if (_animationWrites is { } writes)
+            for (int index = firstAnimation; index < writes.Count; index++)
+                writes[index].CommitAnimations(world);
+    }
+
+    internal void ReleaseChildren(World world)
+    {
+        CommitAnimations(world, 0);
+        if (_animationWrites is { } writes)
             foreach (ComponentCopy copy in writes)
-                copy.CommitAnimations(world);
+                copy.CompleteAnimations();
         foreach (IChildData data in _previousData)
             data.Complete();
         foreach (Entity entity in _removedChildren)
@@ -83,6 +119,7 @@ internal sealed class ChildChanges
 
     private interface IChildData
     {
+        void Retain() { }
         void Restore(World world);
         void Complete() { }
     }
@@ -111,7 +148,9 @@ internal sealed class ChildChanges
 
         public void Restore(World world)
         {
-            world.OverwriteComponentData(entity, in value);
+            T restored = value;
+            AnimatedFields.PreservePresentation(world, entity, ref restored);
+            world.OverwriteComponentData(entity, in restored);
             world.OverwriteComponentData(entity, in _viewType);
             if (_buildRequested && !world.Has<BuildRequest>(entity))
                 world.AddTag<BuildRequest>(entity);
@@ -132,7 +171,11 @@ internal sealed class ChildChanges
         public void Restore(World world)
         {
             if (exists)
-                world.OverwriteComponentData(entity, in value);
+            {
+                T restored = value;
+                AnimatedFields.PreservePresentation(world, entity, ref restored);
+                world.OverwriteComponentData(entity, in restored);
+            }
             else if (world.HasComponentData<T>(entity))
                 world.DiscardComponentData<T>(entity);
         }
@@ -140,11 +183,18 @@ internal sealed class ChildChanges
 
     private sealed class ChildComputations(Entity entity, ComputationList? computations) : IChildData
     {
+        private int _buildCount = 1;
+        private bool _restored;
+
+        public void Retain() => _buildCount++;
+
         public void Restore(World world)
         {
             if (world.HasSparse<Computations>(entity))
             {
-                world.ReadSparse<Computations>(entity).List.ReleaseChildren();
+                ComputationList current = world.ReadSparse<Computations>(entity).List;
+                if (!ReferenceEquals(current, computations))
+                    current.ReleaseChildren();
                 if (computations is not null)
                     world.ReplaceSparse(entity, new Computations(computations));
                 else
@@ -152,9 +202,15 @@ internal sealed class ChildChanges
             }
             else if (computations is not null)
                 world.AddSparse(entity, new Computations(computations));
+            _restored = true;
+            Complete();
         }
 
-        public void Complete() => computations?.ReleaseChildren();
+        public void Complete()
+        {
+            if (--_buildCount == 0 && !_restored)
+                computations?.ReleaseChildren();
+        }
     }
 
     private sealed class ChildReads(Entity entity, Dependency[]? reads, ObjectDependencyList? objects) : IChildData

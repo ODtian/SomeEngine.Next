@@ -9,7 +9,7 @@ public static partial class Scope
     internal static void Animate<T>(Entity entity, Channel<T> channel, Spec spec) where T : unmanaged
     {
         ScopeData current = Current;
-        var copies = (current.Calculation ?? current).ComponentCopies;
+        var copies = current.ViewData.ComponentCopies;
         bool hasCopy = copies is not null && copies.TryGetValue((entity, channel.Component), out _);
         T value = hasCopy
             ? Unsafe.ReadUnaligned<T>(ref Unsafe.Add(ref copies![(entity, channel.Component)].Bytes, channel.Offset))

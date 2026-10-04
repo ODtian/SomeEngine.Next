@@ -20,6 +20,9 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerChecks.cs" Link="PointerChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerRoutingChecks.cs" Link="PointerRoutingChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/PressableFunctions.cs" Link="Rewrites/PressableFunctions.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs" Link="ButtonChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs" Link="Rewrites/Button.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs" Link="Rewrites/IconButton.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/FlexChecks.cs" Link="FlexChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/StackGridChecks.cs" Link="StackGridChecks.cs" />
     <ProjectReference Include="../../src/SomeEngine.Views.Compose/SomeEngine.Views.Compose.csproj" GlobalPropertiesToRemove="PublishAot" />

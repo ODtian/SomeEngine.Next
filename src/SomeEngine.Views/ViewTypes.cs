@@ -142,6 +142,8 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
 
     internal static void Build(World world, Entity entity, ulong frame, bool firstBuild)
     {
+        if (BuildQueue.For(world).Contains(entity))
+            return;
         ViewType viewType = world.Read<ViewType>(entity);
         if (viewType.RebuildRequired)
         {
@@ -172,20 +174,19 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
 
     private static void BuildContents(World world, Entity entity, ulong frame, in T view, uint parameterVersion)
     {
+        bool suspended = false;
         try
         {
             using var scope = Scope.Enter(world, entity, frame,
                 declaresChildren: T.Children == ChildSource.Build, dependenciesEnabled: T.Mode == BuildMode.Rerun);
-            view.Build().Complete();
-            scope.Complete();
-            if (world.HasSparse<BuildError>(entity))
-                world.RemoveSparse<BuildError>(entity);
+            scope.Finish(view.Build(), T.Mode == BuildMode.Rerun ? parameterVersion : null);
+            suspended = scope.IsSuspended;
         }
         catch (Exception exception)
         {
             BuildErrors.Record(world, entity, exception, frame, typeof(T));
         }
-        if (T.Mode == BuildMode.Rerun)
+        if (!suspended && T.Mode == BuildMode.Rerun)
         {
             if (world.Has<ParameterVersion>(entity))
                 world.Replace(entity, new ParameterVersion(parameterVersion));
