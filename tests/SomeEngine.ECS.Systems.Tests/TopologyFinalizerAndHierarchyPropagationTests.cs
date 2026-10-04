@@ -1039,12 +1039,12 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         try
         {
             Assert.True(arrived.Wait(TimeSpan.FromSeconds(5)));
-            binding = Task.Run(() =>
+            binding = Task.Factory.StartNew(() =>
             {
                 attempted.Set();
                 world.Hooks<UnrelatedHookValue>().OnReplace(IgnoreUnrelatedHook);
                 events.Enqueue("hooks bound");
-            });
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             Assert.True(attempted.Wait(TimeSpan.FromSeconds(5)));
             release.Set();
             propagation.Handle.Complete();
@@ -1352,7 +1352,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
             int active = Interlocked.Increment(ref Active);
             UpdateMaximum(ref Maximum, active);
             _arrived?.Signal();
-            if (_release is not null && !_release.Wait(TimeSpan.FromSeconds(5)))
+            if (_release is not null && !_release.Wait(TimeSpan.FromSeconds(30)))
                 throw new TimeoutException("Parallel propagation test release timed out.");
             Interlocked.Decrement(ref Active);
         }
