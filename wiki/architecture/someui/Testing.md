@@ -586,5 +586,80 @@ SHA-256 与既有同版本构建相等。Views 原生发布、启动与跨进程
 最后一轮复核完成后清理 59 个已核对的生成目录，包含复用的字体依赖、测试和 Views 原生产物。
 检查点临时文件由脚本清理，交付工作树保留源码与完整 Git 记录。
 
+## 应用接入功能验收（#42，2026-10-04）
+
+派发基线为 `f7f66815c02d0f46a577fe7f8ce06d4f8147e97a`。
+实现提交为 `6301cf4c`，公开数据名称整理为 `fabc038d`；
+交付前合入集成提交 `1fbce9ce094995af979e06b83da069d3f4e8cdde`，
+本节最终 Runtime 公共 API 与示例构建验证的源码提交为
+`c8ad9ed18f72dd44f4eb61941eaaa2c273c2808b`。
+
+公开接缝为 `WindowInput`、`GameFrameSystems.Describe/UpdateInput/UpdateViews`、
+`FrameStageDescription.SystemTypes`、`SurfacePanelExample.ClickCount/Resize`，
+以及普通 World 的组件、层级和文本读取入口。TDD 按输入、调度和计数面板逐项推进。
+按钮用例同时使用普通 World 和应用相同的 `WorldJobs(JobSystem.Default)` 配置。
+带 Job 的用例复现了依赖缓冲借用期间跨存储读取的问题；依赖来源复制与版本比较
+采用两个读取窗口后，两个配置均完成点击、显示更新与尺寸更新。
+
+`GameFrameTests` 从实际注册的公开描述核对 Wiki 顺序，并以动画后矩形验证用户界面系统、
+动画、布局与布局后扩展的执行关系。`WindowInputTests` 覆盖缩放画布上的主键、次键与中键，
+导航与重复确认、窗口失焦后的释放、滚轮单位转换、屏幕与世界画布隔离及游戏输入阶段的捕获数据。
+`CounterPanelTests` 通过可见文本验证点击后的计数与缩放后的保留。
+
+采用 Wiki 的动画 → 文本测量 → 布局 → FLIP → 提取顺序。
+`AddInterfaceSystem` 与 `AddFlipSystem` 提供对应位置的公开安装入口；#52 的 FLIP 实现
+沿布局后入口接入。输入与提取继续使用引擎现有 ECS 和 Game world → Rendering world 边界。
+窗口输入接入已交付的 #37、#39 公共入口，文字与输入法事件随 #41 的公共入口交付接入。
+
+### 命令与结果
+
+以下命令在本票工作树逐个工程执行。`Debug` 的四项视图相关回归及 `Release` 的
+Views、系统回归采用 `f04382e8` 的源码；该范围内本票触及的产品源码与上述最终提交相同。
+Runtime 的两种配置在公开数据命名整理与最后一次集成后重新执行。
+
+```powershell
+dotnet test tests/<工程>/<工程>.csproj -c <配置> --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false
+```
+
+| 工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Runtime.Tests | 27 | 27 |
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Layout.Tests | 95 | — |
+| SomeEngine.Elements.Consumer.Tests | 193 | — |
+| SomeEngine.Elements.Render.Tests | 17 | — |
+| SomeEngine.ECS.Systems.Tests | 298 | 298 |
+
+系统工程的既有 CS4014 诊断位于 `LifecycleClosureTests.cs:585`；两种配置均完成系统回归。
+
+```powershell
+dotnet run --project templates/DefaultProject/Game.Build/Game.Build.csproj -c Release --no-launch-profile -v quiet -p:UseSharedCompilation=false -p:BuildInParallel=false -- --project templates/DefaultProject --engine .
+dotnet build templates/DefaultProject/Game.App/Game.App.csproj -c Release --no-restore --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false
+./templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe
+git diff --check
+```
+
+内容构建从本项目源文件生成 67 项资产。最终示例构建退出码为 0，诊断为 0 个警告、0 个错误。
+真实窗口功能验收使用 `f04382e8eca29f12ae2d488e662cdab1a5400a68` 的 Release 示例，
+分辨率为 1280×720、DPI 为 1，默认 1024 小球场景。
+通过窗口消息注入鼠标移动、按下与释放，点击位置为 `(1100, 610)`，计数由 0 变为 1。
+F1 关闭调试窗口后，Down 与 Enter 将按钮计数变为 2；再次 F1 打开 ImGui，
+点击 `(41, 583)` 切换 `Animate scene` 复选框。应用完成 14606 帧后正常关闭，退出码为 0。
+截图通过平台的 F8 捕获入口取得，转换为保留像素的 PNG；本节记录这些操作的功能结果。
+
+### 界面证据
+
+[初始计数 0 与 ImGui 共存](images/someui-42-before.png)。
+鼠标点击后计数为 1：
+
+![鼠标点击后计数为 1，SomeUI 与 ImGui 共存](images/someui-42-clicked.png)
+
+[方向键与 Enter 确认后计数为 2，F1 已关闭调试窗口](images/someui-42-keyboard.png)。
+[F1 重新打开 ImGui，Animate scene 已切换，计数保留为 2](images/someui-42-debug.png)。
+
+截图文件与本节一同提交，供统一 PR 引用。
+验收结束后清理 98 个生成目录、67 个生成资产和原始 BMP 捕获文件；
+源码、构建输入与上述四张 PNG 交付证据保留在工作树中。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
