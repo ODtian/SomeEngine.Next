@@ -184,8 +184,11 @@ public sealed class AssetBlockBehaviorTests
             await using var opened = await files.OpenControlledAsync(read);
             Task<BlockTestText> acquisition = opened.GetBlockAsync<BlockTestText>().AsTask();
             await read.Started.Task.WaitAsync(CompletionTimeout);
+            var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var cancellationRegistration = read.ReadCancellation.Register(() => cancellationObserved.TrySetResult());
             Task firstClose = opened.DisposeAsync().AsTask();
             Task secondClose = opened.DisposeAsync().AsTask();
+            await cancellationObserved.Task.WaitAsync(CompletionTimeout);
             Assert.False(firstClose.IsCompleted);
             Assert.False(secondClose.IsCompleted);
             read.Continue.TrySetResult();
