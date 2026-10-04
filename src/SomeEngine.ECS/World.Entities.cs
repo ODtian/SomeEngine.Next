@@ -7,6 +7,19 @@ namespace SomeEngine.ECS;
 
 public partial class World
 {
+    /// <summary>Runs while the entity's components and parent links are still available.</summary>
+    /// <remarks>Handlers may update surviving entities through the ordinary World APIs.</remarks>
+    public event Action<World, Entity>? EntityDestroying;
+
+    private void NotifyEntityDestroying(Entity entity)
+    {
+        if (EntityDestroying is not { } release)
+            return;
+        _iteration.Throw();
+        _entities.ThrowDead(entity);
+        release(this, entity);
+    }
+
     /// <summary>创建空 entity（无组件）。</summary>
     public Entity CreateEntity()
     {
@@ -62,12 +75,14 @@ public partial class World
     internal void DestroyEntityImmediate(Entity entity)
     {
         using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
+        NotifyEntityDestroying(entity);
         _entities.DestroyNow(entity);
     }
 
     public void DestroyEntity(Entity entity)
     {
         using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
+        NotifyEntityDestroying(entity);
         _entities.Destroy(entity);
     }
 

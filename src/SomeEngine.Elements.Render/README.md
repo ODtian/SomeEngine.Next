@@ -50,3 +50,38 @@ current collection. Static frames preserve the buffer values and write versions.
 The public behavior checks live in `tests/SomeEngine.Elements.Render.Tests`.
 The existing Elements consumer architecture check also loads this assembly and
 its dependencies to verify public assembly access.
+
+Screen canvas drawing uses `SurfaceMaterial` and `CanvasRenderer`:
+
+```csharp
+using SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld, material, outputFormat);
+
+// After applying extraction, explicitly reconcile canvas membership and the target.
+canvases.ReconcileGraph(screenTarget);
+
+RenderGraphFrame frame = graph.BeginFrame();
+try
+{
+    canvases.UpdateFrame(ref frame);
+    frame.Execute(completions);
+}
+finally { frame.Dispose(); }
+```
+
+Provide a defined color target, such as the result of the scene's presentation pass.
+`TryGetPass(canvasEntity, out pass)` exposes a drawing pass for application ordering.
+Keep reconciliation between graph frames, and update drawing data once in each frame.
+Dispose the drawing renderer while its graph and RenderWorld are available; the graph
+retires its GPU resources after submitted work completes.
+
+The built-in shader generates instanced quads and interprets its own instance bytes.
+Static canvas frames reuse their instance buffers. Canvas size and scale are frame
+values, while canvas membership and target changes use explicit graph edits.
+Material pixel semantics and integration details are maintained in
+[`Render-Path`](../../wiki/architecture/someui/Render-Path.md).
+
+DefaultGame shows the panel through the test platform's `Surface panel` option.
+Runtime applications using the argument entry point can enable it with `--surface-panel`.
+Graph structure and D3D12/Vulkan pixel behavior are covered by
+`tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests.cs`.

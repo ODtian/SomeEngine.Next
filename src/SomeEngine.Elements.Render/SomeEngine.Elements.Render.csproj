@@ -7,6 +7,8 @@
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Elements/SomeEngine.Elements.csproj" />
     <ProjectReference Include="../SomeEngine.Render/SomeEngine.Render.csproj" />
+    <ProjectReference Include="../SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
+    <EmbeddedResource Include="Shaders/Surface.slang" />
   </ItemGroup>
 </Project>

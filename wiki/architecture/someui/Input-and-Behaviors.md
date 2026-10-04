@@ -92,5 +92,85 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext> { /* ... */ 
 [冒泡与子树悬停共用检查](../../../tests/SomeEngine.Elements.Consumer.Tests/PointerRoutingChecks.cs)、
 [用户重写](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/PressableFunctions.cs)。
 
+## 焦点与键盘、手柄导航实现（#39）
+
+以下公开类型位于 `SomeEngine.Elements`：
+
+```csharp
+public struct Focusable : IComponent { }
+public struct Focused : ISparseComponent { }
+public enum Direction : byte { Left, Right, Up, Down }
+public enum Key : byte { Left, Right, Up, Down, Enter, Space }
+public static class Keyboard
+{
+    public static void Key(World world, Key key, bool pressed);
+}
+public static class Gamepad
+{
+    public static void Navigate(World world, Direction direction);
+    public static void Confirm(World world);
+}
+public static class FocusFunctions
+{
+    public static Entity Focusable(Entity node);
+    public static bool Focused(this Entity node);
+}
+public enum FocusInputKind : byte { Key, Navigate, Confirm }
+public struct FocusInput : IBufferElement
+{
+    public FocusInputKind Kind;
+    public Key Key;
+    public bool Pressed;
+    public Direction Direction;
+}
+public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext> { /* ... */ }
+```
+
+应用在输入阶段调用 `Keyboard` 和 `Gamepad`，事件按注入顺序追加到 World 单例
+`InputCapture` 实体的 `FocusInput` 缓冲。首次输入或首次创建导航系统时建立默认单例和缓冲；
+应用也可以事先创建自己的单例。导航系统在下一次输入阶段领取并清空事件。
+`Key` 保存按下和释放两种变化；默认系统对每次 `pressed: true` 执行一次对应动作，
+`pressed: false` 保持当前焦点与点击计数。平台的重复按键通过再次注入按下事件表达。
+方向键执行导航，`Enter` 与 `Space` 执行确认。有效 World、已定义的键与方向，以及
+每个 World 的单例数量要求通过 Core `DevelopmentCheck` 检查。
+
+将 `FocusNavigationSystem` 与 `HitTestSystem` 注册在游戏输入之前，随后运行
+`ViewRebuildSystem` 和 `LayoutSystem`。两个输入系统共享 `InputCapture`，分别写入
+`Keyboard` 和 `Pointer`。默认导航系统使 `Keyboard` 表示当前 World 持有界面焦点。
+游戏系统在自己的输入阶段通过公开查询读取这份数据。
+
+默认导航使用上一帧完成的布局。在当前焦点所在的画布内，按候选矩形中心相对当前中心
+的方向筛选：左右使用 X 的大小，上下使用 Y 的大小。候选中选择中心距离最近的节点，
+等距时选择实体编号较小者；方向边界保持当前焦点。首次方向输入按中心 Y、中心 X、
+实体编号的顺序选择左上方节点。每个 World 至多一个节点带 `Focused`，各 World 独立维护。
+普通布局节点使用自己的 `LayoutRect`；布局透明的组合视图使用同一画布内子内容矩形的
+包围矩形，焦点继续写在声明 `Focusable` 的组合节点上。
+
+确认输入递增当前焦点节点的 `Clicks.Count`，读取与消费继续沿用上面的 `Clicked()`。
+同帧的导航与确认严格按缓冲顺序执行，因此确认作用于它之前的导航结果。
+`FocusFunctions.Focusable(node)` 用 `Scope.Ensure` 声明 `Focusable` 和 `Clicks`，
+并返回原节点。`node.Focused()` 通过 `Scope.Has<Focused>` 读取 sparse 标记并登记存在性依赖，
+取得与失去焦点都使调用方计算更新。
+
+导航系统通过公开的 `World.EntityDestroying` 接入实体释放边界，在实体组件与父链接仍可读取
+时检查 `Focused`，沿当时的 `ElementTree` 父链找到最近的 `Focusable` 祖先，并将标记转移到它。
+父链的终点使焦点清空。视图重建释放和 `World.DestroyEntity`、
+`Hierarchy<ElementTree>.DestroySubtree` 共用这一边界；子树按后序释放时，焦点逐层转移到存活
+的可聚焦祖先。当前节点的 `Focusable` 被移除时，下一次导航阶段执行相同的祖先转移规则。
+释放时同步更新 `InputCapture.Keyboard`，每帧直接读取 ECS 中的焦点与父链。
+
+用户通过普通 `SystemGroup<ImmediateSystemContext>` 注册自己的输入系统，或禁用默认系统
+并注册自定义系统。自定义系统从同一个公开 `FocusInput` 缓冲领取事件，通过公开 World API
+写入 `Focused`、`Clicks` 与输入捕获，并实现自己的导航规则。
+
+实现：[焦点与输入数据](../../../src/SomeEngine.Elements/FocusComponents.cs)、
+[Keyboard](../../../src/SomeEngine.Elements/Keyboard.cs)、[Gamepad](../../../src/SomeEngine.Elements/Gamepad.cs)、
+[FocusFunctions](../../../src/SomeEngine.Elements/FocusFunctions.cs)、
+[FocusNavigationSystem](../../../src/SomeEngine.Elements/FocusNavigationSystem.cs)。
+公开验收：[FocusTests](../../../tests/SomeEngine.Elements.Consumer.Tests/FocusTests.cs)，
+共享检查与外部重写位于同一消费者工程，覆盖网格导航、确认消费、焦点读取依赖、
+祖先转移、清空、父链移动、布局透明组合、最近中心与上一帧布局、画布内导航、输入顺序、
+捕获字段、开发检查和调度中的自定义导航。同一组行为检查接入 `just views-aot win-x64` 的原生验收。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]
