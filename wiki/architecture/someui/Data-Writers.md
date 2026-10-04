@@ -12,7 +12,7 @@
 | 环境数据（用户定义的主题等组件） | 调用方通过 `Entity.Provide` 写入 |
 | `Clicks` | 输入阶段：`HitTestSystem` 的指针点击与 `FocusNavigationSystem` 的焦点确认；视图用 `Ensure<T>` 声明需要 |
 | `Hover` | `HitTestSystem`；视图用 `Ensure<T>` 声明需要 |
-| `Pressable` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
+| `Pressable`、`StopsPointer` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
 | `ClickSeen` | 调用方作用域通过 `Clicked()` 的 `Write<T>` 提交 |
 | 画布指针事件缓冲 | `Pointer` 的追加与领取入口 |
 | 画布的当前位置、各按钮按下状态与目标 | `HitTestSystem`；`Pointer` 首次输入时声明默认数据 |

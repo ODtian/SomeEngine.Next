@@ -2,11 +2,12 @@ using SomeEngine.ECS;
 
 namespace SomeEngine.Elements;
 
-/// <summary>Pointer hover and held-press state written by HitTestSystem.</summary>
+/// <summary>Pointer hover, held-press, and subtree state written by HitTestSystem.</summary>
 public struct Hover : IComponent
 {
     public bool Hovered;
     public bool Pressed;
+    public bool Within;
 }
 
 /// <summary>The number of pointer clicks and focus confirmations written by the input stage.</summary>
@@ -23,6 +24,9 @@ public struct ClickSeen : IComponent
 
 /// <summary>Declares that a node participates in pointer hit testing.</summary>
 public struct Pressable : IComponent;
+
+/// <summary>Ends pointer click bubbling at this node.</summary>
+public struct StopsPointer : IComponent;
 
 /// <summary>World-wide input consumption, read by game input systems.</summary>
 public struct InputCapture : IComponent
