@@ -31,7 +31,8 @@
 | `Focusable` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
 | `FocusInput` 缓冲 | `Keyboard` / `Gamepad` 追加键盘、字符、组合与手柄输入，调度中的焦点系统按顺序领取 |
 | `Focused` | 调度中的焦点系统，默认由 `FocusNavigationSystem` 写入和转移 |
-| `EditableText` | 输入阶段的 `TextEditingSystem`；调用方通过 `Ensure<T>` 声明并读取 |
+| `EditableText` | 文本编辑行为：输入阶段的 `TextEditingSystem` 应用输入，TextField 的参数计算同步变化的调用方文字；调用方通过 `Ensure<T>` 声明并读取 |
+| `SingleLineText` 标记 | TextField 或用户控件通过 `Ensure<T>` 声明 |
 | `EditSeen` | 调用方作用域通过 `Edited(out text)` 的 `Write<T>` 提交 |
 | 视图局部状态与 `Remember`/`[State]` 存储 | 该视图自己的构建 |
 | `LayoutRect`、`LayoutCache` | 布局系统 |

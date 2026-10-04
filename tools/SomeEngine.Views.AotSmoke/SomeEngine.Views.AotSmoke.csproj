@@ -53,6 +53,8 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DialogTitle.cs" Link="Rewrites/DialogTitle.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DialogFooter.cs" Link="Rewrites/DialogFooter.cs" />
 
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextFieldChecks.cs" Link="TextFieldChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/TextField.cs" Link="Rewrites/TextField.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ValueChecks.cs" Link="ValueChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ValueRangeChecks.cs" Link="ValueRangeChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ValueVolumeChecks.cs" Link="ValueVolumeChecks.cs" />

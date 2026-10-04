@@ -24,3 +24,6 @@ public struct EditSeen : IComponent
 {
     public uint Count;
 }
+
+/// <summary>Text input removes CR and LF, retaining a single editable line.</summary>
+public struct SingleLineText : IComponent { }

@@ -27,19 +27,29 @@ public static class TextEditingSystem
             "EditableText requires positions at complete text element boundaries.");
         if (input.Kind == FocusInputKind.Composition)
         {
-            if (value.Composition != input.Text || value.CompositionCaret != input.CompositionCaret)
+            string composition = input.Text!;
+            int compositionCaret = input.CompositionCaret;
+            if (world.Has<SingleLineText>(node))
             {
-                value.Composition = input.Text!;
-                value.CompositionCaret = input.CompositionCaret;
+                foreach (char character in composition.AsSpan(0, compositionCaret))
+                    if (character is '\r' or '\n')
+                        compositionCaret--;
+                composition = RemoveLineBreaks(composition);
+            }
+            if (value.Composition != composition || value.CompositionCaret != compositionCaret)
+            {
+                value.Composition = composition;
+                value.CompositionCaret = compositionCaret;
                 world.Replace(node, value);
             }
             return true;
         }
         if (input.Kind == FocusInputKind.Text)
         {
-            if (input.Text!.Length == 0)
+            string inserted = world.Has<SingleLineText>(node) ? RemoveLineBreaks(input.Text!) : input.Text!;
+            if (inserted.Length == 0)
                 return true;
-            ReplaceSelection(ref value, input.Text!);
+            ReplaceSelection(ref value, inserted);
             world.Replace(node, value);
             return true;
         }
@@ -83,6 +93,9 @@ public static class TextEditingSystem
         }
         return true;
     }
+
+    private static string RemoveLineBreaks(string text) =>
+        text.Replace("\r", string.Empty, StringComparison.Ordinal).Replace("\n", string.Empty, StringComparison.Ordinal);
 
     /// <summary>Ends a node's candidate presentation while preserving its committed text and selection.</summary>
     public static void CancelComposition(World world, Entity node)
