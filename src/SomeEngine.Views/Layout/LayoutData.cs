@@ -9,7 +9,7 @@ using SomeEngine.Views;
 namespace SomeEngine.Layout;
 
 /// <summary>Measurements and content-relative positions for the current canvas.</summary>
-internal sealed class LayoutData(World world)
+internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 {
     internal World World { get; } = world;
     private readonly List<NodeLayout> _nodes = new();
@@ -37,18 +37,23 @@ internal sealed class LayoutData(World world)
                 if (World.Has<ScrollOffset>(node.Entity))
                     UpdateScroll(in node);
                 _nodes[index] = node;
-                World.Replace(node.Entity, new LayoutRect
-                {
-                    Value = new Rect(node.Position.X, node.Position.Y, node.Size.Width, node.Size.Height),
-                });
+                WriteRect(node.Entity, new Rect(node.Position.X, node.Position.Y, node.Size.Width, node.Size.Height));
             }
-            World.Replace(canvas, new LayoutRect { Value = new Rect(0, 0, size.Width, size.Height) });
+            WriteRect(canvas, new Rect(0, 0, size.Width, size.Height));
+            foreach (ILayoutDataUpdate update in dataUpdates)
+                update.Complete(World);
         }
         finally
         {
             _nodes.Clear();
             _indices.Clear();
         }
+    }
+
+    private void WriteRect(Entity node, Rect rectangle)
+    {
+        if (World.Read<LayoutRect>(node).Value != rectangle)
+            World.Replace(node, new LayoutRect { Value = rectangle });
     }
 
     internal Size Measure(Entity node, in Constraints constraints, int parentIndex)
@@ -88,6 +93,8 @@ internal sealed class LayoutData(World world)
         var pass = new LayoutPass(this, node, index, Children(node), new Vector2(box.Padding.Left, box.Padding.Top));
         Constraints measuredConstraints = World.Has<ScrollOffset>(node)
             ? new Constraints(default, Size.Unbounded) : contentConstraints;
+        foreach (ILayoutDataUpdate update in dataUpdates)
+            update.Update(World, node, in measuredConstraints);
         Size size = ViewTypes.HasMeasure(World, node)
             ? ViewTypes.Measure(World, node, ref pass, in measuredConstraints)
             : MeasureScrollContent(ref pass, in measuredConstraints);
