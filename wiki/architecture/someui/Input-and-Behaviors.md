@@ -290,7 +290,7 @@ Ratio 是当前参数在范围内的比例，等值范围返回 0，供用户控
 
 虚拟键 Left、Right、Up、Down、Enter 和 Space 对应 `Keyboard.Key`，
 按下、释放及平台重复按下分别转接。文本与输入法的转接随 #41 公开入口交付接入。
-`Capture` 从 World 单例读取当前 `InputCapture`；在 `GameFrameSystems.UpdateInput`
+`WindowInput.InputCapture` 从 World 单例读取当前捕获数据；在 `GameFrameSystems.UpdateInput`
 之后，游戏摄像机将其与 ImGui 的捕获合并，分别控制键盘移动和鼠标旋转。
 
 公开验收：[WindowInputTests](../../../tests/SomeEngine.Runtime.Tests/WindowInputTests.cs)。

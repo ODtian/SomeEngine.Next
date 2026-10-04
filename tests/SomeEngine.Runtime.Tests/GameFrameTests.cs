@@ -27,12 +27,12 @@ public sealed partial class GameFrameTests
             FrameStage.ViewRebuild, FrameStage.InterfaceUpdate, FrameStage.Animation,
             FrameStage.TextMeasurement, FrameStage.Layout, FrameStage.Flip, FrameStage.Extraction,
         }, stages.Select(stage => stage.Stage));
-        Assert.Equal(new[] { typeof(HitTestSystem), typeof(FocusNavigationSystem) }, stages[1].Systems);
-        Assert.Equal(new[] { typeof(ViewRebuildSystem) }, stages[3].Systems);
-        Assert.Equal(typeof(TimelineSystem), stages[5].Systems[0]);
-        Assert.Equal(typeof(TimelineEndSystem), stages[5].Systems[^1]);
-        Assert.Equal(new[] { typeof(TextShapingSystem) }, stages[6].Systems);
-        Assert.Equal(new[] { typeof(LayoutSystem) }, stages[7].Systems);
+        Assert.Equal(new[] { typeof(HitTestSystem), typeof(FocusNavigationSystem) }, stages[1].SystemTypes);
+        Assert.Equal(new[] { typeof(ViewRebuildSystem) }, stages[3].SystemTypes);
+        Assert.Equal(typeof(TimelineSystem), stages[5].SystemTypes[0]);
+        Assert.Equal(typeof(TimelineEndSystem), stages[5].SystemTypes[^1]);
+        Assert.Equal(new[] { typeof(TextShapingSystem) }, stages[6].SystemTypes);
+        Assert.Equal(new[] { typeof(LayoutSystem) }, stages[7].SystemTypes);
     }
 
     [Fact]
@@ -54,8 +54,8 @@ public sealed partial class GameFrameTests
         frames.UpdateViews(0.5);
 
         Assert.Equal(new Rect(50, 0, 30, 40), world.Read<MeasuredRectangle>(result).Value);
-        Assert.Equal(new[] { typeof(ResizeElement) }, frames.Describe()[4].Systems);
-        Assert.Equal(new[] { typeof(ReadRectangle) }, frames.Describe()[8].Systems);
+        Assert.Equal(new[] { typeof(ResizeElement) }, frames.Describe()[4].SystemTypes);
+        Assert.Equal(new[] { typeof(ReadRectangle) }, frames.Describe()[8].SystemTypes);
     }
 
     private readonly record struct MovingElement() : IView, IComponent

@@ -822,7 +822,7 @@ internal static class RuntimeApplication
                     scene.Play(sceneSeconds, options.ScenePlayback is "materials" or "camera", animateMaterial,
                         orbitCamera: options.ScenePlayback == "camera");
                 ui.BeginFrame(deltaSeconds, width, height, window.DpiScale);
-                SomeEngine.Elements.InputCapture elementCapture = elementInput?.Capture ?? default;
+                SomeEngine.Elements.InputCapture elementCapture = elementInput?.InputCapture ?? default;
                 scene.Camera.Update(
                     input,
                     deltaSeconds,

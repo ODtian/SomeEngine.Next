@@ -22,9 +22,9 @@ public sealed partial class SurfacePanelExample : IDisposable
     private readonly Entity _canvas;
     private readonly Entity _view;
     private readonly Font _font;
-    private readonly State<int> _count = new(0);
+    private readonly State<int> _clickCount = new(0);
     public Entity AtlasSource { get; }
-    public int Count => _count.Value;
+    public int ClickCount => _clickCount.Value;
 
     public SurfacePanelExample(World world, int width, int height)
     {
@@ -36,7 +36,7 @@ public sealed partial class SurfacePanelExample : IDisposable
         _font = Font.Load(fontBytes.ToArray());
         AtlasSource = world.CreateEntity(new TextAtlas(new GlyphAtlas()));
         _canvas = world.CreateEntity(new Canvas { Size = new Size(width, height) });
-        _view = Views.Views.Spawn(world, _canvas, new PanelView(width, height, _font, _count));
+        _view = Views.Views.Spawn(world, _canvas, new PanelView(width, height, _font, _clickCount));
     }
 
     public void Resize(int width, int height)
@@ -44,7 +44,7 @@ public sealed partial class SurfacePanelExample : IDisposable
         Size size = new(width, height);
         if (_world.Read<Canvas>(_canvas).Size == size) return;
         _world.Replace(_canvas, new Canvas { Size = size });
-        _world.Replace(_view, new PanelView(width, height, _font, _count));
+        _world.Replace(_view, new PanelView(width, height, _font, _clickCount));
     }
 
     public void Dispose()
@@ -54,7 +54,7 @@ public sealed partial class SurfacePanelExample : IDisposable
         _font.Dispose();
     }
 
-    private readonly record struct PanelView(int Width, int Height, Font Font, State<int> Count) : IView, IComponent
+    private readonly record struct PanelView(int Width, int Height, Font Font, State<int> ClickCount) : IView, IComponent
     {
         public BuildTask Build()
         {
@@ -67,8 +67,8 @@ public sealed partial class SurfacePanelExample : IDisposable
                 Text("Hello SomeEngine").TextColor(new Color(0.12f, 0.7f, 0.86f));
                 Text("中文你好世界");
                 Entity button = FocusFunctions.Focusable(Button("Add one"));
-                if (button.Clicked()) Count.Value++;
-                Text($"Clicks: {Count.Value}");
+                if (button.Clicked()) ClickCount.Value++;
+                Text($"Clicks: {ClickCount.Value}");
             }
             return default;
         }

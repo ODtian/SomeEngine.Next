@@ -25,7 +25,7 @@ public sealed class WindowInput : IDisposable
     }
 
     /// <summary>The current game-world capture flags, after the interface input stage.</summary>
-    public InputCapture Capture
+    public InputCapture InputCapture
     {
         get
         {

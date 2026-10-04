@@ -29,11 +29,11 @@ public sealed class CounterPanelTests
         frames.UpdateInput();
         frames.UpdateViews(1d / 60);
 
-        Assert.Equal(1, panel.Count);
+        Assert.Equal(1, panel.ClickCount);
         FindText(world, "Clicks: 1");
         panel.Resize(960, 540);
         frames.UpdateViews(1d / 60);
-        Assert.Equal(1, panel.Count);
+        Assert.Equal(1, panel.ClickCount);
         FindText(world, "Clicks: 1");
     }
 

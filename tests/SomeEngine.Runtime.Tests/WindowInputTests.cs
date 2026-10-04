@@ -29,7 +29,7 @@ public sealed class WindowInputTests
 
         Assert.Equal(1u, world.Read<Clicks>(node).Count);
         Assert.True(world.Read<Hover>(node).Hovered);
-        Assert.True(input.Capture.Pointer);
+        Assert.True(input.InputCapture.Pointer);
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public sealed class WindowInputTests
 
         Assert.True(world.HasSparse<Focused>(node));
         Assert.Equal(3u, world.Read<Clicks>(node).Count);
-        Assert.True(input.Capture.Keyboard);
+        Assert.True(input.InputCapture.Keyboard);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class WindowInputTests
         Assert.False(world.Read<Hover>(node).Pressed);
         Assert.False(world.Read<Hover>(node).Hovered);
         Assert.Equal(0u, world.Read<Clicks>(node).Count);
-        Assert.False(input.Capture.Pointer);
+        Assert.False(input.InputCapture.Pointer);
     }
 
     [Fact]

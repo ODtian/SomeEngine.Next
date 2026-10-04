@@ -22,7 +22,7 @@ public enum FrameStage : byte
 }
 
 /// <summary>A frame stage and its registered systems; application boundaries have an empty system list.</summary>
-public readonly record struct FrameStageDescription(FrameStage Stage, IReadOnlyList<Type> Systems);
+public readonly record struct FrameStageDescription(FrameStage Stage, IReadOnlyList<Type> SystemTypes);
 
 /// <summary>Game-world interface systems, with input before simulation and layout before extraction.</summary>
 public sealed class GameFrameSystems : IDisposable
