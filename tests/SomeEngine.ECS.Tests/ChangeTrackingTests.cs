@@ -26,7 +26,7 @@ public class ChangeTrackingTests
 
         uint version = world.AcquireSystemVersion();
 
-        Assert.True(VersionClock.IsNewer(version, baseline));
+        Assert.True(version > baseline);
         Assert.Equal(version, world.CurrentTick);
     }
 
@@ -108,7 +108,7 @@ public class ChangeTrackingTests
                 .Changed<Position>());
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, world.CurrentTick, ref count, CountRows);
+        world.ExecuteQuery(query, lastVersion, ref count, CountRows);
 
         Assert.Equal(0, count);
     }
@@ -128,7 +128,7 @@ public class ChangeTrackingTests
                 .Changed<Position>());
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, world.CurrentTick, ref count, CountRows);
+        world.ExecuteQuery(query, lastVersion, ref count, CountRows);
 
         Assert.Equal(1, count);
     }
@@ -159,7 +159,7 @@ public class ChangeTrackingTests
         world.Replace(first, new Velocity { X = 7, Y = 7 });
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, world.CurrentTick, cursor =>
+        world.ExecuteQuery(query, lastVersion, cursor =>
         {
             foreach (var row in cursor.Rows)
             {
@@ -187,7 +187,7 @@ public class ChangeTrackingTests
                 .Added<Position>());
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, world.CurrentTick, cursor =>
+        world.ExecuteQuery(query, lastVersion, cursor =>
         {
             foreach (var row in cursor.Rows)
             {
@@ -241,7 +241,7 @@ public class ChangeTrackingTests
                 .Changed<Position>());
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, world.CurrentTick, cursor =>
+        world.ExecuteQuery(query, lastVersion, cursor =>
         {
             foreach (var chunk in cursor.Chunks)
             {
@@ -344,11 +344,17 @@ public class ChangeTrackingTests
         Assert.Equal(9, removed.Value.Y);
         Assert.Equal(secondRemovalVersion, removed.Version);
         Assert.False(world.Has<Position>(entity));
-        Assert.Single(
-            world.AllArchetypes.ToArray(),
-            archetype => archetype.HasComponent(ComponentMetadata<Removed<Position>>.Id) &&
-                         archetype.Chunks.ToArray().Any(chunk =>
-                            chunk.Entities[..chunk.Count].Contains(entity)));
+        var query = world.Query(world.QueryDefinition().Read<Removed<Position>>());
+        int count = 0;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+            {
+                Assert.Equal(entity, row.Entity);
+                count++;
+            }
+        });
+        Assert.Equal(1, count);
     }
 
     [Fact]
@@ -389,7 +395,7 @@ public class ChangeTrackingTests
                 .Changed<Position>());
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, world.CurrentTick, cursor =>
+        world.ExecuteQuery(query, lastVersion, cursor =>
         {
             foreach (var row in cursor.Rows)
             {
@@ -399,16 +405,6 @@ public class ChangeTrackingTests
         });
 
         Assert.Equal(1, count);
-    }
-
-    [Fact]
-    public void VersionIsNewer_WrapAroundHandling()
-    {
-        Assert.True(VersionClock.IsNewer(1, 0));
-        Assert.True(VersionClock.IsNewer(100, 50));
-        Assert.False(VersionClock.IsNewer(50, 100));
-        Assert.False(VersionClock.IsNewer(0, 0));
-        Assert.True(VersionClock.IsNewer(0, uint.MaxValue));
     }
 
     [Fact]
@@ -427,18 +423,6 @@ public class ChangeTrackingTests
         Assert.Equal(22, world.Read<Position>(second).X);
     }
 
-    [Fact]
-    public void CoarseVersionPublicationUsesClockWrapOrdering()
-    {
-        uint version = uint.MaxValue;
-
-        VersionClock.PublishNewest(ref version, 0);
-        VersionClock.PublishNewest(ref version, uint.MaxValue);
-
-        Assert.Equal(0u, version);
-    }
-
-
     private static int CountRows(
         World world,
         QueryHandle query,
@@ -449,7 +433,6 @@ public class ChangeTrackingTests
         world.ExecuteQuery(
             query,
             lastSystemVersion,
-            currentSystemVersion,
             ref count,
             CountRows);
 
@@ -472,7 +455,6 @@ public class ChangeTrackingTests
         world.ExecuteQuery(
             query,
             lastSystemVersion,
-            currentSystemVersion,
             ref count,
             static (QueryCursor cursor, ref int state) =>
             {

@@ -18,6 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="../Shared/TestSignal.cs" Link="TestSignal.cs" />
   </ItemGroup>
   <ItemGroup>
   </ItemGroup>
