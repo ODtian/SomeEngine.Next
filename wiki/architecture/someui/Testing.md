@@ -234,5 +234,31 @@ info 验收同时覆盖 Compose 与 SwiftUI，内容委托形状由编译诊断�
 在测试运行器和原生入口执行同一份检查。API 与默认主题由
 [[architecture/someui/Composition|Composition]] 维护。
 
+2026-10-04，本票实现提交 `7d0e472f0e053b38ae2779eb1f3c8785d9bc11e9`，
+验收源码提交 `09f57726f1987f569285577d1faa180ad160460e`，已合入集成分支提交
+`f72a355041cdecced3cb0778e50ed7fa08c987b3`。Windows x64，.NET SDK `10.0.112`，
+执行环境 `.NET 10.0.12`。
+
+公开 API 接入、主题读取、悬停配色与外部控件声明采用先红后绿流程。
+本票新增的行为组在 Debug 中包含 21 个用例，Release 中包含 18 个用例；
+三个开发作用域用例经 Core 的统一开发检查执行。
+下表各 `dotnet test` 命令同时使用
+`--nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Debug` | 68 通过 |
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Release` | 49 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Debug` | 94 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Release` | 74 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug` | 259 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release` | 230 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Debug` | 95 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Release` | 95 通过 |
+| `just views-aot win-x64` | 原生发布、三种按钮共享检查、现有视图检查、存档写入与读回通过，退出码 0 |
+
+NativeAOT 的 IL2026、IL3050 与 IL2070 诊断位于已有 `TraceCapture` 和
+`JobStorageTypeShape` 路径。本次验收的构建、原生产物及测试临时数据已清理。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
