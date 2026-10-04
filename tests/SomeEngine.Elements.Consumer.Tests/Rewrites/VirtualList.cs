@@ -14,6 +14,7 @@ public record struct VirtualList(float RowHeight) : IView, ISparseComponent, ILa
 
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.List, "");
         DevelopmentCheck.Require(float.IsFinite(RowHeight) && RowHeight > 0,
             "VirtualList.RowHeight requires a finite value greater than zero.");
         ScrollableFunctions.Scrollable(Scope.Entity);

@@ -56,6 +56,8 @@
 
 **复合部件**：组成复合控件的一组公开视图，由调用方拼装，例如 `Dialog`、`DialogTitle`、`DialogActions`。
 
+**无障碍角色与名称**（`AccessibleRole`、`AccessibleName`）：节点上的公开语义数据，角色表达控件或内容的用途，名称表达显示文字或业务标签。默认数据与用户修饰见 [Accessibility](wiki/architecture/someui/Accessibility.md)。
+
 **通道**（`Channel<T>`）：以组件编号加字节偏移定位的组件字段，属性动画通过它写目标字段。
 
 **时间线**（`Timeline`）：动画实例的时间状态，属性动画与姿势动画共用；启动与停止只切换启用位。

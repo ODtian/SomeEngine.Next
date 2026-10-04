@@ -31,6 +31,7 @@ public partial record struct TextField(string Text, string Placeholder = "") : I
             "TextField.Text requires a single-line string.");
         DevelopmentCheck.Require(field.Placeholder is not null && field.Placeholder.AsSpan().IndexOfAny('\r', '\n') < 0,
             "TextField.Placeholder requires a single-line string.");
+        Scope.Entity.Accessible(Role.TextField, field.Placeholder);
         return field.Text;
     }
 

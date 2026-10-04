@@ -43,6 +43,7 @@ public record struct Text(string Value) : IView, IComponent, ILayout
             value = formatted.Format(content.Value, provider);
         }
         content = new TextContent(value);
+        Scope.Entity.Accessible(Role.Text, value);
     }
 
     private static void ResolveStyle()

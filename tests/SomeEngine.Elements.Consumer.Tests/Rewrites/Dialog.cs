@@ -11,6 +11,7 @@ public record struct Dialog() : IView, ISparseComponent, ILayout
 
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.Dialog, "");
         DialogTheme theme = Scope.ReadUp<DialogTheme>();
         ref Surface surface = ref Scope.Write<Surface>(Scope.Entity);
         surface.Fill = theme.Fill;
