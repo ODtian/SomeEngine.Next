@@ -216,6 +216,65 @@ info 验收同时覆盖 Compose 与 SwiftUI，内容委托形状由编译诊断�
 原生验收产物在执行后清理。接口与节点规则见
 [[architecture/someui/Compose-Frontend|Compose Frontend]]。
 
+## Button 与外部控件对等验收（#43）
+
+[ButtonTests](../../../tests/SomeEngine.Elements.Consumer.Tests/ButtonTests.cs)
+对内置 Button、[用户 Button](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs)
+和[用户 IconButton](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs)
+运行同一组公开行为用例。验收通过视图函数声明节点，通过 `Pointer` 注入输入并推进系统帧，
+读取公开的 Surface、Box、Text、ShapedText、Hover、Clicks 和调用方写出的点击显示数据。
+
+用例覆盖默认样式、标签与图标间距、非均匀内边距、子树主题更新、最近主题的完整默认值、
+显式透明颜色、零圆角与零内边距、悬停与按下颜色、按住后移出、区域外释放、连续读取点击、同帧多次
+点击的消费，以及修改标签与主题后的按下和点击保留。开发构建通过 Core 作用域检查报告
+构建使用错误。
+
+[ButtonChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs)
+和两个用户控件源文件由 Views NativeAOT 工程编译，点击消费、标签更新、主题与输入状态
+在测试运行器和原生入口执行同一份检查。API 与默认主题由
+[[architecture/someui/Composition|Composition]] 维护。
+
+2026-10-04，本票实现提交 `7d0e472f0e053b38ae2779eb1f3c8785d9bc11e9`，
+完整回归源码提交 `09f57726f1987f569285577d1faa180ad160460e`，已合入集成分支提交
+`f72a355041cdecced3cb0778e50ed7fa08c987b3`。Windows x64，.NET SDK `10.0.112`，
+执行环境 `.NET 10.0.12`。
+
+公开 API 接入、主题读取、悬停配色与外部控件声明采用先红后绿流程。
+本票新增的行为组在 Debug 中包含 21 个用例，Release 中包含 18 个用例；
+三个开发作用域用例经 Core 的统一开发检查执行。
+下表各 `dotnet test` 命令同时使用
+`--nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`。
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Debug` | 68 通过 |
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Release` | 49 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Debug` | 94 通过 |
+| `dotnet test tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj -c Release` | 74 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Debug` | 259 通过 |
+| `dotnet test tests/SomeEngine.Views.Tests/SomeEngine.Views.Tests.csproj -c Release` | 230 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Debug` | 95 通过 |
+| `dotnet test tests/SomeEngine.Views.Generators.Tests/SomeEngine.Views.Generators.Tests.csproj -c Release` | 95 通过 |
+| `just views-aot win-x64` | 原生发布、三种按钮共享检查、现有视图检查、存档写入与读回通过，退出码 0 |
+
+NativeAOT 的 IL2026、IL3050 与 IL2070 诊断位于已有 `TraceCapture` 和
+`JobStorageTypeShape` 路径。本次验收的构建、原生产物及测试临时数据已清理。
+
+最终输入联合回归源码提交 `538bd1d5488137786b6fb133c63fd4e30f0e493f`，
+包含集成提交 `3da0051c0116fb962997fa40d3f3a0c12803c257` 的点击冒泡与子树悬停。
+三种按钮沿当前命中系统运行，原生入口同时执行指针路由和按钮检查。
+公共 Views、Layout 与生成器的回归采用上表的完整回归结果；这些源码在输入合入时保持相同。
+
+| 命令 | 最终输入联合回归结果 |
+|---|---|
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Debug` | 75 通过 |
+| `dotnet test tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj -c Release` | 56 通过 |
+| `just views-aot win-x64` | 三种按钮、指针路由、现有视图行为与存档读写通过，退出码 0 |
+
+本轮字体原生依赖复用 #27 工作树的同版本产物；复用前以 SHA-256 核对
+`CMakeLists.txt`、`GlyphBitmap.c` 与 Typography 项目文件三个构建输入一致。
+本轮构建、原生产物与测试临时数据在验收后清理。
+
 ## 指针冒泡与子树悬停验收（#38）
 
 2026-10-04，Windows x64，.NET SDK `10.0.112`。

@@ -10,6 +10,7 @@
 | `TextStyle` 的显式样式字段 | 调用方作用域 |
 | `TextAppearance`（文本此次构建解析的完整样式） | `Text.Build` |
 | 环境数据（用户定义的主题等组件） | 调用方通过 `Entity.Provide` 写入 |
+| `ButtonTheme` | 调用方通过 `Entity.Provide` 写入，Button 读取最近提供者 |
 | `Clicks`、`Hover` | `HitTestSystem`；视图用 `Ensure<T>` 声明需要 |
 | `Pressable`、`StopsPointer` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
 | `ClickSeen` | 调用方作用域通过 `Clicked()` 的 `Write<T>` 提交 |
@@ -44,6 +45,10 @@
 文本样式默认字段通过最近祖先的 `TextTheme` 环境读取取得，
 排版系统沿布局测量约束维护 `ShapedText`；具体读取、提交和版本规则见
 [[architecture/someui/Text|Text]]。
+
+Button 的构建作为子 Row 和 Text 的调用方，写入 Row 的 `Surface`、`Box.Padding`
+以及 Text 的显式颜色。主题、布局、悬停和点击继续由表格中各自的写入方维护，
+组合规则与默认主题见 [[architecture/someui/Composition|Composition]]。
 
 ## Relations
 [[architecture/someui/Modifiers|Modifiers]] · [[architecture/someui/Composition|Composition]]

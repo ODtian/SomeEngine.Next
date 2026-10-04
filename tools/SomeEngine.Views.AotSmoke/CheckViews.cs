@@ -55,6 +55,10 @@ Console.WriteLine("Canvas pointer input, click bubbling, StopsPointer, subtree h
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(true);
 Console.WriteLine("Drag, scroll, selection and external behavior declarations passed.");
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.BuiltIn);
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);
+Console.WriteLine("Button themes, held presses, click consumption, label updates, and public user Button and IconButton passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
 Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
 
