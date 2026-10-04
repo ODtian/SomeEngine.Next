@@ -40,6 +40,7 @@ public sealed partial class HitTestSystem
         drag.Delta += delta;
         drag.Total += delta;
         _drags[press.DragNode] = drag;
+        ValueEditing.Drag(world, press.DragNode, in drag);
         AddScroll(world, press.DragNode, -delta);
     }
 

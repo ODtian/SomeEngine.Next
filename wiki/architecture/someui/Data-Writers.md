@@ -15,6 +15,10 @@
 | `Hover` | `HitTestSystem`；视图用 `Ensure<T>` 声明需要 |
 | `Pressable`、`StopsPointer` 标记 | 调用方作用域通过 `Ensure<T>` 声明 |
 | `ClickSeen` | 调用方作用域通过 `Clicked()` 的 `Write<T>` 提交 |
+| `ValueRange`、`ValueDrag` | 控件构建通过公开 `ValueDraggable` 写入调用方参数与拖动映射 |
+| `ValueEdit` | 输入阶段：HitTestSystem 的数值拖动与 FocusNavigationSystem 的键盘步进 |
+| `ValueEditSeen` | 调用方作用域通过 `Edited()` 的 `Write<T>` 提交 |
+| 数值手势起始值 | HitTestSystem 的数值拖动阶段，跟随该节点当前 Drag.Count |
 | `Drag`、`Selected` | `HitTestSystem` 的行为阶段；调用方通过 `Ensure<T>` 声明 |
 | `ScrollInput` | `HitTestSystem`，记录当帧滚轮与拖动产生的实际位移及输入计数 |
 | `ScrollOffset` | 布局系统，按当前内容与视口写入范围和受限偏移 |
