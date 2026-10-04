@@ -1,6 +1,7 @@
 using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
+using SomeEngine.Elements;
 using SomeEngine.Elements.Render;
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Validation;
@@ -68,7 +69,10 @@ public sealed partial class CanvasCompositionTests
         var matrix = new Matrix3x2(0, 1, -1, 0, 48, 0);
         world.ExecuteBufferWrite<SurfaceInstance>(canvas, values =>
             values.Add(new(Entity.Null, new Rect(4, 4, 8, 8), new Color(1, 0, 0), 0, default, 0, clip, 0, 1)
-            { Matrix = matrix, Alpha = 0.5f }));
+            {
+                Shadow = new DropShadow(new Color(0, 1, 0, 0.5f), new Vector2(0, 8), 0),
+                Matrix = matrix, Alpha = 0.5f,
+            }));
         world.ExecuteBufferWrite<GlyphInstance>(canvas, values =>
             values.Add(new(Entity.Null, 0, new Rect(4, 20, 8, 8), Vector2.Zero, Vector2.One,
                 new Color(0, 1, 0), new Rect(0, 0, 26, 64), 0, 1, 1)
@@ -120,6 +124,8 @@ public sealed partial class CanvasCompositionTests
             using MappedBuffer pixels = backend.Map(readback, MapType.Read, BufferRange.Whole);
             pixels.Invalidate(pixels.Range);
             Pixel(pixels.Bytes, 40, 8, index < 2 ? [128, 0, 0, 255] : [0, 0, 0, 255]);
+            Pixel(pixels.Bytes, 32, 8, index < 2 ? [0, 64, 0, 255] : [0, 0, 0, 255]);
+            Pixel(pixels.Bytes, 8, 16, index < 2 ? [0, 0, 0, 255] : [0, 128, 0, 255]);
             Pixel(pixels.Bytes, 24, 8, index < 2 ? [0, 128, 0, 255] : [0, 0, 0, 255]);
             Pixel(pixels.Bytes, 8, 8, index < 2 ? [0, 0, 128, 255] : [255, 0, 0, 255]);
             Pixel(pixels.Bytes, 8, 24, index < 2 ? [0, 0, 0, 255] : [0, 255, 0, 255]);

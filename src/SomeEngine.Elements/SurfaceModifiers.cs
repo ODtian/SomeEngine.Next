@@ -25,4 +25,10 @@ public static class SurfaceModifiers
         surface.BorderWidth = width;
         return entity;
     }
+
+    public static Entity Shadow(this Entity entity, in DropShadow shadow)
+    {
+        Scope.Write<Surface>(entity).Shadow = shadow;
+        return entity;
+    }
 }

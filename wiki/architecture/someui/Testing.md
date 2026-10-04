@@ -688,6 +688,104 @@ SHA-256 与既有同版本构建相等。Views 原生发布、启动与跨进程
 最后一轮复核完成后清理 59 个已核对的生成目录，包含复用的字体依赖、测试和 Views 原生产物。
 检查点临时文件由脚本清理，交付工作树保留源码与完整 Git 记录。
 
+## Dialog 复合部件与阴影验收（#47）
+
+2026-10-04，Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+画布集成验收提交 `e86d06122a163e29be7f2e6ae954a26107f2035e` 已合入集成提交
+`55cfda50379cedd4a0726bc627d260a8f3d9ee7f`。
+
+Dialog、DialogTitle、DialogActions、DialogTheme 与 TitledDialog 沿公开接口完成
+逐项红测与实现。`DialogTests` 通过公开视图声明、主题提供、World、ElementTree、
+Surface、ShapedText 与 LayoutRect 验证任意部件顺序、用户内容插入、标题省略、
+右对齐操作区、辅助函数与手写组合的一致性，以及返回作用域的父节点恢复。
+最近主题、完整默认值、显式透明颜色和零间距在同帧主题更新中共同验收。
+该组包含 Debug 24 项、Release 17 项，开发检查使用 Core 的统一作用域入口。
+
+[DialogChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/DialogChecks.cs) 将相同的
+主题、文本样式与布局结果应用于内置和用户 Dialog、DialogTitle、DialogFooter 的八种组合。
+用户版本位于外部消费者程序集，使用公开的视图、主题、Surface、Text 与 ILayout 接缝。
+调用方提供 Box 尺寸与内边距，容器 Build 写入自身的 Surface 和排列结果；
+该写入职责随主题更新、相同内容保留和内置/用户部件混合一起验收。
+组合语义与默认值见 [[architecture/someui/Composition|Composition]]，
+数据写入职责见 [[architecture/someui/Data-Writers|Data Writers]]。
+
+阴影像素用例先以预期半透明绿色像素完成红测，再实现 Surface 材质与 shader 绘制。
+集成统一画布提取者时，既有阴影送达用例再次报告红测；阴影数据随后接入
+CanvasRenderExtractor 的首次收集和增量更新，同一组创建、修改与清空验收对
+CanvasRenderExtractor、SurfaceRenderExtractor 两个公开入口均通过。
+`CanvasShadowTests` 在 D3D12 WARP 与 Vulkan 上启用引擎图形验证层并读回 RGBA，
+覆盖半透明颜色、柔化边缘、正负偏移、画布裁剪、参数更新、清空及表面对自身阴影的覆盖。
+混合绘制回归同时覆盖 Surface、文字、图片、世界空间投影和深度测试。
+渲染数据与材质语义见 [[architecture/someui/Render-Path|Render Path]]。
+
+各完整工程采用以下命令，两种配置分别执行：
+
+```powershell
+dotnet test tests/<项目>/<项目>.csproj -c <Debug|Release> --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj -c <Debug|Release> --filter 'FullyQualifiedName~CanvasDrawingTests|FullyQualifiedName~CanvasShadowTests|FullyQualifiedName~WorldCanvasDrawingTests|FullyQualifiedName~GlyphDrawingTests|FullyQualifiedName~ImageDrawingTests|FullyQualifiedName~CanvasCompositionTests' --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+```
+
+| 项目 / 接缝 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 257 | 184 |
+| SomeEngine.Elements.Render.Tests | 34 | 32 |
+| SomeEngine.Views.Solid.Tests | 50 | 46 |
+| 画布、阴影、世界空间、字形、图片与混合绘制 | 29 | 29 |
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Layout.Tests | 95 | 75 |
+| SomeEngine.Views.Generators.Tests | 162 | 162 |
+
+前四项完整结果基于 `e86d0612`。Views、Layout 与生成器的结果关联
+`a2ae537f750e50bb96c3c844ec6b64bf03a87689`；这三个工程的产品源码及用例与
+`e86d0612` 相同，保留相同源码对应的完整两种配置验收。
+
+原生共享入口执行内置、全用户版本及混合 Footer 三种 Dialog 组合，
+并沿现有 Views 冒烟入口运行已集成的视图、布局、文本、输入和各前端检查。
+原生验收命令为：
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+```
+
+上述三个原生命令基于 `e86d0612` 执行，退出码均为 0。检查点在第一个进程写入
+面板 ViewType.Id 1，第二个进程映射为 5，完成读回、下一帧重建与依赖更新。
+发布中的 IL2026、IL3050 与 IL2070 诊断位于 TraceCapture 与 JobStorageTypeShape。
+字体原生依赖复用 #27 的同版本产物，复用前以 SHA-256 核对 CMakeLists.txt、
+GlyphBitmap.c 与 Typography 项目文件三个构建输入一致。
+
+### 交付前应用输入与帧调度集成
+
+随后合入集成提交 `8c953fae65deb55d925043a1377ec48253744dc1`，
+形成代码提交 `27be30b7dfd0f6feb5faaee5157167217de7a229`。
+该集成将依赖来源收集与版本比较分为两个读取窗口，并接入窗口输入及应用帧阶段。
+Views、消费者、Runtime 和系统工程按上文完整工程命令重新执行两种配置；
+系统 Debug 还通过独立进程完成完整的并发与关闭验收：
+
+```powershell
+dotnet test tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -c Debug --no-build --no-restore --blame-hang --blame-hang-timeout 60s --blame-hang-dump-type none --results-directory TestResults/SystemDiagnostics --logger 'console;verbosity=normal' --nologo -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+```
+
+| 工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Elements.Consumer.Tests | 257 | 184 |
+| SomeEngine.Runtime.Tests | 30 | 30 |
+| SomeEngine.ECS.Systems.Tests | 298 | 298 |
+
+Runtime 的公开检查同时使用普通 World 与 Job World，观察输入、计数文本和布局更新。
+图形、Elements、Solid、Layout 与生成器产品源码及对应的图形、布局、生成器用例
+与本节前轮验收保持相同，继续关联上述相同源码的两种配置结果。
+运行时依赖 Alimer.Bindings 按仓库锁定提交 `8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4` 就位。
+
+基于 `27be30b7` 再次执行上述 NativeAOT 发布、入口运行与跨进程检查点命令，
+三个命令均退出码 0。共享入口再次通过内置、用户和混合 Dialog 组合，
+检查点完成类型编号 1 → 5 的重映射、下一帧重建与依赖更新。
+验证完成后逐一核对绝对路径和 Git 跟踪文件，清理本工作树内 92 个生成目录，
+包含 bin、obj、测试诊断目录、原生产物与复用的排版依赖；检查点文件由脚本清理。
+工作树保留源码、锁定构建输入和完整 Git 记录。
+
 ## 应用接入功能验收（#42，2026-10-04）
 
 派发基线为 `f7f66815c02d0f46a577fe7f8ce06d4f8147e97a`。
@@ -837,6 +935,67 @@ ECS 矩阵的原生文件 SHA-256 为
 本次发布日志与矩阵 JSON 在结果读取后清理；跨进程检查点由验证脚本在结束时清理。
 交付前按已核对的 30 个构建工程清理 60 个 bin / obj 生成目录，包含字体原生依赖、
 两种配置的测试结果及两个 NativeAOT 发布目录，验收记录和源码保存在本页与 Git 中。
+
+## Dialog 阴影与界面呈现集成验收（#47、#52）
+
+2026-10-04，Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+合入集成提交 `4d50853955d2bc830012947e270969529c741bfc`，形成代码提交
+`cb5f93897c8c1c85a39dffb8baac4bb86ea00426`。
+随后合入 `e5b481042212b475d80d0bae5ad9a71c229a4845` 的 TextField 与默认 FLIP 调度，
+形成最终代码验收提交 `4791c89ee2f1fcdd96e0eb22e284280e2ae5d186`。
+
+SurfaceInstance 同时保存 DropShadow、Matrix 与 Alpha，保留九参数构造和解构。
+CanvasRenderExtractor 在同一画布收集和增量更新中送达这些数据，SurfaceRenderExtractor
+继续作为同一提取者的公开入口。世界投影、场景深度与滚动裁剪沿既有路径维护。
+Surface、Glyphs、Image 分别由自己的材质和 shader 解释实例数据；对应实例字节数为
+144、96、80。Surface 先以自身覆盖率合成填充、描边及后方阴影，然后将完整预乘 RGBA
+乘呈现透明度；表面及扩展阴影范围共同应用呈现矩阵。
+数据规则见 [[architecture/someui/Render-Path|Render Path]]。
+
+`PresentationTransformsAndOpacityReachAllCanvasMaterials` 增加阴影与三种材质的组合像素。
+红测的四种后端/画布组合在 `(40, 8)` 读到黑色，预期为 `[128, 0, 0, 255]`；
+合并材质编码及 shader 后，同组全部通过。像素同时验证旋转后的阴影为半透明绿色，
+填充遮挡自身阴影、呈现透明度及静止/取消帧后的保留。
+
+[CanvasShadowAnimationTests](../../../tests/SomeEngine.RenderGraph.Tests/CanvasShadowAnimationTests.cs)
+从公开视图、`.Animate`、Flip.Enable、系统帧、Game world → Rendering world 提取、
+持久图与 RGBA 读回验证真实颜色动画、位置与透明度 FLIP、用户变换、滚动视口裁剪和世界深度。
+游戏暂停时，开始、重定目标、半程及完成四帧分别采样可见表面与阴影；
+世界画布再验证场景深度遮挡。两个后端和两种画布共四项用例，使用字面预期像素值。
+
+各完整工程两种配置采用以下命令，图形专项采用同一筛选范围：
+
+```powershell
+dotnet test tests/<工程>/<工程>.csproj -c <Debug|Release> --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj -c <Debug|Release> --filter 'FullyQualifiedName~CanvasDrawingTests|FullyQualifiedName~CanvasShadowTests|FullyQualifiedName~GlyphDrawingTests|FullyQualifiedName~ImageDrawingTests|FullyQualifiedName~CanvasCompositionTests' --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+```
+
+| 工程 / 接缝 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Render.Tests | 36 | 34 |
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Elements.Consumer.Tests | 309 | 226 |
+| SomeEngine.Runtime.Tests | 32 | 32 |
+| 画布、阴影、字形、图片、呈现与动画组合像素 | 37 | 37 |
+
+渲染提取与 Views 的完整结果基于 `cb5f9389`，这两个工程的产品源码及用例在
+`4791c89e` 保持相同。消费者、应用与全部图形专项在最终代码提交重新完成两种配置验收。
+原生发布、运行和跨进程检查点均基于 `4791c89e`，三个命令退出码均为 0：
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+```
+
+原生入口同时通过 Dialog 内置/用户组合、界面颜色与用户值动画、相同目标保留、
+中断 FLIP、用户变换、挂起/恢复的动画目标、四种前端的普通 World/Job World 输入及 TextField。
+检查点完成类型编号 1 → 5 重映射、读回、下一帧重建与依赖更新。
+本轮字体原生库由同一构建输入在本工作树生成。
+
+验证完成后按绝对路径和 Git 跟踪文件逐一核对，清理本工作树内 84 个生成目录，
+包含测试 bin/obj、原生产物、字体原生构建目录和依赖输出。跨进程检查点文件由脚本清理。
+工作树保留本轮代码、文档、锁定构建输入与 Git 提交记录。
 
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

@@ -64,6 +64,15 @@ and label use the same text theme and color, with four layout units between them
 `ButtonChecks` shares click consumption, held presses, label changes, and
 provided appearance updates with the Views NativeAOT executable.
 
+`DialogTests` verifies caller part order, inserted views, title omission,
+right-aligned actions, TitledDialog equivalence and scope disposal, default
+surface and shadow data, nearest themes, explicit transparent and zero values,
+and development scope checks. `Rewrites/Dialog.cs`, `DialogTitle.cs`, and
+`DialogFooter.cs` use public view, theme, surface, text, and layout APIs.
+`DialogChecks` applies the same specified theme and layout results to all eight
+combinations of built-in and user parts. It also supplies the shared NativeAOT
+checks for built-in, user, and mixed composition.
+
 `PointerRoutingChecks` shares child-to-card click bubbling, `StopsPointer`
 changes, subtree entry and exit, sibling hover changes, held presses, and caller
 output updates across the built-in and user-written behaviors. `PointerTests`

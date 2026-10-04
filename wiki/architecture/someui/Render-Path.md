@@ -4,7 +4,7 @@
 界面渲染数据沿 Game world 到 Rendering world 的既有提取路径流动，并按更新频率区分持久部分与随变化更新的部分。
 
 ## Invariants
-- 视觉都是材质加用户 shader。`Surface`（填充、圆角、描边，由 `Background`/`Corner`/`Border` 修饰写在参与布局的节点上）、`Image`、`Glyphs` 使用引擎自带的普通材质；渲染管线不识别控件，也不预设顶点布局。
+- 视觉都是材质加用户 shader。`Surface`（填充、圆角、描边、阴影，由 `Background`/`Corner`/`Border`/`Shadow` 修饰或复合容器 Build 写在参与布局的节点上）、`Image`、`Glyphs` 使用引擎自带的普通材质；渲染管线依赖用户 shader 解释绘制数据与顶点布局。
 - 界面 pass 的拓扑在增删 `Canvas`、改变渲染目标或深度测试配置时通过显式修改维护，放在持久 RenderGraph 中。
 - 实例数据按 ECS 写版本以块为单位增量提取，更新 Rendering world 中常驻的实例缓冲；静态界面不重新提取。
 - 节点的最终呈现为布局结果、用户变换与 `PresentationOffset` 的叠加。
@@ -14,17 +14,22 @@
 
 ## Surface 提取（#32）
 
-`SomeEngine.Elements.Render` 的 `CanvasRenderExtractor` 统一提取画布、Surface 与 Image；
-`SurfaceRenderExtractor` 保留为同一提取者的原有调用入口。应用在首次提取前将它
-安装到 `RenderExtractionSystems`。它声明读取 `Canvas`、`Surface`、`LayoutRect`、`ScrollOffset`、
-`ElementTransform`、`PresentationOffset`
-及 `ElementTree` 的 Parent/Children 写版本，沿现有提取阶段收集数据。
+`SomeEngine.Elements.Render` 的 `CanvasRenderExtractor` 统一收集画布上的 Surface 与 Image，
+`SurfaceRenderExtractor` 保留原有调用入口。应用在首次提取前将其中一个
+安装到 `RenderExtractionSystems`。Surface 数据读取 `Canvas`、`Surface`、`LayoutRect`、
+`ScrollOffset`、`ElementTransform`、`PresentationOffset` 及 `ElementTree` 的 Parent/Children
+写版本，沿现有提取阶段收集。
 
 每个 Canvas 的 RenderWorld 镜像实体持有 `RenderCanvas` 与一份 ECS
 `SurfaceInstance` 缓冲。`RenderCanvas` 保存目标、像素尺寸与每布局单位像素数。
 `SurfaceInstance` 的公开成员为 `Node`、`Rectangle`、`Fill`、`CornerRadius`、
 `BorderColor`、`BorderWidth`、`ClipRectangle`、`DrawOrder`、`Version`、`Matrix` 与 `Alpha`。
+`Shadow` 是附加的可初始化 DropShadow 属性，保留原有九参数构造与解构写法。
 `Node` 标识来源实体，渲染消费者从缓冲取得其绘制数据。
+
+阴影颜色、画布偏移与模糊半径和其余 Surface 字段在同一读取窗口收集，
+初次提取和按行更新均写入同一 SurfaceInstance。渲染消费者通过自己的材质和 shader
+解释这些参数。默认 DropShadow 表示透明阴影；清空或修改阴影沿同一增量提取路径送达。
 
 矩形采用 `LayoutRect` 的画布坐标。基础裁剪范围为画布的布局单位边界：
 `(0, 0, Canvas.Size.Width / Canvas.Scale, Canvas.Size.Height / Canvas.Scale)`。
@@ -50,6 +55,8 @@ ECS 结构事务送入常驻缓冲。常驻绘制数据由 RenderWorld 的 ECS �
 提取调度、帧协调器和缓冲读取验证单节点改色、静态帧、树序、释放、组件移除与恢复、
 跨画布移动、布局与缩放更新，以及提取后 Game world 继续修改时的值送达边界。
 `ScrollClippingTests` 覆盖嵌套视口、外框变化、滚动声明增删与静止帧的裁剪数据。
+`SurfaceShadowsReachRenderingOnCreationUpdateAndClear` 对两个公开提取入口应用同一组
+阴影创建、更新与清空检查，观察 Rendering world 中的 SurfaceInstance 值。
 
 此前独立 SomeUI 的 Scene、实例与 DrawOrderSystem 用于核对绘制数据及树序。
 这里的实例缓冲采用引擎 ECS 存储，增量依据来自 ECS 写版本，并通过既有提取边界应用。
@@ -68,10 +75,12 @@ ECS 结构事务送入常驻缓冲。常驻绘制数据由 RenderWorld 的 ECS �
 呈现写版本按行选择实例更新；改变呈现数据保留布局、图片 UV 和字形图集的既有值。
 
 Surface、Glyphs 与 Image 各自编码实例及解释 shader 字节，实例大小分别为
-112、96、80 字节。每种材质在自己的原有字段之后保存矩阵与透明度数据。
+144、96、80 字节。Surface 在填充、描边、裁剪、形状和阴影数据之后保存矩阵与透明度；
+Glyphs、Image 在各自的原有字段之后保存呈现数据。
 shader 先把矩形点转换到呈现的画布坐标，再应用屏幕或世界画布的裁剪空间矩阵。
 裁剪使用呈现的画布坐标；Surface 的圆角与描边覆盖率使用原矩形局部坐标。
-三种材质分别把透明度倍率乘入自身颜色或纹理的 alpha，并采用既有预乘混合规则。
+Surface 先按自身覆盖率合成填充、描边及其后方阴影，再将完整预乘 RGBA 乘呈现透明度。
+Glyphs、Image 分别将呈现透明度乘入字形覆盖率和纹理 alpha，并采用既有预乘混合规则。
 同一画布的持久 pass 按原树序消费这些材质。
 
 `PresentationExtractionTests` 经公开 World、提取与缓冲读取验证三种视觉的矩阵、透明度、
@@ -114,6 +123,14 @@ shader 以圆角矩形的距离函数计算覆盖率；填充与内部描边分�
 填充与描边的 RGBA 值在 shader 中乘覆盖率并转成预乘 alpha，
 再以 `One` / `OneMinusSourceAlpha` 混合到已定义的目标颜色上。
 
+Surface 材质同时解释实例中的 DropShadow。顶点范围覆盖表面与偏移后的阴影，
+并包含模糊半径及一个目标像素的边缘余量。阴影沿同一圆角矩形距离函数计算：
+正模糊半径使用 `1 - smoothstep(-BlurRadius, BlurRadius, distance)` 柔化边缘，
+零半径使用一个目标像素的覆盖率过渡。shader 以表面剩余透明度合成阴影，
+填充与描边位于自身阴影前方。表面与扩展的阴影范围共同应用呈现矩阵，再投影到画布目标；
+同一裁剪矩形作用于两者呈现后的画布坐标，完整组合通过呈现透明度一起淡出。
+实例字节布局由 Surface 材质与其 shader 共同解释。
+
 Runtime 的 `SurfacePanelExample` 使用公开视图修饰与布局系统构建画布和面板，
 沿同一 Game world → Rendering world 提取路径绘制。
 DefaultGame 的测试平台默认显示该面板，`Surface panel` 选项控制示例；
@@ -130,6 +147,8 @@ DefaultGame 的测试平台默认显示该面板，`Surface panel` 选项控制�
 `tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests` 经公开结构版本、pass 身份和
 GPU 像素读回验收画布成员修改、静态帧、改色、取消帧、透明树序叠加、裁剪与画布移除。
 相同像素用例分别使用 D3D12 WARP 和 Vulkan，并启用引擎图形验证层。
+`CanvasShadowTests` 同样通过两种后端的像素读回验收阴影半透明颜色、柔化边缘、
+正负偏移、裁剪、参数更新与清空，以及表面对自身阴影的覆盖。
 
 此前独立 SomeUI 的距离函数及填充/描边覆盖区域用于核对材质语义。
 本实现采用引擎的持久图与实例光栅绘制，实例数据由既有 RenderWorld 缓冲提供。

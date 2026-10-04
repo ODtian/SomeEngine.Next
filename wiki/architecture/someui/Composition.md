@@ -23,7 +23,7 @@ public record struct IconButton(string Glyph, string Label) : IView, ISparseComp
     }
 }
 
-using (Dialog().Content())
+using (Dialog().Padding(24).Content())
 {
     DialogTitle("设置");
     VolumeSlider(settings);
@@ -126,6 +126,100 @@ using (Column(6).Provide(new ButtonTheme
 独立 SomeUI 参考实现采用按钮专用挂载、输入与外观数据；本票依据 ADR 0011，
 采用公开视图、行为与修饰组合，输入数据由命中系统持有，主题数据由提供者持有。
 这一取舍把内置与用户控件放在相同的公开接口上。
+
+## Dialog 复合部件（#47）
+
+公开类型位于 `SomeEngine.Elements`：
+
+```csharp
+public record struct Dialog() : IView, ISparseComponent, ILayout
+{
+    public static ChildSource Children => ChildSource.Caller;
+}
+public record struct DialogTitle(string Text) : IView, ISparseComponent;
+public record struct DialogActions() : IView, ISparseComponent, ILayout
+{
+    public static ChildSource Children => ChildSource.Caller;
+}
+public static partial class DialogFunctions
+{
+    public static ParentScope TitledDialog(string title);
+}
+public struct DialogTheme : IComponent
+{
+    public Color Fill { readonly get; set; }
+    public float CornerRadius { readonly get; set; }
+    public DropShadow Shadow { readonly get; set; }
+    public float Gap { readonly get; set; }
+    public Color TitleColor { readonly get; set; }
+    public float TitleSize { readonly get; set; }
+    public float ActionsGap { readonly get; set; }
+}
+```
+
+源生成器分别在 `DialogFunctions`、`DialogTitleFunctions` 和 `DialogActionsFunctions`
+提供同名视图函数。Dialog 与 DialogActions 的 Build 读取最近的
+`Scope.ReadUp<DialogTheme>()`，在自身节点写入解析后的 Flex 排列数据，再通过公开
+`ILayout` 接缝调用 Flex 测量。Dialog 采用纵向、主轴起点、交叉轴拉伸；
+DialogActions 采用横向、主轴终点、交叉轴居中。Dialog 同时将背景、圆角与阴影写入
+自身的 Surface。容器内容由调用方的 `.Content()` 声明，主题刷新时保留这些内容。
+
+DialogTitle 的子 Text 显示 `Text` 参数，字号和颜色来自 DialogTheme，字体与行高沿用
+TextTheme。各部件在自己的构建中登记主题读取；最近提供者的整个组件供该部件读取，
+主题更新后同帧刷新外观和布局。
+
+`default(DialogTheme)`、`new DialogTheme()` 和省略的属性具有以下默认值。
+显式透明颜色、默认 DropShadow、零圆角和零间距作为调用方数据保留。
+颜色采用线性 RGBA，间距、字号与阴影参数采用布局单位。
+
+| 属性 | 默认值 |
+|---|---|
+| `Fill` | `(0.15, 0.15, 0.15, 1)` |
+| `CornerRadius` | `8` |
+| `Shadow` | 颜色 `(0, 0, 0, 0.35)`，偏移 `(0, 4)`，模糊半径 `12` |
+| `Gap` | `16` |
+| `TitleColor` | `(1, 1, 1, 1)` |
+| `TitleSize` | `24` |
+| `ActionsGap` | `8` |
+
+尺寸限制与内边距继续由调用方通过 Box 修饰提供，默认 Box 的内边距为零。
+主题数据、解析结果与调用方修饰的写入职责见
+[[architecture/someui/Data-Writers|Data Writers]]。
+调用方可以调整部件顺序、按条件省略标题、插入自己的视图，或把用户定义的
+DialogFooter 与内置部件放在同一容器中。
+
+```csharp
+using static SomeEngine.Elements.DialogFunctions;
+using static SomeEngine.Elements.DialogActionsFunctions;
+using static SomeEngine.Elements.ButtonFunctions;
+
+using (var dialog = TitledDialog("设置"))
+{
+    dialog.Entity.Size(360, float.NaN).Padding(24);
+    VolumeSlider(settings);
+    using (DialogActions().Content())
+    {
+        Button("取消");
+        Button("确定");
+    }
+}
+```
+
+TitledDialog 是普通函数：声明 Dialog、打开其内容作用域、声明 DialogTitle，然后返回
+已打开的 ParentScope。调用方在返回作用域内继续声明内容，Dispose 完成这份全部内容并
+恢复外层父节点。它与手写 `Dialog().Content()` 加 `DialogTitle(title)` 的拼装结果相同。
+
+[用户 Dialog](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Dialog.cs)、
+[用户 DialogTitle](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DialogTitle.cs) 和
+[用户 DialogFooter](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DialogFooter.cs)
+在外部程序集只使用公开 API。DialogFooter 是接受调用方内容的横向布局；它读取同一
+DialogTheme 并与内置 DialogActions 运行相同的组合验收。
+
+独立 SomeUI 的 Card 是由源生成器展开视觉数据的 Widget。这里依据 ADR 0011 和
+Child Source 规则，采用公开 IView、ILayout、Surface 与主题数据组合，并由调用方声明内容。
+Surface 的阴影数据与提取入口见 [[architecture/someui/Modifiers|Modifiers]] 和
+[[architecture/someui/Render-Path|Render Path]]，公开行为验收见
+[[architecture/someui/Testing|Testing]]。
 
 ## Toggle、Slider 与用户 Knob（#44）
 

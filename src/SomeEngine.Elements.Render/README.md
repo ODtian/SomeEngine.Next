@@ -14,7 +14,7 @@ renderWorld.ExecuteBufferRead<SurfaceInstance>(canvasMirror, instances =>
 {
     foreach (SurfaceInstance instance in instances.AsSpan())
     {
-        // Consume the rectangle, fill, corners, border, clip, presentation, order, and version.
+        // Consume the rectangle, fill, corners, border, shadow, clip, presentation, order, and version.
     }
 });
 ```
@@ -34,6 +34,20 @@ The buffer follows the applied `ElementTree` children in depth-first preorder.
 zero and counting transparent nodes. Nested canvases have their own buffers and
 traversals. `Node` identifies the source entity; render consumers read the drawing
 values from this buffer.
+The `Shadow` init property carries the surface's `DropShadow` color, offset,
+and blur radius through the same extraction path. Creation, edits, and clearing
+to the transparent default update that same instance for the material to use.
+The existing nine-argument constructor and deconstruction remain available.
+The built-in Surface material expands its shader-generated rectangle to include
+the shifted shadow and blur radius, then composites the shadow behind the fill
+and border with the same clip rectangle. Positive blur radii use a smoothstep
+distance transition; zero radius retains the one-pixel edge coverage.
+The surface and its expanded shadow bounds use the same presentation matrix.
+The shader composites fill, border, and shadow before multiplying the complete
+premultiplied RGBA by presentation opacity, preserving their mutual coverage.
+Clipping uses their presented canvas coordinates; both follow the canvas
+projection and depth test. Surface, Glyphs, and Image each encode their own
+matrix and opacity in the instance layout defined by that material and shader.
 
 Component write versions select changed chunks and rows. Surface and rectangle
 edits update their existing instances. Tree membership, child order, and canvas
