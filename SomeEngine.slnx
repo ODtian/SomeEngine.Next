@@ -25,6 +25,8 @@
   <Project Path="src/SomeEngine.Layout/SomeEngine.Layout.csproj" />
   <Project Path="tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj" />
   <Project Path="src/SomeEngine.Elements/SomeEngine.Elements.csproj" />
+  <Project Path="src/SomeEngine.Elements.Render/SomeEngine.Elements.Render.csproj" />
+  <Project Path="tests/SomeEngine.Elements.Render.Tests/SomeEngine.Elements.Render.Tests.csproj" />
   <Project Path="tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj" />
   <Project Path="src\SomeEngine.Views.Compose\SomeEngine.Views.Compose.csproj" />
   <Project Path="src\SomeEngine.Views.SwiftUI\SomeEngine.Views.SwiftUI.csproj" />

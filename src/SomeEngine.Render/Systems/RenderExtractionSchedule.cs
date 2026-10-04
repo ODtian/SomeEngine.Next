@@ -193,16 +193,20 @@ public sealed class RenderExtractionSystems : IDisposable
         _changedSystems.Clear();
         try
         {
-            RenderExtractionSystems state = this;
+            var state = (Systems: this, Source: mainWorld);
             mainWorld.ExecuteReadSnapshot(_sourceQueryHandle, _lastSystemVersion, ref state,
-                static (QueryCursor query, ref RenderExtractionSystems systems) =>
+                static (QueryCursor query, ref (RenderExtractionSystems Systems, World Source) state) =>
                 {
+                    RenderExtractionSystems systems = state.Systems;
                     systems._candidateSourceChanges = systems._sourceChanges!.Read();
                     systems._candidateFullReconciliation = systems._mainWorld is null ||
                         systems._candidateSourceChanges.Count != 0;
                     systems._context.BeginSourceChanges(systems._candidateSourceChanges.Entities);
                     if (systems._candidateFullReconciliation) systems.Collect(query);
                     else systems.CollectDelta(query);
+                    foreach (IRenderExtractionSystem system in systems._systems)
+                        if (system.CompleteSourceCollection(state.Source, systems._candidateFullReconciliation))
+                            systems._changedSystems.Add(system);
                 });
             foreach (IRenderExtractionSystem system in _systems)
                 if (system.CompleteCollection(_context, _candidateFullReconciliation))
@@ -421,6 +425,12 @@ public interface IRenderExtractionSystem : IDisposable
 
     /// <summary>Collects only values changed since the preceding extraction.</summary>
     bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context);
+
+    /// <summary>
+    /// Finishes source reads inside the same mutation-free extraction window, for data such as
+    /// ordered hierarchy children. Apply callbacks consume only the collected values.
+    /// </summary>
+    bool CompleteSourceCollection(World sourceWorld, bool fullCollection) => false;
 
     /// <summary>Collects changes to source assets referenced by the collected Game World entities.</summary>
     bool CompleteCollection(RenderExtractionContext context, bool fullCollection) => false;
