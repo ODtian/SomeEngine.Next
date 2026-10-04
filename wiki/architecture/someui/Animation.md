@@ -40,9 +40,17 @@ Flip.Enable(row, Spec.Tween(0.2f));
 首次声明建立禁用的内联时间线、轨道缓冲、调用方基准值与字段声明缓冲。
 初次写入作为初值直接呈现。后续 `Scope.Write` 副本从调用方的基准值开始，
 保留同组件其它字段的普通写入。视图参数更新也进入这条字段提交路径。
-组件提交保留动画字段当前呈现值；最外层构建成功后，提交目标值到
-`PropertyAnimation.SetBase`，目标发生变化时调用 `PropertyAnimation.To`。
-父构建失败时撤回本次目标，已有过渡继续使用此前成功提交的目标。
+组件提交保留动画字段当前呈现值。同步构建在最外层成功完成时提交目标；
+异步构建在初次挂起、恢复后再次挂起以及成功完成时提交该段目标。
+目标写入 `PropertyAnimation.SetBase`，目标变化时调用 `PropertyAnimation.To`。
+整次构建失败时按记录的逆序恢复此前完整构建的目标，从当帧呈现值继续过渡。
+普通组件与参数的恢复同样保留动画字段当帧呈现值。
+
+动画写入沿 `ChildChanges` 的既有提交与恢复路径持有。同步父视图中的异步子视图
+首次挂起时，动画记录随其它恢复数据保留到子视图；开始位置由 `FirstAnimation`
+随 `BeginChildren` 和 `ReplaceChanges` 保存、调整。每份记录保存一次提交前目标，
+首次提交后继续承担恢复；父子共享的记录按使用它的构建数保留，最后一个构建结束时释放恢复值。
+作用域复用时，`ChildChanges.Clear` 同时清空动画记录。
 
 相同字段字节值保留已有目标及其进度；重跑可以更新以后采用的 Spec。
 新目标沿属性动画规则从当前呈现值继续，弹簧沿其公开 API 保留速度。
@@ -73,6 +81,9 @@ Flip.Enable(row, Spec.Tween(0.2f));
 `InterfaceAnimationChecks.cs` 将用户自定义值运算、内联颜色轨道与中断 FLIP 的相同
 行为检查复用于 `SomeEngine.Views.AotSmoke`。
 渲染提取的呈现行为见 `PresentationExtractionTests.cs`。
+`AsyncAnimationTests.cs` 验证挂起与恢复段的目标、相同目标续跑、跨帧失败、
+参数呈现连续性，以及同步父与异步子共享计算记录的恢复。
+原生入口的 `AsyncAnimationChecks` 使用同一公开接缝覆盖嵌套计算与动画目标恢复。
 
 2026-10-04 的验收代码提交为 `8f35d86b8d6a2faead6f8469b1fb802d5ccd9d91`，
 包含集成分支 `f72a355041cdecced3cb0778e50ed7fa08c987b3`。以
