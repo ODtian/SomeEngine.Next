@@ -19,7 +19,17 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         foreach (var (node, measurement) in _measurements)
         {
             if (!context.World.IsAlive(node) || !context.World.Has<Text>(node))
+            {
                 _removed.Add(node);
+                continue;
+            }
+            TextStyle style = context.World.Read<TextAppearance>(node).Style;
+            if (measurement.HasResult && measurement.ResultInputs == ReadInputs(context.World, node) &&
+                measurement.Style != style)
+            {
+                measurement.Style = style;
+                context.World.Replace(node, new ShapedText(measurement, in style, measurement.Version));
+            }
             foreach (TextShapeBuffer shape in measurement.Buffers)
                 shape.Used = false;
         }
@@ -38,13 +48,14 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         if (!world.Has<Text>(node))
             return false;
         return !_measurements.TryGetValue(node, out TextMeasurement? measurement) ||
-            !measurement.HasResult || measurement.ResultVersions != ReadVersions(world, node);
+            !measurement.HasResult || measurement.ResultInputs != ReadInputs(world, node);
     }
 
-    private static TextVersions ReadVersions(World world, Entity node) => new(
-        world.WriteVersion<TextContent>(node),
-        world.Has<TextStyle>(node) ? world.WriteVersion<TextStyle>(node) : 0,
-        world.WriteVersion<TextAppearance>(node));
+    private static TextInputs ReadInputs(World world, Entity node)
+    {
+        TextStyle style = world.Read<TextAppearance>(node).Style;
+        return new(world.WriteVersion<TextContent>(node), style.Font, style.Size, style.LineHeight);
+    }
 
     void ILayoutDataUpdate.Update(World world, Entity node, in Constraints constraints)
     {
@@ -55,15 +66,15 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
             measurement = new TextMeasurement();
             _measurements.Add(node, measurement);
         }
-        TextVersions versions = ReadVersions(world, node);
+        TextInputs inputs = ReadInputs(world, node);
         float width = constraints.Max.Width;
         TextStyle style = world.Read<TextAppearance>(node).Style;
         TextShapeBuffer shape = measurement.GetBuffer(width);
-        if (!shape.HasShape || shape.Versions != versions)
+        if (!shape.HasShape || shape.Inputs != inputs)
         {
             Shaper.Shape(world.Read<TextContent>(node).Value, new TextStyleData(style.Font!, style.Size, LineHeight: style.LineHeight),
                 width, shape.Buffer);
-            shape.Versions = versions;
+            shape.Inputs = inputs;
             shape.HasShape = true;
         }
         shape.Used = true;
@@ -80,10 +91,10 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         {
             TextMeasurement measurement = _measurements[node];
             TextShapeBuffer shape = measurement.Current;
-            if (measurement.HasResult && measurement.ResultWidth == shape.Width && measurement.ResultVersions == shape.Versions)
+            if (measurement.HasResult && measurement.ResultWidth == shape.Width && measurement.ResultInputs == shape.Inputs)
                 continue;
             measurement.ResultWidth = shape.Width;
-            measurement.ResultVersions = shape.Versions;
+            measurement.ResultInputs = shape.Inputs;
             measurement.HasResult = true;
             measurement.Version++;
             world.Replace(node, new ShapedText(measurement, in measurement.Style, measurement.Version));
@@ -109,7 +120,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         internal TextShapeBuffer Current = null!;
         internal TextStyle Style;
         internal float ResultWidth;
-        internal TextVersions ResultVersions;
+        internal TextInputs ResultInputs;
         internal bool HasResult;
         internal uint Version;
 
@@ -143,10 +154,10 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
     {
         internal readonly ShapeBuffer Buffer = new();
         internal float Width;
-        internal TextVersions Versions;
+        internal TextInputs Inputs;
         internal bool HasShape;
         internal bool Used;
     }
 
-    internal readonly record struct TextVersions(uint Content, uint Style, uint Appearance);
+    internal readonly record struct TextInputs(uint Content, Font? Font, float Size, float LineHeight);
 }

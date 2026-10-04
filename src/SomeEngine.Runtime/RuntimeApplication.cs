@@ -477,6 +477,7 @@ internal static class RuntimeApplication
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor(),
             new SurfaceRenderExtractor());
+        if (surfacePanel is not null) extraction.Add(new GlyphRenderExtractor(surfacePanel.AtlasSource));
 
         RuntimeScene scene = RuntimeWait.Task(
             RuntimeScene.CreateAsync(mainWorld, assets, loadShader).AsTask(),
@@ -552,8 +553,10 @@ internal static class RuntimeApplication
                 Label: "SomeEngine Runtime Render Graph"));
         using SurfaceMaterial? surfaceMaterial = options.SurfacePanel
             ? SurfaceMaterial.Create(device.Capabilities.CompileTarget) : null;
+        using GlyphsMaterial? glyphMaterial = options.SurfacePanel
+            ? GlyphsMaterial.Create(device.Capabilities.CompileTarget) : null;
         using CanvasRenderer? surfaces = surfaceMaterial is null ? null
-            : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat);
+            : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat, glyphMaterial);
         var outputDescription = new ClusterPipelineOutputDescription(boot.Width, boot.Height, 1);
         using var lighting = new LightingFeature(
             backend,
