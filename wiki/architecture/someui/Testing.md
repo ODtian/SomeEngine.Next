@@ -5,6 +5,8 @@
 2026-10-04，Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
 派发及集成基线为 `e7ec3626d9abe873ef6ef7b4b88bc3ce718ea3a2`，
 交付分支为 `codex/someui-ticket-69`。
+实现提交为 `571afa4f47d977ec60464115871fd706c41d62fb`，
+提交后执行 `git merge --no-edit codex/someui` 对齐上述集成提交，随后复测四个直接相关工程的 Debug 公共行为。
 
 TDD 使用票中确定的公开接缝：系统更新入口，以及 World 中的 `LayoutRect`、
 `ShapedText`、Rendering world 中的 Surface、Image 和 Glyph 实例缓冲。
@@ -38,6 +40,7 @@ Release 消费者完整复测另用 `--logger 'console;verbosity=minimal'`。
 原生入口覆盖布局协议、文字、四种前端、输入、动画与 FLIP，检查点完成类型编号
 1 → 5 的映射、下一帧重建与依赖更新。
 发布中的 IL2026 / IL3050 来自既有 `TraceCapture`，IL2070 来自 `JobStorageTypeShape`。
+原生文件 SHA-256 为 `630f86225604ef0a1aa3def1e477587e55926880c794f59ee00211981a7738e1`。
 DefaultGame 动态 HUD 的三场景前后数值与统一配置见
 [Performance 的 #69 对照](Performance.md#job-并行平台对照69，2026-10-04)。
 测量结果与临时原生产物在使用后清理，源码、测试和数值记录随本票提交。
