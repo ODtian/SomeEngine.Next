@@ -68,16 +68,21 @@ public static partial class Scope
         return memo;
     }
 
-    internal static Computation AddComputation(Action run, bool evaluatesOnRead = false)
+    internal static Computation AddComputation(Action? run, bool evaluatesOnRead = false)
+    {
+        ScopeData current = Current;
+        var computation = new Computation(current.World, current.Entity, current.Computation, run,
+            current.Frame, evaluatesOnRead);
+        RetainComputation(computation);
+        return computation;
+    }
+
+    private static void RetainComputation(Computation computation)
     {
         ScopeData current = Current;
         if (!current.World.HasSparse<Computations>(current.Entity))
             current.World.AddSparse(current.Entity, new Computations(new ComputationList()));
-        ComputationList list = current.World.ReadSparse<Computations>(current.Entity).List;
-        var computation = new Computation(current.World, current.Entity, current.Computation, run,
-            current.Frame, evaluatesOnRead);
-        list.Items.Add(computation);
-        return computation;
+        current.World.ReadSparse<Computations>(current.Entity).List.Items.Add(computation);
     }
 
     /// <summary>Records an object source read by a Rerun build.</summary>
@@ -314,10 +319,13 @@ public static partial class Scope
             {
                 var copies = current.ViewData.ComponentCopies ??= new();
                 var component = (existing, ComponentId<T>.Value);
-                if (!copies.TryGetValue(component, out ComponentCopy? copy))
-                    copies.Add(component, copy = new ComponentCopy<T>(existing, view));
+                if (!copies.TryGetValue(component, out ComponentCopy? copy) || !copy.Written && !copy.CanReuse)
+                    copies[component] = copy = new ComponentCopy<T>(existing, view);
                 else
+                {
                     ((ComponentCopy<T>)copy).Value = view;
+                    copy.Written = true;
+                }
                 current.Changes.WriteAnimation(copy);
             }
             if (previousTarget.Equals(view) || previous.Equals(parameters))
@@ -415,7 +423,7 @@ public static partial class Scope
         current.DependenciesEnabled = dependenciesEnabled;
         current.Queue = BuildQueue.For(world);
         current.BeginChildren(frame, parent?.World == world ? parent.Changes : null);
-        current.Changes.RememberComputations(world, entity);
+        current.PreviousComputations = current.Changes.RememberComputations(world, entity);
 #if DEBUG
         current.ContentVersion++;
         current.BuildNumber = ++s_buildNumber;
@@ -438,7 +446,7 @@ public static partial class Scope
         current.ViewData = current;
         current.Computation = computation;
         current.DeclaresChildren = false;
-        current.DependenciesEnabled = true;
+        current.DependenciesEnabled = computation.Async is null;
         current.Queue = BuildQueue.For(computation.World);
         ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
         current.BeginChildren(frame, parent?.World == computation.World ? parent.Changes : null);
@@ -484,6 +492,8 @@ public static partial class Scope
         data.Cancellation = null;
         data.Computation = null;
         data.RememberOccurrences?.Clear();
+        data.AsyncOccurrences?.Clear();
+        data.PreviousComputations = null;
         data.ParameterVersion = null;
         data.Suspended = false;
         if (data.OutermostBuild)
@@ -566,10 +576,15 @@ public static partial class Scope
     {
         if (data.ComponentCopies is { } copies)
         {
+            bool asynchronousCalculation = data.Computation?.Async is not null;
             foreach (ComponentCopy copy in copies.Values)
                 if (copy.Written)
+                {
                     copy.Commit(data.World, data.Changes,
-                        reuseData: data.OutermostBuild && data.Computation is not null);
+                        reuseData: data.OutermostBuild && data.Computation is not null && !asynchronousCalculation);
+                    if (asynchronousCalculation)
+                        copy.Clear();
+                }
             if (data.Computation is null)
                 copies.Clear();
         }
@@ -740,6 +755,8 @@ public static partial class Scope
         internal bool Suspended;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal Dictionary<ulong, int>? RememberOccurrences;
+        internal Dictionary<ulong, int>? AsyncOccurrences;
+        internal ComputationList? PreviousComputations;
         internal ulong? KeyPrefix;
         // Caller content inherits the call group; explicit Key scopes belong to their parent.
         internal ulong? GroupPrefix;

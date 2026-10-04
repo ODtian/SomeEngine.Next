@@ -12,8 +12,50 @@ using Size = SomeEngine.Layout.Size;
 
 namespace SomeEngine.Elements.Consumer.Tests;
 
+[Collection("Text allocations")]
 public sealed partial class TextTests
 {
+    [Fact]
+    public void ScopeAndWorldWritesKeepTextParametersAndDisplayedContentTogether() => TextChecks.VerifyTextSources();
+
+    [Fact]
+    public void RepeatedNumericDeclarationsAllocateTheSameBytesAsEqualStringDeclarations() =>
+        TextChecks.VerifyRepeatedDeclarations();
+
+    [Theory]
+    [InlineData("decimal")]
+    [InlineData("offset")]
+    [InlineData("kind")]
+    [InlineData("double")]
+    [InlineData("float")]
+    [InlineData("half")]
+    public void ChangedFormattingDataKeepsParametersAndDisplayTogether(string example) =>
+        TextChecks.VerifyChangedFormattingData(example);
+
+    [Fact]
+    public void ChangingTextColorKeepsTheShapeAndLayout()
+    {
+        using Font font = LoadFont();
+        using var frames = new TextFrames();
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        frames.World.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 20 }));
+        Entity node = Views.Views.Spawn(frames.World, canvas, new Text("AV"));
+        frames.Frame();
+        ShapedText before = frames.World.Read<ShapedText>(node);
+        var glyphs = before.Shape.Glyphs.ToArray();
+        uint rectangleVersion = frames.World.WriteVersion<LayoutRect>(node);
+
+        frames.World.Add(node, new TextStyle { Color = new Color(0.2f, 0.4f, 0.6f) });
+        frames.Frame();
+
+        ShapedText after = frames.World.Read<ShapedText>(node);
+        Assert.Equal(before.Version, after.Version);
+        Assert.Equal(glyphs, after.Shape.Glyphs.ToArray());
+        Assert.Equal(before.Size, after.Size);
+        Assert.Equal(rectangleVersion, frames.World.WriteVersion<LayoutRect>(node));
+        Assert.Equal(new Color(0.2f, 0.4f, 0.6f), after.Style.Color);
+    }
+
     [Fact]
     public void SharedTextBehaviorChecksPass() => TextChecks.Run();
 
@@ -277,6 +319,9 @@ public sealed partial class TextTests
         }
     }
 }
+
+[CollectionDefinition("Text allocations", DisableParallelization = true)]
+public sealed class TextAllocationCollection { }
 
 internal sealed class TextFrames : IDisposable
 {

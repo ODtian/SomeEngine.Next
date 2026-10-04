@@ -408,5 +408,330 @@ StopsPointer、子树悬停、文本、布局、视图与各前端检查。
 发布中的既有 IL2026、IL3050、IL2070 诊断分别来自 TraceCapture 与 JobStorageTypeShape。
 临时构建输出、原生产物与检查点验收文件随验证完成清理。
 
+## 文本编辑与输入法组合验收（#41）
+
+2026-10-04，Windows x64，.NET SDK `10.0.112`。
+实现提交 `db9f3d08`，验收源码提交 `d841adf65db827d2e79158eea3de729e27b2d5f1`，
+已合入集成提交 `5d3be07dc7e38c61783d85a5ad5d807d2c10f98b`。
+
+输入、光标移动、选区替换、删除、组合输入、组合期间按键、焦点事件顺序、上下行移动、
+文本元素连接、空输入与开发诊断逐次执行红绿循环。公开帧检查随后覆盖失焦输入、重复声明、
+World 间的文本与 Shift 状态隔离，以及焦点资格移除后的组合显示。
+全部 14 项行为对内置声明与外部 `Rewrites/TextEditingFunctions.cs` 重写分别执行，
+共 28 项共享行为检查；Debug 另有 12 项开发诊断，通过 Core `DevelopmentCheck` 执行。
+验收观察公开文本、选区、组合、焦点、点击与调用方写出的编辑显示数据。
+
+下表各工程执行
+`dotnet test tests/<项目>/<项目>.csproj -c Debug/Release --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`。
+专项红绿循环使用同一消费者工程并附加 `--filter FullyQualifiedName~TextEditingTests`；
+依赖还原完成后的循环加 `--no-restore`。
+
+| 工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 185 | 134 |
+| SomeEngine.Views.Tests | 290 | 260 |
+| SomeEngine.Layout.Tests | 94 | 74 |
+| SomeEngine.Views.Solid.Tests | 13 | 12 |
+| SomeEngine.Elements.Render.Tests | 10 | 10 |
+
+原生验收执行以下命令，均退出 0：
+
+| 命令 | 结果 |
+|---|---|
+| `dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false` | 原生发布成功 |
+| `tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe` | 28 项文本编辑共享行为及原有视图、前端、布局、指针、焦点、拖动滚动和 Button 检查通过 |
+| `pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable F:/.codex/worktrees/someui-ticket-41/SomeEngine.Next/tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe` | 两进程检查点写入、ViewType.Id 重映射、读回、下一帧重建与依赖更新通过 |
+
+原生发布的 IL2026、IL3050 与 IL2070 来自既有 `TraceCapture` 与 `JobStorageTypeShape`。
+
+行为与数据写入规则由
+[[architecture/someui/Input-and-Behaviors|Input and Behaviors]] 维护。
+
+交付整合依次纳入集成提交 `30977b382e11b2d7a61380db17c40042173fcefa`
+与 `a2586c1efbccd2b0b132be382bb63ccb6af3d176`。最终验收源码提交为
+`4eb13d39a8d36e5c4edd7944e404bb533eb8c22a`，文本、值控件共用 `Edited` 时的
+消费者示例使用 `out string _` 与 `out float _` 明确结果类型。
+
+| 最终整合回归工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 224 | 158 |
+| SomeEngine.Views.Tests | 290 | 260 |
+| SomeEngine.Views.Generators.Tests | 109 | 109 |
+| SomeEngine.Views.Solid.Tests | 18 | 17 |
+
+Layout 的 94／74 项与 Elements.Render 的 13／13 项在合并源码
+`99707698766d05fa886f76936a74a3750580ad76` 通过；对应实现与测试在最终整合中保持相同。
+上述原生发布、执行和两进程检查点命令在最终源码再次全部退出 0。
+入口包含 28 项文本编辑行为，并联合执行值控件、列表控件和 Solid 组件导出的共享检查。
+
+完成验证后清理本票工作树内 72 个已核对的 bin / obj 生成目录，包含原生发布和字体构建
+产物；检查点临时文件由验收脚本清理。`git diff --check` 通过。
+
+## Toggle、Slider、Knob 与音量贯穿场景验收（#44）
+
+2026-10-04，Windows x64，.NET SDK `10.0.112`。
+本票实现提交 `e767e985`，派发基线 `f7df93dc`；合入集成提交
+`5d3be07d` 后形成 `8a5d4ce9`，首轮验收代码与取消用例修订为 `03fed94e`。
+
+Toggle、数值键盘、累计拖动、范围端点、外部 Toggle 和同帧多个拖动手势
+分别沿公开接缝完成红测与实现。既有能力继续通过新增的连续值、等值范围和半步量化用例核对。
+本票新增 17 项行为用例和 9 项 Debug 开发检查；Slider 与用户圆形 Knob
+共用键盘、拖动、量化、输入顺序与边界用例，内置与外部 Toggle 共用指针与焦点确认用例。
+检查从 Pointer、Keyboard、Gamepad、视图函数、Toggled、Edited、World 和 ElementTree
+进入，通过应用数据、节点参数、Surface、LayoutRect 与公开写版本观察结果。
+
+音量贯穿检查由游戏系统在公开查询回调中用 `ref AudioSettings` 修改 Volume，
+观察 Slider、Knob 的参数与可见位置及文本更新；随后接受 Slider 的拖动值写回同一组件，
+再观察 Knob 与文本更新。Volume 从 `0.75` 变为 `0.754`，显示字符串仍为 `0.75` 时，
+Text、TextContent、ShapedText 与 LayoutRect 的公开写版本均保留。
+共享检查位于 [ValueChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/ValueChecks.cs)、
+[范围检查](../../../tests/SomeEngine.Elements.Consumer.Tests/ValueRangeChecks.cs) 与
+[贯穿场景](../../../tests/SomeEngine.Elements.Consumer.Tests/ValueVolumeChecks.cs)。
+
+集成回归中的异步取消用例按公开的 finally、using 清理结果和文本输出等待 Task.WaitAsync
+回调就绪，再推进重建阶段；依据见 [[architecture/someui/Async-Build|Async Build]]。
+这一验收修订提交为 `03fed94e`，Views Debug 的 290 项用例连续四轮通过。
+Elements Debug 在 `8a5d4ce9` 执行，其余表中回归基于 `03fed94e`；两提交间的产品源码一致。
+
+各工程执行
+`dotnet test tests/<项目>/<项目>.csproj -c <Debug|Release> --nologo -v quiet -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false`。
+Views 的时序复核采用 `-v minimal`，编译后的重复验证另加 `--no-build --no-restore`。
+
+| 项目 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 171 | 123 |
+| SomeEngine.Views.Tests | 290 | 260 |
+| SomeEngine.Layout.Tests | 94 | 74 |
+| SomeEngine.Views.Generators.Tests | 95 | 95 |
+| SomeEngine.Elements.Render.Tests | 10 | 10 |
+
+基于 `03fed94e`，以下三个命令均成功，退出码 0：
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+```
+
+原生入口执行本票全部 17 项共享行为检查，随后两进程检查点验收完成写入、
+ViewType.Id 重映射、读回、下一帧重建和依赖更新。
+发布中的既有 IL2026、IL3050 与 IL2070 诊断分别来自 TraceCapture 与 JobStorageTypeShape。
+字体原生依赖复用 #27 的同版本产物，复用前以 SHA-256 核对 CMakeLists.txt、
+GlyphBitmap.c 与 Typography 项目文件三个构建输入一致。
+
+交付前继续合入集成提交 `b51b1cf1` 的 ScrollView、VirtualList 与滚动裁剪，
+合并提交为 `258f0c87`。取消用例沿已验证的公开结果就绪等待完成合并。
+基于该合并提交，消费者、渲染提取与 Views 再次执行相同命令的两种配置：
+
+| 项目 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 184 | 130 |
+| SomeEngine.Elements.Render.Tests | 12 | 12 |
+| SomeEngine.Views.Tests | 290 | 260 |
+
+Views、Layout 与生成器产品源码相对于 `03fed94e` 保持一致，Layout 与生成器沿用
+上表首轮完整回归结果。以最新合并源码再次执行上述原生发布、入口运行与检查点命令，
+三者均退出码 0；入口同时包含列表控件与本票全部 17 项共享行为。
+验证完成后清理本工作树内 69 个已核对的 bin / obj 构建输出目录，
+包含原生发布产物与复用的字体依赖，检查点临时文件由验收脚本完成清理。
+
+## 第三批公开行为修复验收（2026-10-04）
+
+Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+固定评审范围为 `6a6a759ccbc4f77bd1c77335487789a4f539645f` →
+`f7df93dc59dcc629f57151f8a7c69da595f73849`。工作树从集成提交
+`5d3be07dc7e38c61783d85a5ad5d807d2c10f98b` 创建，分支为
+`codex/someui-review-fixes-3`，路径为
+`F:\.codex\worktrees\someui-review-fixes-3\SomeEngine.Next`。
+
+修复提交为 `72e63d013bbcb7aed4be7cdb65c58ae6406d6fbc`。
+交付前两次合入集成分支：先形成 `642724cacd290d97a5d1f2e7275e0740ff470ebd`，
+再合入 `f7f66815c02d0f46a577fe7f8ce06d4f8147e97a`，形成本轮完整验收代码提交
+`118953eb17d50b9046fbdcb57c1cd7342ecd2704`。以下完整结果基于该代码提交。
+
+| 修复 | 公开复现与结果 |
+|---|---|
+| 跨帧失败与取消恢复（#1、#20、#21） | 读者先显示已提交的表格与 sparse 值 2，恢复后源值与读者都为 1；子视图参数同样从 2 恢复为 1。两条恢复路径共用值比较入口，变化值推进写版本，相等结果保留版本；旧构建清理继续保留当前输出。 |
+| 多次约束与连续局部布局（#27） | 用户布局先按松约束、再按固定约束测量同一子节点；先修改内部内容，再把容器宽度改为 60、140、45，相邻节点随宽度重新摆放，各节点矩形与清除公开 LayoutCache 后的全量结果相等。 |
+| Solid 数字与日期语言（#53、#55） | Once 视图中的 decimal、整数及月份绑定随 en-US → de-DE 更新：1,234.50 → 1.234,50、1,234 → 1.234、October → Oktober；显式格式提供者保持其规则及相等结果版本。 |
+| 相同数字声明分配（#31） | 公开声明入口采用 10,000 次预热、1,000 次采样。旧整数路径相对字符串声明额外分配 40,000 字节；修复后整数、decimal 与日期声明的分配量均与字符串声明相等，新增分配为 0 字节。 |
+| Scope / World 文本来源（#31） | Once 构建先 DeclareText(1, 23, "D2")，再作用域 SetText(42, "D2")，Text.Value 与 TextContent.Value 均为 42；World 重载继续写入 99 后两者均为 99，相等后续写入保留版本。 |
+
+每项公开失败用例先执行红测，再执行实现与回归。格式化数据复用继续通过六组公开变化验收：
+decimal 精度、日期 Kind、DateTimeOffset 时区偏移，以及 double、float、Half 的零符号变化。
+这些输入的参数字符串与实际显示共同更新。分配采样通过公开 GC API 直接统计声明调用，
+各种数据采用同一预热、采样、JIT 和 GC 配置；采样前完成完整 GC 与终结器处理。
+托管文本分配测试按序执行。托管回归统一设置 `DOTNET_TieredCompilation=0`。
+
+七个完整测试工程采用以下命令，两种配置分别执行：
+
+```powershell
+dotnet test tests/<项目>/<项目>.csproj -c <Debug|Release> --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false
+dotnet test tests/SomeEngine.Job.Tests/SomeEngine.Job.Tests.csproj -c <Debug|Release> --filter FullyQualifiedName~JobHandleAwaitTests --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false
+dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj -c <Debug|Release> --filter 'FullyQualifiedName~CanvasDrawingTests|FullyQualifiedName~GlyphDrawingTests' --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false
+```
+
+| 项目 / 接缝 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Layout.Tests | 95 | 75 |
+| SomeEngine.Elements.Consumer.Tests | 193 | 139 |
+| SomeEngine.Views.Solid.Tests | 19 | 18 |
+| SomeEngine.Views.Generators.Tests | 112 | 112 |
+| SomeEngine.Elements.Render.Tests | 17 | 17 |
+| SomeEngine.Typography.Tests | 45 | 42 |
+| JobHandleAwaitTests | 6 | 6 |
+| CanvasDrawingTests / GlyphDrawingTests | 11 | 11 |
+| 合计 | 803 | 693 |
+
+GPU 用例实际执行 D3D12 与 Vulkan，覆盖画布填充、边框、裁剪、世界空间投影与深度，
+以及字形参考覆盖、颜色更新、图集新增区域与页、树序和裁剪。
+
+Views 原生发布、运行与跨进程检查点命令均退出码 0：
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+```
+
+共享的 LayoutChecks、TextChecks 与 SolidChecks 实际验证本批布局、文本来源、
+重复声明分配、格式化数据变化与 Locale 绑定。检查点在第一个进程写入面板类型编号 1，
+第二个进程映射为 5，完成读回、下一帧重建和依赖更新。
+该原生文件的 SHA-256 为
+`26BC132891142000A91257121E4E2DC3B3577BE67169635D375CBFB38761CDD2`。
+
+ECS 原生发布与启动命令均退出码 0：
+
+```powershell
+dotnet restore tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -r win-x64 -p:PublishAot=true -p:_IsPublishing=true --nologo -v minimal -m:1 -nr:false
+dotnet publish tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -c Release -r win-x64 --self-contained true --no-restore -t:Rebuild -o tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/win-x64/native-publish -p:PublishAot=true -p:SelfContained=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/win-x64/native-publish/SomeEngine.ECS.AotSmoke.exe
+```
+
+FirstBuildChecks 调用共享的跨帧组件与子参数恢复检查，实际执行失败、取消及旧清理行为。
+结果为 `managedReferencesVerified: true`、`viewsVerified: true`，实体数 4，
+持久存档 702 字节、generation 2，语义校验值 `-25362004713`。
+该原生文件的 SHA-256 为
+`65D9347A296E27598E4AD207F1B09D51AF2170FCE6D60595900E8DE62D927819`。
+发布中的既有 IL2026、IL3050 诊断来自 TraceCapture，IL2070 来自 JobStorageTypeShape。
+两次原生实际运行与共享行为结果由上述入口确认。
+验证完成后核对并清理工作树内 88 个 bin / obj 输出目录，包含排版原生依赖、
+两个原生发布目录与测试产物。跨进程检查点文件由验收脚本清理。
+本节记录与测试文件的空行整理形成 `1ee15a5c015f9f7d948c13ade9d7b6fbff9dfb32`。
+
+### 交付前 Solid 控制流集成
+
+随后合入当时集成提交 `72d1409e23ea75102b5a247cd8cf757b44dd14d8`，
+形成交付代码提交 `82f959cb7e38a0281319501c118bc6ea9c75d9c8`。
+该次集成增加 Solid Show、Switch/Match 与 Dynamic；本批 Views、Layout、Elements、
+Elements.Render、生成器、Typography、Job、ECS 及 ECS 原生入口源码与
+`118953eb` 相同，对应完整回归与 ECS 原生结果继续关联同一份产品源码。
+
+关联的两个工程按上文相同的两种配置命令执行完整回归：
+
+| 工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Views.Solid.Tests | 35 | 32 |
+| SomeEngine.Elements.Consumer.Tests | 193 | 139 |
+
+其它七个接缝采用上表已确认的相同产品源码结果，交付覆盖计数为 Debug 819、Release 707。
+字体原生依赖复用前核对 CMakeLists.txt、GlyphBitmap.c 和 Typography 项目文件的
+SHA-256 与既有同版本构建相等。Views 原生发布、启动与跨进程检查点再按上文命令执行，
+三个命令均退出码 0；共享检查同时覆盖本批全部相关行为与新增 Solid 控制流。
+检查点继续在两个进程间将面板类型编号从 1 映射为 5，并完成重建与依赖更新。
+该次 Views 原生文件的 SHA-256 为
+`9C40CF3DA86BC1CB80CED683BC8FE0CAC66A6220C90C9AC0229E6F67F56993AF`。
+最后一轮复核完成后清理 59 个已核对的生成目录，包含复用的字体依赖、测试和 Views 原生产物。
+检查点临时文件由脚本清理，交付工作树保留源码与完整 Git 记录。
+
+## 应用接入功能验收（#42，2026-10-04）
+
+派发基线为 `f7f66815c02d0f46a577fe7f8ce06d4f8147e97a`。
+实现提交为 `6301cf4c`，公开数据名称整理为 `fabc038d`；
+交付前依次合入集成提交 `1fbce9ce094995af979e06b83da069d3f4e8cdde` 与
+`55cfda50379cedd4a0726bc627d260a8f3d9ee7f`，后者包含 #35 画布绘制与 #41 文本编辑。
+本节最终 Runtime、元素、画布及示例验证的源码提交为
+`ebc3527b788cab70a3897b001528455068ecd75e`。
+
+公开接缝为 `WindowInput`、`GameFrameSystems.Describe/UpdateInput/UpdateViews`、
+`FrameStageDescription.SystemTypes`、`SurfacePanelExample.ClickCount/Resize`，
+以及普通 World 的组件、层级和文本读取入口。TDD 按输入、调度和计数面板逐项推进。
+按钮用例同时使用普通 World 和应用相同的 `WorldJobs(JobSystem.Default)` 配置。
+带 Job 的用例复现了依赖缓冲借用期间跨存储读取的问题；依赖来源复制与版本比较
+采用两个读取窗口后，两个配置均完成点击、显示更新与尺寸更新。
+
+`GameFrameTests` 从实际注册的公开描述核对 Wiki 顺序，并以动画后矩形验证用户界面系统、
+动画、布局与布局后扩展的执行关系。`WindowInputTests` 覆盖缩放画布上的主键、次键与中键，
+导航与重复确认、窗口失焦后的释放、滚轮单位转换、屏幕与世界画布隔离及游戏输入阶段的捕获数据。
+`CounterPanelTests` 通过可见文本验证点击后的计数与缩放后的保留。
+
+采用 Wiki 的动画 → 文本测量 → 布局 → FLIP → 提取顺序。
+`AddInterfaceSystem` 与 `AddFlipSystem` 提供对应位置的公开安装入口；#52 的 FLIP 实现
+沿布局后入口接入。输入与提取继续使用引擎现有 ECS 和 Game world → Rendering world 边界。
+窗口输入接入 #37、#39、#41 的公共入口；文本编辑在默认焦点系统的同一输入顺序中执行。
+
+### 命令与结果
+
+以下命令在本票工作树逐个工程执行。`Debug` 的四项视图相关回归及 `Release` 的
+Views、系统回归采用 `f04382e8` 的源码；该范围内本票触及的产品源码与上述最终提交相同。
+Runtime 的两种配置，以及元素、提取与画布像素专项在最后一次集成后重新执行。
+
+```powershell
+dotnet test tests/<工程>/<工程>.csproj -c <配置> --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false
+```
+
+| 工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Runtime.Tests | 30 | 30 |
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Layout.Tests | 95 | — |
+| SomeEngine.Elements.Consumer.Tests | 233 | — |
+| SomeEngine.Elements.Render.Tests | 32 | — |
+| SomeEngine.ECS.Systems.Tests | 298 | 298 |
+
+画布像素专项通过 27 项，实际覆盖 D3D12 WARP 与 Vulkan 上的 Surface、Glyphs、Image
+组合及世界画布绘制。执行命令为：
+
+```powershell
+dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj --filter 'FullyQualifiedName~CanvasDrawingTests|FullyQualifiedName~GlyphDrawingTests|FullyQualifiedName~CanvasCompositionTests|FullyQualifiedName~ImageDrawingTests|FullyQualifiedName~WorldCanvasDrawingTests' --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false
+```
+
+平台文本接缝覆盖普通 World 与 Job World 下的 Shift 选区、End、删除、
+组合预览与确认，并验证跨帧 UTF-16 代理项组合及编辑控制字符的处理。
+默认 FocusNavigationSystem 按输入顺序调用 TextEditingSystem，调度描述继续对应实际系统组。
+
+系统工程的既有 CS4014 诊断位于 `LifecycleClosureTests.cs:585`；两种配置均完成系统回归。
+
+```powershell
+dotnet run --project templates/DefaultProject/Game.Build/Game.Build.csproj -c Release --no-launch-profile -v quiet -p:UseSharedCompilation=false -p:BuildInParallel=false -- --project templates/DefaultProject --engine .
+dotnet build templates/DefaultProject/Game.App/Game.App.csproj -c Release --no-restore --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false
+./templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe
+git diff --check
+```
+
+内容构建从本项目源文件生成 67 项资产。最终示例构建退出码为 0，诊断为 0 个警告、0 个错误。
+真实窗口功能验收使用 `ebc3527b788cab70a3897b001528455068ecd75e` 的 Release 示例，
+分辨率为 1280×720、DPI 为 1，默认 1024 小球场景。
+通过窗口消息注入鼠标移动、按下与释放，点击位置为 `(1100, 610)`，计数由 0 变为 1。
+F1 关闭调试窗口后，Down 与 Enter 将按钮计数变为 2；再次 F1 打开 ImGui，
+点击 `(41, 583)` 切换 `Animate scene` 复选框。窗口另接收 IME 开始、组合、结束与
+确认消息，以及 UTF-16 代理项字符消息，运行路径完成处理。应用完成 393 帧后正常关闭，退出码为 0。
+截图通过平台的 F8 捕获入口取得，转换为保留像素的 PNG；本节记录这些操作的功能结果。
+
+### 界面证据
+
+[初始计数 0 与 ImGui 共存](images/someui-42-before.png)。
+鼠标点击后计数为 1：
+
+![鼠标点击后计数为 1，SomeUI 与 ImGui 共存](images/someui-42-clicked.png)
+
+[方向键与 Enter 确认后计数为 2，F1 已关闭调试窗口](images/someui-42-keyboard.png)。
+[F1 重新打开 ImGui，Animate scene 已切换，计数保留为 2](images/someui-42-debug.png)。
+
+截图文件与本节一同提交，供统一 PR 引用。
+两轮验收后分别清理 98／94 个生成目录、各 67 个生成资产及原始 BMP 捕获文件；
+源码、构建输入与上述四张 PNG 交付证据保留在工作树中。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

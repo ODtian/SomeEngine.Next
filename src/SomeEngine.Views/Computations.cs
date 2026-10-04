@@ -11,14 +11,40 @@ internal sealed class ComputationList
 {
     internal List<Computation> Items { get; } = new();
 
-    internal void ReleaseChildren(Computation? parent = null)
+    internal ComputationList? TakeAsyncChildren(Computation parent)
+    {
+        ComputationList? previous = null;
+        for (int index = 0; index < Items.Count;)
+        {
+            Computation computation = Items[index];
+            bool retain = computation.Parent == parent && computation.Async is not null;
+            if (!retain && previous is not null)
+                foreach (Computation ancestor in previous.Items)
+                    if (computation.IsChildOf(ancestor))
+                    {
+                        retain = true;
+                        break;
+                    }
+            if (retain)
+            {
+                (previous ??= new()).Items.Add(computation);
+                Items.RemoveAt(index);
+            }
+            else
+                index++;
+        }
+        return previous;
+    }
+
+    internal void ReleaseChildren(Computation? parent = null, ComputationList? retained = null)
     {
         for (int index = Items.Count - 1; index >= 0; index--)
         {
             Computation computation = Items[index];
             if (parent is not null && !computation.IsChildOf(parent))
                 continue;
-            computation.Release();
+            if (retained is null || !retained.Items.Contains(computation))
+                computation.Release();
             Items.RemoveAt(index);
         }
     }
@@ -26,17 +52,20 @@ internal sealed class ComputationList
 
 /// <summary>A view's callback and the data read during its latest evaluation.</summary>
 internal sealed class Computation(World world, Entity entity, Computation? parent,
-    Action run, ulong frame, bool evaluatesOnRead)
+    Action? run, ulong frame, bool evaluatesOnRead)
 {
     private Action? _run = run;
     private Computation? _parent = parent;
     private Exception? _error;
+    private bool _released;
 
     internal World World { get; } = world;
     internal Entity Entity { get; } = entity;
     internal ulong Frame { get; private set; } = frame;
     internal bool EvaluatesOnRead { get; } = evaluatesOnRead;
-    internal bool Released => _run is null;
+    internal bool Released => _released;
+    internal Computation? Parent => _parent;
+    internal AsyncComputation? Async;
     internal Exception? Error => _error;
     internal List<Dependency> Reads { get; } = new();
     internal ObjectDependencyList ObjectReads { get; } = new(frame);
@@ -46,14 +75,22 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
     {
         RebuildDiagnostics.Record(this, frame);
         Frame = frame;
-        World.ReadSparse<Computations>(Entity).List.ReleaseChildren(this);
+        ComputationList calculations = World.ReadSparse<Computations>(Entity).List;
+        ComputationList? previous = Async is null ? calculations.TakeAsyncChildren(this) : null;
+        calculations.ReleaseChildren(this);
         Reads.Clear();
         ObjectReads.Clear(frame);
         using var scope = Scope.Enter(this, frame);
+        ScopeData!.PreviousComputations = previous;
         try
         {
-            _run!();
-            scope.Complete();
+            if (Async is { } asynchronous)
+                scope.Finish(asynchronous.Run(Scope.Cancel), null, 0);
+            else
+            {
+                _run!();
+                scope.Complete();
+            }
             Exception? previousError = _error;
             _error = null;
             RestoreError(previousError);
@@ -62,6 +99,10 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
         {
             _error = exception;
             throw;
+        }
+        finally
+        {
+            previous?.ReleaseChildren(retained: calculations);
         }
     }
 
@@ -102,11 +143,15 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
 
     internal void Release()
     {
+        if (ScopeData is { Suspended: true } data)
+            data.Queue.Cancel(data, restore: false);
         Reads.Clear();
         ObjectReads.Clear(Frame);
         _run = null;
         _parent = null;
         _error = null;
+        _released = true;
+        Async = null;
         ScopeData = null;
     }
 

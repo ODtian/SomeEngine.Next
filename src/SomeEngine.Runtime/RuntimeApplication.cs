@@ -8,6 +8,8 @@ using SomeEngine.Resources;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
+using SomeEngine.Layout;
+using SomeEngine.Views;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Elements.Render;
 using SomeEngine.Graphics;
@@ -474,20 +476,28 @@ internal static class RuntimeApplication
             new(Execution: new WorldJobs(JobSystem.Default))).AsTask(), window, FrameTimeout);
         using SurfacePanelExample? surfacePanel = options.SurfacePanel
             ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height) : null;
+        using SphereNameplates? nameplates = options.WorldNameplates ? new SphereNameplates(mainWorld) : null;
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor(),
             new SurfaceRenderExtractor());
+        if (surfacePanel is not null) extraction.Add(new GlyphRenderExtractor(surfacePanel.AtlasSource));
 
         RuntimeScene scene = RuntimeWait.Task(
             RuntimeScene.CreateAsync(mainWorld, assets, loadShader).AsTask(),
             window,
             FrameTimeout);
 
+        using GameFrameSystems? elementSystems = options.SurfacePanel || options.WorldNameplates
+            ? new GameFrameSystems(mainWorld) : null;
+        using WindowInput? elementInput = elementSystems is null ? null : new WindowInput(mainWorld);
+        elementSystems?.UpdateViews(0);
+
         if (!options.SynchronousFrames)
         {
             if (options.ScenePlayback is not null)
                 scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
                     orbitCamera: options.ScenePlayback == "camera");
+            nameplates?.Update();
             extraction.Extract(mainWorld);
         }
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
@@ -550,10 +560,12 @@ internal static class RuntimeApplication
                 // frames. Match that count instead of rotating a third copy of graph data.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
-        using SurfaceMaterial? surfaceMaterial = options.SurfacePanel
+        using SurfaceMaterial? surfaceMaterial = options.SurfacePanel || options.WorldNameplates
             ? SurfaceMaterial.Create(device.Capabilities.CompileTarget) : null;
+        using GlyphsMaterial? glyphMaterial = options.SurfacePanel
+            ? GlyphsMaterial.Create(device.Capabilities.CompileTarget) : null;
         using CanvasRenderer? surfaces = surfaceMaterial is null ? null
-            : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat);
+            : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat, glyphMaterial);
         var outputDescription = new ClusterPipelineOutputDescription(boot.Width, boot.Height, 1);
         using var lighting = new LightingFeature(
             backend,
@@ -594,7 +606,7 @@ internal static class RuntimeApplication
         GraphPassId temporalProducer = default;
         GraphPassId presentationReadback = default;
         Task? nextGameUpdate = null;
-        var input = new RuntimeInput();
+        var input = new RuntimeInput(elementInput);
         int width = boot.Width;
         int height = boot.Height;
         RenderGraphStatistics latestGraphStatistics = default;
@@ -750,6 +762,7 @@ internal static class RuntimeApplication
                     input.Process(windowEvent);
                     ui.ProcessEvent(windowEvent, input);
                 }
+                elementSystems?.UpdateInput();
                 if (input.WasKeyPressed(RuntimeInput.KeyEscape))
                 {
                     window.RequestClose();
@@ -809,11 +822,12 @@ internal static class RuntimeApplication
                     scene.Play(sceneSeconds, options.ScenePlayback is "materials" or "camera", animateMaterial,
                         orbitCamera: options.ScenePlayback == "camera");
                 ui.BeginFrame(deltaSeconds, width, height, window.DpiScale);
+                SomeEngine.Elements.InputCapture elementCapture = elementInput?.InputCapture ?? default;
                 scene.Camera.Update(
                     input,
                     deltaSeconds,
-                    ui.WantCaptureKeyboard,
-                    ui.WantCaptureMouse);
+                    ui.WantCaptureKeyboard || elementCapture.Keyboard,
+                    ui.WantCaptureMouse || elementCapture.Pointer);
                 RuntimeViewFrame viewFrame = RuntimeViewFrame.Create(
                     scene.Camera.View,
                     scene.Projection(width, height),
@@ -844,6 +858,8 @@ internal static class RuntimeApplication
                     if (animateScene && options.ScenePlayback is null)
                         scene.Update(sceneSeconds);
                     surfacePanel?.Resize(width, height);
+                    nameplates?.Update();
+                    elementSystems?.UpdateViews(deltaSeconds);
                     extraction.Extract(mainWorld);
                 }
                 long prepareStarted = Stopwatch.GetTimestamp();
@@ -906,7 +922,7 @@ internal static class RuntimeApplication
                     edit.Commit();
                     presentationReadback = pipeline.PageFaultReadbackPass;
                 }
-                surfaces?.ReconcileGraph(presentation.Target);
+                surfaces?.ReconcileGraph(presentation.Target, new WorldCanvasTarget(presentation.Target, clusterOutputs.Depth, viewEntity));
                 ui.InstallGraph(renderGraph, presentation.Target);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
@@ -981,6 +997,8 @@ internal static class RuntimeApplication
                         else if (updateScene)
                             scene.Update(nextSceneTime);
                         surfacePanel?.Resize(nextCanvasWidth, nextCanvasHeight);
+                        nameplates?.Update();
+                        elementSystems?.UpdateViews(deltaSeconds);
                         extraction.Extract(mainWorld);
                     });
                 }

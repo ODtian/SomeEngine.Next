@@ -6,7 +6,7 @@ using TextData = SomeEngine.Elements.Text;
 namespace SomeEngine.Views.Solid;
 
 /// <summary>Calculations and element declarations for components built once.</summary>
-public static class Solid
+public static partial class Solid
 {
     /// <summary>Runs a calculation now and in the rebuild phase when its reads change.</summary>
     public static void Effect(Action run) => Scope.Compute(run);
@@ -24,6 +24,13 @@ public static class Solid
         DevelopmentCheck.Require(read is not null, "Untrack requires a value getter.");
         using (Scope.Untrack())
             return read();
+    }
+
+    /// <summary>Rebuilds inserted content when its reads change, reusing children by their node identities.</summary>
+    public static void Insert(Action content)
+    {
+        DevelopmentCheck.Require(content is not null, "Insert requires content.");
+        Scope.View(new InsertedContent(content), 0);
     }
 
     /// <summary>Creates a text node with its initial value.</summary>

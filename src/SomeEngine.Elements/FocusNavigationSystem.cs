@@ -16,6 +16,7 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
 {
     private QueryHandle _focusableQuery;
     private Entity _input;
+    private bool _shiftPressed;
     private readonly List<Entity> _nodes = new();
     private readonly List<FocusTarget> _targets = new();
     private readonly List<FocusInput> _events = new();
@@ -55,12 +56,21 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
             focused = ReturnFocus(world, focused);
         foreach (FocusInput input in _events)
         {
+            if (input.Kind == FocusInputKind.Key && input.Key == Key.Shift)
+            {
+                _shiftPressed = input.Pressed;
+                continue;
+            }
+            if (TextEditingSystem.HandleInput(world, focused, in input, _shiftPressed))
+                continue;
             if (input.Kind == FocusInputKind.Navigate)
                 focused = Navigate(world, focused, input.Direction);
             else if (input.Kind == FocusInputKind.Confirm)
                 Confirm(world, focused);
             else if (input.Pressed)
             {
+                if (ValueEditing.Step(world, focused, input.Key))
+                    continue;
                 switch (input.Key)
                 {
                     case Key.Left: focused = Navigate(world, focused, Direction.Left); break;
@@ -168,7 +178,10 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
         if (previous == next)
             return;
         if (previous != Entity.Null)
+        {
+            TextEditingSystem.CancelComposition(world, previous);
             world.RemoveSparse<Focused>(previous);
+        }
         if (next != Entity.Null)
             world.AddSparse(next, new Focused());
     }

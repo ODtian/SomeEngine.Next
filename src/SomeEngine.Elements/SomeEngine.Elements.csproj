@@ -8,6 +8,7 @@
     <ProjectReference Include="../SomeEngine.Views/SomeEngine.Views.csproj" />
     <ProjectReference Include="../SomeEngine.Layout/SomeEngine.Layout.csproj" />
     <ProjectReference Include="../SomeEngine.Typography/SomeEngine.Typography.csproj" />
+    <ProjectReference Include="../SomeEngine.Assets/SomeEngine.Assets.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

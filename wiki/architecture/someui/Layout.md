@@ -76,6 +76,13 @@ public readonly record struct Constraints(Size Min, Size Max);
 `CanvasTarget.Screen` 表示屏幕，`RenderTexture(entity)` 与 `WorldSpace(entity)`
 分别保存纹理实体与世界实体。Canvas 配置由应用写入。
 
+世界空间画布的目标实体持有 `WorldTransform`，应用在提取前完成其更新。
+画布原点为该实体的原点，布局 X 沿实体的局部 +X，布局 Y 沿局部 -Y；
+目标的平移、旋转、缩放与拉伸共同定位画布。布局尺寸与屏幕画布采用同一约束协议。
+绘制先以 `Scale` 将布局单位转换为目标局部像素，再应用目标的世界变换。
+`Canvas.DepthTest` 由应用选择场景深度测试，默认 false。
+独立偏移和世界尺寸通过目标实体的变换表达。
+
 帧顺序为 `ViewRebuildSystem` → `LayoutSystem`。
 开发构建通过 Core 的 `DevelopmentCheck` 报告尺寸、约束、缩放及测量/摆放使用错误，
 这些检查调用随 shipping 编译消失。
@@ -93,6 +100,8 @@ Text 的更新者比较文本、样式与外观的公开 ECS 写版本，内容�
 
 文本系统通过这一入口按内容宽度写入字形结果，`Text.Measure` 读取结果尺寸；
 接口、系统接入、版本与缓冲期限由 [[architecture/someui/Text|Text]] 维护。
+图片通过 `ImageTextures` 在同一入口取得应用已就绪的纹理与固有尺寸；
+资源更新、布局尺寸与填充语义由 [[architecture/someui/Render-Path|Render Path]] 维护。
 `LayoutRect` 写入比较最终矩形，相同矩形保持组件写版本。
 
 ## Flex（#25）
@@ -178,6 +187,9 @@ public struct LayoutCache : IComponent
 
 节点在父布局的一次计算中接受的每组约束，经 Box 限制后均固定两轴时，
 其后代布局尺寸变化在该节点止步。该节点使用上次的传入约束单独测量内容，父布局继续使用其固定外框。
+重排边界由父布局传入的全部约束共同确定，并保留到父布局下一次测量该节点。
+独立内容重测更新该节点的测量结果及读取依赖，保留父布局形成的边界判断；
+因此先修改容器内部内容、再修改容器的 Box 尺寸时，父布局仍会取得新尺寸并重新摆放相邻节点。
 节点自身的 Box、视图参数、父约束以及父布局直接读取的数据变化，仍按相应输入更新。
 多次测量保留本次计算的读取依赖，并共同确定重排边界：
 Flex 的松约束基础测量仍贡献自然尺寸，因此内容变化继续影响基础尺寸和伸缩分配；

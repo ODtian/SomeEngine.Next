@@ -9,7 +9,7 @@
 - 悬停：`Hover.Hovered` 表示命中目标；`Hover.Within` 表示指针命中该节点或同一画布内的后代。
 - 输入归属：命中测试在游戏输入之前运行，结果写入单例 `InputCapture`，游戏系统据此决定是否处理本次输入。
 - 焦点：全局一个实体带 `Focused`；`Focusable` 为标记；键盘与手柄导航由可通过系统调度替换的 `FocusNavigationSystem` 根据布局结果计算。
-- 文本输入：平台把字符与输入法组合文本写入 `TextInput`，编辑逻辑由 `TextEditing` 行为对应的系统处理。
+- 文本输入：平台通过 `Keyboard.Text` 与 `Keyboard.Composition` 将字符和组合文本追加到 World 的 `FocusInput` 缓冲，文本编辑系统按事件所在的焦点修改节点的 `EditableText`。
 - 行为部件（`Pressable`、`Draggable`、`Focusable`、`Scrollable`、`TextEditing`、`Selectable`）用 `Ensure<T>` 声明数据，可挂到任意节点。
 
 ## 指针输入与冒泡实现（#37、#38）
@@ -100,7 +100,7 @@ public sealed class HitTestSystem : ISystem<ImmediateSystemContext> { /* ... */ 
 public struct Focusable : IComponent { }
 public struct Focused : ISparseComponent { }
 public enum Direction : byte { Left, Right, Up, Down }
-public enum Key : byte { Left, Right, Up, Down, Enter, Space }
+public enum Key : byte { Left, Right, Up, Down, Enter, Space, Home, End, Shift, Backspace, Delete }
 public static class Keyboard
 {
     public static void Key(World world, Key key, bool pressed);
@@ -115,13 +115,15 @@ public static class FocusFunctions
     public static Entity Focusable(Entity node);
     public static bool Focused(this Entity node);
 }
-public enum FocusInputKind : byte { Key, Navigate, Confirm }
+public enum FocusInputKind : byte { Key, Navigate, Confirm, Text, Composition }
 public struct FocusInput : IBufferElement
 {
     public FocusInputKind Kind;
     public Key Key;
     public bool Pressed;
     public Direction Direction;
+    public string? Text;
+    public int CompositionCaret;
 }
 public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext> { /* ... */ }
 ```
@@ -131,7 +133,7 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext> { /*
 应用也可以事先创建自己的单例。导航系统在下一次输入阶段领取并清空事件。
 `Key` 保存按下和释放两种变化；默认系统对每次 `pressed: true` 执行一次对应动作，
 `pressed: false` 保持当前焦点与点击计数。平台的重复按键通过再次注入按下事件表达。
-方向键执行导航，`Enter` 与 `Space` 执行确认。有效 World、已定义的键与方向，以及
+普通可聚焦节点的方向键执行导航，`Enter` 与 `Space` 执行确认；可编辑节点的键盘规则见下节。有效 World、已定义的键与方向，以及
 每个 World 的单例数量要求通过 Core `DevelopmentCheck` 检查。
 
 将 `FocusNavigationSystem` 与 `HitTestSystem` 注册在游戏输入之前，随后运行
@@ -171,6 +173,93 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext> { /*
 共享检查与外部重写位于同一消费者工程，覆盖网格导航、确认消费、焦点读取依赖、
 祖先转移、清空、父链移动、布局透明组合、最近中心与上一帧布局、画布内导航、输入顺序、
 捕获字段、开发检查和调度中的自定义导航。同一组行为检查接入 `just views-aot win-x64` 的原生验收。
+
+## 文本编辑与输入法组合实现（#41）
+
+以下公开类型位于 `SomeEngine.Elements`：
+
+```csharp
+public struct EditableText : IComponent
+{
+    public string Text;
+    public int Caret;
+    public int SelectionStart;
+    public string Composition;
+    public int CompositionCaret;
+    public uint Edits;
+}
+public struct EditSeen : IComponent { public uint Count; }
+public static class Keyboard
+{
+    public static void Text(World world, string text);
+    public static void Composition(World world, string text, int caret);
+}
+public static class TextEditingFunctions
+{
+    public static Entity TextEditing(Entity node);
+    public static bool Edited(this Entity node, out string text);
+}
+public static class TextEditingSystem
+{
+    public static bool HandleInput(World world, Entity node, in FocusInput input, bool selecting = false);
+    public static void CancelComposition(World world, Entity node);
+}
+```
+
+`TextEditing(node)` 通过公开 `Scope.Ensure` 声明 `EditableText`、`Focusable` 和 `Clicks`，
+返回原节点并保留现有值。`EditableText` 是节点文本编辑数据的主要持有者，输入阶段由
+`TextEditingSystem` 写入；视图读取组件并组合自己的文字、选区和光标外观。首次声明的
+字符串字段按空字符串解释，光标与选区起点为 0；应用可以在声明前提供有效初值。
+
+`Caret` 是活动端，`SelectionStart` 是选区锚点，两者相等时选区折叠。它们使用 .NET
+字符串的 UTF-16 偏移，并落在完整文本元素边界上；emoji、代理对与组合字符一起移动和删除。
+字符输入替换两个端点之间的文字，将两端移到插入文字后的文本元素边界。插入连接字符
+使两侧合成一个文本元素时，光标移到该元素末尾。空字符输入保留现有文本、选区与组合显示。
+
+可编辑节点的 Left / Right 跨一个文本元素移动；已有选区在释放 Shift 后分别向起点或终点
+折叠。Home / End 移到整个字符串的起点或终点。Up / Down 在显式换行之间按当前文本元素
+列移动，较短行使用行尾；LF 与 CRLF 都作为换行。首末行的上下边界保持当前位置。
+按住 Shift 时，上述移动保留锚点并扩展选区，释放时结束扩展；Shift 状态由默认输入系统
+按键事件维护。Backspace / Delete 优先移除选区，选区折叠时分别删除前后一个完整文本元素。
+文本首尾的删除保持原值。按下事件各执行一次，包括平台重复按键；释放事件保留文本状态。
+编辑器领取四个方向键、Home、End、删除键、Enter 与 Space。平台通过 `Keyboard.Text`
+提供空格、换行与确认字符，手柄方向和确认继续沿焦点导航与 `Clicks` 处理。
+
+`Keyboard.Composition(world, text, caret)` 写入独立的 `Composition` 与 `CompositionCaret`。
+组合光标是平台给出的组合字符串 UTF-16 偏移，范围包含字符串首尾。选区和已提交 `Text`
+保持原值，调用方显示时以组合文字替换该选区的呈现内容。重复组合输入更新候选和组合光标，
+可通过正常组件读取依赖刷新外观。组合期间键盘编辑与确认键由输入法处理，平台继续提供
+组合更新与确认字符。`Keyboard.Text` 提供确认结果时替换原选区，并清空组合文字与组合光标；
+`Keyboard.Composition(world, "", 0)` 取消组合显示。默认焦点转移、焦点节点释放和移除
+`Focusable` 都通过 `CancelComposition` 结束原节点的组合显示，保留已提交文字与选区。
+
+仅带 `Focused` 与 `EditableText` 的节点处理文本事件。输入在当前帧按注入顺序领取，
+每条字符或组合事件作用于它之前的导航结果；失焦期间的事件在当次输入阶段结束。
+多个 World 分别使用自己的缓冲、焦点和 Shift 状态。默认 `FocusNavigationSystem` 在
+每条事件的位置直接调用无状态的 `TextEditingSystem.HandleInput`，将编辑与导航共用一份
+事件序列。返回 true 表示该事件由编辑器领取，false 表示继续执行导航规则。替换默认导航
+的用户系统也可以调用这两个公开方法，向 `HandleInput` 传入自己的选区扩展状态，并在
+转移焦点时调用 `CancelComposition`。调度顺序继续沿上节的输入阶段运行。
+
+`Edits` 仅在已提交文字内容变化时递增，采用 `uint` 回绕。光标、选区和组合显示的变化
+保留该计数。`node.Edited(out string text)` 使用 `Scope.Read<EditableText>` 取得文本与计数，
+通过 `Scope.Write<EditSeen>` 比较并保存该节点已经消费的计数，比较规则与 `Clicked` 一样
+使用 `!=`。返回 true 表示有新编辑，一次读取消费当时的全部新计数；out 参数始终返回当前
+已提交文本。同一作用域中的多次读取共用写入副本，成功计算结束时提交。
+
+文本与值控件共享 `Edited` 名称时，通过 `out string text` 或 `out float value` 选择对应
+行为；只消费计数时，分别写 `Edited(out string _)` 与 `Edited(out float _)`。
+
+有效 World、非 null 输入字符串、组合光标范围，以及初始 `EditableText` 的文本元素位置
+要求通过 Core `DevelopmentCheck` 报告，shipping 构建沿统一条件编译移除这些诊断。
+参考独立 SomeUI 的完整文本元素移动与删除；本票按公开 `EditableText` 保存选区、独立组合
+字符串与编辑计数，并通过公开作用域声明行为数据。
+
+实现：[EditableText](../../../src/SomeEngine.Elements/EditableText.cs)、
+[TextEditingFunctions](../../../src/SomeEngine.Elements/TextEditingFunctions.cs)、
+[TextEditingSystem](../../../src/SomeEngine.Elements/TextEditingSystem.cs)。
+公开验收：[TextEditingTests](../../../tests/SomeEngine.Elements.Consumer.Tests/TextEditingTests.cs)，
+共享行为检查、开发检查和外部行为重写位于同一消费者工程，接入既有 Views NativeAOT 验收。
 
 ## 拖动、滚动与选择（#40）
 
@@ -232,6 +321,78 @@ Selectable 组合 Pressable 与 Selected。重复构建保留系统写入的值�
 [共享滚动数据](../../../src/SomeEngine.Views/Layout/ScrollOffset.cs)。
 公开验收：[BehaviorTests](../../../tests/SomeEngine.Elements.Consumer.Tests/BehaviorTests.cs)、
 [内置与用户重写共用检查](../../../tests/SomeEngine.Elements.Consumer.Tests/BehaviorChecks.cs)。
+
+## 数值编辑行为（#44）
+
+```csharp
+public record struct ValueRange(float Value, float Minimum = 0, float Maximum = 1, float Step = 0)
+    : IComponent
+{
+    public readonly float Ratio { get; }
+}
+public record struct ValueDrag(Vector2 Direction, float Distance) : IComponent;
+public struct ValueEdit : IComponent { public float Value; public uint Count; }
+public struct ValueEditSeen : IComponent { public uint Count; }
+```
+
+`ValueFunctions.ValueDraggable(node, range, direction, distance)` 组合 `Draggable` 与
+`Focusable`，写入调用方的范围和拖动映射，并声明编辑数据。方向在声明时归一化；
+Distance 表示从 Minimum 到 Maximum 所需的画布位移。重复声明保留输入数据。
+Value、Minimum、Maximum 与 Step 均要求有限，Minimum ≤ Value ≤ Maximum，Step ≥ 0，
+方向有效且 Distance > 0；使用错误通过 Core `DevelopmentCheck` 报告。
+
+HitTestSystem 的拖动阶段按指针事件顺序保存当前手势的起始值，用累计 `Drag.Total` 在 Direction 上的
+投影计算候选值，再按范围和 Step 限制。小幅位移先累计，再量化，因此多次小移动可以
+跨过量化阈值；区域外释放保留同一个捕获手势的结果。新手势以调用方当前值或此前尚待
+领取的编辑值开始，同一输入帧中的多个手势按到达顺序应用。
+当前输入结果与调用方数值分开持有：输入系统写 ValueEdit，调用方通过 Edited 写回应用数据。
+
+当焦点节点声明 ValueRange 时，FocusNavigationSystem 将按下的 Right / Up 作为增加，
+Left / Down 作为减少；每次重复按下对应一次步进，释放保持当前值。
+Step > 0 时按 Step 步进，Step = 0 时按完整范围的 5% 步进。
+数值节点的方向键编辑当前值，Gamepad.Navigate 继续执行原有焦点导航。
+首次方向输入仍沿默认规则取得焦点，后续方向键编辑已聚焦节点。
+Enter、Space 与 Gamepad.Confirm 继续提供焦点确认，Toggle 通过 Toggled 消费它们。
+
+Step > 0 时，范围内候选值在以 Minimum 为原点的步长格点上取最近值，半步向增加方向取整；
+范围端点保持可达。Step = 0 保留连续候选值。相同结果保持编辑计数，发生变化时递增
+ValueEdit.Count。连续的键盘输入按缓冲顺序应用，并以本次尚待调用方领取的结果继续编辑。
+`Edited(out value)` 读取 ValueEdit 并登记依赖，以 ValueEditSeen 消费新计数；成功构建结束
+时按 Scope 的比较提交规则保存已读计数。读取 false 时，out 值为当前 ValueRange.Value。
+Ratio 是当前参数在范围内的比例，等值范围返回 0，供用户控件选择自己的呈现。
+
+实现：[ValueFunctions](../../../src/SomeEngine.Elements/ValueFunctions.cs)、
+[数值输入](../../../src/SomeEngine.Elements/ValueEditing.cs)。
+公开对等验收：[ValueChecks](../../../tests/SomeEngine.Elements.Consumer.Tests/ValueChecks.cs)、
+[用户 Knob](../../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Knob.cs)。
+
+## 窗口输入转接（#42）
+
+`SomeEngine.Runtime.WindowInput` 使用公开 `Pointer` 与 `Keyboard` 入口，
+为一个 Game world 转接窗口输入。窗口事件由 `RuntimeInput.Process` 同时更新游戏输入
+数据并交给该转接器，ImGui 继续沿自己的窗口事件入口接收输入。
+
+转接器读取当前屏幕 `Canvas`，将窗口像素位置及滚轮增量除以该画布的 `Scale`，
+再将移动、主键、次键、中键和滚轮按到达顺序送入对应画布。窗口离开时移动到画布外，
+窗口失焦时在画布外释放各按钮，并送出键盘释放事件；已捕获的按下随释放结束。
+`CanvasTarget.WorldSpace` 与纹理画布由各自的交互来源供给指针数据。
+
+虚拟键 Left、Right、Up、Down、Enter、Space、Home、End、Shift、Backspace 与 Delete
+对应 `Keyboard.Key`，按下、释放及平台重复按下分别转接。
+`RuntimeInput` 从原有按键数据合并两侧 Shift，随后送出同一份选择状态。
+`EnterCharacter` 组合窗口的 UTF-16 代理项，完整字符交给 `EnterText` → `Keyboard.Text`；
+编辑控制字符沿键盘入口处理。`ChangeComposition` 将候选字符串与 UTF-16 光标位置交给
+`Keyboard.Composition`，窗口失焦结束当前组合。
+
+`NativeWindow` 接收 `WM_IME_STARTCOMPOSITION`、`WM_IME_COMPOSITION` 与
+`WM_IME_ENDCOMPOSITION`，使用 IMM 读取预览、光标及确认字符串，按原有窗口事件队列转接。
+确认字符串作为一个文本事件送到 SomeUI 与 ImGui。
+该处理依据 [Microsoft 的 IMM 字符串读取说明](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immgetcompositionstringw)
+及 [组合字符串确认路径](https://learn.microsoft.com/en-us/windows/win32/controls/em-setimestatus)。
+`WindowInput.InputCapture` 从 World 单例读取当前捕获数据；在 `GameFrameSystems.UpdateInput`
+之后，游戏摄像机将其与 ImGui 的捕获合并，分别控制键盘移动和鼠标旋转。
+
+公开验收：[WindowInputTests](../../../tests/SomeEngine.Runtime.Tests/WindowInputTests.cs)。
 
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Data-Writers|Data Writers]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]]

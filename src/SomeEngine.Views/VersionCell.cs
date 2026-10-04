@@ -13,5 +13,5 @@ public class VersionCell
     public void AdvanceShared() => Interlocked.Add(ref Version, 2);
 
     internal virtual void Refresh(ulong frame) { }
-    internal virtual Exception? Error => null;
+    internal virtual Exception? ReadError => null;
 }

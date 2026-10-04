@@ -97,7 +97,8 @@ GlyphAtlas loaded = GlyphAtlas.Load(contentStream, [font]);
 API 使用错误通过 `DevelopmentCheck` 报告；文件头与版本决定二进制格式的读取方式。
 `Load` 在文件边界检查栅格化配置：页宽高大于 2、字号为正数、距离范围为 2–32 像素；
 非法文件配置通过 `InvalidDataException` 报告，Debug、Release 与 NativeAOT 采用相同规则。
-CPU 数据沿 Game world 到 Rendering world 的既有提取路径交付，GPU 上传由 #34 承接。
+CPU 数据沿 Game world 到 Rendering world 的既有提取路径交付，GPU 上传与字形绘制见
+[Render Path](Render-Path.md#文字提取与绘制34)。
 相较于 SomeUI 的 `FontAtlas` 参考，这里的基准字号采用像素/em，像素保存为单通道，
 字形查询消费 HarfBuzz 编号，并以追加固定页保持位置。
 
@@ -168,13 +169,18 @@ systems.Add(new LayoutSystem(shaping));
 `ShapedText.Size` 并按约束限制尺寸。Flex 与 Grid 的基础测量和最终测量沿同一入口，
 因此文本按当前分配宽度换行，父布局使用此次测量的高度摆放后续子节点。
 
-排版系统按显示字符串 `TextContent`、调用方样式与解析样式的组件版本复用字形结果。
-布局缓存通过 `ILayoutDataUpdate.HasChanges` 沿用这组三种版本，语言切换形成的
+排版系统按显示字符串 `TextContent` 的写版本及解析后的字体、字号、行高复用字形结果。
+布局缓存通过 `ILayoutDataUpdate.HasChanges` 沿用这些排版输入，语言切换形成的
 显示字符串变化会使对应文本的测量失效。每个节点持有可复用的
 各测量宽度缓冲；后续布局复用已经闲置的宽度缓冲，持续改变画布尺寸时存储按同时需要的
 测量宽度数保留。画布布局结束后，以最终宽度和数据版本比较、提交 `ShapedText`。
 相同文本、样式与最终约束保持 `ShapedText.Version` 及组件写版本；
 相同布局矩形也保持 `LayoutRect` 的写版本。
+
+单独修改颜色时，排版系统更新 `ShapedText.Style.Color` 并推进该组件的写版本，
+保留字形、行、尺寸与 `ShapedText.Version`。此版本表示字形布局的变化；
+组件写版本同时供渲染提取观察颜色变化。各宽度的字形缓冲按排版输入复用，
+颜色通过同一节点的样式送达字形实例。图集页与其版本保持原值。
 
 `ShapedText` 由排版系统写入，公开读取字形、行、尺寸、完整样式和版本。
 字形与行范围的读取期限为相关缓冲下一次复用或释放之前；应用在界面布局阶段结束后读取最终结果。
@@ -200,15 +206,24 @@ public static Entity SetText(this Entity node, World world, string value);
 数字声明由同名函数拦截器提供调用位置，再通过
 `Scope.View<T, TValue>(in value, create, key)` 在匹配节点后取得旧文本。
 参数工厂把格式化字符与旧字符串比较，相等时复用旧字符串；变化时创建新的文本参数。
+原始值、格式与格式提供者引用相等时，参数工厂同时复用该节点已有的格式化声明。
+比较保留 decimal 精度、日期 Kind / 时区偏移和浮点符号；这些数据变化时形成新的声明，
+使参数字符串与 `TextContent` 的实际显示一起更新。相同数字重复声明的预热稳态，
+相对于等价字符串声明新增分配为 0 字节。
 `SetText` 供调用方直接写入已存在的文本节点，遵循相同的字符比较和版本规则。
 带 World 的重载即时写入文本；作用域重载写入 `Scope.Write<Text>` 返回的组件副本，
 并在当前计算完成时按同一提交规则写入。Solid 的数字属性绑定使用作用域重载。
+作用域与 World 的数字重载共用文本来源规则：相同原始值、格式、格式提供者及字符保留当前声明；
+新输入写入普通字符串参数，字符串重载直接采用调用方提供的普通字符串。
+一次来源切换在 `Text` 参数中明确提交，显示字符串相等时 `TextContent` 及排版结果继续保留版本。
 值、格式与格式提供者形成的文本保持相等时，数字写入保持托管分配为零与文本写版本。
 短格式使用栈上的字符范围；较长格式使用可复用字符池。格式提供者沿用 .NET 的格式化规则，
 省略格式提供者时，声明的文本在自己的 `Build` 中读取当前 `Locale`，
 按该语言格式化并登记组件依赖；提供格式提供者时采用调用方指定的格式规则。
 应用在声明界面之前创建语言单例；沿用纯数字写入的应用也可采用 .NET 当前文化。
 `SetText` 按调用时的语言格式化并写入字符串参数，配置语言后的相同数字写入仍保持零分配。
+作用域数字写入在采用默认格式提供者时读取并登记 `Locale`，
+因此 Solid 计算随语言变化重跑并格式化当前数字或日期；显式格式提供者继续持有自己的格式规则。
 单例定位保存实体、Locale 类型写计数及该版本对应的只读格式提供者；
 `Locale.Name` 持有当前语言，版本变化后重新取得格式提供者。
 新格式首次使用时建立需要的字符池容量。
@@ -312,7 +327,8 @@ world.Replace(language, new Locale { Name = "zh-CN" });
 
 ## 后续文本能力
 
-文本绘制由 #34 沿既有 Game world 到 Rendering world 提取路径接入。
+文本绘制通过 `GlyphRenderExtractor` 与 `GlyphsMaterial` 沿既有 Game world 到
+Rendering world 提取路径接入，公开入口及像素语义见 [Render Path](Render-Path.md#文字提取与绘制34)。
 富文本继续按样式段扩展排版数据。
 
 ## Open questions

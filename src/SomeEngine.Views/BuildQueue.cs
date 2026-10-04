@@ -12,6 +12,7 @@ internal sealed class BuildQueue
     private static readonly ConditionalWeakTable<World, BuildQueue> s_worlds = new();
     private readonly Lock _gate = new();
     private readonly Dictionary<Entity, Scope.ScopeData> _builds = new();
+    private readonly HashSet<Scope.ScopeData> _computations = new();
     private List<BuildStateMachine> _ready = new();
     private List<BuildStateMachine> _resuming = new();
     private List<Action> _nextFrame = new();
@@ -23,11 +24,17 @@ internal sealed class BuildQueue
     internal static BuildQueue For(World world) => s_worlds.GetValue(world, static world =>
     {
         var queue = new BuildQueue();
-        world.EntityDestroying += (_, entity) => queue.Cancel(entity, restore: false);
+        world.EntityDestroying += (_, entity) => queue.Release(world, entity);
         return queue;
     });
 
-    internal void Add(Scope.ScopeData data) => _builds.Add(data.Entity, data);
+    internal void Add(Scope.ScopeData data)
+    {
+        if (data.Computation is null)
+            _builds.Add(data.Entity, data);
+        else
+            _computations.Add(data);
+    }
 
     internal void Open()
     {
@@ -45,6 +52,34 @@ internal sealed class BuildQueue
     {
         if (_builds.Remove(entity, out Scope.ScopeData? data))
             Scope.CancelBuild(data, restore);
+    }
+
+    internal void Cancel(Scope.ScopeData data, bool restore)
+    {
+        if (_computations.Remove(data))
+            Scope.CancelBuild(data, restore);
+        else if (_builds.TryGetValue(data.Entity, out Scope.ScopeData? current) && current == data)
+            Cancel(data.Entity, restore);
+    }
+
+    private void Release(World world, Entity entity)
+    {
+        Cancel(entity, restore: false);
+        if (world.HasSparse<Computations>(entity))
+            world.ReadSparse<Computations>(entity).List.ReleaseChildren();
+        while (true)
+        {
+            Scope.ScopeData? next = null;
+            foreach (Scope.ScopeData data in _computations)
+                if (data.Entity == entity)
+                {
+                    next = data;
+                    break;
+                }
+            if (next is null)
+                return;
+            Cancel(next, restore: false);
+        }
     }
 
     internal void CancelChanged(World world, DependencyChanges changes)
@@ -117,8 +152,11 @@ internal sealed class BuildQueue
                 Scope.ScopeData data = stateMachine.Data;
                 Scope.ScopeData view = data.ViewData;
                 if (!view.IsCanceled && !world.IsAlive(build.Entity))
-                    Cancel(build.Entity, restore: false);
-                if (!view.IsCanceled && !_builds.ContainsKey(build.Entity))
+                    Cancel(view, restore: false);
+                bool active = view.Computation is null
+                    ? _builds.TryGetValue(build.Entity, out Scope.ScopeData? currentBuild) && currentBuild == view
+                    : _computations.Contains(view);
+                if (!view.IsCanceled && !active)
                     continue;
                 bool completed = false;
                 try
@@ -165,6 +203,7 @@ internal sealed class BuildQueue
                         }
                         if (_builds.TryGetValue(build.Entity, out Scope.ScopeData? current) && current == view)
                             _builds.Remove(build.Entity);
+                        _computations.Remove(view);
                         Scope.Release(view);
                     }
                 }
@@ -182,8 +221,9 @@ internal sealed class BuildQueue
     internal void Close(World world, ulong frame)
     {
         _changedBuilds.AddRange(_builds.Values);
+        _changedBuilds.AddRange(_computations);
         foreach (Scope.ScopeData data in _changedBuilds)
-            Cancel(data.Entity, restore: false);
+            Cancel(data, restore: false);
         _changedBuilds.Clear();
         while (true)
         {
@@ -200,6 +240,7 @@ internal sealed class BuildQueue
         _frameCallbacks.Clear();
         _depths.Clear();
         _builds.Clear();
+        _computations.Clear();
     }
 
     private readonly record struct BuildDepth(BuildStateMachine StateMachine, Entity Entity, int Depth);

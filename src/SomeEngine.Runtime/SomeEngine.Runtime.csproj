@@ -22,6 +22,7 @@
     <ProjectReference Include="..\SomeEngine.Graphics.Validation\SomeEngine.Graphics.Validation.csproj" />
     <ProjectReference Include="..\SomeEngine.Render\SomeEngine.Render.csproj" />
     <ProjectReference Include="..\SomeEngine.Views\SomeEngine.Views.csproj" />
+    <ProjectReference Include="..\SomeEngine.Animation\SomeEngine.Animation.csproj" />
     <ProjectReference Include="..\SomeEngine.Elements.Render\SomeEngine.Elements.Render.csproj" />
     <ProjectReference Include="..\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj" />
     <ProjectReference Include="..\SomeEngine.Render.Cluster.Pipeline\SomeEngine.Render.Cluster.Pipeline.csproj" />
@@ -31,6 +32,9 @@
     <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../assets/Fonts/Example.otf" LogicalName="SomeEngine.Runtime.Fonts.Example.otf" />
+    <Content Include="../../assets/Fonts/OFL-Example.txt" Link="Fonts/OFL-Example.txt"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="imgui.ini" Condition="Exists('imgui.ini')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

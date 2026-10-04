@@ -28,20 +28,39 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusLayoutChecks.cs" Link="FocusLayoutChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusPointerChecks.cs" Link="FocusPointerChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/FocusFunctions.cs" Link="Rewrites/FocusFunctions.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextEditingChecks.cs" Link="TextEditingChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextDeletionChecks.cs" Link="TextDeletionChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextCompositionChecks.cs" Link="TextCompositionChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextFocusChecks.cs" Link="TextFocusChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextEditBoundaryChecks.cs" Link="TextEditBoundaryChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextEditDataChecks.cs" Link="TextEditDataChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/TextEditingFunctions.cs" Link="Rewrites/TextEditingFunctions.cs" />
+
 
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/BehaviorChecks.cs" Link="BehaviorChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DraggableFunctions.cs" Link="Rewrites/DraggableFunctions.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/ScrollableFunctions.cs" Link="Rewrites/ScrollableFunctions.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/SelectableFunctions.cs" Link="Rewrites/SelectableFunctions.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ListChecks.cs" Link="ListChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/ScrollView.cs" Link="Rewrites/ScrollView.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/VirtualList.cs" Link="Rewrites/VirtualList.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs" Link="ButtonChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs" Link="Rewrites/Button.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs" Link="Rewrites/IconButton.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ValueChecks.cs" Link="ValueChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ValueRangeChecks.cs" Link="ValueRangeChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ValueVolumeChecks.cs" Link="ValueVolumeChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Toggle.cs" Link="Rewrites/Toggle.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Knob.cs" Link="Rewrites/Knob.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/FlexChecks.cs" Link="FlexChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/StackGridChecks.cs" Link="StackGridChecks.cs" />
     <ProjectReference Include="../../src/SomeEngine.Views.Compose/SomeEngine.Views.Compose.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.Views.SwiftUI/SomeEngine.Views.SwiftUI.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.Views.Solid/SomeEngine.Views.Solid.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/SolidChecks.cs" Link="SolidChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/ControlFlowChecks.cs" Link="ControlFlowChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/ListChecks.cs" Link="SolidListChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/FrontendChecks.cs" Link="FrontendChecks.cs" />
     <ProjectReference Include="../SomeEngine.Views.AotReference/SomeEngine.Views.AotReference.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs" Link="HeadlessFrameDriver.cs" />
   </ItemGroup>

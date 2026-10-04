@@ -83,13 +83,14 @@ internal sealed class ChildChanges
             world.Remove<ObjectDependencies>(entity);
     }
 
-    internal void RememberComputations(World world, Entity entity)
+    internal ComputationList? RememberComputations(World world, Entity entity)
     {
         ComputationList? computations = world.HasSparse<Computations>(entity)
             ? world.ReadSparse<Computations>(entity).List : null;
-        _previousData.Add(new ChildComputations(entity, computations));
+        _previousData.Add(new ChildComputations(world, entity, computations));
         if (computations is not null)
             world.RemoveSparse<Computations>(entity);
+        return computations;
     }
 
     internal void RemoveChild(Entity entity) => _removedChildren.Add(entity);
@@ -138,6 +139,16 @@ internal sealed class ChildChanges
         void Complete() { }
     }
 
+    private static void RestoreValue<T>(World world, Entity entity, in T value) where T : struct
+    {
+        T restored = value;
+        AnimatedFields.PreservePresentation(world, entity, ref restored);
+        if (EqualityComparer<T>.Default.Equals(world.ReadComponentData<T>(entity), restored))
+            world.OverwriteComponentData(entity, in restored);
+        else
+            world.ReplaceComponentData(entity, in restored);
+    }
+
     private sealed class ChildOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children) : IChildData
     {
         public void Restore(World world)
@@ -162,9 +173,7 @@ internal sealed class ChildChanges
 
         public void Restore(World world)
         {
-            T restored = value;
-            AnimatedFields.PreservePresentation(world, entity, ref restored);
-            world.OverwriteComponentData(entity, in restored);
+            RestoreValue(world, entity, in value);
             world.OverwriteComponentData(entity, in _viewType);
             if (_buildRequested && !world.Has<BuildRequest>(entity))
                 world.AddTag<BuildRequest>(entity);
@@ -196,17 +205,13 @@ internal sealed class ChildChanges
         public void Restore(World world)
         {
             if (_exists)
-            {
-                T restored = _value;
-                AnimatedFields.PreservePresentation(world, entity, ref restored);
-                world.OverwriteComponentData(entity, in restored);
-            }
+                RestoreValue(world, entity, in _value);
             else if (world.HasComponentData<T>(entity))
                 world.DiscardComponentData<T>(entity);
         }
     }
 
-    private sealed class ChildComputations(Entity entity, ComputationList? computations) : IChildData
+    private sealed class ChildComputations(World world, Entity entity, ComputationList? computations) : IChildData
     {
         private int _buildCount = 1;
         private bool _restored;
@@ -219,7 +224,7 @@ internal sealed class ChildChanges
             {
                 ComputationList current = world.ReadSparse<Computations>(entity).List;
                 if (!ReferenceEquals(current, computations))
-                    current.ReleaseChildren();
+                    current.ReleaseChildren(retained: computations);
                 if (computations is not null)
                     world.ReplaceSparse(entity, new Computations(computations));
                 else
@@ -234,7 +239,8 @@ internal sealed class ChildChanges
         public void Complete()
         {
             if (--_buildCount == 0 && !_restored)
-                computations?.ReleaseChildren();
+                computations?.ReleaseChildren(retained: world.IsAlive(entity) && world.HasSparse<Computations>(entity)
+                    ? world.ReadSparse<Computations>(entity).List : null);
         }
     }
 

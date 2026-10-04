@@ -58,10 +58,16 @@ public sealed partial class AsyncAnimationTests
         completion.SetResult();
         frames.Frame(0.5f);
         Assert.Equal(new Color(0.375f, 0.5f, 0.125f), frames.World.Read<Surface>(panel).Fill);
+        uint surfaceVersion = frames.World.WriteVersion<Surface>(panel);
         frames.Frame(0);
         Entity content = nested ? Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)) : root;
         Assert.Same(error, frames.World.ReadSparse<BuildError>(content).Exception);
         Assert.Equal(new Color(0.375f, 0.5f, 0.125f), frames.World.Read<Surface>(panel).Fill);
+        if (!computed)
+        {
+            Assert.Equal(3, frames.World.Read<Surface>(panel).CornerRadius);
+            Assert.NotEqual(surfaceVersion, frames.World.WriteVersion<Surface>(panel));
+        }
         frames.Frame(0.5f);
         Assert.Equal(new Color(0.6875f, 0.25f, 0.0625f), frames.World.Read<Surface>(panel).Fill);
         frames.Frame(0.5f);

@@ -52,7 +52,17 @@ SomeEngine.Elements.Consumer.Tests.TextChecks.Run();
 SomeEngine.Elements.Consumer.Tests.LocalizationChecks.Run();
 Console.WriteLine("Localized keys, arguments, language changes, English and Chinese plurals, number and date cultures, and ordinary text versions passed under NativeAOT.");
 SomeEngine.Views.Solid.Tests.SolidChecks.Run();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckInsert();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckInsertedBranches();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckInsertionRecovery();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckComponent();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckBuild();
+Console.WriteLine("Solid Insert parameters, exported Once views, inline component calls, and retained state and computations passed under NativeAOT.");
 Console.WriteLine("Solid text bindings, Memo getters, Effect, Untrack, reactive surfaces, and zero-allocation state changes passed under NativeAOT.");
+SomeEngine.Views.Solid.Tests.ControlFlowChecks.Run();
+Console.WriteLine("Solid Show, keyed values, nullable numbers, Switch/Match, Dynamic, and branch release passed under NativeAOT.");
+SomeEngine.Views.Solid.Tests.ListChecks.Run();
+Console.WriteLine("Solid For and Index row identities, index and item getters, Each queries, and row release passed under NativeAOT.");
 Console.WriteLine("Text shaping, Column measurements, style modifiers, formatted numbers, write versions, and zero-allocation integer writes passed under NativeAOT.");
 Console.WriteLine("Column surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);
@@ -78,14 +88,38 @@ SomeEngine.Elements.Consumer.Tests.FocusChecks.RunReparentedRelease();
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunWorlds();
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunMixedInputs();
 Console.WriteLine("Keyboard and gamepad focus, confirmation, capture, ancestor transfer, layout geometry, public user behaviors, and scheduled navigation passed under NativeAOT.");
+foreach (bool rewritten in new[] { false, true })
+{
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunInsertion(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunMovement(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunSelection(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunDeletion(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunComposition(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunCompositionKeys(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunInputOrder(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunVerticalMovement(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunJoinedCharacters(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunEmptyInput(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunInactive(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunRepeatedDeclaration(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunWorlds(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunFocusabilityRemoval(rewritten);
+}
+Console.WriteLine("Text editing, selections, whole-character movement and deletion, IME composition, focused input order, World isolation, and public user text behaviors passed under NativeAOT.");
+
 
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(true);
 Console.WriteLine("Drag, scroll, selection and external behavior declarations passed.");
+SomeEngine.Elements.Consumer.Tests.ListChecks.Run(false);
+SomeEngine.Elements.Consumer.Tests.ListChecks.Run(true);
+Console.WriteLine("ScrollView content, buffered VirtualList ranges, keyed row lifetimes, row data changes, and public user controls passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.BuiltIn);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);
 Console.WriteLine("Button themes, held presses, click consumption, label updates, and public user Button and IconButton passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.ValueChecks.Run();
+Console.WriteLine("Toggle activation, Slider and user Knob range editing, keyboard steps, quantized dragging, and audio volume with equal text versions passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
 Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
 

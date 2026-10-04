@@ -44,11 +44,24 @@ layout and preserves a held UI press until release.
 The external examples and shared behavior checks live in
 `tests/SomeEngine.Elements.Consumer.Tests`.
 
+`Image(AssetId<TextureAsset> source, ImageFit fit = ImageFit.Contain)` is a layout
+view. Install `new ImageTextures(resolve)` in `LayoutSystem`; the resolver returns
+the application's ready `SomeEngine.Resources.Texture` for that asset identity.
+The application controls acquisition and texture lifetime. Image's natural size
+uses texture width and height. During acquisition it uses the unified missing
+texture's 1×1 size; a Box can supply a fixed drawing area. Ready resource changes
+enter the layout data stage and continue through the shared canvas extraction.
+`ImageFit` supports `Stretch`, `Contain` and `Cover`; fitting applies within Box
+padding, while `LayoutRect` retains the allocated outer rectangle.
+The material and fitting semantics live in the Wiki
+[`Render-Path`](../../wiki/architecture/someui/Render-Path.md).
+
 `FocusFunctions.Focusable(node)` declares the `Focusable` marker and `Clicks`.
 Read `node.Focused()` in a caller scope to observe focus through a presence
 dependency. Queue keys through `Keyboard.Key(world, key, pressed)`, directions
 through `Gamepad.Navigate(world, direction)`, and activation through
-`Gamepad.Confirm(world)`. Arrow keys navigate; Enter and Space activate. Each key
+`Gamepad.Confirm(world)`. On ordinary focusable nodes, arrow keys navigate;
+Enter and Space activate. Each key
 press is one action, including platform repeats; releases preserve focus and
 click counts.
 
@@ -67,6 +80,32 @@ that buffer and implement custom navigation and activation. The default system
 uses `World.EntityDestroying` to transfer focus to the nearest focusable
 ElementTree ancestor during node release. A parent-chain endpoint clears focus.
 
+`TextEditingFunctions.TextEditing(node)` declares `EditableText`, `Focusable`,
+and `Clicks` while preserving their values. Queue committed characters through
+`Keyboard.Text(world, text)` and IME candidates through
+`Keyboard.Composition(world, text, caret)`. The default focus system calls the
+stateless `TextEditingSystem` at each event's position in the same input buffer.
+The focused editor receives text and its arrow, Home, End, Backspace, Delete,
+Enter, and Space keys; gamepad navigation continues to move focus.
+
+Read `EditableText` in the caller's scope to draw text, selection, and caret.
+`Caret` and `SelectionStart` are UTF-16 offsets at complete text element
+boundaries. Shift extends the selection; typing replaces it, and deletion
+removes the selection or one whole text element. Up and Down use the current
+text element column across explicit LF or CRLF lines; Home and End use the
+whole string. Empty character input preserves existing data.
+
+`Composition` and `CompositionCaret` provide the candidate text and its UTF-16
+caret separately from committed `Text`. Display candidates over the selection;
+`Keyboard.Text` commits the result and clears the candidates. An empty
+composition or a focus transfer ends candidate presentation. During composition,
+the input method handles editor keys through subsequent candidate and text
+events. Read `node.Edited(out text)` to consume new committed content changes,
+using the same count comparison as `Clicked()`. Its output is the current
+committed text on every read. Custom navigation systems can call
+`TextEditingSystem.HandleInput` and `CancelComposition` through the public API.
+See Wiki `architecture/someui/Input-and-Behaviors` for complete input rules.
+
 `DraggableFunctions.Draggable(node)`, `ScrollableFunctions.Scrollable(node)`,
 and `SelectableFunctions.Selectable(node)` declare their components through
 `Scope.Ensure`. The pointer stage writes `Drag` and toggles `Selected` on each
@@ -78,6 +117,20 @@ Transparent compositions provide a viewport when they declare scrolling.
 Each function returns the original entity and preserves behavior data when
 declared again. See the Wiki Input-and-Behaviors and Layout pages for units,
 button handling, nested viewports, and the shared public user examples.
+
+`ScrollViewFunctions.ScrollView()` declares a sparse caller-content viewport with
+wheel and drag scrolling. Open its `Content()` to compose the content and set its
+outer size with the layout modifiers. Its descendants use the viewport bounds
+for pointer hit testing and Surface clipping.
+
+`VirtualListFunctions.VirtualList(rowHeight)` declares a sparse scrollable list.
+Within its caller's build, use `Visible(list, count)` to enumerate item indices and
+`Scope.Key(item.Id)` to preserve each row's entity. `VisibleRange` exposes Start,
+End, and Count for its half-open range, with one buffer row at each end. Each row
+supplies a layout root; the list places those roots using the shared row height
+and reports the entire item count's content height. The first layout establishes
+the viewport, and the next rebuild declares its visible rows. See Wiki
+`architecture/someui/Lists` for frame order, padding, and the public examples.
 
 `ButtonFunctions.Button(label)` declares a sparse `Button` view. Import
 `ButtonFunctions` statically to write `if (Button("OK").Clicked())` in a build.
@@ -91,12 +144,30 @@ properties are `Fill`, `HoverFill`, `PressedFill`, `TextColor`, `Padding`, and
 use the button defaults and explicit transparent colors and zero spacing remain
 caller data. See Wiki `architecture/someui/Composition` for values and examples.
 
+`ToggleFunctions.Toggle(on)` composes pointer and focus activation with a switch
+surface. Use `Toggled()` to consume a new activation and change the caller's
+boolean. `SliderFunctions.Slider(value, minimum, maximum, step)` composes a
+horizontal track with the public `ValueDraggable` behavior. Use `Edited(out value)`
+to consume a changed number and save it in application data.
+
+Call `ValueFunctions.ValueDraggable(node, range, direction, distance)` in a user
+control's build to share range editing while choosing its own drag direction,
+canvas distance, structure, and appearance. `ValueRange.Ratio` supplies the
+display fraction. The external Knob example uses upward dragging and a round
+surface. Step zero gives continuous dragging and 5% keyboard steps; positive
+steps quantize edits relative to Minimum. Right and Up increase a focused value;
+Left and Down decrease it. Gamepad directions retain focus navigation.
+See Wiki Composition and Input-and-Behaviors for data writers and examples.
+
 `Text(string)` declares a text view. `Font`, `FontSize`, `TextColor`, and
 `LineHeight` write its caller-chosen `TextStyle` fields. The text view reads
 omitted fields from the nearest `TextTheme` through the public environment API.
 Provide a loaded `SomeEngine.Typography.Font` in that theme or the font modifier.
 Sizes and line heights use pixels; zero line height uses the font metrics.
 `ShapedText` exposes the final glyphs, lines, size, complete style, and version.
+The version tracks glyph layout. A color edit updates the complete style and
+component write version while keeping glyph layout and atlas pixels. Text draws
+through the atlas, extraction and Glyphs material in `SomeEngine.Elements.Render`.
 
 ```csharp
 var shaping = new TextShapingSystem();
