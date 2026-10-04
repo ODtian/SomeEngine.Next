@@ -15,15 +15,23 @@ public static partial class Scope
     private static Stack<ScopeData>? s_scopes;
 #if DEBUG
     [ThreadStatic]
-    private static Dictionary<Entity, ChildDeclaration>? s_childDeclarations;
+    private static Dictionary<Entity, (Entity Entity, ScopeData Data, int Version, int BuildNumber)>? s_childDeclarations;
     [ThreadStatic]
     private static int s_buildNumber;
 #endif
+
+    [ThreadStatic]
+    private static Stack<ScopeData>? s_reusableData;
 
     /// <summary>The World containing the view being built.</summary>
     public static World World => Current.World;
     /// <summary>The entity of the view being built.</summary>
     public static Entity Entity => Current.Entity;
+
+    /// <summary>Waits until this World's next view rebuild phase.</summary>
+    public static FrameAwaitable NextFrame() => new(Current.Queue);
+
+    internal static ScopeData Data => Current;
 
     internal static ulong Frame => s_scopes is { Count: > 0 } ? s_scopes.Peek().Frame : 0;
 
@@ -131,15 +139,15 @@ public static partial class Scope
         return ref current.World.ReadComponentReference<T>(source);
     }
 
-    /// <summary>Returns a component copy that is compared and committed when the build completes.</summary>
-    /// <remarks>The reference remains valid through structural changes in this build.</remarks>
+    /// <summary>Returns a component copy that is compared and committed when the calculation returns or suspends.</summary>
+    /// <remarks>Use the reference before the next await; structural changes within that segment preserve it.</remarks>
     public static ref T Write<T>(Entity entity) where T : struct
     {
         ScopeData current = Current;
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"Scope.Write requires table or sparse component {typeof(T).Name}.");
         var key = (entity, ComponentId<T>.Value);
-        var copies = (current.Calculation ?? current).ComponentCopies ??= new();
+        var copies = current.ViewData.ComponentCopies ??= new();
         if (!copies.TryGetValue(key, out ComponentCopy? copy))
         {
             T value = ComponentCopy<T>.HasComponent(current.World, entity)
@@ -173,7 +181,7 @@ public static partial class Scope
         world.AddComponentData(entity, in value);
     }
 
-    /// <summary>Observes component presence and records additions or removals as a dependency.</summary>
+    /// <summary>Checks component presence and records the result as a dependency of a Rerun build.</summary>
     public static bool Has<T>(Entity entity) where T : struct
     {
         ScopeData current = Current;
@@ -181,15 +189,13 @@ public static partial class Scope
             $"Scope.Has requires a component or tag type, received {typeof(T).Name}.");
         bool present = current.World.HasComponentData<T>(entity);
         if (current.DependenciesEnabled)
-        {
             RecordDependency(current, new Dependency
             {
+                Kind = DependencyKind.Presence,
                 Entity = entity,
                 Component = ComponentId<T>.Value,
                 Version = present ? 1u : 0u,
-                Kind = DependencyKind.Presence,
             });
-        }
         return present;
     }
 
@@ -279,6 +285,7 @@ public static partial class Scope
                 current.World.OverwriteComponentData(existing, in view);
                 return existing;
             }
+
             current.World.ReplaceComponentData(existing, in view);
             if (T.Mode == BuildMode.Rerun)
             {
@@ -359,10 +366,19 @@ public static partial class Scope
             world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
         if (world.Has<ObjectDependencies>(entity))
             world.Read<ObjectDependencies>(entity).Reads.Clear(frame);
-        var current = new ScopeData(world, entity, entity, frame, declaresChildren, dependenciesEnabled,
-            parent?.World == world ? parent.Changes : null);
+        ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
+            ? available : new();
+        current.World = world;
+        current.Entity = entity;
+        current.ViewData = current;
+        current.Parent = entity;
+        current.DeclaresChildren = declaresChildren;
+        current.DependenciesEnabled = dependenciesEnabled;
+        current.Queue = BuildQueue.For(world);
+        current.BeginChildren(frame, parent?.World == world ? parent.Changes : null);
         current.Changes.RememberComputations(world, entity);
 #if DEBUG
+        current.ContentVersion++;
         current.BuildNumber = ++s_buildNumber;
 #endif
         if (declaresChildren)
@@ -371,64 +387,198 @@ public static partial class Scope
             CaptureSiblingCounts(current);
         }
         (s_scopes ??= new Stack<ScopeData>()).Push(current);
-        return default;
+        return new BuildScope(current, releaseOnExit: true);
     }
 
     internal static BuildScope Enter(Computation computation, ulong frame)
     {
+        ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
+            ? available : new();
+        current.World = computation.World;
+        current.Entity = computation.Entity;
+        current.Parent = computation.Entity;
+        current.ViewData = current;
+        current.Computation = computation;
+        current.DeclaresChildren = false;
+        current.DependenciesEnabled = true;
+        current.Queue = BuildQueue.For(computation.World);
         ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
-        var current = new ScopeData(computation.World, computation.Entity, computation.Entity, frame,
-            declaresChildren: false, dependenciesEnabled: true,
-            parent?.World == computation.World ? parent.Changes : null)
-        {
-            Computation = computation,
-        };
+        current.BeginChildren(frame, parent?.World == computation.World ? parent.Changes : null);
 #if DEBUG
         current.BuildNumber = ++s_buildNumber;
 #endif
         (s_scopes ??= new Stack<ScopeData>()).Push(current);
-        return default;
+        return new BuildScope(current, releaseOnExit: true);
+    }
+
+    internal static BuildScope Resume(ScopeData data)
+    {
+        if (data.World.Has<ObjectDependencies>(data.Entity))
+            data.World.Read<ObjectDependencies>(data.Entity).Reads.BeginFrame(data.Frame);
+        if (data.DeclaresChildren)
+            CheckChildDeclaration(data);
+        (s_scopes ??= new Stack<ScopeData>()).Push(data);
+        return new BuildScope(data, releaseOnExit: false);
+    }
+
+    internal static void Release(ScopeData data)
+    {
+        if (data == data.ViewData && data.StateMachines != 0)
+            return;
+        if (data.ContentData is { } content)
+        {
+            foreach (ScopeData declaration in content)
+                Release(declaration);
+            content.Clear();
+        }
+        data.World = null!;
+        data.Entity = default;
+        data.Parent = default;
+        data.ViewData = null!;
+        data.Queue = null!;
+        data.Task = default;
+        data.Computation = null;
+        data.ComponentCopies?.Clear();
+        data.RememberOccurrences?.Clear();
+        data.ParameterVersion = null;
+        data.Suspended = false;
+        if (data.OutermostBuild)
+            data.Changes.Clear();
+        data.Changes = null!;
+        data.PreviousChildren = default;
+        data.DeclaredChildren.Clear();
+        data.Completed = false;
+        data.KeyPrefix = null;
+        data.GroupPrefix = null;
+        data.Occurrences.Clear();
+#if DEBUG
+        data.PreviousSiblings.Clear();
+#endif
+        (s_reusableData ??= new Stack<ScopeData>()).Push(data);
+    }
+
+    internal static void RetainContent(ScopeData data)
+    {
+        ScopeData view = data.ViewData;
+        if (data != view && !data.Suspended)
+        {
+            data.Suspended = true;
+            (view.ContentData ??= new()).Add(data);
+        }
+        if (!view.OutermostBuild)
+        {
+            int firstData = view.FirstData;
+            int firstRemoval = view.FirstRemoval;
+            ChildChanges changes = view.OwnChanges ??= new();
+            view.Changes.CopyTo(changes, firstData, firstRemoval);
+            if (s_scopes is { } scopes)
+                foreach (ScopeData scope in scopes)
+                    if (scope.ViewData == view)
+                        scope.ReplaceChanges(changes, firstData, firstRemoval);
+            if (view.ContentData is { } content)
+                foreach (ScopeData scope in content)
+                    if (scope.Changes != changes)
+                        scope.ReplaceChanges(changes, firstData, firstRemoval);
+            view.OutermostBuild = true;
+        }
+    }
+
+    internal static void CompleteBuild(ScopeData data)
+    {
+        if (data.ContentData is { } content)
+            foreach (ScopeData declaration in content)
+                CompleteChildren(declaration);
+        CompleteChildren(data);
+        CommitWrites(data);
+        if (data.Computation is null && data.World.HasSparse<BuildError>(data.Entity))
+            data.World.RemoveSparse<BuildError>(data.Entity);
+    }
+
+    private static void CompleteChildren(ScopeData data)
+    {
+        if (!data.DeclaresChildren)
+        {
+            data.Completed = true;
+            return;
+        }
+        CheckSiblingCounts(data);
+        var children = Hierarchy<ElementTree>.GetChildren(data.World, data.Parent);
+        for (int index = 0; index < data.DeclaredChildren.Count; index++)
+        {
+            if (children[index] == data.DeclaredChildren[index])
+                continue;
+            Hierarchy<ElementTree>.SetParent(data.World, data.DeclaredChildren[index], data.Parent, index);
+            children = Hierarchy<ElementTree>.GetChildren(data.World, data.Parent);
+        }
+        foreach (Entity child in data.PreviousChildren)
+            if (!data.DeclaredChildren.Contains(child))
+                data.Changes.RemoveChild(child);
+        data.Completed = true;
+    }
+
+    internal static void CommitWrites(ScopeData data)
+    {
+        if (data.ComponentCopies is { } copies)
+        {
+            foreach (ComponentCopy copy in copies.Values)
+                copy.Commit(data.World, data.Changes);
+            copies.Clear();
+        }
+    }
+
+    internal static void FinishChildren(ScopeData data)
+    {
+        if (!data.Completed)
+            data.Changes.Restore(data.World, data.FirstData, data.FirstRemoval);
+        else if (data.OutermostBuild)
+            data.Changes.ReleaseChildren(data.World);
     }
 
     internal static ParentScope EnterContent(Entity entity)
     {
         ScopeData build = Current;
         ViewTypes.CheckContent(build.World, entity);
-        var current = new ScopeData(build.World, build.Entity, entity, build.Frame,
-            declaresChildren: true, dependenciesEnabled: build.DependenciesEnabled, build.Changes,
-            calculation: build.Calculation ?? build)
-        {
-            Computation = build.Computation,
-            KeyPrefix = build.GroupPrefix,
-            GroupPrefix = build.GroupPrefix,
-        };
+        ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
+            ? available : new();
+        current.World = build.World;
+        current.Entity = build.Entity;
+        current.ViewData = build.ViewData;
+        current.Computation = build.Computation;
+        current.Parent = entity;
+        current.DeclaresChildren = true;
+        current.DependenciesEnabled = build.DependenciesEnabled;
+        current.Queue = build.Queue;
+        current.KeyPrefix = build.GroupPrefix;
+        current.GroupPrefix = build.GroupPrefix;
+        current.BeginChildren(build.Frame, build.Changes);
 #if DEBUG
-        current.BuildNumber = build.BuildNumber;
+        current.ContentVersion++;
+        current.BuildNumber = build.ViewData.BuildNumber;
 #endif
         CheckChildDeclaration(current);
         CaptureSiblingCounts(current);
         s_scopes!.Push(current);
-        return new ParentScope(entity, default);
+        return new ParentScope(entity, new BuildScope(current, releaseOnExit: true));
     }
 
 #if DEBUG
     internal static RebuildScope EnterRebuild()
     {
-        var scope = new RebuildScope(s_childDeclarations, s_buildNumber);
-        s_childDeclarations = new Dictionary<Entity, ChildDeclaration>();
-        s_buildNumber = 0;
+        var scope = new RebuildScope(s_childDeclarations);
+        s_childDeclarations = new();
         return scope;
     }
 #endif
 
     [Conditional("DEBUG")]
-    private static void CheckChildDeclaration(ScopeData current)
+    private static void CheckChildDeclaration(ScopeData data)
     {
 #if DEBUG
-        bool declared = s_childDeclarations!.TryGetValue(current.Parent, out ChildDeclaration previous);
-        DevelopmentCheck.Require(!declared || previous.Entity == current.Entity && previous.BuildNumber != current.BuildNumber,
-            $"The children of {current.Parent} were declared by two scopes in the same rebuild.");
-        s_childDeclarations[current.Parent] = new ChildDeclaration(current.Entity, current.BuildNumber);
+        if (s_childDeclarations!.TryGetValue(data.Parent, out var previous))
+            DevelopmentCheck.Require(previous.Data == data && previous.Version == data.ContentVersion ||
+                previous.Entity == data.Entity && previous.BuildNumber != data.ViewData.BuildNumber,
+                $"The children of {data.Parent} were declared by two scopes in the same rebuild.");
+        s_childDeclarations[data.Parent] = (data.Entity, data, data.ContentVersion, data.ViewData.BuildNumber);
 #endif
     }
 
@@ -484,111 +634,113 @@ public static partial class Scope
         return false;
     }
 
-    private readonly record struct SiblingGroup(int Count, bool LocalState);
-    internal readonly record struct ChildDeclaration(Entity Entity, int BuildNumber);
+    internal readonly record struct SiblingGroup(int Count, bool LocalState);
 #endif
 
-    private sealed class ScopeData
+    internal sealed class ScopeData
     {
-        internal ScopeData(World world, Entity entity, Entity parent, ulong frame,
-            bool declaresChildren, bool dependenciesEnabled, ChildChanges? changes, ScopeData? calculation = null)
-        {
-            World = world;
-            Entity = entity;
-            Parent = parent;
-            Frame = frame;
-            DeclaresChildren = declaresChildren;
-            DependenciesEnabled = dependenciesEnabled;
-            Calculation = calculation;
-            PreviousChildren = declaresChildren ? Hierarchy<ElementTree>.GetChildren(world, parent) : default;
-            OutermostBuild = changes is null;
-            Changes = changes ?? new ChildChanges();
-            FirstData = Changes.DataCount;
-            FirstRemoval = Changes.RemovedCount;
-            if (declaresChildren)
-                Changes.RememberOrder(parent, PreviousChildren);
-        }
-
-        internal World World { get; }
-        internal Entity Entity { get; }
-        internal Entity Parent { get; }
-        internal ulong Frame { get; }
-        internal bool DeclaresChildren { get; }
-        internal bool DependenciesEnabled { get; set; }
-        internal Computation? Computation { get; init; }
-        internal ScopeData? Calculation { get; }
+        internal World World = null!;
+        internal Entity Entity;
+        internal Entity Parent;
+        internal ScopeData ViewData = null!;
+        internal List<ScopeData>? ContentData;
+        internal Computation? Computation;
         internal Dictionary<(Entity Entity, ushort Component), ComponentCopy>? ComponentCopies;
-        internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren { get; }
+        internal ulong Frame;
+        internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren;
         internal List<Entity> DeclaredChildren { get; } = new();
-        internal ChildChanges Changes { get; }
-        internal int FirstData { get; }
-        internal int FirstRemoval { get; }
-        internal bool OutermostBuild { get; }
+        internal ChildChanges Changes = null!;
+        internal ChildChanges? OwnChanges;
+        internal int FirstData;
+        internal int FirstRemoval;
+        internal bool OutermostBuild;
         internal bool Completed;
+        internal int StateMachines;
+        internal bool DeclaresChildren;
+        internal bool DependenciesEnabled;
+        internal BuildQueue Queue = null!;
+        internal BuildTask Task;
+        internal uint? ParameterVersion;
+        internal bool Suspended;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal Dictionary<ulong, int>? RememberOccurrences;
         internal ulong? KeyPrefix;
         // Caller content inherits the call group; explicit Key scopes belong to their parent.
         internal ulong? GroupPrefix;
 #if DEBUG
+        internal int ContentVersion;
         internal int BuildNumber;
         internal Dictionary<ulong, SiblingGroup> PreviousSiblings { get; } = new();
 #endif
+
+        internal void BeginChildren(ulong frame, ChildChanges? changes)
+        {
+            Frame = frame;
+            PreviousChildren = DeclaresChildren ? Hierarchy<ElementTree>.GetChildren(World, Parent) : default;
+            OutermostBuild = changes is null;
+            Changes = changes ?? (OwnChanges ??= new());
+            FirstData = Changes.DataCount;
+            FirstRemoval = Changes.RemovedCount;
+            if (DeclaresChildren)
+                Changes.RememberOrder(Parent, PreviousChildren);
+        }
+
+        internal void ReplaceChanges(ChildChanges changes, int firstData, int firstRemoval)
+        {
+            Changes = changes;
+            FirstData -= firstData;
+            FirstRemoval -= firstRemoval;
+        }
     }
 
-    internal readonly struct BuildScope : IDisposable
+    internal readonly struct BuildScope(ScopeData data, bool releaseOnExit) : IDisposable
     {
+        internal bool IsSuspended => data.Suspended;
+        internal void Finish(BuildTask task, uint? parameterVersion)
+        {
+            data.Task = task;
+            data.ParameterVersion = parameterVersion;
+            if (task.IsCompleted)
+            {
+                task.Complete();
+                Complete();
+            }
+            else
+            {
+                CommitWrites(data);
+                data.Suspended = true;
+                data.Queue.Add(data);
+            }
+        }
+
         internal void Complete()
         {
-            ScopeData current = Current;
-            if (current.DeclaresChildren)
-            {
-                CheckSiblingCounts(current);
-                var children = Hierarchy<ElementTree>.GetChildren(current.World, current.Parent);
-                for (int index = 0; index < current.DeclaredChildren.Count; index++)
-                {
-                    if (children[index] == current.DeclaredChildren[index])
-                        continue;
-                    Hierarchy<ElementTree>.SetParent(current.World, current.DeclaredChildren[index], current.Parent, index);
-                    children = Hierarchy<ElementTree>.GetChildren(current.World, current.Parent);
-                }
-                foreach (Entity child in current.PreviousChildren)
-                    if (!current.DeclaredChildren.Contains(child))
-                        current.Changes.RemoveChild(child);
-            }
-            if (current.ComponentCopies is { } copies)
-                foreach (ComponentCopy copy in copies.Values)
-                    copy.Commit(current.World, current.Changes);
-            current.Completed = true;
+            if (data == data.ViewData)
+                CompleteBuild(data);
+            else if (!data.Suspended)
+                CompleteChildren(data);
         }
 
         public void Dispose()
         {
-            ScopeData current = s_scopes!.Pop();
-            if (!current.Completed)
-                current.Changes.Restore(current.World, current.FirstData, current.FirstRemoval);
-            else if (current.OutermostBuild)
-                current.Changes.ReleaseChildren(current.World);
+            s_scopes!.Pop();
+            if (releaseOnExit && !data.Suspended)
+            {
+                FinishChildren(data);
+                Release(data);
+            }
         }
     }
 
 #if DEBUG
     internal readonly struct RebuildScope : IDisposable
     {
-        private readonly Dictionary<Entity, ChildDeclaration>? _previousDeclarations;
-        private readonly int _previousBuildNumber;
+        private readonly Dictionary<Entity, (Entity Entity, ScopeData Data, int Version, int BuildNumber)>? _previousDeclarations;
 
-        internal RebuildScope(Dictionary<Entity, ChildDeclaration>? previousDeclarations, int previousBuildNumber)
-        {
+        internal RebuildScope(Dictionary<Entity, (Entity Entity, ScopeData Data, int Version, int BuildNumber)>? previousDeclarations) =>
             _previousDeclarations = previousDeclarations;
-            _previousBuildNumber = previousBuildNumber;
-        }
 
-        public void Dispose()
-        {
-            s_childDeclarations = _previousDeclarations;
-            s_buildNumber = _previousBuildNumber;
-        }
+        public void Dispose() => s_childDeclarations = _previousDeclarations;
     }
 #endif
 }

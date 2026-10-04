@@ -70,6 +70,10 @@ SomeEngine.Elements.Consumer.Tests.FocusChecks.RunReparentedRelease();
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunWorlds();
 SomeEngine.Elements.Consumer.Tests.FocusChecks.RunMixedInputs();
 Console.WriteLine("Keyboard and gamepad focus, confirmation, capture, ancestor transfer, layout geometry, public user behaviors, and scheduled navigation passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.BuiltIn);
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);
+Console.WriteLine("Button themes, held presses, click consumption, label updates, and public user Button and IconButton passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
 Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
 

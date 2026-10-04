@@ -13,6 +13,7 @@ public enum ChildSource { Build, Caller }
 ## Invariants
 - 节点实体本身归创建它的构建；子节点归打开它的 `.Content()` 块。
 - `.Content()` 块结束时，块内声明的就是该节点的全部子节点，外层构建成功后释放省略的旧子树；失败恢复该次声明，见 [[architecture/someui/Node-Identity|Node Identity]]。
+- 块中启动的 `BuildTask` 辅助方法挂起时，由调用方视图保留声明上下文，在整个构建成功完成时收尾。
 - 一个视图不会同时属于两种来源；不存在具名内容区或槽。
 - 子节点声明由同一视图持有；每次该视图构建为父节点声明一次。来源使用错误、不同视图同时声明同一父节点，以及单次构建中的重复声明通过开发检查报告。
 
@@ -46,8 +47,12 @@ public record struct Group : IView, IComponent
 `Content()` 在活动构建中打开目标容器，`ParentScope.Entity` 返回这个容器实体。
 块内的 `Scope.View` 将目标容器作为父节点，按
 [[architecture/someui/Node-Identity|Node Identity]] 的 key 加出现次数匹配，
-复用或新建节点并维护声明顺序。块结束时完成此次全部子节点声明，
+复用或新建节点并维护声明顺序。同步块结束时完成此次全部子节点声明，
 外层构建成功后释放剩余旧节点及其整个子树；空块对应空的子节点序列。
+异步辅助方法在块中启动并挂起时，该上下文由视图构建保留，
+调用方在块结束后 await 返回的 `BuildTask`。辅助方法恢复时继续向原容器声明，
+整个视图构建成功完成后统一清理剩余内容，具体恢复时机见
+[[architecture/someui/Async-Build|Async Build]]。
 
 `ChildSource.Build` 的构建在成功完成时执行同一子节点匹配收尾。
 `ChildSource.Caller` 的构建只更新自身数据，已有子树由调用方的内容作用域维护。
