@@ -482,7 +482,7 @@ internal static class RuntimeApplication
             window,
             FrameTimeout);
 
-        if (!options.SynchronousFrames)
+        if (!options.SynchronousFrames && script is null)
         {
             if (options.ScenePlayback is not null)
                 scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
@@ -516,11 +516,11 @@ internal static class RuntimeApplication
             coordinator,
             renderWorld,
             instances,
-            platform is null ? null : new ClusterRenderOptions
+            platform is null && script is null ? null : new ClusterRenderOptions
             {
                 Residency = new ClusterResidencyOptions
                 {
-                    PageHeapCapacityBytes = checked((uint)platform.GeometryMemoryMegabytes * 1024 * 1024),
+                    PageHeapCapacityBytes = script?.GeometryMemoryBytes ?? checked((uint)platform!.GeometryMemoryMegabytes * 1024 * 1024),
                 },
             });
         var materialAssignments = new ClusterMaterialAssignments();
@@ -564,7 +564,7 @@ internal static class RuntimeApplication
         var lightSystem = new RenderLightSetSystem();
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
         var streamingConsumer = new ClusterStreamingFeedbackConsumer(cluster, streamingFeedback);
-        var shadowSettings = new VirtualShadowMapSettings { Enabled = options.VirtualShadows };
+        var shadowSettings = (script?.ShadowSettings ?? new VirtualShadowMapSettings()) with { Enabled = options.VirtualShadows };
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
             metrics: options.VerifyFrameOutput);
@@ -615,6 +615,7 @@ internal static class RuntimeApplication
             {
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
+                SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 4,
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics,
             });
@@ -645,6 +646,7 @@ internal static class RuntimeApplication
         }
 
         int frameIndex = 0;
+        uint submittedFrames = 0;
         var sceneEdit = script is null ? null : new SceneEdit(scene, window);
         int actionIndex = 0;
         try
@@ -748,7 +750,7 @@ internal static class RuntimeApplication
                     }
                     catch (Exception error)
                     {
-                        throw new ApplicationRunException(ApplicationFailure.SceneAction, frameIndex, error);
+                        throw new ApplicationRunException(ApplicationFailure.SceneAction, checked((int)submittedFrames), error);
                     }
                     finally { sceneEdit.End(); }
                 }
@@ -784,7 +786,8 @@ internal static class RuntimeApplication
 
                 int clientWidth = window.ClientWidth;
                 int clientHeight = window.ClientHeight;
-                bool cameraCut = false;
+                bool cameraCut = sceneEdit?.CameraCut == true || script?.UseCameraHistory == false;
+                if (sceneEdit?.ShadowMapRefreshRequested == true) virtualShadows.InvalidateAllCasters();
                 if (clientWidth > 0 && clientHeight > 0 &&
                     (clientWidth != width || clientHeight != height))
                 {
@@ -829,7 +832,7 @@ internal static class RuntimeApplication
                     scene.Projection(width, height),
                     width,
                     height,
-                    checked((uint)frameIndex),
+                    submittedFrames,
                     temporalResolveEnabled: options.TemporalAntialiasing,
                     cameraCut: cameraCut);
                 viewSystem.Stage(viewFrame.View);
@@ -849,7 +852,7 @@ internal static class RuntimeApplication
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: applying extracted scene.");
-                if (options.SynchronousFrames)
+                if (options.SynchronousFrames || script is not null)
                 {
                     if (animateScene && options.ScenePlayback is null)
                         scene.Update(sceneSeconds);
@@ -911,7 +914,8 @@ internal static class RuntimeApplication
                 ui.InstallGraph(renderGraph, presentation.Target);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
-                SwapchainImage image = AcquireImage(backend, swapchain, window);
+                SwapchainImage? image = sceneEdit?.FrameCanceled == true
+                    ? null : AcquireImage(backend, swapchain, window);
                 long executeStarted = Stopwatch.GetTimestamp();
                 FrameOutputMetrics? frameOutput = ExecuteFrame(
                     backend,
@@ -939,7 +943,14 @@ internal static class RuntimeApplication
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
                     options.SynchronousFrames,
                     options.TemporalAntialiasing,
-                    viewFrame.JitterPixels);
+                    viewFrame.JitterPixels,
+                    script?.TemporalSettings ?? TemporalResolveSettings.Default);
+                if (image is null)
+                {
+                    frameIndex++;
+                    continue;
+                }
+                submittedFrames++;
                 double executeMs = Stopwatch.GetElapsedTime(executeStarted).TotalMilliseconds;
                 if (sceneEdit?.Images.Count > 0)
                 {
@@ -950,7 +961,7 @@ internal static class RuntimeApplication
                     }
                     catch (Exception error)
                     {
-                        throw new ApplicationRunException(ApplicationFailure.ImageCallback, frameIndex + 1, error);
+                        throw new ApplicationRunException(ApplicationFailure.ImageCallback, checked((int)submittedFrames), error);
                     }
                     if (!options.VerifyFrameOutput && options.FrameOutputPath is null && platform?.ImageRequested != true)
                     {
@@ -995,7 +1006,7 @@ internal static class RuntimeApplication
                                 orbitCamera: options.ScenePlayback == "camera");
                         else if (updateScene)
                             scene.Update(nextSceneTime);
-                        extraction.Extract(mainWorld);
+                        if (script is null) extraction.Extract(mainWorld);
                     });
                 }
 
@@ -1003,7 +1014,7 @@ internal static class RuntimeApplication
                     Console.WriteLine("First frame: presenting.");
                 PresentStatus present = backend.Present(
                     backend.GetQueue(device, QueueType.Graphics),
-                    image);
+                    image.Value);
                 if (present == PresentStatus.Occluded)
                     window.WaitForEvents(TimeSpan.FromMilliseconds(16));
                 else if (present == PresentStatus.OutOfDate)
@@ -1118,13 +1129,13 @@ internal static class RuntimeApplication
                     }
                 }
             }
-            Console.WriteLine($"SomeEngine runtime completed {frameIndex} frame(s).");
-            return frameIndex;
+            Console.WriteLine($"SomeEngine runtime completed {submittedFrames} frame(s).");
+            return checked((int)submittedFrames);
         }
         catch (Exception error)
         {
             if (error is ApplicationRunException) throw;
-            throw new ApplicationRunException(ApplicationRunException.Classify(error, ApplicationFailure.Rendering), frameIndex, error);
+            throw new ApplicationRunException(ApplicationRunException.Classify(error, ApplicationFailure.Rendering), checked((int)submittedFrames), error);
         }
         finally
         {
@@ -1201,7 +1212,7 @@ internal static class RuntimeApplication
         TemporalFeature temporal,
         RuntimePresentationPipeline presentation,
         RuntimeUiRenderer ui,
-        SwapchainImage image,
+        SwapchainImage? image,
         int width,
         int height,
         NativeWindow window,
@@ -1212,7 +1223,8 @@ internal static class RuntimeApplication
         RenderGraphDiagnosticsHandler? graphDiagnostics,
         bool synchronousFrames,
         bool temporalAntialiasing,
-        Vector2 jitterPixels)
+        Vector2 jitterPixels,
+        TemporalResolveSettings temporalSettings)
     {
         using var trace = EngineTrace.Begin(ApplicationTrace.Execute);
         if (!coordinator.TryBeginFrame(out RenderFrame? frame))
@@ -1240,7 +1252,7 @@ internal static class RuntimeApplication
                 {
                     if (reportMilestones)
                         Console.WriteLine("First frame: recording render systems.");
-                    presentation.Bind(ref graphFrame, image, graphicsQueue);
+                    if (image is { } acquired) presentation.Bind(ref graphFrame, acquired, graphicsQueue);
                     using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
                         systems.Update(frame, graphFrame);
                     graphFrame.ObserveExecution(streamingConsumer);
@@ -1255,12 +1267,13 @@ internal static class RuntimeApplication
                             clusterOutputs.MaterialColor,
                             clusterOutputs.Depth,
                             motion,
-                            TemporalResolveSettings.Default,
+                            temporalSettings,
                             enabled: temporalAntialiasing,
                             cameraCut: cameraCut,
                             view: viewEntity,
                             jitterPixels: jitterPixels);
                     ui.Record(ref graphFrame, width, height);
+                    if (image is null) return null;
                     outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue);
                     if (reportMilestones)
                         Console.WriteLine("First frame: analyzing and submitting render graph.");

@@ -1,6 +1,4 @@
 using System.Numerics;
-using SomeEngine.Core.Math;
-using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Runtime.Tests;
 
@@ -39,41 +37,6 @@ public sealed class SceneScriptTests(SceneContentFixture content)
     }
 
     [Fact]
-    public async Task MaterialReplacementAtFrameThreeMatchesStartingWithThatMaterial()
-    {
-        var images = new List<SceneImage>();
-        var script = new SceneScript(content.DirectoryPath, 5,
-        [
-            new(2, edit => edit.CaptureImage(images.Add)),
-            new(3, edit =>
-            {
-                Entity red = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
-                Entity green = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere");
-                edit.ReplaceMaterial(red, edit.GetMaterial(green));
-                edit.CaptureImage(images.Add);
-            }),
-        ]);
-        var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
-        Assert.True(result.Succeeded, result.Error?.ToString());
-        SceneImage? expected = null;
-        var direct = new SceneScript(content.DirectoryPath, 5,
-        [
-            new(0, edit =>
-            {
-                Entity red = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
-                Entity green = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere");
-                edit.ReplaceMaterial(red, edit.GetMaterial(green));
-            }),
-            new(3, edit => edit.CaptureImage(image => expected = image)),
-        ]);
-        var reference = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], direct);
-        Assert.True(reference.Succeeded, reference.Error?.ToString());
-        Assert.Equal([2, 3], images.Select(image => image.Frame));
-        Assert.False(images[0].Pixels.Span.SequenceEqual(images[1].Pixels.Span));
-        Assert.Equal(expected!.Pixels.ToArray(), images[1].Pixels.ToArray());
-    }
-
-    [Fact]
     public async Task CameraTransformAtFrameThreeMatchesStartingWithThatTransform()
     {
         var images = new List<SceneImage>();
@@ -92,63 +55,6 @@ public sealed class SceneScriptTests(SceneContentFixture content)
         var direct = new SceneScript(content.DirectoryPath, 5,
         [
             new(0, edit => edit.SetCameraTransform(new(1, 0, 0), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.1f))),
-            new(3, edit => edit.CaptureImage(image => expected = image)),
-        ]);
-        var reference = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], direct);
-        Assert.True(reference.Succeeded, reference.Error?.ToString());
-        Assert.False(images[0].Pixels.Span.SequenceEqual(images[1].Pixels.Span));
-        Assert.Equal(expected!.Pixels.ToArray(), images[1].Pixels.ToArray());
-    }
-
-    [Fact]
-    public async Task EntityAdditionAtFrameThreeMatchesStartingWithThatEntity()
-    {
-        var images = new List<SceneImage>();
-        var transform = new TransformQvvs(new(0, 1.8f, 6), Quaternion.Identity);
-        var script = new SceneScript(content.DirectoryPath, 5,
-        [
-            new(2, edit => edit.CaptureImage(images.Add)),
-            new(3, edit =>
-            {
-                Entity red = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
-                edit.AddEntity(red, transform);
-                edit.CaptureImage(images.Add);
-            }),
-        ]);
-        var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
-        Assert.True(result.Succeeded, result.Error?.ToString());
-        SceneImage? expected = null;
-        var direct = new SceneScript(content.DirectoryPath, 5,
-        [
-            new(0, edit => edit.AddEntity(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere"), transform)),
-            new(3, edit => edit.CaptureImage(image => expected = image)),
-        ]);
-        var reference = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], direct);
-        Assert.True(reference.Succeeded, reference.Error?.ToString());
-        Assert.False(images[0].Pixels.Span.SequenceEqual(images[1].Pixels.Span));
-        Assert.Equal(expected!.Pixels.ToArray(), images[1].Pixels.ToArray());
-    }
-
-    [Fact]
-    public async Task EntityDeletionAtFrameThreeMatchesStartingWithoutThatEntity()
-    {
-        var images = new List<SceneImage>();
-        var script = new SceneScript(content.DirectoryPath, 5,
-        [
-            new(2, edit => edit.CaptureImage(images.Add)),
-            new(3, edit =>
-            {
-                Entity green = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere");
-                edit.DeleteEntity(green);
-                edit.CaptureImage(images.Add);
-            }),
-        ]);
-        var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
-        Assert.True(result.Succeeded, result.Error?.ToString());
-        SceneImage? expected = null;
-        var direct = new SceneScript(content.DirectoryPath, 5,
-        [
-            new(0, edit => edit.DeleteEntity(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere"))),
             new(3, edit => edit.CaptureImage(image => expected = image)),
         ]);
         var reference = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], direct);

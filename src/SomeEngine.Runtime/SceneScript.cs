@@ -2,6 +2,9 @@ using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Resources;
+using SomeEngine.Render.Components;
+using SomeEngine.Render.Frame;
+using SomeEngine.Render.Shadows;
 
 namespace SomeEngine.Runtime;
 
@@ -25,6 +28,13 @@ public sealed class SceneScript
         Actions = Array.AsReadOnly(ordered);
     }
 
+    public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
+    public bool WaitForFrames { get; init; } = true;
+    public float RasterEdgePixels { get; init; } = 4;
+    public bool UseCameraHistory { get; init; } = true;
+    public VirtualShadowMapSettings ShadowSettings { get; init; } = new();
+    public TemporalResolveSettings TemporalSettings { get; init; } = TemporalResolveSettings.Default;
+
     public string ContentDirectory { get; }
     public int FrameCount { get; }
     public IReadOnlyList<SceneAction> Actions { get; }
@@ -45,7 +55,15 @@ public sealed class SceneEdit
 
     internal SceneEdit(RuntimeScene scene, NativeWindow window) => (_scene, _window) = (scene, window);
     internal IReadOnlyList<Action<SceneImage>> Images => _images;
-    internal void Begin() { _images.Clear(); _active = true; }
+    internal bool FrameCanceled { get; private set; }
+    internal bool CameraCut { get; private set; }
+    internal bool ShadowMapRefreshRequested { get; private set; }
+    internal void Begin()
+    {
+        _images.Clear();
+        FrameCanceled = CameraCut = ShadowMapRefreshRequested = false;
+        _active = true;
+    }
     internal void End() => _active = false;
 
     public IReadOnlyList<Entity> MeshEntities { get { RequireAction(); return _scene.GetMeshEntities(); } }
@@ -81,6 +99,31 @@ public sealed class SceneEdit
         RequireAction();
         return _scene.AddEntity(source, transform);
     }
+
+    public void SetEntityTransform(Entity entity, TransformQvvs transform)
+    {
+        RequireAction();
+        _scene.SetEntityTransform(entity, transform);
+    }
+
+    public IReadOnlyList<Entity> PointLights { get { RequireAction(); return _scene.GetPointLights(); } }
+
+    public void SetPointLight(Entity entity, PointLight light)
+    {
+        RequireAction();
+        _scene.SetPointLight(entity, light);
+    }
+
+    public void SetDirectionalLight(Entity entity, DirectionalLight light)
+    {
+        RequireAction();
+        _scene.SetDirectionalLight(entity, light);
+    }
+
+    /// <summary>Records this frame and discards it before GPU submission.</summary>
+    public void CancelFrame() { RequireAction(); FrameCanceled = true; }
+    public void ResetCameraHistory() { RequireAction(); CameraCut = true; }
+    public void RefreshShadowMaps() { RequireAction(); ShadowMapRefreshRequested = true; }
 
     public void DeleteEntity(Entity entity)
     {

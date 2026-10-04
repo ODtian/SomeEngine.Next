@@ -295,6 +295,21 @@ internal sealed class RuntimeScene : IDisposable
         catch { _world.DestroyEntity(entity); throw; }
     }
 
+    internal void SetEntityTransform(Entity entity, TransformQvvs transform) =>
+        _world.Replace(entity, new WorldTransform { Qvvs = transform });
+    internal Entity[] GetPointLights() => Entities(_world, new QueryDefinitionBuilder().Read<PointLight>());
+    internal void SetPointLight(Entity entity, PointLight light) => _world.Replace(entity, light);
+
+    internal void SetDirectionalLight(Entity entity, DirectionalLight light)
+    {
+        if (_world.Has<DirectionalLight>(entity)) _world.Replace(entity, light);
+        else
+        {
+            _world.Remove<PointLight>(entity);
+            _world.Add(entity, light);
+        }
+    }
+
     internal void DeleteEntity(Entity entity) => _world.DestroyEntity(entity);
 
     internal Matrix4x4 Projection(int viewportWidth, int viewportHeight)

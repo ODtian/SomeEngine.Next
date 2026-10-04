@@ -16,6 +16,10 @@
 - `AddEntity` 以已有实体的网格、材质创建新实例，并返回其公共 ECS 实体身份；`DeleteEntity` 删除实体。
 - `SetOutputSize` 改变窗口客户区尺寸，现有窗口事件和帧循环尺寸检查接着处理交换链变化。
 - `CaptureImage` 登记当前帧的图像回调。
+- `SetEntityTransform` 更改 Game world 中实体的变换。
+- `PointLights`、`SetPointLight` 与 `SetDirectionalLight` 经已有灯光提取路径处理灯光变化。
+- `ResetCameraHistory` 在该帧应用相机切换语义；`RefreshShadowMaps` 请求重新生成影子。
+- `CancelFrame` 经过场景提取、渲染准备和帧记录，在 GPU 提交边界丢弃该帧。脚本帧号继续推进，已完成帧数和 Temporal 抖动序列按已提交帧推进。取消帧的图像回调随该帧一起丢弃。
 
 动作位于 Game world 提取之前。Game world 与 Rendering world 继续通过已有 extraction 交付变化。脚本场景使用引擎默认的动态实例存储容量，供增删实体及重建时的旧、新批次同时存活。
 
@@ -37,6 +41,10 @@ ApplicationResult result = await Application.RunAsync(["--hardware-adapter", "--
 `tools/SomeEngine.SceneContent` 是共享生成库。`SceneContent.GenerateDefaultAsync` 从默认项目的源码、模型与引擎 shader 包含库构建完整内容；`GenerateSpheresAsync` 复用该构建，创建固定相机和变换的红、绿小球；`RenderScenarios.GenerateAsync` 提供原有 Phong、材质、位移与稀疏运动变体。原命令行工具调用该库。
 
 测试集合以一个实例夹具在临时目录生成内容，结束时删除目录；启动尺寸变体使用单独的临时副本，在对应测试结束时删除。比较材质、相机和实体变化时，把第 3 帧的变化图像与第 0 帧已经具有目标状态的同一场景逐像素比较。绝对颜色验证覆盖整块球体内部区域。
+
+`SceneScript` 的 `GeometryMemoryBytes` 与 `RasterEdgePixels` 配置几何流送内存和光栅阈值，`ShadowSettings` 与 `TemporalSettings` 直接传给已有 Feature。`UseCameraHistory=false` 为每帧生成新历史；`WaitForFrames=false` 运行在途帧，图像回调继续等待对应 GPU 完成。脚本动作始终在 Game world 提取之前执行。
+
+Cluster、VSM、Temporal 的逐项迁移与图像期望见 [图像行为检查](../../harness/Cluster-Image-Checks.md)。
 
 ## 软件适配器证据（2026-10-04，票 #86）
 
