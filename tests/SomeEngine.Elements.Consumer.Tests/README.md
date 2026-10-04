@@ -31,3 +31,8 @@ display, draw order, transparent compositions, previous-frame layout, per-button
 presses, canvas isolation, and development errors. `PointerChecks` runs the same
 caller consumption example for the built-in and user-written `Pressable` and
 `Clicked` functions and shares those cases with the NativeAOT executable.
+`PointerRoutingChecks` shares child-to-card click bubbling, `StopsPointer`
+changes, subtree entry and exit, sibling hover changes, held presses, and caller
+output updates across the built-in and user-written behaviors. `PointerTests`
+also verifies stopping at the target or an ancestor and keeping nested canvas
+clicks and subtree hover inside their own tree.

@@ -30,7 +30,12 @@ rectangle. A transparent composition uses its layout content's rectangles.
 
 Queue input through `Pointer.Move`, `Press`, `Release`, and `Wheel` with a World
 and Canvas entity. Positions use canvas units. Each button pairs its press and
-release independently; releasing over the original target increments `Clicks`.
+release independently; releasing over the original target increments `Clicks`
+on that target and its `Pressable` ancestors up to the Canvas. Declare
+`StopsPointer` through `Scope.Ensure` to end bubbling after that node's click.
+`Hover.Hovered` follows the hit target, `Pressed` follows the held target, and
+`Within` follows the hit target's subtree ancestry inside the Canvas. Ancestors
+can declare `Hover` through `Scope.Ensure` to observe `Within`.
 Register `HitTestSystem` before game input, then `ViewRebuildSystem` and
 `LayoutSystem`. Game systems query the World's single `InputCapture` component
 to read the frame's pointer consumption. The input system uses the previous
