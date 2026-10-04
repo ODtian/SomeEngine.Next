@@ -112,7 +112,8 @@ GPU 像素读回验收画布成员修改、静态帧、改色、取消帧、透�
 矩阵与 viewport 经当帧数据接口更新，目标变换与视图移动保留 pass 身份和图结构版本。
 
 `DepthTest` 为 true 时，pass 读取场景深度附件，以 `WorldCanvasTarget.DepthFormat`
-与 `DepthComparison` 创建材质管线；默认 D32Float / GreaterOrEqual，匹配场景反向深度。
+与 `DepthComparison` 创建材质管线；默认 D32Float / LessOrEqual，匹配当前场景管线。
+使用反向深度的场景可以显式选择 GreaterOrEqual。
 附件按只读深度声明，场景深度值继续供后续消费者使用。
 画布成员、目标与深度配置变化只维护对应画布 pass；其它画布继续使用原有 pass。
 同一颜色目标上的屏幕画布显式排序在世界画布之后。
@@ -126,7 +127,7 @@ Runtime 参数入口通过 `--world-nameplates` 启用。
 
 公开提取测试验证目标的平移、旋转、缩放、拉伸与值送达边界。
 `WorldCanvasDrawingTests` 在 D3D12 WARP 与 Vulkan 开启图形验证层，读回像素验证
-投影位置、可选深度遮挡、前后位置变化、视图移动与结构版本保持。
+投影位置、两种深度约定下的可选遮挡、前后位置变化、视图移动、透视投影与结构版本保持。
 
 ## Relations
 [[architecture/rendering/Extraction|Extraction]] · [[architecture/Render-Graph|Render Graph]] · [[architecture/someui/Layout|Layout]]

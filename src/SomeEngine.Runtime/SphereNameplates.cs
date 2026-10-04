@@ -34,7 +34,8 @@ internal sealed partial class SphereNameplates : IDisposable
                 foreach (QueryChunkView chunk in rows.Chunks)
                     foreach (Entity sphere in chunk.Entities)
                     {
-                        if (index % 97 == 48) spheres.Add(sphere);
+                        const int columns = 32;
+                        if (index / columns == columns - 1 && index % 4 == 0) spheres.Add(sphere);
                         index++;
                     }
             });
@@ -61,7 +62,8 @@ internal sealed partial class SphereNameplates : IDisposable
 
     private TransformQvvs PlateTransform(Entity sphere) => TransformQvvs.Combine(
         _world.Read<WorldTransform>(sphere).Qvvs,
-        new TransformQvvs(new Vector3(-1.2f, 1.7f, -0.2f), Quaternion.Identity, 0.015f));
+        new TransformQvvs(new Vector3(2.4f, 2.5f, -0.2f),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI), 0.03f));
 
     public void Dispose()
     {

@@ -95,7 +95,7 @@ canvases.ReconcileGraph(screenTarget, new WorldCanvasTarget(sceneColor, sceneDep
 ```
 
 World canvases use the view's viewport and projection. The default depth format is
-D32Float with GreaterOrEqual for reversed depth. Configure `DepthFormat` and
+D32Float with LessOrEqual to match the current scene pipeline. Configure `DepthFormat` and
 `DepthComparison` on `WorldCanvasTarget` to match the scene. Frame updates carry
 target and view matrices through the existing graph constants. Screen canvases
 sharing the color target compose after world canvases.

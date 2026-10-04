@@ -95,7 +95,7 @@ internal sealed class SurfaceDrawing : IDisposable
         _pipeline = CreatePipeline();
     }
 
-    private Pipeline CreatePipeline(Format? depthFormat = null, CompareOperation comparison = CompareOperation.GreaterOrEqual)
+    private Pipeline CreatePipeline(Format? depthFormat = null, CompareOperation comparison = CompareOperation.LessOrEqual)
     {
         int target = _shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
         ShaderReflection reflection = _shader.GetSlangReflection(target);
