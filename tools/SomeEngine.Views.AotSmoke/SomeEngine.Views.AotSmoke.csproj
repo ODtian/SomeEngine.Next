@@ -12,6 +12,9 @@
     <Compile Include="../../tests/SomeEngine.Layout.Tests/LayoutChecks.cs" Link="LayoutChecks.cs" />
     <ProjectReference Include="../../src/SomeEngine.Elements/SomeEngine.Elements.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/SurfaceChecks.cs" Link="SurfaceChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextChecks.cs" Link="TextChecks.cs" />
+    <Content Include="../../tests/SomeEngine.Typography.Tests/Fonts/Latin.ttf" Link="Fonts/Latin.ttf"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/SurfaceModifiers.cs" Link="Rewrites/SurfaceModifiers.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerChecks.cs" Link="PointerChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/PressableFunctions.cs" Link="Rewrites/PressableFunctions.cs" />

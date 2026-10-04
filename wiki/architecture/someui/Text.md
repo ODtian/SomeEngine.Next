@@ -17,7 +17,9 @@ Shaper.Shape(text, style, wrapWidth: 240, output);
 TextShape shape = output.Shape;
 ```
 
-`TextStyleData` 包含 `Font`、`FontSize` 与 `ReadOnlyMemory<Font> Fallbacks`。
+`TextStyleData` 包含 `Font`、`FontSize`、`ReadOnlyMemory<Font> Fallbacks` 与 `LineHeight`。
+`LineHeight` 为像素行高，零采用实际字体的行指标；正值作为每行高度，额外的行间空间
+平均放在字体行框的上下两侧，字形基线与整体尺寸沿同一规则计算。
 `Shaper.Shape` 同时提供 `ShapeBuffer` 和 `ref ShapeBuffer` 入口，调用同一排版方法。
 `ShapeBuffer` 是由调用方持有的可复用对象，持有一个 HarfBuzz 缓冲和字形、行数组。
 `Shape` 通过引用对象接收缓冲，使这份原生资源及其可复用存储由同一对象持有。
@@ -99,12 +101,114 @@ CPU 数据沿 Game world 到 Rendering world 的既有提取路径交付，GPU �
 相较于 SomeUI 的 `FontAtlas` 参考，这里的基准字号采用像素/em，像素保存为单通道，
 字形查询消费 HarfBuzz 编号，并以追加固定页保持位置。
 
-## Current design
-- 字形排版使用 HarfBuzz，栅格化使用 FreeType，生成动态 SDF 图集；常用字形在内容构建阶段预烘焙，中日韩字符动态生成。原生库通过 `LibraryImport` 调用，兼容 NativeAOT。
-- 数据：`Text`（视图参数，字面文本或本地化 key 与参数）、`TextStyle`（字体、字号、颜色）、`ShapedText`（字形与位置，由排版系统写入并按版本缓存）。富文本的样式段放在缓冲中。
-- `Text` 的 `Measure` 读取 `ShapedText`。
-- 写入节点文本缓冲的数字与格式化重载在值不变时不分配、不推进版本。
-- 当前语言是单例组件；读取它登记依赖，切换语言只重建受影响的文本。复数规则表在内容构建阶段生成。
+## Text 元素（#31）
+
+`SomeEngine.Elements` 提供以下公开入口：
+
+```csharp
+public record struct Text(string Value) : IView, IComponent, ILayout;
+public record struct TextStyle : IComponent
+{
+    public Font? Font;
+    public float Size { get; set; }
+    public Color Color { get; set; }
+    public float LineHeight { get; set; }
+}
+public readonly record struct TextTheme(TextStyle Style) : IComponent;
+public readonly struct ShapedText : IComponent
+{
+    public TextShape Shape { get; }
+    public TextStyle Style { get; }
+    public SomeEngine.Layout.Size Size { get; }
+    public uint Version { get; }
+}
+```
+
+`Text.Value` 是调用方写入的字符串参数。生成的 `Text(string Value)` 函数与
+`Scope.View(new Text(value))` 使用同一节点身份和参数比较规则。
+字体直接使用 #29 的 `SomeEngine.Typography.Font`，取代票文示例中的 `FontRef`，
+使加载的字体与排版、图集共用一份字体资源。
+
+`.Font(font)`、`.FontSize(size)`、`.TextColor(color)` 和 `.LineHeight(height)`
+通过 `Scope.Write<TextStyle>` 写入调用方选择的字段。`Text.Build` 读取这些字段；
+其余字段通过 `Scope.ReadUp<TextTheme>()` 取得最近祖先提供的默认样式，并登记环境依赖。
+默认字号为 16 像素/em、颜色为线性白色、行高为零；字体由应用加载并提供。
+显式零颜色保留 RGBA 零值；显式零行高选择字体行指标。
+构建把此次解析的样式写入自身的 `TextAppearance` 数据，排版系统消费这份结果。
+祖先主题变化时，继承相应字段的文本在当前重建阶段更新；显式字段继续采用调用方的值。
+`ShapedText.Style` 提供此次排版使用的完整样式。
+
+```csharp
+using static SomeEngine.Elements.TextFunctions;
+using static SomeEngine.Layout.FlexFunctions;
+
+// 在调用方 Build 中提供已经加载的字体：
+using (Column(5).Provide(new TextTheme(new TextStyle { Font = font, Size = 20 })).Content())
+{
+    Text("Title").TextColor(new Color(1, 0.8f, 0.2f));
+    Text(42, "D4").FontSize(16);
+}
+```
+
+## 排版与测量顺序
+
+```csharp
+var shaping = new TextShapingSystem();
+systems.Add(new ViewRebuildSystem());
+systems.Add(shaping);
+systems.Add(new LayoutSystem(shaping));
+```
+
+同一个排版系统实例加入系统组并传入 `LayoutSystem`。布局通过共享协议
+`ILayoutDataUpdate` 在每次视图测量前提供扣除 Box 内边距后的内容约束。
+排版系统使用 `constraints.Max.Width` 换行，随后 `Text.Measure` 读取
+`ShapedText.Size` 并按约束限制尺寸。Flex 与 Grid 的基础测量和最终测量沿同一入口，
+因此文本按当前分配宽度换行，父布局使用此次测量的高度摆放后续子节点。
+
+排版系统按文本、调用方样式与解析样式的组件版本复用字形结果。每个节点持有可复用的
+各测量宽度缓冲；后续布局复用已经闲置的宽度缓冲，持续改变画布尺寸时存储按同时需要的
+测量宽度数保留。画布布局结束后，以最终宽度和数据版本比较、提交 `ShapedText`。
+相同文本、样式与最终约束保持 `ShapedText.Version` 及组件写版本；
+相同布局矩形也保持 `LayoutRect` 的写版本。
+
+`ShapedText` 由排版系统写入，公开读取字形、行、尺寸、完整样式和版本。
+字形与行范围的读取期限为相关缓冲下一次复用或释放之前；应用在界面布局阶段结束后读取最终结果。
+排版缓冲由系统持有，在节点释放后的下一次系统更新以及系统销毁时释放。
+应用在相关排版与图集使用结束后释放字体。
+字号、行高、字体与系统接入的使用错误通过 Core 的 `DevelopmentCheck` 报告。
+
+## 数字与格式化写入
+
+```csharp
+public static Entity Text(int value, string format = "");
+public static Entity Text<T>(T value, string format = "", IFormatProvider? provider = null)
+    where T : struct, ISpanFormattable;
+public static Entity DeclareText<T>(ulong callKey, T value, string format = "", IFormatProvider? provider = null)
+    where T : struct, ISpanFormattable;
+public static Entity SetText<T>(this Entity node, World world, T value,
+    string format = "", IFormatProvider? provider = null) where T : struct, ISpanFormattable;
+public static Entity SetText(this Entity node, World world, string value);
+```
+
+数字声明由同名函数拦截器提供调用位置，再通过
+`Scope.View<T, TValue>(in value, create, key)` 在匹配节点后取得旧文本。
+参数工厂把格式化字符与旧字符串比较，相等时复用旧字符串；变化时创建新的文本参数。
+`SetText` 供调用方直接写入已存在的文本节点，遵循相同的字符比较和版本规则。
+值、格式与格式提供者形成的文本保持相等时，数字写入保持托管分配为零与文本写版本。
+短格式使用栈上的字符范围；较长格式使用可复用字符池。格式提供者沿用 .NET 的格式化规则，
+默认采用当前文化。新格式首次使用时建立需要的字符池容量。
+
+`TextTests` 经公开 API 验证 Column 高度排列、文字与主题变化、显式样式、行高、
+Row 伸缩后的换行和最终版本、格式变化、长格式、数字稳态分配及开发错误。
+`TextChecks` 同时用于外部消费者测试和 `just views-aot win-x64`，验证字符串、整数与
+指定文化的泛型格式声明、测量、样式、版本与连续 10,000 次整数写入的零字节分配。
+参考 SomeUI 的 `TextContent`、`Text` 和 `Label` 用于核对字体、字号与颜色语义；
+本实现采用本页的视图参数、独立样式、排版系统写入与布局协议。
+
+## 后续文本能力
+
+文本绘制由 #34 沿既有 Game world 到 Rendering world 提取路径接入。
+本地化 key、语言依赖与复数规则由 #53 接入；富文本继续按样式段扩展排版数据。
 
 ## Open questions
 - 双向文字放到二期。

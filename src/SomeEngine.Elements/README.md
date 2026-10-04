@@ -46,3 +46,31 @@ Disable the default navigation system and schedule a user system to consume
 that buffer and implement custom navigation and activation. The default system
 uses `World.EntityDestroying` to transfer focus to the nearest focusable
 ElementTree ancestor during node release. A parent-chain endpoint clears focus.
+
+`Text(string)` declares a text view. `Font`, `FontSize`, `TextColor`, and
+`LineHeight` write its caller-chosen `TextStyle` fields. The text view reads
+omitted fields from the nearest `TextTheme` through the public environment API.
+Provide a loaded `SomeEngine.Typography.Font` in that theme or the font modifier.
+Sizes and line heights use pixels; zero line height uses the font metrics.
+`ShapedText` exposes the final glyphs, lines, size, complete style, and version.
+
+```csharp
+var shaping = new TextShapingSystem();
+systems.Add(new ViewRebuildSystem());
+systems.Add(shaping);
+systems.Add(new LayoutSystem(shaping));
+```
+
+Layout supplies the content width to that same shaping system before measuring
+each text node. The shaping system retains its buffers, commits the final result
+after canvas layout, and disposes the buffers when nodes are released or the
+system is destroyed. Consume glyph and line ranges before their buffers are
+reused, and dispose fonts after their shaping and atlas users finish.
+
+`Text(42, "D4")` and `Text(12.5m, "F2", CultureInfo.InvariantCulture)` format
+view parameters after matching the node. `node.SetText(world, value, format,
+provider)` updates an existing text node. Matching formatted characters retain
+the string and write version and allocate zero managed bytes in steady use.
+Long formats reuse pooled character storage; strings are created for changed
+characters. Public behavior checks run in the consumer tests and the Views
+NativeAOT smoke executable.
