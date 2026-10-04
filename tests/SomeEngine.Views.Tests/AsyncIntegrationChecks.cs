@@ -54,6 +54,51 @@ internal static partial class AsyncIntegrationChecks
         Require(frames.World.ReadSparse<SparseNumber>(target).Value == 10, "The later calculation refreshes through shared dependency checks.");
     }
 
+    internal static void VerifyFailureRecovery(bool nested = false)
+    {
+        using var frames = new HeadlessFrameDriver();
+        Entity target = frames.World.CreateEntity(new Number());
+        frames.World.AddSparse(target, new SparseNumber());
+        var first = new State<int>(3);
+        var second = new State<int>(7);
+        var error = new InvalidOperationException("resumed content failed");
+        Entity root = nested
+            ? Views.Spawn(frames.World, Entity.Null, new RecoveringGroup(first, target, 3, null, error))
+            : Views.Spawn(frames.World, Entity.Null, new RecoveringContent(first, target, 3, null, error));
+        frames.Frame();
+        Entity content = nested ? Hierarchy<ElementTree>.GetChildren(frames.World, root)[0] : root;
+        var completion = new TaskCompletionSource();
+        if (nested)
+            frames.World.Replace(root, new RecoveringGroup(second, target, 7, completion.Task, error));
+        else
+            frames.World.Replace(root, new RecoveringContent(second, target, 7, completion.Task, error));
+
+        frames.Frame();
+
+        Require(frames.World.Read<Number>(target).Value == 14, "The suspended build exposes its new binding.");
+        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 7, "The first segment exposes its sparse write.");
+        Require(frames.World.Has<AddedNumber>(target), "The suspended build exposes its added component.");
+        completion.SetResult();
+        frames.Frame();
+        Require(frames.World.Read<Number>(target).Value == 100, "A later segment commits another table value.");
+        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 200, "A later segment commits another sparse value.");
+
+        frames.Frame();
+
+        Require(ReferenceEquals(frames.World.ReadSparse<BuildError>(content).Exception, error),
+            "The final segment records the original error.");
+        Require(frames.World.ReadSparse<BuildError>(content).Frame == 4, "The error records its resumed frame.");
+        Require(frames.World.Read<Number>(target).Value == 6, "Failure restores the previous table output.");
+        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 3, "Failure restores the previous sparse output.");
+        Require(!frames.World.Has<AddedNumber>(target), "Failure restores the previous component presence.");
+        first.Value = 9;
+        frames.Frame();
+        Require(frames.World.Read<Number>(target).Value == 18, "The previous Memo binding refreshes after recovery.");
+        second.Value = 11;
+        frames.Frame();
+        Require(frames.World.Read<Number>(target).Value == 18, "The restored binding retains its own source.");
+    }
+
     internal static void VerifyObjectFrames()
     {
         using var frames = new HeadlessFrameDriver();
@@ -151,6 +196,37 @@ internal static partial class AsyncIntegrationChecks
         }
     }
 
+    private readonly record struct RecoveringContent(State<int> Number, Entity Target, int Value, Task? Result,
+        Exception Error) : IView, IComponent
+    {
+        public async BuildTask Build()
+        {
+            State<int> number = Number;
+            Entity target = Target;
+            Memo<int> doubled = Scope.Memo(() => number.Value * 2);
+            Scope.Compute(() => Scope.Write<Number>(target) = new Number(doubled.Value));
+            Scope.Write<SparseNumber>(target) = new SparseNumber(Value);
+            if (Result is null)
+                return;
+            Scope.Ensure<AddedNumber>(target);
+            await Result;
+            Scope.Write<Number>(target) = new Number(100);
+            Scope.Write<SparseNumber>(target) = new SparseNumber(200);
+            await Scope.NextFrame();
+            throw Error;
+        }
+    }
+
+    private readonly record struct RecoveringGroup(State<int> Number, Entity Target, int Value, Task? Result,
+        Exception Error) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.View(new RecoveringContent(Number, Target, Value, Result, Error), 1);
+            return default;
+        }
+    }
+
     private readonly record struct WrittenContent(Entity Target, Task Result) : IView, IComponent
     {
         public async BuildTask Build()
@@ -170,6 +246,7 @@ internal static partial class AsyncIntegrationChecks
 
     private readonly record struct Number(int Value) : IComponent;
     private readonly record struct SparseNumber(int Value) : ISparseComponent;
+    private readonly record struct AddedNumber(int Value) : IComponent;
     private readonly record struct NumberLabel(int Value) : IView, IComponent
     {
         public BuildTask Build() => default;

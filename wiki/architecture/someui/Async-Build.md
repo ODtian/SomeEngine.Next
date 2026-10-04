@@ -56,7 +56,10 @@ C# 编译器在 Release 中生成 struct 状态机，Debug 中的 async 状态�
 初次挂起返回构建入口、每次恢复再挂起以及成功完成时，使用现有 `ComponentCopy.Commit`
 比较当前 ECS 值并提交本段写入，随后清空副本集合。下一段首次写入从当前 ECS 数据取值。
 子声明数据与读取依赖跨段保留，整个构建成功完成时统一执行子树收尾。
-异常发生的段释放自己的写入副本，之前已经提交的段保持其公开结果。
+每次提交沿现有子声明变更记录保存原值和组件存在性。整个构建失败时，
+按提交的逆序恢复先前输出，并恢复该视图之前的计算列表；异常段的副本随后释放。
+嵌套异步子视图与同步父视图共享的计算恢复记录按使用它的构建计数保留，
+最后一个构建完成时释放原计算，恢复时把原计算列表交回视图。
 
 恢复时推进对象依赖集合的读取帧，保留集合中已登记的版本，沿
 `DependencyChanges` 的轮次检查处理同帧收敛。挂起构建中的 `Compute` 与 `Memo`
@@ -83,7 +86,7 @@ C# 编译器在 Release 中生成 struct 状态机，Debug 中的 async 状态�
 共享公开检查 `FirstBuildChecks.cs` 同时覆盖 `NextFrame` 的 30 帧序列与
 工作线程完成 `ConfigureAwait(false)` 后的内容更新，经现有 `just ecs-aot win-x64` 入口运行。
 `AsyncIntegrationChecks.cs` 同时编入这一入口，覆盖 table/sparse 分段提交、
-挂起期间 Memo 绑定、对象读取帧与存档后的异步构建恢复。
+挂起期间 Memo 绑定、跨段失败时的组件与原计算恢复、对象读取帧与存档后的异步构建恢复。
 
 ## Relations
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · ADR 0012

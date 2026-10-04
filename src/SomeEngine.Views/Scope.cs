@@ -139,8 +139,8 @@ public static partial class Scope
         return ref current.World.ReadComponentReference<T>(source);
     }
 
-    /// <summary>Returns a component copy that is compared and committed when the build completes.</summary>
-    /// <remarks>The reference remains valid through structural changes in this build.</remarks>
+    /// <summary>Returns a component copy that is compared and committed when the calculation returns or suspends.</summary>
+    /// <remarks>Use the reference before the next await; structural changes within that segment preserve it.</remarks>
     public static ref T Write<T>(Entity entity) where T : struct
     {
         ScopeData current = Current;

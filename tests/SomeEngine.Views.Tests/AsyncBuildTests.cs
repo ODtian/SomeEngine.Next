@@ -15,6 +15,12 @@ public sealed partial class AsyncBuildTests
     public void MemoBindingsRefreshDuringSuspensionAndCalculationsContinueAfterResumption() =>
         AsyncIntegrationChecks.VerifyComputations();
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AsyncFailureRestoresEarlierComponentValuesAndThePreviousMemoBinding(bool nested) =>
+        AsyncIntegrationChecks.VerifyFailureRecovery(nested);
+
     [Fact]
     public void ObjectReadsObserveTheResumedFrameAndSettleBeforeTheNextFrame() =>
         AsyncIntegrationChecks.VerifyObjectFrames();

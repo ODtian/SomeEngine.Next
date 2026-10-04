@@ -39,6 +39,8 @@ internal static partial class FirstBuildChecks
         VerifyAsyncBuilds(frames);
         AsyncIntegrationChecks.VerifyWrites();
         AsyncIntegrationChecks.VerifyComputations();
+        AsyncIntegrationChecks.VerifyFailureRecovery();
+        AsyncIntegrationChecks.VerifyFailureRecovery(nested: true);
         AsyncIntegrationChecks.VerifyObjectFrames();
         AsyncIntegrationChecks.VerifyRestoredBuild();
         VerifyObjectState(frames);
