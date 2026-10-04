@@ -1,4 +1,5 @@
 using System.Numerics;
+using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 
 namespace SomeEngine.Layout;
@@ -17,8 +18,16 @@ public struct ScrollInput : IComponent
     public uint Count;
 }
 
+/// <summary>The latest content-coordinate rectangle requested for display in a scroll viewport.</summary>
+public struct ScrollTarget : IComponent
+{
+    public Rect Region;
+    public uint Count;
+}
+
 /// <summary>The scroll input count already applied by the layout stage.</summary>
 internal struct ScrollSeen : IComponent
 {
     internal uint Count;
+    internal uint TargetCount;
 }

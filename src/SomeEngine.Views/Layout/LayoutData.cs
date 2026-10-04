@@ -258,24 +258,51 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         Vector2 viewport = new(MathF.Max(0, size.Width - box.Padding.Left - box.Padding.Right),
             MathF.Max(0, size.Height - box.Padding.Top - box.Padding.Bottom));
         offset.Max = Vector2.Max(Vector2.Zero, new Vector2(node.ContentSize.Width, node.ContentSize.Height) - viewport);
+        bool hasSeen = World.Has<ScrollSeen>(node.Entity);
+        ScrollSeen seen = hasSeen ? World.Read<ScrollSeen>(node.Entity) : default;
+        bool inputChanged = false;
         if (World.Has<ScrollInput>(node.Entity))
         {
             ScrollInput input = World.Read<ScrollInput>(node.Entity);
-            bool hasSeen = World.Has<ScrollSeen>(node.Entity);
-            ScrollSeen seen = hasSeen ? World.Read<ScrollSeen>(node.Entity) : default;
             if (input.Count != seen.Count)
             {
                 offset.Value += input.Delta;
                 seen.Count = input.Count;
-                if (hasSeen)
-                    World.Replace(node.Entity, seen);
-                else
-                    World.Add(node.Entity, seen);
+                inputChanged = true;
             }
         }
         offset.Value = Vector2.Clamp(offset.Value, Vector2.Zero, offset.Max);
+        if (World.Has<ScrollTarget>(node.Entity))
+        {
+            ScrollTarget target = World.Read<ScrollTarget>(node.Entity);
+            if (target.Count != seen.TargetCount)
+            {
+                Rect region = target.Region;
+                offset.Value = Vector2.Clamp(new Vector2(
+                    ScrollToRegion(offset.Value.X, viewport.X, region.X, region.Width),
+                    ScrollToRegion(offset.Value.Y, viewport.Y, region.Y, region.Height)), Vector2.Zero, offset.Max);
+                seen.TargetCount = target.Count;
+                inputChanged = true;
+            }
+        }
+        if (inputChanged)
+        {
+            if (hasSeen)
+                World.Replace(node.Entity, seen);
+            else
+                World.Add(node.Entity, seen);
+        }
         if (offset.Value != previous.Value || offset.Max != previous.Max)
             World.Replace(node.Entity, offset);
+    }
+
+    private static float ScrollToRegion(float offset, float viewport, float start, float size)
+    {
+        if (start < offset)
+            return start;
+        if (start + size > offset + viewport)
+            return MathF.Min(start, start + size - viewport);
+        return offset;
     }
 
     private static Size MeasureScrollContent(ref LayoutPass pass, in Constraints constraints)
