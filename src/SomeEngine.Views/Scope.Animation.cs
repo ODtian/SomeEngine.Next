@@ -10,7 +10,7 @@ public static partial class Scope
     {
         ScopeData current = Current;
         var copies = current.ViewData.ComponentCopies;
-        bool hasCopy = copies is not null && copies.TryGetValue((entity, channel.Component), out _);
+        bool hasCopy = copies is not null && copies.TryGetValue((entity, channel.Component), out var copy) && copy.Written;
         T value = hasCopy
             ? Unsafe.ReadUnaligned<T>(ref Unsafe.Add(ref copies![(entity, channel.Component)].Bytes, channel.Offset))
             : Unsafe.ReadUnaligned<T>(in current.World.ReadBytes(entity, channel.Component, channel.Offset, Unsafe.SizeOf<T>()));

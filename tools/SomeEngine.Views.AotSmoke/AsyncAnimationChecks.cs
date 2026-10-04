@@ -20,7 +20,7 @@ internal static partial class AsyncAnimationChecks
         systems.Add(new ViewRebuildSystem());
         AnimationSystems.AddDefaults(systems, time);
         var error = new InvalidOperationException("The resumed animation is rejected.");
-        Entity root = Views.Views.Spawn(world, Entity.Null, new PaintGroup(target, new Color(1, 0, 0), null, error));
+        Entity root = global::SomeEngine.Views.Views.Spawn(world, Entity.Null, new PaintGroup(target, new Color(1, 0, 0), null, error));
         Frame(0);
         var ready = new TaskCompletionSource();
         world.Replace(root, new PaintGroup(target, new Color(0, 0, 1), ready.Task, error));
