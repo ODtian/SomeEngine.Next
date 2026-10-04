@@ -57,6 +57,9 @@ public static class Solid
 委托读取来源，通过 `Scope.Write<Text>(node).Value` 写入已有节点。
 数字重载调用 Elements 的作用域格式化写入，格式、文化与字符相等规则由
 [[architecture/someui/Text|Text]] 定义。
+采用默认格式提供者的数字、整数与日期绑定把 `Locale` 登记为该计算的依赖，
+语言切换时更新同一个文本节点的参数和显示内容。显式格式提供者按自身规则格式化，
+对应结果保持相等时也保留文本与显示内容的写版本。
 
 `Effect` 转发 `Scope.Compute`。`Memo` 返回 getter，以保留规格中的 `hp()` 写法；
 getter 闭包在创建时分配一次，后续读取委托转到同一个 `Scope.Memo` 对象的 `.Value`。

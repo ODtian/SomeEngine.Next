@@ -15,6 +15,7 @@ internal static partial class LayoutChecks
 {
     internal static void Run()
     {
+        VerifyRepeatedMeasurements();
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
@@ -52,6 +53,73 @@ internal static partial class LayoutChecks
         world.Replace(canvas, new Canvas { Size = new Size(600, 400), Scale = 2 });
         systems.Update();
         Require(world.Read<LayoutRect>(absolute).Value == new Rect(0, 0, 300, 200), "Changing canvas size updates its layout roots.");
+    }
+
+    internal static void VerifyRepeatedMeasurements()
+    {
+        using var world = new World();
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        systems.Add(new ViewRebuildSystem());
+        systems.Add(new LayoutSystem());
+        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Spawn(world, canvas, new RepeatedMeasurements());
+        systems.Update();
+        var children = Hierarchy<ElementTree>.GetChildren(world, root);
+        Entity container = children[0];
+        Entity sibling = children[1];
+        Entity leaf = Child(world, container);
+        Entity[] nodes = [canvas, root, container, sibling, leaf];
+        Require(world.Read<LayoutRect>(sibling).Value == new Rect(100, 0, 10, 10),
+            "The custom layout places the sibling after the container's measured width.");
+
+        foreach (float width in new[] { 60f, 140f, 45f })
+        {
+            world.Replace(leaf, new MeasuredSize(new Size(width / 2, 30)));
+            systems.Update();
+            world.Replace(container, new Box { Fixed = new Size(width, 80) });
+            systems.Update();
+            Require(world.Read<LayoutRect>(sibling).Value == new Rect(width, 0, 10, 10),
+                "Consecutive content and container changes update the sibling's position.");
+            Rect[] incremental = nodes.Select(node => world.Read<LayoutRect>(node).Value).ToArray();
+            foreach (Entity node in nodes)
+                if (world.Has<LayoutCache>(node))
+                    world.Remove<LayoutCache>(node);
+            systems.Update();
+            Require(incremental.SequenceEqual(nodes.Select(node => world.Read<LayoutRect>(node).Value)),
+                "Incremental rectangles match a full measurement after clearing public caches.");
+        }
+    }
+
+    private readonly record struct RepeatedMeasurements : ILayout, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Scope.View(new Absolute(), 1).Size(100, 80).Content())
+                Scope.View(new MeasuredSize(new Size(20, 10)), 2);
+            Scope.View(new MeasuredSize(new Size(10, 10)), 3);
+            return default;
+        }
+
+        public Size Measure(ref LayoutPass pass, in Constraints constraints)
+        {
+            var available = new Constraints(default, constraints.Max);
+            float x = 0;
+            foreach (Entity child in pass.Children)
+            {
+                Size size = pass.Measure(child, in available);
+                var allocation = Constraints.Fixed(size);
+                pass.Measure(child, in allocation);
+                pass.Place(child, new Vector2(x, 0));
+                x += size.Width;
+            }
+            return constraints.Max;
+        }
+    }
+
+    private readonly record struct MeasuredSize(Size Value) : ILayout, IComponent
+    {
+        public BuildTask Build() => default;
+        public Size Measure(ref LayoutPass pass, in Constraints constraints) => Value;
     }
 
     private static Entity Child(World world, Entity parent)
