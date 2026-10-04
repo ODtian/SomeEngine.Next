@@ -44,6 +44,8 @@ SwiftUIChecks.Run(frames);
 RememberChecks.Run(frames);
 SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(true);
+SomeEngine.Elements.Consumer.Tests.TextChecks.Run();
+Console.WriteLine("Text shaping, Column measurements, style modifiers, formatted numbers, write versions, and zero-allocation integer writes passed under NativeAOT.");
 Console.WriteLine("Column surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(true);

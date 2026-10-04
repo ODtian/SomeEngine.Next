@@ -17,5 +17,7 @@
     <ProjectReference Include="../../src/SomeEngine.Typography/SomeEngine.Typography.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Views.Compose/SomeEngine.Views.Compose.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Views.SwiftUI/SomeEngine.Views.SwiftUI.csproj" />
+    <Content Include="../SomeEngine.Typography.Tests/Fonts/*.ttf;../SomeEngine.Typography.Tests/Fonts/*.otf"
+             Link="Fonts/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
