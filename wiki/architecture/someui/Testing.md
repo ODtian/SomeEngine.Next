@@ -1144,5 +1144,75 @@ Runtime 验收按仓库 gitlink 初始化 Alimer.Bindings：
 
 上述测试、原生发布与验证产物在验收结束后清理，代码和本次证据保存在 Git 中。
 
+## 第四批评审统一修复验收（2026-10-04）
+
+本批固定评审范围为 `f7df93dc59dcc629f57151f8a7c69da595f73849` →
+`8c953fae65deb55d925043a1377ec48253744dc1`。接续提交为 `84a4f80d`，
+主要修复提交为 `420df94d`，泛型 await 与公共验收补齐提交为
+`f74890bffe9a221fa21ec8364879cf2f284bc8e7`。交付前依次合入
+`e7ec3626`、`418d580d`、`5ae726c377dbf2718044ad1f8c386024c6cb22a0`；
+最终源码验收基于合并提交 `663c9ea4dde9f180ed016169e1b596cf04b7b830`。
+该版本包含 Dialog、HUD、无障碍数据与布局、排版、实例计算的分块 Job。
+
+| 修复行为 | 公共验证 |
+|---|---|
+| 旧构建在取消后的恢复点交付取消，当前 State 与新构建结果继续保留 | BuildCancellationTests；普通及配置 Task / ValueTask、BuildTask 辅助方法、用户等待类型分别验证；finally 使用独立完成源跨帧清理，using 释放与新结果同时保持 |
+| 取消回调异常交给视图错误边界，立即开始新构建并继续同帧视图更新 | BuildResumeChecks 的回调失败与 Launch 回调恢复；原始异常与帧号通过公开 BuildError 读取 |
+| 成功的异步子计算清除其此前错误，并保留其它子计算的错误 | LaunchTests 的异步恢复、多个子任务错误及取消回调错误恢复 |
+| Show 保留分支时 getter 读取当前条件来源 | ControlFlowChecks 在两种 World 上更换 State 参数，验证节点身份、绑定文本、后续来源更新与作用域外 getter |
+| 方法组及局部委托中的前端原语接受函数体混用检查 | FrontendTests 验证 SEV019、错误级别及其它编译错误集合 |
+| 跨文件显式 Rerun 视图的普通响应式参数得到提示 | FrontendTests 验证 SEV020、提示级别、Screens.cs 与 state.Value 的公开诊断位置 |
+| 采样器构造失败时绘制构造方释放已创建的 Glyph Pipeline | GlyphDrawingTests 在 WARP / Vulkan 上连续失败三次，公开 SetPipeline 观察已释放资源，同一设备再次成功创建绘制器 |
+| 三类材质共享画布遍历、裁剪与树序 | GlyphExtractionTests 验证两种 World 的完整提取与颜色更新；ParallelExtractionTests 比较顺序 / 并行实例缓冲、图集页像素与变化区域 |
+| 泛型 await 编译处理保留状态机字段的泛型参数 | AsyncCallTests 的公开 Resource 输出从修复前的 [0, 0] 恢复为 [10, 20]；ResourceResultChecks 在两种 World 与两套 NativeAOT 入口运行；编译消费者连续处理两次后运行生成 API |
+
+运行环境为 Windows x64、.NET SDK 10.0.112、.NET 10.0.12。
+最终两个配置的八工程结果如下，共 2,326 项通过，Debug 1,238 项、Release 1,088 项。
+
+| 工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Views.Tests | 331 | 299 |
+| SomeEngine.Views.Generators.Tests | 166 | 166 |
+| SomeEngine.Views.Solid.Tests | 53 | 49 |
+| SomeEngine.Elements.Consumer.Tests | 344 | 258 |
+| SomeEngine.Elements.Render.Tests | 42 | 40 |
+| SomeEngine.Layout.Tests | 97 | 77 |
+| SomeEngine.RenderGraph.Tests | 168 | 162 |
+| SomeEngine.Runtime.Tests | 37 | 37 |
+
+每项测试使用默认 `dotnet test` 入口，自动执行
+[Behavior Checks](../../harness/Behavior-Checks.md) 中的 TEST001 / TEST002 / TEST003。
+相关工程的规则检查结果为 0 违规。异常处理用例通过异常类型、原始异常引用与
+开发检查触发结果验证；等待、取消和异步清理通过完成源与公开结果同步。
+RenderGraph 测试经公共资源入口编译和执行。
+
+```powershell
+dotnet test tests/<工程>/<工程>.csproj -c Debug --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -p:RestoreDisableParallel=true
+dotnet test tests/<工程>/<工程>.csproj -c Release --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -p:RestoreDisableParallel=true
+```
+
+Runtime 工程附加 `-- xUnit.MaxParallelThreads=1 xUnit.ParallelizeTestCollections=false`。
+GPU 像素与资源释放场景使用已有 D3D12 WARP / Vulkan 入口。
+构建、计算、输入、布局、提取与图执行均沿现有公共路径驱动。
+
+Views 与 ECS 两套 NativeAOT 程序完成原生发布并实际启动，退出码均为 0。
+Views 输出覆盖普通 World / Job World 的四种写法、取消恢复、跨帧 finally 清理、
+同步 Resource、Launch 错误恢复、Show、输入、Dialog、TextField 和动画组合。
+ECS 的公开结果为 `managedReferencesVerified=true`、`viewsVerified=true`，
+存档 generation 为 2。Views 的双进程 checkpoint 通过，面板类型编号由 1 映射为 5，
+读回后的首帧重建与后续依赖更新通过。
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -p:RestoreDisableParallel=true --nologo -v quiet
+tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+dotnet publish tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -p:RestoreDisableParallel=true --nologo -v quiet
+tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.ECS.AotSmoke.exe
+```
+
+发布诊断中的 IL2026 / IL3050 位于 TraceCapture.cs:54，
+IL2070 位于 JobStorageTypeMetadata.cs:59；上述原生运行同时验证最终镜像的公共行为。
+临时探针、检查点、图片、日志、构建与发布产物在验收后清理，源码与本记录保存在 Git 中。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]] · [[architecture/someui/Accessibility|Accessibility]]
