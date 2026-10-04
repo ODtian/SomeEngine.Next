@@ -7,6 +7,7 @@ using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Elements;
 using SomeEngine.Layout;
+using SomeEngine.Job;
 using SomeEngine.Views;
 using static SomeEngine.Layout.AbsoluteFunctions;
 
@@ -33,6 +34,7 @@ public sealed partial class GameFrameTests
         Assert.Equal(typeof(TimelineEndSystem), stages[5].SystemTypes[^1]);
         Assert.Equal(new[] { typeof(TextShapingSystem) }, stages[6].SystemTypes);
         Assert.Equal(new[] { typeof(LayoutSystem) }, stages[7].SystemTypes);
+        Assert.Equal(new[] { typeof(FlipSystem) }, stages[8].SystemTypes);
     }
 
     [Fact]
@@ -55,7 +57,29 @@ public sealed partial class GameFrameTests
 
         Assert.Equal(new Rect(50, 0, 30, 40), world.Read<MeasuredRectangle>(result).Value);
         Assert.Equal(new[] { typeof(ResizeElement) }, frames.Describe()[4].SystemTypes);
-        Assert.Equal(new[] { typeof(ReadRectangle) }, frames.Describe()[8].SystemTypes);
+        Assert.Equal(new[] { typeof(FlipSystem), typeof(ReadRectangle) }, frames.Describe()[8].SystemTypes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Default_frame_preserves_presentation_when_layout_moves(bool jobs)
+    {
+        using var world = new World(execution: jobs ? new WorldJobs(JobSystem.Default) : null);
+        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Views.Spawn(world, canvas, new MovingElement());
+        using var frames = new GameFrameSystems(world);
+        frames.UpdateViews(0);
+        Entity container = Hierarchy<ElementTree>.GetChildren(world, root)[0];
+        Entity node = Hierarchy<ElementTree>.GetChildren(world, container)[0];
+        Flip.Enable(world, node, Spec.Tween(1));
+        frames.UpdateViews(0);
+
+        world.Replace(node, new AbsolutePosition { Value = new Vector2(100, 0) });
+        frames.UpdateViews(0);
+
+        Assert.Equal(100, world.Read<LayoutRect>(node).Value.X);
+        Assert.Equal(Matrix3x2.CreateTranslation(-100, 0), world.Read<PresentationOffset>(node).Matrix);
     }
 
     private readonly record struct MovingElement() : IView, IComponent

@@ -195,7 +195,8 @@ public struct BuildError : ISparseComponent
 将数据提取到 Rendering world。
 
 `AddInterfaceSystem` 在重建之后、动画之前加入用户系统；`AddFlipSystem` 在布局之后、
-提取之前加入系统。FLIP 的实现由 #52 提供，该扩展阶段随实现交付安装。
+提取之前加入系统。默认阶段已安装 `FlipSystem`；其查询先更新前帧布局与呈现偏移，
+结束读取窗口后再提交属性动画目标，使普通 World 与 Job World 通过同一帧入口运行。
 
 同步帧在当前呈现前完成视图更新和提取。重叠帧在取得前次 Game world 工作结果后
 处理当前平台输入，并在当前帧的 CPU 渲染读取结束后执行模拟、视图更新和提取；
