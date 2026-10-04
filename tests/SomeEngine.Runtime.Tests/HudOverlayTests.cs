@@ -44,8 +44,8 @@ public sealed class HudOverlayTests
         Assert.Equal("Item 00000", world.Read<TextContent>(before[0]).Value);
 
         var rectangle = world.Read<LayoutRect>(list).Value;
-        Pointer.Move(world, hud.Canvas, new Vector2(rectangle.X + 8, rectangle.Y + 8));
-        Pointer.Wheel(world, hud.Canvas, new Vector2(0, 48));
+        using var input = new WindowInput(world);
+        input.ScrollPointer(new Vector2(rectangle.X + 8, rectangle.Y + 8), new Vector2(0, 48));
         frames.UpdateInput();
         frames.UpdateViews(1d / 60);
         frames.UpdateViews(1d / 60);
