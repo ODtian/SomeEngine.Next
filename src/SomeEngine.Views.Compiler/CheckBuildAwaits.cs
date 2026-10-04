@@ -86,12 +86,12 @@ public static class BuildAwaitChecks
             var fields = resume.Body.Instructions.Select(instruction => instruction.Operand)
                 .OfType<FieldReference>().Where(field => field.FieldType.FullName == builder.FullName).ToArray();
             var build = fields.FirstOrDefault(field => field.DeclaringType is GenericInstanceType) ?? fields[0];
+            resume.Body.SimplifyMacros();
             var results = resume.Body.Instructions.Where(instruction => instruction.OpCode.Code is Code.Call or Code.Callvirt &&
                 instruction.Operand is MethodReference { Name: "GetResult", Parameters.Count: 0 } method &&
-                type.Fields.Any(field => field.FieldType.FullName == method.DeclaringType.FullName)).ToArray();
+                HasAwaiterResult(instruction, method)).ToArray();
             if (results.Length == 0)
                 continue;
-            resume.Body.SimplifyMacros();
             foreach (var result in results)
             {
                 if (result.Next?.Next?.Next?.Operand is MethodReference next && next.FullName == check.FullName)
@@ -122,6 +122,21 @@ public static class BuildAwaitChecks
             resume.Body.OptimizeMacros();
         }
         return changed;
+    }
+
+    private static bool HasAwaiterResult(Instruction call, MethodReference result)
+    {
+        Instruction? receiver = call.Previous;
+        if (receiver?.Operand is MethodReference { Name: "BeginAwait" } begin &&
+            begin.DeclaringType.FullName == "SomeEngine.Views.BuildTaskBuilder")
+            receiver = receiver.Previous?.Previous?.Previous;
+        if (receiver?.Operand is not VariableDefinition value ||
+            receiver.OpCode.Code is not (Code.Ldloc or Code.Ldloca))
+            return false;
+        for (TypeReference? awaiter = value.VariableType; awaiter is not null; awaiter = awaiter.Resolve()?.BaseType)
+            if (awaiter.GetElementType().FullName == result.DeclaringType.GetElementType().FullName)
+                return true;
+        return false;
     }
 
     private static IEnumerable<TypeDefinition> Types(IEnumerable<TypeDefinition> types)

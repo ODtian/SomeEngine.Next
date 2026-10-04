@@ -15,6 +15,8 @@
              Link="FirstBuildChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/BuildResumeChecks.cs" Link="BuildResumeChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/BuildAwaitChecks.cs" Link="BuildAwaitChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/InheritedAwaiterChecks.cs" Link="InheritedAwaiterChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/CleanupHelperChecks.cs" Link="CleanupHelperChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/ResourceResultChecks.cs" Link="ResourceResultChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/AsyncIntegrationChecks.cs"
              Link="AsyncIntegrationChecks.cs" />

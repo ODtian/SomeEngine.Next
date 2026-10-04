@@ -50,6 +50,11 @@ NuGet 包通过 `buildTransitive/SomeEngine.Views.targets` 接入，工具及其
 当前结果，公开检查见 `ResourceResultChecks` 与生成器的 `AsyncCallTests`；
 生成器消费者连续执行两次编译处理后运行生成的 API。
 
+await 的结果消费点根据 C# 状态机中的接收者局部类型识别，再沿基类核对 `GetResult`
+的声明类型。引用型 awaiter 的跨帧字段可由 C# 编译器存为 `object`，恢复时的类型化
+局部变量继续给出实际 awaiter；继承的 `GetResult` 因此接入同一取消观察与检查。
+重复处理先归一化指令，再沿既有观察调用取得接收者，保留已经补齐的 await 边界。
+
 `SomeEngine.Views.Compose`（#58）提供 `ComposableAttribute`，依赖 Views。
 直接引用 Compose 包时，生成器 DLL 与 buildTransitive props 随 Views 依赖接入，
 由 Views 包持有同一份生成器与拦截命名空间配置。

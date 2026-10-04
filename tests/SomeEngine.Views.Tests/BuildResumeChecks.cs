@@ -11,6 +11,8 @@ public static partial class BuildResumeChecks
         foreach (bool jobWorld in new[] { false, true })
         {
             VerifyCanceledTask(jobWorld);
+            VerifyInheritedAwaiter(jobWorld);
+            VerifyCleanupHelper(jobWorld);
             VerifyCanceledConfiguredTask(jobWorld);
             VerifyCanceledValueTask(jobWorld);
             VerifyCanceledConfiguredValueTask(jobWorld);

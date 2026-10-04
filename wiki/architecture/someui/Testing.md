@@ -1293,5 +1293,73 @@ tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.ECS
 IL2070 位于 JobStorageTypeMetadata.cs:59；上述原生运行同时验证最终镜像的公共行为。
 临时探针、检查点、图片、日志、构建与发布产物在验收后清理，源码与本记录保存在 Git 中。
 
+## 取消恢复 P1 补充验收（2026-10-05）
+
+最终 Spec 评审的固定范围为 `8c953fae` →
+`663c9ea4`。本次沿原票工作树从 `cb66dd360ea9c6284faf8cef1b871847e7c652df`
+接续两项公开失败，修复提交为 `633ce897`，交付前合入当前集成
+`69abcfc6489a55001ecb411c1f3974e1129c4ee8`，合并提交为
+`c61d5798fe76f334d168c2662375f7642d22bfde`。
+
+`InheritedAwaiterChecks` 通过 IView、State、TaskCompletionSource、自定义
+INotifyCompletion awaiter 与无头帧入口复现。继承的 GetResult 位于基类，
+编译器把引用型 awaiter 的跨帧字段存为 object。原编译处理下，完成旧等待后 State
+由新结果 2 写回 1；修复后根据结果消费接收者的局部类型与基类识别 await，
+公开事件顺序为 disposed、canceled、finally，结果继续为 2。
+完成回调用显式同步点登记就绪，再推进恢复帧。两种 World 的 Release 红 / 绿回归各 2 项。
+
+`CleanupHelperChecks` 在取消后的 finally 中 await 返回 BuildTask 的清理辅助方法，
+由第二个完成源决定其继续时机。原实现下，辅助方法尾部及调用方后续 finally 语句
+跳过，公共回归在两种 World 上失败。修复后，在已取消作用域中开始的辅助方法继承
+清理阶段；结果消费释放状态机，原方法的 await 边界交付取消，重建队列处理最终提交。
+公开事件顺序为 finally、helper finished、after helper、disposed、canceled；
+新 State 与新组件结果保持为 2，清理副本中的组件值 99 随清理结束释放。
+两种 World 的 Release 红 / 绿回归各 2 项。
+
+本次原构建、异步辅助方法、嵌套恢复、泛型字段引用、重复编译、同步 Resource、
+Launch、错误恢复及前端消费者通过完整工程回归。相关默认测试入口继续执行
+[Behavior Checks](../../harness/Behavior-Checks.md)，规则检查通过。
+
+| 工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Views.Tests | 335 | 303 |
+| SomeEngine.Views.Generators.Tests | 166 | 166 |
+| SomeEngine.Views.Solid.Tests | 53 | 49 |
+| SomeEngine.Elements.Consumer.Tests | 354 | 268 |
+| SomeEngine.Layout.Tests | 101 | 81 |
+
+五工程共 1,876 项通过，Debug 1,009 项、Release 867 项。
+消费者与布局的最终结果来自当前集成合并后的源码。消费者使用串行测试集合运行，
+零分配数字文本与语言格式化回归通过；Launch 清理用例按公开完成结果推进帧。
+
+```powershell
+dotnet test tests/<工程>/<工程>.csproj -c Debug --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -p:RestoreDisableParallel=true
+dotnet test tests/<工程>/<工程>.csproj -c Release --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -p:RestoreDisableParallel=true
+```
+
+消费者附加 `-- xUnit.MaxParallelThreads=1 xUnit.ParallelizeTestCollections=false`。
+初次回归在 `cb66dd36` 源码上运行，其后对合并影响的消费者与布局执行两个配置复验，
+覆盖 `1c634f83` 的长文本光标、滚动与布局更新，以及 `69abcfc6` 的并行布局缓存读取修复。
+
+在最终合并提交 `c61d5798` 上，Views 与 ECS 的 win-x64 NativeAOT
+完成发布、实际启动，退出码均为 0。
+两套入口通过 BuildResumeChecks.VerifyAll 实际执行上述继承 awaiter 与 BuildTask
+清理辅助方法检查，同时执行同步 Resource 与既有异步回归。Views 的四种写法、
+普通 World / Job World、输入、动画及当前长文本光标场景通过。ECS 输出为
+managedReferencesVerified=true、viewsVerified=true，durableGeneration=2。
+双进程 checkpoint 完成面板类型编号 1 → 5 映射、首帧重建与后续依赖更新。
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -p:RestoreDisableParallel=true --nologo -v quiet
+tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+dotnet publish tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false -m:1 -nr:false -p:UseSharedCompilation=false -p:BuildInParallel=false -p:RestoreDisableParallel=true --nologo -v quiet
+tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.ECS.AotSmoke.exe
+```
+
+发布诊断 IL2026 / IL3050 来自 TraceCapture.cs:54，IL2070 来自
+JobStorageTypeMetadata.cs:59；原生运行结果核对最终镜像的公共行为。
+临时探针、检查点、构建与发布产物在验收后清理，源码与本记录保存在 Git 中。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]] · [[architecture/someui/Accessibility|Accessibility]]

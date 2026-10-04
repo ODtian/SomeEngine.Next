@@ -43,11 +43,7 @@ public readonly struct BuildTaskAwaiter : ICriticalNotifyCompletion
     internal BuildTaskAwaiter(BuildTask task) => _task = task;
 
     public bool IsCompleted => _task.IsCompleted;
-    public void GetResult()
-    {
-        _task.Complete();
-        Scope.ThrowIfCanceled();
-    }
+    public void GetResult() => _task.Complete();
     public void OnCompleted(Action continuation) => _task.Continue(continuation);
     public void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
 }
@@ -60,7 +56,8 @@ public struct BuildTaskBuilder
     private bool _cancellationObserved;
     private bool _canceledAwait;
 
-    public static BuildTaskBuilder Create() => default;
+    // Helpers started after cancellation belong to the caller's cleanup segment.
+    public static BuildTaskBuilder Create() => new() { _cancellationObserved = Scope.IsCanceled };
     /// <summary>Observes cancellation before consuming this awaiter's result.</summary>
     public void BeginAwait()
     {
@@ -169,7 +166,6 @@ internal abstract class BuildStateMachine
         try
         {
             _error?.Throw();
-            Data.ViewData.Cancellation?.Token.ThrowIfCancellationRequested();
         }
         finally
         {

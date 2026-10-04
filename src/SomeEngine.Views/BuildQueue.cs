@@ -178,8 +178,11 @@ internal sealed class BuildQueue
                     {
                         completed = true;
                         view.Task.Complete();
-                        Scope.CompleteBuild(view);
-                        view.Computation?.Complete();
+                        if (!view.IsCanceled)
+                        {
+                            Scope.CompleteBuild(view);
+                            view.Computation?.Complete();
+                        }
                     }
                     else if (!view.IsCanceled)
                         Scope.CommitWrites(view, submitAnimations: true);
