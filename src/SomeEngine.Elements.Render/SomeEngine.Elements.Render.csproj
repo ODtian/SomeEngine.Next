@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>Surface extraction through the shared render update boundary.</Description>
+    <Description>Canvas extraction and built-in materials through the shared render update boundary.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Elements/SomeEngine.Elements.csproj" />
@@ -10,5 +10,6 @@
     <ProjectReference Include="../SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
     <EmbeddedResource Include="Shaders/Surface.slang" />
+    <EmbeddedResource Include="Shaders/Image.slang" />
   </ItemGroup>
 </Project>

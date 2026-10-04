@@ -1,12 +1,12 @@
 # SomeEngine.Elements.Render
 
-`SurfaceRenderExtractor` transfers layout nodes with `Surface` and `LayoutRect`
+`CanvasRenderExtractor` transfers layout nodes with `Surface`, `Image` and `LayoutRect`
 through `RenderExtractionSystems`. Install it with the other extractors before
 the first extraction:
 
 ```csharp
 using var extraction = new RenderExtractionSystems(
-    renderWorld, new SurfaceRenderExtractor());
+    renderWorld, new CanvasRenderExtractor());
 extraction.Extract(gameWorld);
 prepareSystems.ApplyExtraction(prepareScope);
 Entity canvasMirror = extraction.RequireMirror(canvas);
@@ -20,6 +20,8 @@ renderWorld.ExecuteBufferRead<SurfaceInstance>(canvasMirror, instances =>
 ```
 
 Each canvas mirror holds `RenderCanvas` and one ECS buffer of `SurfaceInstance`.
+Images occupy an `ImageInstance` buffer on the same mirror. `SurfaceRenderExtractor`
+keeps the original entry point for the shared canvas extractor.
 `RenderCanvas` carries the target, pixel size, and pixels per layout unit. Instance
 rectangles use canvas coordinates. The clip rectangle covers the canvas in layout
 units: `(0, 0, Size.Width / Scale, Size.Height / Scale)`.
@@ -81,3 +83,24 @@ DefaultGame shows the panel through the test platform's `Surface panel` option.
 Runtime applications using the argument entry point can enable it with `--surface-panel`.
 Graph structure and D3D12/Vulkan pixel behavior are covered by
 `tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests.cs`.
+
+Image views refer to `AssetId<TextureAsset>` and use `ImageTextures` with
+`LayoutSystem` to receive ready application textures. Drawing includes the image
+material and the application's device resource manager:
+
+```csharp
+using ImageMaterial images = ImageMaterial.Create(device.Capabilities.CompileTarget);
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
+    material, outputFormat, images, renderDevice);
+```
+
+The canvas pass merges surfaces and images by tree order, with the node's surface
+before its image. Each material interprets its own instance bytes and supplies
+the buffer range starting at each batch. Consecutive instances using the same
+material and texture draw together. Image textures use RenderDevice's normal
+upload and view methods; the unified missing texture covers acquisition time.
+Texture bindings belong to each graph frame and retain the canvas pass identity.
+
+`ImageTests` covers intrinsic size, fitted rectangles and UV through public APIs.
+`ImageDrawingTests` uses the complete view, layout, extraction and canvas path to
+read pixels on D3D12 WARP and Vulkan with graphics validation enabled.

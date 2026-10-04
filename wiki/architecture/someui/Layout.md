@@ -93,6 +93,8 @@ Text 的更新者比较文本、样式与外观的公开 ECS 写版本，内容�
 
 文本系统通过这一入口按内容宽度写入字形结果，`Text.Measure` 读取结果尺寸；
 接口、系统接入、版本与缓冲期限由 [[architecture/someui/Text|Text]] 维护。
+图片通过 `ImageTextures` 在同一入口取得应用已就绪的纹理与固有尺寸；
+资源更新、布局尺寸与填充语义由 [[architecture/someui/Render-Path|Render Path]] 维护。
 `LayoutRect` 写入比较最终矩形，相同矩形保持组件写版本。
 
 ## Flex（#25）
