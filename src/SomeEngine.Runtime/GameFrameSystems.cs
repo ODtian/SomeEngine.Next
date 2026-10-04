@@ -43,6 +43,7 @@ public sealed class GameFrameSystems : IDisposable
         var shaping = new TextShapingSystem();
         Group(FrameStage.TextMeasurement).Add(shaping);
         Group(FrameStage.Layout).Add(new LayoutSystem(shaping));
+        Group(FrameStage.Flip).Add(new FlipSystem());
     }
 
     /// <summary>Describes actual registration and the surrounding application boundaries.</summary>

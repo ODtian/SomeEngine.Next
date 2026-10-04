@@ -116,6 +116,17 @@ foreach (bool rewritten in new[] { false, true })
     SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunFocusabilityRemoval(rewritten);
 }
 Console.WriteLine("Text editing, selections, whole-character movement and deletion, IME composition, focused input order, World isolation, and public user text behaviors passed under NativeAOT.");
+foreach (bool rewritten in new[] { false, true })
+{
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunFeedback(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunSelection(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunPlaceholder(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunComposition(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunSingleLine(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunParameters(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunTheme(rewritten);
+}
+Console.WriteLine("TextField feedback, parameter replacement, caret and selection, placeholders, IME display, single-line input, themes, and public user rewrites passed under NativeAOT.");
 
 
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(false);

@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.Animation;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
@@ -12,16 +13,22 @@ namespace SomeEngine.Elements;
 public struct FlipSystem : ISystem<ImmediateSystemContext>
 {
     private QueryHandle _nodes;
+    private List<FlipTarget> _targets;
 
-    public void OnCreate(ref ImmediateSystemContext context) =>
+    public void OnCreate(ref ImmediateSystemContext context)
+    {
+        _targets = new();
         _nodes = context.World.Query(context.World.QueryDefinition()
             .Read<FlipSettings>().ReadWrite<FlipFrame>().ReadWrite<PresentationOffset>().Optional<LayoutRect>(QueryAccess.Read)
             .Optional<ElementTransform>(QueryAccess.Read));
+    }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        world.ExecuteQuery(_nodes, context.LastSystemVersion, ref world, static (rows, ref world) =>
+        _targets.Clear();
+        List<FlipTarget> targets = _targets;
+        world.ExecuteQuery(_nodes, context.LastSystemVersion, ref targets, static (rows, ref targets) =>
         {
             foreach (QueryRow row in rows.Rows)
             {
@@ -46,11 +53,8 @@ public struct FlipSystem : ISystem<ImmediateSystemContext>
                     Spec spec = row.Read<FlipSettings>().Spec;
                     if (matrixChanged) offset.Matrix = Invert(previous, rectangle, transform.Matrix) * offset.Matrix;
                     if (alphaChanged) offset.Alpha = transform.Alpha != 0 ? previous.Alpha * offset.Alpha / transform.Alpha : 1;
-                    world.Replace(row.Entity, offset);
-                    if (matrixChanged)
-                        PropertyAnimation.To(world, row.Entity, PresentationChannels.Matrix, Matrix3x2.Identity, spec);
-                    if (alphaChanged)
-                        PropertyAnimation.To(world, row.Entity, PresentationChannels.Alpha, 1f, spec);
+                    row.ReadWrite<PresentationOffset>() = offset;
+                    targets.Add(new FlipTarget(row.Entity, spec, matrixChanged, alphaChanged));
                 }
 
                 previous.Rectangle = rectangle;
@@ -60,6 +64,13 @@ public struct FlipSystem : ISystem<ImmediateSystemContext>
                 row.ReadWrite<FlipFrame>() = previous;
             }
         });
+        foreach (FlipTarget target in _targets)
+        {
+            if (target.MatrixChanged)
+                PropertyAnimation.To(world, target.Entity, PresentationChannels.Matrix, Matrix3x2.Identity, target.Spec);
+            if (target.AlphaChanged)
+                PropertyAnimation.To(world, target.Entity, PresentationChannels.Alpha, 1f, target.Spec);
+        }
     }
 
     private static Matrix3x2 Invert(FlipFrame previous, Rect rectangle, Matrix3x2 transform)
@@ -78,4 +89,7 @@ public struct FlipSystem : ISystem<ImmediateSystemContext>
     }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_nodes);
+
+    private readonly record struct FlipTarget(Entity Entity, Spec Spec,
+        bool MatrixChanged, bool AlphaChanged);
 }
