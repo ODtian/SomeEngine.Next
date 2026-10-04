@@ -476,5 +476,90 @@ Views、Layout 与生成器产品源码相对于 `03fed94e` 保持一致，Layou
 验证完成后清理本工作树内 69 个已核对的 bin / obj 构建输出目录，
 包含原生发布产物与复用的字体依赖，检查点临时文件由验收脚本完成清理。
 
+## 第三批公开行为修复验收（2026-10-04）
+
+Windows x64，.NET SDK `10.0.112`，执行环境 `.NET 10.0.12`。
+固定评审范围为 `6a6a759ccbc4f77bd1c77335487789a4f539645f` →
+`f7df93dc59dcc629f57151f8a7c69da595f73849`。工作树从集成提交
+`5d3be07dc7e38c61783d85a5ad5d807d2c10f98b` 创建，分支为
+`codex/someui-review-fixes-3`，路径为
+`F:\.codex\worktrees\someui-review-fixes-3\SomeEngine.Next`。
+
+修复提交为 `72e63d013bbcb7aed4be7cdb65c58ae6406d6fbc`。
+交付前两次合入集成分支：先形成 `642724cacd290d97a5d1f2e7275e0740ff470ebd`，
+再合入 `f7f66815c02d0f46a577fe7f8ce06d4f8147e97a`，形成最终验收代码提交
+`118953eb17d50b9046fbdcb57c1cd7342ecd2704`。以下完整结果基于该代码提交。
+
+| 修复 | 公开复现与结果 |
+|---|---|
+| 跨帧失败与取消恢复（#1、#20、#21） | 读者先显示已提交的表格与 sparse 值 2，恢复后源值与读者都为 1；子视图参数同样从 2 恢复为 1。两条恢复路径共用值比较入口，变化值推进写版本，相等结果保留版本；旧构建清理继续保留当前输出。 |
+| 多次约束与连续局部布局（#27） | 用户布局先按松约束、再按固定约束测量同一子节点；先修改内部内容，再把容器宽度改为 60、140、45，相邻节点随宽度重新摆放，各节点矩形与清除公开 LayoutCache 后的全量结果相等。 |
+| Solid 数字与日期语言（#53、#55） | Once 视图中的 decimal、整数及月份绑定随 en-US → de-DE 更新：1,234.50 → 1.234,50、1,234 → 1.234、October → Oktober；显式格式提供者保持其规则及相等结果版本。 |
+| 相同数字声明分配（#31） | 公开声明入口采用 10,000 次预热、1,000 次采样。旧整数路径相对字符串声明额外分配 40,000 字节；修复后整数、decimal 与日期声明的分配量均与字符串声明相等，新增分配为 0 字节。 |
+| Scope / World 文本来源（#31） | Once 构建先 DeclareText(1, 23, "D2")，再作用域 SetText(42, "D2")，Text.Value 与 TextContent.Value 均为 42；World 重载继续写入 99 后两者均为 99，相等后续写入保留版本。 |
+
+每项公开失败用例先执行红测，再执行实现与回归。格式化数据复用继续通过六组公开变化验收：
+decimal 精度、日期 Kind、DateTimeOffset 时区偏移，以及 double、float、Half 的零符号变化。
+这些输入的参数字符串与实际显示共同更新。分配采样通过公开 GC API 直接统计声明调用，
+各种数据采用同一预热、采样、JIT 和 GC 配置；采样前完成完整 GC 与终结器处理。
+托管文本分配测试按序执行。托管回归统一设置 `DOTNET_TieredCompilation=0`。
+
+七个完整测试工程采用以下命令，两种配置分别执行：
+
+```powershell
+dotnet test tests/<项目>/<项目>.csproj -c <Debug|Release> --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false
+dotnet test tests/SomeEngine.Job.Tests/SomeEngine.Job.Tests.csproj -c <Debug|Release> --filter FullyQualifiedName~JobHandleAwaitTests --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false
+dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj -c <Debug|Release> --filter 'FullyQualifiedName~CanvasDrawingTests|FullyQualifiedName~GlyphDrawingTests' --nologo -v quiet -m:1 -nr:false -p:UseSharedCompilation=false
+```
+
+| 项目 / 接缝 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Views.Tests | 305 | 273 |
+| SomeEngine.Layout.Tests | 95 | 75 |
+| SomeEngine.Elements.Consumer.Tests | 193 | 139 |
+| SomeEngine.Views.Solid.Tests | 19 | 18 |
+| SomeEngine.Views.Generators.Tests | 112 | 112 |
+| SomeEngine.Elements.Render.Tests | 17 | 17 |
+| SomeEngine.Typography.Tests | 45 | 42 |
+| JobHandleAwaitTests | 6 | 6 |
+| CanvasDrawingTests / GlyphDrawingTests | 11 | 11 |
+| 合计 | 803 | 693 |
+
+GPU 用例实际执行 D3D12 与 Vulkan，覆盖画布填充、边框、裁剪、世界空间投影与深度，
+以及字形参考覆盖、颜色更新、图集新增区域与页、树序和裁剪。
+
+Views 原生发布、运行与跨进程检查点命令均退出码 0：
+
+```powershell
+dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable ./tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe
+```
+
+共享的 LayoutChecks、TextChecks 与 SolidChecks 实际验证本批布局、文本来源、
+重复声明分配、格式化数据变化与 Locale 绑定。检查点在第一个进程写入面板类型编号 1，
+第二个进程映射为 5，完成读回、下一帧重建和依赖更新。
+该原生文件的 SHA-256 为
+`26BC132891142000A91257121E4E2DC3B3577BE67169635D375CBFB38761CDD2`。
+
+ECS 原生发布与启动命令均退出码 0：
+
+```powershell
+dotnet restore tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -r win-x64 -p:PublishAot=true -p:_IsPublishing=true --nologo -v minimal -m:1 -nr:false
+dotnet publish tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -c Release -r win-x64 --self-contained true --no-restore -t:Rebuild -o tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/win-x64/native-publish -p:PublishAot=true -p:SelfContained=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+./tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/win-x64/native-publish/SomeEngine.ECS.AotSmoke.exe
+```
+
+FirstBuildChecks 调用共享的跨帧组件与子参数恢复检查，实际执行失败、取消及旧清理行为。
+结果为 `managedReferencesVerified: true`、`viewsVerified: true`，实体数 4，
+持久存档 702 字节、generation 2，语义校验值 `-25362004713`。
+该原生文件的 SHA-256 为
+`65D9347A296E27598E4AD207F1B09D51AF2170FCE6D60595900E8DE62D927819`。
+发布中的既有 IL2026、IL3050 诊断来自 TraceCapture，IL2070 来自 JobStorageTypeShape。
+两次原生实际运行与共享行为结果由上述入口确认。
+验证完成后核对并清理工作树内 88 个 bin / obj 输出目录，包含排版原生依赖、
+两个原生发布目录与测试产物。跨进程检查点文件由验收脚本清理。
+本节记录与测试文件的空行整理形成交付记录提交，产品源码对应上文的最终验收代码提交。
+
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]

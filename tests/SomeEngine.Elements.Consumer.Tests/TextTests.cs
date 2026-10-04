@@ -31,6 +31,7 @@ public sealed partial class TextTests
     [InlineData("half")]
     public void ChangedFormattingDataKeepsParametersAndDisplayTogether(string example) =>
         TextChecks.VerifyChangedFormattingData(example);
+
     [Fact]
     public void ChangingTextColorKeepsTheShapeAndLayout()
     {
