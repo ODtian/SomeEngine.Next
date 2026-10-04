@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace SomeEngine.Runtime;
 
-internal sealed class RuntimeInput
+internal sealed class RuntimeInput(WindowInput? elements = null)
 {
     internal const int KeyBackspace = 0x08;
     internal const int KeyTab = 0x09;
@@ -77,20 +77,25 @@ internal sealed class RuntimeInput
                 break;
             case NativeWindowEventKind.KeyChanged:
                 SetKey(windowEvent.VirtualKey, windowEvent.IsDown);
+                elements?.ChangeKey(windowEvent.VirtualKey, windowEvent.IsDown);
                 break;
             case NativeWindowEventKind.MouseMoved:
                 SetMousePosition(windowEvent.MousePosition);
+                elements?.MovePointer(windowEvent.MousePosition);
                 break;
             case NativeWindowEventKind.MouseLeft:
                 _hasMousePosition = false;
+                elements?.LeavePointer();
                 break;
             case NativeWindowEventKind.MouseButtonChanged:
                 SetMousePosition(windowEvent.MousePosition);
                 SetMouseButton(windowEvent.MouseButton, windowEvent.IsDown);
+                elements?.ChangePointerButton((int)windowEvent.MouseButton, windowEvent.IsDown, windowEvent.MousePosition);
                 break;
             case NativeWindowEventKind.MouseWheel:
                 SetMousePosition(windowEvent.MousePosition);
                 MouseWheel += windowEvent.Wheel;
+                elements?.ScrollPointer(windowEvent.MousePosition, windowEvent.Wheel);
                 break;
         }
     }
@@ -146,6 +151,7 @@ internal sealed class RuntimeInput
 
     private void ReleaseAll()
     {
+        elements?.ReleaseInput();
         for (int index = 0; index < _keys.Length; index++)
         {
             if (_keys[index])

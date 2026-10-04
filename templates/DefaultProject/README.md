@@ -5,8 +5,14 @@ Install this template once into an absent or empty directory. The copied C#, sha
 ```powershell
 pwsh -File <engine>/templates/DefaultProject/Install.ps1 -Destination <project> -EnginePath <engine>
 dotnet run --project <project>/Game.Build/Game.Build.csproj -c Release -- --project <project> --engine <engine>
-dotnet run --project <project>/Game.App/Game.App.csproj -c Release -- --warp --frames 30 --synchronous-frames --verify-frame-output
+dotnet run --project <project>/Game.App/Game.App.csproj -c Release
 ```
+
+`DefaultGame` opens the scene test platform. Its SomeUI panel appears at the lower right:
+click `Add one` to increase `Clicks: N`, or use an arrow key to focus the button and Enter or
+Space to confirm it. The count stays with the panel when the window is resized.
+F1 opens and closes the ImGui debug panel, where `Surface panel` controls the SomeUI example.
+The application takes its scene and rendering settings from that in-game panel.
 
 `Game.Build` compiles every project `.shader`, creates the default textures and materials from the declarations in `DefaultTextures.cs` and `DefaultMaterials.cs`, and imports the copied glTF model through the project's importer capabilities. The glTF importer produces the source scene and shared mesh assets. `DefaultContent` then builds the separate 1024-instance test world from that mesh and writes application settings pointing to the test world. `DefaultContentIds.cs` holds identities for code-defined assets; changing a display name keeps its identity. The glTF source has its own persisted import identities and settings after the first import.
 

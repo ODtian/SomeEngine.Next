@@ -487,16 +487,10 @@ internal static class RuntimeApplication
             window,
             FrameTimeout);
 
-        using SystemGroup<ImmediateSystemContext>? elementSystems = options.SurfacePanel || options.WorldNameplates
-            ? new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(mainWorld)) : null;
-        if (elementSystems is not null)
-        {
-            var shaping = new SomeEngine.Elements.TextShapingSystem();
-            elementSystems.Add(new ViewRebuildSystem());
-            elementSystems.Add(shaping);
-            elementSystems.Add(new LayoutSystem(shaping));
-            elementSystems.Update();
-        }
+        using GameFrameSystems? elementSystems = options.SurfacePanel || options.WorldNameplates
+            ? new GameFrameSystems(mainWorld) : null;
+        using WindowInput? elementInput = elementSystems is null ? null : new WindowInput(mainWorld);
+        elementSystems?.UpdateViews(0);
 
         if (!options.SynchronousFrames)
         {
@@ -612,7 +606,7 @@ internal static class RuntimeApplication
         GraphPassId temporalProducer = default;
         GraphPassId presentationReadback = default;
         Task? nextGameUpdate = null;
-        var input = new RuntimeInput();
+        var input = new RuntimeInput(elementInput);
         int width = boot.Width;
         int height = boot.Height;
         RenderGraphStatistics latestGraphStatistics = default;
@@ -768,6 +762,7 @@ internal static class RuntimeApplication
                     input.Process(windowEvent);
                     ui.ProcessEvent(windowEvent, input);
                 }
+                elementSystems?.UpdateInput();
                 if (input.WasKeyPressed(RuntimeInput.KeyEscape))
                 {
                     window.RequestClose();
@@ -827,11 +822,12 @@ internal static class RuntimeApplication
                     scene.Play(sceneSeconds, options.ScenePlayback is "materials" or "camera", animateMaterial,
                         orbitCamera: options.ScenePlayback == "camera");
                 ui.BeginFrame(deltaSeconds, width, height, window.DpiScale);
+                SomeEngine.Elements.InputCapture elementCapture = elementInput?.Capture ?? default;
                 scene.Camera.Update(
                     input,
                     deltaSeconds,
-                    ui.WantCaptureKeyboard,
-                    ui.WantCaptureMouse);
+                    ui.WantCaptureKeyboard || elementCapture.Keyboard,
+                    ui.WantCaptureMouse || elementCapture.Pointer);
                 RuntimeViewFrame viewFrame = RuntimeViewFrame.Create(
                     scene.Camera.View,
                     scene.Projection(width, height),
@@ -863,7 +859,7 @@ internal static class RuntimeApplication
                         scene.Update(sceneSeconds);
                     surfacePanel?.Resize(width, height);
                     nameplates?.Update();
-                    elementSystems?.Update();
+                    elementSystems?.UpdateViews(deltaSeconds);
                     extraction.Extract(mainWorld);
                 }
                 long prepareStarted = Stopwatch.GetTimestamp();
@@ -1002,7 +998,7 @@ internal static class RuntimeApplication
                             scene.Update(nextSceneTime);
                         surfacePanel?.Resize(nextCanvasWidth, nextCanvasHeight);
                         nameplates?.Update();
-                        elementSystems?.Update();
+                        elementSystems?.UpdateViews(deltaSeconds);
                         extraction.Extract(mainWorld);
                     });
                 }
