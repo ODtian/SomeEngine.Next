@@ -79,6 +79,19 @@ public readonly record struct Constraints(Size Min, Size Max);
 开发构建通过 Core 的 `DevelopmentCheck` 报告尺寸、约束、缩放及测量/摆放使用错误，
 这些检查调用随 shipping 编译消失。
 
+## 内容测量数据（#31）
+
+`LayoutSystem` 接受 `params ILayoutDataUpdate[]`，保留公开无参构造函数。
+`ILayoutDataUpdate` 位于共享布局协议层，提供
+`Update(World, Entity, in Constraints)` 与默认空实现的 `Complete(World)`。
+布局在每次测量前，把扣除 Box 内边距后的内容约束交给这些数据更新者；
+画布的测量、摆放与坐标写入完成后调用 `Complete` 提交最终内容结果。
+各布局继续通过同一 `ILayout` 类型分派和 `LayoutPass.Measure` 测量自己的子节点。
+
+文本系统通过这一入口按内容宽度写入字形结果，`Text.Measure` 读取结果尺寸；
+接口、系统接入、版本与缓冲期限由 [[architecture/someui/Text|Text]] 维护。
+`LayoutRect` 写入比较最终矩形，相同矩形保持组件写版本。
+
 ## Flex（#25）
 
 ```csharp
