@@ -13,6 +13,11 @@ internal static class ElementPresentation
             ? world.Read<ElementTransform>(node) : ElementTransform.Identity;
         PresentationOffset offset = world.Has<PresentationOffset>(node)
             ? world.Read<PresentationOffset>(node) : PresentationOffset.Identity;
+        return Calculate(rectangle, transform, offset);
+    }
+
+    internal static (Matrix3x2 Matrix, float Alpha) Calculate(Rect rectangle, ElementTransform transform, PresentationOffset offset)
+    {
         Matrix3x2 matrix = Matrix3x2.CreateTranslation(-rectangle.X, -rectangle.Y)
             * transform.Matrix * Matrix3x2.CreateTranslation(rectangle.X, rectangle.Y) * offset.Matrix;
         return (matrix, transform.Alpha * offset.Alpha);

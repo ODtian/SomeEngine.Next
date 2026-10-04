@@ -67,3 +67,11 @@ using (Grid([GridTrack.Auto, GridTrack.Fraction()],
 
 详细接口、尺寸语义、透明组合与公共行为验收见
 [Layout](../../wiki/architecture/someui/Layout.md)。
+
+`LayoutSystem.Parallel` 默认 true，按画布根与重排边界运行独立子树的 Job。
+设置 false 使用同一测量算法顺序执行。输入读取与最终 ECS 提交由系统线程完成。
+内容更新者通过 `SupportsParallel`、`ReadContent` 和 `ILayoutContent.Update`
+提供节点的约束测量数据，`Complete` 提交最终内容结果。
+原有 `ILayoutDataUpdate.Update` 接入继续采用顺序测量。
+共享公开分块入口为 `ChunkJobs.Run`；详细执行规则见
+[子树 Job 测量](../../wiki/architecture/someui/Layout.md#子树-job-测量69)。
