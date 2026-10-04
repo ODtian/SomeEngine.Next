@@ -46,6 +46,14 @@ layout and preserves a held UI press until release.
 The external examples and shared behavior checks live in
 `tests/SomeEngine.Elements.Consumer.Tests`.
 
+Built-in content and controls expose `AccessibleRole` and `AccessibleName` on
+their view entities. Applications read them through the public World component
+API. User components declare their own role and label with
+`node.Accessible(Role.Button, "Open inventory")` in a build or computation;
+the modifier returns the same entity. The default role table, name sources, and
+writing rules live in
+[`Accessibility`](../../wiki/architecture/someui/Accessibility.md).
+
 `Image(AssetId<TextureAsset> source, ImageFit fit = ImageFit.Contain)` is a layout
 view. Install `new ImageTextures(resolve)` in `LayoutSystem`; the resolver returns
 the application's ready `SomeEngine.Resources.Texture` for that asset identity.

@@ -11,6 +11,7 @@ public record struct Dialog() : IView, ISparseComponent, ILayout
 
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.Dialog, "");
         DialogTheme theme = Scope.ReadUp<DialogTheme>();
         Scope.Entity.Background(theme.Fill).Corner(theme.CornerRadius).Shadow(theme.Shadow);
         Scope.Write<Flex>(Scope.Entity) = new Flex(Axis.Vertical, theme.Gap);

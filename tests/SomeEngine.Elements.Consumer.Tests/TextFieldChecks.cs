@@ -103,6 +103,10 @@ internal static partial class TextFieldChecks
         var text = new State<string>(string.Empty);
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new EditingField(text, "Name", rewritten));
         frames.Frame();
+        Entity field = frames.World.Read<FieldDisplay>(root).Field;
+        Require(frames.World.Read<AccessibleRole>(field).Value == Role.TextField &&
+            frames.World.Read<AccessibleName>(field).Value == "Name",
+            "Both field implementations expose their text-field role and placeholder name.");
         Require(DisplayText(frames.World, root) == "Name" &&
             frames.World.Read<ShapedText>(TextNode(frames.World, root)).Style.Color == new Color(1, 1, 1, 0.5f),
             "An empty field displays the placeholder with half the text theme's alpha.");
@@ -120,6 +124,8 @@ internal static partial class TextFieldChecks
         Require(text.Value == "X" && DisplayText(frames.World, root) == "X" &&
             frames.World.Read<ShapedText>(TextNode(frames.World, root)).Style.Color == new Color(1, 1, 1),
             "Typing replaces the placeholder with committed text in the ordinary text color.");
+        Require(frames.World.Read<AccessibleName>(field).Value == "Name",
+            "Typing retains the field's accessible name.");
         Keyboard.Key(frames.World, Key.Backspace, true);
         frames.Frame();
         Require(text.Value == string.Empty && DisplayText(frames.World, root) == "Name",
@@ -127,6 +133,8 @@ internal static partial class TextFieldChecks
         frames.World.Replace(root, new EditingField(text, "Updated", rewritten));
         frames.Frame();
         Require(DisplayText(frames.World, root) == "Updated", "A changed placeholder appears in the same frame.");
+        Require(frames.World.Read<AccessibleName>(field).Value == "Updated",
+            "A changed placeholder updates the accessible name in the same frame.");
     }
 
     private static string DisplayText(World world, Entity root) =>

@@ -12,6 +12,7 @@ public record struct Slider(float Value, float Minimum = 0, float Maximum = 1, f
 {
     public BuildTask Build()
     {
+        Scope.Entity.Accessible(Role.Slider, "");
         var range = new ValueRange(Value, Minimum, Maximum, Step);
         ValueFunctions.ValueDraggable(Scope.Entity, in range, Vector2.UnitX, 148);
         bool focused = Scope.Entity.Focused();

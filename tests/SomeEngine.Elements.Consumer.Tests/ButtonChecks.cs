@@ -22,6 +22,9 @@ internal static partial class ButtonChecks
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ClickingButtonExample(kind, "AV"));
         frames.Frame();
         Entity button = frames.World.Read<ClickDisplay>(root).Button;
+        Require(frames.World.Read<AccessibleRole>(button).Value == Role.Button &&
+            frames.World.Read<AccessibleName>(button).Value == "AV",
+            "Built-in, user, and icon buttons expose the button role and their label.");
         Require(frames.World.Read<ClickDisplay>(root).Count == 0, "A new button displays zero consumed clicks.");
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(4, 4));
@@ -64,6 +67,9 @@ internal static partial class ButtonChecks
         frames.World.Replace(root, new ClickingButtonExample(kind, "OK", theme));
         frames.Frame();
         button = frames.World.Read<ClickDisplay>(root).Button;
+        Require(frames.World.Read<AccessibleRole>(button).Value == Role.Button &&
+            frames.World.Read<AccessibleName>(button).Value == "OK",
+            "A changed label updates the button's accessibility name.");
         List<Entity> texts = DescendantsWith<Text>(frames.World, button);
         Require(texts.Count(node => frames.World.Read<Text>(node).Value == "OK") == 1,
             "Updated parameters display the new button label.");
