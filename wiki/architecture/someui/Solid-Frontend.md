@@ -166,6 +166,67 @@ nullable 数值、Switch 首个分支与 span 数据、Dynamic 函数切换、�
 在托管测试和 `just views-aot win-x64` 中复用 Show、keyed 值、nullable 数值、
 Switch/Match、Dynamic 与分支释放的公开行为。
 
+## For 与 Index（#57）
+
+列表 getter 由 `Rerun` 子视图求值，列表中的每行由 `Once` 子视图执行。
+行内普通读取取得首次构建的值；Text getter、Effect、Memo 和嵌套控制流各自登记依赖。
+
+```csharp
+namespace SomeEngine.Views.Solid;
+public static partial class Solid
+{
+    public static void For<T>(Func<IReadOnlyList<T>> each, Action<T, Func<int>> row)
+        where T : IEquatable<T>;
+    public static void Index<T>(Func<IReadOnlyList<T>> each, Action<Func<T>, int> row);
+
+    public static void For(Func<QueryRows> each, Action<Entity, Func<int>> row);
+    public static void Index(Func<QueryRows> each, Action<Func<Entity>, int> row);
+}
+```
+
+| 原语 | 行身份与变化送达 |
+|---|---|
+| `For` | 使用 `EqualityComparer<T>.Default` 匹配元素；保留相等元素的行实体和首次内容，按新顺序移动行；`index` getter 读取该行的最新位置 |
+| `Index` | 位置决定行身份；`item` getter 读取该位置的最新元素，位置参数保持首次值；相等元素保留该行读取元素的计算结果 |
+
+`For` 的元素、位置与内容委托由行的视图参数持有，节点 key 由该行的 `ElementKey` 持有。
+每次列表构建从现有子行中按相等性匹配，每行在这次声明中匹配一次；
+重复元素按原有行的出现次序匹配。新增元素使用独立 key，元素哈希相同的各行仍按元素相等性区分。
+`Index` 以位置作为 key，更新对应行的元素参数；列表缩短时释放末尾省略的位置。
+列表首次为空时形成空内容，随后新增元素创建对应行；释放后再次出现的行重新构建。
+行参数按元素与位置比较，宿主再次声明时将行内容委托覆盖为最新；
+元素与位置相等时保持参数版本和已有 getter 计算结果。
+
+传给行的 getter 在活动构建或计算作用域中使用，通过 `Scope.Read` 读取该行的视图参数。
+`For` 的位置变化使读取 `index` 的计算更新，`Index` 的元素变化使读取 `item` 的计算更新。
+各行的参数、依赖和生命周期沿共享视图管理；构建修改的恢复、子树释放及所属计算释放见
+[[architecture/someui/Node-Identity|Node Identity]] 与 [[architecture/someui/Computations|Computations]]。
+
+```csharp
+var names = new State<IReadOnlyList<string>>(["first", "second"]);
+Index(() => names.Value, (name, position) => Text(name));
+
+For(() => Scope.Each(enemies), (enemy, index) =>
+{
+    Text(() => Scope.Read<Health>(enemy).Current);
+    Text(index);
+});
+```
+
+`Each(query)` 返回栈上的 `QueryRows`。两个查询重载在列表 getter 的追踪作用域中调用它，
+先把当次实体序列收集为只读列表，再沿通用列表声明路径构建行。
+这使 `For(() => Each(query), ...)` 和 `Index(() => Each(query), ...)` 直接使用实体，
+查询成员依赖与各行组件读取依赖沿 [[architecture/someui/Lists|Lists]] 和
+[[architecture/someui/Dependencies|Dependencies]] 的共享规则更新。
+
+作用域、列表 getter、行内容委托与 getter 返回的列表使用 Core 的 `DevelopmentCheck`
+报告使用错误；shipping 构建移除这些检查调用。
+公开验收见 [ListTests](../../../tests/SomeEngine.Views.Solid.Tests/ListTests.cs)，
+通过有序层级、实体、显示数据和用户计算验证行重排、索引更新、单行元素更新、首次内容、
+相等元素与重复元素、宿主刷新、查询成员、子树与计算释放以及异常恢复。
+[ListChecks](../../../tests/SomeEngine.Views.Solid.Tests/ListChecks.cs) 在托管测试和
+`just views-aot win-x64` 中共享 For、Index、Each 查询与行释放行为。
+
 ## Insert 与组件导出（#63）
 
 ```csharp

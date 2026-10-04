@@ -47,6 +47,25 @@ Switch(
 `Dynamic(Func<Action>)` 在选中的组件函数变化时重新构建。
 分支释放与嵌套内容沿共享视图的节点身份和生命周期规则处理。
 
+`For<T>(Func<IReadOnlyList<T>>, Action<T, Func<int>>)` 以元素相等性匹配行，
+保留行实体与首次内容，重排后通过索引 getter 提供最新位置；`T` 实现 `IEquatable<T>`。
+`Index<T>(Func<IReadOnlyList<T>>, Action<Func<T>, int>)` 按位置保留行，
+元素 getter 绑定该位置的最新值。行通过 `Text` getter、Effect 和 Memo 独立更新。
+两个原语还提供 `Func<QueryRows>` 重载，直接接收 `() => Scope.Each(query)`。
+
+```csharp
+var names = new State<IReadOnlyList<string>>(["first", "second"]);
+Index(() => names.Value, (name, position) => Text(name));
+For(() => names.Value, (name, index) =>
+{
+    Text(name);
+    Text(index);
+});
+```
+
+行 getter 在活动构建或计算作用域中读取行参数，列表增删与释放使用共享视图生命周期。
+列表 API 与查询用法见 Wiki `architecture/someui/Solid-Frontend` 的 For 与 Index 节。
+
 `Insert(Action)` 声明一个 `Rerun` 子视图，内容读取变化后重新执行，
 Compose 和普通视图沿共同的身份与参数规则更新原节点。
 
