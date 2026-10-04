@@ -69,6 +69,8 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
                 Confirm(world, focused);
             else if (input.Pressed)
             {
+                if (ValueEditing.Step(world, focused, input.Key))
+                    continue;
                 switch (input.Key)
                 {
                     case Key.Left: focused = Navigate(world, focused, Direction.Left); break;

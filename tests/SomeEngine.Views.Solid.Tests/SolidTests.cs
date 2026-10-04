@@ -397,9 +397,11 @@ public sealed partial class SolidTests
     public void SolidCallsReportTheirRequiredScopeAndGetters()
     {
         Assert.Throws<InvalidOperationException>(() => Effect(() => { }));
+        Assert.Throws<InvalidOperationException>(() => Insert(() => { }));
         Assert.Throws<InvalidOperationException>(() => Memo(() => 3));
         Assert.Throws<InvalidOperationException>(() => Untrack(() => 3));
         Assert.Throws<InvalidOperationException>(() => Effect(null!));
+        Assert.Throws<InvalidOperationException>(() => Insert(null!));
         Assert.Throws<InvalidOperationException>(() => Memo((Func<int>)null!));
         Assert.Throws<InvalidOperationException>(() => Untrack((Func<int>)null!));
         Assert.Throws<InvalidOperationException>(() => Text((Func<string>)null!));
