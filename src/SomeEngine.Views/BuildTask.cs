@@ -43,7 +43,11 @@ public readonly struct BuildTaskAwaiter : ICriticalNotifyCompletion
     internal BuildTaskAwaiter(BuildTask task) => _task = task;
 
     public bool IsCompleted => _task.IsCompleted;
-    public void GetResult() => _task.Complete();
+    public void GetResult()
+    {
+        _task.Complete();
+        Scope.ThrowIfCanceled();
+    }
     public void OnCompleted(Action continuation) => _task.Continue(continuation);
     public void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
 }
@@ -145,6 +149,7 @@ internal abstract class BuildStateMachine
         try
         {
             _error?.Throw();
+            Data.ViewData.Cancellation?.Token.ThrowIfCancellationRequested();
         }
         finally
         {

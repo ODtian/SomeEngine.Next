@@ -142,8 +142,7 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
 
     internal static void Build(World world, Entity entity, ulong frame, bool firstBuild)
     {
-        if (BuildQueue.For(world).Contains(entity))
-            return;
+        BuildQueue.For(world).Cancel(entity, restore: true);
         ViewType viewType = world.Read<ViewType>(entity);
         if (viewType.RebuildRequired)
         {
@@ -179,7 +178,7 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
         {
             using var scope = Scope.Enter(world, entity, frame,
                 declaresChildren: T.Children == ChildSource.Build, dependenciesEnabled: T.Mode == BuildMode.Rerun);
-            scope.Finish(view.Build(), T.Mode == BuildMode.Rerun ? parameterVersion : null);
+            scope.Finish(view.Build(), T.Mode == BuildMode.Rerun ? parameterVersion : null, ComponentId<T>.Value);
             suspended = scope.IsSuspended;
         }
         catch (Exception exception)
