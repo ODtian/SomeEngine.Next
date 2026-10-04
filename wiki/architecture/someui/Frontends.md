@@ -18,5 +18,8 @@
 - 从 Solid 组件向其它前端组件传普通值只求值一次；需要随数据更新时使用 `Insert(() => ...)` 或传 `State<T>`。
 - 结构嵌套统一使用 `using (entity.Content())`。
 
+`[Component]` 的 Once 视图导出与 `Insert(Action)` 的 Rerun 子视图实现见
+[[architecture/someui/Solid-Frontend|Solid Frontend]]。
+
 ## Relations
 [[architecture/someui/Compose-Frontend|Compose]] · [[architecture/someui/SwiftUI-Frontend|SwiftUI]] · [[architecture/someui/Solid-Frontend|Solid]] · ADR 0009

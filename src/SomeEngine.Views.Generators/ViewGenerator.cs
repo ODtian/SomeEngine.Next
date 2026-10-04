@@ -29,20 +29,26 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
             static (node, _) => node is MethodDeclarationSyntax,
             static (syntax, _) => (IMethodSymbol)syntax.TargetSymbol);
 
-        context.RegisterSourceOutput(views.Collect().Combine(composables.Collect()).Combine(context.CompilationProvider),
-            static (output, input) => Generate(output, input.Right, input.Left.Left, input.Left.Right));
+        var components = context.SyntaxProvider.ForAttributeWithMetadataName(
+            "SomeEngine.Views.Solid.ComponentAttribute",
+            static (node, _) => node is MethodDeclarationSyntax,
+            static (syntax, _) => (IMethodSymbol)syntax.TargetSymbol);
+
+        context.RegisterSourceOutput(views.Collect().Combine(composables.Collect().Combine(components.Collect()))
+            .Combine(context.CompilationProvider), static (output, input) => Generate(output, input.Right,
+                input.Left.Left, input.Left.Right.Left.AddRange(input.Left.Right.Right)));
     }
 
     private static void Generate(SourceProductionContext output, Compilation compilation,
-        ImmutableArray<INamedTypeSymbol> views, ImmutableArray<IMethodSymbol> composables)
+        ImmutableArray<INamedTypeSymbol> views, ImmutableArray<IMethodSymbol> methods)
     {
         var options = (CSharpParseOptions)compilation.SyntaxTrees.First().Options;
         var functions = new List<SyntaxTree>();
-        GenerateComposeMethods(output, compilation, options, functions, composables);
-        Compilation composeCompilation = compilation.AddSyntaxTrees(functions);
+        GenerateMethodViews(output, compilation, options, functions, methods);
+        Compilation viewCompilation = compilation.AddSyntaxTrees(functions);
         foreach (SyntaxTree tree in functions)
         {
-            SemanticModel model = composeCompilation.GetSemanticModel(tree);
+            SemanticModel model = viewCompilation.GetSemanticModel(tree);
             foreach (TypeDeclarationSyntax declaration in tree.GetRoot(output.CancellationToken)
                 .DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
@@ -99,8 +105,9 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 bool viewCall = ViewCalls.IsView(method);
                 bool namedCall = ViewCalls.IsViewFunction(method);
                 bool composeCall = ViewCalls.IsComposeView(method) || ViewCalls.IsComposeGroup(method);
+                bool componentCall = ViewCalls.IsSolidComponent(method) && ViewCalls.IsComponentCall(model, call.SpanStart);
                 bool rememberCall = ViewCalls.IsRemember(method);
-                if (!viewCall && !namedCall && !composeCall && !rememberCall)
+                if (!viewCall && !namedCall && !composeCall && !componentCall && !rememberCall)
                     continue;
                 if (composeCall && model.GetEnclosingSymbol(call.SpanStart, output.CancellationToken) is IMethodSymbol enclosingMethod &&
                     ViewCalls.IsComposeBuild(enclosingMethod))
@@ -119,9 +126,9 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                     GenerateRememberInterceptor(interceptors, location, key, count++);
                     continue;
                 }
-                if (composeCall)
+                if (composeCall || componentCall)
                 {
-                    GenerateComposeInterceptor(interceptors, method, location, key, count++);
+                    GenerateMethodInterceptor(interceptors, method, location, key, count++);
                     continue;
                 }
                 interceptors.Append("        [global::System.Runtime.CompilerServices.InterceptsLocationAttribute(")
