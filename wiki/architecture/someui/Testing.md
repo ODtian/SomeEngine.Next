@@ -440,12 +440,32 @@ World 间的文本与 Shift 状态隔离，以及焦点资格移除后的组合�
 |---|---|
 | `dotnet publish tools/SomeEngine.Views.AotSmoke/SomeEngine.Views.AotSmoke.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false --nologo -v minimal -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false` | 原生发布成功 |
 | `tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe` | 28 项文本编辑共享行为及原有视图、前端、布局、指针、焦点、拖动滚动和 Button 检查通过 |
-| `pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable <上行原生程序的绝对路径>` | 两进程检查点写入、ViewType.Id 重映射、读回、下一帧重建与依赖更新通过 |
+| `pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Executable F:/.codex/worktrees/someui-ticket-41/SomeEngine.Next/tools/SomeEngine.Views.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Views.AotSmoke.exe` | 两进程检查点写入、ViewType.Id 重映射、读回、下一帧重建与依赖更新通过 |
 
 原生发布的 IL2026、IL3050 与 IL2070 来自既有 `TraceCapture` 与 `JobStorageTypeShape`。
 
 行为与数据写入规则由
 [[architecture/someui/Input-and-Behaviors|Input and Behaviors]] 维护。
+
+交付整合依次纳入集成提交 `30977b382e11b2d7a61380db17c40042173fcefa`
+与 `a2586c1efbccd2b0b132be382bb63ccb6af3d176`。最终验收源码提交为
+`4eb13d39a8d36e5c4edd7944e404bb533eb8c22a`，文本、值控件共用 `Edited` 时的
+消费者示例使用 `out string _` 与 `out float _` 明确结果类型。
+
+| 最终整合回归工程 | Debug 通过 | Release 通过 |
+|---|---:|---:|
+| SomeEngine.Elements.Consumer.Tests | 224 | 158 |
+| SomeEngine.Views.Tests | 290 | 260 |
+| SomeEngine.Views.Generators.Tests | 109 | 109 |
+| SomeEngine.Views.Solid.Tests | 18 | 17 |
+
+Layout 的 94／74 项与 Elements.Render 的 13／13 项在合并源码
+`99707698766d05fa886f76936a74a3750580ad76` 通过；对应实现与测试在最终整合中保持相同。
+上述原生发布、执行和两进程检查点命令在最终源码再次全部退出 0。
+入口包含 28 项文本编辑行为，并联合执行值控件、列表控件和 Solid 组件导出的共享检查。
+
+完成验证后清理本票工作树内 72 个已核对的 bin / obj 生成目录，包含原生发布和字体构建
+产物；检查点临时文件由验收脚本清理。`git diff --check` 通过。
 
 ## Toggle、Slider、Knob 与音量贯穿场景验收（#44）
 
