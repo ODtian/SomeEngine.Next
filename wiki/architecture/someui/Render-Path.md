@@ -107,7 +107,7 @@ GPU 像素读回验收画布成员修改、静态帧、改色、取消帧、透�
 
 绘制调用为 `ReconcileGraph(screenTarget, new WorldCanvasTarget(color, depth, view))`。
 `view` 是 RenderWorld 中的 `RenderView` 实体；场景颜色和深度均为现有图资源。
-世界画布使用视图的 viewport，材质把画布坐标经目标变换、View 与 Projection
+世界画布使用视图的 viewport，材质把画布坐标经 Scale、目标变换、View 与 Projection
 转换到裁剪空间。屏幕画布由同一材质使用像素到裁剪空间的矩阵。
 矩阵与 viewport 经当帧数据接口更新，目标变换与视图移动保留 pass 身份和图结构版本。
 
@@ -127,7 +127,7 @@ Runtime 参数入口通过 `--world-nameplates` 启用。
 
 公开提取测试验证目标的平移、旋转、缩放、拉伸与值送达边界。
 `WorldCanvasDrawingTests` 在 D3D12 WARP 与 Vulkan 开启图形验证层，读回像素验证
-投影位置、两种深度约定下的可选遮挡、前后位置变化、视图移动、透视投影与结构版本保持。
+投影位置、两种深度约定下的可选遮挡、前后位置变化、视图移动、透视投影、画布缩放与结构版本保持。
 
 ## Relations
 [[architecture/rendering/Extraction|Extraction]] · [[architecture/Render-Graph|Render Graph]] · [[architecture/someui/Layout|Layout]]

@@ -99,7 +99,7 @@ public sealed partial class CanvasDrawingTests
         if (reversedDepth) worldTarget = worldTarget with { DepthComparison = CompareOperation.GreaterOrEqual };
         GraphPassId previousPass = default;
         ulong structure = 0;
-        for (int index = 0; index < 6; index++)
+        for (int index = 0; index < 7; index++)
         {
             world.AcquireSystemTick();
             if (index == 1) canvasData = canvasData with { DepthTest = true };
@@ -109,6 +109,14 @@ public sealed partial class CanvasDrawingTests
             {
                 Transform = Matrix4x4.CreateScale(2) * Matrix4x4.CreateTranslation(-1.5f, 1.5f, -2), DepthTest = false,
             };
+            if (index == 6)
+            {
+                canvasData = canvasData with { Scale = 2 };
+                world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer => buffer[0] = buffer[0] with
+                {
+                    Rectangle = new Rect(0, 0, 0.25f, 0.25f), ClipRectangle = new Rect(0, 0, 0.25f, 0.25f), Version = 2,
+                });
+            }
             world.Replace(canvas, canvasData);
             if (index == 4) world.Replace(view, new RenderView(Matrix4x4.CreateTranslation(-0.5f, 0, 0), Matrix4x4.Identity, 64, 64));
             if (index == 5) world.Replace(view, new RenderView(Matrix4x4.Identity,
@@ -136,7 +144,7 @@ public sealed partial class CanvasDrawingTests
             finally { frame.Dispose(); }
             using MappedBuffer pixels = backend.Map(readback, MapType.Read, BufferRange.Whole);
             pixels.Invalidate(new BufferRange(0, 64 * 256));
-            AssertPixel(pixels.Bytes, 16, 16, index is 0 or 2 or 5 ? [255, 0, 0, 255] : [0, 0, 0, 255]);
+            AssertPixel(pixels.Bytes, 16, 16, index is 0 or 2 or 5 or 6 ? [255, 0, 0, 255] : [0, 0, 0, 255]);
             AssertPixel(pixels.Bytes, 48, 32, index == 3 ? [255, 0, 0, 255] : [0, 0, 0, 255]);
             AssertPixel(pixels.Bytes, 32, 32, index == 4 ? [255, 0, 0, 255] : [0, 0, 0, 255]);
         }

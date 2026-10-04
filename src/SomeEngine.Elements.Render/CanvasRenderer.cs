@@ -163,7 +163,8 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
                 RenderView view = _world.Read<RenderView>(_view);
                 width = (int)view.ViewportWidth;
                 height = (int)view.ViewportHeight;
-                transform = Matrix4x4.CreateScale(1, -1, 1) * buffers.Canvas.Transform * view.View * view.Projection;
+                float scale = buffers.Canvas.Scale;
+                transform = Matrix4x4.CreateScale(scale, -scale, 1) * buffers.Canvas.Transform * view.View * view.Projection;
             }
             else transform = Matrix4x4.CreateScale(2 * buffers.Canvas.Scale / width, -2 * buffers.Canvas.Scale / height, 1)
                 * Matrix4x4.CreateTranslation(-1, 1, 0);

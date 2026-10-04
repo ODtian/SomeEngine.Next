@@ -86,7 +86,8 @@ For a world canvas, provide `CanvasTarget.WorldSpace(targetEntity)` and a target
 `WorldTransform` in the Game world. `Canvas.DepthTest` chooses scene depth testing.
 Extraction supplies `RenderCanvas.Transform` and `DepthTest` alongside the same
 Surface instance buffer. The target transform places the canvas origin and controls
-world size; layout X follows local +X and layout Y follows local -Y.
+world size; layout X follows local +X and layout Y follows local -Y. `Scale` converts
+layout units to target pixels before the world transform is applied.
 
 Pass the scene resources and its RenderWorld `RenderView` entity when reconciling:
 
