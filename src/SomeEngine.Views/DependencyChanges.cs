@@ -8,6 +8,7 @@ namespace SomeEngine.Views;
 internal sealed class DependencyChanges
 {
     private readonly List<ushort> _types = new();
+    private readonly List<Dependency> _dependencies = new();
     private ComponentChange[] _changes = new ComponentChange[16];
 
     internal ulong Frame { get; private set; }
@@ -15,6 +16,7 @@ internal sealed class DependencyChanges
     internal void Clear()
     {
         _types.Clear();
+        _dependencies.Clear();
         Array.Clear(_changes);
     }
 
@@ -72,21 +74,17 @@ internal sealed class DependencyChanges
         if (!world.HasBuffer<Dependency>(entity))
             return false;
 
-        var changes = (Checks: this, World: world, Entity: entity, Recheck: recheck, Found: false);
-        world.ExecuteBufferRead<Dependency,
-            (DependencyChanges Checks, World World, Entity Entity, bool Recheck, bool Found)>(
-            entity, ref changes, static (buffer, ref result) =>
+        _dependencies.Clear();
+        List<Dependency> dependencies = _dependencies;
+        world.ExecuteBufferRead<Dependency, List<Dependency>>(entity, ref dependencies, static (buffer, ref values) =>
         {
             foreach (Dependency read in buffer.AsSpan())
-            {
-                if (result.Checks.HasChanges(result.World, result.Entity, read, result.Recheck))
-                {
-                    result.Found = true;
-                    return;
-                }
-            }
+                values.Add(read);
         });
-        return changes.Found;
+        foreach (Dependency read in _dependencies)
+            if (HasChanges(world, entity, read, recheck))
+                return true;
+        return false;
     }
 
     private struct ComponentChange
