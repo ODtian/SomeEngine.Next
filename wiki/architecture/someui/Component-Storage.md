@@ -13,7 +13,7 @@
 | 数据 | 存储 |
 |---|---|
 | `Flex`、`Text`、`Image` 等元素参数，`Box`、`Surface`、`LayoutRect`、`LayoutCache`、`ElementKey`、`ViewType` | 表格 |
-| 指针数据（`Clicks`、`Hover`） | 表格 |
+| 指针数据（`Clicks`、`Hover`、`ClickSeen`、`Pressable`、`StopsPointer`）、`InputCapture` 与画布指针状态 | 表格；画布输入事件使用表格缓冲 |
 | 依赖缓冲、对象依赖数组 | 表格，所有视图共用 |
 | 复合与用户视图的参数（生成器默认）、计算列表、Compose/SwiftUI 状态存储 | sparse |
 | `Focused`、`BuildError` | sparse |

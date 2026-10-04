@@ -4,7 +4,8 @@ namespace SomeEngine.Typography;
 
 public readonly record struct Size(float Width, float Height);
 
-public readonly record struct TextStyleData(Font Font, float FontSize, ReadOnlyMemory<Font> Fallbacks = default);
+public readonly record struct TextStyleData(Font Font, float FontSize, ReadOnlyMemory<Font> Fallbacks = default,
+    float LineHeight = 0);
 
 /// <summary>Position uses a top-left origin and a downward Y axis. TextIndex is a UTF-16 offset.</summary>
 public readonly record struct Glyph(Font Font, uint Index, int TextIndex, Vector2 Position, Vector2 Advance, int LineIndex);

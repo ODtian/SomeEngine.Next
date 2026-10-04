@@ -8,7 +8,7 @@
 | `SomeEngine.Layout` | `LayoutSystem`、`Absolute`、`Flex`、`Grid`、`Stack` 与布局修饰；缓存由后续票扩展 | Views |
 | `SomeEngine.Animation` | 引擎级动画核心与属性动画（见 [[architecture/Animation|Animation]]）；FLIP 与 `.Animate` 在 Elements 中 | ECS、Job |
 | `SomeEngine.Typography` | 字形排版、字体、图集 | — |
-| `SomeEngine.Elements` | `Text`、`Image` 等元素、`Surface` 修饰，行为部件，内置控件与复合部件，输入与焦点系统，`.Animate` 衔接 | Views、Layout、Typography、Animation |
+| `SomeEngine.Elements` | `Surface` 修饰、`Text`、文本样式与排版系统、`Pressable`、`Pointer` 与 `HitTestSystem`；`Image`、其它控件、焦点和 `.Animate` 按后续票扩展 | Views、Layout、Typography |
 | `SomeEngine.Elements.Render` | 提取系统、屏幕画布绘制、内置 Surface 材质 | Elements、Render、RenderGraph |
 | `SomeEngine.Views.Compose` / `.SwiftUI` / `.Solid` | 各前端的协调原语 | Views |
 
@@ -45,9 +45,11 @@ Compose 的视图生成、调用位置拦截与跨程序集类型复用由同一
 
 ## Elements 接入（#28）
 
-`SomeEngine.Elements` 提供 `Surface` 和 `SurfaceModifiers`，当前引用 Views 与 Layout。
+`SomeEngine.Elements` 提供 `Surface`、`SurfaceModifiers`、`Text`、`TextStyle`、
+`TextTheme`、`ShapedText`、`TextModifiers` 与 `TextShapingSystem`，当前引用 Views、Layout 与 Typography。
 Surface 的字段、默认值和调用方写入规则见 [[architecture/someui/Modifiers|Modifiers]]。
-后续元素按实际使用的公开能力接入 Typography 与 Animation。
+文本接口、主题默认值与测量顺序见 [[architecture/someui/Text|Text]]。
+后续元素按实际使用的公开能力接入 Animation。
 
 `SomeEngine.Elements.Consumer.Tests` 是外部重写工程，直接引用 Views、Layout 与 Elements
 的公开项目，用户示例位于 `Rewrites/`。每个内置控件的等价重写在这一工程中接入同一组

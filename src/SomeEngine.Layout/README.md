@@ -60,5 +60,10 @@ using (Grid([GridTrack.Auto, GridTrack.Fraction()],
 `Rect` 和 `Thickness` 来自 Core。应用持有 Canvas 的目标、尺寸和缩放；
 修饰通过 `Scope.Write` 提交，布局系统持有 `LayoutRect` 的写入职责。
 
+布局系统写入 `LayoutCache` 保存最后的约束、外框尺寸与布局输入版本。
+相同约束和输入复用测量，固定尺寸子树的内部变化由重排边界局部处理。
+用户布局通过 `LayoutPass.Read` 与 `Has` 读取的组件也参与失效判断。
+矩形值变化时推进 `LayoutRect` 的 ECS 写版本；清除布局节点上的 `LayoutCache` 后重新测量。
+
 详细接口、尺寸语义、透明组合与公共行为验收见
 [Layout](../../wiki/architecture/someui/Layout.md)。
