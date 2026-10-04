@@ -17,6 +17,7 @@ public static class Shaper
         DevelopmentCheck.Require(style.Font is not null, "Text needs a font.");
         DevelopmentCheck.Require(!style.Font.Data.IsClosed, "The font must be alive while shaping.");
         DevelopmentCheck.Require(float.IsFinite(style.FontSize) && style.FontSize > 0, "Font size must be positive and finite.");
+        DevelopmentCheck.Require(float.IsFinite(style.LineHeight) && style.LineHeight >= 0, "Line height must be finite and nonnegative.");
         DevelopmentCheck.Require(!float.IsNaN(wrapWidth), "Wrap width must be a number.");
         output.Reset();
         if (text.IsEmpty) return;
@@ -204,8 +205,9 @@ public static class Shaper
             MeasureFont(style.Font, style.FontSize, ref ascent, ref descent, ref gap);
         for (int index = first; index < end; index++)
             MeasureFont(glyphs[index].Font, style.FontSize, ref ascent, ref descent, ref gap);
-        float baseline = output.Height + ascent;
-        float height = ascent + descent + gap;
+        float fontHeight = ascent + descent + gap;
+        float height = style.LineHeight > 0 ? style.LineHeight : fontHeight;
+        float baseline = output.Height + ascent + (height - fontHeight) * 0.5f;
         var point = new Vector2(0, baseline);
         for (int index = first; index < end; index++)
         {

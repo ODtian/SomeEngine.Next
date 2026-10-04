@@ -6,8 +6,10 @@ using SomeEngine.ECS.Systems;
 namespace SomeEngine.Layout;
 
 /// <summary>Measures each canvas after view rebuilds and writes canvas-coordinate rectangles.</summary>
-public sealed class LayoutSystem : ISystem<ImmediateSystemContext>
+public sealed class LayoutSystem(params ILayoutDataUpdate[] dataUpdates) : ISystem<ImmediateSystemContext>
 {
+    public LayoutSystem() : this([]) { }
+
     private QueryHandle _canvasQuery;
     private LayoutData _data = null!;
     private readonly List<Entity> _canvases = new();
@@ -15,7 +17,7 @@ public sealed class LayoutSystem : ISystem<ImmediateSystemContext>
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _canvasQuery = context.World.Query(context.World.QueryDefinition().Read<Canvas>());
-        _data = new LayoutData(context.World);
+        _data = new LayoutData(context.World, dataUpdates);
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)

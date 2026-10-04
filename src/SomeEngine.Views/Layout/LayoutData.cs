@@ -10,7 +10,7 @@ using SomeEngine.Views;
 namespace SomeEngine.Layout;
 
 /// <summary>Layout reads, ordered children, and content-relative positions across canvas updates.</summary>
-internal sealed class LayoutData(World world)
+internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 {
     internal World World { get; } = world;
     private readonly Dictionary<Entity, NodeLayout> _nodes = new();
@@ -81,6 +81,8 @@ internal sealed class LayoutData(World world)
                     measured.Width, measured.Height));
             }
             WriteRectangle(canvas, new Rect(0, 0, size.Width, size.Height));
+            foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
+                dataUpdate.Complete(World);
         }
         finally
         {
@@ -101,6 +103,8 @@ internal sealed class LayoutData(World world)
         bool missingMeasurement = !node.HasMeasurement || !World.Has<LayoutCache>(entity) ||
             World.Read<LayoutCache>(entity).InputVersion != node.InputVersion;
         bool readsChanged = HasReadChanges(node);
+        foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
+            readsChanged |= dataUpdate.HasChanges(World, entity);
         bool parentChanged = node.Parent != parent;
         bool typeChanged = node.ViewType != viewType;
         _children.Clear();
@@ -170,6 +174,8 @@ internal sealed class LayoutData(World world)
             new Size(MathF.Max(0, outerConstraints.Min.Width - padding.Width), MathF.Max(0, outerConstraints.Min.Height - padding.Height)),
             new Size(MathF.Max(0, outerConstraints.Max.Width - padding.Width), MathF.Max(0, outerConstraints.Max.Height - padding.Height)));
         var pass = new LayoutPass(this, entity, new LayoutChildren(node.Children), new Vector2(box.Padding.Left, box.Padding.Top));
+        foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
+            dataUpdate.Update(World, entity, in contentConstraints);
         Size size = ViewTypes.Measure(World, entity, ref pass, in contentConstraints);
         CheckMeasuredChildren(node);
         LayoutValidation.CheckSize(size);
