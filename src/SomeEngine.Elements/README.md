@@ -45,7 +45,8 @@ The material and fitting semantics live in the Wiki
 Read `node.Focused()` in a caller scope to observe focus through a presence
 dependency. Queue keys through `Keyboard.Key(world, key, pressed)`, directions
 through `Gamepad.Navigate(world, direction)`, and activation through
-`Gamepad.Confirm(world)`. Arrow keys navigate; Enter and Space activate. Each key
+`Gamepad.Confirm(world)`. On ordinary focusable nodes, arrow keys navigate;
+Enter and Space activate. Each key
 press is one action, including platform repeats; releases preserve focus and
 click counts.
 
@@ -63,6 +64,32 @@ Disable the default navigation system and schedule a user system to consume
 that buffer and implement custom navigation and activation. The default system
 uses `World.EntityDestroying` to transfer focus to the nearest focusable
 ElementTree ancestor during node release. A parent-chain endpoint clears focus.
+
+`TextEditingFunctions.TextEditing(node)` declares `EditableText`, `Focusable`,
+and `Clicks` while preserving their values. Queue committed characters through
+`Keyboard.Text(world, text)` and IME candidates through
+`Keyboard.Composition(world, text, caret)`. The default focus system calls the
+stateless `TextEditingSystem` at each event's position in the same input buffer.
+The focused editor receives text and its arrow, Home, End, Backspace, Delete,
+Enter, and Space keys; gamepad navigation continues to move focus.
+
+Read `EditableText` in the caller's scope to draw text, selection, and caret.
+`Caret` and `SelectionStart` are UTF-16 offsets at complete text element
+boundaries. Shift extends the selection; typing replaces it, and deletion
+removes the selection or one whole text element. Up and Down use the current
+text element column across explicit LF or CRLF lines; Home and End use the
+whole string. Empty character input preserves existing data.
+
+`Composition` and `CompositionCaret` provide the candidate text and its UTF-16
+caret separately from committed `Text`. Display candidates over the selection;
+`Keyboard.Text` commits the result and clears the candidates. An empty
+composition or a focus transfer ends candidate presentation. During composition,
+the input method handles editor keys through subsequent candidate and text
+events. Read `node.Edited(out text)` to consume new committed content changes,
+using the same count comparison as `Clicked()`. Its output is the current
+committed text on every read. Custom navigation systems can call
+`TextEditingSystem.HandleInput` and `CancelComposition` through the public API.
+See Wiki `architecture/someui/Input-and-Behaviors` for complete input rules.
 
 `DraggableFunctions.Draggable(node)`, `ScrollableFunctions.Scrollable(node)`,
 and `SelectableFunctions.Selectable(node)` declare their components through

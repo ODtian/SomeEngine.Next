@@ -27,6 +27,14 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusLayoutChecks.cs" Link="FocusLayoutChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/FocusPointerChecks.cs" Link="FocusPointerChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/FocusFunctions.cs" Link="Rewrites/FocusFunctions.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextEditingChecks.cs" Link="TextEditingChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextDeletionChecks.cs" Link="TextDeletionChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextCompositionChecks.cs" Link="TextCompositionChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextFocusChecks.cs" Link="TextFocusChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextEditBoundaryChecks.cs" Link="TextEditBoundaryChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/TextEditDataChecks.cs" Link="TextEditDataChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/TextEditingFunctions.cs" Link="Rewrites/TextEditingFunctions.cs" />
+
 
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/BehaviorChecks.cs" Link="BehaviorChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DraggableFunctions.cs" Link="Rewrites/DraggableFunctions.cs" />

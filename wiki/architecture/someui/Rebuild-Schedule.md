@@ -7,7 +7,7 @@
 每帧顺序：
 
 1. 平台输入。
-2. 输入系统：`HitTestSystem` 与 `FocusNavigationSystem` 使用上一帧布局，写指针数据、焦点与 `InputCapture`。
+2. 输入系统：`HitTestSystem` 与 `FocusNavigationSystem` 使用上一帧布局，写指针数据、焦点与 `InputCapture`；默认焦点系统按事件顺序调用 `TextEditingSystem` 写入 `EditableText`。
 3. 游戏输入与模拟。
 4. `ViewRebuildSystem`：先恢复已就绪的异步构建，再执行失效的计算。
 5. 用户的界面系统（可选）。
