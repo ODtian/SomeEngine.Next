@@ -142,7 +142,9 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
 
     internal static void Build(World world, Entity entity, ulong frame, bool firstBuild)
     {
-        BuildQueue.For(world).Cancel(entity, restore: true);
+        BuildQueue builds = BuildQueue.For(world);
+        builds.CountBuild();
+        builds.Cancel(entity, restore: true);
         ViewType viewType = world.Read<ViewType>(entity);
         if (viewType.RebuildRequired)
         {

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using SomeEngine.Diagnostics;
 using SomeEngine.Render.Cluster;
+using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Runtime;
 
@@ -11,6 +12,11 @@ public sealed record TestScene(string Name, string ContentDirectory, bool Animat
 /// <summary>Shared scene selection and render settings for the interactive test application.</summary>
 public sealed class SceneTestPlatform
 {
+    private const int MinimumReadyFrames = 16;
+    private const int MinimumRenderedFrames = 16;
+    private const double WarmupSeconds = 3;
+    private const double SampleSeconds = 2;
+    private const double MaximumTestSeconds = 45;
     public SceneTestPlatform(IReadOnlyList<TestScene> scenes)
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
@@ -52,6 +58,8 @@ public sealed class SceneTestPlatform
     public bool IsMeasuring { get; private set; }
     public string? LastReport { get; private set; }
     public int GeometryMemoryMegabytes { get; private set; } = 256;
+    public bool HudOverlayEnabled => Options.HudOverlay;
+    public bool HudNumbersChange => Options.HudNumbersChange;
     internal bool ImageRequested { get; private set; }
     internal string? LastImage { get; private set; }
 
@@ -59,6 +67,15 @@ public sealed class SceneTestPlatform
         => (_renderWidth, _renderHeight, _graphicsDevice, _graphicsDriver) = (width, height, device, driver);
 
     public void CaptureImage() => ImageRequested = true;
+
+    /// <summary>Selects the standard HUD workload; static numbers provide a matching dependency-check measurement.</summary>
+    public void SetHudOverlay(bool enabled, bool changeNumbers = true)
+    {
+        DevelopmentCheck.Require(!IsMeasuring, "Change the HUD between scene measurements.");
+        if (Options.HudOverlay == enabled && Options.HudNumbersChange == changeNumbers) return;
+        Options = Options with { HudOverlay = enabled, HudNumbersChange = changeNumbers };
+        ReloadRequested = true;
+    }
 
     internal string ImageDestination()
     {
@@ -82,7 +99,9 @@ public sealed class SceneTestPlatform
         _interactiveOptions = Options;
         _interactiveScene = SelectedScene;
         Options = Options with { WindowVSync = false, FixedFrameSeconds = 1f / 60f };
-        _resultDirectory = Path.Combine(AppContext.BaseDirectory, "Performance", DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+        string workload = Options.HudOverlay ? (Options.HudNumbersChange ? "hud" : "hud-static") : "scene";
+        _resultDirectory = Path.Combine(AppContext.BaseDirectory, "Performance", recordTrace ? "trace" : "timing",
+            $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{workload}");
         Directory.CreateDirectory(_resultDirectory);
         _sceneStarted = 0;
         _testStarted = Stopwatch.GetTimestamp();
@@ -103,7 +122,7 @@ public sealed class SceneTestPlatform
     {
         ReloadRequested = false;
         if (!IsMeasuring) return;
-        _sceneTimeLimit = (45 - Stopwatch.GetElapsedTime(_testStarted).TotalSeconds) / (Scenes.Count - SelectedScene);
+        _sceneTimeLimit = (MaximumTestSeconds - Stopwatch.GetElapsedTime(_testStarted).TotalSeconds) / (Scenes.Count - SelectedScene);
         _sceneStarted = Stopwatch.GetTimestamp();
         _sampleStarted = 0;
         _renderingStarted = 0;
@@ -120,7 +139,12 @@ public sealed class SceneTestPlatform
                 new SomeEngine.Diagnostics.TraceOptions
                 {
                     Detail = Options.TraceDetail, Allocations = Options.TraceAllocations,
-                    Metadata = new Dictionary<string, string> { ["scene"] = Current.Name },
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["scene"] = Current.Name,
+                        ["hudOverlay"] = Options.HudOverlay.ToString(),
+                        ["hudNumbersChange"] = Options.HudNumbersChange.ToString(),
+                    },
                 });
     }
 
@@ -150,7 +174,8 @@ public sealed class SceneTestPlatform
         _wasStreaming = !ready;
         _readyFrames = ready ? _readyFrames + 1 : 0;
         double elapsed = Stopwatch.GetElapsedTime(_sceneStarted).TotalSeconds;
-        if (_readyFrames >= 32 && _renderedFrames >= 128 && Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= 3)
+        if (_readyFrames >= MinimumReadyFrames && _renderedFrames >= MinimumRenderedFrames &&
+            Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= WarmupSeconds)
         {
             if (_sampleStarted == 0) _sampleStarted = Stopwatch.GetTimestamp();
             _frames.Add(frame);
@@ -160,8 +185,8 @@ public sealed class SceneTestPlatform
             _sampleStarted = 0;
             _frames.Clear();
         }
-        bool sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= 2;
-        bool expired = elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= 45;
+        bool sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= SampleSeconds;
+        bool expired = elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= MaximumTestSeconds;
         if (!sampled && !expired) return;
         double[] times = _frames.Select(f => f.ElapsedMs).Order().ToArray();
         _results.Add(new(Current.Name, sampled ? "Measured" : "Not converged within time limit", times.Length,
@@ -174,7 +199,18 @@ public sealed class SceneTestPlatform
             residency.ResidentPages, residency.RegisteredPages, residency.QueuedPageLoads, residency.ActivePageLoads,
             residency.PageHeapUsedBytes, residency.PageHeapFreeBytes, residency.BackpressuredPages,
             _renderWidth, _renderHeight, Options.DynamicScene,
-            _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults));
+            _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults,
+            _frames.Sum(f => (long)f.Views.RebuildCount),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.RebuildCount),
+            _frames.Sum(f => (long)f.Views.ComputationCount),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.ComputationCount),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.RebuildMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.TextMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.LayoutMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.TotalMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.ExtractionMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.AllocatedBytes),
+            _frames.Count == 0 ? null : _frames.Average(f => f.ExtractionAllocatedBytes)));
         ReloadRequested = true;
     }
 
@@ -183,7 +219,8 @@ public sealed class SceneTestPlatform
         _trace?.Dispose();
         _trace = null;
         if (!IsMeasuring || _sceneStarted == 0) return;
-        if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
+        if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count &&
+            Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < MaximumTestSeconds)
         {
             SelectScene(SelectedScene + 1);
             return;
@@ -197,11 +234,14 @@ public sealed class SceneTestPlatform
             GraphicsDriver = _graphicsDriver,
             Processor = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
             Framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            Architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
             TieredCompilation = AppContext.GetData("System.Runtime.TieredCompilation")?.ToString(),
             Error = error,
             ExpectedScenes = Scenes.Select(scene => scene.Name),
             ElapsedSeconds = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
-            Timing = "Presented frame elapsed time and CPU-side stage elapsed time; GPU duration is not measured",
+            Timing = "Presented frame elapsed time; CPU game-world interface updates and extraction; current-thread allocations",
+            Sampling = new { MinimumReadyFrames, MinimumRenderedFrames, WarmupSeconds, SampleSeconds, MaximumTestSeconds },
             TraceEnabled = _recordTrace,
             Options.TraceDetail, Options.TraceAllocations,
             Options.TemporalAntialiasing, Options.VirtualShadows, Options.AsyncCompute, Options.ForceHardwareRaster,
@@ -209,6 +249,11 @@ public sealed class SceneTestPlatform
             Options.SynchronousFrames, Options.ScenePlayback, Options.DisableMeshShaders, Options.DeviceValidation,
             Options.SurfacePanel,
             Options.WorldNameplates,
+            Options.HudOverlay,
+            Options.HudNumbersChange,
+            Options.WindowVSync,
+            RebuildDiagnosticsEnabled = SomeEngine.Views.RebuildDiagnostics.Enabled,
+            HudWorkload = new { HudOverlay.StaticLabelCount, HudOverlay.ChangingNumberCount, HudOverlay.ListItemCount },
             GeometryMemoryMegabytes,
             Scenes = _results,
         }, new JsonSerializerOptions { WriteIndented = true }));
@@ -222,7 +267,7 @@ public sealed class SceneTestPlatform
     internal void Draw()
     {
         ImGui.SeparatorText("Test scenes");
-        ImGui.TextUnformatted("F2: spheres   F3: Sponza   F4: Amazon Bistro");
+        ImGui.TextUnformatted("F2: spheres   F3: Sponza   F4: Amazon Bistro   F6: HUD");
         if (ImGui.BeginCombo("Scene", Current.Name))
         {
             for (int index = 0; index < Scenes.Count; index++)
@@ -269,6 +314,8 @@ public sealed class SceneTestPlatform
         bool validation = Options.DeviceValidation;
         bool surfacePanel = Options.SurfacePanel;
         bool worldNameplates = Options.WorldNameplates;
+        bool hudOverlay = Options.HudOverlay;
+        bool hudNumbersChange = Options.HudNumbersChange;
         string[] playbacks = ["Scene behavior", "Motion and lights", "Material changes", "Camera sweep"];
         int playback = Options.ScenePlayback switch { "motion" => 1, "materials" => 2, "camera" => 3, _ => 0 };
         bool changed = ImGui.Checkbox("Temporal antialiasing", ref taa);
@@ -282,6 +329,8 @@ public sealed class SceneTestPlatform
         changed |= ImGui.Checkbox("Graphics validation", ref validation);
         changed |= ImGui.Checkbox("Surface panel", ref surfacePanel);
         changed |= ImGui.Checkbox("World nameplates", ref worldNameplates);
+        changed |= ImGui.Checkbox("HUD overlay", ref hudOverlay);
+        changed |= ImGui.Checkbox("Update HUD numbers", ref hudNumbersChange);
         changed |= ImGui.Combo("Playback", ref playback, playbacks, playbacks.Length);
         if (changed)
         {
@@ -292,18 +341,24 @@ public sealed class SceneTestPlatform
                 DisableMeshShaders = !meshShaders, SynchronousFrames = synchronous, DeviceValidation = validation,
                 SurfacePanel = surfacePanel,
                 WorldNameplates = worldNameplates,
+                HudOverlay = hudOverlay,
+                HudNumbersChange = hudNumbersChange,
                 ScenePlayback = playback switch { 1 => "motion", 2 => "materials", 3 => "camera", _ => null },
             };
             ReloadRequested = true;
         }
     }
 
-    internal readonly record struct FrameTiming(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs);
+    internal readonly record struct FrameTiming(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs,
+        ViewTiming Views, double ExtractionMs, long ExtractionAllocatedBytes);
     private sealed record SceneTiming(string Scene, string Status, int Frames, double? MeanMs, double? MedianMs,
         double? P95Ms, double? PrepareMs, double? ReconcileMs, double? ExecuteMs,
         uint ResidentPages, uint RegisteredPages, int QueuedLoads, int ActiveLoads,
         uint GeometryUsedBytes, uint GeometryFreeBytes, ulong BackpressuredPages,
         int RenderWidth, int RenderHeight, bool AnimateScene,
-        double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults);
+        double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults,
+        long Rebuilds, double? RebuildsPerFrame, long Computations, double? ComputationsPerFrame,
+        double? RebuildMs, double? TextMs, double? LayoutMs, double? ViewMs, double? ExtractionMs,
+        double? ViewAllocatedBytes, double? ExtractionAllocatedBytes);
 }
 

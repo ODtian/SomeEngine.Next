@@ -144,6 +144,8 @@ DefaultGame 的测试平台默认显示该面板，`Surface panel` 选项控制�
 呈现目标；F1 控制 ImGui，`Surface panel` 控制 SomeUI 示例。
 公开验收：[CounterPanelTests](../../../tests/SomeEngine.Runtime.Tests/CounterPanelTests.cs)。
 
+DefaultGame 的标准 HUD、共享文字资源和三场景测量由 [Performance](Performance.md#标准-hud-与统一测量68) 维护。
+
 `tests/SomeEngine.RenderGraph.Tests/CanvasDrawingTests` 经公开结构版本、pass 身份和
 GPU 像素读回验收画布成员修改、静态帧、改色、取消帧、透明树序叠加、裁剪与画布移除。
 相同像素用例分别使用 D3D12 WARP 和 Vulkan，并启用引擎图形验证层。

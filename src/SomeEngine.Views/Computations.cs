@@ -73,6 +73,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
 
     internal void Execute(ulong frame)
     {
+        BuildQueue.For(World).CountComputation();
         RebuildDiagnostics.Record(this, frame);
         Frame = frame;
         ComputationList calculations = World.ReadSparse<Computations>(Entity).List;

@@ -996,6 +996,49 @@ pwsh -NoProfile -File tools/SomeEngine.Views.AotSmoke/Test-Checkpoint.ps1 -Execu
 验证完成后按绝对路径和 Git 跟踪文件逐一核对，清理本工作树内 84 个生成目录，
 包含测试 bin/obj、原生产物、字体原生构建目录和依赖输出。跨进程检查点文件由脚本清理。
 工作树保留本轮代码、文档、锁定构建输入与 Git 提交记录。
+## HUD 与三场景测量验收（#68）
+
+2026-10-04，测量源码为 `36d797b95f6b42dca312038a8a148196aaf59568`，
+已合入集成提交 `e5b481042212b475d80d0bae5ad9a71c229a4845`。
+公开接缝为场景平台 HUD 选项、视图帧、窗口输入、元素层级与显示数据，以及统一测量脚本和报告。
+`HudOverlayTests` 先验证缺失公开入口及列表行为的失败，再沿相同接口完成红绿循环。
+验收覆盖约 1000 个节点、100 组数字更新、尺寸变化后的显示、窗口滚轮、可见行生命周期和测量帧的布局结果。
+普通 World 与 Job World 共同覆盖数字更新，断言只读取公开层级、文字、布局与平台选项。
+
+测试命令使用以下模板，`<配置>` 为 Debug 或 Release：
+
+```powershell
+dotnet test tests/<工程>/<工程>.csproj -c <配置> --nologo -v quiet --logger 'console;verbosity=minimal' -m:1 -nr:false -p:BuildInParallel=false -p:UseSharedCompilation=false
+```
+
+| 工程 | Debug 通过 | Release 通过 | 验收范围 |
+|---|---:|---:|---|
+| SomeEngine.Runtime.Tests | 37 | 37 | HUD、窗口输入、计数面板与默认 FLIP 帧阶段 |
+| SomeEngine.Views.Tests | 305 | 273 | 构建、计算、异步生命周期与共享视图行为 |
+| SomeEngine.Elements.Consumer.Tests | 285 | 209 | 公开控件、长列表、编辑和用户重写版本 |
+| SomeEngine.Elements.Render.Tests | 34 | 32 | 公开提取、裁剪、字形与呈现数据 |
+| SomeEngine.Layout.Tests | 95 | 75 | 公共布局协议、文字测量和布局更新 |
+
+Views、Elements.Render、Layout 的完整回归在前一集成提交
+`6b56cf5088ad18b7ed16de512fe06799348566b7` 执行；最新集成追加的 TextField 与默认 FLIP
+通过上表 Runtime 和 Elements.Consumer 的两种配置重新验收。
+`dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj -c Debug`
+使用同一公共测试参数及 `--filter 'FullyQualifiedName~Canvas|FullyQualifiedName~Glyph'`，23 个画布和字形像素用例通过。
+
+`just views-aot win-x64` 在最终测量源码上完成原生发布、公开共享行为运行和跨进程检查点，退出码为 0。
+原生输出包含八个计数面板场景、动画、TextField、VirtualList、按钮、文本与三种前端检查。
+发布日志中的 IL2026、IL3050 位于既有 TraceCapture，IL2070 位于既有 JobStorageTypeShape。
+
+内容构建先执行 `dotnet build templates/DefaultProject/Game.Build/Game.Build.csproj -c Release`
+及 `Game.Build.exe --project <工作树>/templates/DefaultProject --engine <工作树>`，生成 67 项默认资产。
+随后用同一 Game.Build 的 `--import-scene` 在本工作树更新 Sponza 与 Bistro，分别完成 96、2046 项资产。
+`dotnet build templates/DefaultProject/Game.App/Game.App.csproj -c Release` 通过，警告和错误均为 0。
+真实 DefaultGame 的 F8 图像已目视核对 HUD、长列表、中英文计数面板和场景的共同绘制，应用正常退出。
+
+`tools/Measure-Scenes.ps1` 的关闭 HUD、动态 HUD、静止 HUD 与动态 HUD trace 四组反馈均在 60 秒内完成，
+三场景均为 Measured、Complete=true。配置核对、完整数值、采集质量与预算由
+[Performance](Performance.md#首次预算校准与合并后复测2026-10-04) 保存。
+本次原始报告、trace、窗口图像、生成内容、构建和原生发布目录在使用后清理，源码与验收记录保存在 Git 中。
 
 ## Relations
 [[architecture/someui/Composition|Composition]] · [[architecture/someui/Performance|Performance]]
