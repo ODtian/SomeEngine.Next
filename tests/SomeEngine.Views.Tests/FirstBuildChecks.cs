@@ -36,6 +36,13 @@ internal static partial class FirstBuildChecks
         VerifySpawnedChildParameters(frames);
         VerifyCallerChildren(frames);
         VerifyReadDependencies(frames);
+        VerifyAsyncBuilds(frames);
+        AsyncIntegrationChecks.VerifyWrites();
+        AsyncIntegrationChecks.VerifyComputations();
+        AsyncIntegrationChecks.VerifyFailureRecovery();
+        AsyncIntegrationChecks.VerifyFailureRecovery(nested: true);
+        AsyncIntegrationChecks.VerifyObjectFrames();
+        AsyncIntegrationChecks.VerifyRestoredBuild();
         VerifyObjectState(frames);
         ComputationChecks.Verify();
         VerifyBuildErrors();
@@ -184,6 +191,87 @@ internal static partial class FirstBuildChecks
         uint textVersion = frames.World.WriteVersion<TableText>(child);
         frames.Frame();
         Require(frames.World.WriteVersion<TableText>(child) == textVersion, "A later frame retains the displayed text version.");
+    }
+
+    private static void VerifyAsyncBuilds(HeadlessFrameDriver frames)
+    {
+        Entity steps = Views.Spawn(frames.World, Entity.Null, new FrameSequence());
+        frames.Frame();
+        Require(frames.World.Read<Selection>(steps).Value == 0, "The sequence starts at its first visible value.");
+        for (int step = 1; step <= 30; step++)
+        {
+            frames.Frame();
+            Require(frames.World.Read<Selection>(steps).Value == step, "Each frame displays its next sequence value.");
+        }
+
+        var completion = new TaskCompletionSource<string>();
+        Entity loading = Views.Spawn(frames.World, Entity.Null, new LoadedText(completion.Task));
+        frames.Frame();
+        Require(frames.World.Read<TableText>(loading).Value == "loading", "The loading text is immediately visible.");
+        var worker = new Thread(() => completion.SetResult("ready"));
+        worker.Start();
+        worker.Join();
+        Require(frames.World.Read<TableText>(loading).Value == "loading", "The loading text remains until rebuilding.");
+        frames.Frame();
+        Require(frames.World.Read<TableText>(loading).Value == "ready", "Worker completion supplies the rebuilt text.");
+        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, loading)[0];
+        Require(frames.World.Read<TableText>(child).Value == "ready", "The resumed build creates its text child.");
+
+        completion = new TaskCompletionSource<string>();
+        Entity contentRoot = Views.Spawn(frames.World, Entity.Null, new ContentLoad(completion.Task));
+        frames.Frame();
+        Entity group = Hierarchy<ElementTree>.GetChildren(frames.World, contentRoot)[0];
+        worker = new Thread(() => completion.SetResult("content ready"));
+        worker.Start();
+        worker.Join();
+        frames.Frame();
+        frames.Frame();
+        var content = Hierarchy<ElementTree>.GetChildren(frames.World, group);
+        Require(content.Count == 2 && frames.World.Read<TableText>(content[1]).Value == "content ready",
+            "A suspended content helper retains its container through the calling build.");
+    }
+
+    private readonly record struct ContentLoad(Task<string> Result) : IView, IComponent
+    {
+        public async BuildTask Build()
+        {
+            Entity group = Scope.View(new Group());
+            BuildTask content;
+            using (group.Content())
+                content = LoadChildren(Result);
+            await content;
+        }
+
+        private static async BuildTask LoadChildren(Task<string> result)
+        {
+            Scope.View(new TableText("loading"));
+            string text = await result.ConfigureAwait(false);
+            Scope.View(new TableText(text));
+        }
+    }
+
+    private readonly record struct FrameSequence : IView, IComponent
+    {
+        public async BuildTask Build()
+        {
+            Scope.World.Add(Scope.Entity, new Selection(0));
+            for (int step = 1; step <= 30; step++)
+            {
+                await Scope.NextFrame();
+                Scope.World.Replace(Scope.Entity, new Selection(step));
+            }
+        }
+    }
+
+    private readonly record struct LoadedText(Task<string> Result) : IView, IComponent
+    {
+        public async BuildTask Build()
+        {
+            Scope.World.Add(Scope.Entity, new TableText("loading"));
+            string result = await Result.ConfigureAwait(false);
+            Scope.World.Replace(Scope.Entity, new TableText(result));
+            Scope.View(new TableText(result));
+        }
     }
 
     private static void VerifyObjectState(HeadlessFrameDriver frames)

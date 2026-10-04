@@ -393,4 +393,3 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
         return hash == 0 ? 1UL : hash;
     }
 }
-

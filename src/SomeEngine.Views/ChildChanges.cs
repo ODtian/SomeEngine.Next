@@ -13,6 +13,18 @@ internal sealed class ChildChanges
     internal int DataCount => _previousData.Count;
     internal int RemovedCount => _removedChildren.Count;
 
+    internal void CopyTo(ChildChanges changes, int firstData, int firstRemoval)
+    {
+        for (int index = firstData; index < _previousData.Count; index++)
+        {
+            IChildData data = _previousData[index];
+            data.Retain();
+            changes._previousData.Add(data);
+        }
+        for (int index = firstRemoval; index < _removedChildren.Count; index++)
+            changes._removedChildren.Add(_removedChildren[index]);
+    }
+
     internal void Clear()
     {
         _previousData.Clear();
@@ -83,6 +95,7 @@ internal sealed class ChildChanges
 
     internal interface IChildData
     {
+        void Retain() { }
         void Restore(World world);
         void Complete() { }
     }
@@ -151,11 +164,18 @@ internal sealed class ChildChanges
 
     private sealed class ChildComputations(Entity entity, ComputationList? computations) : IChildData
     {
+        private int _buildCount = 1;
+        private bool _restored;
+
+        public void Retain() => _buildCount++;
+
         public void Restore(World world)
         {
             if (world.HasSparse<Computations>(entity))
             {
-                world.ReadSparse<Computations>(entity).List.ReleaseChildren();
+                ComputationList current = world.ReadSparse<Computations>(entity).List;
+                if (!ReferenceEquals(current, computations))
+                    current.ReleaseChildren();
                 if (computations is not null)
                     world.ReplaceSparse(entity, new Computations(computations));
                 else
@@ -163,9 +183,15 @@ internal sealed class ChildChanges
             }
             else if (computations is not null)
                 world.AddSparse(entity, new Computations(computations));
+            _restored = true;
+            Complete();
         }
 
-        public void Complete() => computations?.ReleaseChildren();
+        public void Complete()
+        {
+            if (--_buildCount == 0 && !_restored)
+                computations?.ReleaseChildren();
+        }
     }
 
     private sealed class ChildReads(Entity entity, Dependency[]? reads, ObjectDependencyList? objects) : IChildData
