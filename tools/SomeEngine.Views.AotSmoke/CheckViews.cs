@@ -84,6 +84,9 @@ Console.WriteLine("Keyboard and gamepad focus, confirmation, capture, ancestor t
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(true);
 Console.WriteLine("Drag, scroll, selection and external behavior declarations passed.");
+SomeEngine.Elements.Consumer.Tests.ListChecks.Run(false);
+SomeEngine.Elements.Consumer.Tests.ListChecks.Run(true);
+Console.WriteLine("ScrollView content, buffered VirtualList ranges, keyed row lifetimes, row data changes, and public user controls passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.BuiltIn);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);
