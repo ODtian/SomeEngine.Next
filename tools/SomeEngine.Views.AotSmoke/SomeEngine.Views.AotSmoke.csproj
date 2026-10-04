@@ -50,6 +50,7 @@
     <ProjectReference Include="../../src/SomeEngine.Views.Solid/SomeEngine.Views.Solid.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/SolidChecks.cs" Link="SolidChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/ControlFlowChecks.cs" Link="ControlFlowChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/ListChecks.cs" Link="SolidListChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Solid.Tests/FrontendChecks.cs" Link="FrontendChecks.cs" />
     <ProjectReference Include="../SomeEngine.Views.AotReference/SomeEngine.Views.AotReference.csproj" GlobalPropertiesToRemove="PublishAot" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/HeadlessFrameDriver.cs" Link="HeadlessFrameDriver.cs" />
