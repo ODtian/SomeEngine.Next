@@ -44,6 +44,12 @@ NuGet 包通过 `buildTransitive/SomeEngine.Views.targets` 接入，工具及其
 位于包的 `tools/`。仓库引用按已解析的 Views 程序集接入同一阶段。
 运行时与 NativeAOT 镜像依赖 Views，构建工具在编译完成后结束使用。
 
+编译任务沿用 C# 编译器生成的方法构建器字段引用，保留泛型状态机的类型参数。
+重复编译时复用同一 await 边界，并将较早编译任务写入的字段引用更新为该状态机的
+泛型引用。同步完成的 `Resource<int>` 在普通 World 与 Job World 中经组件副本提交
+当前结果，公开检查见 `ResourceResultChecks` 与生成器的 `AsyncCallTests`；
+生成器消费者连续执行两次编译处理后运行生成的 API。
+
 `SomeEngine.Views.Compose`（#58）提供 `ComposableAttribute`，依赖 Views。
 直接引用 Compose 包时，生成器 DLL 与 buildTransitive props 随 Views 依赖接入，
 由 Views 包持有同一份生成器与拦截命名空间配置。

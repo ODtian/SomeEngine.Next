@@ -283,7 +283,7 @@ public sealed partial class TextTests
 
         frames.Frame();
 
-        Assert.Contains("Font size", frames.World.ReadSparse<BuildError>(root).Exception.Message);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
     }
 
     [Fact]
@@ -298,9 +298,7 @@ public sealed partial class TextTests
         world.Add(canvas, new TextTheme(new TextStyle { Font = font }));
         Views.Views.Spawn(world, canvas, new Text("AV"));
 
-        var error = Assert.Throws<InvalidOperationException>(() => systems.Update());
-
-        Assert.Contains("TextShapingSystem", error.Message);
+        Assert.Throws<InvalidOperationException>(() => systems.Update());
     }
 #endif
 

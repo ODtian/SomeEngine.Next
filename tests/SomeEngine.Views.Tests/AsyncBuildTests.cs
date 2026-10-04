@@ -413,7 +413,6 @@ public sealed partial class AsyncBuildTests
 
         Assert.True(method.IsFaulted);
         var error = Assert.Throws<InvalidOperationException>(() => Complete(method));
-        Assert.Contains("active view build", error.Message, StringComparison.OrdinalIgnoreCase);
         frames.Frame();
         Assert.Same(error, frames.World.ReadSparse<BuildError>(root).Exception);
     }

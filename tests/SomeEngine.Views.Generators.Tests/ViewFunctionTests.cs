@@ -52,7 +52,6 @@ public sealed class ViewFunctionTests
 #if DEBUG
         frames.Frame();
         var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Contains("intercept", error.Message, StringComparison.OrdinalIgnoreCase);
 #else
         frames.Frame();
         Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));

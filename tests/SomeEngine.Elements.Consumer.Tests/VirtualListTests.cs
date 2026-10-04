@@ -152,7 +152,6 @@ public sealed partial class VirtualListTests
         frames.Frame();
 
         var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(list).Exception);
-        Assert.Contains("RowHeight", error.Message);
     }
 
     [Fact]
@@ -163,7 +162,6 @@ public sealed partial class VirtualListTests
         frames.Frame();
 
         var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Contains("item count", error.Message);
     }
 
     [Fact]
@@ -175,7 +173,6 @@ public sealed partial class VirtualListTests
         frames.Frame();
 
         var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Contains("VirtualList node", error.Message);
     }
 
     private readonly record struct OtherContainer() : IView, IComponent

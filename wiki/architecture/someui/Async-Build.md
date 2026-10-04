@@ -216,8 +216,12 @@ World 的 `EntityDestroying` 通知在节点释放时立即发出取消，旧构
 工作线程完成 `ConfigureAwait(false)` 后的内容更新，经现有 `just ecs-aot win-x64` 入口运行。
 `AsyncIntegrationChecks.cs` 同时编入这一入口，覆盖 table/sparse 分段提交、
 挂起期间 Memo 绑定、跨段失败时的组件与原计算恢复、对象读取帧与存档后的异步构建恢复。
-`BuildResumeChecks.cs` 在两种 World 上验证旧等待完成后保留新 State、取消异常、
+`BuildAwaitChecks.cs` 分别验证普通与配置等待的 Task、ValueTask、异步辅助方法和
+用户等待类型。异步清理用独立的完成源挂起 finally，显式完成后继续清理并保留新结果。
+`BuildResumeChecks.cs` 在两种 World 上验证取消异常、
 finally/using 与异步清理、回调异常隔离和 Launch 错误恢复，并同时编入 Views 与 ECS NativeAOT 入口。
+`ResourceResultChecks.cs` 在相同入口验证同步 Resource 的首次结果及来源改变后的结果，
+两次结果通过同一计算的组件写入呈现。
 
 ## Relations
 [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · ADR 0012

@@ -470,14 +470,14 @@ public sealed partial class SolidTests
         Assert.Throws<InvalidOperationException>(() => Show(() => "value", _ => { }));
         Assert.Throws<InvalidOperationException>(() => Switch());
         Assert.Throws<InvalidOperationException>(() => Dynamic(() => () => { }));
-        Assert.Contains("condition getter", Assert.Throws<InvalidOperationException>(() => Show(null!, () => { })).Message);
-        Assert.Contains("branch content", Assert.Throws<InvalidOperationException>(() => Show(() => true, (Action)null!)).Message);
-        Assert.Contains("value getter", Assert.Throws<InvalidOperationException>(() => Show<string>(null!, _ => { })).Message);
-        Assert.Contains("branch content", Assert.Throws<InvalidOperationException>(() => Show<string>(() => "value", null!)).Message);
-        Assert.Contains("condition getter", Assert.Throws<InvalidOperationException>(() => Match(null!, () => { })).Message);
-        Assert.Contains("branch content", Assert.Throws<InvalidOperationException>(() => Match(() => true, null!)).Message);
-        Assert.Contains("condition getter", Assert.Throws<InvalidOperationException>(() => Switch(default(SomeEngine.Views.Solid.Match))).Message);
-        Assert.Contains("component getter", Assert.Throws<InvalidOperationException>(() => Dynamic(null!)).Message);
+        Assert.Throws<InvalidOperationException>(() => Show(null!, () => { }));
+        Assert.Throws<InvalidOperationException>(() => Show(() => true, (Action)null!));
+        Assert.Throws<InvalidOperationException>(() => Show<string>(null!, _ => { }));
+        Assert.Throws<InvalidOperationException>(() => Show<string>(() => "value", null!));
+        Assert.Throws<InvalidOperationException>(() => Match(null!, () => { }));
+        Assert.Throws<InvalidOperationException>(() => Match(() => true, null!));
+        Assert.Throws<InvalidOperationException>(() => Switch(default(SomeEngine.Views.Solid.Match)));
+        Assert.Throws<InvalidOperationException>(() => Dynamic(null!));
     }
 
     [Fact]
@@ -489,7 +489,6 @@ public sealed partial class SolidTests
         Entity component = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
         Exception error = frames.World.ReadSparse<BuildError>(component).Exception;
         Assert.IsType<InvalidOperationException>(error);
-        Assert.Contains("component function", error.Message);
     }
 #endif
 

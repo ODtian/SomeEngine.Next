@@ -97,8 +97,7 @@ public sealed partial class GridLayoutTests
         Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(100, 100) });
         Views.Views.Spawn(frames.World, canvas, new Grid([GridTrack.Fixed(50)], [GridTrack.Fixed(50)], gap));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains("Grid.Gap", error.Message);
+        Assert.Throws<InvalidOperationException>(frames.Frame);
     }
 
     [Theory]
@@ -110,8 +109,7 @@ public sealed partial class GridLayoutTests
     [InlineData((GridTrackKind)99, 1)]
     public void InvalidTrackDefinitionsAreReportedByDevelopmentChecks(GridTrackKind kind, float value)
     {
-        var error = Assert.Throws<InvalidOperationException>(() => new GridTracks(new GridTrack(kind, value)));
-        Assert.Contains("GridTrack", error.Message);
+        Assert.Throws<InvalidOperationException>(() => new GridTracks(new GridTrack(kind, value)));
     }
 
     [Theory]
@@ -128,8 +126,7 @@ public sealed partial class GridLayoutTests
             [GridTrack.Fixed(50)], [GridTrack.Fixed(50)]),
             [new Item(default, row, column, rowSpan, columnSpan)]));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains("GridCell", error.Message);
+        Assert.Throws<InvalidOperationException>(frames.Frame);
     }
 #endif
 

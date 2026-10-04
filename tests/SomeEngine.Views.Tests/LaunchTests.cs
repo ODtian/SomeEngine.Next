@@ -82,9 +82,11 @@ public sealed partial class LaunchTests
         {
             Cancellation[key] = cancel;
             Status.Value = $"running {key}";
+            var completion = new TaskCompletionSource();
+            using var registration = cancel.Register(() => completion.TrySetCanceled(cancel));
             try
             {
-                await Task.Delay(Timeout.Infinite, cancel);
+                await completion.Task.ConfigureAwait(false);
             }
             finally
             {

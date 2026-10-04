@@ -6,6 +6,12 @@ namespace SomeEngine.Views.Tests;
 
 public sealed partial class ResourceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SynchronousResultsUpdateTheComponentOnEachSourceChange(bool jobWorld) =>
+        ResourceResultChecks.Verify(jobWorld);
+
     [Fact]
     public void ANewSourceRecoversTheFailedResourceAndItsErrorOnlyReader() =>
         AsyncPrimitiveChecks.VerifyResourceRecovery();

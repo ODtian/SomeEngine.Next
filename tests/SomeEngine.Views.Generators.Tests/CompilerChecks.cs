@@ -25,7 +25,9 @@ internal static class CompilerChecks
             await compilation.WithAnalyzers(analyzers.ToImmutableArray()).GetAllDiagnosticsAsync());
     }
 
-    internal static async Task<bool> Run(string source)
+    internal static Task<bool> Run(string source) => Run<bool>(source);
+
+    internal static async Task<T> Run<T>(string source)
     {
         var (compilation, diagnostics) = Compile(source, true, null);
         diagnostics = diagnostics.AddRange(await compilation.WithAnalyzers([new ViewAnalyzer(), new ComposeAnalyzer(),
@@ -35,9 +37,11 @@ internal static class CompilerChecks
         using var image = new MemoryStream();
         var result = compilation.Emit(image);
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
-        Compiler.BuildAwaitChecks.Apply(image, ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator));
+        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
+        Compiler.BuildAwaitChecks.Apply(image, references);
+        Compiler.BuildAwaitChecks.Apply(image, references);
         var assembly = System.Reflection.Assembly.Load(image.ToArray());
-        var check = (Func<bool>)assembly.GetType("ReferenceChecks")!.GetMethod("Check")!.CreateDelegate(typeof(Func<bool>));
+        var check = (Func<T>)assembly.GetType("ReferenceChecks")!.GetMethod("Check")!.CreateDelegate(typeof(Func<T>));
         return check();
     }
 

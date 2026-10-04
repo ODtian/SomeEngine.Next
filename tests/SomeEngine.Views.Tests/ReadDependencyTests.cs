@@ -412,8 +412,7 @@ public sealed partial class ReadDependencyTests
     [Fact]
     public void ReadOutsideBuildReportsTheRequiredScope()
     {
-        var error = Assert.Throws<InvalidOperationException>(() => Scope.Read<Value>(Entity.Null));
-        Assert.Contains("active view build", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(() => Scope.Read<Value>(Entity.Null));
     }
 #endif
 

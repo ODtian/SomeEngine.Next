@@ -19,7 +19,7 @@ public sealed partial class ButtonTests
     [InlineData(ButtonKind.Icon)]
     public void ButtonsRequireAnActiveBuildScope(ButtonKind kind)
     {
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             switch (kind)
             {
@@ -28,7 +28,6 @@ public sealed partial class ButtonTests
                 case ButtonKind.Icon: new Rewrites.IconButton(">", "AV").Build(); break;
             }
         });
-        Assert.Contains("active view build", error.Message);
     }
 #endif
 

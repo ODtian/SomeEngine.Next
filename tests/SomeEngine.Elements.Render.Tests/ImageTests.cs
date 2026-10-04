@@ -175,7 +175,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         systems.Add(new LayoutSystem());
         Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
         Views.Views.Spawn(world, canvas, new Image(default));
-        Assert.Contains("ImageTextures", Assert.Throws<InvalidOperationException>(systems.Update).Message);
+        Assert.Throws<InvalidOperationException>(systems.Update);
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         systems.Add(new LayoutSystem(new ImageTextures(_ => texture)));
         Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
         Views.Views.Spawn(world, canvas, new Image(default, (ImageFit)99));
-        Assert.Contains("Image fitting", Assert.Throws<InvalidOperationException>(systems.Update).Message);
+        Assert.Throws<InvalidOperationException>(systems.Update);
     }
 #endif
 

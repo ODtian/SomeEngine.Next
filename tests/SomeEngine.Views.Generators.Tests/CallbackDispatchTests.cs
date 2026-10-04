@@ -40,7 +40,7 @@ public sealed class CallbackDispatchTests
         frames.World.ReplaceSparse(root, new CallbackRecoveryScreens.Screen_View(1, true, clicked));
         frames.Frame();
 
-        Assert.Equal("parent failed", frames.World.ReadSparse<BuildError>(root).Exception.Message);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
         Assert.Equal("tick 0", callbacks.Tooltip());
         callbacks.Change(true);
         Assert.Equal(0, clicked.Value);

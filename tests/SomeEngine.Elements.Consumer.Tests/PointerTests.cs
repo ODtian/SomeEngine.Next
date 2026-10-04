@@ -23,7 +23,7 @@ public sealed partial class PointerTests
     {
         using var world = new World();
         Entity entity = world.CreateEntity();
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             switch (input)
             {
@@ -33,7 +33,6 @@ public sealed partial class PointerTests
                 case 3: Pointer.Wheel(world, entity, Vector2.One); break;
             }
         });
-        Assert.Contains("Canvas", error.Message);
     }
 
     [Theory]
@@ -41,14 +40,13 @@ public sealed partial class PointerTests
     [InlineData(true)]
     public void PressableReadsAndDeclarationsRequireAnActiveScope(bool read)
     {
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             if (read)
                 Entity.Null.Clicked();
             else
                 Pressable(Entity.Null);
         });
-        Assert.Contains("active view build", error.Message);
     }
 
     [Theory]

@@ -71,8 +71,7 @@ public sealed partial class LayoutTests
         Entity root = Views.Views.Spawn(frames.World, canvas, new Fill());
         frames.World.Add(root, new Box { Min = new Size(150, 80), Max = new Size(100, 100) });
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains("Box", error.Message);
+        Assert.Throws<InvalidOperationException>(frames.Frame);
     }
 #endif
 

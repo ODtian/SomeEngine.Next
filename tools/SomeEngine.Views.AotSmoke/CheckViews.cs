@@ -29,6 +29,9 @@ foreach (bool jobs in new[] { false, true })
 
 using var frames = new HeadlessFrameDriver();
 BuildResumeChecks.VerifyAll();
+ResourceResultChecks.Verify(false);
+ResourceResultChecks.Verify(true);
+Console.WriteLine("Synchronous resource results and changed sources passed in both Worlds under NativeAOT.");
 Console.WriteLine("Canceled awaits, asynchronous cleanup, cancellation callbacks, and child computation error recovery passed under NativeAOT.");
 Entity root = Views.Spawn(frames.World, Entity.Null, new Cards(false));
 frames.Frame();

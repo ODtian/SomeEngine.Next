@@ -52,6 +52,8 @@ internal static class Program
         global::SomeEngine.ECS.Tests.ManagedComponentChecks.VerifyAll();
         global::SomeEngine.Views.Tests.FirstBuildChecks.Verify();
         global::SomeEngine.Views.Tests.BuildResumeChecks.VerifyAll();
+        global::SomeEngine.Views.Tests.ResourceResultChecks.Verify(false);
+        global::SomeEngine.Views.Tests.ResourceResultChecks.Verify(true);
         global::SomeEngine.Views.Tests.AsyncPrimitiveChecks.VerifyConcurrentBuild();
         global::SomeEngine.Views.Tests.AsyncPrimitiveChecks.VerifyResourceRecovery();
 

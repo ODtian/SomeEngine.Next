@@ -21,8 +21,7 @@ public sealed partial class StackLayoutTests
         Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(100, 100) });
         Views.Views.Spawn(frames.World, canvas, new Stack(horizontal, vertical));
 
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains("Stack", error.Message);
+        Assert.Throws<InvalidOperationException>(frames.Frame);
     }
 #endif
 

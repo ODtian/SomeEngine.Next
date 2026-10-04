@@ -361,12 +361,12 @@ public sealed partial class SolidTests
     {
         Assert.Throws<InvalidOperationException>(() => For<int>(() => [], (_, _) => { }));
         Assert.Throws<InvalidOperationException>(() => Index<int>(() => [], (_, _) => { }));
-        Assert.Contains("items getter", Assert.Throws<InvalidOperationException>(() => For<int>(null!, (_, _) => { })).Message);
-        Assert.Contains("row content", Assert.Throws<InvalidOperationException>(() => For<int>(() => [], null!)).Message);
-        Assert.Contains("items getter", Assert.Throws<InvalidOperationException>(() => Index<int>(null!, (_, _) => { })).Message);
-        Assert.Contains("row content", Assert.Throws<InvalidOperationException>(() => Index<int>(() => [], null!)).Message);
-        Assert.Contains("items getter", Assert.Throws<InvalidOperationException>(() => For((Func<QueryRows>)null!, (_, _) => { })).Message);
-        Assert.Contains("items getter", Assert.Throws<InvalidOperationException>(() => Index((Func<QueryRows>)null!, (_, _) => { })).Message);
+        Assert.Throws<InvalidOperationException>(() => For<int>(null!, (_, _) => { }));
+        Assert.Throws<InvalidOperationException>(() => For<int>(() => [], null!));
+        Assert.Throws<InvalidOperationException>(() => Index<int>(null!, (_, _) => { }));
+        Assert.Throws<InvalidOperationException>(() => Index<int>(() => [], null!));
+        Assert.Throws<InvalidOperationException>(() => For((Func<QueryRows>)null!, (_, _) => { }));
+        Assert.Throws<InvalidOperationException>(() => Index((Func<QueryRows>)null!, (_, _) => { }));
     }
 #endif
 

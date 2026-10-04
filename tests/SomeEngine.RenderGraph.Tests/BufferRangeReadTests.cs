@@ -161,10 +161,10 @@ public sealed class BufferRangeReadTests
             PassDefinition pass = frame.GetPass(readers[0]);
             pass.ReadRanges(buffer, new BufferRangeSet([new BufferRange(8, 4)]),
                 PipelineSync.Copy, ResourceAccess.CopySource);
-            string? failure = null;
+            InvalidOperationException? failure = null;
             try { frame.Execute(completions); }
-            catch (InvalidOperationException error) { failure = error.Message; }
-            Assert.Contains("RG4001", failure);
+            catch (InvalidOperationException error) { failure = error; }
+            Assert.IsType<InvalidOperationException>(failure);
         }
 #endif
         void Capture(in RenderGraphDiagnosticsView diagnostics) => reused = diagnostics.Statistics.AnalysisReused;

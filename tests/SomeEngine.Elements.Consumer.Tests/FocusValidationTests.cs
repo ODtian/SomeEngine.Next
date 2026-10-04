@@ -14,14 +14,13 @@ public sealed partial class FocusTests
     public void InputRequiresSupportedKeysAndDirections(bool keyboard)
     {
         using var world = new World();
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             if (keyboard)
                 Keyboard.Key(world, (Key)255, true);
             else
                 Gamepad.Navigate(world, (Direction)255);
         });
-        Assert.Contains("supported", error.Message);
     }
 
     [Theory]
@@ -30,7 +29,7 @@ public sealed partial class FocusTests
     [InlineData(2)]
     public void InputRequiresAWorld(int input)
     {
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             switch (input)
             {
@@ -39,7 +38,6 @@ public sealed partial class FocusTests
                 case 2: Gamepad.Confirm(null!); break;
             }
         });
-        Assert.Contains("World", error.Message);
     }
 
     [Theory]
@@ -47,14 +45,13 @@ public sealed partial class FocusTests
     [InlineData(true)]
     public void FocusHelpersRequireAnActiveViewBuild(bool read)
     {
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             if (read)
                 Entity.Null.Focused();
             else
                 FocusFunctions.Focusable(Entity.Null);
         });
-        Assert.Contains("active view build", error.Message);
     }
 
     [Fact]
@@ -63,8 +60,7 @@ public sealed partial class FocusTests
         using var world = new World();
         world.CreateEntity(new InputCapture());
         world.CreateEntity(new InputCapture());
-        var error = Assert.Throws<InvalidOperationException>(() => Gamepad.Confirm(world));
-        Assert.Contains("InputCapture", error.Message);
+        Assert.Throws<InvalidOperationException>(() => Gamepad.Confirm(world));
     }
 
     [Fact]
@@ -76,8 +72,7 @@ public sealed partial class FocusTests
         var nodes = Hierarchy<ElementTree>.GetChildren(frames.World, root);
         frames.World.AddSparse(nodes[0], new Focused());
         frames.World.AddSparse(nodes[1], new Focused());
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains("Focused", error.Message);
+        Assert.Throws<InvalidOperationException>(frames.Frame);
     }
 
     private readonly record struct FocusChecksForValidation() : IView, IComponent

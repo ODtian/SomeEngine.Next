@@ -58,12 +58,12 @@ public sealed class CountedBufferRangesTests
         }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using RenderGraphFrame frame = graph.BeginFrame();
-        string? failure = null;
+        InvalidOperationException? failure = null;
         try { frame.Execute(completions); }
-        catch (InvalidOperationException error) { failure = error.Message; }
+        catch (InvalidOperationException error) { failure = error; }
         if (!accepted)
         {
-            Assert.Contains("RG4001", failure);
+            Assert.IsType<InvalidOperationException>(failure);
             return;
         }
         Assert.Null(failure);

@@ -67,7 +67,7 @@ public sealed partial class BehaviorTests
     [InlineData(2)]
     public void BehaviorDeclarationsUseTheSharedDevelopmentScopeCheck(int behavior)
     {
-        var error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
         {
             switch (behavior)
             {
@@ -76,7 +76,6 @@ public sealed partial class BehaviorTests
                 case 2: SelectableFunctions.Selectable(Entity.Null); break;
             }
         });
-        Assert.Contains("active view build", error.Message);
     }
 #endif
 

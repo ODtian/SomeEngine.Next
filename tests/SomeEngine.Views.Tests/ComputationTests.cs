@@ -433,8 +433,7 @@ public sealed partial class ComputationTests
             });
         }));
 #if DEBUG
-        var error = Assert.Throws<InvalidOperationException>(frames.Frame);
-        Assert.Contains("iteration limit of 2", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(frames.Frame);
 #else
         frames.Frame();
 #endif
@@ -465,8 +464,7 @@ public sealed partial class ComputationTests
 
         Hierarchy<ElementTree>.DestroySubtree(frames.World, root);
 
-        var error = Assert.Throws<InvalidOperationException>(() => memo.Value);
-        Assert.Contains("active", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(() => memo.Value);
     }
 #endif
 

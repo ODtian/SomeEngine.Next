@@ -1,7 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Views.Tests;
 
@@ -11,9 +10,14 @@ public static partial class BuildResumeChecks
     {
         foreach (bool jobWorld in new[] { false, true })
         {
-            foreach (BuildWait wait in new[] { BuildWait.Task, BuildWait.ConfiguredTask, BuildWait.ValueTask,
-                BuildWait.ConfiguredValueTask, BuildWait.Helper, BuildWait.Custom, BuildWait.AsyncCleanup, BuildWait.CanceledWaitCleanup })
-                VerifyCanceledTask(jobWorld, wait);
+            VerifyCanceledTask(jobWorld);
+            VerifyCanceledConfiguredTask(jobWorld);
+            VerifyCanceledValueTask(jobWorld);
+            VerifyCanceledConfiguredValueTask(jobWorld);
+            VerifyCanceledHelper(jobWorld);
+            VerifyCanceledCustomAwait(jobWorld);
+            VerifyCanceledAsyncCleanup(jobWorld);
+            VerifyCanceledWaitCleanup(jobWorld);
             VerifyCancelCallbackFailure(jobWorld);
             VerifyLaunchRecovery(jobWorld);
             VerifyLaunchErrors(jobWorld);
@@ -203,102 +207,4 @@ public static partial class BuildResumeChecks
     }
 
     private readonly record struct Number(int Value) : IComponent;
-
-    public static void VerifyCanceledTask(bool jobWorld, BuildWait wait = BuildWait.Task)
-    {
-        using var frames = new HeadlessFrameDriver(new World(execution:
-            jobWorld ? new SomeEngine.ECS.Systems.WorldJobs(SomeEngine.Job.JobSystem.Default) : null));
-        var source = new State<int>(1);
-        var output = new State<int>();
-        var completion = new TaskCompletionSource();
-        var cleanup = new CleanupData();
-        Entity root = Views.Spawn(frames.World, Entity.Null, new TaskContent(source, output, completion.Task, cleanup, wait));
-        frames.Frame();
-        source.Value = 2;
-        frames.Frame();
-        Require(output.Value == 2, "The changed dependency starts and presents the new build.");
-        completion.SetResult();
-        Require(SpinWait.SpinUntil(() =>
-        {
-            frames.Frame();
-            return cleanup.Finally;
-        }, TimeSpan.FromSeconds(5)), "The ready canceled task finishes cleanup in the rebuild phase.");
-        Require(output.Value == 2, "The canceled task resumes through cancellation before writing shared state.");
-        Require(cleanup.Canceled && cleanup.Finally && cleanup.Disposed,
-            "The canceled task delivers OperationCanceledException and runs finally and using cleanup.");
-        Require(!frames.World.HasSparse<BuildError>(root), "Cancellation completes as build cleanup.");
-    }
-
-    private readonly record struct TaskContent(State<int> Source, State<int> Output, Task Result, CleanupData Cleanup, BuildWait Wait)
-        : IView, IComponent
-    {
-        public async BuildTask Build()
-        {
-            int value = Source.Value;
-            if (value == 1)
-            {
-                try
-                {
-                    using (Cleanup)
-                    {
-                        switch (Wait)
-                        {
-                            case BuildWait.Task: await Result; break;
-                            case BuildWait.AsyncCleanup: await Result; break;
-                            case BuildWait.CanceledWaitCleanup: await Result.WaitAsync(Scope.Cancel); break;
-                            case BuildWait.ConfiguredTask: await Result.ConfigureAwait(false); break;
-                            case BuildWait.ValueTask: await new ValueTask(Result); break;
-                            case BuildWait.ConfiguredValueTask: await new ValueTask(Result).ConfigureAwait(false); break;
-                            case BuildWait.Helper: await WaitForTask(Result, Output); break;
-                            case BuildWait.Custom: await new TaskWait(Result); break;
-                        }
-                        Output.Value = value;
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    Cleanup.Canceled = true;
-                }
-                finally
-                {
-                    if (Wait is BuildWait.AsyncCleanup or BuildWait.CanceledWaitCleanup)
-                        await Task.CompletedTask;
-                    Cleanup.Finally = true;
-                }
-            }
-            else
-                Output.Value = value;
-        }
-
-        private static async BuildTask WaitForTask(Task result, State<int> output)
-        {
-            await result.ConfigureAwait(false);
-            output.Value = 99;
-        }
-    }
-
-    private readonly struct TaskWait(Task result) : INotifyCompletion
-    {
-        public TaskWait GetAwaiter() => this;
-        public bool IsCompleted => result.IsCompleted;
-        public void GetResult() => result.GetAwaiter().GetResult();
-        public void OnCompleted(Action continuation) => result.GetAwaiter().OnCompleted(continuation);
-    }
-
-    private sealed class CleanupData : IDisposable
-    {
-        internal bool Canceled;
-        internal bool Finally;
-        internal bool Disposed;
-
-        public void Dispose() => Disposed = true;
-    }
-
-    private static void Require(bool value, string message)
-    {
-        if (!value)
-            throw new InvalidOperationException(message);
-    }
 }
-
-public enum BuildWait { Task, ConfiguredTask, ValueTask, ConfiguredValueTask, Helper, Custom, AsyncCleanup, CanceledWaitCleanup }

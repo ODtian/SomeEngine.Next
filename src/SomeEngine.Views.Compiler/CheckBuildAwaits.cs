@@ -82,7 +82,10 @@ public static class BuildAwaitChecks
                 !type.Interfaces.Any(value => value.InterfaceType.FullName == "System.Runtime.CompilerServices.IAsyncStateMachine"))
                 continue;
             var resume = type.Methods.First(method => method.Name == "MoveNext");
-            var build = type.Fields.First(field => field.FieldType.FullName == builder.FullName);
+            // Keep the compiler's generic state machine arguments on the field reference.
+            var fields = resume.Body.Instructions.Select(instruction => instruction.Operand)
+                .OfType<FieldReference>().Where(field => field.FieldType.FullName == builder.FullName).ToArray();
+            var build = fields.FirstOrDefault(field => field.DeclaringType is GenericInstanceType) ?? fields[0];
             var results = resume.Body.Instructions.Where(instruction => instruction.OpCode.Code is Code.Call or Code.Callvirt &&
                 instruction.Operand is MethodReference { Name: "GetResult", Parameters.Count: 0 } method &&
                 type.Fields.Any(field => field.FieldType.FullName == method.DeclaringType.FullName)).ToArray();
@@ -92,7 +95,16 @@ public static class BuildAwaitChecks
             foreach (var result in results)
             {
                 if (result.Next?.Next?.Next?.Operand is MethodReference next && next.FullName == check.FullName)
+                {
+                    // An incremental compile can reuse bytes written by the earlier compiler task.
+                    foreach (var existingAddress in new[] { result.Previous?.Previous, result.Next.Next })
+                        if (existingAddress?.Operand is FieldReference previous && previous.FullName != build.FullName)
+                        {
+                            existingAddress.Operand = build;
+                            changed = true;
+                        }
                     continue;
+                }
                 // Observe cancellation even when GetResult itself throws, so awaits in finally can finish.
                 // Consume the result before delivering cancellation, including pooled ValueTask sources.
                 var instructions = resume.Body.GetILProcessor();

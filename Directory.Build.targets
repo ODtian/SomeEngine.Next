@@ -12,6 +12,14 @@
     <SomeEngineViewsCompilerPath>$(SomeEngineRepositoryRoot)src/SomeEngine.Views.Compiler/bin/$(Configuration)/netstandard2.0/SomeEngine.Views.Compiler.dll</SomeEngineViewsCompilerPath>
   </PropertyGroup>
   <Import Project="$(SomeEngineRepositoryRoot)src/SomeEngine.Views/buildTransitive/SomeEngine.Views.targets" />
+  <Target Name="BuildTestRuleChecker">
+    <MSBuild Projects="$(SomeEngineRepositoryRoot)tools/TestRules/SomeEngine.TestRules.csproj"
+             Targets="Restore;Build" Properties="Configuration=$(Configuration)"
+             RemoveProperties="TargetFramework;TargetFrameworks;RuntimeIdentifier;SelfContained;PublishAot" />
+  </Target>
+  <Target Name="CheckTestRules" BeforeTargets="VSTest" DependsOnTargets="BuildTestRuleChecker" Condition="'$(IsTestProject)' == 'true'">
+    <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/TestRules/bin/$(Configuration)/net10.0/SomeEngine.TestRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(AssemblyName)&quot;" />
+  </Target>
   <Target Name="ValidateSlangToolchainIdentity" BeforeTargets="PrepareForBuild" Condition="'$(MSBuildProjectName)' == 'SomeEngine.Graphics' or '$(MSBuildProjectName)' == 'SomeEngine.Graphics.Direct3D12.Tests'">
     <Error Condition="'$(_RequestedSlangToolchainVersion)' != '' and '$(_RequestedSlangToolchainVersion)' != '$(SlangToolchainVersion)'"
            Text="SlangToolchainVersion is pinned by the product and cannot be overridden (requested '$(_RequestedSlangToolchainVersion)', pinned '$(SlangToolchainVersion)')." />

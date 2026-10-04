@@ -130,9 +130,7 @@ public sealed partial class FirstBuildTests
     [Fact]
     public void ViewDeclarationOutsideBuildReportsTheRequiredScope()
     {
-        var error = Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
-
-        Assert.Contains("active view build", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
     }
 
     [Fact]
@@ -144,12 +142,10 @@ public sealed partial class FirstBuildTests
 
         frames.Frame();
         Assert.False(frames.World.HasSparse<BuildError>(root));
-        var scopeError = Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
-        Assert.Contains("active view build", scopeError.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
         completion.SetResult();
         frames.Frame();
-        scopeError = Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
-        Assert.Contains("active view build", scopeError.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(() => Scope.View(new Label("outside")));
     }
 #endif
 

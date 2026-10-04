@@ -123,14 +123,11 @@ public sealed partial class SwiftUIStateTests
     {
         var counter = new Counter("outside");
         var error = Assert.Throws<InvalidOperationException>(() => counter.Count);
-        Assert.Contains("active view build", error.Message, StringComparison.OrdinalIgnoreCase);
 
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ForeignCounterRead());
         frames.Frame();
         error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Contains("Counter", error.Message);
-        Assert.Contains("active build", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

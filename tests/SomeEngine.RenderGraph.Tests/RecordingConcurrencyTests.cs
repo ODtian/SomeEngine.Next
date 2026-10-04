@@ -89,11 +89,12 @@ public sealed class RecordingConcurrencyTests
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         using var finished = new ManualResetEventSlim();
+        var error = new InvalidOperationException("recording failed");
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             GraphBufferId source = edit.CreateTransientBuffer(new BufferDesc(4,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
-            var data = new FailureData(source, entered, release, finished);
+            var data = new FailureData(source, entered, release, finished, error);
             edit.AddCopyPass<FailureData, byte>("failing calling-thread callback",
                 PassQueueSelection.Exact(support.CopyQueue), data,
                 new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
@@ -105,7 +106,7 @@ public sealed class RecordingConcurrencyTests
                     bool started = data.Entered.Wait(TimeSpan.FromSeconds(10));
                     data.Release.Set();
                     Assert.True(started);
-                    throw new InvalidOperationException("recording failed");
+                    throw data.Error;
                 });
             edit.AddCopyPass<FailureData, byte>("worker callback completing during failure",
                 PassQueueSelection.Exact(support.GraphicsQueue), data,
@@ -126,13 +127,13 @@ public sealed class RecordingConcurrencyTests
         }
         using RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(FrameSubmissionMode.RecordAhead));
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-        bool failed = false;
+        InvalidOperationException? failed = null;
         try { frame.Execute(completions); }
-        catch (InvalidOperationException exception) when (exception.Message == "recording failed") { failed = true; }
-        Assert.True(failed);
+        catch (InvalidOperationException exception) { failed = exception; }
+        Assert.Same(error, failed);
         Assert.True(finished.IsSet);
     }
 
     private readonly record struct FailureData(GraphBufferId Source, ManualResetEventSlim Entered,
-        ManualResetEventSlim Release, ManualResetEventSlim Finished);
+        ManualResetEventSlim Release, ManualResetEventSlim Finished, Exception Error);
 }

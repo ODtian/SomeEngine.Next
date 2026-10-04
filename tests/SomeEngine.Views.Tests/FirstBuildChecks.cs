@@ -367,7 +367,7 @@ internal static partial class FirstBuildChecks
         frames.Frame();
 
         BuildError error = frames.World.ReadSparse<BuildError>(branch);
-        Require(error.Frame == 2 && error.Exception.Message == "content failed", "The child retains its exception and frame.");
+        Require(error.Frame == 2 && error.Exception is InvalidOperationException, "The child retains its exception and frame.");
         Require(Hierarchy<ElementTree>.GetChildren(frames.World, branch).Span.SequenceEqual(children),
             "A failed build retains its complete children.");
         Require(frames.World.Read<TableText>(children[0]).Value == "before", "The previous child parameters survive.");

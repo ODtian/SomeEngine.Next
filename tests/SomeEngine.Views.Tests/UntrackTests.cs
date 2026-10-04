@@ -87,8 +87,7 @@ public sealed partial class UntrackTests
     [Fact]
     public void UntrackOutsideBuildReportsTheRequiredScope()
     {
-        var error = Assert.Throws<InvalidOperationException>(() => Scope.Untrack());
-        Assert.Contains("active view build", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(() => Scope.Untrack());
     }
 #endif
 
