@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -19,6 +20,39 @@ namespace SomeEngine.Elements.Render.Tests;
 
 public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graphics) : IClassFixture<SurfaceExtractionDevice>
 {
+    [Fact]
+    public void SurfaceShadowsReachRenderingOnCreationUpdateAndClear()
+    {
+        using var game = new World();
+        using var render = new RenderWorld();
+        using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
+        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity node = AddPanel(game, canvas, new Rect(10, 20, 120, 80), new Color(1, 0, 0));
+        Surface surface = game.Read<Surface>(node);
+        surface.Shadow = new DropShadow(new Color(0, 0, 0, 0.35f), new Vector2(0, 4), 12);
+        game.Replace(node, surface);
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+        Entity mirror = extraction.RequireMirror(canvas);
+        Assert.Equal(new DropShadow(new Color(0, 0, 0, 0.35f), new Vector2(0, 4), 12),
+            Assert.Single(ReadInstances(render, mirror)).Shadow);
+
+        surface.Shadow = new DropShadow(new Color(0.2f, 0.3f, 0.4f, 0.5f), new Vector2(-3, 6), 2);
+        game.Replace(node, surface);
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+        SurfaceInstance updated = Assert.Single(ReadInstances(render, mirror));
+        Assert.Equal(new DropShadow(new Color(0.2f, 0.3f, 0.4f, 0.5f), new Vector2(-3, 6), 2), updated.Shadow);
+        Assert.Equal(new Rect(10, 20, 120, 80), updated.Rectangle);
+        Assert.Equal(new Color(1, 0, 0), updated.Fill);
+
+        surface.Shadow = default;
+        game.Replace(node, surface);
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+        Assert.Equal(default, Assert.Single(ReadInstances(render, mirror)).Shadow);
+    }
+
     [Fact]
     public void RecoloringOneNodeChangesOnlyItsRenderedInstance()
     {

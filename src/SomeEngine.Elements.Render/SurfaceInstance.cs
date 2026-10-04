@@ -14,4 +14,7 @@ public readonly record struct SurfaceInstance(
     float BorderWidth,
     Rect ClipRectangle,
     int DrawOrder,
-    uint Version) : IBufferElement;
+    uint Version) : IBufferElement
+{
+    public DropShadow Shadow { get; init; }
+}

@@ -22,6 +22,10 @@
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs" Link="ButtonChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs" Link="Rewrites/Button.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/IconButton.cs" Link="Rewrites/IconButton.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/DialogChecks.cs" Link="DialogChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Dialog.cs" Link="Rewrites/Dialog.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DialogTitle.cs" Link="Rewrites/DialogTitle.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/DialogFooter.cs" Link="Rewrites/DialogFooter.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/FlexChecks.cs" Link="FlexChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Layout.Tests/StackGridChecks.cs" Link="StackGridChecks.cs" />
     <ProjectReference Include="../../src/SomeEngine.Views.Compose/SomeEngine.Views.Compose.csproj" GlobalPropertiesToRemove="PublishAot" />

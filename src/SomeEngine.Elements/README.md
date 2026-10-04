@@ -1,11 +1,13 @@
 # SomeEngine.Elements
 
 Elements use the public view and layout APIs. The caller writes a layout node's
-`Surface` data through `Background(fill)`, `Corner(radius)`, and
-`Border(color, width)` during a view build or computation. Each modifier returns
+`Surface` data through `Background(fill)`, `Corner(radius)`,
+`Border(color, width)`, and `Shadow(shadow)` during a view build or computation. Each modifier returns
 the same entity and preserves the other surface fields. Colors use
 `SomeEngine.Core.Math.Color` in linear RGBA; radii and widths use layout units.
 Equal values preserve the component's write versions when a build repeats.
+`DropShadow` carries a linear RGBA color, a canvas offset, and a blur radius in
+layout units. Its default value is transparent with zero offset and radius.
 
 `PressableFunctions.Pressable(node)` declares `Hover`, `Clicks`, and the
 `Pressable` marker through `Scope.Ensure`. Read `node.Clicked()` in the caller's
@@ -40,6 +42,35 @@ properties are `Fill`, `HoverFill`, `PressedFill`, `TextColor`, `Padding`, and
 `CornerRadius`. The default value supplies a complete style; omitted properties
 use the button defaults and explicit transparent colors and zero spacing remain
 caller data. See Wiki `architecture/someui/Composition` for values and examples.
+
+`DialogFunctions.Dialog()` and `DialogActionsFunctions.DialogActions()` declare
+sparse containers accepting caller content. Dialog places parts vertically and
+writes its own themed Surface. Actions places its children horizontally at the
+right edge. Their resolved Flex data uses the public `ILayout` measurement API.
+`DialogTitleFunctions.DialogTitle(text)` composes a Text with dialog title size
+and color, retaining the nearest text theme's font and line height.
+
+Each part reads the nearest `DialogTheme`. Provide its `Fill`, `CornerRadius`,
+`Shadow`, `Gap`, `TitleColor`, `TitleSize`, and `ActionsGap` properties to style a
+subtree. Omitted properties use the complete defaults documented in Composition;
+explicit transparent colors and zero corner radius or gaps remain caller data.
+The caller supplies Box dimensions and padding through the usual modifiers.
+
+`DialogFunctions.TitledDialog(title)` is an ordinary composition function
+returning an open `ParentScope` after declaring the dialog and its title:
+
+```csharp
+using (var dialog = DialogFunctions.TitledDialog("Settings"))
+{
+    dialog.Entity.Size(360, float.NaN).Padding(24);
+    TextFunctions.Text("Content");
+    using (DialogActionsFunctions.DialogActions().Content())
+        ButtonFunctions.Button("OK");
+}
+```
+
+The caller controls part order, optional titles, and inserted views. User parts
+can read the same theme and mix with built-in parts through the same public APIs.
 
 `Text(string)` declares a text view. `Font`, `FontSize`, `TextColor`, and
 `LineHeight` write its caller-chosen `TextStyle` fields. The text view reads

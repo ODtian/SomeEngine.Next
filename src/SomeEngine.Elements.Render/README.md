@@ -14,7 +14,7 @@ renderWorld.ExecuteBufferRead<SurfaceInstance>(canvasMirror, instances =>
 {
     foreach (SurfaceInstance instance in instances.AsSpan())
     {
-        // Consume the rectangle, fill, corners, border, clip, order, and version.
+        // Consume the rectangle, fill, corners, border, shadow, clip, order, and version.
     }
 });
 ```
@@ -29,6 +29,10 @@ The buffer follows the applied `ElementTree` children in depth-first preorder.
 zero and counting transparent nodes. Nested canvases have their own buffers and
 traversals. `Node` identifies the source entity; render consumers read the drawing
 values from this buffer.
+The `Shadow` init property carries the surface's `DropShadow` color, offset,
+and blur radius through the same extraction path. Creation, edits, and clearing
+to the transparent default update that same instance for the material to use.
+The existing nine-argument constructor and deconstruction remain available.
 
 Component write versions select changed chunks and rows. Surface and rectangle
 edits update their existing instances. Tree membership, child order, and canvas

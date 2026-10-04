@@ -56,6 +56,10 @@ SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);
 Console.WriteLine("Button themes, held presses, click consumption, label updates, and public user Button and IconButton passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(false, false, false);
+SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(true, true, true);
+SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(false, false, true);
+Console.WriteLine("Dialog themes, title styles, caller geometry, and built-in and user Dialog, DialogTitle, and DialogFooter composition passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
 Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
 

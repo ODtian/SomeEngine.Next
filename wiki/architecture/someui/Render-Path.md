@@ -4,7 +4,7 @@
 界面渲染数据沿 Game world 到 Rendering world 的既有提取路径流动，并按更新频率区分持久部分与随变化更新的部分。
 
 ## Invariants
-- 视觉都是材质加用户 shader。`Surface`（填充、圆角、描边，由 `Background`/`Corner`/`Border` 修饰写在参与布局的节点上）、`Image`、`Glyphs` 使用引擎自带的普通材质；渲染管线不识别控件，也不预设顶点布局。
+- 视觉都是材质加用户 shader。`Surface`（填充、圆角、描边、阴影，由 `Background`/`Corner`/`Border`/`Shadow` 修饰或复合容器 Build 写在参与布局的节点上）、`Image`、`Glyphs` 使用引擎自带的普通材质；渲染管线不识别控件，也不预设顶点布局。
 - 界面 pass 的拓扑只在增删 `Canvas` 或改变渲染目标时变化，放在持久 RenderGraph 中通过显式修改维护。
 - 实例数据按 ECS 写版本以块为单位增量提取，更新 Rendering world 中常驻的实例缓冲；静态界面不重新提取。
 - 节点的最终呈现为布局结果、用户变换与 `PresentationOffset` 的叠加。
@@ -22,7 +22,12 @@
 `SurfaceInstance` 缓冲。`RenderCanvas` 保存目标、像素尺寸与每布局单位像素数。
 `SurfaceInstance` 的公开成员为 `Node`、`Rectangle`、`Fill`、`CornerRadius`、
 `BorderColor`、`BorderWidth`、`ClipRectangle`、`DrawOrder` 与 `Version`。
+`Shadow` 是附加的可初始化 DropShadow 属性，保留原有九参数构造与解构写法。
 `Node` 标识来源实体，渲染消费者从缓冲取得其绘制数据。
+
+阴影颜色、画布偏移与模糊半径和其余 Surface 字段在同一读取窗口收集，
+初次提取和按行更新均写入同一 SurfaceInstance。渲染消费者通过自己的材质和 shader
+解释这些参数。默认 DropShadow 表示透明阴影；清空或修改阴影沿同一增量提取路径送达。
 
 矩形采用 `LayoutRect` 的画布坐标。当前裁剪范围为画布的布局单位边界：
 `(0, 0, Canvas.Size.Width / Canvas.Scale, Canvas.Size.Height / Canvas.Scale)`。

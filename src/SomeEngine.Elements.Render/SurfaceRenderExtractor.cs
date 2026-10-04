@@ -116,7 +116,7 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
             {
                 SurfaceValue value = ReadSurface(world, node);
                 surfaces.Add(new(node, value.Rectangle, value.Fill, value.CornerRadius,
-                    value.BorderColor, value.BorderWidth, clip, drawOrder, 0));
+                    value.BorderColor, value.BorderWidth, clip, drawOrder, 0) { Shadow = value.Shadow });
             }
             drawOrder++;
             var children = Hierarchy<ElementTree>.GetChildren(world, node);
@@ -129,7 +129,7 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
     {
         Surface surface = world.Read<Surface>(node);
         return new(world.Read<LayoutRect>(node).Value, surface.Fill, surface.CornerRadius,
-            surface.BorderColor, surface.BorderWidth);
+            surface.BorderColor, surface.BorderWidth, surface.Shadow);
     }
 
     public void Apply(RenderExtractionContext context)
@@ -171,6 +171,7 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
                     {
                         Rectangle = value.Rectangle, Fill = value.Fill, CornerRadius = value.CornerRadius,
                         BorderColor = value.BorderColor, BorderWidth = value.BorderWidth,
+                        Shadow = value.Shadow,
                     };
                     if (before != after) buffer[index] = after with { Version = unchecked(before.Version + 1) };
                 }
@@ -209,5 +210,6 @@ public sealed class SurfaceRenderExtractor : IRenderExtractionSystem
     }
 
     private readonly record struct CanvasSurfaces(RenderCanvas Canvas, List<SurfaceInstance> Instances);
-    private readonly record struct SurfaceValue(Rect Rectangle, Color Fill, float CornerRadius, Color BorderColor, float BorderWidth);
+    private readonly record struct SurfaceValue(Rect Rectangle, Color Fill, float CornerRadius,
+        Color BorderColor, float BorderWidth, DropShadow Shadow);
 }

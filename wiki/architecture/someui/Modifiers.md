@@ -14,8 +14,8 @@ using (Column().Padding(16).Background(fill).Content()) { ... }
 ```
 
 ## Invariants
-- 所有构建函数返回 `Entity`；只有 `.Content()` 返回用于 `using` 的 `ParentScope`。
-- 修饰由调用方的作用域写入，按计算结束时比较提交；视图不给自己写修饰数据，默认值放在自身参数中。
+- 视图函数返回 `Entity`；`.Content()` 与 TitledDialog 等普通组合辅助函数返回用于 `using` 的 `ParentScope`。
+- 普通修饰由调用方作用域写入，按计算结束时比较提交。复合容器的 Build 将自身参数或环境主题解析为节点输出；各数据的写入方见 Data Writers。
 - 修饰不是视图，不创建实体，也不参与子视图的参数比较。
 - 影响布局的特殊包装（宽高比、偏移等）写成只有一个子节点的布局视图，不做修饰链。
 - 用户的修饰与内置修饰写法相同。
@@ -42,13 +42,17 @@ public struct Surface : IComponent
     public float CornerRadius;
     public Color BorderColor;
     public float BorderWidth;
+    public DropShadow Shadow;
 }
+
+public readonly record struct DropShadow(Color Color, Vector2 Offset, float BlurRadius);
 
 public static class SurfaceModifiers
 {
     public static Entity Background(this Entity entity, Color fill);
     public static Entity Corner(this Entity entity, float radius);
     public static Entity Border(this Entity entity, Color color, float width);
+    public static Entity Shadow(this Entity entity, in DropShadow shadow);
 }
 ```
 
@@ -57,11 +61,14 @@ Column().Background(fill).Corner(4).Border(borderColor, 2);
 ```
 
 调用方在参与布局的节点上使用这些修饰。`Background` 更新填充色，`Corner` 更新圆角半径，
-`Border` 同时更新描边颜色和宽度；每个修饰保留 Surface 的其余字段并返回原实体。
-圆角与描边宽度采用布局单位。默认 Surface 的颜色为透明黑，圆角和描边宽度为零。
+`Border` 同时更新描边颜色和宽度，`Shadow` 更新 DropShadow；
+每个修饰保留 Surface 的其余字段并返回原实体。
+圆角、描边宽度、阴影偏移和模糊半径采用布局单位。阴影颜色使用线性 RGBA，
+偏移按画布的 X/Y 方向表示；默认 DropShadow 的颜色为透明黑，偏移和模糊半径为零。
+默认 Surface 的颜色为透明黑，圆角和描边宽度为零。
 
 这些方法沿用 `Scope.Write<Surface>` 的组件副本，成功计算结束时比较提交。
-重建写入相等的四个字段时，节点与类型的写版本均保留；值变化时按 ECS 写入规则推进版本。
+重建写入相等的 Surface 数据时，节点与类型的写版本均保留；值变化时按 ECS 写入规则推进版本。
 调用所需的构建或计算作用域由 Core `DevelopmentCheck` 的开发构建检查报告。
 数据写入方由 [[architecture/someui/Data-Writers|Data Writers]] 维护，
 公开行为与用户等价修饰的验收见 [[architecture/someui/Testing|Testing]]。
