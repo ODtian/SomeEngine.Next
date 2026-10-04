@@ -1,5 +1,10 @@
 # SomeEngine.Elements
 
+`TextShapingSystem.Parallel` 默认 true，按分块刷新变化文字的已用宽度。
+它也通过公开的 `ILayoutContent` 接入布局子树测量，布局结束时提交最终 `ShapedText`。
+设置 false 使用同一排版回调顺序执行；字体与结果期限见
+[排版分块 Job](../../wiki/architecture/someui/Text.md#排版分块-job69)。
+
 Elements use the public view and layout APIs. The caller writes a layout node's
 `Surface` data through `Background(fill)`, `Corner(radius)`,
 `Border(color, width)`, and `Shadow(shadow)` during a view build or computation. Each modifier returns

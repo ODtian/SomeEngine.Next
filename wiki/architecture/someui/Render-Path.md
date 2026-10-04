@@ -328,5 +328,17 @@ Runtime 参数入口通过 `--world-nameplates` 启用。
 `WorldCanvasDrawingTests` 在 D3D12 WARP 与 Vulkan 开启图形验证层，读回像素验证
 投影位置、两种深度约定下的可选遮挡、前后位置变化、视图移动、透视投影、画布缩放与结构版本保持。
 
+## 提取分块 Job（#69）
+
+`CanvasRenderExtractor.Parallel` 与 `GlyphRenderExtractor.Parallel` 默认 true，false 使用
+相同分块回调顺序执行。源读取窗口先按 chunk 与行写版本选择变化，并取得层级、布局、
+样式、图片纹理与呈现变换；32 个节点一块的 `IJobChunk` 计算 Surface、Image 与字形实例。
+每项工作持有自己的输出，完成后按原收集顺序合并，再沿 Rendering world 更新边界写入缓冲。
+
+字形图集按源节点和字形顺序串行取得首次位置，再把这些位置交给 Job 计算几何。
+因此图集页、UV、像素、裁剪、树序与实例版本在顺序和并行模式下保持一致。
+释放、跨画布移动、组件移除、静止帧与提取后的源修改继续沿已有增量与提交规则处理。
+公开验收比较两种模式下三类完整实例缓冲，并逐页比较图集像素及变化区域。
+
 ## Relations
 [[architecture/rendering/Extraction|Extraction]] · [[architecture/Render-Graph|Render Graph]] · [[architecture/someui/Layout|Layout]]

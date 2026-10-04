@@ -14,6 +14,9 @@ public sealed class LayoutSystem(params ILayoutDataUpdate[] dataUpdates) : ISyst
     private LayoutData _data = null!;
     private readonly List<Entity> _canvases = new();
 
+    /// <summary>Measures independent canvas and boundary subtrees with jobs.</summary>
+    public bool Parallel { get; set; } = true;
+
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _canvasQuery = context.World.Query(context.World.QueryDefinition().Read<Canvas>());
@@ -36,12 +39,13 @@ public sealed class LayoutSystem(params ILayoutDataUpdate[] dataUpdates) : ISyst
             {
                 Canvas canvas = context.World.Read<Canvas>(entity);
                 LayoutValidation.CheckCanvas(in canvas);
-                _data.Update(entity, new Size(canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale));
+                _data.ReadCanvas(entity, new Size(canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale));
             }
-            _data.EndUpdate();
+            _data.Update(Parallel);
         }
         finally
         {
+            _data.EndUpdate();
             _canvases.Clear();
         }
     }

@@ -9,6 +9,7 @@ using SomeEngine.ECS.Queries;
 using SomeEngine.Layout;
 using SomeEngine.Render.Systems;
 using SomeEngine.Views;
+using SomeEngine.Job;
 
 namespace SomeEngine.Elements.Render;
 
@@ -24,6 +25,10 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
     private readonly Dictionary<Entity, Entity> _worldTargets = [];
     private readonly HashSet<Entity> _changedTargets = [];
     private readonly Dictionary<Entity, RenderCanvas> _canvasChanges = [];
+    private readonly List<DrawingData> _drawings = [];
+
+    /// <summary>Computes detached visual instances with chunk jobs.</summary>
+    public bool Parallel { get; set; } = true;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
@@ -52,6 +57,7 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         _imageValuesByCanvas.Clear();
         _changedTargets.Clear();
         _canvasChanges.Clear();
+        _drawings.Clear();
     }
 
     public void Collect(QueryChunkView chunk)
@@ -129,21 +135,42 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         {
             Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasInstances.ContainsKey(canvas)) continue;
-            if (!_surfaceValuesByCanvas.TryGetValue(canvas, out var surfaces))
-                _surfaceValuesByCanvas.Add(canvas, surfaces = []);
-            surfaces.Add(node, ReadSurface(sourceWorld, node));
+            _drawings.Add(new(canvas, node) { Surface = ReadSurface(sourceWorld, node), HasSurface = true });
         }
         foreach (Entity node in _changedImageNodes)
         {
             Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasInstances.ContainsKey(canvas)) continue;
-            if (!_imageValuesByCanvas.TryGetValue(canvas, out var images))
-                _imageValuesByCanvas.Add(canvas, images = []);
-            images.Add(node, ReadImage(sourceWorld, node));
+            _drawings.Add(new(canvas, node) { Image = ReadImage(sourceWorld, node), HasImage = true });
         }
         foreach ((Entity canvas, Entity target) in _worldTargets)
             if (_changedTargets.Contains(target) && !_canvasInstances.ContainsKey(canvas))
                 _canvasChanges.Add(canvas, ReadCanvas(sourceWorld, canvas));
+        ChunkJobs.Run(new DrawingJob(_drawings), _drawings.Count, Parallel);
+        foreach (DrawingData drawing in _drawings)
+        {
+            if (_canvasInstances.TryGetValue(drawing.Canvas, out CanvasInstances canvas))
+            {
+                if (drawing.HasSurface) canvas.Surfaces.Add(drawing.SurfaceInstance);
+                if (drawing.HasImage) canvas.Images.Add(drawing.ImageInstance);
+            }
+            else
+            {
+                if (drawing.HasSurface)
+                {
+                    if (!_surfaceValuesByCanvas.TryGetValue(drawing.Canvas, out var surfaces))
+                        _surfaceValuesByCanvas.Add(drawing.Canvas, surfaces = []);
+                    surfaces.Add(drawing.Node, drawing.SurfaceValue);
+                }
+                if (drawing.HasImage)
+                {
+                    if (!_imageValuesByCanvas.TryGetValue(drawing.Canvas, out var images))
+                        _imageValuesByCanvas.Add(drawing.Canvas, images = []);
+                    images.Add(drawing.Node, drawing.ImageInstance);
+                }
+            }
+        }
+        _drawings.Clear();
         return _canvasInstances.Count != 0 || _surfaceValuesByCanvas.Count != 0 ||
             _imageValuesByCanvas.Count != 0 || _canvasChanges.Count != 0;
     }
@@ -157,17 +184,15 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         while (tree.TryRead(out CanvasNode entry))
         {
             Entity node = entry.Node;
-            if (world.Has<Surface>(node) && world.Has<LayoutRect>(node))
-            {
-                SurfaceValue value = ReadSurface(world, node);
-                surfaces.Add(new(node, value.Rectangle, value.Fill, value.CornerRadius,
-                    value.BorderColor, value.BorderWidth, entry.Clip, entry.DrawOrder, 0)
+            bool surface = world.Has<Surface>(node) && world.Has<LayoutRect>(node);
+            bool image = world.Has<Image>(node) && world.Has<LayoutRect>(node);
+            if (surface || image)
+                _drawings.Add(new(canvasEntity, node)
                 {
-                    Shadow = value.Shadow, Matrix = value.Matrix, Alpha = value.Alpha,
+                    HasSurface = surface, Surface = surface ? ReadSurface(world, node) : default,
+                    HasImage = image, Image = image ? ReadImage(world, node) : default,
+                    Clip = entry.Clip, Order = entry.DrawOrder,
                 });
-            }
-            if (world.Has<Image>(node) && world.Has<LayoutRect>(node))
-                images.Add(ReadImage(world, node) with { ClipRectangle = entry.Clip, DrawOrder = entry.DrawOrder });
         }
         if (canvas.Target.Kind == CanvasTargetKind.WorldSpace)
             _worldTargets[canvasEntity] = canvas.Target.Entity;
@@ -191,23 +216,34 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
         };
     }
 
-    private static SurfaceValue ReadSurface(World world, Entity node)
+    private static SurfaceData ReadSurface(World world, Entity node)
     {
         Surface surface = world.Read<Surface>(node);
         Rect rectangle = world.Read<LayoutRect>(node).Value;
-        var presentation = ElementPresentation.Read(world, node, rectangle);
-        return new(rectangle, surface.Fill, surface.CornerRadius,
-            surface.BorderColor, surface.BorderWidth, surface.Shadow, presentation.Matrix, presentation.Alpha);
+        return new(rectangle, surface,
+            world.Has<ElementTransform>(node) ? world.Read<ElementTransform>(node) : ElementTransform.Identity,
+            world.Has<PresentationOffset>(node) ? world.Read<PresentationOffset>(node) : PresentationOffset.Identity);
     }
 
-    private static ImageInstance ReadImage(World world, Entity node)
+    private static ImageData ReadImage(World world, Entity node)
     {
         Image image = world.Read<Image>(node);
         ImageTexture texture = world.Has<ImageTexture>(node) ? world.Read<ImageTexture>(node) :
             new(null, new Size(1, 1), 0);
         Rect rectangle = world.Read<LayoutRect>(node).Value;
-        var presentation = ElementPresentation.Read(world, node, rectangle);
         Thickness padding = world.Has<Box>(node) ? world.Read<Box>(node).Padding : default;
+        return new(image, texture, rectangle, padding,
+            world.Has<ElementTransform>(node) ? world.Read<ElementTransform>(node) : ElementTransform.Identity,
+            world.Has<PresentationOffset>(node) ? world.Read<PresentationOffset>(node) : PresentationOffset.Identity);
+    }
+
+    private static ImageInstance CreateImage(Entity node, ImageData data)
+    {
+        Image image = data.Image;
+        ImageTexture texture = data.Texture;
+        Rect rectangle = data.Rectangle;
+        Thickness padding = data.Padding;
+        var presentation = ElementPresentation.Calculate(rectangle, data.Transform, data.Offset);
         rectangle = new(rectangle.X + padding.Left, rectangle.Y + padding.Top,
             MathF.Max(0, rectangle.Width - padding.Left - padding.Right),
             MathF.Max(0, rectangle.Height - padding.Top - padding.Bottom));
@@ -367,4 +403,47 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
     private readonly record struct CanvasInstances(RenderCanvas Canvas, List<SurfaceInstance> Surfaces, List<ImageInstance> Images);
     private readonly record struct SurfaceValue(Rect Rectangle, Color Fill, float CornerRadius,
         Color BorderColor, float BorderWidth, DropShadow Shadow, Matrix3x2 Matrix, float Alpha);
+
+    private readonly record struct SurfaceData(Rect Rectangle, Surface Surface, ElementTransform Transform, PresentationOffset Offset);
+    private readonly record struct ImageData(Image Image, ImageTexture Texture, Rect Rectangle, Thickness Padding,
+        ElementTransform Transform, PresentationOffset Offset);
+
+    private sealed class DrawingData(Entity canvas, Entity node)
+    {
+        internal readonly Entity Canvas = canvas;
+        internal readonly Entity Node = node;
+        internal bool HasSurface, HasImage;
+        internal SurfaceData Surface;
+        internal ImageData Image;
+        internal Rect Clip;
+        internal int Order;
+        internal SurfaceValue SurfaceValue;
+        internal SurfaceInstance SurfaceInstance;
+        internal ImageInstance ImageInstance;
+    }
+
+    private readonly struct DrawingJob(List<DrawingData> drawings) : IJobChunk
+    {
+        public void Execute(JobChunk chunk)
+        {
+            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++)
+            {
+                DrawingData drawing = drawings[index];
+                if (drawing.HasSurface)
+                {
+                    SurfaceData data = drawing.Surface;
+                    Surface surface = data.Surface;
+                    var presentation = ElementPresentation.Calculate(data.Rectangle, data.Transform, data.Offset);
+                    drawing.SurfaceValue = new(data.Rectangle, surface.Fill, surface.CornerRadius,
+                        surface.BorderColor, surface.BorderWidth, surface.Shadow, presentation.Matrix, presentation.Alpha);
+                    drawing.SurfaceInstance = new(drawing.Node, data.Rectangle, surface.Fill, surface.CornerRadius,
+                        surface.BorderColor, surface.BorderWidth, drawing.Clip, drawing.Order, 0)
+                    { Shadow = surface.Shadow, Matrix = presentation.Matrix, Alpha = presentation.Alpha };
+                }
+                if (drawing.HasImage)
+                    drawing.ImageInstance = CreateImage(drawing.Node, drawing.Image) with
+                        { ClipRectangle = drawing.Clip, DrawOrder = drawing.Order };
+            }
+        }
+    }
 }

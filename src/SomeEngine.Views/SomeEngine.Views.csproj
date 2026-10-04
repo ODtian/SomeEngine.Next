@@ -11,6 +11,7 @@
     <ProjectReference Include="../SomeEngine.ECS.Serialization/SomeEngine.ECS.Serialization.csproj" />
     <ProjectReference Include="../SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="../SomeEngine.Job/SomeEngine.Job.csproj" />
+    <ProjectReference Include="../SomeEngine.Job.Dots/SomeEngine.Job.Dots.csproj" />
     <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
     <ProjectReference Include="../SomeEngine.Views.Compiler/SomeEngine.Views.Compiler.csproj"
                       ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="PublishAot" />

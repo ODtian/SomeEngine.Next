@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.ExceptionServices;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.Views;
+using SomeEngine.Job;
 
 namespace SomeEngine.Layout;
 
@@ -18,6 +20,10 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
     private readonly List<Entity> _roots = new();
     private readonly List<Entity> _children = new();
     private readonly List<Entity> _removed = new();
+    private readonly List<(Entity Entity, Size Size)> _canvases = new();
+    private readonly List<Subtree> _subtrees = new();
+    private readonly List<(Entity, ushort)> _unusedInputKeys = new();
+    private bool _parallelMeasurement;
     private ulong _frame;
     private uint _inputVersion;
 
@@ -31,18 +37,31 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         foreach (Entity entity in _removed)
             _nodes.Remove(entity);
         _removed.Clear();
+        _order.Clear();
+        _roots.Clear();
+        _children.Clear();
+        _canvases.Clear();
+        _subtrees.Clear();
     }
 
-    internal void Update(Entity canvas, Size size)
+    internal void ReadCanvas(Entity canvas, Size size)
+    {
+        if (!World.Has<LayoutRect>(canvas)) World.Add(canvas, new LayoutRect());
+        _canvases.Add((canvas, size));
+        CollectChildren(canvas, _roots);
+        foreach (Entity root in _roots)
+        {
+            ReadTree(root, canvas, canvas);
+            _nodes[root].Position = default;
+            AddSubtree(_nodes[root], Constraints.Fixed(size), canvas, true);
+        }
+        _roots.Clear();
+    }
+
+    internal void Update(bool parallel)
     {
         try
         {
-            if (!World.Has<LayoutRect>(canvas))
-                World.Add(canvas, new LayoutRect());
-            CollectChildren(canvas, _roots);
-            foreach (Entity root in _roots)
-                ReadTree(root, canvas);
-
             for (int index = _order.Count - 1; index >= 0; index--)
             {
                 NodeLayout node = _order[index];
@@ -57,36 +76,50 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
                     node.InputVersion = ++_inputVersion;
             }
 
-            Constraints constraints = Constraints.Fixed(size);
-            foreach (Entity root in _roots)
+            bool parallelContent = dataUpdates.All(update => update.SupportsParallel);
+            MeasureSubtrees(parallel && parallelContent);
+            while (true)
             {
-                _nodes[root].Position = default;
-                Measure(root, in constraints, canvas);
-            }
-            // A cached parent keeps its fixed-size children in place while their contents update.
-            foreach (NodeLayout node in _order)
-            {
-                LayoutCache cache = World.Read<LayoutCache>(node.Entity);
-                if (cache.InputVersion != node.InputVersion)
-                    Measure(node.Entity, in cache.Constraints, node.Parent, parentMeasurement: false);
-            }
-
-            foreach (NodeLayout node in _order)
-            {
-                node.CanvasPosition = node.Position;
-                if (node.Parent != canvas && _nodes.TryGetValue(node.Parent, out NodeLayout? parent))
+                _subtrees.Clear();
+                // Choose the highest dirty descendant under each cached boundary, making the jobs disjoint.
+                foreach (NodeLayout node in _order)
                 {
-                    node.CanvasPosition += parent.CanvasPosition;
-                    if (World.Has<ScrollOffset>(parent.Entity))
-                        node.CanvasPosition -= World.Read<ScrollOffset>(parent.Entity).Value;
+                    bool ancestorChanged = node.Parent != node.Canvas && _nodes[node.Parent].DirtySubtree;
+                    bool changed = node.Cache.InputVersion != node.InputVersion;
+                    node.DirtySubtree = ancestorChanged || changed;
+                    if (changed && !ancestorChanged)
+                        AddSubtree(node, node.Cache.Constraints, node.Parent, false);
                 }
-                Size measured = World.Read<LayoutCache>(node.Entity).Size;
-                if (World.Has<ScrollOffset>(node.Entity))
-                    UpdateScroll(node, measured);
-                WriteRectangle(node.Entity, new Rect(node.CanvasPosition.X, node.CanvasPosition.Y,
-                    measured.Width, measured.Height));
+                if (_subtrees.Count == 0) break;
+                MeasureSubtrees(parallel && parallelContent);
             }
-            WriteRectangle(canvas, new Rect(0, 0, size.Width, size.Height));
+            bool coordinatesChanged = false;
+            foreach (NodeLayout node in _order)
+            {
+                coordinatesChanged |= node.ResultFrame == _frame;
+                if (node.ResultFrame == _frame) ReleaseUnusedInputs(node);
+                if (node.CacheWritten) WriteCache(node);
+                Size measured = node.Cache.Size;
+                if (World.Has<ScrollOffset>(node.Entity))
+                {
+                    UpdateScroll(node, measured);
+                    Vector2 scroll = World.Read<ScrollOffset>(node.Entity).Value;
+                    coordinatesChanged |= scroll != node.Scroll;
+                    node.Scroll = scroll;
+                }
+                else
+                {
+                    coordinatesChanged |= node.Scroll != default;
+                    node.Scroll = default;
+                }
+            }
+            _subtrees.Clear();
+            foreach (NodeLayout node in _order)
+                if (node.Parent == node.Canvas) AddSubtree(node, default, node.Canvas, true);
+            if (coordinatesChanged) ChunkJobs.Run(new RectangleJob(this), _subtrees.Count, parallel, chunkSize: 1);
+            foreach (NodeLayout node in _order) WriteRectangle(node.Entity, node.Rectangle);
+            foreach (var canvas in _canvases)
+                WriteRectangle(canvas.Entity, new Rect(0, 0, canvas.Size.Width, canvas.Size.Height));
             foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
                 dataUpdate.Complete(World);
         }
@@ -95,14 +128,17 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             _order.Clear();
             _roots.Clear();
             _children.Clear();
+            _canvases.Clear();
+            _subtrees.Clear();
         }
     }
 
-    private void ReadTree(Entity entity, Entity parent)
+    private void ReadTree(Entity entity, Entity parent, Entity canvas)
     {
+        if (!World.Has<LayoutRect>(entity)) World.Add(entity, new LayoutRect());
         if (!_nodes.TryGetValue(entity, out NodeLayout? node))
         {
-            node = new NodeLayout(entity);
+            node = new NodeLayout(entity, dataUpdates.Length);
             _nodes.Add(entity, node);
         }
         ushort viewType = World.Read<ViewType>(entity).Id;
@@ -127,9 +163,20 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         node.Parent = parent;
         node.ViewType = viewType;
         node.TreeFrame = _frame;
+        node.Canvas = canvas;
+        node.Measurable = ViewTypes.HasMeasure(World, entity);
+        node.CacheWritten = false;
+        if (World.Has<LayoutCache>(entity)) node.Cache = World.Read<LayoutCache>(entity);
+        else node.HasMeasurement = false;
+        if (node.InputsChanged)
+            for (int index = 0; index < dataUpdates.Length; index++)
+                if (dataUpdates[index].SupportsParallel)
+                    node.Content[index] = dataUpdates[index].ReadContent(World, entity);
+        if (node.InputsChanged)
+            foreach (LayoutInput input in node.Inputs.Values) input.Capture(World);
         _order.Add(node);
         foreach (Entity child in node.Children)
-            ReadTree(child, entity);
+            ReadTree(child, entity, canvas);
     }
 
     private bool HasReadChanges(NodeLayout node)
@@ -144,9 +191,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
     {
         NodeLayout node = _nodes[entity];
         DevelopmentCheck.Require(node.Parent == parent, "Measure requires this layout's child.");
-        if (!World.Has<LayoutRect>(entity))
-            World.Add(entity, new LayoutRect());
-        Box box = World.Has<Box>(entity) ? World.Read<Box>(entity) : default;
+        Box box = Has<Box>(entity, entity) ? Read<Box>(entity, entity) : default;
         LayoutValidation.CheckBox(in box);
         Constraints outerConstraints = ConstrainBox(in box, in constraints);
         bool firstMeasurement = node.MeasurementFrame != _frame;
@@ -165,9 +210,9 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             }
         }
         node.MeasurementFrame = _frame;
-        if (node.HasMeasurement && World.Has<LayoutCache>(entity))
+        if (node.HasMeasurement)
         {
-            LayoutCache cache = World.Read<LayoutCache>(entity);
+            LayoutCache cache = node.Cache;
             if (cache.InputVersion == node.InputVersion && cache.Constraints == constraints)
                 return cache.Size;
         }
@@ -176,7 +221,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         if (firstMeasurement)
             node.Reads.Clear();
         Has<Box>(entity, entity);
-        if (World.Has<Box>(entity))
+        if (Has<Box>(entity, entity))
             Read<Box>(entity, entity);
         bool scrolling = Has<ScrollOffset>(entity, entity);
         Size padding = new(box.Padding.Left + box.Padding.Right, box.Padding.Top + box.Padding.Bottom);
@@ -185,10 +230,11 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             new Size(MathF.Max(0, outerConstraints.Max.Width - padding.Width), MathF.Max(0, outerConstraints.Max.Height - padding.Height)));
         var pass = new LayoutPass(this, entity, new LayoutChildren(node.Children), new Vector2(box.Padding.Left, box.Padding.Top));
         Constraints measuredConstraints = scrolling ? new Constraints(default, Size.Unbounded) : contentConstraints;
-        foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
-            dataUpdate.Update(World, entity, in measuredConstraints);
-        Size size = ViewTypes.HasMeasure(World, entity)
-            ? ViewTypes.Measure(World, entity, ref pass, in measuredConstraints)
+        for (int index = 0; index < dataUpdates.Length; index++)
+            if (dataUpdates[index].SupportsParallel) node.Content[index]?.Update(in measuredConstraints);
+            else dataUpdates[index].Update(World, entity, in measuredConstraints);
+        Size size = node.Measurable
+            ? ViewTypes.Measure(node.ViewType, World, entity, ref pass, in measuredConstraints)
             : MeasureScrollContent(ref pass, in measuredConstraints);
         CheckMeasuredChildren(node);
         LayoutValidation.CheckSize(size);
@@ -196,10 +242,10 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         size = contentConstraints.Constrain(size);
         size = outerConstraints.Constrain(new Size(size.Width + padding.Width, size.Height + padding.Height));
         var measured = new LayoutCache { Constraints = constraints, Size = size, InputVersion = node.InputVersion };
-        if (World.Has<LayoutCache>(entity))
-            World.Replace(entity, in measured);
-        else
-            World.Add(entity, in measured);
+        node.Cache = measured;
+        node.ResultFrame = _frame;
+        node.CacheWritten = true;
+        if (!_parallelMeasurement) WriteCache(node);
         node.HasMeasurement = true;
         return size;
     }
@@ -286,23 +332,162 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 
     internal ref readonly T Read<T>(Entity node, Entity entity) where T : struct
     {
+        LayoutInput<T> input = ReadInput<T>(node, entity);
+        DevelopmentCheck.Require(input.Exists, $"Layout input {typeof(T).Name} requires component data.");
         RecordRead(node, new Dependency
         {
             Kind = DependencyKind.Component, Entity = entity, Component = ComponentId<T>.Value,
-            Version = World.ComponentDataWriteVersion<T>(entity),
+            Version = input.Version,
         });
-        return ref World.ReadComponentReference<T>(entity);
+        return ref input.Value;
     }
 
     internal bool Has<T>(Entity node, Entity entity) where T : struct
     {
-        bool exists = World.HasComponentData<T>(entity);
+        bool exists = ReadInput<T>(node, entity).Exists;
         RecordRead(node, new Dependency
         {
             Kind = DependencyKind.Presence, Entity = entity, Component = ComponentId<T>.Value,
             Version = exists ? 1u : 0u,
         });
         return exists;
+    }
+
+    private LayoutInput<T> ReadInput<T>(Entity node, Entity entity) where T : struct
+    {
+        Dictionary<(Entity, ushort), LayoutInput> inputs = _nodes[node].Inputs;
+        var key = (entity, ComponentId<T>.Value);
+        if (!inputs.TryGetValue(key, out LayoutInput? input))
+        {
+            if (_parallelMeasurement) throw new LayoutInputRequired();
+            input = new LayoutInput<T>(entity);
+            inputs.Add(key, input);
+        }
+        if (!_parallelMeasurement) input.Capture(World);
+        return (LayoutInput<T>)input;
+    }
+
+    private void WriteCache(NodeLayout node)
+    {
+        if (World.Has<LayoutCache>(node.Entity)) World.Replace(node.Entity, node.Cache);
+        else World.Add(node.Entity, node.Cache);
+        node.CacheWritten = false;
+    }
+
+    private void ReleaseUnusedInputs(NodeLayout node)
+    {
+        foreach (var key in node.Inputs.Keys)
+        {
+            bool used = false;
+            foreach (Dependency read in node.Reads)
+                if (read.Entity == key.Item1 && read.Component == key.Item2) { used = true; break; }
+            if (!used) _unusedInputKeys.Add(key);
+        }
+        foreach (var key in _unusedInputKeys) node.Inputs.Remove(key);
+        _unusedInputKeys.Clear();
+    }
+
+    private void MeasureSubtrees(bool parallel)
+    {
+        for (int index = _subtrees.Count - 1; index >= 0; index--)
+        {
+            Subtree subtree = _subtrees[index];
+            NodeLayout node = _nodes[subtree.Entity];
+            if (!node.HasMeasurement || node.Cache.InputVersion != node.InputVersion || node.Cache.Constraints != subtree.Constraints)
+                continue;
+            Measure(subtree.Entity, in subtree.Constraints, subtree.Parent, subtree.ParentMeasurement);
+            _subtrees.RemoveAt(index);
+        }
+        _parallelMeasurement = parallel;
+        try { ChunkJobs.Run(new MeasureJob(this), _subtrees.Count, parallel, chunkSize: 1); }
+        finally { _parallelMeasurement = false; }
+        foreach (Subtree subtree in _subtrees)
+        {
+            if (subtree.Error is not null) ExceptionDispatchInfo.Capture(subtree.Error).Throw();
+            if (!subtree.ReadsRequired) continue;
+            RestartMeasurement(subtree.Entity);
+            Measure(subtree.Entity, in subtree.Constraints, subtree.Parent, subtree.ParentMeasurement);
+        }
+    }
+
+    private void AddSubtree(NodeLayout node, Constraints constraints, Entity parent, bool parentMeasurement)
+    {
+        Subtree subtree = node.Subtree;
+        subtree.Constraints = constraints;
+        subtree.Parent = parent;
+        subtree.ParentMeasurement = parentMeasurement;
+        subtree.ReadsRequired = false;
+        subtree.Error = null;
+        _subtrees.Add(subtree);
+    }
+
+    private void RestartMeasurement(Entity entity)
+    {
+        NodeLayout node = _nodes[entity];
+        node.MeasurementFrame = 0;
+        node.HasMeasurement = false;
+        foreach (Entity child in node.Children) RestartMeasurement(child);
+    }
+
+    private void CalculateRectangles(Entity entity, Vector2 origin)
+    {
+        NodeLayout node = _nodes[entity];
+        node.CanvasPosition = origin + node.Position;
+        node.Rectangle = new Rect(node.CanvasPosition.X, node.CanvasPosition.Y, node.Cache.Size.Width, node.Cache.Size.Height);
+        foreach (Entity child in node.Children) CalculateRectangles(child, node.CanvasPosition - node.Scroll);
+    }
+
+    private readonly struct MeasureJob(LayoutData data) : IJobChunk
+    {
+        public void Execute(JobChunk chunk)
+        {
+            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++)
+            {
+                Subtree subtree = data._subtrees[index];
+                try { data.Measure(subtree.Entity, in subtree.Constraints, subtree.Parent, subtree.ParentMeasurement); }
+                catch (LayoutInputRequired) { subtree.ReadsRequired = true; }
+                catch (Exception error) { subtree.Error = error; }
+            }
+        }
+    }
+
+    private readonly struct RectangleJob(LayoutData data) : IJobChunk
+    {
+        public void Execute(JobChunk chunk)
+        {
+            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++)
+                data.CalculateRectangles(data._subtrees[index].Entity, Vector2.Zero);
+        }
+    }
+
+    private sealed class Subtree(Entity entity)
+    {
+        internal readonly Entity Entity = entity;
+        internal Constraints Constraints;
+        internal Entity Parent;
+        internal bool ParentMeasurement;
+        internal bool ReadsRequired;
+        internal Exception? Error;
+    }
+
+    private sealed class LayoutInputRequired : Exception;
+
+    private abstract class LayoutInput
+    {
+        internal bool Exists;
+        internal uint Version;
+        internal abstract void Capture(World world);
+    }
+
+    private sealed class LayoutInput<T>(Entity entity) : LayoutInput where T : struct
+    {
+        internal T Value;
+        internal override void Capture(World world)
+        {
+            Exists = world.HasComponentData<T>(entity);
+            Value = Exists ? world.ReadComponentData<T>(entity) : default;
+            Version = Exists ? world.ComponentDataWriteVersion<T>(entity) : 0;
+        }
     }
 
     private void RecordRead(Entity entity, Dependency read)
@@ -340,19 +525,30 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         }
     }
 
-    private sealed class NodeLayout(Entity entity)
+    private sealed class NodeLayout(Entity entity, int contentCount)
     {
         internal readonly Entity Entity = entity;
         internal readonly List<Entity> Children = new();
         internal readonly List<Dependency> Reads = new();
+        internal readonly Dictionary<(Entity, ushort), LayoutInput> Inputs = new();
+        internal readonly ILayoutContent?[] Content = new ILayoutContent?[contentCount];
+        internal readonly Subtree Subtree = new(entity);
         internal Entity Parent;
+        internal Entity Canvas;
         internal ushort ViewType;
         internal Vector2 Position;
         internal Vector2 CanvasPosition;
         internal Size ContentSize;
+        internal LayoutCache Cache;
+        internal Rect Rectangle;
+        internal Vector2 Scroll;
+        internal bool CacheWritten;
+        internal bool Measurable;
+        internal bool DirtySubtree;
         internal uint InputVersion;
         internal ulong TreeFrame;
         internal ulong MeasurementFrame;
+        internal ulong ResultFrame;
         internal bool HasMeasurement;
         internal bool ConstraintsAreTight;
         internal bool SizeIsFixed;

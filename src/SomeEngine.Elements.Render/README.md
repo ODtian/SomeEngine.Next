@@ -1,5 +1,10 @@
 # SomeEngine.Elements.Render
 
+`CanvasRenderExtractor.Parallel` 与 `GlyphRenderExtractor.Parallel` 默认 true，
+以 `IJobChunk` 计算分离的绘制数据；设置 false 使用相同回调顺序执行。
+源读取、图集首次位置和最终缓冲提交保持原顺序，实例版本按最终值维护。
+规则见 [提取分块 Job](../../wiki/architecture/someui/Render-Path.md#提取分块-job69)。
+
 `CanvasRenderExtractor` transfers layout nodes with `Surface`, `Image` and `LayoutRect`
 through `RenderExtractionSystems`. Install it with the other extractors before
 the first extraction:
