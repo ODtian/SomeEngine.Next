@@ -38,6 +38,66 @@ public class TestRuleCommandTests
     }
 
     [Theory]
+    [InlineData("", "[assembly: System.Runtime.CompilerServices.InternalsVisibleTo(Friends.Tests)]", "static class Friends { public const string Tests = \"Example\" + \".Tests\"; }")]
+    [InlineData("global using Friend = System.Runtime.CompilerServices.InternalsVisibleToAttribute;", "[assembly: Friend(\"Example.Tests\")]", "")]
+    [InlineData("global using Friend = System.Runtime.CompilerServices.InternalsVisibleToAttribute;", "#if SPECIAL_BUILD\n[assembly: Friend(Friends.Tests)]\n#endif", "static class Friends { public const string Tests = \"Example.Tests\"; }")]
+    [InlineData("global using Friend = System.Runtime.CompilerServices.InternalsVisibleToAttribute;", "#if false\n[assembly: Friend(Friends.Tests)]\n#endif", "static class Friends { public const string Tests = \"Example.Tests\"; }")]
+    [InlineData("global using Friend = System.Runtime.CompilerServices.InternalsVisibleToAttribute;", "[assembly: Friend(Friends.Tests)]", "static class Friends {\n#if SPECIAL_BUILD\npublic const string Tests = \"Example.Tests\";\n#else\npublic const string Tests = \"Example.Render\";\n#endif\n}")]
+    [InlineData("global using Friend = System.Runtime.CompilerServices.InternalsVisibleToAttribute;", "[assembly: Friend(Friends.Tests)]", "static class Friends {\n#if true\npublic const string Tests = \"Example.Tests\";\n#else\npublic const string Tests = \"Example.Render\";\n#endif\n}")]
+    [InlineData("#if SPECIAL_BUILD && !OTHER_BUILD\nglobal using Friend = System.Runtime.CompilerServices.InternalsVisibleToAttribute;\n#else\nglobal using Friend = ProductionAccessAttribute;\n#endif", "[assembly: Friend(Friends.Tests)]", "static class Friends { public const string Tests = \"Example.Tests\"; } class ProductionAccessAttribute : System.Attribute { public ProductionAccessAttribute(string name) { } }")]
+    public async Task DefaultTestCommandRejectsCrossFileTestFriends(string imports, string attribute, string constants)
+    {
+        using var files = new TestRepository();
+        files.Write("src/Library/Library.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><DefineConstants>SPECIAL_BUILD</DefineConstants></PropertyGroup></Project>");
+        files.Write("src/Library/Imports.cs", imports);
+        files.Write("src/Library/Friends.cs", constants);
+        files.Write("src/Library/Assembly.cs", attribute);
+        var build = await files.Run("build", "src/Library/Library.csproj", "-v:quiet");
+        Assert.True(build.ExitCode == 0, build.Output);
+
+        var result = await files.Run("test", files.Project, "--no-build");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("Assembly.cs(", result.Output);
+        Assert.Contains("error TEST001", result.Output);
+        Assert.Contains("Test rules: Example.Tests; 1 violations.", result.Output);
+    }
+
+    [Fact]
+    public async Task FriendConstantsAndAliasesKeepTheirProjectMeaning()
+    {
+        using var files = new TestRepository();
+        foreach (var project in new[] { "Library", "Other" })
+            files.Write($"src/{project}/{project}.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+        files.Write("src/Library/Imports.cs", "global using Friend = System.Runtime.CompilerServices.InternalsVisibleToAttribute;");
+        files.Write("src/Library/Assembly.cs", "[assembly: Friend(Friends.Target)]");
+        files.Write("src/Library/Friends.cs", "static class Friends { public const string Target = \"Example.Render\"; }");
+        files.Write("src/Other/Friends.cs", "static class Friends { public const string Target = \"Example.Tests\"; }");
+        files.Write("src/Other/Assembly.cs", "[assembly: Friend(Friends.Target)] class FriendAttribute : System.Attribute { public FriendAttribute(string name) { } }");
+
+        var result = await files.Run("msbuild", files.Project, "-t:CheckTestRules", "-v:minimal");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("Test rules: Example.Tests; 0 violations.", result.Output);
+    }
+
+    [Fact]
+    public async Task DefaultTestCommandRejectsFriendsDeclaredByAnotherTestProject()
+    {
+        using var files = new TestRepository();
+        files.Write("tests/Other.Tests/Other.Tests.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><IsTestProject>true</IsTestProject></PropertyGroup></Project>");
+        files.Write("tests/Other.Tests/Assembly.cs", "[assembly: System.Runtime.CompilerServices.InternalsVisibleTo(Friends.Target)]");
+        files.Write("tests/Other.Tests/Friends.cs", "static class Friends { public const string Target = \"Example.Tests\"; }");
+        files.Write("tests/Example.Tests/Friends.cs", "static class Friends { public const string Target = \"Example.Render\"; }");
+
+        var result = await files.Run("test", files.Project, "--no-build");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("Assembly.cs(1,", result.Output);
+        Assert.Contains("error TEST001", result.Output);
+    }
+
+    [Theory]
     [InlineData("Example.Tests")]
     [InlineData("SomeEngine.Graphics.Vulkan.Tests")]
     [InlineData("SomeEngine.ECS.Fuzz.Tests")]

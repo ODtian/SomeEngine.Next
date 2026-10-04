@@ -37,6 +37,14 @@ namespace SomeEngine.TestRules
         public static IReadOnlyList<TestRuleViolation> ReadCSharp(string path, string source, bool isTestCode, string testAssembly)
         {
             var result = new List<TestRuleViolation>();
+            var tree = ReadSyntaxTree(path, source);
+            var compilation = CreateCompilation(new[] { tree });
+            ReadTree(tree.GetRoot(), compilation.GetSemanticModel(tree), path, isTestCode, testAssembly, result);
+            return result;
+        }
+
+        private static SyntaxTree ReadSyntaxTree(string path, string source)
+        {
             // Scan every conditional branch while preserving source positions.
             var firstTree = CSharpSyntaxTree.ParseText(source, path: path).GetRoot();
             var characters = source.ToCharArray();
@@ -49,13 +57,18 @@ namespace SomeEngine.TestRules
                         if (characters[index] != '\r' && characters[index] != '\n')
                             characters[index] = ' ';
             }
-            ReadTree(CSharpSyntaxTree.ParseText(new string(characters), path: path).GetRoot(), path, isTestCode, testAssembly, result);
-            return result;
+            return CSharpSyntaxTree.ParseText(new string(characters), path: path);
         }
 
-        private static void ReadTree(SyntaxNode root, string path, bool isTestCode, string testAssembly, List<TestRuleViolation> result)
+        private static CSharpCompilation CreateCompilation(IEnumerable<SyntaxTree> trees) =>
+            CSharpCompilation.Create("TestRuleInput", trees,
+                new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) });
+
+        private static void ReadTree(SyntaxNode root, SemanticModel model, string path, bool isTestCode, string testAssembly, List<TestRuleViolation> result, bool readAssemblyAttributes = true)
         {
-            var aliases = root.DescendantNodes().OfType<UsingDirectiveSyntax>()
+            var imports = model.Compilation.SyntaxTrees.SelectMany(tree => tree.GetRoot().DescendantNodes().OfType<UsingDirectiveSyntax>())
+                .Where(u => u.SyntaxTree == root.SyntaxTree || u.GlobalKeyword != default).ToArray();
+            var aliases = imports
                 .Where(u => u.Alias != null && u.Name != null)
                 .GroupBy(u => u.Alias!.Name.Identifier.ValueText)
                 .ToDictionary(g => g.Key, g => g.Last().Name!.ToString().Replace("global::", ""));
@@ -65,11 +78,9 @@ namespace SomeEngine.TestRules
                 var parts = name.Split('.');
                 return aliases.TryGetValue(parts[0], out var target) ? target + name.Substring(parts[0].Length) : name;
             };
-            var model = CSharpCompilation.Create("TestRuleInput", new[] { root.SyntaxTree },
-                new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) }).GetSemanticModel(root.SyntaxTree);
-            var staticAssert = root.DescendantNodes().OfType<UsingDirectiveSyntax>()
+            var staticAssert = imports
                 .Any(u => u.StaticKeyword != default && u.Name?.ToString().Replace("global::", "") == "Xunit.Assert");
-            var staticThread = root.DescendantNodes().OfType<UsingDirectiveSyntax>()
+            var staticThread = imports
                 .Any(u => u.StaticKeyword != default && u.Name?.ToString().Replace("global::", "") == "System.Threading.Thread");
             Func<InvocationExpressionSyntax, string?> readAssertionName = call =>
             {
@@ -84,9 +95,10 @@ namespace SomeEngine.TestRules
                 return null;
             };
 
-            foreach (var attribute in root.DescendantNodes().OfType<AttributeSyntax>())
+            foreach (var attribute in readAssemblyAttributes ? root.DescendantNodes().OfType<AttributeSyntax>() : Enumerable.Empty<AttributeSyntax>())
             {
-                var name = resolveName(attribute.Name.ToString()).Split('.').Last();
+                var name = model.GetSymbolInfo(attribute).Symbol?.ContainingType?.Name ??
+                    resolveName(attribute.Name.ToString()).Split('.').Last();
                 if (name != "InternalsVisibleTo" && name != "InternalsVisibleToAttribute")
                     continue;
                 var expression = attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression;
@@ -189,21 +201,86 @@ namespace SomeEngine.TestRules
         {
             var result = new List<TestRuleViolation>();
             var testRoot = System.IO.Path.GetFullPath(projectDirectory).TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
-            foreach (var file in EnumerateSourceFiles(root))
+            var files = EnumerateSourceFiles(root).ToArray();
+            var projectDirectories = files.Where(file => System.IO.Path.GetExtension(file) == ".csproj")
+                .Select(file => System.IO.Path.GetDirectoryName(file)!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var sources = new Dictionary<string, List<SyntaxTree>>(StringComparer.OrdinalIgnoreCase);
+            var sourceTexts = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var file in files)
             {
                 var extension = System.IO.Path.GetExtension(file);
                 var source = File.ReadAllText(file);
                 var path = System.IO.Path.GetRelativePath(root, file).Replace('\\', '/');
                 if (extension == ".cs")
                 {
-                    bool isTestCode = System.IO.Path.GetFullPath(file).StartsWith(testRoot, StringComparison.OrdinalIgnoreCase);
-                    if (isTestCode || source.Contains("InternalsVisibleTo", StringComparison.Ordinal))
-                        result.AddRange(ReadCSharp(path, source, isTestCode, testAssembly));
+                    var directory = System.IO.Path.GetDirectoryName(file)!;
+                    while (!projectDirectories.Contains(directory) && directory != root)
+                        directory = System.IO.Path.GetDirectoryName(directory) ?? root;
+                    if (!sources.TryGetValue(directory, out var trees))
+                        sources.Add(directory, trees = new List<SyntaxTree>());
+                    trees.Add(ReadSyntaxTree(path, source));
+                    sourceTexts.Add(path, source);
                 }
                 else if (source.Contains("InternalsVisibleTo", StringComparison.Ordinal))
                     result.AddRange(ReadBuildFile(path, source, testAssembly));
             }
-            return result.OrderBy(v => v.Path, StringComparer.Ordinal).ThenBy(v => v.Line).ThenBy(v => v.Column).ToArray();
+            foreach (var trees in sources.Values)
+            {
+                bool hasFriends = trees.Any(tree => tree.GetRoot().DescendantNodes().Any(node =>
+                    node is AttributeSyntax attribute && IsFriendName(attribute.Name.ToString()) ||
+                    node is UsingDirectiveSyntax import && import.Alias != null && import.Name != null && IsFriendName(import.Name.ToString())));
+                var inspected = trees.Where(tree => hasFriends && tree.GetRoot().DescendantNodes().OfType<AttributeListSyntax>().Any(list => list.Target?.Identifier.ValueText == "assembly") ||
+                    System.IO.Path.GetFullPath(System.IO.Path.Combine(root, tree.FilePath)).StartsWith(testRoot, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (inspected.Length == 0)
+                    continue;
+                var originalTrees = hasFriends ? trees.Select(tree => CSharpSyntaxTree.ParseText(sourceTexts[tree.FilePath], path: tree.FilePath)).ToArray() : Array.Empty<SyntaxTree>();
+                var conditions = originalTrees.SelectMany(tree => tree.GetRoot().DescendantTrivia(descendIntoTrivia: true))
+                    .Select(trivia => trivia.GetStructure())
+                    .Select(directive => directive is IfDirectiveTriviaSyntax start ? start.Condition :
+                        directive is ElifDirectiveTriviaSyntax next ? next.Condition : null)
+                    .Where(condition => condition != null).ToArray();
+                var symbols = conditions.SelectMany(condition => condition!.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>())
+                    .Select(identifier => identifier.Identifier.ValueText).Distinct(StringComparer.Ordinal).ToArray();
+                var compilation = CreateCompilation(trees);
+                foreach (var tree in inspected)
+                {
+                    bool isTestCode = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, tree.FilePath)).StartsWith(testRoot, StringComparison.OrdinalIgnoreCase);
+                    ReadTree(tree.GetRoot(), compilation.GetSemanticModel(tree), tree.FilePath, isTestCode, testAssembly, result, hasFriends);
+                }
+                if (conditions.Length == 0)
+                    continue;
+                foreach (var definitions in ReadDefinitions(symbols, 0))
+                {
+                    var options = CSharpParseOptions.Default.WithPreprocessorSymbols(definitions);
+                    var branchTrees = originalTrees.Select(tree => CSharpSyntaxTree.ParseText(sourceTexts[tree.FilePath], options, tree.FilePath)).ToArray();
+                    var branchCompilation = CreateCompilation(branchTrees);
+                    foreach (var tree in branchTrees.Where(tree => tree.GetRoot().DescendantNodes().OfType<AttributeListSyntax>()
+                        .Any(list => list.Target?.Identifier.ValueText == "assembly")))
+                        ReadTree(tree.GetRoot(), branchCompilation.GetSemanticModel(tree), tree.FilePath, false, testAssembly, result);
+                }
+            }
+            return result.GroupBy(v => (v.Rule, v.Path, v.Line, v.Column)).Select(group => group.First())
+                .OrderBy(v => v.Path, StringComparer.Ordinal).ThenBy(v => v.Line).ThenBy(v => v.Column).ToArray();
+        }
+
+        private static IEnumerable<string[]> ReadDefinitions(string[] symbols, int index)
+        {
+            if (index == symbols.Length)
+            {
+                yield return Array.Empty<string>();
+                yield break;
+            }
+            foreach (var remaining in ReadDefinitions(symbols, index + 1))
+            {
+                yield return remaining;
+                yield return new[] { symbols[index] }.Concat(remaining).ToArray();
+            }
+        }
+
+        private static bool IsFriendName(string name)
+        {
+            var last = name.Split('.').Last();
+            return last == "InternalsVisibleTo" || last == "InternalsVisibleToAttribute";
         }
 
         private static IEnumerable<string> EnumerateSourceFiles(string directory)

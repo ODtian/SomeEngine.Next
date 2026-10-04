@@ -11,10 +11,16 @@ public sealed class SceneScriptTests(SceneContentFixture content)
     public async Task ImagesArriveAtRequestedFramesWithPackedPixelsThatSurviveShutdown()
     {
         var images = new List<SceneImage>();
+        var imageCopies = new List<SceneImage>();
+        void Receive(SceneImage image)
+        {
+            images.Add(image);
+            imageCopies.Add(image with { Pixels = image.Pixels.ToArray() });
+        }
         var script = new SceneScript(content.DirectoryPath, 5,
         [
-            new(4, edit => edit.CaptureImage(images.Add)),
-            new(2, edit => edit.CaptureImage(images.Add)),
+            new(4, edit => edit.CaptureImage(Receive)),
+            new(2, edit => edit.CaptureImage(Receive)),
         ]);
         ApplicationResult result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
         Assert.True(result.Succeeded, result.Error?.ToString());
@@ -26,7 +32,8 @@ public sealed class SceneScriptTests(SceneContentFixture content)
             Assert.Equal(64, image.Height);
             Assert.Equal(64 * 64 * 4, image.Pixels.Length);
         });
-        Assert.Equal(images[0].Pixels.ToArray(), images[1].Pixels.ToArray());
+        for (int index = 0; index < images.Count; index++)
+            SceneImages.AssertEqual(imageCopies[index], images[index]);
         // Entire interior regions are colored by the declared spheres, independently of background coverage.
         for (int y = 29; y <= 34; y++)
         for (int x = 37; x <= 42; x++)
@@ -40,8 +47,17 @@ public sealed class SceneScriptTests(SceneContentFixture content)
     public async Task CameraTransformAtFrameThreeMatchesStartingWithThatTransform()
     {
         var images = new List<SceneImage>();
+        // Small spheres retain the same visible mesh detail across the two camera histories.
         var script = new SceneScript(content.DirectoryPath, 5,
         [
+            new(0, edit =>
+            {
+                foreach (var entity in edit.MeshEntities)
+                {
+                    float x = edit.GetMaterial(entity).Name == "red sphere" ? -1 : 1;
+                    edit.SetEntityTransform(entity, new(new Vector3(x, 0, 6), Quaternion.Identity, .25f));
+                }
+            }),
             new(2, edit => edit.CaptureImage(images.Add)),
             new(3, edit =>
             {
@@ -54,13 +70,21 @@ public sealed class SceneScriptTests(SceneContentFixture content)
         SceneImage? expected = null;
         var direct = new SceneScript(content.DirectoryPath, 5,
         [
-            new(0, edit => edit.SetCameraTransform(new(1, 0, 0), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.1f))),
+            new(0, edit =>
+            {
+                foreach (var entity in edit.MeshEntities)
+                {
+                    float x = edit.GetMaterial(entity).Name == "red sphere" ? -1 : 1;
+                    edit.SetEntityTransform(entity, new(new Vector3(x, 0, 6), Quaternion.Identity, .25f));
+                }
+                edit.SetCameraTransform(new(1, 0, 0), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.1f));
+            }),
             new(3, edit => edit.CaptureImage(image => expected = image)),
         ]);
         var reference = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], direct);
         Assert.True(reference.Succeeded, reference.Error?.ToString());
         Assert.False(images[0].Pixels.Span.SequenceEqual(images[1].Pixels.Span));
-        Assert.Equal(expected!.Pixels.ToArray(), images[1].Pixels.ToArray());
+        SceneImages.AssertEqual(expected!, images[1]);
     }
 
     [Fact]
@@ -86,27 +110,18 @@ public sealed class SceneScriptTests(SceneContentFixture content)
     [Fact]
     public async Task ImagesAtUnalignedWidthsContainPackedRows()
     {
-        string directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-Image-{Guid.NewGuid():N}");
-        try
-        {
-            foreach (string file in Directory.EnumerateFiles(content.DirectoryPath, "*", SearchOption.AllDirectories))
-            {
-                string destination = Path.Combine(directory, Path.GetRelativePath(content.DirectoryPath, file));
-                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                File.Copy(file, destination);
-            }
-            await SomeEngine.SceneContent.SceneContent.SetOutputSizeAsync(directory, 80, 48);
-            SceneImage? image = null;
-            var script = new SceneScript(directory, 4, [new(3, edit => edit.CaptureImage(value => image = value))]);
-            var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
-            Assert.True(result.Succeeded, result.Error?.ToString());
-            Assert.Equal(80, image!.Width);
-            Assert.Equal(48, image.Height);
-            Assert.Equal(80 * 48 * 4, image.Pixels.Length);
-            for (int alpha = 3; alpha < image.Pixels.Length; alpha += 4)
-                Assert.Equal((byte)255, image.Pixels.Span[alpha]);
-        }
-        finally { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); }
+        using var files = new SceneContentCopy(content.DirectoryPath);
+        string directory = files.DirectoryPath;
+        await SomeEngine.SceneContent.SceneContent.SetOutputSizeAsync(directory, 80, 48);
+        SceneImage? image = null;
+        var script = new SceneScript(directory, 4, [new(3, edit => edit.CaptureImage(value => image = value))]);
+        var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
+        Assert.True(result.Succeeded, result.Error?.ToString());
+        Assert.Equal(80, image!.Width);
+        Assert.Equal(48, image.Height);
+        Assert.Equal(80 * 48 * 4, image.Pixels.Length);
+        for (int alpha = 3; alpha < image.Pixels.Length; alpha += 4)
+            Assert.Equal((byte)255, image.Pixels.Span[alpha]);
     }
 
     [Fact(Skip = "#129: window resize fails swapchain reconfiguration; Cluster output also retains startup dimensions.")]
@@ -120,25 +135,16 @@ public sealed class SceneScriptTests(SceneContentFixture content)
         ]);
         var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
         Assert.True(result.Succeeded, result.Error?.ToString());
-        string directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-Resize-{Guid.NewGuid():N}");
-        try
-        {
-            foreach (string file in Directory.EnumerateFiles(content.DirectoryPath, "*", SearchOption.AllDirectories))
-            {
-                string destination = Path.Combine(directory, Path.GetRelativePath(content.DirectoryPath, file));
-                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                File.Copy(file, destination);
-            }
-            await SomeEngine.SceneContent.SceneContent.SetOutputSizeAsync(directory, 80, 48);
-            SceneImage? expected = null;
-            var direct = new SceneScript(directory, 5, [new(4, edit => edit.CaptureImage(image => expected = image))]);
-            var reference = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], direct);
-            Assert.True(reference.Succeeded, reference.Error?.ToString());
-            Assert.Equal(80, resized!.Width);
-            Assert.Equal(48, resized.Height);
-            Assert.Equal(expected!.Pixels.ToArray(), resized.Pixels.ToArray());
-        }
-        finally { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); }
+        using var files = new SceneContentCopy(content.DirectoryPath);
+        string directory = files.DirectoryPath;
+        await SomeEngine.SceneContent.SceneContent.SetOutputSizeAsync(directory, 80, 48);
+        SceneImage? expected = null;
+        var direct = new SceneScript(directory, 5, [new(4, edit => edit.CaptureImage(image => expected = image))]);
+        var reference = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], direct);
+        Assert.True(reference.Succeeded, reference.Error?.ToString());
+        Assert.Equal(80, resized!.Width);
+        Assert.Equal(48, resized.Height);
+        SceneImages.AssertEqual(expected!, resized);
     }
 }
 

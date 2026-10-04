@@ -319,33 +319,47 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
             position: Vector3.Zero);
         using ManualResetEventSlim mutationEntered = new();
         using ManualResetEventSlim releaseMutation = new();
+        using ManualResetEventSlim extractionEntered = new();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        MeshInstance replacement = new()
+        {
+            Mesh = MeshAsset(2, 1),
+            BoundsExpansion = 3,
+        };
+        extractionSystems.Add(new MeshReadObserver(extractionEntered, value =>
+        {
+            Assert.Same(replacement.Mesh, value.Mesh);
+            Assert.Equal(replacement.BoundsExpansion, value.BoundsExpansion);
+            events.Enqueue("extraction observed committed mesh");
+        }));
         mainWorld.Hooks<MeshInstance>().OnReplace(
             (DeferredWorld _, Entity _, in MeshInstance _) =>
             {
                 mutationEntered.Set();
                 Assert.True(releaseMutation.Wait(TimeSpan.FromSeconds(10)));
             });
-
-        MeshInstance replacement = new()
-        {
-            Mesh = MeshAsset(2, 1),
-            BoundsExpansion = 3,
-        };
+        mainWorld.Hooks<MeshInstance>().OnInsert(
+            (DeferredWorld _, Entity _, in MeshInstance value) =>
+            {
+                Assert.Same(replacement.Mesh, value.Mesh);
+                events.Enqueue("mesh replacement committed");
+            });
         Task mutation = Task.Run(() => mainWorld.Replace(source, replacement));
         Assert.True(mutationEntered.Wait(TimeSpan.FromSeconds(5)));
 
         Task extraction = Task.Run(() => extractionSystems.Extract(mainWorld));
         try
         {
-            await Task.Delay(100);
-            Assert.False(extraction.IsCompleted);
+            Assert.True(extractionEntered.Wait(TimeSpan.FromSeconds(5)));
         }
         finally
         {
             releaseMutation.Set();
         }
 
-        await Task.WhenAll(mutation, extraction);
+        await Task.WhenAll(mutation, extraction).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(["mesh replacement committed", "extraction observed committed mesh"], events);
 
         Assert.Equal(0, renderWorld.GetByIndex<RenderSource, Entity>(source).Length);
         Assert.True(graphics.Apply(extractionSystems, renderWorld));
@@ -1418,6 +1432,29 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
 
     private readonly record struct CustomExtractValue(int Value) :
         SomeEngine.ECS.IComponent;
+
+    private sealed class MeshReadObserver(ManualResetEventSlim entered, Action<MeshInstance> observe) : IRenderExtractionSystem
+    {
+        public void DeclareReads(RenderExtractionQuery query)
+        {
+            query.ReadOptional<MeshInstance>();
+            entered.Set();
+        }
+
+        public void Reset() { }
+        public void Collect(QueryChunkView chunk)
+        {
+            if (chunk.TryRead<MeshInstance>(out var values))
+                foreach (var value in values) observe(value);
+        }
+        public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+        {
+            Collect(chunk);
+            return false;
+        }
+        public void Apply(RenderExtractionContext context) { }
+        public void ApplyChanges(RenderExtractionContext context) { }
+    }
 
     private readonly record struct CustomRenderValue(int Value) :
         SomeEngine.ECS.IComponent;
