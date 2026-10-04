@@ -14,7 +14,7 @@ namespace SomeEngine.Assets.Importers;
 
 public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImportOverrides>
 {
-    public const uint ImporterVersion = 14;
+    public const uint ImporterVersion = 15;
     public static readonly Guid SourceImporterId = new("b0c10195-d8d1-46ab-81b8-f8c54db7d0aa");
     private readonly Action<IServiceCollection> _configureServices;
     private readonly string _capabilitiesVersion;
@@ -37,7 +37,7 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
     public ValueTask<ModelRoot> ReadAsync(string sourcePath, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ModelRoot source = ModelRoot.Load(sourcePath);
+        ModelRoot source = GltfCompressionInput.Load(sourcePath);
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(source);
     }

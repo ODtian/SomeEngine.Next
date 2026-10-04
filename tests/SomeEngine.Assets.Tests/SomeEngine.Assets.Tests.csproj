@@ -33,6 +33,9 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="Content\Gltf\mikk-reference.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\..\templates\DefaultProject\assets\Shaders\hello_triangle.shader.asset">
       <Link>Content\Shaders\hello_triangle.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
