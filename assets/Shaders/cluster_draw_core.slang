@@ -150,8 +150,7 @@ VertexEvalContext MakeDrawVertexEvalContext(
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
-    ctx.vertexBlobAddress = vertexBlobAddress;
-    ctx.vertexBlobSize = vertexBlobSize;
+    LoadVertexData(ctx, vertexBlobAddress);
     ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = instanceID;
     ctx.transform = transform;

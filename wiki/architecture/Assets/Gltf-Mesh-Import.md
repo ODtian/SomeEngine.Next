@@ -69,19 +69,18 @@ public sealed partial class VertexStreamsBlock : AssetBlock
 
 ## Cluster geometry and attributes
 
-中立组合包含 `GltfVertexStreamsImporter`；Cluster 组合包含 `ClusterGeometryImporter`、`ClusterVertexAttributesImporter` 与扩展阶段保留的 `ClusterGltfMeshImporter`。Importer 通过无参构造与生成的能力描述注册，算法由 Importer 的实现持有。
+中立组合包含 `GltfVertexStreamsImporter`；Cluster 组合包含 `ClusterGeometryImporter` 与 `ClusterVertexAttributesImporter`。Importer 通过无参构造与生成的能力描述注册，算法由 Importer 的实现持有。
 
 几何焊接逐位比较 double 中保存的全部基础属性、来源切线、各形变目标及来源形变切线，同时区分材质、属性名称与分量数、形变目标数量和 Deform 类别。只为被三角形引用的行建立顶点身份。`Vertices` 中每一项包含来源图元号、准备流的行号和原 accessor 行号，所有逐顶点 Importer 可使用这份映射。
 
-cluster 构建按四种 Deform 类别分区。复用现有 meshoptimizer cluster 与 LOD DAG 构建流程，局部索引引用 cluster 顶点，逐三角形保留来源材质编号；不同分区的 LOD 组编号彼此独立。重合但身份不同的顶点受到简化锁保护，覆盖全部 UV 接缝、法线不连续和材质边界。蒙皮或形变流在边两端发生变化时，两端同样锁住：以变化为零的保守误差约束保留所有影响集和目标，适用于任意来源数量。新路径采用受锁约束的简化；静态及变形数据恒定区域可生成更粗 LOD。
+cluster 构建按四种 Deform 类别分区。复用现有 meshoptimizer cluster 与 LOD DAG 构建流程，局部索引引用 cluster 顶点，逐三角形保留来源材质编号和网格区域编号，渲染按区域索引实例的材质绑定；不同分区的 LOD 组编号彼此独立。重合但身份不同的顶点受到简化锁保护，覆盖全部 UV 接缝、法线不连续和材质边界。蒙皮或形变流在边两端发生变化时，两端同样锁住：以变化为零的保守误差约束保留所有影响集和目标，适用于任意来源数量。新路径采用受锁约束的简化；静态及变形数据恒定区域可生成更粗 LOD。
 
-位置按 cluster 以 uint16 XYZ 编码，使用与标准组合编码一致的二次幂量化步长；包围半径包含量化误差。属性按同一 cluster 顶点顺序以 little-endian float64 编码，完整保留来源数值（包括 uint32 精度与符号零）。每个属性保存语义名称、最大分量数和逐顶点的实际分量数，0 表示该来源图元省略该属性。基础位置与蒙皮影响分别属于几何及后续影响 Block；其余基础属性全部进入属性 Block。属性的布局信息属于构建产物，现有渲染仍消费既有固定着色器解释的组合编码。
+位置按 cluster 以 uint16 XYZ 编码，使用与标准组合编码一致的二次幂量化步长；包围半径包含量化误差。属性按同一 cluster 顶点顺序以 little-endian float64 编码，完整保留来源数值（包括 uint32 精度与符号零）。每个属性保存语义名称、最大分量数和逐顶点的实际分量数，0 表示该来源图元省略该属性。基础位置与蒙皮影响分别属于几何及后续影响 Block；其余基础属性全部进入属性 Block。属性数值与材质 Shader 的编码由同一个属性 Importer 交付，具体表示见 [Vertex Encoding](../cluster/Vertex-Encoding.md)。渲染页组合仅复制属性字节，材质 Shader 解释其布局。
 
-公开行为验收见 `ClusterGeometryImportTests`：位置对照、全部属性与保存重读、逐流位比较焊接、四种分区、LOD 接缝及材质、混合属性形状、包组合同时交付新旧 Block。
+公开行为验收见 `ClusterGeometryImportTests`：位置解码与来源对照、全部属性与保存重读、逐流位比较焊接、四种分区、LOD 接缝及材质、混合属性形状、包组合交付两份独立的 Cluster Block。
 
 ## 当前代码与目标的差异
 
-- 渲染读取在收缩阶段迁移到新 Block；现有组合 Block 的产出继续供该阶段前的渲染消费。
 - 蒙皮影响编码与形变增量编码由后续管线表示 Importer 实现。
 
 ## Relations

@@ -145,10 +145,10 @@ public sealed class ClusterRenderingTests
         async Task<Mesh> ReadMesh()
         {
             using MeshAsset value = await MeshAsset.OpenAsync(assets, new(manifest.List(MeshAsset.FileType).First().AssetGuid));
-            ClusterMeshBlock geometry = value.GetBlock<ClusterMeshBlock>();
-            Mesh result = await geometry.CreateAsync(value.GetBlock<MeshBlock>(), value.Name);
-            if (streamedGeometry) streamedPages = await geometry.OpenPayloadSourceAsync();
-            else await geometry.LoadPagesAsync(result, Enumerable.Range(0, result.PageCount));
+            ClusterGeometryBlock geometry = value.GetBlock<ClusterGeometryBlock>();
+            Mesh result = await geometry.CreateAsync(value.GetBlock<MeshBlock>(), await value.GetBlockAsync<ClusterVertexAttributesBlock>(), value.Name);
+            if (streamedGeometry) streamedPages = await geometry.OpenPayloadSourceAsync(value.GetBlock<ClusterVertexAttributesBlock>());
+            else await geometry.LoadPagesAsync(result, value.GetBlock<ClusterVertexAttributesBlock>(), Enumerable.Range(0, result.PageCount));
             return result;
         }
         async Task<Material> ReadMaterial()

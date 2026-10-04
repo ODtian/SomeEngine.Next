@@ -104,14 +104,15 @@ internal sealed class RuntimeScene : IDisposable
                     using MeshAsset file = await MeshAsset.OpenAsync(assets, meshIds[index], cancellationToken)
                         .ConfigureAwait(false);
                     MeshBlock geometry = await file.GetBlockAsync<MeshBlock>(cancellationToken).ConfigureAwait(false);
-                    ClusterMeshBlock clusters = await file.GetBlockAsync<ClusterMeshBlock>(cancellationToken).ConfigureAwait(false);
+                    ClusterGeometryBlock clusters = await file.GetBlockAsync<ClusterGeometryBlock>(cancellationToken).ConfigureAwait(false);
                     MeshMaterialsBlock references = await file.GetBlockAsync<MeshMaterialsBlock>(cancellationToken)
                         .ConfigureAwait(false);
-                    Mesh mesh = await clusters.CreateAsync(geometry, file.Name, cancellationToken).ConfigureAwait(false);
+                    ClusterVertexAttributesBlock attributes = await file.GetBlockAsync<ClusterVertexAttributesBlock>(cancellationToken).ConfigureAwait(false);
+                    Mesh mesh = await clusters.CreateAsync(geometry, attributes, file.Name, cancellationToken).ConfigureAwait(false);
                     MeshPayloadSource? pages = null;
                     try
                     {
-                        pages = await clusters.OpenPayloadSourceAsync(cancellationToken).ConfigureAwait(false);
+                        pages = await clusters.OpenPayloadSourceAsync(attributes, cancellationToken).ConfigureAwait(false);
                         loadedMeshes[index] = new SceneMeshData(mesh, pages, references.Materials.ToArray());
                     }
                     catch { try { pages?.Dispose(); } finally {  } throw; }

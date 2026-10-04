@@ -26,7 +26,8 @@ public sealed class GltfExtensionBehaviorTests
         using var provider = services.BuildServiceProvider();
         Assert.Empty(provider.GetServices<IClusterVertexEncoder>());
         using var scope = provider.CreateScope();
-        Assert.IsType<ClusterGltfMeshImporter>(scope.ServiceProvider.GetRequiredService<ClusterGltfMeshImporter>());
+        Assert.IsType<ClusterGeometryImporter>(scope.ServiceProvider.GetRequiredService<ClusterGeometryImporter>());
+        Assert.IsType<ClusterVertexAttributesImporter>(scope.ServiceProvider.GetRequiredService<ClusterVertexAttributesImporter>());
 
         using var files = new GltfFiles();
         await files.WriteDefaultTemplatesAsync();
@@ -34,15 +35,15 @@ public sealed class GltfExtensionBehaviorTests
         var project = new AssetProject(files.Directory, [importer]);
         Guid id = MeshId(project, await project.ImportAsync(files.Source));
         using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
-        ClusterMeshBlock clusters = await mesh.GetBlockAsync<ClusterMeshBlock>();
-        Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, clusters.VertexEncoding);
-        Assert.NotEmpty(clusters.LowestDetailPageIndices);
+        ClusterGeometryBlock clusters = await mesh.GetBlockAsync<ClusterGeometryBlock>();
+        Assert.Equal(ClusterGeometryBlock.EncodingCompatibility, clusters.PositionEncoding);
+        Assert.NotEmpty(clusters.Clusters);
     }
 
     [Theory]
     [InlineData("TEXCOORD_1")]
     [InlineData("_CUSTOM")]
-    public async Task StandardClusterImportReportsSkippedSourceAttributes(string attribute)
+    public async Task StandardClusterImportPreservesAdditionalSourceAttributes(string attribute)
     {
         using var files = new GltfFiles();
         files.AddVertexAttribute(attribute);
@@ -55,11 +56,11 @@ public sealed class GltfExtensionBehaviorTests
             var project = new AssetProject(files.Directory, [importer]);
             Guid id = MeshId(project, await project.ImportAsync(files.Source));
             using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
-            ClusterMeshBlock clusters = await mesh.GetBlockAsync<ClusterMeshBlock>();
-            Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, clusters.VertexEncoding);
-            Assert.NotEmpty(clusters.LowestDetailPageIndices);
-            Assert.Contains(diagnostics.Messages, message => message.Contains(attribute, StringComparison.Ordinal)
-                && message.Contains("Skipped", StringComparison.Ordinal));
+            ClusterGeometryBlock clusters = await mesh.GetBlockAsync<ClusterGeometryBlock>();
+            Assert.Equal(ClusterGeometryBlock.EncodingCompatibility, clusters.PositionEncoding);
+            Assert.NotEmpty(clusters.Clusters);
+            ClusterVertexAttributesBlock values = await mesh.GetBlockAsync<ClusterVertexAttributesBlock>();
+            Assert.Contains(values.Clusters.SelectMany(cluster => cluster.Attributes), stream => stream.Name == attribute);
         }
         finally { Trace.Listeners.Remove(diagnostics); }
     }
@@ -126,7 +127,7 @@ public sealed class GltfExtensionBehaviorTests
         using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
         ExtensionGltfBlock block = await mesh.GetBlockAsync<ExtensionGltfBlock>();
         Assert.Equal("library source", block.Label);
-        Assert.False(mesh.ContainsBlock<ClusterMeshBlock>());
+        Assert.False(mesh.ContainsBlock<ClusterGeometryBlock>());
     }
 
     [Fact]
@@ -138,13 +139,13 @@ public sealed class GltfExtensionBehaviorTests
         var original = StandardGltfSceneImporter.CreateSourceImporter(_ => { }, "project-services-1");
         Guid id = MeshId(project, await project.ImportAsync(files.Source, original));
         SourceMeta metadata = SourceMeta.Load(files.Source);
-        Assert.Equal(new[] { ImporterId<GltfMeshImporter>(), ImporterId<ClusterGltfMeshImporter>(), ImporterId<GltfTextureImporter>(),
+        Assert.Equal(new[] { ImporterId<GltfMeshImporter>(), ImporterId<ClusterGeometryImporter>(), ImporterId<ClusterVertexAttributesImporter>(), ImporterId<GltfVertexStreamsImporter>(), ImporterId<GltfTextureImporter>(),
             MorphTargetSetImporter.Id, StandardGltfSceneImporter.ImporterId }.Order(),
             metadata.Importers.Select(value => value.ImporterId).Order());
         var extended = StandardGltfSceneImporter.CreateSourceImporter(services => ConsumerAssetCapabilities.AddAssetCapabilities(services), "project-services-1");
         Assert.Equal(id, MeshId(project, await project.ImportAsync(files.Source, extended)));
         using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
-        Assert.True(mesh.ContainsBlock<ClusterMeshBlock>());
+        Assert.True(mesh.ContainsBlock<ClusterGeometryBlock>());
         Assert.False(mesh.ContainsBlock<ExtensionGltfBlock>());
     }
 
@@ -286,7 +287,7 @@ public sealed class GltfExtensionBehaviorTests
         using (MeshAsset mesh = await MeshAsset.OpenAsync(output))
         {
             Assert.True(mesh.ContainsBlock<MeshBlock>());
-            Assert.False(mesh.ContainsBlock<ClusterMeshBlock>());
+            Assert.False(mesh.ContainsBlock<ClusterGeometryBlock>());
             Assert.Single(mesh.GetBlock<MeshMaterialsBlock>().Materials);
             Assert.Single(mesh.GetBlock<MeshBlock>().Regions);
             ExtensionGltfBlock extension = await mesh.GetBlockAsync<ExtensionGltfBlock>();

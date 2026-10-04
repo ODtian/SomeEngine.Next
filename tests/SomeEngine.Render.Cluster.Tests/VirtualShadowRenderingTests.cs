@@ -132,9 +132,9 @@ public sealed class VirtualShadowRenderingTests(ITestOutputHelper output)
             optionalFeatures: meshShaders ? DeviceFeatures.MeshShaders : DeviceFeatures.None));
         if (meshShaders) Assert.True(backend.TryGetCapability(device, out MeshShaders? meshCapabilities) && meshCapabilities is not null);
         using MeshAsset meshFile = await MeshAsset.OpenAsync(assets, new(manifest.List(MeshAsset.FileType).First().AssetGuid));
-        ClusterMeshBlock geometry = meshFile.GetBlock<ClusterMeshBlock>();
-        Mesh mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
-        await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
+        ClusterGeometryBlock geometry = meshFile.GetBlock<ClusterGeometryBlock>();
+        Mesh mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), await meshFile.GetBlockAsync<ClusterVertexAttributesBlock>(), meshFile.Name);
+        await geometry.LoadPagesAsync(mesh, meshFile.GetBlock<ClusterVertexAttributesBlock>(), Enumerable.Range(0, mesh.PageCount));
         using MaterialAsset materialFile = await MaterialAsset.OpenAsync(assets,
             new(manifest.List(MaterialAsset.FileType).First(item => item.Name == "Standard").AssetGuid));
         using Material material = await materialFile.CreateAsync(

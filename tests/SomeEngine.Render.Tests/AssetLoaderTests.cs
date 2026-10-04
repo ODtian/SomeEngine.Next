@@ -77,9 +77,9 @@ public sealed class AssetLoaderTests
             shader.GetSlangEntryBlob(targetIndex, shaderEntry) is not null ||
             !shader.GetSlangEntryBytes(targetIndex, shaderEntry).IsEmpty);
         await using MeshAsset meshFile = await MeshAsset.OpenAsync(loader, new AssetId<MeshAsset>(meshId));
-        var mesh = await meshFile.GetBlock<ClusterMeshBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
+        var mesh = await meshFile.GetBlock<ClusterGeometryBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), await meshFile.GetBlockAsync<ClusterVertexAttributesBlock>(), meshFile.Name);
         Assert.True(mesh.TryGetPage(0, out _));
-        await meshFile.GetBlock<ClusterMeshBlock>().LoadPagesAsync(mesh, [0]);
+        await meshFile.GetBlock<ClusterGeometryBlock>().LoadPagesAsync(mesh, await meshFile.GetBlockAsync<ClusterVertexAttributesBlock>(), [0]);
         await using MaterialAsset materialFile = await MaterialAsset.OpenAsync(loader, new AssetId<MaterialAsset>(materialId));
         using Material material = await materialFile.CreateAsync(loader);
         StandardMaterial standard = Assert.IsType<StandardMaterial>(material);
@@ -204,43 +204,18 @@ public sealed class AssetLoaderTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.mesh.asset");
-        const string vertexEncoding = "someengine.vertex.standard.cluster.v1";
-        const int vertexBlobBytes = 1;
-        const int indexBytes = 3;
-        int pageSize = checked(MeshPageHeader.Size + PackedCluster.SizeInBytes
-            + vertexBlobBytes + indexBytes);
-        byte[] payload = new byte[checked(pageSize + Marshal.SizeOf<ClusterBVHNode>())];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            VertexBlobBytes = vertexBlobBytes,
-            ClustersOffset = MeshPageHeader.Size,
-            VertexBlobsOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes,
-            IndicesOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes + vertexBlobBytes,
-            ExtensionDataOffset = checked((uint)pageSize),
-            VertexEncodingHash = VertexEncodingCompatibility.Hash(vertexEncoding),
-        };
-        MemoryMarshal.Write(payload.AsSpan(0, MeshPageHeader.Size), in header);
-        var cluster = new PackedCluster
-        {
-            VertexBlobSize = vertexBlobBytes,
-            ExtensionOffset = uint.MaxValue,
-            LODRadius = 1,
-            BoundMax = Vector3.One,
-            PackedCounts = 1u | (1u << 8),
-            MaterialTableOffset = uint.MaxValue,
-        };
-        MemoryMarshal.Write(
-            payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes),
-            in cluster);
         using var asset = new MeshAsset(guid) { Name = "stored-mesh" };
-        using var geometry = new MeshBlock();
-        using var clusters = new ClusterMeshBlock { VertexEncoding = vertexEncoding };
-        clusters.SetPayload(payload, (ulong)pageSize);
-        asset.SetBlock(geometry);
-        asset.SetBlock(clusters);
+        using var shape = new MeshBlock();
+        using var geometry = new ClusterGeometryBlock
+        {
+            Vertices = [new(0, 0, 0), new(0, 1, 1), new(0, 2, 2)],
+            Clusters = [new() { Vertices = [0, 1, 2], Indices = [0, 1, 2], TriangleMaterials = [0], PositionStep = 1,
+                PositionData = [0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0], Group = -1, ParentGroup = -1,
+                ParentError = float.MaxValue, Radius = 2, LodRadius = 2, SelfLodRadius = 2 }],
+        };
+        using var attributes = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity,
+            Clusters = [ClusterVertexAttributes.Encode([])] };
+        asset.SetBlock(shape); asset.SetBlock(geometry); asset.SetBlock(attributes);
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }

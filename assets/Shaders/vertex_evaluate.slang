@@ -3,76 +3,54 @@
 
 #include "vertex_evaluate_interfaces.slang"
 
-uint LoadStandardVertexBits(VertexEvalContext ctx, uint bitOffset, uint bitCount)
-{
-    if (bitCount == 0u)
-        return 0u;
-
-    uint wordAddress = ctx.vertexBlobAddress + ((bitOffset >> 5u) * 4u);
-    uint shift = bitOffset & 31u;
-    uint value = ctx.pageHeap.Load(wordAddress) >> shift;
-    if (shift + bitCount > 32u)
-        value |= ctx.pageHeap.Load(wordAddress + 4u) << (32u - shift);
-    return bitCount == 32u ? value : value & ((1u << bitCount) - 1u);
-}
-
-struct StandardVertexWidths
-{
-    uint x;
-    uint y;
-    uint z;
-    uint u;
-    uint v;
-};
-
-StandardVertexWidths LoadStandardVertexWidths(VertexEvalContext ctx)
-{
-    uint packed = ctx.pageHeap.Load(ctx.vertexBlobAddress + 12u);
-    StandardVertexWidths widths;
-    widths.x = packed & 31u;
-    widths.y = (packed >> 5u) & 31u;
-    widths.z = (packed >> 10u) & 31u;
-    widths.u = (packed >> 15u) & 31u;
-    widths.v = (packed >> 20u) & 31u;
-    return widths;
-}
-
-uint StandardVertexRecordBitAddress(VertexEvalContext ctx)
-{
-    uint recordBitStride = ctx.pageHeap.Load(ctx.vertexBlobAddress + 16u);
-    uint dataBitOffset = ctx.pageHeap.Load(ctx.vertexBlobAddress + 20u);
-    return dataBitOffset + ctx.localVertexIndex * recordBitStride;
-}
-
-float3 DecodeStandardSnorm3(uint raw)
-{
-    int3 value;
-    value.x = (int(raw & 0xFFu) << 24) >> 24;
-    value.y = (int((raw >> 8u) & 0xFFu) << 24) >> 24;
-    value.z = (int((raw >> 16u) & 0xFFu) << 24) >> 24;
-    return max(float3(value) / 127.0, float3(-1.0));
-}
-
-float4 DecodeStandardSnorm4(uint raw)
-{
-    int4 value;
-    value.x = (int(raw & 0xFFu) << 24) >> 24;
-    value.y = (int((raw >> 8u) & 0xFFu) << 24) >> 24;
-    value.z = (int((raw >> 16u) & 0xFFu) << 24) >> 24;
-    value.w = (int((raw >> 24u) & 0xFFu) << 24) >> 24;
-    return max(float4(value) / 127.0, float4(-1.0));
-}
-
 float3 EvalObjectPosition(VertexEvalContext ctx)
 {
-    StandardVertexWidths widths = LoadStandardVertexWidths(ctx);
-    uint bit = StandardVertexRecordBitAddress(ctx);
-    uint x = LoadStandardVertexBits(ctx, bit, widths.x); bit += widths.x;
-    uint y = LoadStandardVertexBits(ctx, bit, widths.y); bit += widths.y;
-    uint z = LoadStandardVertexBits(ctx, bit, widths.z);
-    float3 origin = asfloat(ctx.pageHeap.Load3(ctx.vertexBlobAddress + 24u));
-    float step = asfloat(ctx.pageHeap.Load(ctx.vertexBlobAddress + 36u));
-    return origin + float3(x, y, z) * step;
+    uint address = ctx.vertexBlobAddress + 16u + ctx.localVertexIndex * 6u;
+    uint aligned = address & ~3u;
+    uint2 words = ctx.pageHeap.Load2(aligned);
+    uint3 position;
+    if ((address & 2u) == 0u)
+        position = uint3(words.x & 65535u, words.x >> 16u, words.y & 65535u);
+    else
+        position = uint3(words.x >> 16u, words.y & 65535u, words.y >> 16u);
+    float3 origin = asfloat(ctx.pageHeap.Load3(ctx.vertexBlobAddress));
+    float step = asfloat(ctx.pageHeap.Load(ctx.vertexBlobAddress + 12u));
+    return origin + float3(position) * step;
+}
+
+// Convert the persisted double components using integer/float32 operations. This material
+// interprets normal/tangent/UV values without requiring shader float64 device features.
+float ReadStandardComponent(VertexEvalContext ctx, uint stream, uint component, float fallback)
+{
+    if (stream == 0u) return fallback;
+    uint descriptor = ctx.attributeBlobAddress + 16u + (stream - 1u) * 28u;
+    uint components = ctx.pageHeap.Load(descriptor + 4u);
+    uint counts = ctx.pageHeap.Load(descriptor + 12u);
+    uint count = counts == 0xFFFFFFFFu ? components : ctx.pageHeap.Load(ctx.attributeBlobAddress + counts + ctx.localVertexIndex * 4u);
+    if (component >= count) return fallback;
+    uint values = ctx.pageHeap.Load(descriptor + 8u);
+    uint format = ctx.pageHeap.Load(descriptor + 24u);
+    if (format == 1u || format == 2u)
+    {
+        uint raw = ctx.pageHeap.Load(ctx.attributeBlobAddress + values + ctx.localVertexIndex * 4u);
+        int value = (int((raw >> (component * 8u)) & 255u) << 24) >> 24;
+        return max(float(value) / 127.0, -1.0);
+    }
+    if (format == 3u)
+    {
+        if (component >= 2u) return fallback;
+        uint address = ctx.attributeBlobAddress + values;
+        float2 origin = asfloat(ctx.pageHeap.Load2(address));
+        float step = asfloat(ctx.pageHeap.Load(address + 8u));
+        uint packed = ctx.pageHeap.Load(address + 12u + ctx.localVertexIndex * 4u);
+        return (component == 0u ? origin.x : origin.y) + float((packed >> (component * 16u)) & 65535u) * step;
+    }
+    uint2 bits = ctx.pageHeap.Load2(ctx.attributeBlobAddress + values + (ctx.localVertexIndex * components + component) * 8u);
+    uint exponent = (bits.y >> 20u) & 2047u;
+    if (exponent == 0u) return asfloat(bits.y & 0x80000000u);
+    float fraction = 1.0 + float(bits.y & 1048575u) * (1.0 / 1048576.0) + float(bits.x) * (1.0 / 4503599627370496.0);
+    float value = ldexp(fraction, int(exponent) - 1023);
+    return (bits.y & 0x80000000u) == 0u ? value : -value;
 }
 
 float3 EvalWorldPosition(VertexEvalContext ctx)
@@ -98,14 +76,15 @@ struct StaticVertexAttributes
 
 StaticVertexAttributes EvalStaticVertexAttributes(VertexEvalContext ctx)
 {
-    StandardVertexWidths widths = LoadStandardVertexWidths(ctx);
-    uint bit = StandardVertexRecordBitAddress(ctx) + widths.x + widths.y + widths.z;
-    float3 normal = DecodeStandardSnorm3(LoadStandardVertexBits(ctx, bit, 24u)); bit += 24u;
-    float4 tangent = DecodeStandardSnorm4(LoadStandardVertexBits(ctx, bit, 32u)); bit += 32u;
-    uint u = LoadStandardVertexBits(ctx, bit, widths.u); bit += widths.u;
-    uint v = LoadStandardVertexBits(ctx, bit, widths.v);
-    float2 uvOrigin = asfloat(ctx.pageHeap.Load2(ctx.vertexBlobAddress + 40u));
-    float uvStep = asfloat(ctx.pageHeap.Load(ctx.vertexBlobAddress + 48u));
+    uint normalStream = ctx.pageHeap.Load(ctx.attributeBlobAddress + 4u);
+    uint tangentStream = ctx.pageHeap.Load(ctx.attributeBlobAddress + 8u);
+    uint uvStream = ctx.pageHeap.Load(ctx.attributeBlobAddress + 12u);
+    float3 normal = float3(ReadStandardComponent(ctx, normalStream, 0u, 0.0),
+        ReadStandardComponent(ctx, normalStream, 1u, 1.0), ReadStandardComponent(ctx, normalStream, 2u, 0.0));
+    float4 tangent = float4(ReadStandardComponent(ctx, tangentStream, 0u, 1.0),
+        ReadStandardComponent(ctx, tangentStream, 1u, 0.0), ReadStandardComponent(ctx, tangentStream, 2u, 0.0),
+        ReadStandardComponent(ctx, tangentStream, 3u, 1.0));
+    float2 uv = float2(ReadStandardComponent(ctx, uvStream, 0u, 0.0), ReadStandardComponent(ctx, uvStream, 1u, 0.0));
 
     StaticVertexAttributes attrs;
     float3 scale = ctx.transform.Scale * ctx.transform.Stretch;
@@ -123,7 +102,7 @@ StaticVertexAttributes EvalStaticVertexAttributes(VertexEvalContext ctx)
         dot(transformedTangent, transformedTangent) > 0.0
             ? normalize(transformedTangent) : normalize(RotateByTransform(tangent.xyz, ctx.transform)),
         handedness);
-    attrs.uv0 = uvOrigin + float2(u, v) * uvStep;
+    attrs.uv0 = uv;
     return attrs;
 }
 
@@ -134,6 +113,14 @@ struct StandardVertex
     float3 worldNormal;
     float4 worldTangent;
     float2 uv0;
+};
+
+struct StaticPositionEval : IVertexEvaluate
+{
+    typedef float3 Vertex;
+    Vertex evaluate(VertexEvalContext ctx) { return EvalWorldPosition(ctx); }
+    float3 getPosition(Vertex value) { return value; }
+    Vertex readLane(Vertex value, uint lane) { return WaveReadLaneAt(value, lane); }
 };
 
 struct StaticVertexEval : IVertexEvaluate

@@ -42,7 +42,7 @@ public sealed class ClusterVertexAttributesImporter : IAssetImporter<GltfMesh, G
                 }
                 attributes.Add(new() { Name = name, ComponentCount = components, VertexComponentCounts = [.. componentCounts], Data = [.. data] });
             }
-            clusters.Add(new() { Attributes = [.. attributes] });
+            clusters.Add(ClusterVertexAttributes.Encode(attributes));
         }
         var block = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity, Clusters = clusters };
         try { output.SetBlock(block); }

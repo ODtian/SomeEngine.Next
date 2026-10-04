@@ -89,15 +89,18 @@ public class GltfSourceImporterTests
                 (_, id) => new MeshAsset(id),
                 (_, id) => id + ".mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
             var geometry = new GltfMeshImporter();
-            var clusters = new ClusterGltfMeshImporter();
             var settings = new GltfMeshSettings();
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
-                new Guid("548d394b-5600-49e0-b04a-9c9d0d53b4b0"), [ClusterMeshBlock.BlockTypeId], clusters, settings));
+                new Guid("ce474674-bd5e-4ae0-b72e-2d50d64e6413"), [ClusterGeometryBlock.BlockTypeId], new ClusterGeometryImporter(), settings));
+            context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
+                new Guid("535b2c57-2964-483b-867a-f38ef1a9fe5b"), [ClusterVertexAttributesBlock.BlockTypeId], new ClusterVertexAttributesImporter(), settings));
+            context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
+                Guid.NewGuid(), [VertexStreamsBlock.BlockTypeId], new GltfVertexStreamsImporter(), settings));
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
                 new Guid("334ba003-337f-4298-ae72-1a5ce4861591"), [MeshBlock.BlockTypeId], geometry, settings));
             MeshAsset mesh = await context.GetAssetAsync<SharpGLTF.Schema2.Mesh, MeshAsset>(source);
             Assert.Single(mesh.GetBlock<MeshBlock>().Regions);
-            Assert.True(mesh.ContainsBlock<ClusterMeshBlock>());
+            Assert.True(mesh.ContainsBlock<ClusterGeometryBlock>());
             Assert.False(mesh.ContainsBlock<MeshMaterialsBlock>());
             MeshRegionSource origin = Assert.Single(mesh.GetBlock<MeshBlock>().RegionSources);
             Assert.Equal(source.LogicalIndex, origin.MeshIndex);

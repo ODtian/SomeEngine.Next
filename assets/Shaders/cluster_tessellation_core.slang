@@ -104,8 +104,7 @@ TDomain.TriangleData LoadTessellationTriangle<TVE, TDomain>(
             corner);
         VertexEvalContext context;
         context.pageHeap = PageHeap;
-        context.vertexBlobAddress = vertexBlobAddress;
-        context.vertexBlobSize = vertexBlobSize;
+        LoadVertexData(context, vertexBlobAddress);
         context.localVertexIndex = localVertex;
         context.instanceID = request.InstanceID;
         context.transform = GetCurrentInstanceTransform(request.InstanceID);
@@ -155,8 +154,7 @@ DomainEvaluate.TriangleData LoadTessellationTriangleWithVisibility(
             corner);
         VertexEvalContext context;
         context.pageHeap = PageHeap;
-        context.vertexBlobAddress = vertexBlobAddress;
-        context.vertexBlobSize = vertexBlobSize;
+        LoadVertexData(context, vertexBlobAddress);
         context.localVertexIndex = localVertex;
         context.instanceID = request.InstanceID;
         context.transform = GetCurrentInstanceTransform(request.InstanceID);
@@ -606,7 +604,8 @@ void FinalizeTessellationPatch(
         // material data, keeping the 16-byte intermediate work representation.
         DrawRequest source = TessellationVisibleClusters[patch.VisibleClusterIndex];
         uint4 vertReuseBatchWords;
-        uint triangleCount, materials, ranges;
+        uint triangleCount, ranges;
+        uint3 materials;
         ReadClusterBinData(PageHeap, source, vertReuseBatchWords, triangleCount, materials, ranges);
         uint slotOffset = LoadClusterMaterialSlotOffset(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD), source.InstanceID);

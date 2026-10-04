@@ -1,201 +1,142 @@
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
+using System.Numerics;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Assets.Pipeline;
-using SomeEngine.Resources.Geometry;
-using SomeEngine.Serialization.Containers;
-using SomeEngine.Serialization.IO;
-using SomeEngine.Serialization.Streaming;
 
 namespace SomeEngine.Assets.Consumer.Tests;
 
 public sealed class MeshAssetBehaviorTests
 {
-    private const string Encoding = "consumer.opaque-vertices";
-
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task CreationsFromTheSameDefinitionShareGeometry(bool fileBacked)
+    public async Task CreationsFromTheSameBlocksSharePagesAndOutliveTheAsset(bool fileBacked)
     {
         using var files = new MeshFiles();
-        byte[] payload = CreatePayload(out int offset);
-        using var created = CreateAsset(payload, offset);
+        using var created = CreateAsset();
         if (fileBacked) await created.SaveAsync(files.Path);
         using var asset = fileBacked ? await MeshAsset.OpenAsync(files.Path) : created.Duplicate();
-        ClusterMeshBlock block = asset.GetBlock<ClusterMeshBlock>();
-        MeshBlock shape = asset.GetBlock<MeshBlock>();
-        using var branch = block.Duplicate();
-
-        var first = await block.CreateAsync(shape, "first");
-        var second = await block.CreateAsync(shape, "second");
-        var third = await branch.CreateAsync(shape, "branch");
-
+        ClusterGeometryBlock geometry = asset.GetBlock<ClusterGeometryBlock>();
+        ClusterVertexAttributesBlock attributes = await asset.GetBlockAsync<ClusterVertexAttributesBlock>();
+        using var branch = geometry.Duplicate();
+        var first = await geometry.CreateAsync(asset.GetBlock<MeshBlock>(), attributes, "first");
+        var second = await geometry.CreateAsync(asset.GetBlock<MeshBlock>(), attributes, "second");
+        var third = await branch.CreateAsync(asset.GetBlock<MeshBlock>(), attributes, "branch");
         Assert.True(first.TryGetPage(0, out var firstPage));
         Assert.True(second.TryGetPage(0, out var secondPage));
         Assert.True(third.TryGetPage(0, out var thirdPage));
-        Assert.True(firstPage.Equals(secondPage));
-        Assert.True(firstPage.Equals(thirdPage));
+        Assert.True(firstPage.Equals(secondPage)); Assert.True(firstPage.Equals(thirdPage));
         Assert.True(first.Bvh.Equals(second.Bvh));
-        Assert.True(first.Bvh.Equals(third.Bvh));
+        using MeshPayloadSource source = await geometry.OpenPayloadSourceAsync(attributes);
+        asset.Dispose();
+        Assert.Equal(firstPage.ToArray(), (await source.ReadPageAsync(0)).ToArray());
+        Assert.Equal("surface", Assert.Single(first.Regions).Name);
     }
 
     [Fact]
-    public async Task EditedPageDescriptionIsUsedByTheNextRead()
+    public async Task EditingGeometryKeepsRetainedPagesAndNewCreationsUseNewData()
     {
-        byte[] payload = CreatePayload(out int offset);
-        using var asset = CreateAsset(payload, offset);
-        ClusterMeshBlock block = asset.GetBlock<ClusterMeshBlock>();
-        using var first = await block.OpenPayloadSourceAsync();
-        ReadOnlyMemory<byte> bytes = await first.ReadPageAsync(0);
-        block.PageDigests[0] = block.PageDigests[0] with { Sha256 = [.. new byte[32]] };
-        using var changed = await block.OpenPayloadSourceAsync();
-
-        await Assert.ThrowsAsync<InvalidDataException>(() => changed.ReadPageAsync(0).AsTask());
-        Assert.Equal(payload[..offset], bytes.ToArray());
+        using var asset = CreateAsset();
+        ClusterGeometryBlock geometry = asset.GetBlock<ClusterGeometryBlock>();
+        ClusterVertexAttributesBlock attributes = asset.GetBlock<ClusterVertexAttributesBlock>();
+        using var first = await geometry.OpenPayloadSourceAsync(attributes);
+        byte[] original = (await first.ReadPageAsync(0)).ToArray();
+        geometry.Clusters[0] = geometry.Clusters[0] with { PositionOrigin = new() { X = 7 } };
+        using var changed = await geometry.OpenPayloadSourceAsync(attributes);
+        Assert.Equal(original, (await first.ReadPageAsync(0)).ToArray());
+        Assert.NotEqual(original, (await changed.ReadPageAsync(0)).ToArray());
+        Assert.Equal(7, geometry.Clusters[0].DecodePosition(0).X);
     }
 
     [Fact]
-    public async Task ProceduralSourceKeepsItsPagesAcrossMeshUpdates()
+    public async Task EditingAttributesKeepsRetainedPagesAndNextReadUsesNewBytes()
     {
-        byte[] payload = CreatePayload(out int offset);
-        var mesh = SomeEngine.Resources.Mesh.Create("ready", Encoding, payload.AsMemory(), (ulong)offset);
+        using var asset = CreateAsset();
+        ClusterGeometryBlock geometry = asset.GetBlock<ClusterGeometryBlock>();
+        ClusterVertexAttributesBlock attributes = asset.GetBlock<ClusterVertexAttributesBlock>();
+        using var first = await geometry.OpenPayloadSourceAsync(attributes);
+        byte[] original = (await first.ReadPageAsync(0)).ToArray();
+        attributes.Clusters[0] = new() { Data = [4, 3, 2, 1] };
+        using var changed = await geometry.OpenPayloadSourceAsync(attributes);
+        Assert.Equal(original, (await first.ReadPageAsync(0)).ToArray());
+        Assert.NotEqual(original, (await changed.ReadPageAsync(0)).ToArray());
+    }
+
+    [Fact]
+    public async Task DifferentVertexIdentitiesAreRejectedBeforeCreatingRenderGeometry()
+    {
+        using var asset = CreateAsset();
+        ClusterGeometryBlock geometry = asset.GetBlock<ClusterGeometryBlock>();
+        using var other = asset.GetBlock<ClusterVertexAttributesBlock>().Duplicate();
+        other.VertexIdentity = Guid.NewGuid();
+        await Assert.ThrowsAsync<InvalidDataException>(() => geometry.CreateAsync(asset.GetBlock<MeshBlock>(), other, "mismatch").AsTask());
+    }
+
+    [Fact]
+    public async Task ReopenedBlocksLoadPagesIntoTheSameRenderGeometry()
+    {
+        using var files = new MeshFiles();
+        using var created = CreateAsset();
+        await created.SaveAsync(files.Path);
+        using var first = await MeshAsset.OpenAsync(files.Path);
+        var mesh = await first.GetBlock<ClusterGeometryBlock>().CreateAsync(first.GetBlock<MeshBlock>(),
+            await first.GetBlockAsync<ClusterVertexAttributesBlock>(), first.Name);
+        using var second = await MeshAsset.OpenAsync(files.Path);
+        await second.GetBlock<ClusterGeometryBlock>().LoadPagesAsync(mesh, await second.GetBlockAsync<ClusterVertexAttributesBlock>(), [0]);
+        Assert.True(mesh.TryGetPage(0, out _));
         using var source = MeshPayloadSource.FromMesh(mesh);
         Assert.True(source.Matches(mesh));
-        payload[offset - 4] = 23;
-        var changed = SomeEngine.Resources.Mesh.Create("changed", Encoding, payload.AsMemory(), (ulong)offset);
-        Assert.False(source.Matches(changed));
-        mesh.Update(changed);
-        byte[] result = new byte[offset];
-        await source.ReadPageIntoAsync(0, result);
-        Assert.Equal(0, result[offset - 4]);
-        var page = await source.ReadPageAsync(0);
-        Assert.Equal(0, page.Span[offset - 4]);
-        using var asset = CreateAsset(payload, offset);
-        var partial = SomeEngine.Resources.Mesh.Create("partial", Encoding, mesh.PageDigests, mesh.Bvh);
-        Assert.Throws<InvalidOperationException>(() => MeshPayloadSource.FromMesh(partial));
+        using var changedAsset = CreateAsset();
+        ClusterGeometryBlock changed = changedAsset.GetBlock<ClusterGeometryBlock>();
+        changed.Clusters[0] = changed.Clusters[0] with { PositionOrigin = new() { X = 8 } };
+        var replacement = await changed.CreateAsync(changedAsset.GetBlock<MeshBlock>(), changedAsset.GetBlock<ClusterVertexAttributesBlock>(), "replacement");
+        Assert.False(source.Matches(replacement));
+        byte[] before = (await source.ReadPageAsync(0)).ToArray();
+        mesh.Update(replacement);
+        Assert.Equal(before, (await source.ReadPageAsync(0)).ToArray());
     }
 
     [Fact]
-    public async Task CreatingMeshAcquiresMinimumGeometryAndDataOutlivesTheAsset()
+    public async Task LargeAttributeSetsRetainEveryStreamInTheRenderSource()
     {
-        using var files = new MeshFiles();
-        byte[] payload = CreatePayload(out int offset);
-        using (var created = CreateAsset(payload, offset)) await created.SaveAsync(files.Path);
-        using var asset = await MeshAsset.OpenAsync(files.Path);
-        var mesh = await asset.GetBlock<ClusterMeshBlock>().CreateAsync(asset.GetBlock<MeshBlock>(), asset.Name);
-        Assert.Equal("surface", Assert.Single(mesh.Regions).Name);
-        Assert.True(mesh.TryGetPage(0, out _));
-        byte[] bvh = new byte[mesh.BvhByteLength];
-        mesh.ReadBvh(bvh);
-        Assert.Equal(payload[offset..], bvh);
-        // A second decode creates different digest arrays with the same content.
-        using (var reopened = await MeshAsset.OpenAsync(files.Path))
-            await reopened.GetBlock<ClusterMeshBlock>().LoadPagesAsync(mesh, [0]);
-        Assert.True(mesh.TryGetPage(0, out var read));
-        asset.Dispose();
-        Assert.Equal(payload[..offset], read.ToArray());
-    }
-
-    [Fact]
-    public async Task RetainedSourceSurvivesFileClosureAndResidentEditsSeparateItsBytes()
-    {
-        using var files = new MeshFiles();
-        byte[] payload = CreatePayload(out int offset);
-        using var created = CreateAsset(payload, offset);
-        using var resident = await created.GetBlock<ClusterMeshBlock>().OpenPayloadSourceAsync();
-        byte[] replacement = payload.ToArray();
-        replacement[offset - 4] = 39;
-        created.GetBlock<ClusterMeshBlock>().SetPayload(replacement, (ulong)offset);
-        using var edited = await created.GetBlock<ClusterMeshBlock>().OpenPayloadSourceAsync();
-        await created.SaveAsync(files.Path);
-        created.Dispose();
-        byte[] original = new byte[offset];
-        byte[] changed = new byte[offset];
-        await resident.ReadPageIntoAsync(0, original);
-        await edited.ReadPageIntoAsync(0, changed);
-        Assert.Equal(payload[..offset], original);
-        Assert.Equal(39, changed[offset - 4]);
-        using var opened = await MeshAsset.OpenAsync(files.Path);
-        using var disk = await opened.GetBlock<ClusterMeshBlock>().OpenPayloadSourceAsync();
-        opened.Dispose();
-        await disk.ReadPageIntoAsync(0, original);
-        Assert.Equal(changed, original);
-    }
-
-    [Fact]
-    public async Task CorruptGeometryIsRejectedWhenExplicitlyReadAndDoesNotChangeMesh()
-    {
-        using var files = new MeshFiles();
-        byte[] payload = CreatePayload(out int offset);
-        using (var created = CreateAsset(payload, offset)) await created.SaveAsync(files.Path);
-        long chunkOffset;
-        using var description = await MeshAsset.OpenAsync(files.Path);
-        ulong payloadKey = description.BlockDescriptions.Single(block => block.BlockTypeId == ClusterMeshBlock.BlockTypeId)
-            .GetStorageKey(ClusterMeshBlock.PayloadChunkKey);
-        description.Dispose();
-        await using (var document = await BinaryDocument.OpenAsync(FileRangeSource.Open(files.Path), MeshAsset.WireType, ownsSource: true))
-            chunkOffset = (await document.FindChunkAsync(payloadKey))!.Value.Offset;
-        using (var stream = new FileStream(files.Path, FileMode.Open, FileAccess.ReadWrite))
+        using var asset = CreateAsset();
+        ClusterGeometryBlock geometry = asset.GetBlock<ClusterGeometryBlock>();
+        ClusterVertexAttributesBlock attributes = asset.GetBlock<ClusterVertexAttributesBlock>();
+        var streams = Enumerable.Range(0, 512).Select(index => new ClusterVertexAttribute
         {
-            stream.Position = chunkOffset + offset - 4;
-            stream.WriteByte(73);
-        }
-        using var asset = await MeshAsset.OpenAsync(files.Path);
-        ClusterMeshBlock block = asset.GetBlock<ClusterMeshBlock>();
-        await Assert.ThrowsAsync<InvalidDataException>(() => block.CreateAsync(asset.GetBlock<MeshBlock>(), asset.Name).AsTask());
-        using MeshPayloadSource source = await block.OpenPayloadSourceAsync();
-        await Assert.ThrowsAsync<InvalidDataException>(() => source.ReadPageAsync(0).AsTask());
-        Assert.Equal(payload[offset..], (await source.ReadBvhAsync()).ToArray());
+            Name = "_ATTRIBUTE_" + index,
+            ComponentCount = 64,
+            VertexComponentCounts = [64, 64, 64],
+            Data = [.. new byte[3 * 64 * sizeof(double)]],
+        }).ToArray();
+        attributes.Clusters[0] = ClusterVertexAttributes.Encode(streams);
+        var mesh = await geometry.CreateAsync(asset.GetBlock<MeshBlock>(), attributes, "large attributes");
+        using var source = await geometry.OpenPayloadSourceAsync(attributes);
+        Assert.True(mesh.TryGetPage(0, out var page));
+        Assert.True(page.Length > 131072);
+        Assert.Equal(page.ToArray(), (await source.ReadPageAsync(0)).ToArray());
+        Assert.Equal(512, attributes.Clusters[0].Attributes.Length);
+        Assert.All(attributes.Clusters[0].Attributes, stream => Assert.Equal(0, stream.ReadComponent(2, 63)));
     }
 
-    private static MeshAsset CreateAsset(byte[] payload, int offset)
+    private static MeshAsset CreateAsset()
     {
-        var result = new MeshAsset { Name = "mesh" };
-        using var geometry = new MeshBlock { Regions = [new SomeEngine.Resources.MeshRegion { Name = "surface" }] };
-        using var clusters = new ClusterMeshBlock { VertexEncoding = Encoding };
-        try
+        var asset = new MeshAsset { Name = "mesh" };
+        using var shape = new MeshBlock { Regions = [new SomeEngine.Resources.MeshRegion { Name = "surface" }] };
+        using var geometry = new ClusterGeometryBlock
         {
-            clusters.SetPayload(payload, (ulong)offset);
-            result.SetBlock(geometry);
-            result.SetBlock(clusters);
-            return result;
-        }
-        catch { result.Dispose(); throw; }
-    }
-
-    private static byte[] CreatePayload(out int bvhOffset)
-    {
-        int vertices = MeshPageHeader.Size + PackedCluster.SizeInBytes;
-        const int vertexBytes = 65536;
-        bvhOffset = vertices + vertexBytes + 3;
-        byte[] bytes = new byte[bvhOffset + Unsafe.SizeOf<ClusterBVHNode>()];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1, TotalVertexCount = 3, TotalTriangleCount = 1, VertexBlobBytes = vertexBytes,
-            ClustersOffset = MeshPageHeader.Size, VertexBlobsOffset = (uint)vertices,
-            IndicesOffset = (uint)(vertices + vertexBytes), ExtensionDataOffset = (uint)bvhOffset,
-            VertexEncodingHash = VertexEncodingCompatibility.Hash(Encoding),
+            Vertices = [new(0, 0, 0), new(0, 1, 1), new(0, 2, 2)],
+            Clusters = [new() { Vertices = [0, 1, 2], Indices = [0, 1, 2], TriangleMaterials = [0], PositionStep = 1,
+                PositionData = [0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0], ParentError = float.MaxValue, Group = -1, ParentGroup = -1,
+                Radius = 2, LodRadius = 2, SelfLodRadius = 2 }],
         };
-        MemoryMarshal.Write(bytes, in header);
-        var cluster = new PackedCluster
-        {
-            VertexBlobSize = vertexBytes, ExtensionOffset = uint.MaxValue, MaterialTableOffset = uint.MaxValue,
-            PackedCounts = 3 | (1u << 8),
-        };
-        MemoryMarshal.Write(bytes.AsSpan(MeshPageHeader.Size), in cluster);
-        bytes[bvhOffset - 2] = 1; bytes[bvhOffset - 1] = 2;
-        var node = new ClusterBVHNode { NodeType = 1 };
-        node.SetLeafData(0, 1);
-        MemoryMarshal.Write(bytes.AsSpan(bvhOffset), in node);
-        return bytes;
+        using var attributes = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity, Clusters = [ClusterVertexAttributes.Encode([])] };
+        asset.SetBlock(shape); asset.SetBlock(geometry); asset.SetBlock(attributes); return asset;
     }
-
     private sealed class MeshFiles : IDisposable
     {
-        private readonly string _directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "someengine-mesh-" + Guid.NewGuid().ToString("N"));
-        internal MeshFiles() => Directory.CreateDirectory(_directory);
-        internal string Path => System.IO.Path.Combine(_directory, "test.mesh.asset");
-        public void Dispose() => Directory.Delete(_directory, recursive: true);
+        private readonly string _directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SomeEngine-cluster-" + Guid.NewGuid().ToString("N"));
+        public MeshFiles() => Directory.CreateDirectory(_directory);
+        public string Path => System.IO.Path.Combine(_directory, "mesh.mesh.asset");
+        public void Dispose() => Directory.Delete(_directory, true);
     }
 }

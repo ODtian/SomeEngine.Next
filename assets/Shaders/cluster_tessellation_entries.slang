@@ -4,7 +4,7 @@
 #include "cluster_tessellation_core.slang"
 #include "cluster_policy_raster_output.slang"
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -16,7 +16,7 @@ void ClusterTessellationSeed(
     SeedTessellationRasterBin(vertex, groupId, groupThreadIndex);
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -29,7 +29,7 @@ void ClusterTessellationSplit(
     SplitTessellationPatches(vertex, domain, groupId, groupThreadIndex);
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -51,7 +51,7 @@ void ClusterTessellationDiceImageAtomic64(
         groupThreadIndex);
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -69,7 +69,7 @@ void ClusterTessellationDiceBufferAtomic64(
     DiceTessellationPatches(vertex, domain, visibility, output, groupId, groupThreadIndex);
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
 [ConservativeBounds("unbounded")]
 [shader("vertex")]
 ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareVertex(
@@ -138,7 +138,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
     return output;
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
 [ConservativeBounds("unbounded")]
 [shader("mesh")]
 [outputtopology("triangle")]

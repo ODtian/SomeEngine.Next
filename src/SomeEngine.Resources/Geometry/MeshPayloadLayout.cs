@@ -59,11 +59,11 @@ public static class MeshPayloadLayout
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} has invalid opaque vertex metadata.");
         }
-        if (pageSize < MeshPageHeader.Size || pageSize > MeshPageHeader.MaxPageSize)
+        if (pageSize < MeshPageHeader.Size || pageSize > int.MaxValue)
         {
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} declares invalid size {pageSize}; valid pages are " +
-                $"{MeshPageHeader.Size}..{MeshPageHeader.MaxPageSize} bytes.");
+                $"{MeshPageHeader.Size}..{int.MaxValue} bytes.");
         }
         if (pageSize > checked((ulong)remaining))
         {

@@ -30,7 +30,7 @@
 
 ## 字节与业务分块
 
-文件 chunk 与业务单元的关系由具体 Block 描述。Texture tile 使用独立 chunk；ClusterMeshBlock 的几何页和 BVH 是 payload chunk 内可独立校验的范围。需要独立读取的业务单元必须有可独立取得、解码和校验的存储边界。
+文件 chunk 与业务单元的关系由具体 Block 描述。Texture tile 使用独立 chunk；Cluster 两份 Block 的持久读取以各自的元数据边界校验，渲染页在取得 Block 后由几何和不透明属性字节组合。需要独立读取的业务单元必须有可独立取得、解码和校验的存储边界。
 
 `AssetFile.ReadBytesAsync` 直接将文档数据读入最终实际长度数组。它不保留结果缓存；同一内容定义的复用由 Block 的数据节点提供，见 [共享规则](Asset-Sharing-and-Writes.md)。范围读取继续使用 `IRangeSource`，不强迫为读一页几何取得整个 payload。
 

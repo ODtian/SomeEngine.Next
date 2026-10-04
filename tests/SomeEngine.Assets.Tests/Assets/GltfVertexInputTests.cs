@@ -93,7 +93,7 @@ public sealed class GltfVertexInputTests
                 new ClusterBuilderOptions { VertexEncoder = encoder });
             Assert.True(encoder.SawNormalizedUv);
             Assert.True(encoder.SawSparseUv);
-            Assert.Equal(encoder.Compatibility, asset.GetBlock<ClusterMeshBlock>().VertexEncoding);
+            Assert.Equal(encoder.Compatibility, asset.GetBlock<ClusterVertexAttributesBlock>().Encoding);
         }
         finally { Directory.Delete(directory, recursive: true); }
     }

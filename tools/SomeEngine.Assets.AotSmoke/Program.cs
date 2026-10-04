@@ -60,25 +60,30 @@ try
         throw new InvalidOperationException("Downstream generated asset format did not run under NativeAOT.");
     using var mesh = CreateMesh();
     using var meshCopy = mesh.Duplicate();
-    var meshRead = mesh.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
-    long marker = MeshPageHeader.Size + PackedCluster.SizeInBytes;
-    byte[] editedMesh = meshRead.ToArray();
-    editedMesh[marker] = 9;
-    meshCopy.GetBlock<ClusterMeshBlock>().SetPayload(editedMesh, meshCopy.GetBlock<ClusterMeshBlock>().BvhOffset);
-    var originalBytes = mesh.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
-    var copiedBytes = meshCopy.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
-    if (meshRead.Span[checked((int)marker)] != 1 || originalBytes.Span[checked((int)marker)] != 1 || copiedBytes.Span[checked((int)marker)] != 9)
-        throw new InvalidOperationException("A mesh byte edit changed another branch or reader.");
+    ClusterGeometryBlock originalGeometry = mesh.GetBlock<ClusterGeometryBlock>();
+    ClusterGeometry originalCluster = originalGeometry.Clusters[0];
+    ClusterGeometryBlock copiedGeometry = meshCopy.GetBlock<ClusterGeometryBlock>();
+    copiedGeometry.Clusters[0] = copiedGeometry.Clusters[0] with { PositionOrigin = new() { X = 9 } };
+    if (originalCluster.DecodePosition(0).X != 1 || originalGeometry.Clusters[0].DecodePosition(0).X != 1
+        || copiedGeometry.Clusters[0].DecodePosition(0).X != 9)
+        throw new InvalidOperationException("A geometry edit changed another branch or reader.");
     AssetEntry meshEntry = await meshCopy.SaveAsync(Path.Combine(directory, "mesh.mesh.asset"));
     using var meshFile = await MeshAsset.OpenAsync(meshEntry.Path);
-    var readyMesh = await meshFile.GetBlock<ClusterMeshBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
+    ClusterGeometryBlock loadedGeometry = meshFile.GetBlock<ClusterGeometryBlock>();
+    ClusterVertexAttributesBlock loadedAttributes = await meshFile.GetBlockAsync<ClusterVertexAttributesBlock>();
+    var readyMesh = await loadedGeometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), loadedAttributes, meshFile.Name);
     if (!readyMesh.TryGetPage(0, out _))
-        throw new InvalidOperationException("Mesh creation did not acquire minimum drawable geometry.");
-    await meshFile.GetBlock<ClusterMeshBlock>().LoadPagesAsync(readyMesh, [0]);
+        throw new InvalidOperationException("Mesh creation must acquire minimum drawable geometry.");
+    await loadedGeometry.LoadPagesAsync(readyMesh, loadedAttributes, [0]);
+    using var pages = await loadedGeometry.OpenPayloadSourceAsync(loadedAttributes);
+    if (loadedGeometry.Clusters[0].DecodePosition(0).X != 9)
+        throw new InvalidOperationException("Saved geometry must retain the branch edit.");
     meshFile.Dispose();
     byte[] page = new byte[readyMesh.GetPageByteLength(0)];
     readyMesh.ReadPage(0, page);
-    if (page[marker] != 9) throw new InvalidOperationException("Saved Mesh pages lost an edit or require a closed source.");
+    ReadOnlyMemory<byte> retainedPage = await pages.ReadPageAsync(0);
+    if (!page.AsSpan().SequenceEqual(retainedPage.Span))
+        throw new InvalidOperationException("Render geometry must outlive its source file.");
     using var parent = new StandardMaterialAsset();
     _ = new StandardMaterialParameters(parent.GetBlock<MaterialBlock>()) { Roughness = 0.25f };
     project.RegisterAsset(await parent.SaveAsync(Path.Combine(directory, "parent.material.asset")));
@@ -238,45 +243,19 @@ static async ValueTask<Guid> WriteTextureAsync(AssetProject project, string path
 
 static MeshAsset CreateMesh()
 {
-    const string encoding = "aot-smoke.opaque-vertex";
-    int vertices = MeshPageHeader.Size + PackedCluster.SizeInBytes;
-    int bvhOffset = vertices + 1 + 3;
-    byte[] bytes = new byte[bvhOffset + Unsafe.SizeOf<ClusterBVHNode>()];
-    var header = new MeshPageHeader
-    {
-        ClusterCount = 1,
-        TotalVertexCount = 1,
-        TotalTriangleCount = 1,
-        VertexBlobBytes = 1,
-        ClustersOffset = MeshPageHeader.Size,
-        VertexBlobsOffset = (uint)vertices,
-        IndicesOffset = (uint)(vertices + 1),
-        ExtensionDataOffset = (uint)bvhOffset,
-        VertexEncodingHash = VertexEncodingCompatibility.Hash(encoding),
-    };
-    MemoryMarshal.Write(bytes, in header);
-    var cluster = new PackedCluster
-    {
-        VertexBlobSize = 1,
-        PackedCounts = 1 | (1u << 8),
-        ExtensionOffset = uint.MaxValue,
-        MaterialTableOffset = uint.MaxValue
-    };
-    MemoryMarshal.Write(bytes.AsSpan(MeshPageHeader.Size), in cluster);
-    bytes[vertices] = 1;
-    var bvh = new ClusterBVHNode { NodeType = 1 };
-    bvh.SetLeafData(0, 1);
-    MemoryMarshal.Write(bytes.AsSpan(bvhOffset), in bvh);
     var result = new MeshAsset { Name = "mesh" };
-    using var geometry = new MeshBlock();
-    using var clusters = new ClusterMeshBlock { VertexEncoding = encoding };
-    try
+    using var shape = new MeshBlock();
+    using var geometry = new ClusterGeometryBlock
     {
-        clusters.SetPayload(bytes, (ulong)bvhOffset);
-        result.SetBlock(geometry);
-        result.SetBlock(clusters);
-        return result;
-    }
+        Vertices = [new(0, 0, 0), new(0, 1, 1), new(0, 2, 2)],
+        Clusters = [new() { Vertices = [0, 1, 2], Indices = [0, 1, 2], TriangleMaterials = [0],
+            PositionOrigin = new() { X = 1 }, PositionStep = 1,
+            PositionData = [0,0,0,0,0,0, 1,0,0,0,0,0, 0,0,1,0,0,0],
+            Group = -1, ParentGroup = -1, ParentError = float.MaxValue, Radius = 2, LodRadius = 2, SelfLodRadius = 2 }],
+    };
+    using var attributes = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity,
+        Clusters = [ClusterVertexAttributes.Encode([])] };
+    try { result.SetBlock(shape); result.SetBlock(geometry); result.SetBlock(attributes); return result; }
     catch { result.Dispose(); throw; }
 }
 

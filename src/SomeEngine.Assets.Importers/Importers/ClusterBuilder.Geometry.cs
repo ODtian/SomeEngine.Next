@@ -131,6 +131,7 @@ public static partial class ClusterBuilder
         List<uint> vertices = [];
         byte[] localIndices = new byte[triangles.Length];
         int[] materials = new int[triangles.Length / 3];
+        int[] regions = new int[triangles.Length / 3];
         for (int corner = 0; corner < triangles.Length; corner++)
         {
             uint vertex = triangles[corner];
@@ -141,7 +142,11 @@ public static partial class ClusterBuilder
                 vertices.Add(vertex);
             }
             localIndices[corner] = local;
-            if (corner % 3 == 0) materials[corner / 3] = rows[(int)vertex].Rows.Primitive.Material;
+            if (corner % 3 == 0)
+            {
+                materials[corner / 3] = rows[(int)vertex].Rows.Primitive.Material;
+                regions[corner / 3] = rows[(int)vertex].Rows.Primitive.SourcePrimitive;
+            }
         }
         Vector3 min = new(float.MaxValue), max = new(float.MinValue);
         foreach (uint vertex in vertices)
@@ -163,12 +168,13 @@ public static partial class ClusterBuilder
         }
         return new()
         {
-            Deform = deform, Vertices = [.. vertices], Indices = [.. localIndices], TriangleMaterials = [.. materials],
+            Deform = deform, Vertices = [.. vertices], Indices = [.. localIndices], TriangleMaterials = [.. materials], TriangleRegions = [.. regions],
             PositionOrigin = CreateVec3(min), PositionStep = step, PositionData = [.. data],
             Level = meshlet.Level, Error = meshlet.Error, ParentError = meshlet.ParentError,
             Group = meshlet.GroupId + groupOffset, ParentGroup = meshlet.ParentGroupId < 0 ? -1 : meshlet.ParentGroupId + groupOffset,
             Center = CreateVec3(meshlet.Center), Radius = meshlet.Radius + quantizationRadius,
             LodCenter = CreateVec3(meshlet.LodCenter), LodRadius = meshlet.LodRadius + quantizationRadius,
+            SelfLodCenter = CreateVec3(meshlet.SelfLodCenter), SelfLodRadius = meshlet.SelfLodRadius + quantizationRadius,
         };
     }
 

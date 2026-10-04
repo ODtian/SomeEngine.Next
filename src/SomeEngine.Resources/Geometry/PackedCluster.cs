@@ -49,7 +49,7 @@ public struct PackedCluster
     // 72: [range0End:8][range1End:8][Reserved:16]
     public uint PackedRanges;
 
-    // 76: undefined slow material path sentinel (must be uint.MaxValue)
+    // 76: page-relative uint32 material IDs, or uint.MaxValue for inline IDs
     public uint MaterialTableOffset;
 
     // 80..95: inline vertex-reuse batch data. The first 12 bits store up to three

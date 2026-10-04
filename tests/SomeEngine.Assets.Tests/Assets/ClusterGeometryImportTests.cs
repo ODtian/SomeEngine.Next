@@ -17,7 +17,7 @@ public sealed class ClusterGeometryImportTests
     [InlineData(1)]
     [InlineData(.0001f)]
     [InlineData(10000)]
-    public async Task NewPositionsMatchTheRetainedClusterBlock(float scale)
+    public async Task QuantizedPositionsMatchSourceAtDifferentScales(float scale)
     {
         VertexPrimitive primitive = Triangle();
         double[] values = primitive.Attributes["POSITION"].Values.ToArray();
@@ -26,8 +26,7 @@ public sealed class ClusterGeometryImportTests
         await using ImportResult imported = await ImportAsync([primitive]);
         Vector3[] positions = Enumerable.Range(0, 3).Select(vertex => new Vector3((float)values[vertex * 3],
             (float)values[vertex * 3 + 1], (float)values[vertex * 3 + 2])).ToArray();
-        using MeshAsset old = ClusterBuilder.ProcessRaw(positions, [], [0, 1, 2], ClusterBuilderTestMaterials.Slots(), "Old geometry");
-        List<Vector3> oldPositions = await DecodeOldPositionsAsync(old.GetBlock<ClusterMeshBlock>());
+        List<Vector3> oldPositions = positions.ToList();
         ClusterGeometry cluster = Assert.Single(imported.Geometry.Clusters);
         Assert.Equal(oldPositions.Count, cluster.Vertices.Length);
         for (int vertex = 0; vertex < cluster.Vertices.Length; vertex++)
@@ -232,13 +231,13 @@ public sealed class ClusterGeometryImportTests
             MeshAsset mesh = await context.GetAssetAsync<GltfMesh, MeshAsset>(model.LogicalMeshes[0]);
             Assert.Single(mesh.GetBlock<ClusterGeometryBlock>().Clusters);
             Assert.Single(mesh.GetBlock<ClusterVertexAttributesBlock>().Clusters);
-            Assert.Equal(3, (await DecodeOldPositionsAsync(mesh.GetBlock<ClusterMeshBlock>())).Count);
+            Assert.Equal(3, Assert.Single(mesh.GetBlock<ClusterGeometryBlock>().Clusters).Vertices.Length);
             string saved = Path.Combine(directory, "triangle.mesh.asset");
             await mesh.SaveAsync(saved);
             using MeshAsset reopened = await MeshAsset.OpenAsync(saved);
             Assert.Single((await reopened.GetBlockAsync<ClusterGeometryBlock>()).Clusters);
             Assert.Single((await reopened.GetBlockAsync<ClusterVertexAttributesBlock>()).Clusters);
-            Assert.Equal(3, (await DecodeOldPositionsAsync(await reopened.GetBlockAsync<ClusterMeshBlock>())).Count);
+            Assert.Equal(3, Assert.Single(mesh.GetBlock<ClusterGeometryBlock>().Clusters).Vertices.Length);
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -360,40 +359,4 @@ public sealed class ClusterGeometryImportTests
         return directory;
     }
 
-    private static async Task<List<Vector3>> DecodeOldPositionsAsync(ClusterMeshBlock block)
-    {
-        List<Vector3> positions = [];
-        using var source = await block.OpenPayloadSourceAsync();
-        for (int page = 0; page < block.PageDigests.Count; page++)
-        {
-            ReadOnlyMemory<byte> memory = await source.ReadPageAsync(page);
-            ReadOnlySpan<byte> data = memory.Span;
-            MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(data);
-            ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(data.Slice((int)header.ClustersOffset, (int)header.ClusterCount * PackedCluster.SizeInBytes));
-            foreach (PackedCluster cluster in clusters)
-            {
-                ReadOnlySpan<byte> blob = data.Slice((int)(header.VertexBlobsOffset + cluster.VertexBlobOffset), (int)cluster.VertexBlobSize);
-                uint widths = BinaryPrimitives.ReadUInt32LittleEndian(blob[12..]);
-                int stride = (int)BinaryPrimitives.ReadUInt32LittleEndian(blob[16..]);
-                int start = (int)BinaryPrimitives.ReadUInt32LittleEndian(blob[20..]);
-                Vector3 origin = new(BinaryPrimitives.ReadSingleLittleEndian(blob[24..]), BinaryPrimitives.ReadSingleLittleEndian(blob[28..]), BinaryPrimitives.ReadSingleLittleEndian(blob[32..]));
-                float step = BinaryPrimitives.ReadSingleLittleEndian(blob[36..]);
-                for (int vertex = 0; vertex < (cluster.PackedCounts & 255); vertex++)
-                {
-                    int bit = start + vertex * stride;
-                    positions.Add(origin + new Vector3(ReadBits(blob, ref bit, (int)(widths & 31)),
-                        ReadBits(blob, ref bit, (int)(widths >> 5 & 31)), ReadBits(blob, ref bit, (int)(widths >> 10 & 31))) * step);
-                }
-            }
-        }
-        return positions;
-    }
-
-    private static uint ReadBits(ReadOnlySpan<byte> data, ref int bit, int count)
-    {
-        uint value = 0;
-        for (int component = 0; component < count; component++, bit++)
-            value |= (uint)(data[bit / 8] >> (bit % 8) & 1) << component;
-        return value;
-    }
 }

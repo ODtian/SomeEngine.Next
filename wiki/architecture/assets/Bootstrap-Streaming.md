@@ -5,7 +5,7 @@ Bootstrap 是某项业务操作所需的最低有效表示。只有它就绪，�
 
 ## Invariants
 - `TextureBlock.CreateAsync` 在最粗 mip 的完整像素取得后返回 Texture，调用方可以直接使用其最低采样表示。
-- `ClusterMeshBlock.CreateAsync` 取得 BVH 和 LowestDetailPageIndices 指定的几何页后返回。后续细节显式取得，再经既有 Game world → Rendering world 路径发布。
+- `ClusterGeometryBlock.CreateAsync(shape, attributes, name)` 取得 BVH 和 LowestDetailPageIndices 指定的几何页后返回。后续细节显式取得，再经既有 Game world → Rendering world 路径发布。
 - 普通描述存在不代表几何数据已加载；完整的创建入口必须满足其承诺的最低可用表示。
 - Bootstrap 在其最低业务表示被使用期间不可被普通细节驱逐策略移除。
 - refinement 失败时保留当前有效表示，不切换到 correctness fallback。

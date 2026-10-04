@@ -43,9 +43,11 @@
 
 公开行为验收见 [DeformationBlockBehaviorTests](../../../tests/SomeEngine.Animation.Pose.Tests/DeformationBlockBehaviorTests.cs)：覆盖 `.gltf`、`.glb` 保存重开、共享 mesh 的不同 skin、来源关节重排、替换骨架生产者、省略值、静态网格与重新导入更新。
 
-Cluster 组合同时产出上述两个 Block 与既有 `ClusterMeshBlock`。`ClusterGeometryImporter` 从 `VertexStreamsBlock` 决定顶点身份；`ClusterVertexAttributesImporter` 通过 `GetBlockAsync` 获取几何及顶点流，使用同一映射。两者的 `VertexIdentity` 关联该份顶点身份。准备数据属于中立组合，持久保存包含两份新表示；现有渲染继续读取 `ClusterMeshBlock`。
+Cluster 组合产出 `ClusterGeometryBlock` 与 `ClusterVertexAttributesBlock`。几何 Importer 从顶点流决定顶点身份，属性 Importer 显式取得几何及准备流，使用同一映射。两者的 `VertexIdentity` 对应同一份焊接与重排。中立组合提供准备流，保存交付两份持久表示。
 
-当前代码与目标的差异：渲染读取迁移由收缩阶段完成；普通管线的表示 Block、管线蒙皮影响与形变增量由后续任务交付。
+渲染加载明确取得两份 Block，通过 `ClusterGeometryBlock.CreateAsync(shape, attributes, name)` 创建渲染 Mesh。位置与拓扑、属性字节分别进入 GPU 页的两段数据；用户 Vertex 接口取得各自的地址与长度。默认材质的深度与阴影入口选取 `StaticPositionEval`，着色入口选取完整顶点。属性的数值与 Shader 编码见 [Vertex Encoding](../cluster/Vertex-Encoding.md)。
+
+当前代码与目标的差异：普通管线的表示 Block、管线蒙皮影响与形变增量由后续任务交付。
 
 ## Relations
 [[architecture/Assets/Asset-Meshes|Mesh]] · [[architecture/Assets/Gltf-Mesh-Import|glTF Mesh Import]] · [[architecture/Assets/Importer-Sets|Importer Sets]] · ADR 0016
