@@ -15,6 +15,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
 {
     private readonly GraphicsPipeline _pipeline;
     private readonly GraphTextureId _target;
+    private readonly GraphPassId _pass;
     private bool _disposed;
 
     internal RuntimePresentationPipeline(
@@ -142,6 +143,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                 edit.OrderAfter(pass, inputCompletePass);
                 edit.Commit();
                 _target = target;
+                _pass = pass;
             }
             finally
             {
@@ -158,6 +160,8 @@ internal sealed class RuntimePresentationPipeline : IDisposable
     }
 
     internal GraphTextureId Target => _target;
+
+    internal void OrderAfter(RenderGraphEdit edit, GraphPassId predecessor) => edit.OrderAfter(_pass, predecessor);
 
     internal void Bind(
         ref RenderGraphFrame frame,
