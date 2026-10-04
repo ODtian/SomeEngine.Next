@@ -51,3 +51,24 @@ the string and write version and allocate zero managed bytes in steady use.
 Long formats reuse pooled character storage; strings are created for changed
 characters. Public behavior checks run in the consumer tests and the Views
 NativeAOT smoke executable.
+
+`Text(Loc.Key("menu.start"))` declares localized text. Put one `Locale` and
+loaded `Translations` on the same entity before declaring the interface.
+`world.Replace(language, new Locale { Name = "zh-CN" })` updates the texts
+that read that language. Ordinary string text retains its content and shaping
+versions. Default number and date declarations also read the language; an
+explicit format provider supplies its own culture.
+
+Build language-key JSON content with `Translations.Build(source, destination)`
+in the content build, then load the binary directory with `Translations.Load`.
+String entries use .NET composite formats. Plural entries contain `argument`,
+`other`, and optional `one` fields. The content build emits English and Chinese
+cardinal rule tables; English distinguishes integer one and Chinese uses other.
+`Loc.Key("items", count)` supplies the positional arguments. Keep argument
+memory and referenced values immutable while the view uses them.
+
+Read the displayed string from `TextContent.Value`. `Text.Value` retains the
+string declaration parameter, and `Text.LocalizedValue` holds a localized
+input. `SetText` formats at the time of writing; its string overload selects
+ordinary text, including an empty string. Full content examples and public API
+behavior are in `wiki/architecture/someui/Text.md`.

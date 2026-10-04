@@ -42,7 +42,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
             measurement = new TextMeasurement();
             _measurements.Add(node, measurement);
         }
-        uint textVersion = world.WriteVersion<Text>(node);
+        uint textVersion = world.WriteVersion<TextContent>(node);
         bool hasStyle = world.Has<TextStyle>(node);
         uint styleVersion = hasStyle ? world.WriteVersion<TextStyle>(node) : 0;
         uint appearanceVersion = world.WriteVersion<TextAppearance>(node);
@@ -52,7 +52,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         TextShapeBuffer shape = measurement.GetBuffer(width);
         if (!shape.HasShape || shape.Versions != versions)
         {
-            Shaper.Shape(world.Read<Text>(node).Value, new TextStyleData(style.Font!, style.Size, LineHeight: style.LineHeight),
+            Shaper.Shape(world.Read<TextContent>(node).Value, new TextStyleData(style.Font!, style.Size, LineHeight: style.LineHeight),
                 width, shape.Buffer);
             shape.Versions = versions;
             shape.HasShape = true;
