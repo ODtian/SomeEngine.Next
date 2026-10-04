@@ -1,3 +1,4 @@
+using System.Globalization;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -12,6 +13,7 @@ public static partial class SolidChecks
 {
     public static void Run()
     {
+        VerifyNumberLanguages();
         using var frames = new HeadlessFrameDriver();
         var count = new State<int>(3);
         var sample = new State<int>(7);
@@ -75,6 +77,60 @@ public static partial class SolidChecks
         Require(!positive(), "Memo getters observe a state written before the next frame.");
         frames.Frame();
         Require(frames.World.Read<Elements.Text>(sign).Value == "negative", "Changed Memo results update downstream text.");
+    }
+
+    public static void VerifyNumberLanguages()
+    {
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            using var frames = new HeadlessFrameDriver();
+            Entity language = frames.World.CreateEntity(new Locale { Name = "en-US" });
+            var amount = new State<decimal>(1234.5m);
+            var count = new State<int>(1234);
+            var date = new State<DateTime>(new DateTime(2026, 10, 4));
+            Entity number = default;
+            Entity integer = default;
+            Entity month = default;
+            Entity specified = default;
+            Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
+            {
+                Scope.Write<Display>(Scope.Entity).Value = "created Once content";
+                number = Text(() => amount.Value, "N2");
+                integer = Text(() => count.Value, "N0");
+                month = Text(() => date.Value, "MMMM");
+                specified = Text(() => amount.Value, "N2", CultureInfo.InvariantCulture);
+            }));
+            frames.Frame();
+            Require(frames.World.Read<TextContent>(number).Value == "1,234.50" &&
+                frames.World.Read<TextContent>(month).Value == "October", "Numeric and date bindings use the initial language.");
+            uint specifiedVersion = frames.World.WriteVersion<Elements.Text>(specified);
+            uint specifiedContentVersion = frames.World.WriteVersion<TextContent>(specified);
+            frames.World.Replace(root, new Display("retained Once content"));
+
+            frames.World.Replace(language, new Locale { Name = "de-DE" });
+            frames.Frame();
+
+            Require(frames.World.Read<Elements.Text>(number).Value == "1.234,50" &&
+                frames.World.Read<TextContent>(number).Value == "1.234,50",
+                "A language change updates both the numeric binding's parameters and display.");
+            Require(frames.World.Read<TextContent>(integer).Value == "1.234" &&
+                frames.World.Read<TextContent>(month).Value == "Oktober", "Integer and date bindings follow the same language change.");
+            Require(frames.World.Read<TextContent>(specified).Value == "1,234.50" &&
+                frames.World.WriteVersion<Elements.Text>(specified) == specifiedVersion &&
+                frames.World.WriteVersion<TextContent>(specified) == specifiedContentVersion,
+                "An explicit provider retains its own format and equal text versions.");
+            Require(frames.World.Read<Display>(root).Value == "retained Once content", "Locale updates preserve the Once view's data.");
+            amount.Value = 9876.5m;
+            frames.Frame();
+            Require(frames.World.Read<TextContent>(number).Value == "9.876,50" &&
+                frames.World.Read<TextContent>(specified).Value == "9,876.50", "Later values use each binding's current format rules.");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
     }
 
     private static void Require(bool condition, string message)

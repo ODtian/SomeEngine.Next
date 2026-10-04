@@ -68,7 +68,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             {
                 LayoutCache cache = World.Read<LayoutCache>(node.Entity);
                 if (cache.InputVersion != node.InputVersion)
-                    Measure(node.Entity, in cache.Constraints, node.Parent);
+                    Measure(node.Entity, in cache.Constraints, node.Parent, parentMeasurement: false);
             }
 
             foreach (NodeLayout node in _order)
@@ -140,7 +140,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         return false;
     }
 
-    internal Size Measure(Entity entity, in Constraints constraints, Entity parent)
+    internal Size Measure(Entity entity, in Constraints constraints, Entity parent, bool parentMeasurement = true)
     {
         NodeLayout node = _nodes[entity];
         DevelopmentCheck.Require(node.Parent == parent, "Measure requires this layout's child.");
@@ -150,18 +150,21 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         LayoutValidation.CheckBox(in box);
         Constraints outerConstraints = ConstrainBox(in box, in constraints);
         bool firstMeasurement = node.MeasurementFrame != _frame;
-        if (firstMeasurement)
+        if (parentMeasurement)
         {
-            node.ConstraintsAreTight = constraints.Min == constraints.Max;
-            node.SizeIsFixed = outerConstraints.Min == outerConstraints.Max;
-            node.MeasurementFrame = _frame;
+            if (firstMeasurement)
+            {
+                node.ConstraintsAreTight = constraints.Min == constraints.Max;
+                node.SizeIsFixed = outerConstraints.Min == outerConstraints.Max;
+            }
+            else
+            {
+                // The parent's loose basis still contributes when its final allocation is fixed.
+                node.ConstraintsAreTight &= constraints.Min == constraints.Max;
+                node.SizeIsFixed &= outerConstraints.Min == outerConstraints.Max;
+            }
         }
-        else
-        {
-            // Flex's loose basis still contributes to the parent even when its final allocation is fixed.
-            node.ConstraintsAreTight &= constraints.Min == constraints.Max;
-            node.SizeIsFixed &= outerConstraints.Min == outerConstraints.Max;
-        }
+        node.MeasurementFrame = _frame;
         if (node.HasMeasurement && World.Has<LayoutCache>(entity))
         {
             LayoutCache cache = World.Read<LayoutCache>(entity);

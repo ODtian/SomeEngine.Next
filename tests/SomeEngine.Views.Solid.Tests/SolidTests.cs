@@ -14,6 +14,10 @@ namespace SomeEngine.Views.Solid.Tests;
 public sealed partial class SolidTests
 {
     [Fact]
+    public void NumericAndDateBindingsFollowLocaleWhileExplicitProvidersKeepTheirRules() =>
+        SolidChecks.VerifyNumberLanguages();
+
+    [Fact]
     public void ManagedAndNativeConsumersShareTheSolidBehavior() => SolidChecks.Run();
 
     [Fact]

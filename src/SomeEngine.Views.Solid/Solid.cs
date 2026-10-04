@@ -6,7 +6,7 @@ using TextData = SomeEngine.Elements.Text;
 namespace SomeEngine.Views.Solid;
 
 /// <summary>Calculations and element declarations for components built once.</summary>
-public static class Solid
+public static partial class Solid
 {
     /// <summary>Runs a calculation now and in the rebuild phase when its reads change.</summary>
     public static void Effect(Action run) => Scope.Compute(run);
