@@ -111,6 +111,9 @@ omitted fields from the nearest `TextTheme` through the public environment API.
 Provide a loaded `SomeEngine.Typography.Font` in that theme or the font modifier.
 Sizes and line heights use pixels; zero line height uses the font metrics.
 `ShapedText` exposes the final glyphs, lines, size, complete style, and version.
+The version tracks glyph layout. A color edit updates the complete style and
+component write version while keeping glyph layout and atlas pixels. Text draws
+through the atlas, extraction and Glyphs material in `SomeEngine.Elements.Render`.
 
 ```csharp
 var shaping = new TextShapingSystem();
