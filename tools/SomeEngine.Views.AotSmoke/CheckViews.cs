@@ -49,7 +49,9 @@ Console.WriteLine("Text shaping, Column measurements, style modifiers, formatted
 Console.WriteLine("Column surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(true);
-Console.WriteLine("Canvas pointer input, click consumption, held presses, capture, and public user behaviors passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.PointerChecks.RunRouting(false);
+SomeEngine.Elements.Consumer.Tests.PointerChecks.RunRouting(true);
+Console.WriteLine("Canvas pointer input, click bubbling, StopsPointer, subtree hover, held presses, capture, and public user behaviors passed under NativeAOT.");
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.BuiltIn);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
 SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);

@@ -17,6 +17,7 @@
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/SurfaceModifiers.cs" Link="Rewrites/SurfaceModifiers.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerChecks.cs" Link="PointerChecks.cs" />
+    <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/PointerRoutingChecks.cs" Link="PointerRoutingChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/PressableFunctions.cs" Link="Rewrites/PressableFunctions.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/ButtonChecks.cs" Link="ButtonChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Elements.Consumer.Tests/Rewrites/Button.cs" Link="Rewrites/Button.cs" />
