@@ -11,9 +11,62 @@
 - 调用作用域函数的异步辅助方法必须返回 `BuildTask`；返回 `Task` 的方法在 `await` 后调用作用域函数由开发检查报告。
 - 同步视图也写作 `async BuildTask Build()`，CS1998 由 `DiagnosticSuppressor` 屏蔽。
 
-## 后续能力
-- `Launch(key, static async (k) => ...)`：后台任务，key 变化时取消并重新开始。
-- `Resource<T>`：值、加载中、错误三部分组成的状态；来源变化时重新请求，期间保留旧值。
+## Launch 与 Resource（#23）
+
+```csharp
+public static class Scope
+{
+    public static void Launch<TKey>(TKey key, Func<TKey, CancellationToken, BuildTask> run);
+    public static Resource<T> Resource<TSource, T>(TSource source, Func<TSource, CancellationToken, ValueTask<T>> fetch);
+
+    public static void Launch<TKey>(TKey key, Func<TKey, CancellationToken, BuildTask> run, ulong callKey);
+    public static Resource<T> Resource<TSource, T>(TSource source, Func<TSource, CancellationToken, ValueTask<T>> fetch, ulong callKey);
+}
+
+public sealed class Resource<T> : VersionCell
+{
+    public T Value { get; }
+    public bool Loading { get; }
+    public Exception? Error { get; }
+}
+```
+
+`Launch` 是当前视图或计算的异步子计算，首次声明立即调用 `run(key, cancel)`。
+生成器为双参数调用提供文件、行和列组成的调用位置 key，三参数重载供调用方显式指定身份。
+身份还包含出现次数，并沿 `Scope.Key` 组合列表项的分组。
+方法组使用 `callKey` 重载；分析器通过 `SEV004` 指引调用方提供调用身份。
+视图或计算重跑时保留再次声明的匹配异步计算及其后代，释放本次省略的异步计算。
+
+任务的 key 使用 `EqualityComparer<TKey>.Default` 比较。相等时保留正在等待或已经完成的任务；
+变化时立即触发旧取消令牌，随后启动新任务。创建它的计算释放或视图释放时也触发取消。
+每次运行持有自己的作用域和取消源，旧状态机沿现有重建队列继续执行 `finally` 与 `using`。
+同一视图的主体构建与多个子任务分别等待、恢复和完成，恢复位置沿本页的重建阶段规则。
+任务中的直接读取取得当前值，任务重新开始由传入的 key 决定；需要响应式求值时，
+在 `Compute` 中读取来源并声明 `Launch`。建议传 `static` lambda，通过 key 传入所需数据。
+
+`Resource` 在同一调用身份保留一个 `Resource<T>`，来源使用
+`EqualityComparer<TSource>.Default` 比较。首次请求以 `default(T)` 作为值并设置 `Loading=true`。
+来源变化时取消旧请求、保留最近一次成功的值、清除旧错误并设置 `Loading=true`。
+当前请求完成后提交新值并设置 `Loading=false`；失败时保留旧值、记录原异常并结束加载。
+后续来源变化重新请求，成功结果同时清除错误。已取消请求的恢复继续使用自己的令牌完成清理，
+资源状态由当前请求提交。同步完成的 `ValueTask<T>` 在声明位置直接提交结果。
+
+三个属性的读取都登记该资源的对象依赖。资源持有值、加载状态、错误和版本；
+属性读取与整次结果写入通过同一把锁保持完整值，状态改变推进版本，使仅依赖 `Error`
+或 `Loading` 的计算也能更新。请求错误作为资源数据供界面读取，`Launch` 的任务异常
+沿构建错误入口记录为所属视图的 `BuildError`。
+
+`Rerun` 视图可直接读取来源并调用 `Resource`。`Once` 视图在 `Compute` 中读取来源和
+资源属性，使来源变化与请求完成分别更新该计算，旧值沿同一资源保留。
+作用域外创建、空回调与取消清理期间创建通过 Core 的 `DevelopmentCheck` 报告。
+
+实现：[Scope 异步入口](../../../src/SomeEngine.Views/Scope.Async.cs)、
+[异步子计算](../../../src/SomeEngine.Views/AsyncComputation.cs)、
+[资源状态](../../../src/SomeEngine.Views/Resource.cs)。
+公开行为验收：[LaunchTests](../../../tests/SomeEngine.Views.Tests/LaunchTests.cs)、
+[ResourceTests](../../../tests/SomeEngine.Views.Tests/ResourceTests.cs) 与
+[共享异步检查](../../../tests/SomeEngine.Views.Tests/AsyncPrimitiveChecks.cs)，
+后者通过 `just ecs-aot win-x64` 编入原生消费者。
 
 ## 等待 Job（#22）
 

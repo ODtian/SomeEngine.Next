@@ -19,7 +19,7 @@ public sealed class ImageMaterial : Material
     /// <summary>Uses the shared built-in shader compiled for the requested graphics target.</summary>
     public static ImageMaterial Create(SlangCompileTarget target) => new()
     {
-        Shader = CanvasShaders.Get("Image", target),
+        Shader = ElementShaders.Get("Image", target),
     };
 
     public override void ApplyParameter(MaterialValue parameter, Texture? texture) =>

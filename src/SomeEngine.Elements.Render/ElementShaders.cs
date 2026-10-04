@@ -3,35 +3,35 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.Elements.Render;
 
-/// <summary>Shared immutable built-in shaders and their Slang data for the life of the process.</summary>
-internal static class CanvasShaders
+/// <summary>Holds the immutable built-in shader resources for the application's lifetime.</summary>
+internal static class ElementShaders
 {
-    private static readonly object s_shaderLock = new();
     private static readonly Dictionary<(string Name, SlangCompileTarget Target), Shader> s_shaders = [];
+    private static readonly object s_gate = new();
     private static IGlobalSession? s_global;
 
     internal static Shader Get(string name, SlangCompileTarget target)
     {
-        lock (s_shaderLock)
+        lock (s_gate)
         {
             if (s_shaders.TryGetValue((name, target), out Shader? shader)) return shader;
-            if (s_global is null)
-            {
-                Require(Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession global), null);
-                s_global = global;
-            }
-            shader = Compile(s_global, name, target);
+            shader = Compile(name, target);
             s_shaders.Add((name, target), shader);
             return shader;
         }
     }
 
-    private static Shader Compile(IGlobalSession global, string name, SlangCompileTarget target)
+    private static Shader Compile(string name, SlangCompileTarget target)
     {
+        if (s_global is null)
+        {
+            Require(Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession global), null);
+            s_global = global;
+        }
         var targetDescription = new TargetDesc
         {
             Format = target,
-            Profile = global.FindProfile(target == SlangCompileTarget.Spirv ? "glsl_460" : "sm_6_0"),
+            Profile = s_global.FindProfile(target == SlangCompileTarget.Spirv ? "glsl_460" : "sm_6_0"),
             Flags = target == SlangCompileTarget.Spirv ? SlangTargetFlags.GenerateSpirvDirectly : 0,
         };
         var description = new SessionDesc
@@ -44,24 +44,24 @@ internal static class CanvasShaders
                 new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0)),
             ],
         };
-        Require(global.CreateSession(description, out ISession session), null);
-        using Stream source = typeof(CanvasShaders).Assembly.GetManifestResourceStream(
+        Require(s_global.CreateSession(description, out ISession session), null);
+        using Stream source = typeof(ElementShaders).Assembly.GetManifestResourceStream(
             $"SomeEngine.Elements.Render.Shaders.{name}.slang")!;
         using var reader = new StreamReader(source);
-        IModule? sourceCode = session.LoadModuleFromSource(name, $"{name}.slang",
+        IModule? shaderSource = session.LoadModuleFromSource(name, $"{name}.slang",
             Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
-        if (sourceCode is null) throw new InvalidDataException(DiagnosticText(diagnostics));
-        Require(sourceCode.FindEntryPointByName("vertexMain", out IEntryPoint vertex), null);
-        Require(sourceCode.FindEntryPointByName("pixelMain", out IEntryPoint pixel), null);
-        Require(session.CreateCompositeComponentType([sourceCode, vertex, pixel],
+        if (shaderSource is null) throw new InvalidDataException(DiagnosticText(diagnostics));
+        Require(shaderSource.FindEntryPointByName("vertexMain", out IEntryPoint vertex), null);
+        Require(shaderSource.FindEntryPointByName("pixelMain", out IEntryPoint pixel), null);
+        Require(session.CreateCompositeComponentType([shaderSource, vertex, pixel],
             out IComponentType combined, out diagnostics), diagnostics);
         Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
-        return Shader.CreateFromSlang(name, global, session, [sourceCode], [vertex, pixel], linked, [targetDescription]);
+        return Shader.CreateFromSlang(name, s_global, session, [shaderSource], [vertex, pixel], linked, [targetDescription]);
     }
 
     private static void Require(SlangResult result, ISlangBlob? diagnostics)
     {
-        if (result.Failed) throw new InvalidDataException($"Canvas shader compilation failed: {result}. {DiagnosticText(diagnostics)}");
+        if (result.Failed) throw new InvalidDataException($"Element shader compilation failed: {result}. {DiagnosticText(diagnostics)}");
     }
 
     private static string DiagnosticText(ISlangBlob? diagnostics) => diagnostics is null ? string.Empty : diagnostics.AsString;

@@ -97,8 +97,8 @@ using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
     material, outputFormat, images, renderDevice);
 ```
 
-The canvas pass merges surfaces and images by tree order, with the node's surface
-before its image. Each material interprets its own instance bytes and supplies
+The canvas pass merges surfaces, glyphs and images by tree order. One node draws
+its surface, glyphs and image in that order. Each material interprets its own bytes and supplies
 the buffer range starting at each batch. Consecutive instances using the same
 material and texture draw together. Image textures use RenderDevice's normal
 upload and view methods; the unified missing texture covers acquisition time.
@@ -107,6 +107,49 @@ Texture bindings belong to each graph frame and retain the canvas pass identity.
 `ImageTests` covers intrinsic size, fitted rectangles and UV through public APIs.
 `ImageDrawingTests` uses the complete view, layout, extraction and canvas path to
 read pixels on D3D12 WARP and Vulkan with graphics validation enabled.
+Text uses a CPU atlas entity and the same extraction stage:
+
+```csharp
+Entity textAtlas = gameWorld.CreateEntity(new TextAtlas(new GlyphAtlas()));
+using var extraction = new RenderExtractionSystems(renderWorld,
+    new SurfaceRenderExtractor(), new GlyphRenderExtractor(textAtlas));
+using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
+    material, outputFormat, glyphs);
+```
+
+Register `TextShapingSystem` with the layout system before extraction. The canvas
+mirror receives `GlyphInstance` and `CanvasGlyphAtlas`; the atlas mirror receives
+`RenderGlyphAtlas`. Glyph rectangles combine the text node's rectangle, padding,
+shaped baseline and scaled atlas offset. Whitespace keeps its advance in shaping.
+
+Atlas pixels are detached during extraction. `RenderGlyphAtlas` holds immutable
+page data, the latest changed rectangles and a version. GPU textures retain one
+single-channel page each: initialize the whole page, then copy changed rectangles
+on successive versions. Whole page data also allows a renderer to catch up after
+several extractions. Keep caller-supplied page memories read-only while consumed.
+
+Surface and glyph draws share the persistent canvas pass and follow the tree's
+order. Glyphs sample an SDF and calculate coverage in target pixels, then use the
+same premultiplied alpha blend as Surface. A color edit keeps the shaped glyphs,
+layout rectangles, atlas pixels and atlas version; only drawing colors advance.
+`ElementShaders` holds all three built-in shader resources by name and target for the application's
+lifetime, while pipelines, instance buffers and GPU pages retire with graph work.
+
+`GlyphExtractionTests` drives public World frames and extraction; `GlyphDrawingTests`
+compares D3D12 WARP and Vulkan pixel readback against an independent glyph outline
+image. The screen panel example displays both English and Chinese text.
+
+Provide both optional materials to compose surfaces, text and images in one canvas pass:
+
+```csharp
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
+    material, outputFormat, glyphs, images, renderDevice);
+```
+
+`CanvasCompositionTests` reads known colors after interleaved surface, glyph and
+image draws, concurrent atlas/texture updates, canceled frames and GC. The same
+cases run on screen and world canvases on D3D12 WARP and Vulkan, including depth.
 For a world canvas, provide `CanvasTarget.WorldSpace(targetEntity)` and a target
 `WorldTransform` in the Game world. `Canvas.DepthTest` chooses scene depth testing.
 Extraction supplies `RenderCanvas.Transform` and `DepthTest` alongside the same

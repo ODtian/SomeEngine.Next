@@ -11,5 +11,6 @@
     <None Update="README.md" Pack="true" PackagePath="/" />
     <EmbeddedResource Include="Shaders/Surface.slang" />
     <EmbeddedResource Include="Shaders/Image.slang" />
+    <EmbeddedResource Include="Shaders/Glyphs.slang" />
   </ItemGroup>
 </Project>

@@ -131,13 +131,13 @@ Stretch 使用整个内容区域和 `(0, 0, 1, 1)` UV；Contain 保持纹理比�
 UV 矩形、画布裁剪、树序和绘制版本。数据更新与结构更新沿 ECS 写版本处理。
 
 `ImageMaterial` 编译自身的 Slang shader，并解释自己的实例字节。
-Surface 与 Image 的内嵌 shader 由共享编译数据持有，每个图形目标各编译一份。
+Surface、Glyphs 与 Image 的内嵌 shader 由 ElementShaders 统一持有，每个图形目标各编译一份。
 这些不可变 shader 供材质与管线引用，使用期限覆盖进程中的画布绘制。
 Slang 的全局对象由这一份数据保持有效，其派生对象按
 [Slang 生命周期规则](https://github.com/shader-slang/slang/blob/master/docs/user-guide/08-compiling.md)
 保持在全局对象的使用期限内。
 `CanvasRenderer` 接受 Image 材质与应用的 `RenderDevice`，在现有画布 pass 中
-按树序组合 Surface 与 Image。同一节点先绘制 Surface，再绘制 Image。
+按树序组合 Surface、Glyphs 与 Image。同一节点依次绘制 Surface、Glyphs、Image。
 shader 从 `SV_VertexID` 生成矩形，以纹理 RGBA 转成预乘 alpha 后混合到目标。
 纹理使用线性过滤与边界夹取，裁剪采用画布布局坐标。
 Image 与 Surface 在同一次画布遍历中继承滚动视口的裁剪交集，视口外框变化更新对应实例。
@@ -158,6 +158,84 @@ D3D12 WARP 与 Vulkan 上读回图片、缺失纹理、透明叠加和混合树�
 
 此前独立 SomeUI 的 ImageSource 和 Image 视图作为元素构成参考。
 本票使用引擎的强类型资产身份、布局协议、提取阶段与统一纹理设备资源。
+## 文字提取与绘制（#34）
+
+应用创建一个持有 CPU 图集的 `TextAtlas` 实体，并把该实体交给
+`GlyphRenderExtractor`。应用同时安装 `SurfaceRenderExtractor`，后者继续写入
+画布的 `RenderCanvas`；字形提取写入 `GlyphInstance` 缓冲与 `CanvasGlyphAtlas`。
+
+```csharp
+Entity textAtlas = gameWorld.CreateEntity(new TextAtlas(new GlyphAtlas()));
+using var extraction = new RenderExtractionSystems(renderWorld,
+    new SurfaceRenderExtractor(), new GlyphRenderExtractor(textAtlas));
+using SurfaceMaterial surfaces = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
+    surfaces, outputFormat, glyphs);
+```
+
+`ShapedText` 的最终字形与样式、`LayoutRect`、Text 节点自身的 `Box.Padding`
+生成字形实例。位置为节点左上角加内边距、排版给出的基线位置、按字号缩放的图集偏移；
+尺寸为图集字形矩形乘以 `ShapedText.Style.Size / GlyphAtlas.FontSize`。
+`GlyphInstance` 提供 `Node`、`GlyphIndex`、`Rectangle`、`UV0`、`UV1`、`Color`、
+`ClipRectangle`、`PageIndex`、`DrawOrder` 与 `Version`。
+`GlyphIndex` 是排版字形序列的位置。空白字形保留排版推进，绘制实例只包含有图集矩形的字形。
+树序、画布坐标与裁剪规则沿用 Surface 提取；同节点的背景先于文字。
+祖先滚动视口的矩形逐层取交集；视口尺寸变化时重算后代字形的裁剪。
+字形布局及矩形按 chunk 与行的写版本筛选；实例数据相等时保留 ECS 缓冲写版本。
+文字由空变为可见、树重排、嵌套画布及节点释放沿同一提取入口更新。
+
+图集源的镜像实体持有 `RenderGlyphAtlas`，画布的 `CanvasGlyphAtlas.Atlas` 指向它。
+`RenderGlyphAtlas` 保存 `Pages`、`DirtyRegions`、`DistanceSpread` 和 `Version`。
+每个 `GlyphPagePixels` 提供尺寸与只读单通道页像素。
+提取在同一 Game world 读取窗口内复制变化页的像素，再清空 CPU 图集新增区域。
+完整页数据供首次绘制及渲染跨过多次提取后的补齐；当前变化矩形供连续帧增量上传。
+所有页引用与实例值在 RenderPrepare 边界提交，RenderWorld 持有这份绘制数据。
+改色时只更新字形颜色与实例版本，排版版本及图集组件、页像素和图集版本保持原值。
+
+每个图集页对应常驻的 `R8UNorm` GPU 纹理。首次使用时上传整页，使字形间的零值边界
+也具有定义的内容；连续提取版本按 `DirtyRegions` 矩形上传。跨过多个图集版本时，
+完整页数据补齐对应纹理。上传行距与起始偏移由 RHI 的纹理复制足迹决定。
+区域复制属于当帧图工作，画布 raster pass 保留持久身份及结构版本。
+画布绘制显式排序在相关区域复制之后，GPU 页状态与完成点由图帧提交结果接续。
+取消帧后，已收集像素继续供下一帧上传；已提交的复制决定 GPU 图集版本。
+
+`GlyphsMaterial` 是普通 Material；内嵌 `Glyphs.slang` 以 `SV_VertexID` 生成矩形，
+以 `SV_InstanceID` 读取自身实例字节。Surface、Glyphs 与 Image 在同一个画布 pass 中，
+按树序及图集页形成连续绘制范围，分别绑定各自的 shader 和参数。
+材质按自己的实例字节大小建立各绘制范围的缓冲视图，shader 使用相对的 `SV_InstanceID`。
+这与 [Slang 的 SPIR-V 实例编号规则](https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/a2-01-spirv-target-specific.html)
+及当前 D3D12 编译目标采用同一套实例寻址，连续范围从对应缓冲视图的起点开始。
+内置 shader 编译结果由 `ElementShaders` 按名称与目标统一持有，供应用生命周期内的材质共用。
+原有 Surface、Surface/Glyphs 与 Surface/Image 构造入口继续接入这一份画布绘制器。
+同时绘制三种材质时，调用方传入 GlyphsMaterial、ImageMaterial 和 RenderDevice：
+
+```csharp
+using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
+    surfaces, outputFormat, glyphs, images, renderDevice);
+```
+
+实例按节点树序排列，同一节点依次绘制 Surface、Glyphs、Image；
+每个材质用自己的实例范围、纹理或图集页形成连续批次。
+字形图集与图片纹理的上传均属于当帧图工作，消费它们的画布 pass 保持持久身份。
+管线顶点布局沿用 shader 自己解释实例的规则。
+
+Glyphs 以线性采样读取单通道 SDF：`(sample * 255 - 128) * DistanceSpread / 128`
+还原图集像素距离，按字形大小与画布缩放转换到目标像素，
+转换比例从插值 UV 的屏幕导数取得，随画布的屏幕变换与世界投影变化；
+`saturate(0.5 + distance)` 形成一个目标像素宽的抗锯齿覆盖率。
+裁剪采用包含左上、排除右下的画布矩形；颜色乘覆盖率并转成预乘 alpha，
+与 Surface 使用相同的 `One` / `OneMinusSourceAlpha` 混合。
+相比此前独立 SomeUI 的 RGBA/MSDF 参考，本实现直接消费 Typography 的单通道距离值、
+真实 `DistanceSpread` 与按像素/em 给出的字形几何。
+
+Runtime 的屏幕面板使用随资产提供的 Noto 字体子集显示 `Hello SomeEngine` 与
+`中文你好世界`，字体及许可证位于 `assets/Fonts/`。
+公开 World 验收位于 `GlyphExtractionTests`；D3D12 WARP 与 Vulkan 的覆盖图读回
+位于 `GlyphDrawingTests`，参考图从字体轮廓独立生成，生成方式与容差位于测试图像目录。
+`CanvasCompositionTests` 通过公开 RenderWorld、实例缓冲、图集页和纹理数据，
+在 D3D12 WARP 与 Vulkan 的屏幕/世界画布上读回交错的 Surface、文字与图片。
+用例同时修改图集区域和图片纹理，取消更新帧后重新绘制，并验证 GC、裁剪、深度与图结构保持。
 ## 世界空间画布（#36）
 
 `CanvasTarget.WorldSpace(entity)` 指向 Game world 中持有 `WorldTransform` 的目标。

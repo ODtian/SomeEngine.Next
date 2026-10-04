@@ -19,7 +19,7 @@ public sealed class SurfaceMaterial : Material
     /// <summary>Uses the shared built-in shader compiled for the requested graphics target.</summary>
     public static SurfaceMaterial Create(SlangCompileTarget target) => new()
     {
-        Shader = CanvasShaders.Get("Surface", target),
+        Shader = ElementShaders.Get("Surface", target),
     };
 
     public override void ApplyParameter(MaterialValue parameter, Texture? texture) =>

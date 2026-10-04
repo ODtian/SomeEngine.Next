@@ -21,6 +21,9 @@
     <ProjectReference Include="../../src/SomeEngine.Graphics.Validation/SomeEngine.Graphics.Validation.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="../SomeEngine.Typography.Tests/Fonts/*.ttf;../SomeEngine.Typography.Tests/Fonts/*.otf"
+             Link="Fonts/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Images/*.pgm" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../assets/Shaders/hello_triangle.shader.asset"
           Link="Content/Shaders/hello_triangle.shader.asset"
           CopyToOutputDirectory="PreserveNewest" />
