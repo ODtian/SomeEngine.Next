@@ -8,7 +8,7 @@
 | `SomeEngine.Layout` | `LayoutSystem`、`Absolute`、`Flex`、`Grid`、`Stack` 与布局修饰；缓存由后续票扩展 | Views |
 | `SomeEngine.Animation` | 引擎级动画核心与属性动画（见 [[architecture/Animation|Animation]]）；FLIP 与 `.Animate` 在 Elements 中 | ECS、Job |
 | `SomeEngine.Typography` | 字形排版、字体、图集 | — |
-| `SomeEngine.Elements` | `Surface` 修饰、`Text`、文本样式与排版系统、`Pressable`、`Draggable`、`Scrollable`、`Selectable`、`Pointer`、`HitTestSystem`、`Button`、`ButtonTheme`、`Focusable`、`Keyboard`、`Gamepad` 与 `FocusNavigationSystem`；`Image`、其它控件和 `.Animate` 按后续票扩展 | Views、Layout、Typography |
+| `SomeEngine.Elements` | `Surface` 修饰、`Text`、文本样式与排版系统、`Pressable`、`Draggable`、`Scrollable`、`Selectable`、`Pointer`、`HitTestSystem`、`Button`、`ButtonTheme`、`Toggle`、`Slider`、数值编辑行为、`Focusable`、`Keyboard`、`Gamepad` 与 `FocusNavigationSystem`；`Image`、其它控件和 `.Animate` 按后续票扩展 | Views、Layout、Typography |
 | `SomeEngine.Elements.Render` | 提取系统、屏幕画布绘制、内置 Surface 材质 | Elements、Render、RenderGraph |
 | `SomeEngine.Views.Compose` / `.SwiftUI` | 各前端的协调原语 | Views |
 | `SomeEngine.Views.Solid` | Effect、Memo getter、Untrack、Insert、Component 标记、Text 与可响应字段修饰 | Views、Elements |
