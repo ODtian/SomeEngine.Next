@@ -9,7 +9,7 @@ using SomeEngine.Views;
 namespace SomeEngine.Layout;
 
 /// <summary>Measurements and content-relative positions for the current canvas.</summary>
-internal sealed class LayoutData(World world)
+internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 {
     internal World World { get; } = world;
     private readonly List<NodeLayout> _nodes = new();
@@ -30,18 +30,23 @@ internal sealed class LayoutData(World world)
                 if (node.ParentIndex >= 0)
                     node.Position += _nodes[node.ParentIndex].Position;
                 _nodes[index] = node;
-                World.Replace(node.Entity, new LayoutRect
-                {
-                    Value = new Rect(node.Position.X, node.Position.Y, node.Size.Width, node.Size.Height),
-                });
+                WriteRect(node.Entity, new Rect(node.Position.X, node.Position.Y, node.Size.Width, node.Size.Height));
             }
-            World.Replace(canvas, new LayoutRect { Value = new Rect(0, 0, size.Width, size.Height) });
+            WriteRect(canvas, new Rect(0, 0, size.Width, size.Height));
+            foreach (ILayoutDataUpdate update in dataUpdates)
+                update.Complete(World);
         }
         finally
         {
             _nodes.Clear();
             _indices.Clear();
         }
+    }
+
+    private void WriteRect(Entity node, Rect rectangle)
+    {
+        if (World.Read<LayoutRect>(node).Value != rectangle)
+            World.Replace(node, new LayoutRect { Value = rectangle });
     }
 
     internal Size Measure(Entity node, in Constraints constraints, int parentIndex)
@@ -79,6 +84,8 @@ internal sealed class LayoutData(World world)
             new Size(MathF.Max(0, minimum.Width - padding.Width), MathF.Max(0, minimum.Height - padding.Height)),
             new Size(MathF.Max(0, maximum.Width - padding.Width), MathF.Max(0, maximum.Height - padding.Height)));
         var pass = new LayoutPass(this, node, index, Children(node), new Vector2(box.Padding.Left, box.Padding.Top));
+        foreach (ILayoutDataUpdate update in dataUpdates)
+            update.Update(World, node, in contentConstraints);
         Size size = ViewTypes.Measure(World, node, ref pass, in contentConstraints);
         LayoutValidation.CheckSize(size);
         NodeLayout measured = _nodes[index];

@@ -46,7 +46,12 @@ SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(false);
 SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(true);
 SomeEngine.Elements.Consumer.Tests.InterfaceAnimationChecks.Run();
 Console.WriteLine("Interface color and user value animation, equal-target rebuilds, interrupted FLIP, and caller transforms passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.TextChecks.Run();
+Console.WriteLine("Text shaping, Column measurements, style modifiers, formatted numbers, write versions, and zero-allocation integer writes passed under NativeAOT.");
 Console.WriteLine("Column surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);
+SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(true);
+Console.WriteLine("Canvas pointer input, click consumption, held presses, capture, and public user behaviors passed under NativeAOT.");
 ComposeGroupChecks.Run(frames);
 Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
 

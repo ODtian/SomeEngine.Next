@@ -248,6 +248,11 @@ public static partial class Scope
     /// <summary>Matches a child by key and occurrence and updates its parameters.</summary>
     public static Entity View<T>(in T view, ulong key)
         where T : struct, IView, IEquatable<T>
+        => View<T, T>(in view, static (in T value, in T previous) => value, key);
+
+    /// <summary>Creates parameters after matching the child, allowing unchanged formatted data to reuse its string.</summary>
+    public static Entity View<T, TValue>(in TValue value, CreateView<T, TValue> create, ulong key)
+        where T : struct, IView, IEquatable<T>
     {
         ScopeData current = Current;
         DevelopmentCheck.Require(current.DeclaresChildren,
@@ -268,6 +273,7 @@ public static partial class Scope
                 break;
             current.DeclaredChildren.Add(existing);
             T previous = current.World.ReadComponentData<T>(existing);
+            T view = create(in value, in previous);
             current.Changes.RememberParameters(current.World, existing, in previous);
             T previousTarget = previous;
             AnimatedFields.RestoreBase(current.World, existing, ref previousTarget);
@@ -295,7 +301,9 @@ public static partial class Scope
             }
             return existing;
         }
-        Entity child = Views.Create(current.World, in view, new ElementKey { Key = key, Occurrence = occurrence });
+        T initial = default;
+        T created = create(in value, in initial);
+        Entity child = Views.Create(current.World, in created, new ElementKey { Key = key, Occurrence = occurrence });
         current.Changes.RememberAddedChild(child);
         current.DeclaredChildren.Add(child);
         Hierarchy<ElementTree>.SetParent(current.World, child, current.Parent);
