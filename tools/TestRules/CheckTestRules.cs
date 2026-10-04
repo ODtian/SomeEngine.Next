@@ -20,7 +20,6 @@ namespace SomeEngine.TestRules
         public int Column { get; }
         public string Member { get; }
         public string Code { get; }
-        public string WhitelistEntry => string.Join("\t", Rule, Path, Member, Code);
 
         public TestRuleViolation(string rule, string path, int line, int column, string member, string code)
         {
@@ -207,28 +206,6 @@ namespace SomeEngine.TestRules
             return result.OrderBy(v => v.Path, StringComparer.Ordinal).ThenBy(v => v.Line).ThenBy(v => v.Column).ToArray();
         }
 
-        public static IReadOnlyList<TestRuleViolation> ApplyWhitelist(IEnumerable<TestRuleViolation> violations, string project, IEnumerable<string> whitelist)
-        {
-            var entries = new Dictionary<string, int>(StringComparer.Ordinal);
-            bool inProject = false;
-            foreach (var line in whitelist)
-            {
-                if (line.StartsWith("[", StringComparison.Ordinal) && line.EndsWith("]", StringComparison.Ordinal))
-                    inProject = line == "[" + project + "]";
-                else if (inProject && line.Length > 0 && !line.StartsWith("#", StringComparison.Ordinal))
-                    entries[line] = entries.TryGetValue(line, out var count) ? count + 1 : 1;
-            }
-            var result = new List<TestRuleViolation>();
-            foreach (var violation in violations)
-            {
-                if (entries.TryGetValue(violation.WhitelistEntry, out var count) && count > 0)
-                    entries[violation.WhitelistEntry] = count - 1;
-                else
-                    result.Add(violation);
-            }
-            return result;
-        }
-
         private static IEnumerable<string> EnumerateSourceFiles(string directory)
         {
             foreach (var file in Directory.EnumerateFiles(directory))
@@ -281,32 +258,22 @@ namespace SomeEngine.TestRules
     {
         public static int Main(string[] arguments)
         {
-            if (arguments.Length != 3 && (arguments.Length != 4 || arguments[3] != "--report"))
+            if (arguments.Length != 3)
             {
-                Console.Error.WriteLine("Usage: SomeEngine.TestRules <repository> <test-project-directory> <test-assembly> [--report]");
+                Console.Error.WriteLine("Usage: SomeEngine.TestRules <repository> <test-project-directory> <test-assembly>");
                 return 2;
             }
             var root = System.IO.Path.GetFullPath(arguments[0]);
             var projectDirectory = arguments[1];
             var testAssembly = arguments[2];
             var violations = TestRuleScanner.ReadProject(root, projectDirectory, testAssembly);
-            if (arguments.Length == 4)
-            {
-                Console.WriteLine("WHITELIST:[" + testAssembly + "]");
-                foreach (var violation in violations)
-                    Console.WriteLine("WHITELIST:" + violation.WhitelistEntry);
-                return 0;
-            }
-            var whitelist = File.ReadAllLines(System.IO.Path.Combine(root, "tools", "TestRules", "TestRuleWhitelist.txt"));
-            var newViolations = TestRuleScanner.ApplyWhitelist(violations, testAssembly, whitelist);
-            foreach (var violation in newViolations)
+            foreach (var violation in violations)
                 Console.Error.WriteLine("{0}({1},{2}): error {3}: {4}: {5}. Rule source: {6}",
                     System.IO.Path.Combine(root, violation.Path), violation.Line, violation.Column,
                     violation.Rule, violation.Member, violation.Code,
                     System.IO.Path.Combine(root, "wiki", "harness", "Behavior-Checks.md"));
-            Console.WriteLine("Test rules: {0}; {1} existing violations accepted; {2} new violations.",
-                testAssembly, violations.Count - newViolations.Count, newViolations.Count);
-            return newViolations.Count == 0 ? 0 : 1;
+            Console.WriteLine("Test rules: {0}; {1} violations.", testAssembly, violations.Count);
+            return violations.Count == 0 ? 0 : 1;
         }
     }
 }

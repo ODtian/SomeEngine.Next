@@ -27,13 +27,14 @@
 
 检查使用 C# 语法树，字符串、注释中的样例文字不参与判定。TEST002 通过语法中的 `Message` 读取识别文本依赖，并使用可解析的类型排除普通数据的同名成员。检查包含条件编译分支。测试目录和仓库自有 C# / MSBuild 声明参与扫描；`bin`、`obj`、`.git` 和第三方 `external` 内容按构建输出或依赖处理。
 
-根级 `Directory.Build.targets` 在每个测试项目的 `VSTest` 入口构建 C# 检查工具并执行检查，`dotnet test`、指定项目的 `dotnet test` 和 `dotnet test --no-build` 均执行。发现新违规后，命令以失败退出，输出检查编号、文件、行列、成员和本页链接。
+根级 `Directory.Build.targets` 在每个测试项目的 `VSTest` 入口构建 C# 检查工具并执行检查，`dotnet test`、指定项目的 `dotnet test` 和 `dotnet test --no-build` 均执行。发现违规后，命令以失败退出，输出检查编号、文件、行列、成员和本页链接。
 
-现有违规记录在 [TestRuleWhitelist.txt](../../tools/TestRules/TestRuleWhitelist.txt)，按测试项目分组。每条记录包含检查编号、相对文件路径、所属成员及去除空白的语句 token；重复项按出现次数匹配。移动行号和调整排版保留匹配，新增重复违规会耗尽对应记录并报错。项目迁移时同步移除已修复的条目，白名单只用于逐批移除现有违规。
+检查对全部测试项目生效，发现任何违规都使命令失败。默认 CI 在构建与软件适配器测试前执行全项目规则检查，覆盖软件、硬件、长时间模糊与性能类别的测试项目。
 
-检查器的公共输入输出测试位于 `tests/SomeEngine.TestRules.Tests`，覆盖违规样例、合规样例、位置报告和白名单行为。执行：
+检查器的公共输入输出测试位于 `tests/SomeEngine.TestRules.Tests`，覆盖违规样例、合规样例、位置报告、重复违规及各类别测试项目的命令失败行为。执行：
 
 ```powershell
 dotnet test tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj
 dotnet msbuild tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj -t:CheckTestRules
+pwsh -NoProfile -File tools/Check-TestRules.ps1
 ```

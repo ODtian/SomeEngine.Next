@@ -27,6 +27,8 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+      - name: Check rules in all test projects
+        run: ./tools/Check-TestRules.ps1
       - name: Build all projects and test content
         run: ./tools/Build.ps1
       - name: Run software adapter tests

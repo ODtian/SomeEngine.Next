@@ -140,45 +140,15 @@ public class TestRuleScannerTests
     }
 
     [Fact]
-    public void ANewDuplicateExceedsItsWhitelistEntry()
+    public void RepeatedViolationsAreReportedAtEachSourcePosition()
     {
-        var first = "class Example { void Waits() { Thread.Sleep(1); } }";
-        var existing = Assert.Single(TestRuleScanner.ReadCSharp("Tests.cs", first, true, "Example.Tests"));
-        var whitelist = new[] { "[Example.Tests]", existing.WhitelistEntry };
-        var changed = "class Example { void Waits() { Thread.Sleep(1); Thread.Sleep(1); } }";
+        var source = "class Example { void Waits() { Thread.Sleep(1); Thread.Sleep(1); } }";
 
-        var violations = TestRuleScanner.ApplyWhitelist(TestRuleScanner.ReadCSharp("Tests.cs", changed, true, "Example.Tests"), "Example.Tests", whitelist);
+        var violations = TestRuleScanner.ReadCSharp("Tests.cs", source, true, "Example.Tests");
 
-        Assert.Single(violations);
-    }
-
-    [Fact]
-    public void WhitelistedViolationsSurviveLineAndSpacingChanges()
-    {
-        var original = Assert.Single(TestRuleScanner.ReadCSharp("Tests.cs", "class Example { void Waits() { Thread.Sleep(1); } }", true, "Example.Tests"));
-        var whitelist = new[] { "[Example.Tests]", original.WhitelistEntry };
-        var changed = "\n\nclass Example { void Waits() { Thread . Sleep ( 1 ); } }";
-
-        Assert.Empty(TestRuleScanner.ApplyWhitelist(TestRuleScanner.ReadCSharp("Tests.cs", changed, true, "Example.Tests"), "Example.Tests", whitelist));
-    }
-
-    [Fact]
-    public void WhitelistEntriesBelongToTheirTestProject()
-    {
-        var violation = Assert.Single(TestRuleScanner.ReadCSharp("Tests.cs", "Thread.Sleep(1);", true, "Example.Tests"));
-        var whitelist = new[] { "[Other.Tests]", violation.WhitelistEntry };
-
-        Assert.Single(TestRuleScanner.ApplyWhitelist(new[] { violation }, "Example.Tests", whitelist));
-    }
-
-    [Fact]
-    public void MovingAViolationToANewBehaviorReportsIt()
-    {
-        var original = Assert.Single(TestRuleScanner.ReadCSharp("Tests.cs", "class Example { void First() { Thread.Sleep(1); } }", true, "Example.Tests"));
-        var whitelist = new[] { "[Example.Tests]", original.WhitelistEntry };
-        var changed = "class Example { void Second() { Thread.Sleep(1); } }";
-
-        Assert.Single(TestRuleScanner.ApplyWhitelist(TestRuleScanner.ReadCSharp("Tests.cs", changed, true, "Example.Tests"), "Example.Tests", whitelist));
+        Assert.Collection(violations,
+            first => { Assert.Equal("TEST003", first.Rule); Assert.Equal(32, first.Column); },
+            second => { Assert.Equal("TEST003", second.Rule); Assert.Equal(49, second.Column); });
     }
 
     [Fact]
