@@ -21,6 +21,10 @@ internal static class ShadowReferenceScene
     internal static readonly Vector3 PointPosition = new(-4, 2, -3);
     internal static readonly Vector3 LightDirection = Vector3.Normalize(new(.35f, -.85f, -.4f));
     internal static bool IsPointLight(string light) => light.StartsWith("point", StringComparison.Ordinal);
+    internal static bool IsSpotLight(string light) => light.StartsWith("spot", StringComparison.Ordinal);
+    internal static float LocalRange(string light) => light == "point-range" ? 7 : UsesDefaultGrid(light) ? 28 : 20;
+    internal static Vector3 SpotDirection => Vector3.Normalize(ReceiverPosition - PointPosition);
+    internal static float OuterConeCos(string light) => MathF.Cos(light == "spot-cone" ? MathF.PI / 9 : MathF.PI * 2 / 9);
     internal static bool HasMotion(string light) => light.EndsWith("-motion", StringComparison.Ordinal);
     internal static bool UsesSoftwareRaster(string light) => light.EndsWith("-software", StringComparison.Ordinal);
     internal static bool UsesDefaultGrid(string light) => light.EndsWith("-grid", StringComparison.Ordinal);
@@ -57,9 +61,11 @@ internal static class ShadowReferenceScene
         Caster = UsesDefaultGrid(light) ? null : new { Position = new[] { 0f, 0f, CasterStart(light).Z }, Scale = new[] { .6f, .6f, .6f },
             Moving = HasMotion(light), AmplitudeX = HasMotion(light) ? .75f : 0f, Seed = 0,
             CapturedPosition = new[] { CasterAtCapture(light).X, 0f, CasterAtCapture(light).Z } },
-        Light = IsPointLight(light)
-            ? new { Type = light, Vector = new[] { PointLightPosition(light).X, PointLightPosition(light).Y, PointLightPosition(light).Z }, Intensity = 30f, Range = UsesDefaultGrid(light) ? 28f : 20f }
+        Light = IsPointLight(light) || IsSpotLight(light)
+            ? new { Type = light, Vector = new[] { PointLightPosition(light).X, PointLightPosition(light).Y, PointLightPosition(light).Z }, Intensity = 30f, Range = LocalRange(light) }
             : new { Type = light, Vector = new[] { Direction(light).X, Direction(light).Y, Direction(light).Z }, Intensity = 3f, Range = 0f },
+        SpotCone = IsSpotLight(light) ? new { Direction = SpotDirection, InnerConeCos = MathF.Cos(MathF.PI / 12),
+            OuterConeCos = OuterConeCos(light) } : null,
         Material = "Standard: white albedo; metallic=0; roughness=.5; emissive=0",
     };
 
@@ -105,7 +111,9 @@ internal static class ShadowReferenceScene
         });
         if (illuminated)
         {
-            if (IsPointLight(light)) world.CreateEntity(new PointLight(PointLightPosition(light), UsesDefaultGrid(light) ? 28 : 20, Vector3.One, 30));
+            if (IsPointLight(light)) world.CreateEntity(new PointLight(PointLightPosition(light), LocalRange(light), Vector3.One, 30));
+            else if (IsSpotLight(light)) world.CreateEntity(new SpotLight(PointPosition, LocalRange(light),
+                SpotDirection, MathF.Cos(MathF.PI / 12), OuterConeCos(light), Vector3.One, 30));
             else world.CreateEntity(new DirectionalLight(Direction(light), Vector3.One, 3));
         }
         using var asset = new WorldAsset(scene.AssetGuid) { Name = scene.Name };

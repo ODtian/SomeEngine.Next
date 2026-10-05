@@ -7,10 +7,10 @@ struct RayShadowInputs
     uint Height;
     float3 LightPosition;
     uint LightKind;
-    float Padding0;
+    float LightRange;
     float NearPlane;
     float FarPlane;
-    float Padding;
+    float OuterConeCos;
 };
 struct RayVertex
 {
@@ -115,6 +115,14 @@ float3 OffsetRayPosition(float3 position, float3 normal)
         OffsetRayCoordinate(position.y, normal.y), OffsetRayCoordinate(position.z, normal.z));
 }
 
+uint PointFace(float3 fromLight)
+{
+    float3 magnitude = abs(fromLight);
+    if (magnitude.x >= magnitude.y && magnitude.x >= magnitude.z) return fromLight.x >= 0.0 ? 0u : 1u;
+    if (magnitude.y >= magnitude.z) return fromLight.y >= 0.0 ? 2u : 3u;
+    return fromLight.z >= 0.0 ? 4u : 5u;
+}
+
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
@@ -166,11 +174,24 @@ void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
     normalTs.xy *= geometry.NormalScale;
     normal = normalize(worldTangent * normalTs.x + cross(normal, worldTangent) * handedness * normalTs.y + normal * normalTs.z);
     float3 toLight = Inputs.LightKind == 0u ? -Inputs.LightDirection : Inputs.LightPosition - position;
+    uint faceBits = Inputs.LightKind == 1u ? (PointFace(-toLight) + 1u) << 8u : 0u;
     uint shadingRejected = all(isfinite(normal)) && dot(normal, -primary.Direction) > 0.0 &&
         dot(normal, normalize(toLight)) >= 0.15 ? 0u : 4u;
-    if (dot(geometricNormal, normalize(toLight)) < 0.15)
+    // Light eligibility uses source geometry and authored range/cone, never a mapped
+    // normal, production depth bias or a shadow-map residency result.
+    if (Inputs.LightKind != 0u && length(toLight) >= Inputs.LightRange)
     {
-        Visibility[output] = 2u | shadingRejected;
+        Visibility[output] = 2u | shadingRejected | 16u | faceBits;
+        return;
+    }
+    if (Inputs.LightKind == 2u && dot(-normalize(toLight), normalize(Inputs.LightDirection)) < Inputs.OuterConeCos)
+    {
+        Visibility[output] = 2u | shadingRejected | 32u | faceBits;
+        return;
+    }
+    if (dot(geometricNormal, normalize(toLight)) <= 0.0)
+    {
+        Visibility[output] = 2u | shadingRejected | faceBits;
         return;
     }
 
@@ -191,5 +212,5 @@ void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
     bool selfHit = blocked && ray.CommittedInstanceID() == camera.CommittedInstanceID() &&
         ray.CommittedGeometryIndex() == camera.CommittedGeometryIndex() &&
         ray.CommittedPrimitiveIndex() == camera.CommittedPrimitiveIndex();
-    Visibility[output] = (blocked ? 0u : 1u) | shadingRejected | (selfHit ? 8u : 0u);
+    Visibility[output] = (blocked ? 0u : 1u) | shadingRejected | (selfHit ? 8u : 0u) | faceBits;
 }
