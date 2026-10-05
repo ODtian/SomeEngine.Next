@@ -43,7 +43,9 @@ void UpdateVirtualShadowDynamicResolution(uint3 threadId : SV_DispatchThreadID)
         ? pageLoad / DynamicResolution.PagePoolLoadStart : 1.0;
 
     uint targetWork = max(DynamicResolution.TargetRasterWork, 1u);
-    float workRatio = max(float(PolicyRasterWorkCount[0]) / float(targetWork), 1.0);
+    // The producer counts HW page-batch area, not window instances. The public
+    // budget retains eight-by-eight-page batch equivalents; SW batches weigh one.
+    float workRatio = max(float(PolicyRasterWorkCount[0]) / (64.0 * float(targetWork)), 1.0);
     float workBias = log2(workRatio);
     float4 state = DynamicResolutionBias[0];
     float2 limits = float2(DynamicResolution.MaxDirectionalLodBias, DynamicResolution.MaxLocalLodBias);

@@ -1,0 +1,186 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="d0f92bf6-62d2-4341-89fb-dfad18d05f3f" name="boqi@BOQI-THE-DAEMON 2026-10-06 00:31:54" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T00:31:54.4270414+08:00" queuing="2026-10-06T00:31:54.4270419+08:00" start="2026-10-06T00:31:27.0181412+08:00" finish="2026-10-06T00:32:57.7889700+08:00" />
+  <TestSettings name="default" id="f3bf33a3-fcf4-491f-8603-929d5a61ce8d">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_00_31_54" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="84cb78d9-e74d-4018-b7c6-0329562228c0" testId="c8eb2ee5-0d8d-2357-f37b-cb2bc1305e8d" testName="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: &quot;D3D12&quot;, hardware: True)" computerName="BOQI-THE-DAEMON" duration="00:00:09.3185979" startTime="2026-10-06T00:32:12.1401956+08:00" endTime="2026-10-06T00:32:21.4552103+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="84cb78d9-e74d-4018-b7c6-0329562228c0">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Collections differ&#xD;
+                       ↓ (pos 13672)&#xD;
+Expected: [···, 0, 60, 216, 47, 216, ···]&#xD;
+Actual:   [···, 0, 60, 0, 60, 0, ···]&#xD;
+                       ↑ (pos 13672)</Message>
+          <StackTrace>   at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs:line 34&#xD;
+   at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs:line 35&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="1fc11708-8109-45b8-a6e8-8f13e93c5551" testId="0cffc5f0-e6cc-6ffd-13fd-4d7ccd4d3c67" testName="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: &quot;Vulkan&quot;, hardware: False)" computerName="BOQI-THE-DAEMON" duration="00:00:17.0646370" startTime="2026-10-06T00:32:21.4575922+08:00" endTime="2026-10-06T00:32:38.5210698+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1fc11708-8109-45b8-a6e8-8f13e93c5551">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Collections differ&#xD;
+                       ↓ (pos 13672)&#xD;
+Expected: [···, 0, 60, 216, 47, 216, ···]&#xD;
+Actual:   [···, 0, 60, 0, 60, 0, ···]&#xD;
+                       ↑ (pos 13672)</Message>
+          <StackTrace>   at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs:line 34&#xD;
+   at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs:line 35&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="14714c97-7e3c-4cb7-b5bd-568c560c7f7b" testId="ab89eafc-8212-b0fb-ecf4-941437eb6548" testName="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: &quot;D3D12&quot;, hardware: False)" computerName="BOQI-THE-DAEMON" duration="00:00:25.8930336" startTime="2026-10-06T00:31:28.4327107+08:00" endTime="2026-10-06T00:31:54.3618446+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="14714c97-7e3c-4cb7-b5bd-568c560c7f7b">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Collections differ&#xD;
+                       ↓ (pos 13672)&#xD;
+Expected: [···, 0, 60, 216, 47, 216, ···]&#xD;
+Actual:   [···, 0, 60, 0, 60, 0, ···]&#xD;
+                       ↑ (pos 13672)</Message>
+          <StackTrace>   at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs:line 34&#xD;
+   at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs:line 35&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e494511f-5b9a-4895-aaaa-90470be1f0ee" testId="6df2b4fd-f355-6461-4e9f-590b0ed0550e" testName="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: &quot;Vulkan&quot;, hardware: True)" computerName="BOQI-THE-DAEMON" duration="00:00:17.7696034" startTime="2026-10-06T00:31:54.4013136+08:00" endTime="2026-10-06T00:32:12.1351862+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e494511f-5b9a-4895-aaaa-90470be1f0ee">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Collections differ&#xD;
+                       ↓ (pos 13672)&#xD;
+Expected: [···, 0, 60, 216, 47, 216, ···]&#xD;
+Actual:   [···, 0, 60, 0, 60, 0, ···]&#xD;
+                       ↑ (pos 13672)</Message>
+          <StackTrace>   at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs:line 34&#xD;
+   at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs:line 35&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="a759fadd-9272-4f17-8b5b-75527bdddcae" testId="de91f778-4cf1-9c43-44a1-8a117d8acf50" testName="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.SupportedWorkMemoryPreservesAllShadowedPixels(backend: &quot;Vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:10.0678102" startTime="2026-10-06T00:32:47.5153676+08:00" endTime="2026-10-06T00:32:57.5810989+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a759fadd-9272-4f17-8b5b-75527bdddcae" />
+    <UnitTestResult executionId="78600c11-6008-408e-a84d-42c8bea653fc" testId="17740d49-c5c3-77ce-a535-579476b3c199" testName="SomeEngine.Render.Cluster.Tests.ClusterPipelineOutputTests.View_counts_that_cannot_retain_distinct_geometry_identities_are_rejected" computerName="BOQI-THE-DAEMON" duration="00:00:00.0052915" startTime="2026-10-06T00:32:57.5896191+08:00" endTime="2026-10-06T00:32:57.5949312+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="78600c11-6008-408e-a84d-42c8bea653fc" />
+    <UnitTestResult executionId="21a8b25e-8572-4616-be04-74359347f443" testId="99176b1a-e624-0646-51fe-f80ade250469" testName="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.SupportedWorkMemoryPreservesAllShadowedPixels(backend: &quot;D3D12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.9875202" startTime="2026-10-06T00:32:38.5261046+08:00" endTime="2026-10-06T00:32:47.5132227+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="21a8b25e-8572-4616-be04-74359347f443" />
+    <UnitTestResult executionId="10f71fda-b5f6-49ed-bc08-0994c31daeb6" testId="effa8d22-70b0-d7dc-fc59-240699f6b73d" testName="SomeEngine.Render.Cluster.Tests.ClusterPipelineOutputTests.Output_description_requires_positive_dimensions" computerName="BOQI-THE-DAEMON" duration="00:00:00.0041058" startTime="2026-10-06T00:32:57.5951394+08:00" endTime="2026-10-06T00:32:57.5992050+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="10f71fda-b5f6-49ed-bc08-0994c31daeb6" />
+    <UnitTestResult executionId="9ed7149a-3a8e-443d-b91a-d430c910a763" testId="ac32cfcd-64bd-0762-e7af-3c0478bd6c71" testName="SomeEngine.Render.Cluster.Tests.ClusterPipelineOutputTests.Geometry_outputs_are_explicit_and_have_no_presentation_target" computerName="BOQI-THE-DAEMON" duration="00:00:00.0028925" startTime="2026-10-06T00:32:57.5996831+08:00" endTime="2026-10-06T00:32:57.6022002+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9ed7149a-3a8e-443d-b91a-d430c910a763" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.SupportedWorkMemoryPreservesAllShadowedPixels(backend: &quot;D3D12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="99176b1a-e624-0646-51fe-f80ade250469">
+      <Execution id="21a8b25e-8572-4616-be04-74359347f443" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests" name="SupportedWorkMemoryPreservesAllShadowedPixels" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.ClusterPipelineOutputTests.View_counts_that_cannot_retain_distinct_geometry_identities_are_rejected" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="17740d49-c5c3-77ce-a535-579476b3c199">
+      <Execution id="78600c11-6008-408e-a84d-42c8bea653fc" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.ClusterPipelineOutputTests" name="View_counts_that_cannot_retain_distinct_geometry_identities_are_rejected" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.ClusterPipelineOutputTests.Geometry_outputs_are_explicit_and_have_no_presentation_target" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="ac32cfcd-64bd-0762-e7af-3c0478bd6c71">
+      <Execution id="9ed7149a-3a8e-443d-b91a-d430c910a763" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.ClusterPipelineOutputTests" name="Geometry_outputs_are_explicit_and_have_no_presentation_target" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: &quot;Vulkan&quot;, hardware: True)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="6df2b4fd-f355-6461-4e9f-590b0ed0550e">
+      <Execution id="e494511f-5b9a-4895-aaaa-90470be1f0ee" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests" name="TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: &quot;Vulkan&quot;, hardware: False)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="0cffc5f0-e6cc-6ffd-13fd-4d7ccd4d3c67">
+      <Execution id="1fc11708-8109-45b8-a6e8-8f13e93c5551" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests" name="TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.SupportedWorkMemoryPreservesAllShadowedPixels(backend: &quot;Vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="de91f778-4cf1-9c43-44a1-8a117d8acf50">
+      <Execution id="a759fadd-9272-4f17-8b5b-75527bdddcae" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests" name="SupportedWorkMemoryPreservesAllShadowedPixels" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: &quot;D3D12&quot;, hardware: True)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="c8eb2ee5-0d8d-2357-f37b-cb2bc1305e8d">
+      <Execution id="84cb78d9-e74d-4018-b7c6-0329562228c0" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests" name="TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: &quot;D3D12&quot;, hardware: False)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="ab89eafc-8212-b0fb-ecf4-941437eb6548">
+      <Execution id="14714c97-7e3c-4cb7-b5bd-568c560c7f7b" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests" name="TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.ClusterPipelineOutputTests.Output_description_requires_positive_dimensions" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="effa8d22-70b0-d7dc-fc59-240699f6b73d">
+      <Execution id="10f71fda-b5f6-49ed-bc08-0994c31daeb6" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.ClusterPipelineOutputTests" name="Output_description_requires_positive_dimensions" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="c8eb2ee5-0d8d-2357-f37b-cb2bc1305e8d" executionId="84cb78d9-e74d-4018-b7c6-0329562228c0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0cffc5f0-e6cc-6ffd-13fd-4d7ccd4d3c67" executionId="1fc11708-8109-45b8-a6e8-8f13e93c5551" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ab89eafc-8212-b0fb-ecf4-941437eb6548" executionId="14714c97-7e3c-4cb7-b5bd-568c560c7f7b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6df2b4fd-f355-6461-4e9f-590b0ed0550e" executionId="e494511f-5b9a-4895-aaaa-90470be1f0ee" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="de91f778-4cf1-9c43-44a1-8a117d8acf50" executionId="a759fadd-9272-4f17-8b5b-75527bdddcae" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="17740d49-c5c3-77ce-a535-579476b3c199" executionId="78600c11-6008-408e-a84d-42c8bea653fc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="99176b1a-e624-0646-51fe-f80ade250469" executionId="21a8b25e-8572-4616-be04-74359347f443" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="effa8d22-70b0-d7dc-fc59-240699f6b73d" executionId="10f71fda-b5f6-49ed-bc08-0994c31daeb6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ac32cfcd-64bd-0762-e7af-3c0478bd6c71" executionId="9ed7149a-3a8e-443d-b91a-d430c910a763" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="9" executed="9" passed="5" failed="4" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.19]   Discovering: SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.37]   Discovered:  SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.42]   Starting:    SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:26.41]       Assert.Equal() Failure: Collections differ&#xD;
+[xUnit.net 00:00:26.41]                              ↓ (pos 13672)&#xD;
+[xUnit.net 00:00:26.41]       Expected: [···, 0, 60, 216, 47, 216, ···]&#xD;
+[xUnit.net 00:00:26.41]       Actual:   [···, 0, 60, 0, 60, 0, ···]&#xD;
+[xUnit.net 00:00:26.41]                              ↑ (pos 13672)&#xD;
+[xUnit.net 00:00:26.41]       Stack Trace:&#xD;
+[xUnit.net 00:00:26.41]         F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs(34,0): at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware)&#xD;
+[xUnit.net 00:00:26.41]         F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs(35,0): at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware)&#xD;
+[xUnit.net 00:00:26.41]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:44.18]       Assert.Equal() Failure: Collections differ&#xD;
+[xUnit.net 00:00:44.18]                              ↓ (pos 13672)&#xD;
+[xUnit.net 00:00:44.18]       Expected: [···, 0, 60, 216, 47, 216, ···]&#xD;
+[xUnit.net 00:00:44.18]       Actual:   [···, 0, 60, 0, 60, 0, ···]&#xD;
+[xUnit.net 00:00:44.18]                              ↑ (pos 13672)&#xD;
+[xUnit.net 00:00:44.18]       Stack Trace:&#xD;
+[xUnit.net 00:00:44.18]         F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs(34,0): at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware)&#xD;
+[xUnit.net 00:00:44.18]         F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs(35,0): at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware)&#xD;
+[xUnit.net 00:00:44.18]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:53.50]       Assert.Equal() Failure: Collections differ&#xD;
+[xUnit.net 00:00:53.50]                              ↓ (pos 13672)&#xD;
+[xUnit.net 00:00:53.50]       Expected: [···, 0, 60, 216, 47, 216, ···]&#xD;
+[xUnit.net 00:00:53.50]       Actual:   [···, 0, 60, 0, 60, 0, ···]&#xD;
+[xUnit.net 00:00:53.50]                              ↑ (pos 13672)&#xD;
+[xUnit.net 00:00:53.50]       Stack Trace:&#xD;
+[xUnit.net 00:00:53.50]         F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs(34,0): at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware)&#xD;
+[xUnit.net 00:00:53.50]         F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs(35,0): at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware)&#xD;
+[xUnit.net 00:00:53.50]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:01:10.56]       Assert.Equal() Failure: Collections differ&#xD;
+[xUnit.net 00:01:10.56]                              ↓ (pos 13672)&#xD;
+[xUnit.net 00:01:10.56]       Expected: [···, 0, 60, 216, 47, 216, ···]&#xD;
+[xUnit.net 00:01:10.56]       Actual:   [···, 0, 60, 0, 60, 0, ···]&#xD;
+[xUnit.net 00:01:10.56]                              ↑ (pos 13672)&#xD;
+[xUnit.net 00:01:10.56]       Stack Trace:&#xD;
+[xUnit.net 00:01:10.56]         F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs(34,0): at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware)&#xD;
+[xUnit.net 00:01:10.56]         F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\VsmWorkRenderingTests.cs(35,0): at SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(String backend, Boolean hardware)&#xD;
+[xUnit.net 00:01:10.56]         --- End of stack trace from previous location ---&#xD;
+{"Backend":"D3D12","First":{"FrameIndex":1,"CandidateCount":2,"CandidateDispatchGroups":1,"PhaseOneSoftwareClusters":0,"PhaseOneHardwareClusters":2,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":21,"SoftwareRasterBatches":0,"FirstShadeBinTiles":28,"ShadingWorkItems":221,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":0,"VisibilityProbePixels":55,"ResidencyEpoch":9,"Work":{"Overflow":0,"TargetCandidateTests":5,"PotentialHardwareWindows":5,"EmptyHardwareWindows":0,"RequiredHardwareWindows":5,"AcceptedHardwareWindows":5,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":21,"SoftwareRasterBatches":0,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"FirstConstrained":{"FrameIndex":1,"CandidateCount":2,"CandidateDispatchGroups":1,"PhaseOneSoftwareClusters":0,"PhaseOneHardwareClusters":2,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":21,"SoftwareRasterBatches":0,"FirstShadeBinTiles":28,"ShadingWorkItems":221,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":0,"VisibilityProbePixels":55,"ResidencyEpoch":10,"Work":{"Overflow":0,"TargetCandidateTests":5,"PotentialHardwareWindows":5,"EmptyHardwareWindows":0,"RequiredHardwareWindows":5,"AcceptedHardwareWindows":5,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":21,"SoftwareRasterBatches":0,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"Settled":{"FrameIndex":25,"CandidateCount":377,"CandidateDispatchGroups":6,"PhaseOneSoftwareClusters":1,"PhaseOneHardwareClusters":189,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":464,"SoftwareRasterBatches":1,"FirstShadeBinTiles":32,"ShadingWorkItems":228,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":1,"VisibilityProbePixels":58,"ResidencyEpoch":9,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":463,"SoftwareRasterBatches":1,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"Constrained":{"FrameIndex":25,"CandidateCount":377,"CandidateDispatchGroups":6,"PhaseOneSoftwareClusters":1,"PhaseOneHardwareClusters":189,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":464,"SoftwareRasterBatches":1,"FirstShadeBinTiles":32,"ShadingWorkItems":228,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":1,"VisibilityProbePixels":58,"ResidencyEpoch":10,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":463,"SoftwareRasterBatches":1,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}}}&#xD;
+{"Backend":"Vulkan","First":{"FrameIndex":1,"CandidateCount":2,"CandidateDispatchGroups":1,"PhaseOneSoftwareClusters":0,"PhaseOneHardwareClusters":2,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":21,"SoftwareRasterBatches":0,"FirstShadeBinTiles":28,"ShadingWorkItems":221,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":0,"VisibilityProbePixels":55,"ResidencyEpoch":11,"Work":{"Overflow":0,"TargetCandidateTests":5,"PotentialHardwareWindows":5,"EmptyHardwareWindows":0,"RequiredHardwareWindows":5,"AcceptedHardwareWindows":5,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":21,"SoftwareRasterBatches":0,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"FirstConstrained":{"FrameIndex":1,"CandidateCount":2,"CandidateDispatchGroups":1,"PhaseOneSoftwareClusters":0,"PhaseOneHardwareClusters":2,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":21,"SoftwareRasterBatches":0,"FirstShadeBinTiles":28,"ShadingWorkItems":221,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":0,"VisibilityProbePixels":55,"ResidencyEpoch":12,"Work":{"Overflow":0,"TargetCandidateTests":5,"PotentialHardwareWindows":5,"EmptyHardwareWindows":0,"RequiredHardwareWindows":5,"AcceptedHardwareWindows":5,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":21,"SoftwareRasterBatches":0,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"Settled":{"FrameIndex":25,"CandidateCount":377,"CandidateDispatchGroups":6,"PhaseOneSoftwareClusters":1,"PhaseOneHardwareClusters":189,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":464,"SoftwareRasterBatches":1,"FirstShadeBinTiles":32,"ShadingWorkItems":228,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":1,"VisibilityProbePixels":58,"ResidencyEpoch":11,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":463,"SoftwareRasterBatches":1,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"Constrained":{"FrameIndex":25,"CandidateCount":377,"CandidateDispatchGroups":6,"PhaseOneSoftwareClusters":1,"PhaseOneHardwareClusters":189,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":464,"SoftwareRasterBatches":1,"FirstShadeBinTiles":32,"ShadingWorkItems":228,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":1,"VisibilityProbePixels":58,"ResidencyEpoch":12,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":463,"SoftwareRasterBatches":1,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}}}&#xD;
+[xUnit.net 00:01:29.65]   Finished:    SomeEngine.Render.Cluster.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T00:31:54.3671087+08:00">
+        <Text>[xUnit.net 00:00:26.41]     SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: "D3D12", hardware: False) [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T00:32:12.1364165+08:00">
+        <Text>[xUnit.net 00:00:44.18]     SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: "Vulkan", hardware: True) [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T00:32:21.4558356+08:00">
+        <Text>[xUnit.net 00:00:53.49]     SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: "D3D12", hardware: True) [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T00:32:38.5218456+08:00">
+        <Text>[xUnit.net 00:01:10.56]     SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.TransparentUserVisibilityPreservesTheSameReceiversAsRemovingTheCaster(backend: "Vulkan", hardware: False) [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

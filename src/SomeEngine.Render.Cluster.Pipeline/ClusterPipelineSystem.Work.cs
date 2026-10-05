@@ -24,7 +24,7 @@ public sealed partial class ClusterPipelineSystem
 
     private void BindWorkStatus(ref RenderGraphEdit graph, ref PassDefinition pass) =>
         _ = pass.Bind(graph.CreateBufferUav(GraphData.Resources.WorkStatus), PipelineSync.ComputeShading,
-            GraphAccessMode.ReadWrite, WriteCoverage.Complete);
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial);
 
     private void RecordWorkStatus(ref RenderGraphEdit graph, in FrameResources frame)
     {

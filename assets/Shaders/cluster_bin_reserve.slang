@@ -13,8 +13,7 @@ RWByteAddressBuffer BinnedSWDispatchArgs;
 RWByteAddressBuffer TessellationSeedDispatchArgs;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> ReserveCounters;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint> PolicyRasterWorkCounter;
+#include "cluster_work_status.slang"
 static const uint BLOCK_SIZE = 128u;
 
 [shader("compute")]
@@ -34,7 +33,8 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID)
     if (WaveIsFirstLane())
     {
         if (waveTotal != 0u)
-            InterlockedAdd(ReserveCounters[0], waveTotal, totalBase);
+            totalBase = ReserveClusterWork(ReserveCounters, waveTotal,
+                Uniforms.MaxVisibleClusters * 9u, 16u);
         if (waveSoftware != 0u)
             InterlockedAdd(ReserveCounters[1], waveSoftware, softwareBase);
         if (Uniforms.CollectMetrics != 0u)
@@ -42,11 +42,20 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID)
             InterlockedAdd(ReserveCounters[2], waveTotal);
             InterlockedAdd(ReserveCounters[3], waveSoftware);
         }
-        if (Uniforms.PolicyTarget != 0u)
-            InterlockedAdd(PolicyRasterWorkCounter[0], waveTotal);
     }
     totalBase = WaveReadLaneFirst(totalBase);
     softwareBase = WaveReadLaneFirst(softwareBase);
+    AddClusterWorkMetric(64u, hardwareCount);
+    AddClusterWorkMetric(72u, softwareCount);
+    if (totalBase + waveTotal > Uniforms.MaxVisibleClusters * 9u)
+    {
+        // No indirect consumer may execute a range not retained in the index buffer.
+        RasterBinMeta[bin].BinSWCount = 0u;
+        RasterBinMeta[bin].BinHWCount = 0u;
+        softwareCount = 0u;
+        hardwareCount = 0u;
+        totalCount = 0u;
+    }
     ReserveRaster(
         RasterBinMeta,
         BinnedHWDrawArgs,

@@ -19,6 +19,9 @@ public sealed record VirtualShadowMapSettings
     public float DirectionalResolutionLodBias { get; init; } = -2.0f;
     public float LocalResolutionLodBias { get; init; }
     public bool DynamicResolutionEnabled { get; init; }
+    /// <summary>Raster budget in 8×8-page material-batch equivalents. HW contributes
+    /// cropped page-batch area / 64; each bounded SW material batch contributes one.
+    /// Four-page partitioning alone therefore cannot raise resolution pressure.</summary>
     public uint DynamicResolutionTargetRasterWork { get; init; } = 250_000;
     public float DynamicResolutionPagePoolLoadStart { get; init; } = 0.85f;
     public float DynamicResolutionMaxDirectionalLodBias { get; init; } = 2.0f;

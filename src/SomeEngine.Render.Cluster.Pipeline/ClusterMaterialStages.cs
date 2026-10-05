@@ -1843,6 +1843,7 @@ internal enum ClusterTessellationCoreResource : byte
     RasterPatches,
     BinCounts,
     BinOffsets,
+    WorkStatus,
 }
 
 internal enum ClusterShadeCoreResource : byte
@@ -2626,6 +2627,7 @@ internal static class ClusterTessellationCoreResources
             ClusterTessellationCoreResource.WinnerBuffer => ResourceBindingType.BufferUav,
             ClusterTessellationCoreResource.BinnedClusters or
             ClusterTessellationCoreResource.Counters or
+            ClusterTessellationCoreResource.WorkStatus or
             ClusterTessellationCoreResource.WorkPatches0 or
             ClusterTessellationCoreResource.WorkPatches1 or
             ClusterTessellationCoreResource.LevelCounts or
@@ -2669,6 +2671,7 @@ internal static class ClusterTessellationCoreResources
         "VisibilityWinnerImage" => ClusterTessellationCoreResource.WinnerImage,
         "VisibilityWinnerBuffer" => ClusterTessellationCoreResource.WinnerBuffer,
         "TessellationCounters" => ClusterTessellationCoreResource.Counters,
+        "WorkStatus" => ClusterTessellationCoreResource.WorkStatus,
         "TessellationWorkPatches0" => ClusterTessellationCoreResource.WorkPatches0,
         "TessellationWorkPatches1" => ClusterTessellationCoreResource.WorkPatches1,
         "TessellationLevelCounts" => ClusterTessellationCoreResource.LevelCounts,

@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "195f009089a62fd7ebbf9012ca8b8a4a72a43dc4a9c1e007661c07c9b865c1f2",
+  "input_hash": "bd1b00da65f6a5353e17c6471971f800ab34e38bb3ada7aa671234f2c19d5398",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bin_common.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_bin_io.slang",
-      "content_hash": "8990864044d4b7351e58696a6e1157735d5abd8e609b52d2cf381adfc74a4f7d"
+      "content_hash": "e9ee490154cefaf92c133a6042bd86489158af9bd519a4b42aa34599ad815b13"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_common.slang",
@@ -33,11 +33,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_output.slang",
-      "content_hash": "32fd647f3e0c7a4f4a75d86d9a06d0afa4180f0aac7d2ebcaf57fdb64d336254"
+      "content_hash": "e2ef814edf011c0a0910fc41b2673aeb35ed4224e68689e8f4fe5ddf6ca1770c"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_resources.slang",
-      "content_hash": "4d2e861c166bc5b151509c89c0e470967a147f4f47cc066f87e164b3b824d74c"
+      "content_hash": "ad63901bbbf5dc2875f694ac25bb00ddae5b8e033d126de895ae76ecd3fe5023"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_view.slang",
@@ -49,7 +49,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_tessellation_core.slang",
-      "content_hash": "9af8bed7034f608f28de6cf41c0fb57026e7dd5653aca6976b81dd8cc20ab1ee"
+      "content_hash": "1c31811f3a62f05c7026ba5cc1e11ef0dba8ae76e51b5bffcd8de9732d95e03b"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_tessellation_entries.slang",
@@ -74,6 +74,10 @@
     {
       "relative_path": "../../assets/Shaders/cluster_visibility_raster_output.slang",
       "content_hash": "9c621be45539ec4d4fe939679a5759d4290b67fa57ba807f702d6909fc695b8b"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_work_status.slang",
+      "content_hash": "e30c3735a446f9ffcf9f2c0497f623be7cded6b71924a8bc5432d11a5b0805da"
     },
     {
       "relative_path": "../../assets/Shaders/common.slang",
@@ -161,11 +165,11 @@
     {
       "asset_guid": "7b4325f4-f32e-5690-a842-1e5faa296ba6",
       "sub_asset_key": "",
-      "input_hash": "195f009089a62fd7ebbf9012ca8b8a4a72a43dc4a9c1e007661c07c9b865c1f2",
+      "input_hash": "bd1b00da65f6a5353e17c6471971f800ab34e38bb3ada7aa671234f2c19d5398",
       "dependencies": [],
       "asset_path": "cluster_tessellation_phong.shader.asset",
-      "version": "c54cc97f-3aaf-4d17-0faf-2592b5535a88",
-      "content_hash": "D5AFCD898A9793BFB50EB51F6659D9721B1897E179C8F1A2835DBB583990F16E",
+      "version": "4515040e-888e-9dca-feda-5c1d13cac7be",
+      "content_hash": "87647BBFC112637FAA4EDCBDA4F256EB0920C9831B548326B8EF605C62331170",
       "asset_dependencies": []
     }
   ]

@@ -608,7 +608,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                 uint rasterWindows = 0u;
                 for (uint mip = 0u; mip < settings.MipLevelCount; mip++)
                 {
-                    uint dimension = (settings.PageTableMipPagesPerRow(mip) + 7u) / 8u;
+                    uint dimension = (settings.PageTableMipPagesPerRow(mip) + 3u) / 4u;
                     rasterWindows = checked(rasterWindows + dimension * dimension);
                 }
                 _geometry.ConfigureRenderContext(new ClusterRenderContext(
@@ -620,8 +620,8 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     _clusterInvocationDispatchArguments,
                     _policyRasterWorkCount,
                     sourceViewCapacity * settings.MipLevelCount,
-                    checked(settings.PageSize * 8u),
-                    checked(settings.PageSize * 8u),
+                    checked(settings.PageSize * 4u),
+                    checked(settings.PageSize * 4u),
                     checked((uint)pageHiZMipCount),
                     Math.Max(settings.PageSize / 2u, 1u))
                 {

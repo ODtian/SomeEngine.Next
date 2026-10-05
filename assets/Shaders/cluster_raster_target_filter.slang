@@ -184,6 +184,17 @@ bool ClusterTargetPolicyRasterBoundsWindow(
     if (!ClusterTargetPageBounds(
             target, firstPixel, lastPixel, firstPage, lastPage))
         return false;
+    return ClusterTargetCropRasterWindow(target, uint4(firstPage, lastPage),
+        firstPixel, lastPixel, rasterWindow);
+}
+
+bool ClusterTargetCropRasterWindow(
+    ClusterRasterTargetView target, uint4 pages,
+    uint2 firstPixel, uint2 lastPixel, out uint2 rasterWindow)
+{
+    rasterWindow = 0u.xx;
+    uint2 firstPage = pages.xy;
+    uint2 lastPage = pages.zw;
     uint2 acceptedFirst = lastPage;
     uint2 acceptedLast = firstPage;
     bool accepted = false;
@@ -205,8 +216,10 @@ bool ClusterTargetPolicyRasterBoundsWindow(
                 uint column = word * 32u + firstbitlow(mask);
                 mask &= mask - 1u;
                 uint2 localPage = uint2(column, row);
-                if (ClusterTargetReceiverAccepts(
-                        target, localPage, firstPixel, lastPixel))
+                uint tableIndex;
+                uint physicalPage;
+                if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, physicalPage) &&
+                    ClusterTargetReceiverAccepts(target, localPage, firstPixel, lastPixel))
                 {
                     acceptedFirst = min(acceptedFirst, localPage);
                     acceptedLast = max(acceptedLast, localPage);
@@ -227,19 +240,8 @@ bool ClusterTargetEntryValid(
     uint2 localPage,
     out uint physicalPage)
 {
-    uint tableIndex = ClusterRasterTargetTableIndex(target, localPage);
-    uint4 entry = RasterTargetPageTable[tableIndex];
-    int2 expectedWorldPage = ClusterRasterTargetWorldPage(target, localPage);
-    if (entry.x == 0u || entry.x == 0xFFFFFFFFu ||
-        (entry.w != 0u && entry.w != target.CacheGeneration) ||
-        asint(entry.y) != expectedWorldPage.x ||
-        asint(entry.z) != expectedWorldPage.y)
-    {
-        physicalPage = 0u;
-        return false;
-    }
-    physicalPage = entry.x - 1u;
-    return true;
+    uint tableIndex;
+    return ClusterRasterTargetResolvePage(target, localPage, tableIndex, physicalPage);
 }
 
 float ClusterTargetHiZMax(

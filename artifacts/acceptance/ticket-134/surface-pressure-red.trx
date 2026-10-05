@@ -1,0 +1,144 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="86b9a00e-b70d-4cee-8e17-0744b59e5a79" name="boqi@BOQI-THE-DAEMON 2026-10-06 00:07:11" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T00:07:11.2345320+08:00" queuing="2026-10-06T00:07:11.2345324+08:00" start="2026-10-06T00:05:38.8899249+08:00" finish="2026-10-06T00:07:19.5484708+08:00" />
+  <TestSettings name="default" id="cc795143-084b-402d-9fe8-feb846772cd8">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_00_07_11" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="608d8f87-3a74-444f-9d7d-652229a12a65" testId="4ab4134f-56da-c9ca-7de9-fed8601cacca" testName="SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.7188798" startTime="2026-10-06T00:07:09.7129257+08:00" endTime="2026-10-06T00:07:18.3905638+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="608d8f87-3a74-444f-9d7d-652229a12a65">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ&#xD;
+Expected: Rendering&#xD;
+Actual:   None</Message>
+          <StackTrace>   at SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(String backend) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Runtime.Tests\RasterWorkFailureTests.cs:line 19&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="500eedcf-d483-498a-a926-ee556c827cf8" testId="bafeb91a-60e2-9e1d-e72a-97096bd2817d" testName="SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T00:07:09.6864609+08:00" endTime="2026-10-06T00:07:09.6908943+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="500eedcf-d483-498a-a926-ee556c827cf8">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="4ab4134f-56da-c9ca-7de9-fed8601cacca">
+      <Execution id="608d8f87-3a74-444f-9d7d-652229a12a65" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RasterWorkFailureTests" name="InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="bafeb91a-60e2-9e1d-e72a-97096bd2817d">
+      <Execution id="500eedcf-d483-498a-a926-ee556c827cf8" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RasterWorkFailureTests" name="InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="4ab4134f-56da-c9ca-7de9-fed8601cacca" executionId="608d8f87-3a74-444f-9d7d-652229a12a65" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bafeb91a-60e2-9e1d-e72a-97096bd2817d" executionId="500eedcf-d483-498a-a926-ee556c827cf8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="2" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.18]   Discovering: SomeEngine.Runtime.Tests&#xD;
+[xUnit.net 00:00:02.73]   Discovered:  SomeEngine.Runtime.Tests&#xD;
+[xUnit.net 00:00:02.79]   Starting:    SomeEngine.Runtime.Tests&#xD;
+Shader: cluster_bin_count.shader&#xD;
+Shader: cluster_bin_reserve.shader&#xD;
+Shader: cluster_bin_reset.shader&#xD;
+Shader: cluster_bin_scatter.shader&#xD;
+Shader: cluster_bvh_traverse.shader&#xD;
+Shader: cluster_bvh_traverse_seed.shader&#xD;
+Shader: cluster_cull_phase1.shader&#xD;
+Shader: cluster_cull_phase2.shader&#xD;
+Shader: cluster_cull_reset.shader&#xD;
+Shader: cluster_deferred_resume.shader&#xD;
+Shader: cluster_draw.shader&#xD;
+Shader: cluster_resolve.shader&#xD;
+Shader: cluster_scene_bounds.shader&#xD;
+Shader: cluster_tessellation_bin.shader&#xD;
+Shader: cluster_tessellation_phong.shader&#xD;
+Shader: clustered_light_grid.shader&#xD;
+Shader: debug_args_copy.shader&#xD;
+Shader: debug_sphere.shader&#xD;
+Shader: hello_triangle.shader&#xD;
+Shader: hiz_init.shader&#xD;
+Shader: hiz_reduce.shader&#xD;
+Shader: hiz_reduce_pair.shader&#xD;
+Shader: imgui.shader&#xD;
+Shader: post_tonemap.shader&#xD;
+Shader: ray_tracing_geometry.shader&#xD;
+Shader: render_debug_overlay.shader&#xD;
+Shader: shade_bin_count.shader&#xD;
+Shader: shade_bin_reserve.shader&#xD;
+Shader: shade_bin_reset.shader&#xD;
+Shader: shade_bin_scatter.shader&#xD;
+Shader: shader_contract_probe.shader&#xD;
+Shader: standard.shader&#xD;
+Shader: stream_output_geometry.shader&#xD;
+Shader: sw_raster.shader&#xD;
+Shader: temporal_resolve.shader&#xD;
+Shader: translucency_composite.shader&#xD;
+Shader: triangle.shader&#xD;
+Shader: unlit.shader&#xD;
+Shader: visibility_clear_buffer.shader&#xD;
+Shader: visibility_clear_image.shader&#xD;
+Shader: visibility_resolve_buffer.shader&#xD;
+Shader: visibility_resolve_image.shader&#xD;
+Shader: vsm_allocate_pages.shader&#xD;
+Shader: vsm_caster_invalidation.shader&#xD;
+Shader: vsm_clear_pages.shader&#xD;
+Shader: vsm_dynamic_resolution.shader&#xD;
+Shader: vsm_frame_reset.shader&#xD;
+Shader: vsm_mark_coarse_pages.shader&#xD;
+Shader: vsm_mark_pages.shader&#xD;
+Shader: vsm_page_depth_complete.shader&#xD;
+Shader: vsm_page_hiz.shader&#xD;
+Shader: vsm_page_hiz_copy.shader&#xD;
+Shader: vsm_page_hiz_reduce.shader&#xD;
+Shader: vsm_page_pool.shader&#xD;
+Shader: vsm_receiver_mask_reset.shader&#xD;
+Shader: vsm_state_init.shader&#xD;
+Shader: vsm_view_compact.shader&#xD;
+  ClusterPipeline: assets/Pipelines/default_cluster.clusterrender.asset&#xD;
+  VirtualShadowMap: assets/Pipelines/default_virtual_shadow.virtualshadow.asset&#xD;
+  Scene: assets/Scenes/default.scene.asset&#xD;
+  Application: assets/Runtime/default.runtime.asset&#xD;
+Built 69 project assets from project sources and the engine shader library.&#xD;
+[xUnit.net 00:01:29.93]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-84582f7893d24bd48b95b75ef8c636f1\tessellation; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=12/12, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 4 frame(s).&#xD;
+[xUnit.net 00:01:38.64]       Assert.Equal() Failure: Values differ&#xD;
+[xUnit.net 00:01:38.64]       Expected: Rendering&#xD;
+[xUnit.net 00:01:38.64]       Actual:   None&#xD;
+[xUnit.net 00:01:38.64]       Stack Trace:&#xD;
+[xUnit.net 00:01:38.64]         F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Runtime.Tests\RasterWorkFailureTests.cs(19,0): at SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(String backend)&#xD;
+[xUnit.net 00:01:38.64]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:01:39.63]   Finished:    SomeEngine.Runtime.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T00:07:09.7430111+08:00">
+        <Text>[xUnit.net 00:01:29.93]     SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T00:07:18.3965924+08:00">
+        <Text>[xUnit.net 00:01:38.64]     SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: "d3d12") [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

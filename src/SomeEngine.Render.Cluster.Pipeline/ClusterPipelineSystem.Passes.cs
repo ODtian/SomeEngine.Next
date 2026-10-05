@@ -124,6 +124,7 @@ public sealed partial class ClusterPipelineSystem
             SoftwareDebug = frame.SoftwareDebug,
             PhaseOneTessellationCounters = frame.PhaseOneTessellationCounters,
             PhaseTwoTessellationCounters = frame.TessellationCounters,
+            WorkStatus = frame.WorkStatus,
             Visibility = frame.VisBuffer,
             VisibilityProbeX = checked((uint)Math.Max(
                 0,
@@ -162,6 +163,9 @@ public sealed partial class ClusterPipelineSystem
                 Read(ref access, data.SoftwareDebug, 0, sizeof(uint));
                 Read(ref access, data.PhaseOneTessellationCounters, 0, 8 * sizeof(uint));
                 Read(ref access, data.PhaseTwoTessellationCounters, 0, 8 * sizeof(uint));
+                Read(ref access, data.WorkStatus, 0, WorkMetricsByteSize);
+                access.Write(data.Destination, new BufferRange(WorkMetricsReadbackOffset, WorkMetricsByteSize),
+                    PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
                 _ = access.Read(
                     data.Visibility,
                     new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
@@ -859,6 +863,17 @@ public sealed partial class ClusterPipelineSystem
             WriteCoverage.Partial,
             ResourceContentState.Defined,
             BufferContentScope.CountBoundedRanges));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.VisibleClusterRasterWindows, VisibleClusterRasterWindowStride),
+            PipelineSync.ComputeShading, BufferContentScope.CountBoundedPrefix));
+        GraphBufferId policyRasterWorkCounter = _renderContext.IsValid && epoch >= 2
+            ? _renderContext.PolicyRasterWorkCounter : frame.NeutralPolicyCounter;
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, policyRasterWorkCounter, sizeof(uint)), PipelineSync.ComputeShading,
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial,
+            unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.WorkStatus), PipelineSync.ComputeShading));
         ClusterIndirectDispatchParameters count = new(
             RequireDispatchIndirectLayout(), frame.RasterWorkArguments, 0);
         GraphPassId countPass = AddComputePass(
@@ -901,15 +916,8 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.RasterReserveCounters, sizeof(uint)),
             PipelineSync.ComputeShading));
-        GraphBufferId policyRasterWorkCounter = _renderContext.IsValid && epoch >= 2
-            ? _renderContext.PolicyRasterWorkCounter
-            : frame.NeutralPolicyCounter;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, policyRasterWorkCounter, sizeof(uint)),
-            PipelineSync.ComputeShading,
-            GraphAccessMode.ReadWrite,
-            WriteCoverage.Partial,
-            unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable));
+            CreateStorageBufferView(graph, frame.WorkStatus), PipelineSync.ComputeShading));
         ClusterDispatchParameters reserve = new(new DispatchArguments(
             Math.Max(1u, (frame.RasterBinCount + 127u) / 128u), 1, 1));
         GraphPassId reservePass = AddComputePass(
@@ -957,6 +965,8 @@ public sealed partial class ClusterPipelineSystem
             CreateReadOnlyBufferView(graph, frame.RasterSlots, sizeof(uint)),
             PipelineSync.ComputeShading));
         AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.WorkStatus), PipelineSync.ComputeShading));
         ClusterIndirectDispatchParameters scatter = new(
             RequireDispatchIndirectLayout(), frame.RasterWorkArguments, ClusterRasterArguments.RasterScatterOffset);
         GraphPassId scatterPass = AddComputePass(
