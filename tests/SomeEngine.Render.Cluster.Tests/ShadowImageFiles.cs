@@ -1,5 +1,8 @@
 using System.Buffers.Binary;
 using System.Numerics;
+using System.Runtime.InteropServices;
+using SkiaSharp;
+using SomeEngine.Runtime;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
@@ -22,6 +25,20 @@ internal static class ShadowImageFiles
             int offset = data + (signedHeight < 0 ? y : height - 1 - y) * pitch + x * channels;
             pixels[y * width + x] = new(InverseToneMap(bytes[offset + 2]),
                 InverseToneMap(bytes[offset + 1]), InverseToneMap(bytes[offset]));
+        }
+        return pixels;
+    }
+
+    internal static Vector3[] ReadRawLinearPixels(string path, int width, int height)
+    {
+        SceneLinearImage image = SceneLinearImage.Load(path);
+        Assert.Equal(width, image.Frame.Width);
+        Assert.Equal(height, image.Frame.Height);
+        var pixels = new Vector3[width * height];
+        for (int pixel = 0; pixel < pixels.Length; pixel++)
+        {
+            ReadOnlySpan<Half> rgba = image.Pixels.Span.Slice(pixel * 4, 4);
+            pixels[pixel] = new((float)rgba[0], (float)rgba[1], (float)rgba[2]);
         }
         return pixels;
     }
@@ -49,5 +66,10 @@ internal static class ShadowImageFiles
             bytes[57 + pixel * 4] = 255;
         }
         File.WriteAllBytes(path, bytes);
+        using var bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        Marshal.Copy(bytes, 54, bitmap.GetPixels(), pixels.Length * 4);
+        using SKData png = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        using var file = File.Create(Path.ChangeExtension(path, ".png"));
+        png.SaveTo(file);
     }
 }

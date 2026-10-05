@@ -1,0 +1,11 @@
+{
+  "Operation": "Invalid first selected-capture command",
+  "Cause": "IO.Path.GetFullPath used process working directory rather than PowerShell Set-Location",
+  "AttemptedRoot": "F:/SomeEngine.Next",
+  "ExitCode": 1,
+  "WallSeconds": 0.3516991,
+  "AcceptedEvidence": false,
+  "OutputLogWriteFailed": true,
+  "DeviceCreationKnown": false,
+  "Recovery": "No protected-tree retrieval or replay; use explicit owned absolute paths"
+}

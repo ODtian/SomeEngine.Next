@@ -1,0 +1,2 @@
+"PSPath","PSDrive","PSProvider","PSIsContainer","Name","Key","Value"
+"Microsoft.PowerShell.Core\Environment::DOTNET_CLI_TELEMETRY_OPTOUT","Env","Microsoft.PowerShell.Core\Environment","False","DOTNET_CLI_TELEMETRY_OPTOUT","DOTNET_CLI_TELEMETRY_OPTOUT","true"

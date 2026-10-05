@@ -1,0 +1,10 @@
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\templates\DefaultProject; sceneInstances=1024, sceneBounds=<-23.25, -23.25, 65>..<23.25, 23.25, 65>, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.
+First frame: applying extracted scene.
+First frame: preparing streamed meshes.
+First frame: publishing prepare systems.
+First frame: acquiring presentation image.
+First frame: recording render systems.
+First frame: analyzing and submitting render graph.
+First frame: presenting.
+Cluster residency: meshes=1/1, pages=3/6, missing=3, queued=0, active=0, failures=0.
+SomeEngine runtime completed 4 frame(s).

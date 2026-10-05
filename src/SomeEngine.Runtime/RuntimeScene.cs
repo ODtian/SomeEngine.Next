@@ -20,7 +20,7 @@ internal sealed class RuntimeScene : IDisposable
         AssetId<MaterialAsset>[] MaterialIds);
 
     private readonly World _world;
-    private (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings)[] _meshes = [];
+    private (Guid Asset, Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings)[] _meshes = [];
     private readonly (Entity Entity, PointLight Value)[] _playbackLights;
     private readonly Material[] _playbackMaterials;
     private Texture[] _textures = [];
@@ -190,7 +190,7 @@ internal sealed class RuntimeScene : IDisposable
                 return new RuntimeScene(world, playbackLights, [.. materials.Values], motionQuery,
                     runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
                     camera.FarPlane, instances.Length, meshPositionMin, meshPositionMax)
-                    { _meshes = [.. meshes.Values],
+                    { _meshes = [.. meshes.Select(pair => (pair.Key, pair.Value.Mesh, pair.Value.Source, pair.Value.Bindings))],
                         _textures = [.. textureReads.Values.Select(read => read.Value.Result)] };
             }
             catch { world.ReleaseQuery(motionQuery); throw; }
@@ -262,6 +262,41 @@ internal sealed class RuntimeScene : IDisposable
     }
 
     internal Entity[] GetMeshEntities() => Entities(_world, new QueryDefinitionBuilder().Read<MeshInstance>());
+
+    // Called only for a requested image, after extraction/prepare and before the next game update.
+    // This records the same scene inputs; it never builds an alternate World-to-GPU path.
+    internal SceneFrame CaptureFrame(SceneFrame frame)
+    {
+        var lights = new List<SceneLight>();
+        foreach (Entity entity in Entities(_world, new QueryDefinitionBuilder().Read<DirectionalLight>()))
+        {
+            DirectionalLight light = _world.Read<DirectionalLight>(entity);
+            lights.Add(new(SceneLightKind.Directional, Vector3.Zero, light.Direction, 0, 0, 0,
+                light.Color, light.Intensity, light.LayerMask));
+        }
+        foreach (Entity entity in GetPointLights())
+        {
+            PointLight light = _world.Read<PointLight>(entity);
+            lights.Add(new(SceneLightKind.Point, light.Position, Vector3.Zero, light.Range, 0, 0,
+                light.Color, light.Intensity, light.LayerMask));
+        }
+        foreach (Entity entity in Entities(_world, new QueryDefinitionBuilder().Read<SpotLight>()))
+        {
+            SpotLight light = _world.Read<SpotLight>(entity);
+            lights.Add(new(SceneLightKind.Spot, light.Position, light.Direction, light.Range,
+                light.InnerConeCos, light.OuterConeCos, light.Color, light.Intensity, light.LayerMask));
+        }
+        return frame with
+        {
+            NearPlane = _nearPlane, FarPlane = _farPlane, Lights = lights.ToArray(),
+            Meshes = GetMeshEntities().Select(entity =>
+            {
+                Mesh mesh = _world.Read<MeshInstance>(entity).Mesh;
+                Guid asset = _meshes.First(value => ReferenceEquals(value.Mesh, mesh)).Asset;
+                return new SceneMeshTransform(asset, _world.Read<WorldTransform>(entity).Qvvs.ToMatrix());
+            }).ToArray(),
+        };
+    }
 
     internal void SetCameraTransform(Vector3 position, Quaternion rotation) =>
         Camera = new RuntimeCamera(position, position + Vector3.Transform(Vector3.UnitZ, rotation),
