@@ -23,6 +23,8 @@ public sealed partial class ClusterPipelineSystem
     internal const int ShadeBinCountReadbackOffset = 80;
     internal const int PhaseOneTessellationCountersReadbackOffset = 84;
     internal const int PhaseTwoTessellationCountersReadbackOffset = 116;
+    internal const int WorkMetricsReadbackOffset = 160;
+    internal const int WorkMetricsByteSize = 96;
     internal const int MetricsFrameIndexOffset = 152;
     internal const int VisibilityProbeReadbackOffset = 512;
     internal const int VisibilityProbePixelCount = 64;
@@ -107,7 +109,8 @@ public sealed partial class ClusterPipelineSystem
 
         GraphData.PageUpload = geometryBuffers.PageUpload;
         GraphData.BvhUpload = geometryBuffers.BvhUpload;
-        frame.WorkStatus = frame.AddBuffer(ref graph, sizeof(uint), BufferUsages.CopySource,
+        frame.WorkStatus = frame.AddBuffer(ref graph,
+            checked((ulong)(_options.EnableFrameMetricsReadback ? WorkMetricsByteSize : sizeof(uint))), BufferUsages.CopySource,
             "Cluster work overflow status");
         frame.CandidateArgs = frame.AddBuffer(
             ref graph,

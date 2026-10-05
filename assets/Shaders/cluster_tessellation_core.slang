@@ -7,6 +7,7 @@
 #include "cluster_view_access.slang"
 #include "resource_effects.slang"
 #include "vertex_consumer_cache.slang"
+#include "cluster_work_status.slang"
 
 ConstantBuffer<TessellationUniforms> TessellationUniformData;
 StructuredBuffer<ClusterViewUniforms> TessellationViews;
@@ -350,6 +351,7 @@ void SeedTessellationRasterBin<TVE : IVertexEvaluate>(
         float3(0.0, 0.0, 1.0));
     SetTessellationPatchState(patch, 0u, 1u.xxx);
 
+    AddClusterWorkMetric(80u, 1u);
     uint4 active = WaveActiveBallot(true);
     uint lane = WaveGetLaneIndex();
     uint leader = WaveMaskFirstLane(active);
@@ -357,7 +359,8 @@ void SeedTessellationRasterBin<TVE : IVertexEvaluate>(
     uint baseIndex = 0u;
     if (lane == leader)
     {
-        InterlockedAdd(TessellationLevelCounts[0], waveCount, baseIndex);
+        baseIndex = ReserveClusterWork(TessellationLevelCounts, waveCount,
+            TessellationUniformData.MaxPatchItems, 32u);
         uint ignored;
         TessellationCounters.InterlockedAdd(
             TESS_COUNTER_ROOT_COUNT,
@@ -511,13 +514,15 @@ void AddTessellationCounter(uint byteOffset, uint value)
 
 bool AppendFinalTessellationPatch(TessellationPatch patch)
 {
+    AddClusterWorkMetric(88u, 1u);
     uint4 active = WaveActiveBallot(true);
     uint lane = WaveGetLaneIndex();
     uint leader = WaveMaskFirstLane(active);
     uint waveCount = WaveMaskBitCount(active);
     uint baseIndex = 0u;
     if (lane == leader)
-        TessellationCounters.InterlockedAdd(TESS_COUNTER_FINAL_COUNT, waveCount, baseIndex);
+        baseIndex = ReserveClusterWork(TessellationCounters, TESS_COUNTER_FINAL_COUNT,
+            waveCount, TessellationUniformData.MaxPatchItems, 32u);
     baseIndex = WaveReadLaneAt(baseIndex, leader);
     uint index = baseIndex + WaveMaskPrefix(active, lane);
     bool admitted = index < TessellationUniformData.MaxPatchItems;
@@ -540,6 +545,23 @@ void RecordTessellationProcessed()
     AddTessellationCounter(TESS_COUNTER_PROCESSED, 1u);
 }
 
+uint ReserveTessellationLevel(uint level, uint amount)
+{
+    uint current = TessellationLevelCounts[level];
+    for (;;)
+    {
+        uint accepted = min(amount, TessellationUniformData.MaxPatchItems - current);
+        uint observed;
+        InterlockedCompareExchange(TessellationLevelCounts[level], current, current + accepted, observed);
+        if (observed == current)
+        {
+            if (accepted != amount) RejectClusterWork(32u);
+            return current;
+        }
+        current = observed;
+    }
+}
+
 bool PublishTessellationChildren(
     TessellationPatch children[4],
     uint childCount)
@@ -549,7 +571,7 @@ bool PublishTessellationChildren(
     uint waveCount = WaveActiveSum(childCount);
     uint baseIndex = 0u;
     if (WaveIsFirstLane() && waveCount != 0u)
-        InterlockedAdd(TessellationLevelCounts[nextLevel], waveCount, baseIndex);
+        baseIndex = ReserveTessellationLevel(nextLevel, waveCount);
     baseIndex = WaveReadLaneFirst(baseIndex);
 
     uint admittedEnd = min(baseIndex + waveCount, TessellationUniformData.MaxPatchItems);
@@ -589,8 +611,8 @@ bool PublishTessellationChildren(
     // A capacity overflow may admit only a prefix of the wave.  Once any child
     // has been published the parent must not also be finalized, otherwise the
     // accepted children overlap the parent and rasterize the same surface twice.
-    // Overflow is already recorded above; the capacity policy drops only the
-    // non-admitted suffix.
+    // The shared frame status rejects this incomplete frame. Its depth must not
+    // become sample-valid; clamping here protects memory, not rendering quality.
     return admittedCount != 0u;
 }
 

@@ -63,28 +63,6 @@ bool ClusterRasterTargetCachedReceiverAccepts(
         : (receiverMask.y & (1u << (bit - 32u))) != 0u;
 }
 
-bool ClusterRasterTargetResolvePage(
-    ClusterRasterTargetView target,
-    uint2 localPage,
-    out uint tableIndex,
-    out uint page)
-{
-    tableIndex = ClusterRasterTargetTableIndex(target, localPage);
-    uint4 entry = RasterTargetPageTable[tableIndex];
-    int2 expectedWorldPage = ClusterRasterTargetWorldPage(target, localPage);
-    if (entry.x == 0u ||
-        entry.x == 0xFFFFFFFFu ||
-        (entry.w != 0u && entry.w != target.CacheGeneration) ||
-        asint(entry.y) != expectedWorldPage.x ||
-        asint(entry.z) != expectedWorldPage.y)
-    {
-        page = CLUSTER_RASTER_TARGET_INVALID_PAGE;
-        return false;
-    }
-    page = entry.x - 1u;
-    return true;
-}
-
 int4 PrepareRasterTargetScissor(
     uint2 rasterWindow,
     uint targetViewIndex,

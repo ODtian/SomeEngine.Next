@@ -109,7 +109,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     target.TableOriginY = asuint(worldOrigin.y) & pageMask;
     target.ReceiverMaskEnabled =
         (source.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u ? 1u : 0u;
-    target.RasterWindowPages = 8u;
+    target.RasterWindowPages = 4u;
     target.Padding = uint2(0, 0);
     target.UncachedPageRect = uncachedRect;
     RasterTargetViews[compactIndex] = target;

@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "04187ba9edb0abbb103d4e6ef9c1bd132ca32f0c782e7fc6cb03811c2304a3b8",
+  "input_hash": "c5e6d7e5081f4587539699fea75abcf45684aa95c723a9e4cb0865e6389c5a35",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bin_common.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_bin_io.slang",
-      "content_hash": "8990864044d4b7351e58696a6e1157735d5abd8e609b52d2cf381adfc74a4f7d"
+      "content_hash": "e9ee490154cefaf92c133a6042bd86489158af9bd519a4b42aa34599ad815b13"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_common.slang",
@@ -41,11 +41,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_output.slang",
-      "content_hash": "32fd647f3e0c7a4f4a75d86d9a06d0afa4180f0aac7d2ebcaf57fdb64d336254"
+      "content_hash": "e2ef814edf011c0a0910fc41b2673aeb35ed4224e68689e8f4fe5ddf6ca1770c"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_resources.slang",
-      "content_hash": "4d2e861c166bc5b151509c89c0e470967a147f4f47cc066f87e164b3b824d74c"
+      "content_hash": "ad63901bbbf5dc2875f694ac25bb00ddae5b8e033d126de895ae76ecd3fe5023"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_view.slang",
@@ -157,11 +157,11 @@
     {
       "asset_guid": "77261b58-8f75-5ad6-8fee-d7490a8cf873",
       "sub_asset_key": "",
-      "input_hash": "04187ba9edb0abbb103d4e6ef9c1bd132ca32f0c782e7fc6cb03811c2304a3b8",
+      "input_hash": "c5e6d7e5081f4587539699fea75abcf45684aa95c723a9e4cb0865e6389c5a35",
       "dependencies": [],
       "asset_path": "unlit.shader.asset",
-      "version": "a72500af-5fd4-cb0b-7e8f-e2f52cd908c0",
-      "content_hash": "35B1CDF8D89D534FD99C4662A2DF554E58DB4A7AFB2F8BD4492282E5BA214192",
+      "version": "ea73f2cb-e313-c226-812f-5aa8e49e2ec9",
+      "content_hash": "86B1F2A856D70FF3B9C0F9A57C81A55B5FCDB66D4FC8D781BA7A54914F01CA5F",
       "asset_dependencies": []
     }
   ]

@@ -12,6 +12,12 @@ Indirect draw/dispatch 只是 Cluster triangle raster pipeline 当前内部命�
 ## Relations
 [[Hardware-Raster]] · [[Software-Raster]] · [[architecture/material/Raster-Compatibility]]
 
+VSM 目标页硬件窗口按四页网格分区（默认 128 px 页对应 512×512 px viewport）。
+每个分区先与遮挡者保守投影、uncached 范围、实际请求位、当前映射/world-page tags
+和接收区域相交；按剩余页裁剪，空分区不进入光栅箱。小矩形跨分区边界也必须分区。
+SW 保留一个有界几何项，不把其计数称为 HW 窗口。绘制允许刚变脏的 generation=0
+映射；材质采样仍需完成后的 generation。窗口内的空洞继续由最终像素筛选保留。
+
 目标页硬件光栅先根据当前窗口、页请求、页表和接收区域解析 atlas 像素地址，
 通过筛选的像素再调用用户的可见性 shader，并将其深度原子合并到目标像素。
 地址解析和写入共用原页表及 atlas，用户 shader 继续解释自己的 varying 和深度。

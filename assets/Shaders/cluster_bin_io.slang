@@ -128,7 +128,7 @@ void ReserveRaster(
     WriteDispatch(swArgs, bin, swCount);
 }
 
-void ScatterRaster(
+bool ScatterRaster(
     RWStructuredBuffer<RasterBinEntry> bins,
     RWStructuredBuffer<uint> indices,
     uint bin,
@@ -136,7 +136,7 @@ void ScatterRaster(
     uint workIndex,
     bool sw)
 {
-    if (!IsBin(bin)) return;
+    if (!IsBin(bin)) return true;
 
     uint offset = bins[bin].ClusterOffset;
     uint key = (bin << 1u) | (sw ? 1u : 0u);
@@ -152,14 +152,13 @@ void ScatterRaster(
     }
     localBase = WaveReadLaneAt(localBase, leader);
     uint local = localBase + WaveMaskPrefix(matching, WaveGetLaneIndex());
-    if (sw)
-    {
-        indices[offset + local] = visible | (workIndex << 22u);
-        return;
-    }
-
-    uint swCount = bins[bin].BinSWCount;
-    indices[offset + swCount + local] = visible | (workIndex << 22u);
+    uint count = sw ? bins[bin].BinSWCount : bins[bin].BinHWCount;
+    uint index = offset + (sw ? 0u : bins[bin].BinSWCount) + local;
+    uint capacity, stride;
+    indices.GetDimensions(capacity, stride);
+    if (local >= count || index >= capacity) return false;
+    indices[index] = visible | (workIndex << 22u);
+    return true;
 }
 
 #endif

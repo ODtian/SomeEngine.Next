@@ -17,10 +17,23 @@ ByteAddressBuffer PageHeap;
 
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> BinnedClusterIndexBuffer;
+StructuredBuffer<uint2> VisibleClusterRasterWindows;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> PolicyRasterWorkCounter;
+#include "cluster_raster_target_view.slang"
 
 void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware)
 {
     if (!IsBin(bin)) return;
+    if (Uniforms.PolicyTarget != 0u)
+    {
+        uint4 pages = ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindows[visibleIndex]);
+        uint2 extent = pages.zw - pages.xy + 1u;
+        // Page-batch area is invariant under partitioning. Software remains one
+        // bounded geometry batch; do not lower resolution just for more HW windows.
+        uint area = isSoftware ? 64u : extent.x * extent.y;
+        InterlockedAdd(PolicyRasterWorkCounter[0], area);
+    }
     uint capacity = RasterBinMeta[bin].BinCapacity;
     if (capacity == 0u)
     {
@@ -43,10 +56,18 @@ void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftwa
     // Keep both lists in append order. The hardware region starts after the
     // maximum software work derived from this phase's visible-cluster count.
     uint index = (isSoftware ? RasterBinMeta[bin].ClusterOffset : RasterBinMeta[bin].HardwareOffset) + item;
+    uint entries, stride;
+    BinnedClusterIndexBuffer.GetDimensions(entries, stride);
+    if (index >= entries)
+    {
+        RejectClusterWork(16u);
+        return;
+    }
     BinnedClusterIndexBuffer[index] = visibleIndex | (workIndex << 22u);
 }
 
 #include "cluster_bin_batches.slang"
+#include "cluster_work_status.slang"
 
 [shader("compute")]
 [numthreads(64, 1, 1)]

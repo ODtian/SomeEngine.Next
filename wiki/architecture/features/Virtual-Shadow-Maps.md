@@ -20,6 +20,10 @@ VSM 构造普通 unified render views，并通过 geometry pipeline 能力使用
 计算目标级别，再寻找覆盖该世界位置的首个 clipmap。请求页与材质采样共用这一选择。
 动态分辨率的页池压力偏移作用于这个覆盖投影，使压力反馈能降低实际请求页的密度。
 DefaultGame 启用此反馈；页分配失败、页池占用和光栅工作量由 VSM 自身维护。
+`DynamicResolutionTargetRasterWork` 的单位为 8×8 页材质 batch 等价量：HW 使用
+裁剪后 page-batch 面积 / 64，SW 有界几何 batch 使用一。它不是候选数、窗口数或
+indirect instance 数；将 HW 窗口改为四页不能单凭分区数增加而降低分辨率。
+当前裁剪面积反馈可比旧的每窗口一更低，可能恢复更多细节；最终有效质量/成本仍需实测。
 
 clipmap 按二次幂分级。默认偏移为零时，可覆盖目标位置的选中级别使像素投影的最短主轴
 覆盖 1–2 个阴影 texel；较长主轴按投影比例覆盖更多 texel。虚拟分辨率的级别范围限定最大精度。

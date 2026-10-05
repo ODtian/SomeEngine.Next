@@ -256,6 +256,8 @@ void AppendVisibleWindow(
     }
     routeBase = WaveReadLaneAt(routeBase, routeLeader);
     uint outIdx = routeBase + WaveMaskPrefix(routeMask, lane);
+    if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+        AddClusterWorkMetric(isSW ? 56u : 40u, 1u);
     if (isSW)
     {
         uint globalIdx = baseSWCount + outIdx;
@@ -351,6 +353,7 @@ bool LoadAndFilterCandidate(
     view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
     if (threadId >= view.MaxCandidates)
         return false;
+    if (view.TargetPolicy != 0u) AddClusterWorkMetric(8u, 1u);
 
     cluster = LoadCluster(pageOffset, clusterID);
     t = LoadRenderTransform(
@@ -373,7 +376,7 @@ bool LoadAndFilterCandidate(
 #else
     bool needsCurrentBounds = view.TargetPolicy != 0u || view.HasPrevHistory == 0u;
 #endif
-    if (needsCurrentBounds && (view.CullingEnabled != 0u || view.TargetPolicy != 0u))
+    if (needsCurrentBounds && view.CullingEnabled != 0u)
         currentBounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, false, view);
     if (view.TargetPolicy != 0u && !ClusterTargetPolicyRasterBoundsWindow(
             currentBounds.MinUv, currentBounds.MaxUv, view, rasterWindow))
@@ -394,11 +397,13 @@ void AppendVisibleWindow(uint pageOffset, uint clusterID, uint instanceID,
 // Hardware work is bounded by the target's raster window, independently of
 // its virtual resolution. Empty windows never enter the raster bins.
 void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
-    uint viewIndex, uint2 rasterWindow, bool isSW, uint maxCandidates)
+    uint viewIndex, uint2 rasterWindow, bool isSW, uint maxCandidates,
+    ClusterScreenBounds currentBounds)
 {
     ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
     if (isSW || view.TargetPolicy == 0u)
     {
+        if (view.TargetPolicy != 0u) AddClusterWorkMetric(48u, 1u);
         AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, isSW, maxCandidates);
         return;
     }
@@ -410,37 +415,27 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
         return;
     }
     uint4 pages = ClusterUnpackRasterTargetPageWindow(rasterWindow);
-    // The candidate filter already clipped this rectangle to accepted pages.
-    // Only rectangles spanning several hardware windows need another partition.
-    if (all(pages.zw - pages.xy < windowSize))
+    uint2 firstPixel;
+    uint2 lastPixel;
+    if (!ClusterTargetPixelBounds(currentBounds.MinUv, currentBounds.MaxUv,
+            view, target, firstPixel, lastPixel)) return;
+    // Partition on the page grid, including small rectangles crossing a boundary.
+    // Each partition repeats all draw-eligibility tests, not just request bits.
+    uint2 firstWindow = pages.xy / windowSize * windowSize;
+    for (uint y = firstWindow.y; y <= pages.w; y += windowSize)
+    for (uint x = firstWindow.x; x <= pages.z; x += windowSize)
     {
-        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, false, maxCandidates);
-        return;
-    }
-    for (uint y = pages.y; y <= pages.w; y += windowSize)
-    {
-        for (uint x = pages.x; x <= pages.z; x += windowSize)
+        uint2 first = max(uint2(x, y), pages.xy);
+        uint2 last = min(uint2(x, y) + windowSize - 1u, pages.zw);
+        uint2 clipped;
+        AddClusterWorkMetric(16u, 1u);
+        if (ClusterTargetCropRasterWindow(target, uint4(first, last), firstPixel, lastPixel, clipped))
         {
-            uint2 last = min(uint2(x, y) + windowSize - 1u, pages.zw);
-            uint4 clipped = uint4(last, uint2(x, y));
-            bool accepted = false;
-            for (uint row = y; row <= last.y; row++)
-            {
-                uint firstWord = x / 32u;
-                uint lastWord = last.x / 32u;
-                for (uint word = firstWord; word <= lastWord; word++)
-                {
-                    uint mask = ClusterTargetHierarchyWordMask(target, 0u, row, word, x, last.x);
-                    if (mask == 0u) continue;
-                    clipped.xy = min(clipped.xy, uint2(word * 32u + firstbitlow(mask), row));
-                    clipped.zw = max(clipped.zw, uint2(word * 32u + firstbithigh(mask), row));
-                    accepted = true;
-                }
-            }
-            if (accepted)
-                AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex,
-                    ClusterPackRasterTargetPageWindow(clipped), false, maxCandidates);
+            AddClusterWorkMetric(32u, 1u);
+            AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex,
+                clipped, false, maxCandidates);
         }
+        else AddClusterWorkMetric(24u, 1u);
     }
 }
 
@@ -498,7 +493,8 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
             viewIndex,
             rasterWindow,
             isSW,
-            view.MaxCandidates);
+            view.MaxCandidates,
+            currentBounds);
     }
 }
 #elif CLUSTER_CULL_PHASE == 2
@@ -551,6 +547,8 @@ void AppendVisibleWindow(
     }
     routeBase = WaveReadLaneAt(routeBase, routeLeader);
     localIdx = routeBase + WaveMaskPrefix(routeMask, lane);
+    if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+        AddClusterWorkMetric(isSW ? 56u : 40u, 1u);
     if (isSW)
     {
         uint globalIdx = baseSWCount + localIdx;
@@ -611,7 +609,8 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
             viewIndex,
             rasterWindow,
             isSW,
-            view.MaxCandidates);
+            view.MaxCandidates,
+            currentBounds);
     }
 }
 #endif

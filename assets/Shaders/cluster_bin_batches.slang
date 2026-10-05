@@ -1,6 +1,20 @@
 #ifndef CLUSTER_BIN_BATCHES_SLANG
 #define CLUSTER_BIN_BATCHES_SLANG
 
+// The existing buffer budget permits at most nine batches per visible item.
+// Reject unsupported expansion before it can alias another item's bin region.
+void EmitRasterBatch(uint bin, uint visible, uint workIndex, bool software, inout uint batchCount)
+{
+    if (!IsBin(bin)) return;
+    if (batchCount >= 9u)
+    {
+        RejectClusterWork(16u);
+        return;
+    }
+    batchCount++;
+    WriteRasterBatch(bin, visible, workIndex, software);
+}
+
 void BuildRasterBatches(
     uint visibleIndex,
     uint slotOffset,
@@ -14,6 +28,7 @@ void BuildRasterBatches(
     if (triangleCount == 0u)
         return;
 
+    uint emittedBatches = 0u;
     uint rangeCount = MaterialRangeCount(packedRanges, triangleCount);
     uint triangleStart = 0u;
     uint flatBatchIndex = 0u;
@@ -44,11 +59,8 @@ void BuildRasterBatches(
                 mergedRangeCount++;
             }
 
-            WriteRasterBatch(
-                bin,
-                visibleIndex,
-                RasterRangeWorkIndex(rangeIndex, mergedRangeCount),
-                isSoftware);
+            EmitRasterBatch(bin, visibleIndex,
+                RasterRangeWorkIndex(rangeIndex, mergedRangeCount), isSoftware, emittedBatches);
             flatBatchIndex += mergedBatchCount;
             rangeIndex += mergedRangeCount;
             triangleStart = MaterialRangeEnd(
@@ -58,11 +70,7 @@ void BuildRasterBatches(
 
         for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
         {
-            WriteRasterBatch(
-                bin,
-                visibleIndex,
-                flatBatchIndex,
-                isSoftware);
+            EmitRasterBatch(bin, visibleIndex, flatBatchIndex, isSoftware, emittedBatches);
             triangleStart = min(
                 triangleStart + VertReuseBatchTriangleCount(vertReuseBatchWords, flatBatchIndex),
                 rangeEnd);

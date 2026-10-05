@@ -327,6 +327,9 @@ public sealed partial class ClusterPipelineSystem
             case ClusterTessellationCoreResource.WinnerBuffer:
                 BindVisibilityWinnerBuffer(ref graph, ref pass, sync);
                 return;
+            case ClusterTessellationCoreResource.WorkStatus:
+                BindWorkStatus(ref graph, ref pass);
+                return;
             case ClusterTessellationCoreResource.Counters:
                 _ = pass.Bind(
                     graph.CreateBufferUav(frame.TessellationCounters, label: "Cluster tessellation counters"),
