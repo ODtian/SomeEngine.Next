@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Security.Cryptography;
 using System.Text.Json;
 using SomeEngine.Core.Math;
 using SomeEngine.Render.Shadows;
@@ -116,10 +117,20 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
         {
             string raw = Path.Combine(directory, name + ".rgba16");
             string[] arguments = ["--hardware-adapter", "--graphics-backend", "d3d12", "--hidden-window", "--no-vsync",
+                "--frames", script.FrameCount.ToString(),
                 "--no-debug-ui", "--fixed-step", "0.016666667", "--linear-frame-output", raw,
                 "--frame-output", Path.Combine(directory, name + ".bmp"), .. options];
+            var contentFiles = System.IO.Directory.EnumerateFiles(Path.Combine(Content, "assets"), "*.asset", SearchOption.AllDirectories)
+                .Append(Path.Combine(Content, "Library/AssetManifest/catalog.json"))
+                .OrderBy(path => path, StringComparer.Ordinal).Select(path => new
+                {
+                    File = Path.GetRelativePath(Content, path),
+                    Sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))),
+                }).ToArray();
             ApplicationResult result = await Application.RunAsync(arguments, script);
             var capture = new { Arguments = arguments, result.Succeeded, result.CompletedFrames, result.Failure,
+                SourceCommit = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_SOURCE"),
+                ContentFiles = contentFiles, script.FrameCount,
                 Actions = script.Actions.Select(action => action.Frame).ToArray(), script.WaitForFrames, script.ShadowSettings };
             _captures.Add(capture);
             await File.WriteAllTextAsync(Path.Combine(directory, name + ".capture.json"),
