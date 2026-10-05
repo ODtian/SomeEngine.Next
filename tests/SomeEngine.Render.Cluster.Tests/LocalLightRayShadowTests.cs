@@ -40,6 +40,24 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
                 "The point fixture must cross a cube-face boundary without removing either side.");
     }
 
+    [Fact]
+    public async Task RepeatedLocalLightStartupAndShutdownPreservesIndependentShadows()
+    {
+        for (int repetition = 0; repetition < 3; repetition++)
+        {
+            using var scene = await LocalScene.CreateAsync("spot", output);
+            var settings = new VirtualShadowMapSettings { DynamicResolutionEnabled = true };
+            SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 64, [])
+                { WaitForFrames = false, ShadowSettings = settings });
+            SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 64, [])
+                { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
+            await ShadowReferenceScene.WriteWorldAsync(scene.Content, "spot", illuminated: false);
+            SceneLinearImage ambient = await scene.CaptureAsync("ambient", new(scene.Content, 64, [])
+                { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
+            AssertAccuracy(await scene.CompareAsync(shadowed, unshadowed, ambient));
+        }
+    }
+
     [Theory]
     [InlineData("point")]
     [InlineData("spot")]
