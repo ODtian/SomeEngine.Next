@@ -790,6 +790,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 label: "Cluster neutral raster receiver masks"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
+            graph.CreateBufferSrv(
+                GraphData.Resources.NeutralPolicyView,
+                structureStride: 4 * sizeof(uint),
+                label: "Cluster neutral raster page HiZ metadata"),
+            PipelineSync.ComputeShading);
+        _ = pass.Bind(
             graph.CreateTextureSrv(
                 GraphData.Resources.PreviousHiZ,
                 format: Format.R32Float,
