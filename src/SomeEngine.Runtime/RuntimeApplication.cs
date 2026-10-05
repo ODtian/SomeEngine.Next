@@ -547,7 +547,7 @@ internal static class RuntimeApplication
                 Label: "SomeEngine Runtime Render Graph"));
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
         GraphRegionId targetGeometryAfterRegion, shadingRegion, temporalRegion, presentationRegion, uiRegion, feedbackRegion;
-        GraphRegionId frameOutputRegion;
+        GraphRegionId frameOutputRegion, linearOutputRegion;
         using (RenderGraphEdit edit = renderGraph.BeginEdit())
         {
             _ = edit.AddRegion("Frame uploads");
@@ -557,6 +557,7 @@ internal static class RuntimeApplication
             targetGeometryRegion = edit.AddRegion("Target view geometry");
             targetGeometryAfterRegion = edit.AddRegion("After target view geometry");
             shadingRegion = edit.AddRegion("Shading");
+            linearOutputRegion = edit.AddFrameRegion("Linear frame output");
             GraphRegionId postProcessing = edit.AddRegion("Post processing");
             temporalRegion = edit.AddRegion("Temporal", postProcessing);
             presentationRegion = edit.AddRegion("Presentation", postProcessing);
@@ -606,6 +607,7 @@ internal static class RuntimeApplication
         var graphCompletionSlots = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         var graphCompletions = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         FrameOutputVerifier? outputVerifier = null;
+        FrameOutputVerifier? linearVerifier = null;
         RuntimeUiRenderer? ui = null;
         RuntimePresentationPipeline? presentation = null;
         TemporalFeature? temporal = null;
@@ -673,10 +675,12 @@ internal static class RuntimeApplication
         uint submittedFrames = 0;
         var sceneEdit = script is null ? null : new SceneEdit(scene, window);
         int actionIndex = 0;
+        int? captureFrame = options.CaptureFrame ?? (options.FrameLimit > 0 ? options.FrameLimit - 1 : null);
+        bool outputSaved = false, linearOutputSaved = false;
         try
         {
             frameSystems.Initialize();
-            outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
+            outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && captureFrame is null)
                 ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                 : null;
             ui = new RuntimeUiRenderer(
@@ -762,6 +766,8 @@ internal static class RuntimeApplication
                 {
                     outputVerifier?.Dispose();
                     outputVerifier = null;
+                    linearVerifier?.Dispose();
+                    linearVerifier = null;
                     ReconfigureSwapchain(
                         backend,
                         swapchain,
@@ -772,7 +778,7 @@ internal static class RuntimeApplication
                     width = clientWidth;
                     height = clientHeight;
                     cameraCut = true;
-                    outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
+                    outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && captureFrame is null)
                         ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                         : null;
                 }
@@ -833,8 +839,15 @@ internal static class RuntimeApplication
                 renderDevice.CollectCompleted();
                 pipeline.ThrowIfWorkFailed();
                 long prepareStarted = Stopwatch.GetTimestamp();
-                if (platform?.ImageRequested == true || sceneEdit?.Images.Count > 0)
+                bool selectedCapture = captureFrame == frameIndex;
+                bool captureBeauty = options.VerifyFrameOutput || platform?.ImageRequested == true || sceneEdit?.Images.Count > 0 ||
+                    (options.FrameOutputPath is not null && (selectedCapture || captureFrame is null));
+                bool captureLinear = sceneEdit?.LinearImages.Count > 0 ||
+                    (selectedCapture && options.LinearFrameOutputPath is not null);
+                if (captureBeauty)
                     outputVerifier ??= new FrameOutputVerifier(backend, device, width, height, PresentationFormat);
+                if (captureLinear)
+                    linearVerifier ??= new FrameOutputVerifier(backend, device, width, height, Format.R16G16B16A16Float);
                 Prepare(
                     prepareSystems,
                     cluster,
@@ -877,6 +890,18 @@ internal static class RuntimeApplication
                     Console.WriteLine("First frame: acquiring presentation image.");
                 SwapchainImage? image = sceneEdit?.FrameCanceled == true
                     ? null : AcquireImage(backend, swapchain, window);
+                SceneFrame? capturedFrame = captureLinear ? scene.CaptureFrame(new SceneFrame
+                {
+                    Frame = frameIndex, SubmittedFrame = submittedFrames, SceneSeconds = sceneSeconds,
+                    Width = width, Height = height, CameraPosition = scene.Camera.Position,
+                    View = scene.Camera.View, Projection = viewFrame.View.Projection,
+                    UnjitteredProjection = scene.Projection(width, height), JitterPixels = viewFrame.JitterPixels,
+                    Options = options, ShadowSettings = shadowSettings,
+                    TemporalSettings = script?.TemporalSettings ?? TemporalResolveSettings.Default,
+                    RasterEdgePixels = script?.RasterEdgePixels ?? 4,
+                    ClusterWorkCapacity = script?.ClusterWorkCapacity ?? 1_048_576,
+                    Adapter = device.Adapter.Name, DriverVersion = device.Adapter.DriverVersion,
+                }) : null;
                 long executeStarted = Stopwatch.GetTimestamp();
                 FrameOutputMetrics? frameOutput = ExecuteFrame(
                     backend,
@@ -902,8 +927,10 @@ internal static class RuntimeApplication
                     reportMilestones,
                     cameraCut,
                     viewEntity,
-                    outputVerifier,
+                    captureBeauty ? outputVerifier : null,
                     frameOutputRegion,
+                    captureLinear ? linearVerifier : null,
+                    linearOutputRegion,
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
                     options.SynchronousFrames,
                     options.TemporalAntialiasing,
@@ -928,6 +955,36 @@ internal static class RuntimeApplication
                         throw new ApplicationRunException(ApplicationFailure.ImageCallback, checked((int)submittedFrames), error);
                     }
                     if (!options.VerifyFrameOutput && options.FrameOutputPath is null && platform?.ImageRequested != true)
+                    {
+                        outputVerifier.Dispose();
+                        outputVerifier = null;
+                    }
+                }
+                if (captureLinear)
+                {
+                    SceneLinearImage captured = linearVerifier!.CopyLinearImage(capturedFrame!);
+                    if (selectedCapture && options.LinearFrameOutputPath is not null)
+                    {
+                        captured.Save(options.LinearFrameOutputPath);
+                        linearOutputSaved = true;
+                    }
+                    try
+                    {
+                        if (sceneEdit is not null)
+                            foreach (Action<SceneLinearImage> receive in sceneEdit.LinearImages) receive(captured);
+                    }
+                    catch (Exception error)
+                    {
+                        throw new ApplicationRunException(ApplicationFailure.ImageCallback, checked((int)submittedFrames), error);
+                    }
+                    linearVerifier.Dispose();
+                    linearVerifier = null;
+                }
+                if (selectedCapture && options.FrameOutputPath is not null)
+                {
+                    outputVerifier!.SaveImage(options.FrameOutputPath);
+                    outputSaved = true;
+                    if (!options.VerifyFrameOutput && platform?.ImageRequested != true)
                     {
                         outputVerifier.Dispose();
                         outputVerifier = null;
@@ -999,8 +1056,11 @@ internal static class RuntimeApplication
 
             if (frameIndex > 0)
             {
-                if (options.FrameOutputPath is not null)
+                if (options.FrameOutputPath is not null && captureFrame is null)
+                {
                     outputVerifier!.SaveImage(options.FrameOutputPath);
+                    outputSaved = true;
+                }
                 ClusterRenderDiagnostics diagnostics = cluster.CaptureDiagnostics();
                 ClusterResidencyDiagnostics residency = diagnostics.Residency;
                 Console.WriteLine(
@@ -1096,6 +1156,9 @@ internal static class RuntimeApplication
             renderDevice.WaitForTrackedSubmissions(FrameTimeout);
             renderGraph.CollectCompleted();
             pipeline.ThrowIfWorkFailed();
+            if ((options.FrameOutputPath is not null && !outputSaved) ||
+                (options.LinearFrameOutputPath is not null && !linearOutputSaved))
+                throw new InvalidOperationException("The requested capture frame was not submitted.");
             Console.WriteLine($"SomeEngine runtime completed {submittedFrames} frame(s).");
             return checked((int)submittedFrames);
         }
@@ -1110,6 +1173,7 @@ internal static class RuntimeApplication
                 RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
             renderDevice.WaitForTrackedSubmissions(FrameTimeout);
             outputVerifier?.Dispose();
+            linearVerifier?.Dispose();
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();
@@ -1189,6 +1253,8 @@ internal static class RuntimeApplication
         Entity viewEntity,
         FrameOutputVerifier? outputVerifier,
         GraphRegionId frameOutputRegion,
+        FrameOutputVerifier? linearVerifier,
+        GraphRegionId linearOutputRegion,
         RenderGraphDiagnosticsHandler? graphDiagnostics,
         bool synchronousFrames,
         bool temporalAntialiasing,
@@ -1226,6 +1292,8 @@ internal static class RuntimeApplication
                         clusterOutputs.Width,
                         clusterOutputs.Height,
                         clusterOutputs.ViewCount);
+                    if (image is not null)
+                        linearVerifier?.Record(ref graphFrame, clusterOutputs.MaterialColor, graphicsQueue, linearOutputRegion);
                     using (EngineTrace.Begin(ApplicationTrace.TemporalRecording))
                         temporal.Record(
                             ref graphFrame,
@@ -1251,14 +1319,12 @@ internal static class RuntimeApplication
                     ReadOnlySpan<QueueCompletion> execution = completions.AsSpan(0, completionCount);
                     renderDevice.TrackSubmission(execution);
                     readScope.Dispose();
-                    if (synchronousFrames && outputVerifier is null)
+                    bool readOutput = outputVerifier is not null || linearVerifier is not null;
+                    if (synchronousFrames || readOutput)
                         Wait(backend, execution, window, synchronousFrames);
-                    if (outputVerifier is not null)
-                    {
-                        Wait(backend, execution, window, synchronousFrames);
-                        frameOutput = outputVerifier.Read();
-                    }
-                    if (synchronousFrames || outputVerifier is not null)
+                    if (outputVerifier is not null) frameOutput = outputVerifier.Read();
+                    linearVerifier?.ReadPixels();
+                    if (synchronousFrames || readOutput)
                     {
                         graph.CollectCompleted();
                         pipeline.ThrowIfWorkFailed();

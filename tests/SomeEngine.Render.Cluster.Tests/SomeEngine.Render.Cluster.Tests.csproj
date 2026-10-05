@@ -20,6 +20,8 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <ProjectReference Include="../../src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
     <ProjectReference Include="../../templates/DefaultProject/Game.Assets/Game.Assets.csproj" />
     <ProjectReference Include="../../samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />

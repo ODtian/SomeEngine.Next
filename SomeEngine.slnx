@@ -28,6 +28,7 @@
   <Project Path="src\SomeEngine.Render.Features\SomeEngine.Render.Features.csproj" />
   <Project Path="src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />
   <Project Path="tests\SomeEngine.Runtime.Tests\SomeEngine.Runtime.Tests.csproj" />
+  <Project Path="tests/SomeEngine.Runtime.Output.Tests/SomeEngine.Runtime.Output.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Tests\SomeEngine.ECS.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Systems.Tests\SomeEngine.ECS.Systems.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Serialization.Tests\SomeEngine.ECS.Serialization.Tests.csproj" />

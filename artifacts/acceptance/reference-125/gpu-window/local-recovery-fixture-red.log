@@ -1,0 +1,40 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Render.Cluster.Tests; 0 violations.
+F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.2 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+[xUnit.net 00:00:24.70]     SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.LocalLightPagePressureRecoversAfterMovingCasterAndCanceledRefresh(light: "point") [FAIL]
+  失败 SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.LocalLightPagePressureRecoversAfterMovingCasterAndCanceledRefresh(light: "point") [24 s]
+  错误消息:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  堆栈跟踪:
+     at SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.AssertAccuracy(RayShadowComparison comparison) in F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Render.Cluster.Tests\LocalLightRayShadowTests.cs:line 90
+   at SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.LocalLightPagePressureRecoversAfterMovingCasterAndCanceledRefresh(String light) in F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Render.Cluster.Tests\LocalLightRayShadowTests.cs:line 80
+--- End of stack trace from previous location ---
+  标准输出消息:
+ Local light independent reference: F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\artifacts\acceptance\reference-125\gpu-window\local-lights\local-ray-point-00dc59c869fc43738ff013873afa5a48; RayShadowComparison { AllReceivers = ShadowReferenceComparison { ShadowedPixels = 0, LitPixels = 42751, MismatchedPixels = 14, ComparedPixels = 42751, MismatchFraction = 0.00032747773, MeanVisibilityError = 0.00032747773, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 14 }, Interior = ShadowReferenceComparison { ShadowedPixels = 0, LitPixels = 40554, MismatchedPixels = 0, ComparedPixels = 40554, MismatchFraction = 0, MeanVisibilityError = 0, MaximumVisibilityError = 0, MissedShadowPixels = 0, FalseShadowPixels = 0 }, Boundary = ShadowReferenceComparison { ShadowedPixels = 0, LitPixels = 2197, MismatchedPixels = 14, ComparedPixels = 2197, MismatchFraction = 0.006372326, MeanVisibilityError = 0.006372326, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 14 }, ReferenceReceiverPixels = 42751, SkyPixels = 22432, GeometryFacingLightRejectedPixels = 353, MissingRenderedReceiverPixels = 0, ReferenceShadingRejectedPixels = 189, RenderedShadingRejectedPixels = 12, SelfHitPixels = 0, RenderedReceiverCoverage = 1, RangeRejectedPixels = 0, ConeRejectedPixels = 0, CubeFaceReceiverPixels = System.Int32[], FalseShadowFraction = 0.00032747773, MissedShadowFraction = 0 }
+
+
+[xUnit.net 00:00:45.13]     SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.LocalLightPagePressureRecoversAfterMovingCasterAndCanceledRefresh(light: "spot") [FAIL]
+  失败 SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.LocalLightPagePressureRecoversAfterMovingCasterAndCanceledRefresh(light: "spot") [20 s]
+  错误消息:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  堆栈跟踪:
+     at SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.AssertAccuracy(RayShadowComparison comparison) in F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Render.Cluster.Tests\LocalLightRayShadowTests.cs:line 90
+   at SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.LocalLightPagePressureRecoversAfterMovingCasterAndCanceledRefresh(String light) in F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Render.Cluster.Tests\LocalLightRayShadowTests.cs:line 80
+--- End of stack trace from previous location ---
+  标准输出消息:
+ Local light independent reference: F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\artifacts\acceptance\reference-125\gpu-window\local-lights\local-ray-spot-a770b9eb005648619e2a9de365112e57; RayShadowComparison { AllReceivers = ShadowReferenceComparison { ShadowedPixels = 0, LitPixels = 42751, MismatchedPixels = 16, ComparedPixels = 42751, MismatchFraction = 0.00037426024, MeanVisibilityError = 0.00037426024, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 16 }, Interior = ShadowReferenceComparison { ShadowedPixels = 0, LitPixels = 40554, MismatchedPixels = 0, ComparedPixels = 40554, MismatchFraction = 0, MeanVisibilityError = 0, MaximumVisibilityError = 0, MissedShadowPixels = 0, FalseShadowPixels = 0 }, Boundary = ShadowReferenceComparison { ShadowedPixels = 0, LitPixels = 2197, MismatchedPixels = 16, ComparedPixels = 2197, MismatchFraction = 0.007282658, MeanVisibilityError = 0.007282658, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 16 }, ReferenceReceiverPixels = 42751, SkyPixels = 22432, GeometryFacingLightRejectedPixels = 353, MissingRenderedReceiverPixels = 0, ReferenceShadingRejectedPixels = 189, RenderedShadingRejectedPixels = 12, SelfHitPixels = 0, RenderedReceiverCoverage = 1, RangeRejectedPixels = 0, ConeRejectedPixels = 0, CubeFaceReceiverPixels = System.Int32[], FalseShadowFraction = 0.00037426024, MissedShadowFraction = 0 }
+
+
+结果文件: F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\artifacts\acceptance\reference-125\gpu-window\local-recovery.trx
+
+失败!  - 失败:     2，通过:     0，已跳过:     0，总计:     2，持续时间: 44 s - SomeEngine.Render.Cluster.Tests.dll (net10.0)

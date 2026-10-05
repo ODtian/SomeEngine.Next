@@ -53,16 +53,19 @@ public sealed class SceneEdit
     private readonly RuntimeScene _scene;
     private readonly NativeWindow _window;
     private readonly List<Action<SceneImage>> _images = [];
+    private readonly List<Action<SceneLinearImage>> _linearImages = [];
     private bool _active;
 
     internal SceneEdit(RuntimeScene scene, NativeWindow window) => (_scene, _window) = (scene, window);
     internal IReadOnlyList<Action<SceneImage>> Images => _images;
+    internal IReadOnlyList<Action<SceneLinearImage>> LinearImages => _linearImages;
     internal bool FrameCanceled { get; private set; }
     internal bool CameraCut { get; private set; }
     internal bool ShadowMapRefreshRequested { get; private set; }
     internal void Begin()
     {
         _images.Clear();
+        _linearImages.Clear();
         FrameCanceled = CameraCut = ShadowMapRefreshRequested = false;
         _active = true;
     }
@@ -138,6 +141,14 @@ public sealed class SceneEdit
         RequireAction();
         ArgumentNullException.ThrowIfNull(receive);
         _images.Add(receive);
+    }
+
+    /// <summary>Retains this submitted frame's linear material color and its matching scene inputs.</summary>
+    public void CaptureLinearImage(Action<SceneLinearImage> receive)
+    {
+        RequireAction();
+        ArgumentNullException.ThrowIfNull(receive);
+        _linearImages.Add(receive);
     }
 
     private void RequireAction()

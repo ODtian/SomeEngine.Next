@@ -24,10 +24,10 @@ internal static class RayShadowImage
         internal uint Height;
         internal Vector3 LightPosition;
         internal uint LightKind;
-        internal float Padding0;
+        internal float LightRange;
         internal float NearPlane;
         internal float FarPlane;
-        internal float Padding;
+        internal float OuterConeCos;
     }
 
     internal static async Task<uint[]> TraceAsync(string engine, RayShadowScene scene, Inputs inputs, bool vulkan)
