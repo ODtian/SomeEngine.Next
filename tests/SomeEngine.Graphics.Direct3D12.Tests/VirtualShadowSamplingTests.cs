@@ -279,7 +279,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             pixels[y * 512 + x] = BitConverter.SingleToUInt32Bits(1 - fineDepth);
             pixels[y * 512 + 128 + x] = BitConverter.SingleToUInt32Bits(1 - coarseDepth);
         }
-        uint[][] result = ExecuteSource("""
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
