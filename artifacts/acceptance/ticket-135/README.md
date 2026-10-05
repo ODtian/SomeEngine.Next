@@ -1,4 +1,6 @@
-# #135 CPU/source checkpoint — not GPU acceptance
+# #135 initial CPU/source checkpoint — not final acceptance
+
+The later serialized validation is recorded in [gpu-window/README.md](gpu-window/README.md): concentrated public/local RT results, actual resource-interface fixes, baseline compatibility (not a red), and a failed zero-result native spot-recovery host. GPU released; #135 remains blocked. The records below retain their original CPU-checkpoint scope and hashes.
 
 Owned branch `agent/rg70-ticket-135`, clean exact starting base `1667bd94c435e91c60006e4c504d3ab2abc0f2da`.
 

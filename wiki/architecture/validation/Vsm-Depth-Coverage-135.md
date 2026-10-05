@@ -1,6 +1,6 @@
 # VSM HiZ lifetime and completed receiver depth — #135
 
-Scope: [#135](https://github.com/ODtian/SomeEngine.Next/issues/135), parent [#132](https://github.com/ODtian/SomeEngine.Next/issues/132), implement-spec [#70](https://github.com/ODtian/SomeEngine.Next/issues/70). **CPU/source/content-build checkpoint only. No observed rendering red/green, RT acceptance, GPU timing or performance acceptance.**
+Scope: [#135](https://github.com/ODtian/SomeEngine.Next/issues/135), parent [#132](https://github.com/ODtian/SomeEngine.Next/issues/132), implement-spec [#70](https://github.com/ODtian/SomeEngine.Next/issues/70). **Initial source checkpoint plus serialized GPU continuation. Concentrated public/local RT results are recorded below, but a native testhost abort blocks completion. No wrong-baseline numerical red, default three-scene RT/beauty or performance acceptance is claimed.**
 
 ## Version and access boundary
 
@@ -59,7 +59,7 @@ The inherited #133 corrections are preserved: each fallback tap returns its actu
 
 `CopyPageHiZ` was removed from the shader settings block, its validation/resource realization, `VirtualShadowMap` construction/disposal and DefaultContent generation together with the copy kernel, pipeline wrapper, shader asset and import record. Content must be rebuilt from these sources; old shader-settings packets are not paired with the new binary. No atlas/work capacity, resolution, raster routes, material interpretation, quality defaults or independent reference gates were reduced or enlarged as a fix.
 
-## Prepared public behavior — hardware blocked
+## Prepared public behavior — initial CPU checkpoint
 
 `VsmCoverageImageTests.ExpandingReceiversDuringRepeatedCasterChangesPreservesFilteredShadows` uses only public startup, SceneScript and full SceneImage outputs. It expands receiver demand while moving a caster on successive frames, with normal bias and sixteen blocker/filter samples. First expanded and later repeatedly changed whole outputs are compared against a fresh final-state, mask-free scene; a no-VSM control must differ. Receivers and filter edges are retained. There are no test friends, private queues/storage assertions, exception-message assertions, sleeps or production fault switches.
 
@@ -93,12 +93,69 @@ The initial Runtime build failed with missing Alimer.Bindings/MeshOptimizer (2 w
 
 Exact final production commit, final build/check commands and source/content SHA-256 manifest are recorded with the retained [checkpoint artifacts](../../../artifacts/acceptance/ticket-135/README.md). No transient probe/script was created; generated shader packets/catalog are reproducible build products, not committed binaries or runtime validation.
 
-## Ready / blockers / unchanged final gates
+## Initial readiness / unchanged final gates
 
 Ready for the coordinator's serialized GPU window **after reference-125 releases**. No authorization to discover devices, list device-creating theories, render or execute GPU tests was granted during this checkpoint. Reference-125's raw selected-frame/jitter-aligned capture and independent local-light branch has not been imported; parent coordinates it before final #135 validation. Merge the current integration ref into this branch before reporting and again if it advances before the hardware run.
 
 Required next evidence: the matching public red/green; repeated dirty/filter receiver coverage; prior/current/reused-page and coarse/old/new caster outputs; cancellation/partial failure; alpha/material/streaming transitions; mapped unfinished/no-mip/allocation-pressure recovery; independent point/spot/range/cone and directional all-receiver reference; supported raster/backend/default beauty. No new runtime/source fixture substitutes for reference-125's owned independent truth.
 
 Unchanged independent gates: mismatch **and mean error** ≤2%, false/lit ≤2%, missed/shadowed ≤2%, coverage ≥98%, ≥32 shadowed and ≥512 lit receivers, zero unexpected self-hit, all receivers/edges retained. Full beauty/RT and matched converged DefaultGame three-scene non-trace performance plus separate CPU/calibrated GPU diagnostics remain later gates. No speedup or equal-effective-quality assertion is made. #125/#127/#81 and full Standards/Spec remain open, as does #135 acceptance at this source-only checkpoint.
+
+## Serialized GPU continuation after #125 integration
+
+### Version, actual resource-interface failures and fixes
+
+Resumed the clean `602bda9249d5439fb354ff7f1c9943d285ef7908` checkpoint. Integration `a0a17365e2055cde8dabd55543d5b6570409b4e5` was merged without conflicts as **`ff8aafc8e4a009d2e2f34d51872055d02b5c31f2`** before validation. Read the actual partial #125 merge/handoff. Capture/reference ownership was preserved; no denied root, sampling/resource/native-source/compiler test/Issue access was retried. The exclusive window allowed public GPU cases and source-compatible content building, not denied source access.
+
+Two actual current-source receiver runs failed at **zero completed frames**, not at image accuracy:
+
+1. `ff8aafc8`: six bounded resources expected, five supplied. A material receiver-mask declaration in the shared sampling include also appeared in administrative page pipelines. **`d94bcbf8571acacc2c686998af51f562da00db99`** explicitly selects page-definition/whole-only mode for all eight administrative producers. They never perform material receiver sampling; the default user material still gets coverage-aware sampling. No dummy per-pass binding or quality reduction was added.
+2. `d94bcbf8`: twenty-four bounded resources expected, twenty-three supplied. The new target HiZ metadata had been bound for VSM target consumers but not the primary pipeline's neutral target interface. **`d497c04d`** binds the existing neutral page data in that same interface. It adds no new storage or mirror.
+
+Both failed TRX/logs are retained; each has 2 rows, 1 executed/failed D3D12, 1 Vulkan Presentation skip. The same public behavior then passes. This is an actual source-interface failure→success, **not the required red on the regression-only pre-#135 production baseline**.
+
+Coherent content/source checkpoint **`9333101b7920176b90d5f10c886505182a402086`** records regenerated import metadata after these source corrections. Content cook: **68 project assets**; payload manifest contains those 68 assets plus catalog (69 records). No production source changed after d497c04d. #125 raw/capture, independent rays and thresholds were unchanged.
+
+### Observed baseline and final public results
+
+A newly owned detached tree at **`d6085c7db41397db09c2e53cf143de5547fe88a3`** was confirmed clean, built and ran the exact new receiver-expansion test. **It passed**, 1 D3D12 pass / 1 Vulkan Presentation skip. It therefore establishes compatibility but **does not provide a baseline red or sensitivity proof**. No production mutation or receiver exclusion was used to manufacture one. The used detached tree was removed after the retained result was saved outside it.
+
+| Actual coherent record | Result rows | Executed/passed | Failed | Capability skips |
+| --- | ---: | ---: | ---: | ---: |
+| receiver-expansion-coherent.trx | 2 | 1 | 0 | 1 |
+| public-transitions.trx | 67 | 34 | 0 | 33 |
+| headless-work-material.trx | 17 | 17 | 0 | 0 |
+| Five completed isolated local RT hosts | 5 | 5 | 0 | 0 |
+| **Completed scopes above** | **91** | **57** | **0** | **34** |
+
+These are actual TRX row counts; no separate list-tests run is claimed. Runtime skips explicitly report Vulkan lacking **Presentation**. The headless batch passes both D3D12 and Vulkan; that does not establish Vulkan presentation. The public batch covers receiver masks/normal offsets in mesh, vertex and SW-capable routes, sparse old/new footprints, moving/coarse/rear/streamed casters, scroll/light changes, VSM×TAA, camera/geometry changes, cancellation and typed surface failure without incomplete output. The headless batch covers work-memory output, fully transparent user visibility, public output descriptions and ordinary/tessellated material replacement.
+
+### Independent local reference on the actual #135 source
+
+All five completed runs identify source `9333101b`; D3D12, 256² raw selected-frame output, captured submitted projection/transforms and unchanged full-receiver source-triangle reference. Each ran in a **fresh one-row testhost**; command filters, exit codes and 35.9–39.3 second walls are in `local-commands.json`.
+
+| Completed case | Shadowed / lit | Mismatch AND mean | False / lit | Missed / shadowed |
+| --- | ---: | ---: | ---: | ---: |
+| point | 3839 / 38812 | 0.1078521% | 0.0566835% | 0.6251628% |
+| spot | 3839 / 38812 | 0.11957516% | 0.07471916% | 0.57306592% |
+| point-range | 2894 / 37846 | 0.26018654% | 0.1664641% | 1.4858328% |
+| spot-cone | 3839 / 18938 | 0.2151293% | 0.13200971% | 0.6251628% |
+| point recovery, new footprint | 4449 / 38149 | 0.12911404% | 0.086502923% | 0.49449313% |
+
+All completed comparisons, including point recovery's old footprint, retain **100% coverage / zero self-hit**. Point-range's 3.6244% boundary mismatch remains included in its 0.2602% aggregate; no edge removal. Independent range/cone rejects remain 1915/20075. Point fixtures cover three cube faces, not all six. Recovery captures scene/submitted **63/62**, retains old frame31 comparison and configured 64-page pressure. **That setting alone does not prove fine miss, coarse fallback or no-resident-mip state.**
+
+### Native blocker — not a sixth pass
+
+The sixth host, `local-spot-recovery.trx`, aborted with **`0xC0000005`**, stack **Marshal.Release → ComObject.Finalize → GC.RunFinalizers**. Its run outcome is **Failed**, total/executed/result rows all **zero**. It is neither a failed assertion nor a capability skip, and is not included in the 57 completed-case passes. No completed spot recovery comparison exists for this source.
+
+GPU execution stopped and the exclusive window was released after this abort. No repeat/native-source workaround was attempted. #125's earlier **two** equivalent zero-result native-aborted runs remain failures in their separate evidence, even though its later six isolated hosts passed. Those inherited passes do not turn this actual current-source abort into success or prove batch reliability. Root cause remains unknown; it has not been diagnosed as a VSM validity defect.
+
+### Final CPU checks, provenance and remaining gates
+
+After stopping GPU, the integration merge again returned Already up to date at a0a17365. Runtime, Cluster (including Game.App) and D3D12 test-project Release builds each exited 0 with **0 warnings/0 errors**. Default rule checker: **24 projects / 0 violations**. No denied standalone reference compiler or device test was run by these CPU checks.
+
+All actual commands, baseline/source boundaries, TRX totals and native abort are retained under `artifacts/acceptance/ticket-135/gpu-window`. `content-payloads.csv`, `source-executable-hashes.csv`, actual raw/beauty/sidecar/capture provenance, `dotnet-info.txt`, `jit-environment.csv` and `test-totals.json` record this generation. Earlier CPU manifests remain earlier observations, not overwritten executable identities. The post-CPU recheck has **5 executable-byte differences** (Game.App exe/DLL, its Runtime DLL and the two test DLLs), despite matching sizes and unchanged production source; all **69 cooked payload/catalog records still match**, as does runtimeconfig. Historical executed-byte hashes remain in source-executable-hashes.csv; current bytes are separately recorded in post-cpu-byte-check.json. Do not claim current binary byte identity with the earlier GPU/test executables or rewrite the recorded hashes to manufacture it.
+
+**Not completed:** regression-only baseline red; exact missing/unfinished/coarse/recovery-state proof; spot recovery/native host reliability; broader patterned alpha/custom deformation/all-six-face/backend coverage; partial-submission render-output failure recovery; owned Sponza/Bistro preparation and actual default **three-scene** raw directional RT/beauty; matched #81/#127 performance and full Standards/Spec. Import/default three-scene GPU work did not start after the target host abort. `Measure-Scenes` was first deferred for #81 CPU-build serialization, then remained unrun due to this blocker. No waits were relabeled GPU timings and no performance/quality gate was weakened. #135 is **not ready to close**.
 
 Retained citations only, not new private-source verification: UE commit `396c9f059903aed5fec78ecd3d437a40c6415368`, `VirtualShadowMapArray.cpp:4830–4920` (dirty HiZ main/post handoff), `VirtualShadowMapPhysicalPageManagement.usf:315–384` (receiver coverage/cache distinction), `VirtualShadowMapProjectionCommon.ush:413–426,533–605` (explicit local missing validity). No unretained full paths or live-source claims are added. See [#133](Vsm-Gpu-Work-133.md) and [#134](Vsm-Window-Work-134.md) for predecessor boundaries, not final combined acceptance.

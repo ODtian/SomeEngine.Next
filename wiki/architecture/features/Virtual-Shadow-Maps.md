@@ -38,7 +38,8 @@ clipmap 按二次幂分级。默认偏移为零时，可覆盖目标位置的选
 HiZ 只有一个图管理的持久存储：main 读取先前结果后，intermediate 更新脏页，
 post 消费已保留的 deferred work，再更新 final 供下帧使用。不复制整池历史，
 不 replay 或重新从根发现 deferred work。未受影响的缓存页不复制或重建。
-参见 [[architecture/validation/Vsm-Depth-Coverage-135]]；当前只有源码/构建检查，GPU 验收待完成。
+参见 [[architecture/validation/Vsm-Depth-Coverage-135]]；已有分项公开输出/局部光 RT 检查，
+完整 GPU 验收仍被 native testhost 中止及未完成的默认三场景/错误版本回归等门禁阻挡。
 
 页原点沿实际光视图的 X/Y UV 方向滚动。相机跨过对齐边界时，固定世界几何的细页地址保持不变。
 clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 mip，在投影变化时重新绘制。

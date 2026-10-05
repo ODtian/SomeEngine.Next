@@ -1,0 +1,122 @@
+[
+  {
+    "Record": "receiver-expansion-baseline",
+    "RunOutcome": "Completed",
+    "ResultRows": 2,
+    "Passed": 1,
+    "Failed": 0,
+    "Skipped": 1,
+    "SummaryTotal": 2,
+    "SummaryExecuted": 1
+  },
+  {
+    "Record": "receiver-expansion-final",
+    "RunOutcome": "Failed",
+    "ResultRows": 2,
+    "Passed": 0,
+    "Failed": 1,
+    "Skipped": 1,
+    "SummaryTotal": 2,
+    "SummaryExecuted": 1
+  },
+  {
+    "Record": "receiver-expansion-after-resource-fix",
+    "RunOutcome": "Failed",
+    "ResultRows": 2,
+    "Passed": 0,
+    "Failed": 1,
+    "Skipped": 1,
+    "SummaryTotal": 2,
+    "SummaryExecuted": 1
+  },
+  {
+    "Record": "receiver-expansion-coherent",
+    "RunOutcome": "Completed",
+    "ResultRows": 2,
+    "Passed": 1,
+    "Failed": 0,
+    "Skipped": 1,
+    "SummaryTotal": 2,
+    "SummaryExecuted": 1
+  },
+  {
+    "Record": "public-transitions",
+    "RunOutcome": "Completed",
+    "ResultRows": 67,
+    "Passed": 34,
+    "Failed": 0,
+    "Skipped": 33,
+    "SummaryTotal": 67,
+    "SummaryExecuted": 34
+  },
+  {
+    "Record": "headless-work-material",
+    "RunOutcome": "Completed",
+    "ResultRows": 17,
+    "Passed": 17,
+    "Failed": 0,
+    "Skipped": 0,
+    "SummaryTotal": 17,
+    "SummaryExecuted": 17
+  },
+  {
+    "Record": "local-point",
+    "RunOutcome": "Completed",
+    "ResultRows": 1,
+    "Passed": 1,
+    "Failed": 0,
+    "Skipped": 0,
+    "SummaryTotal": 1,
+    "SummaryExecuted": 1
+  },
+  {
+    "Record": "local-spot",
+    "RunOutcome": "Completed",
+    "ResultRows": 1,
+    "Passed": 1,
+    "Failed": 0,
+    "Skipped": 0,
+    "SummaryTotal": 1,
+    "SummaryExecuted": 1
+  },
+  {
+    "Record": "local-point-range",
+    "RunOutcome": "Completed",
+    "ResultRows": 1,
+    "Passed": 1,
+    "Failed": 0,
+    "Skipped": 0,
+    "SummaryTotal": 1,
+    "SummaryExecuted": 1
+  },
+  {
+    "Record": "local-spot-cone",
+    "RunOutcome": "Completed",
+    "ResultRows": 1,
+    "Passed": 1,
+    "Failed": 0,
+    "Skipped": 0,
+    "SummaryTotal": 1,
+    "SummaryExecuted": 1
+  },
+  {
+    "Record": "local-point-recovery",
+    "RunOutcome": "Completed",
+    "ResultRows": 1,
+    "Passed": 1,
+    "Failed": 0,
+    "Skipped": 0,
+    "SummaryTotal": 1,
+    "SummaryExecuted": 1
+  },
+  {
+    "Record": "local-spot-recovery",
+    "RunOutcome": "Failed",
+    "ResultRows": 0,
+    "Passed": 0,
+    "Failed": 0,
+    "Skipped": 0,
+    "SummaryTotal": 0,
+    "SummaryExecuted": 0
+  }
+]
