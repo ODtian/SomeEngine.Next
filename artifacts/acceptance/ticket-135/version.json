@@ -1,0 +1,130 @@
+{
+  "SourceCommit": "fe15c1cd306e8765ebb45402ed151e7a192bc339",
+  "ProductionCommit": "c8d427183ea2b15870bfa52b593bf6761b25eb3d",
+  "BaselineWithRegression": "d6085c7db41397db09c2e53cf143de5547fe88a3",
+  "IntegrationTip": "1667bd94c435e91c60006e4c504d3ab2abc0f2da",
+  "SDK": "10.0.112",
+  "Scope": "CPU/source/content build only; no test discovery/device/GPU execution",
+  "ContentAssets": 68,
+  "RuleProjects": 23,
+  "RuleViolations": 0,
+  "TestDiscoveryExecutedPassedFailedSkipped": [
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "Files": [
+    {
+      "File": "assets/Shaders/cluster_raster_target_filter.slang",
+      "Bytes": 14110,
+      "SHA256": "800F84AA234DDAA609C5D8A6CAE9F786D848D9F1626DBBB1B03E99550C8663FE"
+    },
+    {
+      "File": "assets/Shaders/vsm_allocate_pages.slang",
+      "Bytes": 10121,
+      "SHA256": "A58255832390BBF7947738D6F575D1608E038E3487496A718DADDD201C81A151"
+    },
+    {
+      "File": "assets/Shaders/vsm_material.slang",
+      "Bytes": 934,
+      "SHA256": "9EC0E43724E068C4081D63914E59994311C89D421EED308DBC27789C224EA302"
+    },
+    {
+      "File": "assets/Shaders/vsm_page_depth_complete.slang",
+      "Bytes": 1156,
+      "SHA256": "82A8B5B9D75C12017274AC7DA19396766D6DB02E09BAED3F851042328AD7E856"
+    },
+    {
+      "File": "assets/Shaders/vsm_page_pool.slang",
+      "Bytes": 5712,
+      "SHA256": "D91A5B9E60739E28C19669AD2CF4CD83CABD17CC61454B2E5E9C9B0F737FAE99"
+    },
+    {
+      "File": "assets/Shaders/vsm_sampling.slang",
+      "Bytes": 42744,
+      "SHA256": "B40DDDD58F91E37B9572B01ED5CB15BB3A7E282965AF0FC5A2ED8C4933C40773"
+    },
+    {
+      "File": "assets/Shaders/depth_page_hiz.slang",
+      "Bytes": 534,
+      "SHA256": "F9D22734CA7A6EB4944090D172F4CA08F2AD8C4CC04B25B47F221E5A06B870D9"
+    },
+    {
+      "File": "assets/Shaders/vsm_page_hiz_common.slang",
+      "Bytes": 2960,
+      "SHA256": "B91A5414951EC2F047B5BBAC6421C7BC92064861C4EC4E7BB8AF0FED90669E92"
+    },
+    {
+      "File": "src/SomeEngine.Render.Features/Shadows/VirtualShadowFeature.cs",
+      "Bytes": 96228,
+      "SHA256": "11411E84EAB6A74F60A7C13158B83C4C02451EB0B88AC9DA58292EC6EEC29923"
+    },
+    {
+      "File": "src/SomeEngine.Render/Shadows/VirtualShadowMap.cs",
+      "Bytes": 45455,
+      "SHA256": "37DA3866114F4F7DC5B6B55DA1F54DDE7AA8EF4295DC95F60101AB7F287E9EFB"
+    },
+    {
+      "File": "src/SomeEngine.Render/Shadows/VirtualShadowMapSettings.cs",
+      "Bytes": 10523,
+      "SHA256": "9DAE5ADE7F79A8EAE78048D632909DCC4DA0F0A7158A01DD2D2C5E71E67F4E87"
+    },
+    {
+      "File": "src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.cs",
+      "Bytes": 53688,
+      "SHA256": "5E468503BAEDAFD4BD58F96E89CC7FC0E149D03E0EB6524796A2477789CDB535"
+    },
+    {
+      "File": "src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.Textures.cs",
+      "Bytes": 4755,
+      "SHA256": "9485F3326ECADA991FE33EBEA71EC93AD7969DE076AF99D670C3C8FB415B21A1"
+    },
+    {
+      "File": "src/SomeEngine.Assets/Schema/VirtualShadowMapShadersBlock.cs",
+      "Bytes": 4905,
+      "SHA256": "B06A240A3EC50575158D537D2A49950C8BC84542149B0AF03179219647757F6F"
+    },
+    {
+      "File": "src/SomeEngine.Resources/VirtualShadowMapShaders.cs",
+      "Bytes": 1905,
+      "SHA256": "29AB4E8A77BFB9C4682645F75EA5DC992DBDB41D5189D7669EE647199C3A7390"
+    },
+    {
+      "File": "templates/DefaultProject/assets/Shaders/standard_material.slang",
+      "Bytes": 14474,
+      "SHA256": "25B61A516419112F16AC066F2EB1393A72179619189F8B83BB175FD90D58EB6C"
+    },
+    {
+      "File": "templates/DefaultProject/Library/AssetManifest/catalog.json",
+      "Bytes": 43559,
+      "SHA256": "0B996CD4AD2853F643CC23883E94674A8924F05D69D22497CBDD15322C4966C1"
+    },
+    {
+      "File": "templates/DefaultProject/assets/Models/ico_sphere.glb",
+      "Bytes": 451664,
+      "SHA256": "40523D69E4E2C6FC1316114008B3DE26100108A3A5ED2A5601FF1B9FF6C89A83"
+    },
+    {
+      "File": "templates/DefaultProject/assets/Pipelines/default_virtual_shadow.virtualshadow.asset",
+      "Bytes": 1424,
+      "SHA256": "C1909EF14592054BD9C71AAF94F84815019C0C2D3E591985EB0A29A62AAC5F8A"
+    },
+    {
+      "File": "templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.runtimeconfig.json",
+      "Bytes": 392,
+      "SHA256": "1AE3FC161EB583DBC3ACFF1A40549EFD71C6350290C1379D8BE7C006AB0626B3"
+    },
+    {
+      "File": "global.json",
+      "Bytes": 116,
+      "SHA256": "5B021458DE2ADC891A6F13D1A53E9C648FEBD99E460A20B94813EFDD18242A95"
+    },
+    {
+      "File": "Directory.Build.props",
+      "Bytes": 865,
+      "SHA256": "68DCB6F5DA31A0EDFC25745724081E88409403015F3467A37435CA367EDF6ED1"
+    }
+  ]
+}

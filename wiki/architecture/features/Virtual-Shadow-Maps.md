@@ -27,7 +27,18 @@ indirect instance 数；将 HW 窗口改为四页不能单凭分区数增加而�
 
 clipmap 按二次幂分级。默认偏移为零时，可覆盖目标位置的选中级别使像素投影的最短主轴
 覆盖 1–2 个阴影 texel；较长主轴按投影比例覆盖更多 texel。虚拟分辨率的级别范围限定最大精度。
-页池容量不足或者目标页还没有驻留时仍可能采样较粗的页，不能把回退画面视为目标分辨率。
+页池容量不足或者目标页还没有完成深度时仍可能采样较粗的页，不能把回退画面视为目标分辨率。
+映射不等于采样有效：新脏页仍可光栅，但直到全部必要 caster/material/surface 工作通过
+才获得完成标记。接收者掩码完成只允许实际覆盖单元的采样，不能作为整页缓存或先前 HiZ。
+过滤的每个 tap 都验证覆盖；缺页不伪造 blocker，也不混入一个声称有效的平均值。
+`TrySampleDirectional/Point/SpotVirtualShadowMap` 分别返回有效性和可见性；缺少完整 footprint
+时先尝试较粗 mip/clipmap，再返回 false 与 lit 因子。默认局部光材质明确处理 false，
+后续帧仍请求缺失工作。旧 float 签名保留为兼容因子，不提供独立有效性证明。
+
+HiZ 只有一个图管理的持久存储：main 读取先前结果后，intermediate 更新脏页，
+post 消费已保留的 deferred work，再更新 final 供下帧使用。不复制整池历史，
+不 replay 或重新从根发现 deferred work。未受影响的缓存页不复制或重建。
+参见 [[architecture/validation/Vsm-Depth-Coverage-135]]；当前只有源码/构建检查，GPU 验收待完成。
 
 页原点沿实际光视图的 X/Y UV 方向滚动。相机跨过对齐边界时，固定世界几何的细页地址保持不变。
 clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 mip，在投影变化时重新绘制。
@@ -38,10 +49,13 @@ clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 
 
 阴影比较在实际 atlas texel 中心计算接收面深度。接收位置与相邻像素的光空间投影
 形成接收面深度梯度，硬阴影、遮挡者搜索与过滤采样共用此梯度。默认 `DepthBias`
-为 `0.00002`，在默认方向光深度范围中对应约 2 cm；`NormalBias` 为 `0.01` 世界单位。
+为 `0.000001`，在默认方向光深度范围中对应约 1 mm；`NormalBias` 为 `0.001` 世界单位。
+用户材质标量和已有 texture 内容通知同样使深度失效，即使资源绑定/光栅箱不变。
+几何驻留变更、主相机几何选择变更、外部有界/无界输入失效入口继续保留。
 
-三场景自动回归以硬件 DXR inline `RayQuery` 阴影为真值，参考使用源 glTF 的
-BLAS/TLAS、实例变换、透明度遮罩与法线贴图。相机与方向光从同次场景资产读取，
-材质输出的 VSM 可见性与 RT 遮挡结果逐像素比较。独立 CPU 三角形射线补充覆盖
-局部光、遮挡者运动、接触阴影和方向光兜底页。测试入口为 `tools/Test-Shadows.ps1`。
-参见 [[architecture/validation/Shadow-Reference-2026-10-04]]。
+独立验收目标以源 glTF 三角形、实例变换、透明度、几何法线射线起点为真值，
+使用同次提交的 raw/pre-TAA 输出和实际 jitter，保留全部有效接收者及边缘。
+方向光、point、spot 的参考/capture 修正由 #125 单独交付；当前源码构建不能证明最终数值质量。
+`tools/Test-Shadows.ps1` 是已有测试入口，不等于全部新 Runtime 行为或完整独立参考门禁。
+[[architecture/validation/Shadow-Reference-2026-10-04]] 是历史记录；当前 #135 检查范围见
+[[architecture/validation/Vsm-Depth-Coverage-135]]，最终 #125/#127/#81 与 Standards/Spec 仍待验收。
