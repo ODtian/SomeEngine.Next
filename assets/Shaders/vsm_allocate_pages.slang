@@ -203,12 +203,19 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     uint packedPage = VSM_PAGE_UNMAPPED;
     uint previousLayer = 0xFFFFFFFFu;
     bool partialReceivers = sameTag && entry.w != view.CacheGeneration &&
+        (entry.w & VSM_PAGE_RECEIVER_DEPTH) == 0u &&
         (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u;
+    bool previousHiZ = false;
     if (sameTag)
     {
         if (!DecodeVirtualShadowPage(entry.x, atlasPage))
             return;
-        previousLayer = atlasPage;
+        // Metadata.y is the generation of completed whole-page HiZ, not allocation.
+        // A retagged/reused or masked/incomplete page cannot acquire prior history.
+        previousHiZ = PageMetadata[atlasPage].y == view.CacheGeneration &&
+            (PageMetadata[atlasPage].w & VSM_PAGE_MASKED) == 0u &&
+            (view.Flags & VSM_VIEW_PREVIOUS_PROJECTION_VALID) != 0u;
+        previousLayer = previousHiZ ? atlasPage : 0xFFFFFFFFu;
         packedPage = entry.x;
         uint previousFlags = PageMetadata[atlasPage].z;
         PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
@@ -226,7 +233,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         // A receiver-masked depth page is incomplete even if its projection and
         // casters did not change. Render it fully once before retaining it.
         if (entry.w == view.CacheGeneration && !detailUpgrade && !coarseProjectionChanged &&
-            PageMetadata[atlasPage].w == 0u)
+            (PageMetadata[atlasPage].w & VSM_PAGE_MASKED) == 0u)
             return;
     }
     else if (entry.x != VSM_PAGE_UNMAPPED && entry.x != VSM_PAGE_LOCKED)
@@ -253,11 +260,14 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         asuint(expectedWorldPage.y),
         0u);
     PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
-    PageMetadata[atlasPage].y = view.CacheGeneration;
-    PageMetadata[atlasPage].z = requestFlags;
-    PageMetadata[atlasPage].w = partialReceivers ? 1u : 0u;
     if (!partialReceivers)
         PageReceiverMasks[tableIndex] = 0xFFFFFFFFu.xx;
+    // Coarse/full receiver requests are whole-page work even on an invalidated page.
+    partialReceivers = partialReceivers && any(PageReceiverMasks[tableIndex] != 0xFFFFFFFFu.xx);
+    PageMetadata[atlasPage].y = 0u;
+    PageMetadata[atlasPage].z = requestFlags;
+    PageMetadata[atlasPage].w = (partialReceivers ? VSM_PAGE_MASKED : 0u) |
+        (previousHiZ ? VSM_PAGE_PRIOR_HIZ : 0u);
     PublishDirtyPage(
         tableIndex,
         viewIndex,

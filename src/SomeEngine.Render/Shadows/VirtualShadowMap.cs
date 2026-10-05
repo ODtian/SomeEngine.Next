@@ -79,7 +79,6 @@ public sealed class VirtualShadowMap : IDisposable
         LinkedComputePipeline? compactViews = null;
         LinkedComputePipeline? initializePageHiZ = null;
         LinkedComputePipeline? reducePageHiZ = null;
-        LinkedComputePipeline? copyPageHiZ = null;
         LinkedComputePipeline? completePageDepth = null;
         LinkedComputePipeline? dynamicResolution = null;
         Buffer? physicalPageOwners = null;
@@ -146,8 +145,6 @@ public sealed class VirtualShadowMap : IDisposable
                 shaders.InitializePageHiZShader,
                 shaders.InitializePageHiZ,
                 "Virtual shadow physical-page HiZ initialization");
-            copyPageHiZ = LinkedComputePipeline.Create(_backend, _device,
-                shaders.CopyPageHiZShader, shaders.CopyPageHiZ, "Copy virtual shadow page HiZ");
             completePageDepth = LinkedComputePipeline.Create(_backend, _device,
                 shaders.CompletePageDepthShader, shaders.CompletePageDepth, "Complete virtual shadow page depth");
             reducePageHiZ = LinkedComputePipeline.Create(
@@ -193,7 +190,6 @@ public sealed class VirtualShadowMap : IDisposable
             if (clearPages is not null) TryDispose(clearPages, ref cleanupFailures);
             if (compactViews is not null) TryDispose(compactViews, ref cleanupFailures);
             if (completePageDepth is not null) TryDispose(completePageDepth, ref cleanupFailures);
-            if (copyPageHiZ is not null) TryDispose(copyPageHiZ, ref cleanupFailures);
             if (reducePageHiZ is not null) TryDispose(reducePageHiZ, ref cleanupFailures);
             if (dynamicResolution is not null) TryDispose(dynamicResolution, ref cleanupFailures);
             if (initializePageHiZ is not null) TryDispose(initializePageHiZ, ref cleanupFailures);
@@ -227,7 +223,6 @@ public sealed class VirtualShadowMap : IDisposable
         ViewCompactPipeline = compactViews;
         PageHiZInitializePipeline = initializePageHiZ;
         PageHiZReducePipeline = reducePageHiZ;
-        PageHiZCopyPipeline = copyPageHiZ;
         PageDepthCompletePipeline = completePageDepth;
         DynamicResolutionPipeline = dynamicResolution;
         _physicalPageOwners = physicalPageOwners;
@@ -262,7 +257,6 @@ public sealed class VirtualShadowMap : IDisposable
     public LinkedComputePipeline ViewCompactPipeline { get; }
     public LinkedComputePipeline PageHiZInitializePipeline { get; }
     public LinkedComputePipeline PageHiZReducePipeline { get; }
-    public LinkedComputePipeline PageHiZCopyPipeline { get; }
     public LinkedComputePipeline PageDepthCompletePipeline { get; }
     public LinkedComputePipeline DynamicResolutionPipeline { get; }
     public bool RequiresInitialization => !_pageTableInitialized;
@@ -518,6 +512,12 @@ public sealed class VirtualShadowMap : IDisposable
                 generation = NextCacheGeneration(generation);
                 _views[index].CacheGeneration = generation;
             }
+        }
+        if (generation < _committedCacheGeneration)
+        {
+            _pendingCacheReset = true;
+            for (int index = 0; index < viewCount; index++)
+                _views[index].CacheGeneration = generation;
         }
         if (_initialized && viewCount == _committedViewCount)
         {
@@ -828,7 +828,8 @@ public sealed class VirtualShadowMap : IDisposable
     private static uint NextCacheGeneration(uint value)
     {
         uint next = value + 1u;
-        return next == 0u ? 1u : next;
+        // The high bit distinguishes completed receiver coverage from a whole page.
+        return next >= 0x80000000u ? 1u : next;
     }
 
     private static bool HasSameClipmapConfiguration(
@@ -883,7 +884,6 @@ public sealed class VirtualShadowMap : IDisposable
         _pageTable = null;
         TryDispose(PageClearPipeline, ref failures);
         TryDispose(PageDepthCompletePipeline, ref failures);
-        TryDispose(PageHiZCopyPipeline, ref failures);
         TryDispose(PageHiZReducePipeline, ref failures);
         TryDispose(DynamicResolutionPipeline, ref failures);
         TryDispose(PageHiZInitializePipeline, ref failures);

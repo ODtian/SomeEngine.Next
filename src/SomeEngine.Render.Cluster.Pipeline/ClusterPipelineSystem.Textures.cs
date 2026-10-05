@@ -88,6 +88,9 @@ public sealed partial class ClusterPipelineSystem
             }
             edit.Commit();
             _graphData.MaterialTextures = textures;
+            // A texture notification can change alpha/deformation with an unchanged
+            // material binding (including in-place content). Do not retain old depth.
+            _rasterRevision = checked(_rasterRevision + 1);
         }
         catch { Volatile.Write(ref _materialTexturesChanged, 1); throw; }
         finally { edit.Dispose(); }

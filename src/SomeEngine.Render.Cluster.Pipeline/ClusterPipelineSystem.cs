@@ -343,6 +343,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
         bool materialResourcesChanged = CollectMaterialChanges(assignments);
+        // User vertex/domain/visibility shaders may consume scalar inputs without
+        // changing a resource binding or a raster bin. Such edits still change depth.
+        bool materialDepthChanged = assignmentsChanged || assignments.ChangedMaterialIds.Any();
         if (!assignmentsChanged && !materialResourcesChanged)
         {
             ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments);
@@ -354,6 +357,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _materialScalars = updated;
             }
             AcceptMaterialChanges(assignments);
+            if (materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
             return GraphData.Outputs;
         }
         if (!_graphInstalled)
@@ -418,7 +422,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _shadeStages!.AcceptChanges();
         _cullingEnabled = cullingEnabled;
         _graphInstalled = true;
-        if (rasterChanged) _rasterRevision = checked(_rasterRevision + 1);
+        if (rasterChanged || materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
         return GraphData.Outputs;
     }
 

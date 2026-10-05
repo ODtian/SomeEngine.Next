@@ -61,6 +61,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                 .3f + .1f * (planeAxis == 0 ? index % 5 : index / 5))).ToArray();
         if (depthEdge != 0) depths[13] = BitConverter.SingleToUInt32Bits(depthEdge == 1 ? 1.0f : .95f);
         uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             #include "vsm_receiver_pixel.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
@@ -125,6 +126,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
         // Unstretched pixels cover 1.5 texels in their requested clipmap.
         float step = 1.5f * (1 << pixelLevel) / 64;
         uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -178,6 +180,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
         }
         float step = 1.5f * (1 << pixelMip) / 512;
         uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -228,6 +231,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                 Array.Fill(pixels, BitConverter.SingleToUInt32Bits(1.0f - occluderDepth), (page / 4 * 128 + y) * 512, 128);
         uint[] position = [BitConverter.SingleToUInt32Bits(pixelX), BitConverter.SingleToUInt32Bits(pixelY)];
         uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -276,6 +280,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             pixels[y * 512 + 128 + x] = BitConverter.SingleToUInt32Bits(1 - coarseDepth);
         }
         uint[][] result = ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -317,6 +322,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
         pages[lastMipOffset * 4] = 4;
         pages[lastMipOffset * 4 + 3] = 7;
         uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -365,6 +371,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                 Array.Fill(pixels, BitConverter.SingleToUInt32Bits(level == firstResident ? .75f : .25f), y * 512 + level * 128, 128);
         }
         uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;

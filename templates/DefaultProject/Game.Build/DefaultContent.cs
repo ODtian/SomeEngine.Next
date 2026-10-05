@@ -371,9 +371,6 @@ public static class DefaultContent
                 ReducePageHiZ = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_page_hiz_reduce.shader"),
                     "ReduceVirtualShadowPageHiZ"),
-                CopyPageHiZ = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_page_hiz_copy.shader"),
-                    "CopyVirtualShadowPageHiZ"),
                 CompletePageDepth = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_page_depth_complete.shader"),
                     "CompleteVirtualShadowPageDepth"),

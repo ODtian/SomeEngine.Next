@@ -204,7 +204,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                     pointLightIndex * 6u;
                 if (firstShadowView + 5u < VirtualShadowSampling.ViewCount)
                 {
-                    shadow = SamplePointVirtualShadowMap(
+                    bool shadowDepthValid = TrySamplePointVirtualShadowMap(
                         VirtualShadowViews,
                         VirtualShadowPageTable,
                         VirtualShadowAtlas,
@@ -217,7 +217,10 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                         VirtualShadowSampling.FilterSampleCount,
                         VirtualShadowSampling.BlockerSearchRadiusTexels,
                         VirtualShadowSampling.MaxFilterRadiusTexels,
-                        geometricNormal);
+                        geometricNormal, shadow);
+                    // No completed mip is explicitly invalid, not fabricated occlusion.
+                    // Page demand retries next frame; a completed coarse mip is preferred.
+                    if (!shadowDepthValid) shadow = 1.0;
                 }
             }
             else if (lightIndex >= VirtualShadowSampling.SpotLightBufferOffset &&
@@ -229,7 +232,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                 uint shadowView = VirtualShadowSampling.SpotViewOffset + spotLightIndex;
                 if (shadowView < VirtualShadowSampling.ViewCount)
                 {
-                    shadow = SampleSpotVirtualShadowMap(
+                    bool shadowDepthValid = TrySampleSpotVirtualShadowMap(
                         VirtualShadowViews,
                         VirtualShadowPageTable,
                         VirtualShadowAtlas,
@@ -242,7 +245,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                         VirtualShadowSampling.FilterSampleCount,
                         VirtualShadowSampling.BlockerSearchRadiusTexels,
                         VirtualShadowSampling.MaxFilterRadiusTexels,
-                        geometricNormal);
+                        geometricNormal, shadow);
+                    if (!shadowDepthValid) shadow = 1.0;
                 }
             }
             float3 radiance = light.Color * (light.Intensity * shadow);

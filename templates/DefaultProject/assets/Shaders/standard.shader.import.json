@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "e41a0e87227c413ca0e4d4dce326888bb4dd74aa641cd7b3c8f6221b4aa0f320",
+  "input_hash": "eb96cd6a99211df5efd34e5bbd11395db986f753c2e7d24ab8ddd89a510dfdd2",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/brdf.slang",
@@ -137,7 +137,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_material.slang",
-      "content_hash": "94f5b1b919c57d678ff2fbd510b9581490cd171082066a34de41f9912865f036"
+      "content_hash": "9ec0e43724e068c4081d63914e59994311c89d421eed308dbc27789c224ea302"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_pixel.slang",
@@ -145,7 +145,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "e132161ae292221066b42b6e9aeac5eb03379556217e8e25184facdddcae8018"
+      "content_hash": "b40dddd58f91e37b9572b01ed5cb15bb3a7e282965af0fc5a2ed8c4933c40773"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -169,7 +169,7 @@
     },
     {
       "relative_path": "assets/Shaders/standard_material.slang",
-      "content_hash": "d008ad295cf39fd204408db79dc85543dfbcbeaa728d6a2a5b1b9e086f916307"
+      "content_hash": "25b61a516419112f16ac066f2eb1393a72179619189f8b83bb175fd90d58eb6c"
     }
   ],
   "reported_inputs": [],
@@ -177,11 +177,11 @@
     {
       "asset_guid": "e4eb98e0-2dcb-57d4-a7bb-bcb52ecae5bd",
       "sub_asset_key": "",
-      "input_hash": "e41a0e87227c413ca0e4d4dce326888bb4dd74aa641cd7b3c8f6221b4aa0f320",
+      "input_hash": "eb96cd6a99211df5efd34e5bbd11395db986f753c2e7d24ab8ddd89a510dfdd2",
       "dependencies": [],
       "asset_path": "standard.shader.asset",
-      "version": "ce68d955-4dcc-350e-771c-f9da01f79d01",
-      "content_hash": "805CCA0FA5E30AE33519DEB1D119474104E0FC0217948A4D8AE595078E0B7E6B",
+      "version": "5f0b679b-57fc-7627-f8d3-2ebe94e7ba55",
+      "content_hash": "DB55940C258B86D60164860E6C487EB06DA14027D4D9247E98931A62DD077C71",
       "asset_dependencies": []
     }
   ]
