@@ -1,0 +1,6 @@
+{
+  "Source": "86555c9 + public repeated-startup regression only",
+  "ExitCode": 0,
+  "WallSeconds": 72.3374389,
+  "Command": "dotnet test tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj -c Release --no-build --filter FullyQualifiedName~RepeatedLocalLightStartupAndShutdownPreservesIndependentShadows --results-directory <proof>/repeated-startup-before --logger trx;LogFileName=repeated-startup-before.trx --blame-crash --blame-crash-dump-type mini"
+}

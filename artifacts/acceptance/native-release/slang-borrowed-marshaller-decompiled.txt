@@ -1,0 +1,21 @@
+using System.Runtime.InteropServices.Marshalling;
+
+namespace SlangShaderSharp.Internal;
+
+[CustomMarshaller(typeof(CustomMarshallerAttribute.GenericPlaceholder), MarshalMode.Default, typeof(NoFreeComInterfaceMarshaller<>))]
+internal static class NoFreeComInterfaceMarshaller<T> where T : class
+{
+	public unsafe static void* ConvertToUnmanaged(T? managed)
+	{
+		return ComInterfaceMarshaller<T>.ConvertToUnmanaged(managed);
+	}
+
+	public unsafe static T? ConvertToManaged(void* unmanaged)
+	{
+		return ComInterfaceMarshaller<T>.ConvertToManaged(unmanaged);
+	}
+
+	public unsafe static void Free(void* unmanaged)
+	{
+	}
+}
