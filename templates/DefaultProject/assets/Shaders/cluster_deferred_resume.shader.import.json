@@ -1,19 +1,23 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "edbd79b71917c683378201245f662d39be256010d5e7a3dd35d4f6f738ff93c3",
+  "input_hash": "ba7578148af47506934e4ff75bc6c6783b301dbafa1b5afb8f7306730b5f4315",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_deferred_resume.slang",
-      "content_hash": "62f4e739e7effb7834b8f9096fe7984400c184e10fc5d6427609bc52bfa776d3"
+      "content_hash": "68537a6e1b135555913f755fe744dac8ffce72a9d9845d694eca5ce7f263bd69"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "89677843803ec893351df7ca9e5652bdf398ba2803ae4167189a7836cf30cfd2"
+      "content_hash": "42555f29e07c376908038817f915380dd937fba3dd3d76d081975db658c3dda7"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_work_status.slang",
+      "content_hash": "e8ab3b180d2f441c3fa7d2549870729e7f80d53af4e447cd3255378db3e61e96"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -37,11 +41,11 @@
     {
       "asset_guid": "1c40ffb4-67dc-523b-bc03-c033d51f1c86",
       "sub_asset_key": "",
-      "input_hash": "edbd79b71917c683378201245f662d39be256010d5e7a3dd35d4f6f738ff93c3",
+      "input_hash": "ba7578148af47506934e4ff75bc6c6783b301dbafa1b5afb8f7306730b5f4315",
       "dependencies": [],
       "asset_path": "cluster_deferred_resume.shader.asset",
-      "version": "c60e8959-0b39-0738-650d-eadf3b95a97a",
-      "content_hash": "020B61F9514366A662AD5F0DFDB80511494B48A66EC48EBDA05A0CA2A1F3F989",
+      "version": "645ac3cb-af8d-3e71-50a6-5e46f997c338",
+      "content_hash": "7054FFAC55BDAD67ADF5EF5EDAD9699208B4D212A2A6020214B04DA3F79BA0AF",
       "asset_dependencies": []
     }
   ]

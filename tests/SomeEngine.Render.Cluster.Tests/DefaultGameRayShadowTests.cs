@@ -1,10 +1,9 @@
-using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Numerics;
 using System.Text.Json;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Core.ECS.Components;
+using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -16,15 +15,55 @@ namespace SomeEngine.Render.Cluster.Tests;
 [Trait("Category", "Hardware")]
 public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
 {
+    private const int CaptureFrames = 64;
+    private const float FixedStep = .016666667f;
+
     [Theory]
     [InlineData("spheres")]
     [InlineData("sponza")]
     [InlineData("bistro")]
-    public async Task ThreeSceneShadowsMatchHardwareRayTracing(string scene)
+    public Task ThreeSceneShadowsMatchHardwareRayTracing(string scene) => CaptureSceneAsync(scene,
+        "diagnostic", ["--static-scene", "--synchronous-frames", "--no-taa", "--no-async-compute",
+            "--hardware-raster", "--no-mesh-shaders"], 0);
+
+    [Theory]
+    [InlineData("spheres")]
+    [InlineData("sponza")]
+    [InlineData("bistro")]
+    public Task DefaultSceneShadowsMatchHardwareRayTracing(string scene) => CaptureSceneAsync(scene,
+        "default", [scene == "spheres" ? "--dynamic-scene" : "--static-scene"],
+        scene == "spheres" ? (CaptureFrames - 1) * FixedStep : 0);
+
+    [Fact]
+    public async Task GeometricOcclusionIsIndependentOfNormalTextures()
+    {
+        string engine = FindEngine();
+        var scene = new RayShadowScene(Path.Combine(engine, "templates", "DefaultProject", "assets", "Models", "ico_sphere.glb"),
+            [Matrix4x4.CreateScale(ShadowReferenceScene.ReceiverScale) * Matrix4x4.CreateTranslation(ShadowReferenceScene.ReceiverPosition),
+             Matrix4x4.CreateScale(ShadowReferenceScene.CasterScale) * Matrix4x4.CreateTranslation(ShadowReferenceScene.CasterPosition)]);
+        Matrix4x4.Invert(Matrix4x4.CreateLookAt(Vector3.Zero, ShadowReferenceScene.ReceiverPosition, Vector3.UnitY) *
+            Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), out Matrix4x4 clipToWorld);
+        var inputs = new RayShadowImage.Inputs
+        {
+            ClipToWorld = clipToWorld, CameraPosition = Vector3.Zero, Width = 96, Height = 96,
+            LightDirection = ShadowReferenceScene.LightDirection, NearPlane = .1f, FarPlane = 100,
+        };
+        uint[] first = await RayShadowImage.TraceAsync(engine, scene, inputs, vulkan: false);
+        scene.Texels[0] = 0xff0080ff;
+        uint[] second = await RayShadowImage.TraceAsync(engine, scene, inputs, vulkan: false);
+        Assert.Equal(first.Select(value => value & 3u), second.Select(value => value & 3u));
+        Assert.True(first.Count(value => (value & 3u) <= 1u) >= 512);
+        Assert.True(first.Count(value => (value & 3u) == 0u) >= 32);
+        Assert.True(first.Where((value, index) => (value & 4u) != (second[index] & 4u)).Any(),
+            "The normal texture variation must change the separately reported shading condition.");
+        Assert.DoesNotContain(first.Concat(second), value => (value & 3u) <= 1u && (value & 8u) != 0);
+    }
+
+    private async Task CaptureSceneAsync(string scene, string mode, string[] renderingOptions, float captureSeconds)
     {
         string engine = FindEngine();
         string? evidence = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_EVIDENCE");
-        string directory = Path.Combine(evidence ?? Path.GetTempPath(), $"ray-shadow-{scene}-{Guid.NewGuid():N}");
+        string directory = Path.Combine(evidence ?? Path.GetTempPath(), $"ray-shadow-{scene}-{mode}-{Guid.NewGuid():N}");
         string content = Path.Combine(directory, "content");
         Directory.CreateDirectory(directory);
         try
@@ -33,49 +72,63 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
             string sourceContent = spheres ? Path.Combine(engine, "templates", "DefaultProject")
                 : Path.Combine(engine, "samples", "ImportedScenes", "Apps", scene == "sponza" ? "Sponza" : "Bistro");
             Assert.True(Directory.Exists(Path.Combine(sourceContent, "Library", "AssetManifest")),
-                $"Build the DefaultGame {scene} content before running the three-scene RT shadow regression.");
-            if (spheres) await ShadowReferenceScene.BuildAsync(engine, content, "directional-grid");
-            else CopyContent(sourceContent, content);
-            await CaptureAsync(engine, content, Path.Combine(directory, "scene.bmp"));
-            await BuildShadowMaskAsync(engine, sourceContent, content);
-            await CaptureAsync(engine, content, Path.Combine(directory, "vsm-shadow.bmp"));
+                $"Build the DefaultGame {scene} content before running its RT shadow regression.");
+            CopyContent(sourceContent, content);
+            SceneInputs inputs = await ReadSceneInputsAsync(content, captureSeconds);
+            string application = Path.Combine(engine, "templates", "DefaultProject", "Game.App", "bin", "Release", "net10.0", "Game.App.exe");
+            List<DefaultGameCapture.Result> captures = [];
+            async Task Capture(string file)
+            {
+                string image = Path.Combine(directory, file);
+                string[] arguments = ["--test-scene", content, "--frames", CaptureFrames.ToString(),
+                    "--hidden-window", "--fixed-step", "0.016666667", "--no-vsync", "--no-debug-ui",
+                    "--vsm", .. renderingOptions, "--frame-output", image];
+                captures.Add(await DefaultGameCapture.RunAsync(application, arguments, image, output));
+            }
+            await Capture("scene.bmp");
             string geometry = spheres ? Path.Combine(sourceContent, "assets", "Models", "ico_sphere.glb")
                 : Path.Combine(sourceContent, "assets", "Imported", scene == "sponza" ? "Sponza" : "Bistro",
                     scene == "sponza" ? "Sponza.gltf" : "Bistro.glb");
-            var rays = new RayShadowScene(geometry, spheres);
-            var inputs = await ReadSceneInputsAsync(content);
-            Vector3 camera = inputs.Camera.Position, target = inputs.Camera.Target;
-            float fieldOfView = inputs.Camera.VerticalFieldOfView;
-            int width = inputs.Width, height = inputs.Height;
-            float near = inputs.Camera.NearPlane, far = inputs.Camera.FarPlane;
-            Matrix4x4.Invert(Matrix4x4.CreateLookAt(camera, target, Vector3.UnitY) *
-                Matrix4x4.CreatePerspectiveFieldOfView(fieldOfView, (float)width / height, near, far), out Matrix4x4 clipToWorld);
+            await ShadowVisibilityContent.BuildAsync(engine, sourceContent, content, geometry, spheres);
+            await Capture("vsm-shadow.bmp");
+            var rays = spheres ? new RayShadowScene(geometry, inputs.MeshTransforms) : new RayShadowScene(geometry, false);
+            Matrix4x4.Invert(Matrix4x4.CreateLookAt(inputs.Camera.Position, inputs.Camera.Target, inputs.Camera.Up) *
+                Matrix4x4.CreatePerspectiveFieldOfView(inputs.Camera.VerticalFieldOfView,
+                    (float)inputs.Width / inputs.Height, inputs.Camera.NearPlane, inputs.Camera.FarPlane), out Matrix4x4 clipToWorld);
             uint[] reference = await RayShadowImage.TraceAsync(engine, rays, new()
             {
-                ClipToWorld = clipToWorld, CameraPosition = camera, Width = (uint)width, Height = (uint)height,
-                LightDirection = Vector3.Normalize(inputs.Light.Direction),
-                LightKind = 0, NormalBias = .01f, NearPlane = near, FarPlane = far,
+                ClipToWorld = clipToWorld, CameraPosition = inputs.Camera.Position,
+                Width = (uint)inputs.Width, Height = (uint)inputs.Height,
+                LightDirection = Vector3.Normalize(inputs.Light.Direction), LightKind = 0,
+                NearPlane = inputs.Camera.NearPlane, FarPlane = inputs.Camera.FarPlane,
             }, vulkan: false);
-            var comparison = Compare(directory, reference, width, height);
+            RayShadowComparison comparison = RayShadowComparison.Write(directory, reference, inputs.Width, inputs.Height);
             await File.WriteAllTextAsync(Path.Combine(directory, "comparison.json"), JsonSerializer.Serialize(new
             {
-                Scene = scene, SourceCommit = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_SOURCE"),
-                Reference = "Hardware DXR inline RayQuery against source glTF BLAS/TLAS; bilinear-repeat alpha-mask intersections; source normals, tangent space and normal textures",
-                Camera = new { Position = camera, Target = target, FieldOfView = fieldOfView, Near = near, Far = far },
-                Light = inputs.Light,
-                Conditions = "1280x720; D3D12 RTX hardware; static scene; 64 frames; fixed 1/60 s; VS/PS; TAA off; async compute off; synchronous; UI hidden",
+                Scene = scene, Mode = mode, SourceCommit = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_SOURCE"),
+                Reference = "Source glTF BLAS/TLAS; original triangle geometry and alpha masks; barycentric surface position; geometric-normal ULP ray origin; shading conditions reported independently",
+                Camera = inputs.Camera, Light = inputs.Light, inputs.Width, inputs.Height,
+                CaptureFrames, FixedStep, CaptureSeconds = captureSeconds, RenderingOptions = renderingOptions,
+                Captures = captures, MeshTransforms = inputs.MeshTransforms,
                 SourceGeometry = new { Meshes = rays.Meshes.Length, Instances = rays.Instances.Length,
                     Triangles = rays.Indices.Length / 3, AlphaMaskedGeometries = rays.Geometries.Count(value => value.AlphaCutoff >= 0) },
-                Thresholds = new { EdgeExclusionPixels = 2, MaximumFalseShadowFraction = .02f,
-                    MaximumMissedShadowFraction = .02f, MinimumComparedPixels = 512 },
+                PixelChannels = "Inverse-tone-mapped red = shadow visibility * temporal receiver coverage; green = receiver coverage; blue = shading condition. Visibility is red/green.",
+                BoundaryDefinition = "Reference visibility or geometric eligibility changes within a 5x5 neighborhood. All receiver pixels remain in the aggregate, images and CSV.",
+                Thresholds = new { MaximumPixelVisibilityError = .15f, MaximumMismatchFraction = .02f,
+                    MaximumMeanVisibilityError = .02f, MaximumFalseShadowFraction = .02f,
+                    MaximumMissedShadowFraction = .02f, MinimumShadowedPixels = 32,
+                    MinimumLitPixels = 512, MinimumRenderedReceiverCoverage = .98f },
                 Comparison = comparison,
             }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             output.WriteLine($"Hardware RT shadow comparison: {directory}; {comparison}");
-            Assert.True(comparison.ComparedPixels >= 512, "The scene must deliver visible receiver pixels for the RT comparison.");
-            Assert.True(comparison.MismatchFraction <= .02f &&
-                comparison.FalseShadowPixels <= comparison.LitPixels * .02f &&
-                comparison.MissedShadowPixels <= comparison.ShadowedPixels * .02f,
-                $"DefaultGame {scene} differs from hardware RT shadows: {comparison}. Evidence: {directory}");
+            ShadowReferenceComparison all = comparison.AllReceivers;
+            Assert.True(all.ShadowedPixels >= 32 && all.LitPixels >= 512,
+                $"The scene must cover both geometric shadow and light receivers. {comparison}");
+            Assert.True(comparison.RenderedReceiverCoverage >= .98f, $"Receiver coverage: {comparison}");
+            Assert.Equal(0, comparison.SelfHitPixels);
+            Assert.True(all.MeanVisibilityError <= .02f && all.MismatchFraction <= .02f &&
+                all.FalseShadowPixels <= all.LitPixels * .02f && all.MissedShadowPixels <= all.ShadowedPixels * .02f,
+                $"DefaultGame {scene}/{mode} differs from hardware RT shadows. {comparison}. Evidence: {directory}");
         }
         finally
         {
@@ -84,7 +137,9 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
         }
     }
 
-    private static async Task<(SceneCamera Camera, DirectionalLight Light, int Width, int Height)> ReadSceneInputsAsync(string content)
+    private sealed record SceneInputs(SceneCamera Camera, DirectionalLight Light, int Width, int Height, Matrix4x4[] MeshTransforms);
+
+    private static async Task<SceneInputs> ReadSceneInputsAsync(string content, float seconds)
     {
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
         await using var assets = new AssetLoader(new LooseAssetStorage(content, manifest));
@@ -95,7 +150,21 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
         using World world = await file.LoadAsync(SceneSerialization.CreateRegistry());
         Entity camera = Entities(new QueryDefinitionBuilder().Read<SceneCamera>()).Single();
         Entity light = Entities(new QueryDefinitionBuilder().Read<DirectionalLight>()).First();
-        return (world.Read<SceneCamera>(camera), world.Read<DirectionalLight>(light), values.Width, values.Height);
+        Matrix4x4[] transforms = Entities(new QueryDefinitionBuilder().Read<WorldTransform>().Read<MeshSource>()).Select(entity =>
+        {
+            TransformQvvs transform = world.Read<WorldTransform>(entity).Qvvs;
+            if (seconds != 0 && world.Has<MeshMotion>(entity))
+            {
+                MeshMotion motion = world.Read<MeshMotion>(entity);
+                Vector3 frequency = new(.55f + Unit(Hash(motion.Seed ^ 0xA511E9B3u)) * .35f,
+                    .70f + Unit(Hash(motion.Seed ^ 0x63D83595u)) * .45f,
+                    .42f + Unit(Hash(motion.Seed ^ 0xB5297A4Du)) * .31f);
+                transform.Position += new Vector3(MathF.Sin(seconds * frequency.X) * motion.Amplitude.X,
+                    MathF.Sin(seconds * frequency.Y) * motion.Amplitude.Y, MathF.Sin(seconds * frequency.Z) * motion.Amplitude.Z);
+            }
+            return transform.ToMatrix();
+        }).ToArray();
+        return new(world.Read<SceneCamera>(camera), world.Read<DirectionalLight>(light), values.Width, values.Height, transforms);
 
         Entity[] Entities(QueryDefinitionBuilder definition)
         {
@@ -111,35 +180,11 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
             }
             finally { world.ReleaseQuery(query); }
         }
-    }
-
-    private async Task CaptureAsync(string engine, string content, string image)
-    {
-        string executable = Path.Combine(engine, "templates", "DefaultProject", "Game.App", "bin", "Release", "net10.0", "Game.App.exe");
-        var start = new ProcessStartInfo(executable)
+        static uint Hash(uint value)
         {
-            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
-        };
-        string[] arguments = ["--test-scene", content, "--frames", "64", "--static-scene", "--hidden-window",
-            "--fixed-step", "0.016666667", "--no-vsync", "--synchronous-frames", "--no-debug-ui", "--no-taa",
-            "--no-async-compute", "--hardware-raster", "--no-mesh-shaders", "--vsm", "--frame-output", image];
-        foreach (string argument in arguments) start.ArgumentList.Add(argument);
-        string command = executable + " " + string.Join(" ", arguments.Select(value => '"' + value + '"'));
-        output.WriteLine(command);
-        using Process process = Process.Start(start)!;
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync(), stderr = process.StandardError.ReadToEndAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        try { await process.WaitForExitAsync(timeout.Token); }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync();
-            throw new TimeoutException(command);
+            unchecked { value ^= value >> 16; value *= 0x7FEB352Du; value ^= value >> 15; value *= 0x846CA68Bu; return value ^ (value >> 16); }
         }
-        string log = $"{command}\nExitCode: {process.ExitCode}\n{await stdout}\n{await stderr}";
-        await File.WriteAllTextAsync(Path.ChangeExtension(image, ".log"), log);
-        Assert.True(process.ExitCode == 0, log);
-        Assert.True(File.Exists(image), log);
+        static float Unit(uint value) => (value >> 8) * (1f / 16_777_215f);
     }
 
     private static void CopyContent(string source, string destination)
@@ -151,102 +196,6 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target);
         }
-    }
-
-    private static async Task BuildShadowMaskAsync(string engine, string sourceContent, string content)
-    {
-        string shaders = Path.Combine(content, "assets", "Shaders");
-        foreach (string source in Directory.EnumerateFiles(Path.Combine(sourceContent, "assets", "Shaders"), "*", SearchOption.AllDirectories)
-            .Where(path => path.EndsWith(".slang") || path.EndsWith(".shader")))
-        {
-            string target = Path.Combine(shaders, Path.GetRelativePath(Path.Combine(sourceContent, "assets", "Shaders"), source));
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(source, target, overwrite: true);
-        }
-        foreach (string material in new[] { "standard_material.slang", "scene_material.slang" })
-        {
-            string path = Path.Combine(shaders, material);
-            if (!File.Exists(path)) continue;
-            string text = File.ReadAllText(path).Replace("\r\n", "\n");
-            text = text.Replace("            if (dot(mappedNormal, -light.Direction) <= 0.0)\n                continue;",
-                "            if (dot(mappedNormal, -light.Direction) < 0.15)\n            {\n                outputColor[ctx.pixelCoord] = float4(0,0,0,1);\n                return;\n            }");
-            text = text.Replace("outputColor[ctx.pixelCoord] = float4(finalColor, 1.0);",
-                "outputColor[ctx.pixelCoord] = float4(0,0,0,1);");
-            text = text.Replace("            finalColor += EvaluateDirectionalLight(",
-                "            outputColor[ctx.pixelCoord] = float4(shadow, 1.0, 0.0, 1.0);\n            return;\n            finalColor += EvaluateDirectionalLight(");
-            File.WriteAllText(path, text);
-        }
-        var project = new AssetProject(content, [], sourceFormats: [new ShaderSourceFormat([Path.Combine(engine, "assets", "Shaders")])]);
-        foreach (string definition in Directory.EnumerateFiles(shaders, "*.shader")
-            .Where(path => Path.GetFileName(path) == "standard.shader" || Path.GetFileName(path).StartsWith("scene_", StringComparison.Ordinal)))
-            await project.BuildAsync(definition);
-    }
-
-    private static ShadowReferenceComparison Compare(string directory, uint[] reference, int width, int height)
-    {
-        byte[] bitmap = File.ReadAllBytes(Path.Combine(directory, "vsm-shadow.bmp"));
-        int data = BinaryPrimitives.ReadInt32LittleEndian(bitmap.AsSpan(10));
-        int signedHeight = BinaryPrimitives.ReadInt32LittleEndian(bitmap.AsSpan(22));
-        Assert.Equal(width, BinaryPrimitives.ReadInt32LittleEndian(bitmap.AsSpan(18)));
-        Assert.Equal(height, Math.Abs(signedHeight));
-        var actual = new int[width * height];
-        Array.Fill(actual, -1);
-        for (int y = 0; y < height; y++)
-        for (int x = 0; x < width; x++)
-        {
-            int offset = data + ((signedHeight < 0 ? y : height - 1 - y) * width + x) * 4;
-            if (bitmap[offset + 1] >= 128) actual[y * width + x] = bitmap[offset + 2] >= 128 ? 1 : 0;
-        }
-        int shadowed = 0, lit = 0, missed = 0, falseShadow = 0;
-        var difference = new byte[actual.Length];
-        using var csv = new StreamWriter(Path.Combine(directory, "ray-comparison.csv"));
-        csv.WriteLine("x,y,rayVisibility,vsmVisibility,mismatch");
-        for (int y = 2; y < height - 2; y++)
-        for (int x = 2; x < width - 2; x++)
-        {
-            int pixel = y * width + x;
-            if (reference[pixel] > 1 || actual[pixel] < 0) continue;
-            bool interior = true;
-            for (int dy = -2; dy <= 2; dy++)
-            for (int dx = -2; dx <= 2; dx++)
-                interior &= reference[pixel + dy * width + dx] == reference[pixel] && actual[pixel + dy * width + dx] >= 0;
-            if (!interior) continue;
-            if (reference[pixel] == 0) shadowed++;
-            else lit++;
-            bool mismatch = actual[pixel] != reference[pixel];
-            if (mismatch)
-            {
-                if (reference[pixel] == 0) missed++;
-                else falseShadow++;
-                difference[pixel] = 255;
-            }
-            csv.WriteLine($"{x},{y},{reference[pixel]},{actual[pixel]},{(mismatch ? 1 : 0)}");
-        }
-        WriteBitmap(Path.Combine(directory, "rt-shadow.bmp"), width, height,
-            reference.Select(value => value > 1 ? (byte)127 : (byte)(value * 255)).ToArray());
-        WriteBitmap(Path.Combine(directory, "shadow-error.bmp"), width, height, difference);
-        int compared = lit + shadowed, errors = missed + falseShadow;
-        float fraction = compared == 0 ? 1 : (float)errors / compared;
-        return new(shadowed, lit, errors, compared, fraction, fraction, errors == 0 ? 0 : 1, missed, falseShadow);
-    }
-
-    private static void WriteBitmap(string path, int width, int height, byte[] pixels)
-    {
-        byte[] bytes = new byte[54 + pixels.Length * 4];
-        bytes[0] = (byte)'B'; bytes[1] = (byte)'M';
-        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(2), bytes.Length);
-        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(10), 54);
-        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(14), 40);
-        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(18), width);
-        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(22), -height);
-        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(26), 1);
-        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(28), 32);
-        for (int pixel = 0; pixel < pixels.Length; pixel++)
-        {
-            bytes[54 + pixel * 4] = bytes[55 + pixel * 4] = bytes[56 + pixel * 4] = pixels[pixel];
-            bytes[57 + pixel * 4] = 255;
-        }
-        File.WriteAllBytes(path, bytes);
     }
 
     private static string FindEngine()

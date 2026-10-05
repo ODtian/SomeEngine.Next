@@ -134,8 +134,7 @@ void BuildVirtualShadowPagePool(uint3 threadId : SV_DispatchThreadID)
     PublishOwnedPage(atlasPage, owner);
 
     bool requested = RequestedShadowPages[owner] == PagePool.FrameIndex;
-    if (requested)
-        return;
+    if (requested) return;
 
     uint lastUsed = PageMetadata[atlasPage].x;
     uint age = PagePool.FrameIndex - lastUsed;

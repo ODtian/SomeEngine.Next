@@ -1,4 +1,5 @@
 #include "resource_effects.slang"
+#include "depth_page_hiz.slang"
 
 struct VirtualShadowPageHiZUniforms
 {
@@ -33,7 +34,7 @@ void StoreVirtualShadowPageHiZ(float depth, uint physicalPage, uint2 pixel, uint
     uint lane = thread.y * 8u + thread.x;
     PageHiZTile[lane] = depth;
     if (all(pixel < destinationSize))
-        VirtualShadowPageHiZDestination[uint3(pixel, physicalPage)] = depth;
+        VirtualShadowPageHiZDestination[CalculateDepthPageHiZPixel(physicalPage, pixel, destinationSize, PageHiZ.PhysicalPagesPerRow)] = depth;
     // One tile produces four mips; dispatch boundaries synchronize tiles.
     [unroll]
     for (uint step = 1u; step <= 3u; step++)
@@ -53,11 +54,11 @@ void StoreVirtualShadowPageHiZ(float depth, uint physicalPage, uint2 pixel, uint
             if (destinationSize >= scale && all(outputPixel < (destinationSize >> step)))
             {
                 if (step == 1u)
-                    VirtualShadowPageHiZDestination1[uint3(outputPixel, physicalPage)] = depth;
+                    VirtualShadowPageHiZDestination1[CalculateDepthPageHiZPixel(physicalPage, outputPixel, destinationSize >> step, PageHiZ.PhysicalPagesPerRow)] = depth;
                 else if (step == 2u)
-                    VirtualShadowPageHiZDestination2[uint3(outputPixel, physicalPage)] = depth;
+                    VirtualShadowPageHiZDestination2[CalculateDepthPageHiZPixel(physicalPage, outputPixel, destinationSize >> step, PageHiZ.PhysicalPagesPerRow)] = depth;
                 else
-                    VirtualShadowPageHiZDestination3[uint3(outputPixel, physicalPage)] = depth;
+                    VirtualShadowPageHiZDestination3[CalculateDepthPageHiZPixel(physicalPage, outputPixel, destinationSize >> step, PageHiZ.PhysicalPagesPerRow)] = depth;
             }
         }
     }

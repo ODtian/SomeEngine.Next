@@ -149,6 +149,6 @@ public struct VirtualShadowDynamicResolutionUniforms
     public float MaxDirectionalLodBias;
     public float MaxLocalLodBias;
     public uint Enabled;
-    public uint Pad0;
+    public uint EvictionBucketCount;
     public uint Pad1;
 }

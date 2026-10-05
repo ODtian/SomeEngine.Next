@@ -29,6 +29,8 @@ public sealed class SceneScript
     }
 
     public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
+    /// <summary>Maximum hierarchy, candidate and deferred entries retained by the geometry pipeline.</summary>
+    public uint ClusterWorkCapacity { get; init; } = 1_048_576;
     public bool WaitForFrames { get; init; } = true;
     public float RasterEdgePixels { get; init; } = 4;
     public bool UseCameraHistory { get; init; } = true;

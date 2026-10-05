@@ -17,7 +17,7 @@ public sealed partial class ClusterPipelineSystem
             edit.SetBufferDescription(GraphData.Resources.TraversalArguments1,
                 new BufferDesc(size, usages, "Cluster hierarchy indirect arguments 1"));
             foreach ((int phase, GraphRegionMap<int, bool> levels) in GraphData.TraversalLevels)
-                GraphData.TraversalLevels = GraphData.TraversalLevels.SetItem(phase, RecordTraversal(ref edit, GraphData.Resources,
+                GraphData.TraversalLevels = GraphData.TraversalLevels.SetItem(phase, RecordTraversal(ref edit, GetRasterFrameResources(GraphData.Resources, phase >= 2),
                     GraphData.Resources.PackedViews, phase < 2 ? GraphData.Resources.ViewCount : _renderContext.MaximumInvocationCount,
                     phase < 2 ? 0u : 1u, phase % 2 != 0 ? 2u : phase == 0 ? 0u : 1u,
                     false, levels, phase switch

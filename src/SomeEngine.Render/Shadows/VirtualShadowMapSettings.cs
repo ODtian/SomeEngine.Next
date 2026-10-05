@@ -7,7 +7,7 @@ public sealed record VirtualShadowMapSettings
 {
     public bool Enabled { get; init; } = true;
     public uint VirtualResolution { get; init; } = 16_384;
-    public uint AtlasSize { get; init; } = 4_096;
+    public uint AtlasSize { get; init; } = 8_192;
     public uint PageSize { get; init; } = 128;
     public uint MaxShadowLights { get; init; } = 4;
     // Meter-scale scenes need levels below zero near the camera. Keep the
@@ -16,7 +16,7 @@ public sealed record VirtualShadowMapSettings
     public int DirectionalFirstClipmapLevel { get; init; } = -4;
     public int DirectionalFirstCoarseClipmapLevel { get; init; } = 15;
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
-    public float DirectionalResolutionLodBias { get; init; }
+    public float DirectionalResolutionLodBias { get; init; } = -2.0f;
     public float LocalResolutionLodBias { get; init; }
     public bool DynamicResolutionEnabled { get; init; }
     public uint DynamicResolutionTargetRasterWork { get; init; } = 250_000;
@@ -26,9 +26,9 @@ public sealed record VirtualShadowMapSettings
     public bool DirectionalReceiverMask { get; init; } = true;
     public bool LocalReceiverMask { get; init; } = true;
     // The receiver-plane comparison handles texel offsets. This remaining
-    // normalized-depth allowance is two centimeters over the default directional range.
-    public float DepthBias { get; init; } = 0.00002f;
-    public float NormalBias { get; init; } = 0.01f;
+    // normalized-depth allowance covers one millimeter over the default directional range.
+    public float DepthBias { get; init; } = 0.000001f;
+    public float NormalBias { get; init; } = 0.001f;
     public float DirectionalLightDistance { get; init; } = 500.0f;
     public float DirectionalNearPlane { get; init; } = 0.1f;
     public float DirectionalFarPlane { get; init; } = 1000.0f;

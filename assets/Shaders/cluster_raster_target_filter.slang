@@ -2,15 +2,15 @@
 #define CLUSTER_RASTER_TARGET_FILTER_SLANG
 
 #include "cluster_raster_target_view.slang"
+#include "depth_page_hiz.slang"
 #include "cluster_view_access.slang"
 #include "raster_sample_bounds.slang"
 
-StructuredBuffer<ClusterRasterTargetView> RasterTargetViews;
-StructuredBuffer<uint> RasterTargetPageHierarchy;
-StructuredBuffer<uint4> RasterTargetPageTable;
-StructuredBuffer<uint2> RasterTargetReceiverMasks;
+#include "cluster_raster_target_resources.slang"
+#ifndef CLUSTER_TARGET_BOUNDS_ONLY
 Texture2DArray<float> RasterTargetCurrentHiZ;
 Texture2DArray<float> RasterTargetPreviousHiZ;
+#endif
 
 uint2 ClusterTargetPixelMin(float2 uv, ClusterViewUniforms view)
 {
@@ -221,6 +221,7 @@ bool ClusterTargetPolicyRasterBoundsWindow(
     return accepted;
 }
 
+#ifndef CLUSTER_TARGET_BOUNDS_ONLY
 bool ClusterTargetEntryValid(
     ClusterRasterTargetView target,
     uint2 localPage,
@@ -230,7 +231,7 @@ bool ClusterTargetEntryValid(
     uint4 entry = RasterTargetPageTable[tableIndex];
     int2 expectedWorldPage = ClusterRasterTargetWorldPage(target, localPage);
     if (entry.x == 0u || entry.x == 0xFFFFFFFFu ||
-        entry.w != target.CacheGeneration ||
+        (entry.w != 0u && entry.w != target.CacheGeneration) ||
         asint(entry.y) != expectedWorldPage.x ||
         asint(entry.z) != expectedWorldPage.y)
     {
@@ -265,11 +266,11 @@ float ClusterTargetHiZMax(
 
     return max(
         max(
-            source.Load(int4(p0, physicalPage, mip)),
-            source.Load(int4(p1, physicalPage, mip))),
+            source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p0, mipSize, target.PhysicalPagesPerRow), mip)),
+            source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p1, mipSize, target.PhysicalPagesPerRow), mip))),
         max(
-            source.Load(int4(p2, physicalPage, mip)),
-            source.Load(int4(p3, physicalPage, mip))));
+            source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p2, mipSize, target.PhysicalPagesPerRow), mip)),
+            source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p3, mipSize, target.PhysicalPagesPerRow), mip))));
 }
 
 bool ClusterTargetPolicyAccepts(
@@ -409,4 +410,5 @@ bool ClusterTargetPolicyWorldBoundsOccluded(
         view);
 }
 
-#endif
+#endif // CLUSTER_TARGET_BOUNDS_ONLY
+#endif // CLUSTER_RASTER_TARGET_FILTER_SLANG

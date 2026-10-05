@@ -167,7 +167,7 @@ public sealed partial class ClusterPipelineSystem
                     uniformBuffer,
                     phaseOne,
                     nextLevelArgument,
-                    sync);
+                    sync, policyTarget);
                 continue;
             }
             if (stage.FeatureBinders[resourceIndex] is { } featureBinder)
@@ -203,9 +203,10 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferInput uniformBuffer,
         bool phaseOne,
         uint nextLevelArgument,
-        PipelineSync sync)
+        PipelineSync sync,
+        bool policyTarget)
     {
-        FrameResources frame = GraphData.Resources;
+        FrameResources frame = GetRasterFrameResources(GraphData.Resources, policyTarget);
         switch (resource)
         {
             case ClusterTessellationCoreResource.InstanceData:
@@ -463,7 +464,7 @@ public sealed partial class ClusterPipelineSystem
                     ref graph,
                     ref pass,
                     core,
-                    uniformBuffer);
+                    uniformBuffer, policyTarget);
                 continue;
             }
             if (!policyTarget && BindNeutralRasterTargetResource(ref graph, ref pass, resource))
@@ -524,7 +525,7 @@ public sealed partial class ClusterPipelineSystem
                     ref pass,
                     core,
                     uniformBuffer,
-                    dispatchUniformBuffer);
+                    dispatchUniformBuffer, policyTarget);
                 continue;
             }
             if (!policyTarget && BindNeutralRasterTargetResource(ref graph, ref pass, resource))
@@ -608,9 +609,10 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterSoftwareRasterCoreResource resource,
-        GraphBufferInput uniformBuffer)
+        GraphBufferInput uniformBuffer,
+        bool policyTarget)
     {
-        FrameResources frame = GraphData.Resources;
+        FrameResources frame = GetRasterFrameResources(GraphData.Resources, policyTarget);
         switch (resource)
         {
             case ClusterSoftwareRasterCoreResource.InstanceData:
@@ -734,9 +736,10 @@ public sealed partial class ClusterPipelineSystem
         ref PassDefinition pass,
         ClusterHardwareRasterCoreResource resource,
         GraphBufferInput uniformBuffer,
-        GraphBufferInput dispatchUniformBuffer)
+        GraphBufferInput dispatchUniformBuffer,
+        bool policyTarget)
     {
-        FrameResources frame = GraphData.Resources;
+        FrameResources frame = GetRasterFrameResources(GraphData.Resources, policyTarget);
         switch (resource)
         {
             case ClusterHardwareRasterCoreResource.InstanceData:

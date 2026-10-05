@@ -45,7 +45,9 @@ struct ClusterTraversalLevelUniforms
 };
 
 ConstantBuffer<ClusterTraversalLevelUniforms> TraversalLevel;
-RWStructuredBuffer<ClusterTraversalNode> TraversalNodes;
+StructuredBuffer<ClusterTraversalNode> CurrentTraversalNodes;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<ClusterTraversalNode> NextTraversalNodes;
 ByteAddressBuffer CurrentNodeIndirectArgs;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer NextNodeIndirectArgs;
@@ -61,6 +63,8 @@ StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
 
 void PublishCandidateDispatchArgs(uint start, uint count, uint maxCandidates)
 {
+    if (count > maxCandidates - min(start, maxCandidates))
+        RejectClusterWork(2u);
     if (count == 0 || start >= maxCandidates)
         return;
 
@@ -125,7 +129,7 @@ void AppendDeferredTraversalNode(ClusterTraversalNode node, uint maxNodes)
     uint waveCount = WaveMaskBitCount(activeMask);
     if (lane == leader)
     {
-        InterlockedAdd(DeferredWorkCount[0], waveCount, waveBase);
+        waveBase = ReserveClusterWork(DeferredWorkCount, waveCount, maxNodes, 4u);
         uint published = min(waveBase + waveCount, maxNodes);
         uint ignored;
         DeferredWorkDispatchArgs.InterlockedMax(0u, (published + 63u) / 64u, ignored);
@@ -140,19 +144,16 @@ void ProcessTraversalLevel(
     uint groupID,
     uint groupThreadIndex)
 {
-    uint inputStart = min(
-        CurrentNodeIndirectArgs.Load(TraversalLevel.CurrentArgsOffset + 16u),
-        TraversalLevel.MaxNodes);
+    // Each level consumes one node buffer and writes the other from index zero.
+    // Processed levels leave their capacity available to later levels.
     uint inputCount = min(
         CurrentNodeIndirectArgs.Load(TraversalLevel.CurrentArgsOffset + 12u),
-        TraversalLevel.MaxNodes - inputStart);
-    uint inputEnd = inputStart + inputCount;
-    uint parentIndex = inputStart +
-        groupID * CLUSTER_BVH_PARENTS_PER_GROUP +
+        TraversalLevel.MaxNodes);
+    uint parentIndex = groupID * CLUSTER_BVH_PARENTS_PER_GROUP +
         groupThreadIndex / CLUSTER_BVH_FANOUT;
-    bool validParent = parentIndex < inputEnd;
+    bool validParent = parentIndex < inputCount;
     ClusterTraversalNode parent = validParent
-        ? TraversalNodes[parentIndex]
+        ? CurrentTraversalNodes[parentIndex]
         : (ClusterTraversalNode)0;
     ClusterBVHNode parentNode = validParent
         ? GlobalBVH[parent.NodeIndex]
@@ -200,7 +201,8 @@ void ProcessTraversalLevel(
         ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
         ClusterProjectedBounds projectedBounds;
         bool outside = ProjectWorldAabbForView(worldMin, worldMax, view, previousProjection, projectedBounds);
-        if ((view.CullingEnabled != 0u && outside) || !ClusterNodePassesLod(node, transform, view))
+        if ((view.CullingEnabled != 0u && outside) ||
+            !ClusterNodePassesLod(node, transform, LoadClusterGeometryView(Views, view)))
             continue;
         uint state = ClusterHierarchyNodeState(worldMin, worldMax, projectedBounds, viewIndex, view);
         if (state == 2u)
@@ -251,12 +253,9 @@ void ProcessTraversalLevel(
         uint waveCount = WaveMaskBitCount(nodeMask);
         if (lane == leader)
         {
-            NextNodeIndirectArgs.InterlockedAdd(
-                TraversalLevel.NextArgsOffset + 12u,
-                waveCount,
-                waveBase);
-            uint available = TraversalLevel.MaxNodes - inputEnd;
-            uint publishedCount = min(waveBase + waveCount, available);
+            waveBase = ReserveClusterWork(NextNodeIndirectArgs,
+                TraversalLevel.NextArgsOffset + 12u, waveCount, TraversalLevel.MaxNodes, 1u);
+            uint publishedCount = min(waveBase + waveCount, TraversalLevel.MaxNodes);
             uint groupCount =
                 (publishedCount + CLUSTER_BVH_PARENTS_PER_GROUP - 1u) /
                 CLUSTER_BVH_PARENTS_PER_GROUP;
@@ -267,13 +266,13 @@ void ProcessTraversalLevel(
                 ignored);
             NextNodeIndirectArgs.InterlockedMax(TraversalLevel.NextArgsOffset + 4u, (groupCount + 65534u) / 65535u, ignored);
             NextNodeIndirectArgs.Store(TraversalLevel.NextArgsOffset + 8u, 1u);
-            NextNodeIndirectArgs.Store(TraversalLevel.NextArgsOffset + 16u, inputEnd);
+            NextNodeIndirectArgs.Store(TraversalLevel.NextArgsOffset + 16u, 0u);
         }
         waveBase = WaveReadLaneAt(waveBase, leader);
-        uint outputIndex = inputEnd + waveBase + WaveMaskPrefix(nodeMask, lane);
+        uint outputIndex = waveBase + WaveMaskPrefix(nodeMask, lane);
         if (outputIndex < TraversalLevel.MaxNodes)
         {
-            TraversalNodes[outputIndex] = MakeClusterTraversalNode(
+            NextTraversalNodes[outputIndex] = MakeClusterTraversalNode(
                 nodeIndex,
                 instanceID,
                 viewBase,
@@ -294,16 +293,16 @@ void ProcessTraversalLevel(
     }
     bool outputLeaf = activeViews != 0u && !pageFault && node.NodeType != 0u;
     uint clusterCount = outputLeaf ? node.ChildCount >> 12u : 0u;
+    uint firstCluster = node.ChildCount & 0xFFFu;
     uint leafCount = clusterCount * countbits(activeViews);
     uint leafOffset = WavePrefixSum(leafCount);
     uint waveLeafCount = WaveActiveSum(leafCount);
     uint candidateBase = 0u;
     if (WaveIsFirstLane())
-        InterlockedAdd(CandidateCount[0], waveLeafCount, candidateBase);
+        candidateBase = ReserveClusterWork(CandidateCount, waveLeafCount, TraversalLevel.MaxNodes, 2u);
     candidateBase = WaveReadLaneFirst(candidateBase);
     if (WaveIsFirstLane())
         PublishCandidateDispatchArgs(candidateBase, waveLeafCount, TraversalLevel.MaxNodes);
-    uint firstCluster = node.ChildCount & 0xFFFu;
     uint output = candidateBase + leafOffset;
     uint leafViews = outputLeaf ? activeViews : 0u;
     while (leafViews != 0u)
@@ -320,3 +319,5 @@ void ProcessTraversalLevel(
         }
     }
 }
+
+#include "cluster_work_status.slang"

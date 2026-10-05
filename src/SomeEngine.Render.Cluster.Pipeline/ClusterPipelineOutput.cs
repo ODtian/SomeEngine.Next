@@ -14,6 +14,9 @@ public readonly record struct ClusterPipelineOutputDescription
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
         ArgumentOutOfRangeException.ThrowIfZero(viewCount);
+        // DrawRequest has a 20-bit view identity, with one bit selecting target views.
+        if (viewCount > ClusterRenderContext.MaximumViewCount)
+            throw new ArgumentOutOfRangeException(nameof(viewCount), "Primary view identities exceed the Cluster draw ABI.");
         if (checked((ulong)width * (ulong)height * viewCount) > uint.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(viewCount),
                 "The combined view pixels must fit the 32-bit shading counters and offsets.");
@@ -74,7 +77,13 @@ public readonly record struct ClusterRenderContext(
     uint OcclusionTexelSize,
     bool HardwareRasterOnly = false)
 {
+    public const uint MaximumViewCount = 1u << 19;
     public const uint TargetViewSizeInBytes = 80;
+    public const int ViewSizeInBytes = 496;
+    public GraphResourceBinder? BindTargetPageBounds { get; init; }
+    public uint ViewDetailCount { get; init; } = 1u;
+    /// <summary>Maximum number of raster windows across all details of one source view.</summary>
+    public uint MaximumRasterWindowsPerSourceView { get; init; }
 
     public bool IsValid =>
         PolicyId != 0u &&
@@ -84,7 +93,7 @@ public readonly record struct ClusterRenderContext(
         InvocationCountBinder is not null &&
         InvocationDispatchArguments != default &&
         PolicyRasterWorkCounter != default &&
-        MaximumInvocationCount != 0 &&
+        MaximumInvocationCount is > 0 and <= MaximumViewCount &&
         RasterWidth != 0 &&
         RasterHeight != 0 &&
         OcclusionMipCount != 0u &&
@@ -133,6 +142,8 @@ public sealed class ClusterGeometryCapabilities
     public uint PackedViewStride => ClusterViewUniforms.SizeInBytes;
     public GraphBufferId InstanceData { get; }
     public GraphBufferId InstanceWorldBounds { get; internal init; }
+    /// <summary>Whole-frame ClusterWorkOverflow flags. Nonzero forbids publishing cached depth as complete.</summary>
+    public GraphBufferId WorkStatus { get; internal init; }
     public GraphPassId BoundsReady { get; internal init; }
     public GraphBufferId InstanceProperties { get; }
     public BufferRange InstancePropertiesRange { get; }

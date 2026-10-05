@@ -27,7 +27,7 @@ public sealed record ClusterPipelineOptions
     public uint MaxCandidates { get; init; } = 1_048_576;
 
 
-    public float LodThreshold { get; init; } = 1.0f;
+    public float LodThreshold { get; init; } = 0.25f;
 
     public uint MaxTessellationFactor { get; init; } = 256;
 

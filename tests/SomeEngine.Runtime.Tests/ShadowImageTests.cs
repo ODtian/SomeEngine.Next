@@ -110,6 +110,140 @@ public sealed class ShadowImageTests(RenderingContentFixture content)
         SceneImages.AssertEqual(complete!, masked!, 2);
     }
 
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task CoarseDirectionalShadowsFollowTheCasterInTheFirstChangedFrame(string backend)
+    {
+        SceneImage? before = null, moved = null, expected = null, unshadowed = null;
+        var settings = new VirtualShadowMapSettings
+        {
+            VirtualResolution = 4096, AtlasSize = 512, MaxShadowLights = 1,
+            DirectionalClipmapLevels = 1, DirectionalFirstClipmapLevel = 4,
+            DirectionalFirstCoarseClipmapLevel = 4, DirectionalLastCoarseClipmapLevel = 4,
+            DirectionalReceiverMask = false,
+        };
+        void Configure(SceneEdit edit)
+        {
+            edit.SetDirectionalLight(edit.PointLights.Single(), new(Vector3.Normalize(new(.4f, 0, 1)), Vector3.One, 3));
+            // The scene authors the receiver first and the caster second.
+            edit.SetEntityTransform(edit.MeshEntities[1],
+                new(new Vector3(-.8f, 0, 6), Quaternion.Identity, .6f));
+        }
+        void Move(SceneEdit edit) => edit.SetEntityTransform(
+            edit.MeshEntities[1],
+            new(new Vector3(.8f, 0, 6), Quaternion.Identity, .6f));
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, Configure),
+            new(15, edit => edit.CaptureImage(image => before = image)),
+            new(16, edit => { Move(edit); edit.CaptureImage(image => moved = image); }),
+        ]) { ShadowSettings = settings }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, edit => { Configure(edit); Move(edit); }),
+            new(23, edit => edit.CaptureImage(image => expected = image)),
+        ]) { ShadowSettings = settings }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, edit => { Configure(edit); Move(edit); }),
+            new(23, edit => edit.CaptureImage(image => unshadowed = image)),
+        ]) { ShadowSettings = settings }, "--no-taa", "--no-vsm");
+        Assert.NotEqual(before!.Pixels.ToArray(), moved!.Pixels.ToArray());
+        Assert.NotEqual(unshadowed!.Pixels.ToArray(), expected!.Pixels.ToArray());
+        // Whole output, including both the old and new shadow footprints; no edge mask.
+        SceneImages.AssertEqual(expected!, moved!, 2);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task MovingTheFrontCasterRecoversTheRearCasterShadowInTheSameFrame(string backend)
+    {
+        SceneImage? recovered = null, expected = null, unshadowed = null;
+        Entity blocker = default;
+        void Configure(SceneEdit edit)
+        {
+            blocker = edit.MeshEntities[1];
+            edit.SetDirectionalLight(edit.PointLights.Single(), new(Vector3.Normalize(new(.4f, 0, 1)), Vector3.One, 3));
+            edit.SetEntityTransform(blocker, new(new Vector3(0, 0, 6), Quaternion.Identity, 1.2f));
+            edit.AddEntity(blocker, new(new Vector3(.4f, 0, 7), Quaternion.Identity, .6f));
+        }
+        void MoveBlocker(SceneEdit edit) => edit.SetEntityTransform(blocker,
+            new(new Vector3(100, 0, 6), Quaternion.Identity, 1.2f));
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, Configure),
+            new(16, edit => { MoveBlocker(edit); edit.CaptureImage(image => recovered = image); }),
+        ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, edit => { Configure(edit); MoveBlocker(edit); }),
+            new(23, edit => edit.CaptureImage(image => expected = image)),
+        ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, edit => { Configure(edit); MoveBlocker(edit); }),
+            new(23, edit => edit.CaptureImage(image => unshadowed = image)),
+        ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--no-vsm");
+        Assert.NotEqual(unshadowed!.Pixels.ToArray(), expected!.Pixels.ToArray());
+        SceneImages.AssertEqual(expected!, recovered!, 2);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task CanceledCasterFrameResumesWithTheSameShadowsAsFreshArrival(string backend)
+    {
+        SceneImage? resumed = null, expected = null;
+        void Move(SceneEdit edit) => edit.SetEntityTransform(edit.MeshEntities[1],
+            new(new Vector3(-1, 0, 6), Quaternion.Identity, .6f));
+        var script = new SceneScript(content.Shadows, 24,
+        [
+            new(16, edit => { Move(edit); edit.CancelFrame(); }),
+            new(17, edit => edit.CaptureImage(image => resumed = image)),
+        ]) { ShadowSettings = CreateShadowSettings() };
+        ApplicationResult result = await Application.RunAsync(
+            ["--hardware-adapter", "--graphics-backend", backend, "--no-taa", "--vsm"], script);
+        Assert.True(result.Succeeded, result.Error?.ToString());
+        Assert.Equal(23, result.CompletedFrames);
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, Move),
+            new(17, edit => edit.CaptureImage(image => expected = image)),
+        ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
+        SceneImages.AssertEqual(expected!, resumed!, 2);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver(string backend)
+    {
+        SceneImage? shadowed = null, withoutCaster = null, unshadowed = null, unshadowedWithoutCaster = null;
+        await SceneImages.RunAsync(backend, new SceneScript(content.OffCameraShadows, 24,
+            [new(23, edit => edit.CaptureImage(image => shadowed = image))])
+            { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.OffCameraShadows, 24,
+        [
+            new(0, edit => edit.DeleteEntity(edit.MeshEntities[1])),
+            new(23, edit => edit.CaptureImage(image => withoutCaster = image)),
+        ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.OffCameraShadows, 24,
+            [new(23, edit => edit.CaptureImage(image => unshadowed = image))]), "--no-taa", "--no-vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.OffCameraShadows, 24,
+        [
+            new(0, edit => edit.DeleteEntity(edit.MeshEntities[1])),
+            new(23, edit => edit.CaptureImage(image => unshadowedWithoutCaster = image)),
+        ]), "--no-taa", "--no-vsm");
+        // Removing the separate streamed mesh cannot change primary geometry output.
+        SceneImages.AssertEqual(unshadowedWithoutCaster!, unshadowed!);
+        // But it must change the shadow on the receiver, including its central interior.
+        Assert.NotEqual(withoutCaster!.Pixels.ToArray(), shadowed!.Pixels.ToArray());
+        int center = (shadowed.Height / 2 * shadowed.Width + shadowed.Width / 2) * 4;
+        Assert.True(shadowed.Pixels.Span[center] < withoutCaster.Pixels.Span[center]);
+    }
+
     private static VirtualShadowMapSettings CreateShadowSettings() => new()
     {
         VirtualResolution = 4096, AtlasSize = 2048, MaxShadowLights = 1,

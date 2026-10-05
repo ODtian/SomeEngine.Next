@@ -22,6 +22,14 @@ public sealed class ClusterPipelineOutputTests
     }
 
     [Fact]
+    public void View_counts_that_cannot_retain_distinct_geometry_identities_are_rejected()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ClusterPipelineOutputDescription(1, 1, 524_289));
+        Assert.Equal(524_288u, new ClusterPipelineOutputDescription(1, 1, 524_288).ViewCount);
+    }
+
+    [Fact]
     public void Geometry_outputs_are_explicit_and_have_no_presentation_target()
     {
         var outputs = new ClusterPipelineOutputs(

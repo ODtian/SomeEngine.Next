@@ -5,7 +5,7 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CopyPageHiZ), nameof(CompletePageDepth))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 {
     public partial ShaderRef? ResetReceiverMasks { get; set; }
@@ -21,6 +21,8 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
     public partial ShaderRef? InitializePageHiZ { get; set; }
     public partial ShaderRef? ReducePageHiZ { get; set; }
     public partial ShaderRef? DynamicResolution { get; set; }
+    public partial ShaderRef? CopyPageHiZ { get; set; }
+    public partial ShaderRef? CompletePageDepth { get; set; }
 
     protected override void ValidateContent() => Validate("shader settings");
 
@@ -81,6 +83,10 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
             InitializePageHiZ = Resolve(copy.InitializePageHiZ),
             ReducePageHiZShader = shaders[copy.ReducePageHiZ!.Asset.Value],
             ReducePageHiZ = Resolve(copy.ReducePageHiZ),
+            CopyPageHiZShader = shaders[copy.CopyPageHiZ!.Asset.Value],
+            CopyPageHiZ = Resolve(copy.CopyPageHiZ),
+            CompletePageDepthShader = shaders[copy.CompletePageDepth!.Asset.Value],
+            CompletePageDepth = Resolve(copy.CompletePageDepth),
             DynamicResolutionShader = shaders[copy.DynamicResolution!.Asset.Value],
             DynamicResolution = Resolve(copy.DynamicResolution),
         };

@@ -677,16 +677,17 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool policyTarget)
     {
         PassDefinition pass = graph.GetPass(passId);
+        FrameResources frame = GetRasterFrameResources(GraphData.Resources, policyTarget);
         _ = pass.Bind(
             graph.CreateTextureSrv(
-                GraphData.Resources.PreviousHiZ,
+                frame.PreviousHiZ,
                 format: Format.R32Float,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Cluster hierarchy history HiZ"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateBufferUav(
-                GraphData.Resources.Phase2CandidateClusters,
+                frame.Phase2CandidateClusters,
                 structureStride: CandidateStride,
                 label: "Cluster deferred hierarchy work"),
             PipelineSync.ComputeShading,
@@ -696,13 +697,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(
             graph.CreateBufferUav(
-                GraphData.Resources.Phase2CandidateCount,
+                frame.Phase2CandidateCount,
                 structureStride: sizeof(uint),
                 label: "Cluster deferred hierarchy count"),
             PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite,
             WriteCoverage.Complete);
-        _ = pass.Bind(graph.CreateBufferUav(GraphData.Resources.Phase2CandidateArgs,
+        _ = pass.Bind(graph.CreateBufferUav(frame.Phase2CandidateArgs,
                 label: "Cluster deferred hierarchy dispatch arguments"),
             PipelineSync.ComputeShading, GraphAccessMode.ReadWrite, WriteCoverage.Complete);
         BindPolicyClusterViews(
@@ -715,12 +716,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         else
             BindNeutralTargetPolicyFilterResources(ref graph, ref pass);
         BindSceneSeed(ref graph, ref pass);
+        BindWorkStatus(ref graph, ref pass);
     }
 
     private void BindTargetPolicyResources(
         ref RenderGraphEdit graph,
         GraphPassId passId,
-        bool policyTarget)
+        bool policyTarget, bool workStatusFirst = false)
     {
         PassDefinition pass = graph.GetPass(passId);
         BindPolicyClusterViews(
@@ -728,6 +730,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ref pass,
             PipelineSync.ComputeShading,
             policyTarget);
+        if (workStatusFirst) BindWorkStatus(ref graph, ref pass);
         if (policyTarget)
             _renderContext.FilterResourcesBinder(ref graph, ref pass, PipelineSync.ComputeShading);
         else

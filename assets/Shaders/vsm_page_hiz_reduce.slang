@@ -11,9 +11,9 @@ void ReduceVirtualShadowPageHiZ(
     uint sourceSize = max(max(PageHiZ.PageSize / 2u, 1u) >> PageHiZ.SourceMip, 1u);
     uint2 source = min(pixel * 2u, sourceSize - 1u);
     uint2 next = min(source + 1u, sourceSize - 1u);
-    float d0 = VirtualShadowPageHiZSource.Load(int4(source, physicalPage, 0));
-    float d1 = VirtualShadowPageHiZSource.Load(int4(uint2(next.x, source.y), physicalPage, 0));
-    float d2 = VirtualShadowPageHiZSource.Load(int4(uint2(source.x, next.y), physicalPage, 0));
-    float d3 = VirtualShadowPageHiZSource.Load(int4(next, physicalPage, 0));
+    float d0 = VirtualShadowPageHiZSource.Load(int4(CalculateDepthPageHiZPixel(physicalPage, source, sourceSize, PageHiZ.PhysicalPagesPerRow), 0));
+    float d1 = VirtualShadowPageHiZSource.Load(int4(CalculateDepthPageHiZPixel(physicalPage, uint2(next.x, source.y), sourceSize, PageHiZ.PhysicalPagesPerRow), 0));
+    float d2 = VirtualShadowPageHiZSource.Load(int4(CalculateDepthPageHiZPixel(physicalPage, uint2(source.x, next.y), sourceSize, PageHiZ.PhysicalPagesPerRow), 0));
+    float d3 = VirtualShadowPageHiZSource.Load(int4(CalculateDepthPageHiZPixel(physicalPage, next, sourceSize, PageHiZ.PhysicalPagesPerRow), 0));
     StoreVirtualShadowPageHiZ(max(max(d0, d1), max(d2, d3)), physicalPage, pixel, groupThreadId.xy);
 }

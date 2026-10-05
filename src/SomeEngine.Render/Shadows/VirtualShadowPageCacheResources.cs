@@ -8,7 +8,7 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
 {
     internal const uint UnownedPage = uint.MaxValue;
     internal const int PageMetadataStride = 16;
-    internal const uint EvictionBucketCount = 8;
+    internal const uint EvictionBucketCount = VirtualShadowMap.EvictionBucketCount;
 
     private readonly IGraphicsBackend _backend;
     private readonly Buffer _freePages;

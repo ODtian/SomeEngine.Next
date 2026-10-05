@@ -29,6 +29,21 @@ public sealed class SceneAdapterRenderingTests(SceneContentFixture content)
 
     [Fact]
     [Trait("Category", "Hardware")]
+    public async Task InsufficientGeometryWorkMemoryFailsInsteadOfPresentingAnIncompleteScene()
+    {
+        SceneImage? incomplete = null;
+        var script = new SceneScript(content.DirectoryPath, 4,
+            [new(0, edit => edit.CaptureImage(image => incomplete = image))]) { ClusterWorkCapacity = 1 };
+        var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
+        Assert.Equal(ApplicationFailure.Rendering, result.Failure);
+        var overflow = Assert.IsType<SomeEngine.Render.Cluster.Pipeline.ClusterWorkOverflowException>(result.Error!.GetBaseException());
+        Assert.Equal(1u, overflow.Capacity);
+        Assert.NotEqual(SomeEngine.Render.Cluster.Pipeline.ClusterWorkOverflow.None, overflow.Work);
+        Assert.Null(incomplete);
+    }
+
+    [Fact]
+    [Trait("Category", "Hardware")]
     public async Task HardwareFrameLoopDeliversRequestedImages()
     {
         SceneImage? image = null;

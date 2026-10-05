@@ -75,6 +75,30 @@ public static class BehaviorScenes
         await SceneContent.SetOutputSizeAsync(destination, 128, 128);
     }
 
+    public static async Task CreateOffCameraShadowCasterAsync(string source, string destination)
+    {
+        CopyContent(source, destination);
+        var project = new AssetProject(destination, []);
+        await using var loader = new AssetLoader(project.CreateStorage());
+        using var receiverMesh = await MeshAsset.OpenAsync(loader,
+            new(project.Resolve("assets/Meshes/receiver.mesh.asset")!.Value));
+        using var material = await StandardMaterialAsset.OpenAsync(loader,
+            new(project.Manifest.Assets.Values.Single(entry => entry.Name == "Standard" && entry.AssetType == MaterialAsset.FileType).AssetGuid));
+        var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(5);
+        using MeshAsset casterMesh = ClusterBuilder.ProcessRaw(vertices, attributes, indices,
+            [new(material.Id)], "off-camera caster");
+        project.RegisterAsset(await casterMesh.SaveAsync(Path.Combine(destination, "assets/Meshes/caster.mesh.asset")));
+        await WriteSceneAsync(project, world =>
+        {
+            Entity receiver = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 8), Quaternion.Identity) { Stretch = new(4, 4, .1f) } });
+            world.Add(receiver, new MeshSource { Mesh = receiverMesh.Reference });
+            // Outside the camera frustum, but on the light-to-receiver-center segment.
+            Entity caster = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(3.4f, 1.7f, 3.75f), Quaternion.Identity, .3f) });
+            world.Add(caster, new MeshSource { Mesh = casterMesh.Reference });
+            world.CreateEntity(new PointLight(new(4, 2, 3), 20, Vector3.One, 30));
+        });
+    }
+
     private static async Task SetGreenShaderAsync(string directory, string engineRoot, string name, string source)
     {
         string shaderDirectory = Path.Combine(directory, "assets/Shaders");
