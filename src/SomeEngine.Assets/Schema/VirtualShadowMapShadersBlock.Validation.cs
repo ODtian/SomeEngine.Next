@@ -22,7 +22,6 @@ public sealed partial class VirtualShadowMapShadersBlock
             InitializePageHiZ,
             ReducePageHiZ,
             DynamicResolution,
-            CopyPageHiZ,
             CompletePageDepth,
         ];
         string[] names =
@@ -40,7 +39,6 @@ public sealed partial class VirtualShadowMapShadersBlock
             nameof(InitializePageHiZ),
             nameof(ReducePageHiZ),
             nameof(DynamicResolution),
-            nameof(CopyPageHiZ),
             nameof(CompletePageDepth),
         ];
         for (int index = 0; index < entries.Length; index++)

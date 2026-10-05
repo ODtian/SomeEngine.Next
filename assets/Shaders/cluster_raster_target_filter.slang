@@ -8,6 +8,7 @@
 
 #include "cluster_raster_target_resources.slang"
 #ifndef CLUSTER_TARGET_BOUNDS_ONLY
+StructuredBuffer<uint4> RasterTargetPageMetadata;
 Texture2DArray<float> RasterTargetCurrentHiZ;
 Texture2DArray<float> RasterTargetPreviousHiZ;
 #endif
@@ -335,6 +336,10 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
 
                 uint physicalPage;
                 if (!ClusterTargetEntryValid(target, localPage, physicalPage))
+                    return false;
+                // Only allocation of the same world page from completed whole depth
+                // carries prior history. Newly assigned tiles may contain unrelated HiZ.
+                if (usePrevious && (RasterTargetPageMetadata[physicalPage].w & 2u) == 0u)
                     return false;
 
                 uint2 pageOrigin = localPage * target.PageSize;

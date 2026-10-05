@@ -1,0 +1,40 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.Generators -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Generators\bin\Release\netstandard2.0\SomeEngine.Generators.dll
+  SomeEngine.Job.Contracts -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Job.Contracts\bin\Release\net10.0\SomeEngine.Job.Contracts.dll
+  SomeEngine.Diagnostics -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Diagnostics\bin\Release\net10.0\SomeEngine.Diagnostics.dll
+  SomeEngine.Serialization -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Serialization\bin\Release\net10.0\SomeEngine.Serialization.dll
+  SomeEngine.ECS.SourceGen -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.Job -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Job\bin\Release\net10.0\SomeEngine.Job.dll
+  SomeEngine.Graphics -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Graphics\bin\Release\net10.0\SomeEngine.Graphics.dll
+  SomeEngine.ECS -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.ECS\bin\Release\net10.0\SomeEngine.ECS.dll
+  SomeEngine.Graphics.Validation -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Graphics.Validation\bin\Release\net10.0\SomeEngine.Graphics.Validation.dll
+  SomeEngine.Resources -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Resources\bin\Release\net10.0\SomeEngine.Resources.dll
+  SomeEngine.ECS.Serialization -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.ECS.Serialization\bin\Release\net10.0\SomeEngine.ECS.Serialization.dll
+  SomeEngine.ECS.Systems -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.ECS.Systems\bin\Release\net10.0\SomeEngine.ECS.Systems.dll
+  Game -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\templates\DefaultProject\Game\bin\Release\net10.0\Game.dll
+  SomeEngine.Graphics.Vulkan -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Graphics.Vulkan\bin\Release\net10.0\SomeEngine.Graphics.Vulkan.dll
+  SomeEngine.Core -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Core\bin\Release\net10.0\SomeEngine.Core.dll
+  SomeEngine.Graphics.Direct3D12 -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Graphics.Direct3D12\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.dll
+  SomeEngine.Assets -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Assets\bin\Release\net10.0\SomeEngine.Assets.dll
+  Game.Assets -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\templates\DefaultProject\Game.Assets\bin\Release\net10.0\Game.Assets.dll
+  ImportedScenes.Materials -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\samples\ImportedScenes\Materials\bin\Release\net10.0\ImportedScenes.Materials.dll
+  SomeEngine.RenderGraph -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.RenderGraph\bin\Release\net10.0\SomeEngine.RenderGraph.dll
+  SomeEngine.RenderGraph.Diagnostics -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.RenderGraph.Diagnostics\bin\Release\net10.0\SomeEngine.RenderGraph.Diagnostics.dll
+  SomeEngine.Render -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Render\bin\Release\net10.0\SomeEngine.Render.dll
+  Alimer.Bindings.MeshOptimizer -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\external\Alimer.Bindings\artifacts\bin\Alimer.Bindings.MeshOptimizer\release_net10.0\Alimer.Bindings.MeshOptimizer.dll
+  SomeEngine.Render.Cluster -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Render.Cluster\bin\Release\net10.0\SomeEngine.Render.Cluster.dll
+  SomeEngine.Assets.Importers -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Assets.Importers\bin\Release\net10.0\SomeEngine.Assets.Importers.dll
+  Game.Importing -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\templates\DefaultProject\Game.Importing\bin\Release\net10.0\Game.Importing.dll
+  Game.Build -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\templates\DefaultProject\Game.Build\bin\Release\net10.0\Game.Build.dll
+  SomeEngine.Render.Cluster.Pipeline -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Render.Cluster.Pipeline\bin\Release\net10.0\SomeEngine.Render.Cluster.Pipeline.dll
+  SomeEngine.SceneContent -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tools\SomeEngine.SceneContent\bin\Release\net10.0\SomeEngine.SceneContent.dll
+  SomeEngine.Render.Features -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Render.Features\bin\Release\net10.0\SomeEngine.Render.Features.dll
+  SomeEngine.Runtime -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Runtime\bin\Release\net10.0\SomeEngine.Runtime.dll
+  SomeEngine.Runtime.Tests -> F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:32.97

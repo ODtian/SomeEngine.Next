@@ -30,8 +30,6 @@ public sealed class VirtualShadowMapShaders
     public EntryPointReflection InitializePageHiZ { get; init; }
     public Shader? ReducePageHiZShader { get; init; }
     public EntryPointReflection ReducePageHiZ { get; init; }
-    public Shader? CopyPageHiZShader { get; init; }
-    public EntryPointReflection CopyPageHiZ { get; init; }
     public Shader? CompletePageDepthShader { get; init; }
     public EntryPointReflection CompletePageDepth { get; init; }
     public Shader? DynamicResolutionShader { get; init; }

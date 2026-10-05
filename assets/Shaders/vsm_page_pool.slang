@@ -1,3 +1,4 @@
+#define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 #include "resource_effects.slang"
 #include "wave_aggregation.slang"
@@ -95,7 +96,7 @@ void PublishOwnedPage(uint atlasPage, uint owner)
     uint4 entry = ShadowPageTable[owner];
     int2 worldPage = VirtualShadowWorldPage(view, mipLevel, localPage);
     if (entry.x != PackVirtualShadowPage(atlasPage + 1u) ||
-        entry.w != view.CacheGeneration ||
+        (entry.w & ~VSM_PAGE_RECEIVER_DEPTH) != view.CacheGeneration ||
         !IsVirtualShadowPageTag(entry, worldPage))
     {
         return;

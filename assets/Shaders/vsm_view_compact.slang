@@ -1,3 +1,4 @@
+#define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 #include "vsm_raster_work_common.slang"
 #include "cluster_view.slang"
