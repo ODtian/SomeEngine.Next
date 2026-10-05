@@ -66,6 +66,7 @@ public sealed class EcsFuzzTests
             observed.OrderBy(static kind => kind));
     }
 
+    [Trait("Category", "LongFuzz")]
     [ConfiguredFact("SOMEENGINE_ECS_FUZZ_SEED", "SOMEENGINE_ECS_FUZZ_STEPS")]
     public void EnvironmentCampaign_ReplaysRequestedSeedWhenConfigured()
     {
@@ -124,6 +125,7 @@ public sealed class EcsFuzzTests
         Assert.Equal(materialized, streaming);
     }
 
+    [Trait("Category", "LongFuzz")]
     [ConfiguredFact("SOMEENGINE_ECS_FUZZ_TRACE")]
     public void EnvironmentTrace_ReplaysExactMinimizedArtifactWhenConfigured()
     {

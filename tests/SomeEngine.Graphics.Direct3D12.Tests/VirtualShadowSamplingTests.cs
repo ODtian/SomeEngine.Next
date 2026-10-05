@@ -5,7 +5,8 @@ using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class VirtualShadowSamplingTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(2, 0, 0)]
@@ -59,7 +60,7 @@ public sealed class VirtualShadowSamplingTests
             .Select(index => BitConverter.SingleToUInt32Bits(planeAxis == 2 ? .5f :
                 .3f + .1f * (planeAxis == 0 ? index % 5 : index / 5))).ToArray();
         if (depthEdge != 0) depths[13] = BitConverter.SingleToUInt32Bits(depthEdge == 1 ? 1.0f : .95f);
-        uint[][] result = ExecuteSource("""
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "vsm_sampling.slang"
             #include "vsm_receiver_pixel.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
@@ -123,7 +124,7 @@ public sealed class VirtualShadowSamplingTests
         }
         // Unstretched pixels cover 1.5 texels in their requested clipmap.
         float step = 1.5f * (1 << pixelLevel) / 64;
-        uint[][] result = ExecuteSource("""
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -176,7 +177,7 @@ public sealed class VirtualShadowSamplingTests
                     y * 512 + mip * 128, 128);
         }
         float step = 1.5f * (1 << pixelMip) / 512;
-        uint[][] result = ExecuteSource("""
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -226,7 +227,7 @@ public sealed class VirtualShadowSamplingTests
             for (int y = 0; y < 128; y++)
                 Array.Fill(pixels, BitConverter.SingleToUInt32Bits(1.0f - occluderDepth), (page / 4 * 128 + y) * 512, 128);
         uint[] position = [BitConverter.SingleToUInt32Bits(pixelX), BitConverter.SingleToUInt32Bits(pixelY)];
-        uint[][] result = ExecuteSource("""
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -264,7 +265,7 @@ public sealed class VirtualShadowSamplingTests
         uint[] pages = new uint[(lastMipOffset + 1) * 4];
         pages[lastMipOffset * 4] = 4;
         pages[lastMipOffset * 4 + 3] = 7;
-        uint[][] result = ExecuteSource("""
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -312,7 +313,7 @@ public sealed class VirtualShadowSamplingTests
             for (int y = 0; y < 128; y++)
                 Array.Fill(pixels, BitConverter.SingleToUInt32Bits(level == firstResident ? .75f : .25f), y * 512 + level * 128, 128);
         }
-        uint[][] result = ExecuteSource("""
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
@@ -343,7 +344,7 @@ public sealed class VirtualShadowSamplingTests
         view[34] = 5;
         view[36] = selectedLevel ? 1u : 0u;
         const int pages = 341;
-        uint[][] result = Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
+        uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
             [([1, pages, 9, 0], ResourceBindingType.ConstantBuffer, 0),
              (view, ResourceBindingType.BufferSrv, 176), (new uint[pages], ResourceBindingType.BufferUav, 4),
              (new uint[pages], ResourceBindingType.BufferUav, 4), (new uint[pages], ResourceBindingType.BufferUav, 4),

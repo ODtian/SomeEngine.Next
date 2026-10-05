@@ -24,8 +24,7 @@ public sealed class RepeatedFrameTests
         {
             RenderGraphFrame frame = graph.BeginFrame();
             completions.AsSpan().Clear();
-            if (frame.Execute(completions) != 0)
-                throw new InvalidOperationException("An empty graph unexpectedly submitted GPU work.");
+            Assert.Equal(0, frame.Execute(completions));
             frame.Dispose();
         }
 
@@ -56,33 +55,9 @@ public sealed class RepeatedFrameTests
             GraphBufferId destinationId = edit.RegisterExternalBuffer(
                 destination,
                 [Endpoint(destination, ResourceContentState.Undefined)]);
-            CopyState state = new(sourceId, destinationId);
-            _ = edit.AddCopyPass<CopyState, byte>(
-                "stable registered copy",
-                PassQueueSelection.Exact(support.GraphicsQueue),
-                state,
-                default,
-                static (ref PassDefinition access, ref CopyState data) =>
-                {
-                    _ = access.Read(
-                        data.Source,
-                        new BufferRange(0, CopySize),
-                        PipelineSync.Copy,
-                        ResourceAccess.CopySource);
-                    _ = access.Write(
-                        data.Destination,
-                        new BufferRange(0, CopySize),
-                        PipelineSync.Copy,
-                        ResourceAccess.CopyDestination,
-                        WriteCoverage.Complete);
-                },
-                static (ref CopyPassCommandScope commands, in CopyState data, in byte _) =>
-                    commands.CopyBuffer(new BufferCopy(
-                        commands.GetBuffer(data.Source),
-                        0,
-                        commands.GetBuffer(data.Destination),
-                        0,
-                        CopySize)));
+            edit.DeclareBufferCopy("registered copy", PassQueueSelection.Exact(support.GraphicsQueue),
+                new GraphBufferSlice(sourceId, new BufferRange(0, CopySize)),
+                new GraphBufferSlice(destinationId, new BufferRange(0, CopySize)));
             edit.Commit();
         }
 
@@ -96,8 +71,7 @@ public sealed class RepeatedFrameTests
         {
             completions.AsSpan().Clear();
             RenderGraphFrame frame = graph.BeginFrame();
-            if (frame.Execute(completions) != 1)
-                throw new InvalidOperationException("The stable copy graph did not submit one Queue.");
+            Assert.Equal(1, frame.Execute(completions));
             frame.Dispose();
             support.Wait(completions);
         }
@@ -105,7 +79,7 @@ public sealed class RepeatedFrameTests
     }
 
     [Fact]
-    public void CommittedEditInvalidatesStableTransientExecution()
+    public void CommittedEditInvalidatesStableTransientExecution_DoesNotThrow()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using var graph = new RenderGraph(
@@ -148,7 +122,7 @@ public sealed class RepeatedFrameTests
     }
 
     [Fact]
-    public void StableTransientTextureExecutesAfterPlanReuse()
+    public void StableTransientTextureExecutesAfterPlanReuse_DoesNotThrow()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using var graph = new RenderGraph(
@@ -269,7 +243,7 @@ public sealed class RepeatedFrameTests
     }
 
     [Fact]
-    public void StableRasterAttachmentDescriptionIsReusable()
+    public void StableRasterAttachmentDescriptionIsReusable_DoesNotThrow()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using var graph = new RenderGraph(

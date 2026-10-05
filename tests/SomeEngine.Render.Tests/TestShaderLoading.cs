@@ -6,14 +6,10 @@ namespace SomeEngine.Render.Tests;
 
 internal static class TestShaderLoading
 {
-    private static readonly Lazy<IGlobalSession> s_slang = new(CreateGlobalSession);
-
-    internal static IGlobalSession Slang => s_slang.Value;
-
     internal static SessionDesc CreateSessionDescription(
+        IGlobalSession slang,
         SlangCompileTarget target = SlangCompileTarget.Dxil)
     {
-        IGlobalSession slang = Slang;
         return new SessionDesc
         {
             Targets =
@@ -39,13 +35,16 @@ internal static class TestShaderLoading
     internal static ValueTask<Shader> CreateAsync(
         ShaderAsset asset,
         SlangCompileTarget target = SlangCompileTarget.Dxil,
-        CancellationToken cancellationToken = default) =>
-        asset.GetBlock<ShaderBlock>().CreateAsync(
+        CancellationToken cancellationToken = default)
+    {
+        IGlobalSession slang = CreateGlobalSession();
+        return asset.GetBlock<ShaderBlock>().CreateAsync(
             asset.GetBlock<ShaderSourceBlock>(),
-            Slang,
-            CreateSessionDescription(target),
+            slang,
+            CreateSessionDescription(slang, target),
             asset.Name,
             cancellationToken: cancellationToken);
+    }
 
     private static IGlobalSession CreateGlobalSession()
     {

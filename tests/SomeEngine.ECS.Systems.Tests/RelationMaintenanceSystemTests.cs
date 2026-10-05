@@ -5,14 +5,14 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class RelationMaintenanceSystemTests
+public sealed class RelationMaintenanceSystemTests : JobTest
 {
     [Fact]
     public void RelaxedReaderSeesLastApplied_AndFreshReaderDependsOnMaintenanceHandle()
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity source = world.CreateEntity();
             Entity oldTarget = world.CreateEntity();
             Entity newTarget = world.CreateEntity();
@@ -37,7 +37,7 @@ public sealed class RelationMaintenanceSystemTests
                 Assert.True(endpointsWritten.Wait(TimeSpan.FromSeconds(2)));
 
                 var relaxedCapture = new EdgeCapture<DirectedA>();
-                JobHandle relaxed = JobSystem.Schedule(
+                JobHandle relaxed = Jobs.Schedule(
                     new CaptureIncomingJob<DirectedA>(world, oldTarget, relaxedCapture));
                 relaxed.Complete();
 
@@ -54,7 +54,7 @@ public sealed class RelationMaintenanceSystemTests
 
                 JobHandle maintenance = RelationMaintenanceSystem<DirectedA>.Schedule(world);
                 var freshCapture = new EdgeCapture<DirectedA>();
-                JobHandle fresh = JobSystem.Schedule(
+                JobHandle fresh = Jobs.Schedule(
                     new CaptureIncomingJob<DirectedA>(world, newTarget, freshCapture),
                     maintenance);
 
@@ -87,13 +87,13 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             using var readerStarted = new ManualResetEventSlim();
             using var releaseReader = new ManualResetEventSlim();
             JobHandle reader = default;
             try
             {
-                reader = JobSystem.Schedule(
+                reader = Jobs.Schedule(
                     new BlockingJob(readerStarted, releaseReader));
                 Assert.True(readerStarted.Wait(TimeSpan.FromSeconds(2)));
 
@@ -117,8 +117,8 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var worldA = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
-            var worldB = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var worldA = CreateJobWorld();
+            var worldB = CreateJobWorld();
             using var blockerStarted = new ManualResetEventSlim();
             using var releaseBlocker = new ManualResetEventSlim();
             JobHandle blocker = default;
@@ -153,18 +153,18 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity source = world.CreateEntity();
             Entity oldTarget = world.CreateEntity();
             Entity newTarget = world.CreateEntity();
             RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, new DirectedA());
             var mutation = new RetargetJob<DirectedA>(world, edge, source, newTarget);
 
-            JobHandle undeclared = JobSystem.Schedule(mutation);
+            JobHandle undeclared = Jobs.Schedule(mutation);
             Assert.Throws<JobResourceSafetyException>(() => undeclared.Complete());
             Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
 
-            JobHandle missingWorldGate = JobSystem.Schedule(
+            JobHandle missingWorldGate = Jobs.Schedule(
                 mutation,
                 RelationJobAccess<DirectedA>.EndpointsWrite(world));
             Assert.Throws<JobResourceSafetyException>(() => missingWorldGate.Complete());
@@ -175,7 +175,7 @@ public sealed class RelationMaintenanceSystemTests
                 RelationJobAccess<DirectedA>.EndpointsRead(world),
                 RelationshipJobAccess.TopologyWrite(world),
             ];
-            JobHandle insufficient = JobSystem.Schedule(mutation, readOnly);
+            JobHandle insufficient = Jobs.Schedule(mutation, readOnly);
             Assert.Throws<JobResourceSafetyException>(() => insufficient.Complete());
             Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
 
@@ -189,7 +189,7 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity source = world.CreateEntity();
             Entity oldTarget = world.CreateEntity();
             Entity newTarget = world.CreateEntity();
@@ -200,7 +200,7 @@ public sealed class RelationMaintenanceSystemTests
                 RelationshipJobAccess.TopologyWrite(world),
             ];
 
-            JobHandle parallel = JobSystem.ScheduleParallel(
+            JobHandle parallel = Jobs.ScheduleParallel(
                 new ParallelRetargetJob<DirectedA>(world, edge, source, newTarget),
                 length: 2,
                 batchSize: 1,
@@ -216,11 +216,11 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = CreateJobWorld();
             Entity endpoint = world.CreateEntity();
             var capture = new EdgeCapture<DirectedA>();
 
-            JobHandle reader = JobSystem.Schedule(
+            JobHandle reader = Jobs.Schedule(
                 new CaptureIncomingJob<DirectedA>(world, endpoint, capture));
 
             reader.Complete();
@@ -231,10 +231,10 @@ public sealed class RelationMaintenanceSystemTests
     [Fact]
     public void ReplacingTheDefaultSchedulerDoesNotRebindAnExplicitWorld()
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = CreateJobWorld(scheduler: scheduler);
         Entity source = world.CreateEntity();
         Entity target = world.CreateEntity();
         try
@@ -256,28 +256,27 @@ public sealed class RelationMaintenanceSystemTests
     [Fact]
     public void RejectManagedPayloadPolicy_IsHonoredAndNotMutatedBySchedule()
     {
-        ManagedPayloadPolicy previous = JobSystem.ManagedPayloadPolicy;
+        ManagedPayloadPolicy previous = Jobs.ManagedPayloadPolicy;
         try
         {
-            JobSystem.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            Jobs.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
+            var world = CreateJobWorld();
 
             var error = Assert.Throws<InvalidOperationException>(
                 () => RelationMaintenanceSystem<DirectedA>.Schedule(world));
 
-            Assert.Contains("managed payload policy", error.Message, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(ManagedPayloadPolicy.Reject, JobSystem.ManagedPayloadPolicy);
+            Assert.Equal(ManagedPayloadPolicy.Reject, Jobs.ManagedPayloadPolicy);
         }
         finally
         {
-            JobSystem.ManagedPayloadPolicy = previous;
+            Jobs.ManagedPayloadPolicy = previous;
         }
     }
 
-    private static void WithJobRuntime(Action action)
+    private void WithJobRuntime(Action action)
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
         InitializeJobRuntime(previousSafety);
         try
         {
@@ -289,9 +288,9 @@ public sealed class RelationMaintenanceSystemTests
         }
     }
 
-    private static void InitializeJobRuntime(JobSafetyMode safetyMode)
+    private void InitializeJobRuntime(JobSafetyMode safetyMode)
     {
-        JobSystem.Initialize(new JobRuntimeConfig
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 4,
             SafetyMode = safetyMode,
@@ -299,11 +298,11 @@ public sealed class RelationMaintenanceSystemTests
         });
     }
 
-    private static void RestoreJobRuntime(
+    private void RestoreJobRuntime(
         ManagedPayloadPolicy payloadPolicy,
         JobSafetyMode safetyMode)
     {
-        JobSystem.Initialize(new JobRuntimeConfig
+        ConfigureJobs(new JobRuntimeConfig
         {
             SafetyMode = safetyMode,
             ManagedPayloadPolicy = payloadPolicy,

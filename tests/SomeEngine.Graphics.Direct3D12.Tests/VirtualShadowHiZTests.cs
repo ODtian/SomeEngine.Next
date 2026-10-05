@@ -5,15 +5,16 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class VirtualShadowHiZTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Two_dispatches_match_a_cpu_max_pyramid_for_reordered_physical_pages()
     {
-        D3D12TestShader initialize = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader initialize = shaderCompiler.CompileWithSearchPaths(
             "shadow_hiz_initialize", "#include \"vsm_page_hiz.slang\"",
             [new("InitializeVirtualShadowPageHiZ", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
-        D3D12TestShader reduce = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader reduce = shaderCompiler.CompileWithSearchPaths(
             "shadow_hiz_reduce", "#include \"vsm_page_hiz_reduce.slang\"",
             [new("ReduceVirtualShadowPageHiZ", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         using var backend = D3D12GraphicsBackend.Create();

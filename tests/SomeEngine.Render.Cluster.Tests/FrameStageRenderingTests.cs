@@ -28,6 +28,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
+[Trait("Category", "Hardware")]
 public sealed class FrameStageRenderingTests
 {
     [Theory]

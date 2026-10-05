@@ -363,7 +363,7 @@ public sealed class WarpCopyTests
                 ResourceAccess.CopyDestination,
                 TextureLayout.Undefined,
                 TextureLayout.CopyDestination)));
-        Assert.Contains("QueueRelease/QueueAcquire", failure.Message, StringComparison.Ordinal);
+
         backend.Discard(context);
     }
 

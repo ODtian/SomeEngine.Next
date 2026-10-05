@@ -5,7 +5,8 @@ using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class VirtualShadowInvalidationTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class VirtualShadowInvalidationTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(-0.5f, -0.5f, 2f, 0.5f, 0.5f, 3f, false)]
@@ -63,7 +64,7 @@ public sealed class VirtualShadowInvalidationTests
         Assert.Contains(Enumerable.Range(0, 16), page => pages[page * 4 + 3] == 0);
     }
 
-    private static uint[] Invalidate(Vector3 min, Vector3 max, Vector3 previousMin, Vector3 previousMax,
+    private uint[] Invalidate(Vector3 min, Vector3 max, Vector3 previousMin, Vector3 previousMax,
         bool allocated = true, float lightRange = 0)
     {
         // Public GPU view data: perspective projection, four pages per axis, one mip.
@@ -80,7 +81,7 @@ public sealed class VirtualShadowInvalidationTests
         uint[] hierarchy = allocated ? [15, 15, 15, 15, 3, 3, 1] : new uint[7];
         uint[] rect = allocated ? [0, 0, 3, 3] : [uint.MaxValue, uint.MaxValue, 0, 0];
         // Requests are deliberately empty: cached pages must be invalidated even when unused this frame.
-        return Execute("vsm_caster_invalidation.slang", "InvalidateMovedVirtualShadowCasters", new(1, 1, 1),
+        return new D3D12TestCompute(shaderCompiler).Execute("vsm_caster_invalidation.slang", "InvalidateMovedVirtualShadowCasters", new(1, 1, 1),
             [([1, 1, 16, 0, 3, 7, 1, 0], ResourceBindingType.ConstantBuffer, 0),
              (view, ResourceBindingType.BufferSrv, 176),
              (MemoryMarshal.Cast<Vector4, uint>(bounds.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),

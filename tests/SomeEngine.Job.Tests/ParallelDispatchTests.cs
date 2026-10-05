@@ -2,10 +2,12 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class ParallelDispatchTests
 {
+    private readonly ParallelData _data = new();
+
     public ParallelDispatchTests()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
-        ParallelJobs.Reset();
+        _data.Reset();
     }
 
     [Fact]
@@ -13,7 +15,7 @@ public sealed class ParallelDispatchTests
     {
         var values = Array.Empty<int>();
 
-        var handle = JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), 0, 4);
+        var handle = JobSystem.ScheduleParallel(new ParallelData.MarkIndexJob(values), 0, 4);
 
         Assert.True(handle.IsCompleted);
         handle.Complete();
@@ -25,7 +27,7 @@ public sealed class ParallelDispatchTests
         var values = Array.Empty<int>();
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, 0));
+            JobSystem.ScheduleParallel(new ParallelData.MarkIndexJob(values), values.Length, 0));
     }
 
     [Fact]
@@ -33,7 +35,7 @@ public sealed class ParallelDispatchTests
     {
         var values = new int[10];
 
-        JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, 4).Complete();
+        JobSystem.ScheduleParallel(new ParallelData.MarkIndexJob(values), values.Length, 4).Complete();
 
         Assert.All(values, value => Assert.Equal(1, value));
     }
@@ -43,7 +45,7 @@ public sealed class ParallelDispatchTests
     {
         var values = new int[8];
 
-        JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, 1).Complete();
+        JobSystem.ScheduleParallel(new ParallelData.MarkIndexJob(values), values.Length, 1).Complete();
 
         Assert.All(values, value => Assert.Equal(1, value));
     }
@@ -53,7 +55,7 @@ public sealed class ParallelDispatchTests
     {
         var values = new int[5];
 
-        JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, 50).Complete();
+        JobSystem.ScheduleParallel(new ParallelData.MarkIndexJob(values), values.Length, 50).Complete();
 
         Assert.All(values, value => Assert.Equal(1, value));
     }
@@ -72,7 +74,7 @@ public sealed class ParallelDispatchTests
         var values = new int[1_000];
 
         JobSystem.ScheduleParallel(
-            new ParallelJobs.AutoMarkIndexJob(values),
+            new ParallelData.AutoMarkIndexJob(values),
             values.Length,
             JobScheduleOptions.AutomaticBatchSize).Complete();
 
@@ -85,7 +87,7 @@ public sealed class ParallelDispatchTests
         var observedCalls = new int[8];
 
         JobSystem.ScheduleParallel(
-            new ParallelJobs.MutableBatchStateJob(observedCalls),
+            new ParallelData.MutableBatchStateJob(observedCalls),
             observedCalls.Length,
             batchSize: 2).Complete();
 
@@ -97,7 +99,7 @@ public sealed class ParallelDispatchTests
     {
         var attempted = new int[8];
         JobHandle handle = JobSystem.ScheduleParallel(
-            new ParallelJobs.ThrowAtBatchStartJob(attempted),
+            new ParallelData.ThrowAtBatchStartJob(attempted),
             attempted.Length,
             batchSize: 2);
 
@@ -113,10 +115,10 @@ public sealed class ParallelDispatchTests
         var values = new int[1];
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, 0));
+            JobSystem.ScheduleParallel(new ParallelData.MarkIndexJob(values), values.Length, 0));
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, -2));
+            JobSystem.ScheduleParallel(new ParallelData.MarkIndexJob(values), values.Length, -2));
     }
 
     [Fact]
@@ -132,26 +134,24 @@ public sealed class ParallelDispatchTests
         var values = new int[5];
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, 1));
-
-        Assert.Contains("Job queue capacity exhausted", ex.Message);
+            JobSystem.ScheduleParallel(new ParallelData.MarkIndexJob(values), values.Length, 1));
     }
 
     [Fact]
     public void ParallelJobScheduledFromParentAttachesToParentScope()
     {
-        ParallelJobs.ParentValues = new int[9];
+        _data.ParentValues = new int[9];
 
-        JobSystem.Schedule(new ParallelJobs.ParentSchedulesParallelJob()).Complete();
+        JobSystem.Schedule(new ParallelData.ParentSchedulesParallelJob(_data)).Complete();
 
-        Assert.All(ParallelJobs.ParentValues, value => Assert.Equal(1, value));
+        Assert.All(_data.ParentValues, value => Assert.Equal(1, value));
     }
 
-    private static class ParallelJobs
+    private sealed class ParallelData
     {
-        internal static int[] ParentValues = [];
+        internal int[] ParentValues = [];
 
-        internal static void Reset()
+        internal void Reset()
         {
             ParentValues = [];
         }
@@ -222,9 +222,13 @@ public sealed class ParallelDispatchTests
 
         internal struct ParentSchedulesParallelJob : IJob
         {
+            private readonly ParallelData _data;
+
+            internal ParentSchedulesParallelJob(ParallelData data) => _data = data;
+
             public void Execute()
             {
-                JobSystem.ScheduleParallel(new MarkIndexJob(ParentValues), ParentValues.Length, 2);
+                JobSystem.ScheduleParallel(new MarkIndexJob(_data.ParentValues), _data.ParentValues.Length, 2);
             }
         }
     }

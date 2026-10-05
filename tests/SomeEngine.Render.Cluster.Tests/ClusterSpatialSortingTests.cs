@@ -22,6 +22,7 @@ using Xunit;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
+[Trait("Category", "Hardware")]
 public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     [Fact]

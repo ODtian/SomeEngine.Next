@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.ECS.Serialization;
@@ -98,7 +99,8 @@ internal static class TopologyCodec
         ReadOnlySpan<TopologySerializationRuntime> expectedRuntimes = registry.TopologyRuntimes;
         if (count != expectedRuntimes.Length)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.InvalidData,
                 $"Serialized topology runtime count {count} does not exactly match " +
                 $"the registered runtime count {expectedRuntimes.Length}.");
         }
@@ -127,7 +129,8 @@ internal static class TopologyCodec
             using var payloadStream = new BoundedCountingReadStream(
                 reader.BaseStream,
                 budget.Limits.MaxPayloadBytes,
-                limitExceeded: static (_, _, _) => new InvalidDataException(
+                limitExceeded: static (_, _, _) => SerializationErrors.CreateDataException(
+                    SerializationError.LimitExceeded,
                     "Topology payload exceeds the configured byte limit."));
             using (var payloadReader = new BinaryReader(
                        payloadStream,

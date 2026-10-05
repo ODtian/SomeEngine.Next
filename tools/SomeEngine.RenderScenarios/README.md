@@ -1,12 +1,16 @@
 # Rendering scenarios
 
+The [scene script API and adapter evidence](../../wiki/architecture/rendering/Scene-Scripts.md) describe the public test entry. The `SomeEngine.SceneContent` library provides the same generator to tests. `SceneContent.GenerateDefaultAsync` builds fresh default content from checked-in project and shader sources; `SceneContent.GenerateSpheresAsync` creates a fixed red/green sphere scene. Callers supply an empty directory and delete it after their run. `RenderScenarios.GenerateAsync` builds the richer variations from existing content.
+
 Build the runtime, then generate a scenario in a new or empty directory outside its build output:
 
 ```powershell
 dotnet build src/SomeEngine.Runtime/SomeEngine.Runtime.csproj
 dotnet run --project tools/SomeEngine.RenderScenarios -- `
   F:/SomeEngine.Next-render-enhancement/src/SomeEngine.Runtime/bin/Debug/net10.0 `
-  F:/render-scenarios/displacement displacement
+  F:/render-scenarios/displacement displacement `
+  F:/SomeEngine.Next/templates/DefaultProject `
+  F:/SomeEngine.Next
 ```
 
 The generator copies the built runtime, creates scenario geometry/materials, and cooks the affected shader to DXIL and SPIR-V. It refuses a nonempty destination. It does not change the source runtime or project assets. To refresh code or shaders, generate another output from the newly built runtime.
@@ -17,7 +21,7 @@ The generator copies the built runtime, creates scenario geometry/materials, and
 | `factors` | Four meshes with different source subdivision densities |
 | `materials` | Four Phong spheres using different alpha-mask textures and materials, with compatible split stages |
 | `wpo-alpha` | Eight displaced/checker-alpha spheres at near and far distances, producing both HW and SW work in hybrid mode |
-| `displacement` | Four spheres with an 8×8 bilinear-repeat height map and conservative min/max bounds texture |
+| `displacement` | Four spheres with an 8脳8 bilinear-repeat height map and conservative min/max bounds texture |
 | `sparse-motion` | 128 spheres; only one instance moves |
 | `lighting` | Three colored spheres and a receiving floor, with directional, point and spot lights |
 | `occlusion` | A moving wall occludes and reveals a grid of 128 spheres |
@@ -42,7 +46,7 @@ The displacement scenario uses its two domain textures for height and conservati
 
 Read `tessDropped` and `tessLimited` independently. The former counts capacity loss; the latter reports reaching the quality/depth budget. A frame with no validation errors can still report a quality limit.
 
-`shadeBinTiles` counts full 8×8 tiles in the first material bin. `shadeItems` counts all emitted tile/quad work records, not pixels or shader invocations. A full tile record represents 64 pixels; a quad record carries a mask for one to four pixels of one material. Both records use 8 bytes. Hardware linear-repeat filtering is used for displacement height; analytic derivatives and conservative error bounds account for its finite interpolation precision.
+`shadeBinTiles` counts full 8脳8 tiles in the first material bin. `shadeItems` counts all emitted tile/quad work records, not pixels or shader invocations. A full tile record represents 64 pixels; a quad record carries a mask for one to four pixels of one material. Both records use 8 bytes. Hardware linear-repeat filtering is used for displacement height; analytic derivatives and conservative error bounds account for its finite interpolation precision.
 
 These are ordinary optional validation tools. See the [implementation and measurement record](../../wiki/architecture/Render-Enhancement-Optimization-2026-09-05.md) for measured cases and limits.
 

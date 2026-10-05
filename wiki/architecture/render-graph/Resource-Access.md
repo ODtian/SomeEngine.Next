@@ -10,5 +10,9 @@ RenderGraph 的同步与生命周期事实来自 pass 对真实 Graphics 资源�
 - descriptor 内元素的访问通过普通 resource access 声明表达；元素范围变化属于帧数据，传统绑定与图结构保持原有形式。
 - `SetBufferRanges` 将缓冲的当帧范围集合应用到使用该缓冲的读取 descriptor，依赖分析、同步和范围完成查询共用这些普通访问行。
 
+## Failure
+
+当 Buffer、Texture、Query 或 RayTracingShaderTable 的读取范围包含未定义内容时，帧执行抛出公共 `UndefinedResourceReadException`。调用方通过异常类型区分资源内容失败，诊断消息提供 pass 与资源上下文。
+
 ## Relations
 [[Shader-Resource-Closure]] · [[architecture/material/MaterialBindless]] · [[architecture/cluster-streaming/Resident-Ranges]]

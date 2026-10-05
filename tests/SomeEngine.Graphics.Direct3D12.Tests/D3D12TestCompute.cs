@@ -5,7 +5,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-internal static class D3D12TestCompute
+internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
 {
     internal sealed record BufferInput(
         string Name,
@@ -15,18 +15,18 @@ internal static class D3D12TestCompute
 
     internal sealed record SampledImage(uint Width, uint Height, uint[] Pixels, int BindingIndex,
         Format PixelFormat = Format.R32UInt, TextureViewDimension ViewDimension = TextureViewDimension.Texture2D);
-    internal static uint[][] Execute(string file, string entry, DispatchArguments dispatch,
+    internal uint[][] Execute(string file, string entry, DispatchArguments dispatch,
         (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs)
         => ExecuteSource($"#include \"{file}\"", entry, dispatch, inputs);
 
-    internal static uint[][] Execute(
+    internal uint[][] Execute(
         string file,
         string entry,
         DispatchArguments dispatch,
         BufferInput[] inputs) =>
         ExecuteSourceCore($"#include \"{file}\"", entry, dispatch, inputs, null);
 
-    internal static uint[][] ExecuteSource(string source, string entry, DispatchArguments dispatch,
+    internal uint[][] ExecuteSource(string source, string entry, DispatchArguments dispatch,
         (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs, SampledImage? image = null,
         SampledImage[]? images = null) =>
         ExecuteSourceCore(
@@ -37,7 +37,7 @@ internal static class D3D12TestCompute
             image,
             images);
 
-    private static uint[][] ExecuteSourceCore(
+    private uint[][] ExecuteSourceCore(
         string source,
         string entry,
         DispatchArguments dispatch,
@@ -49,7 +49,7 @@ internal static class D3D12TestCompute
         for (DirectoryInfo? current = new(AppContext.BaseDirectory); current is not null; current = current.Parent)
             if (Directory.Exists(Path.Combine(current.FullName, "assets", "Shaders")))
             { directory = Path.Combine(current.FullName, "assets", "Shaders"); break; }
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths("compute_test", source,
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("compute_test", source,
             [new(entry, SlangStage.Compute)], "sm_6_0", directory ?? throw new DirectoryNotFoundException());
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);

@@ -2,10 +2,12 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class JobForCompatibilityTests
 {
+    private readonly JobForData _data = new();
+
     public JobForCompatibilityTests()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
-        JobForJobs.Reset();
+        _data.Reset();
     }
 
     [Fact]
@@ -13,7 +15,7 @@ public sealed class JobForCompatibilityTests
     {
         var values = new int[13];
 
-        new JobForJobs.MarkForJob(values).Schedule(values.Length, 4).Complete();
+        new JobForData.MarkForJob(values).Schedule(values.Length, 4).Complete();
 
         Assert.All(values, value => Assert.Equal(1, value));
     }
@@ -21,57 +23,59 @@ public sealed class JobForCompatibilityTests
     [Fact]
     public void JobForAdapterPreservesDependencyBehavior()
     {
-        using var dependencyStarted = new ManualResetEventSlim();
-        using var dependencyGate = new ManualResetEventSlim();
-        using var indexRan = new ManualResetEventSlim();
+        using var dependencyStarted = _data.Events.CreateSignal();
+        using var dependencyGate = _data.Events.CreateSignal();
+        using var indexRan = _data.Events.CreateSignal();
         var values = new int[3];
 
-        var dependency = JobSystem.Schedule(new JobForJobs.BlockingJob(dependencyStarted, dependencyGate));
-        var dependent = new JobForJobs.SignalForJob(values, indexRan).Schedule(values.Length, 1, dependency);
+        var dependency = JobSystem.Schedule(new JobForData.BlockingJob(dependencyStarted, dependencyGate));
+        var dependent = new JobForData.SignalForJob(values, indexRan).Schedule(values.Length, 1, dependency);
 
         Assert.True(dependencyStarted.Wait(TimeSpan.FromSeconds(2)));
-        Assert.False(indexRan.Wait(TimeSpan.FromMilliseconds(100)));
 
         dependencyGate.Set();
         dependent.Complete();
 
         Assert.True(indexRan.IsSet);
         Assert.Equal([1, 1, 1], values);
+        _data.Events.AssertBefore(dependencyGate, indexRan);
     }
 
     [Fact]
     public void JobForAdapterScheduledFromParentKeepsChildScopeSemantics()
     {
-        JobForJobs.ParentValues = new int[9];
+        _data.ParentValues = new int[9];
 
-        JobSystem.Schedule(new JobForJobs.ParentSchedulesForJob()).Complete();
+        JobSystem.Schedule(new JobForData.ParentSchedulesForJob(_data)).Complete();
 
-        Assert.All(JobForJobs.ParentValues, value => Assert.Equal(1, value));
+        Assert.All(_data.ParentValues, value => Assert.Equal(1, value));
     }
 
     [Fact]
-    public void JobForAdapterExecutesManagedAndUnmanagedJobs()
+    public void JobForAdapterExecutesArrayAndListResults()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
-        JobForJobs.StaticValues = new int[5];
+        _data.Values = new int[5];
         var managedLog = new List<int>();
 
-        new JobForJobs.RefFreeForJob().Schedule(JobForJobs.StaticValues.Length, 2).Complete();
-        new JobForJobs.RefContainingForJob(managedLog).Schedule(3, 2).Complete();
+        new JobForData.ArrayForJob(_data).Schedule(_data.Values.Length, 2).Complete();
+        new JobForData.RefContainingForJob(managedLog).Schedule(3, 2).Complete();
 
-        Assert.Equal([1, 1, 1, 1, 1], JobForJobs.StaticValues);
+        Assert.Equal([1, 1, 1, 1, 1], _data.Values);
         Assert.Equal([0, 1, 2], managedLog);
     }
 
-    private static class JobForJobs
+    private sealed class JobForData
     {
-        internal static int[] ParentValues = [];
-        internal static int[] StaticValues = [];
+        internal readonly ExecutionEvents Events = new();
 
-        internal static void Reset()
+        internal int[] ParentValues = [];
+        internal int[] Values = [];
+
+        internal void Reset()
         {
             ParentValues = [];
-            StaticValues = [];
+            Values = [];
         }
 
         internal readonly struct MarkForJob : IJobFor
@@ -92,9 +96,9 @@ public sealed class JobForCompatibilityTests
         internal readonly struct SignalForJob : IJobFor
         {
             private readonly int[] _values;
-            private readonly ManualResetEventSlim _ran;
+            private readonly JobSignal _ran;
 
-            internal SignalForJob(int[] values, ManualResetEventSlim ran)
+            internal SignalForJob(int[] values, JobSignal ran)
             {
                 _values = values;
                 _ran = ran;
@@ -109,10 +113,10 @@ public sealed class JobForCompatibilityTests
 
         internal readonly struct BlockingJob : IJob
         {
-            private readonly ManualResetEventSlim _started;
-            private readonly ManualResetEventSlim _gate;
+            private readonly JobSignal _started;
+            private readonly JobSignal _gate;
 
-            internal BlockingJob(ManualResetEventSlim started, ManualResetEventSlim gate)
+            internal BlockingJob(JobSignal started, JobSignal gate)
             {
                 _started = started;
                 _gate = gate;
@@ -127,17 +131,25 @@ public sealed class JobForCompatibilityTests
 
         internal struct ParentSchedulesForJob : IJob
         {
+            private readonly JobForData _data;
+
+            internal ParentSchedulesForJob(JobForData data) => _data = data;
+
             public void Execute()
             {
-                new MarkForJob(ParentValues).Schedule(ParentValues.Length, 3);
+                new MarkForJob(_data.ParentValues).Schedule(_data.ParentValues.Length, 3);
             }
         }
 
-        internal struct RefFreeForJob : IJobFor
+        internal struct ArrayForJob : IJobFor
         {
+            private readonly JobForData _data;
+
+            internal ArrayForJob(JobForData data) => _data = data;
+
             public void Execute(int index)
             {
-                Interlocked.Increment(ref StaticValues[index]);
+                Interlocked.Increment(ref _data.Values[index]);
             }
         }
 

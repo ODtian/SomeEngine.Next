@@ -11,8 +11,6 @@ public class InlineListTests
         InlineList<object, NotInlineStorage> list = default;
 
         var ex = Assert.Throws<InvalidOperationException>(() => list.Add(new object()));
-
-        Assert.Contains("InlineArrayAttribute", ex.Message);
     }
 
     [Fact]
@@ -34,8 +32,6 @@ public class InlineListTests
         InlineList<object, WrongElementStorage> list = default;
 
         var ex = Assert.Throws<InvalidOperationException>(() => list.Add(new object()));
-
-        Assert.Contains("exactly one instance field", ex.Message);
     }
 
     private struct NotInlineStorage

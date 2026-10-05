@@ -5,6 +5,7 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
+[Trait("Category", "Hardware")]
 public sealed class RasterRegionRenderingTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     private static readonly Vector4 Red = new(.9f, .1f, .2f, 1);

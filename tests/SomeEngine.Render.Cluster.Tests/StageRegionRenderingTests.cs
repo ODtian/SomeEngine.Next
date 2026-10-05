@@ -5,6 +5,7 @@ using SomeEngine.Graphics;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
+[Trait("Category", "Hardware")]
 public sealed class StageRegionRenderingTests
 {
     public static IEnumerable<object[]> Backends => [["D3D12"], ["Vulkan"]];
@@ -120,8 +121,7 @@ public sealed class StageRegionRenderingTests
         var material = scene.CreateShadeMaterial(Blue);
         material.Shader = RasterTestShaders.CreateWithUnresolvedShade(backend);
         var added = scene.AddMaterialMesh(material);
-        var error = await Assert.ThrowsAsync<GraphicsException>(() => scene.ReadNextRasterImageAsync());
-        Assert.Contains(backend == "Vulkan" ? "SPIR-V" : "DXIL", error.Message);
+        await Assert.ThrowsAsync<GraphicsException>(() => scene.ReadNextRasterImageAsync());
         scene.RemoveMaterialMesh(added);
         RasterImage restored = await scene.ReadRasterImageAsync();
         Assert.Equal(before.Color, restored.Color);

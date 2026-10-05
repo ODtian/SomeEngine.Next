@@ -396,7 +396,9 @@ public partial class BinaryDocument : IAsyncDisposable
                 expected.SchemaFingerprint, header.SchemaEpoch, expected.SchemaEpoch, expected.Compatibility);
         BinaryWireTypeDescriptor root = catalog[0];
         if (root.TypeId != expected.TypeId)
-            throw new InvalidDataException("The file has a different root type ID; another catalog entry cannot be used as its root.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
+                "The file has a different root type ID; another catalog entry cannot be used as its root.");
         if (root != expected)
             throw new InvalidDataException("The root descriptor differs from its file header.");
     }
@@ -731,7 +733,9 @@ public partial class BinaryDocument : IAsyncDisposable
         EnsureSourceGeneration();
         if (chunk.Compression != ChunkCompression.None &&
             !await VerifyChunkContentAsync(chunk, cancellationToken).ConfigureAwait(false))
-            throw new InvalidDataException($"Binary chunk 0x{chunk.Key:X16} content hash mismatch.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
+                $"Binary chunk 0x{chunk.Key:X16} content hash mismatch.");
 
         byte[] buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -750,7 +754,9 @@ public partial class BinaryDocument : IAsyncDisposable
             EnsureSourceGeneration();
             Digest256 digest = Digest256.Finish(hash);
             if (chunk.Compression == ChunkCompression.None && digest != chunk.ContentHash)
-                throw new InvalidDataException($"Binary chunk 0x{chunk.Key:X16} content hash mismatch.");
+                throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
+                $"Binary chunk 0x{chunk.Key:X16} content hash mismatch.");
             return digest;
         }
         finally
@@ -921,7 +927,9 @@ public partial class BinaryDocument : IAsyncDisposable
         BinaryReadLimits limits)
     {
         if (header.SchemaFingerprint == 0)
-            throw new InvalidDataException("Binary document schema fingerprint cannot be zero.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
+                "Binary document schema fingerprint cannot be zero.");
         if (header.SchemaEpoch == 0)
             throw new InvalidDataException("Binary document schema epoch cannot be zero.");
         if (header.TotalLength != sourceLength)
@@ -929,13 +937,16 @@ public partial class BinaryDocument : IAsyncDisposable
                 $"Binary document declares length {header.TotalLength}, source length is {sourceLength}.");
         if (header.CatalogLength < 4 + BinaryDocumentFormat.HashSize
             || header.CatalogLength > limits.MaxTypeCatalogBytes)
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Binary type catalog length {header.CatalogLength} exceeds configured limits.");
         if (header.RootLength < 0 || header.RootLength > limits.MaxRootBytes)
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Binary root length {header.RootLength} exceeds configured limit {limits.MaxRootBytes}.");
         if (header.ChunkCount > limits.MaxChunkCount)
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Binary chunk count {header.ChunkCount} exceeds configured limit {limits.MaxChunkCount}.");
 
         long expectedDirectoryLength;
@@ -1010,12 +1021,17 @@ public partial class BinaryDocument : IAsyncDisposable
         if ((entry.Offset & (entry.Alignment - 1L)) != 0)
             throw new InvalidDataException($"Chunk 0x{entry.Key:X16} offset is not aligned.");
         if (entry.StoredLength < 0 || entry.StoredLength > _limits.MaxStoredChunkBytes)
-            throw new InvalidDataException($"Chunk 0x{entry.Key:X16} stored length is outside configured limits.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"Chunk 0x{entry.Key:X16} stored length is outside configured limits.");
         if (entry.DecodedLength < 0 || entry.DecodedLength > _limits.MaxDecodedChunkBytes)
-            throw new InvalidDataException($"Chunk 0x{entry.Key:X16} decoded length is outside configured limits.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"Chunk 0x{entry.Key:X16} decoded length is outside configured limits.");
         if (entry.StoredLength > int.MaxValue || entry.DecodedLength > int.MaxValue)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Chunk 0x{entry.Key:X16} exceeds the contiguous .NET Memory limit and must be semantically subdivided.");
         }
         if (entry.Compression == ChunkCompression.None && entry.StoredLength != entry.DecodedLength)
@@ -1025,7 +1041,8 @@ public partial class BinaryDocument : IAsyncDisposable
         if (entry.StoredLength > 0
             && entry.DecodedLength > checked(entry.StoredLength * (long)_limits.MaxCompressionRatio))
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Chunk 0x{entry.Key:X16} exceeds maximum compression ratio {_limits.MaxCompressionRatio}:1.");
         }
 
@@ -1083,7 +1100,9 @@ public partial class BinaryDocument : IAsyncDisposable
     {
         Digest256 actual = Digest256.ComputeSha256(bytes);
         if (!actual.FixedTimeEquals(expected))
-            throw new InvalidDataException($"SHA-256 validation failed for {description}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
+                $"SHA-256 validation failed for {description}.");
     }
 }
 

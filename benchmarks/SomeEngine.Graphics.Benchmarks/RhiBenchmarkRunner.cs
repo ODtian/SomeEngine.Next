@@ -185,9 +185,7 @@ internal static partial class RhiBenchmarkRunner
             QueueCompletion completion = receiver.Submit(queue, submit);
             long stopped = Stopwatch.GetTimestamp();
             long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-            long events = AllocationEventCounter.AttributeIntervalEvents(
-                bytes,
-                allocations.Count - beforeEvents);
+            long events = allocations.Count - beforeEvents;
             RequireCompleted(receiver.WaitCpu(completion, GpuTimeout));
             receiver.CollectCompleted(device);
             long ticks = stopped - started;
@@ -479,9 +477,7 @@ internal static partial class RhiBenchmarkRunner
         QueueCompletion completion = receiver.Submit(queue, submit);
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-        long events = AllocationEventCounter.AttributeIntervalEvents(
-            bytes,
-            allocations.Count - beforeEvents);
+        long events = allocations.Count - beforeEvents;
         recorded.Dispose();
         RequireCompleted(receiver.WaitCpu(completion, GpuTimeout));
         receiver.CollectCompleted(device);
@@ -630,9 +626,7 @@ internal static partial class RhiBenchmarkRunner
         QueueCompletion completion = receiver.Submit(queue, submit);
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-        long events = AllocationEventCounter.AttributeIntervalEvents(
-            bytes,
-            allocations.Count - beforeEvents);
+        long events = allocations.Count - beforeEvents;
         recorded.Dispose();
         RequireCompleted(receiver.WaitCpu(completion, GpuTimeout));
         receiver.CollectCompleted(device);
@@ -994,9 +988,7 @@ internal static partial class RhiBenchmarkRunner
             throw new InvalidOperationException($"Present returned {present}.");
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-        long events = AllocationEventCounter.AttributeIntervalEvents(
-            bytes,
-            allocations.Count - beforeEvents);
+        long events = allocations.Count - beforeEvents;
 
         copyRecorded.Dispose();
         computeRecorded.Dispose();

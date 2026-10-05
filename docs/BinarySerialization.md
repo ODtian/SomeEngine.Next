@@ -149,6 +149,31 @@ Asset and Block saving use the existing document writer and file replacement. Th
 
 `AssetProject` imports, creates, registers, indexes and diagnoses files. `AssetEntry` is the shared directory record. Source identity, settings and element identities live in `.meta`; derived inputs and output verification live in `.import.json`. Source, asset and dependency indexes are saved together in one `catalog.json`, without the three old index files. Explicit mesh streaming reads authenticated pages directly into final storage; already usable meshes do not query Asset on ordinary access. Textures acquire selected mip data asynchronously before use and feed existing device upload/completion handling. Shader backend selection and material parent/override data remain supported. Scene instances enter the existing Game world to Rendering world extraction path, not a loader-maintained object graph.
 
+## Read failures
+
+Callers use standard exception types and `SerializationErrors.GetError(exception)` to select
+recovery behavior. Data failures retain `InvalidDataException`; `BinarySchemaMismatchException`
+retains its type and its actual/expected schema data. Categories cover malformed data, an unsupported
+version, a schema mismatch, an unknown ECS type, a configured limit, an integrity mismatch, and a
+rejected save generation. An ordinary `InvalidDataException` reports `InvalidData`. I/O, cancellation,
+allocation and disposal failures retain their standard types and report `Unspecified`.
+
+`SerializationErrors.CreateDataException(category, diagnostic, cause)` lets a custom codec provide
+the same machine-readable category and retain its original cause. The category lives on the
+exception; changing diagnostic wording preserves recovery decisions.
+
+ECS generation recovery carries the category while trying older valid files. When every file is
+rejected, the aggregate data failure reports the primary file's category when that file exists,
+otherwise the previous file's category. Truncated envelopes and authentication failures report
+`IntegrityMismatch`; the anti-rollback floor reports `GenerationRejected`. A valid envelope's decoder
+failure propagates directly, retaining its type, category and cause.
+
+ECS `SerializationRegistry.RegisterCodec` and `RegisterBufferCodec` accept caller-created codec
+values. Each registry retains its supplied codec, and copies the struct for each value read or written.
+Reference fields hold caller-selected data for the registry. The overloads accepting
+`SerializationTypeKey` provide the explicit identity required for durable saves; the overloads with
+just a codec use the existing build-derived identity.
+
 ## Current-schema policy
 
 `BinaryEnvelopeMetadata` exposes root type, schema, compatibility marker, epoch, generation and payload length without decoding business values. Non-generic `BinaryDocument.InspectAsync` works without an installed business type. Typed reads still require the expected compiled schema. Description, object and view opening share header/catalog checks and external package authentication. Schema changes require producing new asset data offline; there is no implicit migration reader.

@@ -6,7 +6,8 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class HierarchicalDepthTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class HierarchicalDepthTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void EveryMipMatchesTheMaximumDepthIncludingOddEdgesAndArrayLayers()
@@ -27,7 +28,7 @@ public sealed class HierarchicalDepthTests
         })
             Check(width, height);
 
-        D3D12TestShader Compile(string file, string entry) => D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader Compile(string file, string entry) => shaderCompiler.CompileWithSearchPaths(
             entry, $"#include \"{file}\"", [new(entry, SlangStage.Compute)], "sm_6_0", directory);
 
         void Check(int width, int height)

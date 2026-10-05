@@ -55,7 +55,7 @@ internal sealed partial class FrameExecutor
                             _bufferContentScopeScratch[segment],
                             access.BufferContentScope))
                     {
-                        throw new InvalidOperationException(
+                        throw new UndefinedResourceReadException(
                             $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads undefined Buffer " +
                             $"'{buffer.Description.Label ?? $"Buffer[{bufferIndex}]"}'. " +
                             string.Join("; ", accesses.Select(i => $"{_passes[_accesses[i].PassIndex].Label}: {_accesses[i].Mode}/{_accesses[i].Coverage} at declaration {_passes[_accesses[i].PassIndex].DeclarationOrdinal}")));
@@ -142,7 +142,7 @@ internal sealed partial class FrameExecutor
                 if (access.Mode is GraphAccessMode.Read or GraphAccessMode.ReadWrite &&
                     _contentsScratch[cell] != ResourceContentState.Defined)
                 {
-                    throw new InvalidOperationException(
+                    throw new UndefinedResourceReadException(
                         $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads undefined Texture " +
                         $"'{texture.Label ?? $"Texture[{textureIndex}]"}'. " +
                         string.Join("; ", accesses.Select(i => $"{_passes[_accesses[i].PassIndex].Label}: {_accesses[i].Mode}/{_accesses[i].Coverage} at declaration {_passes[_accesses[i].PassIndex].DeclarationOrdinal}")));
@@ -228,7 +228,7 @@ internal sealed partial class FrameExecutor
                     access.Coverage == WriteCoverage.Partial;
                 if (reads && _contentsScratch[segment] != ResourceContentState.Defined)
                 {
-                    throw new InvalidOperationException(
+                    throw new UndefinedResourceReadException(
                         $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads undefined Query results.");
                 }
                 if (reads && _writerScratch[segment] >= 0)
@@ -267,7 +267,7 @@ internal sealed partial class FrameExecutor
                 access.Coverage == WriteCoverage.Partial;
             if (reads && contents != ResourceContentState.Defined)
             {
-                throw new InvalidOperationException(
+                throw new UndefinedResourceReadException(
                     $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads an undefined RayTracingShaderTable.");
             }
             if (reads && writer >= 0)

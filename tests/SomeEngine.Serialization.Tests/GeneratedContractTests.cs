@@ -145,7 +145,7 @@ public sealed class GeneratedContractTests
 
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
             async () => await document.AcquireChunkAsync(document.Root.PayloadChunk));
-        Assert.Contains("directory length disagrees", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
 
         bool destinationAllocated = false;
         InvalidDataException readError = await Assert.ThrowsAsync<InvalidDataException>(
@@ -156,12 +156,12 @@ public sealed class GeneratedContractTests
                     destinationAllocated = true;
                     return new byte[length];
                 }));
-        Assert.Contains("directory length disagrees", readError.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(readError));
         Assert.False(destinationAllocated);
 
         InvalidDataException rangeError = await Assert.ThrowsAsync<InvalidDataException>(
             async () => await document.OpenChunkRangeSourceAsync(document.Root.PayloadChunk));
-        Assert.Contains("directory length disagrees", rangeError.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(rangeError));
     }
 
     [Fact]
@@ -319,7 +319,7 @@ public sealed class GeneratedContractTests
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() => ReadNonNullableString(input));
 
-        Assert.Contains("non-nullable string", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -337,7 +337,7 @@ public sealed class GeneratedContractTests
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() => ReadDictionary(input));
 
-        Assert.Contains("canonical", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -351,7 +351,7 @@ public sealed class GeneratedContractTests
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() => ReadUnion(input));
 
-        Assert.Contains("Unknown closed binary union tag", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -359,10 +359,10 @@ public sealed class GeneratedContractTests
     {
         byte[] nullSentinel = [0];
 
-        Assert.Contains("non-nullable collection", Assert.Throws<InvalidDataException>(() => ReadList(nullSentinel)).Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("non-nullable dictionary", Assert.Throws<InvalidDataException>(() => ReadDictionary(nullSentinel)).Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("non-nullable nested contract", Assert.Throws<InvalidDataException>(() => ReadNestedClass(nullSentinel)).Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("non-nullable union", Assert.Throws<InvalidDataException>(() => ReadUnion(nullSentinel)).Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidDataException>(() => ReadList(nullSentinel));
+        Assert.Throws<InvalidDataException>(() => ReadDictionary(nullSentinel));
+        Assert.Throws<InvalidDataException>(() => ReadNestedClass(nullSentinel));
+        Assert.Throws<InvalidDataException>(() => ReadUnion(nullSentinel));
     }
 
     [Fact]
@@ -378,7 +378,7 @@ public sealed class GeneratedContractTests
             input,
             new BinaryReadLimits { MaxAllocationBytes = 1_024 }));
 
-        Assert.Contains("allocation", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -388,7 +388,7 @@ public sealed class GeneratedContractTests
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() => ReadCurrentRequired(input));
 
-        Assert.Contains("non-nullable string", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]

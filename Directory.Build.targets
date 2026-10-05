@@ -9,4 +9,25 @@
     <Error Condition="'$(SlangTestFixtureDirectory)' != 'SlangStandardModule$(SlangToolchainVersion)'"
            Text="SlangTestFixtureDirectory must be derived from SlangToolchainVersion." />
   </Target>
+  <!-- dotnet test, just test and CI share this default selection. An explicit filter overrides it. -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <EngineTestCategory>Software</EngineTestCategory>
+    <EngineTestCategory Condition="'$(MSBuildProjectName)' == 'SomeEngine.Graphics.Vulkan.Tests'">Hardware</EngineTestCategory>
+    <EngineTestCategory Condition="$([System.String]::Copy('$(MSBuildProjectName)').Contains('.Benchmarks.Tests'))">Performance</EngineTestCategory>
+    <VSTestTestCaseFilter Condition="'$(VSTestTestCaseFilter)' == ''">(Category=Software)&amp;(Category!=Hardware)&amp;(Category!=LongFuzz)&amp;(Category!=Performance)&amp;(Isolation!=PresentationProcess)&amp;(Isolation!=DeviceLossProcess)</VSTestTestCaseFilter>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <AssemblyAttribute Include="Xunit.AssemblyTraitAttribute">
+      <_Parameter1>Category</_Parameter1>
+      <_Parameter2>$(EngineTestCategory)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <Target Name="BuildTestRuleChecker">
+    <MSBuild Projects="$(SomeEngineRepositoryRoot)tools/TestRules/SomeEngine.TestRules.csproj"
+             Targets="Restore;Build" Properties="Configuration=$(Configuration)"
+             RemoveProperties="TargetFramework;TargetFrameworks;RuntimeIdentifier;SelfContained;PublishAot" />
+  </Target>
+  <Target Name="CheckTestRules" BeforeTargets="VSTest" DependsOnTargets="BuildTestRuleChecker" Condition="'$(IsTestProject)' == 'true'">
+    <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/TestRules/bin/$(Configuration)/net10.0/SomeEngine.TestRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(AssemblyName)&quot;" />
+  </Target>
 </Project>

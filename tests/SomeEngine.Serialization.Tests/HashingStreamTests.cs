@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 using System.Security.Cryptography;
 using SomeEngine.Serialization.IO;
 
@@ -158,7 +159,7 @@ public sealed class HashingStreamTests
         InvalidDataException error = Assert.Throws<InvalidDataException>(
             () => stream.Write(new byte[] { 3, 4 }));
 
-        Assert.Contains("3-byte limit", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(error));
         Assert.Equal(new byte[] { 1, 2 }, destination.ToArray());
         Assert.Equal(2, stream.BytesWritten);
         Assert.Equal([(0L, 2)], appends);

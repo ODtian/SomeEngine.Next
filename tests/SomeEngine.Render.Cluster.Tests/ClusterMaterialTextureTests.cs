@@ -21,6 +21,7 @@ using Texture = SomeEngine.Resources.Texture;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
+[Trait("Category", "Hardware")]
 public sealed class ClusterMaterialTextureTests
 {
     [Fact]

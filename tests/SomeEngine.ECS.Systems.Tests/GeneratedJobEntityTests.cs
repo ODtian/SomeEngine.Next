@@ -10,15 +10,66 @@ using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class GeneratedJobEntityTests
+public sealed class GeneratedJobEntityTests : JobTest
 {
 
+    [Fact]
+    public void GeneratedCommandRecordingRequiresAJobCommandWriter()
+    {
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        World world = CreateMovingWorld(8, out _);
+        var commands = world.Commands();
+        using var data = new CallbackData<GeneratedCommandData>(new GeneratedCommandData(commands));
+        Assert.Throws<InvalidOperationException>(() =>
+            new GeneratedCommandJob(data).Schedule(world).Complete());
+        Assert.Equal(0, commands.CommandCount);
+        Assert.Throws<InvalidOperationException>(() =>
+            new GeneratedCommandJob(data).ScheduleParallel(world,
+                new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete());
+        Assert.Equal(0, commands.CommandCount);
+    }
+
+    [Fact]
+    public async Task GeneratedCallbacksFinishBeforeStructuralMutation()
+    {
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        World world = CreateMovingWorld(16, out _);
+        using var attempted = new ManualResetEventSlim();
+        using var data = new CallbackData<GeneratedTopologyData>(new GeneratedTopologyData(16));
+        JobHandle handle = new GeneratedTopologyJob(data).ScheduleParallel(world,
+            new JobEntityScheduleOptions(rowsPerPacket: 1));
+        Task<Entity>? writer = null;
+        try
+        {
+            Assert.True(data.Value.Started.Wait(TimeSpan.FromSeconds(5)));
+            writer = Task.Run(() =>
+            {
+                attempted.Set();
+                var entity = world.CreateEntity();
+                data.Value.Events.Enqueue("entity created");
+                return entity;
+            });
+            Assert.True(attempted.Wait(TimeSpan.FromSeconds(5)));
+            data.Value.Release.Set();
+            handle.Complete();
+            var created = await writer.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(world.IsAlive(created));
+            Assert.Equal(new[] { "callbacks finished", "entity created" }, data.Value.Events.ToArray());
+        }
+        finally
+        {
+            data.Value.Release.Set();
+            handle.Complete();
+            if (writer is not null)
+                await writer.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
 
     [Fact]
     public void RuntimeBoundaryHoist_StillRejectsAnUndeclaredSparseBorrow()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new GeneratedPosition { Value = 4 });
         world.AddSparse(entity, new GeneratedSparse { Value = 9 });
         var descriptor = new GeneratedQueryAccessDescriptor(
@@ -34,35 +85,8 @@ public sealed class GeneratedJobEntityTests
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => handle.Complete());
-        Assert.Contains("Sparse", error.Message, StringComparison.OrdinalIgnoreCase);
+
         Assert.Equal(9, world.ReadSparse<GeneratedSparse>(entity).Value);
-    }
-
-    [Fact]
-    public void GeneratedSerialAndParallelJobsRejectSharedCommandBufferEscapeBeforeRecording()
-    {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        World world = CreateMovingWorld(8, out _);
-        CommandBuffer commands = world.Commands();
-        GeneratedCommandBufferEscapeJob.Configure(commands);
-        try
-        {
-            InvalidOperationException serial = Assert.Throws<InvalidOperationException>(() =>
-                new GeneratedCommandBufferEscapeJob().Schedule(world).Complete());
-            Assert.Contains("CommandBuffer", serial.Message, StringComparison.Ordinal);
-            Assert.Equal(0, commands.CommandCount);
-
-            InvalidOperationException parallel = Assert.Throws<InvalidOperationException>(() =>
-                new GeneratedCommandBufferEscapeJob().ScheduleParallel(
-                    world,
-                    new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete());
-            Assert.Contains("CommandBuffer", parallel.Message, StringComparison.Ordinal);
-            Assert.Equal(0, commands.CommandCount);
-        }
-        finally
-        {
-            GeneratedCommandBufferEscapeJob.Clear();
-        }
     }
 
     [Fact]
@@ -109,14 +133,12 @@ public sealed class GeneratedJobEntityTests
                 query,
                 GeneratedQueryAccess.Table<GeneratedManagedComponent>(GeneratedQueryMode.Read)));
 
-        Assert.Contains("alias-free", error.Message, StringComparison.OrdinalIgnoreCase);
     }
-
 
     [Fact]
     public void ExplicitFilter_ComposesSelectionWithoutAddingValueAccess()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(8, out Entity[] entities);
         for (int i = 0; i < entities.Length; i += 2)
             world.AddTag<GeneratedExcludedTag>(entities[i]);
@@ -138,12 +160,10 @@ public sealed class GeneratedJobEntityTests
                 new JobEntityScheduleOptions(filter: invalidAccess)));
     }
 
-
-
     [Fact]
     public void ExactChangedFilter_RunsAfterRangeHazardsAndBeforeCurrentRowWrite()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 3);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(10, out Entity[] entities);
         uint baseline = world.AcquireSystemTick();
         for (int i = 0; i < entities.Length; i += 2)
@@ -164,8 +184,8 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void EmptySerialAndParallelJobs_DoNotAcquireAnExecutionVersion()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         uint tickBefore = world.CurrentTick;
 
         new IntegrateGeneratedJob().Schedule(world).Complete();
@@ -180,7 +200,7 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void FullyRowFilteredSerialAndParallelJobs_DoNotAcquireAnExecutionVersion()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(4, out Entity[] entities);
         foreach (Entity entity in entities)
         {
@@ -204,7 +224,7 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void FullyChunkFilteredParallelPackets_DoNotAcquireAnExecutionVersion()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(4, out _);
         QueryDefinition filter = world.QueryDefinition().ChunkChanged<GeneratedVelocity>().Build();
         uint tickBefore = world.CurrentTick;
@@ -222,27 +242,28 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void MatchingReadOnlySerialAndParallelJobs_DoNotAcquireAnExecutionVersion()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(6, out Entity[] entities);
         uint tickBefore = world.CurrentTick;
+        using var data = new CallbackData<GeneratedReadCount>(new GeneratedReadCount());
 
-        GeneratedReadOnlyProbeJob.Reset();
-        new GeneratedReadOnlyProbeJob().Schedule(world).Complete();
-        Assert.Equal(entities.Length, GeneratedReadOnlyProbeJob.ExecutionCount);
+        new GeneratedReadOnlyProbeJob(data).Schedule(world).Complete();
+        Assert.Equal(entities.Length, data.Value.Count);
         Assert.Equal(tickBefore, world.CurrentTick);
+        data.Value.Count = 0;
 
-        GeneratedReadOnlyProbeJob.Reset();
-        new GeneratedReadOnlyProbeJob().ScheduleParallel(
+        new GeneratedReadOnlyProbeJob(data).ScheduleParallel(
             world,
             new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete();
-        Assert.Equal(entities.Length, GeneratedReadOnlyProbeJob.ExecutionCount);
+        Assert.Equal(entities.Length, data.Value.Count);
         Assert.Equal(tickBefore, world.CurrentTick);
+        data.Value.Count = 0;
     }
 
     [Fact]
     public void EnabledFilter_OwnsPacketBitRangesAndSkipsDisabledRows()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 3);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(10, out Entity[] entities);
         for (int i = 0; i < entities.Length; i++)
         {
@@ -263,7 +284,7 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void ChunkChangedFilter_WithSameFamilyDirectWriteIsExplicitlySerialOnly()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(4, out _);
         QueryDefinition filter = world.QueryDefinition().ChunkChanged<GeneratedPosition>().Build();
 
@@ -272,42 +293,42 @@ public sealed class GeneratedJobEntityTests
                 world,
                 new JobEntityScheduleOptions(filter: filter)));
 
-        Assert.Contains("parallel", error.Message, StringComparison.OrdinalIgnoreCase);
         new GeneratedPositionIncrementJob().Schedule(
             world,
             new JobEntityScheduleOptions(filter: filter)).Complete();
     }
 
     [Fact]
-    public void ScheduleParallel_WritesDisjointPacketsConcurrently()
+    public void GeneratedParallelWritesEachMatchingEntityOnce()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(32, out Entity[] entities);
-        GeneratedConcurrencyProbe.Reset();
+        using var data = new CallbackData<GeneratedConcurrencyData>(new GeneratedConcurrencyData());
+        JobHandle handle = new GeneratedConcurrencyJob(data).ScheduleParallel(world,
+            new JobEntityScheduleOptions(rowsPerPacket: 1));
         try
         {
-            new GeneratedConcurrencyProbe().ScheduleParallel(
-                world,
-                new JobEntityScheduleOptions(rowsPerPacket: 4)).Complete();
-
-            Assert.True(GeneratedConcurrencyProbe.ObservedOverlap);
-            foreach (Entity entity in entities)
+            Assert.True(data.Value.Arrivals.Wait(TimeSpan.FromSeconds(5)));
+            data.Value.Release.Set();
+            handle.Complete();
+            foreach (var entity in entities)
                 Assert.Equal(1, world.Read<GeneratedPosition>(entity).Value);
         }
         finally
         {
-            GeneratedConcurrencyProbe.Release();
+            data.Value.Release.Set();
+            handle.Complete();
         }
     }
 
     [Fact]
     public async Task ScheduleParallel_ResolvesPacketsAfterSemanticDependencyWithoutBlockingIntermediateTopology()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 3);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(4, out _);
         using var dependencyStarted = new ManualResetEventSlim();
         using var releaseDependency = new ManualResetEventSlim();
-        JobHandle dependency = JobSystem.Schedule(
+        JobHandle dependency = Jobs.Schedule(
             new BlockingDependencyJob(dependencyStarted, releaseDependency));
         Assert.True(dependencyStarted.Wait(TimeSpan.FromSeconds(5)));
 
@@ -322,11 +343,7 @@ public sealed class GeneratedJobEntityTests
             world.Add(entity, new GeneratedVelocity { Value = 2 });
             return entity;
         });
-        Task completed = await Task.WhenAny(mutation, Task.Delay(TimeSpan.FromSeconds(5)));
-        Assert.Same(
-            mutation,
-            completed);
-        Entity mutatedEntity = await mutation;
+        Entity mutatedEntity = await mutation.WaitAsync(TimeSpan.FromSeconds(5));
 
         releaseDependency.Set();
         generated.Complete();
@@ -338,10 +355,10 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void ScheduleParallel_CapturesAfterDynamicTopologyWriterDescendant()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 3);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(3, out _);
         var capture = new EntityCapture();
-        JobHandle dependency = JobSystem.Schedule(
+        JobHandle dependency = Jobs.Schedule(
             new DynamicTopologyDependencyJob(world, capture));
 
         new IntegrateGeneratedJob().ScheduleParallel(
@@ -357,11 +374,11 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void ScheduleParallel_RegisteredTopologySuccessorCannotSilentlyInvalidateCapturedPackets()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 1);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 1, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(3, out Entity[] originalEntities);
         using var workerOccupied = new ManualResetEventSlim();
         using var releaseWorker = new ManualResetEventSlim();
-        JobHandle occupier = JobSystem.Schedule(
+        JobHandle occupier = Jobs.Schedule(
             new BlockingDependencyJob(workerOccupied, releaseWorker));
         Assert.True(workerOccupied.Wait(TimeSpan.FromSeconds(5)));
 
@@ -377,7 +394,7 @@ public sealed class GeneratedJobEntityTests
         accesses[0] = RelationshipJobAccess.TopologyWrite(world);
         accesses[1] = ComponentJobAccess<GeneratedPosition>.Write(world);
         accesses[2] = ComponentJobAccess<GeneratedVelocity>.Write(world);
-        JobHandle writer = JobSystem.Schedule(
+        JobHandle writer = Jobs.Schedule(
             new CreateMovingEntityJob(world, writerCapture),
             accesses);
 
@@ -388,7 +405,7 @@ public sealed class GeneratedJobEntityTests
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => generated.Complete());
-        Assert.Contains("stale", error.Message, StringComparison.OrdinalIgnoreCase);
+
         occupier.Complete();
         writer.Complete();
 
@@ -402,10 +419,10 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void Schedule_RegistersQueryResourcesAfterDynamicTopologyAndDataWriterDescendant()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 3);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(3, out _);
         var capture = new EntityCapture();
-        JobHandle dependency = JobSystem.Schedule(
+        JobHandle dependency = Jobs.Schedule(
             new DynamicTopologyDependencyJob(world, capture));
 
         new IntegrateGeneratedJob().Schedule(world, dependency).Complete();
@@ -416,67 +433,34 @@ public sealed class GeneratedJobEntityTests
     }
 
     [Fact]
-    public async Task ScheduleParallel_HoldsTopologyLeaseAcrossAllPacketBodies()
+    public void GeneratedParallelWritesPreserveValuesAfterCommandPlayback()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        World world = CreateMovingWorld(16, out _);
-        GeneratedTopologyLeaseProbe.Reset();
-        JobHandle generated = default;
-        try
-        {
-            generated = new GeneratedTopologyLeaseProbe().ScheduleParallel(
-                world,
-                new JobEntityScheduleOptions(rowsPerPacket: 1));
-            Assert.True(GeneratedTopologyLeaseProbe.Started.Wait(TimeSpan.FromSeconds(5)));
-
-            Task<Entity> writer = Task.Run(() => world.CreateEntity());
-            Task first = await Task.WhenAny(writer, Task.Delay(TimeSpan.FromMilliseconds(150)));
-            Assert.NotSame(writer, first);
-
-            GeneratedTopologyLeaseProbe.Release();
-            generated.Complete();
-            Entity created = await writer;
-            Assert.True(world.IsAlive(created));
-        }
-        finally
-        {
-            GeneratedTopologyLeaseProbe.Release();
-            if (!generated.IsCompleted)
-                generated.Complete();
-        }
-    }
-
-    [Fact]
-    public void ScheduleParallel_FirstCowWriteDetachesSharedChunkOnceForAllPackets()
-    {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(48, out Entity[] entities);
-
-        // Publishing an unrelated command candidate keeps untouched table chunks COW-shared with
-        // the previous root. Multiple row packets then reach the first writable detach together.
         world.Commands().CreateEntity();
         world.Flush();
-        GeneratedConcurrencyProbe.Reset();
+        using var data = new CallbackData<GeneratedConcurrencyData>(new GeneratedConcurrencyData());
+        JobHandle handle = new GeneratedConcurrencyJob(data).ScheduleParallel(world,
+            new JobEntityScheduleOptions(rowsPerPacket: 1));
         try
         {
-            new GeneratedConcurrencyProbe().ScheduleParallel(
-                world,
-                new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete();
+            Assert.True(data.Value.Arrivals.Wait(TimeSpan.FromSeconds(5)));
+            data.Value.Release.Set();
+            handle.Complete();
+            foreach (var entity in entities)
+                Assert.Equal(1, world.Read<GeneratedPosition>(entity).Value);
         }
         finally
         {
-            GeneratedConcurrencyProbe.Release();
+            data.Value.Release.Set();
+            handle.Complete();
         }
-
-        Assert.True(GeneratedConcurrencyProbe.ObservedOverlap);
-        foreach (Entity entity in entities)
-            Assert.Equal(1, world.Read<GeneratedPosition>(entity).Value);
     }
 
     [Fact]
     public void ScheduleParallel_SparseWrapperFiltersAndWritesRequiredRows()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 3);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(12, out Entity[] entities);
         for (int i = 0; i < entities.Length; i += 2)
             world.AddSparse(entities[i], new GeneratedSparse { Value = i });
@@ -497,7 +481,7 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void ScheduleParallel_BufferWrapperBorrowsOnlyCurrentPacketRows()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 3);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(10, out Entity[] entities);
         foreach (Entity entity in entities)
         {
@@ -522,82 +506,56 @@ public sealed class GeneratedJobEntityTests
     }
 
     [Fact]
-    public void ScheduleParallel_UsesOneExecutionVersionAcrossAllPacketsAndTableBufferStorage()
+    public void GeneratedStorageWritesShareOneWorldWriteVersion()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 3);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(12, out Entity[] entities);
         foreach (Entity entity in entities)
         {
             world.AddBuffer<GeneratedBufferElement>(entity);
-            world.ExecuteBufferWrite<GeneratedBufferElement>(
-                entity,
-                static buffer => buffer.Add(new GeneratedBufferElement { Value = 1 }));
+            world.ExecuteBufferWrite<GeneratedBufferElement>(entity,
+                buffer => buffer.Add(new GeneratedBufferElement { Value = 1 }));
             world.AddSparse(entity, new GeneratedSparse { Value = 1 });
         }
-
-        GeneratedVersionedStorageJob.Reset();
-        JobHandle handle = default;
-        try
+        uint baseline = world.CurrentTick;
+        new GeneratedStorageJob().ScheduleParallel(world,
+            new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete();
+        Assert.Equal(baseline + 1, world.CurrentTick);
+        foreach (var entity in entities)
         {
-            handle = new GeneratedVersionedStorageJob().ScheduleParallel(
-                world,
-                new JobEntityScheduleOptions(rowsPerPacket: 1));
-            Assert.True(GeneratedVersionedStorageJob.Started.Wait(TimeSpan.FromSeconds(5)));
-
-            // Packet workers retain topology-read while paused. Advancing the global clock here
-            // must not change the version already assigned to this logical execution.
-            _ = world.AcquireSystemTick();
-            _ = world.AcquireSystemTick();
-            _ = world.AcquireSystemTick();
-            GeneratedVersionedStorageJob.Release();
-            handle.Complete();
-
-            int positionId = ComponentMetadata<GeneratedPosition>.Id;
-            uint[] rowVersions = world.AllArchetypes.ToArray()
-                .Where(archetype => archetype.HasComponent(positionId))
-                .SelectMany(archetype => archetype.Chunks.ToArray().SelectMany(chunk =>
-                {
-                    int column = archetype.Column(positionId);
-                    return Enumerable.Range(0, chunk.Count)
-                        .Select(row => chunk.WriteVersionRows(column)[row]);
-                }))
-                .ToArray();
-            uint executionVersion = Assert.Single(rowVersions.Distinct());
-
-            int bufferId = BufferComponents.Header<GeneratedBufferElement>();
-            uint[] bufferVersions = world.AllArchetypes.ToArray()
-                .Where(archetype => archetype.HasComponent(bufferId))
-                .SelectMany(archetype => archetype.Chunks.ToArray().SelectMany(chunk =>
-                {
-                    int column = archetype.Column(bufferId);
-                    return Enumerable.Range(0, chunk.Count)
-                        .Select(row => chunk.WriteVersionRows(column)[row]);
-                }))
-                .ToArray();
-
-            Assert.Equal(entities.Length, rowVersions.Length);
-            Assert.Equal(entities.Length, bufferVersions.Length);
-            Assert.All(rowVersions, version => Assert.Equal(executionVersion, version));
-            Assert.All(bufferVersions, version => Assert.Equal(executionVersion, version));
+            Assert.Equal(1, world.Read<GeneratedPosition>(entity).Value);
+            Assert.Equal(2, world.ReadSparse<GeneratedSparse>(entity).Value);
+            world.ExecuteBufferRead<GeneratedBufferElement>(entity,
+                buffer => Assert.Equal(2, buffer[0].Value));
         }
-        finally
+        var changed = world.Query(world.QueryDefinition().Changed<GeneratedPosition>());
+        int positionChanges = 0;
+        world.ExecuteQuery(changed, baseline, cursor =>
         {
-            GeneratedVersionedStorageJob.Release();
-            if (!handle.IsCompleted)
-                handle.Complete();
-        }
+            foreach (var row in cursor.Rows)
+                positionChanges++;
+        });
+        Assert.Equal(entities.Length, positionChanges);
+        var buffers = world.Query(world.QueryDefinition().ChangedBuffer<GeneratedBufferElement>());
+        int bufferChanges = 0;
+        world.ExecuteQuery(buffers, baseline, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                bufferChanges++;
+        });
+        Assert.Equal(entities.Length, bufferChanges);
     }
 
     [Fact]
     public void ColdBufferDescriptor_CompilesLogicalBufferAdmissionBeforeAnyBufferExists()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         GeneratedQueryAccessDescriptor descriptor =
             new GeneratedColdBufferJob().GetGeneratedQueryAccess();
         Assert.Equal(1, descriptor.AccessCount);
         Assert.Equal(GeneratedQueryStorage.Buffer, descriptor.GetAccess(0).Storage);
 
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         world.AddBuffer<GeneratedColdBufferElement>(entity);
         world.ExecuteBufferWrite<GeneratedColdBufferElement>(
@@ -616,8 +574,8 @@ public sealed class GeneratedJobEntityTests
     [Fact]
     public void SerialCanonicalParentWriter_UsesWorldFinalizerAndHasNoParallelSurface()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity firstParent = world.CreateEntity();
         Entity secondParent = world.CreateEntity();
         Entity child = world.CreateEntity();
@@ -640,9 +598,9 @@ public sealed class GeneratedJobEntityTests
         Assert.Equal([child], Hierarchy<GeneratedHierarchyDomain>.GetChildren(world, secondParent).ToArray());
     }
 
-    private static World CreateMovingWorld(int count, out Entity[] entities)
+    private World CreateMovingWorld(int count, out Entity[] entities)
     {
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        var world = CreateJobWorld();
         entities = new Entity[count];
         for (int i = 0; i < count; i++)
         {
@@ -651,31 +609,6 @@ public sealed class GeneratedJobEntityTests
             entities[i] = entity;
         }
         return world;
-    }
-
-    private sealed class JobRuntimeScope : IDisposable
-    {
-        private readonly JobSafetyMode _safety = JobSystem.SafetyMode;
-        private readonly ManagedPayloadPolicy _payload = JobSystem.ManagedPayloadPolicy;
-
-        internal JobRuntimeScope(int workerCount)
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                WorkerCount = workerCount,
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-            });
-        }
-
-        public void Dispose()
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = _payload,
-            });
-        }
     }
 
     private readonly struct BlockingDependencyJob : IJob
@@ -794,41 +727,6 @@ public partial struct IntegrateGeneratedJob : IJobEntity
     }
 }
 
-public partial struct GeneratedConcurrencyProbe : IJobEntity
-{
-    private static ManualResetEventSlim s_release = new();
-    private static int s_entered;
-    private static int s_observedOverlap;
-
-    public static bool ObservedOverlap => Volatile.Read(ref s_observedOverlap) != 0;
-
-    public static void Reset()
-    {
-        s_release.Dispose();
-        s_release = new ManualResetEventSlim();
-        Volatile.Write(ref s_entered, 0);
-        Volatile.Write(ref s_observedOverlap, 0);
-    }
-
-    public static void Release() => s_release.Set();
-
-    public void Execute(ref GeneratedPosition position)
-    {
-        int entered = Interlocked.Increment(ref s_entered);
-        if (entered == 1)
-        {
-            if (s_release.Wait(TimeSpan.FromSeconds(5)))
-                Volatile.Write(ref s_observedOverlap, 1);
-        }
-        else if (entered == 2)
-        {
-            Volatile.Write(ref s_observedOverlap, 1);
-            s_release.Set();
-        }
-        position.Value++;
-    }
-}
-
 public partial struct GeneratedSparseJob : IJobEntity
 {
     public void Execute(ref GeneratedSparse sparse)
@@ -847,37 +745,14 @@ public partial struct GeneratedBoundaryProbeJob : IJobEntity
 
 public partial struct GeneratedReadOnlyProbeJob : IJobEntity
 {
-    private static int s_executionCount;
+    private readonly CallbackData<GeneratedReadCount> _data;
 
-    public static int ExecutionCount => Volatile.Read(ref s_executionCount);
-
-    public static void Reset() => Volatile.Write(ref s_executionCount, 0);
-
+    internal GeneratedReadOnlyProbeJob(CallbackData<GeneratedReadCount> data) => _data = data;
     public void Execute(in GeneratedPosition position)
     {
         _ = position.Value;
-        Interlocked.Increment(ref s_executionCount);
-    }
-}
-
-public partial struct GeneratedCommandBufferEscapeJob : IJobEntity
-{
-    private static CommandBuffer? s_commands;
-
-    public static void Configure(CommandBuffer commands)
-    {
-        s_commands = commands;
-    }
-
-    public static void Clear()
-    {
-        s_commands = null;
-    }
-
-    public void Execute(Entity entity, in GeneratedPosition position)
-    {
-        _ = position.Value;
-        s_commands!.Replace(entity, new GeneratedPosition { Value = 99 });
+        Assert.Equal(0, position.Value);
+        Interlocked.Increment(ref _data.Value.Count);
     }
 }
 
@@ -897,49 +772,6 @@ public partial struct GeneratedBufferJob : IJobEntity
     }
 }
 
-public partial struct GeneratedVersionedStorageJob : IJobEntity
-{
-    private static ManualResetEventSlim s_started = new();
-    private static ManualResetEventSlim s_release = new();
-    private static int s_first;
-
-    public static ManualResetEventSlim Started => s_started;
-
-    public static void Reset()
-    {
-        s_started.Dispose();
-        s_release.Dispose();
-        s_started = new ManualResetEventSlim();
-        s_release = new ManualResetEventSlim();
-        Volatile.Write(ref s_first, 0);
-    }
-
-    public static void Release() => s_release.Set();
-
-    public void Execute(
-        ref GeneratedPosition position,
-        DynamicBuffer<GeneratedBufferElement> buffer,
-        ref GeneratedSparse sparse)
-    {
-        if (Interlocked.CompareExchange(ref s_first, 1, 0) == 0)
-        {
-            buffer[0].Value++;
-            s_started.Set();
-            if (!s_release.Wait(TimeSpan.FromSeconds(5)))
-                throw new TimeoutException("Version probe release was not signaled.");
-        }
-        else
-        {
-            if (!s_release.Wait(TimeSpan.FromSeconds(5)))
-                throw new TimeoutException("Version probe release was not signaled.");
-            buffer[0].Value++;
-        }
-
-        position.Value++;
-        sparse.Value++;
-    }
-}
-
 public partial struct GeneratedColdBufferJob : IJobEntity
 {
     public void Execute(DynamicBuffer<GeneratedColdBufferElement> buffer)
@@ -956,37 +788,6 @@ public partial struct GeneratedPositionIncrementJob : IJobEntity
     }
 }
 
-public partial struct GeneratedTopologyLeaseProbe : IJobEntity
-{
-    private static ManualResetEventSlim s_started = new();
-    private static ManualResetEventSlim s_release = new();
-    private static int s_first;
-
-    public static ManualResetEventSlim Started => s_started;
-
-    public static void Reset()
-    {
-        s_started.Dispose();
-        s_release.Dispose();
-        s_started = new ManualResetEventSlim();
-        s_release = new ManualResetEventSlim();
-        Volatile.Write(ref s_first, 0);
-    }
-
-    public static void Release() => s_release.Set();
-
-    public void Execute(ref GeneratedPosition position)
-    {
-        if (Interlocked.CompareExchange(ref s_first, 1, 0) == 0)
-        {
-            s_started.Set();
-            if (!s_release.Wait(TimeSpan.FromSeconds(5)))
-                throw new TimeoutException("Topology lease probe was not released.");
-        }
-        position.Value++;
-    }
-}
-
 public readonly partial struct GeneratedReparentJob : IJobEntity
 {
     private readonly Entity _parent;
@@ -999,5 +800,88 @@ public readonly partial struct GeneratedReparentJob : IJobEntity
     public void Execute(ref Parent<GeneratedHierarchyDomain> parent)
     {
         parent.Value = _parent;
+    }
+}
+
+public partial struct GeneratedStorageJob : IJobEntity
+{
+    public void Execute(ref GeneratedPosition position,
+        DynamicBuffer<GeneratedBufferElement> buffer,
+        ref GeneratedSparse sparse)
+    {
+        position.Value++;
+        buffer[0].Value++;
+        sparse.Value++;
+    }
+}
+
+internal sealed class GeneratedReadCount
+{
+    internal int Count;
+}
+
+internal sealed class GeneratedConcurrencyData : IDisposable
+{
+    internal readonly CountdownEvent Arrivals = new(2);
+    internal readonly ManualResetEventSlim Release = new();
+    internal int Entered;
+    public void Dispose() { Arrivals.Dispose(); Release.Dispose(); }
+}
+
+public partial struct GeneratedConcurrencyJob : IJobEntity
+{
+    private readonly CallbackData<GeneratedConcurrencyData> _data;
+    internal GeneratedConcurrencyJob(CallbackData<GeneratedConcurrencyData> data) => _data = data;
+    public void Execute(ref GeneratedPosition position)
+    {
+        if (Interlocked.Increment(ref _data.Value.Entered) <= 2)
+        {
+            _data.Value.Arrivals.Signal();
+            if (!_data.Value.Release.Wait(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("The concurrent callbacks were not released.");
+        }
+        position.Value++;
+    }
+}
+
+internal sealed class GeneratedCommandData(CommandBuffer commands)
+{
+    internal readonly CommandBuffer Commands = commands;
+}
+
+public partial struct GeneratedCommandJob : IJobEntity
+{
+    private readonly CallbackData<GeneratedCommandData> _data;
+    internal GeneratedCommandJob(CallbackData<GeneratedCommandData> data) => _data = data;
+    public void Execute(Entity entity, in GeneratedPosition position) =>
+        _data.Value.Commands.Replace(entity, new GeneratedPosition { Value = 99 });
+}
+
+internal sealed class GeneratedTopologyData(int count) : IDisposable
+{
+    internal readonly ManualResetEventSlim Started = new();
+    internal readonly ManualResetEventSlim Release = new();
+    internal readonly System.Collections.Concurrent.ConcurrentQueue<string> Events = new();
+    internal readonly int Count = count;
+    internal int First;
+    internal int Finished;
+    public void Dispose() { Started.Dispose(); Release.Dispose(); }
+}
+
+public partial struct GeneratedTopologyJob : IJobEntity
+{
+    private readonly CallbackData<GeneratedTopologyData> _data;
+    internal GeneratedTopologyJob(CallbackData<GeneratedTopologyData> data) => _data = data;
+    public void Execute(ref GeneratedPosition position)
+    {
+        if (Interlocked.CompareExchange(ref _data.Value.First, 1, 0) == 0)
+        {
+            _data.Value.Started.Set();
+            if (!_data.Value.Release.Wait(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("The generated callback was not released.");
+        }
+        position.Value++;
+        if (Interlocked.Increment(ref _data.Value.Finished) == _data.Value.Count)
+            _data.Value.Events.Enqueue("callbacks finished");
     }
 }

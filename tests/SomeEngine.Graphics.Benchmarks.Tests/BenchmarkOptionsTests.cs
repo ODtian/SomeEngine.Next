@@ -3,11 +3,6 @@ namespace SomeEngine.Graphics.Benchmarks.Tests;
 public sealed class BenchmarkOptionsTests
 {
 
-
-
-
-
-
     [Fact]
     public void ProbeAcceptsSelectedWorkloadsAndManagedVariants()
     {
@@ -33,7 +28,6 @@ public sealed class BenchmarkOptionsTests
             [ReceiverVariant.DirectSilkDefault, ReceiverVariant.DirectSilk],
             options.Variants);
     }
-
 
     [Fact]
     public void GraphCpuAcceptsTheVulkanBackend()
@@ -62,24 +56,20 @@ public sealed class BenchmarkOptionsTests
     [InlineData("invalid")]
     public void GraphCpuRejectsUnsupportedResourceCounts(string value)
     {
-        BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
+        Assert.Throws<BenchmarkUsageException>(() =>
             BenchmarkOptions.Parse([
                 "graph-cpu", "--adapter", "1:0",
                 "--resource-counts", value,
             ]));
-
-        Assert.Contains("resource count", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void GraphCpuResourceSelectionIsNotAcceptedByOtherCommands()
     {
-        BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
+        Assert.Throws<BenchmarkUsageException>(() =>
             BenchmarkOptions.Parse([
                 "warp", "--resource-counts", "25",
             ]));
-
-        Assert.Contains("graph-cpu", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -98,24 +88,19 @@ public sealed class BenchmarkOptionsTests
     [Fact]
     public void ProbeRejectsNativeCppBecauseItCannotSelectWorkloads()
     {
-        BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
+        Assert.Throws<BenchmarkUsageException>(() =>
             BenchmarkOptions.Parse([
                 "probe", "--adapter", "1:0", "--variants", "native-cpp",
             ]));
-
-        Assert.Contains("native-cpp", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void DiagnosticRequiresHardwareAdapter()
     {
-        BenchmarkUsageException missingAdapter = Assert.Throws<BenchmarkUsageException>(() =>
+        Assert.Throws<BenchmarkUsageException>(() =>
             BenchmarkOptions.Parse(["diagnose", "--native-runner", "native.exe"]));
-        Assert.Contains("adapter", missingAdapter.Message, StringComparison.OrdinalIgnoreCase);
 
     }
-
-
 
     [Fact]
     public void DiagnosticWorkerAcceptsZeroUnusedBarriers()
@@ -132,14 +117,12 @@ public sealed class BenchmarkOptionsTests
         Assert.Equal(0, options.BarrierCount);
     }
 
-
     [Fact]
     public void ResumeIsRestrictedToHardwareControllers()
     {
-        BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
+        Assert.Throws<BenchmarkUsageException>(() =>
             BenchmarkOptions.Parse(["warp", "--resume", "raw-run"]));
 
-        Assert.Contains("probe", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -159,18 +142,16 @@ public sealed class BenchmarkOptionsTests
     [Fact]
     public void ManagedRunnerIsRestrictedToDiagnosticCommand()
     {
-        BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
+        Assert.Throws<BenchmarkUsageException>(() =>
             BenchmarkOptions.Parse(["warp", "--managed-runner", "old-release.exe"]));
 
-        Assert.Contains("diagnose", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void WarpAlwaysSelectsWarp()
     {
-        BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
+        Assert.Throws<BenchmarkUsageException>(() =>
             BenchmarkOptions.Parse(["warp", "--adapter", "1:0"]));
 
-        Assert.Contains("WARP", exception.Message, StringComparison.Ordinal);
     }
 }

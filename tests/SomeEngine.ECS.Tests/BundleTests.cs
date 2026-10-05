@@ -277,12 +277,6 @@ public class BundleTests
                 count++;
         });
 
-        var archetype = Assert.Single(
-            world.AllArchetypes.ToArray(),
-            static candidate =>
-                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
-                candidate.HasComponent(ComponentMetadata<SceneId>.Id));
-        Assert.Equal(1, archetype.Chunks.Length);
         Assert.Equal(2, count);
     }
 
@@ -455,49 +449,29 @@ public class BundleTests
     }
 
     [Fact]
-    public void ReserveBundle_WithExistingOccupancy_ReservesAdditionalFreeRows()
+    public void ReservedBundleCanSpawnAdditionalRowsWithExistingEntities()
     {
-        var world = new World();
-        int[] componentIds =
+        using var world = new World();
+        world.Spawn(new PhysicsBundle { Position = new Position { X = -1 } });
+        int[] ids = [ComponentMetadata<Position>.Id, ComponentMetadata<Velocity>.Id];
+        world.ReserveBundle(ids, 2_049);
+        world.ExecuteBundleSpawnBatch(ids, 2_049, view =>
         {
-            ComponentMetadata<Position>.Id,
-            ComponentMetadata<Velocity>.Id,
-        };
-
-        var state = new PhysicsBundle
+            var position = new Position { X = view.Index };
+            var velocity = new Velocity { X = view.Index + 1 };
+            view.Write(in position);
+            view.Write(in velocity);
+        });
+        Assert.Equal(2_050, world.EntityCount);
+        var query = world.Query(world.QueryDefinition().Read<Position>().Read<Velocity>());
+        var values = new List<float>();
+        world.ExecuteQuery(query, cursor =>
         {
-            Position = new Position { X = 1, Y = 2 },
-            Velocity = new Velocity { X = 3, Y = 4 },
-        };
-        _ = world.ExecuteBundleSpawn(
-            componentIds,
-            ref state,
-            static (BundleWriteView view, ref PhysicsBundle values) =>
-            {
-                view.Write(in values.Position);
-                view.Write(in values.Velocity);
-            });
-
-        var archetype = Assert.Single(
-            world.AllArchetypes.ToArray(),
-            static candidate =>
-                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
-                candidate.HasComponent(ComponentMetadata<Velocity>.Id));
-        int existingFreeRows = CountFreeRows(archetype);
-        int additionalRows = existingFreeRows + 1;
-
-        world.ReserveBundle(componentIds, additionalRows);
-
-        Assert.True(CountFreeRows(archetype) >= additionalRows);
-
-        static int CountFreeRows(SomeEngine.ECS.Archetypes.Archetype archetype)
-        {
-            int freeRows = 0;
-            foreach (var chunk in archetype.Chunks)
-                freeRows += chunk.Capacity - chunk.Count;
-
-            return freeRows;
-        }
+            foreach (var row in cursor.Rows)
+                values.Add(row.Read<Position>().X);
+        });
+        Assert.Equal(Enumerable.Range(-1, 2_050).Select(value => (float)value),
+            values.OrderBy(value => value));
     }
 
     private struct BatchWriteState

@@ -58,10 +58,7 @@ public sealed class RecordingConcurrencyTests
                         commands.ClearBuffer(commands.GetBuffer(data.Destination), new BufferRange(0, 4), 73);
                     data.Recorded.Set();
                 });
-            edit.AddCopyFramePass("independent worker work", PassQueueSelection.Exact(support.GraphicsQueue), 0,
-                new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedRecordingCost: 64),
-                static (ref PassDefinition _, ref int _) => { },
-                static (ref CopyPassCommandScope _, in int _) => { });
+            edit.DeclareCopyPass("independent worker work", PassQueueSelection.Exact(support.GraphicsQueue), options: new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedRecordingCost: 64));
             edit.Commit();
         }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
@@ -86,6 +83,7 @@ public sealed class RecordingConcurrencyTests
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using var graph = new RenderGraph(support.Backend, support.Device,
             [support.CopyQueue, support.GraphicsQueue]);
+        var recordingFailure = new InvalidOperationException("recording failed");
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         using var finished = new ManualResetEventSlim();
@@ -100,12 +98,12 @@ public sealed class RecordingConcurrencyTests
                 static (ref PassDefinition pass, ref FailureData data) =>
                     pass.Write(data.Source, new BufferRange(0, 4), PipelineSync.Copy,
                         ResourceAccess.CopyDestination, WriteCoverage.Complete),
-                static (ref CopyPassCommandScope _, in FailureData data, in byte _) =>
+                (ref CopyPassCommandScope _, in FailureData data, in byte _) =>
                 {
                     bool started = data.Entered.Wait(TimeSpan.FromSeconds(10));
                     data.Release.Set();
                     Assert.True(started);
-                    throw new InvalidOperationException("recording failed");
+                    throw recordingFailure;
                 });
             edit.AddCopyPass<FailureData, byte>("worker callback completing during failure",
                 PassQueueSelection.Exact(support.GraphicsQueue), data,
@@ -118,17 +116,14 @@ public sealed class RecordingConcurrencyTests
                     Assert.True(data.Release.Wait(TimeSpan.FromSeconds(10)));
                     data.Finished.Set();
                 });
-            edit.AddCopyFramePass("independent worker work", PassQueueSelection.Exact(support.GraphicsQueue), 0,
-                new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedRecordingCost: 64),
-                static (ref PassDefinition _, ref int _) => { },
-                static (ref CopyPassCommandScope _, in int _) => { });
+            edit.DeclareCopyPass("independent worker work", PassQueueSelection.Exact(support.GraphicsQueue), options: new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedRecordingCost: 64));
             edit.Commit();
         }
         using RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(FrameSubmissionMode.RecordAhead));
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         bool failed = false;
         try { frame.Execute(completions); }
-        catch (InvalidOperationException exception) when (exception.Message == "recording failed") { failed = true; }
+        catch (InvalidOperationException exception) when (ReferenceEquals(exception, recordingFailure)) { failed = true; }
         Assert.True(failed);
         Assert.True(finished.IsSet);
     }

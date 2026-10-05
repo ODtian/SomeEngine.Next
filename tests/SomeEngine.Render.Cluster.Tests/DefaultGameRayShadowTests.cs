@@ -13,6 +13,7 @@ using Xunit.Abstractions;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
+[Trait("Category", "Hardware")]
 public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
 {
     [Theory]

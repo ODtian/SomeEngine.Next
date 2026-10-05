@@ -34,7 +34,7 @@ pass 与访问声明序号对应，支持创建 pass 后通过 `GetPass` 补充�
 
 `FrameRegionTests` 使用 WARP、自给的复制与清除工作和公共缓冲回读，覆盖区段顺序、
 命令数据更新、局部增减、持久 pass 编辑、祖先启用、活动帧边界及显式顺序复用。
-`PersistentRenderGraphTests.FrameRegionParticipatesInCullingAndScheduling` 覆盖当帧资源
+`PassCullingAndAliasingTests.FrameRegionParticipatesInCullingAndScheduling_DoesNotThrow` 覆盖当帧资源
 与跨队列调度。
 
 ## Relations
