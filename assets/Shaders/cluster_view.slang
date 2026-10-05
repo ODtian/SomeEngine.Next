@@ -43,15 +43,17 @@ struct ClusterViewUniforms
     // Zero disables reuse. Within one target policy, equal nonzero indices identify
     // identical ViewProj, CameraPos, CullingRadius and CullingEnabled values.
     uint CullingProjectionIndex;
-    uint Pad6;
+    // Zero selects this view; other values select primary geometry views, index + 1.
+    uint GeometryViewIndex;
+    float4x4 GeometryViewProj;
 };
 
 float3 ClusterProjectionScales(ClusterViewUniforms view)
 {
     return float3(
-        length(float3(view.ViewProj[0][0], view.ViewProj[1][0], view.ViewProj[2][0])),
-        length(float3(view.ViewProj[0][1], view.ViewProj[1][1], view.ViewProj[2][1])),
-        length(float3(view.ViewProj[0][3], view.ViewProj[1][3], view.ViewProj[2][3])));
+        length(float3(view.GeometryViewProj[0][0], view.GeometryViewProj[1][0], view.GeometryViewProj[2][0])),
+        length(float3(view.GeometryViewProj[0][1], view.GeometryViewProj[1][1], view.GeometryViewProj[2][1])),
+        length(float3(view.GeometryViewProj[0][3], view.GeometryViewProj[1][3], view.GeometryViewProj[2][3])));
 }
 
 float ClusterProjectedError(
@@ -73,7 +75,7 @@ float ClusterProjectedError(
 
 float ClusterSphereError(float3 center, float sphereRadius, float error, ClusterViewUniforms view)
 {
-    float4 clip = mul(float4(center, 1.0), view.ViewProj);
+    float4 clip = mul(float4(center, 1.0), view.GeometryViewProj);
     float3 scales = ClusterProjectionScales(view);
     return ClusterProjectedError(clip.w - sphereRadius * scales.z,
         abs(clip.xy) + sphereRadius * scales.xy, error, scales,

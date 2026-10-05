@@ -51,6 +51,8 @@ internal sealed partial class FrameExecutor
     internal void ChangeCommandData(GraphIdentity identity)
     {
         if (TryResolvePass(identity, out int pass)) _commandChanges.Add(pass);
+        foreach (GraphIdentity copy in _frame.StructureIndex.PassCopies.GetValueOrDefault(identity, []))
+            if (TryResolvePass(copy, out int copied)) _commandChanges.Add(copied);
     }
 
     internal ReadOnlySpan<QueueCompletion> SubmittedCompletions =>
@@ -1092,7 +1094,8 @@ internal sealed partial class FrameExecutor
         int expectedOrdinal)
     {
         GraphIdentity passIdentity = _passes[pass].Identity;
-        if (region.Pass != passIdentity || region.Value.Slot != expectedOrdinal)
+        if ((region.Pass != passIdentity && region.Pass != _passes[pass].CommandSource) ||
+            region.Value.Slot != expectedOrdinal)
             throw new InvalidOperationException("The rendering region is invalid or out of order.");
         RenderingDesc description = BuildGeneralRendering(pass, expectedOrdinal);
         _frame.Backend.BeginRendering(context, description);
@@ -1684,8 +1687,18 @@ internal sealed partial class FrameExecutor
             if (block.Count == 0 && block.Data is not { Length: > 0 }) continue;
             if (block.Bindings is null)
             {
-                _frame.Backend.SetTransientParameterBindings(context,
-                    new ParameterBlockBindings(block.Layout, block.Resources.AsSpan(0, block.Count), block.Data ?? []));
+                try
+                {
+                    _frame.Backend.SetTransientParameterBindings(context,
+                        new ParameterBlockBindings(block.Layout, block.Resources.AsSpan(0, block.Count), block.Data ?? []));
+                }
+                catch (ArgumentException error)
+                {
+                    FramePass row = _passes[pass];
+                    string label = row.CommandSource.IsValid
+                        ? _frame.StructureIndex.Structure.Passes.Get(row.CommandSource).Label : row.Label;
+                    throw new ArgumentException($"Shader bindings for pass '{label}': {error.Message}", error);
+                }
                 continue;
             }
             _frame.Backend.SetPersistentParameterBindings(context, block.Bindings!);

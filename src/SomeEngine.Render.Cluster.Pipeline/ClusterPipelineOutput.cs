@@ -75,6 +75,11 @@ public readonly record struct ClusterRenderContext(
     bool HardwareRasterOnly = false)
 {
     public const uint TargetViewSizeInBytes = 80;
+    public const int ViewSizeInBytes = 496;
+    public GraphResourceBinder? BindTargetPageBounds { get; init; }
+    public uint ViewDetailCount { get; init; } = 1u;
+    /// <summary>Maximum number of raster windows across all details of one source view.</summary>
+    public uint MaximumRasterWindowsPerSourceView { get; init; }
 
     public bool IsValid =>
         PolicyId != 0u &&

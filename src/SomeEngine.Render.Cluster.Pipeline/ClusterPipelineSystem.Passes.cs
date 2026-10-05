@@ -20,6 +20,8 @@ public sealed partial class ClusterPipelineSystem
     {
         FrameResources frame = CreateFrameResources(ref graph, in output, assignments, rasterStages, shadeStages);
         GraphData.Resources = frame;
+        GraphData.TargetBatchUniforms = CreateParameters(ref graph, new byte[32], "Cluster target source batch");
+        GraphData.TargetSourceOffsets = graph.CreateBufferInput(BufferUsages.ShaderRead);
         AuthorHistoryInitialization(ref graph, frame);
         frame.PackedViews = graph.DeclareExternalBuffer(new BufferDesc(
             checked((ulong)_packedViews.Length * ClusterViewUniforms.SizeInBytes),
@@ -71,30 +73,39 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferId packedViews, ImmutableDictionary<int, RasterPhase> phases)
     {
         if (!_renderContext.IsValid) return phases;
-        var reset = new ClusterContinuationResetParameters(frame.CandidateCount, frame.TraversalArguments0,
-            frame.TraversalArguments1, frame.CandidateArgsInitialization, frame.CandidateArgs,
-            frame.ContinuationDrawArgs, frame.Phase2CandidateCount, frame.Phase2CandidateArgs, frame.ContinuationPostDrawArgs);
+        FrameResources targets = GetRasterFrameResources(frame, true);
+        GraphData.TargetFirstReference = graph.AddRegion("Cluster target first drawing shape", _targetPhaseOneRegion);
+        GraphData.TargetSecondReference = graph.AddRegion("Cluster target second drawing shape", _targetPhaseTwoRegion);
+        var reset = new ClusterContinuationResetParameters(targets.CandidateCount, targets.TraversalArguments0,
+            targets.TraversalArguments1, targets.CandidateArgsInitialization, targets.CandidateArgs,
+            targets.ContinuationDrawArgs, targets.Phase2CandidateCount, targets.Phase2CandidateArgs, targets.ContinuationPostDrawArgs);
         graph.AddCopyFramePass("Reset Cluster continuation scratch", PassQueueSelection.AnyOfType(QueueType.Graphics),
             reset, new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
-            ClusterContinuationResetParameters.Declare, ClusterContinuationResetParameters.Record, region: _targetPhaseOneRegion);
-        GraphRegionId targetTraversal = graph.AddRegion("Cluster target traversal", _targetPhaseOneRegion);
-        GraphData.TraversalLevels = GraphData.TraversalLevels.Add(2, RecordTraversal(ref graph, frame, packedViews,
+            ClusterContinuationResetParameters.Declare, ClusterContinuationResetParameters.Record, region: GraphData.TargetFirstReference);
+        GraphRegionId targetTraversal = graph.AddRegion("Cluster target traversal", GraphData.TargetFirstReference);
+        GraphData.TraversalLevels = GraphData.TraversalLevels.Add(2, RecordTraversal(ref graph, targets, packedViews,
             _renderContext.MaximumInvocationCount, 1u, 1u, true,
             new GraphRegionMap<int, bool>(targetTraversal), "continuation"));
-        RecordCullPhaseOne(ref graph, frame, packedViews, frame.ContinuationDrawArgs, frame.DrawArgs,
-            frame.Phase2DrawArgs, false, "continuation", graph.AddRegion("Cluster target first cull", _targetPhaseOneRegion));
-        RasterPhase first = RecordRasterPhase(ref graph, frame, rasterStages, frame.ContinuationDrawArgs,
-            frame.DrawArgs, frame.Phase2DrawArgs, frame.ReadOffsetZero, 2, true);
-        GraphRegionId targetDeferredTraversal = graph.AddRegion("Cluster target deferred traversal", _targetPhaseTwoRegion);
-        RecordDeferredResume(ref graph, frame, frame.ContinuationPostDrawArgs, "continuation post-HiZ", targetDeferredTraversal);
-        GraphData.TraversalLevels = GraphData.TraversalLevels.Add(3, RecordTraversal(ref graph, frame, packedViews,
+        GraphData.TargetFirstCull = RecordCullPhaseOne(ref graph, targets, packedViews, targets.ContinuationDrawArgs, targets.ReadOffsetZero,
+            targets.ReadOffsetZero, false, "continuation", graph.AddRegion("Cluster target first cull", GraphData.TargetFirstReference));
+        RasterPhase first = RecordRasterPhase(ref graph, targets, rasterStages, targets.ContinuationDrawArgs,
+            targets.ReadOffsetZero, targets.ReadOffsetZero, targets.ReadOffsetZero, 2, true);
+        GraphRegionId targetDeferredTraversal = graph.AddRegion("Cluster target deferred traversal", GraphData.TargetSecondReference);
+        RecordDeferredResume(ref graph, targets, targets.ContinuationPostDrawArgs, "continuation post-HiZ", targetDeferredTraversal);
+        GraphData.TraversalLevels = GraphData.TraversalLevels.Add(3, RecordTraversal(ref graph, targets, packedViews,
             _renderContext.MaximumInvocationCount, 1u, 2u, false,
             new GraphRegionMap<int, bool>(targetDeferredTraversal), "continuation post-HiZ"));
-        RecordCullPhaseTwo(ref graph, frame, packedViews, frame.CandidateClusters, frame.CandidateCount,
-            frame.CandidateArgs, frame.ContinuationPostDrawArgs, frame.DrawArgs, frame.Phase2DrawArgs,
-            frame.ContinuationDrawArgs, "continuation post", graph.AddRegion("Cluster target second cull", _targetPhaseTwoRegion));
-        RasterPhase second = RecordRasterPhase(ref graph, frame, rasterStages, frame.ContinuationPostDrawArgs,
-            frame.DrawArgs, frame.Phase2DrawArgs, frame.ContinuationDrawArgs, 3, false);
+        RecordCullPhaseTwo(ref graph, targets, packedViews, targets.CandidateClusters, targets.CandidateCount,
+            targets.CandidateArgs, targets.ContinuationPostDrawArgs, targets.ReadOffsetZero, targets.ReadOffsetZero,
+            targets.ContinuationDrawArgs, "continuation post", graph.AddRegion("Cluster target second cull", GraphData.TargetSecondReference));
+        RasterPhase second = RecordRasterPhase(ref graph, targets, rasterStages, targets.ContinuationPostDrawArgs,
+            targets.ReadOffsetZero, targets.ReadOffsetZero, targets.ContinuationDrawArgs, 3, false);
+        GraphData.TargetFirstDraws = new GraphRegionMap<uint, TargetSourceBatch>(
+            graph.AddRegion("Cluster target first source draws", _targetPhaseOneRegion), new TargetSourceBatchComparer());
+        GraphData.TargetSecondDraws = new GraphRegionMap<uint, TargetSourceBatch>(
+            graph.AddRegion("Cluster target second source draws", _targetPhaseTwoRegion), new TargetSourceBatchComparer());
+        GraphData.TargetFirstBatches = graph.AddFrameRegion("Cluster target first source batches", _targetPhaseOneRegion);
+        GraphData.TargetSecondBatches = graph.AddFrameRegion("Cluster target second source batches", _targetPhaseTwoRegion);
         return phases.Add(2, first).Add(3, second);
     }
 
@@ -242,7 +253,7 @@ public sealed partial class ClusterPipelineSystem
                 CreateConstantBufferView(graph, frame.InstanceProperties, frame.InstancePropertiesRange),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.TraversalNodes, TraversalNodeStride),
+                CreateStorageBufferView(graph, frame.TraversalNodes0, TraversalNodeStride),
                 PipelineSync.ComputeShading,
                 GraphAccessMode.Write,
                 WriteCoverage.Partial,
@@ -322,6 +333,12 @@ public sealed partial class ClusterPipelineSystem
             GraphBufferId nextArguments = (level & 1u) == 0u
                 ? data.TraversalArguments1
                 : data.TraversalArguments0;
+            GraphBufferId currentNodes = (level & 1u) == 0u
+                ? data.TraversalNodes0
+                : data.TraversalNodes1;
+            GraphBufferId nextNodes = (level & 1u) == 0u
+                ? data.TraversalNodes1
+                : data.TraversalNodes0;
             uint currentOffset = checked(level * (uint)TraversalArgumentStride);
             uint nextOffset = checked((level + 1u) * (uint)TraversalArgumentStride);
             GraphBufferInput levelUniforms = UploadUniform(
@@ -372,10 +389,14 @@ public sealed partial class ClusterPipelineSystem
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
                 CreateConstantBufferView(edit, levelUniforms),
                 PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(edit, data.TraversalNodes, TraversalNodeStride),
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+                CreateReadOnlyBufferView(edit, currentNodes, TraversalNodeStride),
                 PipelineSync.ComputeShading,
-                GraphAccessMode.ReadWrite,
+                BufferContentScope.CountBoundedPrefix));
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+                CreateStorageBufferView(edit, nextNodes, TraversalNodeStride),
+                PipelineSync.ComputeShading,
+                GraphAccessMode.Write,
                 WriteCoverage.Partial,
                 ResourceContentState.Defined,
                 BufferContentScope.CountBoundedPrefix));
@@ -428,7 +449,7 @@ public sealed partial class ClusterPipelineSystem
                         PipelineSync.ExecuteIndirect,
                         ResourceAccess.IndirectArgument),
                 ClusterIndirectDispatchParameters.Record, region: layer);
-            BindTargetPolicyResources(ref edit, levelPass, viewIndexMode != 0u);
+            BindTargetPolicyResources(ref edit, levelPass, viewIndexMode != 0u, sourceRanges: true);
         });
     }
 
@@ -469,7 +490,7 @@ public sealed partial class ClusterPipelineSystem
             CreateReadOnlyBufferView(graph, frame.Phase2CandidateCount, sizeof(uint)),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.TraversalNodes, TraversalNodeStride),
+            CreateStorageBufferView(graph, frame.TraversalNodes0, TraversalNodeStride),
             PipelineSync.ComputeShading,
             GraphAccessMode.Write,
             WriteCoverage.Partial,
@@ -614,6 +635,7 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: region);
         BindTargetPolicyResources(ref graph, pass, !primaryView);
+        BindTargetSourceRanges(ref graph, pass);
         return pass;
     }
 
@@ -694,6 +716,7 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: region);
         BindTargetPolicyResources(ref graph, pass, phaseDrawArgs != frame.Phase2DrawArgs);
+        BindTargetSourceRanges(ref graph, pass);
         return pass;
     }
 
@@ -708,10 +731,11 @@ public sealed partial class ClusterPipelineSystem
         int epoch,
         bool phaseOne)
     {
+        FrameResources raster = GetRasterFrameResources(frame, epoch >= 2);
         GraphRegionId parent = epoch switch
         {
-            2 => _targetPhaseOneRegion,
-            3 => _targetPhaseTwoRegion,
+            2 => GraphData.TargetFirstReference,
+            3 => GraphData.TargetSecondReference,
             _ => GraphData.PrimaryGeometry,
         };
         GraphRegionId phase = graph.AddRegion(
@@ -721,9 +745,9 @@ public sealed partial class ClusterPipelineSystem
         GraphRegionId groups = graph.AddRegion("Tessellation groups", phase);
         GraphRegionId patches = graph.AddRegion("Final patch binning", phase);
         GraphRegionId bins = graph.AddRegion("Raster bins", phase);
-        RecordRasterWorkGeneration(ref graph, frame, drawArgs,
+        RecordRasterWorkGeneration(ref graph, raster, drawArgs,
             readOffsetArgs0, readOffsetArgs1, readOffsetArgs2, phaseOne, epoch, work);
-        RecordTessellationReset(ref graph, frame, phaseOne, work);
+        RecordTessellationReset(ref graph, raster, phaseOne, work);
         var data = new RasterPhase(phase,
             new GraphRegionMap<uint, RasterBin>(bins, RasterBinComparer.Instance),
             new GraphRegionMap<TessellationSplitKey, bool>(groups),
@@ -731,7 +755,7 @@ public sealed partial class ClusterPipelineSystem
             new GraphRegionMap<int, RasterInputs>(patches), phaseOne, epoch >= 2);
         data = ReconcileRasterPhase(ref graph, data, rasterStages);
         if (epoch < 2 && _visibilityMode != ClusterVisibilityMode.HardwareOnly)
-            RecordWinnerResolve(ref graph, frame, phaseOne, graph.AddRegion("Visibility resolve", phase));
+            RecordWinnerResolve(ref graph, raster, phaseOne, graph.AddRegion("Visibility resolve", phase));
         return data;
     }
 

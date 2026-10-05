@@ -181,6 +181,8 @@ public sealed class ClusterRenderResources : IDisposable
 
     internal int PublishedMeshCount => _meshes.PublishedMeshCount;
 
+    internal uint GetSourceClusterCount(Mesh mesh) => _residency.GetSourceClusterCount(mesh);
+
     internal int HierarchyLevels => _residency.HierarchyLevels;
 
     internal int PageFaultCapacity => _residency.PageFaultCapacity;

@@ -107,6 +107,8 @@ public sealed partial class ClusterPipelineSystem
 
         GraphData.PageUpload = geometryBuffers.PageUpload;
         GraphData.BvhUpload = geometryBuffers.BvhUpload;
+        GraphData.SourceRangeUpload = geometryBuffers.SourceRangeUpload;
+        frame.SourceClusterRanges = geometryBuffers.SourceClusterRanges;
         frame.CandidateArgs = frame.AddBuffer(
             ref graph,
             16,
@@ -130,11 +132,16 @@ public sealed partial class ClusterPipelineSystem
             stackalloc byte[checked((int)ClusterRenderContext.TargetViewSizeInBytes)],
             BufferUsages.ShaderRead,
             "Cluster neutral target view");
-        frame.TraversalNodes = frame.AddBuffer(
+        frame.TraversalNodes0 = frame.AddBuffer(
             ref graph,
             checked(candidates * TraversalNodeStride),
             BufferUsages.None,
-            "Cluster breadth-first hierarchy nodes");
+            "Cluster hierarchy nodes for even levels");
+        frame.TraversalNodes1 = frame.AddBuffer(
+            ref graph,
+            checked(candidates * TraversalNodeStride),
+            BufferUsages.None,
+            "Cluster hierarchy nodes for odd levels");
         ulong traversalArgumentBytes = checked(
             ((ulong)_resources.HierarchyLevels + 1u) * TraversalArgumentStride);
         frame.TraversalArguments0 = frame.AddBuffer(
@@ -200,6 +207,15 @@ public sealed partial class ClusterPipelineSystem
             checked(candidates * VisibleClusterRasterWindowStride),
             BufferUsages.None,
             "Cluster visible raster windows");
+        if (_renderContext.IsValid)
+        {
+            frame.TargetVisibleClusters = frame.AddBuffer(ref graph,
+                checked(candidates * VisibleClusterStride), BufferUsages.None,
+                "Cluster target visible clusters");
+            frame.TargetRasterWindows = frame.AddBuffer(ref graph,
+                checked(candidates * VisibleClusterRasterWindowStride), BufferUsages.None,
+                "Cluster target raster windows");
+        }
         frame.RasterBinMeta = frame.AddBuffer(
             ref graph,
             checked((ulong)rasterBinCount * RasterBinStride),
@@ -646,6 +662,8 @@ public sealed partial class ClusterPipelineSystem
             graph.WriteBuffer(GraphData.Resources.PageHeap, upload.Offset, upload.Bytes.Span);
         foreach (ClusterStagedUpload upload in publication.Meshes.Bvh.Uploads)
             graph.WriteBuffer(GraphData.Resources.Bvh, upload.Offset, upload.Bytes.Span);
+        foreach (ClusterStagedUpload upload in publication.Meshes.Bvh.SourceRangeUploads)
+            graph.WriteBuffer(GraphData.Resources.SourceClusterRanges, upload.Offset, upload.Bytes.Span);
     }
 
     private void DeclareResidencyReads(
@@ -655,6 +673,8 @@ public sealed partial class ClusterPipelineSystem
         graph.SetBufferRanges(GraphData.Resources.PageHeap, _residentPageReads);
 
         graph.SetBufferRanges(GraphData.Resources.Bvh, GraphData.Outputs.Geometry.BvhReadRanges);
+        graph.SetBufferRanges(GraphData.Resources.SourceClusterRanges, new BufferRangeSet(
+            [new BufferRange(binding.BvhRange.Offset / 64u * 8u, binding.BvhRange.Size / 64u * 8u)]));
     }
 
     private QueueCompletion[][] CaptureRetirementCompletions(
@@ -1015,6 +1035,17 @@ public sealed partial class ClusterPipelineSystem
         return buffer;
     }
 
+    private static FrameResources GetRasterFrameResources(in FrameResources frame, bool target)
+    {
+        FrameResources resources = frame;
+        if (target)
+        {
+            resources.VisibleClusters = frame.TargetVisibleClusters;
+            resources.VisibleClusterRasterWindows = frame.TargetRasterWindows;
+        }
+        return resources;
+    }
+
     private struct FrameResources
     {
         public FrameResources() { }
@@ -1027,6 +1058,7 @@ public sealed partial class ClusterPipelineSystem
         internal int PageFaultCapacity;
         internal GraphBufferId PageHeap;
         internal GraphBufferId Bvh;
+        internal GraphBufferId SourceClusterRanges;
         internal GraphBufferId InstanceData;
         internal GraphBufferId InstanceProperties;
         internal BufferRange InstancePropertiesRange;
@@ -1043,7 +1075,8 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId NeutralPolicyCounter;
         internal GraphBufferId NeutralPolicyView;
         internal GraphTextureId NeutralPolicyOutput;
-        internal GraphBufferId TraversalNodes;
+        internal GraphBufferId TraversalNodes0;
+        internal GraphBufferId TraversalNodes1;
         internal GraphBufferId TraversalArguments0;
         internal GraphBufferId TraversalArguments1;
         internal GraphBufferId CandidateArgsInitialization;
@@ -1058,6 +1091,8 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId ContinuationDrawArgs;
         internal GraphBufferId ContinuationPostDrawArgs;
         internal GraphBufferId VisibleClusters;
+        internal GraphBufferId TargetVisibleClusters;
+        internal GraphBufferId TargetRasterWindows;
         internal GraphBufferId VisibleClusterRasterWindows;
         internal GraphBufferId RasterBinMeta;
         internal GraphBufferId BinnedClusters;

@@ -358,7 +358,7 @@ bool LoadAndFilterCandidate(
             instanceID));
 
     if (!(work.KeepCoarseGeometry != 0u && view.CullingEnabled != 0u) &&
-        !PassesLODFilter(cluster, t, view))
+        !PassesLODFilter(cluster, t, LoadClusterGeometryView(Views, view)))
         return false;
 
 #if CLUSTER_CULL_PHASE == 2
@@ -481,7 +481,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
         AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates,
             CandidateClusters[dispatchThreadID.x].KeepCoarseGeometry);
     }
-    else
+    else if (TargetBatch.CollectDeferredOnly == 0u)
     {
         bool isSW = ShouldUseSWRaster(bounds.MinUv, bounds.MaxUv, view);
         AppendVisible(
@@ -604,3 +604,5 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     }
 }
 #endif
+
+#include "cluster_target_source_ranges.slang"

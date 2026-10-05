@@ -36,8 +36,10 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
     private readonly GraphTextureInput _receiverDepth;
 
     private const uint DispatchStride = 16u;
-    private const uint EvictionBucketCount = 8u;
+    private const uint EvictionBucketCount = VirtualShadowMap.EvictionBucketCount;
     private const uint PageMetadataStride = 16u;
+    private uint PageHiZPagesPerRow => Math.Min(_shadowMap.Settings.AtlasSize / _shadowMap.Settings.PageSize, 8u);
+    private uint PageHiZLayerCount => DivideRoundUp(_shadowMap.Settings.MaxPhysicalPages, PageHiZPagesPerRow * PageHiZPagesPerRow);
 
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
@@ -54,6 +56,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
     private readonly GraphBufferId _pageOwners;
     private readonly GraphTextureId _atlas;
     private readonly GraphTextureId _pageHiZ;
+    private readonly GraphTextureId _previousPageHiZ;
     private readonly GraphBufferId _freePages;
     private readonly GraphBufferId _freePageCount;
     private readonly GraphBufferId _pageMetadata;
@@ -78,6 +81,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
     private readonly GraphBufferId _allocationFailures;
     private readonly GraphBufferId _policyRasterWorkCount;
     private readonly GraphBufferId _dynamicResolutionBias;
+    private readonly GraphBufferId _frameResolutionBias;
     private readonly GraphBufferId _rasterInvocationViews;
     private readonly GraphBufferId _rasterTargetViews;
     private readonly GraphBufferInput _clusterSourceViews;
@@ -211,15 +215,26 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                 int pageHiZMipCount = checked(BitOperations.Log2(Math.Max(settings.PageSize / 2u, 1u)) + 1);
                 _pageHiZ = edit.CreatePersistentTexture(new TextureDesc(
                     TextureDimension.Texture2D,
-                    Math.Max(settings.PageSize / 2u, 1u),
-                    Math.Max(settings.PageSize / 2u, 1u),
+                    Math.Max(settings.PageSize / 2u, 1u) * PageHiZPagesPerRow,
+                    Math.Max(settings.PageSize / 2u, 1u) * PageHiZPagesPerRow,
                     1,
                     checked((uint)pageHiZMipCount),
-                    settings.MaxPhysicalPages,
+                    PageHiZLayerCount,
                     1,
                     Format.R32Float,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
                     label: "Virtual shadow physical-page HiZ"));
+                _previousPageHiZ = edit.CreatePersistentTexture(new TextureDesc(
+                    TextureDimension.Texture2D,
+                    Math.Max(settings.PageSize / 2u, 1u) * PageHiZPagesPerRow,
+                    Math.Max(settings.PageSize / 2u, 1u) * PageHiZPagesPerRow,
+                    1,
+                    checked((uint)pageHiZMipCount),
+                    PageHiZLayerCount,
+                    1,
+                    Format.R32Float,
+                    TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
+                    label: "Virtual shadow previous-page HiZ"));
                 BufferUsages cacheUsages = BufferUsages.ShaderRead | BufferUsages.ShaderWrite |
                     BufferUsages.CopySource | BufferUsages.CopyDestination;
                 _freePages = edit.DeclareExternalBuffer(new BufferDesc(
@@ -312,11 +327,14 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination,
                     "Virtual shadow policy raster work count"));
                 _dynamicResolutionBias = edit.CreatePersistentBuffer(new BufferDesc(
-                    2u * sizeof(float),
-                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination,
+                    4u * sizeof(float),
+                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination,
                     "Virtual shadow dynamic resolution bias"));
+                _frameResolutionBias = edit.CreateBuffer(new BufferDesc(2u * sizeof(float),
+                    BufferUsages.ShaderRead | BufferUsages.CopyDestination,
+                    "Virtual shadow resolution bias for this frame"));
                 _rasterInvocationViews = edit.CreateBuffer(new BufferDesc(
-                    checked((ulong)rasterViewCapacity * 432u),
+                    checked((ulong)rasterViewCapacity * (uint)ClusterRenderContext.ViewSizeInBytes),
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
                     "Virtual shadow raster invocation views"));
                 _rasterTargetViews = edit.CreateBuffer(new BufferDesc(
@@ -392,6 +410,14 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     VirtualShadowBufferResetPassData.Declare,
                     VirtualShadowBufferResetPassData.Record, region: primaryDepthAfter);
 
+                var resolutionCopy = new VirtualShadowResolutionCopyPassData(_dynamicResolutionBias, _frameResolutionBias);
+                GraphPassId resolutionCopyPass = edit.AddCopyFramePass("Copy virtual shadow resolution bias for the frame",
+                    PassQueueSelection.AnyCompatible(), resolutionCopy,
+                    new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                    VirtualShadowResolutionCopyPassData.Declare, VirtualShadowResolutionCopyPassData.Record,
+                    region: primaryDepthAfter);
+                edit.OrderAfter(resolutionCopyPass, _dynamicResolutionResetPass);
+
                 var atlasInitialize = new VirtualShadowAtlasInitializePassData(_atlas);
                 _atlasInitializePass = edit.AddCopyFramePass(
                     "Initialize virtual shadow atlas",
@@ -406,7 +432,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                         0,
                         checked((uint)pageHiZMipCount),
                         0,
-                        settings.MaxPhysicalPages,
+                        PageHiZLayerCount,
                         TextureAspects.Color));
                 _pageHiZStorageInitializePass = edit.AddCopyFramePass(
                     "Initialize virtual shadow physical-page HiZ storage",
@@ -462,6 +488,23 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     "Clear dirty virtual shadow pages",
                     _shadowMap.PageClearPipeline,
                     _pageWorkDispatchArguments, region: primaryDepthAfter);
+                for (uint mip = 0u; mip < pageHiZMipCount; mip++)
+                {
+                    uint extent = Math.Max((settings.PageSize / 2u) >> checked((int)mip), 1u) * PageHiZPagesPerRow;
+                    GraphPassId copy = AddComputePass(ref edit, "Save virtual shadow page HiZ",
+                        _shadowMap.PageHiZCopyPipeline,
+                        new VirtualShadowDispatchPassData(new DispatchArguments((extent + 7u) / 8u,
+                            (extent + 7u) / 8u, PageHiZLayerCount)), region: primaryDepthAfter);
+                    PassDefinition pass = edit.GetPass(copy);
+                    var range = new TextureSubresourceRange(mip, 1u, 0u, PageHiZLayerCount, TextureAspects.Color);
+                    _ = pass.Bind(edit.CreateTextureSrv(_pageHiZ, range, Format.R32Float,
+                        SomeEngine.Graphics.TextureViewDimension.Texture2DArray), PipelineSync.ComputeShading);
+                    _ = pass.Bind(edit.CreateTextureUav(_previousPageHiZ, range, Format.R32Float,
+                        SomeEngine.Graphics.TextureViewDimension.Texture2DArray), PipelineSync.ComputeShading,
+                        GraphAccessMode.Write, WriteCoverage.Complete);
+                    edit.OrderAfter(copy, _pageHiZStorageInitializePass);
+                }
+
                 _compactViewsPass = AddComputePass(
                     ref edit,
                     "Compact virtual shadow raster views",
@@ -502,13 +545,17 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                         _pageWorkDispatchArguments,
                         checked((ulong)mip * DispatchStride), region: targetGeometryAfter);
                 }
-                _rasterCompletePass = edit.AddCopyFramePass(
-                    "Virtual shadow raster completion",
-                    PassQueueSelection.AnyOfType(QueueType.Graphics),
-                    0u,
-                    new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
-                    static (ref PassDefinition _, ref uint _) => { },
-                    static (ref CopyPassCommandScope _, in uint _) => { }, region: targetGeometryAfter);
+                _framePageTable = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource);
+                _rasterCompletePass = AddComputePass(ref edit, "Complete virtual shadow page depth",
+                    _shadowMap.PageDepthCompletePipeline,
+                    new VirtualShadowDispatchPassData(new DispatchArguments((settings.MaxPhysicalPages + 63u) / 64u, 1u, 1u)),
+                    region: targetGeometryAfter);
+                PassDefinition depthComplete = edit.GetPass(_rasterCompletePass);
+                _ = depthComplete.Bind(edit.CreateBufferSrv(_activePages, structureStride: 16), PipelineSync.ComputeShading,
+                    BufferContentScope.CountBoundedPrefix);
+                _ = depthComplete.Bind(edit.CreateBufferSrv(_activePageCount, structureStride: 4), PipelineSync.ComputeShading);
+                _ = depthComplete.Bind(edit.CreateBufferUav(_framePageTable, structureStride: 16), PipelineSync.ComputeShading,
+                    GraphAccessMode.ReadWrite, WriteCoverage.Partial);
                 _frameCompletePass = edit.AddGeneralFramePass(
                     "Finalize virtual shadow frame endpoints",
                     PassQueueSelection.AnyOfType(QueueType.Graphics),
@@ -536,6 +583,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                 edit.OrderAfter(_requestResetPass, _allocatePass);
                 edit.OrderAfter(_receiverMaskResetPass, _rasterCompletePass);
                 edit.OrderAfter(_dynamicResolutionPass, _rasterCompletePass);
+                edit.OrderAfter(_dynamicResolutionPass, resolutionCopyPass);
                 edit.OrderAfter(_frameCompletePass, _dynamicResolutionPass);
                 edit.OrderAfter(_poolResetPass, _markPass);
                 for (int mip = 0; mip < _pageHiZReducePasses.Length; mip++)
@@ -554,6 +602,12 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                             : _finalPageHiZReducePasses[mip - 1]);
                 }
 
+                uint rasterWindows = 0u;
+                for (uint mip = 0u; mip < settings.MipLevelCount; mip++)
+                {
+                    uint dimension = (settings.PageTableMipPagesPerRow(mip) + 7u) / 8u;
+                    rasterWindows = checked(rasterWindows + dimension * dimension);
+                }
                 _geometry.ConfigureRenderContext(new ClusterRenderContext(
                     1u,
                     BindRasterPolicyFilterResources,
@@ -566,8 +620,12 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     checked(settings.PageSize * 8u),
                     checked(settings.PageSize * 8u),
                     checked((uint)pageHiZMipCount),
-                    Math.Max(settings.PageSize / 2u, 1u)));
-                _framePageTable = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource);
+                    Math.Max(settings.PageSize / 2u, 1u))
+                {
+                    BindTargetPageBounds = BindRasterPageBounds,
+                    ViewDetailCount = settings.MipLevelCount,
+                    MaximumRasterWindowsPerSourceView = rasterWindows,
+                });
                 _clusterSourceViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameShadowViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameChangedInstances = edit.CreateBufferInput(BufferUsages.ShaderRead);
@@ -650,7 +708,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _rasterInvocationViews,
-                structureStride: 432,
+                structureStride: (uint)ClusterRenderContext.ViewSizeInBytes,
                 label: "Virtual shadow raster invocation views"),
             sync,
             BufferContentScope.CountBoundedPrefix);
@@ -710,10 +768,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
         ref RenderGraphEdit graph,
         ref PassDefinition pass, PipelineSync sync)
     {
-        BindRasterTargetViews(ref graph, ref pass, sync);
-        BindRasterPageHierarchy(ref graph, ref pass, sync);
-        BindRasterPageTable(ref graph, ref pass, sync);
-        BindRasterReceiverMasks(ref graph, ref pass, sync);
+        BindRasterPageBounds(ref graph, ref pass, sync);
         _ = pass.Bind(
             graph.CreateTextureSrv(
                 _pageHiZ,
@@ -723,11 +778,19 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             sync);
         _ = pass.Bind(
             graph.CreateTextureSrv(
-                _pageHiZ,
+                _previousPageHiZ,
                 format: Format.R32Float,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Virtual shadow previous raster-target HiZ"),
             sync);
+    }
+
+    private void BindRasterPageBounds(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
+    {
+        BindRasterTargetViews(ref graph, ref pass, sync);
+        BindRasterPageHierarchy(ref graph, ref pass, sync);
+        BindRasterPageTable(ref graph, ref pass, sync);
+        BindRasterReceiverMasks(ref graph, ref pass, sync);
     }
 
     private void BindPageDepthAtlas(
@@ -999,10 +1062,10 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                 Math.Min(checked((uint)_changedInstances.Count), 65535u),
                 DivideRoundUp(checked((uint)_changedInstances.Count), 65535u),
                 1u)));
+        // The persistent pass uses its dispatch count to express caster changes.
+        // Newly initialized page tables already contain empty mappings.
         graph.SetPassEnabled(
             _invalidatePass,
-            !resetState &&
-            _changedInstances.Count != 0 &&
             viewCount != 0u);
 
         var coarseDemand = new VirtualShadowCoarsePageDemandUniforms
@@ -1031,6 +1094,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             MaxDirectionalLodBias = _shadowMap.Settings.DynamicResolutionMaxDirectionalLodBias,
             MaxLocalLodBias = _shadowMap.Settings.DynamicResolutionMaxLocalLodBias,
             Enabled = _shadowMap.Settings.DynamicResolutionEnabled && viewCount != 0u ? 1u : 0u,
+            EvictionBucketCount = EvictionBucketCount,
         };
         _uniformData.Write(ref graph, _dynamicResolutionUniforms, in dynamicResolution);
         graph.SetPassEnabled(_dynamicResolutionPass, viewCount != 0u);
@@ -1267,7 +1331,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
             label: "Virtual shadow receiver depth"), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(
-            _dynamicResolutionBias,
+            _frameResolutionBias,
             structureStride: 2 * sizeof(float),
             label: "Virtual shadow dynamic resolution bias"),
             PipelineSync.ComputeShading);
@@ -1300,6 +1364,11 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             label: "Virtual shadow dynamic resolution free count"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(
+            _evictionBucketCounts,
+            structureStride: sizeof(uint),
+            label: "Virtual shadow dynamic resolution reclaimable pages"),
+            PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(
             _policyRasterWorkCount,
             structureStride: sizeof(uint),
             label: "Virtual shadow dynamic resolution raster work"),
@@ -1311,10 +1380,10 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferUav(
             _dynamicResolutionBias,
-            structureStride: 2 * sizeof(float),
+            structureStride: 4 * sizeof(float),
             label: "Virtual shadow dynamic resolution output"),
             PipelineSync.ComputeShading,
-            GraphAccessMode.Write,
+            GraphAccessMode.ReadWrite,
             WriteCoverage.Complete);
     }
 
@@ -1481,9 +1550,9 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
         _ = pass.Bind(graph.CreateBufferSrv(_frameShadowViews,
             structureStride: VirtualShadowView.SizeInBytes,
             label: "Virtual shadow current source views"), PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(sourceViews, structureStride: 432,
+        _ = pass.Bind(graph.CreateBufferSrv(sourceViews, structureStride: (uint)ClusterRenderContext.ViewSizeInBytes,
             label: "Virtual shadow source Cluster views"), PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferUav(_rasterInvocationViews, structureStride: 432,
+        _ = pass.Bind(graph.CreateBufferUav(_rasterInvocationViews, structureStride: (uint)ClusterRenderContext.ViewSizeInBytes,
             label: "Virtual shadow raster invocation views"), PipelineSync.ComputeShading,
             GraphAccessMode.Write, WriteCoverage.Partial,
             resultContents: ResourceContentState.Defined,
@@ -1565,7 +1634,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     sourceMip,
                     1,
                     0,
-                    _shadowMap.Settings.MaxPhysicalPages,
+                    PageHiZLayerCount,
                     TextureAspects.Color),
                 Format.R32Float,
                 SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
@@ -1584,7 +1653,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                 graph.CreateTextureUav(
                     _pageHiZ,
                     new TextureSubresourceRange(Math.Min(firstMip + offset, lastMip), 1,
-                        0, _shadowMap.Settings.MaxPhysicalPages, TextureAspects.Color),
+                        0, PageHiZLayerCount, TextureAspects.Color),
                     Format.R32Float,
                     SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                     "Virtual shadow page HiZ destination mip"),
@@ -1622,7 +1691,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
         PipelineSync sync)
     {
         _ = pass.Bind(graph.CreateBufferSrv(
-            _dynamicResolutionBias,
+            _frameResolutionBias,
             structureStride: 2 * sizeof(float),
             label: "Standard shade virtual shadow dynamic resolution bias"), sync);
     }

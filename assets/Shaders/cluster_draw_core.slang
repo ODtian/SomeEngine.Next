@@ -310,6 +310,8 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         visibilityInput.ViewIndex = viewIndex;
         visibilityInput.LocalVertexIndex = localVertex;
         output.Varying = visibility.makeVarying(value, visibilityInput);
+        output.VisibleClusterIndex = visible;
+        output.ViewIndex = viewIndex;
         uint outputVertex = fullRange ? localVertex : ClusterMeshVertexRank(used, localVertex);
         vertices[outputVertex] = output;
         if (view.TargetPolicy != 0u) HardwareRasterClipPositions[outputVertex] = output.Pos;
@@ -347,13 +349,9 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         }
         indices[triangleIndex] = outputIndices;
         ClusterMeshPrimitive output;
-        output.VisibleClusterIndex = visible;
         output.TriangleID = first + triangleIndex;
-        output.ViewIndex = viewIndex;
         output.RenderTargetIndex = view.TargetPolicy == 0u ? view.TargetViewIndex : 0u;
-        primitives[triangleIndex].VisibleClusterIndex = output.VisibleClusterIndex;
         primitives[triangleIndex].TriangleID = output.TriangleID;
-        primitives[triangleIndex].ViewIndex = output.ViewIndex;
         primitives[triangleIndex].RenderTargetIndex = output.RenderTargetIndex;
     }
 }
@@ -397,9 +395,9 @@ ClusterRasterPixelInput<TVarying> MakeMeshPixelInput<TVarying>(
     ClusterRasterPixelInput<TVarying> result;
     result.Pos = vertex.Pos;
     result.Varying = vertex.Varying;
-    result.VisibleClusterIndex = primitive.VisibleClusterIndex;
+    result.VisibleClusterIndex = vertex.VisibleClusterIndex;
     result.TriangleID = primitive.TriangleID;
-    result.ViewIndex = primitive.ViewIndex;
+    result.ViewIndex = vertex.ViewIndex;
     result.RenderTargetIndex = primitive.RenderTargetIndex;
     return result;
 }

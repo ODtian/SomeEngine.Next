@@ -43,16 +43,19 @@ groupshared uint ClusterSceneOccludedViewMask;
 
 uint ClusterSeedViewCount()
 {
-    return TraversalSeed.ViewIndexMode == 0u
-        ? TraversalSeed.ViewCount
-        : min(PolicyActiveViewCount[0], TraversalSeed.ViewCount);
+    if (TraversalSeed.ViewIndexMode == 0u) return TraversalSeed.ViewCount;
+    uint count = min(PolicyActiveViewCount[0], TraversalSeed.ViewCount);
+    if (TargetBatch.SourceClusterCount != 0u && GetClusterTargetSourceRange().y == 0u) return 0u;
+    return TargetBatch.SourceClusterCount == 0u ? count :
+        min(TargetBatch.TargetViewCount, count - min(count, TargetBatch.FirstTargetView));
 }
 
 uint ClusterSeedViewIndex(uint compactViewIndex)
 {
     return TraversalSeed.ViewIndexMode == 0u
         ? compactViewIndex
-        : ClusterEncodePolicyViewIndex(compactViewIndex);
+        : ClusterEncodePolicyViewIndex(compactViewIndex +
+            (TargetBatch.SourceClusterCount == 0u ? 0u : TargetBatch.FirstTargetView));
 }
 
 // Reject sample-free roots before expanding their hierarchy.
@@ -123,6 +126,7 @@ void SeedHierarchyRoots(
     uint groupThreadIndex : SV_GroupThreadID)
 {
     uint sortedIndex = groupID.x * 64u + groupThreadIndex;
+    bool useInstanceGroups = TraversalSeed.UseInstanceGroups != 0u;
     uint instanceID = 0xFFFFFFFFu;
     uint viewSlotBase = groupID.y * 32u;
     uint compactViewCount = ClusterSeedViewCount();
@@ -135,7 +139,7 @@ void SeedHierarchyRoots(
         sortedIndex < LoadClusterCullView(Views, PolicyClusterViews, firstViewIndex).InstanceCount;
     uint activeGroupViews = activeViewCount == 32u ? 0xFFFFFFFFu : (1u << activeViewCount) - 1u;
     uint occludedGroupViews = 0u;
-    if (TraversalSeed.UseInstanceGroups != 0u)
+    if (useInstanceGroups)
     {
         if (groupThreadIndex == 0u)
         {
@@ -181,7 +185,7 @@ void SeedHierarchyRoots(
 
     if (activeGroupViews == 0u)
         return;
-    if (valid) instanceID = TraversalSeed.UseInstanceGroups != 0u ? SceneInstances[sortedIndex] : sortedIndex;
+    if (valid) instanceID = useInstanceGroups ? SceneInstances[sortedIndex] : sortedIndex;
     uint rootIndex = valid
         ? LoadClusterBvhRoot(
             InstanceData,
@@ -191,6 +195,7 @@ void SeedHierarchyRoots(
             instanceID)
         : 0xFFFFFFFFu;
     valid = valid && rootIndex != 0xFFFFFFFFu;
+    if (valid) valid = ClusterTargetNodeIntersectsSourceRange(rootIndex, instanceID);
     float3 instanceWorldMin = 1e30.xxx;
     float3 instanceWorldMax = -1e30.xxx;
     ClusterBVHNode root = (ClusterBVHNode)0;
@@ -233,7 +238,7 @@ void SeedHierarchyRoots(
                 projectedBounds);
             if (view.CullingEnabled != 0u && outsideFrustum)
                 continue;
-            if (!ClusterNodePassesLod(root, transform, view))
+            if (!ClusterNodePassesLod(root, transform, LoadClusterGeometryView(Views, view)))
                 continue;
             uint boundsState = (occludedGroupViews & (1u << bit)) != 0u
                 ? (ClusterSeedTargetAccepts(projectedBounds, view) ? 2u : 0u)
@@ -317,3 +322,5 @@ void SeedHierarchyRoots(
                 1u)), 0u);
     }
 }
+
+#include "cluster_target_source_ranges.slang"

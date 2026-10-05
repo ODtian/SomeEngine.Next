@@ -54,4 +54,5 @@ public static class VirtualShadowViewFlags
     public const uint ForceCacheDynamicCoarse = 1u << 1;
     public const uint UseReceiverMask = 1u << 2;
     public const uint PreviousProjectionValid = 1u << 3;
+    public const uint OrthographicReceiver = 1u << 4;
 }

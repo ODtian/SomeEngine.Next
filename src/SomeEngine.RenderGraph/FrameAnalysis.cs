@@ -55,7 +55,7 @@ internal sealed partial class FrameExecutor
                             _bufferContentScopeScratch[segment],
                             access.BufferContentScope))
                     {
-                        throw new UndefinedResourceReadException(
+                        throw new InvalidOperationException(
                             $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads undefined Buffer " +
                             $"'{buffer.Description.Label ?? $"Buffer[{bufferIndex}]"}'. " +
                             string.Join("; ", accesses.Select(i => $"{_passes[_accesses[i].PassIndex].Label}: {_accesses[i].Mode}/{_accesses[i].Coverage} at declaration {_passes[_accesses[i].PassIndex].DeclarationOrdinal}")));
@@ -142,7 +142,7 @@ internal sealed partial class FrameExecutor
                 if (access.Mode is GraphAccessMode.Read or GraphAccessMode.ReadWrite &&
                     _contentsScratch[cell] != ResourceContentState.Defined)
                 {
-                    throw new UndefinedResourceReadException(
+                    throw new InvalidOperationException(
                         $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads undefined Texture " +
                         $"'{texture.Label ?? $"Texture[{textureIndex}]"}'. " +
                         string.Join("; ", accesses.Select(i => $"{_passes[_accesses[i].PassIndex].Label}: {_accesses[i].Mode}/{_accesses[i].Coverage} at declaration {_passes[_accesses[i].PassIndex].DeclarationOrdinal}")));
@@ -228,7 +228,7 @@ internal sealed partial class FrameExecutor
                     access.Coverage == WriteCoverage.Partial;
                 if (reads && _contentsScratch[segment] != ResourceContentState.Defined)
                 {
-                    throw new UndefinedResourceReadException(
+                    throw new InvalidOperationException(
                         $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads undefined Query results.");
                 }
                 if (reads && _writerScratch[segment] >= 0)
@@ -267,7 +267,7 @@ internal sealed partial class FrameExecutor
                 access.Coverage == WriteCoverage.Partial;
             if (reads && contents != ResourceContentState.Defined)
             {
-                throw new UndefinedResourceReadException(
+                throw new InvalidOperationException(
                     $"RG4001: Pass '{_passes[access.PassIndex].Label}' reads an undefined RayTracingShaderTable.");
             }
             if (reads && writer >= 0)
@@ -505,64 +505,6 @@ internal sealed partial class FrameExecutor
 
     private readonly HashSet<int> _orderSearchVisited = [];
     private readonly Stack<int> _orderSearchWork = new();
-    private ulong[][] _passOrderAncestors = [];
-    private enum PassOrderSearchState : byte { Unvisited, Searching, Complete }
-    private PassOrderSearchState[] _passOrderSearchStates = [];
-    private ulong[] _resourceOrderPassWords = [];
-    private int _passOrderWordCount;
-    private bool _hasPassOrderCycle;
-
-    private ReadOnlySpan<ulong> CollectPassOrderAncestors(int pass)
-    {
-        if (_passOrderSearchStates[pass] == PassOrderSearchState.Complete) return _passOrderAncestors[pass];
-        _orderSearchWork.Clear();
-        _orderSearchWork.Push(pass);
-        while (_orderSearchWork.TryPeek(out int current))
-        {
-            if (_passOrderSearchStates[current] == PassOrderSearchState.Complete)
-            {
-                _orderSearchWork.Pop();
-                continue;
-            }
-            if (_passOrderSearchStates[current] == PassOrderSearchState.Unvisited)
-            {
-                _analyzedPasses.Add(current);
-                _passOrderSearchStates[current] = PassOrderSearchState.Searching;
-                ref ulong[] words = ref _passOrderAncestors[current];
-                if (words is null || words.Length < _passOrderWordCount)
-                    words = new ulong[_passOrderWordCount];
-                else Array.Clear(words, 0, _passOrderWordCount);
-                if (_passes[current].Enabled && _orderEdgesByPass.TryGetValue(current, out var edges))
-                    foreach (PassEdge edge in edges)
-                    {
-                        if (edge.Consumer != current || !_passes[edge.Predecessor].Enabled) continue;
-                        if (_passOrderSearchStates[edge.Predecessor] == PassOrderSearchState.Searching)
-                        {
-                            // Resource projection and live-pass scheduling retain cycle validation.
-                            _hasPassOrderCycle = true;
-                            return [];
-                        }
-                        if (_passOrderSearchStates[edge.Predecessor] == PassOrderSearchState.Unvisited)
-                            _orderSearchWork.Push(edge.Predecessor);
-                    }
-                if (_orderSearchWork.Peek() != current) continue;
-            }
-            ulong[] ancestors = _passOrderAncestors[current];
-            if (_passes[current].Enabled && _orderEdgesByPass.TryGetValue(current, out var predecessors))
-                foreach (PassEdge edge in predecessors)
-                {
-                    if (edge.Consumer != current || !_passes[edge.Predecessor].Enabled) continue;
-                    ulong[] previous = _passOrderAncestors[edge.Predecessor];
-                    for (int word = 0; word < _passOrderWordCount; word++)
-                        ancestors[word] |= previous[word];
-                    ancestors[edge.Predecessor / 64] |= 1UL << (edge.Predecessor & 63);
-                }
-            _passOrderSearchStates[current] = PassOrderSearchState.Complete;
-            _orderSearchWork.Pop();
-        }
-        return _passOrderAncestors[pass];
-    }
-
     private readonly List<int> _resourceOrderNodes = [];
     private readonly Dictionary<int, int> _resourceOrderRanks = [];
     private readonly PriorityQueue<int, long> _resourceOrderReady = new();
@@ -582,35 +524,15 @@ internal sealed partial class FrameExecutor
             if (_resourceOrderRanks.TryAdd(node, _resourceOrderNodes.Count)) _resourceOrderNodes.Add(node);
         }
         int count = _resourceOrderNodes.Count;
-        EnsureCapacity(ref _resourceOrderPassWords, _passOrderWordCount);
-        Array.Clear(_resourceOrderPassWords, 0, _passOrderWordCount);
-        foreach (int node in _resourceOrderNodes)
-            _resourceOrderPassWords[node / 64] |= 1UL << (node & 63);
         if (_resourceOrderIndegrees.Length < count) Array.Resize(ref _resourceOrderIndegrees, count);
         if (_resourceOrderSuccessors.Length < count) Array.Resize(ref _resourceOrderSuccessors, count);
         Array.Clear(_resourceOrderIndegrees, 0, count);
         for (int index = 0; index < count; index++) (_resourceOrderSuccessors[index] ??= []).Clear();
         for (int consumer = 0; consumer < count; consumer++)
         {
-            ReadOnlySpan<ulong> ancestors = _hasPassOrderCycle
-                ? default : CollectPassOrderAncestors(_resourceOrderNodes[consumer]);
-            if (_hasPassOrderCycle)
-                AddResourceOrderPredecessors(consumer);
-            else
-            {
-                for (int word = 0; word < _passOrderWordCount; word++)
-                {
-                    ulong users = ancestors[word] & _resourceOrderPassWords[word];
-                    while (users != 0)
-                    {
-                        int node = word * 64 + System.Numerics.BitOperations.TrailingZeroCount(users);
-                        users &= users - 1;
-                        int predecessor = _resourceOrderRanks[node];
-                        _resourceOrderSuccessors[predecessor].Add(consumer);
-                        _resourceOrderIndegrees[consumer]++;
-                    }
-                }
-            }
+            // The nearest resource users preserve the same precedence relation.
+            // Their own predecessors carry the earlier users transitively.
+            AddResourceOrderPredecessors(consumer);
             if (_resourceOrderIndegrees[consumer] == 0)
                 _resourceOrderReady.Enqueue(consumer, _passes[_resourceOrderNodes[consumer]].DeclarationOrdinal);
         }
@@ -1229,11 +1151,6 @@ internal sealed partial class FrameExecutor
         _dependencyPassCount = _passes.Count;
 
         UpdateOrderEdges();
-        _passOrderWordCount = (_passes.Count + 63) / 64;
-        EnsureCapacity(ref _passOrderAncestors, _passes.Count);
-        EnsureCapacity(ref _passOrderSearchStates, _passes.Count);
-        Array.Clear(_passOrderSearchStates, 0, _passes.Count);
-        _hasPassOrderCycle = false;
         foreach (int pass in _changedAnalysisPasses)
         {
             if ((uint)pass < (uint)_passes.Count) _analyzedPasses.Add(pass);

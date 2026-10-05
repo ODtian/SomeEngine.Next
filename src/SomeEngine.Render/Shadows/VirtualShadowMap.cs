@@ -18,6 +18,7 @@ namespace SomeEngine.Render.Shadows;
 /// </summary>
 public sealed class VirtualShadowMap : IDisposable
 {
+    public const uint EvictionBucketCount = 8;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private Buffer? _pageTable;
@@ -52,6 +53,8 @@ public sealed class VirtualShadowMap : IDisposable
     private ulong _pendingRasterRevision;
     private uint _committedCacheGeneration;
     private uint _pendingCacheGeneration;
+    private RenderView _committedGeometryView;
+    private RenderView _frameGeometryView;
 
     public VirtualShadowMap(
         IGraphicsBackend backend,
@@ -76,6 +79,8 @@ public sealed class VirtualShadowMap : IDisposable
         LinkedComputePipeline? compactViews = null;
         LinkedComputePipeline? initializePageHiZ = null;
         LinkedComputePipeline? reducePageHiZ = null;
+        LinkedComputePipeline? copyPageHiZ = null;
+        LinkedComputePipeline? completePageDepth = null;
         LinkedComputePipeline? dynamicResolution = null;
         Buffer? physicalPageOwners = null;
         Texture? atlas = null;
@@ -141,6 +146,10 @@ public sealed class VirtualShadowMap : IDisposable
                 shaders.InitializePageHiZShader,
                 shaders.InitializePageHiZ,
                 "Virtual shadow physical-page HiZ initialization");
+            copyPageHiZ = LinkedComputePipeline.Create(_backend, _device,
+                shaders.CopyPageHiZShader, shaders.CopyPageHiZ, "Copy virtual shadow page HiZ");
+            completePageDepth = LinkedComputePipeline.Create(_backend, _device,
+                shaders.CompletePageDepthShader, shaders.CompletePageDepth, "Complete virtual shadow page depth");
             reducePageHiZ = LinkedComputePipeline.Create(
                 _backend,
                 _device,
@@ -183,6 +192,8 @@ public sealed class VirtualShadowMap : IDisposable
                 TryDispose(physicalPageOwners, ref cleanupFailures);
             if (clearPages is not null) TryDispose(clearPages, ref cleanupFailures);
             if (compactViews is not null) TryDispose(compactViews, ref cleanupFailures);
+            if (completePageDepth is not null) TryDispose(completePageDepth, ref cleanupFailures);
+            if (copyPageHiZ is not null) TryDispose(copyPageHiZ, ref cleanupFailures);
             if (reducePageHiZ is not null) TryDispose(reducePageHiZ, ref cleanupFailures);
             if (dynamicResolution is not null) TryDispose(dynamicResolution, ref cleanupFailures);
             if (initializePageHiZ is not null) TryDispose(initializePageHiZ, ref cleanupFailures);
@@ -216,6 +227,8 @@ public sealed class VirtualShadowMap : IDisposable
         ViewCompactPipeline = compactViews;
         PageHiZInitializePipeline = initializePageHiZ;
         PageHiZReducePipeline = reducePageHiZ;
+        PageHiZCopyPipeline = copyPageHiZ;
+        PageDepthCompletePipeline = completePageDepth;
         DynamicResolutionPipeline = dynamicResolution;
         _physicalPageOwners = physicalPageOwners;
         _atlas = atlas;
@@ -249,6 +262,8 @@ public sealed class VirtualShadowMap : IDisposable
     public LinkedComputePipeline ViewCompactPipeline { get; }
     public LinkedComputePipeline PageHiZInitializePipeline { get; }
     public LinkedComputePipeline PageHiZReducePipeline { get; }
+    public LinkedComputePipeline PageHiZCopyPipeline { get; }
+    public LinkedComputePipeline PageDepthCompletePipeline { get; }
     public LinkedComputePipeline DynamicResolutionPipeline { get; }
     public bool RequiresInitialization => !_pageTableInitialized;
     public bool RequiresCacheReset => _pendingCacheReset;
@@ -297,6 +312,7 @@ public sealed class VirtualShadowMap : IDisposable
         _pendingGeometryRevision = geometryRevision;
         _pendingRasterRevision = rasterRevision;
         _pendingInstanceCount = instanceCount;
+        _frameGeometryView = receiverView;
         if (viewCount == 0)
         {
             _pendingCacheReset = !_initialized;
@@ -306,10 +322,13 @@ public sealed class VirtualShadowMap : IDisposable
         if (!Matrix4x4.Invert(receiverView.View, out Matrix4x4 worldFromView))
             throw new ArgumentException("The receiver view must be invertible.", nameof(receiverView));
         Vector3 camera = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
-        // Receiver demand and material sampling project the same screen-pixel
-        // footprint into the light view. Only the user's quality bias belongs
-        // in the view data; camera distance cannot describe that footprint.
-        float resolutionLodBias = Settings.DirectionalResolutionLodBias;
+        // Calibrate the camera-distance clipmap rule for this camera projection.
+        // The doubled clipmap region accommodates snapped projection centers.
+        float resolutionScale = 0.5f * Settings.VirtualResolution /
+            (receiverView.ViewportWidth * MathF.Abs(receiverView.Projection.M11));
+        bool orthographicReceiver = receiverView.Projection.M44 != 0.0f;
+        if (orthographicReceiver) resolutionScale *= 0.5f;
+        float resolutionLodBias = Settings.DirectionalResolutionLodBias + MathF.Log2(resolutionScale);
         uint physicalPagesPerRow = Settings.AtlasSize / Settings.PageSize;
         uint virtualPagesPerRow = Settings.VirtualResolution / Settings.PageSize;
         uint pageTableEntriesPerView = Settings.PageTableEntriesPerView;
@@ -381,6 +400,7 @@ public sealed class VirtualShadowMap : IDisposable
                     MipLevelCount = Settings.MipLevelCount,
                     MinMipLevel = 0u,
                     Flags =
+                        (orthographicReceiver ? VirtualShadowViewFlags.OrthographicReceiver : 0u) |
                         (coarseFallback
                             ? VirtualShadowViewFlags.CoarseClipLevel |
                               VirtualShadowViewFlags.ForceCacheDynamicCoarse
@@ -472,7 +492,8 @@ public sealed class VirtualShadowMap : IDisposable
             _initialized &&
             (geometryRevision != _committedGeometryRevision ||
              rasterRevision != _committedRasterRevision ||
-             instanceCount != _committedInstanceCount);
+             instanceCount != _committedInstanceCount ||
+             !HasSameGeometrySelection(receiverView, _committedGeometryView));
         _pendingCacheReset = !_initialized || viewLayoutChanged;
 
         uint generation = _committedCacheGeneration;
@@ -665,6 +686,7 @@ public sealed class VirtualShadowMap : IDisposable
         _committedInstanceCount = _pendingInstanceCount;
         _committedGeometryRevision = _pendingGeometryRevision;
         _committedRasterRevision = _pendingRasterRevision;
+        _committedGeometryView = _frameGeometryView;
         if (_committedViews.Length != _pendingViewCount)
             _committedViews = new VirtualShadowView[_pendingViewCount];
         _views.AsSpan(0, _pendingViewCount).CopyTo(_committedViews);
@@ -796,6 +818,13 @@ public sealed class VirtualShadowMap : IDisposable
         };
     }
 
+    private static bool HasSameGeometrySelection(in RenderView current, in RenderView previous) =>
+        current.View.Equals(previous.View) &&
+        (current.GeometryProjection ?? current.Projection).Equals(
+            previous.GeometryProjection ?? previous.Projection) &&
+        current.ViewportWidth == previous.ViewportWidth &&
+        current.ViewportHeight == previous.ViewportHeight;
+
     private static uint NextCacheGeneration(uint value)
     {
         uint next = value + 1u;
@@ -853,6 +882,8 @@ public sealed class VirtualShadowMap : IDisposable
             TryDispose(_pageTable, ref failures);
         _pageTable = null;
         TryDispose(PageClearPipeline, ref failures);
+        TryDispose(PageDepthCompletePipeline, ref failures);
+        TryDispose(PageHiZCopyPipeline, ref failures);
         TryDispose(PageHiZReducePipeline, ref failures);
         TryDispose(DynamicResolutionPipeline, ref failures);
         TryDispose(PageHiZInitializePipeline, ref failures);

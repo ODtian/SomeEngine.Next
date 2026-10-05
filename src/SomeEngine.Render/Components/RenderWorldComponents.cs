@@ -119,4 +119,5 @@ public readonly record struct RenderView(
     Matrix4x4 Projection,
     uint ViewportWidth,
     uint ViewportHeight,
-    bool CameraCut = false) : IComponent;
+    bool CameraCut = false,
+    Matrix4x4? GeometryProjection = null) : IComponent;

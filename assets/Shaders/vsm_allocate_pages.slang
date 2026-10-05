@@ -127,7 +127,7 @@ void PublishDirtyPage(
             atlasPage,
             tableIndex,
             previousLayer,
-            0u);
+            ShadowViews[viewIndex].CacheGeneration);
     uint ignored;
     uint rectIndex = viewIndex * PageAllocation.MipLevelCount + mipLevel;
     InterlockedMin(
@@ -251,7 +251,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         packedPage,
         asuint(expectedWorldPage.x),
         asuint(expectedWorldPage.y),
-        view.CacheGeneration);
+        0u);
     PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
     PageMetadata[atlasPage].y = view.CacheGeneration;
     PageMetadata[atlasPage].z = requestFlags;

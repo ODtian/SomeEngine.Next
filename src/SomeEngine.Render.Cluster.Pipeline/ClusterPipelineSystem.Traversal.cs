@@ -7,6 +7,8 @@ public sealed partial class ClusterPipelineSystem
 {
     private void ReconcileTraversal()
     {
+        _targetFirstRaster = null;
+        _targetSecondRaster = null;
         EditGraph((ref RenderGraphEdit edit) =>
         {
             ulong size = checked(((ulong)_resources.HierarchyLevels + 1u) * TraversalArgumentStride);

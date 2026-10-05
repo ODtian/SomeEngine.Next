@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "7383e95e1154e9875da020a30b524151582ef0f9f36d0f8e8e73bea971f0746b",
+  "input_hash": "a135e95e355407cf3dd56acf88d0037012836433982a44dfbe1c2b7739701533",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/render_lighting.slang",
@@ -9,11 +9,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_mark_pages.slang",
-      "content_hash": "6d265607c7396bd10bb245bc24591edad76e37a15126ad79a8b1b4211f3fb794"
+      "content_hash": "41c8a67a2c61604bc41c259fd875906ba9c4e52b3a15ebe1a74f8da8855f9e6f"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_request_common.slang",
@@ -21,11 +21,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_pixel.slang",
-      "content_hash": "d34bf399a3f9522be3ffef4622619d9b4e685ff970542c9bb9700f355896c67e"
+      "content_hash": "7e7ed415fa3c6d34204e03a8d2cf867151fce6e611f3b1353bfb4370b7d31249"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "ca0d77b824bef5420ebff6d86e75e83f60c5a42ed98fbea8b9a345029cf12adb"
+      "content_hash": "42651f131125a1a3a559112e8120b9eabce57e7b54cfeb6448ef206600e948f4"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -49,11 +49,11 @@
     {
       "asset_guid": "6c441d68-a857-5643-9923-2d03131e0a37",
       "sub_asset_key": "",
-      "input_hash": "7383e95e1154e9875da020a30b524151582ef0f9f36d0f8e8e73bea971f0746b",
+      "input_hash": "a135e95e355407cf3dd56acf88d0037012836433982a44dfbe1c2b7739701533",
       "dependencies": [],
       "asset_path": "vsm_mark_pages.shader.asset",
-      "version": "ac96f495-dedf-c946-dfeb-12b6044f688f",
-      "content_hash": "6E8BBEDA60456644336DD0B9084D114052462E1FDE47C4B8A263DB44C5714325",
+      "version": "e94e7290-0610-7048-5782-3286ad0ccb38",
+      "content_hash": "97FB6CAD60DEB6DD9315F198F06914BC56C40B3E476CDC1FD775D17010BAC5ED",
       "asset_dependencies": []
     }
   ]

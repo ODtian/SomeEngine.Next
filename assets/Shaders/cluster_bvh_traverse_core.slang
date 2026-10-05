@@ -45,7 +45,9 @@ struct ClusterTraversalLevelUniforms
 };
 
 ConstantBuffer<ClusterTraversalLevelUniforms> TraversalLevel;
-RWStructuredBuffer<ClusterTraversalNode> TraversalNodes;
+StructuredBuffer<ClusterTraversalNode> CurrentTraversalNodes;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<ClusterTraversalNode> NextTraversalNodes;
 ByteAddressBuffer CurrentNodeIndirectArgs;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer NextNodeIndirectArgs;
@@ -140,19 +142,16 @@ void ProcessTraversalLevel(
     uint groupID,
     uint groupThreadIndex)
 {
-    uint inputStart = min(
-        CurrentNodeIndirectArgs.Load(TraversalLevel.CurrentArgsOffset + 16u),
-        TraversalLevel.MaxNodes);
+    // Each level consumes one node buffer and writes the other from index zero.
+    // Processed levels leave their capacity available to later levels.
     uint inputCount = min(
         CurrentNodeIndirectArgs.Load(TraversalLevel.CurrentArgsOffset + 12u),
-        TraversalLevel.MaxNodes - inputStart);
-    uint inputEnd = inputStart + inputCount;
-    uint parentIndex = inputStart +
-        groupID * CLUSTER_BVH_PARENTS_PER_GROUP +
+        TraversalLevel.MaxNodes);
+    uint parentIndex = groupID * CLUSTER_BVH_PARENTS_PER_GROUP +
         groupThreadIndex / CLUSTER_BVH_FANOUT;
-    bool validParent = parentIndex < inputEnd;
+    bool validParent = parentIndex < inputCount;
     ClusterTraversalNode parent = validParent
-        ? TraversalNodes[parentIndex]
+        ? CurrentTraversalNodes[parentIndex]
         : (ClusterTraversalNode)0;
     ClusterBVHNode parentNode = validParent
         ? GlobalBVH[parent.NodeIndex]
@@ -173,6 +172,7 @@ void ProcessTraversalLevel(
         ? LoadClusterCullView(Views, PolicyClusterViews, viewBase)
         : (ClusterViewUniforms)0;
     validNode = validNode && instanceID < firstView.InstanceCount;
+    if (validNode) validNode = ClusterTargetNodeIntersectsSourceRange(nodeIndex, instanceID);
     RenderInstanceTransform transform = (RenderInstanceTransform)0;
     float boundsExpansion = 0.0;
     if (validNode)
@@ -200,7 +200,8 @@ void ProcessTraversalLevel(
         ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
         ClusterProjectedBounds projectedBounds;
         bool outside = ProjectWorldAabbForView(worldMin, worldMax, view, previousProjection, projectedBounds);
-        if ((view.CullingEnabled != 0u && outside) || !ClusterNodePassesLod(node, transform, view))
+        if ((view.CullingEnabled != 0u && outside) ||
+            !ClusterNodePassesLod(node, transform, LoadClusterGeometryView(Views, view)))
             continue;
         uint state = ClusterHierarchyNodeState(worldMin, worldMax, projectedBounds, viewIndex, view);
         if (state == 2u)
@@ -255,8 +256,7 @@ void ProcessTraversalLevel(
                 TraversalLevel.NextArgsOffset + 12u,
                 waveCount,
                 waveBase);
-            uint available = TraversalLevel.MaxNodes - inputEnd;
-            uint publishedCount = min(waveBase + waveCount, available);
+            uint publishedCount = min(waveBase + waveCount, TraversalLevel.MaxNodes);
             uint groupCount =
                 (publishedCount + CLUSTER_BVH_PARENTS_PER_GROUP - 1u) /
                 CLUSTER_BVH_PARENTS_PER_GROUP;
@@ -267,13 +267,13 @@ void ProcessTraversalLevel(
                 ignored);
             NextNodeIndirectArgs.InterlockedMax(TraversalLevel.NextArgsOffset + 4u, (groupCount + 65534u) / 65535u, ignored);
             NextNodeIndirectArgs.Store(TraversalLevel.NextArgsOffset + 8u, 1u);
-            NextNodeIndirectArgs.Store(TraversalLevel.NextArgsOffset + 16u, inputEnd);
+            NextNodeIndirectArgs.Store(TraversalLevel.NextArgsOffset + 16u, 0u);
         }
         waveBase = WaveReadLaneAt(waveBase, leader);
-        uint outputIndex = inputEnd + waveBase + WaveMaskPrefix(nodeMask, lane);
+        uint outputIndex = waveBase + WaveMaskPrefix(nodeMask, lane);
         if (outputIndex < TraversalLevel.MaxNodes)
         {
-            TraversalNodes[outputIndex] = MakeClusterTraversalNode(
+            NextTraversalNodes[outputIndex] = MakeClusterTraversalNode(
                 nodeIndex,
                 instanceID,
                 viewBase,
@@ -294,6 +294,8 @@ void ProcessTraversalLevel(
     }
     bool outputLeaf = activeViews != 0u && !pageFault && node.NodeType != 0u;
     uint clusterCount = outputLeaf ? node.ChildCount >> 12u : 0u;
+    uint firstCluster = node.ChildCount & 0xFFFu;
+    if (outputLeaf) ClipClusterTargetSourceRange(nodeIndex, instanceID, firstCluster, clusterCount);
     uint leafCount = clusterCount * countbits(activeViews);
     uint leafOffset = WavePrefixSum(leafCount);
     uint waveLeafCount = WaveActiveSum(leafCount);
@@ -303,7 +305,6 @@ void ProcessTraversalLevel(
     candidateBase = WaveReadLaneFirst(candidateBase);
     if (WaveIsFirstLane())
         PublishCandidateDispatchArgs(candidateBase, waveLeafCount, TraversalLevel.MaxNodes);
-    uint firstCluster = node.ChildCount & 0xFFFu;
     uint output = candidateBase + leafOffset;
     uint leafViews = outputLeaf ? activeViews : 0u;
     while (leafViews != 0u)
@@ -320,3 +321,5 @@ void ProcessTraversalLevel(
         }
     }
 }
+
+#include "cluster_target_source_ranges.slang"

@@ -15,7 +15,9 @@ internal sealed partial class RenderGraphFrameState
     private readonly Dictionary<GraphIdentity, BufferRangeSet> _bufferRanges = [];
     private readonly Dictionary<(GraphViewKind, GraphIdentity, BufferRange, Format?, uint, GraphIdentity, ulong, string?), GraphIdentity> _bufferViews = [];
     private readonly Dictionary<(GraphViewKind, GraphIdentity, TextureSubresourceRange, Format, TextureViewDimension, bool, bool, string?), GraphIdentity> _textureViews = [];
-    private readonly List<ExplicitPassOrder> _dynamicOrders = [];
+    private readonly FramePassOrders _dynamicOrders = new();
+    private readonly Dictionary<GraphIdentity, List<GraphIdentity>> _copiedPasses = [];
+    private readonly Dictionary<GraphIdentity, PassCallbackStorage> _copiedCommands = [];
     private readonly Dictionary<FramePassCallbackStoreKey, FramePassCallbackStore> _callbackStores = [];
     private readonly List<(GraphIdentity Identity, SwapchainImage Image, Queue PresentQueue)> _swapchainImages = [];
     private readonly Dictionary<Buffer, GraphBufferId> _importedBuffers =
@@ -94,6 +96,7 @@ internal sealed partial class RenderGraphFrameState
     {
         if (!changes.IsEmpty && !changes.LabelsOnly)
         {
+            _copiedCommands.Clear();
             _bufferInputs.Clear();
             _textureInputs.Clear();
             _parameterInputs.Clear();
@@ -212,11 +215,16 @@ internal sealed partial class RenderGraphFrameState
         }
         bool unchanged = graphPass.Options.RepeatCommands &&
             (compareValue ? slot.FrameValueEquals(value) : slot.FrameDataEquals(value));
+        if (!unchanged) _copiedCommands.Remove(pass.Value);
         slot.SetFrameData(value);
         if (!unchanged) Graph.CommandDataChanged(pass.Value);
     }
 
-    internal void CommandDataChanged(GraphIdentity identity) => _executor.ChangeCommandData(identity);
+    internal void CommandDataChanged(GraphIdentity identity)
+    {
+        _copiedCommands.Remove(identity);
+        _executor.ChangeCommandData(identity);
+    }
 
     internal void SetBufferRange(GraphBufferAccessId access, in BufferRange range)
     {
@@ -226,6 +234,7 @@ internal sealed partial class RenderGraphFrameState
         DevelopmentCheck.Require(row.TargetKind == GraphAccessTargetKind.Buffer && row.DynamicRange,
             "The Buffer access range is not dynamic.");
         if (row.CurrentBufferRange == range) return;
+        InvalidateCopyAccesses();
         row.CurrentBufferRange = range;
         Graph.PropertyChanged(access.Value, GraphStoreKind.Accesses);
     }
@@ -296,6 +305,7 @@ internal sealed partial class RenderGraphFrameState
         DevelopmentCheck.Require(row.TargetKind == GraphAccessTargetKind.Texture && row.DynamicRange,
             "The Texture access range is not dynamic.");
         if (row.CurrentTextureRange == range) return;
+        InvalidateCopyAccesses();
         row.CurrentTextureRange = range;
         Graph.PropertyChanged(access.Value, GraphStoreKind.Accesses);
     }
@@ -894,6 +904,7 @@ internal sealed partial class RenderGraphFrameState
             "The pipeline of a persistent pass must be declared in a graph edit.");
         int index = ResolveDynamicPass(pass);
         FramePass row = _dynamicPasses[index];
+        DetachCopyConnections(ref row);
         DevelopmentCheck.Require(row.Pipeline is null, "The Pass pipeline is already assigned.");
         row.Pipeline = pipeline;
         _dynamicPasses[index] = row;
@@ -910,6 +921,7 @@ internal sealed partial class RenderGraphFrameState
             "The parameter layout of a persistent pass must be declared in a graph edit.");
         int index = ResolveDynamicPass(pass);
         FramePass row = _dynamicPasses[index];
+        DetachCopyConnections(ref row);
         DevelopmentCheck.Require(row.ParameterLayout == VariableLayoutReflection.Null,
             "The Pass parameter block is already assigned.");
         row.ParameterLayout = layout;
@@ -927,6 +939,7 @@ internal sealed partial class RenderGraphFrameState
             "Shader resource connections for a persistent pass must be declared in a graph edit.");
         int index = ResolveDynamicPass(pass);
         FramePass row = _dynamicPasses[index];
+        DetachCopyConnections(ref row);
         (row.ParameterBindings ??= []).Add(binding);
         _dynamicPasses[index] = row;
     }
@@ -941,6 +954,7 @@ internal sealed partial class RenderGraphFrameState
             "Persistent parameter connections for a persistent pass must be declared in a graph edit.");
         int index = ResolveDynamicPass(pass);
         FramePass row = _dynamicPasses[index];
+        DetachCopyConnections(ref row);
         (row.PersistentBindings ??= []).Add(bindings.Value);
         _dynamicPasses[index] = row;
         return StructureIndex.Structure.PersistentBindings.Get(bindings.Value).Inventory;
@@ -953,6 +967,14 @@ internal sealed partial class RenderGraphFrameState
         ValidatePassIdentity(predecessor.Value);
         var order = new ExplicitPassOrder(predecessor.Value, pass.Value);
         _dynamicOrders.Add(order);
+        foreach (GraphIdentity copy in StructureIndex.PassCopies.GetValueOrDefault(pass.Value, []))
+            _dynamicOrders.Add(new ExplicitPassOrder(predecessor.Value, copy));
+        foreach (GraphIdentity copy in StructureIndex.PassCopies.GetValueOrDefault(predecessor.Value, []))
+            _dynamicOrders.Add(new ExplicitPassOrder(copy, pass.Value));
+        if (_copiedPasses.TryGetValue(pass.Value, out List<GraphIdentity>? consumers))
+            foreach (GraphIdentity copy in consumers) _dynamicOrders.Add(new ExplicitPassOrder(predecessor.Value, copy));
+        if (_copiedPasses.TryGetValue(predecessor.Value, out List<GraphIdentity>? predecessors))
+            foreach (GraphIdentity copy in predecessors) _dynamicOrders.Add(new ExplicitPassOrder(copy, pass.Value));
     }
 
     internal void OrderAfter(GraphParameterInput input, GraphPassId pass, bool consumersAfter)
@@ -1134,7 +1156,7 @@ internal sealed partial class RenderGraphFrameState
         uint width,
         uint height)
     {
-        _ = ResolveDynamicPass(pass);
+        DetachCopyConnections(pass);
         if (!DynamicRenderingRegions.TryGetValue(pass, out List<PassRenderingRegion>? regions))
         {
             regions = [];
@@ -1148,6 +1170,7 @@ internal sealed partial class RenderGraphFrameState
 
     internal void AddColorAttachment(in GraphIdentity pass, in GraphColorAttachment attachment)
     {
+        DetachCopyConnections(pass);
         if (!DynamicColorAttachments.TryGetValue(pass, out List<GraphColorAttachment>? attachments))
         {
             attachments = [];
@@ -1158,6 +1181,7 @@ internal sealed partial class RenderGraphFrameState
 
     internal void SetDepthStencilAttachment(in GraphIdentity pass, in GraphDepthStencilAttachment attachment)
     {
+        DetachCopyConnections(pass);
         if (!DynamicDepthAttachments.TryAdd(pass, attachment))
             throw new InvalidOperationException("The pass already has a depth-stencil attachment.");
     }
@@ -1514,6 +1538,7 @@ internal sealed partial class RenderGraphFrameState
 
     private void ClearFrameData()
     {
+        InvalidateCopyAccesses();
         ClearBufferUploads();
         _readbacks.Clear();
         foreach (GraphIdentity id in _bufferData.Keys) _executor.ChangeBuffer(id, refreshViews: false);
@@ -1529,6 +1554,8 @@ internal sealed partial class RenderGraphFrameState
         _bufferRangeReads.Clear();
         _bufferRanges.Clear();
         _dynamicOrders.Clear();
+        _copiedPasses.Clear();
+        TrimCopyBindings();
         foreach (var image in _swapchainImages)
         {
             if (StructureIndex.Structure.Textures.Contains(image.Identity))
@@ -1628,7 +1655,11 @@ internal sealed partial class RenderGraphFrameState
         bool changed = data.Frame == 0 || !data.Value.Equals(next);
         data.Value = next;
         data.Frame = Identity;
-        if (changed) _executor.ChangeBufferInput(input);
+        if (changed)
+        {
+            if (!_copyBufferInputs.Contains(input)) InvalidateCopyAccesses();
+            _executor.ChangeBufferInput(input);
+        }
     }
 
     internal GraphBufferSlice ResolveBufferInput(GraphBufferInput input)
@@ -1643,6 +1674,7 @@ internal sealed partial class RenderGraphFrameState
     internal void SetTextureInput(GraphTextureInput input, GraphTextureId value)
     {
         EnsureAuthoring();
+        InvalidateCopyAccesses();
         DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
             "The texture input must belong to this graph.");
         ValidateResourceIdentity(value.Value, buffer: false);
@@ -1673,6 +1705,7 @@ internal sealed partial class RenderGraphFrameState
     internal void SetParameterInput(GraphParameterInput input, ResourceBinding binding)
     {
         EnsureAuthoring();
+        InvalidateCopyAccesses();
         DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity && input.Type == binding.Type,
             "The binding must match this graph's parameter input.");
         DevelopmentCheck.Require(binding.Value is DeviceResource resource &&

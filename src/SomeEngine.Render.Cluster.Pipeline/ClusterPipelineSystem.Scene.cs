@@ -27,6 +27,14 @@ public sealed partial class ClusterPipelineSystem
     private Vector3[] _scenePositions = [];
     private uint[] _sceneRemap = [];
     private uint[] _sceneInstances = [];
+    private uint[] _targetSourceCounts = [];
+    private ulong[] _targetSourceOffsets = [0ul];
+    private uint[][] _targetSourceMaterialBins = [];
+    private RenderInstanceBatch? _sourceBatch;
+    private ulong _sourceGeometryRevision;
+    private ulong _sourceInstanceRevision;
+    private ulong _sourceMaterialVersion;
+    private ClusterRasterStageSet? _sourceRasterStages;
 
     private void InstallSceneBounds(ref RenderGraphEdit graph)
     {
@@ -69,6 +77,7 @@ public sealed partial class ClusterPipelineSystem
 
     private void BindSceneBounds(ref RenderGraphFrame graph, RenderWorld world, RenderInstanceBatch batch, bool hasTargetViews)
     {
+        UpdateTargetSourceRanges(world, batch);
         bool hasPrevious = ReferenceEquals(_sceneBatch, batch);
         bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision || _sceneGeometryRevision != GeometryRevision;
         // Movement changes bounds, not the instance membership of the spatial groups.
@@ -108,6 +117,57 @@ public sealed partial class ClusterPipelineSystem
         graph.SetRegionEnabled(GraphData.SceneBoundsRegion, changed && hasGeometry);
         SetGeometryPassesEnabled(ref graph, hasGeometry, hasGeometry && hasTargetViews);
         graph.SetRegionEnabled(GraphData.SceneInitialization, _sceneBatch is null);
+    }
+
+    private void UpdateTargetSourceRanges(RenderWorld world, RenderInstanceBatch batch)
+    {
+        ClusterMaterialAssignmentSet materials = _materialAssignments.Current;
+        ClusterRasterStageSet rasterStages = _installedRasterStages!;
+        if (_pendingResidencyPublication is null && ReferenceEquals(_sourceBatch, batch) && _sourceGeometryRevision == GeometryRevision &&
+            _sourceInstanceRevision == batch.ContentRevision && _sourceMaterialVersion == materials.TopologyVersion &&
+            ReferenceEquals(_sourceRasterStages, rasterStages)) return;
+        if (_targetSourceCounts.Length != batch.InstanceCount)
+        {
+            _targetSourceCounts = new uint[batch.InstanceCount];
+            _targetSourceOffsets = new ulong[batch.InstanceCount + 1];
+            _targetSourceMaterialBins = new uint[batch.InstanceCount][];
+        }
+        var counts = new TargetSourceCounts(_instances.Current!, _resources, _targetSourceCounts,
+            materials, rasterStages.BinIndices, _targetSourceMaterialBins);
+        world.ExecuteQuery(_sceneQuery, ref counts,
+            static (QueryCursor query, ref TargetSourceCounts data) => data.Collect(query));
+        for (int row = 0; row < batch.InstanceCount; row++)
+            _targetSourceOffsets[row + 1] = checked(_targetSourceOffsets[row] + _targetSourceCounts[row]);
+        _sourceBatch = batch;
+        _sourceGeometryRevision = GeometryRevision;
+        _sourceInstanceRevision = batch.ContentRevision;
+        _sourceMaterialVersion = materials.TopologyVersion;
+        _sourceRasterStages = rasterStages;
+    }
+
+    private struct TargetSourceCounts(
+        RenderInstanceBatches<RenderInstanceSingleGroup> batches,
+        ClusterRenderResources resources, uint[] counts, ClusterMaterialAssignmentSet materials,
+        ClusterBytes rasterIndices, uint[][] materialBins)
+    {
+        private int _entityIndex;
+        internal void Collect(QueryCursor query)
+        {
+            foreach (QueryRow row in query.Rows)
+            {
+                uint count = resources.GetSourceClusterCount(row.Read<RenderMesh>().Mesh);
+                var range = materials.GetEntityMaterialRange(row.Entity);
+                var indices = new uint[range.MaterialCount];
+                rasterIndices.CopyTo(MemoryMarshal.AsBytes(indices.AsSpan()), checked((int)range.FirstMaterialIndex * sizeof(uint)));
+                uint[] bins = indices.Where(static value => value != uint.MaxValue)
+                    .Select(static value => value & 0x1FFFFFFFu).Distinct().ToArray();
+                foreach (var address in batches.RowsForEntity(_entityIndex++))
+                {
+                    counts[address.Row] = count;
+                    materialBins[address.Row] = bins;
+                }
+            }
+        }
     }
 
     private struct ScenePositions(RenderInstanceBatches<RenderInstanceSingleGroup> batches, Vector3[] positions)

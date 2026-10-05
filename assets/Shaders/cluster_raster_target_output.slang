@@ -3,10 +3,7 @@
 
 #include "cluster_raster_target_view.slang"
 
-StructuredBuffer<ClusterRasterTargetView> RasterTargetViews;
-StructuredBuffer<uint> RasterTargetPageHierarchy;
-StructuredBuffer<uint4> RasterTargetPageTable;
-StructuredBuffer<uint2> RasterTargetReceiverMasks;
+#include "cluster_raster_target_resources.slang"
 RWTexture2D<uint> RasterTargetOutput;
 
 static const uint CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM = 8u;
@@ -77,7 +74,7 @@ bool ClusterRasterTargetResolvePage(
     int2 expectedWorldPage = ClusterRasterTargetWorldPage(target, localPage);
     if (entry.x == 0u ||
         entry.x == 0xFFFFFFFFu ||
-        entry.w != target.CacheGeneration ||
+        (entry.w != 0u && entry.w != target.CacheGeneration) ||
         asint(entry.y) != expectedWorldPage.x ||
         asint(entry.z) != expectedWorldPage.y)
     {
@@ -89,7 +86,7 @@ bool ClusterRasterTargetResolvePage(
 }
 
 int4 PrepareRasterTargetScissor(
-    uint visibleClusterIndex,
+    uint2 rasterWindow,
     uint targetViewIndex,
     uint screenWidth,
     uint screenHeight,
@@ -98,7 +95,7 @@ int4 PrepareRasterTargetScissor(
 {
     ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
     uint4 pageWindow = ClusterUnpackRasterTargetPageWindow(
-        VisibleClusterRasterWindows[visibleClusterIndex]);
+        rasterWindow);
     uint2 extent = pageWindow.zw - pageWindow.xy + 1u;
     bool cacheEnabled = all(extent <= CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM.xx);
 
@@ -142,6 +139,13 @@ int4 PrepareRasterTargetScissor(
         (pageWindow.zw + 1u) * target.PageSize,
         max(target.MipResolution, 1u).xx);
     return int4(firstPixel, lastPixelExclusive);
+}
+
+int4 PrepareRasterTargetScissor(uint visibleClusterIndex, uint targetViewIndex,
+    uint screenWidth, uint screenHeight, uint threadIndex, uint threadCount)
+{
+    return PrepareRasterTargetScissor(VisibleClusterRasterWindows[visibleClusterIndex], targetViewIndex,
+        screenWidth, screenHeight, threadIndex, threadCount);
 }
 
 int4 PrepareRasterTargetScissor(

@@ -99,6 +99,9 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         float3 T = normalize(ctx.worldTangent.xyz - N_geom * dot(N_geom, ctx.worldTangent.xyz)); // Gram-Schmidt
         float3 B = cross(N_geom, T) * ctx.worldTangent.w; // handedness
         float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
+        float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
+            triangle.Position2 - triangle.Position0), N_geom);
+        if (dot(geometricNormal, N_geom) < 0.0) geometricNormal = -geometricNormal;
 
         float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
         float roughness = saturate(armSample.g * scalars.Roughness);
@@ -128,7 +131,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             if (dot(mappedNormal, -light.Direction) <= 0.0)
                 continue;
             float3 shadowPosition = ctx.surfacePosition +
-                mappedNormal * VirtualShadowSampling.NormalBias;
+                geometricNormal * VirtualShadowSampling.NormalBias;
             float shadow = 1.0;
             if (lightIndex < VirtualShadowSampling.DirectionalLightCount &&
                 VirtualShadowSampling.DirectionalClipmapLevels != 0u)
@@ -147,12 +150,13 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                             VirtualShadowSampling.ViewCount - firstShadowView),
                         VirtualShadowDynamicResolutionBias[0].x,
                         shadowPosition,
-                        receiverPositionDx + mappedNormal * VirtualShadowSampling.NormalBias,
-                        receiverPositionDy + mappedNormal * VirtualShadowSampling.NormalBias,
+                        receiverPositionDx + geometricNormal * VirtualShadowSampling.NormalBias,
+                        receiverPositionDy + geometricNormal * VirtualShadowSampling.NormalBias,
                         VirtualShadowSampling.BlockerSampleCount,
                         VirtualShadowSampling.FilterSampleCount,
                         VirtualShadowSampling.BlockerSearchRadiusTexels,
-                        VirtualShadowSampling.MaxFilterRadiusTexels);
+                        VirtualShadowSampling.MaxFilterRadiusTexels,
+                        geometricNormal);
                 }
             }
             finalColor += EvaluateDirectionalLight(
@@ -188,7 +192,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                     light.Direction, light.InnerConeCos, light.OuterConeCos) <= 0.0)
                 continue;
             float3 shadowPosition = ctx.surfacePosition +
-                mappedNormal * VirtualShadowSampling.NormalBias;
+                geometricNormal * VirtualShadowSampling.NormalBias;
             float shadow = 1.0;
             if (lightIndex >= VirtualShadowSampling.PointLightBufferOffset &&
                 lightIndex < VirtualShadowSampling.PointLightBufferOffset +
@@ -207,12 +211,13 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                         firstShadowView,
                         VirtualShadowDynamicResolutionBias[0].y,
                         shadowPosition,
-                        receiverPositionDx + mappedNormal * VirtualShadowSampling.NormalBias,
-                        receiverPositionDy + mappedNormal * VirtualShadowSampling.NormalBias,
+                        receiverPositionDx + geometricNormal * VirtualShadowSampling.NormalBias,
+                        receiverPositionDy + geometricNormal * VirtualShadowSampling.NormalBias,
                         VirtualShadowSampling.BlockerSampleCount,
                         VirtualShadowSampling.FilterSampleCount,
                         VirtualShadowSampling.BlockerSearchRadiusTexels,
-                        VirtualShadowSampling.MaxFilterRadiusTexels);
+                        VirtualShadowSampling.MaxFilterRadiusTexels,
+                        geometricNormal);
                 }
             }
             else if (lightIndex >= VirtualShadowSampling.SpotLightBufferOffset &&
@@ -231,12 +236,13 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                         shadowView,
                         VirtualShadowDynamicResolutionBias[0].y,
                         shadowPosition,
-                        receiverPositionDx + mappedNormal * VirtualShadowSampling.NormalBias,
-                        receiverPositionDy + mappedNormal * VirtualShadowSampling.NormalBias,
+                        receiverPositionDx + geometricNormal * VirtualShadowSampling.NormalBias,
+                        receiverPositionDy + geometricNormal * VirtualShadowSampling.NormalBias,
                         VirtualShadowSampling.BlockerSampleCount,
                         VirtualShadowSampling.FilterSampleCount,
                         VirtualShadowSampling.BlockerSearchRadiusTexels,
-                        VirtualShadowSampling.MaxFilterRadiusTexels);
+                        VirtualShadowSampling.MaxFilterRadiusTexels,
+                        geometricNormal);
                 }
             }
             float3 radiance = light.Color * (light.Intensity * shadow);

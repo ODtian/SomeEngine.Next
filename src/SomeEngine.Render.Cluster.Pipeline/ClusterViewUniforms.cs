@@ -8,7 +8,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 internal struct ClusterViewUniforms
 {
-    internal const int SizeInBytes = 432;
+    internal const int SizeInBytes = ClusterRenderContext.ViewSizeInBytes;
 
     internal Matrix4x4 ViewProj;
     internal Vector3 CameraPos;
@@ -45,7 +45,8 @@ internal struct ClusterViewUniforms
     internal uint TargetPolicy;
     internal uint TargetViewIndex;
     internal uint CullingProjectionIndex;
-    internal uint Pad6;
+    internal uint GeometryViewIndex;
+    internal Matrix4x4 GeometryViewProj;
 
     internal static ClusterViewUniforms Create(
         in RenderView source,
@@ -104,6 +105,7 @@ internal struct ClusterViewUniforms
             ClipToWorld = clipToWorld,
             TargetPolicy = 0u,
             TargetViewIndex = 0u,
+            GeometryViewProj = source.View * (source.GeometryProjection ?? source.Projection),
         };
     }
 
