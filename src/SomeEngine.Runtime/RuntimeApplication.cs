@@ -303,7 +303,8 @@ internal static class RuntimeApplication
                 adapter.Id,
                 queues,
                 requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands,
-                optionalFeatures: options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders,
+                optionalFeatures: (options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders) |
+                    (Environment.GetEnvironmentVariable("RG81_GPU_DIRECTORY") is null ? DeviceFeatures.None : DeviceFeatures.CalibratedTimestamps),
                 label: "SomeEngine Runtime Device"));
             Swapchain = Backend.CreateSwapchain(Device, new SwapchainDesc(
                 Surface,
@@ -677,6 +678,12 @@ internal static class RuntimeApplication
         int actionIndex = 0;
         int? captureFrame = options.CaptureFrame ?? (options.FrameLimit > 0 ? options.FrameLimit - 1 : null);
         bool outputSaved = false, linearOutputSaved = false;
+        DiagnosticGpuTimestamps? gpuTimestamps = Environment.GetEnvironmentVariable("RG81_GPU_DIRECTORY") is string gpuDirectory && platform?.IsMeasuring == true
+            ? new DiagnosticGpuTimestamps(backend, device, gpuDirectory, platform.Current.Name, platform.SelectedScene,
+                new { Options = options, ShadowSettings = shadowSettings, Width = width, Height = height,
+                    GeometryMemoryBytes = checked((uint)platform.GeometryMemoryMegabytes * 1024 * 1024),
+                    Adapter = device.Adapter.Name, Driver = device.Adapter.DriverVersion })
+            : null;
         try
         {
             frameSystems.Initialize();
@@ -707,6 +714,7 @@ internal static class RuntimeApplication
             {
                 long frameStarted = Stopwatch.GetTimestamp();
                 using var frameTrace = EngineTrace.BeginFrame(++traceFrameIndex);
+                gpuTimestamps?.BeginFrame(frameIndex, submittedFrames, traceFrameIndex);
                 // Shared asset content can change only after the Game World extraction reader exits.
                 if (nextGameUpdate is not null)
                 {
@@ -1050,6 +1058,7 @@ internal static class RuntimeApplication
                 if (platform?.IsMeasuring == true && !platform.ReloadRequested)
                     platform.RecordFrame(new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
                         prepareMs, reconcileMs, executeMs), cluster.CaptureDiagnostics());
+                gpuTimestamps?.MarkSampled(platform!.SampleFrameCount);
                 frameIndex++;
                 if (platform?.ReloadRequested == true) break;
             }
@@ -1172,6 +1181,7 @@ internal static class RuntimeApplication
             if (nextGameUpdate is not null)
                 RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
             renderDevice.WaitForTrackedSubmissions(FrameTimeout);
+            gpuTimestamps?.Dispose();
             outputVerifier?.Dispose();
             linearVerifier?.Dispose();
             ui?.Dispose();

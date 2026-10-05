@@ -940,7 +940,7 @@ internal sealed partial class FrameExecutor
                     else if (key.Kind == GraphAccessTargetKind.Texture)
                         foreach (TextureBoundaryState state in TextureEntryStates(_textures[key.Index])) AddWait(state.ReadyAfter);
                 }
-                QueueCompletion completion = _frame.Backend.Submit(queue,
+                QueueCompletion completion = DiagnosticGpuTimestamps.Submit(_frame.Backend, queue,
                     new QueueSubmitDesc(CollectionsMarshal.AsSpan(_submitWaits), [], _submitCommands.AsSpan(0, 1), [], []));
                 AddCompletion(_submittedCompletions, completion);
                 CommitLateReleaseState(completion);
@@ -1018,8 +1018,8 @@ internal sealed partial class FrameExecutor
         ResolveSwapchainImages(CollectionsMarshal.AsSpan(passes));
         try
         {
-            QueueCompletion completion = _frame.Backend.Submit(
-                queue,
+            QueueCompletion completion = DiagnosticGpuTimestamps.Submit(
+                _frame.Backend, queue,
                 new QueueSubmitDesc(
                     CollectionsMarshal.AsSpan(_submitWaits),
                     [],
