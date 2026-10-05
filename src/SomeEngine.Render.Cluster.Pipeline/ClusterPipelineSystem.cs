@@ -1018,10 +1018,22 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             SaturatingAdd(phaseOneCulled, phaseTwoCulled),
             SaturatingAdd(phaseOneQualityLimited, phaseTwoQualityLimited),
             ReadUInt32(bytes, SoftwareDebugReadbackOffset),
-            CountNonZeroVisibilityProbe(bytes)) { ResidencyEpoch = epoch };
+            CountNonZeroVisibilityProbe(bytes))
+        {
+            ResidencyEpoch = epoch,
+            Work = new ClusterWorkMetrics(
+                (ClusterWorkOverflow)ReadUInt32(bytes, WorkMetricsReadbackOffset),
+                ReadWorkMetric(bytes, 8), ReadWorkMetric(bytes, 16), ReadWorkMetric(bytes, 24),
+                ReadWorkMetric(bytes, 32), ReadWorkMetric(bytes, 40), ReadWorkMetric(bytes, 48),
+                ReadWorkMetric(bytes, 56), ReadWorkMetric(bytes, 64), ReadWorkMetric(bytes, 72),
+                ReadWorkMetric(bytes, 80), ReadWorkMetric(bytes, 88)),
+        };
         if (_latestFrameMetrics is not { } latest || metrics.FrameIndex > latest.FrameIndex)
             _latestFrameMetrics = metrics;
     }
+
+    private static ulong ReadWorkMetric(ReadOnlySpan<byte> bytes, int offset) =>
+        BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(WorkMetricsReadbackOffset + offset, sizeof(ulong)));
 
     private static uint ReadUInt32(ReadOnlySpan<byte> bytes, int offset) =>
         BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, sizeof(uint)));

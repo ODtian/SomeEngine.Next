@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="e43122f3-0d81-4930-8cf8-eb84838c16d3" name="boqi@BOQI-THE-DAEMON 2026-10-06 00:22:45" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T00:22:45.1268043+08:00" queuing="2026-10-06T00:22:45.1268048+08:00" start="2026-10-06T00:22:27.4044132+08:00" finish="2026-10-06T00:23:07.8945519+08:00" />
+  <TestSettings name="default" id="6b41e02b-8bad-414e-9081-915a0548d92a">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_00_22_45" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="7afdbdd5-1872-4f45-90e1-4df41a49b55e" testId="de91f778-4cf1-9c43-44a1-8a117d8acf50" testName="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.SupportedWorkMemoryPreservesAllShadowedPixels(backend: &quot;Vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:22.6175976" startTime="2026-10-06T00:22:45.1024327+08:00" endTime="2026-10-06T00:23:07.6948377+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7afdbdd5-1872-4f45-90e1-4df41a49b55e" />
+    <UnitTestResult executionId="aacef6ad-5d91-440f-8290-ce3a588ae65e" testId="99176b1a-e624-0646-51fe-f80ade250469" testName="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.SupportedWorkMemoryPreservesAllShadowedPixels(backend: &quot;D3D12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:16.2372477" startTime="2026-10-06T00:22:28.8164455+08:00" endTime="2026-10-06T00:22:45.0739343+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aacef6ad-5d91-440f-8290-ce3a588ae65e" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.SupportedWorkMemoryPreservesAllShadowedPixels(backend: &quot;D3D12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="99176b1a-e624-0646-51fe-f80ade250469">
+      <Execution id="aacef6ad-5d91-440f-8290-ce3a588ae65e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests" name="SupportedWorkMemoryPreservesAllShadowedPixels" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests.SupportedWorkMemoryPreservesAllShadowedPixels(backend: &quot;Vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-134\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="de91f778-4cf1-9c43-44a1-8a117d8acf50">
+      <Execution id="7afdbdd5-1872-4f45-90e1-4df41a49b55e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-134\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.VsmWorkRenderingTests" name="SupportedWorkMemoryPreservesAllShadowedPixels" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="de91f778-4cf1-9c43-44a1-8a117d8acf50" executionId="7afdbdd5-1872-4f45-90e1-4df41a49b55e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="99176b1a-e624-0646-51fe-f80ade250469" executionId="aacef6ad-5d91-440f-8290-ce3a588ae65e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="2" executed="2" passed="2" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.21]   Discovering: SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.37]   Discovered:  SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.42]   Starting:    SomeEngine.Render.Cluster.Tests&#xD;
+{"Backend":"D3D12","Metrics":{"FrameIndex":24,"CandidateCount":377,"CandidateDispatchGroups":6,"PhaseOneSoftwareClusters":1,"PhaseOneHardwareClusters":189,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":464,"SoftwareRasterBatches":1,"FirstShadeBinTiles":32,"ShadingWorkItems":228,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":1,"VisibilityProbePixels":58,"ResidencyEpoch":1,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":463,"SoftwareRasterBatches":1,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"Constrained":{"FrameIndex":24,"CandidateCount":377,"CandidateDispatchGroups":6,"PhaseOneSoftwareClusters":1,"PhaseOneHardwareClusters":189,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":464,"SoftwareRasterBatches":1,"FirstShadeBinTiles":32,"ShadingWorkItems":228,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":1,"VisibilityProbePixels":58,"ResidencyEpoch":2,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":463,"SoftwareRasterBatches":1,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}}}&#xD;
+{"Backend":"Vulkan","Metrics":{"FrameIndex":24,"CandidateCount":377,"CandidateDispatchGroups":6,"PhaseOneSoftwareClusters":1,"PhaseOneHardwareClusters":189,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":464,"SoftwareRasterBatches":1,"FirstShadeBinTiles":32,"ShadingWorkItems":228,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":1,"VisibilityProbePixels":58,"ResidencyEpoch":3,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":463,"SoftwareRasterBatches":1,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"Constrained":{"FrameIndex":24,"CandidateCount":377,"CandidateDispatchGroups":6,"PhaseOneSoftwareClusters":1,"PhaseOneHardwareClusters":189,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":464,"SoftwareRasterBatches":1,"FirstShadeBinTiles":32,"ShadingWorkItems":228,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":1,"VisibilityProbePixels":58,"ResidencyEpoch":4,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":463,"SoftwareRasterBatches":1,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}}}&#xD;
+[xUnit.net 00:00:39.37]   Finished:    SomeEngine.Render.Cluster.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

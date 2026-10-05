@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "1be7de9ba58751ff2f6ecdd3c242af2f0763a67c4704a5a5b713383efc044570",
+  "input_hash": "a96d9add86f68b5225fce7d557cd5186d0e6a0058e1f505435cf9098d82eb8cc",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bin_common.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_bin_io.slang",
-      "content_hash": "8990864044d4b7351e58696a6e1157735d5abd8e609b52d2cf381adfc74a4f7d"
+      "content_hash": "e9ee490154cefaf92c133a6042bd86489158af9bd519a4b42aa34599ad815b13"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_common.slang",
@@ -29,11 +29,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_output.slang",
-      "content_hash": "32fd647f3e0c7a4f4a75d86d9a06d0afa4180f0aac7d2ebcaf57fdb64d336254"
+      "content_hash": "e2ef814edf011c0a0910fc41b2673aeb35ed4224e68689e8f4fe5ddf6ca1770c"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_resources.slang",
-      "content_hash": "4d2e861c166bc5b151509c89c0e470967a147f4f47cc066f87e164b3b824d74c"
+      "content_hash": "ad63901bbbf5dc2875f694ac25bb00ddae5b8e033d126de895ae76ecd3fe5023"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_view.slang",
@@ -133,11 +133,11 @@
     {
       "asset_guid": "70cd2572-fa34-5f52-9676-f355f8f8b6db",
       "sub_asset_key": "",
-      "input_hash": "1be7de9ba58751ff2f6ecdd3c242af2f0763a67c4704a5a5b713383efc044570",
+      "input_hash": "a96d9add86f68b5225fce7d557cd5186d0e6a0058e1f505435cf9098d82eb8cc",
       "dependencies": [],
       "asset_path": "sw_raster.shader.asset",
-      "version": "4105d08a-0218-1c5b-a0a8-613719f51cb2",
-      "content_hash": "2891B937D19FD0531FB498155E124030C1593202101E4C41217CE8D8BA1842F1",
+      "version": "974f5ba7-57bb-9f3c-2063-f1bc07be5a40",
+      "content_hash": "BCD2B2BB5CD66C20EBE4C56C0C907FCEA17E3E73A9140691A08FE694AED1790F",
       "asset_dependencies": []
     }
   ]

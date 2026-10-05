@@ -9,6 +9,8 @@ public enum ClusterWorkOverflow : uint
     Candidates = 2,
     Deferred = 4,
     Visible = 8,
+    RasterBatches = 16,
+    Tessellation = 32,
 }
 
 /// <summary>A memory-safe rejection of required GPU work, not a successful quality reduction.</summary>

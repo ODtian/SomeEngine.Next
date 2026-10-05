@@ -102,6 +102,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private readonly GraphTextureInput _readbackDepth;
     private readonly Entity _view;
     private readonly Entity[] _meshes;
+    private readonly Entity _light;
     private readonly Mesh _mesh;
     private readonly string _backendName;
     private readonly List<Material> _extraMaterials = [];
@@ -116,7 +117,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private FrameStageScene(IGraphicsBackend backend, Device device, Mesh mesh,
         Material standard, Material unlit, ClusterShaders clusterShaders,
         VirtualShadowMapShaders shadowShaders, Shader lightingShader, Shader temporalShader,
-        ApplicationSettingsBlock settings, bool shadows, ClusterPipelineOptions? pipelineOptions, string backendName)
+        ApplicationSettingsBlock settings, bool shadows, ClusterPipelineOptions? pipelineOptions, string backendName,
+        VirtualShadowMapSettings? shadowSettings)
     {
         _backend = backend;
         _backendName = backendName;
@@ -130,7 +132,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
                 { Stretch = new Vector3(4, 4, .1f) }),
             AddMesh(mesh, new TransformQvvs(new Vector3(0, 0, -6), Quaternion.Identity, .6f)),
         ];
-        _gameWorld.CreateEntity(new PointLight(new Vector3(-4, 2, -3), 20, Vector3.One, 30));
+        _light = _gameWorld.CreateEntity(new PointLight(new Vector3(-4, 2, -3), 20, Vector3.One, 30));
         _view = _world.CreateEntity(new RenderView(Matrix4x4.Identity,
             Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), Width, Height));
         _extraction = new RenderExtractionSystems(_world, new MeshRenderExtractor(), new LightRenderExtractor());
@@ -179,7 +181,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             new ClusterPipelineOutputDescription(Width, Height, 1), feedback, resources,
             pipelineOptions ?? new ClusterPipelineOptions { MaxCandidates = 4096 });
         _shadows = new VirtualShadowFeature(backend, device, shadowShaders,
-            new VirtualShadowMapSettings { Enabled = shadows, VirtualResolution = 4096,
+            shadowSettings ?? new VirtualShadowMapSettings { Enabled = shadows, VirtualResolution = 4096,
                 AtlasSize = 2048, MaxShadowLights = 1, DirectionalClipmapLevels = 1,
                 DynamicResolutionEnabled = false }, _graph, _pipeline, _lighting,
             depthAfter, targetAfter, feedbackRegion);
@@ -237,7 +239,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
     }
 
     internal static async Task<FrameStageScene> CreateAsync(string backendName, bool shadows,
-        ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null)
+        ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null,
+        VirtualShadowMapSettings? shadowSettings = null)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -286,7 +289,18 @@ internal sealed class FrameStageScene : IAsyncDisposable
             [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)],
             requiredFeatures: DeviceFeatures.IndirectCommands));
         return new FrameStageScene(backend, device, mesh, standard, unlit, clusterShaders,
-            shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName);
+            shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName, shadowSettings);
+    }
+
+    internal void SetMeshTransform(int index, TransformQvvs transform) =>
+        _gameWorld.Replace(_meshes[index], new WorldTransform { Qvvs = transform });
+
+    internal Entity AddReceiver(TransformQvvs transform) => AddMesh(_mesh, transform);
+
+    internal void UseDirectionalLight(Vector3 direction)
+    {
+        _gameWorld.Remove<PointLight>(_light);
+        _gameWorld.Add(_light, new DirectionalLight(direction, Vector3.One, 3));
     }
 
     internal void UseMaterial(string material) => SetMaterial(material switch
@@ -360,7 +374,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
     internal Material CreateRasterMaterial(RasterMaterialKind kind, Vector4 color)
     {
         Shader shader = RasterTestShaders.Create(_backendName, kind);
-        byte[] pixel = [(byte)(color.X * 255), (byte)(color.Y * 255), (byte)(color.Z * 255), 255];
+        byte[] pixel = [(byte)(color.X * 255), (byte)(color.Y * 255), (byte)(color.Z * 255), (byte)(color.W * 255)];
         var texture = SomeEngine.Resources.Texture.Create(
             new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,
                 TextureUsages.Sampled | TextureUsages.CopyDestination),

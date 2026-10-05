@@ -19,10 +19,12 @@ ByteAddressBuffer PageHeap;
 
 void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware)
 {
-    ScatterRaster(RasterBinMeta, BinnedClusterIndexBuffer, bin, visibleIndex, workIndex, isSoftware);
+    if (!ScatterRaster(RasterBinMeta, BinnedClusterIndexBuffer, bin, visibleIndex, workIndex, isSoftware))
+        RejectClusterWork(16u);
 }
 
 #include "cluster_bin_batches.slang"
+#include "cluster_work_status.slang"
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
