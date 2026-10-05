@@ -22,7 +22,9 @@ internal static class ShadowReferenceScene
     internal static readonly Vector3 LightDirection = Vector3.Normalize(new(.35f, -.85f, -.4f));
     internal static bool IsPointLight(string light) => light.StartsWith("point", StringComparison.Ordinal);
     internal static bool IsSpotLight(string light) => light.StartsWith("spot", StringComparison.Ordinal);
-    internal static float LocalRange(string light) => light == "point-range" ? 7 : UsesDefaultGrid(light) ? 28 : 20;
+    // The caster footprint is about nine units from the point light; the receiver
+    // extends beyond 9.3. Keep shadow, light and range-boundary samples together.
+    internal static float LocalRange(string light) => light == "point-range" ? 9.3f : UsesDefaultGrid(light) ? 28 : 20;
     internal static Vector3 SpotDirection => Vector3.Normalize(ReceiverPosition - PointPosition);
     internal static float OuterConeCos(string light) => MathF.Cos(light == "spot-cone" ? MathF.PI / 9 : MathF.PI * 2 / 9);
     internal static bool HasMotion(string light) => light.EndsWith("-motion", StringComparison.Ordinal);
