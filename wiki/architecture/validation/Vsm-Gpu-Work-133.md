@@ -8,6 +8,7 @@ Owned branch `agent/rg70-ticket-133` was created at exactly `07d9462865f16049729
 
 - `f97c4e5f`: immutable `7507ba59` independent-reference/coarse-sampling corrections.
 - `9e5061c4f5d34702edd48ddee461ecc0ad255f5e`: reconstructed individual-view, correct-but-slow source/content checkpoint. See [recovery provenance](Vsm-Work-Recovery-133.md) for exact selections, exclusions, hashes and limits. It is not a byte-identical immutable snapshot of the historical bounded-batch numerical pass.
+- `bdeb3b5e`: implementation source/shader checkpoint and concentrated verification artifacts.
 - This slice removes that checkpoint's CPU source/view copied chains and deferred-only root rediscovery. RenderGraph and source-range-only BVH/residency additions are restored to the authorized integration base. `git diff 07d94628 -- src/SomeEngine.RenderGraph` is empty on the delivered source, preserving the #82 failure behavior.
 
 No new live private EpicGames/UnrealEngine retrieval or recursive discovery under historical `rt-final-three-scenes` was attempted. Retained citations and separately identified bounded-batch evidence remain historical evidence, not fresh acceptance.
@@ -41,6 +42,7 @@ Tests use only `Application.RunAsync`, `SceneScript`, `SceneImage`, public outpu
 - `InsufficientGeometryWorkMemoryFailsInsteadOfPresentingAnIncompleteScene`: capacity 1 previously completed four frames with `Failure.None`; red expected `Rendering`. Green checks a typed overflow with capacity 1 and nonzero flags; an incomplete frame is not delivered to its requested image callback.
 - `View_counts_that_cannot_retain_distinct_geometry_identities_are_rejected`: 524289 primary views previously constructed successfully; red expected `ArgumentOutOfRangeException`. Green rejects it and accepts the 524288 boundary.
 - Coarse directional caster-motion is carried forward through public scene output, not the #82-deleted legacy driver. A small atlas and a single coarse-enabled directional clipmap exercise fallback demand. Whole images after moving the caster match a fresh final-state arrival, including both old and new footprints; shadowed output must differ from no-VSM output. No edge exclusions.
+- A separate subdivision-five streamed caster outside the camera frustum still shadows the visible receiver. Deleting it leaves no-VSM beauty identical but removes its center shadow. The public-run log additionally reports 10/12 resident pages with VSM versus 7/12 without it; the test does not assert queue/storage state. This exercises target-driven demand for geometry not contributing to primary visibility.
 - Rear caster same-frame recovery compares history with a moved front caster against an independently started final scene. Canceled caster frames likewise resume to the fresh-arrival output. These are history/lifetime checks, not independent ray-traced accuracy claims.
 
 A temporary missing-post mutation was rejected by the tool risk gate. No mutation was applied, no workaround was attempted, and no mutation-sensitivity result is claimed. The first two tests have actual observed pre-implementation reds; the new image regressions are compatibility checks on the new path.
@@ -81,18 +83,20 @@ Retained artifacts: [`artifacts/acceptance/ticket-133`](../../../artifacts/accep
 | Game.App Release build | 0 warnings, 0 errors |
 | Default content + engine shader build | 69 assets completed |
 | Public rendering batch | 40 discovered, 21 executed/passed, 0 failed, 19 capability-skipped |
+| Separate off-camera streamed caster check | 2 discovered, 1 executed/passed, 0 failed, 1 capability-skipped |
 | Full RenderGraph tests | 178 executed/passed, 0 failed/skipped |
 | Public Cluster output tests | 3 executed/passed, 0 failed/skipped |
 | DefaultGame 1024-sphere startup/output, 12 frames | passed with VSM, default TAA, three queues |
 | `git diff --check` | passed |
 
-All 19 rendering skips are Vulkan: `NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.` D3D12 receiver-mask cases include mesh, vertex/pixel and software routes at two normal biases. The batch also covers coarse/moving/rear/canceled caster shadows, camera scroll, camera occlusion recovery, cancellation, empty geometry, material replacement, tessellated material insertion/removal and streaming with detail not fitting at raster edge thresholds 4 and 64.
+All 20 rendering skips across the two batches are Vulkan: `NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.` D3D12 receiver-mask cases include mesh, vertex/pixel and software routes at two normal biases. The batch also covers coarse/moving/rear/canceled caster shadows, camera scroll, camera occlusion recovery, cancellation, empty geometry, material replacement, tessellated material insertion/removal and streaming with detail not fitting at raster edge thresholds 4 and 64.
 
 Commands for the retained tests:
 
 ```powershell
 $filter = 'FullyQualifiedName~CoarseDirectionalShadowsFollow|FullyQualifiedName~MovingTheFrontCaster|FullyQualifiedName~CanceledCasterFrame|FullyQualifiedName~MovingLightShadowsMatch|FullyQualifiedName~DirectionalShadowsAfterCameraScroll|FullyQualifiedName~ReceiverMasksPreserveNormalOffsetShadows|FullyQualifiedName~StreamedGeometryKeepsTheSphereInterior|FullyQualifiedName~CameraMovementRecoversOccludedGeometry|FullyQualifiedName~CanceledGeometryFrame|FullyQualifiedName~DeletingAllGeometry|FullyQualifiedName~AddedTessellatedMaterial|FullyQualifiedName~RemovedTessellatedMaterial|FullyQualifiedName~ReplacedMaterialMatches|FullyQualifiedName~InsufficientGeometryWorkMemory|FullyQualifiedName~HardwareFrameLoopDeliversRequestedImages'
 dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release --filter $filter --logger 'trx;LogFileName=public-rendering.trx' --results-directory artifacts/acceptance/ticket-133
+dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release --filter FullyQualifiedName~StreamedCasterOutsideTheCamera --logger 'trx;LogFileName=off-camera-caster.trx' --results-directory artifacts/acceptance/ticket-133
 dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj -c Release --logger 'trx;LogFileName=render-graph.trx' --results-directory artifacts/acceptance/ticket-133
 dotnet test tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj -c Release --filter FullyQualifiedName~ClusterPipelineOutputTests --logger 'trx;LogFileName=public-output.trx' --results-directory artifacts/acceptance/ticket-133
 & ./templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe --test-scene "$PWD/templates/DefaultProject" --frames 12 --hidden-window --fixed-step 0.016666667 --no-vsync --no-debug-ui --vsm --verify-frame-output

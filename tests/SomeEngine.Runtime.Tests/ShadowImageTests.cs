@@ -215,6 +215,35 @@ public sealed class ShadowImageTests(RenderingContentFixture content)
         SceneImages.AssertEqual(expected!, resumed!, 2);
     }
 
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver(string backend)
+    {
+        SceneImage? shadowed = null, withoutCaster = null, unshadowed = null, unshadowedWithoutCaster = null;
+        await SceneImages.RunAsync(backend, new SceneScript(content.OffCameraShadows, 24,
+            [new(23, edit => edit.CaptureImage(image => shadowed = image))])
+            { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.OffCameraShadows, 24,
+        [
+            new(0, edit => edit.DeleteEntity(edit.MeshEntities[1])),
+            new(23, edit => edit.CaptureImage(image => withoutCaster = image)),
+        ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.OffCameraShadows, 24,
+            [new(23, edit => edit.CaptureImage(image => unshadowed = image))]), "--no-taa", "--no-vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.OffCameraShadows, 24,
+        [
+            new(0, edit => edit.DeleteEntity(edit.MeshEntities[1])),
+            new(23, edit => edit.CaptureImage(image => unshadowedWithoutCaster = image)),
+        ]), "--no-taa", "--no-vsm");
+        // Removing the separate streamed mesh cannot change primary geometry output.
+        SceneImages.AssertEqual(unshadowedWithoutCaster!, unshadowed!);
+        // But it must change the shadow on the receiver, including its central interior.
+        Assert.NotEqual(withoutCaster!.Pixels.ToArray(), shadowed!.Pixels.ToArray());
+        int center = (shadowed.Height / 2 * shadowed.Width + shadowed.Width / 2) * 4;
+        Assert.True(shadowed.Pixels.Span[center] < withoutCaster.Pixels.Span[center]);
+    }
+
     private static VirtualShadowMapSettings CreateShadowSettings() => new()
     {
         VirtualResolution = 4096, AtlasSize = 2048, MaxShadowLights = 1,
