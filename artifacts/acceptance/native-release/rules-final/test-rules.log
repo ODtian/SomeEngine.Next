@@ -1,0 +1,69 @@
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Assets.Consumer.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Assets.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Core.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Diagnostics.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.ECS.Benchmarks.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.ECS.Fuzz.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.ECS.Serialization.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.ECS.SourceGen.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.ECS.Systems.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.ECS.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Graphics.Benchmarks.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Graphics.Direct3D12.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Graphics.Tests; 0 violations.
+适用于 .NET MSBuild 版本 18.0.11+95017c711
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\native-release\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
