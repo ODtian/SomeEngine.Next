@@ -1,3 +1,4 @@
+#define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 #include "vsm_receiver_pixel.slang"
 #include "render_lighting.slang"

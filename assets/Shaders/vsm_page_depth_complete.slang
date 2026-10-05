@@ -1,3 +1,5 @@
+// This producer uses page definitions, not the material receiver-mask resource.
+#define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 
 StructuredBuffer<uint4> ActivePhysicalPages;
