@@ -25,6 +25,9 @@ internal static class ShadowReferenceScene
     // The caster footprint is about nine units from the point light; the receiver
     // extends beyond 9.3. Keep shadow, light and range-boundary samples together.
     internal static float LocalRange(string light) => light == "point-range" ? 9.3f : UsesDefaultGrid(light) ? 28 : 20;
+    // Retained RGBA16F controls need direct radiance above the ambient quantization
+    // step near the finite range boundary. Intensity cancels in the visibility ratio.
+    internal static float LocalIntensity(string light) => light == "point-range" ? 300 : 30;
     internal static Vector3 SpotDirection => Vector3.Normalize(ReceiverPosition - PointPosition);
     internal static float OuterConeCos(string light) => MathF.Cos(light == "spot-cone" ? MathF.PI / 9 : MathF.PI * 2 / 9);
     internal static bool HasMotion(string light) => light.EndsWith("-motion", StringComparison.Ordinal);
@@ -64,7 +67,7 @@ internal static class ShadowReferenceScene
             Moving = HasMotion(light), AmplitudeX = HasMotion(light) ? .75f : 0f, Seed = 0,
             CapturedPosition = new[] { CasterAtCapture(light).X, 0f, CasterAtCapture(light).Z } },
         Light = IsPointLight(light) || IsSpotLight(light)
-            ? new { Type = light, Vector = new[] { PointLightPosition(light).X, PointLightPosition(light).Y, PointLightPosition(light).Z }, Intensity = 30f, Range = LocalRange(light) }
+            ? new { Type = light, Vector = new[] { PointLightPosition(light).X, PointLightPosition(light).Y, PointLightPosition(light).Z }, Intensity = LocalIntensity(light), Range = LocalRange(light) }
             : new { Type = light, Vector = new[] { Direction(light).X, Direction(light).Y, Direction(light).Z }, Intensity = 3f, Range = 0f },
         SpotCone = IsSpotLight(light) ? new { Direction = SpotDirection, InnerConeCos = MathF.Cos(MathF.PI / 12),
             OuterConeCos = OuterConeCos(light) } : null,
@@ -113,7 +116,7 @@ internal static class ShadowReferenceScene
         });
         if (illuminated)
         {
-            if (IsPointLight(light)) world.CreateEntity(new PointLight(PointLightPosition(light), LocalRange(light), Vector3.One, 30));
+            if (IsPointLight(light)) world.CreateEntity(new PointLight(PointLightPosition(light), LocalRange(light), Vector3.One, LocalIntensity(light)));
             else if (IsSpotLight(light)) world.CreateEntity(new SpotLight(PointPosition, LocalRange(light),
                 SpotDirection, MathF.Cos(MathF.PI / 12), OuterConeCos(light), Vector3.One, 30));
             else world.CreateEntity(new DirectionalLight(Direction(light), Vector3.One, 3));
