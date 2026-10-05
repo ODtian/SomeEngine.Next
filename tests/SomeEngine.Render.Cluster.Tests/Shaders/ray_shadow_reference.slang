@@ -209,7 +209,9 @@ void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
                 ray.CandidatePrimitiveIndex(), ray.CandidateTriangleBarycentrics()))
             ray.CommitNonOpaqueTriangleHit();
     bool blocked = ray.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
-    bool selfHit = blocked && ray.CommittedInstanceID() == camera.CommittedInstanceID() &&
+    // InstanceID carries the source mesh's geometry-table offset, shared by all
+    // instances of that mesh. InstanceIndex distinguishes actual TLAS instances.
+    bool selfHit = blocked && ray.CommittedInstanceIndex() == camera.CommittedInstanceIndex() &&
         ray.CommittedGeometryIndex() == camera.CommittedGeometryIndex() &&
         ray.CommittedPrimitiveIndex() == camera.CommittedPrimitiveIndex();
     Visibility[output] = (blocked ? 0u : 1u) | shadingRejected | (selfHit ? 8u : 0u) | faceBits;
