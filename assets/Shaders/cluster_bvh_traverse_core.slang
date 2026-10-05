@@ -63,6 +63,8 @@ StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
 
 void PublishCandidateDispatchArgs(uint start, uint count, uint maxCandidates)
 {
+    if (count > maxCandidates - min(start, maxCandidates))
+        RejectClusterWork(2u);
     if (count == 0 || start >= maxCandidates)
         return;
 
@@ -127,7 +129,7 @@ void AppendDeferredTraversalNode(ClusterTraversalNode node, uint maxNodes)
     uint waveCount = WaveMaskBitCount(activeMask);
     if (lane == leader)
     {
-        InterlockedAdd(DeferredWorkCount[0], waveCount, waveBase);
+        waveBase = ReserveClusterWork(DeferredWorkCount, waveCount, maxNodes, 4u);
         uint published = min(waveBase + waveCount, maxNodes);
         uint ignored;
         DeferredWorkDispatchArgs.InterlockedMax(0u, (published + 63u) / 64u, ignored);
@@ -172,7 +174,6 @@ void ProcessTraversalLevel(
         ? LoadClusterCullView(Views, PolicyClusterViews, viewBase)
         : (ClusterViewUniforms)0;
     validNode = validNode && instanceID < firstView.InstanceCount;
-    if (validNode) validNode = ClusterTargetNodeIntersectsSourceRange(nodeIndex, instanceID);
     RenderInstanceTransform transform = (RenderInstanceTransform)0;
     float boundsExpansion = 0.0;
     if (validNode)
@@ -252,10 +253,8 @@ void ProcessTraversalLevel(
         uint waveCount = WaveMaskBitCount(nodeMask);
         if (lane == leader)
         {
-            NextNodeIndirectArgs.InterlockedAdd(
-                TraversalLevel.NextArgsOffset + 12u,
-                waveCount,
-                waveBase);
+            waveBase = ReserveClusterWork(NextNodeIndirectArgs,
+                TraversalLevel.NextArgsOffset + 12u, waveCount, TraversalLevel.MaxNodes, 1u);
             uint publishedCount = min(waveBase + waveCount, TraversalLevel.MaxNodes);
             uint groupCount =
                 (publishedCount + CLUSTER_BVH_PARENTS_PER_GROUP - 1u) /
@@ -295,13 +294,12 @@ void ProcessTraversalLevel(
     bool outputLeaf = activeViews != 0u && !pageFault && node.NodeType != 0u;
     uint clusterCount = outputLeaf ? node.ChildCount >> 12u : 0u;
     uint firstCluster = node.ChildCount & 0xFFFu;
-    if (outputLeaf) ClipClusterTargetSourceRange(nodeIndex, instanceID, firstCluster, clusterCount);
     uint leafCount = clusterCount * countbits(activeViews);
     uint leafOffset = WavePrefixSum(leafCount);
     uint waveLeafCount = WaveActiveSum(leafCount);
     uint candidateBase = 0u;
     if (WaveIsFirstLane())
-        InterlockedAdd(CandidateCount[0], waveLeafCount, candidateBase);
+        candidateBase = ReserveClusterWork(CandidateCount, waveLeafCount, TraversalLevel.MaxNodes, 2u);
     candidateBase = WaveReadLaneFirst(candidateBase);
     if (WaveIsFirstLane())
         PublishCandidateDispatchArgs(candidateBase, waveLeafCount, TraversalLevel.MaxNodes);
@@ -322,4 +320,4 @@ void ProcessTraversalLevel(
     }
 }
 
-#include "cluster_target_source_ranges.slang"
+#include "cluster_work_status.slang"

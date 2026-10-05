@@ -23,7 +23,6 @@ internal readonly record struct ClusterBvhRegistration(
     uint[] LocalPageByNode,
     int[][] NodesByPage,
     Memory<byte> Nodes,
-    Memory<byte> SourceClusterRanges,
     ClusterLodGroups LodGroups,
     int HierarchyLevels);
 
@@ -36,7 +35,6 @@ internal readonly record struct ClusterBvhLeafIndex(
     uint[] LocalPageByNode,
     int[][] NodesByPage,
     Memory<byte> Nodes,
-    Memory<byte> SourceClusterRanges,
     ClusterLodGroups LodGroups);
 
 internal readonly record struct ClusterBvhDestination(ulong Offset, Memory<byte> Memory);
@@ -49,8 +47,7 @@ internal readonly record struct ClusterBvhCheckpoint(int PatchCount);
 internal sealed record ClusterBvhPublication(
     int PatchCount,
     Mesh[] RootMeshes,
-    ClusterStagedUpload[] Uploads,
-    ClusterStagedUpload[] SourceRangeUploads);
+    ClusterStagedUpload[] Uploads);
 
 internal sealed class ClusterBvh
 {
@@ -68,7 +65,6 @@ internal sealed class ClusterBvh
     private readonly FlatDictionary<Mesh, ClusterRootState> _roots = new();
     private readonly List<ClusterBvhLeafIndex> _leafIndexes = [];
     private readonly List<Mesh> _pendingRootMeshes = [];
-    private readonly List<ClusterStagedUpload> _sourceRangeUploads = [];
     private uint _count;
     private uint _registeredPageCount;
     private int _publishedCount;
@@ -188,7 +184,6 @@ internal sealed class ClusterBvh
         int hierarchyDepth = ValidateTopology(patched);
         var lodGroups = new ClusterLodGroups(patched);
         uint[] localPageByNode = PatchNodes(patched, firstNode, firstPage, pages);
-        byte[] sourceRanges = BuildSourceClusterRanges(patched, firstNode);
         var nodesByPage = new int[pages.Count][];
         var pageCounts = new int[pages.Count];
         foreach (uint page in localPageByNode)
@@ -214,57 +209,8 @@ internal sealed class ClusterBvh
             localPageByNode,
             nodesByPage,
             destination.Memory,
-            sourceRanges,
             lodGroups,
             Math.Max(1, hierarchyDepth - 1));
-    }
-
-    internal uint GetSourceClusterCount(uint root)
-    {
-        if (!TryFindLeafIndexByNode(root, out ClusterBvhLeafIndex mesh)) return 0u;
-        int offset = checked((int)(root - mesh.FirstNode) * 8 + 4);
-        return BinaryPrimitives.ReadUInt32LittleEndian(mesh.SourceClusterRanges.Span.Slice(offset, 4));
-    }
-
-    private static byte[] BuildSourceClusterRanges(ReadOnlySpan<ClusterBVHNode> nodes, uint firstNode)
-    {
-        var bytes = new byte[checked(nodes.Length * 8)];
-        Span<uint> ranges = MemoryMarshal.Cast<byte, uint>(bytes.AsSpan());
-        var nodeStack = new int[nodes.Length];
-        var childStack = new uint[nodes.Length];
-        uint nextCluster = 0u;
-        int stackCount = 1;
-        nodeStack[0] = nodes.Length - 1;
-        while (stackCount != 0)
-        {
-            int stackIndex = stackCount - 1;
-            int nodeIndex = nodeStack[stackIndex];
-            ClusterBVHNode node = nodes[nodeIndex];
-            if (node.NodeType == 1u)
-            {
-                node.GetLeafData(out _, out uint clusterCount);
-                if (node.ChildPointer == PageFaultMarker) clusterCount = 0u;
-                ranges[nodeIndex * 2] = nextCluster;
-                ranges[nodeIndex * 2 + 1] = clusterCount;
-                nextCluster = checked(nextCluster + clusterCount);
-                stackCount--;
-                continue;
-            }
-            uint child = childStack[stackIndex];
-            if (child < node.ChildCount)
-            {
-                childStack[stackIndex] = child + 1u;
-                int childIndex = checked((int)(node.ChildPointer - firstNode + child));
-                nodeStack[stackCount] = childIndex;
-                childStack[stackCount] = 0u;
-                ranges[childIndex * 2] = nextCluster;
-                stackCount++;
-                continue;
-            }
-            ranges[nodeIndex * 2 + 1] = checked(nextCluster - ranges[nodeIndex * 2]);
-            stackCount--;
-        }
-        return bytes;
     }
 
     public uint Commit(in ClusterBvhRegistration registration)
@@ -285,10 +231,7 @@ internal sealed class ClusterBvh
             registration.LocalPageByNode,
             registration.NodesByPage,
             registration.Nodes,
-            registration.SourceClusterRanges,
             registration.LodGroups));
-        _sourceRangeUploads.Add(new ClusterStagedUpload(
-            checked((ulong)registration.FirstNode * 8u), registration.SourceClusterRanges));
         _registeredPageCount = checked(
             registration.FirstPage + checked((uint)registration.PageCount));
         _pendingRootMeshes.Add(registration.Mesh);
@@ -313,7 +256,6 @@ internal sealed class ClusterBvh
         _roots.EnsureCapacity(checked(_roots.Count + 1));
         _leafIndexes.EnsureCapacity(checked(_leafIndexes.Count + 1));
         _pendingRootMeshes.EnsureCapacity(checked(_pendingRootMeshes.Count + 1));
-        _sourceRangeUploads.EnsureCapacity(checked(_sourceRangeUploads.Count + 1));
     }
 
     public void ReservePagePatch(uint pageId)
@@ -397,12 +339,6 @@ internal sealed class ClusterBvh
             Span<ClusterBVHNode> nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(mesh.Nodes.Span);
             if (mesh.LodGroups.UpdateReadiness(nodes) || changedMeshes.Contains(mesh.FirstNode))
                 _storage.Stage(offset, length);
-            // Source batches contain the geometry available to this frame. Missing
-            // pages keep participating in traversal to request their data.
-            byte[] sourceRanges = BuildSourceClusterRanges(nodes, mesh.FirstNode);
-            sourceRanges.CopyTo(mesh.SourceClusterRanges);
-            _sourceRangeUploads.Add(new ClusterStagedUpload(
-                checked((ulong)mesh.FirstNode * 8u), mesh.SourceClusterRanges));
         }
         foreach (Mesh mesh in _pendingRootMeshes)
         {
@@ -414,8 +350,7 @@ internal sealed class ClusterBvh
         return new ClusterBvhPublication(
             _pendingPatches.Count,
             [.. _pendingRootMeshes],
-            _storage.CaptureStagedUploads(),
-            [.. _sourceRangeUploads]);
+            _storage.CaptureStagedUploads());
     }
 
     public void CommitPublication(ClusterBvhPublication publication)
@@ -439,7 +374,6 @@ internal sealed class ClusterBvh
         }
 
         _storage.CompleteStagedUploads(publication.Uploads);
-        _sourceRangeUploads.RemoveRange(0, publication.SourceRangeUploads.Length);
         _pendingPatches.RemoveRange(0, publication.PatchCount);
         _pendingRootMeshes.RemoveRange(0, publication.RootMeshes.Length);
     }
@@ -462,7 +396,6 @@ internal sealed class ClusterBvh
         _pendingPatches.Clear();
         _roots.Clear();
         _leafIndexes.Clear();
-        _sourceRangeUploads.Clear();
         _pendingRootMeshes.Clear();
         _count = 0;
         HierarchyLevels = 1;

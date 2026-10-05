@@ -358,7 +358,6 @@ internal sealed partial class FrameExecutor
                 DeclarationOrdinal = source.DeclarationOrdinal,
                 Enabled = source.Enabled && structureIndex.Structure.IsRegionEnabled(source.Region) &&
                     _frame.HasBufferUploads(source.CallbackStorage),
-                CommandSource = source.CommandSource,
                 PersistentCallbacks = source.CallbackStorage,
                 Region = source.Region,
             });

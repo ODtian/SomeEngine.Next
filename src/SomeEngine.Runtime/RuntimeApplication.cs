@@ -639,6 +639,7 @@ internal static class RuntimeApplication
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
                 SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 4,
+                MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics,
             });
@@ -830,6 +831,7 @@ internal static class RuntimeApplication
                     throw new TimeoutException("The next rendering frame exceeded its resource wait timeout.");
                 using var nextFrameResources = nextFrame;
                 renderDevice.CollectCompleted();
+                pipeline.ThrowIfWorkFailed();
                 long prepareStarted = Stopwatch.GetTimestamp();
                 if (platform?.ImageRequested == true || sceneEdit?.Images.Count > 0)
                     outputVerifier ??= new FrameOutputVerifier(backend, device, width, height, PresentationFormat);
@@ -1091,6 +1093,9 @@ internal static class RuntimeApplication
                     }
                 }
             }
+            renderDevice.WaitForTrackedSubmissions(FrameTimeout);
+            renderGraph.CollectCompleted();
+            pipeline.ThrowIfWorkFailed();
             Console.WriteLine($"SomeEngine runtime completed {submittedFrames} frame(s).");
             return checked((int)submittedFrames);
         }
@@ -1252,6 +1257,11 @@ internal static class RuntimeApplication
                     {
                         Wait(backend, execution, window, synchronousFrames);
                         frameOutput = outputVerifier.Read();
+                    }
+                    if (synchronousFrames || outputVerifier is not null)
+                    {
+                        graph.CollectCompleted();
+                        pipeline.ThrowIfWorkFailed();
                     }
                     return frameOutput;
                 }

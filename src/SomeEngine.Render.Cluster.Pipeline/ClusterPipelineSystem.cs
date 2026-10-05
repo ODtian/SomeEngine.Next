@@ -354,7 +354,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _materialScalars = updated;
             }
             AcceptMaterialChanges(assignments);
-            ReconcileTargetBatches();
             return GraphData.Outputs;
         }
         if (!_graphInstalled)
@@ -420,9 +419,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _cullingEnabled = cullingEnabled;
         _graphInstalled = true;
         if (rasterChanged) _rasterRevision = checked(_rasterRevision + 1);
-        _targetBatchDrawingVersion = uint.MaxValue;
-        _targetFirstRaster = null;
-        _targetSecondRaster = null;
         return GraphData.Outputs;
     }
 
@@ -608,8 +604,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _resources.InstanceResources.BindFrame(ref graph);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(SceneBoundsTrace))
                 BindSceneBounds(ref graph, context.World, batch, policyViewCount != 0);
-            graph.SetBufferInput(GraphData.TargetSourceOffsets, graph.Upload<ulong>(
-                _targetSourceOffsets, BufferUsages.ShaderRead, "Cluster target instance source offsets"));
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyUploadsTrace))
                 RecordResidencyUploads(ref graph, in binding);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyReadsTrace))
@@ -650,8 +644,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                         _outputDescription.Height,
                         checked((uint)primaryViewCount)));
             }
-            if (_renderContext.IsValid && policyViewCount != 0)
-                RecordTargetGeometry(ref graph, batch, checked((uint)policyViewCount));
             bool initializeHistory = history.RequiresInitialization;
             graph.SetRegionEnabled(GraphData.HistoryInitialization, initializeHistory);
         }
@@ -685,16 +677,17 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool policyTarget)
     {
         PassDefinition pass = graph.GetPass(passId);
+        FrameResources frame = GetRasterFrameResources(GraphData.Resources, policyTarget);
         _ = pass.Bind(
             graph.CreateTextureSrv(
-                GraphData.Resources.PreviousHiZ,
+                frame.PreviousHiZ,
                 format: Format.R32Float,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Cluster hierarchy history HiZ"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateBufferUav(
-                GraphData.Resources.Phase2CandidateClusters,
+                frame.Phase2CandidateClusters,
                 structureStride: CandidateStride,
                 label: "Cluster deferred hierarchy work"),
             PipelineSync.ComputeShading,
@@ -704,13 +697,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(
             graph.CreateBufferUav(
-                GraphData.Resources.Phase2CandidateCount,
+                frame.Phase2CandidateCount,
                 structureStride: sizeof(uint),
                 label: "Cluster deferred hierarchy count"),
             PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite,
             WriteCoverage.Complete);
-        _ = pass.Bind(graph.CreateBufferUav(GraphData.Resources.Phase2CandidateArgs,
+        _ = pass.Bind(graph.CreateBufferUav(frame.Phase2CandidateArgs,
                 label: "Cluster deferred hierarchy dispatch arguments"),
             PipelineSync.ComputeShading, GraphAccessMode.ReadWrite, WriteCoverage.Complete);
         BindPolicyClusterViews(
@@ -723,13 +716,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         else
             BindNeutralTargetPolicyFilterResources(ref graph, ref pass);
         BindSceneSeed(ref graph, ref pass);
-        BindTargetSourceRanges(ref graph, passId);
+        BindWorkStatus(ref graph, ref pass);
     }
 
     private void BindTargetPolicyResources(
         ref RenderGraphEdit graph,
         GraphPassId passId,
-        bool policyTarget, bool sourceRanges = false)
+        bool policyTarget, bool workStatusFirst = false)
     {
         PassDefinition pass = graph.GetPass(passId);
         BindPolicyClusterViews(
@@ -737,7 +730,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ref pass,
             PipelineSync.ComputeShading,
             policyTarget);
-        if (sourceRanges) BindTargetSourceRanges(ref graph, passId);
+        if (workStatusFirst) BindWorkStatus(ref graph, ref pass);
         if (policyTarget)
             _renderContext.FilterResourcesBinder(ref graph, ref pass, PipelineSync.ComputeShading);
         else
@@ -836,8 +829,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     uploaded &= result.TryGetPassCompletion(GraphData.PageUpload, out _);
                 if (publication.Meshes.Bvh.Uploads.Length != 0)
                     uploaded &= result.TryGetPassCompletion(GraphData.BvhUpload, out _);
-                if (publication.Meshes.Bvh.SourceRangeUploads.Length != 0)
-                    uploaded &= result.TryGetPassCompletion(GraphData.SourceRangeUpload, out _);
                 if (uploaded)
                     _resources.CommitResidencyPublication(publication, CaptureRetirementCompletions(publication));
                 else

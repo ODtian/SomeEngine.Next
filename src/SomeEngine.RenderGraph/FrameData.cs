@@ -300,8 +300,6 @@ internal struct FrameView
 internal struct FramePass
 {
     internal GraphIdentity Identity;
-    internal GraphIdentity CommandSource;
-    internal GraphPass? CopyDefinition;
     internal GraphPass? Definition;
     internal string Label;
     internal GraphPassKind Kind;

@@ -20,14 +20,13 @@ public sealed partial class ClusterPipelineSystem
     {
         FrameResources frame = CreateFrameResources(ref graph, in output, assignments, rasterStages, shadeStages);
         GraphData.Resources = frame;
-        GraphData.TargetBatchUniforms = CreateParameters(ref graph, new byte[32], "Cluster target source batch");
-        GraphData.TargetSourceOffsets = graph.CreateBufferInput(BufferUsages.ShaderRead);
         AuthorHistoryInitialization(ref graph, frame);
         frame.PackedViews = graph.DeclareExternalBuffer(new BufferDesc(
             checked((ulong)_packedViews.Length * ClusterViewUniforms.SizeInBytes),
             BufferUsages.ShaderRead, "Cluster packed views"), MemoryType.Upload);
         GraphData.Resources = frame;
         RecordFrameMetricsSourceReset(ref graph, frame);
+        RecordWorkStatus(ref graph, frame);
         RecordCullStateReset(ref graph, frame);
         InstallSceneBounds(ref graph);
         GraphData.PrimaryGeometry = graph.AddRegion("Cluster primary geometry work", _regions.PrimaryGeometry);
@@ -63,6 +62,7 @@ public sealed partial class ClusterPipelineSystem
                 _options.MaxCandidates, frame.PageHeap, frame.Bvh, geometryComplete)
             {
                 InstanceWorldBounds = GraphData.InstanceWorldBounds,
+                WorkStatus = frame.WorkStatus,
                 BoundsReady = GraphData.SceneBounds.Pass,
             }, frame.Width, frame.Height, frame.ViewCount);
         return phases;
@@ -74,8 +74,8 @@ public sealed partial class ClusterPipelineSystem
     {
         if (!_renderContext.IsValid) return phases;
         FrameResources targets = GetRasterFrameResources(frame, true);
-        GraphData.TargetFirstReference = graph.AddRegion("Cluster target first drawing shape", _targetPhaseOneRegion);
-        GraphData.TargetSecondReference = graph.AddRegion("Cluster target second drawing shape", _targetPhaseTwoRegion);
+        GraphData.TargetFirstReference = graph.AddRegion("Cluster target main geometry", _targetPhaseOneRegion);
+        GraphData.TargetSecondReference = graph.AddRegion("Cluster target post-HiZ geometry", _targetPhaseTwoRegion);
         var reset = new ClusterContinuationResetParameters(targets.CandidateCount, targets.TraversalArguments0,
             targets.TraversalArguments1, targets.CandidateArgsInitialization, targets.CandidateArgs,
             targets.ContinuationDrawArgs, targets.Phase2CandidateCount, targets.Phase2CandidateArgs, targets.ContinuationPostDrawArgs);
@@ -86,7 +86,7 @@ public sealed partial class ClusterPipelineSystem
         GraphData.TraversalLevels = GraphData.TraversalLevels.Add(2, RecordTraversal(ref graph, targets, packedViews,
             _renderContext.MaximumInvocationCount, 1u, 1u, true,
             new GraphRegionMap<int, bool>(targetTraversal), "continuation"));
-        GraphData.TargetFirstCull = RecordCullPhaseOne(ref graph, targets, packedViews, targets.ContinuationDrawArgs, targets.ReadOffsetZero,
+        RecordCullPhaseOne(ref graph, targets, packedViews, targets.ContinuationDrawArgs, targets.ReadOffsetZero,
             targets.ReadOffsetZero, false, "continuation", graph.AddRegion("Cluster target first cull", GraphData.TargetFirstReference));
         RasterPhase first = RecordRasterPhase(ref graph, targets, rasterStages, targets.ContinuationDrawArgs,
             targets.ReadOffsetZero, targets.ReadOffsetZero, targets.ReadOffsetZero, 2, true);
@@ -100,12 +100,6 @@ public sealed partial class ClusterPipelineSystem
             targets.ContinuationDrawArgs, "continuation post", graph.AddRegion("Cluster target second cull", GraphData.TargetSecondReference));
         RasterPhase second = RecordRasterPhase(ref graph, targets, rasterStages, targets.ContinuationPostDrawArgs,
             targets.ReadOffsetZero, targets.ReadOffsetZero, targets.ContinuationDrawArgs, 3, false);
-        GraphData.TargetFirstDraws = new GraphRegionMap<uint, TargetSourceBatch>(
-            graph.AddRegion("Cluster target first source draws", _targetPhaseOneRegion), new TargetSourceBatchComparer());
-        GraphData.TargetSecondDraws = new GraphRegionMap<uint, TargetSourceBatch>(
-            graph.AddRegion("Cluster target second source draws", _targetPhaseTwoRegion), new TargetSourceBatchComparer());
-        GraphData.TargetFirstBatches = graph.AddFrameRegion("Cluster target first source batches", _targetPhaseOneRegion);
-        GraphData.TargetSecondBatches = graph.AddFrameRegion("Cluster target second source batches", _targetPhaseTwoRegion);
         return phases.Add(2, first).Add(3, second);
     }
 
@@ -449,7 +443,7 @@ public sealed partial class ClusterPipelineSystem
                         PipelineSync.ExecuteIndirect,
                         ResourceAccess.IndirectArgument),
                 ClusterIndirectDispatchParameters.Record, region: layer);
-            BindTargetPolicyResources(ref edit, levelPass, viewIndexMode != 0u, sourceRanges: true);
+            BindTargetPolicyResources(ref edit, levelPass, viewIndexMode != 0u, workStatusFirst: true);
         });
     }
 
@@ -520,7 +514,7 @@ public sealed partial class ClusterPipelineSystem
             WriteCoverage.Complete));
         var indirect = new ClusterIndirectDispatchParameters(
             RequireDispatchIndirectLayout(), frame.Phase2CandidateArgs, 0u);
-        _ = AddComputePass(
+        GraphPassId resume = AddComputePass(
             ref graph,
             $"Resume Cluster {epochLabel} deferred hierarchy work",
             _pipelines!.DeferredResume,
@@ -530,7 +524,8 @@ public sealed partial class ClusterPipelineSystem
                 _ = access.Read(data.Arguments, new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                     PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: region);
-
+        PassDefinition pass = graph.GetPass(resume);
+        BindWorkStatus(ref graph, ref pass);
     }
 
     private void RecordCullStateReset(ref RenderGraphEdit graph, in FrameResources frame)
@@ -635,7 +630,8 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: region);
         BindTargetPolicyResources(ref graph, pass, !primaryView);
-        BindTargetSourceRanges(ref graph, pass);
+        PassDefinition definition = graph.GetPass(pass);
+        BindWorkStatus(ref graph, ref definition);
         return pass;
     }
 
@@ -716,7 +712,8 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: region);
         BindTargetPolicyResources(ref graph, pass, phaseDrawArgs != frame.Phase2DrawArgs);
-        BindTargetSourceRanges(ref graph, pass);
+        PassDefinition definition = graph.GetPass(pass);
+        BindWorkStatus(ref graph, ref definition);
         return pass;
     }
 

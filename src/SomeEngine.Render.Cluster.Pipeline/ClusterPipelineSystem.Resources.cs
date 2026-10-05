@@ -107,8 +107,8 @@ public sealed partial class ClusterPipelineSystem
 
         GraphData.PageUpload = geometryBuffers.PageUpload;
         GraphData.BvhUpload = geometryBuffers.BvhUpload;
-        GraphData.SourceRangeUpload = geometryBuffers.SourceRangeUpload;
-        frame.SourceClusterRanges = geometryBuffers.SourceClusterRanges;
+        frame.WorkStatus = frame.AddBuffer(ref graph, sizeof(uint), BufferUsages.CopySource,
+            "Cluster work overflow status");
         frame.CandidateArgs = frame.AddBuffer(
             ref graph,
             16,
@@ -215,6 +215,14 @@ public sealed partial class ClusterPipelineSystem
             frame.TargetRasterWindows = frame.AddBuffer(ref graph,
                 checked(candidates * VisibleClusterRasterWindowStride), BufferUsages.None,
                 "Cluster target raster windows");
+            // The target main pass appends once. Neither primary nor target scratch resets
+            // may overwrite this list before the target post-HiZ pass consumes it.
+            frame.TargetDeferredWork = frame.AddBuffer(ref graph,
+                checked(candidates * CandidateStride), BufferUsages.None, "Cluster target deferred work");
+            frame.TargetDeferredCount = frame.AddBuffer(ref graph, sizeof(uint), BufferUsages.None,
+                "Cluster target deferred count");
+            frame.TargetDeferredArgs = frame.AddBuffer(ref graph, 16, BufferUsages.Indirect,
+                "Cluster target deferred dispatch");
         }
         frame.RasterBinMeta = frame.AddBuffer(
             ref graph,
@@ -662,8 +670,6 @@ public sealed partial class ClusterPipelineSystem
             graph.WriteBuffer(GraphData.Resources.PageHeap, upload.Offset, upload.Bytes.Span);
         foreach (ClusterStagedUpload upload in publication.Meshes.Bvh.Uploads)
             graph.WriteBuffer(GraphData.Resources.Bvh, upload.Offset, upload.Bytes.Span);
-        foreach (ClusterStagedUpload upload in publication.Meshes.Bvh.SourceRangeUploads)
-            graph.WriteBuffer(GraphData.Resources.SourceClusterRanges, upload.Offset, upload.Bytes.Span);
     }
 
     private void DeclareResidencyReads(
@@ -673,8 +679,6 @@ public sealed partial class ClusterPipelineSystem
         graph.SetBufferRanges(GraphData.Resources.PageHeap, _residentPageReads);
 
         graph.SetBufferRanges(GraphData.Resources.Bvh, GraphData.Outputs.Geometry.BvhReadRanges);
-        graph.SetBufferRanges(GraphData.Resources.SourceClusterRanges, new BufferRangeSet(
-            [new BufferRange(binding.BvhRange.Offset / 64u * 8u, binding.BvhRange.Size / 64u * 8u)]));
     }
 
     private QueueCompletion[][] CaptureRetirementCompletions(
@@ -1042,6 +1046,9 @@ public sealed partial class ClusterPipelineSystem
         {
             resources.VisibleClusters = frame.TargetVisibleClusters;
             resources.VisibleClusterRasterWindows = frame.TargetRasterWindows;
+            resources.Phase2CandidateClusters = frame.TargetDeferredWork;
+            resources.Phase2CandidateCount = frame.TargetDeferredCount;
+            resources.Phase2CandidateArgs = frame.TargetDeferredArgs;
         }
         return resources;
     }
@@ -1058,7 +1065,7 @@ public sealed partial class ClusterPipelineSystem
         internal int PageFaultCapacity;
         internal GraphBufferId PageHeap;
         internal GraphBufferId Bvh;
-        internal GraphBufferId SourceClusterRanges;
+        internal GraphBufferId WorkStatus;
         internal GraphBufferId InstanceData;
         internal GraphBufferId InstanceProperties;
         internal BufferRange InstancePropertiesRange;
@@ -1091,6 +1098,9 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId ContinuationDrawArgs;
         internal GraphBufferId ContinuationPostDrawArgs;
         internal GraphBufferId VisibleClusters;
+        internal GraphBufferId TargetDeferredWork;
+        internal GraphBufferId TargetDeferredCount;
+        internal GraphBufferId TargetDeferredArgs;
         internal GraphBufferId TargetVisibleClusters;
         internal GraphBufferId TargetRasterWindows;
         internal GraphBufferId VisibleClusterRasterWindows;

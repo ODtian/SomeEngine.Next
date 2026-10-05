@@ -781,11 +781,6 @@ internal sealed partial class ClusterMeshes : IDisposable
             _ => throw new ArgumentOutOfRangeException(nameof(index)),
         };
 
-    internal uint GetSourceClusterCount(uint root)
-    {
-        lock (_gate) return _bvh.GetSourceClusterCount(root);
-    }
-
     public bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
         lock (_gate)

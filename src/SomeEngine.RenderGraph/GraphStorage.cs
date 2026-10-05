@@ -423,7 +423,6 @@ internal readonly record struct ExplicitPassOrder(GraphIdentity Predecessor, Gra
 
 internal sealed class GraphPass
 {
-    internal GraphIdentity CommandSource;
     internal bool Enabled = true;
     internal required string Label;
     internal required GraphPassKind Kind;
@@ -445,7 +444,6 @@ internal sealed class GraphPass
 
     internal GraphPass Clone() => new()
     {
-        CommandSource = CommandSource,
         Enabled = Enabled,
         Label = Label,
         Kind = Kind,

@@ -485,31 +485,12 @@ internal sealed partial class FrameExecutor
 
     private void SetPassRow(int index, in FramePass row)
     {
-        FramePass previous = _passes[index];
-        // A copied command shape keeps its connections across frames. Its current
-        // identity and uploaded input values still belong to this frame.
-        if (row.CopyDefinition is not null && ReferenceEquals(previous.CopyDefinition, row.CopyDefinition) &&
-            ReferenceEquals(previous.ParameterBindings, row.ParameterBindings) &&
-            ReferenceEquals(previous.PersistentCallbacks, row.PersistentCallbacks) &&
-            previous.DeclarationOrdinal == row.DeclarationOrdinal && previous.Enabled == row.Enabled &&
-            ReferenceEquals(previous.Pipeline, row.Pipeline) && previous.ParameterLayout == row.ParameterLayout &&
-            ReferenceEquals(previous.ParameterOrdinaryData, row.ParameterOrdinaryData) &&
-            ReferenceEquals(previous.PersistentBindings, row.PersistentBindings) && previous.Options == row.Options &&
-            previous.Region == row.Region)
-        {
-            previous.Identity = row.Identity;
-            previous.Label = row.Label;
-            _passes[index] = previous;
-            return;
-        }
         _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetPassRow);
         _passAccesses[index] ??= [];
-        if (!ReferenceEquals(previous.Pipeline, row.Pipeline) || previous.ParameterLayout != row.ParameterLayout ||
-            !ReferenceEquals(previous.ParameterBindings, row.ParameterBindings) ||
-            !ReferenceEquals(previous.ParameterOrdinaryData, row.ParameterOrdinaryData))
-            _parameterPassChanges.Add(index);
+        _parameterPassChanges.Add(index);
         InvalidateRasterRendering(index);
+        FramePass previous = _passes[index];
         bool identityChanged = previous.Identity != row.Identity &&
             (previous.Definition is not null || row.Definition is not null);
         if (identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal)

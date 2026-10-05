@@ -231,11 +231,15 @@ void AppendVisibleWindow(
     uint activeCount = WaveMaskBitCount(activeMask);
     uint totalBase = 0u;
     if (lane == leader)
-        DrawArgs.InterlockedAdd(12, activeCount, totalBase);
+        totalBase = ReserveClusterWork(DrawArgs, 12u, activeCount,
+            maxCandidates - min(baseCount, maxCandidates), 8u);
     totalBase = WaveReadLaneAt(totalBase, leader);
     bool admitted = baseCount + totalBase + WaveMaskPrefix(activeMask, lane) < maxCandidates;
     if (!admitted)
+    {
+        RejectClusterWork(8u);
         return;
+    }
 
     uint4 routeMask = WaveActiveBallot(admitted && isSW);
     if (!isSW)
@@ -286,11 +290,14 @@ void AppendCandidate(
     uint waveCount = WaveMaskBitCount(activeMask);
     uint waveBase = 0u;
     if (lane == leader)
-        InterlockedAdd(NextCandidateCount[0], waveCount, waveBase);
+        waveBase = ReserveClusterWork(NextCandidateCount, waveCount, maxCandidates, 4u);
     waveBase = WaveReadLaneAt(waveBase, leader);
     uint outIdx = waveBase + WaveMaskPrefix(activeMask, lane);
     if (outIdx >= maxCandidates)
+    {
+        RejectClusterWork(4u);
         return;
+    }
 
     if (lane == leader)
     {
@@ -481,7 +488,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
         AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates,
             CandidateClusters[dispatchThreadID.x].KeepCoarseGeometry);
     }
-    else if (TargetBatch.CollectDeferredOnly == 0u)
+    else
     {
         bool isSW = ShouldUseSWRaster(bounds.MinUv, bounds.MaxUv, view);
         AppendVisible(
@@ -519,11 +526,15 @@ void AppendVisibleWindow(
     uint activeCount = WaveMaskBitCount(activeMask);
     uint totalBase = 0u;
     if (lane == leader)
-        PhaseDrawArgs.InterlockedAdd(12, activeCount, totalBase);
+        totalBase = ReserveClusterWork(PhaseDrawArgs, 12u, activeCount,
+            maxCandidates - min(baseCount, maxCandidates), 8u);
     totalBase = WaveReadLaneAt(totalBase, leader);
     bool admitted = baseCount + totalBase + WaveMaskPrefix(activeMask, lane) < maxCandidates;
     if (!admitted)
+    {
+        RejectClusterWork(8u);
         return;
+    }
 
     uint4 routeMask = WaveActiveBallot(admitted && isSW);
     if (!isSW)
@@ -605,4 +616,4 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
 }
 #endif
 
-#include "cluster_target_source_ranges.slang"
+#include "cluster_work_status.slang"

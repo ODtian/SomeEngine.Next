@@ -44,18 +44,14 @@ groupshared uint ClusterSceneOccludedViewMask;
 uint ClusterSeedViewCount()
 {
     if (TraversalSeed.ViewIndexMode == 0u) return TraversalSeed.ViewCount;
-    uint count = min(PolicyActiveViewCount[0], TraversalSeed.ViewCount);
-    if (TargetBatch.SourceClusterCount != 0u && GetClusterTargetSourceRange().y == 0u) return 0u;
-    return TargetBatch.SourceClusterCount == 0u ? count :
-        min(TargetBatch.TargetViewCount, count - min(count, TargetBatch.FirstTargetView));
+    return min(PolicyActiveViewCount[0], TraversalSeed.ViewCount);
 }
 
 uint ClusterSeedViewIndex(uint compactViewIndex)
 {
     return TraversalSeed.ViewIndexMode == 0u
         ? compactViewIndex
-        : ClusterEncodePolicyViewIndex(compactViewIndex +
-            (TargetBatch.SourceClusterCount == 0u ? 0u : TargetBatch.FirstTargetView));
+        : ClusterEncodePolicyViewIndex(compactViewIndex);
 }
 
 // Reject sample-free roots before expanding their hierarchy.
@@ -195,7 +191,6 @@ void SeedHierarchyRoots(
             instanceID)
         : 0xFFFFFFFFu;
     valid = valid && rootIndex != 0xFFFFFFFFu;
-    if (valid) valid = ClusterTargetNodeIntersectsSourceRange(rootIndex, instanceID);
     float3 instanceWorldMin = 1e30.xxx;
     float3 instanceWorldMax = -1e30.xxx;
     ClusterBVHNode root = (ClusterBVHNode)0;
@@ -263,10 +258,8 @@ void SeedHierarchyRoots(
     uint waveBase = 0u;
     if (WaveIsFirstLane() && waveCount != 0u)
     {
-        NodeIndirectArgs.InterlockedAdd(
-            TraversalSeed.ArgsOffset + 12u,
-            waveCount,
-            waveBase);
+        waveBase = ReserveClusterWork(NodeIndirectArgs,
+            TraversalSeed.ArgsOffset + 12u, waveCount, TraversalSeed.MaxNodes, 1u);
         uint publishedCount = min(waveBase + waveCount, TraversalSeed.MaxNodes);
         uint admittedCount = publishedCount > waveBase
             ? publishedCount - waveBase
@@ -298,7 +291,8 @@ void SeedHierarchyRoots(
     uint deferredWaveBase = 0u;
     if (WaveIsFirstLane() && deferredWaveCount != 0u)
     {
-        InterlockedAdd(DeferredWorkCount[0], deferredWaveCount, deferredWaveBase);
+        deferredWaveBase = ReserveClusterWork(DeferredWorkCount,
+            deferredWaveCount, TraversalSeed.MaxNodes, 4u);
         uint published = min(deferredWaveBase + deferredWaveCount, TraversalSeed.MaxNodes);
         uint ignored;
         DeferredWorkDispatchArgs.InterlockedMax(0u, (published + 63u) / 64u, ignored);
@@ -323,4 +317,4 @@ void SeedHierarchyRoots(
     }
 }
 
-#include "cluster_target_source_ranges.slang"
+#include "cluster_work_status.slang"

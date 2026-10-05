@@ -43,8 +43,7 @@ internal readonly record struct ClusterResidencyBinding(
     ClusterResidencyPublication? Publication);
 
 internal readonly record struct ClusterGeometryBuffers(
-    GraphBufferId PageHeap, GraphBufferId Bvh, GraphPassId PageUpload, GraphPassId BvhUpload,
-    GraphBufferId SourceClusterRanges, GraphPassId SourceRangeUpload);
+    GraphBufferId PageHeap, GraphBufferId Bvh, GraphPassId PageUpload, GraphPassId BvhUpload);
 
 internal sealed record ClusterResidencyPublication(
     ulong Sequence,
@@ -170,12 +169,8 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         GraphBufferId bvh = edit.CreatePersistentBuffer(_bvhDescription);
         GraphPassId pageUpload = edit.AddBufferUploadPass(pages);
         GraphPassId bvhUpload = edit.AddBufferUploadPass(bvh);
-        GraphBufferId sourceRanges = edit.CreatePersistentBuffer(new BufferDesc(
-            checked(_bvhDescription.Size / ClusterBvh.NodeBytes * 8u),
-            BufferUsages.ShaderRead | BufferUsages.CopyDestination, "Cluster source ranges"));
-        GraphPassId sourceRangeUpload = edit.AddBufferUploadPass(sourceRanges);
         edit.Commit();
-        GeometryBuffers = new ClusterGeometryBuffers(pages, bvh, pageUpload, bvhUpload, sourceRanges, sourceRangeUpload);
+        GeometryBuffers = new ClusterGeometryBuffers(pages, bvh, pageUpload, bvhUpload);
         _graph = graph;
     }
 
@@ -269,9 +264,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         if (!ReferenceEquals(publication, _activePublication))
             throw new InvalidOperationException("The discarded Cluster residency publication is stale.");
     }
-
-    internal uint GetSourceClusterCount(Mesh mesh) =>
-        TryGetPublishedRoot(mesh, out uint root) ? _meshes.GetSourceClusterCount(root) : 0u;
 
     internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {

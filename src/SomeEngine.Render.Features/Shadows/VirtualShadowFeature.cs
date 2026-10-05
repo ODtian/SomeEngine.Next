@@ -53,6 +53,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
     private Matrix4x4[] _previousShadowViewProjections = [];
 
     private readonly GraphBufferInput _framePageTable;
+    private readonly GraphBufferInput _geometryWorkStatus;
     private readonly GraphBufferId _pageOwners;
     private readonly GraphTextureId _atlas;
     private readonly GraphTextureId _pageHiZ;
@@ -546,6 +547,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                         checked((ulong)mip * DispatchStride), region: targetGeometryAfter);
                 }
                 _framePageTable = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource);
+                _geometryWorkStatus = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _rasterCompletePass = AddComputePass(ref edit, "Complete virtual shadow page depth",
                     _shadowMap.PageDepthCompletePipeline,
                     new VirtualShadowDispatchPassData(new DispatchArguments((settings.MaxPhysicalPages + 63u) / 64u, 1u, 1u)),
@@ -556,6 +558,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                 _ = depthComplete.Bind(edit.CreateBufferSrv(_activePageCount, structureStride: 4), PipelineSync.ComputeShading);
                 _ = depthComplete.Bind(edit.CreateBufferUav(_framePageTable, structureStride: 16), PipelineSync.ComputeShading,
                     GraphAccessMode.ReadWrite, WriteCoverage.Partial);
+                _ = depthComplete.Bind(edit.CreateBufferSrv(_geometryWorkStatus), PipelineSync.ComputeShading);
                 _frameCompletePass = edit.AddGeneralFramePass(
                     "Finalize virtual shadow frame endpoints",
                     PassQueueSelection.AnyOfType(QueueType.Graphics),
@@ -879,6 +882,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             _frameHasPreviousHistory = hasPreviousTargetHistory;
 
             ClusterPipelineOutputs geometry = _geometry.Outputs;
+            graph.SetBufferInput(_geometryWorkStatus, new GraphBufferSlice(geometry.Geometry.WorkStatus, BufferRange.Whole));
             graph.SetBufferInput(_casterBounds, new GraphBufferSlice(geometry.Geometry.InstanceWorldBounds, BufferRange.Whole));
             graph.SetTextureInput(_receiverDepth, geometry.Depth);
 

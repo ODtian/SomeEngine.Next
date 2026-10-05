@@ -1,7 +1,7 @@
 {
   "importer_id": "b0c10195-d8d1-46ab-81b8-f8c54db7d0aa",
   "importer_version": 13,
-  "input_hash": "2711599A59E5AE3F2035055A6F0C3F8506B88030AF16BB7BED628C08B33C8D52",
+  "input_hash": "345EC096DABF1DFEFDBCEC9FA9E90F940AEE0FEAAB21B9BE6C9F186234E30FB3",
   "inputs": [
     {
       "relative_path": "assets/Materials/Standard.material.asset",
@@ -22,7 +22,7 @@
     {
       "asset_guid": "18f67d63-e2a1-4319-ad3f-411ba7b05b94",
       "sub_asset_key": "material:index:0",
-      "input_hash": "2711599A59E5AE3F2035055A6F0C3F8506B88030AF16BB7BED628C08B33C8D52",
+      "input_hash": "345EC096DABF1DFEFDBCEC9FA9E90F940AEE0FEAAB21B9BE6C9F186234E30FB3",
       "dependencies": [],
       "asset_path": "ico_sphere.18f67d63e2a14319ad3f411ba7b05b94.material.asset",
       "version": "75817e14-79c4-2c31-0ca6-2da059bd1ba6",
@@ -37,7 +37,7 @@
     {
       "asset_guid": "9cc63de3-c663-4f55-8656-bd4587b0fde5",
       "sub_asset_key": "mesh:index:0",
-      "input_hash": "2711599A59E5AE3F2035055A6F0C3F8506B88030AF16BB7BED628C08B33C8D52",
+      "input_hash": "345EC096DABF1DFEFDBCEC9FA9E90F940AEE0FEAAB21B9BE6C9F186234E30FB3",
       "dependencies": [],
       "asset_path": "ico_sphere.9cc63de3c6634f558656bd4587b0fde5.mesh.asset",
       "version": "8011a73c-3596-1270-db84-08c944347ecd",
@@ -49,7 +49,7 @@
     {
       "asset_guid": "a6099bdc-aa52-4f50-a693-b922c43e5d39",
       "sub_asset_key": "scene:index:0",
-      "input_hash": "2711599A59E5AE3F2035055A6F0C3F8506B88030AF16BB7BED628C08B33C8D52",
+      "input_hash": "345EC096DABF1DFEFDBCEC9FA9E90F940AEE0FEAAB21B9BE6C9F186234E30FB3",
       "dependencies": [],
       "asset_path": "ico_sphere.a6099bdcaa524f50a693b922c43e5d39.scene.asset",
       "version": "d1b0f6fd-a1a9-8b6a-3400-3271c2abb9d7",

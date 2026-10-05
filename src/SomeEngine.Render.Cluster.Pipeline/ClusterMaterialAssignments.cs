@@ -74,11 +74,6 @@ public sealed class ClusterMaterialAssignmentSet
     internal IEnumerable<Entity> Entities => _entities.Keys;
     internal IEnumerable<int> GetMaterialOffsets(long id) =>
         _materialOffsets.TryGetValue(id, out var offsets) ? offsets : [];
-    internal (uint FirstMaterialIndex, int MaterialCount) GetEntityMaterialRange(Entity entity)
-    {
-        ClusterMaterialSequence materials = _entities[entity];
-        return (_sequences[materials].Offset, materials.Count);
-    }
     internal bool TryGetMaterial(long id, out Material material)
     {
         bool found = _values.TryGetValue(id, out var value);

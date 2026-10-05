@@ -7,18 +7,6 @@ using Buffer = SomeEngine.Graphics.Buffer;
 namespace SomeEngine.Render.Cluster.Pipeline;
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
-internal struct ClusterTargetBatchUniforms
-{
-    internal ulong FirstSourceCluster;
-    internal uint SourceClusterCount;
-    internal uint CollectDeferredOnly;
-    internal uint FirstTargetView;
-    internal uint TargetViewCount;
-    internal uint Pad0;
-    internal uint Padding;
-}
-
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 internal struct ClusterTraversalSeedUniforms
 {
     internal uint ViewCount;

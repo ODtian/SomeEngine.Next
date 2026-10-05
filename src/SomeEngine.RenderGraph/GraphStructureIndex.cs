@@ -13,7 +13,6 @@ internal sealed class GraphStructureIndex
     internal GraphTable<GraphIdentity> QueryPoolIds => Structure.QueryPools.Identities;
     internal GraphTable<GraphIdentity> ShaderTableIds => Structure.ShaderTables.Identities;
     internal GraphTable<GraphIdentity> ViewIds => Structure.Views.Identities;
-    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> PassCopies { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
     internal GraphTable<GraphIdentity> PassIds => Structure.Passes.Identities;
     internal GraphTable<GraphIdentity> AccessIds => Structure.Accesses.Identities;
     internal ImmutableDictionary<Resource, GraphIdentity> ResourceIdentities { get; private set; } =
@@ -170,7 +169,6 @@ internal sealed class GraphStructureIndex
         statistics = new GraphIndexUpdateStatistics(0, 0, reordered.Count, 0);
         return new GraphStructureIndex(structure)
         {
-            PassCopies = UpdatePassCopies(previous, structure, changes),
             ParameterInputAccesses = UpdateInputs(previous.ParameterInputAccesses, previous.Structure.Accesses, structure.Accesses, changes.Accesses, static row => row.ParameterInput),
             TextureInputViews = UpdateInputs(previous.TextureInputViews, previous.Structure.Views, structure.Views, changes.Views, static row => row.TextureInput),
             TextureInputAccesses = UpdateInputs(previous.TextureInputAccesses, previous.Structure.Accesses, structure.Accesses, changes.Accesses, static row => row.TextureInput),
@@ -189,23 +187,6 @@ internal sealed class GraphStructureIndex
             OrderPositions = positions.ToImmutable(),
             TransientResources = transientResources.ToImmutable(),
         };
-    }
-
-    private static ImmutableDictionary<GraphIdentity, GraphIdentity[]> UpdatePassCopies(
-        GraphStructureIndex previous, GraphStructure structure, GraphEditChanges changes)
-    {
-        GraphAdjacency copies = previous.PassCopies.ToBuilder();
-        foreach (GraphIdentity pass in changes.Passes)
-        {
-            GraphIdentity before = previous.Structure.Passes.Contains(pass)
-                ? previous.Structure.Passes.Get(pass).CommandSource : default;
-            GraphIdentity after = structure.Passes.Contains(pass)
-                ? structure.Passes.Get(pass).CommandSource : default;
-            if (before == after) continue;
-            if (before.IsValid) RemoveAdjacency(copies, before, pass);
-            if (after.IsValid) AddAdjacency(copies, after, pass);
-        }
-        return copies.ToImmutable();
     }
 
     private static ImmutableDictionary<TInput, GraphIdentity[]> UpdateInputs<TRow, TInput>(

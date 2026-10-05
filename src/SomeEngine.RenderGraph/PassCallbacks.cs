@@ -47,7 +47,6 @@ internal abstract class PassCallbackStorage
             ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in right)), Unsafe.SizeOf<T>());
         return first.SequenceEqual(second);
     }
-    internal PassCallbackStorage Copy() => (PassCallbackStorage)MemberwiseClone();
     internal abstract Type FrameDataType { get; }
     internal abstract void ClearData();
     internal abstract void Record(RenderGraphFrameState frame, int passIndex, CommandContext context);
