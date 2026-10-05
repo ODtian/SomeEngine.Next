@@ -56,7 +56,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
             new(31, edit => edit.CaptureLinearImage(image => image.Save(Path.Combine(scene.Directory, "old-footprint.rgba16")))),
             new(32, edit =>
             {
-                edit.SetEntityTransform(edit.MeshEntities[1], new TransformQvvs(new(2, 0, -6), Quaternion.Identity, .6f));
+                edit.SetEntityTransform(edit.MeshEntities[1], new TransformQvvs(new(-1, 0, -6), Quaternion.Identity, .6f));
                 edit.RefreshShadowMaps();
                 edit.CancelFrame();
             }),
@@ -77,11 +77,11 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
         Assert.Equal(63, shadowed.Frame.Frame);
         Assert.Equal(62u, shadowed.Frame.SubmittedFrame);
         RayShadowComparison comparison = await scene.CompareAsync(shadowed, unshadowed, ambient);
-        AssertAccuracy(comparison);
         RayShadowComparison oldFootprint = await scene.CompareAsync(
             SceneLinearImage.Load(Path.Combine(scene.Directory, "old-footprint.rgba16")),
             SceneLinearImage.Load(Path.Combine(scene.Directory, "unshadowed-old.rgba16")),
             SceneLinearImage.Load(Path.Combine(scene.Directory, "ambient-old.rgba16")), "old-footprint");
+        AssertAccuracy(comparison);
         AssertAccuracy(oldFootprint);
     }
 
