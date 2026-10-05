@@ -76,7 +76,7 @@ Final ordinary command (with owned `SOMEENGINE_SHADOW_EVIDENCE`, `SOMEENGINE_SHA
 dotnet test tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj -c Release --no-build --filter FullyQualifiedName~LocalLightRayShadowTests --results-directory <owned-proof>/final-batch --logger 'trx;LogFileName=final-batch.trx'
 ```
 
-Diagnostic runs add only `--blame-crash --blame-crash-dump-type mini`; no native mutation or renderer option changes. All run arguments, source boundaries, exits and walls are in individual command JSONs/logs/TRX. No new discovery/list-tests operation is claimed.
+Diagnostic runs add only `--blame-crash --blame-crash-dump-type mini`; no native mutation or renderer option changes. All run arguments, source boundaries, test-process exits and walls are in individual command JSONs/logs/TRX. The first baseline shell wrapper ended with exit1 from an optional `Get-Command` lookup for absent debugger tools after the test subprocess had exited0; its six Completed TRX rows are the actual test result, not a shell-exit inference. Standard x64 CDB/WinDbg paths were absent; no debugger was installed or downloaded. No new discovery/list-tests operation is claimed.
 
 ### Final independent results and unchanged gates
 
