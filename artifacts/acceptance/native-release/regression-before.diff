@@ -2,10 +2,7 @@ diff --git a/tests/SomeEngine.Render.Cluster.Tests/LocalLightRayShadowTests.cs b
 index 3a0ae29b..aa8c6670 100644
 --- a/tests/SomeEngine.Render.Cluster.Tests/LocalLightRayShadowTests.cs
 +++ b/tests/SomeEngine.Render.Cluster.Tests/LocalLightRayShadowTests.cs
-@@ -40,6 +40,24 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
-                 "The point fixture must cross a cube-face boundary without removing either side.");
-     }
- 
+@@ -42,0 +43,18 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
 +    [Fact]
 +    public async Task RepeatedLocalLightStartupAndShutdownPreservesIndependentShadows()
 +    {
@@ -24,6 +21,3 @@ index 3a0ae29b..aa8c6670 100644
 +        }
 +    }
 +
-     [Theory]
-     [InlineData("point")]
-     [InlineData("spot")]
