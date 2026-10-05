@@ -1,0 +1,25 @@
+{
+  "Application": "F:\\SomeEngine.AgentWork\\rg70-remaining\\trees\\reference-125\\templates\\DefaultProject\\Game.App\\bin\\Release\\net10.0\\Game.App.exe",
+  "Arguments": [
+    "--test-scene",
+    "F:\\SomeEngine.AgentWork\\rg70-remaining\\trees\\reference-125\\templates\\DefaultProject",
+    "--frames",
+    "4",
+    "--capture-frame",
+    "2",
+    "--hidden-window",
+    "--fixed-step",
+    "0.016666667",
+    "--no-vsync",
+    "--no-debug-ui",
+    "--no-vsm",
+    "--frame-output",
+    "F:\\SomeEngine.AgentWork\\rg70-remaining\\trees\\reference-125\\artifacts\\acceptance\\reference-125\\gpu-window\\selected-beauty.bmp",
+    "--linear-frame-output",
+    "F:\\SomeEngine.AgentWork\\rg70-remaining\\trees\\reference-125\\artifacts\\acceptance\\reference-125\\gpu-window\\selected-color.rgba16"
+  ],
+  "ExitCode": 0,
+  "CompletedWithinBound": true,
+  "WallSeconds": 14.0854184,
+  "Source": "0a7a3d7721ae301245b900d30f4b1295b5b1d42e"
+}

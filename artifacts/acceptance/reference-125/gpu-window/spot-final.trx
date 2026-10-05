@@ -1,0 +1,68 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="dc6897df-407c-4a55-a1ce-d227b51f25e5" name="boqi@BOQI-THE-DAEMON 2026-10-06 02:10:48" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T02:10:48.8226868+08:00" queuing="2026-10-06T02:10:48.8226873+08:00" start="2026-10-06T02:10:25.8220800+08:00" finish="2026-10-06T02:10:48.8347714+08:00" />
+  <TestSettings name="default" id="94030c3d-ad2e-4cb8-9769-d2e212a5b337">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_02_10_48" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="89be5217-85d5-469c-8dd1-817554fb607d" testId="a69ee2c5-d1af-cc5f-aefe-fffafc3b20f3" testName="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.LocalLightShadowsMatchIndependentSourceTriangles(light: &quot;spot&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:21.4667565" startTime="2026-10-06T02:10:27.0997241+08:00" endTime="2026-10-06T02:10:48.5847005+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="89be5217-85d5-469c-8dd1-817554fb607d">
+      <Output>
+        <StdOut>Local light independent reference: F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\artifacts\acceptance\reference-125\gpu-window\local-lights\local-ray-spot-b2be79a4d9e34079ba1b624a2d6c7a2f; RayShadowComparison { AllReceivers = ShadowReferenceComparison { ShadowedPixels = 3839, LitPixels = 38812, MismatchedPixels = 51, ComparedPixels = 42651, MismatchFraction = 0.0011957516, MeanVisibilityError = 0.0011957516, MaximumVisibilityError = 1, MissedShadowPixels = 22, FalseShadowPixels = 29 }, Interior = ShadowReferenceComparison { ShadowedPixels = 3254, LitPixels = 36313, MismatchedPixels = 1, ComparedPixels = 39567, MismatchFraction = 2.5273586E-05, MeanVisibilityError = 2.5273586E-05, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 1 }, Boundary = ShadowReferenceComparison { ShadowedPixels = 585, LitPixels = 2499, MismatchedPixels = 50, ComparedPixels = 3084, MismatchFraction = 0.016212711, MeanVisibilityError = 0.016212711, MaximumVisibilityError = 1, MissedShadowPixels = 22, FalseShadowPixels = 28 }, ReferenceReceiverPixels = 42651, SkyPixels = 22426, GeometryFacingLightRejectedPixels = 459, MissingRenderedReceiverPixels = 0, ReferenceShadingRejectedPixels = 199, RenderedShadingRejectedPixels = 13, SelfHitPixels = 0, RenderedReceiverCoverage = 1, RangeRejectedPixels = 0, ConeRejectedPixels = 0, CubeFaceReceiverPixels = System.Int32[], FalseShadowFraction = 0.0007471916, MissedShadowFraction = 0.0057306592 }</StdOut>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.LocalLightShadowsMatchIndependentSourceTriangles(light: &quot;spot&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\reference-125\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="a69ee2c5-d1af-cc5f-aefe-fffafc3b20f3">
+      <Execution id="89be5217-85d5-469c-8dd1-817554fb607d" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests" name="LocalLightShadowsMatchIndependentSourceTriangles" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="a69ee2c5-d1af-cc5f-aefe-fffafc3b20f3" executionId="89be5217-85d5-469c-8dd1-817554fb607d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.19]   Discovering: SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.35]   Discovered:  SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.40]   Starting:    SomeEngine.Render.Cluster.Tests&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\artifacts\acceptance\reference-125\gpu-window\local-lights\local-ray-spot-b2be79a4d9e34079ba1b624a2d6c7a2f\content; sceneInstances=2, sceneBounds=&lt;0, 0, -8&gt;..&lt;0, 0, -6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\artifacts\acceptance\reference-125\gpu-window\local-lights\local-ray-spot-b2be79a4d9e34079ba1b624a2d6c7a2f\content; sceneInstances=2, sceneBounds=&lt;0, 0, -8&gt;..&lt;0, 0, -6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\artifacts\acceptance\reference-125\gpu-window\local-lights\local-ray-spot-b2be79a4d9e34079ba1b624a2d6c7a2f\content; sceneInstances=2, sceneBounds=&lt;0, 0, -8&gt;..&lt;0, 0, -6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+[xUnit.net 00:00:21.95]   Finished:    SomeEngine.Render.Cluster.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

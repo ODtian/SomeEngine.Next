@@ -1,0 +1,58 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="822ec8aa-c054-4c19-96b6-34a6e4966632" name="boqi@BOQI-THE-DAEMON 2026-10-06 02:22:33" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T02:22:33.4677581+08:00" queuing="2026-10-06T02:22:33.4677584+08:00" start="2026-10-06T02:22:31.7045045+08:00" finish="2026-10-06T02:22:33.4769103+08:00" />
+  <TestSettings name="default" id="8a95052f-7500-4ec3-8fb7-a4353605b951">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_02_22_33" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="56b1d6ff-24e5-4959-999a-cea992982ef5" testId="3568d443-4464-2777-72f5-2ca2dcd29a0c" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.LinearOutputRetainsHdrColorAndMatchingSubmittedFrameInputs" computerName="BOQI-THE-DAEMON" duration="00:00:00.2888193" startTime="2026-10-06T02:22:32.9278355+08:00" endTime="2026-10-06T02:22:33.2310897+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="56b1d6ff-24e5-4959-999a-cea992982ef5" />
+    <UnitTestResult executionId="b8154774-1475-45a0-a8c9-5fa8586d0b79" testId="5e1b6854-08b1-18ac-a3ed-5f309ef030cf" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.FiniteBeautyAndLinearOutputSelectOnlyTheLastFrameByDefault" computerName="BOQI-THE-DAEMON" duration="00:00:00.0056396" startTime="2026-10-06T02:22:33.2530683+08:00" endTime="2026-10-06T02:22:33.2531932+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b8154774-1475-45a0-a8c9-5fa8586d0b79" />
+    <UnitTestResult executionId="2c5160b5-3a06-41ec-a309-5c96328b14fd" testId="7984639e-67f5-5824-1713-7b7e4c3fe02a" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.SelectedLinearOutputIsAcceptedWithoutChangingDefaultRendering" computerName="BOQI-THE-DAEMON" duration="00:00:00.0050340" startTime="2026-10-06T02:22:33.2534718+08:00" endTime="2026-10-06T02:22:33.2535975+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2c5160b5-3a06-41ec-a309-5c96328b14fd" />
+    <UnitTestResult executionId="f0d71773-56a2-4088-917b-9b39491ac02e" testId="ab397e86-afed-a075-4817-2b578f80c340" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.CaptureOutsideFiniteRunIsRejected(frame: &quot;-1&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0003040" startTime="2026-10-06T02:22:33.2525949+08:00" endTime="2026-10-06T02:22:33.2527183+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f0d71773-56a2-4088-917b-9b39491ac02e" />
+    <UnitTestResult executionId="b32aff16-dcf8-4147-94a7-faf37ac59e80" testId="9c4d5733-3893-c6f5-1134-7eb4d6a292de" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.CaptureOutsideFiniteRunIsRejected(frame: &quot;64&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0024045" startTime="2026-10-06T02:22:33.2511800+08:00" endTime="2026-10-06T02:22:33.2513480+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b32aff16-dcf8-4147-94a7-faf37ac59e80" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.CaptureOutsideFiniteRunIsRejected(frame: &quot;64&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\reference-125\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="9c4d5733-3893-c6f5-1134-7eb4d6a292de">
+      <Execution id="b32aff16-dcf8-4147-94a7-faf37ac59e80" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="CaptureOutsideFiniteRunIsRejected" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.SelectedLinearOutputIsAcceptedWithoutChangingDefaultRendering" storage="f:\someengine.agentwork\rg70-remaining\trees\reference-125\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="7984639e-67f5-5824-1713-7b7e4c3fe02a">
+      <Execution id="2c5160b5-3a06-41ec-a309-5c96328b14fd" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="SelectedLinearOutputIsAcceptedWithoutChangingDefaultRendering" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.FiniteBeautyAndLinearOutputSelectOnlyTheLastFrameByDefault" storage="f:\someengine.agentwork\rg70-remaining\trees\reference-125\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="5e1b6854-08b1-18ac-a3ed-5f309ef030cf">
+      <Execution id="b8154774-1475-45a0-a8c9-5fa8586d0b79" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="FiniteBeautyAndLinearOutputSelectOnlyTheLastFrameByDefault" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.CaptureOutsideFiniteRunIsRejected(frame: &quot;-1&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\reference-125\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="ab397e86-afed-a075-4817-2b578f80c340">
+      <Execution id="f0d71773-56a2-4088-917b-9b39491ac02e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="CaptureOutsideFiniteRunIsRejected" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.LinearOutputRetainsHdrColorAndMatchingSubmittedFrameInputs" storage="f:\someengine.agentwork\rg70-remaining\trees\reference-125\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="3568d443-4464-2777-72f5-2ca2dcd29a0c">
+      <Execution id="56b1d6ff-24e5-4959-999a-cea992982ef5" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\reference-125\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="LinearOutputRetainsHdrColorAndMatchingSubmittedFrameInputs" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="3568d443-4464-2777-72f5-2ca2dcd29a0c" executionId="56b1d6ff-24e5-4959-999a-cea992982ef5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5e1b6854-08b1-18ac-a3ed-5f309ef030cf" executionId="b8154774-1475-45a0-a8c9-5fa8586d0b79" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7984639e-67f5-5824-1713-7b7e4c3fe02a" executionId="2c5160b5-3a06-41ec-a309-5c96328b14fd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ab397e86-afed-a075-4817-2b578f80c340" executionId="f0d71773-56a2-4088-917b-9b39491ac02e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9c4d5733-3893-c6f5-1134-7eb4d6a292de" executionId="b32aff16-dcf8-4147-94a7-faf37ac59e80" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="5" executed="5" passed="5" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.16]   Discovering: SomeEngine.Runtime.Output.Tests&#xD;
+[xUnit.net 00:00:00.27]   Discovered:  SomeEngine.Runtime.Output.Tests&#xD;
+[xUnit.net 00:00:00.32]   Starting:    SomeEngine.Runtime.Output.Tests&#xD;
+[xUnit.net 00:00:00.69]   Finished:    SomeEngine.Runtime.Output.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

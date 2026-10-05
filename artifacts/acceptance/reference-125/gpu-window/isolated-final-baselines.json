@@ -1,0 +1,41 @@
+[
+  {
+    "Name": "point",
+    "Filter": "FullyQualifiedName~LocalLightShadowsMatchIndependentSourceTriangles&DisplayName~point&DisplayName!~point-range",
+    "Source": "478bafa9915d1e717c4ec74486bf5007fab1bdb5",
+    "ExitCode": 0,
+    "WallSeconds": 36.4901514,
+    "Outcome": "Completed",
+    "Total": 1,
+    "Executed": 1,
+    "Passed": 1,
+    "Failed": 0,
+    "NotExecuted": 0
+  },
+  {
+    "Name": "spot",
+    "Filter": "FullyQualifiedName~LocalLightShadowsMatchIndependentSourceTriangles&DisplayName~spot&DisplayName!~spot-cone",
+    "Source": "478bafa9915d1e717c4ec74486bf5007fab1bdb5",
+    "ExitCode": 0,
+    "WallSeconds": 35.7289442,
+    "Outcome": "Completed",
+    "Total": 1,
+    "Executed": 1,
+    "Passed": 1,
+    "Failed": 0,
+    "NotExecuted": 0
+  },
+  {
+    "Name": "spot-cone",
+    "Filter": "FullyQualifiedName~LocalLightShadowsMatchIndependentSourceTriangles&DisplayName~spot-cone",
+    "Source": "478bafa9915d1e717c4ec74486bf5007fab1bdb5",
+    "ExitCode": 0,
+    "WallSeconds": 40.1648835,
+    "Outcome": "Completed",
+    "Total": 1,
+    "Executed": 1,
+    "Passed": 1,
+    "Failed": 0,
+    "NotExecuted": 0
+  }
+]

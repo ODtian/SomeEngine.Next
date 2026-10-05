@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-**CPU-tested, buildable partial delivery; not GPU or #125 acceptance.** Branch `agent/rg70-reference-125`, initially clean at integration `35295fbfb429a451fb0f591fde84f76839bb9414`. No production Cluster/VSM shader, `VirtualShadowFeature`, `ClusterPipelineSystem`, or Runtime `ShadowImageTests` modification. #134/#135 retain their production responsibilities. The integration coordinator records the delivery commit separately.
+**Initial checkpoint: CPU-tested partial delivery. Later public capture/six-case GPU validation is recorded in [Shadow-Reference-Gpu-125](Shadow-Reference-Gpu-125.md); full #125 acceptance remains partial.** Branch `agent/rg70-reference-125`, initially clean at integration `35295fbfb429a451fb0f591fde84f76839bb9414`. No production Cluster/VSM shader, `VirtualShadowFeature`, `ClusterPipelineSystem`, or Runtime `ShadowImageTests` modification by this slice. #134 was subsequently merged; #135 retains its production responsibilities. The integration coordinator records the delivery commit separately.
 
 Read project AGENTS/GLOSSARY/domain/issue-tracker/Behavior-Checks and the supplied acceptance/evidence/coordination/merge pointers. Live `gh issue view` requests for #125/#132/#70/#127 were denied by the execution guard; no retry or substitute remote retrieval occurred. Therefore this implementation follows the explicit assigned requirements and retained acceptance guidance, not a new live-issue verification.
 
@@ -36,13 +36,13 @@ Independent rays use original glTF triangles, source alpha masks/UVs, barycentri
 
 **Unchanged #132 gates:** pixel error > .15 is mismatch; mismatch and mean error each <=2%; false-shadow/lit and missed-shadow/shadowed each <=2%; rendered receiver coverage >=98%; >=32 shadowed and >=512 lit receivers; zero unexpected self-hit. No edge-exclusion denominator is introduced.
 
-## New local-light fixtures (prepared, not run)
+## New local-light fixtures (initial preparation; later validated in the GPU record)
 
-`LocalLightRayShadowTests.LocalLightShadowsMatchIndependentSourceTriangles` has four authored rows: `point`, `spot`, `point-range`, `spot-cone`. The range/cone rows require independent rejected populations; point rows require receivers on at least two cube faces. These are **source counts**, not discovery/execution/pass counts.
+`LocalLightRayShadowTests.LocalLightShadowsMatchIndependentSourceTriangles` has four authored rows: `point`, `spot`, `point-range`, `spot-cone`. The range/cone rows require independent rejected populations; point rows require receivers on at least two cube faces. At the initial checkpoint these were **source counts**, not discovery/execution/pass counts. Later actual discovery and six final isolated passes are recorded in the linked GPU validation.
 
 `LocalLightRayShadowTests.LocalLightPagePressureRecoversAfterMovingCasterAndCanceledRefresh` has point and spot rows. Public World content supplies SpotLight directly; no Spot edit API is added. A 64-page configured atlas, moving caster, public refresh and canceled frame are followed by final raw capture. The old frame-31 footprint and recovered frame-63 footprint each get the same independent gates; final scene/submitted indices must be 63/62. The unshadowed and ambient controls cancel the corresponding frame too, preserving projection/jitter alignment.
 
-These fixtures observe **Standard user-material linear color**, taking `(shadowed - ambient)/(unshadowed - ambient)` for an isolated light. They do not patch production shader text. No radiance threshold filters out receivers: nonpositive direct radiance produces an indeterminate visibility and full error. This color-ratio approach may expose Half quantization or shading-ineligible geometric receivers; it must be evaluated honestly in the authorized GPU window. It is not yet a validated direct point/spot visibility-mask material. The independently authored light/triangle truth does not by itself prove numerical acceptance.
+These fixtures observe **Standard user-material linear color**, taking `(shadowed - ambient)/(unshadowed - ambient)` for an isolated light. They do not patch production shader text. No radiance threshold filters out receivers: nonpositive direct radiance produces an indeterminate visibility and full error. The later authorized GPU run did expose Half quantization at the range boundary; the fixture uses stronger authored intensity there without filtering receivers or changing gates. Color ratios are validated for the six retained fixtures, not arbitrary shading. This is still not a direct point/spot visibility-mask material. The independently authored light/triangle truth does not by itself prove complete numerical acceptance.
 
 Configured page pressure is **not** proof of a specific fine-page miss, coarse fallback or no-resident-mip transition. Those exact resident-state cases, all six cube faces, backend behavior, alpha/custom-deformation coverage, and #135's final sampling semantics remain integration work. Existing `DefaultGameShadowReferenceTests` remains diagnostic (its legacy beauty/CPU comparator has edge filtering and fixed interpolated-normal offset); it is not promoted to acceptance by these changes.
 
@@ -74,7 +74,7 @@ git diff --check
 
 ## Next authorization and acceptance gates
 
-GPU remains reserved to #134. No device-creating discovery, rendering, RT, content GPU execution, or three-scene measurement has run in this slice. Permission denials also prevented worktree listing, live issue reads, sampling-shader access and targeted Cluster resource-source inspection; there was no retry/workaround for those denied reads. Renew source authorization before checking the material-color format/CopySource capability and compiling the reference shader. The new graph copy path is **not runtime-validated** by a C# build.
+At the initial checkpoint GPU was reserved to #134 and only CPU checks/builds had run. A later exclusive grant permitted the public selected-frame capture and six local RT cases in the linked GPU record; no three-scene measurement ran and GPU is now released. Prior denials of listing, issue/source inspection and standalone CPU shader compilation were not retried or worked around. Format/CopySource/readback compatibility is now verified by public capture output, not denied source inspection. The separate denied CPU/SPIR-V compiler test remains unexecuted; any future attempt still requires explicit source authorization.
 
 After coordinator authorization, cook owned, source-compatible default content, freeze hashes and source, then run in serial:
 
