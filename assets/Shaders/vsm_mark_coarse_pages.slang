@@ -39,13 +39,6 @@ void MarkVirtualShadowCoarsePages(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     if (view.LightKind == VSM_LIGHT_DIRECTIONAL)
     {
-        int lastClipmapLevel =
-            view.FirstClipmapLevel + int(max(view.ClipmapLevelCount, 1u)) - 1;
-        if (view.ClipmapLevel == lastClipmapLevel)
-        {
-            uint lastMip = max(view.MipLevelCount, 1u) - 1u;
-            PublishPage(view, lastMip, 0u.xx);
-        }
         if ((view.Flags & VSM_VIEW_COARSE_CLIP_LEVEL) == 0u)
             return;
         // UE-style directional coarse coverage: selected clipmap levels contribute only

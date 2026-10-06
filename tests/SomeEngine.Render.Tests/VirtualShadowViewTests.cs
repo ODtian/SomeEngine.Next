@@ -15,6 +15,28 @@ namespace SomeEngine.Render.Tests;
 public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     [Fact]
+    public async Task DirectionalClipmapsHaveOneMipWhileLocalLightsKeepTheirMipChain()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings
+            {
+                VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 2,
+                DirectionalClipmapLevels = 2,
+            });
+        var lights = new RenderLightSet();
+        lights.AddDirectional(new RenderDirectionalLight(Vector3.UnitZ, Vector3.One, 1, uint.MaxValue));
+        lights.AddSpot(new RenderSpotLight(Vector3.Zero, 10, -Vector3.UnitZ, .5f, .25f,
+            Vector3.One, 1, uint.MaxValue));
+        var receiver = new RenderView(Matrix4x4.Identity,
+            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+        shadows.BeginFrame();
+        VirtualShadowView[] views = shadows.PrepareViews(lights, receiver, 1, 1, 1).ToArray();
+        // Native clipmaps render only mip zero. Local512/128 maps have4,2,1-page levels.
+        Assert.Equal(new uint[] { 1, 1, 3 }, views.Select(view => view.MipLevelCount).ToArray());
+    }
+
+    [Fact]
     public async Task OrthographicCameraTargetCentersItsClipmapOrigin()
     {
         VirtualShadowMapShaders shaders = await CreateShaders();

@@ -404,7 +404,7 @@ public sealed class VirtualShadowMap : IDisposable
                     FirstClipmapLevel = directionalCamera.FirstLevel,
                     WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
                     ClipmapLevelCount = directionalCamera.LevelCount,
-                    MipLevelCount = Settings.MipLevelCount,
+                    MipLevelCount = 1u,
                     MinMipLevel = 0u,
                     Flags =
                         (orthographicReceiver ? VirtualShadowViewFlags.OrthographicReceiver : 0u) |
