@@ -2017,8 +2017,6 @@ public sealed partial class ClusterPipelineSystem
         ClusterShadeStageSet shadeStages)
     {
         GraphRegionId receivers = _surfaceReceiverRegion != default ? _surfaceReceiverRegion : _regions.Shading;
-        GraphData.ShadeBinning = graph.AddRegion("Cluster shade binning", receivers);
-        GraphData.ReceiverGroups = new GraphRegionMap<uint, ShadeGroup>(graph.AddRegion("Cluster surface receiver materials", receivers), ShadeGroupComparer.Instance);
         var receiverReset = new SurfaceReceiverReset(GraphData.Resources.SurfaceReceivers);
         _ = graph.AddCopyFramePass("Clear Cluster surface receivers", PassQueueSelection.AnyOfType(QueueType.Graphics),
             receiverReset, new PassOptions(RepeatCommands: true), SurfaceReceiverReset.Declare, SurfaceReceiverReset.Record,
@@ -2027,6 +2025,8 @@ public sealed partial class ClusterPipelineSystem
         _ = graph.AddCopyFramePass("Clear Cluster additional surface receivers", PassQueueSelection.AnyOfType(QueueType.Graphics),
             extraReset, new PassOptions(RepeatCommands: true), SurfaceReceiverReset.Declare, SurfaceReceiverReset.Record,
             region: receivers);
+        GraphData.ShadeBinning = graph.AddRegion("Cluster shade binning", receivers);
+        GraphData.ReceiverGroups = new GraphRegionMap<uint, ShadeGroup>(graph.AddRegion("Cluster surface receiver materials", receivers), ShadeGroupComparer.Instance);
         GraphData.ShadeGroups = new GraphRegionMap<uint, ShadeGroup>(graph.AddRegion("Cluster shade materials", _regions.Shading), ShadeGroupComparer.Instance);
         GraphRegionId resolveRegion = graph.AddRegion("Cluster background resolve", _regions.Shading);
         GraphBufferInput binUniforms = UploadUniform(
