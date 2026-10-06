@@ -1,0 +1,20 @@
+{
+  "StartedUtc": "2026-10-06T14:30:05.8319496Z",
+  "Command": "dotnet",
+  "Host": "7f01dfff1449dba53f4922026a9ae5f425d2edbc",
+  "Arguments": [
+    "test",
+    "F:/SomeEngine.AgentWork/rg70-remaining/trees/pre71-matched-81/tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj",
+    "-c",
+    "Release",
+    "--no-build",
+    "--list-tests",
+    "--filter",
+    "FullyQualifiedName~DefaultGameRayShadowTests.DefaultSceneShadowsMatchHardwareRayTracing",
+    "-v",
+    "minimal"
+  ],
+  "Settings": "F:/SomeEngine.AgentWork/rg70-remaining/historical-refresh-81/shared-supported-shadow-settings.json",
+  "ExitCode": 0,
+  "Renderer": "7b03495c2440664f5c2d08d6912be4edf7445630"
+}

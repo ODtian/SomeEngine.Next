@@ -1,0 +1,7 @@
+{
+  "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+  "command": "dotnet build templates/DefaultProject/Game.App/Game.App.csproj -c Release -p:ProjectContentRoot=F:/CodexProjects/2026-10-03/new-chat-2/work/rg70/performance-content/legacy-spheres --verbosity minimal",
+  "elapsed_seconds": 46.0500679,
+  "exit_code": 0,
+  "content_root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres"
+}

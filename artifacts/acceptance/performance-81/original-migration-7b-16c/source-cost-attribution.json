@@ -1,0 +1,791 @@
+{
+  "Scope": "Retained actual original7b-to-migration-only16c pair, legacy native settings/content; recorded source/command/counter/cleanup proofs retained from2026-10-04. Machine-load history and historical independent-quality obligations govern attribution",
+  "Rows": [
+    {
+      "Version": "baseline-refresh",
+      "Source": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "Scene": "1024 spheres",
+      "NoTrace": {
+        "Scene": "1024 spheres",
+        "Status": "Measured",
+        "Frames": 541,
+        "MeanMs": 3.7046706099815174,
+        "MedianMs": 3.6857,
+        "P95Ms": 4.1674,
+        "PrepareMs": 0.29184528650646935,
+        "ReconcileMs": 0.008224584103512013,
+        "ExecuteMs": 1.1265354898336415,
+        "ResidentPages": 6,
+        "RegisteredPages": 6,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 724160,
+        "GeometryFreeBytes": 267711296,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": true,
+        "FirstFrameMs": 382.3007,
+        "StreamingFrames": 4,
+        "StreamingMs": 240.9933,
+        "StreamingMaxFrameMs": 178.6782,
+        "DroppedPageFaults": 0
+      },
+      "NoTraceComplete": true,
+      "NoTraceCommand": {
+        "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+        "started_utc": "2026-10-04T07:10:00.357923+08:00",
+        "elapsed_seconds": 44.732503,
+        "feedback_seconds": 43.83,
+        "within_60_seconds": true,
+        "script_success": true,
+        "error": null,
+        "report": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\baseline-refresh\\Performance\\20261004-071007-754\\results.json",
+        "trace_enabled": false,
+        "content_root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres",
+        "scene_list": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-test-scenes.json",
+        "command": "& 'F:\\.codex\\worktrees\\rg70-ticket-81\\SomeEngine.Next\\tools\\Measure-Scenes.ps1' -ApplicationPath 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\baseline-refresh\\Game.App.exe'"
+      },
+      "Trace": {
+        "scene": "1024 spheres",
+        "trace_complete": true,
+        "dropped_events": 0,
+        "scope_errors": 0,
+        "issue_count": 0,
+        "sample_frames": 518,
+        "first_sample_frame": 627,
+        "last_sample_frame": 1144
+      },
+      "CpuCosts": [
+        {
+          "category": "wait",
+          "name": "CpuFenceWait",
+          "calls": 526.0,
+          "inclusive_ms_per_frame": 1.834642664092663,
+          "self_ms_per_frame": 1.834642664092663
+        },
+        {
+          "category": "render",
+          "name": "Cluster.Update",
+          "calls": 518.0,
+          "inclusive_ms_per_frame": 0.26519459459459493,
+          "self_ms_per_frame": 0.19200907335907325
+        },
+        {
+          "category": "app",
+          "name": "ExecuteFrame",
+          "calls": 518.0,
+          "inclusive_ms_per_frame": 1.1627223938223934,
+          "self_ms_per_frame": 0.056769498069498055
+        },
+        {
+          "category": "app",
+          "name": "Prepare",
+          "calls": 518.0,
+          "inclusive_ms_per_frame": 0.2969857142857141,
+          "self_ms_per_frame": 0.019443629343629348
+        },
+        {
+          "category": "app",
+          "name": "ReconcileGraph",
+          "calls": 518.0,
+          "inclusive_ms_per_frame": 0.0073270270270270246,
+          "self_ms_per_frame": 0.0073270270270270246
+        }
+      ],
+      "Gpu": {
+        "version": "baseline-refresh-gpu",
+        "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+        "scene": "1024 spheres",
+        "complete": true,
+        "frames": 531,
+        "mean_gpu_ms": 6.473183773780722,
+        "median_gpu_ms": 6.475872039794922,
+        "p95_gpu_ms": 6.81276798248291,
+        "mean_graphics_queue_ms": 3.7511356986817335,
+        "mean_compute_queue_ms": 0.03211233145009413,
+        "mean_copy_queue_ms": 0.0,
+        "mean_submissions": 2.0,
+        "raw_intervals_path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-gpu\\scene-0.json"
+      }
+    },
+    {
+      "Version": "baseline-refresh",
+      "Source": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "Scene": "Sponza",
+      "NoTrace": {
+        "Scene": "Sponza",
+        "Status": "Measured",
+        "Frames": 650,
+        "MeanMs": 3.079094615384613,
+        "MedianMs": 3.0761,
+        "P95Ms": 3.3469,
+        "PrepareMs": 0.08192446153846154,
+        "ReconcileMs": 0.005349076923076928,
+        "ExecuteMs": 1.099788923076923,
+        "ResidentPages": 94,
+        "RegisteredPages": 94,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 12245072,
+        "GeometryFreeBytes": 256190384,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": false,
+        "FirstFrameMs": 3693.1271,
+        "StreamingFrames": 4,
+        "StreamingMs": 245.2136,
+        "StreamingMaxFrameMs": 150.4693,
+        "DroppedPageFaults": 0
+      },
+      "NoTraceComplete": true,
+      "NoTraceCommand": {
+        "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+        "started_utc": "2026-10-04T07:10:00.357923+08:00",
+        "elapsed_seconds": 44.732503,
+        "feedback_seconds": 43.83,
+        "within_60_seconds": true,
+        "script_success": true,
+        "error": null,
+        "report": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\baseline-refresh\\Performance\\20261004-071007-754\\results.json",
+        "trace_enabled": false,
+        "content_root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres",
+        "scene_list": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-test-scenes.json",
+        "command": "& 'F:\\.codex\\worktrees\\rg70-ticket-81\\SomeEngine.Next\\tools\\Measure-Scenes.ps1' -ApplicationPath 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\baseline-refresh\\Game.App.exe'"
+      },
+      "Trace": {
+        "scene": "Sponza",
+        "trace_complete": true,
+        "dropped_events": 0,
+        "scope_errors": 0,
+        "issue_count": 0,
+        "sample_frames": 629,
+        "first_sample_frame": 876,
+        "last_sample_frame": 1504
+      },
+      "CpuCosts": [
+        {
+          "category": "wait",
+          "name": "CpuFenceWait",
+          "calls": 577.0,
+          "inclusive_ms_per_frame": 0.4747044515103341,
+          "self_ms_per_frame": 0.4747044515103341
+        },
+        {
+          "category": "render",
+          "name": "Cluster.Update",
+          "calls": 629.0,
+          "inclusive_ms_per_frame": 0.5734670906200323,
+          "self_ms_per_frame": 0.16449793322734496
+        },
+        {
+          "category": "app",
+          "name": "ExecuteFrame",
+          "calls": 629.0,
+          "inclusive_ms_per_frame": 1.8309653418124026,
+          "self_ms_per_frame": 0.12373227344992052
+        },
+        {
+          "category": "app",
+          "name": "Prepare",
+          "calls": 629.0,
+          "inclusive_ms_per_frame": 0.15571605723370402,
+          "self_ms_per_frame": 0.027924006359300483
+        },
+        {
+          "category": "app",
+          "name": "ReconcileGraph",
+          "calls": 629.0,
+          "inclusive_ms_per_frame": 0.016735135135135155,
+          "self_ms_per_frame": 0.016735135135135155
+        }
+      ],
+      "Gpu": {
+        "version": "baseline-refresh-gpu",
+        "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+        "scene": "Sponza",
+        "complete": true,
+        "frames": 649,
+        "mean_gpu_ms": 5.074668417910031,
+        "median_gpu_ms": 5.088235974311829,
+        "p95_gpu_ms": 5.225451946258545,
+        "mean_graphics_queue_ms": 3.0545336209553158,
+        "mean_compute_queue_ms": 0.0329841602465331,
+        "mean_copy_queue_ms": 0.0,
+        "mean_submissions": 2.0,
+        "raw_intervals_path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-gpu\\scene-1.json"
+      }
+    },
+    {
+      "Version": "baseline-refresh",
+      "Source": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "Scene": "Amazon Bistro",
+      "NoTrace": {
+        "Scene": "Amazon Bistro",
+        "Status": "Measured",
+        "Frames": 322,
+        "MeanMs": 6.233409316770189,
+        "MedianMs": 6.2082,
+        "P95Ms": 6.8579,
+        "PrepareMs": 0.13328322981366464,
+        "ReconcileMs": 0.008516149068322985,
+        "ExecuteMs": 2.7365456521739104,
+        "ResidentPages": 2076,
+        "RegisteredPages": 2372,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 116336576,
+        "GeometryFreeBytes": 152098880,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": false,
+        "FirstFrameMs": 11990.2746,
+        "StreamingFrames": 16,
+        "StreamingMs": 563.9473,
+        "StreamingMaxFrameMs": 145.3122,
+        "DroppedPageFaults": 0
+      },
+      "NoTraceComplete": true,
+      "NoTraceCommand": {
+        "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+        "started_utc": "2026-10-04T07:10:00.357923+08:00",
+        "elapsed_seconds": 44.732503,
+        "feedback_seconds": 43.83,
+        "within_60_seconds": true,
+        "script_success": true,
+        "error": null,
+        "report": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\baseline-refresh\\Performance\\20261004-071007-754\\results.json",
+        "trace_enabled": false,
+        "content_root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres",
+        "scene_list": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-test-scenes.json",
+        "command": "& 'F:\\.codex\\worktrees\\rg70-ticket-81\\SomeEngine.Next\\tools\\Measure-Scenes.ps1' -ApplicationPath 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\baseline-refresh\\Game.App.exe'"
+      },
+      "Trace": {
+        "scene": "Amazon Bistro",
+        "trace_complete": true,
+        "dropped_events": 0,
+        "scope_errors": 0,
+        "issue_count": 0,
+        "sample_frames": 315,
+        "first_sample_frame": 396,
+        "last_sample_frame": 710
+      },
+      "CpuCosts": [
+        {
+          "category": "wait",
+          "name": "CpuFenceWait",
+          "calls": 334.0,
+          "inclusive_ms_per_frame": 2.486692063492063,
+          "self_ms_per_frame": 2.486692063492063
+        },
+        {
+          "category": "app",
+          "name": "ExecuteFrame",
+          "calls": 315.0,
+          "inclusive_ms_per_frame": 3.1004301587301617,
+          "self_ms_per_frame": 0.24208253968253968
+        },
+        {
+          "category": "render",
+          "name": "Cluster.Update",
+          "calls": 315.0,
+          "inclusive_ms_per_frame": 1.56832,
+          "self_ms_per_frame": 0.12131142857142861
+        },
+        {
+          "category": "app",
+          "name": "Prepare",
+          "calls": 315.0,
+          "inclusive_ms_per_frame": 0.16186126984126983,
+          "self_ms_per_frame": 0.024485079365079362
+        },
+        {
+          "category": "app",
+          "name": "ReconcileGraph",
+          "calls": 315.0,
+          "inclusive_ms_per_frame": 0.009754285714285708,
+          "self_ms_per_frame": 0.009754285714285708
+        }
+      ],
+      "Gpu": {
+        "version": "baseline-refresh-gpu",
+        "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+        "scene": "Amazon Bistro",
+        "complete": true,
+        "frames": 321,
+        "mean_gpu_ms": 10.801976078767272,
+        "median_gpu_ms": 10.873955965042114,
+        "p95_gpu_ms": 10.999907970428467,
+        "mean_graphics_queue_ms": 6.236108959501558,
+        "mean_compute_queue_ms": 0.004615975077881637,
+        "mean_copy_queue_ms": 0.0,
+        "mean_submissions": 2.0,
+        "raw_intervals_path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-gpu\\scene-2.json"
+      }
+    },
+    {
+      "Version": "post",
+      "Source": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+      "Scene": "1024 spheres",
+      "NoTrace": {
+        "Scene": "1024 spheres",
+        "Status": "Measured",
+        "Frames": 338,
+        "MeanMs": 5.9479372781065125,
+        "MedianMs": 6.1104,
+        "P95Ms": 7.1601,
+        "PrepareMs": 0.22415088757396448,
+        "ReconcileMs": 0.011201479289940834,
+        "ExecuteMs": 1.0803366863905333,
+        "ResidentPages": 6,
+        "RegisteredPages": 6,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 724160,
+        "GeometryFreeBytes": 267711296,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": true,
+        "FirstFrameMs": 342.8177,
+        "StreamingFrames": 3,
+        "StreamingMs": 252.3955,
+        "StreamingMaxFrameMs": 207.0214,
+        "DroppedPageFaults": 0
+      },
+      "NoTraceComplete": true,
+      "NoTraceCommand": {
+        "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+        "started_utc": "2026-10-04T07:10:48.6712062+08:00",
+        "elapsed_seconds": 44.1161108,
+        "feedback_seconds": 43.23,
+        "within_60_seconds": true,
+        "script_success": true,
+        "error": null,
+        "report": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\post\\Performance\\20261004-071055-900\\results.json",
+        "trace_enabled": false,
+        "content_root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres",
+        "scene_list": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-test-scenes.json",
+        "command": "& 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\ticket-81-post\\tools\\Measure-Scenes.ps1' -ApplicationPath 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\post\\Game.App.exe'"
+      },
+      "Trace": {
+        "scene": "1024 spheres",
+        "trace_complete": true,
+        "dropped_events": 0,
+        "scope_errors": 0,
+        "issue_count": 0,
+        "sample_frames": 328,
+        "first_sample_frame": 444,
+        "last_sample_frame": 771
+      },
+      "CpuCosts": [
+        {
+          "category": "wait",
+          "name": "CpuFenceWait",
+          "calls": 492.0,
+          "inclusive_ms_per_frame": 4.147963109756099,
+          "self_ms_per_frame": 4.147963109756099
+        },
+        {
+          "category": "render",
+          "name": "Cluster.Update",
+          "calls": 328.0,
+          "inclusive_ms_per_frame": 0.23231036585365844,
+          "self_ms_per_frame": 0.17964573170731699
+        },
+        {
+          "category": "app",
+          "name": "ExecuteFrame",
+          "calls": 328.0,
+          "inclusive_ms_per_frame": 1.1805060975609758,
+          "self_ms_per_frame": 0.10685274390243898
+        },
+        {
+          "category": "app",
+          "name": "Prepare",
+          "calls": 328.0,
+          "inclusive_ms_per_frame": 0.25102591463414636,
+          "self_ms_per_frame": 0.015532926829268294
+        },
+        {
+          "category": "app",
+          "name": "ReconcileGraph",
+          "calls": 328.0,
+          "inclusive_ms_per_frame": 0.012305487804878052,
+          "self_ms_per_frame": 0.012305487804878052
+        }
+      ],
+      "Gpu": {
+        "version": "post-gpu",
+        "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+        "scene": "1024 spheres",
+        "complete": true,
+        "frames": 482,
+        "mean_gpu_ms": 3.9768022884966427,
+        "median_gpu_ms": 3.9647879600524902,
+        "p95_gpu_ms": 4.238099932670593,
+        "mean_graphics_queue_ms": 3.8351168796680497,
+        "mean_compute_queue_ms": 0.02226263900414937,
+        "mean_copy_queue_ms": 0.0,
+        "mean_submissions": 2.0,
+        "raw_intervals_path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-gpu\\scene-0.json"
+      }
+    },
+    {
+      "Version": "post",
+      "Source": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+      "Scene": "Sponza",
+      "NoTrace": {
+        "Scene": "Sponza",
+        "Status": "Measured",
+        "Frames": 635,
+        "MeanMs": 3.15377244094488,
+        "MedianMs": 3.1319,
+        "P95Ms": 3.4466,
+        "PrepareMs": 0.06927196850393696,
+        "ReconcileMs": 0.00804047244094489,
+        "ExecuteMs": 1.0132159055118126,
+        "ResidentPages": 94,
+        "RegisteredPages": 94,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 12245072,
+        "GeometryFreeBytes": 256190384,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": false,
+        "FirstFrameMs": 3277.866,
+        "StreamingFrames": 4,
+        "StreamingMs": 83.838,
+        "StreamingMaxFrameMs": 20.7557,
+        "DroppedPageFaults": 0
+      },
+      "NoTraceComplete": true,
+      "NoTraceCommand": {
+        "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+        "started_utc": "2026-10-04T07:10:48.6712062+08:00",
+        "elapsed_seconds": 44.1161108,
+        "feedback_seconds": 43.23,
+        "within_60_seconds": true,
+        "script_success": true,
+        "error": null,
+        "report": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\post\\Performance\\20261004-071055-900\\results.json",
+        "trace_enabled": false,
+        "content_root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres",
+        "scene_list": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-test-scenes.json",
+        "command": "& 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\ticket-81-post\\tools\\Measure-Scenes.ps1' -ApplicationPath 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\post\\Game.App.exe'"
+      },
+      "Trace": {
+        "scene": "Sponza",
+        "trace_complete": true,
+        "dropped_events": 0,
+        "scope_errors": 0,
+        "issue_count": 0,
+        "sample_frames": 647,
+        "first_sample_frame": 907,
+        "last_sample_frame": 1553
+      },
+      "CpuCosts": [
+        {
+          "category": "wait",
+          "name": "CpuFenceWait",
+          "calls": 605.0,
+          "inclusive_ms_per_frame": 0.8162026275115922,
+          "self_ms_per_frame": 0.8162026275115922
+        },
+        {
+          "category": "app",
+          "name": "ExecuteFrame",
+          "calls": 647.0,
+          "inclusive_ms_per_frame": 1.5517051004636784,
+          "self_ms_per_frame": 0.15891962905718698
+        },
+        {
+          "category": "render",
+          "name": "Cluster.Update",
+          "calls": 647.0,
+          "inclusive_ms_per_frame": 0.43200772797527015,
+          "self_ms_per_frame": 0.145693972179289
+        },
+        {
+          "category": "app",
+          "name": "Prepare",
+          "calls": 647.0,
+          "inclusive_ms_per_frame": 0.10801143740340023,
+          "self_ms_per_frame": 0.019918392581143744
+        },
+        {
+          "category": "app",
+          "name": "ReconcileGraph",
+          "calls": 647.0,
+          "inclusive_ms_per_frame": 0.013095208655332318,
+          "self_ms_per_frame": 0.013095208655332318
+        }
+      ],
+      "Gpu": {
+        "version": "post-gpu",
+        "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+        "scene": "Sponza",
+        "complete": true,
+        "frames": 651,
+        "mean_gpu_ms": 5.066404074384686,
+        "median_gpu_ms": 5.080048084259033,
+        "p95_gpu_ms": 5.197808027267456,
+        "mean_graphics_queue_ms": 3.0282149554531483,
+        "mean_compute_queue_ms": 0.03254773579109059,
+        "mean_copy_queue_ms": 0.0,
+        "mean_submissions": 2.0,
+        "raw_intervals_path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-gpu\\scene-1.json"
+      }
+    },
+    {
+      "Version": "post",
+      "Source": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+      "Scene": "Amazon Bistro",
+      "NoTrace": {
+        "Scene": "Amazon Bistro",
+        "Status": "Measured",
+        "Frames": 320,
+        "MeanMs": 6.2714021875000014,
+        "MedianMs": 6.1758,
+        "P95Ms": 7.1474,
+        "PrepareMs": 0.1452840625,
+        "ReconcileMs": 0.016216562500000007,
+        "ExecuteMs": 3.1074093749999974,
+        "ResidentPages": 2069,
+        "RegisteredPages": 2372,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 115626576,
+        "GeometryFreeBytes": 152808880,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": false,
+        "FirstFrameMs": 11700.4748,
+        "StreamingFrames": 5,
+        "StreamingMs": 431.7609,
+        "StreamingMaxFrameMs": 192.6335,
+        "DroppedPageFaults": 0
+      },
+      "NoTraceComplete": true,
+      "NoTraceCommand": {
+        "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+        "started_utc": "2026-10-04T07:10:48.6712062+08:00",
+        "elapsed_seconds": 44.1161108,
+        "feedback_seconds": 43.23,
+        "within_60_seconds": true,
+        "script_success": true,
+        "error": null,
+        "report": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\post\\Performance\\20261004-071055-900\\results.json",
+        "trace_enabled": false,
+        "content_root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres",
+        "scene_list": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-test-scenes.json",
+        "command": "& 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\ticket-81-post\\tools\\Measure-Scenes.ps1' -ApplicationPath 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\post\\Game.App.exe'"
+      },
+      "Trace": {
+        "scene": "Amazon Bistro",
+        "trace_complete": true,
+        "dropped_events": 0,
+        "scope_errors": 0,
+        "issue_count": 0,
+        "sample_frames": 322,
+        "first_sample_frame": 416,
+        "last_sample_frame": 737
+      },
+      "CpuCosts": [
+        {
+          "category": "wait",
+          "name": "CpuFenceWait",
+          "calls": 322.0,
+          "inclusive_ms_per_frame": 3.2624456521739122,
+          "self_ms_per_frame": 3.2624456521739122
+        },
+        {
+          "category": "app",
+          "name": "ExecuteFrame",
+          "calls": 322.0,
+          "inclusive_ms_per_frame": 2.354963975155279,
+          "self_ms_per_frame": 0.2466242236024846
+        },
+        {
+          "category": "render",
+          "name": "Cluster.Update",
+          "calls": 322.0,
+          "inclusive_ms_per_frame": 1.0550642857142853,
+          "self_ms_per_frame": 0.10987670807453413
+        },
+        {
+          "category": "app",
+          "name": "Prepare",
+          "calls": 322.0,
+          "inclusive_ms_per_frame": 0.10606863354037267,
+          "self_ms_per_frame": 0.015951552795031052
+        },
+        {
+          "category": "app",
+          "name": "ReconcileGraph",
+          "calls": 322.0,
+          "inclusive_ms_per_frame": 0.010807763975155274,
+          "self_ms_per_frame": 0.010807763975155274
+        }
+      ],
+      "Gpu": {
+        "version": "post-gpu",
+        "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+        "scene": "Amazon Bistro",
+        "complete": true,
+        "frames": 333,
+        "mean_gpu_ms": 10.085517697506123,
+        "median_gpu_ms": 10.120227932929993,
+        "p95_gpu_ms": 10.495012044906616,
+        "mean_graphics_queue_ms": 6.001913081081082,
+        "mean_compute_queue_ms": 0.004675267267267285,
+        "mean_copy_queue_ms": 0.0,
+        "mean_submissions": 2.0,
+        "raw_intervals_path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-gpu\\scene-2.json"
+      }
+    }
+  ],
+  "Files": [
+    {
+      "File": "comparison-verification.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\comparison-verification.json",
+      "Sha256": "2D6F8F7AC2CA8CE1E4F96B71B4F4B576E051020E59A46C0D8682443244E6428E",
+      "Bytes": 6769
+    },
+    {
+      "File": "comparison-sources.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\comparison-sources.json",
+      "Sha256": "8D300C7EEC61D0ABD55896C5AA7C3E9ECF1427F6C9050BC42131AAADBBBD40AB",
+      "Bytes": 2755
+    },
+    {
+      "File": "measurement-window.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\measurement-window.json",
+      "Sha256": "C6DC66EEEE9DDEDD63EA682A05535CAA6E007F8AFC432E6EF2C259298643280A",
+      "Bytes": 9897
+    },
+    {
+      "File": "measurement-cleanup.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\measurement-cleanup.json",
+      "Sha256": "D6A71AEDAAA3D41F618E8A6A65C1305446BF0DCE605E4D71DCD421B967168EB1",
+      "Bytes": 3006
+    },
+    {
+      "File": "baseline-refresh-build.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-build.json",
+      "Sha256": "52F978423C3B4F2022E5DE985668F58A01E9E433061840E8534279C3273B488F",
+      "Bytes": 517
+    },
+    {
+      "File": "baseline-refresh-initial-measure.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-initial-measure.json",
+      "Sha256": "AE60F7FB44ECB39CFF332FE68288914080836F6F6B7D7C2FA8974FC4726434A7",
+      "Bytes": 871
+    },
+    {
+      "File": "baseline-refresh-results.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-results.json",
+      "Sha256": "70DB8BE5763F507276F464B1944E046C9E715B1B9B18E7F063593AC0799B3559",
+      "Bytes": 3316
+    },
+    {
+      "File": "baseline-refresh-trace-measure.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-trace-measure.json",
+      "Sha256": "3363E66D135901D185F4A442CB876E93FC17EDA50FDC9374040F1F7073C3D28A",
+      "Bytes": 879
+    },
+    {
+      "File": "baseline-refresh-trace-results.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-trace-results.json",
+      "Sha256": "AA6A16270802FCD0E9E147992B7CA40DCFB74DA1CC1AE75031E5339EC89F3959",
+      "Bytes": 3308
+    },
+    {
+      "File": "baseline-refresh-trace-cpu-stages.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-trace-cpu-stages.json",
+      "Sha256": "7B9651E31E9896B27F4C5C49B88F9D1B662E5D3CFA157C4D897B449905527C53",
+      "Bytes": 30343
+    },
+    {
+      "File": "baseline-refresh-gpu-measure.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-gpu-measure.json",
+      "Sha256": "AAEDB30A14CC6A7B97148F04D0B1098C636216E9F065E0FA68DBC6873C4DFB92",
+      "Bytes": 931
+    },
+    {
+      "File": "baseline-refresh-gpu-results.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-gpu-results.json",
+      "Sha256": "6720E49FCD14E01D55AC7408DFD5DA25638E81855B05AFF5DB5A8134DFAB4CF2",
+      "Bytes": 3312
+    },
+    {
+      "File": "baseline-refresh-gpu-summary.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-gpu-summary.json",
+      "Sha256": "BC2B9AE3BDADBC234BB9B122317AB739591E885B4C4DA1C268F596F341246790",
+      "Bytes": 1765
+    },
+    {
+      "File": "post-build.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-build.json",
+      "Sha256": "EDFB65E28D459EDE5690E4BA846D4BC89241D8BB9DF4BA30068A62AC8BB0F1B5",
+      "Bytes": 449
+    },
+    {
+      "File": "post-initial-measure.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-initial-measure.json",
+      "Sha256": "4CC2AD14E99A88FD79496B7FEBF31C31B8C14487A694E7E129C8F3729187B337",
+      "Bytes": 871
+    },
+    {
+      "File": "post-results.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-results.json",
+      "Sha256": "41006CC090FE6705B4D741A8D21AC96B04DF2DD93C7034ACF054044E2AE95C78",
+      "Bytes": 3303
+    },
+    {
+      "File": "post-trace-measure.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-trace-measure.json",
+      "Sha256": "CEC3F7FC8BA5841B8D0EC349507A154E7FD76A319A67A28F674894B452D919E7",
+      "Bytes": 876
+    },
+    {
+      "File": "post-trace-results.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-trace-results.json",
+      "Sha256": "A2DEB27A847B95EB7B34F9DAA8729538E41D52E7BBAFF69FE0C7DA80C23F289E",
+      "Bytes": 3309
+    },
+    {
+      "File": "post-trace-cpu-stages.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-trace-cpu-stages.json",
+      "Sha256": "AA4D32594486AE0488DD4AF6DFEEB048608C95B80CC960C2EB4535C5804D43B5",
+      "Bytes": 29879
+    },
+    {
+      "File": "post-gpu-measure.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-gpu-measure.json",
+      "Sha256": "6C57D15E0BCDE4911C5BAF2E7F9BA008993DB2C46E98E176D1C2D28CD2E09EA8",
+      "Bytes": 997
+    },
+    {
+      "File": "post-gpu-results.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-gpu-results.json",
+      "Sha256": "F7724D6E69DEDCC3E1F1E43219D26AB344B97A02636A4E38E34F27B6B8B955E2",
+      "Bytes": 3310
+    },
+    {
+      "File": "post-gpu-summary.json",
+      "OriginalPath": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-gpu-summary.json",
+      "Sha256": "D4BAA16D072D2F93DE67D7BDA677D7B5BEEBDC0614375D7DD3D1282017CD2AFF",
+      "Bytes": 1697
+    }
+  ],
+  "CrossGeneration": "Legacy source and content differ from later #125/current frozen content. This pair retains its own quality and workload scope",
+  "ReferenceScope": "Full corrected raw3scene hardware-RT quality gates were refreshed later at9e/833/2a55 and supported4096historical sources, not retroactively attached to16c",
+  "GpuScope": "Separate historical calibrated marker run, two marker command lists per original submission; GPU crossqueue spans include scheduling gaps, perqueue sums distinct; current perframe observer uses a different marker layout",
+  "RecordedUtc": "2026-10-06T14:54:32.3070329Z"
+}

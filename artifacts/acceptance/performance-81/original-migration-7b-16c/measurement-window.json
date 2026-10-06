@@ -1,0 +1,283 @@
+{
+  "state": "completed",
+  "requestedAtUtc": "2026-10-04T07:33:59.6404364+08:00",
+  "durationMinutes": 8,
+  "purpose": "Ticket #81 paired measurement for #70/#125/#127",
+  "measurementThreadId": "01a10214-bb7b-7710-9fa1-b49d0751bf1c",
+  "orchestratorThreadId": "01a102b5-f670-7c62-8858-9aede915ae43",
+  "heavyWorkPolicy": "Finish in-progress build/test commands, then use source and evidence reading during the shared measurement interval",
+  "groups": [
+    70,
+    82,
+    112,
+    1
+  ],
+  "startedAtUtc": "2026-10-04T07:09:56.6447307+08:00",
+  "cpuPercentAtStart": 29,
+  "stages": [
+    {
+      "key": "baseline-refresh",
+      "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "mode": "timing",
+      "exit_code": 0,
+      "cpu_percent_before": 29,
+      "cpu_percent_after": 19,
+      "completed_at_utc": "2026-10-04T07:10:45.5539939+08:00"
+    },
+    {
+      "key": "post",
+      "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+      "mode": "timing",
+      "exit_code": 0,
+      "cpu_percent_before": 34,
+      "cpu_percent_after": 38,
+      "completed_at_utc": "2026-10-04T07:11:33.2271575+08:00"
+    },
+    {
+      "key": "reference-125",
+      "source_sha": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+      "mode": "timing",
+      "exit_code": 0,
+      "cpu_percent_before": 27,
+      "cpu_percent_after": 53,
+      "completed_at_utc": "2026-10-04T07:12:30.5751739+08:00"
+    },
+    {
+      "key": "current-127",
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "mode": "timing",
+      "exit_code": 0,
+      "cpu_percent_before": 71,
+      "cpu_percent_after": 89,
+      "completed_at_utc": "2026-10-04T07:13:25.835012+08:00"
+    },
+    {
+      "key": "baseline-refresh-trace",
+      "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "mode": "trace",
+      "exit_code": 1,
+      "cpu_percent_before": 91,
+      "cpu_percent_after": 35,
+      "completed_at_utc": "2026-10-04T07:14:30.6784286+08:00"
+    },
+    {
+      "key": "post-trace",
+      "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+      "mode": "trace",
+      "exit_code": 0,
+      "cpu_percent_before": 31,
+      "cpu_percent_after": 70,
+      "completed_at_utc": "2026-10-04T07:15:29.1732908+08:00"
+    },
+    {
+      "key": "reference-125-trace",
+      "source_sha": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+      "mode": "trace",
+      "exit_code": 1,
+      "cpu_percent_before": 58,
+      "cpu_percent_after": 100,
+      "completed_at_utc": "2026-10-04T07:16:36.746959+08:00"
+    },
+    {
+      "key": "current-127-trace",
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "mode": "trace",
+      "exit_code": 1,
+      "cpu_percent_before": 100,
+      "cpu_percent_after": 41,
+      "completed_at_utc": "2026-10-04T07:17:46.2653195+08:00"
+    },
+    {
+      "key": "baseline-refresh-gpu",
+      "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "mode": "gpu",
+      "exit_code": 0,
+      "cpu_percent_before": 34,
+      "cpu_percent_after": 13,
+      "completed_at_utc": "2026-10-04T07:18:36.2470937+08:00"
+    },
+    {
+      "key": "post-gpu",
+      "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+      "mode": "gpu",
+      "exit_code": 0,
+      "cpu_percent_before": 16,
+      "cpu_percent_after": 29,
+      "completed_at_utc": "2026-10-04T07:19:25.0949322+08:00"
+    },
+    {
+      "key": "reference-125-gpu",
+      "source_sha": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+      "mode": "gpu",
+      "exit_code": 0,
+      "cpu_percent_before": 36,
+      "cpu_percent_after": 10,
+      "completed_at_utc": "2026-10-04T07:20:11.8522507+08:00"
+    },
+    {
+      "key": "current-127-gpu",
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "mode": "gpu",
+      "exit_code": 0,
+      "cpu_percent_before": 3,
+      "cpu_percent_after": 15,
+      "completed_at_utc": "2026-10-04T07:20:59.9002824+08:00"
+    },
+    {
+      "key": "reference-125 quiet repeat",
+      "source_sha": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+      "mode": "timing",
+      "exit_code": 1,
+      "cpu_percent_before": 99,
+      "cpu_percent_after": 94,
+      "completed_at_utc": "2026-10-04T07:26:44.2247443+08:00"
+    },
+    {
+      "key": "current-127 quiet repeat",
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "mode": "timing",
+      "exit_code": 1,
+      "cpu_percent_before": 72,
+      "cpu_percent_after": 100,
+      "completed_at_utc": "2026-10-04T07:27:50.9783718+08:00"
+    },
+    {
+      "key": "baseline-refresh quiet repeat",
+      "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "mode": "timing",
+      "exit_code": 1,
+      "cpu_percent_before": 100,
+      "cpu_percent_after": 100,
+      "completed_at_utc": "2026-10-04T07:29:03.6137448+08:00"
+    },
+    {
+      "key": "post quiet repeat",
+      "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+      "mode": "timing",
+      "exit_code": 1,
+      "cpu_percent_before": 90,
+      "cpu_percent_after": 100,
+      "completed_at_utc": "2026-10-04T07:30:13.1543504+08:00"
+    },
+    {
+      "key": "baseline-refresh trace repeat",
+      "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "mode": "trace",
+      "exit_code": 1,
+      "cpu_percent_before": 100,
+      "cpu_percent_after": 53,
+      "completed_at_utc": "2026-10-04T07:31:20.0711845+08:00"
+    },
+    {
+      "key": "reference-125 trace repeat",
+      "source_sha": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+      "mode": "trace",
+      "exit_code": 1,
+      "cpu_percent_before": 60,
+      "cpu_percent_after": 31,
+      "completed_at_utc": "2026-10-04T07:32:19.0867374+08:00"
+    },
+    {
+      "key": "current-127 trace repeat",
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "mode": "trace",
+      "exit_code": 1,
+      "cpu_percent_before": 37,
+      "cpu_percent_after": 94,
+      "completed_at_utc": "2026-10-04T07:33:17.9631243+08:00"
+    },
+    {
+      "key": "baseline-refresh trace continuation",
+      "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "mode": "trace",
+      "exit_code": 1,
+      "cpu_percent_before": 100,
+      "cpu_percent_after": 100,
+      "completed_at_utc": "2026-10-04T10:16:27.6067766+08:00"
+    },
+    {
+      "key": "reference-125 trace continuation",
+      "source_sha": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+      "mode": "trace",
+      "exit_code": 0,
+      "cpu_percent_before": 98,
+      "cpu_percent_after": 43,
+      "completed_at_utc": "2026-10-04T10:17:42.2644626+08:00"
+    },
+    {
+      "key": "current-127 trace continuation",
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "mode": "trace",
+      "exit_code": 0,
+      "cpu_percent_before": 32,
+      "cpu_percent_after": 30,
+      "completed_at_utc": "2026-10-04T10:18:48.6899392+08:00"
+    },
+    {
+      "key": "current-127-legacy",
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "mode": "timing",
+      "exit_code": 1,
+      "cpu_percent_before": 39,
+      "cpu_percent_after": 53,
+      "completed_at_utc": "2026-10-04T10:19:48.0410015+08:00"
+    },
+    {
+      "key": "current-127-legacy-gpu",
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "mode": "gpu",
+      "exit_code": 0,
+      "cpu_percent_before": 16,
+      "cpu_percent_after": 74,
+      "completed_at_utc": "2026-10-04T10:20:38.7111319+08:00"
+    },
+    {
+      "key": "baseline-refresh-trace convergence retry",
+      "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "mode": "trace",
+      "exit_code": 0,
+      "cpu_percent_before": 46,
+      "cpu_percent_after": 67,
+      "completed_at_utc": "2026-10-04T10:22:34.5009181+08:00"
+    },
+    {
+      "key": "current-127-legacy convergence retry",
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "mode": "timing",
+      "exit_code": 1,
+      "cpu_percent_before": 41,
+      "cpu_percent_after": 81,
+      "completed_at_utc": "2026-10-04T10:23:33.5739887+08:00"
+    },
+    {
+      "key": "reference-125-trace convergence retry",
+      "source_sha": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+      "mode": "trace",
+      "exit_code": 1,
+      "cpu_percent_before": 77,
+      "cpu_percent_after": 100,
+      "completed_at_utc": "2026-10-04T10:24:49.5358468+08:00"
+    }
+  ],
+  "phase": "four-source evidence saved and sampling interval released",
+  "updatedAtUtc": "2026-10-04T07:20:59.9021583+08:00",
+  "gpuSamplingCompletedAtUtc": "2026-10-04T07:25:34.6389279+08:00",
+  "extendedPurpose": "Separate external CPU load from source changes in #127",
+  "remainingSampling": "baseline-refresh, reference-125 and current-127 CPU trace; b83555ce legacy-content comparison",
+  "readyEvidence": "four timing sources and four calibrated GPU sources all have converged three-scene results",
+  "completedAtUtc": "2026-10-04T02:39:18.8484163+00:00",
+  "completionScope": "four-source CPU trace, calibrated GPU and same-binary content comparison",
+  "remaining_cpu_trace": "complete",
+  "remaining_cpu_trace_sources": [
+    "7b03495c2440664f5c2d08d6912be4edf7445630",
+    "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+    "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85"
+  ],
+  "remaining_content_comparison": "complete via calibrated GPU comparison",
+  "remaining_fix_comparison": "after required 7507ba59 verification batch",
+  "ticket81_state": "active",
+  "continuationStartedAtUtc": "2026-10-04T10:15:13.3465324+08:00",
+  "expectedEndAtUtc": "2026-10-04T10:25:27.4137096+08:00",
+  "cpuPercentAtContinuationStart": 100,
+  "retryStartedAtUtc": "2026-10-04T10:21:27.4237796+08:00"
+}

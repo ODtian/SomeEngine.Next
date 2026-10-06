@@ -1,0 +1,26 @@
+{
+  "Renderer": "7b03495c2440664f5c2d08d6912be4edf7445630",
+  "FinishedUtc": "2026-10-06T14:34:53.4940596Z",
+  "WallSeconds": 284.4144566,
+  "Host": "7f01dfff1449dba53f4922026a9ae5f425d2edbc",
+  "Settings": "F:/SomeEngine.AgentWork/rg70-remaining/historical-refresh-81/shared-supported-shadow-settings.json",
+  "Command": "dotnet",
+  "Arguments": [
+    "test",
+    "F:/SomeEngine.AgentWork/rg70-remaining/trees/pre71-matched-81/tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj",
+    "-c",
+    "Release",
+    "--no-build",
+    "--filter",
+    "FullyQualifiedName~DefaultGameRayShadowTests.DefaultSceneShadowsMatchHardwareRayTracing",
+    "--results-directory",
+    "F:/SomeEngine.AgentWork/rg70-remaining/final-measurement-81/supported-common/pre71",
+    "--logger",
+    "trx;LogFileName=pre71-raw-quality.trx",
+    "-v",
+    "minimal"
+  ],
+  "ExitCode": 1,
+  "StartedUtc": "2026-10-06T14:30:09.0827292Z",
+  "Scope": "Exclusive supported4096 diagnostic raw/beauty independent allreceiver truth; original64frame motion/TAA/async/mesh; same corrected comparator/gates; separate from final8192default"
+}

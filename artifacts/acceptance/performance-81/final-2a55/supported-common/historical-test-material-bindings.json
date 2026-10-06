@@ -1,0 +1,24 @@
+[
+  {
+    "Source": "pre71",
+    "TestMaterialCommit": "7f01dfff",
+    "BindingsMatch": true,
+    "BindingTextSha256": "916DA2873A79EB11E13463A001FE0FA640C3F43B355AE283056D306E979796E9",
+    "ShaderSha256": "210151BEC8835988788366A7D4B165291973301840FC60864EFD23E4236C3AB2",
+    "OrdinaryShaderSha256": "55A1745C57AB3C2506A3122C8DC8E3B4488A2D1A8CC376F9E6BD3E6375272F03",
+    "Bindings": "struct VirtualShadowSamplingUniforms\n{\n    uint ViewCount;\n    uint DirectionalLightCount;\n    uint DirectionalClipmapLevels;\n    uint PointLightCount;\n    uint PointLightBufferOffset;\n    uint PointViewOffset;\n    uint SpotLightCount;\n    uint SpotLightBufferOffset;\n    uint SpotViewOffset;\n    uint BlockerSampleCount;\n    uint FilterSampleCount;\n    float BlockerSearchRadiusTexels;\n    float MaxFilterRadiusTexels;\n    float NormalBias;\n};\n\nStructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;\nStructuredBuffer<uint4> VirtualShadowPageTable;\nTexture2D<uint> VirtualShadowAtlas;\nConstantBuffer<VirtualShadowSamplingUniforms> VirtualShadowSampling;\nStructuredBuffer<float2> VirtualShadowDynamicResolutionBias;",
+    "HistoricalBeautyBias": "mappedNormal",
+    "NormativeRawBias": "triangle geometric normal"
+  },
+  {
+    "Source": "fast-reference",
+    "TestMaterialCommit": "40f0e2c",
+    "BindingsMatch": true,
+    "BindingTextSha256": "916DA2873A79EB11E13463A001FE0FA640C3F43B355AE283056D306E979796E9",
+    "ShaderSha256": "210151BEC8835988788366A7D4B165291973301840FC60864EFD23E4236C3AB2",
+    "OrdinaryShaderSha256": "55A1745C57AB3C2506A3122C8DC8E3B4488A2D1A8CC376F9E6BD3E6375272F03",
+    "Bindings": "struct VirtualShadowSamplingUniforms\n{\n    uint ViewCount;\n    uint DirectionalLightCount;\n    uint DirectionalClipmapLevels;\n    uint PointLightCount;\n    uint PointLightBufferOffset;\n    uint PointViewOffset;\n    uint SpotLightCount;\n    uint SpotLightBufferOffset;\n    uint SpotViewOffset;\n    uint BlockerSampleCount;\n    uint FilterSampleCount;\n    float BlockerSearchRadiusTexels;\n    float MaxFilterRadiusTexels;\n    float NormalBias;\n};\n\nStructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;\nStructuredBuffer<uint4> VirtualShadowPageTable;\nTexture2D<uint> VirtualShadowAtlas;\nConstantBuffer<VirtualShadowSamplingUniforms> VirtualShadowSampling;\nStructuredBuffer<float2> VirtualShadowDynamicResolutionBias;",
+    "HistoricalBeautyBias": "mappedNormal",
+    "NormativeRawBias": "triangle geometric normal"
+  }
+]

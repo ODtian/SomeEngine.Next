@@ -1,0 +1,997 @@
+[
+  {
+    "scene": "1024 spheres",
+    "trace_complete": true,
+    "dropped_events": 0,
+    "scope_errors": 0,
+    "issue_count": 0,
+    "sample_frames": 518,
+    "first_sample_frame": 627,
+    "last_sample_frame": 1144,
+    "costs": [
+      {
+        "category": "wait",
+        "name": "CpuFenceWait",
+        "calls": 526.0,
+        "inclusive_ms_per_frame": 1.834642664092663,
+        "self_ms_per_frame": 1.834642664092663
+      },
+      {
+        "category": "frame",
+        "name": "Frame",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 3.8984888030887976,
+        "self_ms_per_frame": 0.5963613899613903
+      },
+      {
+        "category": "rg",
+        "name": "SubmitAssembly",
+        "calls": 1036.0,
+        "inclusive_ms_per_frame": 0.49405347490347545,
+        "self_ms_per_frame": 0.4450586872586873
+      },
+      {
+        "category": "render",
+        "name": "Cluster.Update",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.26519459459459493,
+        "self_ms_per_frame": 0.19200907335907325
+      },
+      {
+        "category": "app",
+        "name": "ExtractionApply",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.1546586872586874,
+        "self_ms_per_frame": 0.1546586872586874
+      },
+      {
+        "category": "app",
+        "name": "RenderSystems",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.39486640926640915,
+        "self_ms_per_frame": 0.12967181467181474
+      },
+      {
+        "category": "rg",
+        "name": "CommandLists",
+        "calls": 1554.0,
+        "inclusive_ms_per_frame": 0.15536833976833972,
+        "self_ms_per_frame": 0.12399478764478761
+      },
+      {
+        "category": "ecs",
+        "name": "RenderExtraction",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.12211563706563694,
+        "self_ms_per_frame": 0.12211563706563694
+      },
+      {
+        "category": "app",
+        "name": "Scene.Update",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.079849613899614,
+        "self_ms_per_frame": 0.079849613899614
+      },
+      {
+        "category": "rg",
+        "name": "RecordSubmit",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.6019544401544404,
+        "self_ms_per_frame": 0.07595154440154442
+      },
+      {
+        "category": "render",
+        "name": "Prepare.ClusterInstances",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.06174884169884172,
+        "self_ms_per_frame": 0.06174884169884172
+      },
+      {
+        "category": "app",
+        "name": "ExecuteFrame",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 1.1627223938223934,
+        "self_ms_per_frame": 0.056769498069498055
+      },
+      {
+        "category": "rg",
+        "name": "Rows",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.049646911196911156,
+        "self_ms_per_frame": 0.049646911196911156
+      },
+      {
+        "category": "rg",
+        "name": "StateCommit",
+        "calls": 1036.0,
+        "inclusive_ms_per_frame": 0.04604864864864863,
+        "self_ms_per_frame": 0.04604864864864863
+      },
+      {
+        "category": "app",
+        "name": "PrepareSystems",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.12208648648648639,
+        "self_ms_per_frame": 0.024886293436293408
+      },
+      {
+        "category": "rg",
+        "name": "BoundaryObservation",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.024778764478764467,
+        "self_ms_per_frame": 0.024778764478764467
+      },
+      {
+        "category": "render",
+        "name": "Prepare.ClusterMaterials",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.02344864864864867,
+        "self_ms_per_frame": 0.02344864864864867
+      },
+      {
+        "category": "render",
+        "name": "Cluster.FrameUploads",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.02106505791505792,
+        "self_ms_per_frame": 0.02106505791505792
+      },
+      {
+        "category": "app",
+        "name": "Prepare",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.2969857142857141,
+        "self_ms_per_frame": 0.019443629343629348
+      },
+      {
+        "category": "rg",
+        "name": "PassDispatch",
+        "calls": 1036.0,
+        "inclusive_ms_per_frame": 0.031373552123552084,
+        "self_ms_per_frame": 0.017033976833976838
+      },
+      {
+        "category": "render",
+        "name": "Cluster.ResidencyReads",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.014660617760617762,
+        "self_ms_per_frame": 0.014660617760617762
+      },
+      {
+        "category": "pass",
+        "name": "Callbacks",
+        "calls": 1036.0,
+        "inclusive_ms_per_frame": 0.014339575289575255,
+        "self_ms_per_frame": 0.014339575289575255
+      },
+      {
+        "category": "rg",
+        "name": "WaitCollection",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.01411833976833977,
+        "self_ms_per_frame": 0.01411833976833977
+      },
+      {
+        "category": "render",
+        "name": "Cluster.MaterialInputs",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.013205598455598462,
+        "self_ms_per_frame": 0.013205598455598462
+      },
+      {
+        "category": "wait",
+        "name": "Job.Complete",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.012608301158301125,
+        "self_ms_per_frame": 0.012608301158301125
+      },
+      {
+        "category": "rg",
+        "name": "BindingResolution",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.011223359073359085,
+        "self_ms_per_frame": 0.011223359073359085
+      },
+      {
+        "category": "job",
+        "name": "Execute",
+        "calls": 1036.0,
+        "inclusive_ms_per_frame": 0.16092799227799248,
+        "self_ms_per_frame": 0.010058880308880292
+      },
+      {
+        "category": "render",
+        "name": "Prepare.View",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.00953610038610039,
+        "self_ms_per_frame": 0.00953610038610039
+      },
+      {
+        "category": "rg",
+        "name": "Synchronization",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.007705984555984571,
+        "self_ms_per_frame": 0.007705984555984571
+      },
+      {
+        "category": "app",
+        "name": "ReconcileGraph",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.0073270270270270246,
+        "self_ms_per_frame": 0.0073270270270270246
+      },
+      {
+        "category": "render",
+        "name": "Cluster.RasterInputs",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.006759073359073353,
+        "self_ms_per_frame": 0.006759073359073353
+      },
+      {
+        "category": "rg",
+        "name": "Materialize",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.005816216216216214,
+        "self_ms_per_frame": 0.005816216216216214
+      },
+      {
+        "category": "render",
+        "name": "Cluster.ResourceUse",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.005586100386100388,
+        "self_ms_per_frame": 0.005586100386100388
+      },
+      {
+        "category": "render",
+        "name": "Cluster.FrameResources",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.00523745173745174,
+        "self_ms_per_frame": 0.00523745173745174
+      },
+      {
+        "category": "render",
+        "name": "Cluster.InstanceTransfer",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.004658880308880303,
+        "self_ms_per_frame": 0.004658880308880303
+      },
+      {
+        "category": "app",
+        "name": "TemporalRecording",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.003615057915057905,
+        "self_ms_per_frame": 0.003615057915057905
+      },
+      {
+        "category": "app",
+        "name": "FrameCompletion",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.003198841698841694,
+        "self_ms_per_frame": 0.003198841698841694
+      },
+      {
+        "category": "rg",
+        "name": "Execute",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.7042725868725869,
+        "self_ms_per_frame": 0.0030081081081081073
+      },
+      {
+        "category": "rg",
+        "name": "StateUpdateConstruction",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.002946138996138991,
+        "self_ms_per_frame": 0.002946138996138991
+      },
+      {
+        "category": "render",
+        "name": "Prepare.ClusterResidency",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.0024666023166023216,
+        "self_ms_per_frame": 0.0024666023166023216
+      },
+      {
+        "category": "render",
+        "name": "Cluster.SceneBounds",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.0017536679536679506,
+        "self_ms_per_frame": 0.0017536679536679506
+      },
+      {
+        "category": "app",
+        "name": "GameUpdate",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.20338706563706574,
+        "self_ms_per_frame": 0.0014218146718146716
+      },
+      {
+        "category": "app",
+        "name": "PrepareCommit",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.0007969111969111962,
+        "self_ms_per_frame": 0.0007969111969111962
+      },
+      {
+        "category": "rg",
+        "name": "LateReleases",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.0007235521235521222,
+        "self_ms_per_frame": 0.0007235521235521222
+      },
+      {
+        "category": "wait",
+        "name": "TaskCompletion",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.00044961389961390027,
+        "self_ms_per_frame": 0.00044961389961390027
+      },
+      {
+        "category": "render",
+        "name": "Cluster.ResidencyUploads",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.00025907335907335955,
+        "self_ms_per_frame": 0.00025907335907335955
+      },
+      {
+        "category": "rg",
+        "name": "Diagnostics",
+        "calls": 518.0,
+        "inclusive_ms_per_frame": 0.0001388030888030898,
+        "self_ms_per_frame": 0.0001388030888030898
+      }
+    ]
+  },
+  {
+    "scene": "Sponza",
+    "trace_complete": true,
+    "dropped_events": 0,
+    "scope_errors": 0,
+    "issue_count": 0,
+    "sample_frames": 629,
+    "first_sample_frame": 876,
+    "last_sample_frame": 1504,
+    "costs": [
+      {
+        "category": "frame",
+        "name": "Frame",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 3.1869200317965047,
+        "self_ms_per_frame": 0.6762961844197133
+      },
+      {
+        "category": "rg",
+        "name": "SubmitAssembly",
+        "calls": 1258.0,
+        "inclusive_ms_per_frame": 0.630490461049284,
+        "self_ms_per_frame": 0.5418707472178063
+      },
+      {
+        "category": "wait",
+        "name": "CpuFenceWait",
+        "calls": 577.0,
+        "inclusive_ms_per_frame": 0.4747044515103341,
+        "self_ms_per_frame": 0.4747044515103341
+      },
+      {
+        "category": "render",
+        "name": "Cluster.MaterialInputs",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.2860279809220988,
+        "self_ms_per_frame": 0.2860279809220988
+      },
+      {
+        "category": "render",
+        "name": "Cluster.Update",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.5734670906200323,
+        "self_ms_per_frame": 0.16449793322734496
+      },
+      {
+        "category": "app",
+        "name": "RenderSystems",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.7269046104928463,
+        "self_ms_per_frame": 0.15343751987281415
+      },
+      {
+        "category": "rg",
+        "name": "CommandLists",
+        "calls": 1262.0,
+        "inclusive_ms_per_frame": 0.1877461049284579,
+        "self_ms_per_frame": 0.1461631160572338
+      },
+      {
+        "category": "app",
+        "name": "ExecuteFrame",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 1.8309653418124026,
+        "self_ms_per_frame": 0.12373227344992052
+      },
+      {
+        "category": "rg",
+        "name": "RecordSubmit",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.7931947535771063,
+        "self_ms_per_frame": 0.09994054054054059
+      },
+      {
+        "category": "rg",
+        "name": "StateCommit",
+        "calls": 1258.0,
+        "inclusive_ms_per_frame": 0.0842817170111288,
+        "self_ms_per_frame": 0.0842817170111288
+      },
+      {
+        "category": "rg",
+        "name": "Rows",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.07900620031796499,
+        "self_ms_per_frame": 0.07900620031796499
+      },
+      {
+        "category": "rg",
+        "name": "BoundaryObservation",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.05561033386327503,
+        "self_ms_per_frame": 0.05561033386327503
+      },
+      {
+        "category": "render",
+        "name": "Cluster.FrameUploads",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.05432082670906206,
+        "self_ms_per_frame": 0.05432082670906206
+      },
+      {
+        "category": "ecs",
+        "name": "RenderExtraction",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.048180127186009516,
+        "self_ms_per_frame": 0.048180127186009516
+      },
+      {
+        "category": "render",
+        "name": "Prepare.ClusterMaterials",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.04176104928457871,
+        "self_ms_per_frame": 0.04176104928457871
+      },
+      {
+        "category": "render",
+        "name": "Cluster.ResidencyReads",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.038177901430842584,
+        "self_ms_per_frame": 0.038177901430842584
+      },
+      {
+        "category": "app",
+        "name": "PrepareSystems",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.10591891891891889,
+        "self_ms_per_frame": 0.03407154213036567
+      },
+      {
+        "category": "wait",
+        "name": "TaskCompletion",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.032502861685214435,
+        "self_ms_per_frame": 0.032502861685214435
+      },
+      {
+        "category": "rg",
+        "name": "WaitCollection",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.0305418124006359,
+        "self_ms_per_frame": 0.0305418124006359
+      },
+      {
+        "category": "app",
+        "name": "Prepare",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.15571605723370402,
+        "self_ms_per_frame": 0.027924006359300483
+      },
+      {
+        "category": "wait",
+        "name": "Job.Complete",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.026024642289348164,
+        "self_ms_per_frame": 0.02576375198728138
+      },
+      {
+        "category": "rg",
+        "name": "PassDispatch",
+        "calls": 1177.0,
+        "inclusive_ms_per_frame": 0.04158298887122418,
+        "self_ms_per_frame": 0.023837201907790137
+      },
+      {
+        "category": "app",
+        "name": "ExtractionApply",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.02092798092209859,
+        "self_ms_per_frame": 0.02092798092209859
+      },
+      {
+        "category": "rg",
+        "name": "BindingResolution",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.018087917329093796,
+        "self_ms_per_frame": 0.018087917329093796
+      },
+      {
+        "category": "pass",
+        "name": "Callbacks",
+        "calls": 1177.0,
+        "inclusive_ms_per_frame": 0.017745786963434033,
+        "self_ms_per_frame": 0.017745786963434033
+      },
+      {
+        "category": "app",
+        "name": "ReconcileGraph",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.016735135135135155,
+        "self_ms_per_frame": 0.016735135135135155
+      },
+      {
+        "category": "render",
+        "name": "Prepare.ClusterInstances",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.013705882352941177,
+        "self_ms_per_frame": 0.013705882352941177
+      },
+      {
+        "category": "render",
+        "name": "Prepare.View",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.013015739268680441,
+        "self_ms_per_frame": 0.013015739268680441
+      },
+      {
+        "category": "rg",
+        "name": "Synchronization",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.010821939586645473,
+        "self_ms_per_frame": 0.010821939586645473
+      },
+      {
+        "category": "render",
+        "name": "Cluster.RasterInputs",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.009879173290938001,
+        "self_ms_per_frame": 0.009879173290938001
+      },
+      {
+        "category": "job",
+        "name": "Execute",
+        "calls": 633.0,
+        "inclusive_ms_per_frame": 0.19204165341812404,
+        "self_ms_per_frame": 0.009707631160572338
+      },
+      {
+        "category": "rg",
+        "name": "Materialize",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.008310174880763117,
+        "self_ms_per_frame": 0.008310174880763117
+      },
+      {
+        "category": "render",
+        "name": "Cluster.ResourceUse",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.006953259141494431,
+        "self_ms_per_frame": 0.006953259141494431
+      },
+      {
+        "category": "app",
+        "name": "TemporalRecording",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.005771701112877582,
+        "self_ms_per_frame": 0.005771701112877582
+      },
+      {
+        "category": "render",
+        "name": "Cluster.FrameResources",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.005767090620031793,
+        "self_ms_per_frame": 0.005767090620031793
+      },
+      {
+        "category": "app",
+        "name": "FrameCompletion",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.005051510333863272,
+        "self_ms_per_frame": 0.005051510333863272
+      },
+      {
+        "category": "rg",
+        "name": "StateUpdateConstruction",
+        "calls": 637.0,
+        "inclusive_ms_per_frame": 0.004337996820349761,
+        "self_ms_per_frame": 0.004337996820349761
+      },
+      {
+        "category": "rg",
+        "name": "Execute",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.969505246422894,
+        "self_ms_per_frame": 0.004116057233704296
+      },
+      {
+        "category": "render",
+        "name": "Cluster.InstanceTransfer",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.0039017488076311642,
+        "self_ms_per_frame": 0.0039017488076311642
+      },
+      {
+        "category": "render",
+        "name": "Cluster.SceneBounds",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.003599046104928468,
+        "self_ms_per_frame": 0.003599046104928468
+      },
+      {
+        "category": "render",
+        "name": "Prepare.ClusterResidency",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.0033647058823529394,
+        "self_ms_per_frame": 0.0033647058823529394
+      },
+      {
+        "category": "app",
+        "name": "GameUpdate",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.049522734499205114,
+        "self_ms_per_frame": 0.0013426073131955437
+      },
+      {
+        "category": "app",
+        "name": "PrepareCommit",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.0009451510333863334,
+        "self_ms_per_frame": 0.0009451510333863334
+      },
+      {
+        "category": "rg",
+        "name": "LateReleases",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.0007852146263910949,
+        "self_ms_per_frame": 0.0007852146263910949
+      },
+      {
+        "category": "rg",
+        "name": "Diagnostics",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.00035786963434022144,
+        "self_ms_per_frame": 0.00035786963434022144
+      },
+      {
+        "category": "render",
+        "name": "Cluster.ResidencyUploads",
+        "calls": 629.0,
+        "inclusive_ms_per_frame": 0.0003421303656597786,
+        "self_ms_per_frame": 0.0003421303656597786
+      }
+    ]
+  },
+  {
+    "scene": "Amazon Bistro",
+    "trace_complete": true,
+    "dropped_events": 0,
+    "scope_errors": 0,
+    "issue_count": 0,
+    "sample_frames": 315,
+    "first_sample_frame": 396,
+    "last_sample_frame": 710,
+    "costs": [
+      {
+        "category": "wait",
+        "name": "CpuFenceWait",
+        "calls": 334.0,
+        "inclusive_ms_per_frame": 2.486692063492063,
+        "self_ms_per_frame": 2.486692063492063
+      },
+      {
+        "category": "render",
+        "name": "Cluster.MaterialInputs",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 1.2096050793650797,
+        "self_ms_per_frame": 1.2096050793650797
+      },
+      {
+        "category": "frame",
+        "name": "Frame",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 6.387046031746032,
+        "self_ms_per_frame": 0.6275441269841269
+      },
+      {
+        "category": "rg",
+        "name": "SubmitAssembly",
+        "calls": 630.0,
+        "inclusive_ms_per_frame": 0.5891711111111111,
+        "self_ms_per_frame": 0.42280603174603193
+      },
+      {
+        "category": "app",
+        "name": "ExecuteFrame",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 3.1004301587301617,
+        "self_ms_per_frame": 0.24208253968253968
+      },
+      {
+        "category": "rg",
+        "name": "CommandLists",
+        "calls": 945.0,
+        "inclusive_ms_per_frame": 0.2269412698412698,
+        "self_ms_per_frame": 0.19959873015873011
+      },
+      {
+        "category": "rg",
+        "name": "StateCommit",
+        "calls": 630.0,
+        "inclusive_ms_per_frame": 0.1630276190476191,
+        "self_ms_per_frame": 0.1630276190476191
+      },
+      {
+        "category": "app",
+        "name": "RenderSystems",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 1.6923085714285717,
+        "self_ms_per_frame": 0.12398857142857146
+      },
+      {
+        "category": "render",
+        "name": "Cluster.Update",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 1.56832,
+        "self_ms_per_frame": 0.12131142857142861
+      },
+      {
+        "category": "rg",
+        "name": "BoundaryObservation",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.11604222222222217,
+        "self_ms_per_frame": 0.11604222222222217
+      },
+      {
+        "category": "render",
+        "name": "Cluster.FrameUploads",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.1123987301587303,
+        "self_ms_per_frame": 0.1123987301587303
+      },
+      {
+        "category": "rg",
+        "name": "Rows",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.10115746031746035,
+        "self_ms_per_frame": 0.10115746031746035
+      },
+      {
+        "category": "render",
+        "name": "Cluster.ResidencyReads",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.0993069841269841,
+        "self_ms_per_frame": 0.0993069841269841
+      },
+      {
+        "category": "render",
+        "name": "Prepare.ClusterMaterials",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.06392063492063495,
+        "self_ms_per_frame": 0.06392063492063495
+      },
+      {
+        "category": "rg",
+        "name": "WaitCollection",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.061520000000000005,
+        "self_ms_per_frame": 0.061520000000000005
+      },
+      {
+        "category": "ecs",
+        "name": "RenderExtraction",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.04919142857142854,
+        "self_ms_per_frame": 0.04919142857142854
+      },
+      {
+        "category": "app",
+        "name": "PrepareSystems",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.11546571428571434,
+        "self_ms_per_frame": 0.025625079365079375
+      },
+      {
+        "category": "app",
+        "name": "Prepare",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.16186126984126983,
+        "self_ms_per_frame": 0.024485079365079362
+      },
+      {
+        "category": "app",
+        "name": "ExtractionApply",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.0210825396825397,
+        "self_ms_per_frame": 0.0210825396825397
+      },
+      {
+        "category": "rg",
+        "name": "RecordSubmit",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.8972698412698412,
+        "self_ms_per_frame": 0.019120952380952395
+      },
+      {
+        "category": "rg",
+        "name": "BindingResolution",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.018179365079365066,
+        "self_ms_per_frame": 0.018179365079365066
+      },
+      {
+        "category": "rg",
+        "name": "PassDispatch",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.027342539682539677,
+        "self_ms_per_frame": 0.016121269841269836
+      },
+      {
+        "category": "render",
+        "name": "Prepare.ClusterInstances",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.012426031746031742,
+        "self_ms_per_frame": 0.012426031746031742
+      },
+      {
+        "category": "pass",
+        "name": "Callbacks",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.011221269841269836,
+        "self_ms_per_frame": 0.011221269841269836
+      },
+      {
+        "category": "render",
+        "name": "Prepare.View",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.010791111111111102,
+        "self_ms_per_frame": 0.010791111111111102
+      },
+      {
+        "category": "rg",
+        "name": "Materialize",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.010250476190476188,
+        "self_ms_per_frame": 0.010250476190476188
+      },
+      {
+        "category": "app",
+        "name": "ReconcileGraph",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.009754285714285708,
+        "self_ms_per_frame": 0.009754285714285708
+      },
+      {
+        "category": "rg",
+        "name": "Synchronization",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.009719047619047624,
+        "self_ms_per_frame": 0.009719047619047624
+      },
+      {
+        "category": "render",
+        "name": "Cluster.RasterInputs",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.008773015873015882,
+        "self_ms_per_frame": 0.008773015873015882
+      },
+      {
+        "category": "render",
+        "name": "Cluster.ResourceUse",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.006652698412698422,
+        "self_ms_per_frame": 0.006652698412698422
+      },
+      {
+        "category": "app",
+        "name": "TemporalRecording",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.005328888888888879,
+        "self_ms_per_frame": 0.005328888888888879
+      },
+      {
+        "category": "render",
+        "name": "Cluster.FrameResources",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.004541587301587308,
+        "self_ms_per_frame": 0.004541587301587308
+      },
+      {
+        "category": "app",
+        "name": "FrameCompletion",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.004313333333333344,
+        "self_ms_per_frame": 0.004313333333333344
+      },
+      {
+        "category": "rg",
+        "name": "Execute",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 1.156396825396825,
+        "self_ms_per_frame": 0.0035511111111111086
+      },
+      {
+        "category": "rg",
+        "name": "StateUpdateConstruction",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.0033374603174603184,
+        "self_ms_per_frame": 0.0033374603174603184
+      },
+      {
+        "category": "render",
+        "name": "Cluster.SceneBounds",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.002770793650793648,
+        "self_ms_per_frame": 0.002770793650793648
+      },
+      {
+        "category": "render",
+        "name": "Cluster.InstanceTransfer",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.0027092063492063475,
+        "self_ms_per_frame": 0.0027092063492063475
+      },
+      {
+        "category": "render",
+        "name": "Prepare.ClusterResidency",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.0027028571428571384,
+        "self_ms_per_frame": 0.0027028571428571384
+      },
+      {
+        "category": "app",
+        "name": "GameUpdate",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.050458730158730127,
+        "self_ms_per_frame": 0.0012673015873015886
+      },
+      {
+        "category": "app",
+        "name": "PrepareCommit",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.0008279365079365073,
+        "self_ms_per_frame": 0.0008279365079365073
+      },
+      {
+        "category": "wait",
+        "name": "TaskCompletion",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.0007641269841269849,
+        "self_ms_per_frame": 0.0007641269841269849
+      },
+      {
+        "category": "rg",
+        "name": "LateReleases",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.0005165079365079368,
+        "self_ms_per_frame": 0.0005165079365079368
+      },
+      {
+        "category": "render",
+        "name": "Cluster.ResidencyUploads",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.00025047619047619056,
+        "self_ms_per_frame": 0.00025047619047619056
+      },
+      {
+        "category": "rg",
+        "name": "Diagnostics",
+        "calls": 315.0,
+        "inclusive_ms_per_frame": 0.00022730158730158834,
+        "self_ms_per_frame": 0.00022730158730158834
+      }
+    ]
+  }
+]

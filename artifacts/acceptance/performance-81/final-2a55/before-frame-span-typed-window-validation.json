@@ -1,0 +1,106 @@
+{
+  "Renderer": "9e5061c4f5d34702edd48ddee461ecc0ad255f5e",
+  "ObserverSource": "8effe75926070d22797124d74af6422df2642cf6",
+  "StartedUtc": "2026-10-06T12:37:10.2416149Z",
+  "FinishedUtc": "2026-10-06T12:38:07.1533539Z",
+  "OuterSeconds": 56.9347522,
+  "ExitCode": 1,
+  "PlatformComplete": false,
+  "PlatformElapsedSeconds": 45.411703,
+  "Scenes": [
+    {
+      "Scene": "1024 spheres",
+      "PlatformStatus": "Measured",
+      "Frames": 51,
+      "FirstFrameMs": 736.1577,
+      "QualityComplete": true,
+      "GpuComplete": true,
+      "MissingBias": 0,
+      "MissingGeometry": 0,
+      "FrameJoins": 51,
+      "FirstSceneFrame": 127,
+      "LastSceneFrame": 177,
+      "AppliedDirectionalViewBiases": [
+        0.23659372
+      ],
+      "DirectionalLodAdditions": [
+        0
+      ],
+      "LocalLodAdditions": [
+        0
+      ],
+      "UniqueViewSets": 2,
+      "QualityJSONBytes": 224198,
+      "QualitySerializationMs": 165.5194,
+      "AllObservedCallbackRetentionMs": 0.1113,
+      "GPUReadbackAndDecodeMs": 6.7148,
+      "GPUSerializationMs": 76.7879,
+      "SpanMeanMs": 40.46332826353033,
+      "SpanP50Ms": 39.866492067520085,
+      "SpanP95Ms": 42.807260067518655
+    },
+    {
+      "Scene": "Sponza",
+      "PlatformStatus": "Measured",
+      "Frames": 175,
+      "FirstFrameMs": 3394.2785,
+      "QualityComplete": true,
+      "GpuComplete": true,
+      "MissingBias": 0,
+      "MissingGeometry": 0,
+      "FrameJoins": 175,
+      "FirstSceneFrame": 236,
+      "LastSceneFrame": 410,
+      "AppliedDirectionalViewBiases": [
+        0.7156656
+      ],
+      "DirectionalLodAdditions": [
+        0
+      ],
+      "LocalLodAdditions": [
+        0
+      ],
+      "UniqueViewSets": 2,
+      "QualityJSONBytes": 361119,
+      "QualitySerializationMs": 30.2694,
+      "AllObservedCallbackRetentionMs": 0.1127,
+      "GPUReadbackAndDecodeMs": 0.6891,
+      "GPUSerializationMs": 13.7396,
+      "SpanMeanMs": 11.37352468838568,
+      "SpanP50Ms": 11.25763190158068,
+      "SpanP95Ms": 12.289887901580187
+    },
+    {
+      "Scene": "Amazon Bistro",
+      "PlatformStatus": "Not converged within time limit",
+      "Frames": 48,
+      "FirstFrameMs": 11743.3074,
+      "QualityComplete": true,
+      "GpuComplete": true,
+      "MissingBias": 0,
+      "MissingGeometry": 0,
+      "FrameJoins": 48,
+      "FirstSceneFrame": 127,
+      "LastSceneFrame": 174,
+      "AppliedDirectionalViewBiases": [
+        0.7156656
+      ],
+      "DirectionalLodAdditions": [
+        0
+      ],
+      "LocalLodAdditions": [
+        0
+      ],
+      "UniqueViewSets": 2,
+      "QualityJSONBytes": 165264,
+      "QualitySerializationMs": 31.1774,
+      "AllObservedCallbackRetentionMs": 0.0519,
+      "GPUReadbackAndDecodeMs": 0.2248,
+      "GPUSerializationMs": 13.1159,
+      "SpanMeanMs": 17.24470075974538,
+      "SpanP50Ms": 17.279152083159715,
+      "SpanP95Ms": 17.772328102997562
+    }
+  ],
+  "Scope": "Complete per-scene observation of actual collected sample IDs; global feedback remains failed for insufficient Bistro2sec sampling. Calibrated queue spans include dependency/submit gaps; output encoding and callback cost measured separately. Native9e shaders/quality/sampling unchanged."
+}

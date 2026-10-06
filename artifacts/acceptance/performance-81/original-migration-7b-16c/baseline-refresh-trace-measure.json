@@ -1,0 +1,14 @@
+{
+  "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+  "started_utc": "2026-10-04T02:21:31.0185813+00:00",
+  "elapsed_seconds": 50.1416994,
+  "feedback_seconds": 49.23,
+  "within_60_seconds": true,
+  "script_success": true,
+  "error": null,
+  "report": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\baseline-refresh\\Performance\\20261004-102138-726\\results.json",
+  "trace_enabled": true,
+  "content_root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres",
+  "scene_list": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-test-scenes.json",
+  "command": "& 'F:\\.codex\\worktrees\\rg70-ticket-81\\SomeEngine.Next\\tools\\Measure-Scenes.ps1' -Trace -ApplicationPath 'F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\applications\\baseline-refresh\\Game.App.exe'"
+}

@@ -1,0 +1,21 @@
+{
+  "WallSeconds": 10.4487082,
+  "Scope": "Exactly one fixed-order controlled CPU/GPU-idle NONTRACE unified3scene feedback; original sampling/default features; builds excluded; no best-run selection",
+  "Command": "pwsh",
+  "ExitCode": 1,
+  "ShadowSettings": "F:/SomeEngine.AgentWork/rg70-remaining/historical-refresh-81/shared-final-shadow-settings.json",
+  "Source": "c1904b34153da583be08115a35f26bb7af8658e6",
+  "Arguments": [
+    "-NoProfile",
+    "-File",
+    "F:/SomeEngine.AgentWork/rg70-remaining/trees/fast-config-throughput-81/tools/Measure-Scenes.ps1",
+    "-ApplicationPath",
+    "F:/SomeEngine.AgentWork/rg70-remaining/trees/fast-config-throughput-81/templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe"
+  ],
+  "Purpose": "Recent fast renderer with explicit final-default configured shadow quality",
+  "FinishedUtc": "2026-10-06T13:31:49.3998126Z",
+  "StartedUtc": "2026-10-06T13:31:38.9858825Z",
+  "ReportPaths": [
+    null
+  ]
+}

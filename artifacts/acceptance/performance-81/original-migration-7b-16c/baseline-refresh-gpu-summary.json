@@ -1,0 +1,47 @@
+[
+  {
+    "version": "baseline-refresh-gpu",
+    "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+    "scene": "1024 spheres",
+    "complete": true,
+    "frames": 531,
+    "mean_gpu_ms": 6.473183773780722,
+    "median_gpu_ms": 6.475872039794922,
+    "p95_gpu_ms": 6.81276798248291,
+    "mean_graphics_queue_ms": 3.7511356986817335,
+    "mean_compute_queue_ms": 0.03211233145009413,
+    "mean_copy_queue_ms": 0.0,
+    "mean_submissions": 2.0,
+    "raw_intervals_path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-gpu\\scene-0.json"
+  },
+  {
+    "version": "baseline-refresh-gpu",
+    "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+    "scene": "Sponza",
+    "complete": true,
+    "frames": 649,
+    "mean_gpu_ms": 5.074668417910031,
+    "median_gpu_ms": 5.088235974311829,
+    "p95_gpu_ms": 5.225451946258545,
+    "mean_graphics_queue_ms": 3.0545336209553158,
+    "mean_compute_queue_ms": 0.0329841602465331,
+    "mean_copy_queue_ms": 0.0,
+    "mean_submissions": 2.0,
+    "raw_intervals_path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-gpu\\scene-1.json"
+  },
+  {
+    "version": "baseline-refresh-gpu",
+    "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+    "scene": "Amazon Bistro",
+    "complete": true,
+    "frames": 321,
+    "mean_gpu_ms": 10.801976078767272,
+    "median_gpu_ms": 10.873955965042114,
+    "p95_gpu_ms": 10.999907970428467,
+    "mean_graphics_queue_ms": 6.236108959501558,
+    "mean_compute_queue_ms": 0.004615975077881637,
+    "mean_copy_queue_ms": 0.0,
+    "mean_submissions": 2.0,
+    "raw_intervals_path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-gpu\\scene-2.json"
+  }
+]

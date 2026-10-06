@@ -1,0 +1,137 @@
+[
+  {
+    "Run": "native-pre71",
+    "Source": "7b03495c2440664f5c2d08d6912be4edf7445630",
+    "Purpose": "Original pre71 native-default cost attribution",
+    "Settings": null,
+    "ExitCode": 0,
+    "OuterSeconds": 45.4038308,
+    "Complete": true,
+    "ReportCount": 1,
+    "Scenes": [
+      {
+        "Scene": "1024 spheres",
+        "Status": "Measured",
+        "Frames": 515,
+        "MedianMs": 3.8708,
+        "P95Ms": 4.3515,
+        "MeanMs": 3.889230873786409
+      },
+      {
+        "Scene": "Sponza",
+        "Status": "Measured",
+        "Frames": 727,
+        "MedianMs": 2.6993,
+        "P95Ms": 3.1648,
+        "MeanMs": 2.752389133425036
+      },
+      {
+        "Scene": "Amazon Bistro",
+        "Status": "Measured",
+        "Frames": 294,
+        "MedianMs": 6.8406,
+        "P95Ms": 7.4612,
+        "MeanMs": 6.838773129251699
+      }
+    ],
+    "FailureScope": null
+  },
+  {
+    "Run": "native-fast-reference",
+    "Source": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+    "Purpose": "Recent fast native-default cost attribution",
+    "Settings": null,
+    "ExitCode": 0,
+    "OuterSeconds": 45.0862433,
+    "Complete": true,
+    "ReportCount": 1,
+    "Scenes": [
+      {
+        "Scene": "1024 spheres",
+        "Status": "Measured",
+        "Frames": 524,
+        "MedianMs": 3.7834,
+        "P95Ms": 4.2498,
+        "MeanMs": 3.8203971374045813
+      },
+      {
+        "Scene": "Sponza",
+        "Status": "Measured",
+        "Frames": 1089,
+        "MedianMs": 1.785,
+        "P95Ms": 2.212,
+        "MeanMs": 1.8359611570247947
+      },
+      {
+        "Scene": "Amazon Bistro",
+        "Status": "Measured",
+        "Frames": 642,
+        "MedianMs": 3.0865,
+        "P95Ms": 3.5841,
+        "MeanMs": 3.1214571651090366
+      }
+    ],
+    "FailureScope": null
+  },
+  {
+    "Run": "shared-pre71",
+    "Source": "1f33d2fd90036d284b21502e841606ec92d3decd",
+    "Purpose": "Pre71 renderer with explicit final-default configured shadow quality",
+    "Settings": "F:/SomeEngine.AgentWork/rg70-remaining/historical-refresh-81/shared-final-shadow-settings.json",
+    "ExitCode": 1,
+    "OuterSeconds": 9.9332111,
+    "Complete": false,
+    "ReportCount": 0,
+    "Scenes": [],
+    "FailureScope": "Startup D3D12 texture allocation rejection; zero report/zero samples"
+  },
+  {
+    "Run": "shared-fast-reference",
+    "Source": "c1904b34153da583be08115a35f26bb7af8658e6",
+    "Purpose": "Recent fast renderer with explicit final-default configured shadow quality",
+    "Settings": "F:/SomeEngine.AgentWork/rg70-remaining/historical-refresh-81/shared-final-shadow-settings.json",
+    "ExitCode": 1,
+    "OuterSeconds": 10.4487082,
+    "Complete": false,
+    "ReportCount": 0,
+    "Scenes": [],
+    "FailureScope": "Startup D3D12 texture allocation rejection; zero report/zero samples"
+  },
+  {
+    "Run": "final",
+    "Source": "2a55ca9006e586072d11ea01193662deee567d4f",
+    "Purpose": "Final production defaults equal shared configured values",
+    "Settings": null,
+    "ExitCode": 0,
+    "OuterSeconds": 45.5927199,
+    "Complete": true,
+    "ReportCount": 1,
+    "Scenes": [
+      {
+        "Scene": "1024 spheres",
+        "Status": "Measured",
+        "Frames": 278,
+        "MedianMs": 7.2373,
+        "P95Ms": 8.0208,
+        "MeanMs": 7.2332071942446055
+      },
+      {
+        "Scene": "Sponza",
+        "Status": "Measured",
+        "Frames": 270,
+        "MedianMs": 7.4106,
+        "P95Ms": 8.3522,
+        "MeanMs": 7.460718888888887
+      },
+      {
+        "Scene": "Amazon Bistro",
+        "Status": "Measured",
+        "Frames": 263,
+        "MedianMs": 7.6573,
+        "P95Ms": 8.5725,
+        "MeanMs": 7.633699999999998
+      }
+    ],
+    "FailureScope": null
+  }
+]

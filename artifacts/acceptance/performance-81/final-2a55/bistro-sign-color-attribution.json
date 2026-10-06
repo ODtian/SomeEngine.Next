@@ -1,0 +1,43 @@
+{
+  "SourceMaterialIndex": 19,
+  "SourceMaterialName": "Bistro_Sign_Letters",
+  "SourceMeshIndex": 143,
+  "MeshAsset": "e562085a-5645-416b-827a-9f1ecc2db0e0",
+  "SubmittedFrame": 63,
+  "Frame": 63,
+  "SourceEmissiveFactor": [
+    1,
+    0,
+    0
+  ],
+  "SourceEmissiveStrength": 100,
+  "ImportedEmissiveFactor": [
+    100,
+    0,
+    0
+  ],
+  "ProjectedSourceBoundsPixels": [
+    460,
+    186,
+    678,
+    227
+  ],
+  "ProjectedSourceTriangleMaskPixels": 2177,
+  "RawLinearRGBMedian": [
+    0.0012273788452148438,
+    0.002468109130859375,
+    0.0015411376953125
+  ],
+  "RawLinearRGBMin": [
+    3.9458274841308594e-05,
+    4.786252975463867e-05,
+    3.9458274841308594e-05
+  ],
+  "RawLinearRGBMax": [
+    0.060638427734375,
+    0.08477783203125,
+    100.0
+  ],
+  "BlueDominantHighEnergyPixelsInSourceGeometryMask": 823,
+  "Scope": "Original source triangles projected with actual captured instance/view/jittered projection. Mask includes every projected source sign triangle and may include silhouette/occluded pixels; data is source-surface attribution, not a new filtered reference gate."
+}

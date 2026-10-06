@@ -1,0 +1,164 @@
+{
+  "captured_at_utc": "2026-10-04T02:36:52.552136+00:00",
+  "source_pairs": [
+    {
+      "sources": [
+        "7b03495c2440664f5c2d08d6912be4edf7445630",
+        "16c3a15bcf6870b0eac59581aa06d8df35e6b307"
+      ],
+      "render_options_equal": true,
+      "resolution_and_behavior_equal": true,
+      "options": {
+        "GraphicsDevice": "NVIDIA GeForce RTX 3080",
+        "GraphicsDriver": "32.0.16.1074",
+        "Processor": "Intel64 Family 6 Model 63 Stepping 2, GenuineIntel",
+        "Framework": ".NET 10.0.12",
+        "TieredCompilation": "false",
+        "TemporalAntialiasing": true,
+        "VirtualShadows": true,
+        "AsyncCompute": true,
+        "ForceHardwareRaster": false,
+        "UseInstanceGroups": false,
+        "FixedFrameSeconds": 0.016666668,
+        "SynchronousFrames": false,
+        "ScenePlayback": null,
+        "DisableMeshShaders": false,
+        "DeviceValidation": false,
+        "GeometryMemoryMegabytes": 256
+      }
+    },
+    {
+      "sources": [
+        "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+        "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85"
+      ],
+      "render_options_equal": true,
+      "resolution_and_behavior_equal": true,
+      "options": {
+        "GraphicsDevice": "NVIDIA GeForce RTX 3080",
+        "GraphicsDriver": "32.0.16.1074",
+        "Processor": "Intel64 Family 6 Model 63 Stepping 2, GenuineIntel",
+        "Framework": ".NET 10.0.12",
+        "TieredCompilation": "false",
+        "TemporalAntialiasing": true,
+        "VirtualShadows": true,
+        "AsyncCompute": true,
+        "ForceHardwareRaster": false,
+        "UseInstanceGroups": false,
+        "FixedFrameSeconds": 0.016666668,
+        "SynchronousFrames": false,
+        "ScenePlayback": null,
+        "DisableMeshShaders": false,
+        "DeviceValidation": false,
+        "GeometryMemoryMegabytes": 256
+      }
+    }
+  ],
+  "content_manifests": [
+    {
+      "generation": "legacy",
+      "scene": "1024 spheres",
+      "path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres\\Library\\AssetManifest\\catalog.json",
+      "sha256": "E21603FA9FC9AF0C48CD4CB397F445938493CF25D1EB6C3786FDB674E4B45FE4"
+    },
+    {
+      "generation": "legacy",
+      "scene": "Sponza",
+      "path": "F:\\SomeEngine.Next\\samples\\ImportedScenes\\Apps\\Sponza\\Library\\AssetManifest\\catalog.json",
+      "sha256": "795FA8F9748DC3285764931E278AF141EFB4F89C07BD9442EA9ED9454993D6A3"
+    },
+    {
+      "generation": "legacy",
+      "scene": "Amazon Bistro",
+      "path": "F:\\SomeEngine.Next\\samples\\ImportedScenes\\Apps\\Bistro\\Library\\AssetManifest\\catalog.json",
+      "sha256": "0FCE893A167035499B1FBE6A1ABE62422C4FCE959AAB698C62C2C5292BDE0BC9"
+    },
+    {
+      "generation": "shadow-fixed",
+      "scene": "1024 spheres",
+      "path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\ticket-125\\templates\\DefaultProject\\Library\\AssetManifest\\catalog.json",
+      "sha256": "0B5D6A94D17F49B509345F80C2D8D47466EEE2703F2498D7BED112064112AEB3"
+    },
+    {
+      "generation": "shadow-fixed",
+      "scene": "Sponza",
+      "path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\ticket-125\\samples\\ImportedScenes\\Apps\\Sponza\\Library\\AssetManifest\\catalog.json",
+      "sha256": "13835C2C0A7F6411DE26FC52774BC986C1BB3DB0F28B4923C90E1B98AE33E533"
+    },
+    {
+      "generation": "shadow-fixed",
+      "scene": "Amazon Bistro",
+      "path": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\ticket-125\\samples\\ImportedScenes\\Apps\\Bistro\\Library\\AssetManifest\\catalog.json",
+      "sha256": "F4EEE0A84D5496EF5D709F75B2A384F40C132867AD6B0E33D6070D21DE244E84"
+    }
+  ],
+  "shadow_settings": [
+    {
+      "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
+      "settings_sha256": "8ee3a97f408e4fa5510e9eab55fa900a24ea5241f31ef7366e8e5cbd75eaaa0d",
+      "dynamic_resolution_enabled": false,
+      "VirtualResolution": "16_384",
+      "AtlasSize": "4_096",
+      "PageSize": "128",
+      "DepthBias": "0.0005f",
+      "NormalBias": "0.01f",
+      "DynamicResolutionTargetRasterWork": "250_000",
+      "DynamicResolutionPagePoolLoadStart": "0.85f",
+      "DynamicResolutionMaxDirectionalLodBias": "2.0f",
+      "MaxFilterRadiusTexels": "default 0"
+    },
+    {
+      "source_sha": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+      "settings_sha256": "8ee3a97f408e4fa5510e9eab55fa900a24ea5241f31ef7366e8e5cbd75eaaa0d",
+      "dynamic_resolution_enabled": false,
+      "VirtualResolution": "16_384",
+      "AtlasSize": "4_096",
+      "PageSize": "128",
+      "DepthBias": "0.0005f",
+      "NormalBias": "0.01f",
+      "DynamicResolutionTargetRasterWork": "250_000",
+      "DynamicResolutionPagePoolLoadStart": "0.85f",
+      "DynamicResolutionMaxDirectionalLodBias": "2.0f",
+      "MaxFilterRadiusTexels": "default 0"
+    },
+    {
+      "source_sha": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+      "settings_sha256": "c5963f5375b9effbea24d8ed72275685d396be6f02a05c75e63f0da6308eb3af",
+      "dynamic_resolution_enabled": true,
+      "VirtualResolution": "16_384",
+      "AtlasSize": "4_096",
+      "PageSize": "128",
+      "DepthBias": "0.00002f",
+      "NormalBias": "0.01f",
+      "DynamicResolutionTargetRasterWork": "250_000",
+      "DynamicResolutionPagePoolLoadStart": "0.85f",
+      "DynamicResolutionMaxDirectionalLodBias": "2.0f",
+      "MaxFilterRadiusTexels": "default 0"
+    },
+    {
+      "source_sha": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+      "settings_sha256": "c5963f5375b9effbea24d8ed72275685d396be6f02a05c75e63f0da6308eb3af",
+      "dynamic_resolution_enabled": true,
+      "VirtualResolution": "16_384",
+      "AtlasSize": "4_096",
+      "PageSize": "128",
+      "DepthBias": "0.00002f",
+      "NormalBias": "0.01f",
+      "DynamicResolutionTargetRasterWork": "250_000",
+      "DynamicResolutionPagePoolLoadStart": "0.85f",
+      "DynamicResolutionMaxDirectionalLodBias": "2.0f",
+      "MaxFilterRadiusTexels": "default 0"
+    }
+  ],
+  "formal_proof_paths": [
+    "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-refresh-initial-measure.json",
+    "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\post-initial-measure.json",
+    "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\reference-125-initial-measure.json",
+    "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\current-127-initial-measure.json"
+  ],
+  "cpu_trace_complete": true,
+  "gpu_binary_identity": true,
+  "same_source_content_options_equal": true,
+  "temporary_probe_cleanup_complete": true,
+  "original_programs_restored": true
+}

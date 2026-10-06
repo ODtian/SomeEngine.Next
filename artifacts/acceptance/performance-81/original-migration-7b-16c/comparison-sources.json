@@ -1,0 +1,42 @@
+[
+  {
+    "root": "F:\\.codex\\worktrees\\rg70-ticket-81\\SomeEngine.Next",
+    "source": "7b03495c2440664f5c2d08d6912be4edf7445630",
+    "pair": "migration",
+    "manifest_sha256": "E21603FA9FC9AF0C48CD4CB397F445938493CF25D1EB6C3786FDB674E4B45FE4",
+    "content": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres",
+    "scene_list_sha256": "FC7CC6FB8F4473BE70703FF937FFA717A96439246B3A9B98D87CF92CEE799673",
+    "runtimeconfig_sha256": "1AE3FC161EB583DBC3ACFF1A40549EFD71C6350290C1379D8BE7C006AB0626B3",
+    "scenes": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-test-scenes.json"
+  },
+  {
+    "root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\ticket-81-post",
+    "source": "16c3a15bcf6870b0eac59581aa06d8df35e6b307",
+    "pair": "migration",
+    "manifest_sha256": "E21603FA9FC9AF0C48CD4CB397F445938493CF25D1EB6C3786FDB674E4B45FE4",
+    "content": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres",
+    "scene_list_sha256": "FC7CC6FB8F4473BE70703FF937FFA717A96439246B3A9B98D87CF92CEE799673",
+    "runtimeconfig_sha256": "1AE3FC161EB583DBC3ACFF1A40549EFD71C6350290C1379D8BE7C006AB0626B3",
+    "scenes": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\baseline-test-scenes.json"
+  },
+  {
+    "root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\performance-reference-125",
+    "source": "cbb28b28b3e0a1747909f89b40c5952ac805f201",
+    "pair": "shadow-fixed",
+    "manifest_sha256": "0B5D6A94D17F49B509345F80C2D8D47466EEE2703F2498D7BED112064112AEB3",
+    "content": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\ticket-125\\templates\\DefaultProject",
+    "scene_list_sha256": "C4E9FB285943D26AB6CE05822AE74B3F39810FC4BA242AD15C75B41040A08B7F",
+    "runtimeconfig_sha256": "1AE3FC161EB583DBC3ACFF1A40549EFD71C6350290C1379D8BE7C006AB0626B3",
+    "scenes": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\shadow-fixed-test-scenes.json"
+  },
+  {
+    "root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\performance-current-127",
+    "source": "b83555ceb1bcebb7a33bcbcad79b8c05a0914e85",
+    "pair": "shadow-fixed",
+    "manifest_sha256": "0B5D6A94D17F49B509345F80C2D8D47466EEE2703F2498D7BED112064112AEB3",
+    "content": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\trees\\ticket-125\\templates\\DefaultProject",
+    "scene_list_sha256": "C4E9FB285943D26AB6CE05822AE74B3F39810FC4BA242AD15C75B41040A08B7F",
+    "runtimeconfig_sha256": "1AE3FC161EB583DBC3ACFF1A40549EFD71C6350290C1379D8BE7C006AB0626B3",
+    "scenes": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\shadow-fixed-test-scenes.json"
+  }
+]

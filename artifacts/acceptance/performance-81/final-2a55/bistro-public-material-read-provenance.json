@@ -1,0 +1,16 @@
+{
+  "DevicesCreated": 0,
+  "Output": "F:/SomeEngine.AgentWork/rg70-remaining/final-measurement-81/bistro-source-material-values.json",
+  "SourceSHA256": "5CF999680939C9054BFBD6688F188A5F634376710E2B7B7431956E986FE7D1E1",
+  "TemporarySourceRemoved": true,
+  "ProjectSHA256": "1FD2488F0999E2B81A76BE572A57D44E36DAFA9E5D7711B514FAF7027F2DD317",
+  "ExecutedMaterials": 10,
+  "PublicAPI": [
+    "MaterialTypes.Register",
+    "SceneMaterialAsset.Register",
+    "AssetManifest.Load/List",
+    "MaterialAsset.OpenAsync",
+    "MaterialBlock.GetParameter"
+  ],
+  "Input": "F:/SomeEngine.AgentWork/rg70-remaining/trees/measure-final-81/samples/ImportedScenes/Apps/Bistro"
+}
