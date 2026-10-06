@@ -75,7 +75,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     // its raster dimensions so culling and LOD see the correct pixel scale.
     view.ScreenWidth = mipResolution;
     view.ScreenHeight = mipResolution;
-    view.GeometryLodScale = source.GeometryLodScale;
+    // The source Cluster view already includes the residency quality scale.
     view.StreamingPriorityCategory = 0u;
     view.LodThreshold = source.MaxPixelsPerEdge;
     view.SoftwareRasterEdgeThreshold = source.MinPixelsPerEdgeHardware;

@@ -47,6 +47,7 @@ public sealed partial class ClusterPipelineSystem
         internal ImmutableDictionary<int, RasterPhase> RasterPhases = ImmutableDictionary<int, RasterPhase>.Empty;
         internal RasterBinning?[] RasterBinning = new RasterBinning?[RasterPhaseCount];
         internal GraphRegionMap<uint, ShadeGroup> ShadeGroups = null!;
+        internal GraphRegionMap<uint, ShadeGroup> ReceiverGroups = null!;
         internal List<ClusterLayerDispatch> LayerDispatches = [];
         internal List<ClusterLayerDispatch> WinnerDispatches = [];
         internal GraphBufferInput ShadeBinUniforms = null!;

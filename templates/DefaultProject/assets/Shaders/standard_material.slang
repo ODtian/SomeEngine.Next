@@ -66,13 +66,29 @@ StandardPixelContext BuildStandardPixelContext(
     return ctx;
 }
 
-struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
+struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceReceiverEvaluate<SurfaceEval, Triangle>
 {
     // Textures
     Texture2D AlbedoMap;
     Texture2D NormalMap;
     Texture2D ARMMap;
     SamplerState MaterialSampler;
+
+    SurfaceReceiver evaluateReceiver(uint3 pixelCoord, uint instanceID, uint materialIndex,
+        SurfaceEval surface, float3 bary, Triangle triangle)
+    {
+        float3 baseNormal = normalize(surface.Normal);
+        float3 tangent = normalize(surface.Tangent.xyz - baseNormal * dot(baseNormal, surface.Tangent.xyz));
+        float3 bitangent = cross(baseNormal, tangent) * surface.Tangent.w;
+        float3 normalTS = NormalMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb * 2.0 - 1.0;
+        SurfaceReceiver receiver = (SurfaceReceiver)0;
+        receiver.ShadingNormal = normalize(tangent * normalTS.x + bitangent * normalTS.y + baseNormal * normalTS.z);
+        receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
+            triangle.Position2 - triangle.Position0), baseNormal);
+        if (dot(receiver.GeometricNormal, baseNormal) < 0.0) receiver.GeometricNormal = -receiver.GeometricNormal;
+        receiver.Flags = SURFACE_RECEIVER_LIGHTING;
+        return receiver;
+    }
 
     void evaluateSurface(
         uint3 pixelCoord,
@@ -91,14 +107,21 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         // Sample material textures
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
         float3 armSample    = ARMMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb;
-        float3 normalTS     = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;
         StandardScalars scalars = LoadMaterialScalars<StandardScalars>(materialSlot);
 
         // TBN matrix: transform normal from tangent space to world space
         float3 N_geom = normalize(ctx.worldNormal);
-        float3 T = normalize(ctx.worldTangent.xyz - N_geom * dot(N_geom, ctx.worldTangent.xyz)); // Gram-Schmidt
-        float3 B = cross(N_geom, T) * ctx.worldTangent.w; // handedness
-        float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
+        uint receiverIndex = (pixelCoord.z * Uniforms.ScreenHeight + pixelCoord.y) * Uniforms.ScreenWidth + pixelCoord.x;
+        SurfaceReceiver receiverData = SurfaceReceiverInputs[receiverIndex];
+        float3 mappedNormal;
+        if ((receiverData.Flags & SURFACE_RECEIVER_PRESENT) != 0u) mappedNormal = receiverData.ShadingNormal;
+        else
+        {
+            float3 normalTS = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;
+            float3 T = normalize(ctx.worldTangent.xyz - N_geom * dot(N_geom, ctx.worldTangent.xyz));
+            float3 B = cross(N_geom, T) * ctx.worldTangent.w;
+            mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
+        }
         float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
             triangle.Position2 - triangle.Position0), N_geom);
         if (dot(geometricNormal, N_geom) < 0.0) geometricNormal = -geometricNormal;

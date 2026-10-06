@@ -1,4 +1,5 @@
 #include "cluster_bin_common.slang"
+#include "cluster_view_access.slang"
 #include "cluster_instance_properties.slang"
 #include "resource_effects.slang"
 
@@ -96,7 +97,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
     DrawRequest entry = VisibleClusters[visibleIndex];
     if (Uniforms.PolicyTarget != 0u)
     {
-        ClusterRasterTargetView target = WorkTargetViews[DrawRequestViewIndex(entry)];
+        ClusterRasterTargetView target = WorkTargetViews[ClusterPhysicalViewIndex(DrawRequestViewIndex(entry))];
         if ((target.Padding.y & 1u) != 0u)
             InterlockedAdd(PolicyRasterWorkCounter[1u + target.Padding.x * 2u + (isSoftware ? 1u : 0u)], 1u);
         if ((target.Padding.y & 2u) != 0u)

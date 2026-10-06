@@ -284,6 +284,24 @@ internal sealed class MeshPages
         return true;
     }
 
+    internal ulong CalculateStreamingCapacityBytes(uint heapCapacity)
+    {
+        ulong roots = 0;
+        foreach (uint page in _lowestDetailPageIds)
+        {
+            _ = TrySource(page, out uint size, out _);
+            roots += PageHeap.AllocationSize(size);
+        }
+        return heapCapacity > roots ? heapCapacity - roots : 0;
+    }
+
+    internal uint CalculateStreamingPageBytes(uint page)
+    {
+        if (_lowestDetailPageIds.Contains(page) || !TrySource(page, out uint size, out _))
+            return 0;
+        return PageHeap.AllocationSize(size);
+    }
+
     public void StageResident(
         uint pageId,
         uint offset,

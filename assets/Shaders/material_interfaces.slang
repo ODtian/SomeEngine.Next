@@ -3,6 +3,7 @@
 
 #include "domain_interfaces.slang"
 #include "visibility_evaluate.slang"
+#include "surface_receiver.slang"
 
 [__AttributeUsage(_AttributeTargets.Struct)]
 struct MaterialScalarsAttribute

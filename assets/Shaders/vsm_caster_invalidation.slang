@@ -12,7 +12,7 @@ struct VirtualShadowInvalidationUniforms
     uint FrameIndex;
     uint HierarchyWordsPerView;
     uint MipLevelCount;
-    uint Pad2;
+    uint DeferredChangedInstanceCount;
 };
 
 ConstantBuffer<VirtualShadowInvalidationUniforms> Invalidation;
@@ -139,7 +139,7 @@ void InvalidateBoundsInView(
     uint viewIndex,
     VirtualShadowMapParameters view,
     float3 worldMin,
-    float3 worldMax, uint depthCacheClass)
+    float3 worldMax, uint depthCacheClass, bool deferred)
 {
     if ((view.Flags & VSM_VIEW_CACHED_DISTANT_LIGHT) != 0u) return;
     if (any(worldMin > worldMax) || BoundsOutsideLocalLight(view, worldMin, worldMax))
@@ -191,6 +191,11 @@ void InvalidateBoundsInView(
                 if (RequestedShadowPages[tableIndex] == Invalidation.FrameIndex)
                     requestFlags = RequestedPageFlags[tableIndex];
                 uint ignored;
+                if (deferred)
+                {
+                    InterlockedOr(PageMetadata[atlasPage].w, VSM_PAGE_DEFERRED_INVALIDATION, ignored);
+                    continue;
+                }
                 uint invalidation = depthCacheClass == 1u ? VSM_PAGE_INVALIDATE_STATIC | VSM_PAGE_INVALIDATE_DYNAMIC
                     : VSM_PAGE_INVALIDATE_DYNAMIC;
                 // Dynamic-only coarse retention is an explicit per-view policy.
@@ -212,6 +217,7 @@ void InvalidateMovedVirtualShadowCasters(uint3 group : SV_GroupID, uint lane : S
     if (changedIndex >= Invalidation.ChangedInstanceCount)
         return;
     uint instanceId = ChangedInstances[changedIndex];
+    bool deferred = changedIndex >= Invalidation.ChangedInstanceCount - Invalidation.DeferredChangedInstanceCount;
     float3 currentMin = InstanceWorldBounds[instanceId * 4u].xyz;
     float3 currentMax = InstanceWorldBounds[instanceId * 4u + 1u].xyz;
     float3 previousMin = InstanceWorldBounds[instanceId * 4u + 2u].xyz;
@@ -220,7 +226,7 @@ void InvalidateMovedVirtualShadowCasters(uint3 group : SV_GroupID, uint lane : S
     for (uint viewIndex = lane; viewIndex < Invalidation.ViewCount; viewIndex += 64u)
     {
         VirtualShadowMapParameters view = ShadowViews[viewIndex];
-        InvalidateBoundsInView(viewIndex, view, currentMin, currentMax, uint(InstanceWorldBounds[instanceId * 4u].w));
-        InvalidateBoundsInView(viewIndex, view, previousMin, previousMax, uint(InstanceWorldBounds[instanceId * 4u + 2u].w));
+        InvalidateBoundsInView(viewIndex, view, currentMin, currentMax, uint(InstanceWorldBounds[instanceId * 4u].w), deferred);
+        InvalidateBoundsInView(viewIndex, view, previousMin, previousMax, uint(InstanceWorldBounds[instanceId * 4u + 2u].w), deferred);
     }
 }

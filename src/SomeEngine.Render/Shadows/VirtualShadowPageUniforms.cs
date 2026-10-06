@@ -38,10 +38,10 @@ public struct VirtualShadowPageDemandUniforms
     public uint FrameIndex;
     public float PageDilationBorderPages;
     public float NormalBias;
-    public uint Pad1;
-    public uint Pad2;
-    public uint Pad3;
-    public uint Pad4;
+    public uint AdditionalReceiverLayerCount;
+    public uint CullBackfacingPixels;
+    public float FirstPersonPixelRequestBias;
+    public int FirstPersonPixelRequestMinLevel;
     public VirtualShadowReceiverProjection ReceiverProjection;
 }
 
@@ -62,7 +62,7 @@ public struct VirtualShadowPageAllocationUniforms
     public uint MaxPhysicalPages;
     public uint ViewCount;
     public uint FrameIndex;
-    public uint Pad0;
+    public int DeferredInvalidationBudget;
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
 }
@@ -88,7 +88,7 @@ public struct VirtualShadowInvalidationUniforms
     public uint FrameIndex;
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
-    public uint Pad2;
+    public uint DeferredChangedInstanceCount;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
