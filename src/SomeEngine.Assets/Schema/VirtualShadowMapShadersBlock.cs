@@ -5,7 +5,7 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 {
     public partial ShaderRef? ResetReceiverMasks { get; set; }
@@ -13,6 +13,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
     public partial ShaderRef? MarkPages { get; set; }
     public partial ShaderRef? MarkCoarsePages { get; set; }
     public partial ShaderRef? AllocatePages { get; set; }
+    public partial ShaderRef? MergeStatic { get; set; }
     public partial ShaderRef? ClearPages { get; set; }
     public partial ShaderRef? InitializeState { get; set; }
     public partial ShaderRef? InvalidateCasters { get; set; }
@@ -59,6 +60,8 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
         var result = new VirtualShadowMapShaders
         {
             Name = name,
+            MergeStaticShader = copy.MergeStatic is { } merge ? shaders[merge.Asset.Value] : null,
+            MergeStatic = copy.MergeStatic is { } mergeEntry ? Resolve(mergeEntry) : EntryPointReflection.Null,
             WorkFeedbackShader = copy.WorkFeedback is { } work ? shaders[work.Asset.Value] : null,
             WorkFeedback = copy.WorkFeedback is { } workEntry ? Resolve(workEntry) : EntryPointReflection.Null,
             ResetReceiverMasksShader = shaders[copy.ResetReceiverMasks!.Asset.Value],
