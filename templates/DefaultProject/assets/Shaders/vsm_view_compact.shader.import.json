@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "96639991e45ca867cfb9ee278f4148fccf9ec10b49caf308ca323c9a8a330488",
+  "input_hash": "24fa1b8aeb69f386ef0c42430cb07f227f480847464f5893065cd561c048f095",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_view.slang",
@@ -16,16 +16,20 @@
       "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
+      "relative_path": "../../assets/Shaders/vsm_page_dispatch.slang",
+      "content_hash": "2b5d6555e9e299de8e7b1b261edba0527a5ac7f2b814d06cbd3a21099e719294"
+    },
+    {
       "relative_path": "../../assets/Shaders/vsm_raster_work_common.slang",
       "content_hash": "efe7b377e4f9599a46a946ad2c830ef1cee4ea6a8abfa26c0d8408c1b4ba0dc8"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "b40dddd58f91e37b9572b01ed5cb15bb3a7e282965af0fc5a2ed8c4933c40773"
+      "content_hash": "b3c0a99f20ca72aa7879c89178f07beae1ed9fa48c390570451ad10a881c5088"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_view_compact.slang",
-      "content_hash": "d09147d4e74bec3ebea9ab87e5002aa23b8f1fe4cf9edcfe73b3dd677bf7faf9"
+      "content_hash": "b9832b62451b527347e5f3073f00da0bc7aaf5d93b119f862ed29a8ae3667a73"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_view_compact.slang",
@@ -45,11 +49,11 @@
     {
       "asset_guid": "5610ce5e-dcec-5518-affa-7a9efe3ce939",
       "sub_asset_key": "",
-      "input_hash": "96639991e45ca867cfb9ee278f4148fccf9ec10b49caf308ca323c9a8a330488",
+      "input_hash": "24fa1b8aeb69f386ef0c42430cb07f227f480847464f5893065cd561c048f095",
       "dependencies": [],
       "asset_path": "vsm_view_compact.shader.asset",
-      "version": "e801803a-c4cf-d8da-8131-7e65f408c653",
-      "content_hash": "92DA82823AB823538AFD5FD2796DBDF1FC97CF96CC8DDB238F333BC18C2288AD",
+      "version": "6e10ceae-4f37-0dbb-4dcd-716f137a6a47",
+      "content_hash": "264AF7F7577E3CFDBBABECE2C436148D6116B951C5AA0BAC6C930AE29AF57953",
       "asset_dependencies": []
     }
   ]

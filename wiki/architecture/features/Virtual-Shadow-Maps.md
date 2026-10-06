@@ -10,6 +10,9 @@ VSM 构造普通 unified render views，并通过 geometry pipeline 能力使用
 由 VSM 设置产生并写入每个公开 `VirtualShadowView`；默认 `0.01` 对应米场景。
 shader 将距离转换为原版厘米，计算 `log2(distance)`，先找到未偏置级别对应的 VSM，
 再读取该 VSM 的 `ResolutionLodBias`。该偏置包含配置值与相机 viewport / projection 标度。
+Game/Render 三种 light records 的 `ShadowSettings` 使用共同 `LightShadowSettings`，
+包含本光分辨率偏置与静止/可移动语义。既有 `LightRenderExtractor` 按值提取，
+`RenderLightSet` 持有当帧光数据；方向、point、spot 投影叠加各自的偏置，scene codec 保存这些输入。
 例如距离 192 厘米、first level 6 时，未偏置 index 为 1；它的偏置为 1 时选择 index 2。
 页请求与材质采样共用 `SelectDirectionalVirtualShadowView`，从目标级别寻找覆盖该位置的投影。
 
@@ -65,3 +68,12 @@ clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 
 `tools/Test-Shadows.ps1` 是已有测试入口，不等于全部新 Runtime 行为或完整独立参考门禁。
 [[architecture/validation/Shadow-Reference-2026-10-04]] 是历史记录；当前 #135 检查范围见
 [[architecture/validation/Vsm-Depth-Coverage-135]]，最终 #125/#127/#81 与 Standards/Spec 仍待验收。
+
+阴影几何选择使用每个光视图自身的投影和虚拟像素尺寸。压紧的 mip 视图保持光源投影，
+并将像素宽高缩到该 mip 的虚拟分辨率；traversal 与 cluster 选择消费这份视图数据，
+用户有限细分同样消费该光源投影的像素误差。每个 clipmap 因自身投影范围获得对应的几何精度。
+固定光源的遮挡者流送需求也由这些阴影视图产生，沿既有 RenderWorld 与驻留反馈通路接入。
+原版依据为固定提交 `396c9f059903aed5fec78ecd3d437a40c6415368` 的
+`NaniteShared.cpp:195–202` 与 `VirtualShadowMapArray.cpp:4958–4965,5008–5016`。
+当前深度代号继续消费几何驻留与材质输入 revision；局部几何/材质失效在 #147 与静态/动态缓存
+#141 中接合每个遮挡者的实际影响范围。

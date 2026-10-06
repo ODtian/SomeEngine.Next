@@ -17,9 +17,9 @@ public static class SceneSerialization
         .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
         .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f"))
-        .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32"))
-        .Register<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32"))
-        .Register<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32"));
+        .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"))
+        .Register<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"))
+        .Register<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"));
 
     private static SerializationTypeKey Key(string name, string fields)
         => new(BinaryTypeId.FromLogicalName("SomeEngine.Scene." + name), "SomeEngine.Scene." + name, BinaryFieldKey.FromName(fields));
@@ -28,6 +28,15 @@ public static class SceneSerialization
         writer.WriteSingle(value.X); writer.WriteSingle(value.Y); writer.WriteSingle(value.Z);
     }
     private static Vector3 ReadVector(ref DataReader reader) => new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+
+    private static void WriteShadowSettings(ref DataWriter writer, in LightShadowSettings value)
+    {
+        writer.WriteSingle(value.ResolutionLodBias);
+        writer.WriteUInt32((uint)value.Mobility);
+    }
+
+    private static LightShadowSettings ReadShadowSettings(ref DataReader reader)
+        => new(reader.ReadSingle(), (LightMobility)reader.ReadUInt32());
 
     private struct TransformCodec : ICanonicalComponentCodec<WorldTransform>
     {
@@ -78,9 +87,10 @@ public static class SceneSerialization
             WriteVector(ref writer, value.Color);
             writer.WriteSingle(value.Intensity);
             writer.WriteUInt32(value.LayerMask);
+            WriteShadowSettings(ref writer, value.ShadowSettings);
         }
         public void Read(ref DataReader reader, out DirectionalLight value) => value = new(
-            ReadVector(ref reader), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32());
+            ReadVector(ref reader), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32(), ReadShadowSettings(ref reader));
     }
     private struct PointCodec : ICanonicalComponentCodec<PointLight>
     {
@@ -91,9 +101,10 @@ public static class SceneSerialization
             WriteVector(ref writer, value.Color);
             writer.WriteSingle(value.Intensity);
             writer.WriteUInt32(value.LayerMask);
+            WriteShadowSettings(ref writer, value.ShadowSettings);
         }
         public void Read(ref DataReader reader, out PointLight value) => value = new(
-            ReadVector(ref reader), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32());
+            ReadVector(ref reader), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32(), ReadShadowSettings(ref reader));
     }
     private struct SpotCodec : ICanonicalComponentCodec<SpotLight>
     {
@@ -107,8 +118,9 @@ public static class SceneSerialization
             WriteVector(ref writer, value.Color);
             writer.WriteSingle(value.Intensity);
             writer.WriteUInt32(value.LayerMask);
+            WriteShadowSettings(ref writer, value.ShadowSettings);
         }
         public void Read(ref DataReader reader, out SpotLight value) => value = new(
-            ReadVector(ref reader), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32());
+            ReadVector(ref reader), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32(), ReadShadowSettings(ref reader));
     }
 }

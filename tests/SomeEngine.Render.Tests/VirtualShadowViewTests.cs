@@ -1,8 +1,10 @@
 using System.Numerics;
 using SomeEngine.Assets.Schema;
+using SomeEngine.ECS;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Lighting;
+using SomeEngine.Render.Systems;
 using SomeEngine.Render.Shadows;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
@@ -12,6 +14,43 @@ namespace SomeEngine.Render.Tests;
 
 public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
+    [Fact]
+    public async Task PointShadowViewsUseEachLightResolutionBiasFromTheGameWorld()
+    {
+        using var game = new World();
+        game.CreateEntity(new PointLight(Vector3.Zero, 10, Vector3.One, 1,
+            ShadowSettings: new(.25f, LightMobility.Static)));
+        game.CreateEntity(new PointLight(Vector3.UnitX, 10, Vector3.One, 1,
+            ShadowSettings: new(.75f, LightMobility.Static)));
+        using var world = new RenderWorld();
+        using var extraction = new RenderExtractionSystems(world, new LightRenderExtractor());
+        extraction.Extract(game);
+        graphics.Apply(extraction, world);
+        var lights = new RenderLightSetSystem();
+        using var systems = new RenderFrameSystems(world);
+        systems.Add(lights);
+        using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
+            [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
+        Assert.True(graphics.DataLock.TryBeginRead(out var read));
+        using (read)
+        using (var frame = graph.BeginFrame()) systems.Update(read, frame);
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings
+            {
+                VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 2,
+                LocalResolutionLodBias = .5f,
+            });
+        var receiver = new RenderView(Matrix4x4.Identity,
+            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+        shadows.BeginFrame();
+        VirtualShadowView[] views = shadows.PrepareViews(lights.RequireCurrent(), receiver, 1, 1, 1).ToArray();
+        // Native local bias is the nonmoving global bias plus the authored
+        // per-light bias: .5 + .25 = .75, and .5 + .75 = 1.25.
+        Assert.Equal(.75f, views[0].ResolutionLodBias);
+        Assert.Equal(1.25f, views[6].ResolutionLodBias);
+    }
+
     [Fact]
     public async Task DirectionalFirstLevelSixCoversTheNativeExtentInMeters()
     {

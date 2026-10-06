@@ -364,9 +364,9 @@ internal sealed class FrameStageScene : IAsyncDisposable
         return entity;
     }
 
-    internal Entity AddGeometryMesh(Mesh mesh)
+    internal Entity AddGeometryMesh(Mesh mesh, TransformQvvs? transform = null)
     {
-        Entity entity = AddMesh(mesh, new TransformQvvs(new Vector3(1.3f, 0, -5), Quaternion.Identity, .5f));
+        Entity entity = AddMesh(mesh, transform ?? new TransformQvvs(new Vector3(1.3f, 0, -5), Quaternion.Identity, .5f));
         SetEntityMaterial(entity, _unlit);
         return entity;
     }
