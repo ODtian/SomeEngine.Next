@@ -15,6 +15,102 @@ namespace SomeEngine.Render.Tests;
 public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     [Fact]
+    public async Task OrthographicCameraUsesTheNativeClipmapWidthAndFirstLevel()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings
+            {
+                VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 1,
+                DirectionalResolutionLodBias = 0f,
+            });
+        var lights = new RenderLightSet();
+        lights.AddDirectional(new RenderDirectionalLight(Vector3.UnitZ, Vector3.One, 1, uint.MaxValue,
+            new(0f, LightMobility.Static)));
+        var receiver = new RenderView(Matrix4x4.Identity, Matrix4x4.CreateOrthographic(4f, 4f, .1f, 100f), 128, 128);
+        shadows.BeginFrame();
+        VirtualShadowView[] views = shadows.PrepareViews(lights, receiver, 1, 1, 1).ToArray();
+        // Native ortho projection scale is one. Width400cm dominates viewport128,
+        // so .5*512/400=.64 gives the absolute bias lower bound zero.
+        // Half-width200cm selects first level seven, through last level22.
+        Assert.Equal(0f, views[0].ResolutionLodBias);
+        Assert.Equal(16, views.Length);
+        Vector4 clip = Vector4.Transform(new Vector4(5.12f, 0, 0, 1), views[0].LightViewProjection);
+        Assert.InRange(MathF.Abs(clip.X / clip.W), .99999f, 1.00001f);
+    }
+
+    [Fact]
+    public async Task MovingPointLightBiasDecaysOverTenRenderedFramesAndRestartsAfterMovement()
+    {
+        using var world = new RenderWorld();
+        var light = new RenderPointLight(Vector3.Zero, 10, Vector3.One, 1, uint.MaxValue);
+        var entity = world.CreateEntity(light);
+        var lights = new RenderLightSetSystem();
+        using var systems = new RenderFrameSystems(world);
+        systems.Add(lights);
+        using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
+            [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.AddCopyFramePass("commit light movement frames", PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition _, ref int _) => { },
+                static (ref CopyPassCommandScope _, in int _) => { });
+            edit.Commit();
+        }
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings { VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 1 });
+        var receiver = new RenderView(Matrix4x4.Identity,
+            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+        // Native moving bias is one, static bias is zero. First activity is one;
+        // five rendered frames later it is .5, ten later zero, and movement resets it.
+        float[] expectedBiases = [1f, .9f, .8f, .7f, .6f, .5f, .4f, .3f, .2f, .1f, 0f, 1f];
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int index = 0; index < expectedBiases.Length; index++)
+        {
+            if (index == 11)
+            {
+                world.AcquireSystemVersion();
+                world.Replace(entity, light with { Position = Vector3.UnitX });
+            }
+            Assert.True(graphics.DataLock.TryBeginRead(out var read));
+            using (read)
+            using (var frame = graph.BeginFrame())
+            {
+                systems.Update(read, frame);
+                shadows.BeginFrame();
+                VirtualShadowView view = shadows.PrepareViews(lights.RequireCurrent(), receiver, 1, 1, 1)[0];
+                Assert.InRange(view.ResolutionLodBias, expectedBiases[index] - .000001f, expectedBiases[index] + .000001f);
+                shadows.AcquireFrameResources();
+                frame.ObserveExecution(new ViewCommit(shadows));
+                int count = frame.Execute(completions);
+                for (int completion = 0; completion < count; completion++)
+                    Assert.Equal(WaitStatus.Completed, graphics.Backend.WaitCpu(completions[completion], TimeSpan.FromSeconds(10)));
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ShadowViewsCarryNativeGeometryAndDicingParameters()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings { VirtualResolution = 512, AtlasSize = 256,
+                MaxShadowLights = 1, DirectionalClipmapLevels = 1 });
+        var lights = new RenderLightSet();
+        lights.AddDirectional(new RenderDirectionalLight(Vector3.UnitY, Vector3.One, 1, uint.MaxValue));
+        var receiver = new RenderView(Matrix4x4.Identity,
+            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+        shadows.BeginFrame();
+        VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
+        Assert.Equal(.5f, view.GeometryLodScale);
+        Assert.Equal(1f, view.MaxPixelsPerEdge);
+        Assert.Equal(32f, view.MinPixelsPerEdgeHardware);
+        Assert.Equal(2f, view.DicingRate);
+    }
+
+    [Fact]
     public async Task PointShadowViewsUseEachLightResolutionBiasFromTheGameWorld()
     {
         using var game = new World();

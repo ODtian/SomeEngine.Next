@@ -879,7 +879,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             {
                 ViewCount = checked((uint)_viewCount),
                 DirectionalLightCount = _shadowMap.PendingDirectionalLightCount,
-                DirectionalClipmapLevels = _shadowMap.Settings.DirectionalClipmapLevels,
+                DirectionalClipmapLevels = _shadowMap.DirectionalClipmapLevelCount,
                 PointLightCount = _shadowMap.PendingPointLightCount,
                 PointLightBufferOffset = checked((uint)lights.Directional.Count),
                 PointViewOffset = _shadowMap.PendingPointViewOffset,
@@ -1099,7 +1099,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             ViewCount = viewCount,
             PageTableEntryCount = tableEntries,
             DirectionalLightCount = _shadowMap.PendingDirectionalLightCount,
-            DirectionalClipmapLevels = _shadowMap.Settings.DirectionalClipmapLevels,
+            DirectionalClipmapLevels = _shadowMap.DirectionalClipmapLevelCount,
             PointLightCount = _shadowMap.PendingPointLightCount,
             PointLightBufferOffset = checked((uint)lights.Directional.Count),
             PointViewOffset = _shadowMap.PendingPointViewOffset,

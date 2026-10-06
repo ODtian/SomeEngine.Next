@@ -1,0 +1,7 @@
+{
+  "Path": "Engine/Shaders/Private/Nanite/NaniteCullingCommon.ush",
+  "Commit": "396c9f059903aed5fec78ecd3d437a40c6415368",
+  "GitBlob": "2d3fe204d364606d5057f937151028c9e9a9cc71",
+  "Bytes": 26660,
+  "Sha256": "b4cb242ae0c4814f0c1edb86bcf287dd91c32d30623d3ec1335d86d0444f10ca"
+}

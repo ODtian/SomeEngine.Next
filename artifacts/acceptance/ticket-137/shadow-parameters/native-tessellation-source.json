@@ -1,0 +1,7 @@
+{
+  "Path": "Engine/Shaders/Private/Nanite/NaniteTessellation.ush",
+  "Commit": "396c9f059903aed5fec78ecd3d437a40c6415368",
+  "GitBlob": "5c665ff3fea7fc09b583dec02cbd5d46093895dc",
+  "Bytes": 11445,
+  "Sha256": "ce77973e98fcbe95a2429a4167ff59a197be6ccb4bec8005891bed809c7ea1bf"
+}

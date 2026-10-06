@@ -10,7 +10,7 @@ namespace SomeEngine.Render.Lighting;
 /// Owns light-component queries and one immutable-for-rendering light set. Geometry,
 /// light assignment, shadow and shading pipelines consume this system without querying ECS.
 /// </summary>
-public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
+public sealed class RenderLightSetSystem(uint lightActiveFrameCount = 10) : ISystem<RenderFrameSystemContext>
 {
     private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "LightSet.Update", detail: true);
 
@@ -20,6 +20,8 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
     private QueryHandle _spot;
     private EntityTableChanges? _tableChanges;
     private bool _created;
+    private ulong _renderedFrame;
+    private readonly uint _lightActiveFrameCount = Math.Max(1u, lightActiveFrameCount);
 
     public RenderLightSet RequireCurrent() => _created
         ? _lights
@@ -74,6 +76,7 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
             static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdatePoints(rows));
         context.World.ExecuteQuery(_spot, context.LastSystemVersion, ref update,
             static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdateSpots(rows));
+        _lights.AdvanceLightMovement(checked(++_renderedFrame), _lightActiveFrameCount);
         if (update.Changed) _lights.CommitChanges();
         _tableChanges.Accept(membership);
     }
@@ -95,6 +98,7 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
         _point = default;
         _directional = default;
         _lights.Clear();
+        _renderedFrame = 0;
         _tableChanges!.Dispose();
         _tableChanges = null;
         _created = false;

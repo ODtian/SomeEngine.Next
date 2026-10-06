@@ -43,13 +43,4 @@ ClusterViewUniforms LoadClusterView(
     return LoadClusterCullView(primaryViews, policyViews, viewIndex);
 }
 
-ClusterViewUniforms LoadClusterGeometryView(
-    StructuredBuffer<ClusterViewUniforms> primaryViews,
-    ClusterViewUniforms rasterView)
-{
-    return rasterView.GeometryViewIndex == 0u
-        ? rasterView
-        : primaryViews[rasterView.GeometryViewIndex - 1u];
-}
-
 #endif

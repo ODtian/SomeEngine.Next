@@ -28,6 +28,10 @@ struct VirtualShadowMapParameters
     float WorldUnitsPerCentimeter;
     float3 LightPosition;
     float LightRange;
+    float GeometryLodScale;
+    float MaxPixelsPerEdge;
+    float MinPixelsPerEdgeHardware;
+    float DicingRate;
 };
 
 static const uint VSM_LIGHT_DIRECTIONAL = 0u;
@@ -515,8 +519,6 @@ float CalculateDirectionalVirtualShadowPixelLevel(
     float3 worldPositionDx,
     float3 worldPositionDy)
 {
-    if ((parameters.Flags & VSM_VIEW_ORTHOGRAPHIC_RECEIVER) != 0u)
-        return parameters.ResolutionLodBias - float(parameters.FirstClipmapLevel);
     return CalculateDirectionalVirtualShadowDistanceLevel(parameters, worldPosition) +
         parameters.ResolutionLodBias;
 }

@@ -1,0 +1,22 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Graphics.Direct3D12.Tests; 0 violations.
+F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.2 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+[xUnit.net 00:00:05.69]     SomeEngine.Graphics.Direct3D12.Tests.ShadowGeometryProjectionTests.ShadowSphereErrorUsesItsLightProjectionDepthAndAngle [FAIL]
+  失败 SomeEngine.Graphics.Direct3D12.Tests.ShadowGeometryProjectionTests.ShadowSphereErrorUsesItsLightProjectionDepthAndAngle [1 s]
+  错误消息:
+   Assert.InRange() Failure: Value not in range
+Range:  (0.510308981 - 0.510312021)
+Actual: 0.626223087
+  堆栈跟踪:
+     at SomeEngine.Graphics.Direct3D12.Tests.ShadowGeometryProjectionTests.ShadowSphereErrorUsesItsLightProjectionDepthAndAngle() in F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\ShadowGeometryProjectionTests.cs:line 40
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+结果文件: F:\SomeEngine.AgentWork\rg70-remaining\ticket-137-projection-red\red.trx
+
+失败!  - 失败:     1，通过:     0，已跳过:     0，总计:     1，持续时间: 1 s - SomeEngine.Graphics.Direct3D12.Tests.dll (net10.0)
