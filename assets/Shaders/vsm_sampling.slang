@@ -35,7 +35,24 @@ struct VirtualShadowMapParameters
     float DepthCenterZ;
     float DepthRadius;
     float2 DepthPadding;
+    float3 WorldOriginHigh;
+    float OriginHighPadding;
+    float3 WorldOriginLow;
+    float OriginLowPadding;
+    int ClipmapCornerRelativeOffsetX;
+    int ClipmapCornerRelativeOffsetY;
+    uint2 WorldPageOriginX;
+    uint2 WorldPageOriginY;
+    float2 AddressPadding;
 };
+
+// Positions passed to this file are offsets from the owning Game world's origin.
+// Users with another high/low reference can translate before projecting or sampling.
+float3 TranslateVirtualShadowWorldPosition(float3 position, float3 originHigh,
+    float3 originLow, VirtualShadowMapParameters view)
+{
+    return position + ((originHigh - view.WorldOriginHigh) + (originLow - view.WorldOriginLow));
+}
 
 static const uint VSM_LIGHT_DIRECTIONAL = 0u;
 static const uint VSM_LIGHT_POINT = 1u;

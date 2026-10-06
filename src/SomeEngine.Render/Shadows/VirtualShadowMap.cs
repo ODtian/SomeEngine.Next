@@ -55,6 +55,8 @@ public sealed class VirtualShadowMap : IDisposable
     private ulong _pendingRasterRevision;
     private uint _committedCacheGeneration;
     private uint _pendingCacheGeneration;
+    private WorldOrigin _worldOrigin;
+    private WorldOrigin _committedWorldOrigin;
 
     public VirtualShadowMap(
         IGraphicsBackend backend,
@@ -319,6 +321,7 @@ public sealed class VirtualShadowMap : IDisposable
         _pendingGeometryRevision = geometryRevision;
         _pendingRasterRevision = rasterRevision;
         _pendingInstanceCount = instanceCount;
+        _worldOrigin = receiverView.WorldOrigin;
         if (viewCount == 0)
         {
             _pendingCacheReset = !_initialized;
@@ -349,9 +352,15 @@ public sealed class VirtualShadowMap : IDisposable
                 : Vector3.UnitY;
             Vector3 right = Vector3.Normalize(Vector3.Cross(up, direction));
             Vector3 vertical = Vector3.Normalize(Vector3.Cross(direction, right));
-            float cameraRight = Vector3.Dot(clipmapOrigin, right);
-            float cameraVertical = Vector3.Dot(clipmapOrigin, vertical);
+            double originRight = receiverView.WorldOrigin.Dot(right);
+            double originVertical = receiverView.WorldOrigin.Dot(vertical);
+            double cameraRight = originRight + Vector3.Dot(clipmapOrigin, right);
+            double cameraVertical = originVertical + Vector3.Dot(clipmapOrigin, vertical);
             float cameraDepth = Vector3.Dot(clipmapOrigin, direction);
+            double coarsestRadius = Math.Pow(2.0, directionalCamera.FirstLevel + clipmapLevels) *
+                Settings.WorldUnitsPerCentimeter;
+            long referenceSnapX = checked((long)Math.Round(cameraRight / coarsestRadius));
+            long referenceSnapY = checked((long)Math.Round(cameraVertical / coarsestRadius));
             for (int clipmapLevel = 0; clipmapLevel < clipmapLevels; clipmapLevel++)
             {
                 int absoluteClipmapLevel = checked(
@@ -361,19 +370,20 @@ public sealed class VirtualShadowMap : IDisposable
                 float levelRadius = MathF.Pow(2.0f, absoluteClipmapLevel + 1.0f) *
                     Settings.WorldUnitsPerCentimeter;
                 float worldExtent = 4.0f * levelRadius;
-                int centerSnapX = checked((int)MathF.Round(cameraRight / levelRadius));
-                int centerSnapY = checked((int)MathF.Round(cameraVertical / levelRadius));
+                long centerSnapX = checked((long)Math.Round(cameraRight / levelRadius));
+                long centerSnapY = checked((long)Math.Round(cameraVertical / levelRadius));
                 int pagesPerSnap = checked((int)virtualPagesPerRow / 4);
-                int centerPageX = checked(centerSnapX * pagesPerSnap);
-                int centerPageY = checked(centerSnapY * pagesPerSnap);
+                long centerPageX = checked(centerSnapX * pagesPerSnap);
+                long centerPageY = checked(centerSnapY * pagesPerSnap);
                 // LookAt's horizontal axis is -right; UV's vertical flip is
                 // -vertical. The world-page origin follows those same axes,
                 // so scrolling preserves the address of fixed world geometry.
-                int pageOriginX = checked(-centerPageX - (int)virtualPagesPerRow / 2);
-                int pageOriginY = checked(-centerPageY - (int)virtualPagesPerRow / 2);
+                long pageOriginX = checked(-centerPageX - (int)virtualPagesPerRow / 2);
+                long pageOriginY = checked(-centerPageY - (int)virtualPagesPerRow / 2);
                 Vector3 snappedCenter =
-                    right * (centerSnapX * levelRadius) +
-                    vertical * (centerSnapY * levelRadius) + direction * cameraDepth;
+                    right * (float)(centerSnapX * (double)levelRadius - originRight) +
+                    vertical * (float)(centerSnapY * (double)levelRadius - originVertical) + direction * cameraDepth;
+                long referenceScale = 1L << (clipmapLevels - clipmapLevel - 1);
                 float depthRadius = levelRadius * Settings.DirectionalDepthRangeScale;
                 Matrix4x4 lightView = Matrix4x4.CreateLookAt(
                     snappedCenter,
@@ -403,10 +413,14 @@ public sealed class VirtualShadowMap : IDisposable
                     AtlasSize = Settings.AtlasSize,
                     PhysicalPagesPerRow = physicalPagesPerRow,
                     MaxPhysicalPages = checked(physicalPagesPerRow * physicalPagesPerRow),
-                    VirtualPageOriginX = pageOriginX,
+                    VirtualPageOriginX = unchecked((int)pageOriginX),
                     DepthBias = Settings.DepthBias,
                     PageTableOffset = checked((uint)viewIndex * pageTableEntriesPerView),
-                    VirtualPageOriginY = pageOriginY,
+                    VirtualPageOriginY = unchecked((int)pageOriginY),
+                    WorldPageOriginX = pageOriginX,
+                    WorldPageOriginY = pageOriginY,
+                    ClipmapCornerRelativeOffsetX = checked((int)(centerSnapX - referenceSnapX * referenceScale + 2)),
+                    ClipmapCornerRelativeOffsetY = checked((int)(centerSnapY - referenceSnapY * referenceScale + 2)),
                     ClipmapLevel = absoluteClipmapLevel,
                     LightIndex = checked((uint)lightIndex),
                     ClipmapWorldOrigin = clipmapOrigin,
@@ -511,13 +525,20 @@ public sealed class VirtualShadowMap : IDisposable
             _preparedLightProjections[viewIndex] = projection;
         }
 
+        receiverView.WorldOrigin.Split(out Vector3 worldOriginHigh, out Vector3 worldOriginLow);
+        for (int index = 0; index < viewCount; index++)
+        {
+            _views[index].WorldOriginHigh = worldOriginHigh;
+            _views[index].WorldOriginLow = worldOriginLow;
+        }
+
         bool viewLayoutChanged = !_initialized || viewCount != _committedViewCount;
         bool structuralContentChanged =
             _initialized &&
             (geometryRevision != _committedGeometryRevision ||
              rasterRevision != _committedRasterRevision ||
              instanceCount != _committedInstanceCount);
-        _pendingCacheReset = !_initialized || viewLayoutChanged;
+        _pendingCacheReset = !_initialized || viewLayoutChanged || _worldOrigin != _committedWorldOrigin;
 
         uint generation = _committedCacheGeneration;
         if (_pendingCacheReset || structuralContentChanged)
@@ -548,7 +569,7 @@ public sealed class VirtualShadowMap : IDisposable
             for (int index = 0; index < viewCount; index++)
                 _views[index].CacheGeneration = generation;
         }
-        if (_initialized && viewCount == _committedViewCount)
+        if (_initialized && viewCount == _committedViewCount && _worldOrigin == _committedWorldOrigin)
         {
             for (int index = 0; index < viewCount; index++)
             {
@@ -582,7 +603,8 @@ public sealed class VirtualShadowMap : IDisposable
                 shadow.VirtualResolution,
                 shadow.VirtualResolution,
                 CameraCut: false,
-                GeometryLodScale: shadow.GeometryLodScale);
+                GeometryLodScale: shadow.GeometryLodScale,
+                WorldOrigin: _worldOrigin);
         }
         return _pendingViewCount;
     }
@@ -718,6 +740,7 @@ public sealed class VirtualShadowMap : IDisposable
         _committedInstanceCount = _pendingInstanceCount;
         _committedGeometryRevision = _pendingGeometryRevision;
         _committedRasterRevision = _pendingRasterRevision;
+        _committedWorldOrigin = _worldOrigin;
         if (_committedViews.Length != _pendingViewCount)
             _committedViews = new VirtualShadowView[_pendingViewCount];
         _views.AsSpan(0, _pendingViewCount).CopyTo(_committedViews);
@@ -902,7 +925,7 @@ public sealed class VirtualShadowMap : IDisposable
         int viewIndex, int clipmapLevel, uint lightIndex,
         float center, float depthRadius, float levelRadius, Matrix4x4 projection)
     {
-        if (!_initialized || viewIndex >= _committedViewCount)
+        if (!_initialized || viewIndex >= _committedViewCount || _worldOrigin != _committedWorldOrigin)
             return center;
         VirtualShadowView cached = _committedViews[viewIndex];
         bool sameLevel = cached.LightKind == VirtualShadowLightKind.Directional &&

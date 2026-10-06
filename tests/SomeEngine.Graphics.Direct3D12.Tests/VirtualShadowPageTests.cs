@@ -17,7 +17,7 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
     public void CoarseRequestsUseCameraOriginPagesAndOneLocalFallback(uint lightKind, int originX, int originY)
     {
         const int pageTableEntryCount = 22000;
-        uint[] view = new uint[52];
+        uint[] view = new uint[SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes / sizeof(uint)];
         Matrix4x4 projection = Matrix4x4.Identity;
         MemoryMarshal.Write(MemoryMarshal.AsBytes(view.AsSpan()), in projection);
         view[16] = 16384;
@@ -31,7 +31,7 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
         [
             new BufferInput("CoarsePageDemand", [1, pageTableEntryCount, 7, 0], ResourceBindingType.ConstantBuffer, 0),
-            new BufferInput("ShadowViews", view, ResourceBindingType.BufferSrv, 208),
+            new BufferInput("ShadowViews", view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes),
             new BufferInput("RequestedShadowPages", new uint[pageTableEntryCount], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageFlags", new uint[pageTableEntryCount], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageIndices", new uint[pageTableEntryCount], ResourceBindingType.BufferUav, 4),
@@ -64,7 +64,7 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         }
         var requested = new uint[1024];
         Array.Fill(requested, 10u, 0, requests);
-        uint[] views = new uint[52];
+        uint[] views = new uint[SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes / sizeof(uint)];
         views[16] = 4096; views[17] = 128; views[21] = unchecked((uint)-3);
         views[24] = 5; views[25] = 5; views[34] = 1;
         var pageLists = new uint[4 * (capacity + 1)];
@@ -77,7 +77,7 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(16, 1, 1),
         [
             ([1024, 1024, capacity, 1, 10, 0, 63, 1], ResourceBindingType.ConstantBuffer, 0),
-            (views, ResourceBindingType.BufferSrv, 208),
+            (views, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes),
             (Enumerable.Range(0, requests).Select(index => (uint)index).ToArray(), ResourceBindingType.BufferSrv, 4),
             ([requests], ResourceBindingType.BufferSrv, 4),
             (Enumerable.Repeat(1u, 1024).ToArray(), ResourceBindingType.BufferSrv, 4),
@@ -129,7 +129,7 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
     public void Dirty_casters_invalidate_both_transforms_and_dilated_coarse_pages_with_overlapping_groups()
     {
         const int dimension = 16, pages = 320;
-        uint[] views = new uint[52];
+        uint[] views = new uint[SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes / sizeof(uint)];
         Matrix4x4 matrix = Matrix4x4.Identity;
         MemoryMarshal.Write(MemoryMarshal.AsBytes(views.AsSpan()), in matrix);
         views[16] = 2048; views[17] = 128; views[21] = unchecked((uint)-3);
@@ -161,7 +161,7 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_caster_invalidation.slang", "InvalidateMovedVirtualShadowCasters", new(2, 1, 1),
         [
             ([2, 1, pages, 1, 10, 46, 2, 0], ResourceBindingType.ConstantBuffer, 0),
-            (views, ResourceBindingType.BufferSrv, 208), (bounds, ResourceBindingType.BufferSrv, 16),
+            (views, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (bounds, ResourceBindingType.BufferSrv, 16),
             ([0, 2], ResourceBindingType.BufferSrv, 4),
             (new uint[pages], ResourceBindingType.BufferSrv, 4),
             (new uint[pages], ResourceBindingType.BufferSrv, 4),

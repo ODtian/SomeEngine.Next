@@ -17,7 +17,7 @@ public enum VirtualShadowLightKind : uint
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 public struct VirtualShadowView
 {
-    public const int SizeInBytes = 208;
+    public const int SizeInBytes = 272;
     public const int PageTableEntrySizeInBytes = 16;
 
     public Matrix4x4 LightViewProjection;
@@ -52,6 +52,18 @@ public struct VirtualShadowView
     public float DicingRate;
     public float DepthCenterZ;
     public float DepthRadius;
+    private Vector2 DepthPadding;
+    public Vector3 WorldOriginHigh;
+    private float OriginHighPadding;
+    public Vector3 WorldOriginLow;
+    private float OriginLowPadding;
+    /// <summary>Corner offset in level radii from the common coarsest-level reference grid.</summary>
+    public int ClipmapCornerRelativeOffsetX;
+    public int ClipmapCornerRelativeOffsetY;
+    /// <summary>Absolute level-zero page address before the GPU ring tag is reduced to 32 bits.</summary>
+    public long WorldPageOriginX;
+    public long WorldPageOriginY;
+    private Vector2 AddressPadding;
 }
 
 public static class VirtualShadowViewFlags

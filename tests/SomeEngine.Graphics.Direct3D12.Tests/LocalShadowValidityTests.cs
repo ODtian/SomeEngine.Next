@@ -42,7 +42,7 @@ public sealed class LocalShadowValidityTests(D3D12TestCompiler compiler)
         }
         uint[] viewWords = MemoryMarshal.Cast<VirtualShadowView, uint>(views).ToArray();
         uint[][] result = new D3D12TestCompute(compiler).ExecuteSource(Shader, entry, new(1, 1, 1),
-            [(masks, ResourceBindingType.BufferSrv, 8), (viewWords, ResourceBindingType.BufferSrv, 208),
+            [(masks, ResourceBindingType.BufferSrv, 8), (viewWords, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes),
              (pages, ResourceBindingType.BufferSrv, 16), (new uint[queries * 2], ResourceBindingType.BufferUav, 8)],
             new SampledImage(atlasSize, atlasSize, atlas, 3));
         float[] observations = result[0].Select(BitConverter.UInt32BitsToSingle).ToArray();

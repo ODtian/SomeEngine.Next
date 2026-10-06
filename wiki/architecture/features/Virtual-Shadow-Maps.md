@@ -167,6 +167,27 @@ domain 自身提供表面误差；primary 沿其已有用户配置。streaming �
 当前深度代号继续消费几何驻留与材质输入 revision；局部几何/材质失效在 #147 与静态/动态缓存
 #141 中接合每个遮挡者的实际影响范围。
 
+## 相对世界坐标与 clipmap 地址
+
+`WorldOrigin` 是整个 Game world 的 double 原点，实例、相机与光源位置共用其局部 float 空间。
+`RenderView.WorldOrigin` 经唯一提取通路取得该原点，Cluster 560 字节视图记录携带当前和历史
+high/low 原点，阴影 272 字节视图记录携带同一 high/low 原点。请求、几何、光栅、HiZ 与采样
+消费此局部空间中的矩阵和位置。原点变化使下一帧采用新的主视图历史起点与阴影缓存代号，
+成功完成提交后保存新原点；取消继续保留前次提交的原点。
+
+方向 clipmap 用 double 光空间位置与 int64 网格 snap 建立绝对页地址；`WorldPageOriginX/Y`
+保留 64 位地址，`VirtualPageOriginX/Y` 保存其低 32 位环形页 tag。建立 float 投影前先在
+double 中减去原点的光空间位置。`ClipmapCornerRelativeOffsetX/Y` 以最粗层 snap 网格为公共
+参考点，各自使用当前层 radius 为单位。当前 LookAt 与 UV 轴下的 corner 为
+`snapLi - snapLn * 2^levelDelta + 2`。层间 UV 偏移为 `.25 * (cornerB - scale * cornerA)`，
+其中 `scale = 2^-levelDelta`；层间深度偏移由各层投影的 M43 表达。
+
+原版 UE 5.8.3 `396c9f05` 的 radius 为 `2^(absoluteLevel+1)` 厘米；引擎由
+`WorldUnitsPerCentimeter` 转为世界单位，默认每厘米 `.01` 世界单位。公共原点使用世界单位。
+原版核对范围为 `NaniteShared.cpp:231–284`、`VirtualShadowMapClipmap.cpp:337–391` 和
+`VirtualShadowMapProjectionCommon.ush:77–91,218–305`。实际 red/green 投影证据位于
+`artifacts/acceptance/ticket-151/origin-projection/`，远原点 `2^40+1/8` 保留 `-1/2048` 的独立期望。
+
 ## 跨帧页面顺序
 
 页池以 GPU `ShadowPageLists` 的 LRU、AVAILABLE、EMPTY、REQUESTED 四个列表维护跨帧顺序。REQUESTED 在帧结束时包含全部图集页；下一帧先保存该顺序，再将当前请求页移入 REQUESTED，未请求页保序压缩进入 AVAILABLE，空页追加在 AVAILABLE 尾部并优先分配。分配后的剩余 AVAILABLE 追加到本帧请求页之后，成为下一帧输入。未请求缓存页上的完成状态和失效事实随原页面保留，后续请求或回收负责消费。准备、压缩和收尾由持久图中的显式阶段表达，帧取消、部分提交和重新初始化沿现有完成边界维护。

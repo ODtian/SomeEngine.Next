@@ -124,4 +124,5 @@ public readonly record struct RenderView(
     Matrix4x4? GeometryProjection = null,
     float GeometryLodScale = 1.0f,
     Vector3? CameraTarget = null,
-    CameraDepthOfField? DepthOfField = null) : IComponent;
+    CameraDepthOfField? DepthOfField = null,
+    WorldOrigin WorldOrigin = default) : IComponent;

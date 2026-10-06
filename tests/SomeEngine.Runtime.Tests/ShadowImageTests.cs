@@ -10,6 +10,43 @@ namespace SomeEngine.Runtime.Tests;
 [Collection("Rendering content")]
 public sealed class ShadowImageTests(RenderingContentFixture content)
 {
+    [Fact]
+    public async Task FarWorldOriginPreservesSubUnitCasterSpacingInRawAndBeautyImages()
+    {
+        SceneImage? near = null, far = null;
+        SceneLinearImage? nearRaw = null, farRaw = null;
+        var settings = new VirtualShadowMapSettings { VirtualResolution = 4096, AtlasSize = 2048,
+            MaxShadowLights = 1, DirectionalFirstClipmapLevel = -4, DirectionalClipmapLevels = 16,
+            DirectionalFirstCoarseClipmapLevel = 8, DirectionalLastCoarseClipmapLevel = 11,
+            WorldUnitsPerCentimeter = 1, DynamicResolutionEnabled = false };
+        void Configure(SceneEdit edit)
+        {
+            edit.SetDirectionalLight(edit.PointLights.Single(), new(Vector3.UnitZ, Vector3.One, 3));
+            // Source sphere radius1: receiver front7.875 and caster back7.75
+            // leave a1/8 world-unit gap, retained by local float transforms.
+            edit.SetEntityTransform(edit.MeshEntities[0], new(new Vector3(0, 0, 8), Quaternion.Identity)
+                { Stretch = new(4, 4, .125f) });
+            edit.SetEntityTransform(edit.MeshEntities[1], new(new Vector3(0, 0, 7.25f), Quaternion.Identity, .5f));
+        }
+        await SceneImages.RunAsync("d3d12", new SceneScript(content.Shadows, 16,
+        [
+            new(0, edit => { Configure(edit); edit.SetWorldOrigin(new(.1875, 0, 0)); }),
+            new(15, edit => { edit.CaptureImage(image => near = image); edit.CaptureLinearImage(image => nearRaw = image); }),
+        ]) { ShadowSettings = settings }, "--no-taa", "--vsm", "--no-debug-ui");
+        await SceneImages.RunAsync("d3d12", new SceneScript(content.Shadows, 16,
+        [
+            new(0, edit => { Configure(edit); edit.SetWorldOrigin(new(1099511627776.1875, 0, 0)); }),
+            new(15, edit => { edit.CaptureImage(image => far = image); edit.CaptureLinearImage(image => farRaw = image); }),
+        ]) { ShadowSettings = settings }, "--no-taa", "--vsm", "--no-debug-ui");
+        SceneImages.AssertEqual(near!, far!);
+        // The byte image retains every half-float bit and uses the same PNG failure artifacts.
+        SceneImages.AssertEqual(new(15, nearRaw!.Frame.Width * 2, nearRaw.Frame.Height,
+                System.Runtime.InteropServices.MemoryMarshal.AsBytes(nearRaw.Pixels.Span).ToArray()),
+            new(15, farRaw!.Frame.Width * 2, farRaw.Frame.Height,
+                System.Runtime.InteropServices.MemoryMarshal.AsBytes(farRaw.Pixels.Span).ToArray()));
+        Assert.Equal(new WorldOrigin(1099511627776.1875, 0, 0), farRaw.Frame.WorldOrigin);
+    }
+
     [SceneTheory]
     [InlineData("d3d12")]
     [InlineData("vulkan")]

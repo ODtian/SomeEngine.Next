@@ -553,7 +553,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 if (!isTargetView && history.TryGetPrevious(
                         viewIndex,
                         out Matrix4x4 previousView,
-                        out Matrix4x4 previousProjection))
+                        out Matrix4x4 previousProjection,
+                        out WorldOrigin previousOrigin))
                 {
                     ref ClusterViewUniforms uniforms = ref packedViews[viewIndex];
                     uniforms.PrevViewProj = previousView * previousProjection;
@@ -565,6 +566,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     uniforms.PrevView = previousView;
                     uniforms.PrevP00 = previousProjection.M11;
                     uniforms.PrevP11 = previousProjection.M22;
+                    previousOrigin.Split(out uniforms.PreviousWorldOriginHigh, out uniforms.PreviousWorldOriginLow);
                 }
                 else if (isTargetView && _renderContext.IsValid)
                 {

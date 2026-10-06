@@ -1,0 +1,23 @@
+[
+  {
+    "Path": "Engine/Source/Runtime/Renderer/Private/Nanite/NaniteShared.cpp",
+    "Commit": "396c9f059903aed5fec78ecd3d437a40c6415368",
+    "GitBlob": "55587eeda6593e7c88573f20230caa77fb46f560",
+    "Bytes": 24594,
+    "SHA256": "15831D7B0AA9888277162AE7C3CB0E4866F85151D6375B61B14FEE69F78D0497"
+  },
+  {
+    "Path": "Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/VirtualShadowMapClipmap.cpp",
+    "Commit": "396c9f059903aed5fec78ecd3d437a40c6415368",
+    "GitBlob": "043bdf74f210149693ca5d32e6771271912b1cfc",
+    "Bytes": 31336,
+    "SHA256": "EA08B40C3A2DF7FB7BEBC3DF4AB2C310CC428A2DFDB3B1DAC4E5AC4F962E7677"
+  },
+  {
+    "Path": "Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapProjectionCommon.ush",
+    "Commit": "396c9f059903aed5fec78ecd3d437a40c6415368",
+    "GitBlob": "302b78ccc27d19931b193aa7e4aee0ddcc14ce60",
+    "Bytes": 35092,
+    "SHA256": "47628D6CDB7439236231C22634DF30B7D479D9F92BB2E7E719F2AEAB191A2DF0"
+  }
+]
