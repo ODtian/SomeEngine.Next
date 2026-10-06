@@ -122,4 +122,5 @@ public readonly record struct RenderView(
     bool CameraCut = false,
     Matrix4x4? GeometryProjection = null,
     float GeometryLodScale = 1.0f,
-    Vector3? CameraTarget = null) : IComponent;
+    Vector3? CameraTarget = null,
+    CameraDepthOfField? DepthOfField = null) : IComponent;

@@ -1,9 +1,10 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Shadows;
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 80)]
 public struct VirtualShadowReceiverProjection
 {
     public Vector4 WorldToClipW;
@@ -11,9 +12,11 @@ public struct VirtualShadowReceiverProjection
     public uint Pad0;
     public uint Pad1;
     public uint Pad2;
+    public Vector4 WorldToViewDepth;
+    public CameraDepthOfField DepthOfField;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 176)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 224)]
 public struct VirtualShadowPageDemandUniforms
 {
     public Matrix4x4 ClipToWorld;
@@ -125,7 +128,7 @@ public struct VirtualShadowPageClearUniforms
     public uint Pad0;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 96)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 144)]
 public struct VirtualShadowSamplingUniforms
 {
     public uint ViewCount;

@@ -16,7 +16,7 @@ public static class SceneSerialization
         .RegisterHierarchyDomain<DefaultHierarchyDomain>()
         .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
-        .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f"))
+        .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f;dofPresent:u32;focus:f;infinityRadius:f;minRadius:f;maxRadius:f;depthBlurRadius:f;depthBlurExponent:f;shadowBiasStrength:f"))
         .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"))
         .Register<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"))
         .Register<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"));
@@ -72,11 +72,24 @@ public static class SceneSerialization
         {
             WriteVector(ref writer, value.Position); WriteVector(ref writer, value.Target); WriteVector(ref writer, value.Up);
             writer.WriteSingle(value.VerticalFieldOfView); writer.WriteSingle(value.NearPlane); writer.WriteSingle(value.FarPlane);
+            writer.WriteUInt32(value.DepthOfField.HasValue ? 1u : 0u);
+            if (value.DepthOfField is { } depthOfField)
+            {
+                writer.WriteSingle(depthOfField.FocusDistance);
+                writer.WriteSingle(depthOfField.InfinityCircleRadiusPixels);
+                writer.WriteSingle(depthOfField.MinCircleRadiusPixels);
+                writer.WriteSingle(depthOfField.MaxCircleRadiusPixels);
+                writer.WriteSingle(depthOfField.DepthBlurRadiusPixels);
+                writer.WriteSingle(depthOfField.DepthBlurExponent);
+                writer.WriteSingle(depthOfField.ShadowResolutionBiasStrength);
+            }
         }
         public void Read(ref DataReader reader, out SceneCamera value) => value = new()
         {
             Position = ReadVector(ref reader), Target = ReadVector(ref reader), Up = ReadVector(ref reader),
             VerticalFieldOfView = reader.ReadSingle(), NearPlane = reader.ReadSingle(), FarPlane = reader.ReadSingle(),
+            DepthOfField = reader.ReadUInt32() != 0u ? new CameraDepthOfField(reader.ReadSingle(), reader.ReadSingle(),
+                reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()) : null,
         };
     }
     private struct DirectionalCodec : ICanonicalComponentCodec<DirectionalLight>
