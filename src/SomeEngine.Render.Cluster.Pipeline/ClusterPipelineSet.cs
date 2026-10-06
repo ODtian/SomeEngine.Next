@@ -76,6 +76,7 @@ internal sealed class ClusterPipelineSet : IDisposable
                         pixelEntry);
 
             Traversal = Compute(ClusterShaderOperationRole.BvhTraversal, "Cluster BVH traversal");
+            PageRequests = Compute(ClusterShaderOperationRole.PageRequests, "Cluster page request priorities");
             SceneBounds = Compute(ClusterShaderOperationRole.SceneBounds, "Cluster spatial scene bounds");
 
                 TraversalInitialize = Compute(
@@ -190,6 +191,7 @@ internal sealed class ClusterPipelineSet : IDisposable
     }
 
     internal ClusterComputePipeline Traversal { get; }
+    internal ClusterComputePipeline PageRequests { get; }
     internal ClusterComputePipeline SceneBounds { get; }
     internal ClusterComputePipeline TraversalInitialize { get; }
     internal ClusterComputePipeline DeferredResume { get; }

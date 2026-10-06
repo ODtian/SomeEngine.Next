@@ -217,8 +217,21 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         in FrameResources frame)
     {
-        GraphData.PageFaultReadback = graph.AddReadback(frame.PageFaults, new BufferRange(0, checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * sizeof(uint))),
-            new PageFaultReceiver(this), "Read back Cluster page faults", _regions.Feedback);
+        int bindingCount = 0;
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.PackedViews, ClusterViewUniforms.SizeInBytes), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.PageFaults), PipelineSync.ComputeShading,
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial));
+        GraphPassId requests = AddComputePass(ref graph, "Complete Cluster page request priorities",
+            _pipelines!.PageRequests, new DispatchArguments((uint)(frame.PageFaultCapacity + 63) / 64u, 1, 1), bindingCount,
+            static (ref PassDefinition _, ref DispatchArguments _) => { },
+            static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch),
+            region: _regions.Feedback);
+        GraphData.PageFaultReadback = graph.AddReadback(frame.PageFaults,
+            new BufferRange(0, checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * 16u)),
+            new PageFaultReceiver(this), "Read back Cluster page requests", _regions.Feedback);
+        graph.OrderAfter(GraphData.PageFaultReadback, requests);
     }
 
     private GraphRegionMap<int, bool> RecordTraversal(

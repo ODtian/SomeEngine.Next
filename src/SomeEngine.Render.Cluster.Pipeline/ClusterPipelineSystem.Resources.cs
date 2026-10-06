@@ -171,8 +171,8 @@ public sealed partial class ClusterPipelineSystem
         frame.DrawArgs = frame.AddBuffer(ref graph, 16, BufferUsages.CopySource, "Cluster phase-one counts");
         frame.PageFaults = frame.AddBuffer(
             ref graph,
-            checked(sizeof(uint) + (ulong)pageFaultCapacity * sizeof(uint) +
-                ((residency.BvhDescription.Size / 64u + 31u) / 32u) * sizeof(uint)),
+            checked(sizeof(uint) + (ulong)pageFaultCapacity * 16u +
+                (residency.BvhDescription.Size / 64u) * sizeof(uint)),
             BufferUsages.CopySource,
             "Cluster page faults");
         frame.Phase2CandidateArgs = frame.AddBuffer(

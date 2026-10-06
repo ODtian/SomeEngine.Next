@@ -7,6 +7,7 @@
 #include "cluster_target_policy_contract.slang"
 #include "resource_effects.slang"
 #include "wave_aggregation.slang"
+#include "cluster_page_requests.slang"
 
 StructuredBuffer<ClusterViewUniforms> Views;
 
@@ -184,6 +185,7 @@ void ProcessTraversalLevel(
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD), instanceID));
     }
     uint activeViews = 0u;
+    uint streamingPriority = 1u;
     float3 worldMin = 0.0.xxx;
     float3 worldMax = 0.0.xxx;
     if (validNode)
@@ -209,13 +211,21 @@ void ProcessTraversalLevel(
             AppendDeferredTraversalNode(
                 MakeClusterTraversalNode(nodeIndex, instanceID, viewIndex, 1u), TraversalLevel.MaxNodes);
         else if (state != 0u)
+        {
             activeViews |= 1u << bit;
+            float3 lodCenter = TransformInstanceLocalPosition(node.LODSphere.xyz, transform);
+            float largestScale = abs(transform.Scale) * max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
+            float smallestScale = abs(transform.Scale) * min(min(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
+            float errorScale = view.TargetPolicy != 0u ? smallestScale : largestScale;
+            float error = ClusterSphereError(lodCenter, node.LODSphere.w * largestScale, node.LODError * errorScale, view);
+            streamingPriority = max(streamingPriority,
+                PackClusterStreamingPriority(error, view.LodThreshold, view.StreamingPriorityCategory));
+        }
     }
 
     uint leafFlags = uint(node.BoundMin.w);
     bool pageFault = activeViews != 0u && node.NodeType == 1u && node.ChildPointer == 0xFFFFFFFFu;
-    bool pageRequest = pageFault || (activeViews != 0u && node.NodeType == 1u &&
-        (leafFlags & 1u) != 0u && firstView.CullingEnabled != 0u);
+    bool pageRequest = activeViews != 0u && node.NodeType == 1u;
     bool firstFault = false;
     if (pageRequest)
     {
@@ -223,11 +233,10 @@ void ProcessTraversalLevel(
         // need the same geometry page. Publish one representative leaf for
         // that page so repeated demand cannot consume the feedback capacity.
         uint pageIndex = asuint(node.BoundMax.w);
-        uint wordOffset = 4u + firstView.MaxPageFaults * 4u + (pageIndex >> 5u) * 4u;
-        uint bit = 1u << (pageIndex & 31u);
+        uint priorityOffset = ClusterPageRequestPriorityOffset(firstView.MaxPageFaults, pageIndex);
         uint previous;
-        PageFaultBuffer.InterlockedOr(wordOffset, bit, previous);
-        firstFault = (previous & bit) == 0u;
+        PageFaultBuffer.InterlockedMax(priorityOffset, streamingPriority, previous);
+        firstFault = previous == 0u;
     }
     uint4 faultMask = WaveActiveBallot(firstFault);
     if (firstFault)
@@ -240,7 +249,8 @@ void ProcessTraversalLevel(
         faultBase = WaveReadLaneAt(faultBase, leader);
         uint faultIndex = faultBase + WaveMaskPrefix(faultMask, lane);
         if (faultIndex < firstView.MaxPageFaults)
-            PageFaultBuffer.Store(4u + faultIndex * 4u, nodeIndex);
+            PageFaultBuffer.Store4(4u + faultIndex * 16u,
+                uint4(nodeIndex, asuint(node.BoundMax.w), 1u, 0u));
     }
 
     bool outputNode = activeViews != 0u && !pageFault && node.NodeType == 0u;

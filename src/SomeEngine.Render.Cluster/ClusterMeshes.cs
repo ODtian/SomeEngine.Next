@@ -196,6 +196,15 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
+    internal void CollectPageDependencies(Dictionary<uint, uint> priorities)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            _bvh.CollectPageDependencies(priorities);
+        }
+    }
+
     private PageFaultResolution ResolvePageCore(uint pageID)
     {
         if (!_pages.TrySource(pageID, out uint size, out _))

@@ -36,7 +36,7 @@ struct ClusterViewUniforms
     float PrevP11;
     // Zero uses the surface group's configured edge size.
     float TessellationEdgePixels;
-    uint Pad3;
+    uint StreamingPriorityCategory;
 
     float4x4 ClipToWorld;
 

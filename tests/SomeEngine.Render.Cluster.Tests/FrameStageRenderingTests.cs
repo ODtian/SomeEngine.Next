@@ -122,7 +122,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         Material standard, Material unlit, ClusterShaders clusterShaders,
         VirtualShadowMapShaders shadowShaders, Shader lightingShader, Shader temporalShader,
         ApplicationSettingsBlock settings, bool shadows, ClusterPipelineOptions? pipelineOptions, string backendName,
-        VirtualShadowMapSettings? shadowSettings)
+        VirtualShadowMapSettings? shadowSettings, ClusterResidencyOptions? residencyOptions)
     {
         _backend = backend;
         _backendName = backendName;
@@ -145,7 +145,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _instances = new RenderInstanceStorageSystem(backend, device, _world,
             ClusterRenderFeature.InstanceLayout, new RenderInstanceOptions { RowCapacity = 16, BatchCapacity = 8 });
         _cluster = new ClusterRenderResources(backend, device, _world, _instances,
-            new ClusterRenderOptions { Residency = new ClusterResidencyOptions
+            new ClusterRenderOptions { Residency = residencyOptions ?? new ClusterResidencyOptions
                 { PageHeapCapacityBytes = 1048576, BvhCapacityBytes = 65536, PageFaultCapacity = 16 } });
         var assignments = new ClusterMaterialAssignments();
         var instanceSystem = new ClusterInstanceSystem<ClusterMaterialOffsetProducer>(_cluster,
@@ -245,7 +245,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
 
     internal static async Task<FrameStageScene> CreateAsync(string backendName, bool shadows,
         ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null,
-        VirtualShadowMapSettings? shadowSettings = null, DeviceFeatures optionalFeatures = DeviceFeatures.None)
+        VirtualShadowMapSettings? shadowSettings = null, DeviceFeatures optionalFeatures = DeviceFeatures.None,
+        ClusterResidencyOptions? residencyOptions = null)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -294,7 +295,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
             [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)],
             requiredFeatures: DeviceFeatures.IndirectCommands, optionalFeatures: optionalFeatures));
         return new FrameStageScene(backend, device, mesh, standard, unlit, clusterShaders,
-            shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName, shadowSettings);
+            shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName, shadowSettings,
+            residencyOptions);
     }
 
     internal void SetView(RenderView view) => _world.Replace(_view, view);
@@ -370,6 +372,16 @@ internal sealed class FrameStageScene : IAsyncDisposable
         SetEntityMaterial(entity, _unlit);
         return entity;
     }
+
+    internal Entity AddStreamingMesh(Mesh mesh, SomeEngine.Assets.Pipeline.MeshPayloadSource source,
+        TransformQvvs transform)
+    {
+        Entity entity = AddGeometryMesh(mesh, transform);
+        _gameWorld.Replace(entity, new MeshInstance { Mesh = mesh, PageSource = source });
+        return entity;
+    }
+
+    internal void PumpStreaming() => _streaming.Pump();
 
     internal void SetGeometryVisible(bool visible)
     {
