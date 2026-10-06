@@ -2350,7 +2350,9 @@ internal sealed class ClusterLinkedStageLayout
                     ("RasterTargetPageHierarchy", ResourceBindingType.BufferSrv) or
                     ("RasterTargetPageTable", ResourceBindingType.BufferSrv) or
                     ("RasterTargetReceiverMasks", ResourceBindingType.BufferSrv) or
-                    ("RasterTargetOutput", ResourceBindingType.TextureUav))
+                    ("RasterTargetPageMetadata", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetOutput", ResourceBindingType.TextureUav) or
+                    ("RasterTargetStaticOutput", ResourceBindingType.TextureUav))
                     continue;
                 throw new InvalidDataException(
                     $"Final stage entry requires feature resource '{resource.Name}' ({resource.Type}), " +
@@ -2514,8 +2516,8 @@ internal static class ClusterSoftwareRasterCoreResources
 
     private static ClusterSoftwareRasterCoreResource ResolveName(string name) => name switch
     {
-        "InstanceData" => ClusterSoftwareRasterCoreResource.InstanceData,
-        "InstanceProperties" => ClusterSoftwareRasterCoreResource.InstanceProperties,
+        "InstanceData" or "RasterOutputInstanceData" => ClusterSoftwareRasterCoreResource.InstanceData,
+        "InstanceProperties" or "RasterOutputInstanceProperties" => ClusterSoftwareRasterCoreResource.InstanceProperties,
         "PushConstants" or "Uniforms" or
         "ClusterSoftwareRasterPushConstants" or
         "ClusterSoftwareRasterUniformData" => ClusterSoftwareRasterCoreResource.Uniforms,
@@ -2523,7 +2525,7 @@ internal static class ClusterSoftwareRasterCoreResources
         "PolicyClusterViews" or
         "SoftwareRasterPolicyViews" => ClusterSoftwareRasterCoreResource.PolicyViews,
         "PageHeap" => ClusterSoftwareRasterCoreResource.PageHeap,
-        "VisibleClusters" or "SoftwareRasterVisibleClusters" => ClusterSoftwareRasterCoreResource.VisibleClusters,
+        "VisibleClusters" or "SoftwareRasterVisibleClusters" or "RasterOutputVisibleClusters" => ClusterSoftwareRasterCoreResource.VisibleClusters,
         "VisibleClusterRasterWindows" => ClusterSoftwareRasterCoreResource.RasterWindows,
         "BinnedClusterIndexBuffer" or
         "SoftwareRasterBinnedClusterIndexBuffer" => ClusterSoftwareRasterCoreResource.BinnedClusters,
@@ -2576,8 +2578,8 @@ internal static class ClusterHardwareRasterCoreResources
 
     private static ClusterHardwareRasterCoreResource ResolveName(string name) => name switch
     {
-        "InstanceData" => ClusterHardwareRasterCoreResource.InstanceData,
-        "InstanceProperties" => ClusterHardwareRasterCoreResource.InstanceProperties,
+        "InstanceData" or "RasterOutputInstanceData" => ClusterHardwareRasterCoreResource.InstanceData,
+        "InstanceProperties" or "RasterOutputInstanceProperties" => ClusterHardwareRasterCoreResource.InstanceProperties,
         "Uniforms" or "HardwareRasterUniformData" => ClusterHardwareRasterCoreResource.Uniforms,
         "Views" or "HardwareRasterViews" => ClusterHardwareRasterCoreResource.Views,
         "PolicyClusterViews" or
@@ -2587,7 +2589,7 @@ internal static class ClusterHardwareRasterCoreResources
         "PageHeap" => ClusterHardwareRasterCoreResource.PageHeap,
         "BinnedClusterIndexBuffer" or
         "HardwareRasterBinnedClusterIndexBuffer" => ClusterHardwareRasterCoreResource.BinnedClusters,
-        "VisibleClusters" or "HardwareRasterVisibleClusters" => ClusterHardwareRasterCoreResource.VisibleClusters,
+        "VisibleClusters" or "HardwareRasterVisibleClusters" or "RasterOutputVisibleClusters" => ClusterHardwareRasterCoreResource.VisibleClusters,
         "VisibleClusterRasterWindows" => ClusterHardwareRasterCoreResource.RasterWindows,
         "VisibleClusterMeta" or "HardwareRasterVisibleClusterMeta" => ClusterHardwareRasterCoreResource.DrawMetadata,
         "VisibilityWinnerImage" => ClusterHardwareRasterCoreResource.WinnerImage,
@@ -2647,15 +2649,15 @@ internal static class ClusterTessellationCoreResources
 
     private static ClusterTessellationCoreResource ResolveName(string name) => name switch
     {
-        "InstanceData" => ClusterTessellationCoreResource.InstanceData,
-        "InstanceProperties" => ClusterTessellationCoreResource.InstanceProperties,
+        "InstanceData" or "RasterOutputInstanceData" => ClusterTessellationCoreResource.InstanceData,
+        "InstanceProperties" or "RasterOutputInstanceProperties" => ClusterTessellationCoreResource.InstanceProperties,
         "Uniforms" or "TessellationUniformData" => ClusterTessellationCoreResource.Uniforms,
         "Views" or "TessellationViews" => ClusterTessellationCoreResource.Views,
         "PolicyClusterViews" or
         "TessellationPolicyViews" => ClusterTessellationCoreResource.PolicyViews,
         "PageHeap" => ClusterTessellationCoreResource.PageHeap,
         "VisibleClusters" or
-        "TessellationVisibleClusters" => ClusterTessellationCoreResource.VisibleClusters,
+        "TessellationVisibleClusters" or "RasterOutputVisibleClusters" => ClusterTessellationCoreResource.VisibleClusters,
         "VisibleClusterRasterWindows" => ClusterTessellationCoreResource.RasterWindows,
         "BinnedClusterIndexBuffer" or
         "TessellationBinnedClusterIndexBuffer" => ClusterTessellationCoreResource.BinnedClusters,

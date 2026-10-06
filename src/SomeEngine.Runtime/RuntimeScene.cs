@@ -165,7 +165,7 @@ internal sealed class RuntimeScene : IDisposable
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
                 world.Add(entity, new MeshInstance { Mesh = content.Mesh, PageSource = content.Source,
-                    BoundsExpansion = source.BoundsExpansion });
+                    BoundsExpansion = source.BoundsExpansion, DepthCacheClass = source.DepthCacheClass });
                 world.AddBuffer<MeshMaterialBinding>(entity);
                 MeshMaterialBinding[] bindings = content.Bindings;
                 world.ExecuteBufferWrite<MeshMaterialBinding, MeshMaterialBinding[]>(entity, ref bindings,

@@ -88,9 +88,9 @@ public sealed class VirtualShadowInvalidationTests(D3D12TestCompiler shaderCompi
              ([0], ResourceBindingType.BufferSrv, 4),
              (new uint[16], ResourceBindingType.BufferSrv, 4),
              (new uint[16], ResourceBindingType.BufferSrv, 4),
-             (new uint[64], ResourceBindingType.BufferSrv, 16),
+             (new uint[64], ResourceBindingType.BufferUav, 16),
              (hierarchy, ResourceBindingType.BufferSrv, 4),
              (rect, ResourceBindingType.BufferSrv, 16),
-             (table, ResourceBindingType.BufferUav, 16)])[0];
+             (table, ResourceBindingType.BufferUav, 16)])[1];
     }
 }

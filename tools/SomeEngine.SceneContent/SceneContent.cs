@@ -70,7 +70,7 @@ public static class SceneContent
             mesh.GetBlock<MeshMaterialsBlock>().Materials = [material.Reference];
             project.RegisterAsset(await mesh.SaveAsync(Path.Combine(destination, $"assets/Meshes/sphere-{index}.mesh.asset")));
             var entity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(index == 0 ? -1 : 1, 0, 6), Quaternion.Identity) });
-            world.Add(entity, new MeshSource { Mesh = mesh.Reference });
+            world.Add(entity, new MeshSource { Mesh = mesh.Reference, DepthCacheClass = DepthCacheClass.Static });
         }
         world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
             VerticalFieldOfView = MathF.PI / 3, NearPlane = 0.1f, FarPlane = 100 });

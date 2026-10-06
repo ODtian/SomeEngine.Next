@@ -343,7 +343,8 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
                 // cluster can address a smaller rectangle of requested pages.
                 if (any(maximumPixel < 0.0.xx) || any(minimumPixel > targetWindowSize) ||
                     !ClusterRasterTargetCachedBoundsAccepts(
-                        minimumPixel, maximumPixel, view.TargetViewIndex, targetWindowSize))
+                        minimumPixel, maximumPixel, view.TargetViewIndex, targetWindowSize,
+                        RasterOutputDepthCacheClass(visible)))
                     outputIndices = 0u.xxx;
             }
         }

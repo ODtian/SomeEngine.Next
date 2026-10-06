@@ -252,7 +252,7 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
         WriteRasterTargetDepth(
             int2(input.Pos.xy),
             view.TargetViewIndex,
-            saturate(result.Depth));
+            saturate(result.Depth), RasterOutputDepthCacheClass(input.VisibleClusterIndex));
         discard;
     }
     ClusterTessellationHardwareOutput output;

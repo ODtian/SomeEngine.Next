@@ -34,6 +34,7 @@ public sealed partial class VirtualShadowFeature
             AddQualityReadback(ref edit, readbacks, QualityData.Failures, _allocationFailures);
             AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _pageOwners);
             AddQualityReadback(ref edit, readbacks, QualityData.RasterArea, _policyRasterWorkCount);
+            AddQualityReadback(ref edit, readbacks, QualityData.DepthWork, _depthWorkCount);
             AddQualityReadback(ref edit, readbacks, QualityData.ReceiverCoverage, _pageReceiverMasks);
             AddQualityReadback(ref edit, readbacks, QualityData.Views, _frameShadowViews, BufferRange.Whole);
             AddQualityReadback(ref edit, readbacks, QualityData.Pages, _framePageTable, BufferRange.Whole);
@@ -65,7 +66,7 @@ public sealed partial class VirtualShadowFeature
         }
     }
 
-    private enum QualityData { FrameBias, RequestCount, DirtyCount, Failures, FreeCount, RasterArea, ReceiverCoverage, Views, Pages, Work }
+    private enum QualityData { FrameBias, RequestCount, DirtyCount, Failures, FreeCount, RasterArea, ReceiverCoverage, Views, Pages, Work, DepthWork }
 
     private sealed class QualityReadbacks
     {
@@ -87,7 +88,7 @@ public sealed partial class VirtualShadowFeature
 
     private sealed class QualityRequest(int viewCount, float[] baseBias, Action<VirtualShadowFrameQuality> receive)
     {
-        internal readonly byte[][] Bytes = new byte[10][];
+        internal readonly byte[][] Bytes = new byte[11][];
         internal readonly Action<VirtualShadowFrameQuality> Receive = receive;
         internal int Received;
 
@@ -137,6 +138,10 @@ public sealed partial class VirtualShadowFeature
                     WorkLodAddition = view.ResolutionLodBias - baseBias[index],
                     HardwareVisibleItems = Word(QualityData.RasterArea, 1 + index * 2),
                     SoftwareVisibleItems = Word(QualityData.RasterArea, 2 + index * 2),
+                    DynamicHardwareVisibleItems = Word(QualityData.DepthWork, index * 4),
+                    DynamicSoftwareVisibleItems = Word(QualityData.DepthWork, index * 4 + 1),
+                    StaticHardwareVisibleItems = Word(QualityData.DepthWork, index * 4 + 2),
+                    StaticSoftwareVisibleItems = Word(QualityData.DepthWork, index * 4 + 3),
                 };
             }
             return new(frame, bias[0], bias[1], Word(QualityData.RequestCount), Word(QualityData.DirtyCount),

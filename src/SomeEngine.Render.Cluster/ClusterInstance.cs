@@ -20,6 +20,9 @@ public static class ClusterRenderFeature
     public static RenderInstancePropertyKey BoundsExpansionKey { get; } =
         new("someengine.cluster.bounds_expansion");
 
+    public static RenderInstancePropertyKey DepthCacheClassKey { get; } =
+        new("someengine.shadow.depth_cache_class");
+
     public const uint MissingBvhRoot = uint.MaxValue;
     public const uint MissingMaterialSlots = uint.MaxValue;
 
@@ -56,6 +59,7 @@ public static class ClusterRenderFeature
             "SomeEngine.Render.Cluster",
             BoundsExpansionKey,
             Float32Encoding);
+        _ = builder.Register<uint>("SomeEngine.Render", DepthCacheClassKey, UInt32Encoding);
         return builder.Freeze();
     }
 

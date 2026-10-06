@@ -13,6 +13,7 @@ public struct MeshSource : IComponent
 {
     public AssetId<MeshAsset> Mesh;
     public float BoundsExpansion;
+    public DepthCacheClass DepthCacheClass;
 }
 
 public struct MeshMotion : IComponent

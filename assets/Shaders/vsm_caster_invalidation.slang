@@ -1,5 +1,6 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
+#include "vsm_depth_cache.slang"
 #include "resource_effects.slang"
 
 struct VirtualShadowInvalidationUniforms
@@ -20,7 +21,8 @@ StructuredBuffer<float4> InstanceWorldBounds;
 StructuredBuffer<uint> ChangedInstances;
 StructuredBuffer<uint> RequestedShadowPages;
 StructuredBuffer<uint> RequestedPageFlags;
-StructuredBuffer<uint4> PageMetadata;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint4> PageMetadata;
 StructuredBuffer<uint> AllocatedPageHierarchy;
 StructuredBuffer<uint4> AllocatedPageRectBounds;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -137,7 +139,7 @@ void InvalidateBoundsInView(
     uint viewIndex,
     VirtualShadowMapParameters view,
     float3 worldMin,
-    float3 worldMax)
+    float3 worldMax, uint depthCacheClass)
 {
     if (any(worldMin > worldMax) || BoundsOutsideLocalLight(view, worldMin, worldMax))
         return;
@@ -188,6 +190,13 @@ void InvalidateBoundsInView(
                 if (RequestedShadowPages[tableIndex] == Invalidation.FrameIndex)
                     requestFlags = RequestedPageFlags[tableIndex];
                 uint ignored;
+                uint invalidation = depthCacheClass == 1u ? VSM_PAGE_INVALIDATE_STATIC | VSM_PAGE_INVALIDATE_DYNAMIC
+                    : VSM_PAGE_INVALIDATE_DYNAMIC;
+                // Dynamic-only coarse retention is an explicit per-view policy.
+                if (depthCacheClass == 0u && (view.Flags & VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE) != 0u &&
+                    (requestFlags & VSM_PAGE_REQUEST_DETAIL) == 0u) continue;
+                InterlockedOr(PageMetadata[atlasPage].w, invalidation, ignored);
+                if (depthCacheClass == 1u) InterlockedExchange(PageMetadata[atlasPage].y, 0u, ignored);
                 InterlockedExchange(ShadowPageTable[tableIndex].w, 0u, ignored);
             }
         }
@@ -210,7 +219,7 @@ void InvalidateMovedVirtualShadowCasters(uint3 group : SV_GroupID, uint lane : S
     for (uint viewIndex = lane; viewIndex < Invalidation.ViewCount; viewIndex += 64u)
     {
         VirtualShadowMapParameters view = ShadowViews[viewIndex];
-        InvalidateBoundsInView(viewIndex, view, currentMin, currentMax);
-        InvalidateBoundsInView(viewIndex, view, previousMin, previousMax);
+        InvalidateBoundsInView(viewIndex, view, currentMin, currentMax, uint(InstanceWorldBounds[instanceId * 4u].w));
+        InvalidateBoundsInView(viewIndex, view, previousMin, previousMax, uint(InstanceWorldBounds[instanceId * 4u + 2u].w));
     }
 }

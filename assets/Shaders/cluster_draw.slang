@@ -175,7 +175,7 @@ void EvaluatePSVisBufferImageAtomic64(
         WriteRasterTargetDepth(
             int2(input.Pos.xy),
             view.TargetViewIndex,
-            saturate(pixelResult.Depth));
+            saturate(pixelResult.Depth), RasterOutputDepthCacheClass(input.VisibleClusterIndex));
         discard;
     }
     WriteVisibilityWinnerImage(
@@ -206,7 +206,7 @@ void EvaluatePSVisBufferBufferAtomic64(
                 view.TargetViewIndex,
                 int2(input.Pos.xy)))
             discard;
-        WriteRasterTargetDepth(int2(input.Pos.xy), view.TargetViewIndex, saturate(pixelResult.Depth));
+        WriteRasterTargetDepth(int2(input.Pos.xy), view.TargetViewIndex, saturate(pixelResult.Depth), RasterOutputDepthCacheClass(input.VisibleClusterIndex));
         discard;
     }
     WriteVisibilityWinnerBuffer(
@@ -242,7 +242,7 @@ PSVisBufferOutput EvaluatePSVisBufferHardwareOnly(
         WriteRasterTargetDepth(
             int2(input.Pos.xy),
             view.TargetViewIndex,
-            saturate(pixelResult.Depth));
+            saturate(pixelResult.Depth), RasterOutputDepthCacheClass(input.VisibleClusterIndex));
         discard;
     }
     PSVisBufferOutput output;

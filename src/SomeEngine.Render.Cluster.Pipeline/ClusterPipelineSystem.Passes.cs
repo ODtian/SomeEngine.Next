@@ -897,6 +897,11 @@ public sealed partial class ClusterPipelineSystem
         else
             _ = countAccess.Bind(graph.CreateBufferSrv(frame.NeutralPolicyView,
                 structureStride: ClusterRenderContext.TargetViewSizeInBytes), PipelineSync.ComputeShading);
+        GraphBufferId depthWorkCounter = _renderContext.IsValid && epoch >= 2 && _renderContext.DepthWorkCounter != default
+            ? _renderContext.DepthWorkCounter : frame.NeutralPolicyCounter;
+        _ = countAccess.Bind(graph.CreateBufferUav(depthWorkCounter, structureStride: sizeof(uint)), PipelineSync.ComputeShading,
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial,
+            unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
 
         bindingCount = 0;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(

@@ -396,7 +396,8 @@ bool LoadAndFilterCandidate(
     if (needsCurrentBounds && view.CullingEnabled != 0u)
         currentBounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, false, view);
     if (view.TargetPolicy != 0u && !ClusterTargetPolicyRasterBoundsWindow(
-            currentBounds.MinUv, currentBounds.MaxUv, view, rasterWindow))
+            currentBounds.MinUv, currentBounds.MaxUv, view, rasterWindow,
+            LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID)))
         return false;
     if (view.CullingEnabled == 0u)
     {
@@ -446,7 +447,8 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
         uint2 last = min(uint2(x, y) + windowSize - 1u, pages.zw);
         uint2 clipped;
         AddClusterWorkMetric(16u, 1u);
-        if (ClusterTargetCropRasterWindow(target, uint4(first, last), firstPixel, lastPixel, clipped))
+        if (ClusterTargetCropRasterWindow(target, uint4(first, last), firstPixel, lastPixel, clipped,
+                LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID)))
         {
             AddClusterWorkMetric(32u, 1u);
             AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex,

@@ -13,6 +13,12 @@ public sealed partial class VirtualShadowFeature
     private GraphPassId _staticMergeFinalPass;
     private LinkedComputePipeline? _staticMergePipeline;
 
+    private void BindStaticDepthAtlas(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
+        _ = pass.Bind(graph.CreateTextureUav(_staticAtlas, format: Format.R32UInt,
+            dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D), sync,
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial,
+            unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
+
     private void InstallStaticDepth(ref RenderGraphEdit edit, VirtualShadowMapShaders shaders,
         GraphRegionId prepare, GraphRegionId finish)
     {

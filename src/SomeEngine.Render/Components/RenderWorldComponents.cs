@@ -106,7 +106,8 @@ public readonly record struct RenderInstance : IComponent;
 /// without creating a second instance store.
 /// </summary>
 public readonly record struct RenderMesh(Mesh Mesh, float BoundsExpansion,
-    SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource = null) : IComponent;
+    SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource = null,
+    DepthCacheClass DepthCacheClass = DepthCacheClass.Dynamic) : IComponent;
 
 /// <summary>
 /// Pipeline-neutral view input stored as an ordinary RenderWorld component. A view entity may
