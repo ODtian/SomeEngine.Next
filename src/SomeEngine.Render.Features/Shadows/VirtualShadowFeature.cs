@@ -638,6 +638,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BindPool(ref edit, _poolFinishPass, _poolFinishUniforms);
                 BindAllocation(ref edit, _allocatePass, _allocationUniforms);
                 InstallStaticDepth(ref edit, shaders, primaryDepthAfter, targetGeometryAfter);
+                InstallResidentPages(ref edit, shaders, pageTableEntryCapacity, targetGeometryAfter);
                 BindClear(ref edit, _clearUniforms);
                 BindDynamicResolution(ref edit, _dynamicResolutionUniforms);
                 BindCompact(ref edit, _frameInvocationUniforms, _clusterSourceViews);
@@ -658,7 +659,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     [_frameSamplingUniforms, _frameInvocationUniforms, _initUniforms, _invalidationUniforms,
                      _coarseDemandUniforms, _demandUniforms, _poolUniforms,
                      _poolPrepareUniforms, _poolCompactUniforms, _poolFinishUniforms, _allocationUniforms,
-                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, _workUniforms, .. _pageHiZReduceUniforms],
+                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, _workUniforms, _residentUniforms, .. _pageHiZReduceUniforms],
                     device.Capabilities.Limits.ConstantBufferAlignment, "Virtual shadow constant data");
                 PassDefinition frameComplete = edit.GetPass(_frameCompletePass);
                 _ = frameComplete.Read(
@@ -682,6 +683,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         catch
         {
             dispatchLayout?.Dispose();
+            _residentPipeline?.Dispose();
             _staticMergePipeline?.Dispose();
             _workFeedbackPipeline?.Dispose();
             _workTimeQueries?.Dispose();
@@ -999,6 +1001,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             "RasterTargetStaticOutput" when type == ResourceBindingType.TextureUav => BindStaticDepthAtlas,
             "RasterTargetOutput" when type == ResourceBindingType.TextureUav => BindPageDepthAtlas,
             "VirtualShadowViews" when type == ResourceBindingType.BufferSrv => BindShadeViews,
+            "VirtualShadowResidentPages" when type == ResourceBindingType.BufferSrv => BindResidentPages,
             "VirtualShadowPageTable" when type == ResourceBindingType.BufferSrv => BindShadePageTable,
             "VirtualShadowReceiverMasks" when type == ResourceBindingType.BufferSrv => BindRasterReceiverMasks,
             "VirtualShadowAtlas" when type == ResourceBindingType.TextureSrv => BindShadeAtlas,
@@ -1017,6 +1020,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             throw new InvalidOperationException("Finish or cancel the active graph frame before disposing virtual shadows.");
         _qualityReadbacks?.Requests.Clear();
         _dispatchLayout.Dispose();
+        _residentPipeline?.Dispose();
         _staticMergePipeline?.Dispose();
         _workFeedbackPipeline?.Dispose();
         if (_workTimeQueries is { } queries) _renderGraph.RetireAfterSubmittedFrames(queries);
@@ -1245,6 +1249,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
 
         graph.SetPassEnabled(_rasterCompletePass, viewCount != 0u);
         graph.SetPassEnabled(_frameCompletePass, true);
+        UpdateResidentPages(ref graph, viewCount);
         graph.SetPassEnabled(_frameResetPass, true);
 
     }

@@ -386,6 +386,9 @@ public static class DefaultContent
                 AllocatePages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_allocate_pages.shader"),
                     "AllocateVirtualShadowPages"),
+                ResidentPages = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_resident_propagation.shader"),
+                    "PropagateVirtualShadowResidentPages"),
                 MergeStatic = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_merge_static.shader"),
                     "MergeVirtualShadowStaticDepth"),
