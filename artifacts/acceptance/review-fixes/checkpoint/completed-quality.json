@@ -1,0 +1,3799 @@
+{
+    "Shadows": {
+      "RenderingFrame": 64,
+      "DirectionalLodAddition": 0,
+      "LocalLodAddition": 0,
+      "RequestedPages": 0,
+      "DirtyPages": 267,
+      "AllocationFailures": 0,
+      "FineAllocationFailures": 0,
+      "FreePhysicalPages": 3826,
+      "RasterPageArea": 361854,
+      "WorkOverflow": 0,
+      "Views": [
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 0,
+          "ClipmapLevel": -4,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 1,
+          "ClipmapLevel": -3,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 2,
+          "ClipmapLevel": -2,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 3,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 4,
+          "ClipmapLevel": 0,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 5,
+          "ClipmapLevel": 1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 6,
+          "ClipmapLevel": 2,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 7,
+          "ClipmapLevel": 3,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 8,
+          "ClipmapLevel": 4,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 9,
+          "ClipmapLevel": 5,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 10,
+          "ClipmapLevel": 6,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 82,
+              "WholeDepthPages": 40,
+              "ReceiverDepthPages": 41,
+              "UnfinishedPages": 1,
+              "CoveredReceiverCells": 3841
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 11,
+          "ClipmapLevel": 7,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 12,
+          "ClipmapLevel": 8,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 13,
+          "ClipmapLevel": 9,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 14,
+          "ClipmapLevel": 10,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 15,
+          "ClipmapLevel": 11,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 16,
+          "ClipmapLevel": 12,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 17,
+          "ClipmapLevel": 13,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 18,
+          "ClipmapLevel": 14,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 19,
+          "ClipmapLevel": 15,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 4,
+              "WholeDepthPages": 4,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 256
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 20,
+          "ClipmapLevel": 16,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 4,
+              "WholeDepthPages": 4,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 256
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 21,
+          "ClipmapLevel": 17,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 4,
+              "WholeDepthPages": 4,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 256
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 22,
+          "ClipmapLevel": 18,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 4,
+              "WholeDepthPages": 4,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 256
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 23,
+          "ClipmapLevel": 19,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 24,
+          "ClipmapLevel": 20,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 25,
+          "ClipmapLevel": 21,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            }
+          ]
+        },
+        {
+          "LightKind": 0,
+          "LightIndex": 0,
+          "FaceIndex": 26,
+          "ClipmapLevel": 22,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0.23659372,
+          "AppliedResolutionLodBias": 0.23659372,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 4,
+              "WholeDepthPages": 4,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 256
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 1,
+          "FaceIndex": 0,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 4,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 4,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 37
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 8,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 8,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 198
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 2,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 2,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 48
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 1,
+          "FaceIndex": 1,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 1,
+          "FaceIndex": 2,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 7,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 7,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 151
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 2,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 2,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 42
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 1,
+          "FaceIndex": 3,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 4,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 4,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 32
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 7,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 7,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 156
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 2,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 2,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 41
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 1,
+          "FaceIndex": 4,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 4,
+              "WholeDepthPages": 2,
+              "ReceiverDepthPages": 2,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 240
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 1,
+          "FaceIndex": 5,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 2,
+          "FaceIndex": 0,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 2,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 2,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 32
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 2,
+          "FaceIndex": 1,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 12,
+              "WholeDepthPages": 2,
+              "ReceiverDepthPages": 10,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 215
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 8,
+              "WholeDepthPages": 2,
+              "ReceiverDepthPages": 6,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 291
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 2,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 2,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 80
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 2,
+          "FaceIndex": 2,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 8,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 7,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 178
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 2,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 2,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 76
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 2,
+          "FaceIndex": 3,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 10,
+              "WholeDepthPages": 2,
+              "ReceiverDepthPages": 8,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 192
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 7,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 6,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 186
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 2,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 2,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 74
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 2,
+          "FaceIndex": 4,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 4,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 4,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 224
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 2,
+          "FaceIndex": 5,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 3,
+          "FaceIndex": 0,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 6,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 6,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 171
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 4,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 4,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 188
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 3,
+          "FaceIndex": 1,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 6,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 6,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 162
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 4,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 4,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 188
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 3,
+          "FaceIndex": 2,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 4,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 4,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 160
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 3,
+          "FaceIndex": 3,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 8,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 6,
+              "UnfinishedPages": 2,
+              "CoveredReceiverCells": 177
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 4,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 4,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 188
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 3,
+          "FaceIndex": 4,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 16,
+              "WholeDepthPages": 16,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 1024
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        },
+        {
+          "LightKind": 1,
+          "LightIndex": 3,
+          "FaceIndex": 5,
+          "ClipmapLevel": -1,
+          "VirtualResolution": 16384,
+          "BaseResolutionLodBias": 0,
+          "AppliedResolutionLodBias": 0,
+          "Mips": [
+            {
+              "Mip": 0,
+              "Resolution": 16384,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 1,
+              "Resolution": 8192,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 2,
+              "Resolution": 4096,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 3,
+              "Resolution": 2048,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 4,
+              "Resolution": 1024,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 5,
+              "Resolution": 512,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 6,
+              "Resolution": 256,
+              "MappedPages": 0,
+              "WholeDepthPages": 0,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 0
+            },
+            {
+              "Mip": 7,
+              "Resolution": 128,
+              "MappedPages": 1,
+              "WholeDepthPages": 1,
+              "ReceiverDepthPages": 0,
+              "UnfinishedPages": 0,
+              "CoveredReceiverCells": 64
+            }
+          ]
+        }
+      ],
+      "RasterBatchEquivalents": 5653.96875
+    },
+    "Geometry": {
+      "FrameIndex": 64,
+      "CandidateCount": 35841,
+      "CandidateDispatchGroups": 561,
+      "PhaseOneSoftwareClusters": 0,
+      "PhaseOneHardwareClusters": 19359,
+      "PhaseTwoCandidateCount": 0,
+      "PhaseTwoDispatchGroups": 0,
+      "PhaseTwoSoftwareClusters": 0,
+      "PhaseTwoHardwareClusters": 0,
+      "RasterBatches": 131807,
+      "SoftwareRasterBatches": 3510,
+      "FirstShadeBinTiles": 459,
+      "ShadingWorkItems": 49896,
+      "TessellationFinalPatches": 0,
+      "DroppedTessellationPatches": 0,
+      "CulledTessellationPatches": 0,
+      "QualityLimitedTessellationPatches": 0,
+      "SoftwareRasterDebugRecords": 3510,
+      "VisibilityProbePixels": 5,
+      "ResidencyEpoch": 1,
+      "Work": {
+        "Overflow": 0,
+        "TargetCandidateTests": 245164,
+        "PotentialHardwareWindows": 108938,
+        "EmptyHardwareWindows": 0,
+        "RequiredHardwareWindows": 108938,
+        "AcceptedHardwareWindows": 108938,
+        "RequiredSoftwareItems": 3510,
+        "AcceptedSoftwareItems": 3510,
+        "HardwareRasterBatches": 128297,
+        "SoftwareRasterBatches": 3510,
+        "RequiredSurfaceRoots": 0,
+        "RequiredFinalSurfacePatches": 0,
+        "Complete": true
+      }
+    },
+    "Residency": {
+      "RegisteredMeshes": 1,
+      "PublishedMeshes": 1,
+      "RegisteredPages": 6,
+      "ResidentPages": 3,
+      "MissingPages": 3,
+      "QueuedPageLoads": 0,
+      "ActivePageLoads": 0,
+      "PageLoadFailures": 0
+    }
+  }

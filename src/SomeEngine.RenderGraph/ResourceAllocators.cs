@@ -938,7 +938,8 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
 
     private readonly List<UploadPage> _uploadPages = [];
     private readonly Dictionary<GraphIdentity, (BufferDesc Description, UploadPage Page)> _bufferUploads = [];
-    private const BufferUsages UploadReadUsages = BufferUsages.Constant | BufferUsages.ShaderRead;
+    private const BufferUsages UploadReadUsages = BufferUsages.Constant | BufferUsages.ShaderRead |
+        BufferUsages.Vertex | BufferUsages.Index;
 
     internal sealed class UploadPage
     {

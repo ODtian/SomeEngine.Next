@@ -572,10 +572,11 @@ public sealed partial class ClusterPipelineSystem
             case ("RasterTargetPageHierarchy", ResourceBindingType.BufferSrv):
             case ("RasterTargetPageTable", ResourceBindingType.BufferSrv):
             case ("RasterTargetReceiverMasks", ResourceBindingType.BufferSrv):
+            case ("RasterTargetPageMetadata", ResourceBindingType.BufferSrv):
                 uint stride = resource.Name switch
                 {
                     "RasterTargetPageHierarchy" => sizeof(uint),
-                    "RasterTargetPageTable" => 4u * sizeof(uint),
+                    "RasterTargetPageTable" or "RasterTargetPageMetadata" => 4u * sizeof(uint),
                     _ => 2u * sizeof(uint),
                 };
                 _ = pass.Bind(
@@ -584,6 +585,13 @@ public sealed partial class ClusterPipelineSystem
                         structureStride: stride,
                         label: $"Cluster neutral {resource.Name}"),
                     PipelineSync.AllShading);
+                return true;
+            case ("RasterTargetCurrentHiZ", ResourceBindingType.TextureSrv):
+            case ("RasterTargetPreviousHiZ", ResourceBindingType.TextureSrv):
+                _ = pass.Bind(graph.CreateTextureSrv(GraphData.Resources.PreviousHiZ,
+                    format: Format.R32Float,
+                    dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
+                    label: $"Cluster neutral {resource.Name}"), PipelineSync.AllShading);
                 return true;
             case ("RasterTargetOutput", ResourceBindingType.TextureUav):
                 _ = pass.Bind(

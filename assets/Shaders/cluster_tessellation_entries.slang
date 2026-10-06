@@ -4,8 +4,14 @@
 #include "cluster_tessellation_core.slang"
 #include "cluster_policy_raster_output.slang"
 
+// User material entries declare their domain's bound. Linear/identity domains
+// can select finite; displaced domains retain the unbounded default unless proven.
+#ifndef CLUSTER_TESSELLATION_BOUNDS
+#define CLUSTER_TESSELLATION_BOUNDS "unbounded"
+#endif
+
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void ClusterTessellationSeed(
@@ -17,7 +23,7 @@ void ClusterTessellationSeed(
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void ClusterTessellationSplit(
@@ -30,7 +36,7 @@ void ClusterTessellationSplit(
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -41,7 +47,7 @@ void ClusterTessellationDiceImageAtomic64(
     uint3 groupId : SV_GroupID,
     uint groupThreadIndex : SV_GroupThreadID)
 {
-    ClusterRasterOutputImageAtomic64 output;
+    ClusterDicedRasterOutput<ClusterRasterOutputImageAtomic64> output;
     DiceTessellationPatches(
         vertex,
         domain,
@@ -52,7 +58,7 @@ void ClusterTessellationDiceImageAtomic64(
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -63,14 +69,14 @@ void ClusterTessellationDiceBufferAtomic64(
     uint3 groupId : SV_GroupID,
     uint groupThreadIndex : SV_GroupThreadID)
 {
-    ClusterRasterOutputBufferAtomic64 output;
-    output.Width = TessellationUniformData.ScreenWidth;
-    output.Height = TessellationUniformData.ScreenHeight;
+    ClusterDicedRasterOutput<ClusterRasterOutputBufferAtomic64> output;
+    output.Primary.Width = TessellationUniformData.ScreenWidth;
+    output.Primary.Height = TessellationUniformData.ScreenHeight;
     DiceTessellationPatches(vertex, domain, visibility, output, groupId, groupThreadIndex);
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("vertex")]
 ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareVertex(
     uniform VertexEvaluate vertex,
@@ -139,7 +145,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(32, 1, 1)]

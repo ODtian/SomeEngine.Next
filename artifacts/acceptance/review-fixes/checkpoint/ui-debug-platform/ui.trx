@@ -1,0 +1,144 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="333b8d77-c99b-430f-91e9-e88830cb3966" name="boqi@BOQI-THE-DAEMON 2026-10-06 12:05:44" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T12:05:44.5199900+08:00" queuing="2026-10-06T12:05:44.5199904+08:00" start="2026-10-06T12:04:01.6747837+08:00" finish="2026-10-06T12:05:57.5679051+08:00" />
+  <TestSettings name="default" id="33c2f4d6-728b-4037-bc2b-782102fede37">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_12_05_44" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="e59d208e-4e1d-438b-bc5e-4a6d3600b30e" testId="23037d9e-3388-4bd1-0fa0-6ee3ae5184ac" testName="SomeEngine.Runtime.Tests.DebugUiImageTests.OrdinaryDebugWindowRendersVisiblePixelsAcrossGraphFrameUploads(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:13.7601838" startTime="2026-10-06T12:05:43.0126457+08:00" endTime="2026-10-06T12:05:56.7213716+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e59d208e-4e1d-438b-bc5e-4a6d3600b30e" />
+    <UnitTestResult executionId="d69cd917-6b4a-4eb7-b4e2-c5e92ed08852" testId="331f24ca-cc2c-4059-f513-3bedc062326b" testName="SomeEngine.Runtime.Tests.DebugUiImageTests.OrdinaryDebugWindowRendersVisiblePixelsAcrossGraphFrameUploads(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T12:05:42.9877789+08:00" endTime="2026-10-06T12:05:42.9919792+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d69cd917-6b4a-4eb7-b4e2-c5e92ed08852">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Runtime.Tests.DebugUiImageTests.OrdinaryDebugWindowRendersVisiblePixelsAcrossGraphFrameUploads(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.tests\bin\debug\net10.0\someengine.runtime.tests.dll" id="23037d9e-3388-4bd1-0fa0-6ee3ae5184ac">
+      <Execution id="e59d208e-4e1d-438b-bc5e-4a6d3600b30e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Tests\bin\Debug\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.DebugUiImageTests" name="OrdinaryDebugWindowRendersVisiblePixelsAcrossGraphFrameUploads" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.DebugUiImageTests.OrdinaryDebugWindowRendersVisiblePixelsAcrossGraphFrameUploads(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.tests\bin\debug\net10.0\someengine.runtime.tests.dll" id="331f24ca-cc2c-4059-f513-3bedc062326b">
+      <Execution id="d69cd917-6b4a-4eb7-b4e2-c5e92ed08852" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Tests\bin\Debug\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.DebugUiImageTests" name="OrdinaryDebugWindowRendersVisiblePixelsAcrossGraphFrameUploads" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="23037d9e-3388-4bd1-0fa0-6ee3ae5184ac" executionId="e59d208e-4e1d-438b-bc5e-4a6d3600b30e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="331f24ca-cc2c-4059-f513-3bedc062326b" executionId="d69cd917-6b4a-4eb7-b4e2-c5e92ed08852" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="2" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.22]   Discovering: SomeEngine.Runtime.Tests&#xD;
+[xUnit.net 00:00:05.70]   Discovered:  SomeEngine.Runtime.Tests&#xD;
+[xUnit.net 00:00:05.76]   Starting:    SomeEngine.Runtime.Tests&#xD;
+Shader: cluster_bin_count.shader&#xD;
+Shader: cluster_bin_reserve.shader&#xD;
+Shader: cluster_bin_reset.shader&#xD;
+Shader: cluster_bin_scatter.shader&#xD;
+Shader: cluster_bvh_traverse.shader&#xD;
+Shader: cluster_bvh_traverse_seed.shader&#xD;
+Shader: cluster_cull_phase1.shader&#xD;
+Shader: cluster_cull_phase2.shader&#xD;
+Shader: cluster_cull_reset.shader&#xD;
+Shader: cluster_deferred_resume.shader&#xD;
+Shader: cluster_draw.shader&#xD;
+Shader: cluster_resolve.shader&#xD;
+Shader: cluster_scene_bounds.shader&#xD;
+Shader: cluster_tessellation_bin.shader&#xD;
+Shader: cluster_tessellation_phong.shader&#xD;
+Shader: clustered_light_grid.shader&#xD;
+Shader: debug_args_copy.shader&#xD;
+Shader: debug_sphere.shader&#xD;
+Shader: hello_triangle.shader&#xD;
+Shader: hiz_init.shader&#xD;
+Shader: hiz_reduce.shader&#xD;
+Shader: hiz_reduce_pair.shader&#xD;
+Shader: imgui.shader&#xD;
+Shader: post_tonemap.shader&#xD;
+Shader: ray_tracing_geometry.shader&#xD;
+Shader: render_debug_overlay.shader&#xD;
+Shader: shade_bin_count.shader&#xD;
+Shader: shade_bin_reserve.shader&#xD;
+Shader: shade_bin_reset.shader&#xD;
+Shader: shade_bin_scatter.shader&#xD;
+Shader: shader_contract_probe.shader&#xD;
+Shader: standard.shader&#xD;
+Shader: stream_output_geometry.shader&#xD;
+Shader: sw_raster.shader&#xD;
+Shader: temporal_resolve.shader&#xD;
+Shader: translucency_composite.shader&#xD;
+Shader: triangle.shader&#xD;
+Shader: unlit.shader&#xD;
+Shader: visibility_clear_buffer.shader&#xD;
+Shader: visibility_clear_image.shader&#xD;
+Shader: visibility_resolve_buffer.shader&#xD;
+Shader: visibility_resolve_image.shader&#xD;
+Shader: vsm_allocate_pages.shader&#xD;
+Shader: vsm_caster_invalidation.shader&#xD;
+Shader: vsm_clear_pages.shader&#xD;
+Shader: vsm_dynamic_resolution.shader&#xD;
+Shader: vsm_frame_reset.shader&#xD;
+Shader: vsm_mark_coarse_pages.shader&#xD;
+Shader: vsm_mark_pages.shader&#xD;
+Shader: vsm_page_depth_complete.shader&#xD;
+Shader: vsm_page_hiz.shader&#xD;
+Shader: vsm_page_hiz_reduce.shader&#xD;
+Shader: vsm_page_pool.shader&#xD;
+Shader: vsm_receiver_mask_reset.shader&#xD;
+Shader: vsm_state_init.shader&#xD;
+Shader: vsm_view_compact.shader&#xD;
+  ClusterPipeline: assets/Pipelines/default_cluster.clusterrender.asset&#xD;
+  VirtualShadowMap: assets/Pipelines/default_virtual_shadow.virtualshadow.asset&#xD;
+  Scene: assets/Scenes/default.scene.asset&#xD;
+  Application: assets/Runtime/default.runtime.asset&#xD;
+Built 68 project assets from project sources and the engine shader library.&#xD;
+[xUnit.net 00:01:40.44]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.DebugUiImageTests.OrdinaryDebugWindowRendersVisiblePixelsAcrossGraphFrameUploads(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-17fd90badfb6436bbf97af73298da628\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 4 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-17fd90badfb6436bbf97af73298da628\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 4 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-17fd90badfb6436bbf97af73298da628\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 4 frame(s).&#xD;
+[xUnit.net 00:01:54.83]   Finished:    SomeEngine.Runtime.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T12:05:43.0408060+08:00">
+        <Text>[xUnit.net 00:01:40.44]     SomeEngine.Runtime.Tests.DebugUiImageTests.OrdinaryDebugWindowRendersVisiblePixelsAcrossGraphFrameUploads(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

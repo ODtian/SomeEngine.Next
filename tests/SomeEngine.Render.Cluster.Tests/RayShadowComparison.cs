@@ -30,7 +30,7 @@ internal sealed record RayShadowComparison(
         var coverage = new byte[reference.Length];
         var shading = new byte[reference.Length];
         using var csv = new StreamWriter(Path.Combine(directory, "ray-comparison.csv"));
-        csv.WriteLine("x,y,referenceVisibility,renderedVisibility,receiverCoverage,referenceShadingRejected,renderedShadingRejected,selfHit,boundary,absoluteVisibilityError,rangeRejected,coneRejected,cubeFace");
+        csv.WriteLine("x,y,referenceVisibility,renderedVisibility,receiverCoverage,referenceShadingRejected,renderedShadingRejected,selfHit,boundary,absoluteVisibilityError,rangeRejected,coneRejected,cubeFace,rawVisibilityNumerator,rawShadingNumerator");
         for (int y = 0; y < height; y++)
         for (int x = 0; x < width; x++)
         {
@@ -38,13 +38,16 @@ internal sealed record RayShadowComparison(
             uint expected = reference[pixel] & 3u;
             bool skyPixel = reference[pixel] == uint.MaxValue;
             bool eligible = expected <= 1 && !skyPixel;
-            bool rendered = actual[pixel].Y > .001f;
-            float observed = rendered ? Math.Clamp(actual[pixel].X / actual[pixel].Y, 0, 1) : 0;
+            bool rendered = float.IsFinite(actual[pixel].Y) && actual[pixel].Y > .001f;
+            // Preserve the raw ratio for scoring and CSV. Clamp only the preview.
+            float observed = actual[pixel].X / actual[pixel].Y;
+            bool finite = float.IsFinite(actual[pixel].X) && float.IsFinite(actual[pixel].Y) &&
+                float.IsFinite(actual[pixel].Z) && float.IsFinite(observed);
             bool referenceRejected = !skyPixel && (reference[pixel] & 4u) != 0;
             bool renderedRejected = rendered && actual[pixel].Z / actual[pixel].Y < .5f;
             bool selfHit = !skyPixel && (reference[pixel] & 8u) != 0;
             bool edge = eligible && IsBoundary(reference, x, y, width, height);
-            float error = eligible ? rendered && float.IsFinite(observed) ? MathF.Abs(observed - expected) : 1 : 0;
+            float error = eligible ? rendered && finite ? MathF.Abs(observed - expected) : 1 : 0;
             bool outsideRange = !skyPixel && (reference[pixel] & 16u) != 0;
             bool outsideCone = !skyPixel && (reference[pixel] & 32u) != 0;
             int cubeFace = skyPixel ? -1 : (int)((reference[pixel] >> 8) & 7u) - 1;
@@ -66,10 +69,10 @@ internal sealed record RayShadowComparison(
             expectedImage[pixel] = eligible ? (byte)(expected * 255) : (byte)127;
             actualImage[pixel] = float.IsFinite(observed) ? (byte)Math.Clamp(observed * 255, 0, 255) : (byte)127;
             errors[pixel] = (byte)Math.Clamp(error * 255, 0, 255);
-            coverage[pixel] = (byte)Math.Clamp(actual[pixel].Y * 255, 0, 255);
+            coverage[pixel] = float.IsFinite(actual[pixel].Y) ? (byte)Math.Clamp(actual[pixel].Y * 255, 0, 255) : (byte)127;
             shading[pixel] = referenceRejected ? (byte)255 : (byte)0;
             csv.WriteLine(FormattableString.Invariant(
-                $"{x},{y},{(eligible ? (int)expected : -1)},{observed:R},{actual[pixel].Y:R},{(referenceRejected ? 1 : 0)},{(renderedRejected ? 1 : 0)},{(selfHit ? 1 : 0)},{(edge ? 1 : 0)},{error:R},{(outsideRange ? 1 : 0)},{(outsideCone ? 1 : 0)},{cubeFace}"));
+                $"{x},{y},{(eligible ? (int)expected : -1)},{observed:R},{actual[pixel].Y:R},{(referenceRejected ? 1 : 0)},{(renderedRejected ? 1 : 0)},{(selfHit ? 1 : 0)},{(edge ? 1 : 0)},{error:R},{(outsideRange ? 1 : 0)},{(outsideCone ? 1 : 0)},{cubeFace},{actual[pixel].X:R},{actual[pixel].Z:R}"));
         }
         ShadowImageFiles.WriteGrayscale(Path.Combine(directory, "rt-shadow.bmp"), width, height, expectedImage);
         ShadowImageFiles.WriteGrayscale(Path.Combine(directory, "rendered-shadow.bmp"), width, height, actualImage);

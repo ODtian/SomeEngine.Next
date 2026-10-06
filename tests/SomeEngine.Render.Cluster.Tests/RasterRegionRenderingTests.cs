@@ -152,8 +152,7 @@ public sealed class RasterRegionRenderingTests(Xunit.Abstractions.ITestOutputHel
     {
         Assert.Equal(0u, expected.Metrics.DroppedTessellationPatches);
         Assert.Equal(0u, actual.Metrics.DroppedTessellationPatches);
-        Assert.Equal(expected.Color, actual.Color);
-        Assert.Equal(expected.Depth, actual.Depth);
+        RasterImage.AssertEqual(expected, actual);
     }
 
     private static ClusterPipelineOptions Options(bool hardware) => new()

@@ -9,27 +9,29 @@ internal sealed class ShadowReferenceRays
     private readonly Triangle[] _triangles;
     private readonly List<BoundsNode> _bounds = [];
     private readonly ShadowReferenceScene.MeshPlacement[] _meshes;
-    private readonly string _light;
+    private readonly SomeEngine.Runtime.SceneFrame _frame;
+    private readonly SomeEngine.Runtime.SceneLight _light;
     private readonly int[] _meshIndices;
     private readonly List<BoundsNode> _meshBounds = [];
 
     internal Vector3 LightDirection { get; }
 
-    internal ShadowReferenceRays(string source, string light, Vector3? casterPosition = null, Vector3? lightDirection = null)
+    internal ShadowReferenceRays(string source, ShadowReferenceInputs inputs, SomeEngine.Runtime.SceneFrame frame)
     {
         ModelRoot model = ModelRoot.Load(source);
         MeshPrimitive primitive = model.LogicalMeshes.Single().Primitives.Single();
         var positions = primitive.GetVertexAccessor("POSITION").AsVector3Array();
         var normals = primitive.GetVertexAccessor("NORMAL").AsVector3Array();
         var indices = primitive.GetIndexAccessor().AsIndicesArray();
-        _light = light;
-        LightDirection = lightDirection ?? ShadowReferenceScene.Direction(light);
-        _meshes = ShadowReferenceScene.Meshes(light, captured: true);
-        if (casterPosition is Vector3 position)
+        _frame = frame;
+        _light = frame.Lights.Single();
+        LightDirection = _light.Direction;
+        Assert.Equal(inputs.Meshes.Length, frame.Meshes.Length);
+        _meshes = inputs.Meshes.Select((mesh, index) =>
         {
-            int caster = Array.FindIndex(_meshes, mesh => !mesh.Receiver);
-            _meshes[caster] = _meshes[caster] with { Position = position };
-        }
+            Assert.True(Matrix4x4.Decompose(frame.Meshes[index].Transform, out Vector3 scale, out _, out Vector3 position));
+            return mesh with { Position = position, Scale = scale };
+        }).ToArray();
         _meshIndices = Enumerable.Range(0, _meshes.Length).ToArray();
         _triangles = new Triangle[indices.Count / 3];
         for (int index = 0; index < indices.Count; index += 3)
@@ -43,13 +45,11 @@ internal sealed class ShadowReferenceRays
 
     internal bool ReceiverAt(int x, int y, out Vector3 position, out Vector3 normal)
     {
-        int width = ShadowReferenceScene.ImageWidth(_light), height = ShadowReferenceScene.ImageHeight(_light);
-        float tangent = MathF.Tan(ShadowReferenceScene.FieldOfView(_light) / 2);
-        bool grid = ShadowReferenceScene.UsesDefaultGrid(_light);
-        Vector3 direction = Vector3.Normalize(new Vector3(
-            (2 * (x + .5f) / width - 1) * tangent * width / height * (grid ? -1 : 1),
-            (1 - 2 * (y + .5f) / height) * tangent, grid ? 1 : -1));
-        Vector3 origin = ShadowReferenceScene.CameraPosition(_light);
+        Assert.True(Matrix4x4.Invert(_frame.View * _frame.Projection, out Matrix4x4 clipToWorld));
+        Vector4 point = Vector4.Transform(new Vector4(2 * (x + .5f) / _frame.Width - 1,
+            1 - 2 * (y + .5f) / _frame.Height, 1, 1), clipToWorld);
+        Vector3 origin = _frame.CameraPosition;
+        Vector3 direction = Vector3.Normalize(new Vector3(point.X, point.Y, point.Z) / point.W - origin);
         float distance = float.PositiveInfinity;
         int meshIndex = -1;
         normal = default;
@@ -58,11 +58,14 @@ internal sealed class ShadowReferenceRays
         return meshIndex >= 0 && _meshes[meshIndex].Receiver;
     }
 
-    internal bool Occluded(Vector3 position, Vector3 normal, string light)
+    internal Vector3 ToLight(Vector3 position) => _light.Kind == SomeEngine.Runtime.SceneLightKind.Point
+        ? _light.Position - position : -LightDirection;
+
+    internal bool Occluded(Vector3 position, Vector3 normal)
     {
         Vector3 origin = position + normal * .01f;
-        Vector3 toLight = ShadowReferenceScene.IsPointLight(light) ? ShadowReferenceScene.PointLightPosition(light) - origin : -LightDirection;
-        float distance = ShadowReferenceScene.IsPointLight(light) ? toLight.Length() : float.PositiveInfinity;
+        Vector3 toLight = ToLight(origin);
+        float distance = _light.Kind == SomeEngine.Runtime.SceneLightKind.Point ? toLight.Length() : float.PositiveInfinity;
         Vector3 direction = Vector3.Normalize(toLight);
         int meshIndex = -1;
         Vector3 hitNormal = default;

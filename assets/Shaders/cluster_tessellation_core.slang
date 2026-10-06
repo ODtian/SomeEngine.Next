@@ -38,6 +38,7 @@ StructuredBuffer<uint> TessellationBinOffsets;
 
 #include "cluster_hiz_shared.slang"
 #include "cluster_raster_shared.slang"
+#include "cluster_raster_target_filter.slang"
 
 static const uint TESS_PORTABLE_DISPATCH_DIMENSION = 65535u;
 static const uint TESS_DICE_THREADS = 32u;
@@ -275,6 +276,13 @@ bool IsTessellationBoundsVisible(
     bool usePrevious = TessellationUniformData.UsePreviousHiZ != 0u;
     if (WorldAabbOutsideFrustum(minimum, maximum, usePrevious, view))
         return false;
+    if (view.TargetPolicy != 0u)
+    {
+        // Policy view IDs are not primary-camera texture layers. Target history
+        // is qualified per requested page by the same resolver as traversal.
+        return view.CullingEnabled == 0u || !ClusterTargetPolicyWorldBoundsOccluded(
+            minimum, maximum, usePrevious, view);
+    }
     float2 minUv;
     float2 maxUv;
     if (IsWorldAabbOccludedByHiZ(

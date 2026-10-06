@@ -1,0 +1,35 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.Job.Contracts -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Job.Contracts\bin\Release\net10.0\SomeEngine.Job.Contracts.dll
+  SomeEngine.Serialization -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Serialization\bin\Release\net10.0\SomeEngine.Serialization.dll
+  SomeEngine.Diagnostics -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Diagnostics\bin\Release\net10.0\SomeEngine.Diagnostics.dll
+  SomeEngine.Generators -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Generators\bin\Release\netstandard2.0\SomeEngine.Generators.dll
+  SomeEngine.ECS.SourceGen -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.Job -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Job\bin\Release\net10.0\SomeEngine.Job.dll
+  SomeEngine.Graphics -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Graphics\bin\Release\net10.0\SomeEngine.Graphics.dll
+  SomeEngine.Graphics.Vulkan -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Graphics.Vulkan\bin\Release\net10.0\SomeEngine.Graphics.Vulkan.dll
+  SomeEngine.ECS -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.ECS\bin\Release\net10.0\SomeEngine.ECS.dll
+  SomeEngine.Resources -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Resources\bin\Release\net10.0\SomeEngine.Resources.dll
+  SomeEngine.Graphics.Direct3D12 -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Graphics.Direct3D12\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.dll
+  SomeEngine.Graphics.Validation -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Graphics.Validation\bin\Release\net10.0\SomeEngine.Graphics.Validation.dll
+  SomeEngine.ECS.Systems -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.ECS.Systems\bin\Release\net10.0\SomeEngine.ECS.Systems.dll
+  SomeEngine.ECS.Serialization -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.ECS.Serialization\bin\Release\net10.0\SomeEngine.ECS.Serialization.dll
+  Game -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\templates\DefaultProject\Game\bin\Release\net10.0\Game.dll
+  SomeEngine.Core -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Core\bin\Release\net10.0\SomeEngine.Core.dll
+  SomeEngine.Assets -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Assets\bin\Release\net10.0\SomeEngine.Assets.dll
+  Game.Assets -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\templates\DefaultProject\Game.Assets\bin\Release\net10.0\Game.Assets.dll
+  SomeEngine.RenderGraph -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.RenderGraph\bin\Release\net10.0\SomeEngine.RenderGraph.dll
+  ImportedScenes.Materials -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\samples\ImportedScenes\Materials\bin\Release\net10.0\ImportedScenes.Materials.dll
+  SomeEngine.RenderGraph.Diagnostics -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.RenderGraph.Diagnostics\bin\Release\net10.0\SomeEngine.RenderGraph.Diagnostics.dll
+  SomeEngine.Render -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Render\bin\Release\net10.0\SomeEngine.Render.dll
+  Alimer.Bindings.MeshOptimizer -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\external\Alimer.Bindings\artifacts\bin\Alimer.Bindings.MeshOptimizer\release_net10.0\Alimer.Bindings.MeshOptimizer.dll
+F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Render.Cluster\ClusterRenderResources.cs(767,20): error CS8377: 类型“RenderMesh”必须是不可为 null 值的类型，且包括任何嵌套级别的所有字段，才能用作泛型类型或方法“ClusterRenderResources.ClusterGeometryProducer.NextChangedRows<T>(ReadOnlyQueryPacket, uint, ref int, out int)”中的参数“T” [F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj]
+  SomeEngine.Assets.Importers -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Assets.Importers\bin\Release\net10.0\SomeEngine.Assets.Importers.dll
+
+生成失败。
+
+F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Render.Cluster\ClusterRenderResources.cs(767,20): error CS8377: 类型“RenderMesh”必须是不可为 null 值的类型，且包括任何嵌套级别的所有字段，才能用作泛型类型或方法“ClusterRenderResources.ClusterGeometryProducer.NextChangedRows<T>(ReadOnlyQueryPacket, uint, ref int, out int)”中的参数“T” [F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\src\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj]
+    0 个警告
+    1 个错误
+
+已用时间 00:00:10.38

@@ -25,6 +25,14 @@ public interface IRenderInstanceProducer
     /// range. The slice already carries that range; producers never calculate a storage row.
     /// </summary>
     void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet);
+
+    /// <summary>Writes only changed rows/columns; producers owning several properties split by property.</summary>
+    void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion)
+    {
+        for (int row = 0; row < packet.Count; row++)
+            if (GetChanges(packet.Slice(row, 1), lastSystemVersion) != RenderInstanceChanges.None)
+                Write(destination.Slice(row, 1), packet.Slice(row, 1));
+    }
 }
 
 /// <summary>
@@ -89,6 +97,20 @@ public readonly struct RenderInstanceComponentProducer<T> : IRenderInstanceProdu
 
     public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet) =>
         destination.Write(_property, packet.Read<T>());
+
+    public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion)
+    {
+        int start = 0;
+        while (start < packet.Count)
+        {
+            while (start < packet.Count && !packet.Slice(start, 1).ChangedSince<T>(lastSystemVersion)) start++;
+            int end = start;
+            while (end < packet.Count && packet.Slice(end, 1).ChangedSince<T>(lastSystemVersion)) end++;
+            if (end > start)
+                destination.Slice(start, end - start).Write(_property, packet.Read<T>().Slice(start, end - start));
+            start = end;
+        }
+    }
 }
 
 /// <summary>
@@ -146,6 +168,12 @@ public readonly struct RenderInstanceProducerBundle<TFirst, TSecond> : IRenderIn
     {
         _first.Write(destination.Restrict(_first.Properties), packet);
         _second.Write(destination.Restrict(_second.Properties), packet);
+    }
+
+    public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion)
+    {
+        _first.WriteChanged(destination.Restrict(_first.Properties), packet, lastSystemVersion);
+        _second.WriteChanged(destination.Restrict(_second.Properties), packet, lastSystemVersion);
     }
 
     private static void ValidateExactLayout(

@@ -112,10 +112,13 @@ int4 PrepareRasterTargetScissor(
     }
     GroupMemoryBarrierWithGroupSync();
 
+    return RasterTargetWindowScissor(pageWindow, target);
+}
+
+int4 RasterTargetWindowScissor(uint4 pageWindow, ClusterRasterTargetView target)
+{
     uint2 firstPixel = pageWindow.xy * target.PageSize;
-    uint2 lastPixelExclusive = min(
-        (pageWindow.zw + 1u) * target.PageSize,
-        max(target.MipResolution, 1u).xx);
+    uint2 lastPixelExclusive = min((pageWindow.zw + 1u) * target.PageSize, max(target.MipResolution, 1u).xx);
     return int4(firstPixel, lastPixelExclusive);
 }
 

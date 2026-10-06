@@ -19,7 +19,9 @@ public sealed class ReferenceShaderTests
             DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
         }, "Independent source triangles");
         var entry = shader.RequireSlangEntry(0, "TraceRayShadow", SlangStage.Compute);
-        Assert.True(shader.GetSlangEntryBytes(0, entry).Length > 0);
+        ISlangBlob? code = shader.GetSlangEntryBlob(0, entry);
+        Assert.NotNull(code);
+        Assert.True(code.GetBufferSize() > 0);
     }
 
     private static string FindEngine()

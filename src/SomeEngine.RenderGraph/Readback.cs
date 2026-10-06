@@ -19,7 +19,10 @@ public readonly struct GraphReadbackId : IEquatable<GraphReadbackId>
 }
 
 internal readonly record struct ReadbackDescription(
-    GraphBufferId Source, BufferRange Range, IGraphReadbackReceiver Receiver);
+    GraphBufferId Source, BufferRange Range, IGraphReadbackReceiver Receiver)
+{
+    internal GraphBufferInput? Input { get; init; }
+}
 
 internal sealed class ReadbackCommands : PassCallbackStorage, IStaticPassDataStorage<ReadbackDescription>
 {
@@ -33,8 +36,10 @@ internal sealed class ReadbackCommands : PassCallbackStorage, IStaticPassDataSto
     {
         GraphBufferSlice destination = frame.GetReadbackDestination(this);
         var commands = new CopyPassCommandScope(frame, passIndex, context);
-        commands.CopyBuffer(new BufferCopy(commands.GetBuffer(Description.Source), Description.Range.Offset,
-            commands.GetBuffer(destination.Buffer), destination.Range.Offset, Description.Range.Size));
+        BufferRegion source = Description.Input is { } input ? commands.GetBufferRegion(input) :
+            new BufferRegion(commands.GetBuffer(Description.Source), BufferRange.Whole);
+        commands.CopyBuffer(new BufferCopy(source.Buffer, checked(source.Range.Offset + Description.Range.Offset),
+            commands.GetBuffer(destination.Buffer), destination.Range.Offset, destination.Range.Size));
         commands.Finish();
     }
 }
@@ -59,6 +64,23 @@ public ref partial struct RenderGraphEdit
             options with { Culling = PassCullingMode.NeverCull }, null, VariableLayoutReflection.Null, [],
             static (ref PassDefinition pass, ref ReadbackDescription data) =>
                 pass.Read(data.Source, data.Range, PipelineSync.Copy, ResourceAccess.CopySource),
+            new ReadbackCommands(), region);
+        return new GraphReadbackId(pass.Value);
+    }
+
+    /// <summary>Reads a bound frame input. The explicit range is relative to the input slice.</summary>
+    public GraphReadbackId AddReadback(GraphBufferInput source, BufferRange range,
+        IGraphReadbackReceiver receiver, string label, GraphRegionId region = default,
+        in PassOptions options = default)
+    {
+        DevelopmentCheck.Require(receiver is not null, "A readback requires a receiver.");
+        DevelopmentCheck.Require(range.IsWhole || range.Size != 0 && range.Size <= int.MaxValue,
+            "An input readback range must fit a byte span.");
+        GraphPassId pass = AddPersistentFramePass(label, GraphPassKind.Copy,
+            PassQueueSelection.AnyCompatible(), new ReadbackDescription(default, range, receiver) { Input = source },
+            options with { Culling = PassCullingMode.NeverCull }, null, VariableLayoutReflection.Null, [],
+            static (ref PassDefinition pass, ref ReadbackDescription data) =>
+                pass.Read(data.Input!, data.Range, PipelineSync.Copy, ResourceAccess.CopySource),
             new ReadbackCommands(), region);
         return new GraphReadbackId(pass.Value);
     }
@@ -95,7 +117,18 @@ internal sealed partial class RenderGraphFrameState
             if (!pass.Enabled || !structure.IsRegionEnabled(pass.Region) ||
                 pass.CallbackStorage is not ReadbackCommands commands) continue;
             FrameBufferTransfers transfers = Slot.GetBufferTransfers(Graph);
-            var allocation = transfers.ReserveReadback(commands.Description.Range.Size);
+            ulong size = commands.Description.Range.Size;
+            if (commands.Description.Input is { } input)
+            {
+                GraphBufferSlice source = ResolveBufferInput(input);
+                ulong bufferSize = source.Buffer.Value.Owner == Graph.Identity
+                    ? structure.Buffers.Get(source.Buffer.Value).Description.Size
+                    : _dynamicBuffers[source.Buffer.Value.Slot].Description.Size;
+                BufferRange sourceRange = GraphStructureIndex.ResolveRange(source.Range, bufferSize);
+                size = GraphStructureIndex.ResolveRange(commands.Description.Range, sourceRange.Size).Size;
+                DevelopmentCheck.Require(size <= int.MaxValue, "A readback range must fit a byte span.");
+            }
+            var allocation = transfers.ReserveReadback(size);
             BufferRegion destination = allocation.Destination;
             GraphBufferId buffer = Import(destination.Buffer, allocation.BoundaryStates);
             GraphPassId id = new(structure.Passes.IdentityAt(Graph.Identity, index));

@@ -2,6 +2,7 @@
 #define CLUSTER_RASTER_TARGET_FILTER_SLANG
 
 #include "cluster_raster_target_view.slang"
+#include "cluster_bvh_cull_common.slang"
 #include "depth_page_hiz.slang"
 #include "cluster_view_access.slang"
 #include "raster_sample_bounds.slang"

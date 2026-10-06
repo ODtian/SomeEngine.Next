@@ -1,0 +1,96 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="e7eaab3d-46b1-42a4-9cd5-7f1a0211c665" name="boqi@BOQI-THE-DAEMON 2026-10-06 11:20:13" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T11:20:13.0972313+08:00" queuing="2026-10-06T11:20:13.0972318+08:00" start="2026-10-06T11:20:11.1497238+08:00" finish="2026-10-06T11:20:13.3733487+08:00" />
+  <TestSettings name="default" id="bdca0a09-fc53-40ac-b544-dd3be15155f4">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_11_20_13" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="2ab0deb6-49cf-44a2-bc49-b57d02080a12" testId="b5f49edb-28fa-3b13-3a56-bd1a25acb528" testName="SomeEngine.Runtime.Output.Tests.RayShadowComparisonTests.ContinuousVisibilityKeepsRawErrorOutsideTheUnitRange" computerName="BOQI-THE-DAEMON" duration="00:00:00.0298029" startTime="2026-10-06T11:20:12.7505429+08:00" endTime="2026-10-06T11:20:12.7536615+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2ab0deb6-49cf-44a2-bc49-b57d02080a12" />
+    <UnitTestResult executionId="0134b02c-0cb7-4a10-91a1-139462f277bd" testId="9b79d09b-ef6f-bab7-54a3-d97bab057a66" testName="SomeEngine.Runtime.Output.Tests.RayShadowComparisonTests.MissingAndNonfiniteCoverageRemainInTheFullReceiverPopulation" computerName="BOQI-THE-DAEMON" duration="00:00:00.0155119" startTime="2026-10-06T11:20:12.7540767+08:00" endTime="2026-10-06T11:20:12.7696254+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0134b02c-0cb7-4a10-91a1-139462f277bd" />
+    <UnitTestResult executionId="af6a998d-a24a-46fe-8353-e5c816030b9e" testId="9bb065f6-54f4-9cec-5737-409c33391981" testName="SomeEngine.Runtime.Output.Tests.ReferenceShaderTests.IndependentSourceRayShaderCompilesWithoutGraphicsDevice" computerName="BOQI-THE-DAEMON" duration="00:00:00.6269408" startTime="2026-10-06T11:20:12.6075701+08:00" endTime="2026-10-06T11:20:13.2419402+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="af6a998d-a24a-46fe-8353-e5c816030b9e" />
+    <UnitTestResult executionId="193e8cec-9b99-412e-a58f-bb16c6b7eba1" testId="ebe8f6ee-0a4b-882b-3ffc-488ffba8a204" testName="SomeEngine.Runtime.Output.Tests.ImageArtifactTests.ShadowFailureKeepsImagesUnderTheDocumentedRootButDeletesWorkingContent" computerName="BOQI-THE-DAEMON" duration="00:00:00.0375928" startTime="2026-10-06T11:20:12.7503759+08:00" endTime="2026-10-06T11:20:12.7615192+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="193e8cec-9b99-412e-a58f-bb16c6b7eba1" />
+    <UnitTestResult executionId="ea2ac218-4609-4169-9839-1e787131621e" testId="7984639e-67f5-5824-1713-7b7e4c3fe02a" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.SelectedLinearOutputIsAcceptedWithoutChangingDefaultRendering" computerName="BOQI-THE-DAEMON" duration="00:00:00.0058422" startTime="2026-10-06T11:20:13.0109594+08:00" endTime="2026-10-06T11:20:13.0110792+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ea2ac218-4609-4169-9839-1e787131621e" />
+    <UnitTestResult executionId="d0d1cfc1-08df-4522-9efb-b7bccc3a3339" testId="5e1b6854-08b1-18ac-a3ed-5f309ef030cf" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.FiniteBeautyAndLinearOutputSelectOnlyTheLastFrameByDefault" computerName="BOQI-THE-DAEMON" duration="00:00:00.0061954" startTime="2026-10-06T11:20:13.0100181+08:00" endTime="2026-10-06T11:20:13.0101932+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d0d1cfc1-08df-4522-9efb-b7bccc3a3339" />
+    <UnitTestResult executionId="da2861cb-250a-4cdd-910d-d9db73fd3a1d" testId="1126754a-7119-7851-2cf9-b8bb3a938555" testName="SomeEngine.Runtime.Output.Tests.RayShadowComparisonTests.NonfiniteVisibilityIsFullErrorEvenWhenClampingWouldMatchTruth" computerName="BOQI-THE-DAEMON" duration="00:00:00.1075847" startTime="2026-10-06T11:20:12.6076649+08:00" endTime="2026-10-06T11:20:12.7406825+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="da2861cb-250a-4cdd-910d-d9db73fd3a1d" />
+    <UnitTestResult executionId="e8de1607-785f-475b-8411-8b6dc8eb02e2" testId="ab397e86-afed-a075-4817-2b578f80c340" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.CaptureOutsideFiniteRunIsRejected(frame: &quot;-1&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0004380" startTime="2026-10-06T11:20:12.9559888+08:00" endTime="2026-10-06T11:20:12.9562269+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e8de1607-785f-475b-8411-8b6dc8eb02e2" />
+    <UnitTestResult executionId="aaa7aa3f-764d-4866-beeb-83732f60fac9" testId="3568d443-4464-2777-72f5-2ca2dcd29a0c" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.LinearOutputRetainsHdrColorAndMatchingSubmittedFrameInputs" computerName="BOQI-THE-DAEMON" duration="00:00:00.3375641" startTime="2026-10-06T11:20:12.6045725+08:00" endTime="2026-10-06T11:20:12.9526138+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aaa7aa3f-764d-4866-beeb-83732f60fac9" />
+    <UnitTestResult executionId="61f29ce9-3576-4cca-812b-f6d5001db57e" testId="9c4d5733-3893-c6f5-1134-7eb4d6a292de" testName="SomeEngine.Runtime.Output.Tests.FrameOutputTests.CaptureOutsideFiniteRunIsRejected(frame: &quot;64&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0027154" startTime="2026-10-06T11:20:12.9532233+08:00" endTime="2026-10-06T11:20:12.9555307+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="61f29ce9-3576-4cca-812b-f6d5001db57e" />
+    <UnitTestResult executionId="10eb7aea-cccf-4983-8699-f8c6edab421c" testId="dafbf128-e87f-3559-3dc1-1fc587a8a14b" testName="SomeEngine.Runtime.Output.Tests.ImageArtifactTests.HalfColorAndDepthEvidenceKeepsRawValuesAndFullDifferentDimensions" computerName="BOQI-THE-DAEMON" duration="00:00:00.1026737" startTime="2026-10-06T11:20:12.6077254+08:00" endTime="2026-10-06T11:20:12.7226046+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="10eb7aea-cccf-4983-8699-f8c6edab421c" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.CaptureOutsideFiniteRunIsRejected(frame: &quot;64&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="9c4d5733-3893-c6f5-1134-7eb4d6a292de">
+      <Execution id="61f29ce9-3576-4cca-812b-f6d5001db57e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="CaptureOutsideFiniteRunIsRejected" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.SelectedLinearOutputIsAcceptedWithoutChangingDefaultRendering" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="7984639e-67f5-5824-1713-7b7e4c3fe02a">
+      <Execution id="ea2ac218-4609-4169-9839-1e787131621e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="SelectedLinearOutputIsAcceptedWithoutChangingDefaultRendering" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.FiniteBeautyAndLinearOutputSelectOnlyTheLastFrameByDefault" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="5e1b6854-08b1-18ac-a3ed-5f309ef030cf">
+      <Execution id="d0d1cfc1-08df-4522-9efb-b7bccc3a3339" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="FiniteBeautyAndLinearOutputSelectOnlyTheLastFrameByDefault" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.ImageArtifactTests.HalfColorAndDepthEvidenceKeepsRawValuesAndFullDifferentDimensions" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="dafbf128-e87f-3559-3dc1-1fc587a8a14b">
+      <Execution id="10eb7aea-cccf-4983-8699-f8c6edab421c" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.ImageArtifactTests" name="HalfColorAndDepthEvidenceKeepsRawValuesAndFullDifferentDimensions" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.CaptureOutsideFiniteRunIsRejected(frame: &quot;-1&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="ab397e86-afed-a075-4817-2b578f80c340">
+      <Execution id="e8de1607-785f-475b-8411-8b6dc8eb02e2" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="CaptureOutsideFiniteRunIsRejected" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.RayShadowComparisonTests.NonfiniteVisibilityIsFullErrorEvenWhenClampingWouldMatchTruth" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="1126754a-7119-7851-2cf9-b8bb3a938555">
+      <Execution id="da2861cb-250a-4cdd-910d-d9db73fd3a1d" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.RayShadowComparisonTests" name="NonfiniteVisibilityIsFullErrorEvenWhenClampingWouldMatchTruth" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.RayShadowComparisonTests.ContinuousVisibilityKeepsRawErrorOutsideTheUnitRange" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="b5f49edb-28fa-3b13-3a56-bd1a25acb528">
+      <Execution id="2ab0deb6-49cf-44a2-bc49-b57d02080a12" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.RayShadowComparisonTests" name="ContinuousVisibilityKeepsRawErrorOutsideTheUnitRange" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.RayShadowComparisonTests.MissingAndNonfiniteCoverageRemainInTheFullReceiverPopulation" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="9b79d09b-ef6f-bab7-54a3-d97bab057a66">
+      <Execution id="0134b02c-0cb7-4a10-91a1-139462f277bd" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.RayShadowComparisonTests" name="MissingAndNonfiniteCoverageRemainInTheFullReceiverPopulation" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.ImageArtifactTests.ShadowFailureKeepsImagesUnderTheDocumentedRootButDeletesWorkingContent" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="ebe8f6ee-0a4b-882b-3ffc-488ffba8a204">
+      <Execution id="193e8cec-9b99-412e-a58f-bb16c6b7eba1" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.ImageArtifactTests" name="ShadowFailureKeepsImagesUnderTheDocumentedRootButDeletesWorkingContent" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.FrameOutputTests.LinearOutputRetainsHdrColorAndMatchingSubmittedFrameInputs" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="3568d443-4464-2777-72f5-2ca2dcd29a0c">
+      <Execution id="aaa7aa3f-764d-4866-beeb-83732f60fac9" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.FrameOutputTests" name="LinearOutputRetainsHdrColorAndMatchingSubmittedFrameInputs" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Output.Tests.ReferenceShaderTests.IndependentSourceRayShaderCompilesWithoutGraphicsDevice" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.output.tests\bin\release\net10.0\someengine.runtime.output.tests.dll" id="9bb065f6-54f4-9cec-5737-409c33391981">
+      <Execution id="af6a998d-a24a-46fe-8353-e5c816030b9e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\SomeEngine.Runtime.Output.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Output.Tests.ReferenceShaderTests" name="IndependentSourceRayShaderCompilesWithoutGraphicsDevice" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="b5f49edb-28fa-3b13-3a56-bd1a25acb528" executionId="2ab0deb6-49cf-44a2-bc49-b57d02080a12" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9b79d09b-ef6f-bab7-54a3-d97bab057a66" executionId="0134b02c-0cb7-4a10-91a1-139462f277bd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9bb065f6-54f4-9cec-5737-409c33391981" executionId="af6a998d-a24a-46fe-8353-e5c816030b9e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ebe8f6ee-0a4b-882b-3ffc-488ffba8a204" executionId="193e8cec-9b99-412e-a58f-bb16c6b7eba1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7984639e-67f5-5824-1713-7b7e4c3fe02a" executionId="ea2ac218-4609-4169-9839-1e787131621e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5e1b6854-08b1-18ac-a3ed-5f309ef030cf" executionId="d0d1cfc1-08df-4522-9efb-b7bccc3a3339" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1126754a-7119-7851-2cf9-b8bb3a938555" executionId="da2861cb-250a-4cdd-910d-d9db73fd3a1d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ab397e86-afed-a075-4817-2b578f80c340" executionId="e8de1607-785f-475b-8411-8b6dc8eb02e2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3568d443-4464-2777-72f5-2ca2dcd29a0c" executionId="aaa7aa3f-764d-4866-beeb-83732f60fac9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9c4d5733-3893-c6f5-1134-7eb4d6a292de" executionId="61f29ce9-3576-4cca-812b-f6d5001db57e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="dafbf128-e87f-3559-3dc1-1fc587a8a14b" executionId="10eb7aea-cccf-4983-8699-f8c6edab421c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="11" executed="11" passed="11" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.18]   Discovering: SomeEngine.Runtime.Output.Tests&#xD;
+[xUnit.net 00:00:00.30]   Discovered:  SomeEngine.Runtime.Output.Tests&#xD;
+[xUnit.net 00:00:00.39]   Starting:    SomeEngine.Runtime.Output.Tests&#xD;
+Image assertion artifacts: F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\artifacts\test-results\images\HalfColorAndDepthEvidenceKeepsRawValuesAndFullDifferentDimensions-626448de492249d19b890988cef1d2f5&#xD;
+Shadow assertion artifacts: F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Output.Tests\bin\Release\net10.0\artifacts\test-results\images\device-free-shadow-failure-e43f60d4ada642ae8c8a6fea2d43470b&#xD;
+[xUnit.net 00:00:01.08]   Finished:    SomeEngine.Runtime.Output.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

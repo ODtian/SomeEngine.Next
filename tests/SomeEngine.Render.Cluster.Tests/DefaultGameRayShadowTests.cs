@@ -53,11 +53,9 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
     private async Task CaptureSceneAsync(string scene, string mode, string[] renderingOptions)
     {
         string engine = FindEngine();
-        string? evidence = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_EVIDENCE");
-        string directory = Path.Combine(evidence ?? Path.GetTempPath(), $"ray-shadow-{scene}-{mode}-{Guid.NewGuid():N}");
-        string content = Path.Combine(directory, "content");
-        Directory.CreateDirectory(directory);
-        try
+        using var evidence = new ShadowEvidence($"ray-shadow-{scene}-{mode}");
+        string directory = evidence.Directory;
+        string content = evidence.Content;
         {
             bool spheres = scene == "spheres";
             string sourceContent = spheres ? Path.Combine(engine, "templates", "DefaultProject")
@@ -100,7 +98,7 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
             Assert.Equal(beauty.Frame.Adapter, frame.Adapter);
             Assert.Equal(beauty.Frame.DriverVersion, frame.DriverVersion);
             var rays = spheres ? new RayShadowScene(geometry, frame.Meshes.Select(mesh => mesh.Transform).ToArray())
-                : new RayShadowScene(geometry, false);
+                : new RayShadowScene(geometry);
             if (!spheres) MatchStaticSourceTransforms(rays, frame.Meshes);
             Assert.True(Matrix4x4.Invert(frame.View * frame.Projection, out Matrix4x4 clipToWorld));
             SceneLight light = frame.Lights.First(value => value.Kind == SceneLightKind.Directional);
@@ -136,11 +134,7 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
             Assert.True(all.MeanVisibilityError <= .02f && all.MismatchFraction <= .02f &&
                 comparison.FalseShadowFraction <= .02f && comparison.MissedShadowFraction <= .02f,
                 $"DefaultGame {scene}/{mode} differs from hardware RT shadows. {comparison}. Evidence: {directory}");
-        }
-        finally
-        {
-            if (Directory.Exists(content)) Directory.Delete(content, recursive: true);
-            if (evidence is null) Directory.Delete(directory, recursive: true);
+            evidence.Complete();
         }
     }
 
