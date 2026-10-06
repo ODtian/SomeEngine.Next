@@ -198,6 +198,15 @@ domain 自身提供表面误差；primary 沿其已有用户配置。streaming �
 helper 在该固定源码中标为 unused。first person 请求采用默认 bias2 与 absolute minimum level8。
 `SetAdditionalReceiverInputs` 接受用户 shader 在既有图中生成的 water/translucency/hair 层，
 每层按 camera pixel 顺序提供同一32字节数据，depth 采用当前 camera projection。
+用户 receiver entry 也可调用 `WriteAdditionalSurfaceReceiver` 写入三层，由同一材质主要持有者
+登记其资源使用并维护额外缓冲；默认 opaque 使用一个空数据记录。额外层实际写入时按
+water、front translucency、hair 顺序存放，每层包含所有 primary views 的 camera pixels。
+`TrySurfaceReceiverPreviousPixel` 消费包含实际 AA 偏移的 current-to-previous clip 矩阵和前帧 UV 边界，
+`TryReadSurfaceReceiverPreviousDepth` 消费用户解码的覆盖值，保持原版 front-layer 历史 depth 输入语义。
+water/translucency 请求方向光，hair 同时沿实际 clustered local light 列表产生局部请求。
+公开用户 shader 用例在 opaque 声明无 lighting 后，当前 water depth、AA 重投影的前帧 translucency depth
+和 hair depth 继续保留其世界点覆盖，实际 `[0,0,0,0]→[1,1,1,0]`。原版额外深度来源为
+`VirtualShadowMapPageMarking.usf:394–477`，shader 输出与 C# DTO 共用一个32字节布局。
 方向与局部页边界参数默认 `.05`，typed view 的原 padding 持有对应值，保持304字节视图记录。
 原版核对范围为 `VirtualShadowMapPageMarking.usf:349–414,480–612` 与
 `VirtualShadowMapPageMarking.ush:82–143`。

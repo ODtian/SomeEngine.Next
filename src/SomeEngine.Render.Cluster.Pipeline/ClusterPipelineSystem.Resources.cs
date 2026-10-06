@@ -464,6 +464,10 @@ public sealed partial class ClusterPipelineSystem
             }
         frame.SurfaceReceivers = graph.CreateBuffer(new BufferDesc(checked((ulong)width * (ulong)height * viewCount * 32u),
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, "Cluster surface receivers"));
+        frame.AdditionalReceiverLayerCount = shadeStages.HasAdditionalReceivers ? 3u : 0u;
+        frame.AdditionalSurfaceReceivers = graph.CreateBuffer(new BufferDesc(
+            Math.Max(32u, checked((ulong)width * (ulong)height * viewCount * 32u * frame.AdditionalReceiverLayerCount)),
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, "Cluster additional surface receivers"));
         frame.SceneColor = graph.CreateTexture(new TextureDesc(
                 TextureDimension.Texture2D,
                 checked((uint)width),
@@ -568,6 +572,16 @@ public sealed partial class ClusterPipelineSystem
         uint rasterBinCount = rasterStages.BinCount;
         uint tessellationBinCount = checked(rasterBinCount * 8u);
         uint shadeBinCount = shadeStages.BinCount;
+
+        uint additionalLayers = shadeStages.HasAdditionalReceivers ? 3u : 0u;
+        if (additionalLayers != frame.AdditionalReceiverLayerCount)
+        {
+            frame.AdditionalReceiverLayerCount = additionalLayers;
+            SetStageBuffer(ref graph, frame.AdditionalSurfaceReceivers,
+                Math.Max(32u, checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * 32u * additionalLayers)),
+                BufferUsages.None, "Cluster additional surface receivers");
+            GraphData.Outputs = GraphData.Outputs with { AdditionalReceiverLayerCount = additionalLayers };
+        }
 
         bool rasterCapacityChanged = frame.RasterBinCount != rasterBinCount;
         bool shadeCapacityChanged = frame.ShadeBinCount != shadeBinCount;
@@ -1146,6 +1160,8 @@ public sealed partial class ClusterPipelineSystem
         internal GraphTextureId PolicyDepthScratch;
         internal GraphTextureId SceneColor;
         internal GraphBufferId SurfaceReceivers;
+        internal GraphBufferId AdditionalSurfaceReceivers;
+        internal uint AdditionalReceiverLayerCount;
         internal GraphTextureId MotionVectors;
         internal GraphBufferId AddBuffer(
             ref RenderGraphEdit graph,
