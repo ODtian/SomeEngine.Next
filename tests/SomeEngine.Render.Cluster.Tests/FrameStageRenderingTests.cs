@@ -242,7 +242,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
 
     internal static async Task<FrameStageScene> CreateAsync(string backendName, bool shadows,
         ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null,
-        VirtualShadowMapSettings? shadowSettings = null)
+        VirtualShadowMapSettings? shadowSettings = null, DeviceFeatures optionalFeatures = DeviceFeatures.None)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -289,7 +289,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         backend.TryEnumerateAdapters(enumeration, adapters, out _);
         Device device = backend.CreateDevice(new DeviceDesc(adapters.First(item => item.HardwareAccelerated).Id,
             [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)],
-            requiredFeatures: DeviceFeatures.IndirectCommands));
+            requiredFeatures: DeviceFeatures.IndirectCommands, optionalFeatures: optionalFeatures));
         return new FrameStageScene(backend, device, mesh, standard, unlit, clusterShaders,
             shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName, shadowSettings);
     }
@@ -373,9 +373,11 @@ internal sealed class FrameStageScene : IAsyncDisposable
 
     internal void RemoveMaterialMesh(Entity entity) => _gameWorld.DestroyEntity(entity);
 
-    internal Material CreateRasterMaterial(RasterMaterialKind kind, Vector4 color)
+    internal Material CreateRasterMaterial(RasterMaterialKind kind, Vector4 color) =>
+        CreateRasterMaterial(RasterTestShaders.Create(_backendName, kind), color);
+
+    internal Material CreateRasterMaterial(Shader shader, Vector4 color)
     {
-        Shader shader = RasterTestShaders.Create(_backendName, kind);
         byte[] pixel = [(byte)(color.X * 255), (byte)(color.Y * 255), (byte)(color.Z * 255), (byte)(color.W * 255)];
         var texture = SomeEngine.Resources.Texture.Create(
             new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,

@@ -1,0 +1,137 @@
+using System.Numerics;
+using System.Runtime.InteropServices;
+using SomeEngine.Graphics;
+using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.Render.Shadows;
+using SomeEngine.RenderGraph;
+
+namespace SomeEngine.Render.Features.Shadows;
+
+public sealed partial class VirtualShadowFeature
+{
+    private readonly GraphRegionId _qualityRegion;
+    private QualityReadbacks? _qualityReadbacks;
+
+    /// <summary>Installs optional quality readbacks. Ordinary throughput never calls this method.</summary>
+    public void EnableQualityCapture()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_qualityReadbacks is not null) return;
+        var readbacks = new QualityReadbacks();
+        RenderGraphEdit edit = _renderGraph.BeginEdit();
+        try
+        {
+            AddQualityReadback(ref edit, readbacks, QualityData.FrameBias, _frameResolutionBias);
+            AddQualityReadback(ref edit, readbacks, QualityData.RequestCount, _requestedPageCount);
+            AddQualityReadback(ref edit, readbacks, QualityData.DirtyCount, _activePageCount);
+            AddQualityReadback(ref edit, readbacks, QualityData.Failures, _allocationFailures);
+            AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _freePageCount);
+            AddQualityReadback(ref edit, readbacks, QualityData.RasterArea, _policyRasterWorkCount);
+            AddQualityReadback(ref edit, readbacks, QualityData.ReceiverCoverage, _pageReceiverMasks);
+            AddQualityReadback(ref edit, readbacks, QualityData.Views, _frameShadowViews, BufferRange.Whole);
+            AddQualityReadback(ref edit, readbacks, QualityData.Pages, _framePageTable, BufferRange.Whole);
+            AddQualityReadback(ref edit, readbacks, QualityData.Work, _geometryWorkStatus, new BufferRange(0, 4));
+            edit.Commit();
+            _qualityReadbacks = readbacks;
+        }
+        finally { edit.Dispose(); }
+    }
+
+    private void AddQualityReadback(ref RenderGraphEdit edit, QualityReadbacks readbacks, QualityData kind, GraphBufferId buffer) =>
+        readbacks.Readbacks.Add(edit.AddReadback(buffer, BufferRange.Whole, new QualityReceiver(readbacks, kind),
+            "Capture shadow quality " + kind, _qualityRegion));
+
+    private void AddQualityReadback(ref RenderGraphEdit edit, QualityReadbacks readbacks, QualityData kind,
+        GraphBufferInput input, BufferRange range) => readbacks.Readbacks.Add(edit.AddReadback(input, range,
+            new QualityReceiver(readbacks, kind), "Capture shadow quality " + kind, _qualityRegion));
+
+    /// <summary>Delivers semantic quality only after this frame's graph readbacks complete. Call after staging shadow views.</summary>
+    public void CaptureQuality(ref RenderGraphFrame graph, Action<VirtualShadowFrameQuality> receive)
+    {
+        ArgumentNullException.ThrowIfNull(receive);
+        if (_qualityReadbacks is null) throw new InvalidOperationException("Enable quality capture before recording a frame.");
+        _qualityReadbacks.Requests.Add(_frameIndex, new QualityRequest(_viewCount, receive));
+        foreach (GraphReadbackId readback in _qualityReadbacks.Readbacks)
+        {
+            graph.SetReadbackEnabled(readback, true);
+            graph.SetReadbackTag(readback, _frameIndex);
+        }
+    }
+
+    private enum QualityData { FrameBias, RequestCount, DirtyCount, Failures, FreeCount, RasterArea, ReceiverCoverage, Views, Pages, Work }
+
+    private sealed class QualityReadbacks
+    {
+        internal readonly List<GraphReadbackId> Readbacks = [];
+        internal readonly Dictionary<ulong, QualityRequest> Requests = [];
+    }
+
+    private sealed class QualityReceiver(QualityReadbacks readbacks, QualityData kind) : IGraphReadbackReceiver
+    {
+        public void OnReadback(ReadOnlySpan<byte> bytes, ulong tag)
+        {
+            if (!readbacks.Requests.TryGetValue(tag, out QualityRequest? request)) return;
+            request.Bytes[(int)kind] = bytes.ToArray();
+            if (++request.Received != request.Bytes.Length) return;
+            readbacks.Requests.Remove(tag);
+            request.Receive(request.Decode(tag));
+        }
+    }
+
+    private sealed class QualityRequest(int viewCount, Action<VirtualShadowFrameQuality> receive)
+    {
+        internal readonly byte[][] Bytes = new byte[10][];
+        internal readonly Action<VirtualShadowFrameQuality> Receive = receive;
+        internal int Received;
+
+        internal VirtualShadowFrameQuality Decode(ulong frame)
+        {
+            ReadOnlySpan<float> bias = MemoryMarshal.Cast<byte, float>(Bytes[(int)QualityData.FrameBias]);
+            ReadOnlySpan<VirtualShadowView> views = MemoryMarshal.Cast<byte, VirtualShadowView>(Bytes[(int)QualityData.Views]).Slice(0, viewCount);
+            ReadOnlySpan<uint> pages = MemoryMarshal.Cast<byte, uint>(Bytes[(int)QualityData.Pages]);
+            ReadOnlySpan<uint> coverage = MemoryMarshal.Cast<byte, uint>(Bytes[(int)QualityData.ReceiverCoverage]);
+            var result = new VirtualShadowViewQuality[views.Length];
+            for (int index = 0; index < views.Length; index++)
+            {
+                VirtualShadowView view = views[index];
+                var mips = new VirtualShadowMipQuality[view.MipLevelCount];
+                uint dimension = view.VirtualResolution / view.PageSize;
+                uint offset = view.PageTableOffset;
+                for (uint mip = 0; mip < view.MipLevelCount; mip++)
+                {
+                    uint mapped = 0, whole = 0, partial = 0, unfinished = 0;
+                    ulong covered = 0;
+                    int originX = view.VirtualPageOriginX >> (int)mip, originY = view.VirtualPageOriginY >> (int)mip;
+                    for (uint page = 0; page < dimension * dimension; page++)
+                    {
+                        uint table = offset + page;
+                        ReadOnlySpan<uint> entry = pages.Slice(checked((int)table * 4), 4);
+                        if (entry[0] == 0 || entry[0] == uint.MaxValue || entry[0] > view.MaxPhysicalPages ||
+                            unchecked((uint)((int)entry[1] - originX)) >= dimension ||
+                            unchecked((uint)((int)entry[2] - originY)) >= dimension) continue;
+                        mapped++;
+                        if (entry[3] == view.CacheGeneration) { whole++; covered += 64; }
+                        else if (entry[3] == (view.CacheGeneration | 0x80000000u))
+                        {
+                            partial++;
+                            covered += (uint)(BitOperations.PopCount(coverage[checked((int)table * 2)]) +
+                                BitOperations.PopCount(coverage[checked((int)table * 2 + 1)]));
+                        }
+                        else unfinished++;
+                    }
+                    mips[mip] = new(mip, Math.Max(view.VirtualResolution >> (int)mip, view.PageSize),
+                        mapped, whole, partial, unfinished, covered);
+                    offset += dimension * dimension;
+                    dimension = Math.Max(dimension >> 1, 1);
+                }
+                result[index] = new(view.LightKind, view.LightIndex, view.FaceIndex, view.ClipmapLevel, view.VirtualResolution,
+                    view.ResolutionLodBias, view.ResolutionLodBias + bias[view.LightKind == VirtualShadowLightKind.Directional ? 0 : 1], mips);
+            }
+            return new(frame, bias[0], bias[1], Word(QualityData.RequestCount), Word(QualityData.DirtyCount),
+                Word(QualityData.Failures), Word(QualityData.Failures, 1), Word(QualityData.FreeCount),
+                Word(QualityData.RasterArea), (ClusterWorkOverflow)Word(QualityData.Work), result);
+        }
+
+        private uint Word(QualityData kind, int word = 0) => MemoryMarshal.Cast<byte, uint>(Bytes[(int)kind])[word];
+    }
+}

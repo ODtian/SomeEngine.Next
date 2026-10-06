@@ -1,0 +1,31 @@
+# Combined review fixes checkpoint — #70/#125/#127/#132/#135
+
+This is a measurable source checkpoint, **not complete acceptance or issue closure**. Standards and Spec remain separate axes. Parent owns the subsequent three-scene rebuild/reference/quality/performance gate. #79/#80/#134 were actually reopened; historical closure is not current acceptance.
+
+## Standards
+
+- ImGui transient uploads now use graph-managed pages whose actual native usages include Vertex/Index as well as Constant/ShaderRead/CopySource. Existing alignment rules and graph frame completion/cancellation remain authoritative. Ordinary public startup/platform UI images passed in Release and Debug (one D3D12 execution/pass and one Vulkan Presentation capability skip in each configuration). The script startup hides UI intentionally; two earlier test-harness failures are retained, not production reds.
+- New byte-exact Cluster image assertions retain format-aware actual/expected/diff PNGs and raw bytes under SOMEENGINE_TEST_ARTIFACTS or artifacts/test-results. RT failure retention is separate from working content cleanup. Device-free Half/depth/dimension and shadow-retention behaviors passed. Explicit evidence requests can also retain successful captures.
+- Reference content serialization now takes explicit camera, mesh placements/motion and authored lights. Tests supply actions/options; no shared suffix-decoded scene modes or reconstructed frame-63 pose. The legacy CPU image comparator remains an edge-excluded diagnostic, not acceptance.
+
+## Spec
+
+- Finite target tessellation resolves requested pages and qualified prior/current target HiZ; encoded policy IDs never become primary camera texture layers. Public finite linear-domain entries preserve original triangle geometry. An off-camera original-triangle comparison failed with the exact 6706 tessellation core; the corrected hardware routes passed. Mixed routes then exposed a separate real dicing error: heterogeneous patches shared one window's groupshared page cache. Dicing now uses the existing requested-page/receiver-aware writer without that incompatible cache. Same first/history/change whole-image assertions passed all five D3D12/Vulkan VS/MS/mixed rows. No culling, mesh/software route or quality gate was disabled.
+- Dirty-page dispatch uses X/Y for page rows and flattened Z tiles, with matching clear/HiZ/reduction indexing and actual-count tail guards. Accepted capacities are unchanged; no silent truncation or capacity inflation. The actual 65,536+ demand boundary remains unexecuted.
+- Cluster geometry changes are written in property-specific runs; computed roots/expansions fill final graph-mapped typed property spans, with no stack/pool intermediate copy. Producer WriteChanged supports independent child properties. Existing grouped write cancellation and abandon-rewrite rules remain. Actual adjacent-property upload-range/cancellation regression is still pending.
+- Raw RT visibility and color/coverage finiteness are checked before preview clamping; CSV retains raw ratios/numerators, full receivers and unchanged gates. Actual device-free nonfinite red: 1 failed; implementation green: 1 passed. Expanded output/compiler/comparison/retention suite: 11 passed.
+- Corrected-score default spheres reproduced the prior numeric red exactly: 40.718478% mismatch/mean and 41.60603% false/lit. The explicit visibility material had omitted the public geometric receiver-plane argument and used mapped-normal bias unlike Standard. Matching Standard's geometric-plane call produced 1 pass: mismatch/mean 1.9470176%, false/lit 1.45302275%, missed/shadow 1.827909%, coverage 99.518406%, zero self-hit. All 135592 receivers/edges remain. This is a capture-call correction, not a native or production VSM repair.
+
+## Completed quality capture
+
+Selected linear captures optionally install existing graph readbacks and attach SceneFrame.Quality only after frame completion. Reported data includes current frame-used directional/local additions (not future adaptive bias), submitted view/mip resolutions, mapped/whole/receiver-only/unfinished depth populations and covered 8x8 receiver cells, requests/dirty work/allocation failures/free pages, typed geometry overflow, geometry work and streaming residency. Raster pressure version 2 means HW page area and SW batch weight64; equal numeric pressure versus older versions is not equivalent work. Per-mip populations are not per-pixel selected-mip histograms.
+
+Ordinary uncaptured throughput never installs quality readbacks. Public frame-input readback supports slices/Whole with completed delivery. The public cancellation/frame-correspondence test observed a null-quality red, then D3D12 green; Vulkan Presentation skipped. No additional GPU timeline, policy state mirror, world-to-GPU route or main graph rebuild.
+
+## Remaining gates and evidence
+
+Full local missing-fine/coarse/no-mip/unfinished Try-validity, first resumed recovery without global refresh, all six point faces, patterned alpha/in-place/deformation and partial-submit recovery remain incomplete. Existing local settled pressure cases and previously green receiver expansion do not prove these states. Three historical native zero-result aborts remain Failed; no native fix.
+
+Evidence: artifacts/acceptance/review-fixes contains CPU TRX/logs, including failed intermediate builds/cook. Current hardware evidence is retained at F:/SomeEngine.AgentWork/rg70-remaining/review-fixes-validation (sphere red/green, quality red/green, finite old-core red/mixed failures/five-row green, ordinary UI Release/Debug). Old-core sensitivity retained an empty core-versus-6706 diff plus full source delta. Full raw captures/CSV remain outside the repository; no failure artifacts were cleaned as working content.
+
+At forced turn-limit cutoff there was no final default-rule sweep, final recook/app restage, quality-enabled sphere rerun or three-scene throughput. #81 must rebuild/cook source-compatible content after shader changes and revalidate corrected references/semantic quality before measuring; observer-only BEFORE backport must not import production repairs. All builds must stop before performance windows. GPU and own synchronous CPU jobs are released/stopped at this checkpoint.

@@ -133,6 +133,32 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
     }
 };
 
+// A dicing wave can contain patches from different windows/views. Its patches
+// cannot share the ordinary one-window group cache; resolve each target tap
+// through the same requested-page/receiver-aware writer instead.
+struct ClusterDicedRasterOutput<TPrimary : IClusterRasterOutput> : IClusterRasterOutput
+{
+    TPrimary Primary;
+
+    int4 scissor(uint visibleClusterIndex, uint targetPolicy, uint targetViewIndex,
+        uint screenWidth, uint screenHeight)
+    {
+        if (targetPolicy == 0u)
+            return Primary.scissor(visibleClusterIndex, targetPolicy, targetViewIndex, screenWidth, screenHeight);
+        return RasterTargetWindowScissor(ClusterUnpackRasterTargetPageWindow(
+            VisibleClusterRasterWindows[visibleClusterIndex]), RasterTargetViews[targetViewIndex]);
+    }
+
+    void write(int2 pixel, uint viewIndex, uint targetPolicy, uint targetViewIndex,
+        float depth, uint visibilityValue)
+    {
+        if (targetPolicy == 0u)
+            Primary.write(pixel, viewIndex, targetPolicy, targetViewIndex, depth, visibilityValue);
+        else
+            WriteRasterTargetDepth(pixel, targetViewIndex, depth);
+    }
+};
+
 // This output is selected only for a raster stream whose views target depth pages.
 struct ClusterRasterOutputTarget : IClusterRasterOutput
 {
