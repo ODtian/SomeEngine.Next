@@ -46,7 +46,8 @@ public sealed record SceneGeometryResidency(int RegisteredMeshes, int PublishedM
 public sealed record SceneMeshTransform(Guid MeshAsset, Matrix4x4 Transform);
 public enum SceneLightKind : byte { Directional, Point, Spot }
 public sealed record SceneLight(SceneLightKind Kind, Vector3 Position, Vector3 Direction,
-    float Range, float InnerConeCos, float OuterConeCos, Vector3 Color, float Intensity, uint LayerMask);
+    float Range, float InnerConeCos, float OuterConeCos, Vector3 Color, float Intensity, uint LayerMask,
+    SomeEngine.Render.Components.LightShadowSettings ShadowSettings = default);
 
 /// <summary>Packed, top-down linear RGBA16F material output before TAA and tone mapping.</summary>
 public sealed record SceneLinearImage(SceneFrame Frame, ReadOnlyMemory<Half> Pixels)

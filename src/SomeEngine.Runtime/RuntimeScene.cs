@@ -280,19 +280,19 @@ internal sealed class RuntimeScene : IDisposable
         {
             DirectionalLight light = _world.Read<DirectionalLight>(entity);
             lights.Add(new(SceneLightKind.Directional, Vector3.Zero, light.Direction, 0, 0, 0,
-                light.Color, light.Intensity, light.LayerMask));
+                light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
         }
         foreach (Entity entity in GetPointLights())
         {
             PointLight light = _world.Read<PointLight>(entity);
             lights.Add(new(SceneLightKind.Point, light.Position, Vector3.Zero, light.Range, 0, 0,
-                light.Color, light.Intensity, light.LayerMask));
+                light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
         }
         foreach (Entity entity in Entities(_world, new QueryDefinitionBuilder().Read<SpotLight>()))
         {
             SpotLight light = _world.Read<SpotLight>(entity);
             lights.Add(new(SceneLightKind.Spot, light.Position, light.Direction, light.Range,
-                light.InnerConeCos, light.OuterConeCos, light.Color, light.Intensity, light.LayerMask));
+                light.InnerConeCos, light.OuterConeCos, light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
         }
         return frame with
         {

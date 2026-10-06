@@ -17,7 +17,7 @@ public enum VirtualShadowLightKind : uint
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 public struct VirtualShadowView
 {
-    public const int SizeInBytes = 272;
+    public const int SizeInBytes = 304;
     public const int PageTableEntrySizeInBytes = 16;
 
     public Matrix4x4 LightViewProjection;
@@ -64,6 +64,14 @@ public struct VirtualShadowView
     public long WorldPageOriginX;
     public long WorldPageOriginY;
     private Vector2 AddressPadding;
+    public Vector3 LightDirection;
+    /// <summary>Local emitter radius in engine world units.</summary>
+    public float SourceRadius;
+    /// <summary>Directional emitter's full angular diameter in radians.</summary>
+    public float SourceAngleRadians;
+    public float ProjectionDepthScale;
+    public float ProjectionDepthOffset;
+    public float TexelDitherScale;
 }
 
 public static class VirtualShadowViewFlags
