@@ -1,6 +1,5 @@
 #include "resource_effects.slang"
 #define VSM_PAGE_LIST_READ_ONLY 1
-#include "vsm_page_lists.slang"
 
 struct VirtualShadowDynamicResolutionUniforms
 {
@@ -15,6 +14,7 @@ struct VirtualShadowDynamicResolutionUniforms
 };
 
 ConstantBuffer<VirtualShadowDynamicResolutionUniforms> DynamicResolution;
+#include "vsm_page_lists.slang"
 StructuredBuffer<uint> AllocationFailures;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<float4> DynamicResolutionBias;

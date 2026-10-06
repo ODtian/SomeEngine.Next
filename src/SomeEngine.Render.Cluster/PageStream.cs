@@ -22,12 +22,12 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         PageLoadResult Result,
         Exception? Error);
 
-    private readonly uint[] _faultInbox;
-    private readonly HashSet<uint> _pendingLeafNodeIndices = new();
-    private readonly HashSet<uint> _requestedPages = [];
-    private readonly Queue<uint> _queuedPages = new();
-    private readonly HashSet<uint> _queuedPageSet = new();
-    private readonly Dictionary<uint, uint> _loadingPages = new();
+    private readonly ClusterPageRequest[] _faultInbox;
+    private readonly Dictionary<uint, ClusterPageRequest> _pendingRequests = new();
+    private readonly Dictionary<uint, uint> _pagePriorities = [];
+    private readonly Dictionary<uint, uint> _queuedPages = new();
+    private readonly List<KeyValuePair<uint, uint>> _loadCandidates = [];
+    private readonly Dictionary<uint, (uint Size, uint Priority)> _loadingPages = new();
     private readonly HashSet<uint> _permanentlyFailedPages = new();
     private readonly Queue<CompletedStagedPage> _completedStagedPages = new();
     private readonly object _coordinatorGate = new();
@@ -111,10 +111,10 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         _maxRetainedBytes = maxRetainedBytes;
         _maxPendingFaultWords = maxPendingFaultWords;
         _maxQueuedPages = maxQueuedPages;
-        _faultInbox = new uint[maxPendingFaultWords];
-        _pendingLeafNodeIndices.EnsureCapacity(maxPendingFaultWords);
+        _faultInbox = new ClusterPageRequest[maxPendingFaultWords];
+        _pendingRequests.EnsureCapacity(maxPendingFaultWords);
         _queuedPages.EnsureCapacity(maxQueuedPages);
-        _queuedPageSet.EnsureCapacity(maxQueuedPages);
+        _loadCandidates.EnsureCapacity(maxQueuedPages);
         _loadingPages.EnsureCapacity(maxInFlightLoads);
         _completedStagedPages.EnsureCapacity(maxInFlightLoads);
         PublishSnapshot(PageStreamLifecycle.Active);
@@ -143,13 +143,13 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             }
 
             int acceptedCount = Math.Min(
-                faults.LeafNodeIndices.Length,
+                faults.Requests.Length,
                 _maxPendingFaultWords - _pendingFaultWords);
             ulong accepted = checked((uint)acceptedCount);
             ulong dropped = faults.ReportedCount - accepted;
             if (acceptedCount != 0)
             {
-                faults.LeafNodeIndices[..acceptedCount].CopyTo(
+                faults.Requests[..acceptedCount].CopyTo(
                     _faultInbox.AsSpan(_pendingFaultWords, acceptedCount));
                 _pendingFaultWords = checked(_pendingFaultWords + acceptedCount);
             }
@@ -193,8 +193,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 
         lock (_faultGate)
         {
-            _pendingLeafNodeIndices.EnsureCapacity(
-                checked(_pendingLeafNodeIndices.Count + _pendingFaultWords));
+            _pendingRequests.EnsureCapacity(
+                checked(_pendingRequests.Count + _pendingFaultWords));
             _reportedFaultCount = _pendingReportedFaults;
             _storedFaultCount = _pendingStoredFaults;
             _droppedFaultCount = _pendingDroppedFaults;
@@ -202,8 +202,9 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             _pendingStoredFaults = 0;
             _pendingDroppedFaults = 0;
 
-            foreach (uint leafNodeIndex in _faultInbox.AsSpan(0, _pendingFaultWords))
-                _pendingLeafNodeIndices.Add(leafNodeIndex);
+            foreach (ClusterPageRequest request in _faultInbox.AsSpan(0, _pendingFaultWords))
+                if (!_pendingRequests.TryGetValue(request.LeafNodeIndex, out var current) || request.Priority > current.Priority)
+                    _pendingRequests[request.LeafNodeIndex] = request;
             _pendingFaultWords = 0;
         }
 
@@ -213,49 +214,57 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 
     private void QueueRequestedPages()
     {
-        if (_pendingLeafNodeIndices.Count == 0)
+        if (_pendingRequests.Count == 0)
             return;
 
-        _uniqueFaultLeafCount = checked((uint)_pendingLeafNodeIndices.Count);
-        foreach (uint leafNodeIndex in _pendingLeafNodeIndices)
+        _uniqueFaultLeafCount = checked((uint)_pendingRequests.Count);
+        foreach (ClusterPageRequest request in _pendingRequests.Values)
         {
-            PageFaultResolution resolution = _resources.ResolvePageFault(leafNodeIndex);
+            PageFaultResolution resolution = _resources.ResolvePageFault(request.LeafNodeIndex);
             if (resolution.Kind == PageFaultResolutionKind.Unknown)
                 continue;
             _knownFaultLeafCount++;
-            _requestedPages.Add(resolution.PageId);
+            if (resolution.Kind == PageFaultResolutionKind.Satisfied)
+                continue;
+            for (uint index = 0u; index < request.PageCount; index++)
+            {
+                uint page = request.FirstPageId + index;
+                if (!_pagePriorities.TryGetValue(page, out uint previous) || request.Priority > previous)
+                    _pagePriorities[page] = request.Priority;
+            }
+            if (!_pagePriorities.TryGetValue(resolution.PageId, out uint existing) || request.Priority > existing)
+                _pagePriorities[resolution.PageId] = request.Priority;
         }
-        // Include siblings outside the frustum, which cannot fault themselves.
-        // Expand the complete feedback batch once. Sibling pages often share
-        // the same group and ancestors; repeated per-page expansion multiplies
-        // CPU work without producing any additional demand.
-        _resources.CollectPageDependencies(_requestedPages);
-        foreach (uint page in _requestedPages)
-            QueuePageIfNeeded(page, _resources.ResolvePage(page));
-        _pendingLeafNodeIndices.Clear();
-        _requestedPages.Clear();
+        _resources.CollectPageDependencies(_pagePriorities);
+        foreach ((uint page, uint priority) in _pagePriorities)
+            QueuePageIfNeeded(page, _resources.ResolvePage(page), priority);
+        _pendingRequests.Clear();
+        _pagePriorities.Clear();
     }
 
-    private void QueuePageIfNeeded(uint pageID, in PageFaultResolution resolution)
+    private void QueuePageIfNeeded(uint pageID, in PageFaultResolution resolution, uint priority)
     {
         if (resolution.Kind is PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending)
             return;
 
         if (_permanentlyFailedPages.Contains(pageID) ||
-            _loadingPages.ContainsKey(pageID) ||
-            _queuedPageSet.Contains(pageID))
+            _loadingPages.ContainsKey(pageID))
         {
             return;
         }
 
-        if (_queuedPageSet.Count >= _maxQueuedPages)
+        if (_queuedPages.TryGetValue(pageID, out uint previous))
+        {
+            _queuedPages[pageID] = Math.Max(previous, priority);
+            return;
+        }
+        if (_queuedPages.Count >= _maxQueuedPages)
         {
             RecordQueueBackpressure();
             return;
         }
 
-        _queuedPages.Enqueue(pageID);
-        _queuedPageSet.Add(pageID);
+        _queuedPages.Add(pageID, priority);
     }
 
     private void RecordQueueBackpressure()
@@ -267,11 +276,16 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     private void StartQueuedPageLoads()
     {
         List<uint>? pageReads = null;
-        int queuedCount = _queuedPages.Count;
-        for (int i = 0; i < queuedCount; i++)
+        _loadCandidates.Clear();
+        _loadCandidates.AddRange(_queuedPages);
+        _loadCandidates.Sort(static (left, right) =>
         {
-            uint pageID = _queuedPages.Dequeue();
-            _queuedPageSet.Remove(pageID);
+            int priority = right.Value.CompareTo(left.Value);
+            return priority != 0 ? priority : left.Key.CompareTo(right.Key);
+        });
+        foreach ((uint pageID, uint priority) in _loadCandidates)
+        {
+            _queuedPages.Remove(pageID);
 
             PageFaultResolution resolution = _resources.ResolvePage(pageID);
             if (resolution.Kind is PageFaultResolutionKind.Unknown or
@@ -286,13 +300,12 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             if (_loadingPages.Count >= _maxInFlightLoads ||
                 checked(_loadingBytes + size) > _maxRetainedBytes)
             {
-                _queuedPages.Enqueue(pageID);
-                _queuedPageSet.Add(pageID);
+                _queuedPages.Add(pageID, priority);
                 continue;
             }
 
             _loadingBytes = checked(_loadingBytes + size);
-            _loadingPages.Add(pageID, size);
+            _loadingPages.Add(pageID, (size, priority));
             (pageReads ??= []).Add(pageID);
         }
         if (pageReads is null) return;
@@ -348,8 +361,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         failedPages = 0;
         while (TryTakeStagedCompleted(out CompletedStagedPage completed))
         {
-            if (_loadingPages.Remove(completed.PageID, out uint size))
-                _loadingBytes = checked(_loadingBytes - size);
+            _loadingPages.Remove(completed.PageID, out var loading);
+            _loadingBytes = checked(_loadingBytes - loading.Size);
 
             if (completed.Error is not null)
             {
@@ -384,8 +397,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                 case PageLoadResult.AlreadyTracked:
                     break;
                 case PageLoadResult.Deferred:
-                    if (_queuedPageSet.Count < _maxQueuedPages && _queuedPageSet.Add(completed.PageID))
-                        _queuedPages.Enqueue(completed.PageID);
+                    if (_queuedPages.Count < _maxQueuedPages)
+                        _queuedPages.TryAdd(completed.PageID, loading.Priority);
                     else
                         RecordQueueBackpressure();
                     break;
@@ -477,7 +490,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 
     private PageStreamWorkSnapshot CurrentWork()
         => new(
-            _queuedPageSet.Count,
+            _queuedPages.Count,
             _loadingPages.Count,
             _loadingBytes,
             _permanentlyFailedPages.Count);
@@ -532,10 +545,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                     _pendingReportedFaults = 0;
                     _pendingStoredFaults = 0;
                     _pendingDroppedFaults = 0;
-                    _pendingLeafNodeIndices.Clear();
-                    _requestedPages.Clear();
+                    _pendingRequests.Clear();
                     _queuedPages.Clear();
-                    _queuedPageSet.Clear();
                     _completedStagedPages.Clear();
                     _loadingPages.Clear();
                     _loadingBytes = 0;

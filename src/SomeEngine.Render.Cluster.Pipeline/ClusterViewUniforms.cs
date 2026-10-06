@@ -39,7 +39,7 @@ internal struct ClusterViewUniforms
     internal float PrevP00;
     internal float PrevP11;
     internal float TessellationEdgePixels;
-    internal uint Pad3;
+    internal uint StreamingPriorityCategory;
 
     internal Matrix4x4 ClipToWorld;
 
@@ -115,7 +115,7 @@ internal struct ClusterViewUniforms
             PrevP00 = source.Projection.M11,
             PrevP11 = source.Projection.M22,
             TessellationEdgePixels = 0.0f,
-            Pad3 = 0u,
+            StreamingPriorityCategory = source.StreamingPriorityCategory,
             ClipToWorld = clipToWorld,
             TargetPolicy = 0u,
             TargetViewIndex = 0u,

@@ -18,6 +18,9 @@ public sealed record ClusterResidencyOptions
 
     public int PageFaultCapacity { get; init; } = 16 * 1024;
 
+    /// <summary>Maximum page reads admitted together by the geometry streaming system.</summary>
+    public int MaxConcurrentPageLoads { get; init; } = 1024;
+
     public TimeSpan DisposeTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     internal void Validate()
@@ -25,6 +28,7 @@ public sealed record ClusterResidencyOptions
         ArgumentOutOfRangeException.ThrowIfZero(PageHeapCapacityBytes);
         ArgumentOutOfRangeException.ThrowIfZero(BvhCapacityBytes);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(PageFaultCapacity);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(MaxConcurrentPageLoads);
         if (DisposeTimeout <= TimeSpan.Zero || DisposeTimeout == Timeout.InfiniteTimeSpan)
         {
             throw new ArgumentOutOfRangeException(
@@ -105,7 +109,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                 bvhStorage);
             pageStorage = null;
             bvhStorage = null;
-            stream = new PageStream(meshes);
+            stream = new PageStream(meshes, maxInFlightLoads: selected.MaxConcurrentPageLoads);
 
             _pageHeapDescription = new BufferDesc(selected.PageHeapCapacityBytes,
                 BufferUsages.ShaderRead | BufferUsages.CopyDestination, "Cluster page heap");

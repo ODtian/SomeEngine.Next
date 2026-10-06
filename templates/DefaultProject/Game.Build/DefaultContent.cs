@@ -140,6 +140,10 @@ public static class DefaultContent
                     ResolveRequired(project, "assets/Shaders/cluster_bvh_traverse.shader"),
                     "TraverseHierarchyLevel"),
                 ComputeOperation(
+                    ClusterShaderOperationRole.PageRequests,
+                    ResolveRequired(project, "assets/Shaders/cluster_page_request_complete.shader"),
+                    "CompleteClusterPageRequests"),
+                ComputeOperation(
                     ClusterShaderOperationRole.BvhTraversalInitialize,
                     ResolveRequired(project, "assets/Shaders/cluster_bvh_traverse_seed.shader"),
                     "SeedHierarchyRoots"),

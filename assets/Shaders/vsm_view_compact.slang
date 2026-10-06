@@ -76,6 +76,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     view.ScreenWidth = mipResolution;
     view.ScreenHeight = mipResolution;
     view.GeometryLodScale = source.GeometryLodScale;
+    view.StreamingPriorityCategory = 0u;
     view.LodThreshold = source.MaxPixelsPerEdge;
     view.SoftwareRasterEdgeThreshold = source.MinPixelsPerEdgeHardware;
     view.TessellationEdgePixels = source.DicingRate;

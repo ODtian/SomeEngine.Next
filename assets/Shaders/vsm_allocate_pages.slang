@@ -2,7 +2,6 @@
 #include "vsm_sampling.slang"
 #include "vsm_depth_cache.slang"
 #include "resource_effects.slang"
-#include "vsm_page_lists.slang"
 
 struct VirtualShadowPageAllocationUniforms
 {
@@ -24,6 +23,7 @@ StructuredBuffer<uint> RequestedPageFlags;
 RWStructuredBuffer<uint4> ShadowPageTable;
 RWStructuredBuffer<uint> PhysicalPageOwners;
 RWStructuredBuffer<uint4> PageMetadata;
+#include "vsm_page_lists.slang"
 RWStructuredBuffer<uint4> ActivePhysicalPages;
 RWStructuredBuffer<uint> ActivePhysicalPageCount;
 RWStructuredBuffer<uint4> UncachedPageRectBounds;

@@ -16,8 +16,8 @@ public sealed class ClusterStreamingFeedbackChannel
     {
         var ticket = new ClusterReadbackTicket(new ClusterEpochId(epoch), checked(_statistics.ReceivedFrames + 1));
         uint reportedCount = MemoryMarshal.Read<uint>(payload);
-        int storedCount = checked((int)Math.Min(reportedCount, (uint)(payload.Length / sizeof(uint) - 1)));
-        byte[] bytes = reportedCount == 0 ? [] : payload[..((storedCount + 1) * sizeof(uint))].ToArray();
+        int storedCount = checked((int)Math.Min(reportedCount, (uint)((payload.Length - sizeof(uint)) / 16)));
+        byte[] bytes = reportedCount == 0 ? [] : payload[..(sizeof(uint) + storedCount * 16)].ToArray();
         _packets.Enqueue(new ClusterStreamingFeedbackPacket(ticket, bytes.Length == 0 ? EmptyPayloads : [bytes]));
         _statistics = _statistics with
         {

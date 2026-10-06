@@ -125,4 +125,5 @@ public readonly record struct RenderView(
     float GeometryLodScale = 1.0f,
     Vector3? CameraTarget = null,
     CameraDepthOfField? DepthOfField = null,
-    WorldOrigin WorldOrigin = default) : IComponent;
+    WorldOrigin WorldOrigin = default,
+    uint StreamingPriorityCategory = 3u) : IComponent;

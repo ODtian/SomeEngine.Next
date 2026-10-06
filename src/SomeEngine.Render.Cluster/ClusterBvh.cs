@@ -307,6 +307,27 @@ internal sealed class ClusterBvh
         }
     }
 
+    internal void CollectPageDependencies(Dictionary<uint, uint> priorities)
+    {
+        var requested = priorities.OrderByDescending(static pair => pair.Value).ThenBy(static pair => pair.Key).ToArray();
+        var nodes = new List<int>();
+        var groupsByMesh = new Dictionary<ClusterLodGroups, HashSet<int>>();
+        foreach ((uint page, uint priority) in requested)
+        {
+            ClusterBvhLeafIndex mesh = GetLeafIndexByPage(page);
+            if (!groupsByMesh.TryGetValue(mesh.LodGroups, out var visited))
+                groupsByMesh.Add(mesh.LodGroups, visited = []);
+            nodes.Clear();
+            mesh.LodGroups.CollectRequiredNodes(mesh.NodesByPage[page - mesh.FirstPage], nodes, visited);
+            foreach (int node in nodes)
+            {
+                uint dependency = checked(mesh.FirstPage + mesh.LocalPageByNode[node]);
+                if (!priorities.TryGetValue(dependency, out uint previous) || priority > previous)
+                    priorities[dependency] = priority;
+            }
+        }
+    }
+
     public void RestoreChanges(in ClusterBvhCheckpoint checkpoint)
     {
         if (checkpoint.PatchCount > _pendingPatches.Count)
