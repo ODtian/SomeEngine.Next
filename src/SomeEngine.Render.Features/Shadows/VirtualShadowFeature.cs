@@ -113,6 +113,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private readonly GraphPassId _frameCompletePass;
 
     private readonly GraphBufferInput _frameShadowViews;
+    private readonly GraphRegionId _viewUploadRegion;
     private readonly GraphBufferInput _frameSamplingUniforms;
     private readonly GraphBufferInput _frameInvocationUniforms;
     private bool _frameHasPreviousHistory;
@@ -201,6 +202,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             RenderGraphEdit edit = graph.BeginEdit();
             try
             {
+                _viewUploadRegion = edit.AddFrameRegion("Virtual shadow view upload", primaryDepthAfter);
                 ulong pageBytes = checked((ulong)settings.MaxPhysicalPages * sizeof(uint));
                 _pageOwners = edit.DeclareExternalBuffer(new BufferDesc(
                     pageBytes,
@@ -884,10 +886,18 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             graph.SetBufferInput(_casterBounds, new GraphBufferSlice(geometry.Geometry.InstanceWorldBounds, BufferRange.Whole));
             graph.SetTextureInput(_receiverDepth, geometry.Depth);
 
-            graph.SetBufferInput(_frameShadowViews, graph.Upload(
+            GraphBufferSlice viewUpload = graph.Upload(
                 views.IsEmpty ? [default(VirtualShadowView)] : views,
-                BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
+                BufferUsages.CopySource,
+                "Virtual shadow view upload");
+            GraphBufferId viewBuffer = graph.CreateBuffer(new BufferDesc(viewUpload.Range.Size,
+                BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination,
                 "Virtual shadow view parameters"));
+            var viewCopy = new VirtualShadowViewCopyPassData(viewUpload, viewBuffer);
+            graph.AddCopyPass("Upload virtual shadow view parameters", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                viewCopy, default, VirtualShadowViewCopyPassData.Declare, VirtualShadowViewCopyPassData.Record,
+                _viewUploadRegion);
+            graph.SetBufferInput(_frameShadowViews, new GraphBufferSlice(viewBuffer, BufferRange.Whole));
             graph.SetBufferInput(_frameChangedInstances, graph.Upload<uint>(
                 _changedInstances.Count != 0 ? CollectionsMarshal.AsSpan(_changedInstances) : [0u],
                 BufferUsages.ShaderRead,

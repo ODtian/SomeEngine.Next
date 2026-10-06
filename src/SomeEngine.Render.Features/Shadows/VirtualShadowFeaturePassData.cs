@@ -4,6 +4,20 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Features.Shadows;
 
+internal readonly record struct VirtualShadowViewCopyPassData(GraphBufferSlice Source, GraphBufferId Destination)
+{
+    internal static void Declare(ref PassDefinition pass, ref VirtualShadowViewCopyPassData data)
+    {
+        _ = pass.Read(data.Source.Buffer, data.Source.Range, PipelineSync.Copy, ResourceAccess.CopySource);
+        _ = pass.Write(data.Destination, new BufferRange(0, data.Source.Range.Size), PipelineSync.Copy,
+            ResourceAccess.CopyDestination, WriteCoverage.Complete);
+    }
+
+    internal static void Record(ref CopyPassCommandScope commands, in VirtualShadowViewCopyPassData data) =>
+        commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.Source.Buffer), data.Source.Range.Offset,
+            commands.GetBuffer(data.Destination), 0, data.Source.Range.Size));
+}
+
 internal readonly record struct VirtualShadowResolutionCopyPassData(GraphBufferId Source, GraphBufferId Destination)
 {
     private static readonly BufferRange BiasRange = new(0, 2u * sizeof(float));
