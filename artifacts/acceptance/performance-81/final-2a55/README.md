@@ -16,6 +16,8 @@ One controlled CPU/GPU-idle sequence, one feedback per source; individual comman
 
 Final P95ms8.0208/8.3522/8.5725,278/270/263 samples. Native historical and current workloads retain their different settings/policies: old4096atlas/bias0/.0005(pre71)or.00002(cbb) depth/.01normal versus current8192/-2/.000001/.001. Pre71 native dynamicresolutionfalse; cbb/currenttrue. Historical directional selection uses projected shortest-axis receiver footprint and user-only viewbias;9e/current uses camera-distance selection with projection-density calibration. These native timings are source cost attribution; full matched-quality/performance acceptance remains dependent on the supported shared comparison and the original correctness/diagnostic obligations.
 
+The retained original7b→migration-only16c source-cost pair, exact original commands/settings/content identities and separate complete CPU/GPU diagnosis are also committed at ../original-migration-7b-16c. Its legacy-generation quality and actual machine-load scope are retained alongside the fresh native and supported-common observations.
+
 ## Proved old capability boundary and separate supported diagnostic
 
 Both7b/cbb VirtualShadowFeature constructors allocate pageHiZ as64×64/R32Float/7mips Texture2D array with ArrayLayers=settings.MaxPhysicalPages. Shared8192atlas/Page128 requires4096 layers. Their D3D12Device advertises MaximumTextureArrayLayers2048; GetTextureMemoryRequirements reaches native rejected allocation(SizeInBytes=ulong.MaxValue), raising GraphicsError.NativeFailure at graphcommit. Logs retain exact source stack locations. The renderer was retained at its own commit; capacity changes were not imported into the old source.
