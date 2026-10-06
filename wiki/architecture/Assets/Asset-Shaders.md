@@ -48,6 +48,11 @@ ShaderAsset
 
 ## 构建与失效
 
+默认项目的 `DefaultContent.BuildAsync` 枚举引擎 `.shader` 声明，项目已有的同名定义直接编译；
+缺项按声明中的 `SourceNames` 生成到 `assets/Shaders/generated/EngineSources/`，随后通过
+同一 `AssetProject.BuildAsync` 导入。管线配置解析项目路径及其生成来源。引擎新增 VSM、
+驻留传播或页需求 shader 时，这一构建入口从其唯一源声明产生项目输入。
+
 `.shader` 是人类可编辑来源，只有 `SourceNames` 属于定义。构建 target 是工具选择，不进入 `Shader` 语义。`SlangShaderImporter` 使用官方 Slang API 编译、保存模块 IR 和可用代码，并记录实际读取的依赖。
 
 这是破坏性 schema；旧反射字段和旧代码容器没有兼容 reader。编译器、来源、依赖、Block 编码或 target 设置变化时重新构建同一资产身份。

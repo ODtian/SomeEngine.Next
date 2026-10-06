@@ -200,8 +200,13 @@ double 中减去原点的光空间位置。`ClipmapCornerRelativeOffsetX/Y` 以�
 原版 UE 5.8.3 `396c9f05` 的 radius 为 `2^(absoluteLevel+1)` 厘米；引擎由
 `WorldUnitsPerCentimeter` 转为世界单位，默认每厘米 `.01` 世界单位。公共原点使用世界单位。
 原版核对范围为 `NaniteShared.cpp:231–284`、`VirtualShadowMapClipmap.cpp:337–391` 和
-`VirtualShadowMapProjectionCommon.ush:77–91,218–305`。实际 red/green 投影证据位于
-`artifacts/acceptance/ticket-151/origin-projection/`，远原点 `2^40+1/8` 保留 `-1/2048` 的独立期望。
+`VirtualShadowMapProjectionCommon.ush:77–91,218–305`。远原点 `2^40+1/8` 保留 `-1/2048` 的独立期望。
+近、远原点的公开场景保持 `1/8` 遮挡者间距，raw Half 位与 beauty 像素逐位一致。
+实际证明由 [#70 验收记录](../../../docs/agents/acceptance-70.md) 统一索引。
+
+阴影视图每帧通过专用当帧区段，从上传页拷贝到图创建的设备缓冲。
+工作反馈在这一缓冲写入当前 bias，请求、几何视图压缩和采样继续绑定同一视图输入。
+图的持久主体保留拓扑，当帧区段维护近每帧整体更新的视图数据与上传工作。
 
 ## 跨帧页面顺序
 
