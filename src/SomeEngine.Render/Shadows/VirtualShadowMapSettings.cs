@@ -14,6 +14,7 @@ public sealed record VirtualShadowMapSettings
     public float WorldUnitsPerCentimeter { get; init; } = 0.01f;
     public uint DirectionalClipmapLevels { get; init; } = 17;
     public int DirectionalFirstClipmapLevel { get; init; } = 6;
+    public uint DirectionalMinCameraViewportWidth { get; init; }
     public int DirectionalFirstCoarseClipmapLevel { get; init; } = 15;
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
     public float DirectionalResolutionLodBias { get; init; } = -2.0f;

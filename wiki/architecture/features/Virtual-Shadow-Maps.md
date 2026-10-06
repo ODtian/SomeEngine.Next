@@ -18,6 +18,11 @@ Game/Render 三种 light records 的 `ShadowSettings` 使用共同 `LightShadowS
 VSM 设置分别持有非移动与移动精度偏置，按
 `nonmoving + factor * (max(nonmoving, moving) - nonmoving)` 插值，再加本光偏置。
 默认移动偏置为方向光 0、局部光 1；方向光再叠加相机标度并取原版绝对偏置下界 0。
+透视相机标度取投影矩阵 X 标度的绝对值，正交相机标度取 1。
+正交相机宽度转换为厘米后，与 viewport 宽度和 `DirectionalMinCameraViewportWidth` 取最大值。
+相机偏置为 `log2(.5 * VirtualResolution / (width * projectionScale))`。
+正交 first level 使用半宽厘米的 `floor(log2(halfWidth))` 与配置 first 的最大值，绝对下界为 0。
+实际级别范围和 view 数共同写入投影、请求与采样参数；4 米正交相机对应 first 7，默认 last 22。
 例如距离 192 厘米、first level 6 时，未偏置 index 为 1；它的偏置为 1 时选择 index 2。
 页请求与材质采样共用 `SelectDirectionalVirtualShadowView`，从目标级别寻找覆盖该位置的投影。
 

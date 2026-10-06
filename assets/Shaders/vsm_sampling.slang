@@ -515,8 +515,6 @@ float CalculateDirectionalVirtualShadowPixelLevel(
     float3 worldPositionDx,
     float3 worldPositionDy)
 {
-    if ((parameters.Flags & VSM_VIEW_ORTHOGRAPHIC_RECEIVER) != 0u)
-        return parameters.ResolutionLodBias - float(parameters.FirstClipmapLevel);
     return CalculateDirectionalVirtualShadowDistanceLevel(parameters, worldPosition) +
         parameters.ResolutionLodBias;
 }
