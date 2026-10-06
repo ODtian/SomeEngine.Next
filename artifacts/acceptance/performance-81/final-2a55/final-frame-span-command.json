@@ -1,0 +1,21 @@
+{
+  "ReportPaths": [
+    "F:\\SomeEngine.AgentWork\\rg70-remaining\\trees\\final-proof-81\\templates\\DefaultProject\\Game.App\\bin\\Release\\net10.0\\Performance\\20261006-210329-950\\results.json"
+  ],
+  "Command": "pwsh",
+  "FinishedUtc": "2026-10-06T13:04:07.9785803Z",
+  "Scope": "Exclusive GPU quality/window/calibrated frame-span verification; separate Trace run; original scene policy60sec",
+  "WallSeconds": 47.9446066,
+  "StartedUtc": "2026-10-06T13:03:20.0707864Z",
+  "ObserverSource": "8a6b495b0fc58db613a4c8fa46156e043f784e62",
+  "Arguments": [
+    "-NoProfile",
+    "-File",
+    "F:/SomeEngine.AgentWork/rg70-remaining/trees/final-proof-81/tools/Measure-Scenes.ps1",
+    "-ApplicationPath",
+    "F:/SomeEngine.AgentWork/rg70-remaining/trees/final-proof-81/templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe",
+    "-Trace"
+  ],
+  "ExitCode": 0,
+  "Source": "2a55ca9006e586072d11ea01193662deee567d4f"
+}

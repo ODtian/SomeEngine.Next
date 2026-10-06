@@ -1,0 +1,8 @@
+
+Scene         Status   Frames MeanMs MedianMs P95Ms PrepareMs ExecuteMs
+-----         ------   ------ ------ -------- ----- --------- ---------
+1024 spheres  Measured    278   7.23     7.24  8.02      0.26      1.19
+Sponza        Measured    270   7.46     7.41  8.35      0.08      1.44
+Amazon Bistro Measured    263   7.63     7.66  8.57      0.11      2.82
+
+Report: F:\SomeEngine.AgentWork\rg70-remaining\trees\measure-final-81\templates\DefaultProject\Game.App\bin\Release\net10.0\Performance\20261006-213158-825\results.json (42.44 seconds including application startup)

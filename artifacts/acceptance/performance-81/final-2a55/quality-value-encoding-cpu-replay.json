@@ -1,0 +1,32 @@
+[
+  {
+    "Scope": "Actual CPU replay encoding of retained public JSON fields through System.Text.Json; every sample retained. Replay time is artifact encoding cost, separate from measured renderer or actual callback cost.",
+    "Scene": "1024 spheres",
+    "ValueEncodedArtifactEncodingMs": 2.5514,
+    "ValueEncodedUTF8Bytes": 148722,
+    "Frames": 51,
+    "OriginalArtifactEncodingMs": 357.0903,
+    "UniqueViewSets": 1,
+    "OriginalUTF8Bytes": 4332327
+  },
+  {
+    "Scope": "Actual CPU replay encoding of retained public JSON fields through System.Text.Json; every sample retained. Replay time is artifact encoding cost, separate from measured renderer or actual callback cost.",
+    "Scene": "Sponza",
+    "ValueEncodedArtifactEncodingMs": 1.2972,
+    "ValueEncodedUTF8Bytes": 306822,
+    "Frames": 177,
+    "OriginalArtifactEncodingMs": 83.3855,
+    "UniqueViewSets": 1,
+    "OriginalUTF8Bytes": 11303158
+  },
+  {
+    "Scope": "Actual CPU replay encoding of retained public JSON fields through System.Text.Json; every sample retained. Replay time is artifact encoding cost, separate from measured renderer or actual callback cost.",
+    "Scene": "Amazon Bistro",
+    "ValueEncodedArtifactEncodingMs": 0.459,
+    "ValueEncodedUTF8Bytes": 94219,
+    "Frames": 32,
+    "OriginalArtifactEncodingMs": 7.4316,
+    "UniqueViewSets": 1,
+    "OriginalUTF8Bytes": 1716507
+  }
+]

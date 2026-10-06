@@ -1,0 +1,94 @@
+{
+  "Renderer": "2a55ca9006e586072d11ea01193662deee567d4f",
+  "ObserverSource": "8a6b495b0fc58db613a4c8fa46156e043f784e62",
+  "StartedUtc": "2026-10-06T13:03:20.0707864Z",
+  "FinishedUtc": "2026-10-06T13:04:07.9785803Z",
+  "OuterSeconds": 47.9446066,
+  "ExitCode": 0,
+  "PlatformComplete": true,
+  "PlatformElapsedSeconds": 37.0172239,
+  "Scenes": [
+    {
+      "Scene": "1024 spheres",
+      "Frames": 267,
+      "Status": "Measured",
+      "QualityComplete": true,
+      "GpuComplete": true,
+      "FrameJoins": 267,
+      "MissingBias": 0,
+      "MissingGeometry": 0,
+      "FirstSceneFrame": 347,
+      "LastSceneFrame": 613,
+      "AppliedDirectionalViewBiases": [
+        0.23659372
+      ],
+      "DirectionalLodAdditions": [
+        0
+      ],
+      "LocalLodAdditions": [
+        0
+      ],
+      "UniqueViewSets": 2,
+      "QualitySerializationMs": 198.0896,
+      "AllObservedCallbackRetentionMs": 0.1347,
+      "SpanMeanMs": 10.186884392833523,
+      "SpanP50Ms": 7.80893994163489,
+      "SpanP95Ms": 13.77684394163498
+    },
+    {
+      "Scene": "Sponza",
+      "Frames": 253,
+      "Status": "Measured",
+      "QualityComplete": true,
+      "GpuComplete": true,
+      "FrameJoins": 253,
+      "MissingBias": 0,
+      "MissingGeometry": 0,
+      "FirstSceneFrame": 352,
+      "LastSceneFrame": 604,
+      "AppliedDirectionalViewBiases": [
+        0.7156656
+      ],
+      "DirectionalLodAdditions": [
+        0
+      ],
+      "LocalLodAdditions": [
+        0
+      ],
+      "UniqueViewSets": 2,
+      "QualitySerializationMs": 35.3179,
+      "AllObservedCallbackRetentionMs": 0.1291,
+      "SpanMeanMs": 11.443228739581741,
+      "SpanP50Ms": 9.279768157928629,
+      "SpanP95Ms": 14.77445621095194
+    },
+    {
+      "Scene": "Amazon Bistro",
+      "Frames": 244,
+      "Status": "Measured",
+      "QualityComplete": true,
+      "GpuComplete": true,
+      "FrameJoins": 244,
+      "MissingBias": 0,
+      "MissingGeometry": 0,
+      "FirstSceneFrame": 316,
+      "LastSceneFrame": 559,
+      "AppliedDirectionalViewBiases": [
+        0.7156656
+      ],
+      "DirectionalLodAdditions": [
+        0
+      ],
+      "LocalLodAdditions": [
+        0
+      ],
+      "UniqueViewSets": 2,
+      "QualitySerializationMs": 37.5796,
+      "AllObservedCallbackRetentionMs": 0.1584,
+      "SpanMeanMs": 11.984268941664341,
+      "SpanP50Ms": 11.131036082397259,
+      "SpanP95Ms": 14.225720159072807
+    }
+  ],
+  "Scope": "Complete three-scene calibrated application queue spans and used bias/typed geometry sample joins. Separate trace diagnosis; spans include queue/submit gaps, excludePresent, and are not busy execution sums."
+}

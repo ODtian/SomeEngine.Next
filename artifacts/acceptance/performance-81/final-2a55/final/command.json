@@ -1,0 +1,21 @@
+{
+  "WallSeconds": 45.5927199,
+  "Scope": "Exactly one fixed-order controlled CPU/GPU-idle NONTRACE unified3scene feedback; original sampling/default features; builds excluded; no best-run selection",
+  "Command": "pwsh",
+  "ExitCode": 0,
+  "ShadowSettings": null,
+  "Source": "2a55ca9006e586072d11ea01193662deee567d4f",
+  "Arguments": [
+    "-NoProfile",
+    "-File",
+    "F:/SomeEngine.AgentWork/rg70-remaining/trees/measure-final-81/tools/Measure-Scenes.ps1",
+    "-ApplicationPath",
+    "F:/SomeEngine.AgentWork/rg70-remaining/trees/measure-final-81/templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe"
+  ],
+  "Purpose": "Final production defaults equal shared configured values",
+  "FinishedUtc": "2026-10-06T13:32:35.1704502Z",
+  "StartedUtc": "2026-10-06T13:31:49.5847064Z",
+  "ReportPaths": [
+    "F:\\SomeEngine.AgentWork\\rg70-remaining\\trees\\measure-final-81\\templates\\DefaultProject\\Game.App\\bin\\Release\\net10.0\\Performance\\20261006-213158-825\\results.json"
+  ]
+}

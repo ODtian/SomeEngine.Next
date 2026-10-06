@@ -1,0 +1,949 @@
+[
+  {
+    "MaterialIndex": 19,
+    "Name": "Bistro_Sign_Letters",
+    "BaseColorFactor": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "EmissiveFactor": [
+      1,
+      0,
+      0
+    ],
+    "EmissiveStrength": 100,
+    "EmissiveTexture": null,
+    "Geometry": [
+      {
+        "MeshIndex": 143,
+        "MeshName": "Mesh_144",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 169,
+            "Name": "Bistro_Research_Exterior_Paris_BistroFrontBanner_01_4131_pr"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "MaterialIndex": 115,
+    "Name": "Paris_StringLights_01_White_Color",
+    "BaseColorFactor": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "EmissiveFactor": [
+      1,
+      1,
+      1
+    ],
+    "EmissiveStrength": 8,
+    "EmissiveTexture": null,
+    "Geometry": [
+      {
+        "MeshIndex": 1298,
+        "MeshName": "Mesh_1298",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1420,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a_6257_primitive2"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1302,
+        "MeshName": "Mesh_1302",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1425,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a__6259_primitive2"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1305,
+        "MeshName": "Mesh_1306",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1429,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___10__6261_p.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1309,
+        "MeshName": "Mesh_1310",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1434,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___11__6263_p.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1313,
+        "MeshName": "Mesh_1314",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1439,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___2__6265_pr.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1317,
+        "MeshName": "Mesh_1318",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1444,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___3__6267_pr.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1321,
+        "MeshName": "Mesh_1322",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1449,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___4__6269_pr.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1325,
+        "MeshName": "Mesh_1326",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1454,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___5__6271_pr.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1329,
+        "MeshName": "Mesh_1330",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1459,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___6__6273_pr.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1333,
+        "MeshName": "Mesh_1334",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1464,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___7__6275_pr.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1337,
+        "MeshName": "Mesh_1338",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1469,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___8__6277_pr.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1341,
+        "MeshName": "Mesh_1342",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1474,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01a___9__6279_pr.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1345,
+        "MeshName": "Mesh_1345",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1479,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B_6281_primitive1"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1348,
+        "MeshName": "Mesh_1348",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1483,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B__6283_primitive1"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1350,
+        "MeshName": "Mesh_1351",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1486,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___10__6285_p"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1353,
+        "MeshName": "Mesh_1354",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1490,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___11__6287_p"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1356,
+        "MeshName": "Mesh_1357",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1494,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___12__6289_p"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1359,
+        "MeshName": "Mesh_1360",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1498,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___13__6291_p"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1362,
+        "MeshName": "Mesh_1363",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1502,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___14__6293_p"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1365,
+        "MeshName": "Mesh_1366",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1506,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___15__6295_p"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1368,
+        "MeshName": "Mesh_1369",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1510,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___2__6297_pr"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1371,
+        "MeshName": "Mesh_1372",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1514,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___3__6299_pr"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1374,
+        "MeshName": "Mesh_1375",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1518,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___4__6301_pr"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1377,
+        "MeshName": "Mesh_1378",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1522,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___5__6303_pr"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1380,
+        "MeshName": "Mesh_1381",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1526,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___6__6305_pr"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1383,
+        "MeshName": "Mesh_1384",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1530,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___7__6307_pr"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1386,
+        "MeshName": "Mesh_1387",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1534,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___8__6309_pr"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1389,
+        "MeshName": "Mesh_1390",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1538,
+            "Name": "Bistro_Research_Exterior_Paris_StreetLight_01B___9__6311_pr"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1450,
+        "MeshName": "Mesh_1444",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1600,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a1_6473_primitive"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1456,
+        "MeshName": "Mesh_1451",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1607,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a2_6475_primitive"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1463,
+        "MeshName": "Mesh_1457",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1615,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a3_6477_primitive"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1469,
+        "MeshName": "Mesh_1464",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1622,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a4_6479_primitive"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1476,
+        "MeshName": "Mesh_1470",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1630,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a5_6481_primitive"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1482,
+        "MeshName": "Mesh_1477",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1637,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a6_6483_primitive"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1489,
+        "MeshName": "Mesh_1483",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1645,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a7_6485_primitive"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1496,
+        "MeshName": "Mesh_1490",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1653,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a8_6487_primitive"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "MaterialIndex": 120,
+    "Name": "Paris_StringLights_01_Red_Color",
+    "BaseColorFactor": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "EmissiveFactor": [
+      1,
+      0,
+      0
+    ],
+    "EmissiveStrength": 8,
+    "EmissiveTexture": null,
+    "Geometry": [
+      {
+        "MeshIndex": 1445,
+        "MeshName": "Mesh_1446",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1595,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a1_6473_primi.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1452,
+        "MeshName": "Mesh_1453",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1603,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a2_6475_primi.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1458,
+        "MeshName": "Mesh_1459",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1610,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a3_6477_primi.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1465,
+        "MeshName": "Mesh_1466",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1618,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a4_6479_primi.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1471,
+        "MeshName": "Mesh_1472",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1625,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a5_6481_primi.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1478,
+        "MeshName": "Mesh_1479",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1633,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a6_6483_primi.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1484,
+        "MeshName": "Mesh_1485",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1640,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a7_6485_primi.001"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1491,
+        "MeshName": "Mesh_1492",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1648,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a8_6487_primi.001"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "MaterialIndex": 121,
+    "Name": "Paris_StringLights_01_Blue_Color",
+    "BaseColorFactor": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "EmissiveFactor": [
+      0,
+      0,
+      1
+    ],
+    "EmissiveStrength": 8,
+    "EmissiveTexture": null,
+    "Geometry": [
+      {
+        "MeshIndex": 1446,
+        "MeshName": "Mesh_1447",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1596,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a1_6473_primi.002"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1453,
+        "MeshName": "Mesh_1454",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1604,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a2_6475_primi.002"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1459,
+        "MeshName": "Mesh_1460",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1611,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a3_6477_primi.002"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1466,
+        "MeshName": "Mesh_1467",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1619,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a4_6479_primi.002"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1472,
+        "MeshName": "Mesh_1473",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1626,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a5_6481_primi.002"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1479,
+        "MeshName": "Mesh_1480",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1634,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a6_6483_primi.002"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1485,
+        "MeshName": "Mesh_1486",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1641,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a7_6485_primi.002"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1492,
+        "MeshName": "Mesh_1493",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1649,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a8_6487_primi.002"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "MaterialIndex": 122,
+    "Name": "Paris_StringLights_01_Green_Color",
+    "BaseColorFactor": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "EmissiveFactor": [
+      0,
+      1,
+      0
+    ],
+    "EmissiveStrength": 8,
+    "EmissiveTexture": null,
+    "Geometry": [
+      {
+        "MeshIndex": 1447,
+        "MeshName": "Mesh_1448",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1597,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a1_6473_primi.003"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1454,
+        "MeshName": "Mesh_1455",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1605,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a2_6475_primi.003"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1460,
+        "MeshName": "Mesh_1461",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1612,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a3_6477_primi.003"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1467,
+        "MeshName": "Mesh_1468",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1620,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a4_6479_primi.003"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1473,
+        "MeshName": "Mesh_1474",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1627,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a5_6481_primi.003"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1480,
+        "MeshName": "Mesh_1481",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1635,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a6_6483_primi.003"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1486,
+        "MeshName": "Mesh_1487",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1642,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a7_6485_primi.003"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1493,
+        "MeshName": "Mesh_1494",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1650,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a8_6487_primi.003"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "MaterialIndex": 123,
+    "Name": "Paris_StringLights_01_Pink_Color",
+    "BaseColorFactor": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "EmissiveFactor": [
+      1,
+      0,
+      1
+    ],
+    "EmissiveStrength": 8,
+    "EmissiveTexture": null,
+    "Geometry": [
+      {
+        "MeshIndex": 1448,
+        "MeshName": "Mesh_1449",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1598,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a1_6473_primi.004"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1455,
+        "MeshName": "Mesh_1456",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1606,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a2_6475_primi.004"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1461,
+        "MeshName": "Mesh_1462",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1613,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a3_6477_primi.004"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1468,
+        "MeshName": "Mesh_1469",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1621,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a4_6479_primi.004"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1474,
+        "MeshName": "Mesh_1475",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1628,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a5_6481_primi.004"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1481,
+        "MeshName": "Mesh_1482",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1636,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a6_6483_primi.004"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1487,
+        "MeshName": "Mesh_1488",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1643,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a7_6485_primi.004"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1494,
+        "MeshName": "Mesh_1495",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1651,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a8_6487_primi.004"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "MaterialIndex": 124,
+    "Name": "Paris_StringLights_01_Orange_Color",
+    "BaseColorFactor": [
+      1,
+      0.2315981686115265,
+      0,
+      1
+    ],
+    "EmissiveFactor": [
+      1,
+      0.1875,
+      0
+    ],
+    "EmissiveStrength": 8,
+    "EmissiveTexture": null,
+    "Geometry": [
+      {
+        "MeshIndex": 1449,
+        "MeshName": "Mesh_1450",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1599,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a1_6473_primi.005"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1462,
+        "MeshName": "Mesh_1463",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1614,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a3_6477_primi.005"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1475,
+        "MeshName": "Mesh_1476",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1629,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a5_6481_primi.005"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1488,
+        "MeshName": "Mesh_1489",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1644,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a7_6485_primi.005"
+          }
+        ]
+      },
+      {
+        "MeshIndex": 1495,
+        "MeshName": "Mesh_1496",
+        "Primitive": 0,
+        "Nodes": [
+          {
+            "Index": 1652,
+            "Name": "Bistro_Research_Exterior_Paris_StringLights_01a8_6487_primi.005"
+          }
+        ]
+      }
+    ]
+  }
+]
