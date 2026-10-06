@@ -18,7 +18,7 @@ namespace SomeEngine.Render.Shadows;
 /// </summary>
 public sealed class VirtualShadowMap : IDisposable
 {
-    public const uint EvictionBucketCount = 8;
+    public static ulong CalculatePageListBufferSize(uint capacity) => checked(4ul * (capacity + 1ul) * sizeof(uint));
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private Buffer? _pageTable;
@@ -653,11 +653,8 @@ public sealed class VirtualShadowMap : IDisposable
             new VirtualShadowBufferResource(pageTable, _pageTableEndpoint),
             new VirtualShadowBufferResource(_physicalPageOwners, _physicalPageOwnersEndpoint),
             new VirtualShadowTextureResource(_atlas, _atlasEndpoint),
-            cache.FreePages,
-            cache.FreePageCount,
             cache.PageMetadata,
-            cache.EvictionPages,
-            cache.EvictionBucketCounts,
+            cache.PageLists,
             !_pageTableInitialized);
     }
 
@@ -982,9 +979,6 @@ public readonly record struct VirtualShadowMapFrameResources(
     VirtualShadowBufferResource PageTable,
     VirtualShadowBufferResource PhysicalPageOwners,
     VirtualShadowTextureResource Atlas,
-    VirtualShadowBufferResource FreePages,
-    VirtualShadowBufferResource FreePageCount,
     VirtualShadowBufferResource PageMetadata,
-    VirtualShadowBufferResource EvictionPages,
-    VirtualShadowBufferResource EvictionBucketCounts,
+    VirtualShadowBufferResource PageLists,
     bool RequiresInitialization);

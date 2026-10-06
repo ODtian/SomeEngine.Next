@@ -105,38 +105,6 @@ internal readonly record struct VirtualShadowIndirectPassData(
     }
 }
 
-internal readonly record struct VirtualShadowPoolResetPassData(
-    GraphBufferId FreePageCount,
-    GraphBufferId EvictionBucketCounts)
-{
-    internal static void Declare(
-        ref PassDefinition access,
-        ref VirtualShadowPoolResetPassData data)
-    {
-        _ = access.Write(
-            data.FreePageCount,
-            BufferRange.Whole,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            WriteCoverage.Complete);
-        _ = access.Write(
-            data.EvictionBucketCounts,
-            BufferRange.Whole,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            WriteCoverage.Complete);
-    }
-
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in VirtualShadowPoolResetPassData data)
-    {
-        Buffer free = commands.GetBuffer(data.FreePageCount);
-        commands.ClearBuffer(free, new BufferRange(0, free.Info.Size));
-        Buffer buckets = commands.GetBuffer(data.EvictionBucketCounts);
-        commands.ClearBuffer(buckets, new BufferRange(0, buckets.Info.Size));
-    }
-}
 
 internal readonly record struct VirtualShadowReceiverMaskResetPassData(
     GraphBufferId ReceiverMasks)

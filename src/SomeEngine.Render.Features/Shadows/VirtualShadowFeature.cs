@@ -27,6 +27,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private readonly GraphBufferInput _coarseDemandUniforms;
     private readonly GraphBufferInput _demandUniforms;
     private readonly GraphBufferInput _poolUniforms;
+    private readonly GraphBufferInput _poolPrepareUniforms;
+    private readonly GraphBufferInput _poolCompactUniforms;
+    private readonly GraphBufferInput _poolFinishUniforms;
     private readonly GraphBufferInput _allocationUniforms;
     private readonly GraphBufferInput _clearUniforms;
     private readonly GraphBufferInput _dynamicResolutionUniforms;
@@ -36,7 +39,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private readonly GraphTextureInput _receiverDepth;
 
     private const uint DispatchStride = 16u;
-    private const uint EvictionBucketCount = VirtualShadowMap.EvictionBucketCount;
     private const uint PageMetadataStride = 16u;
     private uint PageHiZPagesPerRow => Math.Min(_shadowMap.Settings.AtlasSize / _shadowMap.Settings.PageSize, 8u);
     private uint PageHiZLayerCount => DivideRoundUp(_shadowMap.Settings.MaxPhysicalPages, PageHiZPagesPerRow * PageHiZPagesPerRow);
@@ -57,11 +59,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private readonly GraphBufferId _pageOwners;
     private readonly GraphTextureId _atlas;
     private readonly GraphTextureId _pageHiZ;
-    private readonly GraphBufferId _freePages;
-    private readonly GraphBufferId _freePageCount;
     private readonly GraphBufferId _pageMetadata;
-    private readonly GraphBufferId _evictionPages;
-    private readonly GraphBufferId _evictionBucketCounts;
+    private readonly GraphBufferId _pageLists;
 
     private readonly GraphBufferId _requestedPages;
     private readonly GraphBufferId _requestedPageFlags;
@@ -96,7 +95,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private readonly GraphPassId _invalidatePass;
     private readonly GraphPassId _coarseMarkPass;
     private readonly GraphPassId _markPass;
-    private readonly GraphPassId _poolResetPass;
+    private readonly GraphPassId _poolPreparePass;
+    private readonly GraphPassId _poolCompactPass;
+    private readonly GraphPassId _poolFinishPass;
     private readonly GraphPassId _poolPass;
     private readonly GraphPassId _allocatePass;
     private readonly GraphPassId _clearPass;
@@ -201,7 +202,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 ulong pageBytes = checked((ulong)settings.MaxPhysicalPages * sizeof(uint));
                 _pageOwners = edit.DeclareExternalBuffer(new BufferDesc(
                     pageBytes,
-                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination,
+                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination,
                     "Virtual shadow page owner slot"));
                 _atlas = edit.DeclareExternalTexture(new TextureDesc(
                     TextureDimension.Texture2D,
@@ -228,27 +229,13 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     label: "Virtual shadow physical-page HiZ"));
                 BufferUsages cacheUsages = BufferUsages.ShaderRead | BufferUsages.ShaderWrite |
                     BufferUsages.CopySource | BufferUsages.CopyDestination;
-                _freePages = edit.DeclareExternalBuffer(new BufferDesc(
-                    pageBytes,
-                    cacheUsages,
-                    "Virtual shadow free pages slot"));
-                _freePageCount = edit.DeclareExternalBuffer(new BufferDesc(
-                    sizeof(uint),
-                    cacheUsages,
-                    "Virtual shadow free count slot"));
                 _pageMetadata = edit.DeclareExternalBuffer(new BufferDesc(
                     checked((ulong)settings.MaxPhysicalPages * PageMetadataStride),
                     cacheUsages,
                     "Virtual shadow page metadata slot"));
-                _evictionPages = edit.DeclareExternalBuffer(new BufferDesc(
-                    checked((ulong)settings.MaxPhysicalPages *
-                        EvictionBucketCount * sizeof(uint)),
-                    cacheUsages,
-                    "Virtual shadow eviction pages slot"));
-                _evictionBucketCounts = edit.DeclareExternalBuffer(new BufferDesc(
-                    checked((ulong)EvictionBucketCount * sizeof(uint)),
-                    cacheUsages,
-                    "Virtual shadow eviction counts slot"));
+                _pageLists = edit.DeclareExternalBuffer(new BufferDesc(
+                    VirtualShadowMap.CalculatePageListBufferSize(settings.MaxPhysicalPages),
+                    cacheUsages, "Virtual shadow page lists"));
 
                 _activePages = edit.CreateBuffer(new BufferDesc(
                     checked(pageBytes * 4u),
@@ -454,26 +441,28 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     _shadowMap.PageMarkPipeline,
                     new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
 
-                var poolReset = new VirtualShadowPoolResetPassData(
-                    _freePageCount,
-                    _evictionBucketCounts);
-                _poolResetPass = edit.AddCopyFramePass(
-                    "Reset virtual shadow page pool",
-                    PassQueueSelection.AnyCompatible(),
-                    poolReset,
-                    new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
-                    VirtualShadowPoolResetPassData.Declare,
-                    VirtualShadowPoolResetPassData.Record, region: primaryDepthAfter);
+                _poolPreparePass = AddComputePass(
+                    ref edit, "Prepare virtual shadow page order",
+                    _shadowMap.PagePoolPipeline,
+                    new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
                 _poolPass = AddComputePass(
                     ref edit,
                     "Build virtual shadow page pool",
                     _shadowMap.PagePoolPipeline,
                     new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
+                _poolCompactPass = AddComputePass(
+                    ref edit, "Compact available virtual shadow pages",
+                    _shadowMap.PagePoolPipeline,
+                    new VirtualShadowDispatchPassData(new DispatchArguments(1, 1, 1)), region: primaryDepthAfter);
                 _allocatePass = AddIndirectPass(
                     ref edit,
                     "Allocate virtual shadow pages",
                     _shadowMap.PageAllocatePipeline,
                     _pageRequestDispatchArguments, region: primaryDepthAfter);
+                _poolFinishPass = AddComputePass(
+                    ref edit, "Finish virtual shadow page order",
+                    _shadowMap.PagePoolPipeline,
+                    new VirtualShadowDispatchPassData(new DispatchArguments(1, 1, 1)), region: primaryDepthAfter);
                 _clearPass = AddIndirectPass(
                     ref edit,
                     "Clear dirty virtual shadow pages",
@@ -551,9 +540,13 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 edit.OrderAfter(_coarseMarkPass, _initializePass);
                 edit.OrderAfter(_markPass, _initializePass);
                 edit.OrderAfter(_coarseMarkPass, _dynamicResolutionResetPass);
-                edit.OrderAfter(_poolResetPass, _coarseMarkPass);
-                edit.OrderAfter(_poolPass, _poolResetPass);
+                edit.OrderAfter(_poolPreparePass, _coarseMarkPass);
+                edit.OrderAfter(_poolPass, _poolPreparePass);
                 edit.OrderAfter(_invalidatePass, _poolPass);
+                edit.OrderAfter(_poolCompactPass, _poolPass);
+                edit.OrderAfter(_allocatePass, _poolCompactPass);
+                edit.OrderAfter(_poolFinishPass, _allocatePass);
+                edit.OrderAfter(_dynamicResolutionPass, _poolFinishPass);
                 edit.OrderAfter(_allocatePass, _invalidatePass);
                 edit.OrderAfter(_compactViewsPass, _allocatePass);
                 edit.OrderAfter(_clearPass, _compactViewsPass);
@@ -566,7 +559,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 edit.OrderAfter(_dynamicResolutionPass, resolutionCopyPass);
                 edit.OrderAfter(_frameCompletePass, _dynamicResolutionPass);
                 edit.OrderAfter(_frameCompletePass, _receiverMaskResetPass);
-                edit.OrderAfter(_poolResetPass, _markPass);
+                edit.OrderAfter(_poolPreparePass, _markPass);
                 for (int mip = 0; mip < _pageHiZReducePasses.Length; mip++)
                 {
                     edit.OrderAfter(
@@ -617,6 +610,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 _coarseDemandUniforms = edit.CreateBufferInput(BufferUsages.Constant);
                 _demandUniforms = edit.CreateBufferInput(BufferUsages.Constant);
                 _poolUniforms = edit.CreateBufferInput(BufferUsages.Constant);
+                _poolPrepareUniforms = edit.CreateBufferInput(BufferUsages.Constant);
+                _poolCompactUniforms = edit.CreateBufferInput(BufferUsages.Constant);
+                _poolFinishUniforms = edit.CreateBufferInput(BufferUsages.Constant);
                 _allocationUniforms = edit.CreateBufferInput(BufferUsages.Constant);
                 _clearUniforms = edit.CreateBufferInput(BufferUsages.Constant);
                 _dynamicResolutionUniforms = edit.CreateBufferInput(BufferUsages.Constant);
@@ -629,6 +625,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BindCoarseMark(ref edit, _coarseDemandUniforms);
                 BindMark(ref edit, _demandUniforms);
                 BindPool(ref edit, _poolPass, _poolUniforms);
+                BindPool(ref edit, _poolPreparePass, _poolPrepareUniforms);
+                BindPool(ref edit, _poolCompactPass, _poolCompactUniforms);
+                BindPool(ref edit, _poolFinishPass, _poolFinishUniforms);
                 BindAllocation(ref edit, _allocatePass, _allocationUniforms);
                 BindClear(ref edit, _clearUniforms);
                 BindDynamicResolution(ref edit, _dynamicResolutionUniforms);
@@ -645,7 +644,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 }
                 _uniformData = new FeatureUniformBuffer(ref edit,
                     [_frameSamplingUniforms, _frameInvocationUniforms, _initUniforms, _invalidationUniforms,
-                     _coarseDemandUniforms, _demandUniforms, _poolUniforms, _allocationUniforms,
+                     _coarseDemandUniforms, _demandUniforms, _poolUniforms,
+                     _poolPrepareUniforms, _poolCompactUniforms, _poolFinishUniforms, _allocationUniforms,
                      _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, .. _pageHiZReduceUniforms],
                     device.Capabilities.Limits.ConstantBufferAlignment, "Virtual shadow constant data");
                 PassDefinition frameComplete = edit.GetPass(_frameCompletePass);
@@ -875,6 +875,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 _changedInstances.Count != 0 ? CollectionsMarshal.AsSpan(_changedInstances) : [0u],
                 BufferUsages.ShaderRead,
                 "Virtual shadow changed caster indices"));
+            VirtualShadowReceiverProjection receiverProjection = CalculateReceiverProjection(receiverView);
             var sampling = new VirtualShadowSamplingUniforms
             {
                 ViewCount = checked((uint)_viewCount),
@@ -892,6 +893,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BlockerSearchRadiusTexels = _shadowMap.Settings.BlockerSearchRadiusTexels,
                 MaxFilterRadiusTexels = _shadowMap.Settings.MaxFilterRadiusTexels,
                 NormalBias = _shadowMap.Settings.NormalBias,
+                ReceiverProjection = receiverProjection,
             };
             _uniformData.Write(ref graph, _frameSamplingUniforms, in sampling);
             _geometry.StageViews([receiverView], identities: [receiver]);
@@ -910,7 +912,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 in receiverView,
                 in resources,
                 instanceCount,
-                checked((uint)_viewCount));
+                checked((uint)_viewCount),
+                in receiverProjection);
             _uniformData.Upload(ref graph);
             graph.ObserveExecution(this);
             _frameActive = true;
@@ -1001,13 +1004,25 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _disposed = true;
     }
 
+    private static VirtualShadowReceiverProjection CalculateReceiverProjection(in RenderView view)
+    {
+        Matrix4x4 worldToClip = view.View * view.Projection;
+        return new VirtualShadowReceiverProjection
+        {
+            WorldToClipW = new(worldToClip.M14, worldToClip.M24, worldToClip.M34, worldToClip.M44),
+            ScreenPixelRadius = MathF.Min(1f / (view.ViewportWidth * view.Projection.M11),
+                1f / (view.ViewportHeight * view.Projection.M22)),
+        };
+    }
+
     private void UpdatePassData(
         ref RenderGraphFrame graph,
         RenderLightSet lights,
         in RenderView receiverView,
         in VirtualShadowMapFrameResources resources,
         int instanceCount,
-        uint viewCount)
+        uint viewCount,
+        in VirtualShadowReceiverProjection receiverProjection)
     {
         uint maxPages = _shadowMap.Settings.MaxPhysicalPages;
         uint tableEntries = checked(viewCount * _shadowMap.Settings.PageTableEntriesPerView);
@@ -1084,7 +1099,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             MaxDirectionalLodBias = _shadowMap.Settings.DynamicResolutionMaxDirectionalLodBias,
             MaxLocalLodBias = _shadowMap.Settings.DynamicResolutionMaxLocalLodBias,
             Enabled = _shadowMap.Settings.DynamicResolutionEnabled && viewCount != 0u ? 1u : 0u,
-            EvictionBucketCount = EvictionBucketCount,
         };
         _uniformData.Write(ref graph, _dynamicResolutionUniforms, in dynamicResolution);
         graph.SetPassEnabled(_dynamicResolutionPass, viewCount != 0u);
@@ -1115,6 +1129,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     _shadowMap.Settings.MaxFilterRadiusTexels) /
                 _shadowMap.Settings.PageSize),
             NormalBias = _shadowMap.Settings.NormalBias,
+            ReceiverProjection = receiverProjection,
         };
         _uniformData.Write(ref graph, _demandUniforms, in demand);
         graph.SetPassDataIfChanged(
@@ -1125,12 +1140,18 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 1)));
         graph.SetPassEnabled(_markPass, viewCount != 0u);
 
-        UploadPoolUniforms(ref graph);
-        graph.SetPassDataIfChanged(
-            _poolPass,
-            new VirtualShadowDispatchPassData(new DispatchArguments(pageGroups, 1, 1)));
+        UploadPoolUniforms(ref graph, _poolPrepareUniforms, 0u);
+        UploadPoolUniforms(ref graph, _poolUniforms, 1u);
+        UploadPoolUniforms(ref graph, _poolCompactUniforms, 2u);
+        UploadPoolUniforms(ref graph, _poolFinishUniforms, 3u);
+        var pageOrderDispatch = new VirtualShadowDispatchPassData(new DispatchArguments(
+            DivideRoundUp(_shadowMap.Settings.MaxPhysicalPages, 256u), 1, 1));
+        graph.SetPassDataIfChanged(_poolPass, pageOrderDispatch);
+        graph.SetPassDataIfChanged(_poolPreparePass, pageOrderDispatch);
         graph.SetPassEnabled(_poolPass, viewCount != 0u);
-        graph.SetPassEnabled(_poolResetPass, viewCount != 0u);
+        graph.SetPassEnabled(_poolPreparePass, viewCount != 0u);
+        graph.SetPassEnabled(_poolCompactPass, viewCount != 0u);
+        graph.SetPassEnabled(_poolFinishPass, viewCount != 0u);
 
         UploadAllocationUniforms(ref graph);
         graph.SetPassEnabled(_allocatePass, viewCount != 0u);
@@ -1206,39 +1227,27 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             resources.PhysicalPageOwners.Resource,
             resources.PhysicalPageOwners.BoundaryStates.Span);
         graph.BindExternalTexture(_atlas, resources.Atlas.Resource, resources.Atlas.BoundaryStates.Span);
-        graph.BindExternalBuffer(_freePages, resources.FreePages.Resource, resources.FreePages.BoundaryStates.Span);
-        graph.BindExternalBuffer(
-            _freePageCount,
-            resources.FreePageCount.Resource,
-            resources.FreePageCount.BoundaryStates.Span);
         graph.BindExternalBuffer(
             _pageMetadata,
             resources.PageMetadata.Resource,
             resources.PageMetadata.BoundaryStates.Span);
-        graph.BindExternalBuffer(
-            _evictionPages,
-            resources.EvictionPages.Resource,
-            resources.EvictionPages.BoundaryStates.Span);
-        graph.BindExternalBuffer(
-            _evictionBucketCounts,
-            resources.EvictionBucketCounts.Resource,
-            resources.EvictionBucketCounts.BoundaryStates.Span);
+        graph.BindExternalBuffer(_pageLists, resources.PageLists.Resource, resources.PageLists.BoundaryStates.Span);
     }
 
-    private void UploadPoolUniforms(ref RenderGraphFrame graph)
+    private void UploadPoolUniforms(ref RenderGraphFrame graph, GraphBufferInput input, uint phase)
     {
         var uniforms = new VirtualShadowPagePoolUniforms
         {
             MaxPhysicalPages = _shadowMap.Settings.MaxPhysicalPages,
             PageTableEntryCount = ActivePageTableEntryCount,
             FrameIndex = _frameIndex,
-            EvictionBucketCount = EvictionBucketCount,
+            PageListPhase = phase,
             PageTableEntriesPerView = _shadowMap.Settings.PageTableEntriesPerView,
             HierarchyWordsPerView = _shadowMap.Settings.PageHierarchyWordsPerView,
             MipLevelCount = _shadowMap.Settings.MipLevelCount,
             ViewCount = checked((uint)_viewCount),
         };
-        _uniformData.Write(ref graph, _poolUniforms, in uniforms);
+        _uniformData.Write(ref graph, input, in uniforms);
     }
 
     private void UploadAllocationUniforms(ref RenderGraphFrame graph)
@@ -1250,7 +1259,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             MaxPhysicalPages = _shadowMap.Settings.MaxPhysicalPages,
             ViewCount = checked((uint)_viewCount),
             FrameIndex = _frameIndex,
-            EvictionBucketCount = EvictionBucketCount,
             HierarchyWordsPerView = _shadowMap.Settings.PageHierarchyWordsPerView,
             MipLevelCount = _shadowMap.Settings.MipLevelCount,
         };
@@ -1264,6 +1272,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _ = pass.Bind(graph.CreateBufferUav(_framePageTable, structureStride: 16, label: "Virtual shadow init page table"),
             PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete);
         _ = pass.Bind(graph.CreateBufferUav(_pageOwners, structureStride: sizeof(uint), label: "Virtual shadow init owners"),
+            PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete);
+        _ = pass.Bind(graph.CreateBufferUav(_pageLists, structureStride: sizeof(uint), label: "Virtual shadow init page lists"),
             PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete);
         _ = pass.Bind(graph.CreateBufferUav(_pageMetadata, structureStride: 16, label: "Virtual shadow init metadata"),
             PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete);
@@ -1348,16 +1358,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     {
         PassDefinition pass = graph.GetPass(_dynamicResolutionPass);
         _ = pass.Bind(uniforms, PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(
-            _freePageCount,
-            structureStride: sizeof(uint),
-            label: "Virtual shadow dynamic resolution free count"),
-            PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(
-            _evictionBucketCounts,
-            structureStride: sizeof(uint),
-            label: "Virtual shadow dynamic resolution reclaimable pages"),
-            PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(_pageLists, structureStride: sizeof(uint),
+            label: "Virtual shadow available page count"), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(
             _policyRasterWorkCount,
             structureStride: sizeof(uint),
@@ -1429,21 +1431,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _ = pass.Bind(graph.CreateBufferUav(_pageMetadata, structureStride: 16,
             label: "Virtual shadow pool metadata"), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
-        _ = pass.Bind(graph.CreateBufferUav(_freePages, structureStride: sizeof(uint),
-            label: "Virtual shadow free pages"), PipelineSync.ComputeShading,
-            GraphAccessMode.Write, WriteCoverage.Partial,
-            resultContents: ResourceContentState.Defined,
-            contentScope: BufferContentScope.CountBoundedPrefix);
-        _ = pass.Bind(graph.CreateBufferUav(_freePageCount, structureStride: sizeof(uint),
-            label: "Virtual shadow free count"), PipelineSync.ComputeShading,
-            GraphAccessMode.ReadWrite, WriteCoverage.Partial);
-        _ = pass.Bind(graph.CreateBufferUav(_evictionPages, structureStride: sizeof(uint),
-            label: "Virtual shadow eviction pages"), PipelineSync.ComputeShading,
-            GraphAccessMode.Write, WriteCoverage.Partial,
-            resultContents: ResourceContentState.Defined,
-            contentScope: BufferContentScope.CountBoundedPrefix);
-        _ = pass.Bind(graph.CreateBufferUav(_evictionBucketCounts, structureStride: sizeof(uint),
-            label: "Virtual shadow eviction counts"), PipelineSync.ComputeShading,
+        _ = pass.Bind(graph.CreateBufferUav(_pageLists, structureStride: sizeof(uint),
+            label: "Virtual shadow page lists"), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
         _ = pass.Bind(graph.CreateBufferUav(_allocatedPageHierarchy, structureStride: sizeof(uint),
             label: "Virtual shadow allocated page hierarchy"), PipelineSync.ComputeShading,
@@ -1477,19 +1466,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _ = pass.Bind(graph.CreateBufferUav(_pageMetadata, structureStride: 16,
             label: "Virtual shadow allocation metadata"), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
-        _ = pass.Bind(graph.CreateBufferUav(_freePages, structureStride: sizeof(uint),
-            label: "Virtual shadow allocation free pages"), PipelineSync.ComputeShading,
-            GraphAccessMode.ReadWrite, WriteCoverage.Partial,
-            contentScope: BufferContentScope.CountBoundedPrefix);
-        _ = pass.Bind(graph.CreateBufferUav(_freePageCount, structureStride: sizeof(uint),
-            label: "Virtual shadow allocation free count"), PipelineSync.ComputeShading,
-            GraphAccessMode.ReadWrite, WriteCoverage.Partial);
-        _ = pass.Bind(graph.CreateBufferUav(_evictionPages, structureStride: sizeof(uint),
-            label: "Virtual shadow allocation eviction pages"), PipelineSync.ComputeShading,
-            GraphAccessMode.ReadWrite, WriteCoverage.Partial,
-            contentScope: BufferContentScope.CountBoundedPrefix);
-        _ = pass.Bind(graph.CreateBufferUav(_evictionBucketCounts, structureStride: sizeof(uint),
-            label: "Virtual shadow allocation eviction counts"), PipelineSync.ComputeShading,
+        _ = pass.Bind(graph.CreateBufferUav(_pageLists, structureStride: sizeof(uint),
+            label: "Virtual shadow page lists"), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
         _ = pass.Bind(graph.CreateBufferUav(_activePages, structureStride: 4 * sizeof(uint),
             label: "Virtual shadow active raster pages"), PipelineSync.ComputeShading,

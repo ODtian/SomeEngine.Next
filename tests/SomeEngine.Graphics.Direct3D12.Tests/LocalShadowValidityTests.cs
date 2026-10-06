@@ -74,7 +74,7 @@ public sealed class LocalShadowValidityTests(D3D12TestCompiler compiler)
             if (id.x >= 9u) return;
             float3 position = float3(.25,.25,.5);
             float visibility;
-            bool valid = TrySamplePointVirtualShadowMap(Views, Pages, Atlas, id.x * 6u, 0.0,
+            bool valid = TrySamplePointVirtualShadowMap(Views, Pages, Atlas, id.x * 6u, 0.0, 0.0,
                 position, position + float3(.001,0,0), position + float3(0,.001,0),
                 1u,16u,0.0,id.x == 8u ? 4.0 : 0.0,float3(0,0,1),visibility);
             Observations[id.x] = float2(valid ? 1.0 : 0.0, visibility);
@@ -86,7 +86,7 @@ public sealed class LocalShadowValidityTests(D3D12TestCompiler compiler)
             if (id.x >= 9u) return;
             float3 position = float3(.25,.25,.5);
             float visibility;
-            bool valid = TrySampleSpotVirtualShadowMap(Views, Pages, Atlas, id.x, 0.0,
+            bool valid = TrySampleSpotVirtualShadowMap(Views, Pages, Atlas, id.x, 0.0, 0.0,
                 position, position + float3(.001,0,0), position + float3(0,.001,0),
                 1u,16u,0.0,id.x == 8u ? 4.0 : 0.0,float3(0,0,1),visibility);
             Observations[id.x] = float2(valid ? 1.0 : 0.0, visibility);

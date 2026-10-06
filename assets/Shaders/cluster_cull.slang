@@ -436,9 +436,9 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
     uint2 lastPixel;
     if (!ClusterTargetPixelBounds(currentBounds.MinUv, currentBounds.MaxUv,
             view, target, firstPixel, lastPixel)) return;
-    // Partition on the page grid, including small rectangles crossing a boundary.
-    // Each partition repeats all draw-eligibility tests, not just request bits.
-    uint2 firstWindow = pages.xy / windowSize * windowSize;
+    // Native windows start at this cluster's first page.
+    // Each window repeats the draw-eligibility tests.
+    uint2 firstWindow = pages.xy;
     for (uint y = firstWindow.y; y <= pages.w; y += windowSize)
     for (uint x = firstWindow.x; x <= pages.z; x += windowSize)
     {

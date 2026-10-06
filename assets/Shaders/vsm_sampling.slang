@@ -454,11 +454,10 @@ float GetVirtualShadowPixelWidth(float2 pixelDx, float2 pixelDy)
     return area * rsqrt(max(largestSquare, 1e-30));
 }
 
-uint VirtualShadowLocalMipFromReceiverFootprint(
+uint VirtualShadowLocalMipFromNominalPixelRadius(
     VirtualShadowMapParameters parameters,
     float3 worldPosition,
-    float3 worldPositionDx,
-    float3 worldPositionDy,
+    float nominalWorldPixelRadius,
     float dynamicResolutionLodBias)
 {
     float3 ndc;
@@ -467,21 +466,12 @@ uint VirtualShadowLocalMipFromReceiverFootprint(
     {
         return parameters.MinMipLevel;
     }
-    float3 pixelDx = worldPositionDx - worldPosition;
-    float3 pixelDy = worldPositionDy - worldPosition;
-    float squareX = dot(pixelDx, pixelDx);
-    float squareY = dot(pixelDy, pixelDy);
-    float crossTerm = dot(pixelDx, pixelDy);
-    float largestSquare = 0.5 * (squareX + squareY +
-        sqrt(max((squareX - squareY) * (squareX - squareY) + 4.0 * crossTerm * crossTerm, 0.0)));
-    float cameraPixelWidth = length(cross(pixelDx, pixelDy)) * rsqrt(max(largestSquare, 1e-30));
     float projectionScale = length(float3(parameters.LightViewProjection[0][0],
         parameters.LightViewProjection[1][0], parameters.LightViewProjection[2][0]));
     float4 lightClip = mul(float4(worldPosition, 1.0), parameters.LightViewProjection);
-    // Neighboring camera positions span a full pixel. The light clip projection
-    // spans [-1, 1], while the shadow UV range spans [0, 1].
-    float footprint = 0.5 * cameraPixelWidth * projectionScale * float(parameters.VirtualResolution) / lightClip.w;
-    float mipFloat = log2(max(footprint, 1.0)) +
+    float footprint = abs(nominalWorldPixelRadius * projectionScale / lightClip.w) *
+        float(2u * parameters.VirtualResolution);
+    float mipFloat = log2(footprint) +
         parameters.ResolutionLodBias + dynamicResolutionLodBias;
     uint mip = (uint)max(floor(mipFloat), 0.0);
     return clamp(
@@ -493,14 +483,13 @@ uint VirtualShadowLocalMipFromReceiverFootprint(
 uint VirtualShadowLocalSamplingMip(
     VirtualShadowMapParameters parameters,
     float3 worldPosition,
-    float3 worldPositionDx,
-    float3 worldPositionDy,
+    float nominalWorldPixelRadius,
     float dynamicResolutionLodBias)
 {
     if ((parameters.Flags & VSM_VIEW_USE_RECEIVER_MASK) == 0u)
         return 0u;
-    return VirtualShadowLocalMipFromReceiverFootprint(
-        parameters, worldPosition, worldPositionDx, worldPositionDy, dynamicResolutionLodBias);
+    return VirtualShadowLocalMipFromNominalPixelRadius(
+        parameters, worldPosition, nominalWorldPixelRadius, dynamicResolutionLodBias);
 }
 
 float CalculateDirectionalVirtualShadowDistanceLevel(
@@ -1017,7 +1006,7 @@ bool TrySamplePointVirtualShadowMap(
     StructuredBuffer<uint4> pageTable,
     Texture2D<uint> atlas,
     uint firstView,
-    float dynamicResolutionLodBias,
+    float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition,
     float3 worldPositionDx,
     float3 worldPositionDy,
@@ -1035,8 +1024,7 @@ bool TrySamplePointVirtualShadowMap(
     uint mipLevel = VirtualShadowLocalSamplingMip(
         view,
         worldPosition,
-        worldPositionDx,
-        worldPositionDy,
+        nominalWorldPixelRadius,
         dynamicResolutionLodBias);
     float3 ndc;
     float2 uv;
@@ -1052,7 +1040,7 @@ float SamplePointVirtualShadowMap(
     StructuredBuffer<uint4> pageTable,
     Texture2D<uint> atlas,
     uint firstView,
-    float dynamicResolutionLodBias,
+    float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition,
     float3 worldPositionDx,
     float3 worldPositionDy,
@@ -1062,7 +1050,7 @@ float SamplePointVirtualShadowMap(
     float maxFilterRadiusTexels)
 {
     return SamplePointVirtualShadowMap(views, pageTable, atlas,
-        firstView, dynamicResolutionLodBias,
+        firstView, dynamicResolutionLodBias, nominalWorldPixelRadius,
         worldPosition, worldPositionDx, worldPositionDy, blockerSampleCount, filterSampleCount,
         blockerSearchRadiusTexels, maxFilterRadiusTexels,
         cross(worldPositionDx - worldPosition, worldPositionDy - worldPosition));
@@ -1073,7 +1061,7 @@ bool TrySampleSpotVirtualShadowMap(
     StructuredBuffer<uint4> pageTable,
     Texture2D<uint> atlas,
     uint viewIndex,
-    float dynamicResolutionLodBias,
+    float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition,
     float3 worldPositionDx,
     float3 worldPositionDy,
@@ -1089,8 +1077,7 @@ bool TrySampleSpotVirtualShadowMap(
     uint mipLevel = VirtualShadowLocalSamplingMip(
         view,
         worldPosition,
-        worldPositionDx,
-        worldPositionDy,
+        nominalWorldPixelRadius,
         dynamicResolutionLodBias);
     float3 ndc;
     float2 uv;
@@ -1106,7 +1093,7 @@ float SampleSpotVirtualShadowMap(
     StructuredBuffer<uint4> pageTable,
     Texture2D<uint> atlas,
     uint viewIndex,
-    float dynamicResolutionLodBias,
+    float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition,
     float3 worldPositionDx,
     float3 worldPositionDy,
@@ -1116,13 +1103,13 @@ float SampleSpotVirtualShadowMap(
     float maxFilterRadiusTexels)
 {
     return SampleSpotVirtualShadowMap(views, pageTable, atlas,
-        viewIndex, dynamicResolutionLodBias,
+        viewIndex, dynamicResolutionLodBias, nominalWorldPixelRadius,
         worldPosition, worldPositionDx, worldPositionDy, blockerSampleCount, filterSampleCount,
         blockerSearchRadiusTexels, maxFilterRadiusTexels,
         cross(worldPositionDx - worldPosition, worldPositionDy - worldPosition));
 }
 
-// Compatibility factors retain the public material API. Callers that need to
+// Float factors expose visibility. Callers that need to
 // distinguish missing/unfinished depth use TrySample* and retain its boolean.
 float SampleDirectionalVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
@@ -1141,13 +1128,13 @@ float SampleDirectionalVirtualShadowMap(
 
 float SamplePointVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
-    uint firstView, float dynamicResolutionLodBias,
+    uint firstView, float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition, float3 worldPositionDx, float3 worldPositionDy,
     uint blockerSampleCount, uint filterSampleCount, float blockerSearchRadiusTexels,
     float maxFilterRadiusTexels, float3 receiverPlaneNormal)
 {
     float visibility;
-    TrySamplePointVirtualShadowMap(views, pageTable, atlas, firstView, dynamicResolutionLodBias,
+    TrySamplePointVirtualShadowMap(views, pageTable, atlas, firstView, dynamicResolutionLodBias, nominalWorldPixelRadius,
         worldPosition, worldPositionDx, worldPositionDy, blockerSampleCount, filterSampleCount,
         blockerSearchRadiusTexels, maxFilterRadiusTexels, receiverPlaneNormal, visibility);
     return visibility;
@@ -1155,13 +1142,13 @@ float SamplePointVirtualShadowMap(
 
 float SampleSpotVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
-    uint viewIndex, float dynamicResolutionLodBias,
+    uint viewIndex, float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition, float3 worldPositionDx, float3 worldPositionDy,
     uint blockerSampleCount, uint filterSampleCount, float blockerSearchRadiusTexels,
     float maxFilterRadiusTexels, float3 receiverPlaneNormal)
 {
     float visibility;
-    TrySampleSpotVirtualShadowMap(views, pageTable, atlas, viewIndex, dynamicResolutionLodBias,
+    TrySampleSpotVirtualShadowMap(views, pageTable, atlas, viewIndex, dynamicResolutionLodBias, nominalWorldPixelRadius,
         worldPosition, worldPositionDx, worldPositionDy, blockerSampleCount, filterSampleCount,
         blockerSearchRadiusTexels, maxFilterRadiusTexels, receiverPlaneNormal, visibility);
     return visibility;
