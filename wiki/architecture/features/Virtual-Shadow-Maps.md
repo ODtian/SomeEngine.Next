@@ -26,9 +26,12 @@ VSM 设置分别持有非移动与移动精度偏置，按
 例如距离 192 厘米、first level 6 时，未偏置 index 为 1；它的偏置为 1 时选择 index 2。
 页请求与材质采样共用 `SelectDirectionalVirtualShadowView`，从目标级别寻找覆盖该位置的投影。
 
-局部光接收者遮罩关闭时，point / spot 的采样从 mip 0 开始。遮罩开启时，当前 mip
-由接收面相邻位置在光空间的覆盖范围选择；页请求保留自己的 footprint 入口。
-原版相机 viewport / projection / scene depth 的 nominal pixel radius 输入由 #138 后续切片统一。
+局部光接收者遮罩关闭时，point / spot 的采样从 mip 0 开始。遮罩开启时，mip
+由原版相机 nominal pixel radius 选择。共享 `VirtualShadowReceiverProjection` 从 `RenderView`
+产生 screen radius `min(1 / (viewportXY * projectionXY))` 与 world→camera clip-W 平面。
+请求与标准材质从原始接收位置计算世界半径，材质显式传入 Point/Spot 采样接口；
+光投影将该半径转为 `abs(radius * lightScale / lightClipW) * (2 * VirtualResolution)` footprint。
+其 `floor(log2(footprint) + bias)` 决定 mip，并受可用 mip 范围限制。
 材质采样传入接收面上 X/Y 相邻屏幕像素的世界坐标，供几何接收面和过滤梯度计算。
 页请求与标准材质共用 `ReconstructVirtualShadowReceiverPixel`，从当前深度图
 重建接收面相邻像素的世界坐标。每个轴采用深度差较小的前景邻居，在断层处

@@ -155,13 +155,15 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
     [InlineData(0, 1.0f, 0.0f, 0)]
     [InlineData(1, 1.0f, 0.0f, 1)]
     [InlineData(1, 8.0f, 0.0f, 1)]
-    [InlineData(3, 1.0f, 8.0f, 0)]
-    public void SpotShadowsMatchTheReceiverPixelFootprint(int pixelMip, float stretch, float shear, int selectedMip)
+    [InlineData(3, 1.0f, 8.0f, 3)]
+    public void SpotShadowsUseNominalCameraPixelsWhileReceiverDerivativesDescribeThePlane(
+        int pixelMip, float stretch, float shear, int selectedMip)
     {
         uint[] view = CreateView(0);
         view[16] = 1024;
         view[34] = 4;
         view[37] = 2;
+        view[36] = 4;
         uint[] pages = new uint[85 * 4];
         uint[] pixels = new uint[512 * 128];
         int tableOffset = 0;
@@ -179,6 +181,9 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                     y * 512 + mip * 128, 128);
         }
         float step = 1.5f * (1 << pixelMip) / 512;
+        // Native camera512px/projection1 at depths .375,.75,1.5,3 gives
+        // these radii and light-texel footprints1.5,3,6,12.
+        float[] nominalRadii = [.000732421875f, .00146484375f, .0029296875f, .005859375f];
         uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
@@ -186,13 +191,14 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             StructuredBuffer<uint4> Pages;
             Texture2D<uint> Atlas;
             StructuredBuffer<float3> PixelOffsets;
+            StructuredBuffer<float> NominalRadius;
             RWStructuredBuffer<float> Result;
             [shader("compute")]
             [numthreads(1, 1, 1)]
             void SamplePixelFootprint()
             {
                 float3 world = float3(0.0, 0.0, 0.5);
-                Result[0] = SampleSpotVirtualShadowMap(Views, Pages, Atlas, 0u, 0.0,
+                Result[0] = SampleSpotVirtualShadowMap(Views, Pages, Atlas, 0u, 0.0, NominalRadius[0],
                     world, world + PixelOffsets[0], world + PixelOffsets[1], 1u, 1u, 0.0, 0.0);
             }
             """, "SamplePixelFootprint", new(1, 1, 1),
@@ -200,6 +206,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
              ([BitConverter.SingleToUInt32Bits(step), 0u, 0u,
                BitConverter.SingleToUInt32Bits(step * shear), BitConverter.SingleToUInt32Bits(step * stretch), 0u],
               ResourceBindingType.BufferSrv, 12),
+             ([BitConverter.SingleToUInt32Bits(nominalRadii[pixelMip])], ResourceBindingType.BufferSrv, 4),
              (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2));
         Assert.Equal(0.0f, BitConverter.UInt32BitsToSingle(result[0][0]));
     }

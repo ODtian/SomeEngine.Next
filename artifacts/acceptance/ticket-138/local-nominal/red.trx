@@ -1,0 +1,57 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="f763eb19-73c0-403b-8b1f-94b231fcaf8d" name="boqi@BOQI-THE-DAEMON 2026-10-07 00:31:23" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-07T00:31:23.4142951+08:00" queuing="2026-10-07T00:31:23.4142956+08:00" start="2026-10-07T00:31:16.6108243+08:00" finish="2026-10-07T00:31:23.4255735+08:00" />
+  <TestSettings name="default" id="d7edef5d-a617-416c-8aca-e42ca14456c0">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-07_00_31_23" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="23bb1bab-7e20-4114-936b-b95c255d4709" testId="ff4fc37d-ca7c-dd07-9f2d-24a4b1b66b4e" testName="SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesTheNominalCameraPixelRadius" computerName="BOQI-THE-DAEMON" duration="00:00:01.7177894" startTime="2026-10-07T00:31:21.4950814+08:00" endTime="2026-10-07T00:31:23.1992519+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="23bb1bab-7e20-4114-936b-b95c255d4709">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ&#xD;
+Expected: 0&#xD;
+Actual:   1</Message>
+          <StackTrace>   at SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesTheNominalCameraPixelRadius() in F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\NativeShadowProjectionTests.cs:line 60&#xD;
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesTheNominalCameraPixelRadius" storage="f:\.codex\worktrees\rg70-ticket-138\someengine.next\tests\someengine.graphics.direct3d12.tests\bin\release\net10.0\someengine.graphics.direct3d12.tests.dll" id="ff4fc37d-ca7c-dd07-9f2d-24a4b1b66b4e">
+      <Execution id="23bb1bab-7e20-4114-936b-b95c255d4709" />
+      <TestMethod codeBase="F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests" name="SpotSamplingUsesTheNominalCameraPixelRadius" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="ff4fc37d-ca7c-dd07-9f2d-24a4b1b66b4e" executionId="23bb1bab-7e20-4114-936b-b95c255d4709" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.21]   Discovering: SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.40]   Discovered:  SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.45]   Starting:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:05.65]       Assert.Equal() Failure: Values differ&#xD;
+[xUnit.net 00:00:05.65]       Expected: 0&#xD;
+[xUnit.net 00:00:05.65]       Actual:   1&#xD;
+[xUnit.net 00:00:05.65]       Stack Trace:&#xD;
+[xUnit.net 00:00:05.66]         F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\NativeShadowProjectionTests.cs(60,0): at SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesTheNominalCameraPixelRadius()&#xD;
+[xUnit.net 00:00:05.66]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+[xUnit.net 00:00:05.66]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:05.68]   Finished:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-07T00:31:23.2160202+08:00">
+        <Text>[xUnit.net 00:00:05.65]     SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesTheNominalCameraPixelRadius [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

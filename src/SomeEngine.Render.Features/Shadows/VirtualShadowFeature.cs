@@ -875,6 +875,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 _changedInstances.Count != 0 ? CollectionsMarshal.AsSpan(_changedInstances) : [0u],
                 BufferUsages.ShaderRead,
                 "Virtual shadow changed caster indices"));
+            VirtualShadowReceiverProjection receiverProjection = CalculateReceiverProjection(receiverView);
             var sampling = new VirtualShadowSamplingUniforms
             {
                 ViewCount = checked((uint)_viewCount),
@@ -892,6 +893,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BlockerSearchRadiusTexels = _shadowMap.Settings.BlockerSearchRadiusTexels,
                 MaxFilterRadiusTexels = _shadowMap.Settings.MaxFilterRadiusTexels,
                 NormalBias = _shadowMap.Settings.NormalBias,
+                ReceiverProjection = receiverProjection,
             };
             _uniformData.Write(ref graph, _frameSamplingUniforms, in sampling);
             _geometry.StageViews([receiverView], identities: [receiver]);
@@ -910,7 +912,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 in receiverView,
                 in resources,
                 instanceCount,
-                checked((uint)_viewCount));
+                checked((uint)_viewCount),
+                in receiverProjection);
             _uniformData.Upload(ref graph);
             graph.ObserveExecution(this);
             _frameActive = true;
@@ -1001,13 +1004,25 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _disposed = true;
     }
 
+    private static VirtualShadowReceiverProjection CalculateReceiverProjection(in RenderView view)
+    {
+        Matrix4x4 worldToClip = view.View * view.Projection;
+        return new VirtualShadowReceiverProjection
+        {
+            WorldToClipW = new(worldToClip.M14, worldToClip.M24, worldToClip.M34, worldToClip.M44),
+            ScreenPixelRadius = MathF.Min(1f / (view.ViewportWidth * view.Projection.M11),
+                1f / (view.ViewportHeight * view.Projection.M22)),
+        };
+    }
+
     private void UpdatePassData(
         ref RenderGraphFrame graph,
         RenderLightSet lights,
         in RenderView receiverView,
         in VirtualShadowMapFrameResources resources,
         int instanceCount,
-        uint viewCount)
+        uint viewCount,
+        in VirtualShadowReceiverProjection receiverProjection)
     {
         uint maxPages = _shadowMap.Settings.MaxPhysicalPages;
         uint tableEntries = checked(viewCount * _shadowMap.Settings.PageTableEntriesPerView);
@@ -1114,6 +1129,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     _shadowMap.Settings.MaxFilterRadiusTexels) /
                 _shadowMap.Settings.PageSize),
             NormalBias = _shadowMap.Settings.NormalBias,
+            ReceiverProjection = receiverProjection,
         };
         _uniformData.Write(ref graph, _demandUniforms, in demand);
         graph.SetPassDataIfChanged(

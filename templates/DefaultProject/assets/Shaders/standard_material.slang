@@ -116,6 +116,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             DepthBuffer.Load(int4(ctx.pixelCoord, 0)), receiverView.ClipToWorld);
         float3 receiverPositionDx = ctx.surfacePosition + (receiver.PositionDx - receiver.Position);
         float3 receiverPositionDy = ctx.surfacePosition + (receiver.PositionDy - receiver.Position);
+        float nominalWorldPixelRadius = CalculateVirtualShadowNominalWorldPixelRadius(
+            VirtualShadowSampling.ReceiverProjection, ctx.surfacePosition);
         float3 V = normalize(MaterialCameraPosition(ctx.pixelCoord.z) - ctx.surfacePosition);
         float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
 
@@ -210,6 +212,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                         VirtualShadowAtlas,
                         firstShadowView,
                         VirtualShadowDynamicResolutionBias[0].y,
+                        nominalWorldPixelRadius,
                         shadowPosition,
                         receiverPositionDx + geometricNormal * VirtualShadowSampling.NormalBias,
                         receiverPositionDy + geometricNormal * VirtualShadowSampling.NormalBias,
@@ -238,6 +241,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                         VirtualShadowAtlas,
                         shadowView,
                         VirtualShadowDynamicResolutionBias[0].y,
+                        nominalWorldPixelRadius,
                         shadowPosition,
                         receiverPositionDx + geometricNormal * VirtualShadowSampling.NormalBias,
                         receiverPositionDy + geometricNormal * VirtualShadowSampling.NormalBias,
