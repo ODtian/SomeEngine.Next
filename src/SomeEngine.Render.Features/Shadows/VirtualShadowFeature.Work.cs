@@ -111,7 +111,7 @@ public sealed partial class VirtualShadowFeature
             ViewCount = checked((uint)views.Length),
             HasPreviousWork = _workHistoryReady && !_forceStateReset ? 1u : 0u,
             LoadBudget = settings.WorkLoadBudget > 0f ? settings.WorkLoadBudget : float.MaxValue,
-            DynamicResolutionStrength = -1f,
+            DynamicResolutionStrength = StageWorkTime(ref graph),
             HistoryWeight = settings.WorkHistoryWeight,
             MaxDirectionalBias = settings.WorkMaxDirectionalLodBias,
             MaxLocalBias = settings.WorkMaxLocalLodBias,
