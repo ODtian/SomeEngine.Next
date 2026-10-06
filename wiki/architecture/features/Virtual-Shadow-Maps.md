@@ -65,3 +65,12 @@ clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 
 `tools/Test-Shadows.ps1` 是已有测试入口，不等于全部新 Runtime 行为或完整独立参考门禁。
 [[architecture/validation/Shadow-Reference-2026-10-04]] 是历史记录；当前 #135 检查范围见
 [[architecture/validation/Vsm-Depth-Coverage-135]]，最终 #125/#127/#81 与 Standards/Spec 仍待验收。
+
+阴影几何选择使用每个光视图自身的投影和虚拟像素尺寸。压紧的 mip 视图保持光源投影，
+并将像素宽高缩到该 mip 的虚拟分辨率；traversal 与 cluster 选择消费这份视图数据，
+用户有限细分同样消费该光源投影的像素误差。每个 clipmap 因自身投影范围获得对应的几何精度。
+固定光源的遮挡者流送需求也由这些阴影视图产生，沿既有 RenderWorld 与驻留反馈通路接入。
+原版依据为固定提交 `396c9f059903aed5fec78ecd3d437a40c6415368` 的
+`NaniteShared.cpp:195–202` 与 `VirtualShadowMapArray.cpp:4958–4965,5008–5016`。
+当前深度代号继续消费几何驻留与材质输入 revision；局部几何/材质失效在 #147 与静态/动态缓存
+#141 中接合每个遮挡者的实际影响范围。
