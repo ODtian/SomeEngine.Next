@@ -22,6 +22,8 @@ Both7b/cbb VirtualShadowFeature constructors allocate pageHiZ as64×64/R32Float/
 
 shared-supported-shadow-settings.json is a separate diagnostic4096atlas/max1024 config with the other final configured quality fields retained. Independent raw/actual-quality checks precede any supported-common cost comparison. Native final defaults and their full-quality results remain recorded separately.
 
+The supported common4096independent raw/beauty hosts are now complete: current2a55 3discovered/3executed/3passed; historical7b andcbb each3discovered/3executed/3numeric failures, with the complete unchanged receiver gates. Sphere/Sponza/Bistro all-receiver mismatch percentages are24.40852/50.31986/28.843224(pre71),44.328573/14.159535/5.1690247(cbb), and1.9470176/.10805369/1.7658755(current). The corresponding raw/beauty data, fixture compatibility history, exact historical sampler/material call differences and qualifying-baseline obligation are recorded in supported-common/README.md and supported-common-quality.json.
+
 ## Actual final independent reference and beauty
 
 3 discovered/3executed/3passed/0failed/0skip; standard automatic test rules0violations. Captured actual scene/submitted63/63, scene1.0500001s, jitter(-.4375,.3888889), full raw linear visibility beforeTAA/tone map plus actual beauty.

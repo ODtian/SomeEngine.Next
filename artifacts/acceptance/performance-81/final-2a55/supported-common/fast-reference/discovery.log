@@ -1,0 +1,7 @@
+F:\SomeEngine.AgentWork\rg70-remaining\trees\fast-reference-matched-81\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.2 (x64)
+
+以下测试可用:
+    SomeEngine.Render.Cluster.Tests.DefaultGameRayShadowTests.DefaultSceneShadowsMatchHardwareRayTracing(scene: "spheres")
+    SomeEngine.Render.Cluster.Tests.DefaultGameRayShadowTests.DefaultSceneShadowsMatchHardwareRayTracing(scene: "sponza")
+    SomeEngine.Render.Cluster.Tests.DefaultGameRayShadowTests.DefaultSceneShadowsMatchHardwareRayTracing(scene: "bistro")
