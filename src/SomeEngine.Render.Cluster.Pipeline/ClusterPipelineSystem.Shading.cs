@@ -26,17 +26,28 @@ public sealed partial class ClusterPipelineSystem
 
     private GraphRegionMap<uint, ShadeGroup> UpdateShadeGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages)
     {
-        var desired = stages.Invocations.ToDictionary(static stage => stage.BinIndex, static stage => new ShadeGroup(stage));
-        foreach (ShadeGroup group in GraphData.ShadeGroups.Values)
+        GraphData.ReceiverGroups = UpdateReceiverGroups(ref graph, stages);
+        return UpdateMaterialGroups(ref graph, stages, GraphData.ShadeGroups, receivers: false);
+    }
+
+    private GraphRegionMap<uint, ShadeGroup> UpdateReceiverGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages)
+        => UpdateMaterialGroups(ref graph, stages, GraphData.ReceiverGroups, receivers: true);
+
+    private GraphRegionMap<uint, ShadeGroup> UpdateMaterialGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages,
+        GraphRegionMap<uint, ShadeGroup> previousGroups, bool receivers)
+    {
+        var desired = stages.Invocations.Where(stage => !receivers || stage.Receiver is not null)
+            .ToDictionary(static stage => stage.BinIndex, stage => new ShadeGroup(receivers ? stage.Receiver! : stage));
+        foreach (ShadeGroup group in previousGroups.Values)
             if (!desired.TryGetValue(group.Stage.BinIndex, out ShadeGroup? next) ||
                 !ShadeGroupComparer.Instance.Equals(group, next))
                 RemoveParameters(group.Uniforms);
-        GraphRegionMap<uint, ShadeGroup> groups = GraphData.ShadeGroups.Reconcile(ref graph, desired,
+        GraphRegionMap<uint, ShadeGroup> groups = previousGroups.Reconcile(ref graph, desired,
             (ref RenderGraphEdit edit, GraphRegionId region, uint bin, ShadeGroup value) =>
             {
                 var dispatch = new ClusterIndirectDispatchParameters(RequireDispatchIndirectLayout(),
                     GraphData.Resources.ShadeIndirectArgs, checked((ulong)bin * ClusterIndirectAbi.DispatchBytes));
-                GraphPassId pass = edit.AddComputeFramePass($"Shade Cluster bin {bin}",
+                GraphPassId pass = edit.AddComputeFramePass($"Evaluate Cluster {(receivers ? "receivers" : "color")} bin {bin}",
                     PassQueueSelection.AnyOfType(QueueType.Graphics), dispatch, new PassOptions(RepeatCommands: true),
                     value.Stage.Pipeline.Pipeline, VariableLayoutReflection.Null, default,
                     static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>

@@ -63,7 +63,8 @@ public struct VirtualShadowView
     /// <summary>Absolute level-zero page address before the GPU ring tag is reduced to 32 bits.</summary>
     public long WorldPageOriginX;
     public long WorldPageOriginY;
-    private Vector2 AddressPadding;
+    public float PageDilationBorder;
+    private float AddressPadding;
     public Vector3 LightDirection;
     /// <summary>Local emitter radius in engine world units.</summary>
     public float SourceRadius;
@@ -88,4 +89,5 @@ public static class VirtualShadowViewFlags
     public const uint DistantLight = 1u << 8;
     public const uint CachedDistantLight = 1u << 9;
     public const uint PrefilteredDistant = 1u << 10;
+    public const uint FirstPersonShadow = 1u << 11;
 }

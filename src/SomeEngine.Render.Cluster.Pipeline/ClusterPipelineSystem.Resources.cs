@@ -462,6 +462,8 @@ public sealed partial class ClusterPipelineSystem
                         label: "Cluster policy hardware depth scratch"));
                 }
             }
+        frame.SurfaceReceivers = graph.CreateBuffer(new BufferDesc(checked((ulong)width * (ulong)height * viewCount * 32u),
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, "Cluster surface receivers"));
         frame.SceneColor = graph.CreateTexture(new TextureDesc(
                 TextureDimension.Texture2D,
                 checked((uint)width),
@@ -1143,6 +1145,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphTextureId PolicyVisibilityScratch;
         internal GraphTextureId PolicyDepthScratch;
         internal GraphTextureId SceneColor;
+        internal GraphBufferId SurfaceReceivers;
         internal GraphTextureId MotionVectors;
         internal GraphBufferId AddBuffer(
             ref RenderGraphEdit graph,

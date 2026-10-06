@@ -25,8 +25,15 @@ public sealed partial class ClusterPipelineSystem
         foreach (uint bin in shadeStages.ChangedBins)
         {
             if (_installedShadeStages is not null && _installedShadeStages.TryGetBin(bin, out var before))
+            {
                 Count(before.CommandBindings, -1);
-            if (shadeStages.TryGetBin(bin, out var after)) Count(after.CommandBindings, 1);
+                if (before.Receiver is { } receiver) Count(receiver.CommandBindings, -1);
+            }
+            if (shadeStages.TryGetBin(bin, out var after))
+            {
+                Count(after.CommandBindings, 1);
+                if (after.Receiver is { } receiver) Count(receiver.CommandBindings, 1);
+            }
         }
         void Count(ClusterCommandBindingKey bindings, int change)
         {

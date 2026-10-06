@@ -403,6 +403,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 structureStride: ClusteredLightGridParameters.SizeInBytes,
                 label: "Virtual shadow lighting views"),
             sync);
+        BindLights(ref graph, ref pass, sync);
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _grid,

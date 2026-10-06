@@ -610,6 +610,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     ViewDetailCount = settings.MipLevelCount,
                     MaximumRasterWindowsPerSourceView = rasterWindows,
                 });
+                _geometry.ConfigureSurfaceReceivers(primaryDepthAfter);
                 _clusterSourceViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameShadowViews = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite);
                 _frameChangedInstances = edit.CreateBufferInput(BufferUsages.ShaderRead);
@@ -629,6 +630,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 _pageHiZInitializeUniforms = edit.CreateBufferInput(BufferUsages.Constant);
                 _casterBounds = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _receiverDepth = edit.CreateTextureInput();
+                _surfaceReceivers = edit.CreateBufferInput(BufferUsages.ShaderRead);
+                _additionalReceivers = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _pageHiZReduceUniforms = new GraphBufferInput[_pageHiZReducePasses.Length];
                 BindInitialize(ref edit, _initUniforms);
                 BindInvalidation(ref edit, _invalidationUniforms);
@@ -893,6 +896,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             graph.SetBufferInput(_geometryWorkStatus, new GraphBufferSlice(geometry.Geometry.WorkStatus, BufferRange.Whole));
             graph.SetBufferInput(_casterBounds, new GraphBufferSlice(geometry.Geometry.InstanceWorldBounds, BufferRange.Whole));
             graph.SetTextureInput(_receiverDepth, geometry.Depth);
+            var receiverData = new GraphBufferSlice(geometry.SurfaceReceivers, BufferRange.Whole);
+            graph.SetBufferInput(_surfaceReceivers, receiverData);
+            graph.SetBufferInput(_additionalReceivers, _additionalReceiverCount != 0u ? _additionalReceiverData : receiverData);
 
             GraphBufferSlice viewUpload = graph.Upload(
                 views.IsEmpty ? [default(VirtualShadowView)] : views,
@@ -1181,6 +1187,10 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 lights.Directional.Count + lights.Points.Count)),
             SpotViewOffset = _shadowMap.PendingSpotViewOffset,
             ReceiverViewIndex = 0u,
+            AdditionalReceiverLayerCount = _additionalReceiverCount,
+            CullBackfacingPixels = _shadowMap.Settings.CullBackfacingPixels ? 1u : 0u,
+            FirstPersonPixelRequestBias = _shadowMap.Settings.FirstPersonPixelRequestBias,
+            FirstPersonPixelRequestMinLevel = _shadowMap.Settings.FirstPersonPixelRequestMinLevel,
             FrameIndex = _frameIndex,
             PageDilationBorderPages = (float)(
                 Math.Max(
@@ -1398,6 +1408,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             structureStride: 2 * sizeof(float),
             label: "Virtual shadow dynamic resolution bias"),
             PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(_surfaceReceivers, structureStride: 32), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(_additionalReceivers, structureStride: 32), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferUav(_requestedPages, structureStride: sizeof(uint),
             label: "Virtual shadow request flags"), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);

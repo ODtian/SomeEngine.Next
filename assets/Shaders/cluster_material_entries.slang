@@ -234,6 +234,17 @@ void ClusterShade(
     CSShade(vertex, domain, surface, tid);
 }
 
+#ifdef CLUSTER_SURFACE_RECEIVERS
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClusterSurfaceReceivers(uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+{
+    CSEvaluateSurfaceReceiver(vertex, domain, surface, tid);
+}
+#endif
+
 
 [shader("pixel")]
 void ClusterRasterMeshPixelImageAtomic64(
