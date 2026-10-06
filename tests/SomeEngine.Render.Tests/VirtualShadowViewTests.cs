@@ -85,7 +85,6 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         Vector3[] cameras = [Vector3.Zero, new(0, 0, 2), new(0, 0, -2),
             new(2, 0, 0), new(-2, 0, 0), new(2, 0, 2), new(-2, 0, -2)];
         (int X, int Y)? firstPage = null;
-        uint firstGeneration = 0;
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         foreach (Vector3 camera in cameras)
         {
@@ -101,12 +100,8 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
             var page = (view.VirtualPageOriginX + (int)MathF.Floor(uv.X * view.VirtualResolution / view.PageSize),
                 view.VirtualPageOriginY + (int)MathF.Floor(uv.Y * view.VirtualResolution / view.PageSize));
             if (firstPage is null)
-            {
                 firstPage = page;
-                firstGeneration = view.CacheGeneration;
-            }
             Assert.Equal(firstPage.Value, page);
-            Assert.Equal(firstGeneration, view.CacheGeneration);
             using RenderGraphFrame frame = graph.BeginFrame();
             frame.ObserveExecution(new ViewCommit(shadows));
             int count = frame.Execute(completions);
@@ -133,11 +128,11 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
             InitializeStateShader = shader, InvalidateCastersShader = shader,
             BuildPagePoolShader = shader, CompactViewsShader = shader,
             InitializePageHiZShader = shader, ReducePageHiZShader = shader,
-            DynamicResolutionShader = shader,
+            CompletePageDepthShader = shader, DynamicResolutionShader = shader,
             ResetFrame = entry, ResetReceiverMasks = entry, MarkPages = entry, MarkCoarsePages = entry,
             AllocatePages = entry, ClearPages = entry, InitializeState = entry, InvalidateCasters = entry,
             BuildPagePool = entry, CompactViews = entry, InitializePageHiZ = entry,
-            ReducePageHiZ = entry, DynamicResolution = entry,
+            ReducePageHiZ = entry, CompletePageDepth = entry, DynamicResolution = entry,
         };
     }
 

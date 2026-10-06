@@ -89,6 +89,20 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         Assert.All(result[6], count => Assert.Equal(0u, count));
         Assert.Equal((uint)available, result[8][0]);
         Assert.Equal(new uint[] { (uint)(requests - available), 0 }, result[11]);
+        // Allocation makes pages drawable. Completed depth supplies the generation
+        // that allows these same mappings to be sampled and cached.
+        uint[][] completed = new D3D12TestCompute(shaderCompiler).Execute(
+            "vsm_page_depth_complete.slang", "CompleteVirtualShadowPageDepth",
+            new((uint)(available + 63) / 64, 1, 1),
+            [
+                new BufferInput("ActivePhysicalPages", result[7], ResourceBindingType.BufferSrv, 16),
+                new BufferInput("CompletePageCount", result[8], ResourceBindingType.BufferSrv, 4),
+                new BufferInput("CompletedShadowPageTable", result[0], ResourceBindingType.BufferUav, 16),
+                new BufferInput("GeometryWorkStatus", [0], ResourceBindingType.BufferSrv, 0),
+                new BufferInput("CompletedPageMetadata", result[2], ResourceBindingType.BufferUav, 16),
+            ]);
+        result[0] = completed[0];
+        result[2] = completed[1];
         var allocated = new HashSet<uint>();
         var activeTables = new HashSet<uint>();
         for (int index = 0; index < available; index++)
