@@ -19,13 +19,13 @@ void ClearVirtualShadowPages(
     uint3 groupId : SV_GroupID,
     uint3 groupThreadId : SV_GroupThreadID)
 {
-    uint pageIndex = VirtualShadowDispatchPage(groupId);
+    uint tiles = (max(PageClear.PageSize / 2u, 1u) + 7u) / 8u;
+    uint pageIndex = VirtualShadowDispatchPage(groupId, tiles);
     if (pageIndex >= ActivePhysicalPageCount[0]) return;
     uint physicalPage = ActivePhysicalPages[pageIndex].x;
     uint2 physicalPageCoord = uint2(
         physicalPage % PageClear.PhysicalPagesPerRow,
         physicalPage / PageClear.PhysicalPagesPerRow);
-    uint tiles = (max(PageClear.PageSize / 2u, 1u) + 7u) / 8u;
     uint2 basePixel = (VirtualShadowDispatchTile(groupId, tiles) * 8u + groupThreadId.xy) * 2u;
     [unroll]
     for (uint y = 0u; y < 2u; y++)

@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="553e652a-f988-49de-88f4-9ec013f30caf" name="boqi@BOQI-THE-DAEMON 2026-10-06 14:19:55" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T14:19:55.6215487+08:00" queuing="2026-10-06T14:19:55.6215492+08:00" start="2026-10-06T14:19:44.1608495+08:00" finish="2026-10-06T14:20:19.0457296+08:00" />
+  <TestSettings name="default" id="2c315214-bace-4f8c-96c1-3c9e8e2d2c43">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_14_19_55" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="9df76672-f28a-4a6b-af1f-e40440607505" testId="f747d72f-199a-57e7-7b4d-4169188910d3" testName="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests.LargeAcceptedPagesCompleteTheirFullTileGrid(backend: &quot;D3D12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.9990089" startTime="2026-10-06T14:20:09.8706799+08:00" endTime="2026-10-06T14:20:18.8697171+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9df76672-f28a-4a6b-af1f-e40440607505" />
+    <UnitTestResult executionId="5036e752-720d-40ab-ac14-707af7dc20d0" testId="cca1fe65-5702-af49-937e-11a23aa0b2c9" testName="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests.LargeAcceptedPagesCompleteTheirFullTileGrid(backend: &quot;Vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.3602326" startTime="2026-10-06T14:20:01.5120014+08:00" endTime="2026-10-06T14:20:09.8697768+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5036e752-720d-40ab-ac14-707af7dc20d0" />
+    <UnitTestResult executionId="44acec17-c2ba-4f09-bc32-793e5fae48cd" testId="a0b8aa02-000c-f157-f175-ab851137f551" testName="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests.MoreThanOneDispatchRowOfDirtyPagesCompletesWithoutLosingReceivers(backend: &quot;Vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:09.9120889" startTime="2026-10-06T14:19:45.6326620+08:00" endTime="2026-10-06T14:19:55.5653566+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="44acec17-c2ba-4f09-bc32-793e5fae48cd" />
+    <UnitTestResult executionId="224be1a9-7b5b-48ed-990e-5ce1fc517d96" testId="f656d0e4-c6be-fe6f-9906-6e5c08329137" testName="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests.MoreThanOneDispatchRowOfDirtyPagesCompletesWithoutLosingReceivers(backend: &quot;D3D12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:05.9383205" startTime="2026-10-06T14:19:55.5957956+08:00" endTime="2026-10-06T14:20:01.5064276+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="224be1a9-7b5b-48ed-990e-5ce1fc517d96" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests.LargeAcceptedPagesCompleteTheirFullTileGrid(backend: &quot;Vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="cca1fe65-5702-af49-937e-11a23aa0b2c9">
+      <Execution id="5036e752-720d-40ab-ac14-707af7dc20d0" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests" name="LargeAcceptedPagesCompleteTheirFullTileGrid" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests.LargeAcceptedPagesCompleteTheirFullTileGrid(backend: &quot;D3D12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="f747d72f-199a-57e7-7b4d-4169188910d3">
+      <Execution id="9df76672-f28a-4a6b-af1f-e40440607505" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests" name="LargeAcceptedPagesCompleteTheirFullTileGrid" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests.MoreThanOneDispatchRowOfDirtyPagesCompletesWithoutLosingReceivers(backend: &quot;Vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="a0b8aa02-000c-f157-f175-ab851137f551">
+      <Execution id="44acec17-c2ba-4f09-bc32-793e5fae48cd" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests" name="MoreThanOneDispatchRowOfDirtyPagesCompletesWithoutLosingReceivers" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests.MoreThanOneDispatchRowOfDirtyPagesCompletesWithoutLosingReceivers(backend: &quot;D3D12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="f656d0e4-c6be-fe6f-9906-6e5c08329137">
+      <Execution id="224be1a9-7b5b-48ed-990e-5ce1fc517d96" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.PageDispatchRenderingTests" name="MoreThanOneDispatchRowOfDirtyPagesCompletesWithoutLosingReceivers" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="f747d72f-199a-57e7-7b4d-4169188910d3" executionId="9df76672-f28a-4a6b-af1f-e40440607505" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cca1fe65-5702-af49-937e-11a23aa0b2c9" executionId="5036e752-720d-40ab-ac14-707af7dc20d0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a0b8aa02-000c-f157-f175-ab851137f551" executionId="44acec17-c2ba-4f09-bc32-793e5fae48cd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f656d0e4-c6be-fe6f-9906-6e5c08329137" executionId="224be1a9-7b5b-48ed-990e-5ce1fc517d96" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="4" executed="4" passed="4" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.24]   Discovering: SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.46]   Discovered:  SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.52]   Starting:    SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:33.82]   Finished:    SomeEngine.Render.Cluster.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

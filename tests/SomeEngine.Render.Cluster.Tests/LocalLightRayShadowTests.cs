@@ -123,6 +123,72 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
         scene.Complete();
     }
 
+    [Theory]
+    [InlineData(SceneLightKind.Point)]
+    [InlineData(SceneLightKind.Spot)]
+    public async Task FirstResumedLocalLightFrameMatchesIndependentTrianglesWithoutGlobalRefresh(SceneLightKind light)
+    {
+        ShadowReferenceInputs inputs = CreateInputs(world =>
+        {
+            if (light == SceneLightKind.Point) world.CreateEntity(new PointLight(new(-4, 2, -3), 20, Vector3.One, 30));
+            else world.CreateEntity(new SpotLight(new(-4, 2, -3), 20, Vector3.Normalize(new(4, -2, -5)),
+                MathF.Cos(MathF.PI / 12), MathF.Cos(MathF.PI * 2 / 9), Vector3.One, 30));
+        });
+        using var scene = await LocalScene.CreateAsync(inputs, "first-resumed-" + light, output);
+        var settings = new VirtualShadowMapSettings { VirtualResolution = 4096, AtlasSize = 1024, PageSize = 128,
+            MaxShadowLights = 1, DynamicResolutionEnabled = false };
+        SceneAction[] actions = [new(32, edit =>
+        {
+            edit.SetEntityTransform(edit.MeshEntities[1], new TransformQvvs(new(-1, 0, -6), Quaternion.Identity, .6f));
+            edit.CancelFrame();
+        })];
+        SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 34, actions)
+            { WaitForFrames = false, ShadowSettings = settings });
+        SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 34, actions)
+            { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
+        await ShadowReferenceScene.WriteWorldAsync(scene.Content, inputs with { AddLights = null });
+        SceneLinearImage ambient = await scene.CaptureAsync("ambient", new(scene.Content, 34, actions)
+            { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
+        Assert.Equal(33, shadowed.Frame.Frame);
+        Assert.Equal(32u, shadowed.Frame.SubmittedFrame);
+        AssertAccuracy(await scene.CompareAsync(shadowed, unshadowed, ambient));
+        scene.Complete();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public async Task EveryPointLightFacePreservesIndependentReceiverShadows(int face)
+    {
+        Vector3[] directions = [Vector3.UnitX, -Vector3.UnitX, Vector3.UnitY, -Vector3.UnitY, Vector3.UnitZ, -Vector3.UnitZ];
+        Vector3 axis = directions[face];
+        Vector3 side = face < 2 ? Vector3.UnitY : Vector3.UnitX;
+        Vector3 scale = face < 2 ? new(.1f, 4, 4) : face < 4 ? new(4, .1f, 4) : new(4, 4, .1f);
+        var inputs = new ShadowReferenceInputs(256, 256,
+            new SceneCamera { Position = side * 3, Target = axis * 8, Up = face is 2 or 3 ? Vector3.UnitZ : Vector3.UnitY,
+                VerticalFieldOfView = 1, NearPlane = .1f, FarPlane = 100 },
+            [new(axis * 8, scale, true), new(axis * 6 + side, new(.6f), false)],
+            world => world.CreateEntity(new PointLight(Vector3.Zero, 20, Vector3.One, 30)));
+        using var scene = await LocalScene.CreateAsync(inputs, "point-face-" + face, output);
+        var settings = new VirtualShadowMapSettings { VirtualResolution = 4096, AtlasSize = 2048, PageSize = 128,
+            MaxShadowLights = 1, DynamicResolutionEnabled = false };
+        SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 64, [])
+            { WaitForFrames = false, ShadowSettings = settings });
+        SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 64, [])
+            { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
+        await ShadowReferenceScene.WriteWorldAsync(scene.Content, inputs with { AddLights = null });
+        SceneLinearImage ambient = await scene.CaptureAsync("ambient", new(scene.Content, 64, [])
+            { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
+        RayShadowComparison comparison = await scene.CompareAsync(shadowed, unshadowed, ambient);
+        Assert.True(comparison.CubeFaceReceiverPixels[face] >= 512);
+        AssertAccuracy(comparison);
+        scene.Complete();
+    }
+
     private static ShadowReferenceInputs CreateInputs(Action<World> addLight) => new(256, 256,
         new SceneCamera { Position = Vector3.Zero, Target = new(0, 0, -8), Up = Vector3.UnitY,
             VerticalFieldOfView = 1, NearPlane = .1f, FarPlane = 100 },

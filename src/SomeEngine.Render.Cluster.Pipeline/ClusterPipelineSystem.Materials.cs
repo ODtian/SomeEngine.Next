@@ -13,6 +13,30 @@ public sealed partial class ClusterPipelineSystem
 {
     private readonly record struct MaterialBuffer(GraphBufferId Id, int References, bool RegisteredHere);
 
+    // Vertex/domain/visibility and shading bind the same material scalar data.
+    // The existing scalar holder supplies every stage, and user shaders
+    // interpret their own fields.
+    private sealed class RasterMaterialResources(ClusterPipelineSystem pipeline, IGraphResourceProvider? features) : IGraphResourceProvider
+    {
+        public bool TryResolve(string name, ResourceBindingType type, out GraphResourceBinder binder)
+        {
+            if (type == ResourceBindingType.BufferSrv)
+            {
+                if (name == "MaterialScalarRegion") { binder = pipeline.BindRasterMaterialScalars; return true; }
+                if (name == "MaterialScalarOffsets") { binder = pipeline.BindRasterMaterialOffsets; return true; }
+            }
+            if (features is not null) return features.TryResolve(name, type, out binder);
+            binder = null!;
+            return false;
+        }
+    }
+
+    private void BindRasterMaterialScalars(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.ShadeScalars), sync);
+
+    private void BindRasterMaterialOffsets(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.ShadeScalarOffsets, structureStride: sizeof(uint)), sync);
+
     private (ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> Buffers,
         ImmutableDictionary<EngineTexture, MaterialTexture> Textures) UpdateMaterialResources(
         ref RenderGraphEdit edit, ClusterRasterStageSet rasterStages, ClusterShadeStageSet shadeStages)
