@@ -27,6 +27,7 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 | #142 | 全局页压力、逐视图 HW/SW 工作、时间预算和光实体身份沿对应生产数据反馈；直接用例通过。 |
 | #144 | Vulkan SW 用户 UV 覆盖与运行中材质修改的直接行为通过。 |
 | #145 | 方向/局部 mip 数 `[3,3,3]→[1,1,3]`；粗页四点 `[0,1,1,1]→[0,0,0,0]`；模式条件 `[0,0]→[1,0]`。 |
+| #146 | 生产 resident propagation 后直接采样：unfinished fine 使用已完成 coarse，实际 validity1 / known plane depth .4；1 passed、规则0。原始 TRX 在 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-146/resident-lookup/`。 |
 | #147 | 单页读取预算下，高投影细节需求页面先读取；同一用例实际 FIFO red→priority green，1 passed、0 skipped。 |
 | #149 | 跨旧网格边界的四页按 UE 窗口原点处理，实际工作数 6→4。 |
 | #151 | 远原点的亚单位投影偏移实际 red→green；Runtime 构建和 NativeAOT 编译能力检查通过，图像接合行为继续。 |

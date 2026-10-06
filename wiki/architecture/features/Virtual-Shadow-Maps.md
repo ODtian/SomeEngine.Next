@@ -98,6 +98,19 @@ detail 请求和 static 失效仍触发所需更新。未请求的已分配页�
 接收者、过滤、完成有效性共用 `vsm_receiver_projection.slang`、`vsm_sampling.slang`，
 generic raster adapter 共用 `cluster_policy_raster_output.slang` 与 `cluster_raster_target_output.slang`。
 
+完成深度后，`PropagateVirtualShadowResidentPages` 从主要页表产生当帧 resident 引用。
+每个引用保存已完成来源的表索引和 LOD offset；本级 rendering 映射继续由主要页表维护。
+Local 引用指向同一投影的父 mip，directional 引用指向同一光源更粗的 clipmap。
+材质的 any-LOD 查询直接读取已传播引用，本级查询读取原始完成映射。
+遮罩来源的每个采样 tap 验证其当前接收单元；覆盖不足时沿下一驻留祖先继续解析。
+引用随当帧主要页表的完成数据重建，图完成边界位于传播之后，取消与部分失败沿现有状态恢复。
+Directional 页地址采用 `quarterPages * corner` 的整数移位，UV 使用
+`.25 * (cornerB - scale * cornerA)`，其中 `scale = 1 / 2^levelOffset`。
+coarse 深度以 `(coarseDepth - (offsetZB - scale * offsetZA)) / scale` 返回 requested 范围。
+过滤使用同一 coarse 投影的 UV、深度和接收平面梯度。
+原版依据为 `VirtualShadowMapPageManagement.usf:268–401`、
+`VirtualShadowMapPageAccessCommon.ush:355–371` 与 `VirtualShadowMapProjectionCommon.ush:245–305`。
+
 HiZ 使用静态深度的一个图管理持久存储：main 读取先前结果后，intermediate 更新脏页，
 post 消费已保留的 deferred work，再更新 final 供下帧使用。不复制整池历史，
 不 replay 或重新从根发现 deferred work。未受影响的缓存页不复制或重建。

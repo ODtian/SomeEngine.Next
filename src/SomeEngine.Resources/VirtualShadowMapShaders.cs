@@ -16,6 +16,8 @@ public sealed class VirtualShadowMapShaders
     public EntryPointReflection MarkCoarsePages { get; init; }
     public Shader? AllocatePagesShader { get; init; }
     public EntryPointReflection AllocatePages { get; init; }
+    public Shader? ResidentPagesShader { get; init; }
+    public EntryPointReflection ResidentPages { get; init; }
     public Shader? MergeStaticShader { get; init; }
     public EntryPointReflection MergeStatic { get; init; }
     public Shader? ClearPagesShader { get; init; }
