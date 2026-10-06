@@ -1,0 +1,143 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="8106faef-0895-4056-a069-c465d85972a3" name="boqi@BOQI-THE-DAEMON 2026-10-06 11:37:52" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T11:37:52.5564300+08:00" queuing="2026-10-06T11:37:52.5564304+08:00" start="2026-10-06T11:36:14.6167553+08:00" finish="2026-10-06T11:37:53.2564224+08:00" />
+  <TestSettings name="default" id="1c917337-f4b6-4b8c-8b30-38c465244ecf">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_11_37_52" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="fb80079c-2712-45dd-a017-3b4f462fb3cf" testId="600d22d0-29ff-abaa-f279-4396dd65d3c4" testName="SomeEngine.Runtime.Tests.SceneQualityTests.LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T11:37:52.5313961+08:00" endTime="2026-10-06T11:37:52.5320917+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fb80079c-2712-45dd-a017-3b4f462fb3cf">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="20fa16c0-19fb-42c6-a3a0-004aaa420219" testId="21b26880-3063-d31e-05ae-cecd2526b8bd" testName="SomeEngine.Runtime.Tests.SceneQualityTests.LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:07.5029945" startTime="2026-10-06T11:37:45.0055478+08:00" endTime="2026-10-06T11:37:52.4938333+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="20fa16c0-19fb-42c6-a3a0-004aaa420219">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.IsType() Failure: Value is null&#xD;
+Expected: typeof(SomeEngine.Runtime.SceneRenderingQuality)&#xD;
+Actual:   null</Message>
+          <StackTrace>   at SomeEngine.Runtime.Tests.SceneQualityTests.LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation(String backend) in F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Tests\SceneQualityTests.cs:line 24&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Runtime.Tests.SceneQualityTests.LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="21b26880-3063-d31e-05ae-cecd2526b8bd">
+      <Execution id="20fa16c0-19fb-42c6-a3a0-004aaa420219" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.SceneQualityTests" name="LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.SceneQualityTests.LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="600d22d0-29ff-abaa-f279-4396dd65d3c4">
+      <Execution id="fb80079c-2712-45dd-a017-3b4f462fb3cf" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.SceneQualityTests" name="LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="600d22d0-29ff-abaa-f279-4396dd65d3c4" executionId="fb80079c-2712-45dd-a017-3b4f462fb3cf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="21b26880-3063-d31e-05ae-cecd2526b8bd" executionId="20fa16c0-19fb-42c6-a3a0-004aaa420219" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="2" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.20]   Discovering: SomeEngine.Runtime.Tests&#xD;
+[xUnit.net 00:00:03.01]   Discovered:  SomeEngine.Runtime.Tests&#xD;
+[xUnit.net 00:00:03.07]   Starting:    SomeEngine.Runtime.Tests&#xD;
+Shader: cluster_bin_count.shader&#xD;
+Shader: cluster_bin_reserve.shader&#xD;
+Shader: cluster_bin_reset.shader&#xD;
+Shader: cluster_bin_scatter.shader&#xD;
+Shader: cluster_bvh_traverse.shader&#xD;
+Shader: cluster_bvh_traverse_seed.shader&#xD;
+Shader: cluster_cull_phase1.shader&#xD;
+Shader: cluster_cull_phase2.shader&#xD;
+Shader: cluster_cull_reset.shader&#xD;
+Shader: cluster_deferred_resume.shader&#xD;
+Shader: cluster_draw.shader&#xD;
+Shader: cluster_resolve.shader&#xD;
+Shader: cluster_scene_bounds.shader&#xD;
+Shader: cluster_tessellation_bin.shader&#xD;
+Shader: cluster_tessellation_phong.shader&#xD;
+Shader: clustered_light_grid.shader&#xD;
+Shader: debug_args_copy.shader&#xD;
+Shader: debug_sphere.shader&#xD;
+Shader: hello_triangle.shader&#xD;
+Shader: hiz_init.shader&#xD;
+Shader: hiz_reduce.shader&#xD;
+Shader: hiz_reduce_pair.shader&#xD;
+Shader: imgui.shader&#xD;
+Shader: post_tonemap.shader&#xD;
+Shader: ray_tracing_geometry.shader&#xD;
+Shader: render_debug_overlay.shader&#xD;
+Shader: shade_bin_count.shader&#xD;
+Shader: shade_bin_reserve.shader&#xD;
+Shader: shade_bin_reset.shader&#xD;
+Shader: shade_bin_scatter.shader&#xD;
+Shader: shader_contract_probe.shader&#xD;
+Shader: standard.shader&#xD;
+Shader: stream_output_geometry.shader&#xD;
+Shader: sw_raster.shader&#xD;
+Shader: temporal_resolve.shader&#xD;
+Shader: translucency_composite.shader&#xD;
+Shader: triangle.shader&#xD;
+Shader: unlit.shader&#xD;
+Shader: visibility_clear_buffer.shader&#xD;
+Shader: visibility_clear_image.shader&#xD;
+Shader: visibility_resolve_buffer.shader&#xD;
+Shader: visibility_resolve_image.shader&#xD;
+Shader: vsm_allocate_pages.shader&#xD;
+Shader: vsm_caster_invalidation.shader&#xD;
+Shader: vsm_clear_pages.shader&#xD;
+Shader: vsm_dynamic_resolution.shader&#xD;
+Shader: vsm_frame_reset.shader&#xD;
+Shader: vsm_mark_coarse_pages.shader&#xD;
+Shader: vsm_mark_pages.shader&#xD;
+Shader: vsm_page_depth_complete.shader&#xD;
+Shader: vsm_page_hiz.shader&#xD;
+Shader: vsm_page_hiz_reduce.shader&#xD;
+Shader: vsm_page_pool.shader&#xD;
+Shader: vsm_receiver_mask_reset.shader&#xD;
+Shader: vsm_state_init.shader&#xD;
+Shader: vsm_view_compact.shader&#xD;
+  ClusterPipeline: assets/Pipelines/default_cluster.clusterrender.asset&#xD;
+  VirtualShadowMap: assets/Pipelines/default_virtual_shadow.virtualshadow.asset&#xD;
+  Scene: assets/Scenes/default.scene.asset&#xD;
+  Application: assets/Runtime/default.runtime.asset&#xD;
+Built 68 project assets from project sources and the engine shader library.&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-1f4d4aee283442379bfd911a4ba0ca31\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 3 frame(s).&#xD;
+[xUnit.net 00:01:36.97]       Assert.IsType() Failure: Value is null&#xD;
+[xUnit.net 00:01:36.97]       Expected: typeof(SomeEngine.Runtime.SceneRenderingQuality)&#xD;
+[xUnit.net 00:01:36.97]       Actual:   null&#xD;
+[xUnit.net 00:01:36.97]       Stack Trace:&#xD;
+[xUnit.net 00:01:36.97]         F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Runtime.Tests\SceneQualityTests.cs(24,0): at SomeEngine.Runtime.Tests.SceneQualityTests.LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation(String backend)&#xD;
+[xUnit.net 00:01:36.97]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:01:37.00]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:01:37.53]   Finished:    SomeEngine.Runtime.Tests&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.SceneQualityTests.LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation(backend: "vulkan")”。&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T11:37:52.4992492+08:00">
+        <Text>[xUnit.net 00:01:36.97]     SomeEngine.Runtime.Tests.SceneQualityTests.LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation(backend: "d3d12") [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T11:37:52.5668821+08:00">
+        <Text>[xUnit.net 00:01:37.00]     SomeEngine.Runtime.Tests.SceneQualityTests.LinearCapturesReportCompletedQualityForTheirActualSubmittedFrameAfterCancellation(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
