@@ -538,6 +538,8 @@ public sealed partial class VirtualShadowMap : IDisposable
         {
             _views[index].WorldOriginHigh = worldOriginHigh;
             _views[index].WorldOriginLow = worldOriginLow;
+            _views[index].PageDilationBorder = _views[index].LightKind == VirtualShadowLightKind.Directional
+                ? Settings.DirectionalPageDilationBorder : Settings.LocalPageDilationBorder;
             VirtualShadowView shadow = _views[index];
             LightShadowSettings source;
             if (shadow.LightKind == VirtualShadowLightKind.Directional)

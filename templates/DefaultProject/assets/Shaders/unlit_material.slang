@@ -29,10 +29,16 @@ UnlitPixelContext BuildUnlitPixelContext(
     return ctx;
 }
 
-struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
+struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceReceiverEvaluate<SurfaceEval, Triangle>
 {
     Texture2D AlbedoMap;
     SamplerState MaterialSampler;
+
+    SurfaceReceiver evaluateReceiver(uint3 pixelCoord, uint instanceID, uint materialIndex,
+        SurfaceEval surface, float3 bary, Triangle triangle)
+    {
+        return (SurfaceReceiver)0;
+    }
 
     void evaluateSurface(
         uint3 pixelCoord,

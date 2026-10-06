@@ -182,6 +182,26 @@ domain 自身提供表面误差；primary 沿其已有用户配置。streaming �
 当前深度代号继续消费几何驻留与材质输入 revision；局部几何/材质失效在 #147 与静态/动态缓存
 #141 中接合每个遮挡者的实际影响范围。
 
+## 用户 receiver 输入
+
+用户 shader 通过 `ISurfaceReceiverEvaluate<TSurface, TTriangle>.evaluateReceiver` 返回
+32字节 `SurfaceReceiver`：shading normal、参与/模型 flags、geometric normal 和额外层的 camera depth。
+可选 `ClusterSurfaceReceivers` entry 复用 primary visibility 的材质分箱与用户 vertex/domain 求值，
+位于 primary visibility 完成之后、阴影请求之前。图中的单一 receiver buffer 由 VSM 请求和最终
+材质消费；standard 材质先计算 NormalMap 的 shading normal，并保存独立三角形 geometric normal。
+最终 standard 光照复用同一 shading normal。unlit 用户材质声明其参与结果。
+采用此 entry 时框架补 `Present` 标记；已有用户 shader 沿有效 opaque depth 继续提供默认接收能力。
+
+请求消费用户声明的 shading normal，按原版方向/局部发光面背光条件处理，subsurface、hair 和
+多 normal basis 通过对应 flags 表达背光资格。geometric normal 留作用户和独立参考的几何语义，
+原版当前投射 caller 使用 shading normal；`VirtualShadowMapProjection.usf:122–143` 的几何估计
+helper 在该固定源码中标为 unused。first person 请求采用默认 bias2 与 absolute minimum level8。
+`SetAdditionalReceiverInputs` 接受用户 shader 在既有图中生成的 water/translucency/hair 层，
+每层按 camera pixel 顺序提供同一32字节数据，depth 采用当前 camera projection。
+方向与局部页边界参数默认 `.05`，typed view 的原 padding 持有对应值，保持304字节视图记录。
+原版核对范围为 `VirtualShadowMapPageMarking.usf:349–414,480–612` 与
+`VirtualShadowMapPageMarking.ush:82–143`。
+
 ## 相对世界坐标与 clipmap 地址
 
 零 ray 的直接比较采用原版几何 slope allowance：在反向深度中取

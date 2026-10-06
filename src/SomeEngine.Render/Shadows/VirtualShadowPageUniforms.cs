@@ -36,10 +36,10 @@ public struct VirtualShadowPageDemandUniforms
     public uint FrameIndex;
     public float PageDilationBorderPages;
     public float NormalBias;
-    public uint Pad1;
-    public uint Pad2;
-    public uint Pad3;
-    public uint Pad4;
+    public uint AdditionalReceiverLayerCount;
+    public uint CullBackfacingPixels;
+    public float FirstPersonPixelRequestBias;
+    public int FirstPersonPixelRequestMinLevel;
     public VirtualShadowReceiverProjection ReceiverProjection;
 }
 
