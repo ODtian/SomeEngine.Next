@@ -5,6 +5,7 @@ static const uint VSM_PAGE_DYNAMIC_UNCACHED = 1u << 2u;
 static const uint VSM_PAGE_STATIC_UNCACHED = 1u << 3u;
 static const uint VSM_PAGE_INVALIDATE_DYNAMIC = 1u << 4u;
 static const uint VSM_PAGE_INVALIDATE_STATIC = 1u << 5u;
+static const uint VSM_PAGE_DEFERRED_INVALIDATION = 1u << 6u;
 
 uint InitializeVirtualShadowDynamicDepth(uint staticDepth, uint pageFlags)
 {

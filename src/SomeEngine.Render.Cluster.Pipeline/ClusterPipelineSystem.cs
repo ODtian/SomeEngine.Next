@@ -356,6 +356,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     QueueBufferWrites(GraphData.ScalarOffsets, updated.Offsets, updated.OffsetChanges);
                 _materialScalars = updated;
             }
+            RecordMaterialCasterChanges(assignments);
             AcceptMaterialChanges(assignments);
             if (materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
             return GraphData.Outputs;
@@ -415,6 +416,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         });
         _materialScalars = scalars;
         _installedMaterialTopologyVersion = assignments.TopologyVersion;
+        RecordMaterialCasterChanges(assignments);
         AcceptMaterialChanges(assignments);
         _installedRasterStages = rasterStages;
         _installedShadeStages = shadeStages;
@@ -544,6 +546,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     _cullingEnabled,
                     binding.DispatchExtent,
                     binding.PageFaultCapacity);
+                packedViews[viewIndex].GeometryLodScale *= _resources.Residency.StreamingQuality;
                 packedViews[viewIndex].TargetPolicy = isTargetView
                     ? _stagedPolicies[viewIndex]
                     : 0u;
@@ -890,7 +893,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _metricFrameIndex = 0;
         _latestFrameMetrics = null;
         AcceptMaterialTextures(_graphData.MaterialTextures.Clear());
+        lock (_materialTextureChangeGate) _changedMaterialTextures.Clear();
         _materialScalars = ClusterMaterialScalars.Empty;
+        _casterChanges.Clear();
+        _casterRevision = 0;
+        _lastGeometryChangeSequence = 0;
+        _casterStreamingQuality = 1.0f;
         _graphData = new ClusterGraphData();
         _renderContext = default;
         _installedRasterStages = null;

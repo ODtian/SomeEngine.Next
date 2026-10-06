@@ -47,6 +47,7 @@ internal readonly record struct ClusterBvhCheckpoint(int PatchCount);
 internal sealed record ClusterBvhPublication(
     int PatchCount,
     Mesh[] RootMeshes,
+    Mesh[] ChangedMeshes,
     ClusterStagedUpload[] Uploads);
 
 internal sealed class ClusterBvh
@@ -371,6 +372,8 @@ internal sealed class ClusterBvh
         return new ClusterBvhPublication(
             _pendingPatches.Count,
             [.. _pendingRootMeshes],
+            _leafIndexes.Where(mesh => changedMeshes.Contains(mesh.FirstNode) ||
+                _pendingRootMeshes.Contains(mesh.Mesh)).Select(static mesh => mesh.Mesh).ToArray(),
             _storage.CaptureStagedUploads());
     }
 

@@ -205,6 +205,16 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
+    internal (ulong Bytes, ulong Capacity) CalculateStreamingDemand(IEnumerable<uint> pages)
+    {
+        lock (_gate)
+        {
+            ulong bytes = 0;
+            foreach (uint page in pages) bytes += _pages.CalculateStreamingPageBytes(page);
+            return (bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity));
+        }
+    }
+
     private PageFaultResolution ResolvePageCore(uint pageID)
     {
         if (!_pages.TrySource(pageID, out uint size, out _))

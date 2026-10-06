@@ -238,3 +238,9 @@ double 中减去原点的光空间位置。`ClipmapCornerRelativeOffsetX/Y` 以�
 `VirtualShadowMapPhysicalPageManagement.usf:1091–1577`。
 
 页池以 GPU `ShadowPageLists` 的 LRU、AVAILABLE、EMPTY、REQUESTED 四个列表维护跨帧顺序。REQUESTED 在帧结束时包含全部图集页；下一帧先保存该顺序，再将当前请求页移入 REQUESTED，未请求页保序压缩进入 AVAILABLE，空页追加在 AVAILABLE 尾部并优先分配。分配后的剩余 AVAILABLE 追加到本帧请求页之后，成为下一帧输入。未请求缓存页上的完成状态和失效事实随原页面保留，后续请求或回收负责消费。准备、压缩和收尾由持久图中的显式阶段表达，帧取消、部分提交和重新初始化沿现有完成边界维护。
+
+几何流送的 GPU 页请求携带实际页范围、投影误差优先级和视图类别，主视图类别3、阴影类别0。每页保留最强需求，独立收尾操作将该值写入同一读回记录；CPU 对需要加载的页一次展开依赖并按优先级选择读取，`MaxConcurrentPageLoads` 控制并发读取数。驻留系统持有质量值，初值1，完整反馈按真实可见流送页占页堆容量的比例推进：超过85%连续两帧后每帧乘.97，低于70%连续30帧后每帧乘1.01，范围.3到1。页长度可变时使用页堆分配字节，固定页长度时等价于原版页数比例；最低细节页与其容量从流送部分分离。截断反馈保留当前质量，后续完整需求继续推进。
+
+BVH 的 `ChangedMeshes`、材质绑定的变化实体以及实际纹理通知形成同一份深度变更记录，VSM 按当前实例行投影到已有页。记录由完成的帧确认，当前与上一帧 bounds 中的 static/dynamic 分类分别消费。几何流送的 LOD 变化在同一实例缓冲尾部表达，并在 GPU 页 metadata 中保留 deferred 标记；`DeferredInvalidationBudget` 默认−1，0保留标记，正数按每帧页数消费，剩余标记随页保留到后续请求。材质 alpha、标量及调用方每帧报告的变形继续即时失效。有限 bounds 使用局部范围，范围不完整及变更历史溢出沿整体缓存保护处理。
+
+原版依据为固定396c9f05的 `NaniteStreaming.ush:19–31`、`NaniteStreamingManager.cpp:476–507/2752–2760`、`VirtualShadowMapArray.cpp:119–127` 和 `VirtualShadowMapPhysicalPageManagement.usf:321–379`。视图工作量从包含 policy 位的 draw view index 转成 compact 数组索引后统计。

@@ -348,6 +348,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
     }
 
     internal void UseMaterial(int index, Material material) => SetEntityMaterial(_meshes[index], material);
+    internal void UseEntityMaterial(Entity entity, Material material) => SetEntityMaterial(entity, material);
 
     private void SetEntityMaterial(Entity entity, Material material)
     {
@@ -557,7 +558,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             catch
             {
                 QueueCompletion[] partial = _completions.Where(value => value != default).ToArray();
-                _renderDevice.TrackSubmission(partial);
+                if (partial.Length != 0) _renderDevice.TrackSubmission(partial);
                 foreach (QueueCompletion completion in partial)
                     Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
                 throw;

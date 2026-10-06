@@ -60,7 +60,7 @@ public struct VirtualShadowPageAllocationUniforms
     public uint MaxPhysicalPages;
     public uint ViewCount;
     public uint FrameIndex;
-    public uint Pad0;
+    public int DeferredInvalidationBudget;
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
 }
@@ -86,7 +86,7 @@ public struct VirtualShadowInvalidationUniforms
     public uint FrameIndex;
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
-    public uint Pad2;
+    public uint DeferredChangedInstanceCount;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]

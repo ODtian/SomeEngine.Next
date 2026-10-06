@@ -10,7 +10,7 @@ struct VirtualShadowPageAllocationUniforms
     uint MaxPhysicalPages;
     uint ViewCount;
     uint FrameIndex;
-    uint Pad0;
+    int DeferredInvalidationBudget;
     uint HierarchyWordsPerView;
     uint MipLevelCount;
 };
@@ -187,6 +187,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         any(PageReceiverMasks[tableIndex] != 0xFFFFFFFFu.xx);
     bool staticUncached = true;
     bool dynamicUncached = true;
+    bool keepDeferred = false;
     bool previousHiZ = false;
     if (sameTag)
     {
@@ -209,6 +210,23 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         bool retainDynamicCoarse = (view.Flags & VSM_VIEW_CACHED_DISTANT_LIGHT) != 0u ||
             (view.Flags & VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE) != 0u &&
             (requestFlags & VSM_PAGE_REQUEST_DETAIL) == 0u && !staticUncached;
+        if ((dirtyFlags & VSM_PAGE_DEFERRED_INVALIDATION) != 0u)
+        {
+            bool consume = false;
+            if ((view.Flags & VSM_VIEW_SINGLE_PAGE) == 0u && !retainDynamicCoarse)
+            {
+                consume = PageAllocation.DeferredInvalidationBudget < 0;
+                if (PageAllocation.DeferredInvalidationBudget > 0)
+                {
+                    uint count = WaveActiveCountBits(true);
+                    uint first = 0u;
+                    if (WaveIsFirstLane()) InterlockedAdd(ShadowAllocationFailures[2], count, first);
+                    consume = WaveReadLaneFirst(first) + WavePrefixCountBits(true) < uint(PageAllocation.DeferredInvalidationBudget);
+                }
+            }
+            staticUncached |= consume;
+            keepDeferred = !consume;
+        }
         bool receiverRefresh = (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u && !retainDynamicCoarse;
         dynamicUncached = staticUncached || entry.w != view.CacheGeneration ||
             ((dirtyFlags & VSM_PAGE_INVALIDATE_DYNAMIC) != 0u && !retainDynamicCoarse) || receiverRefresh;
@@ -248,7 +266,8 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     PageMetadata[atlasPage].w = (partialReceivers ? VSM_PAGE_MASKED : 0u) |
         (previousHiZ && !staticUncached ? VSM_PAGE_PRIOR_HIZ : 0u) |
         (staticUncached ? VSM_PAGE_STATIC_UNCACHED : 0u) |
-        (dynamicUncached ? VSM_PAGE_DYNAMIC_UNCACHED : 0u);
+        (dynamicUncached ? VSM_PAGE_DYNAMIC_UNCACHED : 0u) |
+        (keepDeferred ? VSM_PAGE_DEFERRED_INVALIDATION : 0u);
     PublishDirtyPage(
         tableIndex,
         viewIndex,

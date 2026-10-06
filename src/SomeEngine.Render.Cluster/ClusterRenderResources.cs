@@ -348,6 +348,7 @@ public sealed class ClusterRenderResources : IDisposable
                         throw new ArgumentException("Cluster page-fault feedback contains a null payload.", nameof(payloads));
                     _residency.IngestFaults(payload);
                 }
+                _residency.UpdateStreamingQuality();
                 _lastFaultFeedbackSequence = ticket.FeedbackSequence;
             }
         }

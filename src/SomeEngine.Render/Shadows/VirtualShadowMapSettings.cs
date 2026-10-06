@@ -49,6 +49,8 @@ public sealed partial record VirtualShadowMapSettings
     public float ShadowGeometryLodScale => MathF.Pow(2.0f, -ShadowGeometryLodBias);
     public VirtualShadowLocalMipMode LocalMipMode { get; init; }
     public float WorkLoadBudget { get; init; }
+    /// <summary>Pages refreshed for streamed LOD changes each frame; -1 consumes all deferred changes.</summary>
+    public int DeferredInvalidationBudget { get; init; } = -1;
     public float WorkTimeBudgetMilliseconds { get; init; }
     public float WorkHistoryWeight { get; init; } = 0.9f;
     public float WorkMaxDirectionalLodBias { get; init; } = 99999f;

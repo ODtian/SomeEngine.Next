@@ -79,6 +79,13 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     private int _lifecycleState;
     private ulong _publicationSequence;
     private ClusterResidencyPublication? _activePublication;
+    private readonly HashSet<uint> _visiblePages = [];
+    private bool _visibleDemandComplete = true;
+    private float _streamingQuality = 1.0f;
+    private uint _overBudgetFrames;
+    private uint _underBudgetFrames;
+
+    internal float StreamingQuality => _streamingQuality;
 
     internal int HierarchyLevels => _meshes.HierarchyLevels;
 
@@ -301,6 +308,29 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         ThrowIfNotActive();
         PageFaultRead faults = _faults.Read(bytes);
         _stream.Push(faults);
+        _visibleDemandComplete &= !faults.WasTruncated;
+        foreach (ClusterPageRequest request in faults.Requests)
+            for (uint page = 0; page < request.PageCount; page++)
+                _visiblePages.Add(request.FirstPageId + page);
+    }
+
+    internal void UpdateStreamingQuality()
+    {
+        if (!_visibleDemandComplete)
+        {
+            _visiblePages.Clear();
+            _visibleDemandComplete = true;
+            _overBudgetFrames = _underBudgetFrames = 0;
+            return;
+        }
+        (ulong bytes, ulong capacity) = _meshes.CalculateStreamingDemand(_visiblePages);
+        _visiblePages.Clear();
+        float load = capacity == 0 ? 0 : (float)((double)bytes / capacity);
+        _overBudgetFrames = load > .85f ? _overBudgetFrames + 1 : 0;
+        _underBudgetFrames = load < .70f ? _underBudgetFrames + 1 : 0;
+        if (_overBudgetFrames >= 2) _streamingQuality *= .97f;
+        else if (_underBudgetFrames >= 30) _streamingQuality *= 1.01f;
+        _streamingQuality = Math.Clamp(_streamingQuality, .3f, 1.0f);
     }
 
     internal void ReportLeafUsage(ReadOnlySpan<uint> leafNodeIndices)

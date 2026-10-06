@@ -9,7 +9,8 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 public sealed partial class ClusterPipelineSystem
 {
     private readonly record struct MaterialTexture(GraphTextureId Id, RhiTexture Texture, int References, bool RegisteredHere);
-    private int _materialTexturesChanged;
+    private readonly object _materialTextureChangeGate = new();
+    private readonly HashSet<EngineTexture> _changedMaterialTextures = [];
 
     private ImmutableDictionary<EngineTexture, MaterialTexture> UpdateMaterialTextures(
         ref RenderGraphEdit edit, ClusterRasterStageSet rasterStages, ClusterShadeStageSet shadeStages)
@@ -71,11 +72,20 @@ public sealed partial class ClusterPipelineSystem
         _graphData.MaterialTextures = textures;
     }
 
-    private void MaterialTextureChanged(EngineTexture texture) => Volatile.Write(ref _materialTexturesChanged, 1);
+    private void MaterialTextureChanged(EngineTexture texture)
+    {
+        lock (_materialTextureChangeGate) _changedMaterialTextures.Add(texture);
+    }
 
     private void RefreshMaterialTextures()
     {
-        if (Interlocked.Exchange(ref _materialTexturesChanged, 0) == 0) return;
+        HashSet<EngineTexture> changed;
+        lock (_materialTextureChangeGate)
+        {
+            if (_changedMaterialTextures.Count == 0) return;
+            changed = [.. _changedMaterialTextures];
+            _changedMaterialTextures.Clear();
+        }
         var textures = _graphData.MaterialTextures;
         RenderGraphEdit edit = _graph.BeginEdit();
         try
@@ -91,8 +101,13 @@ public sealed partial class ClusterPipelineSystem
             // A texture notification can change alpha/deformation with an unchanged
             // material binding (including in-place content). Do not retain old depth.
             _rasterRevision = checked(_rasterRevision + 1);
+            RecordTextureCasterChanges(changed);
         }
-        catch { Volatile.Write(ref _materialTexturesChanged, 1); throw; }
+        catch
+        {
+            lock (_materialTextureChangeGate) _changedMaterialTextures.UnionWith(changed);
+            throw;
+        }
         finally { edit.Dispose(); }
     }
 }
