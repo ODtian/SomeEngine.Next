@@ -41,12 +41,14 @@ void MarkVirtualShadowCoarsePages(uint3 dispatchThreadId : SV_DispatchThreadID)
     {
         if ((view.Flags & VSM_VIEW_COARSE_CLIP_LEVEL) == 0u)
             return;
-        // UE-style directional coarse coverage: selected clipmap levels contribute only
-        // the center pages. Sampling continues into coarser clipmaps when this view
-        // has no resident page.
+        // Coarse coverage follows the current camera origin inside the snapped
+        // projection. The four page addresses surround this projected origin.
         uint dimension = VirtualShadowMipPagesPerRow(view, 0u);
-        uint2 low = max(dimension / 2u, 1u) - 1u;
-        uint2 high = min(low + 1u, dimension - 1u);
+        float4 originClip = mul(float4(view.ClipmapWorldOrigin, 1.0), view.LightViewProjection);
+        float2 originUv = originClip.xy / originClip.w * float2(0.5, -0.5) + 0.5;
+        float2 pageAddress = originUv * float(dimension);
+        uint2 low = (uint2)floor(pageAddress - 0.5);
+        uint2 high = (uint2)ceil(pageAddress - 0.5);
         PublishPage(view, 0u, uint2(low.x, low.y));
         PublishPage(view, 0u, uint2(low.x, high.y));
         PublishPage(view, 0u, uint2(high.x, low.y));

@@ -14,10 +14,12 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
     [InlineData(0, -17, 5)]
     [InlineData(1, 0, 0)]
     [InlineData(2, 0, 0)]
-    public void CoarseRequestsUseDirectionalCentersAndOneLocalFallback(uint lightKind, int originX, int originY)
+    public void CoarseRequestsUseCameraOriginPagesAndOneLocalFallback(uint lightKind, int originX, int originY)
     {
         const int pageTableEntryCount = 22000;
         uint[] view = new uint[52];
+        Matrix4x4 projection = Matrix4x4.Identity;
+        MemoryMarshal.Write(MemoryMarshal.AsBytes(view.AsSpan()), in projection);
         view[16] = 16384;
         view[17] = 128;
         view[21] = unchecked((uint)originX);
