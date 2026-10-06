@@ -36,6 +36,12 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
     Texture2D<float4> NormalMap;
     SamplerState MaterialSampler;
 
+    void evaluateDebug(uint debugMode, uint3 pixel, uint instance, uint material, SurfaceEval surface,
+        float3 bary, Triangle triangle, RWTexture2DArray<float4> color)
+    {
+        evaluateSurface(pixel, instance, material, surface, bary, triangle, color);
+    }
+
     void evaluateSurface(uint3 pixel, uint instance, uint material, SurfaceEval surface,
         float3 bary, Triangle triangle, RWTexture2DArray<float4> color)
     {
