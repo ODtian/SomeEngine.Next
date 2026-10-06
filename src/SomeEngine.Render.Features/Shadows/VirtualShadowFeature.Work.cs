@@ -24,7 +24,7 @@ public sealed partial class VirtualShadowFeature
     private readonly Dictionary<ShadowWorkView, uint> _committedWorkViews = [];
     private ShadowWorkView[] _frameWorkViews = [];
 
-    private readonly record struct ShadowWorkView(VirtualShadowLightKind Kind, Entity Light, uint DirectLightIndex, int Detail);
+    private readonly record struct ShadowWorkView(VirtualShadowLightKind Kind, Entity Light, uint DirectLightIndex, int Detail, bool FirstPerson);
 
     [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
     private struct WorkUniforms
@@ -99,7 +99,8 @@ public sealed partial class VirtualShadowFeature
                 _ => lights.GetSpotEntity(lightIndex - lights.Directional.Count - lights.Points.Count),
             };
             var key = new ShadowWorkView(view.LightKind, light, light == Entity.Null ? view.LightIndex : 0u,
-                view.LightKind == VirtualShadowLightKind.Directional ? view.ClipmapLevel : checked((int)view.FaceIndex));
+                view.LightKind == VirtualShadowLightKind.Directional ? view.ClipmapLevel : checked((int)view.FaceIndex),
+                (view.Flags & VirtualShadowViewFlags.FirstPersonShadow) != 0u);
             _frameWorkViews[index] = key;
             mapping[index] = _committedWorkViews.TryGetValue(key, out uint previous) ? previous : uint.MaxValue;
         }

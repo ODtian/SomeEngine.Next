@@ -52,3 +52,5 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 原版来源核对包含 Nanite 相对视图、clipmap int64 snap 与相对采样地址。
 图像用例同时验证完整内容构建和 GPU 可写视图：默认项目按引擎 shader 声明生成缺项输入，
 实际构建71资产；视图通过当帧图区段上传到同一设备缓冲，工作反馈与其后消费者共用此数据。
+
+#148 第一人称完整帧公开行 `APlayersWorldRepresentationCastsIntoTheWorldThroughItsFirstPersonShadowFamily`：regular-only caller 的实际图像 red（1 failed，0 skipped，25秒，首次差异 byte16080）→Native FP family 合并 green（1 passed，0 skipped，27秒）。世界替身的完整颜色/深度与同位置普通 caster 一致，参考 caster 移开后阴影消失。固定 level10、4096分辨率、2048密度参考、零射线，以独立距离/密度计算选择同一光 frustum。此前 receiver 区段排序 RG4001、夹具 metrics 和空需求观察分别留作定位记录；af78c88a 的持久区段排序源片接合了主层和额外层。完整内容构建74资产通过，必要C#构建0警告/0错误；收尾保留同一行为参数和有效数据字节，接入 Native 调用方可见性及明确行为命名。原始日志、TRX、图像与hash位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-148/first-person/`。

@@ -129,6 +129,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
         TessellationViews,
         TessellationPolicyViews,
         viewIndex);
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID, view);
     output.Pos = mul(float4(position, 1.0), view.ViewProj);
     output.Pos = ClusterHardwareRasterPosition(output.Pos, patch.VisibleClusterIndex, view,
         ClusterRasterTargetViewport(view));
@@ -189,6 +190,7 @@ void ClusterTessellationHardwareMesh(
     SetMeshOutputCounts(vertexCount, triangleCount);
     uint viewIndex = DrawRequestViewIndex(TessellationVisibleClusters[patch.VisibleClusterIndex]);
     ClusterViewUniforms view = LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex);
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID, view);
     for (uint index = lane; index < vertexCount; index += 32u)
     {
         float3 localBary = TessellationGridBarycentric(factor, TessellationPatchEdgeFactors(patch), index);

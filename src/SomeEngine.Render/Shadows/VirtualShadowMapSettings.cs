@@ -219,6 +219,9 @@ public sealed partial record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(DirectionalClipmapLevels));
         if (DirectionalFirstClipmapLevel is < -32 or > 32)
             throw new ArgumentOutOfRangeException(nameof(DirectionalFirstClipmapLevel));
+        if (FirstPersonFirstClipmapLevel is < -32 or > 32 ||
+            FirstPersonLastClipmapLevel < FirstPersonFirstClipmapLevel || FirstPersonLastClipmapLevel > 32)
+            throw new ArgumentOutOfRangeException(nameof(FirstPersonFirstClipmapLevel));
         if (DirectionalFirstCoarseClipmapLevel is < -32 or > 32)
             throw new ArgumentOutOfRangeException(nameof(DirectionalFirstCoarseClipmapLevel));
         if (DirectionalLastCoarseClipmapLevel is < -32 or > 32 ||

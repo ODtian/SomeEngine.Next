@@ -1,4 +1,5 @@
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Cluster;
 
@@ -22,6 +23,8 @@ public static class ClusterRenderFeature
 
     public static RenderInstancePropertyKey DepthCacheClassKey { get; } =
         new("someengine.shadow.depth_cache_class");
+
+    public static RenderInstancePropertyKey FirstPersonKey { get; } = new("someengine.shadow.first_person");
 
     public const uint MissingBvhRoot = uint.MaxValue;
     public const uint MissingMaterialSlots = uint.MaxValue;
@@ -60,6 +63,9 @@ public static class ClusterRenderFeature
             BoundsExpansionKey,
             Float32Encoding);
         _ = builder.Register<uint>("SomeEngine.Render", DepthCacheClassKey, UInt32Encoding);
+        _ = builder.Register<FirstPersonMeshData>("SomeEngine.Render", FirstPersonKey,
+            new RenderInstancePropertyEncoding("someengine.render.first_person.v1", valueSize: 8,
+                storageAlignment: 4, storageStride: 8, metadataWordCount: 1));
         return builder.Freeze();
     }
 

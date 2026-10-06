@@ -263,7 +263,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
                     "Virtual shadow active raster pages"));
                 _activePageCount = Counter(edit, "Virtual shadow active page count");
-                uint sourceViewCapacity = checked(settings.MaxShadowLights * Math.Max(settings.DirectionalClipmapLevels, 6u));
+                uint sourceViewCapacity = checked(settings.MaxShadowLights * settings.MaximumViewsPerLight);
                 uint pageTableEntryCapacity = checked(
                     sourceViewCapacity * settings.PageTableEntriesPerView);
                 _requestEpochEntryCapacity = pageTableEntryCapacity;
@@ -894,7 +894,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 receiverView,
                 0,
                 0,
-                instanceCount);
+                instanceCount, _geometry.HasFirstPersonWorldMeshes());
             _viewCount = views.Length;
             _frameBaseShadowBias = new float[views.Length];
             for (int index = 0; index < views.Length; index++) _frameBaseShadowBias[index] = views[index].ResolutionLodBias;
@@ -989,6 +989,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     MaxSlopeBias = _shadowMap.Settings.LocalMaxSlopeBias,
                 },
                 ReceiverProjection = receiverProjection,
+                FirstPersonViewOffset = _shadowMap.FirstPersonViewOffset,
             };
             _uniformData.Write(ref graph, _frameSamplingUniforms, in sampling);
             _geometry.StageViews([receiverView], identities: [receiver]);

@@ -3,7 +3,7 @@
 
 // Exact dense metadata layout for the currently cooked Cluster shader variant. ShaderAsset-cook
 // integration must emit one such document for each pipeline/material composition.
-static const uint RENDER_INSTANCE_METADATA_WORD_COUNT = 6u;
+static const uint RENDER_INSTANCE_METADATA_WORD_COUNT = 7u;
 static const uint RENDER_INSTANCE_METADATA_VECTOR_COUNT =
     (RENDER_INSTANCE_METADATA_WORD_COUNT + 3u) / 4u;
 
@@ -25,6 +25,7 @@ static const uint CLUSTER_BOUNDS_EXPANSION_METADATA_WORD = 0u;
 static const uint CLUSTER_BVH_ROOT_METADATA_WORD = 1u;
 static const uint CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD = 2u;
 static const uint RENDER_DEPTH_CACHE_CLASS_METADATA_WORD = 5u;
+static const uint RENDER_FIRST_PERSON_METADATA_WORD = 6u;
 static const uint RENDER_CURRENT_TRANSFORM_METADATA_WORD = 3u;
 static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = 4u;
 

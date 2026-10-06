@@ -46,6 +46,7 @@ internal sealed class RuntimeScene : IDisposable
         float nearPlane,
         float farPlane,
         CameraDepthOfField? depthOfField,
+        uint playerId, FirstPersonCamera? firstPerson,
         int meshInstanceCount,
         Vector3 meshPositionMin,
         Vector3 meshPositionMax)
@@ -65,6 +66,8 @@ internal sealed class RuntimeScene : IDisposable
         _nearPlane = nearPlane;
         _farPlane = farPlane;
         DepthOfField = depthOfField;
+        PlayerId = playerId;
+        FirstPerson = firstPerson;
         MeshInstanceCount = meshInstanceCount;
         MeshPositionMin = meshPositionMin;
         MeshPositionMax = meshPositionMax;
@@ -72,6 +75,8 @@ internal sealed class RuntimeScene : IDisposable
 
     internal RuntimeCamera Camera { get; private set; }
     internal CameraDepthOfField? DepthOfField { get; }
+    internal uint PlayerId { get; }
+    internal FirstPersonCamera? FirstPerson { get; }
 
     internal void SetWorldOrigin(WorldOrigin origin) => _world.Replace(_worldOriginEntity, origin);
 
@@ -170,7 +175,7 @@ internal sealed class RuntimeScene : IDisposable
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
                 world.Add(entity, new MeshInstance { Mesh = content.Mesh, PageSource = content.Source,
-                    BoundsExpansion = source.BoundsExpansion, DepthCacheClass = source.DepthCacheClass });
+                    BoundsExpansion = source.BoundsExpansion, DepthCacheClass = source.DepthCacheClass, FirstPerson = source.FirstPerson });
                 world.AddBuffer<MeshMaterialBinding>(entity);
                 MeshMaterialBinding[] bindings = content.Bindings;
                 world.ExecuteBufferWrite<MeshMaterialBinding, MeshMaterialBinding[]>(entity, ref bindings,
@@ -197,7 +202,7 @@ internal sealed class RuntimeScene : IDisposable
             {
                 return new RuntimeScene(world, playbackLights, [.. materials.Values], motionQuery,
                     runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
-                    camera.FarPlane, camera.DepthOfField, instances.Length, meshPositionMin, meshPositionMax)
+                    camera.FarPlane, camera.DepthOfField, camera.PlayerId, camera.FirstPerson, instances.Length, meshPositionMin, meshPositionMax)
                     { _meshes = [.. meshes.Select(pair => (pair.Key, pair.Value.Mesh, pair.Value.Source, pair.Value.Bindings))],
                         _textures = [.. textureReads.Values.Select(read => read.Value.Result)] };
             }

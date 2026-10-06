@@ -709,6 +709,7 @@ public sealed class ClusterRenderResources : IDisposable
         private readonly ResolvedRenderInstanceProperty<uint> _bvhRoot;
         private readonly ResolvedRenderInstanceProperty<float> _boundsExpansion;
         private readonly ResolvedRenderInstanceProperty<uint> _depthCacheClass;
+        private readonly ResolvedRenderInstanceProperty<FirstPersonMeshData> _firstPerson;
 
         internal ClusterGeometryProducer(ClusterMeshCache meshes)
         {
@@ -721,6 +722,7 @@ public sealed class ClusterRenderResources : IDisposable
             _bvhRoot = clusterProperties.Resolve<uint>(ClusterRenderFeature.BvhRootKey);
             _boundsExpansion = clusterProperties.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey);
             _depthCacheClass = clusterProperties.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey);
+            _firstPerson = clusterProperties.Resolve<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey);
         }
 
         public RenderInstancePropertyLayout Properties => ClusterRenderFeature.GeometryLayout;
@@ -746,6 +748,7 @@ public sealed class ClusterRenderResources : IDisposable
                 destination.BindPerInstance(_bvhRoot);
                 destination.BindPerInstance(_boundsExpansion);
                 destination.BindPerInstance(_depthCacheClass);
+                destination.BindPerInstance(_firstPerson);
             }
         }
 
@@ -760,8 +763,13 @@ public sealed class ClusterRenderResources : IDisposable
             if (!mesh) return;
 
             Span<uint> depthClasses = destination.GetWriteSpan(_depthCacheClass);
+            Span<FirstPersonMeshData> firstPerson = destination.GetWriteSpan(_firstPerson);
             ReadOnlySpan<RenderMesh> meshValues = packet.Read<RenderMesh>();
-            for (int row = 0; row < meshValues.Length; row++) depthClasses[row] = (uint)meshValues[row].DepthCacheClass;
+            for (int row = 0; row < meshValues.Length; row++)
+            {
+                depthClasses[row] = (uint)meshValues[row].DepthCacheClass;
+                firstPerson[row] = meshValues[row].FirstPerson;
+            }
             _meshes.ResolveInstanceGeometry(packet.Entities, meshValues,
                 destination.GetWriteSpan(_bvhRoot), destination.GetWriteSpan(_boundsExpansion));
         }

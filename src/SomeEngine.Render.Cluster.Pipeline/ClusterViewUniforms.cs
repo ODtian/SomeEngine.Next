@@ -56,6 +56,13 @@ internal struct ClusterViewUniforms
     internal float PreviousOriginHighPadding;
     internal Vector3 PreviousWorldOriginLow;
     internal float PreviousOriginLowPadding;
+    internal uint PlayerId;
+    internal RenderViewFamily Family;
+    internal uint FirstPersonTransformEnabled;
+    private uint FirstPersonPadding;
+    internal Matrix4x4 WorldToFirstPerson;
+    internal Matrix4x4 FirstPersonToWorld;
+    internal Matrix4x4 PreviousWorldToFirstPerson;
 
     internal static ClusterViewUniforms Create(
         in RenderView source,
@@ -82,6 +89,8 @@ internal struct ClusterViewUniforms
             throw new ArgumentException("The render-view projection must be invertible.", nameof(source));
         Vector3 cameraPosition = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
         source.WorldOrigin.Split(out Vector3 originHigh, out Vector3 originLow);
+        Matrix4x4 firstPersonTransform = source.FirstPerson?.CalculateWorldToFirstPerson(source.View) ?? Matrix4x4.Identity;
+        Matrix4x4.Invert(firstPersonTransform, out Matrix4x4 firstPersonInverse);
         if (!IsFinite(viewProjection)
             || !IsFinite(cameraPosition))
         {
@@ -125,6 +134,12 @@ internal struct ClusterViewUniforms
             WorldOriginLow = originLow,
             PreviousWorldOriginHigh = originHigh,
             PreviousWorldOriginLow = originLow,
+            PlayerId = source.PlayerId,
+            Family = source.Family,
+            FirstPersonTransformEnabled = source.FirstPerson.HasValue ? 1u : 0u,
+            WorldToFirstPerson = firstPersonTransform,
+            FirstPersonToWorld = firstPersonInverse,
+            PreviousWorldToFirstPerson = firstPersonTransform,
         };
     }
 

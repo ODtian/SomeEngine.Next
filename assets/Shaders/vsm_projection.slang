@@ -438,7 +438,7 @@ VirtualShadowProjectionResult TraceVirtualShadowLocal(
     return result;
 }
 
-VirtualShadowProjectionResult TraceVirtualShadowDirectional(
+VirtualShadowProjectionResult TraceVirtualShadowDirectionalFamily(
     StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pages, Texture2D<uint> atlas,
     uint firstView, uint viewCount, float3 position, float3 normal, float dynamicBias, float receiverBias,
     VirtualShadowRaySettings settings, uint2 pixel, uint frameIndex, float distanceFromCamera, float rayStartOffset)
@@ -499,5 +499,24 @@ VirtualShadowProjectionResult TraceVirtualShadowDirectional(
     return result;
 }
 
+
+VirtualShadowProjectionResult TraceVirtualShadowDirectional(
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pages, Texture2D<uint> atlas,
+    uint firstView, uint viewCount, float3 position, float3 normal, float dynamicBias, float receiverBias,
+    VirtualShadowRaySettings settings, uint2 pixel, uint frameIndex, float distanceFromCamera, float rayStartOffset,
+    bool firstPersonReceiver = false, uint firstPersonView = 0xFFFFFFFFu)
+{
+    VirtualShadowProjectionResult result = TraceVirtualShadowDirectionalFamily(views, pages, atlas,
+        firstView, viewCount, position, normal, dynamicBias, receiverBias, settings, pixel, frameIndex,
+        distanceFromCamera, rayStartOffset);
+    if (!firstPersonReceiver && firstPersonView != 0xFFFFFFFFu && !(result.Valid && result.Visibility == 0.0))
+    {
+        VirtualShadowProjectionResult firstPerson = TraceVirtualShadowDirectionalFamily(views, pages, atlas,
+            firstPersonView, views[firstPersonView].ClipmapLevelCount, position, normal, dynamicBias, receiverBias,
+            settings, pixel, frameIndex, distanceFromCamera, rayStartOffset);
+        if (firstPerson.Valid && (!result.Valid || firstPerson.Visibility <= result.Visibility)) result = firstPerson;
+    }
+    return result;
+}
 
 #endif

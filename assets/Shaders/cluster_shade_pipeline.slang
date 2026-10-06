@@ -303,7 +303,7 @@ void CSShadeCore<
     TriangleInfo tri;
     if (!decodeTriangle(pixelCoord, tri))
         return;
-    ClusterViewUniforms view = Views[tri.viewIndex];
+    ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
 
     TDomain.TriangleData triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
     SurfaceBarycentrics coordinates = ResolveBarycentrics<TVE.Vertex, TDomain>(
@@ -385,14 +385,20 @@ void CSEvaluateSurfaceReceiver<TVE, TDomain, TSurface>(uniform TVE vertexEval, u
     if (fullTile) pixel.xy += uint2(quad % 4u, quad / 4u) * 2u;
     TriangleInfo tri;
     if (!decodeTriangle(pixel, tri)) return;
-    ClusterViewUniforms view = Views[tri.viewIndex];
+    ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
     TDomain.TriangleData triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
     SurfaceBarycentrics coordinates = ResolveBarycentrics<TVE.Vertex, TDomain>(domain, pixel, view, triangle);
     if (coordinates.Valid == 0u) return;
     TDomain.Surface evaluated = domain.eval(triangle, coordinates.Value);
     SurfaceReceiver receiver = surface.evaluateReceiver(pixel, tri.instanceID, tri.materialSlot,
         evaluated, coordinates.Value, triangle);
+    ClusterViewUniforms sourceView = Views[tri.viewIndex];
+    receiver.ShadingNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
+        sourceView, receiver.ShadingNormal);
+    receiver.GeometricNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
+        sourceView, receiver.GeometricNormal);
     receiver.Flags |= SURFACE_RECEIVER_PRESENT;
+    if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, tri.instanceID).x & 3u) == 1u) receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
     uint index = (pixel.z * Uniforms.ScreenHeight + pixel.y) * Uniforms.ScreenWidth + pixel.x;
     SurfaceReceiverOutput[index] = receiver;
 }

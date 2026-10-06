@@ -14,6 +14,7 @@ public struct MeshSource : IComponent
     public AssetId<MeshAsset> Mesh;
     public float BoundsExpansion;
     public DepthCacheClass DepthCacheClass;
+    public FirstPersonMeshData FirstPerson;
 }
 
 public struct MeshMotion : IComponent
@@ -41,4 +42,6 @@ public struct SceneCamera : IComponent
     public float NearPlane;
     public float FarPlane;
     public CameraDepthOfField? DepthOfField;
+    public uint PlayerId;
+    public FirstPersonCamera? FirstPerson;
 }

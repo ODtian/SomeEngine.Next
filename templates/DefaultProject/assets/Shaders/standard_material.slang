@@ -59,8 +59,8 @@ StandardPixelContext BuildStandardPixelContext(
     StandardPixelContext ctx;
     ctx.pixelCoord = pixelCoord;
     ctx.instanceID = instanceID;
-    ctx.surfacePosition = surface.Position;
-    ctx.worldNormal = surface.Normal;
+    ctx.surfacePosition = TransformFirstPersonWorldPosition(InstanceData, InstanceProperties, instanceID, Views[pixelCoord.z], surface.Position);
+    ctx.worldNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, instanceID, Views[pixelCoord.z], surface.Normal);
     ctx.worldTangent = surface.Tangent;
     ctx.uv0 = surface.TexCoord;
     return ctx;
@@ -125,6 +125,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceRecei
         float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
             triangle.Position2 - triangle.Position0), N_geom);
         if (dot(geometricNormal, N_geom) < 0.0) geometricNormal = -geometricNormal;
+        geometricNormal = (receiverData.Flags & SURFACE_RECEIVER_PRESENT) != 0u ? receiverData.GeometricNormal :
+            TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, instanceID, Views[pixelCoord.z], geometricNormal);
 
         float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
         float roughness = saturate(armSample.g * scalars.Roughness);
@@ -174,7 +176,12 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceRecei
                         min(VirtualShadowSampling.DirectionalClipmapLevels, VirtualShadowSampling.ViewCount - firstShadowView),
                         shadowPosition, mappedNormal, VirtualShadowDynamicResolutionBias[0].x, receiverResolutionLodBias,
                         VirtualShadowSampling.DirectionalRays, ctx.pixelCoord.xy, VirtualShadowSampling.FrameIndex,
-                        length(shadowPosition - VirtualShadowSampling.ReceiverProjection.CameraPosition), 0.0);
+                        length(shadowPosition - VirtualShadowSampling.ReceiverProjection.CameraPosition), 0.0,
+                        (receiverData.Flags & SURFACE_RECEIVER_FIRST_PERSON) != 0u,
+                        VirtualShadowSampling.FirstPersonViewOffset < VirtualShadowSampling.ViewCount
+                            ? VirtualShadowSampling.FirstPersonViewOffset + lightIndex *
+                                VirtualShadowViews[VirtualShadowSampling.FirstPersonViewOffset].ClipmapLevelCount
+                            : 0xFFFFFFFFu);
                     shadow = projection.Visibility * SampleDirectionalVirtualShadowPrefiltered(
                         VirtualShadowViews, VirtualShadowPageTable, VirtualShadowPrefilteredAtlas, firstShadowView,
                         min(VirtualShadowSampling.DirectionalClipmapLevels, VirtualShadowSampling.ViewCount - firstShadowView),

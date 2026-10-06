@@ -296,3 +296,9 @@ DefaultGame 的硬阴影源三角形参考明确使用0；软阴影采用光源�
 BVH 的 `ChangedMeshes`、材质绑定的变化实体以及实际纹理通知形成同一份深度变更记录，VSM 按当前实例行投影到已有页。记录由完成的帧确认，当前与上一帧 bounds 中的 static/dynamic 分类分别消费。几何流送的 LOD 变化在同一实例缓冲尾部表达，并在 GPU 页 metadata 中保留 deferred 标记；`DeferredInvalidationBudget` 默认−1，0保留标记，正数按每帧页数消费，剩余标记随页保留到后续请求。材质 alpha、标量及调用方每帧报告的变形继续即时失效。有限 bounds 使用局部范围，范围不完整及变更历史溢出沿整体缓存保护处理。
 
 原版依据为固定396c9f05的 `NaniteStreaming.ush:19–31`、`NaniteStreamingManager.cpp:476–507/2752–2760`、`VirtualShadowMapArray.cpp:119–127` 和 `VirtualShadowMapPhysicalPageManagement.usf:321–379`。视图工作量从包含 policy 位的 draw view index 转成 compact 数组索引后统计。
+
+第一人称分类由 `MeshInstance.FirstPerson` 沿 Mesh 提取进入同一实例属性列。8字节 `FirstPersonMeshData` 保存类别、玩家编号和调用方可见性，`RenderView.PlayerId` 选择当前玩家；`SceneCamera` 与场景序列化承接这些输入。`FirstPerson` 几何进入主视图并使用相机 FOV/scale 变换，玩家可见性由调用方设置。`WorldRepresentation` 为玩家的世界替身：玩家自己的主视图与普通阴影视图隐藏，独立第一人称阴影视图接收；其他玩家按普通场景对象读取。主视图、普通阴影与第一人称阴影通过同一视图的 `Family` 选择实例。
+
+第一人称相机矩阵保存于768字节 Cluster 视图尾部，含当前、逆向与前帧变换；前560字节保持既有字段偏移。变换作用于用户 shader 返回的位置，三角 domain 的重建和运动矢量使用对应投影；用户声明的接收面法线与内置标准材质的世界位置消费同一变换。第一人称阴影与普通 clipmap 共用 caster 数据、页池与图集，使用独立的页地址范围与视图 family。默认第一人称层级8–18，细页需求由 receiver 标记，每帧刷新深度。世界接收面合并两份有效投射结果的最暗遮挡，第一人称接收面消费普通世界阴影。玩家编号变化、取消和完成沿已有帧边界接合。
+
+接收面 producer 位于主可见性之后、页需求之前的固定持久图区段；主层和额外层先清零，再执行用户材质。原版依据为固定396c9f05的 `PrimitiveSceneProxy.cpp:631–648`、`ShadowSceneRenderer.cpp:76–88/565–636`、`SceneView.cpp:742–757` 与 `VirtualShadowMapProjection.usf:437–485`。

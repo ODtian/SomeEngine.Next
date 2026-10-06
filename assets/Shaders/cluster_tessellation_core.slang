@@ -288,12 +288,13 @@ void EvaluateTessellationPatch<TVertex, TDomain>(
 bool IsTessellationBoundsVisible(
     float3 minimum,
     float3 maximum,
-    uint viewIndex)
+    uint viewIndex, uint instanceId)
 {
     ClusterViewUniforms view = LoadClusterView(
         TessellationViews,
         TessellationPolicyViews,
         viewIndex);
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceId, view);
     bool usePrevious = TessellationUniformData.UsePreviousHiZ != 0u;
     if (WorldAabbOutsideFrustum(minimum, maximum, usePrevious, view))
         return false;
@@ -322,13 +323,13 @@ bool IsTessellationBoundsVisible(
 bool IsTessellationDomainVisible<TVertex, TDomain>(
     uniform TDomain domain,
     TDomain.TriangleData triangle,
-    uint viewIndex)
+    uint viewIndex, uint instanceId)
     where TDomain : IDomainEvaluate<TVertex>
 {
     float3 minimum;
     float3 maximum;
     domain.bounds(triangle, minimum, maximum);
-    return IsTessellationBoundsVisible(minimum, maximum, viewIndex);
+    return IsTessellationBoundsVisible(minimum, maximum, viewIndex, instanceId);
 }
 
 void SeedTessellationRasterBin<TVE : IVertexEvaluate>(
@@ -440,7 +441,7 @@ bool IsTessellationPatchVisible<TVertex, TDomain>(
         domain.bounds(triangle, minimum, maximum);
     else
         domain.patchBounds(triangle, bary0, bary1, bary2, minimum, maximum);
-    return IsTessellationBoundsVisible(minimum, maximum, viewIndex);
+    return IsTessellationBoundsVisible(minimum, maximum, viewIndex, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID);
 }
 
 TessellationPatch MakeTessellationChild(
@@ -721,7 +722,8 @@ void ProcessTessellationPatch<TVE, TDomain>(
     EvaluateTessellationPatch<TVE.Vertex, TDomain>(
         domain,
         triangle,
-        LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex),
+        ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID,
+            LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex)),
         bary0,
         bary1,
         bary2,
@@ -855,7 +857,8 @@ void DiceTessellationPatches<
                 TessellationPatchTriangle(patch),
                 sourceVaryings);
             viewIndex = DrawRequestViewIndex(TessellationVisibleClusters[patch.VisibleClusterIndex]);
-            view = LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex);
+            view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID,
+                LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex));
         }
     }
 

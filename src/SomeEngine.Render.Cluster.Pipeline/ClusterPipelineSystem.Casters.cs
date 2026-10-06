@@ -9,6 +9,19 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
+    /// <summary>Reports world-space first-person representations in the current render entities.</summary>
+    public bool HasFirstPersonWorldMeshes()
+    {
+        bool found = false;
+        _resources.World.ExecuteQuery(_sceneQuery, ref found,
+            static (QueryCursor query, ref bool value) =>
+            {
+                foreach (QueryRow row in query.Rows)
+                    value |= row.Read<RenderMesh>().FirstPerson.Kind == FirstPersonMeshKind.WorldRepresentation;
+            });
+        return found;
+    }
+
     private sealed record CasterChange(ulong Revision, Mesh[] Meshes, HashSet<Entity> Entities, bool All);
     private readonly List<CasterChange> _casterChanges = [];
     private ulong _casterRevision;

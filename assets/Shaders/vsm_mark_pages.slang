@@ -213,13 +213,11 @@ void MarkVirtualShadowPages(
     float3 worldPositionDy = receiver.PositionDy;
     float2 dynamicResolutionBias = DynamicResolutionBias[0];
 
-    uint clipmapLevels = max(PageDemand.DirectionalClipmapLevels, 1u);
-    uint directionalCount = min(
-        PageDemand.DirectionalLightCount,
-        PageDemand.ViewCount / clipmapLevels);
-    for (uint lightIndex = 0u; lightIndex < directionalCount; lightIndex++)
+    // Each directional family starts at face zero; regular and FP families
+    // have independent level ranges and the same light index.
+    for (uint baseViewIndex = 0u; baseViewIndex < PageDemand.ViewCount; baseViewIndex++)
     {
-        uint baseViewIndex = lightIndex * clipmapLevels;
+        if (ShadowViews[baseViewIndex].LightKind != VSM_LIGHT_DIRECTIONAL || ShadowViews[baseViewIndex].FaceIndex != 0u) continue;
         VirtualShadowMapParameters baseView = ShadowViews[baseViewIndex];
         for (uint layer = 0u; layer < PageDemand.AdditionalReceiverLayerCount; layer++)
         {

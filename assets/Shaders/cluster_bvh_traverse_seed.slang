@@ -159,8 +159,10 @@ void SeedHierarchyRoots(
                 ClusterSceneWorldMax[0],
                 view,
                 sceneBounds);
-            active = active && (view.CullingEnabled == 0u || !outside);
-            uint boundsState = active
+            // The chunk holds both world and camera-deformed geometry; per-instance
+            // tests below select the corresponding projection.
+            active = active && (view.FirstPersonTransformEnabled != 0u || view.CullingEnabled == 0u || !outside);
+            uint boundsState = view.FirstPersonTransformEnabled != 0u ? 1u : active
                 ? ClusterSeedBoundsState(
                     ClusterSceneWorldMin[0],
                     ClusterSceneWorldMax[0],
@@ -224,6 +226,9 @@ void SeedHierarchyRoots(
             ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
             if (instanceID >= view.InstanceCount)
                 continue;
+            if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view))
+                continue;
+            view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
             ClusterProjectedBounds projectedBounds;
             bool outsideFrustum = ProjectWorldAabbForView(
                 instanceWorldMin,

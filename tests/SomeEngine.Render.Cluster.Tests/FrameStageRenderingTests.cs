@@ -327,6 +327,13 @@ internal sealed class FrameStageScene : IAsyncDisposable
     internal void SetMeshTransform(int index, TransformQvvs transform) =>
         _gameWorld.Replace(_meshes[index], new WorldTransform { Qvvs = transform });
 
+    internal void SetMeshFirstPerson(int index, FirstPersonMeshData firstPerson)
+    {
+        MeshInstance mesh = _gameWorld.Read<MeshInstance>(_meshes[index]);
+        mesh.FirstPerson = firstPerson;
+        _gameWorld.Replace(_meshes[index], mesh);
+    }
+
     internal Entity AddReceiver(TransformQvvs transform) => AddMesh(_mesh, transform);
 
     internal void UseDirectionalLight(Vector3 direction)

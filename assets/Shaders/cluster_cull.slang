@@ -368,6 +368,8 @@ bool LoadAndFilterCandidate(
     instanceID = candidate.InstanceID;
     viewIndex = DrawRequestViewIndex(candidate);
     view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
+    if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view)) return false;
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
     if (threadId >= view.MaxCandidates)
         return false;
     if (view.TargetPolicy != 0u) AddClusterWorkMetric(8u, 1u);

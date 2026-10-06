@@ -167,6 +167,7 @@ void SWRasterKernel<
     uint pageOffset = req.PageOffset;
     uint clusterID = DrawRequestClusterID(req);
     uint realInstanceID = req.InstanceID;
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, realInstanceID, view);
 
     // ─── Load Cluster Geometry ───
     uint vertexBlobAddress, vertexBlobSize, tStart, vertexCount, triangleCount, idxOffset;
