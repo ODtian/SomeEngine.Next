@@ -29,11 +29,13 @@ public sealed class VirtualShadowMap : IDisposable
     private bool _frameResourcesAcquired;
     private readonly Buffer _physicalPageOwners;
     private readonly Texture _atlas;
+    private readonly Texture _staticAtlas;
     private VirtualShadowPageCacheResources? _pageCache;
     private VirtualShadowPageCacheFrameResources? _pendingPageCacheResources;
     private BufferBoundaryState[] _pageTableEndpoint = [];
     private BufferBoundaryState[] _physicalPageOwnersEndpoint;
     private TextureBoundaryState[] _atlasEndpoint;
+    private TextureBoundaryState[] _staticAtlasEndpoint;
     private VirtualShadowView[] _views = [];
     private VirtualShadowView[] _committedViews = [];
     private Matrix4x4[] _preparedLightViews = [];
@@ -81,6 +83,7 @@ public sealed class VirtualShadowMap : IDisposable
         LinkedComputePipeline? dynamicResolution = null;
         Buffer? physicalPageOwners = null;
         Texture? atlas = null;
+        Texture? staticAtlas = null;
         try
         {
             resetReceiverMasks = LinkedComputePipeline.Create(
@@ -178,10 +181,15 @@ public sealed class VirtualShadowMap : IDisposable
                     Format.R32UInt,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
                     label: "Virtual shadow physical atlas"));
+            staticAtlas = _backend.CreateTexture(_device, new TextureDesc(TextureDimension.Texture2D,
+                settings.AtlasSize, settings.AtlasSize, 1, 1, 1, 1, Format.R32UInt,
+                TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
+                label: "Virtual shadow static depth atlas"));
         }
         catch (Exception primary)
         {
             List<Exception>? cleanupFailures = null;
+            if (staticAtlas is not null) TryDispose(staticAtlas, ref cleanupFailures);
             if (atlas is not null) TryDispose(atlas, ref cleanupFailures);
             if (physicalPageOwners is not null)
                 TryDispose(physicalPageOwners, ref cleanupFailures);
@@ -225,9 +233,11 @@ public sealed class VirtualShadowMap : IDisposable
         DynamicResolutionPipeline = dynamicResolution;
         _physicalPageOwners = physicalPageOwners;
         _atlas = atlas;
+        _staticAtlas = staticAtlas;
 
         _physicalPageOwnersEndpoint = [Initial(_physicalPageOwners)];
         _atlasEndpoint = [Initial(_atlas)];
+        _staticAtlasEndpoint = [Initial(_staticAtlas)];
         try
         {
             _pageCache = new VirtualShadowPageCacheResources(
@@ -665,7 +675,10 @@ public sealed class VirtualShadowMap : IDisposable
             new VirtualShadowTextureResource(_atlas, _atlasEndpoint),
             cache.PageMetadata,
             cache.PageLists,
-            !_pageTableInitialized);
+            !_pageTableInitialized)
+        {
+            StaticAtlas = new VirtualShadowTextureResource(_staticAtlas, _staticAtlasEndpoint),
+        };
     }
 
     /// <summary>Accepts actual GPU work and returns a replaced page table for retirement.</summary>
@@ -689,6 +702,8 @@ public sealed class VirtualShadowMap : IDisposable
         if (!owners.IsEmpty) _physicalPageOwnersEndpoint = owners.ToArray();
         ReadOnlySpan<TextureBoundaryState> atlas = result.GetTextureStates(_atlas);
         if (!atlas.IsEmpty) _atlasEndpoint = atlas.ToArray();
+        ReadOnlySpan<TextureBoundaryState> staticAtlas = result.GetTextureStates(_staticAtlas);
+        if (!staticAtlas.IsEmpty) _staticAtlasEndpoint = staticAtlas.ToArray();
         if (!contentComplete)
         {
             if (!result.SubmittedCompletions.IsEmpty)
@@ -949,6 +964,7 @@ public sealed class VirtualShadowMap : IDisposable
         if (_pageCache is not null)
             TryDispose(_pageCache, ref failures);
         _pageCache = null;
+        TryDispose(_staticAtlas, ref failures);
         TryDispose(_atlas, ref failures);
         TryDispose(_physicalPageOwners, ref failures);
         if (_previousPageTable is not null) TryDispose(_previousPageTable, ref failures);
@@ -973,6 +989,7 @@ public sealed class VirtualShadowMap : IDisposable
         Array.Clear(_pageTableEndpoint);
         Array.Clear(_physicalPageOwnersEndpoint);
         Array.Clear(_atlasEndpoint);
+        Array.Clear(_staticAtlasEndpoint);
         Array.Clear(_views);
         Array.Clear(_committedViews);
         Array.Clear(_preparedLightViews);
@@ -1018,4 +1035,7 @@ public readonly record struct VirtualShadowMapFrameResources(
     VirtualShadowTextureResource Atlas,
     VirtualShadowBufferResource PageMetadata,
     VirtualShadowBufferResource PageLists,
-    bool RequiresInitialization);
+    bool RequiresInitialization)
+{
+    public VirtualShadowTextureResource StaticAtlas { get; init; }
+}
