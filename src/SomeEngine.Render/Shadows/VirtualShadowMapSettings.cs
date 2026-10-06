@@ -38,10 +38,11 @@ public sealed record VirtualShadowMapSettings
     public float ShadowGeometryLodScale => MathF.Pow(2.0f, -ShadowGeometryLodBias);
     public VirtualShadowLocalMipMode LocalMipMode { get; init; }
     public float WorkLoadBudget { get; init; }
+    public float WorkTimeBudgetMilliseconds { get; init; }
     public float WorkHistoryWeight { get; init; } = 0.9f;
     public float WorkMaxDirectionalLodBias { get; init; } = 99999f;
     public float WorkMaxLocalLodBias { get; init; } = 99999f;
-    public bool WorkThrottlingEnabled => WorkLoadBudget > 0f;
+    public bool WorkThrottlingEnabled => WorkLoadBudget > 0f || WorkTimeBudgetMilliseconds > 0f;
     public bool DynamicResolutionEnabled { get; init; }
     /// <summary>Raster budget in 8×8-page material-batch equivalents. HW contributes
     /// cropped page-batch area / 64; each bounded SW material batch contributes one.
@@ -213,6 +214,8 @@ public sealed record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(ShadowMinPixelsPerEdgeHardware));
         if (!float.IsFinite(ShadowDicingRate) || ShadowDicingRate <= 0.0f)
             throw new ArgumentOutOfRangeException(nameof(ShadowDicingRate));
+        if (!float.IsFinite(WorkTimeBudgetMilliseconds) || WorkTimeBudgetMilliseconds < 0f)
+            throw new ArgumentOutOfRangeException(nameof(WorkTimeBudgetMilliseconds));
         if (!float.IsFinite(WorkLoadBudget) || WorkLoadBudget < 0f)
             throw new ArgumentOutOfRangeException(nameof(WorkLoadBudget));
         if (!float.IsFinite(WorkHistoryWeight) || WorkHistoryWeight is < 0f or > 1f)

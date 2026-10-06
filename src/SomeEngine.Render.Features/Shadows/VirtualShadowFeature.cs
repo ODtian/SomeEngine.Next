@@ -646,6 +646,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 }
                 InstallWorkFeedback(ref edit, shaders, rasterViewCapacity / settings.MipLevelCount,
                     primaryDepthAfter, feedback, resolutionCopyPass);
+                InstallWorkTime(ref edit, primaryDepthAfter, targetGeometryAfter, feedback);
                 _uniformData = new FeatureUniformBuffer(ref edit,
                     [_frameSamplingUniforms, _frameInvocationUniforms, _initUniforms, _invalidationUniforms,
                      _coarseDemandUniforms, _demandUniforms, _poolUniforms,
@@ -675,6 +676,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         {
             dispatchLayout?.Dispose();
             _workFeedbackPipeline?.Dispose();
+            _workTimeQueries?.Dispose();
             shadowMap?.Dispose();
             throw;
         }
@@ -934,6 +936,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 _shadowFrameActive = false;
             }
             _viewCount = 0;
+            _workTimeFrames.Remove(_frameIndex);
 
             _frameHasPreviousHistory = false;
             _frameIndex = _previousFrameIndex;
@@ -950,6 +953,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             _renderGraph.RetireAfterSubmittedFrames(retiredTable);
         if (!complete)
         {
+            _workTimeFrames.Remove(_frameIndex);
             _qualityReadbacks?.Requests.Remove(_frameIndex);
             if (!result.SubmittedCompletions.IsEmpty) _forceStateReset = true;
             else
@@ -960,6 +964,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             ClearFrame();
             return;
         }
+        CommitWorkTime();
         CommitWorkFeedback();
         _committedInstances = _frameInstances;
         _committedInstanceRevision = _frameInstanceRevision;
@@ -1004,6 +1009,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _qualityReadbacks?.Requests.Clear();
         _dispatchLayout.Dispose();
         _workFeedbackPipeline?.Dispose();
+        if (_workTimeQueries is { } queries) _renderGraph.RetireAfterSubmittedFrames(queries);
         _shadowMap.Dispose();
         Array.Clear(_shadowViews);
 
