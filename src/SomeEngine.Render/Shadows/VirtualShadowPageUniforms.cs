@@ -4,7 +4,7 @@ using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Shadows;
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 80)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 96)]
 public struct VirtualShadowReceiverProjection
 {
     public Vector4 WorldToClipW;
@@ -14,9 +14,11 @@ public struct VirtualShadowReceiverProjection
     public uint Pad2;
     public Vector4 WorldToViewDepth;
     public CameraDepthOfField DepthOfField;
+    public Vector3 CameraPosition;
+    public float CotanHalfFieldOfView;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 224)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 240)]
 public struct VirtualShadowPageDemandUniforms
 {
     public Matrix4x4 ClipToWorld;
@@ -128,7 +130,20 @@ public struct VirtualShadowPageClearUniforms
     public uint Pad0;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 144)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+public struct VirtualShadowRaySettings
+{
+    public uint RayCount;
+    public uint SamplesPerRay;
+    public uint AdaptiveRayCount;
+    public float ExtrapolateMaxSlope;
+    public float TexelDitherScale;
+    public float RayLengthScale;
+    public float MaxRayAngle;
+    public float MaxSlopeBias;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 224)]
 public struct VirtualShadowSamplingUniforms
 {
     public uint ViewCount;
@@ -145,9 +160,11 @@ public struct VirtualShadowSamplingUniforms
     public float BlockerSearchRadiusTexels;
     public float MaxFilterRadiusTexels;
     public float NormalBias;
-    public uint Pad0;
+    public uint FrameIndex;
     public uint Pad1;
     public VirtualShadowReceiverProjection ReceiverProjection;
+    public VirtualShadowRaySettings DirectionalRays;
+    public VirtualShadowRaySettings LocalRays;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]

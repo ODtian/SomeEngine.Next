@@ -4,7 +4,7 @@
 // Material sampling consumes current receiver coverage as well as completed depth.
 #define VSM_RESIDENT_LOOKUP_ENABLED 1
 #define VSM_PREFILTERED_LOOKUP_ENABLED 1
-#include "vsm_sampling.slang"
+#include "vsm_projection.slang"
 #include "vsm_receiver_projection.slang"
 
 struct VirtualShadowSamplingUniforms
@@ -23,9 +23,11 @@ struct VirtualShadowSamplingUniforms
     float BlockerSearchRadiusTexels;
     float MaxFilterRadiusTexels;
     float NormalBias;
-    uint Pad0;
+    uint FrameIndex;
     uint Pad1;
     VirtualShadowReceiverProjection ReceiverProjection;
+    VirtualShadowRaySettings DirectionalRays;
+    VirtualShadowRaySettings LocalRays;
 };
 
 StructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;
