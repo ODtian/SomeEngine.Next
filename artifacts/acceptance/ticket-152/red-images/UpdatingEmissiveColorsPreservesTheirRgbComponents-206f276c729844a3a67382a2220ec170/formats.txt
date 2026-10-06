@@ -1,0 +1,2 @@
+actual: 1x1 R16G16B16A16Float
+expected: 1x1 R16G16B16A16Float

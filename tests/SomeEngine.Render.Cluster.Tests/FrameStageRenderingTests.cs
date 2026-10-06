@@ -404,6 +404,13 @@ internal sealed class FrameStageScene : IAsyncDisposable
     internal Material CreateRasterMaterial(RasterMaterialKind kind, Vector4 color) =>
         CreateRasterMaterial(RasterTestShaders.Create(_backendName, kind), color);
 
+    internal StandardMaterial CreateEmissiveMaterial(Shader shader, Vector3 emission)
+    {
+        var material = new StandardMaterial { Shader = shader, EmissiveFactor = emission };
+        _extraMaterials.Add(material);
+        return material;
+    }
+
     internal Material CreateRasterMaterial(Shader shader, Vector4 color)
     {
         byte[] pixel = [(byte)(color.X * 255), (byte)(color.Y * 255), (byte)(color.Z * 255), (byte)(color.W * 255)];
