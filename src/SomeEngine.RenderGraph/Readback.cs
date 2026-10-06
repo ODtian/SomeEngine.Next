@@ -85,6 +85,14 @@ public ref partial struct RenderGraphEdit
         return new GraphReadbackId(pass.Value);
     }
 
+    /// <summary>Orders a mutable producer's next write after capturing its current value.</summary>
+    public void OrderAfter(GraphPassId pass, GraphReadbackId predecessor) =>
+        OrderAfter(pass, new GraphPassId(predecessor.Value));
+
+    /// <summary>Orders a readback after the producer whose completed value it captures.</summary>
+    public void OrderAfter(GraphReadbackId readback, GraphPassId predecessor) =>
+        OrderAfter(new GraphPassId(readback.Value), predecessor);
+
     public void Remove(GraphReadbackId readback) => Remove(new GraphPassId(readback.Value));
 }
 

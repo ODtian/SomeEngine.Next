@@ -10,6 +10,7 @@ namespace SomeEngine.Render.Features.Shadows;
 public sealed partial class VirtualShadowFeature
 {
     private readonly GraphRegionId _qualityRegion;
+    private readonly GraphRegionId _qualityDemandRegion;
     private QualityReadbacks? _qualityReadbacks;
 
     /// <summary>Installs optional quality readbacks. Ordinary throughput never calls this method.</summary>
@@ -22,7 +23,13 @@ public sealed partial class VirtualShadowFeature
         try
         {
             AddQualityReadback(ref edit, readbacks, QualityData.FrameBias, _frameResolutionBias);
-            AddQualityReadback(ref edit, readbacks, QualityData.RequestCount, _requestedPageCount);
+            // Allocation consumes the published demand before the queue reset.
+            // Capture at that boundary, not at the later depth-completion boundary.
+            GraphReadbackId demand = edit.AddReadback(_requestedPageCount, BufferRange.Whole,
+                new QualityReceiver(readbacks, QualityData.RequestCount), "Capture frame shadow demand", _qualityDemandRegion);
+            readbacks.Readbacks.Add(demand);
+            edit.OrderAfter(demand, _allocatePass);
+            edit.OrderAfter(_requestResetPass, demand);
             AddQualityReadback(ref edit, readbacks, QualityData.DirtyCount, _activePageCount);
             AddQualityReadback(ref edit, readbacks, QualityData.Failures, _allocationFailures);
             AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _freePageCount);

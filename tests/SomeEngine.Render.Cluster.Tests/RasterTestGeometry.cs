@@ -32,6 +32,22 @@ internal static class RasterTestGeometry
             mesh.Bounds, mesh.Regions, mesh.LowestDetailPageIndices);
     }
 
+    internal static async Task<Mesh> CreatePlaneAsync()
+    {
+        Vector3[] positions = [new(-1, -1, 0), new(1, -1, 0), new(1, 1, 0), new(-1, 1, 0)];
+        List<RawAttribute> attributes =
+        [
+            new("NORMAL", new float[] { 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1 }, 3, GeometryValueType.Int8, 3, true),
+            new("TEXCOORD_0", new float[] { 0, 0, 1, 0, 1, 1, 0, 1 }, 2, GeometryValueType.Float16, 2, false),
+        ];
+        using MeshAsset asset = ClusterBuilder.ProcessRaw(positions, attributes, [0, 1, 2, 0, 2, 3],
+            [new MeshMaterialSlot(Guid.Empty)], "Authored plane");
+        ClusterMeshBlock geometry = asset.GetBlock<ClusterMeshBlock>();
+        Mesh mesh = await geometry.CreateAsync(asset.GetBlock<MeshBlock>(), asset.Name);
+        await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
+        return mesh;
+    }
+
     internal static async Task<Mesh> CreateAsync()
     {
         Vector3[] positions = [Vector3.UnitX, -Vector3.UnitX, Vector3.UnitY, -Vector3.UnitY,

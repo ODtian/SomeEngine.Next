@@ -175,6 +175,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         ArgumentNullException.ThrowIfNull(graph);
         _renderGraph = graph;
         _qualityRegion = targetGeometryAfter;
+        _qualityDemandRegion = primaryDepthAfter;
         _geometry = geometry ?? throw new ArgumentNullException(nameof(geometry));
         _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
         if (!ReferenceEquals(graph.Device, device))

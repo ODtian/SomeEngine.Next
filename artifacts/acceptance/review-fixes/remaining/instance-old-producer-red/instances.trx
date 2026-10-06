@@ -1,0 +1,59 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="1bcaaee7-49ce-4241-9581-a3caad0ac5be" name="boqi@BOQI-THE-DAEMON 2026-10-06 14:27:58" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T14:27:59.0035676+08:00" queuing="2026-10-06T14:27:59.0035678+08:00" start="2026-10-06T14:27:54.9898719+08:00" finish="2026-10-06T14:27:59.0127340+08:00" />
+  <TestSettings name="default" id="b63ebaa3-48c6-453c-bdab-654b68559c85">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_14_27_58" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="3f344ac2-4890-4ab5-82e9-bf5ac247e71a" testId="d513cb51-ca89-26de-0ec1-8d8250dbb605" testName="SomeEngine.Render.Cluster.Tests.ClusterInstanceUploadTests.AdjacentDifferentPropertyEditsUploadOnlyTheirOwnRowsAndValues" computerName="BOQI-THE-DAEMON" duration="00:00:02.5037576" startTime="2026-10-06T14:27:56.3031873+08:00" endTime="2026-10-06T14:27:58.8382984+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3f344ac2-4890-4ab5-82e9-bf5ac247e71a">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Collections differ&#xD;
+           ↓ (pos 0)&#xD;
+Expected: [BufferRange { Offset = 144, Size = 48, IsWhole = False }, BufferRange { Offset = 480, Size = 48, IsWhole = False }]&#xD;
+Actual:   [BufferRange { Offset = 144, Size = 96, IsWhole = False }, BufferRange { Offset = 432, Size = 96, IsWhole = False }]&#xD;
+           ↑ (pos 0)</Message>
+          <StackTrace>   at SomeEngine.Render.Cluster.Tests.ClusterInstanceUploadTests.AdjacentDifferentPropertyEditsUploadOnlyTheirOwnRowsAndValues() in F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\ClusterInstanceUploadTests.cs:line 31&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.ClusterInstanceUploadTests.AdjacentDifferentPropertyEditsUploadOnlyTheirOwnRowsAndValues" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="d513cb51-ca89-26de-0ec1-8d8250dbb605">
+      <Execution id="3f344ac2-4890-4ab5-82e9-bf5ac247e71a" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.ClusterInstanceUploadTests" name="AdjacentDifferentPropertyEditsUploadOnlyTheirOwnRowsAndValues" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="d513cb51-ca89-26de-0ec1-8d8250dbb605" executionId="3f344ac2-4890-4ab5-82e9-bf5ac247e71a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.20]   Discovering: SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.38]   Discovered:  SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.42]   Starting:    SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:03.00]       Assert.Equal() Failure: Collections differ&#xD;
+[xUnit.net 00:00:03.00]                  ↓ (pos 0)&#xD;
+[xUnit.net 00:00:03.00]       Expected: [BufferRange { Offset = 144, Size = 48, IsWhole = False }, BufferRange { Offset = 480, Size = 48, IsWhole = False }]&#xD;
+[xUnit.net 00:00:03.00]       Actual:   [BufferRange { Offset = 144, Size = 96, IsWhole = False }, BufferRange { Offset = 432, Size = 96, IsWhole = False }]&#xD;
+[xUnit.net 00:00:03.00]                  ↑ (pos 0)&#xD;
+[xUnit.net 00:00:03.00]       Stack Trace:&#xD;
+[xUnit.net 00:00:03.01]         F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\ClusterInstanceUploadTests.cs(31,0): at SomeEngine.Render.Cluster.Tests.ClusterInstanceUploadTests.AdjacentDifferentPropertyEditsUploadOnlyTheirOwnRowsAndValues()&#xD;
+[xUnit.net 00:00:03.01]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:03.03]   Finished:    SomeEngine.Render.Cluster.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T14:27:58.8437784+08:00">
+        <Text>[xUnit.net 00:00:03.00]     SomeEngine.Render.Cluster.Tests.ClusterInstanceUploadTests.AdjacentDifferentPropertyEditsUploadOnlyTheirOwnRowsAndValues [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

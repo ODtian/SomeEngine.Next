@@ -27,6 +27,7 @@ public sealed class SceneQualityTests(RenderingContentFixture content)
         Assert.NotNull(after.Shadows);
         Assert.Equal(before.Shadows.RenderingFrame + 1, after.Shadows.RenderingFrame);
         Assert.Equal(ClusterWorkOverflow.None, after.Shadows.WorkOverflow);
+        Assert.True(after.Shadows.RequestedPages > 0, "The completed demand must be captured before its request queue is reset.");
         Assert.All(after.Shadows.Views, view =>
         {
             Assert.True(float.IsFinite(view.AppliedResolutionLodBias));

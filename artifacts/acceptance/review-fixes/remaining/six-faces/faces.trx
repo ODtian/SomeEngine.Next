@@ -1,0 +1,268 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="c35e0fc5-04e7-46ac-8ad9-4e2aed2315d5" name="boqi@BOQI-THE-DAEMON 2026-10-06 14:59:36" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T14:59:36.5803253+08:00" queuing="2026-10-06T14:59:36.5803256+08:00" start="2026-10-06T14:59:12.4052720+08:00" finish="2026-10-06T15:01:00.2954631+08:00" />
+  <TestSettings name="default" id="0986c613-0665-4170-b752-79511aaf373f">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_14_59_36" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="1dfb2b87-137f-4c77-b6ea-305935df73f5" testId="6d389908-1bde-c080-4848-9833761cd1e4" testName="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 0)" computerName="BOQI-THE-DAEMON" duration="00:00:17.9234020" startTime="2026-10-06T14:59:36.5560177+08:00" endTime="2026-10-06T14:59:54.4558481+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1dfb2b87-137f-4c77-b6ea-305935df73f5">
+      <Output>
+        <StdOut>Local light independent reference: F:/SomeEngine.AgentWork/rg70-remaining/review-fixes-validation/remaining/six-faces\local-ray-point-face-0-7951e9b4dc07438da437fe9a885a6be4; RayShadowComparison { AllReceivers = ShadowReferenceComparison { ShadowedPixels = 1257, LitPixels = 35512, MismatchedPixels = 52, ComparedPixels = 36769, MismatchFraction = 0.0014142349, MeanVisibilityError = 0.0014142349, MaximumVisibilityError = 1, MissedShadowPixels = 17, FalseShadowPixels = 35 }, Interior = ShadowReferenceComparison { ShadowedPixels = 905, LitPixels = 33298, MismatchedPixels = 3, ComparedPixels = 34203, MismatchFraction = 8.77116E-05, MeanVisibilityError = 8.77116E-05, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 3 }, Boundary = ShadowReferenceComparison { ShadowedPixels = 352, LitPixels = 2214, MismatchedPixels = 49, ComparedPixels = 2566, MismatchFraction = 0.01909587, MeanVisibilityError = 0.01909587, MaximumVisibilityError = 1, MissedShadowPixels = 17, FalseShadowPixels = 32 }, ReferenceReceiverPixels = 36769, SkyPixels = 28663, GeometryFacingLightRejectedPixels = 104, MissingRenderedReceiverPixels = 0, ReferenceShadingRejectedPixels = 108, RenderedShadingRejectedPixels = 23, SelfHitPixels = 0, RenderedReceiverCoverage = 1, RangeRejectedPixels = 0, ConeRejectedPixels = 0, CubeFaceReceiverPixels = System.Int32[], FalseShadowFraction = 0.0009855824, MissedShadowFraction = 0.013524264 }</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="31833f4e-56c2-420f-8122-e90012e3b13c" testId="7f2cc367-8e5f-bc6e-9b99-de2e84998f34" testName="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 3)" computerName="BOQI-THE-DAEMON" duration="00:00:15.9463984" startTime="2026-10-06T15:00:11.3775780+08:00" endTime="2026-10-06T15:00:27.3242751+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="31833f4e-56c2-420f-8122-e90012e3b13c">
+      <Output>
+        <StdOut>Local light independent reference: F:/SomeEngine.AgentWork/rg70-remaining/review-fixes-validation/remaining/six-faces\local-ray-point-face-3-5b295ec529ae471e9ae1616022f002d3; RayShadowComparison { AllReceivers = ShadowReferenceComparison { ShadowedPixels = 1261, LitPixels = 35512, MismatchedPixels = 46, ComparedPixels = 36773, MismatchFraction = 0.0012509178, MeanVisibilityError = 0.0012509178, MaximumVisibilityError = 1, MissedShadowPixels = 18, FalseShadowPixels = 28 }, Interior = ShadowReferenceComparison { ShadowedPixels = 910, LitPixels = 33320, MismatchedPixels = 1, ComparedPixels = 34230, MismatchFraction = 2.921414E-05, MeanVisibilityError = 2.921414E-05, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 1 }, Boundary = ShadowReferenceComparison { ShadowedPixels = 351, LitPixels = 2192, MismatchedPixels = 45, ComparedPixels = 2543, MismatchFraction = 0.017695636, MeanVisibilityError = 0.017695636, MaximumVisibilityError = 1, MissedShadowPixels = 18, FalseShadowPixels = 27 }, ReferenceReceiverPixels = 36773, SkyPixels = 28665, GeometryFacingLightRejectedPixels = 98, MissingRenderedReceiverPixels = 0, ReferenceShadingRejectedPixels = 104, RenderedShadingRejectedPixels = 20, SelfHitPixels = 0, RenderedReceiverCoverage = 1, RangeRejectedPixels = 0, ConeRejectedPixels = 0, CubeFaceReceiverPixels = System.Int32[], FalseShadowFraction = 0.0007884659, MissedShadowFraction = 0.014274386 }</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5d2a6c07-7853-4de1-a491-274f72175159" testId="c1cd4ec9-7cb8-c3a6-dd30-2d5a633afeca" testName="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 1)" computerName="BOQI-THE-DAEMON" duration="00:00:22.7109726" startTime="2026-10-06T14:59:13.8002682+08:00" endTime="2026-10-06T14:59:36.5297442+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5d2a6c07-7853-4de1-a491-274f72175159">
+      <Output>
+        <StdOut>Local light independent reference: F:/SomeEngine.AgentWork/rg70-remaining/review-fixes-validation/remaining/six-faces\local-ray-point-face-1-9a26169ffc5d4b458b5eae7a622cef4c; RayShadowComparison { AllReceivers = ShadowReferenceComparison { ShadowedPixels = 1257, LitPixels = 35512, MismatchedPixels = 48, ComparedPixels = 36769, MismatchFraction = 0.0013054475, MeanVisibilityError = 0.0013054475, MaximumVisibilityError = 1, MissedShadowPixels = 18, FalseShadowPixels = 30 }, Interior = ShadowReferenceComparison { ShadowedPixels = 905, LitPixels = 33298, MismatchedPixels = 3, ComparedPixels = 34203, MismatchFraction = 8.77116E-05, MeanVisibilityError = 8.77116E-05, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 3 }, Boundary = ShadowReferenceComparison { ShadowedPixels = 352, LitPixels = 2214, MismatchedPixels = 45, ComparedPixels = 2566, MismatchFraction = 0.017537022, MeanVisibilityError = 0.017537022, MaximumVisibilityError = 1, MissedShadowPixels = 18, FalseShadowPixels = 27 }, ReferenceReceiverPixels = 36769, SkyPixels = 28663, GeometryFacingLightRejectedPixels = 104, MissingRenderedReceiverPixels = 0, ReferenceShadingRejectedPixels = 103, RenderedShadingRejectedPixels = 20, SelfHitPixels = 0, RenderedReceiverCoverage = 1, RangeRejectedPixels = 0, ConeRejectedPixels = 0, CubeFaceReceiverPixels = System.Int32[], FalseShadowFraction = 0.00084478484, MissedShadowFraction = 0.014319809 }</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="36181e74-1e89-4bec-b9cb-d37bea414744" testId="9653ba44-a278-8170-5295-dc0425a3d82d" testName="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 2)" computerName="BOQI-THE-DAEMON" duration="00:00:16.6155300" startTime="2026-10-06T15:00:27.3250011+08:00" endTime="2026-10-06T15:00:43.9405910+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="36181e74-1e89-4bec-b9cb-d37bea414744">
+      <Output>
+        <StdOut>Local light independent reference: F:/SomeEngine.AgentWork/rg70-remaining/review-fixes-validation/remaining/six-faces\local-ray-point-face-2-ad637595260d47f69dc7034b7ff3c54b; RayShadowComparison { AllReceivers = ShadowReferenceComparison { ShadowedPixels = 1253, LitPixels = 35512, MismatchedPixels = 32, ComparedPixels = 36765, MismatchFraction = 0.00087039307, MeanVisibilityError = 0.00087039307, MaximumVisibilityError = 1, MissedShadowPixels = 12, FalseShadowPixels = 20 }, Interior = ShadowReferenceComparison { ShadowedPixels = 903, LitPixels = 33303, MismatchedPixels = 0, ComparedPixels = 34206, MismatchFraction = 0, MeanVisibilityError = 0, MaximumVisibilityError = 0, MissedShadowPixels = 0, FalseShadowPixels = 0 }, Boundary = ShadowReferenceComparison { ShadowedPixels = 350, LitPixels = 2209, MismatchedPixels = 32, ComparedPixels = 2559, MismatchFraction = 0.012504885, MeanVisibilityError = 0.012504885, MaximumVisibilityError = 1, MissedShadowPixels = 12, FalseShadowPixels = 20 }, ReferenceReceiverPixels = 36765, SkyPixels = 28672, GeometryFacingLightRejectedPixels = 99, MissingRenderedReceiverPixels = 0, ReferenceShadingRejectedPixels = 103, RenderedShadingRejectedPixels = 11, SelfHitPixels = 0, RenderedReceiverCoverage = 1, RangeRejectedPixels = 0, ConeRejectedPixels = 0, CubeFaceReceiverPixels = System.Int32[], FalseShadowFraction = 0.0005631899, MissedShadowFraction = 0.009577015 }</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="2a3282c5-ada8-4694-9e3e-0ef0f25c2c9f" testId="70ef9e5f-50a0-4e86-0746-3575719c69d6" testName="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 5)" computerName="BOQI-THE-DAEMON" duration="00:00:16.9203699" startTime="2026-10-06T14:59:54.4593730+08:00" endTime="2026-10-06T15:00:11.3769592+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2a3282c5-ada8-4694-9e3e-0ef0f25c2c9f">
+      <Output>
+        <StdOut>Local light independent reference: F:/SomeEngine.AgentWork/rg70-remaining/review-fixes-validation/remaining/six-faces\local-ray-point-face-5-ae03cdd873784d2fa17022d67484030f; RayShadowComparison { AllReceivers = ShadowReferenceComparison { ShadowedPixels = 1253, LitPixels = 35511, MismatchedPixels = 44, ComparedPixels = 36764, MismatchFraction = 0.001196823, MeanVisibilityError = 0.001196823, MaximumVisibilityError = 1, MissedShadowPixels = 12, FalseShadowPixels = 32 }, Interior = ShadowReferenceComparison { ShadowedPixels = 903, LitPixels = 33302, MismatchedPixels = 1, ComparedPixels = 34205, MismatchFraction = 2.9235493E-05, MeanVisibilityError = 2.9235493E-05, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 1 }, Boundary = ShadowReferenceComparison { ShadowedPixels = 350, LitPixels = 2209, MismatchedPixels = 43, ComparedPixels = 2559, MismatchFraction = 0.01680344, MeanVisibilityError = 0.01680344, MaximumVisibilityError = 1, MissedShadowPixels = 12, FalseShadowPixels = 31 }, ReferenceReceiverPixels = 36764, SkyPixels = 28666, GeometryFacingLightRejectedPixels = 106, MissingRenderedReceiverPixels = 0, ReferenceShadingRejectedPixels = 104, RenderedShadingRejectedPixels = 22, SelfHitPixels = 0, RenderedReceiverCoverage = 1, RangeRejectedPixels = 0, ConeRejectedPixels = 0, CubeFaceReceiverPixels = System.Int32[], FalseShadowFraction = 0.0009011292, MissedShadowFraction = 0.009577015 }</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="09b9041b-53f3-4948-b619-ffd17a1d08da" testId="d61d1f23-6800-498b-77c0-256601c80dc2" testName="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 4)" computerName="BOQI-THE-DAEMON" duration="00:00:16.1571746" startTime="2026-10-06T15:00:43.9413277+08:00" endTime="2026-10-06T15:01:00.0985957+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="09b9041b-53f3-4948-b619-ffd17a1d08da">
+      <Output>
+        <StdOut>Local light independent reference: F:/SomeEngine.AgentWork/rg70-remaining/review-fixes-validation/remaining/six-faces\local-ray-point-face-4-1c01809071a146e7a21b72dafcee0fbe; RayShadowComparison { AllReceivers = ShadowReferenceComparison { ShadowedPixels = 1261, LitPixels = 35514, MismatchedPixels = 51, ComparedPixels = 36775, MismatchFraction = 0.0013868117, MeanVisibilityError = 0.0013868117, MaximumVisibilityError = 1, MissedShadowPixels = 18, FalseShadowPixels = 33 }, Interior = ShadowReferenceComparison { ShadowedPixels = 910, LitPixels = 33326, MismatchedPixels = 3, ComparedPixels = 34236, MismatchFraction = 8.762706E-05, MeanVisibilityError = 8.762706E-05, MaximumVisibilityError = 1, MissedShadowPixels = 0, FalseShadowPixels = 3 }, Boundary = ShadowReferenceComparison { ShadowedPixels = 351, LitPixels = 2188, MismatchedPixels = 48, ComparedPixels = 2539, MismatchFraction = 0.01890508, MeanVisibilityError = 0.01890508, MaximumVisibilityError = 1, MissedShadowPixels = 18, FalseShadowPixels = 30 }, ReferenceReceiverPixels = 36775, SkyPixels = 28663, GeometryFacingLightRejectedPixels = 98, MissingRenderedReceiverPixels = 0, ReferenceShadingRejectedPixels = 104, RenderedShadingRejectedPixels = 24, SelfHitPixels = 0, RenderedReceiverCoverage = 1, RangeRejectedPixels = 0, ConeRejectedPixels = 0, CubeFaceReceiverPixels = System.Int32[], FalseShadowFraction = 0.00092921103, MissedShadowFraction = 0.014274386 }</StdOut>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 3)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="7f2cc367-8e5f-bc6e-9b99-de2e84998f34">
+      <Execution id="31833f4e-56c2-420f-8122-e90012e3b13c" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests" name="EveryPointLightFacePreservesIndependentReceiverShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 4)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="d61d1f23-6800-498b-77c0-256601c80dc2">
+      <Execution id="09b9041b-53f3-4948-b619-ffd17a1d08da" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests" name="EveryPointLightFacePreservesIndependentReceiverShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 1)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="c1cd4ec9-7cb8-c3a6-dd30-2d5a633afeca">
+      <Execution id="5d2a6c07-7853-4de1-a491-274f72175159" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests" name="EveryPointLightFacePreservesIndependentReceiverShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 5)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="70ef9e5f-50a0-4e86-0746-3575719c69d6">
+      <Execution id="2a3282c5-ada8-4694-9e3e-0ef0f25c2c9f" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests" name="EveryPointLightFacePreservesIndependentReceiverShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 0)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="6d389908-1bde-c080-4848-9833761cd1e4">
+      <Execution id="1dfb2b87-137f-4c77-b6ea-305935df73f5" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests" name="EveryPointLightFacePreservesIndependentReceiverShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests.EveryPointLightFacePreservesIndependentReceiverShadows(face: 2)" storage="f:\someengine.agentwork\rg70-remaining\trees\review-fixes\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="9653ba44-a278-8170-5295-dc0425a3d82d">
+      <Execution id="36181e74-1e89-4bec-b9cb-d37bea414744" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.LocalLightRayShadowTests" name="EveryPointLightFacePreservesIndependentReceiverShadows" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="6d389908-1bde-c080-4848-9833761cd1e4" executionId="1dfb2b87-137f-4c77-b6ea-305935df73f5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7f2cc367-8e5f-bc6e-9b99-de2e84998f34" executionId="31833f4e-56c2-420f-8122-e90012e3b13c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c1cd4ec9-7cb8-c3a6-dd30-2d5a633afeca" executionId="5d2a6c07-7853-4de1-a491-274f72175159" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9653ba44-a278-8170-5295-dc0425a3d82d" executionId="36181e74-1e89-4bec-b9cb-d37bea414744" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="70ef9e5f-50a0-4e86-0746-3575719c69d6" executionId="2a3282c5-ada8-4694-9e3e-0ef0f25c2c9f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d61d1f23-6800-498b-77c0-256601c80dc2" executionId="09b9041b-53f3-4948-b619-ffd17a1d08da" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="6" executed="6" passed="6" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.20]   Discovering: SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.41]   Discovered:  SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.47]   Starting:    SomeEngine.Render.Cluster.Tests&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-1-9a26169ffc5d4b458b5eae7a622cef4c\content; sceneInstances=2, sceneBounds=&lt;-8, -0, -0&gt;..&lt;-6, 1, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-1-9a26169ffc5d4b458b5eae7a622cef4c\content; sceneInstances=2, sceneBounds=&lt;-8, -0, -0&gt;..&lt;-6, 1, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-1-9a26169ffc5d4b458b5eae7a622cef4c\content; sceneInstances=2, sceneBounds=&lt;-8, -0, -0&gt;..&lt;-6, 1, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-0-7951e9b4dc07438da437fe9a885a6be4\content; sceneInstances=2, sceneBounds=&lt;6, 0, 0&gt;..&lt;8, 1, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-0-7951e9b4dc07438da437fe9a885a6be4\content; sceneInstances=2, sceneBounds=&lt;6, 0, 0&gt;..&lt;8, 1, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-0-7951e9b4dc07438da437fe9a885a6be4\content; sceneInstances=2, sceneBounds=&lt;6, 0, 0&gt;..&lt;8, 1, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-5-ae03cdd873784d2fa17022d67484030f\content; sceneInstances=2, sceneBounds=&lt;-0, -0, -8&gt;..&lt;1, 0, -6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-5-ae03cdd873784d2fa17022d67484030f\content; sceneInstances=2, sceneBounds=&lt;-0, -0, -8&gt;..&lt;1, 0, -6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-5-ae03cdd873784d2fa17022d67484030f\content; sceneInstances=2, sceneBounds=&lt;-0, -0, -8&gt;..&lt;1, 0, -6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-3-5b295ec529ae471e9ae1616022f002d3\content; sceneInstances=2, sceneBounds=&lt;-0, -8, -0&gt;..&lt;1, -6, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-3-5b295ec529ae471e9ae1616022f002d3\content; sceneInstances=2, sceneBounds=&lt;-0, -8, -0&gt;..&lt;1, -6, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-3-5b295ec529ae471e9ae1616022f002d3\content; sceneInstances=2, sceneBounds=&lt;-0, -8, -0&gt;..&lt;1, -6, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-2-ad637595260d47f69dc7034b7ff3c54b\content; sceneInstances=2, sceneBounds=&lt;0, 6, 0&gt;..&lt;1, 8, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-2-ad637595260d47f69dc7034b7ff3c54b\content; sceneInstances=2, sceneBounds=&lt;0, 6, 0&gt;..&lt;1, 8, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-2-ad637595260d47f69dc7034b7ff3c54b\content; sceneInstances=2, sceneBounds=&lt;0, 6, 0&gt;..&lt;1, 8, 0&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-4-1c01809071a146e7a21b72dafcee0fbe\content; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;1, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-4-1c01809071a146e7a21b72dafcee0fbe\content; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;1, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from F:\SomeEngine.AgentWork\rg70-remaining\review-fixes-validation\remaining\six-faces\local-ray-point-face-4-1c01809071a146e7a21b72dafcee0fbe\content; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;1, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 64 frame(s).&#xD;
+[xUnit.net 00:01:46.86]   Finished:    SomeEngine.Render.Cluster.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

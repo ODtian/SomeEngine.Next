@@ -114,6 +114,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private readonly Material _standard;
     private readonly Material _unlit;
     private readonly GraphTextureInput _readbackColor;
+    private readonly GraphRegionId _failureRegion;
+    private IRenderGraphFrameExecutionObserver? _executionReceiver;
     private readonly QueueCompletion[] _completions;
 
     private FrameStageScene(IGraphicsBackend backend, Device device, Mesh mesh,
@@ -195,6 +197,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _frames.Add(new VirtualShadowFeatureSystem(_shadows, lightSystem));
         _frames.Add(_pipeline);
         _frames.Initialize();
+        _failureRegion = shading;
         _temporal = new TemporalFeature(backend, device, _graph, Width, Height,
             temporalShader, settings.TemporalVertexEntry, settings.TemporalPixelEntry, region: post);
         _readback = backend.CreateBuffer(device,
@@ -293,6 +296,31 @@ internal sealed class FrameStageScene : IAsyncDisposable
         return new FrameStageScene(backend, device, mesh, standard, unlit, clusterShaders,
             shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName, shadowSettings);
     }
+
+    internal void SetView(RenderView view) => _world.Replace(_view, view);
+    internal void SetPointLight(PointLight light) => _gameWorld.Replace(_light, light);
+    internal void UseSpotLight(SpotLight light)
+    {
+        _gameWorld.Remove<PointLight>(_light);
+        _gameWorld.Add(_light, light);
+    }
+
+    private Action<VirtualShadowFrameQuality>? _receiveQuality;
+    internal async Task<(RasterImage Image, VirtualShadowFrameQuality Quality)> ReadShadowQualityAsync()
+    {
+        _shadows.EnableQualityCapture();
+        VirtualShadowFrameQuality? quality = null;
+        _receiveQuality = value => quality = value;
+        try
+        {
+            RasterImage image = await ReadNextRasterImageAsync();
+            return (image, Assert.IsType<VirtualShadowFrameQuality>(quality));
+        }
+        finally { _receiveQuality = null; }
+    }
+
+    internal void SetBoundsExpansion(int index, float expansion) =>
+        _gameWorld.Replace(_meshes[index], new MeshInstance { Mesh = _mesh, BoundsExpansion = expansion });
 
     internal void SetMeshTransform(int index, TransformQvvs transform) =>
         _gameWorld.Replace(_meshes[index], new WorldTransform { Qvvs = transform });
@@ -430,6 +458,28 @@ internal sealed class FrameStageScene : IAsyncDisposable
         return ReadColor();
     }
 
+    internal GraphPassId AddRecordingFailure(Action fail, IRenderGraphFrameExecutionObserver receiver)
+    {
+        _executionReceiver = receiver;
+        using var edit = _graph.BeginEdit();
+        GraphPassId id = edit.AddCopyFramePass("User copy callback failure after shading", PassQueueSelection.Exact(_backend.GetQueue(_device, QueueType.Copy)),
+            (_pipeline.Outputs.MaterialColor, fail), new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
+            static (ref PassDefinition pass, ref (GraphTextureId Color, Action Fail) data) =>
+                pass.Read(data.Color, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), PipelineSync.Copy,
+                    ResourceAccess.CopySource, TextureLayout.CopySource),
+            static (ref CopyPassCommandScope _, in (GraphTextureId Color, Action Fail) data) => data.Fail(), region: _failureRegion);
+        edit.Commit();
+        return id;
+    }
+
+    internal void RemoveRecordingFailure(GraphPassId failure)
+    {
+        using var edit = _graph.BeginEdit();
+        edit.Remove(failure);
+        edit.Commit();
+        _executionReceiver = null;
+    }
+
     internal async Task DiscardNextFrameAsync()
     {
         _extraction.Extract(_gameWorld);
@@ -474,19 +524,33 @@ internal sealed class FrameStageScene : IAsyncDisposable
             })))
         {
             _frames.Update(frame, commands);
+            var qualityFrame = commands;
+            if (_receiveQuality is not null) _shadows.CaptureQuality(ref qualityFrame, _receiveQuality);
             var temporalFrame = commands;
             _temporal.Record(ref temporalFrame, outputs.MaterialColor, outputs.Depth,
                 new MotionFeatureOutput(outputs.MotionVectors, Width, Height, 1),
                 TemporalResolveSettings.Default, cameraCut: true, view: _view);
             commands.SetTextureInput(_readbackDepth, outputs.Depth);
             commands.SetTextureInput(_readbackColor, postProcessedColor ? _temporal.Output.ResolvedColor : outputs.MaterialColor);
-            commands.Execute(_completions);
+            var executionFrame = commands;
+            if (_executionReceiver is not null) executionFrame.ObserveExecution(_executionReceiver);
+            try { commands.Execute(_completions); }
+            catch
+            {
+                QueueCompletion[] partial = _completions.Where(value => value != default).ToArray();
+                _renderDevice.TrackSubmission(partial);
+                foreach (QueueCompletion completion in partial)
+                    Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
+                throw;
+            }
             QueueCompletion[] accepted = _completions.Where(value => value != default).ToArray();
             _renderDevice.TrackSubmission(accepted);
             frame.Dispose();
             foreach (QueueCompletion completion in accepted)
                 Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
         }
+        _graph.CollectCompleted();
+        _pipeline.ThrowIfWorkFailed();
     }
 
     internal async Task<RasterImage> ReadRasterImageAsync() => new(

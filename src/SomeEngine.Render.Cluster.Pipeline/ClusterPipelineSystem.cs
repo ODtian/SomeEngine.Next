@@ -296,7 +296,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _pipelines!.DefaultRasterVertexEncoding,
                 _pipelines.SoftwareRaster,
                 _pipelines.HardwareRaster,
-                _stageResourceProvider,
+                new RasterMaterialResources(this, _stageResourceProvider),
                 _entryUsages);
             _shadeStages = new ClusterShadeStages(
                 _backend,
