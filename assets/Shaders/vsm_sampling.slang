@@ -44,6 +44,12 @@ struct VirtualShadowMapParameters
     uint2 WorldPageOriginX;
     uint2 WorldPageOriginY;
     float2 AddressPadding;
+    float3 LightDirection;
+    float SourceRadius;
+    float SourceAngleRadians;
+    float ProjectionDepthScale;
+    float ProjectionDepthOffset;
+    float TexelDitherScale;
 };
 
 // Positions passed to this file are offsets from the owning Game world's origin.

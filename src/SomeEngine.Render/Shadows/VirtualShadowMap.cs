@@ -532,6 +532,31 @@ public sealed partial class VirtualShadowMap : IDisposable
         {
             _views[index].WorldOriginHigh = worldOriginHigh;
             _views[index].WorldOriginLow = worldOriginLow;
+            VirtualShadowView shadow = _views[index];
+            LightShadowSettings source;
+            if (shadow.LightKind == VirtualShadowLightKind.Directional)
+            {
+                RenderDirectionalLight light = lights.Directional[checked((int)shadow.LightIndex)];
+                source = light.ShadowSettings;
+            }
+            else if (shadow.LightKind == VirtualShadowLightKind.Point)
+            {
+                RenderPointLight light = lights.Points[checked((int)shadow.LightIndex - lights.Directional.Count)];
+                source = light.ShadowSettings;
+            }
+            else
+            {
+                RenderSpotLight light = lights.Spots[checked((int)shadow.LightIndex - lights.Directional.Count - lights.Points.Count)];
+                source = light.ShadowSettings;
+            }
+            Matrix4x4 lightView = _preparedLightViews[index];
+            _views[index].LightDirection = new(-lightView.M13, -lightView.M23, -lightView.M33);
+            _views[index].SourceRadius = source.SourceRadius;
+            _views[index].SourceAngleRadians = shadow.LightKind == VirtualShadowLightKind.Directional
+                ? (source.SourceAngleDegrees ?? .5357f) * (MathF.PI / 180f) : 0f;
+            _views[index].ProjectionDepthScale = _preparedLightProjections[index].M33;
+            _views[index].ProjectionDepthOffset = _preparedLightProjections[index].M43;
+            _views[index].TexelDitherScale = 1f;
         }
 
         bool viewLayoutChanged = !_initialized || viewCount != _committedViewCount;

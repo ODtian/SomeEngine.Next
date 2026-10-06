@@ -18,10 +18,15 @@ public enum LightMobility : uint
     Static,
 }
 
-/// <summary>Per-light shadow precision and movement semantics.</summary>
+/// <summary>
+/// Per-light shadow precision, movement and emitter geometry. SourceRadius uses world units;
+/// SourceAngleDegrees is the directional emitter's full diameter, with null selecting the native sun size.
+/// </summary>
 public readonly record struct LightShadowSettings(
     float ResolutionLodBias = 0f,
-    LightMobility Mobility = LightMobility.Movable);
+    LightMobility Mobility = LightMobility.Movable,
+    float SourceRadius = 0f,
+    float? SourceAngleDegrees = null);
 
 /// <summary>Directional-light semantics authored in the main world.</summary>
 public readonly record struct DirectionalLight(
