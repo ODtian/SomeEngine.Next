@@ -42,8 +42,8 @@ public struct VirtualShadowView
     public uint Flags;
     public VirtualShadowLightKind LightKind;
     public uint FaceIndex;
-    // Keep the float3 on a 16-byte boundary in both shader targets.
-    public uint Padding;
+    /// <summary>Scene distance represented by one native centimeter.</summary>
+    public float WorldUnitsPerCentimeter;
     public Vector3 LightPosition;
     public float LightRange;
 }

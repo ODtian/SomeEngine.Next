@@ -13,6 +13,28 @@ namespace SomeEngine.Render.Tests;
 public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     [Fact]
+    public async Task DirectionalFirstLevelSixCoversTheNativeExtentInMeters()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings
+            {
+                VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 1,
+                DirectionalClipmapLevels = 1, DirectionalFirstClipmapLevel = 6,
+            });
+        var lights = new RenderLightSet();
+        lights.AddDirectional(new RenderDirectionalLight(Vector3.UnitZ, Vector3.One, 1, uint.MaxValue));
+        var receiver = new RenderView(Matrix4x4.Identity,
+            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+        shadows.BeginFrame();
+        VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
+        // Native first level six has a radius of 128 centimeters. The snapped
+        // projection spans four radii, or 5.12 meters, so 2.56 is its edge.
+        Vector4 clip = Vector4.Transform(new Vector4(2.56f, 0, 0, 1), view.LightViewProjection);
+        Assert.InRange(MathF.Abs(clip.X / clip.W), .99999f, 1.00001f);
+    }
+
+    [Fact]
     public async Task ProjectionHistoryKeepsCachedViewsAndMovingALightInvalidatesOnlyItsViews()
     {
         VirtualShadowMapShaders shaders = await CreateShaders();
@@ -69,6 +91,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
             {
                 VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 1,
                 DirectionalClipmapLevels = 2, DirectionalFirstClipmapLevel = 0,
+                WorldUnitsPerCentimeter = 1f,
             });
         using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
             [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);

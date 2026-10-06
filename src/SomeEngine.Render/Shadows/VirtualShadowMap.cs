@@ -344,7 +344,8 @@ public sealed class VirtualShadowMap : IDisposable
                     Settings.DirectionalFirstClipmapLevel + clipmapLevel);
                 // UE clipmaps snap by one virtual radius, i.e. one quarter of the
                 // level-0 page table. Snapping every page destroys cache locality.
-                float levelRadius = MathF.Pow(2.0f, absoluteClipmapLevel + 1.0f);
+                float levelRadius = MathF.Pow(2.0f, absoluteClipmapLevel + 1.0f) *
+                    Settings.WorldUnitsPerCentimeter;
                 float worldExtent = 4.0f * levelRadius;
                 int centerSnapX = checked((int)MathF.Round(cameraRight / levelRadius));
                 int centerSnapY = checked((int)MathF.Round(cameraVertical / levelRadius));
@@ -390,6 +391,7 @@ public sealed class VirtualShadowMap : IDisposable
                     ClipmapWorldOrigin = camera,
                     ResolutionLodBias = resolutionLodBias,
                     FirstClipmapLevel = Settings.DirectionalFirstClipmapLevel,
+                    WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
                     ClipmapLevelCount = Settings.DirectionalClipmapLevels,
                     MipLevelCount = Settings.MipLevelCount,
                     MinMipLevel = 0u,
@@ -788,6 +790,7 @@ public sealed class VirtualShadowMap : IDisposable
         FaceIndex = faceIndex,
         LightPosition = lightPosition,
         LightRange = lightRange,
+        WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
     };
 
     private void ValidateLocalLight(Vector3 position, float range, string label)
