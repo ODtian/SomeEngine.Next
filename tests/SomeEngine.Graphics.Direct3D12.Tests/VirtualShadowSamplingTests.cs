@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SomeEngine.Render.Shadows;
 using Xunit;
 using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 
@@ -17,138 +18,106 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
     [InlineData(0, 0, 1)]
     [InlineData(4, 0, 1)]
     [InlineData(2, 0, 2)]
-    public void ReceiverDepthsPreservePixelDensityAtViewportAndDepthEdges(int pixelIndex, int depthEdge, int planeAxis)
+    public void ReceiverPositionsPreserveCameraPixelsAtViewportAndDepthEdges(int pixelIndex, int depthEdge, int planeAxis)
     {
-        const int levels = 4, pageEntries = 16;
-        uint[] views = new uint[levels * 44];
-        uint[] pages = new uint[levels * pageEntries * 4];
-        uint[] pixels = new uint[512 * 128];
-        for (int level = 0; level < levels; level++)
-        {
-            uint[] view = CreateView(level);
-            Matrix4x4 rotation = planeAxis switch
-            {
-                0 => Matrix4x4.CreateRotationY(MathF.PI * .5f),
-                1 => Matrix4x4.CreateRotationX(MathF.PI * .5f),
-                _ => Matrix4x4.Identity,
-            };
-            Matrix4x4 projection = rotation *
-                Matrix4x4.CreateScale(1.0f / (4 << level), 1.0f / (4 << level), 1) *
-                Matrix4x4.CreateTranslation(planeAxis == 0 ? -.5f / (4 << level) : 0,
-                    planeAxis == 1 ? .5f / (4 << level) : 0, planeAxis == 2 ? 0 : .5f);
-            MemoryMarshal.Write(MemoryMarshal.AsBytes(view.AsSpan()), in projection);
-            view[16] = 512;
-            view[23] = (uint)(level * pageEntries);
-            view.CopyTo(views, level * 44);
-            for (int row = 0; row < 4; row++)
-            for (int column = 0; column < 4; column++)
-            {
-                int entry = (level * pageEntries + row * 4 + column) * 4;
-                pages[entry] = (uint)level + 1;
-                pages[entry + 1] = (uint)column;
-                pages[entry + 2] = (uint)row;
-                pages[entry + 3] = 7;
-            }
-            for (int row = 0; row < 128; row++)
-                Array.Fill(pixels, BitConverter.SingleToUInt32Bits(level == 2 ? .75f : .25f),
-                    row * 512 + level * 128, 128);
-        }
-        // The receivers are z = x + 0.5, z = -y + 0.5, and z = 0.5.
-        // Their pixel projection covers 6.4 texels
-        // in the base light view and 1.6 texels in the selected second level.
+        // Authored planes z=x+.5, z=-y+.5 and z=.5 have world pixel spacing .1.
+        // Nominal camera neighbors retain the receiver's camera depth.
         uint[] depths = Enumerable.Range(0, 25)
             .Select(index => BitConverter.SingleToUInt32Bits(planeAxis == 2 ? .5f :
                 .3f + .1f * (planeAxis == 0 ? index % 5 : index / 5))).ToArray();
-        if (depthEdge != 0) depths[13] = BitConverter.SingleToUInt32Bits(depthEdge == 1 ? 1.0f : .95f);
-        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
-            #define VSM_WHOLE_PAGE_SAMPLING 1
-            #include "vsm_sampling.slang"
+        if (depthEdge != 0) depths[13] = BitConverter.SingleToUInt32Bits(depthEdge == 1 ? 1f : .95f);
+        int pixelX = planeAxis == 1 ? 2 : pixelIndex;
+        int pixelY = planeAxis == 1 ? pixelIndex : 2;
+        uint[][] observed = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "vsm_receiver_pixel.slang"
-            StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
-            Texture2D<uint> Atlas;
             Texture2DArray<float> ReceiverDepth;
             StructuredBuffer<uint> Pixel;
-            RWStructuredBuffer<float> Result;
+            RWStructuredBuffer<float3> Positions;
             [shader("compute")]
             [numthreads(1, 1, 1)]
-            void SampleReceiver()
+            void ReadReceiverPlane()
             {
                 uint3 pixel = uint3(Pixel[0], Pixel[1], 0u);
                 float4x4 clipToWorld = float4x4(.25,0,0,0, 0,.25,0,0, 0,0,1,0, 0,0,0,1);
                 VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
                     ReceiverDepth, pixel, uint2(5u, 5u), ReceiverDepth.Load(int4(pixel, 0)), clipToWorld);
-                Result[0] = SampleDirectionalVirtualShadowMap(Views, Pages, Atlas, 0u, 4u, 0.0,
-                    receiver.Position, receiver.PositionDx, receiver.PositionDy, 1u, 1u, 0.0, 0.0);
+                Positions[0] = receiver.Position;
+                Positions[1] = receiver.PositionDx;
+                Positions[2] = receiver.PositionDy;
             }
-            """, "SampleReceiver", new(1, 1, 1),
-            [(views, ResourceBindingType.BufferSrv, 176), (pages, ResourceBindingType.BufferSrv, 16),
-             ([(uint)(planeAxis == 1 ? 2 : pixelIndex), (uint)(planeAxis == 1 ? pixelIndex : 2)],
-              ResourceBindingType.BufferSrv, 4), (new uint[1], ResourceBindingType.BufferUav, 4)],
-            images: [new(512, 128, pixels, 2), new(5, 5, depths, 3, Format.R32Float, TextureViewDimension.Texture2DArray)]);
-        Assert.Equal(0.0f, BitConverter.UInt32BitsToSingle(result[0][0]));
+            """, "ReadReceiverPlane", new(1, 1, 1),
+            [([(uint)pixelX, (uint)pixelY], ResourceBindingType.BufferSrv, 4),
+             (new uint[9], ResourceBindingType.BufferUav, 12)],
+            images: [new(5, 5, depths, 0, Format.R32Float, TextureViewDimension.Texture2DArray)]);
+        float x = -.2f + .1f * pixelX;
+        float y = .2f - .1f * pixelY;
+        float z = planeAxis == 0 ? x + .5f : planeAxis == 1 ? -y + .5f : .5f;
+        float[] expected = [x, y, z, x + .1f, y, z, x, y - .1f, z];
+        for (int index = 0; index < expected.Length; index++)
+            Assert.InRange(BitConverter.UInt32BitsToSingle(observed[0][index]), expected[index] - .000001f, expected[index] + .000001f);
     }
 
     [Theory]
-    [InlineData(0, 0.0f, 0.0f, 1.0f, 0.0f, 0)]
-    [InlineData(1, 0.0f, 0.0f, 1.0f, 0.0f, 1)]
-    [InlineData(2, 0.0f, 0.0f, 1.0f, 0.0f, 2)]
-    [InlineData(1, 1.0f, 0.0f, 1.0f, 0.0f, 2)]
-    [InlineData(1, 0.0f, 10000.0f, 1.0f, 0.0f, 1)]
-    [InlineData(0, 0.0f, 0.0f, 8.0f, 0.0f, 0)]
-    [InlineData(1, 0.0f, 0.0f, 8.0f, 0.0f, 1)]
-    [InlineData(3, 0.0f, 0.0f, 1.0f, 8.0f, 0)]
-    public void DirectionalShadowsMatchTheReceiverPixelFootprint(
-        int pixelLevel, float qualityBias, float cameraOrigin, float stretch, float shear, int selectedLevel)
+    [InlineData(192f, 0f, 0f, 6, 1)]
+    [InlineData(384f, 0f, 0f, 6, 2)]
+    [InlineData(768f, 0f, 0f, 6, 3)]
+    [InlineData(192f, 1f, 0f, 6, 2)]
+    [InlineData(192f, -1f, 0f, 6, 0)]
+    [InlineData(192f, .25f, 0f, 6, 1)]
+    [InlineData(240f, .25f, 0f, 6, 2)]
+    [InlineData(192f, 0f, 10000f, 6, 1)]
+    [InlineData(192f, 0f, 0f, 7, 0)]
+    public void DirectionalShadowsUseNativeDistanceBiasAndCameraCoordinates(
+        float distanceCentimeters, float qualityBias, float translation, int firstLevel, int selectedLevel)
     {
-        const int levels = 4, resolution = 512, pageEntries = 16;
-        uint[] views = new uint[levels * 44];
-        uint[] pages = new uint[levels * pageEntries * 4];
+        VirtualShadowView[] views = new VirtualShadowView[4];
+        uint[] pages = new uint[4 * 16 * 4];
         uint[] pixels = new uint[512 * 128];
-        for (int level = 0; level < levels; level++)
+        for (int level = 0; level < views.Length; level++)
         {
-            uint[] view = CreateView(level);
-            Matrix4x4 projection = Matrix4x4.CreateScale(1.0f / (4 << level), 1.0f / (4 << level), 1);
-            MemoryMarshal.Write(MemoryMarshal.AsBytes(view.AsSpan()), in projection);
-            view[16] = resolution;
-            view[23] = (uint)(level * pageEntries);
-            view[28] = BitConverter.SingleToUInt32Bits(cameraOrigin);
-            view[31] = BitConverter.SingleToUInt32Bits(qualityBias);
-            view.CopyTo(views, level * 44);
-            int entry = (level * pageEntries + 10) * 4;
+            float scale = MathF.Pow(2f, -firstLevel - level - 2);
+            views[level] = new VirtualShadowView
+            {
+                LightViewProjection = Matrix4x4.CreateTranslation(-translation, 0, 0) * Matrix4x4.CreateScale(scale, scale, 1),
+                VirtualResolution = 512, PageSize = 128, AtlasSize = 512, PhysicalPagesPerRow = 4,
+                MaxPhysicalPages = 16, PageTableOffset = (uint)(level * 16), CacheGeneration = 7,
+                ClipmapLevel = firstLevel + level, FirstClipmapLevel = firstLevel, ClipmapLevelCount = 4,
+                ClipmapWorldOrigin = new(translation, 0, .5f - distanceCentimeters),
+                ResolutionLodBias = qualityBias, MipLevelCount = 1, WorldUnitsPerCentimeter = 1,
+            };
+            int entry = (level * 16 + 10) * 4;
             pages[entry] = (uint)level + 1;
             pages[entry + 1] = pages[entry + 2] = 2;
             pages[entry + 3] = 7;
-            for (int y = 0; y < 128; y++)
+            for (int row = 0; row < 128; row++)
                 Array.Fill(pixels, BitConverter.SingleToUInt32Bits(level == selectedLevel ? .75f : .25f),
-                    y * 512 + level * 128, 128);
+                    row * 512 + level * 128, 128);
         }
-        // Unstretched pixels cover 1.5 texels in their requested clipmap.
-        float step = 1.5f * (1 << pixelLevel) / 64;
-        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+        // Native 192/384/768cm absolute levels 7.x/8.x/9.x and authored bias
+        // determine the literal selected rows; common translation retains distance/coverage.
+        uint[][] observed = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
             Texture2D<uint> Atlas;
-            StructuredBuffer<float3> PixelOffsets;
-            RWStructuredBuffer<float> Result;
+            StructuredBuffer<float> Translation;
+            RWStructuredBuffer<float> Visibility;
             [shader("compute")]
             [numthreads(1, 1, 1)]
-            void SamplePixelFootprint()
+            void ReadNativeDirectionalShadow()
             {
-                float3 world = float3(0.0, 0.0, 0.5);
-                Result[0] = SampleDirectionalVirtualShadowMap(Views, Pages, Atlas, 0u, 4u, 0.0,
-                    world, world + PixelOffsets[0], world + PixelOffsets[1],
+                float3 position = float3(Translation[0], 0.0, 0.5);
+                Visibility[0] = SampleDirectionalVirtualShadowMap(Views, Pages, Atlas, 0u, 4u, 0.0,
+                    position, position + float3(1.0, 0.0, 0.0), position + float3(0.0, 1.0, 0.0),
                     1u, 1u, 0.0, 0.0);
             }
-            """, "SamplePixelFootprint", new(1, 1, 1),
-            [(views, ResourceBindingType.BufferSrv, 176), (pages, ResourceBindingType.BufferSrv, 16),
-             ([BitConverter.SingleToUInt32Bits(step), 0u, 0u,
-               BitConverter.SingleToUInt32Bits(step * shear), BitConverter.SingleToUInt32Bits(step * stretch), 0u],
-              ResourceBindingType.BufferSrv, 12),
+            """, "ReadNativeDirectionalShadow", new(1, 1, 1),
+            [(MemoryMarshal.Cast<VirtualShadowView, uint>(views.AsSpan()).ToArray(), ResourceBindingType.BufferSrv,
+                VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 16),
+             ([BitConverter.SingleToUInt32Bits(translation)], ResourceBindingType.BufferSrv, 4),
              (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2));
-        Assert.Equal(0.0f, BitConverter.UInt32BitsToSingle(result[0][0]));
+        Assert.Equal(0f, BitConverter.UInt32BitsToSingle(observed[0][0]));
     }
 
     [Theory]
