@@ -1,5 +1,0 @@
-{
-  "ExitCode": 0,
-  "Command": "pwsh -NoProfile -File tools/Check-TestRules.ps1 -ResultsDirectory <proof>/rules-completed",
-  "EarlierAttempt": "rules-final.log: harness command timed out at 180 seconds before checker completion; not counted as a completed check"
-}

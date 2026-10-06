@@ -1,9 +1,0 @@
-# #141 classified depth and masked dynamic lifecycle
-
-Pinned native 396c9f059903aed5fec78ecd3d437a40c6415368: PhysicalPageManagement318–384,804–900,997–1085,1580–1678; Array1018–1030,2000–2014. The production allocator test starts with completed static depth generation7 and current fine receiver demand. Red returns dirty count0; green returns dirty count1 while preserving static generation7 and scheduling new combined depth. One row passed, zero test-rule violations.
-
-MeshSource/MeshInstance classification follows existing extraction into RenderMesh and the existing single instance store. The additional uint metadata word is5; existing words0–4 keep their positions. Current/previous classification is carried with the existing world bounds for old/new caster invalidation. All SW/HW/mesh/tess raster adapters use that class and the same page metadata; static draws cover full pages, dynamic draws consume receiver masks. Dynamic-only changes keep completed static depth. Main/post static merge precedes the corresponding static HiZ. Mode2 derives force-dynamic-coarse retention from the shared #145 producer; fine demand and static changes continue to refresh the needed depths. Unrequested allocated pages retain invalidation until demand returns.
-
-Quality capture records static/dynamic HW/SW accepted visible items separately while the native aggregate work buffer retains its original units/layout. Imported buildings declare static; animated/default instances declare dynamic. MeshSource's scene codec includes the classification and cooked scenes are rebuilt with that codec.
-
-Shared receiver/mask interfaces: vsm_receiver_projection.slang, vsm_sampling.slang, vsm_mark_pages.slang. Output interfaces: cluster_policy_raster_output.slang, cluster_raster_target_output.slang. These are the #148 receiver-input integration points. #146 consumes completed merged atlas plus static cache validity and valid mip ranges.

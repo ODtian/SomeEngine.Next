@@ -1,7 +1,0 @@
-{
-  "Source": "86555c9fbf9651d0eaf9d4916b2b571d10a58f9d",
-  "Filter": "FullyQualifiedName~LocalLightRayShadowTests",
-  "ExitCode": 0,
-  "WallSeconds": 131.5565625,
-  "Command": "dotnet test tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj -c Release --no-build --filter FullyQualifiedName~LocalLightRayShadowTests --results-directory <proof>/baseline-batch --logger trx;LogFileName=baseline-batch.trx"
-}
