@@ -56,7 +56,12 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
             DepthBuffer, pixel, uint2(view.ScreenWidth, view.ScreenHeight),
             DepthBuffer.Load(int4(pixel, 0)), view.ClipToWorld);
-        float3 bias = mappedNormal * VirtualShadowSampling.NormalBias;
+        // Match the ordinary user material's geometric receiver plane. The
+        // camera-depth footprint above selects resolution, not surface slope.
+        float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
+            triangle.Position2 - triangle.Position0), normal);
+        if (dot(geometricNormal, normal) < 0.0) geometricNormal = -geometricNormal;
+        float3 bias = geometricNormal * VirtualShadowSampling.NormalBias;
         float3 position = surface.Position + bias;
         float visibility = SampleDirectionalVirtualShadowMap(VirtualShadowViews,
             VirtualShadowPageTable, VirtualShadowAtlas, 0u, VirtualShadowSampling.DirectionalClipmapLevels,
@@ -64,7 +69,8 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             position + receiver.PositionDx - receiver.Position,
             position + receiver.PositionDy - receiver.Position,
             VirtualShadowSampling.BlockerSampleCount, VirtualShadowSampling.FilterSampleCount,
-            VirtualShadowSampling.BlockerSearchRadiusTexels, VirtualShadowSampling.MaxFilterRadiusTexels);
+            VirtualShadowSampling.BlockerSearchRadiusTexels, VirtualShadowSampling.MaxFilterRadiusTexels,
+            geometricNormal);
         bool shadingFacesLight = dot(mappedNormal, view.CameraPos - surface.Position) > 0.0 &&
             dot(mappedNormal, -LightBuffer[0].Direction) >= 0.15;
         color[pixel] = float4(visibility, 1.0, shadingFacesLight ? 1.0 : 0.0, 1.0);
