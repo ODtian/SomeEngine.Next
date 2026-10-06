@@ -66,7 +66,19 @@ public sealed partial record VirtualShadowMapSettings
     // The receiver-plane comparison handles texel offsets. This remaining
     // normalized-depth allowance covers one millimeter over the default directional range.
     public float DepthBias { get; init; } = 0.000001f;
-    public float NormalBias { get; init; } = 0.001f;
+    public float NormalBias { get; init; } = 0.0005f;
+    public uint DirectionalRayCount { get; init; } = 7;
+    public uint LocalRayCount { get; init; } = 7;
+    public uint DirectionalSamplesPerRay { get; init; } = 8;
+    public uint LocalSamplesPerRay { get; init; } = 8;
+    public uint AdaptiveRayCount { get; init; } = 1;
+    public float DirectionalExtrapolateMaxSlope { get; init; } = 5f;
+    public float LocalExtrapolateMaxSlope { get; init; } = .05f;
+    public float DirectionalTexelDitherScale { get; init; } = 2f;
+    public float LocalTexelDitherScale { get; init; } = 2f;
+    public float DirectionalRayLengthScale { get; init; } = 1.5f;
+    public float LocalMaxRayAngle { get; init; } = .03f;
+    public float LocalMaxSlopeBias { get; init; } = 50f;
     public float DirectionalDepthRangeScale { get; init; } = 1000.0f;
     public float LocalNearPlane { get; init; } = 0.05f;
     public float BlockerSearchRadiusTexels { get; init; }
