@@ -7,6 +7,29 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class ShadowPagePressureTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
+    public void WorkPressureUsesEachViewsClusterContribution()
+    {
+        uint[][] observed = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #include "vsm_work_throttle.slang"
+            RWStructuredBuffer<float2> Bias;
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void ReadWorkBias()
+            {
+                float globalPressure = CalculateVirtualShadowWorkPressure(uint2(11000, 0), 0.0, 0.1, -1.0);
+                uint2 maximum = uint2(10000, 0);
+                float hot = CalculateVirtualShadowViewWorkPressure(uint2(10000, 0), maximum,
+                    globalPressure, 0.0, 0.9);
+                float cool = CalculateVirtualShadowViewWorkPressure(uint2(1000, 0), maximum,
+                    globalPressure, 0.0, 0.9);
+                Bias[0] = float2(hot, cool) * 2.0;
+            }
+            """, "ReadWorkBias", new(1, 1, 1), [(new uint[2], ResourceBindingType.BufferUav, 8)]);
+        Assert.InRange(BitConverter.UInt32BitsToSingle(observed[0][0]), .0399999f, .0400001f);
+        Assert.InRange(BitConverter.UInt32BitsToSingle(observed[0][1]), .0039999f, .0040001f);
+    }
+
+    [Fact]
     public void AvailablePageCapacityPreservesResolutionWhenRasterWorkGrows()
     {
         const uint capacity = 10;
