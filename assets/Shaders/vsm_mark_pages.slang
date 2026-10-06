@@ -1,6 +1,7 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 #include "vsm_receiver_pixel.slang"
+#include "vsm_receiver_projection.slang"
 #include "render_lighting.slang"
 
 struct VirtualShadowPageDemandUniforms
@@ -24,6 +25,9 @@ struct VirtualShadowPageDemandUniforms
     float NormalBias;
     uint Pad1;
     uint Pad2;
+    uint Pad3;
+    uint Pad4;
+    VirtualShadowReceiverProjection ReceiverProjection;
 };
 
 ConstantBuffer<VirtualShadowPageDemandUniforms> PageDemand;
@@ -191,11 +195,10 @@ void MarkVirtualShadowPages(
         {
             continue;
         }
-        uint mipLevel = VirtualShadowLocalMipFromReceiverFootprint(
+        uint mipLevel = VirtualShadowLocalMipFromNominalPixelRadius(
             shadowView,
             worldPosition,
-            worldPositionDx,
-            worldPositionDy,
+            CalculateVirtualShadowNominalWorldPixelRadius(PageDemand.ReceiverProjection, worldPosition),
             dynamicResolutionBias.y);
         PublishProjectedShadowView(
             shadowViewIndex,

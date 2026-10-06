@@ -3,7 +3,17 @@ using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Shadows;
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 136)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+public struct VirtualShadowReceiverProjection
+{
+    public Vector4 WorldToClipW;
+    public float ScreenPixelRadius;
+    public uint Pad0;
+    public uint Pad1;
+    public uint Pad2;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 176)]
 public struct VirtualShadowPageDemandUniforms
 {
     public Matrix4x4 ClipToWorld;
@@ -25,6 +35,9 @@ public struct VirtualShadowPageDemandUniforms
     public float NormalBias;
     public uint Pad1;
     public uint Pad2;
+    public uint Pad3;
+    public uint Pad4;
+    public VirtualShadowReceiverProjection ReceiverProjection;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -112,7 +125,7 @@ public struct VirtualShadowPageClearUniforms
     public uint Pad0;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 56)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 96)]
 public struct VirtualShadowSamplingUniforms
 {
     public uint ViewCount;
@@ -129,6 +142,9 @@ public struct VirtualShadowSamplingUniforms
     public float BlockerSearchRadiusTexels;
     public float MaxFilterRadiusTexels;
     public float NormalBias;
+    public uint Pad0;
+    public uint Pad1;
+    public VirtualShadowReceiverProjection ReceiverProjection;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
