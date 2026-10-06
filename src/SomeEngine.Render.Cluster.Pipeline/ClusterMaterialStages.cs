@@ -1640,7 +1640,8 @@ internal sealed class ClusterShadeStages : IDisposable
         TypeReflection type = reflection.FindTypeByName(typeName)
             ?? throw new InvalidDataException(
                 $"Shader '{shader.Name}' has no linked MaterialScalars type '{typeName}'.");
-        TypeLayoutReflection layout = reflection.GetTypeLayout(type, LayoutRules.Default)
+        // MaterialScalarRegion.Load<T> reads the buffer layout of T.
+        TypeLayoutReflection layout = reflection.GetTypeLayout(type, LayoutRules.DefaultStructuredBuffer)
             ?? throw new InvalidDataException(
                 $"Shader '{shader.Name}' has no layout for MaterialScalars type '{type.Name}'.");
         return ScalarLayout.FromSlang(type.Name, layout);

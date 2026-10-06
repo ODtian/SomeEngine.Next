@@ -31,7 +31,7 @@ float EvaluateLightingCookie(GPULight light, float3 worldPosition)
 }
 
 // C# imports this marked struct through Slang reflection and writes the material
-// scalar payload using Slang's own field offsets and type size.
+// scalar payload using Slang's buffer field offsets and type size.
 [MaterialScalars]
 struct StandardScalars
 {
