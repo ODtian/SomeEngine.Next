@@ -32,6 +32,8 @@ VSM 设置分别持有非移动与移动精度偏置，按
 请求与标准材质从原始接收位置计算世界半径，材质显式传入 Point/Spot 采样接口；
 光投影将该半径转为 `abs(radius * lightScale / lightClipW) * (2 * VirtualResolution)` footprint。
 其 `floor(log2(footprint) + bias)` 决定 mip，并受可用 mip 范围限制。
+`LocalMipMode` 提供 All、Even、Odd；原版在边界限制后选择偶数或奇数 mip，
+同一投影字段同时供页请求与采样使用。
 材质采样传入接收面上 X/Y 相邻屏幕像素的世界坐标，供几何接收面和过滤梯度计算。
 页请求与标准材质共用 `ReconstructVirtualShadowReceiverPixel`，从当前深度图
 重建接收面相邻像素的世界坐标。每个轴采用深度差较小的前景邻居，在断层处

@@ -2,6 +2,13 @@ using System.Numerics;
 
 namespace SomeEngine.Render.Shadows;
 
+public enum VirtualShadowLocalMipMode
+{
+    All,
+    Even,
+    Odd,
+}
+
 /// <summary>Virtual address-space, page-pool and atlas quality settings.</summary>
 public sealed record VirtualShadowMapSettings
 {
@@ -29,6 +36,7 @@ public sealed record VirtualShadowMapSettings
     public float ShadowMinPixelsPerEdgeHardware { get; init; } = 32.0f;
     public float ShadowDicingRate { get; init; } = 2.0f;
     public float ShadowGeometryLodScale => MathF.Pow(2.0f, -ShadowGeometryLodBias);
+    public VirtualShadowLocalMipMode LocalMipMode { get; init; }
     public bool DynamicResolutionEnabled { get; init; }
     /// <summary>Raster budget in 8×8-page material-batch equivalents. HW contributes
     /// cropped page-batch area / 64; each bounded SW material batch contributes one.
