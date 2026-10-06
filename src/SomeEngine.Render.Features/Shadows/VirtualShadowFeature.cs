@@ -928,6 +928,26 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BlockerSearchRadiusTexels = _shadowMap.Settings.BlockerSearchRadiusTexels,
                 MaxFilterRadiusTexels = _shadowMap.Settings.MaxFilterRadiusTexels,
                 NormalBias = _shadowMap.Settings.NormalBias,
+                FrameIndex = _frameIndex,
+                DirectionalRays = new()
+                {
+                    RayCount = _shadowMap.Settings.DirectionalRayCount,
+                    SamplesPerRay = _shadowMap.Settings.DirectionalSamplesPerRay,
+                    AdaptiveRayCount = _shadowMap.Settings.AdaptiveRayCount,
+                    ExtrapolateMaxSlope = _shadowMap.Settings.DirectionalExtrapolateMaxSlope,
+                    TexelDitherScale = _shadowMap.Settings.DirectionalTexelDitherScale,
+                    RayLengthScale = _shadowMap.Settings.DirectionalRayLengthScale,
+                },
+                LocalRays = new()
+                {
+                    RayCount = _shadowMap.Settings.LocalRayCount,
+                    SamplesPerRay = _shadowMap.Settings.LocalSamplesPerRay,
+                    AdaptiveRayCount = _shadowMap.Settings.AdaptiveRayCount,
+                    ExtrapolateMaxSlope = _shadowMap.Settings.LocalExtrapolateMaxSlope,
+                    TexelDitherScale = _shadowMap.Settings.LocalTexelDitherScale,
+                    MaxRayAngle = _shadowMap.Settings.LocalMaxRayAngle,
+                    MaxSlopeBias = _shadowMap.Settings.LocalMaxSlopeBias,
+                },
                 ReceiverProjection = receiverProjection,
             };
             _uniformData.Write(ref graph, _frameSamplingUniforms, in sampling);
@@ -1062,6 +1082,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private static VirtualShadowReceiverProjection CalculateReceiverProjection(in RenderView view)
     {
         Matrix4x4 worldToClip = view.View * view.Projection;
+        Matrix4x4.Invert(view.View, out Matrix4x4 viewToWorld);
         return new VirtualShadowReceiverProjection
         {
             WorldToClipW = new(worldToClip.M14, worldToClip.M24, worldToClip.M34, worldToClip.M44),
@@ -1069,6 +1090,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             DepthOfField = view.DepthOfField.GetValueOrDefault(),
             ScreenPixelRadius = MathF.Min(1f / (view.ViewportWidth * view.Projection.M11),
                 1f / (view.ViewportHeight * view.Projection.M22)),
+            CameraPosition = new(viewToWorld.M41, viewToWorld.M42, viewToWorld.M43),
+            CotanHalfFieldOfView = view.Projection.M11,
         };
     }
 

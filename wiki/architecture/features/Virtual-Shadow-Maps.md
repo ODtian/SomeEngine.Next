@@ -217,6 +217,16 @@ double 中减去原点的光空间位置。`ClipmapCornerRelativeOffsetX/Y` 以�
 
 ## 跨帧页面顺序
 
+标准材质用用户表面着色法线执行阴影偏置和投射。偏置长度取相机距离除以投影横向标度，
+乘 `NormalBias`，下限为 `.02` 原版厘米。方向光完整光源角直径与局部光世界单位半径
+沿 `LightShadowSettings` 提取到同一304字节视图。投射结果带有效性、可见比例和遮挡距离；
+ray 数为零时使用带坡度容差的深度比较。方向和局部 SMRT 使用平方步长、深度历史、
+受限斜率外推与波内自适应停止，点光射线在起终点所在 cube face 间切换。
+接收投影保存相机位置和投影横向标度，页面需求与材质采样消费同一提取结果。
+原版依据为固定提交 `396c9f059903aed5fec78ecd3d437a40c6415368` 的
+`VirtualShadowMapProjectionCommon.ush`、`VirtualShadowMapProjectionSpot.ush`、
+`VirtualShadowMapProjectionDirectional.ush` 与 `VirtualShadowMapSMRTTemplate.ush`。
+
 局部光的最小 mip 使用光包围球最近深度、接收相机像素半径和光投影标度计算，
 并消费同一局部 mip 奇偶模式。`DistantLightMode` 默认 `Conservative`，保守估计到达末级时
 使用 `SinglePage` 表示；`All` 对所有局部光采用该表示。`MaximumDistantUpdatesPerFrame` 默认一。

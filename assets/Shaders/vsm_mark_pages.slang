@@ -82,8 +82,10 @@ void PublishProjectedShadowView(
             shadowView.LightViewProjection[1][1], shadowView.LightViewProjection[2][1]);
         float3 w = float3(shadowView.LightViewProjection[0][3],
             shadowView.LightViewProjection[1][3], shadowView.LightViewProjection[2][3]);
-        float2 xyChange = float2(length(x), length(y)) * PageDemand.NormalBias;
-        float wChange = length(w) * PageDemand.NormalBias;
+        float normalBiasLength = CalculateVirtualShadowNormalBiasLength(PageDemand.ReceiverProjection,
+            worldPosition, PageDemand.NormalBias, shadowView.WorldUnitsPerCentimeter);
+        float2 xyChange = float2(length(x), length(y)) * normalBiasLength;
+        float wChange = length(w) * normalBiasLength;
         float minimumW = clip.w - wChange;
         float2 uvBorder = minimumW > 1e-6
             ? 0.5 * (xyChange * clip.w + abs(clip.xy) * wChange) / (clip.w * minimumW)

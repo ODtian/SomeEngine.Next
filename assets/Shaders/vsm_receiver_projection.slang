@@ -22,7 +22,17 @@ struct VirtualShadowReceiverProjection
     uint Pad2;
     float4 WorldToViewDepth;
     CameraDepthOfField DepthOfField;
+    float3 CameraPosition;
+    float CotanHalfFieldOfView;
 };
+
+float CalculateVirtualShadowNormalBiasLength(VirtualShadowReceiverProjection projection,
+    float3 worldPosition, float normalBias, float worldUnitsPerCentimeter)
+{
+    float distanceToCamera = length(worldPosition - projection.CameraPosition);
+    return max(0.02 * worldUnitsPerCentimeter,
+        normalBias * distanceToCamera / projection.CotanHalfFieldOfView);
+}
 
 float CalculateVirtualShadowNominalWorldPixelRadius(
     VirtualShadowReceiverProjection projection, float3 worldPosition)

@@ -25,6 +25,7 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 | #140 | 两页池 A→B→A→空闲32帧→C 保留最近访问 A，B 再请求恢复与 fresh-state 一致。 |
 | #141 | 动态页更新时复用静态深度；实际 allocator dirty0→dirty1，同时保留静态 generation7。 |
 | #142 | 全局页压力、逐视图 HW/SW 工作、时间预算和光实体身份沿对应生产数据反馈；直接用例通过。 |
+| #143 | 零 ray 斜面比较的原版正向坡度容差实际 red→green；局部光半径为0时半平面外接收点全亮，半径 `.01` 时同点落入独立几何预期的半影范围，实际 D3D12 直接行1 passed、0 skipped。生产材质消费法线距离偏置、有效性/遮挡距离结果、方向/局部 SMRT、cube face 切换和深度历史外推；接收投影96B、页面需求240B、采样224B。原始输出在 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-143/`。 |
 | #144 | Vulkan SW 用户 UV 覆盖与运行中材质修改的直接行为通过。 |
 | #145 | 方向/局部 mip 数 `[3,3,3]→[1,1,3]`；粗页四点 `[0,1,1,1]→[0,0,0,0]`；模式条件 `[0,0]→[1,0]`。 |
 | #146 | 生产 resident propagation 后直接采样：unfinished fine 使用已完成 coarse，实际 validity1 / known plane depth .4；1 passed、规则0。原始 TRX 在 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-146/resident-lookup/`。 |
