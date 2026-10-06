@@ -210,4 +210,12 @@ double 中减去原点的光空间位置。`ClipmapCornerRelativeOffsetX/Y` 以�
 
 ## 跨帧页面顺序
 
+局部光的最小 mip 使用光包围球最近深度、接收相机像素半径和光投影标度计算，
+并消费同一局部 mip 奇偶模式。`DistantLightMode` 默认 `Conservative`，保守估计到达末级时
+使用 `SinglePage` 表示；`All` 对所有局部光采用该表示。`MaximumDistantUpdatesPerFrame` 默认一。
+完成帧以光实体保存上次计划更新的帧号，较旧光源先取得预算；查询和取消继续保留完成帧年龄。
+光移动、投影或缓存代号变化使该光立即重绘。留用的远距离光页保留动态深度，遮挡者事件由
+下一次预算更新消费。原版来源为 `ShadowSceneRenderer.cpp:218–259,343–429` 与
+`VirtualShadowMapCacheManager.h:109,369–410`。
+
 页池以 GPU `ShadowPageLists` 的 LRU、AVAILABLE、EMPTY、REQUESTED 四个列表维护跨帧顺序。REQUESTED 在帧结束时包含全部图集页；下一帧先保存该顺序，再将当前请求页移入 REQUESTED，未请求页保序压缩进入 AVAILABLE，空页追加在 AVAILABLE 尾部并优先分配。分配后的剩余 AVAILABLE 追加到本帧请求页之后，成为下一帧输入。未请求缓存页上的完成状态和失效事实随原页面保留，后续请求或回收负责消费。准备、压缩和收尾由持久图中的显式阶段表达，帧取消、部分提交和重新初始化沿现有完成边界维护。

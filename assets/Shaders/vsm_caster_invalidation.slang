@@ -141,6 +141,7 @@ void InvalidateBoundsInView(
     float3 worldMin,
     float3 worldMax, uint depthCacheClass)
 {
+    if ((view.Flags & VSM_VIEW_CACHED_DISTANT_LIGHT) != 0u) return;
     if (any(worldMin > worldMax) || BoundsOutsideLocalLight(view, worldMin, worldMax))
         return;
     float2 uvMin;

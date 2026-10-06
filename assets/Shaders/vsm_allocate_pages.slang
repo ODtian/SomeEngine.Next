@@ -206,7 +206,8 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         uint dirtyFlags = PageMetadata[atlasPage].w;
         staticUncached = PageMetadata[atlasPage].y != view.CacheGeneration ||
             (dirtyFlags & VSM_PAGE_INVALIDATE_STATIC) != 0u || detailUpgrade;
-        bool retainDynamicCoarse = (view.Flags & VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE) != 0u &&
+        bool retainDynamicCoarse = (view.Flags & VSM_VIEW_CACHED_DISTANT_LIGHT) != 0u ||
+            (view.Flags & VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE) != 0u &&
             (requestFlags & VSM_PAGE_REQUEST_DETAIL) == 0u && !staticUncached;
         bool receiverRefresh = (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u && !retainDynamicCoarse;
         dynamicUncached = staticUncached || entry.w != view.CacheGeneration ||

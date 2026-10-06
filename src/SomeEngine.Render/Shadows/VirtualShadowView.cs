@@ -78,4 +78,5 @@ public static class VirtualShadowViewFlags
     /// <summary>The local shadow uses the last mip as its one-page representation.</summary>
     public const uint SinglePage = 1u << 7;
     public const uint DistantLight = 1u << 8;
+    public const uint CachedDistantLight = 1u << 9;
 }

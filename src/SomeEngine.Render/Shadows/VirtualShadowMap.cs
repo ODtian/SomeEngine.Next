@@ -582,6 +582,7 @@ public sealed partial class VirtualShadowMap : IDisposable
                 }
             }
         }
+        SelectDistantUpdates(lights, viewCount, ref generation);
         _pendingCacheGeneration = generation;
         return _views.AsSpan(0, viewCount);
     }
@@ -742,6 +743,7 @@ public sealed partial class VirtualShadowMap : IDisposable
         _committedInstanceCount = _pendingInstanceCount;
         _committedGeometryRevision = _pendingGeometryRevision;
         _committedRasterRevision = _pendingRasterRevision;
+        CommitDistantLights();
         _committedWorldOrigin = _worldOrigin;
         if (_committedViews.Length != _pendingViewCount)
             _committedViews = new VirtualShadowView[_pendingViewCount];
@@ -957,8 +959,8 @@ public sealed partial class VirtualShadowMap : IDisposable
         left.ClipmapLevelCount == right.ClipmapLevelCount &&
         left.MipLevelCount == right.MipLevelCount &&
         left.MinMipLevel == right.MinMipLevel &&
-        (left.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) ==
-            (right.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) &&
+        (left.Flags & ~(VirtualShadowViewFlags.PreviousProjectionValid | VirtualShadowViewFlags.CachedDistantLight)) ==
+            (right.Flags & ~(VirtualShadowViewFlags.PreviousProjectionValid | VirtualShadowViewFlags.CachedDistantLight)) &&
         left.LightKind == right.LightKind &&
         left.FaceIndex == right.FaceIndex &&
         left.LightPosition == right.LightPosition &&

@@ -66,6 +66,7 @@ static const uint VSM_VIEW_EVEN_MIP_LEVELS = 1u << 5u;
 static const uint VSM_VIEW_ODD_MIP_LEVELS = 1u << 6u;
 static const uint VSM_VIEW_SINGLE_PAGE = 1u << 7u;
 static const uint VSM_VIEW_DISTANT_LIGHT = 1u << 8u;
+static const uint VSM_VIEW_CACHED_DISTANT_LIGHT = 1u << 9u;
 static const uint VSM_PAGE_REQUEST_DETAIL = 1u << 0u;
 static const uint VSM_PAGE_REQUEST_COARSE = 1u << 1u;
 

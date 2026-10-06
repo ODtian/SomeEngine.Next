@@ -30,6 +30,7 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 | #146 | 生产 resident propagation 后直接采样：unfinished fine 使用已完成 coarse，实际 validity1 / known plane depth .4；1 passed、规则0。原始 TRX 在 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-146/resident-lookup/`。 |
 | #147 | 单页读取预算下，高投影细节需求页面先读取；同一用例实际 FIFO red→priority green，1 passed、0 skipped。 |
 | #149 | 跨旧网格边界的四页按 UE 窗口原点处理，实际工作数 6→4。 |
+| #150 | 保守局部 mip 在球体最近点跨过末级边界时从1变2；远距离光源按成功完成的更新年龄选择，输入重排后仍先更新较旧光源，两个直接 CPU 行分别 red→green 1 passed、规则0。原始输出在 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-150/`。 |
 | #151 | `2^40+1/8` 原点的投影偏移由0到独立期望 `-1/2048`，实际 red→green。公开场景入口下，近 `.1875` 与远 `2^40+.1875` 原点保留源球体的 `1/8` 间距，D3D12 raw Half 位及 beauty 像素逐位一致，1 passed、0 skipped；Runtime/Direct3D12 测试项目构建、规则检查及 NativeAOT 编译能力检查通过。 |
 | #152 | 用户材质 float3 使用 structured-buffer 布局，HDR 红/绿/蓝分量的实际渲染检查通过。 |
 

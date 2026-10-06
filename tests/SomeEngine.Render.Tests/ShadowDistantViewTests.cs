@@ -7,6 +7,19 @@ namespace SomeEngine.Render.Tests;
 public sealed class ShadowDistantViewTests
 {
     [Fact]
+    public void CompletedDistantUpdatesLeaveTheOlderLightFirstAfterInputReordering()
+    {
+        var updates = new VirtualShadowDistantLightUpdates();
+        var first = new VirtualShadowLocalLight(VirtualShadowLightKind.Point, default, 1);
+        var second = new VirtualShadowLocalLight(VirtualShadowLightKind.Point, default, 2);
+        updates.CompleteFrame([first, second], [first]);
+        Assert.Equal(second, Assert.Single(updates.Select([first, second], 1)));
+        Assert.Equal(second, Assert.Single(updates.Select([second, first], 1)));
+        updates.CompleteFrame([first, second], [second]);
+        Assert.Equal(first, Assert.Single(updates.Select([second, first], 1)));
+    }
+
+    [Fact]
     public void ConservativeLocalMipReachesOnePageAtTheBoundingSphereBoundary()
     {
         var settings = new VirtualShadowMapSettings { VirtualResolution = 512, AtlasSize = 128, PageSize = 128 };
