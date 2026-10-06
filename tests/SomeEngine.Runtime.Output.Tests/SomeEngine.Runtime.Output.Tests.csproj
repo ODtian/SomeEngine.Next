@@ -20,4 +20,8 @@
     <Compile Include="../SomeEngine.Render.Cluster.Tests/ShadowReferenceComparison.cs" Link="ShadowReferenceComparison.cs" />
     <Compile Include="../SomeEngine.Render.Cluster.Tests/ShadowImageFiles.cs" Link="ShadowImageFiles.cs" />
   </ItemGroup>
+  <ItemGroup Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

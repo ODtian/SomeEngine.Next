@@ -288,73 +288,100 @@ struct ClusterPixelRasterTask<
         return PixelCount;
     }
 
+    ClusterPixelRasterTask<TVertex, TVisibility, TOutput> ReadLane(
+        uniform TVisibility visibility,
+        uint sourceLane)
+    {
+        ClusterPixelRasterTask<TVertex, TVisibility, TOutput> result;
+        result.Triangle.Edge01 = float2(
+            WaveReadLaneAt(Triangle.Edge01.x, sourceLane),
+            WaveReadLaneAt(Triangle.Edge01.y, sourceLane));
+        result.Triangle.Edge12 = float2(
+            WaveReadLaneAt(Triangle.Edge12.x, sourceLane),
+            WaveReadLaneAt(Triangle.Edge12.y, sourceLane));
+        result.Triangle.Edge20 = float2(
+            WaveReadLaneAt(Triangle.Edge20.x, sourceLane),
+            WaveReadLaneAt(Triangle.Edge20.y, sourceLane));
+        result.Triangle.C0 = WaveReadLaneAt(Triangle.C0, sourceLane);
+        result.Triangle.C1 = WaveReadLaneAt(Triangle.C1, sourceLane);
+        result.Triangle.C2 = WaveReadLaneAt(Triangle.C2, sourceLane);
+        result.Triangle.MinPixel = int2(
+            WaveReadLaneAt(Triangle.MinPixel.x, sourceLane),
+            WaveReadLaneAt(Triangle.MinPixel.y, sourceLane));
+        result.Triangle.MaxPixel = int2(
+            WaveReadLaneAt(Triangle.MaxPixel.x, sourceLane),
+            WaveReadLaneAt(Triangle.MaxPixel.y, sourceLane));
+        result.Triangle.DepthPlane = float3(
+            WaveReadLaneAt(Triangle.DepthPlane.x, sourceLane),
+            WaveReadLaneAt(Triangle.DepthPlane.y, sourceLane),
+            WaveReadLaneAt(Triangle.DepthPlane.z, sourceLane));
+        result.Triangle.Screen0 = float2(
+            WaveReadLaneAt(Triangle.Screen0.x, sourceLane),
+            WaveReadLaneAt(Triangle.Screen0.y, sourceLane));
+        result.Triangle.Screen1 = float2(
+            WaveReadLaneAt(Triangle.Screen1.x, sourceLane),
+            WaveReadLaneAt(Triangle.Screen1.y, sourceLane));
+        result.Triangle.Screen2 = float2(
+            WaveReadLaneAt(Triangle.Screen2.x, sourceLane),
+            WaveReadLaneAt(Triangle.Screen2.y, sourceLane));
+        result.Triangle.InvW = float3(
+            WaveReadLaneAt(Triangle.InvW.x, sourceLane),
+            WaveReadLaneAt(Triangle.InvW.y, sourceLane),
+            WaveReadLaneAt(Triangle.InvW.z, sourceLane));
+        result.SourceBarycentric0 = float3(
+            WaveReadLaneAt(SourceBarycentric0.x, sourceLane),
+            WaveReadLaneAt(SourceBarycentric0.y, sourceLane),
+            WaveReadLaneAt(SourceBarycentric0.z, sourceLane));
+        result.SourceBarycentric1 = float3(
+            WaveReadLaneAt(SourceBarycentric1.x, sourceLane),
+            WaveReadLaneAt(SourceBarycentric1.y, sourceLane),
+            WaveReadLaneAt(SourceBarycentric1.z, sourceLane));
+        result.SourceBarycentric2 = float3(
+            WaveReadLaneAt(SourceBarycentric2.x, sourceLane),
+            WaveReadLaneAt(SourceBarycentric2.y, sourceLane),
+            WaveReadLaneAt(SourceBarycentric2.z, sourceLane));
+        result.VisibilityValue = WaveReadLaneAt(VisibilityValue, sourceLane);
+        result.VisibleClusterIndex = WaveReadLaneAt(VisibleClusterIndex, sourceLane);
+        result.TriangleID = WaveReadLaneAt(TriangleID, sourceLane);
+        result.ViewIndex = WaveReadLaneAt(ViewIndex, sourceLane);
+        result.TargetPolicy = WaveReadLaneAt(TargetPolicy, sourceLane);
+        result.TargetViewIndex = WaveReadLaneAt(TargetViewIndex, sourceLane);
+        result.Scanline = WaveReadLaneAt(Scanline, sourceLane);
+        result.Varying0 = visibility.readLane(Varying0, sourceLane);
+        result.Varying1 = visibility.readLane(Varying1, sourceLane);
+        result.Varying2 = visibility.readLane(Varying2, sourceLane);
+        result.PixelCount = WaveReadLaneAt(PixelCount, sourceLane);
+        result.Output = Output;
+        return result;
+    }
+
     [mutating] void ExecuteTask(
         uniform TVisibility visibility,
         uint sourceLane,
         uint localIndex,
         bool active)
     {
-        ClusterRasterTriangle triangle;
-        triangle.Edge01 = float2(
-            WaveReadLaneAt(Triangle.Edge01.x, sourceLane),
-            WaveReadLaneAt(Triangle.Edge01.y, sourceLane));
-        triangle.Edge12 = float2(
-            WaveReadLaneAt(Triangle.Edge12.x, sourceLane),
-            WaveReadLaneAt(Triangle.Edge12.y, sourceLane));
-        triangle.Edge20 = float2(
-            WaveReadLaneAt(Triangle.Edge20.x, sourceLane),
-            WaveReadLaneAt(Triangle.Edge20.y, sourceLane));
-        triangle.C0 = WaveReadLaneAt(Triangle.C0, sourceLane);
-        triangle.C1 = WaveReadLaneAt(Triangle.C1, sourceLane);
-        triangle.C2 = WaveReadLaneAt(Triangle.C2, sourceLane);
-        triangle.MinPixel = int2(
-            WaveReadLaneAt(Triangle.MinPixel.x, sourceLane),
-            WaveReadLaneAt(Triangle.MinPixel.y, sourceLane));
-        triangle.MaxPixel = int2(
-            WaveReadLaneAt(Triangle.MaxPixel.x, sourceLane),
-            WaveReadLaneAt(Triangle.MaxPixel.y, sourceLane));
-        triangle.DepthPlane = float3(
-            WaveReadLaneAt(Triangle.DepthPlane.x, sourceLane),
-            WaveReadLaneAt(Triangle.DepthPlane.y, sourceLane),
-            WaveReadLaneAt(Triangle.DepthPlane.z, sourceLane));
-        triangle.Screen0 = float2(
-            WaveReadLaneAt(Triangle.Screen0.x, sourceLane),
-            WaveReadLaneAt(Triangle.Screen0.y, sourceLane));
-        triangle.Screen1 = float2(
-            WaveReadLaneAt(Triangle.Screen1.x, sourceLane),
-            WaveReadLaneAt(Triangle.Screen1.y, sourceLane));
-        triangle.Screen2 = float2(
-            WaveReadLaneAt(Triangle.Screen2.x, sourceLane),
-            WaveReadLaneAt(Triangle.Screen2.y, sourceLane));
-        triangle.InvW = float3(
-            WaveReadLaneAt(Triangle.InvW.x, sourceLane),
-            WaveReadLaneAt(Triangle.InvW.y, sourceLane),
-            WaveReadLaneAt(Triangle.InvW.z, sourceLane));
-        float3 sourceBarycentric0 = float3(
-            WaveReadLaneAt(SourceBarycentric0.x, sourceLane),
-            WaveReadLaneAt(SourceBarycentric0.y, sourceLane),
-            WaveReadLaneAt(SourceBarycentric0.z, sourceLane));
-        float3 sourceBarycentric1 = float3(
-            WaveReadLaneAt(SourceBarycentric1.x, sourceLane),
-            WaveReadLaneAt(SourceBarycentric1.y, sourceLane),
-            WaveReadLaneAt(SourceBarycentric1.z, sourceLane));
-        float3 sourceBarycentric2 = float3(
-            WaveReadLaneAt(SourceBarycentric2.x, sourceLane),
-            WaveReadLaneAt(SourceBarycentric2.y, sourceLane),
-            WaveReadLaneAt(SourceBarycentric2.z, sourceLane));
-        uint visibilityValue = WaveReadLaneAt(VisibilityValue, sourceLane);
-        uint visibleClusterIndex = WaveReadLaneAt(VisibleClusterIndex, sourceLane);
-        uint triangleID = WaveReadLaneAt(TriangleID, sourceLane);
-        uint viewIndex = WaveReadLaneAt(ViewIndex, sourceLane);
-        uint targetPolicy = WaveReadLaneAt(TargetPolicy, sourceLane);
-        uint targetViewIndex = WaveReadLaneAt(TargetViewIndex, sourceLane);
-        uint scanline = WaveReadLaneAt(Scanline, sourceLane);
-        TVisibility.Varying varying0 = visibility.readLane(Varying0, sourceLane);
-        TVisibility.Varying varying1 = visibility.readLane(Varying1, sourceLane);
-        TVisibility.Varying varying2 = visibility.readLane(Varying2, sourceLane);
-        if (!active)
-            return;
+        ClusterPixelRasterTask<TVertex, TVisibility, TOutput> source = ReadLane(visibility, sourceLane);
+        if (active)
+            source.RasterizePixels(visibility, localIndex);
+    }
 
+    void RasterizePixels(uniform TVisibility visibility, uint localIndex)
+    {
+        ClusterRasterTriangle triangle = Triangle;
+        float3 sourceBarycentric0 = SourceBarycentric0;
+        float3 sourceBarycentric1 = SourceBarycentric1;
+        float3 sourceBarycentric2 = SourceBarycentric2;
+        uint visibilityValue = VisibilityValue;
+        uint visibleClusterIndex = VisibleClusterIndex;
+        uint triangleID = TriangleID;
+        uint viewIndex = ViewIndex;
+        uint targetPolicy = TargetPolicy;
+        uint targetViewIndex = TargetViewIndex;
+        uint scanline = Scanline;
+        TVisibility.Varying varying0 = Varying0;
+        TVisibility.Varying varying1 = Varying1;
+        TVisibility.Varying varying2 = Varying2;
         int width = triangle.MaxPixel.x - triangle.MinPixel.x + 1;
         int firstX = scanline != 0u ? 0 : int(localIndex) % width;
         int lastX = scanline != 0u ? width : firstX + 1;
@@ -572,8 +599,20 @@ void RasterizeClusterTriangleWave<
             task.PixelCount = 0u;
             task.Scanline = 0u;
         }
-        WaveQueue::DistributeWithUniform<TVisibility,
-            ClusterPixelRasterTask<TVertex, TVisibility, TOutput>>(task, visibility);
+        typealias VisibilityVarying = TVisibility.Varying;
+        if (sizeof(VisibilityVarying) != 0u)
+        {
+            // Programmable pixels retain their triangle's opaque user data in
+            // its triangle lane, matching Nanite's programmable raster path.
+            [loop]
+            for (uint pixelTask = 0u; pixelTask < task.PixelCount; pixelTask++)
+                task.RasterizePixels(visibility, pixelTask);
+        }
+        else
+        {
+            WaveQueue::DistributeWithUniform<TVisibility,
+                ClusterPixelRasterTask<TVertex, TVisibility, TOutput>>(task, visibility);
+        }
     }
 }
 

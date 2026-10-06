@@ -1,0 +1,25 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Render.Cluster.Tests; 0 violations.
+F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.2 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+[xUnit.net 00:00:24.16]     SomeEngine.Render.Cluster.Tests.VertexUvRenderingTests.EncodedUvValuesProduceTheAuthoredDepthGradientAcrossTheWholePlane(backend: "Vulkan", hardware: False) [FAIL]
+  失败 SomeEngine.Render.Cluster.Tests.VertexUvRenderingTests.EncodedUvValuesProduceTheAuthoredDepthGradientAcrossTheWholePlane(backend: "Vulkan", hardware: False) [11 s]
+  错误消息:
+   Assert.Equal() Failure: Collections differ
+                      ↓ (pos 8322)
+Expected: [···, 0, 0, 193, 62, 0, ···]
+Actual:   [···, 0, 0, 128, 63, 0, ···]
+                      ↑ (pos 8322)
+  堆栈跟踪:
+     at SomeEngine.Tests.ImageArtifacts.AssertEqual(TestImage expected, TestImage actual, String test) in F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\Shared\ImageArtifacts.cs:line 25
+   at SomeEngine.Render.Cluster.Tests.VertexUvRenderingTests.EncodedUvValuesProduceTheAuthoredDepthGradientAcrossTheWholePlane(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\VertexUvRenderingTests.cs:line 42
+   at SomeEngine.Render.Cluster.Tests.VertexUvRenderingTests.EncodedUvValuesProduceTheAuthoredDepthGradientAcrossTheWholePlane(String backend, Boolean hardware) in F:\SomeEngine.AgentWork\rg70-remaining\trees\review-fixes\tests\SomeEngine.Render.Cluster.Tests\VertexUvRenderingTests.cs:line 42
+--- End of stack trace from previous location ---
+结果文件: F:\SomeEngine.AgentWork\rg70-remaining\ticket-144-validation\numeric\numeric.trx
+
+失败!  - 失败:     1，通过:     3，已跳过:     0，总计:     4，持续时间: 54 s - SomeEngine.Render.Cluster.Tests.dll (net10.0)
