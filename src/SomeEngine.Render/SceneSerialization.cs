@@ -18,9 +18,9 @@ public static class SceneSerialization
         .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f;depthCache:u32"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
         .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f;dofPresent:u32;focus:f;infinityRadius:f;minRadius:f;maxRadius:f;depthBlurRadius:f;depthBlurExponent:f;shadowBiasStrength:f"))
-        .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"))
-        .Register<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"))
-        .Register<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"));
+        .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32;sourceRadius:f;sourceAnglePresent:u32;sourceAngle:f"))
+        .Register<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32;sourceRadius:f;sourceAnglePresent:u32;sourceAngle:f"))
+        .Register<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32;sourceRadius:f;sourceAnglePresent:u32;sourceAngle:f"));
 
     private static SerializationTypeKey Key(string name, string fields)
         => new(BinaryTypeId.FromLogicalName("SomeEngine.Scene." + name), "SomeEngine.Scene." + name, BinaryFieldKey.FromName(fields));
@@ -34,10 +34,19 @@ public static class SceneSerialization
     {
         writer.WriteSingle(value.ResolutionLodBias);
         writer.WriteUInt32((uint)value.Mobility);
+        writer.WriteSingle(value.SourceRadius);
+        writer.WriteUInt32(value.SourceAngleDegrees.HasValue ? 1u : 0u);
+        if (value.SourceAngleDegrees is { } angle) writer.WriteSingle(angle);
     }
 
     private static LightShadowSettings ReadShadowSettings(ref DataReader reader)
-        => new(reader.ReadSingle(), (LightMobility)reader.ReadUInt32());
+    {
+        float bias = reader.ReadSingle();
+        var mobility = (LightMobility)reader.ReadUInt32();
+        float radius = reader.ReadSingle();
+        float? angle = reader.ReadUInt32() != 0u ? reader.ReadSingle() : null;
+        return new(bias, mobility, radius, angle);
+    }
 
     private struct WorldOriginCodec : ICanonicalComponentCodec<WorldOrigin>
     {
