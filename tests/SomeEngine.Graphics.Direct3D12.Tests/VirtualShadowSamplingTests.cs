@@ -426,6 +426,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
         view[26] = (uint)level;
         view[33] = 3;
         view[34] = 1;
+        view[39] = BitConverter.SingleToUInt32Bits(1f);
         return view;
     }
 }

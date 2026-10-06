@@ -25,7 +25,7 @@ struct VirtualShadowMapParameters
     uint Flags;
     uint LightKind;
     uint FaceIndex;
-    uint Padding;
+    float WorldUnitsPerCentimeter;
     float3 LightPosition;
     float LightRange;
 };
@@ -503,7 +503,8 @@ float CalculateDirectionalVirtualShadowDistanceLevel(
     VirtualShadowMapParameters parameters,
     float3 worldPosition)
 {
-    float3 fromCamera = worldPosition - parameters.ClipmapWorldOrigin;
+    float3 fromCamera = (worldPosition - parameters.ClipmapWorldOrigin) /
+        parameters.WorldUnitsPerCentimeter;
     return 0.5 * log2(max(dot(fromCamera, fromCamera), 1e-12)) -
         float(parameters.FirstClipmapLevel);
 }

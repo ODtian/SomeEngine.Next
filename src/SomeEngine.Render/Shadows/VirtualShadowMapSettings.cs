@@ -10,10 +10,10 @@ public sealed record VirtualShadowMapSettings
     public uint AtlasSize { get; init; } = 8_192;
     public uint PageSize { get; init; } = 128;
     public uint MaxShadowLights { get; init; } = 4;
-    // Meter-scale scenes need levels below zero near the camera. Keep the
-    // previous farthest level (22) while adding the nearby levels.
-    public uint DirectionalClipmapLevels { get; init; } = 27;
-    public int DirectionalFirstClipmapLevel { get; init; } = -4;
+    /// <summary>Scene distance represented by one native centimeter. Meter scenes use 0.01.</summary>
+    public float WorldUnitsPerCentimeter { get; init; } = 0.01f;
+    public uint DirectionalClipmapLevels { get; init; } = 17;
+    public int DirectionalFirstClipmapLevel { get; init; } = 6;
     public int DirectionalFirstCoarseClipmapLevel { get; init; } = 15;
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
     public float DirectionalResolutionLodBias { get; init; } = -2.0f;
@@ -136,6 +136,8 @@ public sealed record VirtualShadowMapSettings
 
     public void Validate()
     {
+        if (!float.IsFinite(WorldUnitsPerCentimeter) || WorldUnitsPerCentimeter <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(WorldUnitsPerCentimeter));
         if (!BitOperations.IsPow2(VirtualResolution) ||
             !BitOperations.IsPow2(AtlasSize) ||
             !BitOperations.IsPow2(PageSize) ||

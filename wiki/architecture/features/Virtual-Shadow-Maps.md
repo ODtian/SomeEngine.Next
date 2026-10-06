@@ -6,18 +6,20 @@ VSM 构造普通 unified render views，并通过 geometry pipeline 能力使用
 
 参见 [[architecture/rendering/Multi-View]] · [[architecture/cluster/Cluster-Scope]]。
 
-方向光的 clipmap 与局部光的 mip 都根据屏幕像素投影到光空间后的覆盖范围选择。
-两个屏幕像素偏移形成光空间中的像素投影，选择级别使用其最小主轴宽度。
-该宽度由投影矩阵的较大奇异值与行列式计算，覆盖拉伸、斜切及视图旋转后的短轴精度。
-请求页与材质采样使用同一选择函数；材质调用 `SampleDirectionalVirtualShadowMap` 时，
-在世界坐标位置后传入接收面上 X/Y 相邻屏幕像素的世界坐标。
+方向光按接收位置与相机 clipmap 原点的距离选择绝对级别。`WorldUnitsPerCentimeter`
+由 VSM 设置产生并写入每个公开 `VirtualShadowView`；默认 `0.01` 对应米场景。
+shader 将距离转换为原版厘米，计算 `log2(distance)`，先找到未偏置级别对应的 VSM，
+再读取该 VSM 的 `ResolutionLodBias`。该偏置包含配置值与相机 viewport / projection 标度。
+例如距离 192 厘米、first level 6 时，未偏置 index 为 1；它的偏置为 1 时选择 index 2。
+页请求与材质采样共用 `SelectDirectionalVirtualShadowView`，从目标级别寻找覆盖该位置的投影。
+
+局部光接收者遮罩关闭时，point / spot 的采样从 mip 0 开始。遮罩开启时，当前 mip
+由接收面相邻位置在光空间的覆盖范围选择；页请求保留自己的 footprint 入口。
+原版相机 viewport / projection / scene depth 的 nominal pixel radius 输入由 #138 后续切片统一。
+材质采样传入接收面上 X/Y 相邻屏幕像素的世界坐标，供几何接收面和过滤梯度计算。
 页请求与标准材质共用 `ReconstructVirtualShadowReceiverPixel`，从当前深度图
 重建接收面相邻像素的世界坐标。每个轴采用深度差较小的前景邻居，在断层处
 保持局部接收面；视口边缘沿该接收面延伸相邻坐标。
-`DirectionalResolutionLodBias` 只表示用户指定的精度偏移，不再混入相机投影倍率。
-
-方向光通过 `SelectDirectionalVirtualShadowView` 选取接收者投影。它先按像素覆盖范围
-计算目标级别，再寻找覆盖该世界位置的首个 clipmap。请求页与材质采样共用这一选择。
 动态分辨率的页池压力偏移作用于这个覆盖投影，使压力反馈能降低实际请求页的密度。
 DefaultGame 启用此反馈；页分配失败、页池占用和光栅工作量由 VSM 自身维护。
 `DynamicResolutionTargetRasterWork` 的单位为 8×8 页材质 batch 等价量：HW 使用
@@ -25,8 +27,11 @@ DefaultGame 启用此反馈；页分配失败、页池占用和光栅工作量�
 indirect instance 数；将 HW 窗口改为四页不能单凭分区数增加而降低分辨率。
 当前裁剪面积反馈可比旧的每窗口一更低，可能恢复更多细节；最终有效质量/成本仍需实测。
 
-clipmap 按二次幂分级。默认偏移为零时，可覆盖目标位置的选中级别使像素投影的最短主轴
-覆盖 1–2 个阴影 texel；较长主轴按投影比例覆盖更多 texel。虚拟分辨率的级别范围限定最大精度。
+clipmap 使用原版绝对级别，默认 first 6 至 last 22。级别 L 的半径为
+`2^(L+1) * WorldUnitsPerCentimeter`，投影为容纳滚动对齐覆盖四个半径。
+因此默认 first 6 的半径是 1.28 米，完整投影宽度是 5.12 米；中心 2.56 米处到达投影边界。
+公开 shader 自给数据以同一字段声明其坐标单位，厘米夹具使用 `1`，米夹具使用 `0.01`。
+虚拟分辨率、可用绝对级别和分辨率偏置共同限定精度。
 页池容量不足或者目标页还没有完成深度时仍可能采样较粗的页，不能把回退画面视为目标分辨率。
 映射不等于采样有效：新脏页仍可光栅，但直到全部必要 caster/material/surface 工作通过
 才获得完成标记。接收者掩码完成只允许实际覆盖单元的采样，不能作为整页缓存或先前 HiZ。
