@@ -76,6 +76,7 @@ public sealed partial class ClusterPipelineSystem
         ShadingBin = bin,
         ShadeBinCount = stages.BinCount,
         MaterialSlotCapacity = checked((uint)(stages.BinIndices.Length / sizeof(uint))),
+        ViewCount = GraphData.Resources.ViewCount,
     };
 
     private static uint CalculateShadeBinItemCapacity(in FrameResources frame)

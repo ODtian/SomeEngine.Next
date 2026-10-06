@@ -30,7 +30,7 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 | #145 | 方向/局部 mip 数 `[3,3,3]→[1,1,3]`；粗页四点 `[0,1,1,1]→[0,0,0,0]`；模式条件 `[0,0]→[1,0]`。 |
 | #146 | 生产 resident propagation 后直接采样：unfinished fine 使用已完成 coarse，实际 validity1 / known plane depth .4；1 passed、规则0。原始 TRX 在 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-146/resident-lookup/`。 |
 | #147 | 单页读取预算下，高投影细节需求页面先读取；同一用例实际 FIFO red→priority green，1 passed、0 skipped。 |
-| #148 | 用户 receiver shader 生成32B语义输入后，实际 MarkVirtualShadowPages 世界点覆盖由 `[1,1,1,1]` 到独立期望 `[0,1,0,1]`：subsurface 保留背光接收，unlit 与普通背光按声明筛选。1 passed/0 skipped、规则0；Features/D3D12.Tests Release build0/0。原始输出在 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-148/`。 |
+| #148 | 用户 receiver32B→实际 Mark 世界点覆盖 `[1,1,1,1]→[0,1,0,1]`，subsurface 保留背光，unlit/普通背光按声明筛选。用户额外 water-current、translucency-AAprevious-depth、hair 层的覆盖 `[0,0,0,0]→[1,1,1,0]`。两个直接行各1 passed/0 skipped、规则0，Features/D3D12.Tests Release build0/0；原始输出 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-148/`。 |
 | #149 | 跨旧网格边界的四页按 UE 窗口原点处理，实际工作数 6→4。 |
 | #150 | 保守局部 mip 从1变2；完成帧年龄在光输入重排后仍先更新较旧光源，两个 CPU 行各 red→green。实际 prefilter X/Y/history kernel 的单像素遮挡从 visibility0 到独立期望 `.859375`，历史按原版最小步长推进到 `.86312157`，直接行1 passed/0 skipped、规则0。Features/D3D12.Tests Release build0/0；原始输出在 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-150/`。 |
 | #151 | `2^40+1/8` 原点的投影偏移由0到独立期望 `-1/2048`，实际 red→green。公开场景入口下，近 `.1875` 与远 `2^40+.1875` 原点保留源球体的 `1/8` 间距，D3D12 raw Half 位及 beauty 像素逐位一致，1 passed、0 skipped；Runtime/Direct3D12 测试项目构建、规则检查及 NativeAOT 编译能力检查通过。 |
