@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="aa558412-5420-438c-b0a4-63eec7441968" name="boqi@BOQI-THE-DAEMON 2026-10-07 00:28:50" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-07T00:28:50.3303334+08:00" queuing="2026-10-07T00:28:50.3303339+08:00" start="2026-10-07T00:27:55.7589578+08:00" finish="2026-10-07T00:28:50.4523792+08:00" />
+  <TestSettings name="default" id="edfb6cae-ae05-4b47-a507-5279f515e1ee">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-07_00_28_50" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="da413447-486c-46a5-a170-de07e41d00e9" testId="2375a7d2-2a14-4a4e-4f80-1e5fcda80d6d" testName="SomeEngine.Graphics.Direct3D12.Tests.ShadowPageReuseTests.RecentlyTouchedShadowsSurvivePressureAndRecycledShadowsRecover" computerName="BOQI-THE-DAEMON" duration="00:00:49.4858424" startTime="2026-10-07T00:28:00.7948761+08:00" endTime="2026-10-07T00:28:50.2519903+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="da413447-486c-46a5-a170-de07e41d00e9" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Graphics.Direct3D12.Tests.ShadowPageReuseTests.RecentlyTouchedShadowsSurvivePressureAndRecycledShadowsRecover" storage="f:\.codex\worktrees\rg70-page-lru-140\someengine.next\tests\someengine.graphics.direct3d12.tests\bin\release\net10.0\someengine.graphics.direct3d12.tests.dll" id="2375a7d2-2a14-4a4e-4f80-1e5fcda80d6d">
+      <Execution id="da413447-486c-46a5-a170-de07e41d00e9" />
+      <TestMethod codeBase="F:\.codex\worktrees\rg70-page-lru-140\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Graphics.Direct3D12.Tests.ShadowPageReuseTests" name="RecentlyTouchedShadowsSurvivePressureAndRecycledShadowsRecover" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="2375a7d2-2a14-4a4e-4f80-1e5fcda80d6d" executionId="da413447-486c-46a5-a170-de07e41d00e9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.21]   Discovering: SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.58]   Discovered:  SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.63]   Starting:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:53.59]   Finished:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

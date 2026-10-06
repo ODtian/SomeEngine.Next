@@ -73,11 +73,13 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     // its raster dimensions so culling and LOD see the correct pixel scale.
     view.ScreenWidth = mipResolution;
     view.ScreenHeight = mipResolution;
+    view.GeometryLodScale = source.GeometryLodScale;
+    view.LodThreshold = source.MaxPixelsPerEdge;
+    view.SoftwareRasterEdgeThreshold = source.MinPixelsPerEdgeHardware;
+    view.TessellationEdgePixels = source.DicingRate;
     view.HiZMipCount = ViewCompact.PageHiZMipCount;
     view.HiZInvSize = 2.0.xx / float(max(mipResolution, 2u));
     view.TargetPolicy = 1u;
-    // Each light projection selects geometry at its own virtual-pixel scale.
-    view.GeometryViewIndex = 0u;
     view.TargetViewIndex = compactIndex;
     view.CullingProjectionIndex = sourceViewIndex + 1u;
     // A cube-face far plane also includes corners beyond the local light's sphere.
@@ -114,7 +116,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     target.ReceiverMaskEnabled =
         (source.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u ? 1u : 0u;
     target.RasterWindowPages = 4u;
-    target.Padding = uint2(0, 0);
+    target.Padding = uint2(sourceViewIndex, ViewCompact.WorkFeedbackEnabled);
     target.UncachedPageRect = uncachedRect;
     RasterTargetViews[compactIndex] = target;
 }

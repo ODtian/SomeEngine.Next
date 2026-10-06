@@ -76,6 +76,7 @@ public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler)
                     all(floor(d.uv(t,middle-dv)*8.0-0.5)==cell);
                 Results[id.x*2u] = float4(violation,edgeViolation,boundsViolation,error.Interior);
                 ClusterViewUniforms view = {};
+                view.GeometryLodScale = 1.0;
                 view.ScreenWidth = 800; view.ScreenHeight = 600;
                 bool orthographic = test % 3u == 0u;
                 view.ViewProj = orthographic

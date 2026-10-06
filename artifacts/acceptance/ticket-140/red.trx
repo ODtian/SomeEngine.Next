@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="cded2d0a-78ac-4bfb-9da9-a41fba744cdb" name="boqi@BOQI-THE-DAEMON 2026-10-07 00:25:31" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-07T00:25:31.7169293+08:00" queuing="2026-10-07T00:25:31.7169298+08:00" start="2026-10-07T00:25:05.5916656+08:00" finish="2026-10-07T00:25:31.7274657+08:00" />
+  <TestSettings name="default" id="f46fe619-8132-4501-99b0-5cdd054f8d85">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-07_00_25_31" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="b217e3d0-47c8-46b4-990c-4883d989c680" testId="2375a7d2-2a14-4a4e-4f80-1e5fcda80d6d" testName="SomeEngine.Graphics.Direct3D12.Tests.ShadowPageReuseTests.RecentlyTouchedShadowsSurvivePressureAndRecycledShadowsRecover" computerName="BOQI-THE-DAEMON" duration="00:00:19.7245809" startTime="2026-10-07T00:25:11.7901290+08:00" endTime="2026-10-07T00:25:31.5004954+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b217e3d0-47c8-46b4-990c-4883d989c680">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Collections differ&#xD;
+           ↓ (pos 0)&#xD;
+Expected: [1, 0, 0, 1, 1, ···]&#xD;
+Actual:   [0, 1, 1, 0, 1, ···]&#xD;
+           ↑ (pos 0)</Message>
+          <StackTrace>   at SomeEngine.Graphics.Direct3D12.Tests.ShadowPageReuseTests.RecentlyTouchedShadowsSurvivePressureAndRecycledShadowsRecover() in F:\.codex\worktrees\rg70-page-lru-140\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\ShadowPageReuseTests.cs:line 21&#xD;
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Graphics.Direct3D12.Tests.ShadowPageReuseTests.RecentlyTouchedShadowsSurvivePressureAndRecycledShadowsRecover" storage="f:\someengine.agentwork\rg70-remaining\ticket-140-red\output\someengine.graphics.direct3d12.tests.dll" id="2375a7d2-2a14-4a4e-4f80-1e5fcda80d6d">
+      <Execution id="b217e3d0-47c8-46b4-990c-4883d989c680" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\ticket-140-red\output\SomeEngine.Graphics.Direct3D12.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Graphics.Direct3D12.Tests.ShadowPageReuseTests" name="RecentlyTouchedShadowsSurvivePressureAndRecycledShadowsRecover" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="2375a7d2-2a14-4a4e-4f80-1e5fcda80d6d" executionId="b217e3d0-47c8-46b4-990c-4883d989c680" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.23]   Discovering: SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:04.67]   Discovered:  SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:04.72]   Starting:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:24.94]       Assert.Equal() Failure: Collections differ&#xD;
+[xUnit.net 00:00:24.94]                  ↓ (pos 0)&#xD;
+[xUnit.net 00:00:24.94]       Expected: [1, 0, 0, 1, 1, ···]&#xD;
+[xUnit.net 00:00:24.94]       Actual:   [0, 1, 1, 0, 1, ···]&#xD;
+[xUnit.net 00:00:24.94]                  ↑ (pos 0)&#xD;
+[xUnit.net 00:00:24.95]       Stack Trace:&#xD;
+[xUnit.net 00:00:24.95]         F:\.codex\worktrees\rg70-page-lru-140\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\ShadowPageReuseTests.cs(21,0): at SomeEngine.Graphics.Direct3D12.Tests.ShadowPageReuseTests.RecentlyTouchedShadowsSurvivePressureAndRecycledShadowsRecover()&#xD;
+[xUnit.net 00:00:24.95]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+[xUnit.net 00:00:24.95]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:24.97]   Finished:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-07T00:25:31.5135403+08:00">
+        <Text>[xUnit.net 00:00:24.94]     SomeEngine.Graphics.Direct3D12.Tests.ShadowPageReuseTests.RecentlyTouchedShadowsSurvivePressureAndRecycledShadowsRecover [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

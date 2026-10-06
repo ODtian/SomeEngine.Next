@@ -1,0 +1,25 @@
+  SomeEngine.Job.Contracts -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Job.Contracts\bin\Release\net10.0\SomeEngine.Job.Contracts.dll
+  SomeEngine.Diagnostics -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Diagnostics\bin\Release\net10.0\SomeEngine.Diagnostics.dll
+  SomeEngine.Serialization -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Serialization\bin\Release\net10.0\SomeEngine.Serialization.dll
+  SomeEngine.ECS.SourceGen -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.Job -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Job\bin\Release\net10.0\SomeEngine.Job.dll
+  SomeEngine.Graphics -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Graphics\bin\Release\net10.0\SomeEngine.Graphics.dll
+  SomeEngine.Generators -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Generators\bin\Release\netstandard2.0\SomeEngine.Generators.dll
+  SomeEngine.ECS -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.ECS\bin\Release\net10.0\SomeEngine.ECS.dll
+  SomeEngine.ECS.Serialization -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.ECS.Serialization\bin\Release\net10.0\SomeEngine.ECS.Serialization.dll
+  SomeEngine.ECS.Systems -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.ECS.Systems\bin\Release\net10.0\SomeEngine.ECS.Systems.dll
+  SomeEngine.Core -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Core\bin\Release\net10.0\SomeEngine.Core.dll
+  SomeEngine.Resources -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Resources\bin\Release\net10.0\SomeEngine.Resources.dll
+  Game -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\templates\DefaultProject\Game\bin\Release\net10.0\Game.dll
+  SomeEngine.Graphics.Direct3D12 -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Graphics.Direct3D12\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.dll
+  SomeEngine.RenderGraph -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.RenderGraph\bin\Release\net10.0\SomeEngine.RenderGraph.dll
+  SomeEngine.Assets -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Assets\bin\Release\net10.0\SomeEngine.Assets.dll
+  Game.Assets -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\templates\DefaultProject\Game.Assets\bin\Release\net10.0\Game.Assets.dll
+  SomeEngine.Render -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Render\bin\Release\net10.0\SomeEngine.Render.dll
+  SomeEngine.Render.Tests -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tests\SomeEngine.Render.Tests\bin\Release\net10.0\SomeEngine.Render.Tests.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:13.91

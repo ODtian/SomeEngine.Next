@@ -52,6 +52,10 @@ indirect instance 数；将 HW 窗口改为四页不能单凭分区数增加而�
 
 clipmap 使用原版绝对级别，默认 first 6 至 last 22。级别 L 的半径为
 `2^(L+1) * WorldUnitsPerCentimeter`，投影为容纳滚动对齐覆盖四个半径。
+各级深度半径为该半径乘 `DirectionalDepthRangeScale`，默认倍率为原版的 `1000`。
+光空间 Z 中心来自该视图的实际世界原点；投影使用以该中心为中点的两倍深度半径跨度。
+`VirtualShadowMapClipmap.cpp:352–458` 记录这一逐级投影规则；公开用例
+`DirectionalLevelsCoverTheirNativeDepthRange` 从源世界点检验各级实际可覆盖的深度。
 因此默认 first 6 的半径是 1.28 米，完整投影宽度是 5.12 米；中心 2.56 米处到达投影边界。
 公开 shader 自给数据以同一字段声明其坐标单位，厘米夹具使用 `1`，米夹具使用 `0.01`。
 虚拟分辨率、可用绝对级别和分辨率偏置共同限定精度。
@@ -80,7 +84,21 @@ clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 
 形成接收面深度梯度，硬阴影、遮挡者搜索与过滤采样共用此梯度。默认 `DepthBias`
 为 `0.000001`，在默认方向光深度范围中对应约 1 mm；`NormalBias` 为 `0.001` 世界单位。
 用户材质标量和已有 texture 内容通知同样使深度失效，即使资源绑定/光栅箱不变。
-几何驻留变更、主相机几何选择变更、外部有界/无界输入失效入口继续保留。
+几何驻留与材质 revision 继续保护深度正确性。每个阴影视图按实际投影、深度编码及几何参数
+维护自己的缓存失效；固定阴影视图在 main geometry/FOV/viewport 输入变化后留用对应深度。
+外部 vertex/domain/opacity 输入通过 `InvalidateCasters` 或 `InvalidateAllCasters` 报告实际变化。
+滚动继续维护世界页地址。每级方向光在其 committed view 中保存已采用的光空间深度中心和半径。
+当 `abs(currentZ - cachedZ) + levelRadius <= .9 * cachedRadius` 时，投影偏移继续使用该中心；
+跨过 guardband 后采用当前中心并更新对应视图。图提交与内容完成继续维护该数据的推进和恢复。
+原版依据为 `VirtualShadowMapCacheManager.cpp:258–315`，公共用例
+`CameraDepthMovementUsesCachedRangeUntilTheNativeGuardbandIsCrossed` 检验实际世界点的投影结果。
+
+正交视图的 `RenderView.CameraTarget` 由既有相机/视图数据提供。启用
+`OrthographicProjectCameraTarget` 时，clipmap 的 XY/Z 原点及 `ClipmapWorldOrigin` 采用该目标位置；
+请求与采样的 distance level 沿该同一原点计算。Runtime 相机以位置、方向和目标距离持有实际目标，
+经 `RuntimeViewFrame` 进入 RenderWorld view。透视视图与默认目标输入沿相机原点建立投影。
+`OrthographicEstimateClipmapLevels` 与 `OrthographicClipmapLodBias` 表达原版 first-level 控制参数，
+默认分别为 true 与零；源依据为 `VirtualShadowMapClipmap.cpp:258–317,548–563`。
 
 独立验收目标以源 glTF 三角形、实例变换、透明度、几何法线射线起点为真值，
 使用同次提交的 raw/pre-TAA 输出和实际 jitter，保留全部有效接收者及边缘。
@@ -95,5 +113,21 @@ clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 
 固定光源的遮挡者流送需求也由这些阴影视图产生，沿既有 RenderWorld 与驻留反馈通路接入。
 原版依据为固定提交 `396c9f059903aed5fec78ecd3d437a40c6415368` 的
 `NaniteShared.cpp:195–202` 与 `VirtualShadowMapArray.cpp:4958–4965,5008–5016`。
+透视几何误差以球的最近深度和视角界乘积作为投影距离；正交视图的该距离为一。
+像素倍率取光投影的 Y 标度与虚拟像素高。阴影层级及 cluster 的误差使用实例最小伸缩值，
+球半径使用最大伸缩值；父子几何选择消费一致的误差标度。
+VSM typed view 保存原版 `ShadowMaxPixelsPerEdge=1`、`ShadowMinPixelsPerEdgeHardware=32` 与
+`ShadowDicingRate=2`。`ShadowGeometryLodBias` 默认为一，其倍率为 `2^(-bias)`；原版 caller
+`ShadowSceneRenderer.cpp:142–145,1167–1174` 将该倍率与 streaming quality 相乘后交给阴影视图。
+当前初始 streaming quality 为一，倍率为 `.5`，对应最大几何误差两虚拟像素。
+普通 `RenderView.GeometryLodScale` 从该 typed view 取得同一倍率，compact 将该份参数交给
+Cluster 的独立视图。有限用户 domain 以世界空间边长和最小视图深度生成 dicing factors，
+domain 自身提供表面误差；primary 沿其已有用户配置。streaming 压力质量调整由 #147 的
+实际 visible-page demand 数据接合。原版独立手算例和公开 RHI 输出见
+`artifacts/acceptance/ticket-137/projection-error/`。
 当前深度代号继续消费几何驻留与材质输入 revision；局部几何/材质失效在 #147 与静态/动态缓存
 #141 中接合每个遮挡者的实际影响范围。
+
+## 跨帧页面顺序
+
+页池以 GPU `ShadowPageLists` 的 LRU、AVAILABLE、EMPTY、REQUESTED 四个列表维护跨帧顺序。REQUESTED 在帧结束时包含全部图集页；下一帧先保存该顺序，再将当前请求页移入 REQUESTED，未请求页保序压缩进入 AVAILABLE，空页追加在 AVAILABLE 尾部并优先分配。分配后的剩余 AVAILABLE 追加到本帧请求页之后，成为下一帧输入。未请求缓存页上的完成状态和失效事实随原页面保留，后续请求或回收负责消费。准备、压缩和收尾由持久图中的显式阶段表达，帧取消、部分提交和重新初始化沿现有完成边界维护。

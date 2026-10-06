@@ -9,7 +9,7 @@ struct ClusterViewUniforms
     float3 CameraPos;
     float LodThreshold;
 
-    uint Pad0;
+    float GeometryLodScale;
     uint MaxCandidates;
     // Optional sphere centered at CameraPos; zero leaves only the frustum limits.
     float CullingRadius;
@@ -34,7 +34,9 @@ struct ClusterViewUniforms
     float4x4 PrevView;
     float PrevP00;
     float PrevP11;
-    float2 Pad3;
+    // Zero uses the surface group's configured edge size.
+    float TessellationEdgePixels;
+    uint Pad3;
 
     float4x4 ClipToWorld;
 
@@ -43,8 +45,7 @@ struct ClusterViewUniforms
     // Zero disables reuse. Within one target policy, equal nonzero indices identify
     // identical ViewProj, CameraPos, CullingRadius and CullingEnabled values.
     uint CullingProjectionIndex;
-    // Zero selects this view; other values select primary geometry views, index + 1.
-    uint GeometryViewIndex;
+    float NearPlane;
     float4x4 GeometryViewProj;
 };
 
@@ -73,13 +74,51 @@ float ClusterProjectedError(
     return max(pixels.x, pixels.y);
 }
 
+float CalculateClusterViewPixelScale(ClusterViewUniforms view)
+{
+    return 0.5 * ClusterProjectionScales(view).y * float(view.ScreenHeight);
+}
+
+float CalculateClusterSphereEdgeScale(float3 center, float radius, ClusterViewUniforms view)
+{
+    if (ClusterProjectionScales(view).z <= 1e-8) return 1.0;
+    float3 viewCenter = mul(float4(center, 1.0), view.View).xyz;
+    float depth = -viewCenter.z;
+    float nearDepth = view.NearPlane;
+    if (depth + radius <= nearDepth) return 0.0;
+
+    // The nearest sphere tangent bounds edge projection by forward depth and
+    // viewing angle. View-space forward depth is positive after the RH conversion.
+    float distanceSquared = dot(viewCenter, viewCenter);
+    float sideDistance = sqrt(max(distanceSquared - depth * depth, 0.0));
+    float tangentDistance = sqrt(max(distanceSquared - radius * radius, 0.0));
+    float minimumCosine = (tangentDistance * depth - radius * sideDistance) /
+        max(distanceSquared, 1e-12);
+    if (distanceSquared < radius * radius || minimumCosine * tangentDistance < nearDepth)
+    {
+        float nearOffset = nearDepth - depth;
+        float sideExtent = sqrt(max(radius * radius - nearOffset * nearOffset, 0.0));
+        float farSide = sideDistance + sideExtent;
+        minimumCosine = nearDepth / sqrt(farSide * farSide + nearDepth * nearDepth);
+    }
+    return max(depth - radius, nearDepth) * minimumCosine;
+}
+
+float CalculateClusterSpherePixelScale(float3 center, float radius, ClusterViewUniforms view)
+{
+    return CalculateClusterViewPixelScale(view) / max(CalculateClusterSphereEdgeScale(center, radius, view), 1e-12);
+}
+
 float ClusterSphereError(float3 center, float sphereRadius, float error, ClusterViewUniforms view)
 {
+    if (error <= 1e-8) return 0.0;
+    if (view.TargetPolicy != 0u)
+        return error * view.GeometryLodScale * CalculateClusterSpherePixelScale(center, sphereRadius, view);
     float4 clip = mul(float4(center, 1.0), view.GeometryViewProj);
     float3 scales = ClusterProjectionScales(view);
     return ClusterProjectedError(clip.w - sphereRadius * scales.z,
         abs(clip.xy) + sphereRadius * scales.xy, error, scales,
-        uint2(view.ScreenWidth, view.ScreenHeight));
+        uint2(view.ScreenWidth, view.ScreenHeight)) * view.GeometryLodScale;
 }
 
 #endif

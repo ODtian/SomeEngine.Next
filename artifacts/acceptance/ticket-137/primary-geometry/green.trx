@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="96f65d54-d151-4d14-9b32-109f0534e712" name="boqi@BOQI-THE-DAEMON 2026-10-06 23:21:38" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T23:21:38.3749246+08:00" queuing="2026-10-06T23:21:38.3749250+08:00" start="2026-10-06T23:21:20.1946254+08:00" finish="2026-10-06T23:21:38.3861122+08:00" />
+  <TestSettings name="default" id="449322a3-4e79-4825-addf-2bff09a0eac8">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_23_21_38" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="7c2ab0b7-6030-4a0e-9dd8-4c2efe4c828c" testId="4e2e7f21-732c-a438-4966-eeab2ffec5af" testName="SomeEngine.Render.Cluster.Tests.ShadowGeometryRenderingTests.MainCameraGeometryProjectionPreservesOffCameraCasterShadows" computerName="BOQI-THE-DAEMON" duration="00:00:16.1525052" startTime="2026-10-06T23:21:21.9725591+08:00" endTime="2026-10-06T23:21:38.1440509+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7c2ab0b7-6030-4a0e-9dd8-4c2efe4c828c" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Render.Cluster.Tests.ShadowGeometryRenderingTests.MainCameraGeometryProjectionPreservesOffCameraCasterShadows" storage="f:\.codex\worktrees\rg70-native-geometry-137\someengine.next\tests\someengine.render.cluster.tests\bin\release\net10.0\someengine.render.cluster.tests.dll" id="4e2e7f21-732c-a438-4966-eeab2ffec5af">
+      <Execution id="7c2ab0b7-6030-4a0e-9dd8-4c2efe4c828c" />
+      <TestMethod codeBase="F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tests\SomeEngine.Render.Cluster.Tests\bin\Release\net10.0\SomeEngine.Render.Cluster.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Cluster.Tests.ShadowGeometryRenderingTests" name="MainCameraGeometryProjectionPreservesOffCameraCasterShadows" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="4e2e7f21-732c-a438-4966-eeab2ffec5af" executionId="7c2ab0b7-6030-4a0e-9dd8-4c2efe4c828c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.24]   Discovering: SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.54]   Discovered:  SomeEngine.Render.Cluster.Tests&#xD;
+[xUnit.net 00:00:00.61]   Starting:    SomeEngine.Render.Cluster.Tests&#xD;
+{"SourceTriangles":20480,"SourceVertices":10242,"SourcePages":6,"Expected":{"FrameIndex":6,"CandidateCount":1,"CandidateDispatchGroups":1,"PhaseOneSoftwareClusters":0,"PhaseOneHardwareClusters":1,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":1,"SoftwareRasterBatches":0,"FirstShadeBinTiles":4,"ShadingWorkItems":196,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":0,"VisibilityProbePixels":30,"ResidencyEpoch":1,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":1,"SoftwareRasterBatches":0,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"Actual":{"FrameIndex":6,"CandidateCount":1,"CandidateDispatchGroups":1,"PhaseOneSoftwareClusters":0,"PhaseOneHardwareClusters":1,"PhaseTwoCandidateCount":0,"PhaseTwoDispatchGroups":0,"PhaseTwoSoftwareClusters":0,"PhaseTwoHardwareClusters":0,"RasterBatches":1,"SoftwareRasterBatches":0,"FirstShadeBinTiles":4,"ShadingWorkItems":196,"TessellationFinalPatches":0,"DroppedTessellationPatches":0,"CulledTessellationPatches":0,"QualityLimitedTessellationPatches":0,"SoftwareRasterDebugRecords":0,"VisibilityProbePixels":30,"ResidencyEpoch":2,"Work":{"Overflow":0,"TargetCandidateTests":0,"PotentialHardwareWindows":0,"EmptyHardwareWindows":0,"RequiredHardwareWindows":0,"AcceptedHardwareWindows":0,"RequiredSoftwareItems":0,"AcceptedSoftwareItems":0,"HardwareRasterBatches":1,"SoftwareRasterBatches":0,"RequiredSurfaceRoots":0,"RequiredFinalSurfacePatches":0,"Complete":true}},"Feedback":{"ReceivedFrames":6,"ConsumedFrames":5,"ReportedPageFaults":2,"ConsumedPageFaults":2,"LastEpoch":2}}&#xD;
+[xUnit.net 00:00:16.85]   Finished:    SomeEngine.Render.Cluster.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

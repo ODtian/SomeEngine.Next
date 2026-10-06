@@ -22,13 +22,27 @@ public sealed record VirtualShadowMapSettings
     public uint DirectionalClipmapLevels { get; init; } = 17;
     public int DirectionalFirstClipmapLevel { get; init; } = 6;
     public uint DirectionalMinCameraViewportWidth { get; init; }
+    public bool OrthographicEstimateClipmapLevels { get; init; } = true;
+    public int OrthographicClipmapLodBias { get; init; }
+    public bool OrthographicProjectCameraTarget { get; init; } = true;
     public int DirectionalFirstCoarseClipmapLevel { get; init; } = 15;
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
     public float DirectionalResolutionLodBias { get; init; } = -2.0f;
     public float DirectionalMovingResolutionLodBias { get; init; }
     public float LocalResolutionLodBias { get; init; }
     public float LocalMovingResolutionLodBias { get; init; } = 1.0f;
+    public float ShadowGeometryLodBias { get; init; } = 1.0f;
+    public float ShadowMaxPixelsPerEdge { get; init; } = 1.0f;
+    public float ShadowMinPixelsPerEdgeHardware { get; init; } = 32.0f;
+    public float ShadowDicingRate { get; init; } = 2.0f;
+    public float ShadowGeometryLodScale => MathF.Pow(2.0f, -ShadowGeometryLodBias);
     public VirtualShadowLocalMipMode LocalMipMode { get; init; }
+    public float WorkLoadBudget { get; init; }
+    public float WorkTimeBudgetMilliseconds { get; init; }
+    public float WorkHistoryWeight { get; init; } = 0.9f;
+    public float WorkMaxDirectionalLodBias { get; init; } = 99999f;
+    public float WorkMaxLocalLodBias { get; init; } = 99999f;
+    public bool WorkThrottlingEnabled => WorkLoadBudget > 0f || WorkTimeBudgetMilliseconds > 0f;
     public bool DynamicResolutionEnabled { get; init; }
     /// <summary>Raster budget in 8×8-page material-batch equivalents. HW contributes
     /// cropped page-batch area / 64; each bounded SW material batch contributes one.
@@ -43,9 +57,7 @@ public sealed record VirtualShadowMapSettings
     // normalized-depth allowance covers one millimeter over the default directional range.
     public float DepthBias { get; init; } = 0.000001f;
     public float NormalBias { get; init; } = 0.001f;
-    public float DirectionalLightDistance { get; init; } = 500.0f;
-    public float DirectionalNearPlane { get; init; } = 0.1f;
-    public float DirectionalFarPlane { get; init; } = 1000.0f;
+    public float DirectionalDepthRangeScale { get; init; } = 1000.0f;
     public float LocalNearPlane { get; init; } = 0.05f;
     public float BlockerSearchRadiusTexels { get; init; }
     /// <summary>Zero selects one depth comparison without blocker search or filtering.</summary>
@@ -167,15 +179,8 @@ public sealed record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(DepthBias));
         if (!float.IsFinite(NormalBias) || NormalBias < 0.0f)
             throw new ArgumentOutOfRangeException(nameof(NormalBias));
-        if (!float.IsFinite(DirectionalLightDistance) || DirectionalLightDistance <= 0.0f)
-            throw new ArgumentOutOfRangeException(nameof(DirectionalLightDistance));
-        if (!float.IsFinite(DirectionalNearPlane) ||
-            !float.IsFinite(DirectionalFarPlane) ||
-            DirectionalNearPlane <= 0.0f ||
-            DirectionalFarPlane <= DirectionalNearPlane)
-        {
-            throw new ArgumentOutOfRangeException(nameof(DirectionalFarPlane));
-        }
+        if (!float.IsFinite(DirectionalDepthRangeScale) || DirectionalDepthRangeScale <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(DirectionalDepthRangeScale));
         if (!float.IsFinite(LocalNearPlane) || LocalNearPlane <= 0.0f)
             throw new ArgumentOutOfRangeException(nameof(LocalNearPlane));
         if (!float.IsFinite(BlockerSearchRadiusTexels) || BlockerSearchRadiusTexels < 0.0f)
@@ -201,6 +206,24 @@ public sealed record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(DirectionalResolutionLodBias));
         if (!float.IsFinite(LocalResolutionLodBias))
             throw new ArgumentOutOfRangeException(nameof(LocalResolutionLodBias));
+        if (!float.IsFinite(ShadowGeometryLodBias) || !float.IsFinite(ShadowGeometryLodScale) || ShadowGeometryLodScale <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(ShadowGeometryLodBias));
+        if (!float.IsFinite(ShadowMaxPixelsPerEdge) || ShadowMaxPixelsPerEdge <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(ShadowMaxPixelsPerEdge));
+        if (!float.IsFinite(ShadowMinPixelsPerEdgeHardware) || ShadowMinPixelsPerEdgeHardware <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(ShadowMinPixelsPerEdgeHardware));
+        if (!float.IsFinite(ShadowDicingRate) || ShadowDicingRate <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(ShadowDicingRate));
+        if (!float.IsFinite(WorkTimeBudgetMilliseconds) || WorkTimeBudgetMilliseconds < 0f)
+            throw new ArgumentOutOfRangeException(nameof(WorkTimeBudgetMilliseconds));
+        if (!float.IsFinite(WorkLoadBudget) || WorkLoadBudget < 0f)
+            throw new ArgumentOutOfRangeException(nameof(WorkLoadBudget));
+        if (!float.IsFinite(WorkHistoryWeight) || WorkHistoryWeight is < 0f or > 1f)
+            throw new ArgumentOutOfRangeException(nameof(WorkHistoryWeight));
+        if (!float.IsFinite(WorkMaxDirectionalLodBias) || WorkMaxDirectionalLodBias < 0f)
+            throw new ArgumentOutOfRangeException(nameof(WorkMaxDirectionalLodBias));
+        if (!float.IsFinite(WorkMaxLocalLodBias) || WorkMaxLocalLodBias < 0f)
+            throw new ArgumentOutOfRangeException(nameof(WorkMaxLocalLodBias));
         if (DynamicResolutionTargetRasterWork == 0u)
             throw new ArgumentOutOfRangeException(nameof(DynamicResolutionTargetRasterWork));
         if (!float.IsFinite(DynamicResolutionPagePoolLoadStart) ||

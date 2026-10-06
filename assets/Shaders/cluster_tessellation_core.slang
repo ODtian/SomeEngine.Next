@@ -182,14 +182,23 @@ float2 TessellationScreenPosition(float4 clip, ClusterViewUniforms view)
     if (clip.w <= 1e-5) return 1e20.xx;
     return (clip.xy / clip.w * float2(0.5, -0.5) + 0.5) * float2(view.ScreenWidth, view.ScreenHeight);
 }
-uint TessellationRequestedEdgeFactor(float edgePixels)
+uint TessellationRequestedEdgeFactor(float edgePixels, float targetPixels)
 {
-    float target = max(TessellationUniformData.TargetEdgePixels, 1.0);
-    float requestedFloat = ceil(max(edgePixels, 0.0) / target);
+    float requestedFloat = ceil(max(edgePixels, 0.0) / targetPixels);
     uint requested = requestedFloat >= 65536.0
         ? 65536u
         : max(1u, uint(requestedFloat));
     return TessellationNextPowerOfTwo(requested);
+}
+
+float CalculateTessellationEdgePixels(float3 first, float3 second, ClusterViewUniforms view)
+{
+    float3 firstView = mul(float4(first, 1.0), view.View).xyz;
+    float3 secondView = mul(float4(second, 1.0), view.View).xyz;
+    float edgeDepth = ClusterProjectionScales(view).z <= 1e-8
+        ? 1.0 : max(min(-firstView.z, -secondView.z), view.NearPlane);
+    return length(firstView - secondView) * CalculateClusterViewPixelScale(view) *
+        view.GeometryLodScale / edgeDepth;
 }
 
 uint TessellationMaximumSplitDepth()
@@ -236,10 +245,17 @@ void EvaluateTessellationPatch<TVertex, TDomain>(
     float2 screen0 = TessellationScreenPosition(clip0, view);
     float2 screen1 = TessellationScreenPosition(clip1, view);
     float2 screen2 = TessellationScreenPosition(clip2, view);
+    float targetPixels = view.TessellationEdgePixels > 0.0
+        ? view.TessellationEdgePixels : TessellationUniformData.TargetEdgePixels;
+    float3 edgePixels = view.TargetPolicy != 0u
+        ? float3(CalculateTessellationEdgePixels(position0, position1, view),
+            CalculateTessellationEdgePixels(position1, position2, view),
+            CalculateTessellationEdgePixels(position2, position0, view))
+        : float3(length(screen1 - screen0), length(screen2 - screen1), length(screen0 - screen2));
     edgeFactors = uint3(
-        TessellationRequestedEdgeFactor(length(screen1 - screen0)),
-        TessellationRequestedEdgeFactor(length(screen2 - screen1)),
-        TessellationRequestedEdgeFactor(length(screen0 - screen2)));
+        TessellationRequestedEdgeFactor(edgePixels.x, targetPixels),
+        TessellationRequestedEdgeFactor(edgePixels.y, targetPixels),
+        TessellationRequestedEdgeFactor(edgePixels.z, targetPixels));
 
     float3 scales = ClusterProjectionScales(view);
     uint2 size = uint2(view.ScreenWidth, view.ScreenHeight);
@@ -249,11 +265,16 @@ void EvaluateTessellationPatch<TVertex, TDomain>(
         ClusterProjectedError(min(clip2.w, clip0.w), max(abs(clip2.xy), abs(clip0.xy)), error.Edge.z, scales, size));
     float interiorErrorPixels = ClusterProjectedError(min(clip0.w, min(clip1.w, clip2.w)),
         max(abs(clip0.xy), max(abs(clip1.xy), abs(clip2.xy))), error.Interior, scales, size);
+    if (view.TargetPolicy != 0u)
+    {
+        edgeErrorPixels *= view.GeometryLodScale;
+        interiorErrorPixels *= view.GeometryLodScale;
+    }
     // A final patch may still be diced into smaller triangles. If both the actual
     // surface and every diced vertex stay within E of the patch's corner triangle,
     // the piecewise diced approximation is within at most 2E. Use half the requested
     // pixel tolerance here so the final approximation remains conservative.
-    float errorTarget = max(TessellationUniformData.TargetEdgePixels, 1.0) * 0.5;
+    float errorTarget = targetPixels * 0.5;
     bool3 splitEdges =
         (edgeFactors > TESS_PATTERN_MAX_FACTOR.xxx) ||
         (edgeErrorPixels > errorTarget.xxx);

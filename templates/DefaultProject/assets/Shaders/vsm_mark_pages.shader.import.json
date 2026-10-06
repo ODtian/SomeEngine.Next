@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "035affd7ad91085377560340610e6fa86b1ed0ff613b8a04f2fa740b47e47e2e",
+  "input_hash": "765ad1221b7fc7604f84be88bda8adfa88308f46112b2936f79e5c0130f8087d",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/render_lighting.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_mark_pages.slang",
-      "content_hash": "98ec6ffe391627773c925f0f2c2c5da1acdb1eb8d48a6dfcb7258c4d9c6687a7"
+      "content_hash": "d14e1d0664c273d42eb04d65db4472adf2d7e4c1a656c11cdfc224ea2c89f370"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_request_common.slang",
@@ -24,8 +24,12 @@
       "content_hash": "b9d00a5183d1f1e49798a64fcb7c917a7c0e2d692a9b0c37f44ac9f033506f3e"
     },
     {
+      "relative_path": "../../assets/Shaders/vsm_receiver_projection.slang",
+      "content_hash": "b805483aa53b5090eaec5c1e3620dd89c6a6b8a7d40a2dca94c4e612056bd672"
+    },
+    {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "b40dddd58f91e37b9572b01ed5cb15bb3a7e282965af0fc5a2ed8c4933c40773"
+      "content_hash": "fcc80475e5365b25d5d0e06963de30c0bd6f56083fb74434af00e5141358666a"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -49,11 +53,11 @@
     {
       "asset_guid": "6c441d68-a857-5643-9923-2d03131e0a37",
       "sub_asset_key": "",
-      "input_hash": "035affd7ad91085377560340610e6fa86b1ed0ff613b8a04f2fa740b47e47e2e",
+      "input_hash": "765ad1221b7fc7604f84be88bda8adfa88308f46112b2936f79e5c0130f8087d",
       "dependencies": [],
       "asset_path": "vsm_mark_pages.shader.asset",
-      "version": "63a5cab5-9bfe-7af6-823c-ea039d0e5e63",
-      "content_hash": "35B7FDB5B6BFED264BDA5FFF6020F76D15DB577EDE9FAA894BA4AD0AD92A35AF",
+      "version": "f9c15141-5bdb-6e29-a9ad-e3d697ecf771",
+      "content_hash": "9A91EA73E8938A610C4FF9FED9D22184D2FCB48D68C2ADCAFB9D6D61869CE1D4",
       "asset_dependencies": []
     }
   ]

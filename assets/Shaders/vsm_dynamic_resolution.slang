@@ -1,4 +1,6 @@
 #include "resource_effects.slang"
+#define VSM_PAGE_LIST_READ_ONLY 1
+#include "vsm_page_lists.slang"
 
 struct VirtualShadowDynamicResolutionUniforms
 {
@@ -8,13 +10,11 @@ struct VirtualShadowDynamicResolutionUniforms
     float MaxDirectionalLodBias;
     float MaxLocalLodBias;
     uint Enabled;
-    uint EvictionBucketCount;
+    uint Pad0;
     uint Pad1;
 };
 
 ConstantBuffer<VirtualShadowDynamicResolutionUniforms> DynamicResolution;
-StructuredBuffer<uint> FreePageCount;
-StructuredBuffer<uint> EvictionBucketCounts;
 StructuredBuffer<uint> PolicyRasterWorkCount;
 StructuredBuffer<uint> AllocationFailures;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
@@ -34,23 +34,16 @@ void UpdateVirtualShadowDynamicResolution(uint3 threadId : SV_DispatchThreadID)
     }
 
     uint maxPages = max(DynamicResolution.MaxPhysicalPages, 1u);
-    uint availablePages = FreePageCount[0];
-    for (uint bucket = 0u; bucket < DynamicResolution.EvictionBucketCount; bucket++)
-        availablePages += EvictionBucketCounts[bucket];
+    uint availablePages = ShadowPageListCount(VSM_PAGE_LIST_AVAILABLE, DynamicResolution.MaxPhysicalPages);
     uint freePages = min(availablePages, maxPages);
     float pageLoad = float(maxPages - freePages + AllocationFailures[0]) / float(maxPages);
     float allocationRatio = DynamicResolution.PagePoolLoadStart > 0.0
         ? pageLoad / DynamicResolution.PagePoolLoadStart : 1.0;
 
-    uint targetWork = max(DynamicResolution.TargetRasterWork, 1u);
-    // The producer counts HW page-batch area, not window instances. The public
-    // budget retains eight-by-eight-page batch equivalents; SW batches weigh one.
-    float workRatio = max(float(PolicyRasterWorkCount[0]) / (64.0 * float(targetWork)), 1.0);
-    float workBias = log2(workRatio);
     float4 state = DynamicResolutionBias[0];
     float2 limits = float2(DynamicResolution.MaxDirectionalLodBias, DynamicResolution.MaxLocalLodBias);
-    float2 target = clamp(max(state.xy + log2(max(allocationRatio, 1e-6)), workBias.xx), 0.0.xx, limits);
-    if (allocationRatio > 1.0 || any(target > state.xy))
+    float2 target = clamp(state.xy + log2(max(allocationRatio, 1e-6)), 0.0.xx, limits);
+    if (allocationRatio > 1.0)
     {
         state.xy = lerp(state.xy, target, 0.5);
         state.z = 0.0;

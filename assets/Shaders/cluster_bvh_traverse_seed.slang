@@ -233,7 +233,7 @@ void SeedHierarchyRoots(
                 projectedBounds);
             if (view.CullingEnabled != 0u && outsideFrustum)
                 continue;
-            if (!ClusterNodePassesLod(root, transform, LoadClusterGeometryView(Views, view)))
+            if (!ClusterNodePassesLod(root, transform, view))
                 continue;
             uint boundsState = (occludedGroupViews & (1u << bit)) != 0u
                 ? (ClusterSeedTargetAccepts(projectedBounds, view) ? 2u : 0u)

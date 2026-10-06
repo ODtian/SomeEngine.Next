@@ -14,7 +14,13 @@ public sealed record VirtualShadowFrameQuality(ulong RenderingFrame, float Direc
 /// <summary>Actual submitted projection and mip-resolution/completed-depth populations, not next-frame policy.</summary>
 public sealed record VirtualShadowViewQuality(VirtualShadowLightKind LightKind, uint LightIndex, uint FaceIndex,
     int ClipmapLevel, uint VirtualResolution, float BaseResolutionLodBias, float AppliedResolutionLodBias,
-    VirtualShadowMipQuality[] Mips);
+    VirtualShadowMipQuality[] Mips)
+{
+    /// <summary>One accepted visible cluster/window, before material batch expansion.</summary>
+    public uint HardwareVisibleItems { get; init; }
+    public uint SoftwareVisibleItems { get; init; }
+    public float WorkLodAddition { get; init; }
+}
 
 /// <summary>Receiver coverage uses an 8x8 cell population per page. Missing/unfinished pages contribute no completed cells.</summary>
 public sealed record VirtualShadowMipQuality(uint Mip, uint Resolution, uint MappedPages,

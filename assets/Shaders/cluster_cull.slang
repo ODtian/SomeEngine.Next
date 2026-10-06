@@ -104,7 +104,10 @@ bool PassesLODFilter(
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
     float lodError = DecodeClusterLODError(cluster);
-    return ClusterSphereError(worldCenter, worldRadius, lodError * maxScale, view) <= view.LodThreshold;
+    float errorScale = view.TargetPolicy != 0u
+        ? abs(t.Scale) * min(min(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z))
+        : maxScale;
+    return ClusterSphereError(worldCenter, worldRadius, lodError * errorScale, view) <= view.LodThreshold;
 }
 
 void BuildClusterAabbScreenBoundsAndNearDepth(
@@ -191,7 +194,10 @@ bool IsOccludedByHiZ(ClusterScreenBounds bounds, bool usePrev, uint viewIndex, C
 bool ShouldUseSWRaster(
     float2 minUv,
     float2 maxUv,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view,
+    PackedCluster cluster,
+    RenderInstanceTransform transform,
+    float boundsExpansion)
 {
     float width = (maxUv.x - minUv.x) * view.ScreenWidth;
     float height = (maxUv.y - minUv.y) * view.ScreenHeight;
@@ -204,8 +210,19 @@ bool ShouldUseSWRaster(
     if (view.CullingEnabled == 0u)
         return false;
 
-    float maximumEdge = max(width, height);
-    return maximumEdge <= view.SoftwareRasterEdgeThreshold;
+    if (view.TargetPolicy == 0u)
+        return max(width, height) <= view.SoftwareRasterEdgeThreshold;
+
+    float maximumEdge = abs(DecodeClusterMaximumEdgeLength(cluster));
+    // Source pages cooked before edge metadata use the hardware path.
+    if (maximumEdge == 0.0) return false;
+    float maximumScale = abs(transform.Scale) *
+        max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
+    float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, transform);
+    float worldRadius = cluster.LODRadius * maximumScale + boundsExpansion;
+    float worldEdge = maximumEdge * maximumScale + 2.0 * boundsExpansion;
+    float edgePixels = worldEdge * CalculateClusterSpherePixelScale(worldCenter, worldRadius, view);
+    return edgePixels <= view.SoftwareRasterEdgeThreshold;
 }
 
 #include "cluster_raster_target_filter.slang"
@@ -368,7 +385,7 @@ bool LoadAndFilterCandidate(
             instanceID));
 
     if (!(work.KeepCoarseGeometry != 0u && view.CullingEnabled != 0u) &&
-        !PassesLODFilter(cluster, t, LoadClusterGeometryView(Views, view)))
+        !PassesLODFilter(cluster, t, view))
         return false;
 
 #if CLUSTER_CULL_PHASE == 2
@@ -419,9 +436,9 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
     uint2 lastPixel;
     if (!ClusterTargetPixelBounds(currentBounds.MinUv, currentBounds.MaxUv,
             view, target, firstPixel, lastPixel)) return;
-    // Partition on the page grid, including small rectangles crossing a boundary.
-    // Each partition repeats all draw-eligibility tests, not just request bits.
-    uint2 firstWindow = pages.xy / windowSize * windowSize;
+    // Native windows start at this cluster's first page.
+    // Each window repeats the draw-eligibility tests.
+    uint2 firstWindow = pages.xy;
     for (uint y = firstWindow.y; y <= pages.w; y += windowSize)
     for (uint x = firstWindow.x; x <= pages.z; x += windowSize)
     {
@@ -485,7 +502,8 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     }
     else
     {
-        bool isSW = ShouldUseSWRaster(bounds.MinUv, bounds.MaxUv, view);
+        ClusterScreenBounds rasterBounds = view.TargetPolicy != 0u ? currentBounds : bounds;
+        bool isSW = ShouldUseSWRaster(rasterBounds.MinUv, rasterBounds.MaxUv, view, cluster, t, boundsExpansion);
         AppendVisible(
             pageOffset,
             clusterID,
@@ -601,7 +619,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     bool occluded = IsOccludedByHiZ(currentBounds, false, viewIndex, view);
     if (!occluded)
     {
-        bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, view);
+        bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, view, cluster, t, boundsExpansion);
         AppendVisible(
             pageOffset,
             clusterID,

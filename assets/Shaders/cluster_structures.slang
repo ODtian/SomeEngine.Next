@@ -17,7 +17,7 @@ struct PackedCluster
     float3 BoundMax;                    // 44 — conservative object-space AABB max
     uint PackedLodErrorTriangleStart;   // 56 — LODErrorHalf:16 | TriangleStart:16
     uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
-    uint PackedGroup;                   // 64 — GroupId(i16):16 | Reserved:16
+    uint PackedGroup;                   // 64 — GroupId(i16):16 | MaximumEdgeLengthHalf:16
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
     uint PackedRanges;                  // 72 — [range0End:8][range1End:8][Reserved:16]
     uint MaterialTableOffset;           // 76 — must be 0xFFFFFFFF
@@ -41,6 +41,11 @@ float DecodeClusterLODError(PackedCluster c)
 {
     uint lodErrBits = c.PackedLodErrorTriangleStart & 0xFFFF;
     return f16tof32(lodErrBits);
+}
+
+float DecodeClusterMaximumEdgeLength(PackedCluster cluster)
+{
+    return f16tof32(cluster.PackedGroup >> 16u);
 }
 
 uint DecodeTriangleStart(PackedCluster c)

@@ -60,7 +60,7 @@ public struct VirtualShadowPageAllocationUniforms
     public uint MaxPhysicalPages;
     public uint ViewCount;
     public uint FrameIndex;
-    public uint EvictionBucketCount;
+    public uint Pad0;
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
 }
@@ -95,7 +95,7 @@ public struct VirtualShadowPagePoolUniforms
     public uint MaxPhysicalPages;
     public uint PageTableEntryCount;
     public uint FrameIndex;
-    public uint EvictionBucketCount;
+    public uint PageListPhase;
     public uint PageTableEntriesPerView;
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
@@ -115,7 +115,7 @@ public struct VirtualShadowRasterWorkUniforms
     public uint PhysicalPagesPerRow;
     public uint InstanceGroupCount;
     public uint HasPreviousHistory;
-    public uint Pad0;
+    public uint WorkFeedbackEnabled;
     public uint Pad1;
 }
 
@@ -168,6 +168,6 @@ public struct VirtualShadowDynamicResolutionUniforms
     public float MaxDirectionalLodBias;
     public float MaxLocalLodBias;
     public uint Enabled;
-    public uint EvictionBucketCount;
+    public uint Pad0;
     public uint Pad1;
 }

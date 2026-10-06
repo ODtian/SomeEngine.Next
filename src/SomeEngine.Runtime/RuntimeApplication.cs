@@ -495,6 +495,7 @@ internal static class RuntimeApplication
             boot.Width,
             boot.Height,
             temporalFrameIndex: 0,
+            cameraTarget: scene.Camera.Target,
             depthOfField: scene.DepthOfField);
         Entity viewEntity = renderWorld.CreateEntity(initialView.View);
 
@@ -811,6 +812,7 @@ internal static class RuntimeApplication
                     submittedFrames,
                     temporalResolveEnabled: options.TemporalAntialiasing,
                     cameraCut: cameraCut,
+                    cameraTarget: scene.Camera.Target,
                     depthOfField: scene.DepthOfField);
                 viewSystem.Stage(viewFrame.View);
                 if (platform?.IsMeasuring != true) ui.DrawDebugWindow(

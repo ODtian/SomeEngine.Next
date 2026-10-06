@@ -32,7 +32,7 @@ public sealed partial class VirtualShadowFeature
             edit.OrderAfter(_requestResetPass, demand);
             AddQualityReadback(ref edit, readbacks, QualityData.DirtyCount, _activePageCount);
             AddQualityReadback(ref edit, readbacks, QualityData.Failures, _allocationFailures);
-            AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _freePageCount);
+            AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _pageOwners);
             AddQualityReadback(ref edit, readbacks, QualityData.RasterArea, _policyRasterWorkCount);
             AddQualityReadback(ref edit, readbacks, QualityData.ReceiverCoverage, _pageReceiverMasks);
             AddQualityReadback(ref edit, readbacks, QualityData.Views, _frameShadowViews, BufferRange.Whole);
@@ -57,7 +57,7 @@ public sealed partial class VirtualShadowFeature
     {
         ArgumentNullException.ThrowIfNull(receive);
         if (_qualityReadbacks is null) throw new InvalidOperationException("Enable quality capture before recording a frame.");
-        _qualityReadbacks.Requests.Add(_frameIndex, new QualityRequest(_viewCount, receive));
+        _qualityReadbacks.Requests.Add(_frameIndex, new QualityRequest(_viewCount, _frameBaseShadowBias, receive));
         foreach (GraphReadbackId readback in _qualityReadbacks.Readbacks)
         {
             graph.SetReadbackEnabled(readback, true);
@@ -85,7 +85,7 @@ public sealed partial class VirtualShadowFeature
         }
     }
 
-    private sealed class QualityRequest(int viewCount, Action<VirtualShadowFrameQuality> receive)
+    private sealed class QualityRequest(int viewCount, float[] baseBias, Action<VirtualShadowFrameQuality> receive)
     {
         internal readonly byte[][] Bytes = new byte[10][];
         internal readonly Action<VirtualShadowFrameQuality> Receive = receive;
@@ -132,11 +132,24 @@ public sealed partial class VirtualShadowFeature
                     dimension = Math.Max(dimension >> 1, 1);
                 }
                 result[index] = new(view.LightKind, view.LightIndex, view.FaceIndex, view.ClipmapLevel, view.VirtualResolution,
-                    view.ResolutionLodBias, view.ResolutionLodBias + bias[view.LightKind == VirtualShadowLightKind.Directional ? 0 : 1], mips);
+                    baseBias[index], view.ResolutionLodBias + bias[view.LightKind == VirtualShadowLightKind.Directional ? 0 : 1], mips)
+                {
+                    WorkLodAddition = view.ResolutionLodBias - baseBias[index],
+                    HardwareVisibleItems = Word(QualityData.RasterArea, 1 + index * 2),
+                    SoftwareVisibleItems = Word(QualityData.RasterArea, 2 + index * 2),
+                };
             }
             return new(frame, bias[0], bias[1], Word(QualityData.RequestCount), Word(QualityData.DirtyCount),
-                Word(QualityData.Failures), Word(QualityData.Failures, 1), Word(QualityData.FreeCount),
+                Word(QualityData.Failures), Word(QualityData.Failures, 1), FreePages(),
                 Word(QualityData.RasterArea), (ClusterWorkOverflow)Word(QualityData.Work), result);
+        }
+
+        private uint FreePages()
+        {
+            uint count = 0u;
+            foreach (uint page in MemoryMarshal.Cast<byte, uint>(Bytes[(int)QualityData.FreeCount]))
+                if (page == uint.MaxValue) count++;
+            return count;
         }
 
         private uint Word(QualityData kind, int word = 0) => MemoryMarshal.Cast<byte, uint>(Bytes[(int)kind])[word];

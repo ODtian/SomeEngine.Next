@@ -202,7 +202,7 @@ void ProcessTraversalLevel(
         ClusterProjectedBounds projectedBounds;
         bool outside = ProjectWorldAabbForView(worldMin, worldMax, view, previousProjection, projectedBounds);
         if ((view.CullingEnabled != 0u && outside) ||
-            !ClusterNodePassesLod(node, transform, LoadClusterGeometryView(Views, view)))
+            !ClusterNodePassesLod(node, transform, view))
             continue;
         uint state = ClusterHierarchyNodeState(worldMin, worldMax, projectedBounds, viewIndex, view);
         if (state == 2u)
