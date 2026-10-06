@@ -23,6 +23,11 @@ VSM 设置分别持有非移动与移动精度偏置，按
 相机偏置为 `log2(.5 * VirtualResolution / (width * projectionScale))`。
 正交 first level 使用半宽厘米的 `floor(log2(halfWidth))` 与配置 first 的最大值，绝对下界为 0。
 实际级别范围和 view 数共同写入投影、请求与采样参数；4 米正交相机对应 first 7，默认 last 22。
+相机可选 `CameraDepthOfField` 保存 focus 距离、infinity/min/max CoC 半径、depth blur 系数和阴影偏置强度。
+这些数据通过 SceneCamera 存档与 RuntimeViewFrame 进入 RenderView，并由请求/材质使用同一当帧值。
+原版 CoC 公式组合失焦半径、带符号 depth blur 和半径范围；可用 scene depth 的阴影偏置为
+`min(strength, strength * abs(CoC) / 8)`。方向光先应用此接收者偏置，再确定读取本光偏置的 VSM。
+默认 strength 为 0；用户 shader 也可向相同条件函数提供 CoC 像素值。
 例如距离 192 厘米、first level 6 时，未偏置 index 为 1；它的偏置为 1 时选择 index 2。
 页请求与材质采样共用 `SelectDirectionalVirtualShadowView`，从目标级别寻找覆盖该位置的投影。
 

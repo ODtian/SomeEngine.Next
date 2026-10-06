@@ -118,6 +118,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         float3 receiverPositionDy = ctx.surfacePosition + (receiver.PositionDy - receiver.Position);
         float nominalWorldPixelRadius = CalculateVirtualShadowNominalWorldPixelRadius(
             VirtualShadowSampling.ReceiverProjection, ctx.surfacePosition);
+        float receiverResolutionLodBias = CalculateVirtualShadowReceiverResolutionBias(
+            VirtualShadowSampling.ReceiverProjection, ctx.surfacePosition);
         float3 V = normalize(MaterialCameraPosition(ctx.pixelCoord.z) - ctx.surfacePosition);
         float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
 
@@ -158,7 +160,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                         VirtualShadowSampling.FilterSampleCount,
                         VirtualShadowSampling.BlockerSearchRadiusTexels,
                         VirtualShadowSampling.MaxFilterRadiusTexels,
-                        geometricNormal);
+                        geometricNormal,
+                        receiverResolutionLodBias);
                 }
             }
             finalColor += EvaluateDirectionalLight(

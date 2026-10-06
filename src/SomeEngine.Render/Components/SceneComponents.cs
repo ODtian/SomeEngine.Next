@@ -4,6 +4,7 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Components;
 
@@ -20,6 +21,16 @@ public struct MeshMotion : IComponent
     public uint Seed;
 }
 
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+public readonly record struct CameraDepthOfField(
+    float FocusDistance,
+    float InfinityCircleRadiusPixels,
+    float MinCircleRadiusPixels,
+    float MaxCircleRadiusPixels,
+    float DepthBlurRadiusPixels = 0f,
+    float DepthBlurExponent = 0f,
+    float ShadowResolutionBiasStrength = 0f);
+
 public struct SceneCamera : IComponent
 {
     public Vector3 Position;
@@ -28,4 +39,5 @@ public struct SceneCamera : IComponent
     public float VerticalFieldOfView;
     public float NearPlane;
     public float FarPlane;
+    public CameraDepthOfField? DepthOfField;
 }
