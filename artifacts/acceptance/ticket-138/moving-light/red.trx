@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="e89040d3-708b-4a49-9144-0e9d555dc96c" name="boqi@BOQI-THE-DAEMON 2026-10-06 23:44:18" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T23:44:18.2692674+08:00" queuing="2026-10-06T23:44:18.2692678+08:00" start="2026-10-06T23:44:14.1551886+08:00" finish="2026-10-06T23:44:18.2802580+08:00" />
+  <TestSettings name="default" id="f7ec698e-4480-4756-b360-4d8db94e4dbe">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_23_44_18" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="265eef43-8f4c-4285-9c50-1ab13b7b83b1" testId="1ddb5dc0-22df-1cad-598c-78b8525bf93f" testName="SomeEngine.Render.Tests.VirtualShadowViewTests.MovingPointLightBiasDecaysOverTenRenderedFramesAndRestartsAfterMovement" computerName="BOQI-THE-DAEMON" duration="00:00:01.1197995" startTime="2026-10-06T23:44:16.9407204+08:00" endTime="2026-10-06T23:44:18.0483451+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="265eef43-8f4c-4285-9c50-1ab13b7b83b1">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.InRange() Failure: Value not in range&#xD;
+Range:  (0.999998987 - 1.00000095)&#xD;
+Actual: 0</Message>
+          <StackTrace>   at SomeEngine.Render.Tests.VirtualShadowViewTests.MovingPointLightBiasDecaysOverTenRenderedFramesAndRestartsAfterMovement() in F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Render.Tests\VirtualShadowViewTests.cs:line 59&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Render.Tests.VirtualShadowViewTests.MovingPointLightBiasDecaysOverTenRenderedFramesAndRestartsAfterMovement" storage="f:\.codex\worktrees\rg70-ticket-138\someengine.next\tests\someengine.render.tests\bin\release\net10.0\someengine.render.tests.dll" id="1ddb5dc0-22df-1cad-598c-78b8525bf93f">
+      <Execution id="265eef43-8f4c-4285-9c50-1ab13b7b83b1" />
+      <TestMethod codeBase="F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Render.Tests\bin\Release\net10.0\SomeEngine.Render.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Tests.VirtualShadowViewTests" name="MovingPointLightBiasDecaysOverTenRenderedFramesAndRestartsAfterMovement" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="1ddb5dc0-22df-1cad-598c-78b8525bf93f" executionId="265eef43-8f4c-4285-9c50-1ab13b7b83b1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.19]   Discovering: SomeEngine.Render.Tests&#xD;
+[xUnit.net 00:00:00.33]   Discovered:  SomeEngine.Render.Tests&#xD;
+[xUnit.net 00:00:00.38]   Starting:    SomeEngine.Render.Tests&#xD;
+[xUnit.net 00:00:02.90]       Assert.InRange() Failure: Value not in range&#xD;
+[xUnit.net 00:00:02.90]       Range:  (0.999998987 - 1.00000095)&#xD;
+[xUnit.net 00:00:02.90]       Actual: 0&#xD;
+[xUnit.net 00:00:02.90]       Stack Trace:&#xD;
+[xUnit.net 00:00:02.90]         F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Render.Tests\VirtualShadowViewTests.cs(59,0): at SomeEngine.Render.Tests.VirtualShadowViewTests.MovingPointLightBiasDecaysOverTenRenderedFramesAndRestartsAfterMovement()&#xD;
+[xUnit.net 00:00:02.90]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:02.96]   Finished:    SomeEngine.Render.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T23:44:18.0536775+08:00">
+        <Text>[xUnit.net 00:00:02.90]     SomeEngine.Render.Tests.VirtualShadowViewTests.MovingPointLightBiasDecaysOverTenRenderedFramesAndRestartsAfterMovement [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

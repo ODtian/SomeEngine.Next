@@ -17,7 +17,9 @@ public sealed record VirtualShadowMapSettings
     public int DirectionalFirstCoarseClipmapLevel { get; init; } = 15;
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
     public float DirectionalResolutionLodBias { get; init; } = -2.0f;
+    public float DirectionalMovingResolutionLodBias { get; init; }
     public float LocalResolutionLodBias { get; init; }
+    public float LocalMovingResolutionLodBias { get; init; } = 1.0f;
     public bool DynamicResolutionEnabled { get; init; }
     /// <summary>Raster budget in 8×8-page material-batch equivalents. HW contributes
     /// cropped page-batch area / 64; each bounded SW material batch contributes one.

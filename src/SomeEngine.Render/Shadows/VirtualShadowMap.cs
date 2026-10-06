@@ -322,13 +322,17 @@ public sealed class VirtualShadowMap : IDisposable
             (receiverView.ViewportWidth * MathF.Abs(receiverView.Projection.M11));
         bool orthographicReceiver = receiverView.Projection.M44 != 0.0f;
         if (orthographicReceiver) resolutionScale *= 0.5f;
-        float resolutionLodBias = Settings.DirectionalResolutionLodBias + MathF.Log2(resolutionScale);
+        float cameraResolutionLodBias = MathF.Log2(resolutionScale);
         uint physicalPagesPerRow = Settings.AtlasSize / Settings.PageSize;
         uint virtualPagesPerRow = Settings.VirtualResolution / Settings.PageSize;
         uint pageTableEntriesPerView = Settings.PageTableEntriesPerView;
         for (int lightIndex = 0; lightIndex < directionalLightCount; lightIndex++)
         {
             RenderDirectionalLight light = lights.Directional[lightIndex];
+            float resolutionLodBias = MathF.Max(0f, CalculateLightResolutionLodBias(
+                Settings.DirectionalResolutionLodBias, Settings.DirectionalMovingResolutionLodBias,
+                lights.GetDirectionalMobility(lightIndex), light.ShadowSettings.ResolutionLodBias) +
+                cameraResolutionLodBias);
             Vector3 direction = NormalizeOrZero(light.Direction);
             if (direction == Vector3.Zero)
                 direction = Vector3.UnitZ;
@@ -390,7 +394,7 @@ public sealed class VirtualShadowMap : IDisposable
                     ClipmapLevel = absoluteClipmapLevel,
                     LightIndex = checked((uint)lightIndex),
                     ClipmapWorldOrigin = camera,
-                    ResolutionLodBias = resolutionLodBias + light.ShadowSettings.ResolutionLodBias,
+                    ResolutionLodBias = resolutionLodBias,
                     FirstClipmapLevel = Settings.DirectionalFirstClipmapLevel,
                     WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
                     ClipmapLevelCount = Settings.DirectionalClipmapLevels,
@@ -439,7 +443,8 @@ public sealed class VirtualShadowMap : IDisposable
                     faceIndex,
                     light.Position,
                     light.Range,
-                    Settings.LocalResolutionLodBias + light.ShadowSettings.ResolutionLodBias,
+                    CalculateLightResolutionLodBias(Settings.LocalResolutionLodBias, Settings.LocalMovingResolutionLodBias,
+                        lights.GetPointMobility(lightIndex), light.ShadowSettings.ResolutionLodBias),
                     physicalPagesPerRow,
                     pageTableEntriesPerView);
                 _preparedLightViews[viewIndex] = lightView;
@@ -479,7 +484,8 @@ public sealed class VirtualShadowMap : IDisposable
                 0u,
                 light.Position,
                 light.Range,
-                Settings.LocalResolutionLodBias + light.ShadowSettings.ResolutionLodBias,
+                CalculateLightResolutionLodBias(Settings.LocalResolutionLodBias, Settings.LocalMovingResolutionLodBias,
+                    lights.GetSpotMobility(lightIndex), light.ShadowSettings.ResolutionLodBias),
                 physicalPagesPerRow,
                 pageTableEntriesPerView);
             _preparedLightViews[viewIndex] = lightView;
@@ -758,6 +764,10 @@ public sealed class VirtualShadowMap : IDisposable
 
     private static Vector3 NormalizeOrZero(Vector3 value)
         => value.LengthSquared() > 1e-12f ? Vector3.Normalize(value) : Vector3.Zero;
+
+    private static float CalculateLightResolutionLodBias(float nonMovingBias, float movingBias,
+        float mobilityFactor, float lightBias) =>
+        nonMovingBias + mobilityFactor * (MathF.Max(nonMovingBias, movingBias) - nonMovingBias) + lightBias;
 
     private VirtualShadowView CreateLocalView(
         int viewIndex,
