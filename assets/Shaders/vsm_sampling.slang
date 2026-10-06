@@ -486,6 +486,15 @@ uint VirtualShadowLocalMipFromReceiverFootprint(
         max(parameters.MipLevelCount, 1u) - 1u);
 }
 
+float CalculateDirectionalVirtualShadowDistanceLevel(
+    VirtualShadowMapParameters parameters,
+    float3 worldPosition)
+{
+    float3 fromCamera = worldPosition - parameters.ClipmapWorldOrigin;
+    return 0.5 * log2(max(dot(fromCamera, fromCamera), 1e-12)) -
+        float(parameters.FirstClipmapLevel);
+}
+
 float CalculateDirectionalVirtualShadowPixelLevel(
     VirtualShadowMapParameters parameters,
     float3 worldPosition,
@@ -494,9 +503,8 @@ float CalculateDirectionalVirtualShadowPixelLevel(
 {
     if ((parameters.Flags & VSM_VIEW_ORTHOGRAPHIC_RECEIVER) != 0u)
         return parameters.ResolutionLodBias - float(parameters.FirstClipmapLevel);
-    float3 fromCamera = worldPosition - parameters.ClipmapWorldOrigin;
-    return 0.5 * log2(max(dot(fromCamera, fromCamera), 1e-12)) +
-        parameters.ResolutionLodBias - float(parameters.FirstClipmapLevel);
+    return CalculateDirectionalVirtualShadowDistanceLevel(parameters, worldPosition) +
+        parameters.ResolutionLodBias;
 }
 
 uint VirtualShadowDirectionalLevelFromReceiverFootprint(
@@ -520,8 +528,13 @@ uint SelectDirectionalVirtualShadowView(
     float3 worldPositionDy,
     float dynamicResolutionLodBias)
 {
-    float pixelLevel = CalculateDirectionalVirtualShadowPixelLevel(
-        views[firstView], worldPosition, worldPositionDx, worldPositionDy);
+    VirtualShadowMapParameters baseView = views[firstView];
+    float distanceLevel = CalculateDirectionalVirtualShadowDistanceLevel(baseView, worldPosition);
+    uint unbiasedLevel = (uint)max(distanceLevel, 0.0);
+    float resolutionBias = unbiasedLevel < viewCount
+        ? views[firstView + unbiasedLevel].ResolutionLodBias
+        : baseView.ResolutionLodBias;
+    float pixelLevel = distanceLevel + resolutionBias;
     uint firstLevel = (uint)max(floor(pixelLevel), 0.0);
     uint pressureLevels = (uint)max(
         floor(pixelLevel + dynamicResolutionLodBias) - floor(pixelLevel), 0.0);
