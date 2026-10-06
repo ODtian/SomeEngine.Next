@@ -1,7 +1,6 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 #include "resource_effects.slang"
-#include "vsm_page_lists.slang"
 
 struct VirtualShadowStateInitUniforms
 {
@@ -18,6 +17,7 @@ ConstantBuffer<VirtualShadowStateInitUniforms> StateInit;
 RWStructuredBuffer<uint4> ShadowPageTable;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> PhysicalPageOwners;
+#include "vsm_page_lists.slang"
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint4> PageMetadata;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]

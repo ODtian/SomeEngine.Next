@@ -1,7 +1,6 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 #include "resource_effects.slang"
-#include "vsm_page_lists.slang"
 
 struct VirtualShadowPagePoolUniforms
 {
@@ -26,6 +25,7 @@ RWByteAddressBuffer PageRequestDispatchArgs;
 RWStructuredBuffer<uint> PhysicalPageOwners;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint4> PageMetadata;
+#include "vsm_page_lists.slang"
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> AllocatedPageHierarchy;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
