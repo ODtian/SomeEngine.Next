@@ -1,0 +1,35 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Assets.Tests; 0 violations.
+  SomeEngine.Serialization -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Serialization\bin\Release\net10.0\SomeEngine.Serialization.dll
+  SomeEngine.Job.Contracts -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Job.Contracts\bin\Release\net10.0\SomeEngine.Job.Contracts.dll
+  SomeEngine.Diagnostics -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Diagnostics\bin\Release\net10.0\SomeEngine.Diagnostics.dll
+  SomeEngine.ECS.SourceGen -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.Graphics -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Graphics\bin\Release\net10.0\SomeEngine.Graphics.dll
+  SomeEngine.Job -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Job\bin\Release\net10.0\SomeEngine.Job.dll
+  SomeEngine.ECS -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.ECS\bin\Release\net10.0\SomeEngine.ECS.dll
+  SomeEngine.Generators -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Generators\bin\Release\netstandard2.0\SomeEngine.Generators.dll
+  SomeEngine.ECS.Serialization -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.ECS.Serialization\bin\Release\net10.0\SomeEngine.ECS.Serialization.dll
+  SomeEngine.ECS.Systems -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.ECS.Systems\bin\Release\net10.0\SomeEngine.ECS.Systems.dll
+  SomeEngine.Resources -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Resources\bin\Release\net10.0\SomeEngine.Resources.dll
+  SomeEngine.Core -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Core\bin\Release\net10.0\SomeEngine.Core.dll
+  Game -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\templates\DefaultProject\Game\bin\Release\net10.0\Game.dll
+  SomeEngine.Assets -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Assets\bin\Release\net10.0\SomeEngine.Assets.dll
+  SomeEngine.RenderGraph -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.RenderGraph\bin\Release\net10.0\SomeEngine.RenderGraph.dll
+  Game.Assets -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\templates\DefaultProject\Game.Assets\bin\Release\net10.0\Game.Assets.dll
+  SomeEngine.Render -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Render\bin\Release\net10.0\SomeEngine.Render.dll
+  Alimer.Bindings.MeshOptimizer -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\external\Alimer.Bindings\artifacts\bin\Alimer.Bindings.MeshOptimizer\release_net10.0\Alimer.Bindings.MeshOptimizer.dll
+  SomeEngine.Assets.Importers -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\src\SomeEngine.Assets.Importers\bin\Release\net10.0\SomeEngine.Assets.Importers.dll
+  Game.Importing -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\templates\DefaultProject\Game.Importing\bin\Release\net10.0\Game.Importing.dll
+  SomeEngine.Assets.Tests -> F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tests\SomeEngine.Assets.Tests\bin\Release\net10.0\SomeEngine.Assets.Tests.dll
+F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tests\SomeEngine.Assets.Tests\bin\Release\net10.0\SomeEngine.Assets.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.2 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+结果文件: F:\SomeEngine.AgentWork\rg70-remaining\ticket-137-triangle-edge-green\green.trx
+
+已通过! - 失败:     0，通过:     1，已跳过:     0，总计:     1，持续时间: 350 ms - SomeEngine.Assets.Tests.dll (net10.0)

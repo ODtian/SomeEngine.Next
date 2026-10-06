@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "035affd7ad91085377560340610e6fa86b1ed0ff613b8a04f2fa740b47e47e2e",
+  "input_hash": "282386e87c67da4dc6d65f6ce8e37ac14bb1ab9da617195c28db5748cd7ae058",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/render_lighting.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "b40dddd58f91e37b9572b01ed5cb15bb3a7e282965af0fc5a2ed8c4933c40773"
+      "content_hash": "c83dccdc8d32e3ea18853c58249aac35c490d9b604ed1cde34fee82bfd7106b0"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -49,11 +49,11 @@
     {
       "asset_guid": "6c441d68-a857-5643-9923-2d03131e0a37",
       "sub_asset_key": "",
-      "input_hash": "035affd7ad91085377560340610e6fa86b1ed0ff613b8a04f2fa740b47e47e2e",
+      "input_hash": "282386e87c67da4dc6d65f6ce8e37ac14bb1ab9da617195c28db5748cd7ae058",
       "dependencies": [],
       "asset_path": "vsm_mark_pages.shader.asset",
-      "version": "63a5cab5-9bfe-7af6-823c-ea039d0e5e63",
-      "content_hash": "35B7FDB5B6BFED264BDA5FFF6020F76D15DB577EDE9FAA894BA4AD0AD92A35AF",
+      "version": "b8bd4ae5-773f-7e1a-d84b-4d17250ea294",
+      "content_hash": "9381FC9E0F9DC8E6F131B178094A7FB3E1FD8C23B16B73164682074267759AC2",
       "asset_dependencies": []
     }
   ]

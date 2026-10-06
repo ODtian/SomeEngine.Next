@@ -28,6 +28,10 @@ struct VirtualShadowMapParameters
     float WorldUnitsPerCentimeter;
     float3 LightPosition;
     float LightRange;
+    float GeometryLodScale;
+    float MaxPixelsPerEdge;
+    float MinPixelsPerEdgeHardware;
+    float DicingRate;
 };
 
 static const uint VSM_LIGHT_DIRECTIONAL = 0u;

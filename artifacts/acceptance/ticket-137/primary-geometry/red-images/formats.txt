@@ -1,0 +1,2 @@
+actual: 64x64 R16G16B16A16Float
+expected: 64x64 R16G16B16A16Float

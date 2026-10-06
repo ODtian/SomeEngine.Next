@@ -411,6 +411,10 @@ public sealed class VirtualShadowMap : IDisposable
                             : 0u),
                     LightKind = VirtualShadowLightKind.Directional,
                     FaceIndex = checked((uint)clipmapLevel),
+                    GeometryLodScale = Settings.ShadowGeometryLodScale,
+                    MaxPixelsPerEdge = Settings.ShadowMaxPixelsPerEdge,
+                    MinPixelsPerEdgeHardware = Settings.ShadowMinPixelsPerEdgeHardware,
+                    DicingRate = Settings.ShadowDicingRate,
                 };
                 _preparedLightViews[viewIndex] = lightView;
                 _preparedLightProjections[viewIndex] = lightProjection;
@@ -563,7 +567,8 @@ public sealed class VirtualShadowMap : IDisposable
                 _preparedLightProjections[index],
                 shadow.VirtualResolution,
                 shadow.VirtualResolution,
-                CameraCut: false);
+                CameraCut: false,
+                GeometryLodScale: shadow.GeometryLodScale);
         }
         return _pendingViewCount;
     }
@@ -804,6 +809,10 @@ public sealed class VirtualShadowMap : IDisposable
         FaceIndex = faceIndex,
         LightPosition = lightPosition,
         LightRange = lightRange,
+        GeometryLodScale = Settings.ShadowGeometryLodScale,
+        MaxPixelsPerEdge = Settings.ShadowMaxPixelsPerEdge,
+        MinPixelsPerEdgeHardware = Settings.ShadowMinPixelsPerEdgeHardware,
+        DicingRate = Settings.ShadowDicingRate,
         WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
     };
 
@@ -840,7 +849,8 @@ public sealed class VirtualShadowMap : IDisposable
         (current.GeometryProjection ?? current.Projection).Equals(
             previous.GeometryProjection ?? previous.Projection) &&
         current.ViewportWidth == previous.ViewportWidth &&
-        current.ViewportHeight == previous.ViewportHeight;
+        current.ViewportHeight == previous.ViewportHeight &&
+        current.GeometryLodScale.Equals(previous.GeometryLodScale);
 
     private static uint NextCacheGeneration(uint value)
     {
@@ -873,7 +883,11 @@ public sealed class VirtualShadowMap : IDisposable
         left.LightKind == right.LightKind &&
         left.FaceIndex == right.FaceIndex &&
         left.LightPosition == right.LightPosition &&
-        left.LightRange.Equals(right.LightRange);
+        left.LightRange.Equals(right.LightRange) &&
+        left.GeometryLodScale.Equals(right.GeometryLodScale) &&
+        left.MaxPixelsPerEdge.Equals(right.MaxPixelsPerEdge) &&
+        left.MinPixelsPerEdgeHardware.Equals(right.MinPixelsPerEdgeHardware) &&
+        left.DicingRate.Equals(right.DicingRate);
 
     private static bool HasSameLinearProjection(Matrix4x4 left, Matrix4x4 right) =>
         left.M11.Equals(right.M11) && left.M12.Equals(right.M12) &&

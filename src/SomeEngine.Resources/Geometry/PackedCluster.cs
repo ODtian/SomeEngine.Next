@@ -40,7 +40,7 @@ public struct PackedCluster
     // 60: [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
     public uint PackedCounts;
 
-    // 64: [GroupId(i16):16][Reserved:16]
+    // 64: [GroupId(i16):16][MaximumEdgeLengthHalf:16]
     public uint PackedGroup;
 
     // 68: [mat0:8][mat1:8][mat2:8][Reserved:8]
@@ -78,6 +78,12 @@ public struct PackedCluster
     public short GroupId
     {
         readonly get => unchecked((short)PackedGroup);
-        set => PackedGroup = unchecked((ushort)value);
+        set => PackedGroup = (PackedGroup & 0xFFFF0000u) | unchecked((ushort)value);
+    }
+
+    public ushort MaximumEdgeLengthHalf
+    {
+        readonly get => (ushort)(PackedGroup >> 16);
+        set => PackedGroup = (PackedGroup & 0xFFFFu) | ((uint)value << 16);
     }
 }

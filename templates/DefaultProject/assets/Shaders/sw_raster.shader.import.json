@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "a96d9add86f68b5225fce7d557cd5186d0e6a0058e1f505435cf9098d82eb8cc",
+  "input_hash": "af21ad7e11a9501e1ef329304760cd1f9efd296ae70b10213c566a45fba40869",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bin_common.slang",
@@ -21,15 +21,15 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_policy_raster_output.slang",
-      "content_hash": "58bda832177ab8de4b0da1b06d6fe4acf40186cc5ccbb58732fd4f34b2a017e5"
+      "content_hash": "16ebe2d7ea90fe476b306ebf785b7b84ace9c45f49df0664867032ce4a1ad47c"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_shared.slang",
-      "content_hash": "3257a44e929c328746280534326cee795e8f912b8a47dc50d4fb156254e415cd"
+      "content_hash": "c16a4b7812857d0e7dc01baf5eaf0b7c4e5643bd8a9398f5cdd025a1ab125a3a"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_output.slang",
-      "content_hash": "e2ef814edf011c0a0910fc41b2673aeb35ed4224e68689e8f4fe5ddf6ca1770c"
+      "content_hash": "420664a1ee2392f694b8fd67e6ea42c37c177883e2938f23857d9b87d8ea9822"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_resources.slang",
@@ -41,15 +41,15 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "42555f29e07c376908038817f915380dd937fba3dd3d76d081975db658c3dda7"
+      "content_hash": "3c30ae82f444ff51a16b5c9f8dcd9abc0187892507af4856ccbbe1cb30c43139"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_view.slang",
-      "content_hash": "196ab6e9824d9774210d8cf79c7996925ad6e1df3a97e5346c9bc5c66c5963cf"
+      "content_hash": "74a3c3baf406692ffd3c13ebc651e32e1ddff7c86cb984f1bec10ac0a6ce466d"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_view_access.slang",
-      "content_hash": "3e7afded408137868826cc188f2c39ae059e194789f3a97ca82e3e93b267c0fe"
+      "content_hash": "e54e067102c1a81d385e26f1cfd79cf62881da091fd0087a9eb99f7ce0801975"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_visibility_raster_output.slang",
@@ -133,11 +133,11 @@
     {
       "asset_guid": "70cd2572-fa34-5f52-9676-f355f8f8b6db",
       "sub_asset_key": "",
-      "input_hash": "a96d9add86f68b5225fce7d557cd5186d0e6a0058e1f505435cf9098d82eb8cc",
+      "input_hash": "af21ad7e11a9501e1ef329304760cd1f9efd296ae70b10213c566a45fba40869",
       "dependencies": [],
       "asset_path": "sw_raster.shader.asset",
-      "version": "83cb72da-1335-aaa5-d609-055cb91024af",
-      "content_hash": "C4011EF7701696C12E960059F362967CD8DC8E0E4BB6B4301D21C2F93E409220",
+      "version": "ee59ea7e-43a1-ca41-d948-d87ac8a43eb7",
+      "content_hash": "AC5C561D4D5B92495D5AB7D13D4A8B36F03552689E1E774D78A0A96A2F723729",
       "asset_dependencies": []
     }
   ]
