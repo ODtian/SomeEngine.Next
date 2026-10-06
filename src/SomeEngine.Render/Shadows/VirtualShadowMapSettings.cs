@@ -18,8 +18,11 @@ public sealed record VirtualShadowMapSettings
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
     public float DirectionalResolutionLodBias { get; init; } = -2.0f;
     public float LocalResolutionLodBias { get; init; }
-    /// <summary>Multiplier for geometry precision in each shadow view's virtual pixels.</summary>
-    public float ShadowGeometryLodScale { get; init; } = 1.0f;
+    public float ShadowGeometryLodBias { get; init; } = 1.0f;
+    public float ShadowMaxPixelsPerEdge { get; init; } = 1.0f;
+    public float ShadowMinPixelsPerEdgeHardware { get; init; } = 32.0f;
+    public float ShadowDicingRate { get; init; } = 2.0f;
+    public float ShadowGeometryLodScale => MathF.Pow(2.0f, -ShadowGeometryLodBias);
     public bool DynamicResolutionEnabled { get; init; }
     /// <summary>Raster budget in 8×8-page material-batch equivalents. HW contributes
     /// cropped page-batch area / 64; each bounded SW material batch contributes one.
@@ -192,8 +195,14 @@ public sealed record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(DirectionalResolutionLodBias));
         if (!float.IsFinite(LocalResolutionLodBias))
             throw new ArgumentOutOfRangeException(nameof(LocalResolutionLodBias));
-        if (!float.IsFinite(ShadowGeometryLodScale) || ShadowGeometryLodScale <= 0.0f)
-            throw new ArgumentOutOfRangeException(nameof(ShadowGeometryLodScale));
+        if (!float.IsFinite(ShadowGeometryLodBias) || !float.IsFinite(ShadowGeometryLodScale) || ShadowGeometryLodScale <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(ShadowGeometryLodBias));
+        if (!float.IsFinite(ShadowMaxPixelsPerEdge) || ShadowMaxPixelsPerEdge <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(ShadowMaxPixelsPerEdge));
+        if (!float.IsFinite(ShadowMinPixelsPerEdgeHardware) || ShadowMinPixelsPerEdgeHardware <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(ShadowMinPixelsPerEdgeHardware));
+        if (!float.IsFinite(ShadowDicingRate) || ShadowDicingRate <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(ShadowDicingRate));
         if (DynamicResolutionTargetRasterWork == 0u)
             throw new ArgumentOutOfRangeException(nameof(DynamicResolutionTargetRasterWork));
         if (!float.IsFinite(DynamicResolutionPagePoolLoadStart) ||

@@ -78,8 +78,14 @@ clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 
 透视几何误差以球的最近深度和视角界乘积作为投影距离；正交视图的该距离为一。
 像素倍率取光投影的 Y 标度与虚拟像素高。阴影层级及 cluster 的误差使用实例最小伸缩值，
 球半径使用最大伸缩值；父子几何选择消费一致的误差标度。
-`ShadowGeometryLodScale` 表达阴影视图的几何精度倍率，并通过普通 `RenderView.GeometryLodScale`
-传入相同的 typed view 上传。原版独立手算例和公开 RHI 输出见
+VSM typed view 保存原版 `ShadowMaxPixelsPerEdge=1`、`ShadowMinPixelsPerEdgeHardware=32` 与
+`ShadowDicingRate=2`。`ShadowGeometryLodBias` 默认为一，其倍率为 `2^(-bias)`；原版 caller
+`ShadowSceneRenderer.cpp:142–145,1167–1174` 将该倍率与 streaming quality 相乘后交给阴影视图。
+当前初始 streaming quality 为一，倍率为 `.5`，对应最大几何误差两虚拟像素。
+普通 `RenderView.GeometryLodScale` 从该 typed view 取得同一倍率，compact 将该份参数交给
+Cluster 的独立视图。有限用户 domain 以世界空间边长和最小视图深度生成 dicing factors，
+domain 自身提供表面误差；primary 沿其已有用户配置。streaming 压力质量调整由 #147 的
+实际 visible-page demand 数据接合。原版独立手算例和公开 RHI 输出见
 `artifacts/acceptance/ticket-137/projection-error/`。
 当前深度代号继续消费几何驻留与材质输入 revision；局部几何/材质失效在 #147 与静态/动态缓存
 #141 中接合每个遮挡者的实际影响范围。

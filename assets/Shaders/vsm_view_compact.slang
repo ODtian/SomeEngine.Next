@@ -73,6 +73,10 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     // its raster dimensions so culling and LOD see the correct pixel scale.
     view.ScreenWidth = mipResolution;
     view.ScreenHeight = mipResolution;
+    view.GeometryLodScale = source.GeometryLodScale;
+    view.LodThreshold = source.MaxPixelsPerEdge;
+    view.SoftwareRasterEdgeThreshold = source.MinPixelsPerEdgeHardware;
+    view.TessellationEdgePixels = source.DicingRate;
     view.HiZMipCount = ViewCompact.PageHiZMipCount;
     view.HiZInvSize = 2.0.xx / float(max(mipResolution, 2u));
     view.TargetPolicy = 1u;

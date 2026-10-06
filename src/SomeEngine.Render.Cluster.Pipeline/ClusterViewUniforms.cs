@@ -38,7 +38,8 @@ internal struct ClusterViewUniforms
     internal Matrix4x4 PrevView;
     internal float PrevP00;
     internal float PrevP11;
-    internal Vector2 Pad3;
+    internal float TessellationEdgePixels;
+    internal uint Pad3;
 
     internal Matrix4x4 ClipToWorld;
 
@@ -104,7 +105,8 @@ internal struct ClusterViewUniforms
             PrevView = source.View,
             PrevP00 = source.Projection.M11,
             PrevP11 = source.Projection.M22,
-            Pad3 = default,
+            TessellationEdgePixels = 0.0f,
+            Pad3 = 0u,
             ClipToWorld = clipToWorld,
             TargetPolicy = 0u,
             TargetViewIndex = 0u,

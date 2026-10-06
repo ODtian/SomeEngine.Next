@@ -15,6 +15,25 @@ namespace SomeEngine.Render.Tests;
 public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     [Fact]
+    public async Task ShadowViewsCarryNativeGeometryAndDicingParameters()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings { VirtualResolution = 512, AtlasSize = 256,
+                MaxShadowLights = 1, DirectionalClipmapLevels = 1 });
+        var lights = new RenderLightSet();
+        lights.AddDirectional(new RenderDirectionalLight(Vector3.UnitY, Vector3.One, 1, uint.MaxValue));
+        var receiver = new RenderView(Matrix4x4.Identity,
+            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+        shadows.BeginFrame();
+        VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
+        Assert.Equal(.5f, view.GeometryLodScale);
+        Assert.Equal(1f, view.MaxPixelsPerEdge);
+        Assert.Equal(32f, view.MinPixelsPerEdgeHardware);
+        Assert.Equal(2f, view.DicingRate);
+    }
+
+    [Fact]
     public async Task PointShadowViewsUseEachLightResolutionBiasFromTheGameWorld()
     {
         using var game = new World();

@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "11e3fbf6c821ac85a6ba096fc6896c49d12351fc413bf21dcf97c67b94849d4a",
+  "input_hash": "fa5c494366183a1bfa7ab14892590b4be3ed5c12cd4e6e576f36433d049a2d6f",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_view.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_view.slang",
-      "content_hash": "3641895362aaf78444293b07d77ae27bd73d4b5e3b1887c39fd9d6eb08b5101a"
+      "content_hash": "74a3c3baf406692ffd3c13ebc651e32e1ddff7c86cb984f1bec10ac0a6ce466d"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -25,11 +25,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "25beab71cbc92bb9b93ea7e32c4232d7483b9f4e7e9823717e667c96f12047a8"
+      "content_hash": "c83dccdc8d32e3ea18853c58249aac35c490d9b604ed1cde34fee82bfd7106b0"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_view_compact.slang",
-      "content_hash": "360a505d4abd236f5d2dbf3021a83e4c3ddb77eed743ca71f9b0bccdb7ea451b"
+      "content_hash": "f395223c9fc197d54e929bc173a0a93fbd2b79db75002c2b99c5a98bdc727659"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_view_compact.slang",
@@ -49,11 +49,11 @@
     {
       "asset_guid": "5610ce5e-dcec-5518-affa-7a9efe3ce939",
       "sub_asset_key": "",
-      "input_hash": "11e3fbf6c821ac85a6ba096fc6896c49d12351fc413bf21dcf97c67b94849d4a",
+      "input_hash": "fa5c494366183a1bfa7ab14892590b4be3ed5c12cd4e6e576f36433d049a2d6f",
       "dependencies": [],
       "asset_path": "vsm_view_compact.shader.asset",
-      "version": "4b9cf0c4-3fad-d155-a49e-02ecdc5775cf",
-      "content_hash": "0D9C6A5F044667963345DB0CA6718F14EDC0229CD0C178166C0F334D687A50F4",
+      "version": "209b3fdf-1844-236e-80ce-ed80d738457d",
+      "content_hash": "0432DD0BB8AAA737507790D26FD8C63CCD0524AF1EE7416BF6CC8403DE370FFD",
       "asset_dependencies": []
     }
   ]
