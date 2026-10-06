@@ -1,6 +1,7 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 #include "resource_effects.slang"
+#include "vsm_page_lists.slang"
 
 struct VirtualShadowStateInitUniforms
 {
@@ -46,10 +47,16 @@ void InitializeVirtualShadowState(uint3 threadId : SV_DispatchThreadID)
     if (index == 0u)
     {
         RequestedPageCount[0] = 0u;
+        for (uint list = 0u; list < VSM_PAGE_LIST_COUNT; list++)
+            ShadowPageLists[ShadowPageListCountIndex(list, StateInit.MaxPhysicalPages)] =
+                list == VSM_PAGE_LIST_REQUESTED ? StateInit.MaxPhysicalPages : 0u;
     }
     if (index < StateInit.MaxPhysicalPages)
     {
         PhysicalPageOwners[index] = VSM_UNOWNED_PAGE;
         PageMetadata[index] = 0u.xxxx;
+        for (uint list = 0u; list < VSM_PAGE_LIST_COUNT; list++)
+            ShadowPageLists[ShadowPageListStart(list, StateInit.MaxPhysicalPages) + index] =
+                list == VSM_PAGE_LIST_REQUESTED ? index : VSM_UNOWNED_PAGE;
     }
 }

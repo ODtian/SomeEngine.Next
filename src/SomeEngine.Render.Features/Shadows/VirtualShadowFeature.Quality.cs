@@ -32,7 +32,7 @@ public sealed partial class VirtualShadowFeature
             edit.OrderAfter(_requestResetPass, demand);
             AddQualityReadback(ref edit, readbacks, QualityData.DirtyCount, _activePageCount);
             AddQualityReadback(ref edit, readbacks, QualityData.Failures, _allocationFailures);
-            AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _freePageCount);
+            AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _pageOwners);
             AddQualityReadback(ref edit, readbacks, QualityData.RasterArea, _policyRasterWorkCount);
             AddQualityReadback(ref edit, readbacks, QualityData.ReceiverCoverage, _pageReceiverMasks);
             AddQualityReadback(ref edit, readbacks, QualityData.Views, _frameShadowViews, BufferRange.Whole);
@@ -135,8 +135,16 @@ public sealed partial class VirtualShadowFeature
                     view.ResolutionLodBias, view.ResolutionLodBias + bias[view.LightKind == VirtualShadowLightKind.Directional ? 0 : 1], mips);
             }
             return new(frame, bias[0], bias[1], Word(QualityData.RequestCount), Word(QualityData.DirtyCount),
-                Word(QualityData.Failures), Word(QualityData.Failures, 1), Word(QualityData.FreeCount),
+                Word(QualityData.Failures), Word(QualityData.Failures, 1), FreePages(),
                 Word(QualityData.RasterArea), (ClusterWorkOverflow)Word(QualityData.Work), result);
+        }
+
+        private uint FreePages()
+        {
+            uint count = 0u;
+            foreach (uint page in MemoryMarshal.Cast<byte, uint>(Bytes[(int)QualityData.FreeCount]))
+                if (page == uint.MaxValue) count++;
+            return count;
         }
 
         private uint Word(QualityData kind, int word = 0) => MemoryMarshal.Cast<byte, uint>(Bytes[(int)kind])[word];

@@ -1,6 +1,7 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 #include "resource_effects.slang"
+#include "vsm_page_lists.slang"
 
 struct VirtualShadowPageAllocationUniforms
 {
@@ -9,7 +10,7 @@ struct VirtualShadowPageAllocationUniforms
     uint MaxPhysicalPages;
     uint ViewCount;
     uint FrameIndex;
-    uint EvictionBucketCount;
+    uint Pad0;
     uint HierarchyWordsPerView;
     uint MipLevelCount;
 };
@@ -22,10 +23,6 @@ StructuredBuffer<uint> RequestedPageFlags;
 RWStructuredBuffer<uint4> ShadowPageTable;
 RWStructuredBuffer<uint> PhysicalPageOwners;
 RWStructuredBuffer<uint4> PageMetadata;
-RWStructuredBuffer<uint> FreePages;
-RWStructuredBuffer<uint> FreePageCount;
-RWStructuredBuffer<uint> EvictionPages;
-RWStructuredBuffer<uint> EvictionBucketCounts;
 RWStructuredBuffer<uint4> ActivePhysicalPages;
 RWStructuredBuffer<uint> ActivePhysicalPageCount;
 RWStructuredBuffer<uint4> UncachedPageRectBounds;
@@ -63,21 +60,6 @@ bool ReservePages(RWStructuredBuffer<uint> counts, uint counterIndex, out uint i
     return WavePrefixCountBits(true) < taken;
 }
 
-bool PopEvictionPage(out uint page)
-{
-    for (int bucket = int(PageAllocation.EvictionBucketCount) - 1; bucket >= 0; bucket--)
-    {
-        uint local;
-        if (ReservePages(EvictionBucketCounts, uint(bucket), local))
-        {
-            page = EvictionPages[uint(bucket) * PageAllocation.MaxPhysicalPages + local];
-            return true;
-        }
-    }
-    page = 0u;
-    return false;
-}
-
 void ReleaseOldMapping(uint atlasPage)
 {
     uint oldOwner = PhysicalPageOwners[atlasPage];
@@ -96,17 +78,14 @@ void ReleaseOldMapping(uint atlasPage)
 
 bool AcquireAtlasPage(uint newTableIndex, out uint atlasPage)
 {
-    uint freeIndex;
-    if (ReservePages(FreePageCount, 0u, freeIndex))
-    {
-        atlasPage = FreePages[freeIndex];
-        PhysicalPageOwners[atlasPage] = newTableIndex;
-        return true;
-    }
-    if (!PopEvictionPage(atlasPage))
+    uint index;
+    if (!ReservePages(ShadowPageLists,
+        ShadowPageListCountIndex(VSM_PAGE_LIST_AVAILABLE, PageAllocation.MaxPhysicalPages), index))
         return false;
+    atlasPage = ShadowPageLists[ShadowPageListStart(VSM_PAGE_LIST_AVAILABLE, PageAllocation.MaxPhysicalPages) + index];
     ReleaseOldMapping(atlasPage);
     PhysicalPageOwners[atlasPage] = newTableIndex;
+    AppendShadowPage(VSM_PAGE_LIST_REQUESTED, PageAllocation.MaxPhysicalPages, atlasPage);
     return true;
 }
 
