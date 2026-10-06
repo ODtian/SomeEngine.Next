@@ -11,11 +11,15 @@ public sealed partial class VirtualShadowMap
     private readonly HashSet<VirtualShadowLocalLight> _distantUpdates = [];
     private readonly VirtualShadowDistantLightUpdates _distantSchedule = new();
     private readonly record struct DistantLightHistory(int FirstView, int ViewCount);
+    public float GlobalLocalResolutionLodBias { get; private set; }
+
+    /// <summary>Accepts the completed global page-pressure result used for local shadow requests.</summary>
+    public void UpdateGlobalLocalResolutionLodBias(float bias) => GlobalLocalResolutionLodBias = bias;
 
     private void ConfigureLocalRepresentation(ref VirtualShadowView view, in RenderView receiver, float projectionScale)
     {
         uint minimumMip = Settings.CalculateConservativeLocalMip(receiver, view.LightPosition, view.LightRange,
-            projectionScale, view.ResolutionLodBias);
+            projectionScale, view.ResolutionLodBias, GlobalLocalResolutionLodBias);
         view.MinMipLevel = minimumMip;
         bool distant = Settings.DistantLightMode == VirtualShadowDistantLightMode.All ||
             (Settings.DistantLightMode == VirtualShadowDistantLightMode.Conservative && minimumMip == Settings.MipLevelCount - 1u);

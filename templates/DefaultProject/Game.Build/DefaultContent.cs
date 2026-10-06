@@ -389,6 +389,12 @@ public static class DefaultContent
                 ResidentPages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_resident_propagation.shader"),
                     "PropagateVirtualShadowResidentPages"),
+                Prefilter = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_prefilter.shader"),
+                    "PrefilterVirtualShadowDistant"),
+                PrefilterRequests = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_prefilter_requests.shader"),
+                    "PropagateVirtualShadowFilterRequests"),
                 MergeStatic = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_merge_static.shader"),
                     "MergeVirtualShadowStaticDepth"),

@@ -7,6 +7,7 @@ namespace SomeEngine.Render.Features.Shadows;
 public sealed partial class VirtualShadowFeature
 {
     private QueryPool? _workTimeQueries;
+    private GraphPassId _workTimeEndPass;
     private GraphReadbackId _workTimeReadback;
     private ulong _workTimeFrequency;
     private float _workTimeFraction = 1f;
@@ -42,6 +43,7 @@ public sealed partial class VirtualShadowFeature
         GraphPassId end = edit.AddGeneralFramePass("End virtual shadow geometry timing", PassQueueSelection.AnyOfType(QueueType.Graphics),
             new WorkTimestamp(queries, 1), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             WorkTimestamp.Declare, WorkTimestamp.Record, region: finish);
+        _workTimeEndPass = end;
         edit.OrderAfter(end, _rasterCompletePass);
         GraphPassId resolve = edit.AddGeneralFramePass("Resolve virtual shadow geometry timing", PassQueueSelection.AnyOfType(QueueType.Graphics),
             new WorkTimestampResults(queries, results), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),

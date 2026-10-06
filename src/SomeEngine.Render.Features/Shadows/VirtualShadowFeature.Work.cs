@@ -85,7 +85,7 @@ public sealed partial class VirtualShadowFeature
 
     private void StageWorkFeedback(ref RenderGraphFrame graph, RenderLightSet lights, scoped ReadOnlySpan<VirtualShadowView> views)
     {
-        if (_workFeedbackPipeline is null) return;
+        if (_workFeedbackPipeline is null && _prefilterPipeline is null) return;
         _frameWorkViews = new ShadowWorkView[views.Length];
         uint[] mapping = new uint[Math.Max(views.Length, 1)];
         for (int index = 0; index < views.Length; index++)
@@ -103,6 +103,7 @@ public sealed partial class VirtualShadowFeature
             _frameWorkViews[index] = key;
             mapping[index] = _committedWorkViews.TryGetValue(key, out uint previous) ? previous : uint.MaxValue;
         }
+        if (_workFeedbackPipeline is null) return;
         graph.SetBufferInput(_previousWorkViewIndices, graph.Upload<uint>(mapping, BufferUsages.ShaderRead,
             "Virtual shadow previous work view indices"));
         var settings = _shadowMap.Settings;
@@ -125,7 +126,7 @@ public sealed partial class VirtualShadowFeature
 
     private void CommitWorkFeedback()
     {
-        if (_workFeedbackPipeline is null) return;
+        if (_workFeedbackPipeline is null && _prefilterPipeline is null) return;
         _committedWorkViews.Clear();
         for (int index = 0; index < _frameWorkViews.Length; index++)
             _committedWorkViews.Add(_frameWorkViews[index], checked((uint)index));

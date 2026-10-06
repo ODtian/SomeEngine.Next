@@ -385,6 +385,7 @@ public sealed partial class VirtualShadowMap : IDisposable
                     vertical * (float)(centerSnapY * (double)levelRadius - originVertical) + direction * cameraDepth;
                 long referenceScale = 1L << (clipmapLevels - clipmapLevel - 1);
                 float depthRadius = levelRadius * Settings.DirectionalDepthRangeScale;
+                float cullingEndDistance = levelRadius * MathF.Pow(2f, -resolutionLodBias);
                 Matrix4x4 lightView = Matrix4x4.CreateLookAt(
                     snappedCenter,
                     snappedCenter + direction,
@@ -393,9 +394,9 @@ public sealed partial class VirtualShadowMap : IDisposable
                     worldExtent,
                     worldExtent,
                     -depthRadius,
-                    depthRadius);
+                    Settings.PrefilteredDistantEnabled ? cullingEndDistance : depthRadius);
                 int viewIndex = checked(lightIndex * clipmapLevels + clipmapLevel);
-                float depthCenter = SelectDirectionalDepthCenter(
+                float depthCenter = Settings.PrefilteredDistantEnabled ? cameraDepth : SelectDirectionalDepthCenter(
                     viewIndex, absoluteClipmapLevel, checked((uint)lightIndex),
                     cameraDepth, depthRadius, levelRadius, lightView * lightProjection);
                 // The view tracks current world position while this offset keeps
@@ -444,7 +445,12 @@ public sealed partial class VirtualShadowMap : IDisposable
                     DicingRate = Settings.ShadowDicingRate,
                     DepthCenterZ = depthCenter,
                     DepthRadius = depthRadius,
+                    DepthCullRange = Settings.PrefilteredDistantEnabled
+                        ? new Vector2(lightProjection.M43 + (clipmapLevel == 0 ? 0f : cullingEndDistance * .5f) * lightProjection.M33,
+                            lightProjection.M43 + cullingEndDistance * lightProjection.M33)
+                        : new Vector2(0f, float.MaxValue),
                 };
+                if (Settings.PrefilteredDistantEnabled) _views[viewIndex].Flags |= VirtualShadowViewFlags.PrefilteredDistant;
                 _preparedLightViews[viewIndex] = lightView;
                 _preparedLightProjections[viewIndex] = lightProjection;
             }
@@ -608,6 +614,17 @@ public sealed partial class VirtualShadowMap : IDisposable
             }
         }
         SelectDistantUpdates(lights, viewCount, ref generation);
+        if (Settings.PrefilteredDistantEnabled)
+            for (int index = 0; index < pointViewOffset; index++)
+            {
+                generation = NextCacheGeneration(generation);
+                _views[index].CacheGeneration = generation;
+            }
+        if (generation < _committedCacheGeneration)
+        {
+            _pendingCacheReset = true;
+            for (int index = 0; index < viewCount; index++) _views[index].CacheGeneration = generation;
+        }
         _pendingCacheGeneration = generation;
         return _views.AsSpan(0, viewCount);
     }

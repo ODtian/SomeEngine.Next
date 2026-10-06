@@ -641,6 +641,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BindAllocation(ref edit, _allocatePass, _allocationUniforms);
                 InstallStaticDepth(ref edit, shaders, primaryDepthAfter, targetGeometryAfter);
                 InstallResidentPages(ref edit, shaders, pageTableEntryCapacity, targetGeometryAfter);
+                InstallPrefilter(ref edit, shaders, pageTableEntryCapacity, primaryDepthAfter, targetGeometryAfter);
                 BindClear(ref edit, _clearUniforms);
                 BindDynamicResolution(ref edit, _dynamicResolutionUniforms);
                 BindCompact(ref edit, _frameInvocationUniforms, _clusterSourceViews);
@@ -657,11 +658,14 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 InstallWorkFeedback(ref edit, shaders, rasterViewCapacity / settings.MipLevelCount,
                     primaryDepthAfter, feedback, resolutionCopyPass);
                 InstallWorkTime(ref edit, primaryDepthAfter, targetGeometryAfter, feedback);
+                if (_prefilterPipeline is not null && _workTimeQueries is not null)
+                    edit.OrderAfter(_prefilterPasses[0], _workTimeEndPass);
+                InstallDistantBias(ref edit, feedback);
                 _uniformData = new FeatureUniformBuffer(ref edit,
                     [_frameSamplingUniforms, _frameInvocationUniforms, _initUniforms, _invalidationUniforms,
                      _coarseDemandUniforms, _demandUniforms, _poolUniforms,
                      _poolPrepareUniforms, _poolCompactUniforms, _poolFinishUniforms, _allocationUniforms,
-                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, _workUniforms, _residentUniforms, .. _pageHiZReduceUniforms],
+                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, _workUniforms, _residentUniforms, .. _prefilterUniforms, .. _pageHiZReduceUniforms],
                     device.Capabilities.Limits.ConstantBufferAlignment, "Virtual shadow constant data");
                 PassDefinition frameComplete = edit.GetPass(_frameCompletePass);
                 _ = frameComplete.Read(
@@ -686,6 +690,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         {
             dispatchLayout?.Dispose();
             _residentPipeline?.Dispose();
+            _prefilterPipeline?.Dispose();
+            _prefilterRequestPipeline?.Dispose();
             _staticMergePipeline?.Dispose();
             _workFeedbackPipeline?.Dispose();
             _workTimeQueries?.Dispose();
@@ -944,6 +950,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 checked((uint)_viewCount),
                 in receiverProjection);
             StageWorkFeedback(ref graph, lights, views);
+            StagePrefilter(ref graph, views);
+            StageDistantBias(ref graph);
             _uniformData.Upload(ref graph);
             graph.ObserveExecution(this);
             _frameActive = true;
@@ -957,6 +965,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             }
             _viewCount = 0;
             _workTimeFrames.Remove(_frameIndex);
+            _distantBiasFrames.Remove(_frameIndex);
 
             _frameHasPreviousHistory = false;
             _frameIndex = _previousFrameIndex;
@@ -974,6 +983,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         if (!complete)
         {
             _workTimeFrames.Remove(_frameIndex);
+            _distantBiasFrames.Remove(_frameIndex);
             _qualityReadbacks?.Requests.Remove(_frameIndex);
             if (!result.SubmittedCompletions.IsEmpty) _forceStateReset = true;
             else
@@ -986,6 +996,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         }
         CommitWorkTime();
         CommitWorkFeedback();
+        CommitPrefilter();
+        CommitDistantBias();
         _committedInstances = _frameInstances;
         _committedInstanceRevision = _frameInstanceRevision;
         _deformedInstances.Clear();
@@ -1012,6 +1024,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             "RasterTargetOutput" when type == ResourceBindingType.TextureUav => BindPageDepthAtlas,
             "VirtualShadowViews" when type == ResourceBindingType.BufferSrv => BindShadeViews,
             "VirtualShadowResidentPages" when type == ResourceBindingType.BufferSrv => BindResidentPages,
+            "VirtualShadowPrefilteredAtlas" when type == ResourceBindingType.TextureSrv => BindPrefilteredAtlas,
             "VirtualShadowPageTable" when type == ResourceBindingType.BufferSrv => BindShadePageTable,
             "VirtualShadowReceiverMasks" when type == ResourceBindingType.BufferSrv => BindRasterReceiverMasks,
             "VirtualShadowAtlas" when type == ResourceBindingType.TextureSrv => BindShadeAtlas,
@@ -1031,6 +1044,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _qualityReadbacks?.Requests.Clear();
         _dispatchLayout.Dispose();
         _residentPipeline?.Dispose();
+        _prefilterPipeline?.Dispose();
+        _prefilterRequestPipeline?.Dispose();
         _staticMergePipeline?.Dispose();
         _workFeedbackPipeline?.Dispose();
         if (_workTimeQueries is { } queries) _renderGraph.RetireAfterSubmittedFrames(queries);
@@ -1099,7 +1114,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             PageDilation = checked((uint)Math.Ceiling(
                 Math.Max(
                     _shadowMap.Settings.BlockerSearchRadiusTexels,
-                    _shadowMap.Settings.MaxFilterRadiusTexels) /
+                    Math.Max(_shadowMap.Settings.MaxFilterRadiusTexels, _shadowMap.Settings.PrefilteredDistantEnabled ? 2f : 0f)) /
                 _shadowMap.Settings.PageSize)),
             FrameIndex = _frameIndex,
             HierarchyWordsPerView = _shadowMap.Settings.PageHierarchyWordsPerView,
@@ -1170,7 +1185,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             PageDilationBorderPages = (float)(
                 Math.Max(
                     _shadowMap.Settings.BlockerSearchRadiusTexels,
-                    _shadowMap.Settings.MaxFilterRadiusTexels) /
+                    Math.Max(_shadowMap.Settings.MaxFilterRadiusTexels, _shadowMap.Settings.PrefilteredDistantEnabled ? 2f : 0f)) /
                 _shadowMap.Settings.PageSize),
             NormalBias = _shadowMap.Settings.NormalBias,
             ReceiverProjection = receiverProjection,
@@ -1423,8 +1438,11 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     }
 
     private void BindCoarseMark(ref RenderGraphEdit graph, GraphBufferInput uniforms)
+        => BindCoarseMark(ref graph, _coarseMarkPass, uniforms);
+
+    private void BindCoarseMark(ref RenderGraphEdit graph, GraphPassId passId, GraphBufferInput uniforms)
     {
-        PassDefinition pass = graph.GetPass(_coarseMarkPass);
+        PassDefinition pass = graph.GetPass(passId);
         _ = pass.Bind(uniforms, PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(
             _frameShadowViews,

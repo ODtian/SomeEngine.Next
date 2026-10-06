@@ -5,7 +5,7 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages), nameof(Prefilter), nameof(PrefilterRequests))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 {
     public partial ShaderRef? ResetReceiverMasks { get; set; }
@@ -14,6 +14,8 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
     public partial ShaderRef? MarkCoarsePages { get; set; }
     public partial ShaderRef? AllocatePages { get; set; }
     public partial ShaderRef? ResidentPages { get; set; }
+    public partial ShaderRef? Prefilter { get; set; }
+    public partial ShaderRef? PrefilterRequests { get; set; }
     public partial ShaderRef? MergeStatic { get; set; }
     public partial ShaderRef? ClearPages { get; set; }
     public partial ShaderRef? InitializeState { get; set; }
@@ -61,6 +63,10 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
         var result = new VirtualShadowMapShaders
         {
             Name = name,
+            PrefilterRequestsShader = copy.PrefilterRequests is { } filterRequests ? shaders[filterRequests.Asset.Value] : null,
+            PrefilterRequests = copy.PrefilterRequests is { } filterRequestsEntry ? Resolve(filterRequestsEntry) : EntryPointReflection.Null,
+            PrefilterShader = copy.Prefilter is { } prefilter ? shaders[prefilter.Asset.Value] : null,
+            Prefilter = copy.Prefilter is { } prefilterEntry ? Resolve(prefilterEntry) : EntryPointReflection.Null,
             ResidentPagesShader = copy.ResidentPages is { } resident ? shaders[resident.Asset.Value] : null,
             ResidentPages = copy.ResidentPages is { } residentEntry ? Resolve(residentEntry) : EntryPointReflection.Null,
             MergeStaticShader = copy.MergeStatic is { } merge ? shaders[merge.Asset.Value] : null,

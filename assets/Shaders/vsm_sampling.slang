@@ -34,7 +34,7 @@ struct VirtualShadowMapParameters
     float DicingRate;
     float DepthCenterZ;
     float DepthRadius;
-    float2 DepthPadding;
+    float2 DepthCullRange;
     float3 WorldOriginHigh;
     float OriginHighPadding;
     float3 WorldOriginLow;
@@ -73,8 +73,10 @@ static const uint VSM_VIEW_ODD_MIP_LEVELS = 1u << 6u;
 static const uint VSM_VIEW_SINGLE_PAGE = 1u << 7u;
 static const uint VSM_VIEW_DISTANT_LIGHT = 1u << 8u;
 static const uint VSM_VIEW_CACHED_DISTANT_LIGHT = 1u << 9u;
+static const uint VSM_VIEW_PREFILTERED_DISTANT = 1u << 10u;
 static const uint VSM_PAGE_REQUEST_DETAIL = 1u << 0u;
 static const uint VSM_PAGE_REQUEST_COARSE = 1u << 1u;
+static const uint VSM_PAGE_REQUEST_SECONDARY = 1u << 2u;
 
 static const uint VSM_PAGE_UNMAPPED = 0u;
 static const uint VSM_PAGE_LOCKED = 0xFFFFFFFFu;
@@ -1053,6 +1055,10 @@ float SampleVirtualShadowMapFiltered(
 }
 
 #include "vsm_resident_math.slang"
+#include "vsm_prefilter_sampling.slang"
+#ifdef VSM_PREFILTERED_LOOKUP_ENABLED
+Texture2D<float> VirtualShadowPrefilteredAtlas;
+#endif
 
 bool TryReadVirtualShadowDirectionalResidentDepth(StructuredBuffer<VirtualShadowMapParameters> views,
     StructuredBuffer<uint4> pageTable, StructuredBuffer<uint2> residentPages, Texture2D<uint> atlas,
@@ -1116,6 +1122,12 @@ bool TrySampleDirectionalVirtualShadowMap(
     if (firstLevel >= clipmapLevelCount)
         return true;
 
+    float distantVisibility = 1.0;
+#ifdef VSM_PREFILTERED_LOOKUP_ENABLED
+    distantVisibility = SampleDirectionalVirtualShadowPrefiltered(views, pageTable, VirtualShadowPrefilteredAtlas,
+        firstView, clipmapLevelCount, worldPosition);
+#endif
+
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED
     VirtualShadowMapParameters requested = views[firstView + firstLevel];
     float3 requestedNdc;
@@ -1141,7 +1153,11 @@ bool TrySampleDirectionalVirtualShadowMap(
         float3 sourceNdc = float3(sourceUV * float2(2.0, -2.0) + float2(-1.0, 1.0), requestedNdc.z * transform.x + transform.w);
         if (TrySampleVirtualShadowMapFilteredProjected(source, pageTable, atlas, sourceNdc, lookupUV, 0u,
                 blockerSampleCount, filterSampleCount, blockerSearchRadiusTexels, maxFilterRadiusTexels,
-                visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(source, sourceNdc, receiverPlaneNormal))) return true;
+                visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(source, sourceNdc, receiverPlaneNormal)))
+        {
+            visibility *= distantVisibility;
+            return true;
+        }
         offset = sourceOffset + 1u;
     }
 #else
@@ -1156,7 +1172,11 @@ bool TrySampleDirectionalVirtualShadowMap(
                     views[firstView + level], pageTable, atlas, ndc, uv, 0u,
                     blockerSampleCount, filterSampleCount, blockerSearchRadiusTexels, maxFilterRadiusTexels,
                     visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(
-                        views[firstView + level], ndc, receiverPlaneNormal))) return true;
+                        views[firstView + level], ndc, receiverPlaneNormal)))
+            {
+                visibility *= distantVisibility;
+                return true;
+            }
         }
     }
 #endif

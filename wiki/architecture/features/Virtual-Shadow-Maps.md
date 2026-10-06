@@ -225,4 +225,16 @@ double 中减去原点的光空间位置。`ClipmapCornerRelativeOffsetX/Y` 以�
 下一次预算更新消费。原版来源为 `ShadowSceneRenderer.cpp:218–259,343–429` 与
 `VirtualShadowMapCacheManager.h:109,369–410`。
 
+方向光预滤由 `PrefilteredDistantProjectEnable` 与 `PrefilteredDistant` 两个设置共同启用，
+两者默认 false；历史权重默认 `.87`。启用后 regular clipmap 采用原版缩紧的远端范围，
+每帧刷新其深度，并在同一304字节视图的 `DepthCullRange` 保存相邻层的深度分界。
+细页接收需求按整数 corner 地址将8×8接收单元压缩到所有较粗层，并保持 secondary/detail
+需求和接收覆盖。两轴 `[1,4,6,4,1]/16` 过滤消费实际完成的深度，缺少邻页时使用当前页边缘。
+历史从当前分界中点重建世界位置，投影到同光源的前帧视图，确认前帧页与接收覆盖后混合；
+变化幅度以原版 `1/255` 最小步长推进。独立 R8 页带一个 texel 边框，较粗层的过滤遮挡相乘
+形成当前层结果，随后更新合并页边框供材质双线性采样。两份持久图历史随成功完成的帧切换，
+取消继续使用前次完成层。全局页压力通过完成帧回读进入保守局部 mip，沿实际请求使用的同一 bias。
+原版依据为 `VirtualShadowMapClipmap.cpp:443–475`、`VirtualShadowMapPageManagement.usf:403–495` 与
+`VirtualShadowMapPhysicalPageManagement.usf:1091–1577`。
+
 页池以 GPU `ShadowPageLists` 的 LRU、AVAILABLE、EMPTY、REQUESTED 四个列表维护跨帧顺序。REQUESTED 在帧结束时包含全部图集页；下一帧先保存该顺序，再将当前请求页移入 REQUESTED，未请求页保序压缩进入 AVAILABLE，空页追加在 AVAILABLE 尾部并优先分配。分配后的剩余 AVAILABLE 追加到本帧请求页之后，成为下一帧输入。未请求缓存页上的完成状态和失效事实随原页面保留，后续请求或回收负责消费。准备、压缩和收尾由持久图中的显式阶段表达，帧取消、部分提交和重新初始化沿现有完成边界维护。

@@ -14,7 +14,12 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
         uint Stride);
 
     internal sealed record SampledImage(uint Width, uint Height, uint[] Pixels, int BindingIndex,
-        Format PixelFormat = Format.R32UInt, TextureViewDimension ViewDimension = TextureViewDimension.Texture2D);
+        Format PixelFormat = Format.R32UInt, TextureViewDimension ViewDimension = TextureViewDimension.Texture2D,
+        ResourceBindingType Type = ResourceBindingType.TextureSrv, uint Layers = 1, string Name = "");
+
+    internal uint[][] ExecuteImages(string file, string entry, DispatchArguments dispatch,
+        BufferInput[] inputs, SampledImage[] images) =>
+        ExecuteSourceCore($"#include \"{file}\"", entry, dispatch, inputs, null, images);
     internal uint[][] Execute(string file, string entry, DispatchArguments dispatch,
         (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs)
         => ExecuteSource($"#include \"{file}\"", entry, dispatch, inputs);
@@ -61,6 +66,7 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             backend.Begin(context, new CommandRecordingDesc(64, 8, 64));
             List<(string Name, ResourceBinding Binding)> bindings = [];
             List<(Buffer Buffer, ulong Size)> outputs = [];
+            List<(Texture Texture, SampledImage Image, uint Pitch)> imageOutputs = [];
             foreach (var input in inputs)
             {
                 ulong bytes = (ulong)input.Data.Length * 4u;
@@ -91,26 +97,34 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             foreach (SampledImage sourceImage in sourceImages.OrderBy(value => value.BindingIndex))
             {
                 uint pitch = (sourceImage.Width * 4 + 255u) & ~255u;
-                Buffer upload = Keep(backend.CreateBuffer(device, new((ulong)pitch * sourceImage.Height, BufferUsages.CopySource), MemoryType.Upload));
+                Buffer upload = Keep(backend.CreateBuffer(device, new((ulong)pitch * sourceImage.Height * sourceImage.Layers, BufferUsages.CopySource), MemoryType.Upload));
                 using (MappedBuffer map = backend.Map(upload, MapType.Write, BufferRange.Whole))
                 {
                     map.Bytes.Clear();
-                    for (int row = 0; row < sourceImage.Height; row++)
+                    for (int row = 0; row < sourceImage.Height * sourceImage.Layers; row++)
                         MemoryMarshal.AsBytes(sourceImage.Pixels.AsSpan(row * (int)sourceImage.Width, (int)sourceImage.Width))
                             .CopyTo(map.Bytes.Slice(row * (int)pitch));
                     map.Flush(map.Range);
                 }
+                bool writable = sourceImage.Type == ResourceBindingType.TextureUav;
                 Texture texture = Keep(backend.CreateTexture(device, new(TextureDimension.Texture2D,
-                    sourceImage.Width, sourceImage.Height, 1, 1, 1, 1, sourceImage.PixelFormat, TextureUsages.Sampled | TextureUsages.CopyDestination)));
-                TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
+                    sourceImage.Width, sourceImage.Height, 1, 1, sourceImage.Layers, 1, sourceImage.PixelFormat,
+                    TextureUsages.Sampled | TextureUsages.CopyDestination |
+                        (writable ? TextureUsages.CopySource | TextureUsages.Storage : TextureUsages.None))));
+                TextureSubresourceRange range = new(0, 1, 0, sourceImage.Layers, TextureAspects.Color);
                 backend.Barrier(context, new TextureBarrier(texture, range, PipelineSync.None, PipelineSync.Copy,
                     ResourceAccess.NoAccess, ResourceAccess.CopyDestination, TextureLayout.Undefined, TextureLayout.CopyDestination));
-                backend.CopyBufferToTexture(context, new(upload, 0, pitch, sourceImage.Height, texture, 0, 0, TextureAspects.Color,
-                    0, 0, 0, sourceImage.Width, sourceImage.Height, 1));
+                for (uint layer = 0; layer < sourceImage.Layers; layer++)
+                    backend.CopyBufferToTexture(context, new(upload, (ulong)pitch * sourceImage.Height * layer, pitch, sourceImage.Height,
+                        texture, 0, layer, TextureAspects.Color, 0, 0, 0, sourceImage.Width, sourceImage.Height, 1));
                 backend.Barrier(context, new TextureBarrier(texture, range, PipelineSync.Copy, PipelineSync.ComputeShading,
-                    ResourceAccess.CopyDestination, ResourceAccess.ShaderResource, TextureLayout.CopyDestination, TextureLayout.ShaderResource));
-                TextureSrv view = Keep(backend.CreateTextureSrv(device, new(texture, range, sourceImage.PixelFormat, sourceImage.ViewDimension)));
-                bindings.Insert(sourceImage.BindingIndex, ("", ResourceBinding.SampledTexture(view)));
+                    ResourceAccess.CopyDestination, writable ? ResourceAccess.UnorderedAccess : ResourceAccess.ShaderResource,
+                    TextureLayout.CopyDestination, writable ? TextureLayout.UnorderedAccess : TextureLayout.ShaderResource));
+                ResourceBinding binding = writable
+                    ? ResourceBinding.StorageTexture(Keep(backend.CreateTextureUav(device, new(texture, range, sourceImage.PixelFormat, sourceImage.ViewDimension))))
+                    : ResourceBinding.SampledTexture(Keep(backend.CreateTextureSrv(device, new(texture, range, sourceImage.PixelFormat, sourceImage.ViewDimension))));
+                bindings.Insert(sourceImage.BindingIndex, (sourceImage.Name, binding));
+                if (writable) imageOutputs.Add((texture, sourceImage, pitch));
             }
             Pipeline pipeline = Keep(backend.CreateComputePipeline(device, new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0))));
             backend.SetPipeline(context, pipeline);
@@ -121,22 +135,48 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                 resourceBindings, []));
             backend.Dispatch(context, dispatch);
             ulong total = outputs.Aggregate(0ul, (sum, buffer) => sum + buffer.Size), offset = 0;
-            Buffer readback = Keep(backend.CreateBuffer(device, new(total, BufferUsages.CopyDestination), MemoryType.Readback));
+            ulong imageOffset = (total + 511u) & ~511ul;
+            ulong imageBytes = imageOutputs.Aggregate(0ul, (sum, output) =>
+                sum + (ulong)output.Pitch * output.Image.Height * output.Image.Layers);
+            Buffer readback = Keep(backend.CreateBuffer(device, new(imageOutputs.Count == 0 ? total : imageOffset + imageBytes,
+                BufferUsages.CopyDestination), MemoryType.Readback));
             foreach (var output in outputs)
             {
                 backend.Barrier(context, new BufferBarrier(output.Buffer, PipelineSync.ComputeShading, PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
                 backend.CopyBuffer(context, new BufferCopy(output.Buffer, 0, readback, offset, output.Size));
                 offset += output.Size;
             }
+            ulong textureOffset = imageOffset;
+            foreach (var output in imageOutputs)
+            {
+                var range = new TextureSubresourceRange(0, 1, 0, output.Image.Layers, TextureAspects.Color);
+                backend.Barrier(context, new TextureBarrier(output.Texture, range, PipelineSync.ComputeShading, PipelineSync.Copy,
+                    ResourceAccess.UnorderedAccess, ResourceAccess.CopySource, TextureLayout.UnorderedAccess, TextureLayout.CopySource));
+                for (uint layer = 0; layer < output.Image.Layers; layer++)
+                    backend.CopyTextureToBuffer(context, new(readback, textureOffset + (ulong)output.Pitch * output.Image.Height * layer,
+                        output.Pitch, output.Image.Height, output.Texture, 0, layer, TextureAspects.Color,
+                        0, 0, 0, output.Image.Width, output.Image.Height, 1));
+                textureOffset += (ulong)output.Pitch * output.Image.Height * output.Image.Layers;
+            }
             using RecordedCommands commands = backend.End(context);
             QueueCompletion completion = backend.Submit(backend.GetQueue(device, QueueType.Compute), new([], [], [commands], [], []));
             Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(30)));
             using MappedBuffer result = backend.Map(readback, MapType.Read, BufferRange.Whole);
-            result.Invalidate(new(0, total));
+            result.Invalidate(new(0, readback.Info.Size));
             List<uint[]> values = [];
             int start = 0;
             foreach (var output in outputs)
             { values.Add(MemoryMarshal.Cast<byte, uint>(result.Bytes.Slice(start, (int)output.Size)).ToArray()); start += (int)output.Size; }
+            textureOffset = imageOffset;
+            foreach (var output in imageOutputs)
+            {
+                uint[] pixels = new uint[output.Image.Width * output.Image.Height * output.Image.Layers];
+                for (int row = 0; row < output.Image.Height * output.Image.Layers; row++)
+                    MemoryMarshal.Cast<byte, uint>(result.Bytes.Slice(checked((int)textureOffset + row * (int)output.Pitch),
+                        checked((int)output.Image.Width * 4))).CopyTo(pixels.AsSpan(row * (int)output.Image.Width));
+                values.Add(pixels);
+                textureOffset += (ulong)output.Pitch * output.Image.Height * output.Image.Layers;
+            }
             return values.ToArray();
         }
         finally { for (int index = owned.Count - 1; index >= 0; index--) owned[index].Dispose(); }

@@ -18,6 +18,10 @@ public sealed class VirtualShadowMapShaders
     public EntryPointReflection AllocatePages { get; init; }
     public Shader? ResidentPagesShader { get; init; }
     public EntryPointReflection ResidentPages { get; init; }
+    public Shader? PrefilterShader { get; init; }
+    public EntryPointReflection Prefilter { get; init; }
+    public Shader? PrefilterRequestsShader { get; init; }
+    public EntryPointReflection PrefilterRequests { get; init; }
     public Shader? MergeStaticShader { get; init; }
     public EntryPointReflection MergeStatic { get; init; }
     public Shader? ClearPagesShader { get; init; }

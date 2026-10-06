@@ -3,6 +3,7 @@
 
 // Material sampling consumes current receiver coverage as well as completed depth.
 #define VSM_RESIDENT_LOOKUP_ENABLED 1
+#define VSM_PREFILTERED_LOOKUP_ENABLED 1
 #include "vsm_sampling.slang"
 #include "vsm_receiver_projection.slang"
 

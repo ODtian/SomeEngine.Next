@@ -52,7 +52,7 @@ public struct VirtualShadowView
     public float DicingRate;
     public float DepthCenterZ;
     public float DepthRadius;
-    private Vector2 DepthPadding;
+    public Vector2 DepthCullRange;
     public Vector3 WorldOriginHigh;
     private float OriginHighPadding;
     public Vector3 WorldOriginLow;
@@ -87,4 +87,5 @@ public static class VirtualShadowViewFlags
     public const uint SinglePage = 1u << 7;
     public const uint DistantLight = 1u << 8;
     public const uint CachedDistantLight = 1u << 9;
+    public const uint PrefilteredDistant = 1u << 10;
 }

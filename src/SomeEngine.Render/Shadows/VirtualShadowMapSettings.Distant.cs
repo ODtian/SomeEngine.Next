@@ -14,6 +14,10 @@ public sealed partial record VirtualShadowMapSettings
 {
     public VirtualShadowDistantLightMode DistantLightMode { get; init; } = VirtualShadowDistantLightMode.Conservative;
     public int MaximumDistantUpdatesPerFrame { get; init; } = 1;
+    public bool PrefilteredDistantProjectEnable { get; init; }
+    public bool PrefilteredDistant { get; init; }
+    public float PrefilteredDistantHistoryWeight { get; init; } = .87f;
+    public bool PrefilteredDistantEnabled => PrefilteredDistantProjectEnable && PrefilteredDistant;
 
     /// <summary>Smallest mip requested by a receiver inside the local light's bounding sphere.</summary>
     public uint CalculateConservativeLocalMip(in RenderView receiver, Vector3 lightPosition,
