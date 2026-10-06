@@ -35,6 +35,7 @@ public sealed class NativeShadowProjectionTests(D3D12TestCompiler shaderCompiler
                 ClipmapWorldOrigin = new(0f, 0f, -191.5f),
                 ResolutionLodBias = index == 0 ? 5f : index == 1 ? 1f : 0f,
                 FirstClipmapLevel = 6,
+                WorldUnitsPerCentimeter = 1f,
                 ClipmapLevelCount = 4,
                 MipLevelCount = 1,
             };
