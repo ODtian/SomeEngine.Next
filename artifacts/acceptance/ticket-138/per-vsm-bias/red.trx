@@ -1,0 +1,57 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="d1b42fb5-d583-4ccc-b742-ea8779380238" name="boqi@BOQI-THE-DAEMON 2026-10-06 21:37:22" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T21:37:22.0617660+08:00" queuing="2026-10-06T21:37:22.0617663+08:00" start="2026-10-06T21:37:15.2971266+08:00" finish="2026-10-06T21:37:22.0722350+08:00" />
+  <TestSettings name="default" id="fd98dc3c-e6c4-4eb4-843b-b1281ba647e1">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_21_37_22" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="940f6d5e-fc2a-41e8-b0c6-c3f21b014dcd" testId="851d8fb1-eb03-271b-a0cb-6218e522210e" testName="SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.DirectionalSamplingUsesTheBiasOfTheUnbiasedDistanceLevel" computerName="BOQI-THE-DAEMON" duration="00:00:01.6190859" startTime="2026-10-06T21:37:20.2503286+08:00" endTime="2026-10-06T21:37:21.8582070+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="940f6d5e-fc2a-41e8-b0c6-c3f21b014dcd">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ&#xD;
+Expected: 0&#xD;
+Actual:   1</Message>
+          <StackTrace>   at SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.DirectionalSamplingUsesTheBiasOfTheUnbiasedDistanceLevel() in F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\NativeShadowProjectionTests.cs:line 70&#xD;
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.DirectionalSamplingUsesTheBiasOfTheUnbiasedDistanceLevel" storage="f:\.codex\worktrees\rg70-ticket-138\someengine.next\tests\someengine.graphics.direct3d12.tests\bin\release\net10.0\someengine.graphics.direct3d12.tests.dll" id="851d8fb1-eb03-271b-a0cb-6218e522210e">
+      <Execution id="940f6d5e-fc2a-41e8-b0c6-c3f21b014dcd" />
+      <TestMethod codeBase="F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests" name="DirectionalSamplingUsesTheBiasOfTheUnbiasedDistanceLevel" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="851d8fb1-eb03-271b-a0cb-6218e522210e" executionId="940f6d5e-fc2a-41e8-b0c6-c3f21b014dcd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.21]   Discovering: SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.52]   Discovered:  SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.57]   Starting:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:05.64]       Assert.Equal() Failure: Values differ&#xD;
+[xUnit.net 00:00:05.64]       Expected: 0&#xD;
+[xUnit.net 00:00:05.64]       Actual:   1&#xD;
+[xUnit.net 00:00:05.64]       Stack Trace:&#xD;
+[xUnit.net 00:00:05.64]         F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\NativeShadowProjectionTests.cs(70,0): at SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.DirectionalSamplingUsesTheBiasOfTheUnbiasedDistanceLevel()&#xD;
+[xUnit.net 00:00:05.64]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+[xUnit.net 00:00:05.64]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:05.66]   Finished:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T21:37:21.8730160+08:00">
+        <Text>[xUnit.net 00:00:05.64]     SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.DirectionalSamplingUsesTheBiasOfTheUnbiasedDistanceLevel [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
