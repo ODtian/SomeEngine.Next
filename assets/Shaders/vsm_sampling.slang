@@ -32,6 +32,9 @@ struct VirtualShadowMapParameters
     float MaxPixelsPerEdge;
     float MinPixelsPerEdgeHardware;
     float DicingRate;
+    float DepthCenterZ;
+    float DepthRadius;
+    float2 DepthPadding;
 };
 
 static const uint VSM_LIGHT_DIRECTIONAL = 0u;

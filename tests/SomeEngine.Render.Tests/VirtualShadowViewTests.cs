@@ -15,6 +15,49 @@ namespace SomeEngine.Render.Tests;
 public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     [Fact]
+    public async Task CameraDepthMovementUsesCachedRangeUntilTheNativeGuardbandIsCrossed()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings { VirtualResolution = 512, AtlasSize = 256,
+                MaxShadowLights = 1, DirectionalFirstClipmapLevel = 6, DirectionalClipmapLevels = 1 });
+        using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
+            [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.AddCopyFramePass("Commit directional depth range", PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition _, ref int _) => { },
+                static (ref CopyPassCommandScope _, in int _) => { });
+            edit.Commit();
+        }
+        var lights = new RenderLightSet();
+        lights.AddDirectional(new RenderDirectionalLight(-Vector3.UnitY, Vector3.One, 1, uint.MaxValue));
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        float[] cameraHeights = [0, 1100, 1200];
+        float[] expectedDepths = [.5f, .5f, .96875f];
+        for (int index = 0; index < cameraHeights.Length; index++)
+        {
+            Vector3 camera = new(0, cameraHeights[index], 0);
+            var receiver = new RenderView(Matrix4x4.CreateLookAt(camera, camera - Vector3.UnitZ, Vector3.UnitY),
+                Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+            shadows.BeginFrame();
+            VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
+            Vector4 clip = Vector4.Transform(new Vector4(0, 0, 0, 1), view.LightViewProjection);
+            // Level 6 has radius 1.28 and Z radius 1280. Movement 1100 is inside
+            // 0.9*1280-1.28; movement 1200 adopts the new center, so world zero
+            // projects to (1280+1200)/2560 = .96875.
+            Assert.InRange(clip.Z / clip.W, expectedDepths[index] - 5e-7f, expectedDepths[index] + 5e-7f);
+            shadows.AcquireFrameResources();
+            using RenderGraphFrame frame = graph.BeginFrame();
+            frame.ObserveExecution(new ViewCommit(shadows));
+            int count = frame.Execute(completions);
+            for (int completion = 0; completion < count; completion++)
+                Assert.Equal(WaitStatus.Completed, graphics.Backend.WaitCpu(completions[completion], TimeSpan.FromSeconds(10)));
+        }
+    }
+
+    [Fact]
     public async Task DirectionalLevelsCoverTheirNativeDepthRange()
     {
         VirtualShadowMapShaders shaders = await CreateShaders();

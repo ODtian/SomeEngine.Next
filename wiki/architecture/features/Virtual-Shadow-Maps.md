@@ -80,7 +80,11 @@ clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 
 几何驻留与材质 revision 继续保护深度正确性。每个阴影视图按实际投影、深度编码及几何参数
 维护自己的缓存失效；固定阴影视图在 main geometry/FOV/viewport 输入变化后留用对应深度。
 外部 vertex/domain/opacity 输入通过 `InvalidateCasters` 或 `InvalidateAllCasters` 报告实际变化。
-滚动继续维护世界页地址，方向光实际深度平移变化更新对应视图；per-level Z guardband 由 #139 接合。
+滚动继续维护世界页地址。每级方向光在其 committed view 中保存已采用的光空间深度中心和半径。
+当 `abs(currentZ - cachedZ) + levelRadius <= .9 * cachedRadius` 时，投影偏移继续使用该中心；
+跨过 guardband 后采用当前中心并更新对应视图。图提交与内容完成继续维护该数据的推进和恢复。
+原版依据为 `VirtualShadowMapCacheManager.cpp:258–315`，公共用例
+`CameraDepthMovementUsesCachedRangeUntilTheNativeGuardbandIsCrossed` 检验实际世界点的投影结果。
 
 独立验收目标以源 glTF 三角形、实例变换、透明度、几何法线射线起点为真值，
 使用同次提交的 raw/pre-TAA 输出和实际 jitter，保留全部有效接收者及边缘。
