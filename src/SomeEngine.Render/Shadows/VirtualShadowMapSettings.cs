@@ -2,6 +2,13 @@ using System.Numerics;
 
 namespace SomeEngine.Render.Shadows;
 
+public enum VirtualShadowLocalMipMode
+{
+    All,
+    Even,
+    Odd,
+}
+
 /// <summary>Virtual address-space, page-pool and atlas quality settings.</summary>
 public sealed record VirtualShadowMapSettings
 {
@@ -21,6 +28,7 @@ public sealed record VirtualShadowMapSettings
     public float DirectionalMovingResolutionLodBias { get; init; }
     public float LocalResolutionLodBias { get; init; }
     public float LocalMovingResolutionLodBias { get; init; } = 1.0f;
+    public VirtualShadowLocalMipMode LocalMipMode { get; init; }
     public bool DynamicResolutionEnabled { get; init; }
     /// <summary>Raster budget in 8×8-page material-batch equivalents. HW contributes
     /// cropped page-batch area / 64; each bounded SW material batch contributes one.

@@ -38,6 +38,8 @@ static const uint VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE = 1u << 1u;
 static const uint VSM_VIEW_USE_RECEIVER_MASK = 1u << 2u;
 static const uint VSM_VIEW_PREVIOUS_PROJECTION_VALID = 1u << 3u;
 static const uint VSM_VIEW_ORTHOGRAPHIC_RECEIVER = 1u << 4u;
+static const uint VSM_VIEW_EVEN_MIP_LEVELS = 1u << 5u;
+static const uint VSM_VIEW_ODD_MIP_LEVELS = 1u << 6u;
 static const uint VSM_PAGE_REQUEST_DETAIL = 1u << 0u;
 static const uint VSM_PAGE_REQUEST_COARSE = 1u << 1u;
 
@@ -470,10 +472,15 @@ uint VirtualShadowLocalMipFromNominalPixelRadius(
     float mipFloat = log2(footprint) +
         parameters.ResolutionLodBias + dynamicResolutionLodBias;
     uint mip = (uint)max(floor(mipFloat), 0.0);
-    return clamp(
+    mip = clamp(
         mip,
         parameters.MinMipLevel,
         max(parameters.MipLevelCount, 1u) - 1u);
+    if ((parameters.Flags & VSM_VIEW_EVEN_MIP_LEVELS) != 0u)
+        mip &= ~1u;
+    else if ((parameters.Flags & VSM_VIEW_ODD_MIP_LEVELS) != 0u)
+        mip |= 1u;
+    return mip;
 }
 
 uint VirtualShadowLocalSamplingMip(

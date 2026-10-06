@@ -55,4 +55,6 @@ public static class VirtualShadowViewFlags
     public const uint UseReceiverMask = 1u << 2;
     public const uint PreviousProjectionValid = 1u << 3;
     public const uint OrthographicReceiver = 1u << 4;
+    public const uint EvenMipLevels = 1u << 5;
+    public const uint OddMipLevels = 1u << 6;
 }
