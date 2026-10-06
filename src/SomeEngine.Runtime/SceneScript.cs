@@ -85,6 +85,14 @@ public sealed class SceneEdit
         _scene.SetCameraTransform(position, rotation);
     }
 
+    /// <summary>Moves the entire scene by changing its double precision origin in engine world units.</summary>
+    public void SetWorldOrigin(WorldOrigin origin)
+    {
+        RequireAction();
+        _scene.SetWorldOrigin(origin);
+        CameraCut = true;
+    }
+
     public Material GetMaterial(Entity entity, int index = 0)
     {
         RequireAction();

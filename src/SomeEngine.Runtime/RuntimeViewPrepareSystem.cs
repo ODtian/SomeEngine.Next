@@ -51,6 +51,7 @@ internal sealed class RuntimeViewPrepareSystem : ISystem<RenderPrepareSystemCont
             _hasPending = false;
         }
 
+        next = next with { WorldOrigin = context.World.WorldOrigin };
         if (context.World.Read<RenderView>(_viewEntity) != next)
             context.World.Replace(_viewEntity, next);
     }

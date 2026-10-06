@@ -15,6 +15,27 @@ namespace SomeEngine.Render.Tests;
 public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     [Fact]
+    public async Task FarWorldOriginKeepsTheSubUnitClipmapSnappingOffset()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings { VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 1,
+                DirectionalFirstClipmapLevel = 6, DirectionalClipmapLevels = 2,
+                WorldUnitsPerCentimeter = 1 });
+        var lights = new RenderLightSet();
+        lights.AddDirectional(new RenderDirectionalLight(Vector3.UnitZ, Vector3.One, 1, uint.MaxValue));
+        var receiver = new RenderView(Matrix4x4.Identity,
+            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128,
+            WorldOrigin: new(1099511627776.125, 0, 0));
+        shadows.BeginFrame();
+        VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
+        Vector4 clip = Vector4.Transform(new Vector4(0, 0, 0, 1), view.LightViewProjection);
+        // Native level6 has radius128. The integer-aligned far origin plus1/8
+        // projects to -1/2048 in the horizontal light axis.
+        Assert.Equal(-.00048828125f, clip.X / clip.W);
+    }
+
+    [Fact]
     public async Task DirectionalClipmapsHaveOneMipWhileLocalLightsKeepTheirMipChain()
     {
         VirtualShadowMapShaders shaders = await CreateShaders();

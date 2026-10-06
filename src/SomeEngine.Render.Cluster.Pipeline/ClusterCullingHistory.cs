@@ -15,6 +15,8 @@ internal sealed class ClusterCullingHistory
     private readonly Matrix4x4[] _previousProjections;
     private readonly Matrix4x4[] _pendingViews;
     private readonly Matrix4x4[] _pendingProjections;
+    private readonly WorldOrigin[] _previousOrigins;
+    private readonly WorldOrigin[] _frameOrigins;
     private readonly Entity[] _previousViewEntities;
     private readonly Entity[] _pendingViewEntities;
     private bool _pending;
@@ -30,6 +32,8 @@ internal sealed class ClusterCullingHistory
         _previousProjections = new Matrix4x4[count];
         _pendingViews = new Matrix4x4[count];
         _pendingProjections = new Matrix4x4[count];
+        _previousOrigins = new WorldOrigin[count];
+        _frameOrigins = new WorldOrigin[count];
         _previousViewEntities = new Entity[count];
         _pendingViewEntities = new Entity[count];
     }
@@ -51,11 +55,13 @@ internal sealed class ClusterCullingHistory
         {
             ref readonly RenderView view = ref views[index];
             _usePreviousView[index] = _hasPreviousView[index] && !view.CameraCut &&
-                identities[index] != Entity.Null && identities[index] == _previousViewEntities[index];
+                identities[index] != Entity.Null && identities[index] == _previousViewEntities[index] &&
+                view.WorldOrigin == _previousOrigins[index];
 
             _pendingViews[index] = view.View;
             _pendingProjections[index] = view.Projection;
             _pendingViewEntities[index] = identities[index];
+            _frameOrigins[index] = view.WorldOrigin;
         }
         for (int index = views.Length; index < _hasPreviousView.Length; index++)
             _usePreviousView[index] = false;
@@ -66,17 +72,20 @@ internal sealed class ClusterCullingHistory
     internal bool TryGetPrevious(
         int viewIndex,
         out Matrix4x4 view,
-        out Matrix4x4 projection)
+        out Matrix4x4 projection,
+        out WorldOrigin origin)
     {
         if ((uint)viewIndex >= (uint)_hasPreviousView.Length ||
             !(_pending ? _usePreviousView[viewIndex] : _hasPreviousView[viewIndex]))
         {
             view = default;
             projection = default;
+            origin = default;
             return false;
         }
         view = _previousViews[viewIndex];
         projection = _previousProjections[viewIndex];
+        origin = _previousOrigins[viewIndex];
         return true;
     }
 
@@ -89,6 +98,7 @@ internal sealed class ClusterCullingHistory
             _previousViews[index] = _pendingViews[index];
             _previousProjections[index] = _pendingProjections[index];
             _previousViewEntities[index] = _pendingViewEntities[index];
+            _previousOrigins[index] = _frameOrigins[index];
             _hasPreviousView[index] = _pendingViewEntities[index] != Entity.Null;
         }
         for (int index = _pendingViewCount; index < _hasPreviousView.Length; index++)
@@ -109,6 +119,7 @@ internal sealed class ClusterCullingHistory
         Array.Clear(_pendingViews);
         Array.Clear(_pendingProjections);
         Array.Clear(_pendingViewEntities);
+        Array.Clear(_frameOrigins);
         Array.Clear(_usePreviousView);
         _pendingViewCount = 0;
         _pending = false;

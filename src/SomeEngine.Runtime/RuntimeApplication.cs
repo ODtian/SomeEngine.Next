@@ -475,7 +475,7 @@ internal static class RuntimeApplication
         using World mainWorld = RuntimeWait.Task(sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
             new(Execution: new WorldJobs(JobSystem.Default))).AsTask(), window, FrameTimeout);
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
-        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
+        using var extraction = new RenderExtractionSystems(renderWorld, new WorldOriginRenderExtractor(), new MeshRenderExtractor(), new LightRenderExtractor());
 
         RuntimeScene scene = RuntimeWait.Task(
             RuntimeScene.CreateAsync(mainWorld, assets, loadShader).AsTask(),
@@ -901,6 +901,7 @@ internal static class RuntimeApplication
                 {
                     Frame = frameIndex, SubmittedFrame = submittedFrames, SceneSeconds = sceneSeconds,
                     Width = width, Height = height, CameraPosition = scene.Camera.Position,
+                    WorldOrigin = renderWorld.WorldOrigin,
                     View = scene.Camera.View, Projection = viewFrame.View.Projection,
                     UnjitteredProjection = scene.Projection(width, height), JitterPixels = viewFrame.JitterPixels,
                     Options = options, ShadowSettings = shadowSettings,

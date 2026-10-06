@@ -86,6 +86,8 @@
 
 ## Cluster
 
+**世界原点**（`WorldOrigin`）：整个 Game world 的 double 绝对原点，使用引擎世界单位。实例变换、相机及局部光位置为相对此原点的 float 位移；原点与其它场景变化通过同一提取边界进入 Rendering world。
+
 **光栅箱**：具有相同光栅 shader 与资源绑定的一组材质工作。
 
 **细分组**：共享细分计算 shader 与资源绑定的光栅箱集合。

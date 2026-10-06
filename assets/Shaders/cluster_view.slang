@@ -47,7 +47,21 @@ struct ClusterViewUniforms
     uint CullingProjectionIndex;
     float NearPlane;
     float4x4 GeometryViewProj;
+    float3 WorldOriginHigh;
+    float OriginHighPadding;
+    float3 WorldOriginLow;
+    float OriginLowPadding;
+    float3 PreviousWorldOriginHigh;
+    float PreviousOriginHighPadding;
+    float3 PreviousWorldOriginLow;
+    float PreviousOriginLowPadding;
 };
+
+float3 TranslateClusterWorldPosition(float3 position, float3 originHigh,
+    float3 originLow, ClusterViewUniforms view)
+{
+    return position + ((originHigh - view.WorldOriginHigh) + (originLow - view.WorldOriginLow));
+}
 
 float3 ClusterProjectionScales(ClusterViewUniforms view)
 {

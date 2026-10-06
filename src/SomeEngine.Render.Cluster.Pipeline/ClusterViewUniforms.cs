@@ -48,6 +48,14 @@ internal struct ClusterViewUniforms
     internal uint CullingProjectionIndex;
     internal float NearPlane;
     internal Matrix4x4 GeometryViewProj;
+    internal Vector3 WorldOriginHigh;
+    internal float OriginHighPadding;
+    internal Vector3 WorldOriginLow;
+    internal float OriginLowPadding;
+    internal Vector3 PreviousWorldOriginHigh;
+    internal float PreviousOriginHighPadding;
+    internal Vector3 PreviousWorldOriginLow;
+    internal float PreviousOriginLowPadding;
 
     internal static ClusterViewUniforms Create(
         in RenderView source,
@@ -73,6 +81,7 @@ internal struct ClusterViewUniforms
         if (!Matrix4x4.Invert(viewProjection, out Matrix4x4 clipToWorld))
             throw new ArgumentException("The render-view projection must be invertible.", nameof(source));
         Vector3 cameraPosition = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
+        source.WorldOrigin.Split(out Vector3 originHigh, out Vector3 originLow);
         if (!IsFinite(viewProjection)
             || !IsFinite(cameraPosition))
         {
@@ -112,6 +121,10 @@ internal struct ClusterViewUniforms
             TargetViewIndex = 0u,
             NearPlane = source.Projection.M43 / source.Projection.M33,
             GeometryViewProj = source.View * (source.GeometryProjection ?? source.Projection),
+            WorldOriginHigh = originHigh,
+            WorldOriginLow = originLow,
+            PreviousWorldOriginHigh = originHigh,
+            PreviousWorldOriginLow = originLow,
         };
     }
 

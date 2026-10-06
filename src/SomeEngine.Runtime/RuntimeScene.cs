@@ -20,6 +20,7 @@ internal sealed class RuntimeScene : IDisposable
         AssetId<MaterialAsset>[] MaterialIds);
 
     private readonly World _world;
+    private readonly Entity _worldOriginEntity;
     private (Guid Asset, Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings)[] _meshes = [];
     private readonly (Entity Entity, PointLight Value)[] _playbackLights;
     private readonly Material[] _playbackMaterials;
@@ -50,6 +51,8 @@ internal sealed class RuntimeScene : IDisposable
         Vector3 meshPositionMax)
     {
         _world = world;
+        Entity[] origins = Entities(world, new QueryDefinitionBuilder().Read<WorldOrigin>());
+        _worldOriginEntity = origins.Length == 0 ? world.CreateEntity(default(WorldOrigin)) : origins.Single();
         _playbackLights = playbackLights;
         _playbackMaterials = playbackMaterials;
         _initialCameraPosition = camera.Position;
@@ -69,6 +72,8 @@ internal sealed class RuntimeScene : IDisposable
 
     internal RuntimeCamera Camera { get; private set; }
     internal CameraDepthOfField? DepthOfField { get; }
+
+    internal void SetWorldOrigin(WorldOrigin origin) => _world.Replace(_worldOriginEntity, origin);
 
     internal int MeshInstanceCount { get; }
 

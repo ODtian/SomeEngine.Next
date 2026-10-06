@@ -13,6 +13,7 @@ public static class SceneSerialization
 {
     public static SerializationRegistry CreateRegistry() => new SerializationRegistry()
         .Register<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"))
+        .Register<WorldOrigin, WorldOriginCodec>(Key(nameof(WorldOrigin), "x:f64;y:f64;z:f64"))
         .RegisterHierarchyDomain<DefaultHierarchyDomain>()
         .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
@@ -37,6 +38,14 @@ public static class SceneSerialization
 
     private static LightShadowSettings ReadShadowSettings(ref DataReader reader)
         => new(reader.ReadSingle(), (LightMobility)reader.ReadUInt32());
+
+    private struct WorldOriginCodec : ICanonicalComponentCodec<WorldOrigin>
+    {
+        public void Write(ref DataWriter writer, in WorldOrigin value)
+        { writer.WriteDouble(value.X); writer.WriteDouble(value.Y); writer.WriteDouble(value.Z); }
+        public void Read(ref DataReader reader, out WorldOrigin value) =>
+            value = new(reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble());
+    }
 
     private struct TransformCodec : ICanonicalComponentCodec<WorldTransform>
     {
