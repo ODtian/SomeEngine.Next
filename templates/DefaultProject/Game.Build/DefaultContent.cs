@@ -42,7 +42,7 @@ public static class DefaultContent
             await project.BuildAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Shader: {Path.GetFileName(source)}");
         }
-        await DefaultTextures.BuildAsync(project, cancellationToken).ConfigureAwait(false);
+        await DefaultTextures.BuildAsync(project, engineRoot, cancellationToken).ConfigureAwait(false);
         await DefaultMaterials.BuildAsync(project, cancellationToken).ConfigureAwait(false);
         Guid pipeline = BuildClusterShaders(project);
         Guid shadows = BuildShadowShaders(project);
@@ -371,6 +371,7 @@ public static class DefaultContent
         const string outputPath = "assets/Pipelines/default_virtual_shadow.virtualshadow.asset";
         using var settings = new VirtualShadowMapShadersBlock
             {
+                BlueNoise = new AssetId<TextureAsset>(DefaultContentIds.ShadowBlueNoise),
                 ResetReceiverMasks = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_receiver_mask_reset.shader"),
                     "ResetVirtualShadowReceiverMasks"),

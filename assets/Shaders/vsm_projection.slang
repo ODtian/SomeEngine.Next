@@ -143,7 +143,8 @@ VirtualShadowProjectionResult ProjectVirtualShadowHard(
     if (biasedDepth > receiverDepth)
     {
         result.Visibility = 0.0;
-        result.OccluderDistance = VirtualShadowOccluderDistance(view, biasedDepth, receiverDepth,
+        result.OccluderDistance = VirtualShadowOccluderDistance(view,
+            view.LightKind == VSM_LIGHT_DIRECTIONAL ? sample.Depth : biasedDepth, receiverDepth,
             length(position - view.LightPosition));
     }
     return result;
@@ -280,12 +281,15 @@ bool TraceVirtualShadowRay(StructuredBuffer<VirtualShadowMapParameters> views,
 
 float2 VirtualShadowConcentricDisk(float2 random)
 {
-    float2 square = 2.0 * random - 1.0;
-    if (all(square == 0.0)) return 0.0.xx;
-    float radius, angle;
-    if (abs(square.x) > abs(square.y)) { radius = square.x; angle = .7853981634 * square.y / square.x; }
-    else { radius = square.y; angle = 1.5707963268 - .7853981634 * square.x / square.y; }
-    return radius * float2(cos(angle), sin(angle));
+    float2 square = 2.0 * random - .99999994;
+    float2 magnitude = abs(square);
+    float smaller = min(magnitude.x, magnitude.y);
+    float radius = max(magnitude.x, magnitude.y);
+    float angle = .7853981634 * (smaller / (radius + 5.42101086243e-20) +
+        2.0 * float(magnitude.y >= magnitude.x));
+    float2 circle = asfloat((asuint(float2(cos(angle), sin(angle))) & 0x7fffffffu) |
+        (asuint(square) & 0x80000000u));
+    return radius * circle;
 }
 
 float4 VirtualShadowRayRandom(uint2 pixel, uint frameIndex, uint rayIndex, uint rayCount)
@@ -307,10 +311,36 @@ float4 VirtualShadowRayRandom(uint2 pixel, uint frameIndex, uint rayIndex, uint 
 #endif
 }
 
+float2 VirtualShadowLocalDisk(float2 random)
+{
+    float2 square = random * sqrt(2.0) - sqrt(.5);
+    float2 squared = square * square;
+    float root = sqrt(2.0 * max(squared.x, squared.y) - min(squared.x, squared.y));
+    if (squared.x > squared.y) square.x = square.x > 0.0 ? root : -root;
+    else square.y = square.y > 0.0 ? root : -root;
+    return square;
+}
+
+float VirtualShadowRayStepOffset(uint2 pixel, uint frameIndex)
+{
+#ifdef VSM_BLUE_NOISE_TEXTURE
+    uint width, height;
+    VirtualShadowBlueNoise.GetDimensions(width, height);
+    uint2 address = pixel & (width - 1u);
+    uint row = (frameIndex & (height / width - 1u)) * width;
+    return VirtualShadowBlueNoise.Load(int3(address.x, address.y + row, 0)).r;
+#else
+    return VirtualShadowRayRandom(pixel, frameIndex, 0u, 1u).w;
+#endif
+}
+
 void VirtualShadowRayBasis(float3 axis, out float3 tangent, out float3 bitangent)
 {
-    tangent = normalize(cross(axis, abs(axis.x) > 1e-6 ? float3(1,0,0) : float3(0,1,0)));
-    bitangent = cross(tangent, axis);
+    float signZ = axis.z >= 0.0 ? 1.0 : -1.0;
+    float a = -1.0 / (signZ + axis.z);
+    float b = axis.x * axis.y * a;
+    tangent = float3(1.0 + signZ * a * axis.x * axis.x, signZ * b, -signZ * axis.x);
+    bitangent = float3(b, signZ + a * axis.y * axis.y, -axis.y);
 }
 
 VirtualShadowRay CreateVirtualShadowLocalRay(StructuredBuffer<VirtualShadowMapParameters> views,
@@ -364,10 +394,11 @@ VirtualShadowProjectionResult TraceVirtualShadowLocal(
     float2 tangentSlope = -float2(dot(normal, tangent), dot(normal, bitangent)) / normalZ;
     uint misses = 0u, rays = 0u;
     float hitDistances = 0.0;
+    float stepOffset = VirtualShadowRayStepOffset(pixel, frameIndex);
     for (uint index = 0u; index < settings.RayCount; index++)
     {
         float4 random = VirtualShadowRayRandom(pixel, frameIndex, index, settings.RayCount);
-        float2 disk = VirtualShadowConcentricDisk(random.xy) * coneSin;
+        float2 disk = VirtualShadowLocalDisk(random.xy) * coneSin;
         float cosine = sqrt(max(1.0 - dot(disk, disk), 0.0));
         float3 direction = tangent * disk.x + bitangent * disk.y + axis * cosine;
         float2 offset = (random.zw - .5) * ditherScale;
@@ -382,13 +413,13 @@ VirtualShadowProjectionResult TraceVirtualShadowLocal(
         float2 uv;
         ProjectVirtualShadowPosition(view, start, ndc, uv);
         VirtualShadowDepthSample initial = ReadVirtualShadowProjectionDepth(views, pages, atlas, viewIndex, uv, mip);
-        float bias = initial.Valid ? min(maxBias, VirtualShadowOptimalSlopeBias(views, viewIndex, initial, start, normal)) : 0.0;
+        float bias = initial.Valid ? min(maxBias, VirtualShadowOptimalSlopeBias(views, viewIndex, initial, position, normal)) : 0.0;
         uint startFace = baseView.LightKind == VSM_LIGHT_POINT ? VirtualShadowPointFace(start - baseView.LightPosition) : 0u;
         uint endFace = baseView.LightKind == VSM_LIGHT_POINT ? VirtualShadowPointFace(end - baseView.LightPosition) : 0u;
         VirtualShadowRay ray = CreateVirtualShadowLocalRay(views, firstView, startFace, endFace,
             start, end, mip, bias, settings.ExtrapolateMaxSlope, baseView.LightKind == VSM_LIGHT_POINT);
         float depth;
-        bool hit = TraceVirtualShadowRay(views, pages, atlas, ray, steps, random.w, depth);
+        bool hit = TraceVirtualShadowRay(views, pages, atlas, ray, steps, stepOffset, depth);
         result.Valid = result.Valid || ray.AnyValid;
         result.ViewIndex = ray.SampledView;
         result.MipLevel = ray.SampledMip;
@@ -398,10 +429,12 @@ VirtualShadowProjectionResult TraceVirtualShadowLocal(
             depth, ray.UseSecondFace ? ray.SecondStart.z : ray.FirstStart.z, length(start - view.LightPosition));
         if (settings.AdaptiveRayCount > 0u && ((index == 0u && WaveActiveAllTrue(!hit)) ||
             (index >= settings.AdaptiveRayCount && WaveActiveAllTrue(misses == 0u)))) break;
+        uint seed = asuint(stepOffset) * 0x915f77f5u + 0x93d765ddu;
+        stepOffset = float(seed >> 8) * 5.96046447754e-08;
     }
     result.Visibility = float(misses) / float(rays);
     result.RayCount = rays;
-    result.OccluderDistance = rays == misses ? -1.0 : hitDistances / float(rays - misses);
+    result.OccluderDistance = hitDistances / float(max(1u, rays - misses));
     return result;
 }
 
@@ -410,6 +443,7 @@ VirtualShadowProjectionResult TraceVirtualShadowDirectional(
     uint firstView, uint viewCount, float3 position, float3 normal, float dynamicBias, float receiverBias,
     VirtualShadowRaySettings settings, uint2 pixel, uint frameIndex, float distanceFromCamera, float rayStartOffset)
 {
+    if (viewCount == 0u) return EmptyVirtualShadowProjection();
     uint level = SelectDirectionalVirtualShadowView(views, firstView, viewCount, position, position,
         position, dynamicBias, receiverBias);
     if (level >= viewCount) return EmptyVirtualShadowProjection();
@@ -424,7 +458,8 @@ VirtualShadowProjectionResult TraceVirtualShadowDirectional(
     float3 axis = -view.LightDirection;
     ProjectVirtualShadowPosition(view, position, ndc, uv);
     float3 tangent, bitangent;
-    VirtualShadowRayBasis(axis, tangent, bitangent);
+    tangent = cross(axis, abs(axis.x) > 1e-6 ? float3(1,0,0) : float3(0,1,0));
+    bitangent = cross(tangent, axis);
     float2 slope = clamp(-CalculateVirtualShadowReceiverPlaneDepthGradient(view, ndc, normal), -.05.xx, .05.xx);
     float ditherScale = .5 / float(view.VirtualResolution) * settings.TexelDitherScale * view.TexelDitherScale *
         (distanceFromCamera / view.WorldUnitsPerCentimeter) / exp2(float(view.ClipmapLevel) - view.ResolutionLodBias);
@@ -432,6 +467,7 @@ VirtualShadowProjectionResult TraceVirtualShadowDirectional(
     VirtualShadowProjectionResult result = EmptyVirtualShadowProjection();
     uint misses = 0u, rays = 0u;
     float hitDistances = 0.0;
+    float stepOffset = VirtualShadowRayStepOffset(pixel, frameIndex);
     for (uint index = 0u; index < settings.RayCount; index++)
     {
         float4 random = VirtualShadowRayRandom(pixel, frameIndex, index, settings.RayCount);
@@ -448,7 +484,7 @@ VirtualShadowProjectionResult TraceVirtualShadowDirectional(
         ray.FirstStart.z += max(0.0, 2.0 * max(0.0, dot(slope, offset)) - abs(rayStartOffset * view.ProjectionDepthScale));
         ray.FirstSlope = abs(settings.ExtrapolateMaxSlope * view.WorldUnitsPerCentimeter * view.ProjectionDepthScale);
         float depth;
-        bool hit = TraceVirtualShadowRay(views, pages, atlas, ray, settings.SamplesPerRay, random.w, depth);
+        bool hit = TraceVirtualShadowRay(views, pages, atlas, ray, settings.SamplesPerRay, stepOffset, depth);
         result.Valid = result.Valid || ray.AnyValid;
         result.ViewIndex = ray.SampledView;
         rays++;
@@ -459,7 +495,7 @@ VirtualShadowProjectionResult TraceVirtualShadowDirectional(
     }
     result.Visibility = float(misses) / float(rays);
     result.RayCount = rays;
-    result.OccluderDistance = rays == misses ? -1.0 : hitDistances / float(rays - misses);
+    result.OccluderDistance = hitDistances / float(max(1u, rays - misses));
     return result;
 }
 

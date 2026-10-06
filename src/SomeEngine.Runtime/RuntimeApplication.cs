@@ -38,7 +38,7 @@ internal static class RuntimeApplication
     internal static Task<int> RunAsync(RuntimeStartupOptions options, bool useWarp,
         Func<Material, float, bool>? animateMaterial = null, SceneTestPlatform? platform = null, SceneScript? script = null) => Task.Factory.StartNew(() =>
     {
-        var shaderResources = new RuntimeShaderResources();
+        using var shaderResources = new RuntimeShaderResources();
         using var display = new ApplicationDisplay();
         int frames = 0;
         do
@@ -588,6 +588,8 @@ internal static class RuntimeApplication
         {
             DynamicResolutionEnabled = true,
         }) with { Enabled = options.VirtualShadows };
+        if (options.ShadowRayCount is { } rayCount)
+            shadowSettings = shadowSettings with { DirectionalRayCount = rayCount, LocalRayCount = rayCount };
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
             metrics: options.VerifyFrameOutput || options.LinearFrameOutputPath is not null || script is not null);
@@ -601,7 +603,8 @@ internal static class RuntimeApplication
             lighting,
             primaryDepthAfterRegion,
             targetGeometryAfterRegion,
-            feedbackRegion);
+            feedbackRegion,
+            renderDevice);
         stageResources.Add(virtualShadows);
         RenderFrameSystems frameSystems = CreateFrameSystems(
             pipeline,

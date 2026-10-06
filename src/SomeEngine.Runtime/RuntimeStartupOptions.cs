@@ -41,6 +41,8 @@ public sealed record RuntimeStartupOptions(
     public bool HideDebugUi { get; init; }
     public bool TemporalAntialiasing { get; init; } = true;
     public bool VirtualShadows { get; init; } = true;
+    /// <summary>Optional directional and local ray count; zero selects hard depth comparison.</summary>
+    public uint? ShadowRayCount { get; init; }
 
     public static RuntimeStartupOptions Parse(string[] args)
     {
@@ -88,6 +90,14 @@ public sealed record RuntimeStartupOptions(
         if (playback is not null and not "motion" and not "materials" and not "camera")
             throw new ArgumentException("--scene-playback requires 'motion', 'materials', or 'camera'.");
         bool synchronousFrames = args.Contains("--synchronous-frames", StringComparer.OrdinalIgnoreCase);
+        uint? shadowRayCount = null;
+        if (ReadOptionalValue(args, "--vsm-ray-count") is { } rayText)
+        {
+            if (!uint.TryParse(rayText, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out uint rays))
+                throw new ArgumentOutOfRangeException("--vsm-ray-count");
+            shadowRayCount = rays;
+        }
         float fixedStep = 0;
         string? stepText = ReadOptionalValue(args, "--fixed-step");
         if (stepText is not null && (!float.TryParse(stepText, System.Globalization.CultureInfo.InvariantCulture, out fixedStep)
@@ -147,6 +157,7 @@ public sealed record RuntimeStartupOptions(
             HideDebugUi = args.Contains("--no-debug-ui", StringComparer.OrdinalIgnoreCase),
             TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
             VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
+            ShadowRayCount = shadowRayCount,
         };
     }
 

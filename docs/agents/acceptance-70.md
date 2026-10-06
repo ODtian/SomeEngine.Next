@@ -36,6 +36,14 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 | #151 | `2^40+1/8` 原点的投影偏移由0到独立期望 `-1/2048`，实际 red→green。公开场景入口下，近 `.1875` 与远 `2^40+.1875` 原点保留源球体的 `1/8` 间距，D3D12 raw Half 位及 beauty 像素逐位一致，1 passed、0 skipped；Runtime/Direct3D12 测试项目构建、规则检查及 NativeAOT 编译能力检查通过。 |
 | #152 | 用户材质 float3 使用 structured-buffer 布局，HDR 红/绿/蓝分量的实际渲染检查通过。 |
 
+#143 的同一半影行进一步消费实际 CC0 RGBA8 蓝噪音纹理，标量、R2 偏移、帧切片和
+局部射线步长更新全部进入生产采样分支；1 passed、0 skipped。面源的遮挡距离落在
+独立平面几何预期 `.49–.51`，点源全亮且 SMRT 遮挡距离为0。默认内容75资产构建通过；
+接上真实用户可见性材质后，包含其 receiver entry 的76资产构建通过。
+数据为64³三维 void-and-cluster，原版输入为128²×64 spatiotemporal blue noise，差异、
+许可和固定来源保存在 `assets/Noise/source.json`。硬阴影参考通过公开 `--vsm-ray-count 0`
+选择两类 zero-ray 投射；可见性用户材质使用相同 shading normal、Native Trace 与预滤结果。
+
 各次源码修改以受影响的公开行为、必要构建和测试规则检查记录结果。完整路径汇合后的 DefaultGame 三场景质量与性能结果在此补记，测量使用 `tools/Measure-Scenes.ps1` 的一次不超过60秒反馈，并保持分辨率、场景行为、渲染选项、JIT 与采样方式一致。
 
 #147 的优先级预算公开行实际 FIFO red→priority green，1 passed；原始记录已随95285a3b正式归档。局部 alpha/cache 公开行跨 Native 10帧 moving 阶段固定观察：两侧 cube face 首帧各2项HW工作，进入缓存后各0；global-version对照更新A后无关B重新执行4项，actual red；局部数据范围源更新A后B保持0且完成页保留，色/深度整图与fresh一致，1 passed、0 skipped（21秒）。同一行先定位并修复 per-view counter 的 policy-bit数组越界；shader及CPU scope临时诊断已清理。原始日志/hash/TRX位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-147/local/`，收尾删除打印和集成接口接合复用该最小行为结果并完成必要构建。

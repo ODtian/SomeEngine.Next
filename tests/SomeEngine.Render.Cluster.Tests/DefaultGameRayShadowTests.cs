@@ -71,7 +71,7 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
                 string linear = Path.Combine(directory, name + ".rgba16");
                 string[] arguments = ["--test-scene", content, "--frames", CaptureFrames.ToString(),
                     "--hidden-window", "--fixed-step", "0.016666667", "--no-vsync", "--no-debug-ui",
-                    "--vsm", .. renderingOptions, "--frame-output", image, "--linear-frame-output", linear];
+                    "--vsm", "--vsm-ray-count", "0", .. renderingOptions, "--frame-output", image, "--linear-frame-output", linear];
                 captures.Add(await DefaultGameCapture.RunAsync(application, arguments, image, output));
                 SceneLinearImage result = SceneLinearImage.Load(linear);
                 Assert.Equal(CaptureFrames - 1, result.Frame.Frame);

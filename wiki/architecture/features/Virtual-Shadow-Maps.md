@@ -256,6 +256,19 @@ ray 数为零时使用带坡度容差的深度比较。方向和局部 SMRT 使�
 `VirtualShadowMapProjectionCommon.ush`、`VirtualShadowMapProjectionSpot.ush`、
 `VirtualShadowMapProjectionDirectional.ush` 与 `VirtualShadowMapSMRTTemplate.ush`。
 
+SMRT 的随机输入由阴影设置资产引用蓝噪音纹理，经现有 `Texture` 和 `RenderDevice`
+路径上传。标量取红通道，两个向量通道取绿蓝通道；像素与帧号按实际纹理维度包裹，
+frame slice 按纵向行排列。R2 偏移选择每条射线的向量样本，方向光使用同一标量步长，
+局部光按原版 `EvolveSobolSeed` 更新后续射线步长。默认资产来自 Christoph Peters
+的 CC0 三维 void-and-cluster 数据，由 [Calinou 分发](https://github.com/Calinou/free-blue-noise-textures)
+的固定提交保存为紧凑 RGBA8。实际尺寸为64×64×64，原版纹理输入为128×128×64的
+spatiotemporal blue noise，维度和统计性质分别记录于 `assets/Noise/source.json`。
+完整许可、来源 Git blob、源数据和转换结果的 SHA-256 保存在同目录。
+
+默认方向和局部 ray 数均为7，采样步数均为8。公开 `--vsm-ray-count` 同时设置两类
+ray 数，0选择硬深度比较；`SceneScript.ShadowSettings` 提供逐类 ray 数和原版参数。
+DefaultGame 的硬阴影源三角形参考明确使用0；软阴影采用光源面上的独立射线积分真值。
+
 局部光的最小 mip 使用光包围球最近深度、接收相机像素半径和光投影标度计算，
 并消费同一局部 mip 奇偶模式。`DistantLightMode` 默认 `Conservative`，保守估计到达末级时
 使用 `SinglePage` 表示；`All` 对所有局部光采用该表示。`MaximumDistantUpdatesPerFrame` 默认一。

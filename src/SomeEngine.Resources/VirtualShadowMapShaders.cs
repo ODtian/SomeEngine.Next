@@ -3,8 +3,10 @@ using SlangShaderSharp;
 namespace SomeEngine.Resources;
 
 /// <summary>Ready shadow-map shaders and their direct Slang entry points.</summary>
-public sealed class VirtualShadowMapShaders
+public sealed class VirtualShadowMapShaders : IDisposable
 {
+    /// <summary>Owned blue-noise pixels; GPU data uses the existing texture device path.</summary>
+    public Texture? BlueNoise { get; init; }
     public string? Name { get; init; }
     public Shader? ResetReceiverMasksShader { get; init; }
     public EntryPointReflection ResetReceiverMasks { get; init; }
@@ -44,4 +46,6 @@ public sealed class VirtualShadowMapShaders
     public EntryPointReflection WorkFeedback { get; init; }
     public Shader? DynamicResolutionShader { get; init; }
     public EntryPointReflection DynamicResolution { get; init; }
+
+    public void Dispose() => BlueNoise?.Dispose();
 }

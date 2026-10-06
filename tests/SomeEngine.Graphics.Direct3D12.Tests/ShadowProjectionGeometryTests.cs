@@ -12,6 +12,11 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
     [Fact]
     public void LocalEmitterRadiusProducesTheKnownHalfPlanePenumbra()
     {
+        DirectoryInfo sourceDirectory = new(AppContext.BaseDirectory);
+        while (!File.Exists(Path.Combine(sourceDirectory.FullName, "assets/Noise/shadow_blue_noise.rgba8")))
+            sourceDirectory = sourceDirectory.Parent ?? throw new DirectoryNotFoundException();
+        uint[] noise = MemoryMarshal.Cast<byte, uint>(File.ReadAllBytes(
+            Path.Combine(sourceDirectory.FullName, "assets/Noise/shadow_blue_noise.rgba8"))).ToArray();
         const int resolution = 1024, pageSize = 128, pagesPerRow = 8;
         Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 10);
         Matrix4x4 view = Matrix4x4.CreateLookAt(Vector3.Zero, Vector3.UnitZ, Vector3.UnitY);
@@ -41,11 +46,13 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
             for (int x = 0; x < resolution / 2; x++) depth[y * resolution + x] = BitConverter.SingleToUInt32Bits(1 - plane.Z / plane.W);
         uint[][] actual = new D3D12TestCompute(compiler).ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1
+            #define VSM_BLUE_NOISE_TEXTURE 1
+            Texture2D<float4> VirtualShadowBlueNoise;
             #include "vsm_projection.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint4> Pages;
             Texture2D<uint> Atlas;
-            RWStructuredBuffer<float2> Result;
+            RWStructuredBuffer<float3> Result;
             [shader("compute")]
             [numthreads(2,1,1)]
             void ReadEmitterPenumbra(uint3 thread : SV_DispatchThreadID)
@@ -56,17 +63,19 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
                 VirtualShadowProjectionResult projection = TraceVirtualShadowLocal(Views, Pages, Atlas,
                     thread.x, float3(-.0001,0,1), float3(0,0,-1), .001, 0.0,
                     settings, uint2(20,30), 0u, 0.0);
-                Result[thread.x] = float2(projection.Valid ? 1.0 : 0.0, projection.Visibility);
+                Result[thread.x] = float3(projection.Valid ? 1.0 : 0.0, projection.Visibility, projection.OccluderDistance);
             }
             """, "ReadEmitterPenumbra", new(1,1,1),
             [(MemoryMarshal.Cast<VirtualShadowView,uint>(views).ToArray(), ResourceBindingType.BufferSrv,
                 VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv,16),
-             (new uint[4], ResourceBindingType.BufferUav,8)], new SampledImage(resolution,resolution,depth,2));
+             (new uint[6], ResourceBindingType.BufferUav,12)], new SampledImage(resolution,resolution,depth,3),
+             [new SampledImage(64,4096,noise,0,Format.R8G8B8A8UNorm)]);
         float[] values = actual[0].Select(BitConverter.UInt32BitsToSingle).ToArray();
         // A point emitter sees the open side. A .01-radius disc and the z=.5
         // half plane split the known emitter area almost in half at x=-.0001.
-        Assert.Equal(new float[] { 1,1,1 }, new[] { values[0],values[1],values[2] });
-        Assert.InRange(values[3], .35f, .7f);
+        Assert.Equal(new float[] { 1,1,0,1 }, new[] { values[0],values[1],values[2],values[3] });
+        Assert.InRange(values[4], .35f, .7f);
+        Assert.InRange(values[5], .49f, .51f);
     }
 
     [Fact]

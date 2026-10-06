@@ -10,7 +10,7 @@ namespace SomeEngine.Runtime;
 /// Keeps device-independent Slang objects resident while the runtime changes scenes.
 /// Objects are reused only when their persisted asset versions match.
 /// </summary>
-internal sealed class RuntimeShaderResources
+internal sealed class RuntimeShaderResources : IDisposable
 {
     private readonly record struct ConfigurationIdentity(
         Guid Asset,
@@ -33,9 +33,7 @@ internal sealed class RuntimeShaderResources
     private ClusterShaders? _cluster;
     private ConfigurationIdentity _clusterIdentity;
     private bool _hasClusterIdentity;
-    private VirtualShadowMapShaders? _shadows;
-    private ConfigurationIdentity _shadowIdentity;
-    private bool _hasShadowIdentity;
+    private readonly Dictionary<ConfigurationIdentity, VirtualShadowMapShaders> _shadows = [];
 
     internal IGlobalSession GetSlang(SlangCompileTarget target, int channel)
     {
@@ -101,16 +99,19 @@ internal sealed class RuntimeShaderResources
             VirtualShadowMapShadersAsset.FileType);
         lock (_gate)
         {
-            if (_shadows is not null && _hasShadowIdentity && _shadowIdentity == identity)
-                return _shadows;
+            if (_shadows.TryGetValue(identity, out VirtualShadowMapShaders? existing))
+                return existing;
         }
 
         VirtualShadowMapShaders replacement = await read(cancellationToken).ConfigureAwait(false);
         lock (_gate)
         {
-            _shadows = replacement;
-            _shadowIdentity = identity;
-            _hasShadowIdentity = true;
+            if (_shadows.TryGetValue(identity, out VirtualShadowMapShaders? existing))
+            {
+                replacement.Dispose();
+                return existing;
+            }
+            _shadows.Add(identity, replacement);
         }
         return replacement;
     }
@@ -196,7 +197,8 @@ internal sealed class RuntimeShaderResources
         var text = new StringBuilder();
         bool versionsAvailable = configuration.Version != Guid.Empty;
         foreach (AssetEntry shader in manifest.Assets.Values
-                     .Where(static entry => entry.AssetType == ShaderAsset.FileType)
+                     .Where(entry => entry.AssetType == ShaderAsset.FileType ||
+                         (assetType == VirtualShadowMapShadersAsset.FileType && entry.AssetType == TextureAsset.FileType))
                      .OrderBy(static entry => entry.AssetGuid))
         {
             versionsAvailable &= shader.Version != Guid.Empty;
@@ -219,6 +221,12 @@ internal sealed class RuntimeShaderResources
         if (!string.Equals(entry.AssetType, assetType, StringComparison.Ordinal))
             throw new InvalidDataException($"Asset {id} is {entry.AssetType}, not {assetType}.");
         return entry;
+    }
+
+    public void Dispose()
+    {
+        foreach (VirtualShadowMapShaders shaders in _shadows.Values) shaders.Dispose();
+        _shadows.Clear();
     }
 
 }

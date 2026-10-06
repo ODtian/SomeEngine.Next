@@ -188,7 +188,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             shadowSettings ?? new VirtualShadowMapSettings { Enabled = shadows, VirtualResolution = 4096,
                 AtlasSize = 2048, MaxShadowLights = 1, DirectionalClipmapLevels = 1,
                 DynamicResolutionEnabled = false }, _graph, _pipeline, _lighting,
-            depthAfter, targetAfter, feedbackRegion);
+            depthAfter, targetAfter, feedbackRegion, _renderDevice);
         resources.Add(_shadows);
         var lightSystem = new RenderLightSetSystem();
         _frames = new RenderFrameSystems(_world, _instances);

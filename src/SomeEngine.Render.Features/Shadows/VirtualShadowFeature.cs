@@ -114,6 +114,10 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
 
     private readonly GraphBufferInput _frameShadowViews;
     private readonly GraphRegionId _viewUploadRegion;
+    private readonly GraphParameterInput _blueNoiseInput;
+    private readonly SomeEngine.Resources.Texture _blueNoise;
+    private readonly SomeEngine.Resources.Texture? _blueNoiseFallback;
+    private readonly RenderDevice _textureDevice;
     private readonly GraphBufferInput _frameSamplingUniforms;
     private readonly GraphBufferInput _frameInvocationUniforms;
     private bool _frameHasPreviousHistory;
@@ -173,7 +177,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         LightingFeature lighting,
         GraphRegionId primaryDepthAfter,
         GraphRegionId targetGeometryAfter,
-        GraphRegionId feedback)
+        GraphRegionId feedback,
+        RenderDevice textureDevice)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
@@ -181,6 +186,13 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(graph);
         _renderGraph = graph;
+        _blueNoiseFallback = shaders.BlueNoise is null ? SomeEngine.Resources.Texture.Create(
+            new TextureDesc(TextureDimension.Texture2D, 1,1,1,1,1,1, Format.R8G8B8A8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination),
+            [new TexturePixels(new SomeEngine.Resources.TextureMipTile
+                { Width = 1, Height = 1, RowPitch = 4, SlicePitch = 4, DecodedLength = 4 }, new byte[] { 0, 0, 0, 255 })],
+            SomeEngine.Graphics.TextureViewDimension.Texture2D) : null;
+        _blueNoise = shaders.BlueNoise ?? _blueNoiseFallback!;
+        _textureDevice = textureDevice;
         _qualityRegion = targetGeometryAfter;
         _qualityDemandRegion = primaryDepthAfter;
         _geometry = geometry ?? throw new ArgumentNullException(nameof(geometry));
@@ -206,6 +218,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             try
             {
                 _viewUploadRegion = edit.AddFrameRegion("Virtual shadow view upload", primaryDepthAfter);
+                _blueNoiseInput = edit.CreateParameterInput(ResourceBindingType.TextureSrv);
                 ulong pageBytes = checked((ulong)settings.MaxPhysicalPages * sizeof(uint));
                 _pageOwners = edit.DeclareExternalBuffer(new BufferDesc(
                     pageBytes,
@@ -875,6 +888,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _shadowFrameActive = true;
         try
         {
+            _textureDevice.PrepareTexture(ref graph, _blueNoiseInput, _blueNoise);
             ReadOnlySpan<VirtualShadowView> views = _shadowMap.PrepareViews(
                 lights,
                 receiverView,
@@ -1075,6 +1089,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             "VirtualShadowPageTable" when type == ResourceBindingType.BufferSrv => BindShadePageTable,
             "VirtualShadowReceiverMasks" when type == ResourceBindingType.BufferSrv => BindRasterReceiverMasks,
             "VirtualShadowAtlas" when type == ResourceBindingType.TextureSrv => BindShadeAtlas,
+            "VirtualShadowBlueNoise" when type == ResourceBindingType.TextureSrv => BindShadeBlueNoise,
             "VirtualShadowSampling" when type == ResourceBindingType.ConstantBuffer => BindShadeSampling,
             "VirtualShadowDynamicResolutionBias" when type == ResourceBindingType.BufferSrv => BindShadeDynamicResolutionBias,
             _ => null!,
@@ -1097,6 +1112,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _workFeedbackPipeline?.Dispose();
         if (_workTimeQueries is { } queries) _renderGraph.RetireAfterSubmittedFrames(queries);
         _shadowMap.Dispose();
+        _blueNoiseFallback?.Dispose();
         Array.Clear(_shadowViews);
 
         _frameHasPreviousHistory = false;
@@ -1776,6 +1792,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
             label: "Standard shade virtual shadow atlas"), sync);
     }
+
+    private void BindShadeBlueNoise(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
+        pass.Bind(_blueNoiseInput, sync);
 
     private void BindShadeSampling(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {

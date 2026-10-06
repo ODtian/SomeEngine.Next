@@ -1,0 +1,27 @@
+{
+  "Source": "https://github.com/Calinou/free-blue-noise-textures",
+  "Commit": "a64e300dcd96b5f8c42494c5e452c1eb409b0efb",
+  "Path": "64_64_64/HDR_RGB.raw",
+  "GitBlob": "2fac1f0e10924f3a1530641dc478cb9d99125848",
+  "SourceSHA256": "BF6A0B4677F62AF9915F96CB56660E113E25829352694DF8BF8178E3F4C0B60A",
+  "License": "CC0-1.0",
+  "Dimensions": [
+    64,
+    64,
+    64
+  ],
+  "Channels": [
+    "Scalar",
+    "VectorX",
+    "VectorY",
+    "Opaque"
+  ],
+  "Encoding": "Little-endian source has six int32 header values, then interleaved uint32 RGB ranks. Each channel stores rank >> 10; alpha is 255. The 64 frames are packed vertically into a 64 by 4096 RGBA8 texture.",
+  "Statistics": "The source is a 64 by 64 by 64 three-dimensional void-and-cluster volume. UE's shader input is 128 by 128 by 64 spatiotemporal blue noise. Dimensions and statistics differ; shader address wrapping and R2 offsets use the actual loaded texture dimensions.",
+  "SHA256": "961B719BB9A0CBD99BCB86049E5BB8306B39A14653DDFA0B1B90D67659852A18",
+  "NativeInputDimensions": [
+    128,
+    128,
+    64
+  ]
+}
