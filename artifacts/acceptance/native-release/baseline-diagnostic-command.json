@@ -1,6 +1,0 @@
-{
-  "Source": "86555c9fbf9651d0eaf9d4916b2b571d10a58f9d",
-  "ExitCode": 0,
-  "WallSeconds": 134.8353574,
-  "Command": "dotnet test tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj -c Release --no-build --filter FullyQualifiedName~LocalLightRayShadowTests --results-directory <proof>/baseline-diagnostic --logger trx;LogFileName=baseline-diagnostic.trx --blame-crash --blame-crash-dump-type mini"
-}

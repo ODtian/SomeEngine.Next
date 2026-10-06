@@ -1,7 +1,0 @@
-{
-  "source_sha": "7b03495c2440664f5c2d08d6912be4edf7445630",
-  "command": "dotnet build 'F:\\.codex\\worktrees\\rg70-ticket-81\\SomeEngine.Next\\templates\\DefaultProject\\Game.App\\Game.App.csproj' -c Release '-p:ProjectContentRoot=F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres' --verbosity quiet",
-  "elapsed_seconds": 38.3677811,
-  "exit_code": 0,
-  "content_root": "F:\\CodexProjects\\2026-10-03\\new-chat-2\\work\\rg70\\performance-content\\legacy-spheres"
-}

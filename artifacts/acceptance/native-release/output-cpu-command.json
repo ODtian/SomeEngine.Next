@@ -1,4 +1,0 @@
-{
-  "ExitCode": 0,
-  "Command": "dotnet test tests/SomeEngine.Runtime.Output.Tests/SomeEngine.Runtime.Output.Tests.csproj -c Release --filter FullyQualifiedName~FrameOutputTests --results-directory <proof>/output-cpu --logger trx;LogFileName=frame-output-cpu.trx"
-}
