@@ -26,7 +26,7 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         view[25] = unchecked((uint)originY);
         view[33] = 1;
         view[34] = lightKind == 0 ? 1u : 5u;
-        view[36] = lightKind == 0 ? 1u : 0u;
+        view[36] = 1u;
         view[37] = lightKind;
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
         [

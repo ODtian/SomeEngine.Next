@@ -63,4 +63,6 @@ public static class VirtualShadowViewFlags
     public const uint OrthographicReceiver = 1u << 4;
     public const uint EvenMipLevels = 1u << 5;
     public const uint OddMipLevels = 1u << 6;
+    /// <summary>The local shadow uses the last mip as its one-page representation.</summary>
+    public const uint SinglePage = 1u << 7;
 }

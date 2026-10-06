@@ -408,10 +408,7 @@ public sealed class VirtualShadowMap : IDisposable
                     MinMipLevel = 0u,
                     Flags =
                         (orthographicReceiver ? VirtualShadowViewFlags.OrthographicReceiver : 0u) |
-                        (coarseFallback
-                            ? VirtualShadowViewFlags.CoarseClipLevel |
-                              VirtualShadowViewFlags.ForceCacheDynamicCoarse
-                            : 0u) |
+                        CalculateCoarsePageFlags(Settings.DirectionalCoarsePageMode, coarseFallback) |
                         (Settings.DirectionalReceiverMask
                             ? VirtualShadowViewFlags.UseReceiverMask
                             : 0u),
@@ -800,6 +797,10 @@ public sealed class VirtualShadowMap : IDisposable
         float mobilityFactor, float lightBias) =>
         nonMovingBias + mobilityFactor * (MathF.Max(nonMovingBias, movingBias) - nonMovingBias) + lightBias;
 
+    private static uint CalculateCoarsePageFlags(VirtualShadowCoarsePageMode mode, bool coarseLevel) =>
+        (coarseLevel && mode != VirtualShadowCoarsePageMode.Disabled ? VirtualShadowViewFlags.CoarseClipLevel : 0u) |
+        (mode == VirtualShadowCoarsePageMode.CachedDynamic ? VirtualShadowViewFlags.ForceCacheDynamicCoarse : 0u);
+
     private VirtualShadowView CreateLocalView(
         int viewIndex,
         Matrix4x4 lightView,
@@ -828,8 +829,7 @@ public sealed class VirtualShadowMap : IDisposable
         ClipmapLevelCount = 1u,
         MipLevelCount = Settings.MipLevelCount,
         MinMipLevel = 0u,
-        Flags = VirtualShadowViewFlags.CoarseClipLevel |
-            VirtualShadowViewFlags.ForceCacheDynamicCoarse |
+        Flags = CalculateCoarsePageFlags(Settings.LocalCoarsePageMode, true) |
             (Settings.LocalMipMode switch
             {
                 VirtualShadowLocalMipMode.Even => VirtualShadowViewFlags.EvenMipLevels,

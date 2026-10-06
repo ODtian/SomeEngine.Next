@@ -84,6 +84,11 @@ clipmap 每次滚动四分之一页表，每层仅使用 mip 0；局部光保留
 粗页坐标从当前 `ClipmapWorldOrigin` 投影到该层光视图产生，与距离选择共享原点。
 相机在同一 snapping cell 内移动时，四个粗页仍围绕实际相机位置；正交视图沿用
 相机 target 产生的同一原点。
+`DirectionalCoarsePageMode` 与 `LocalCoarsePageMode` 提供原版模式 0/1/2：
+`Disabled` 关闭对应粗页请求，`Dynamic` 请求粗页，`CachedDynamic` 还设置
+`ForceCacheDynamicCoarse` 供缓存失效路径读取，两者默认 `CachedDynamic`。
+`SinglePage` 局部光始终请求唯一末级页，并在请求、压紧、分配、失效和采样中使用同一
+有效 mip 下界；局部粗页开关与这一表示条件各自生效。
 
 阴影比较在实际 atlas texel 中心计算接收面深度。接收位置与相邻像素的光空间投影
 形成接收面深度梯度，硬阴影、遮挡者搜索与过滤采样共用此梯度。默认 `DepthBias`

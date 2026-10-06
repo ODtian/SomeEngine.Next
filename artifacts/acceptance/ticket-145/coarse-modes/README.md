@@ -1,0 +1,9 @@
+# Coarse modes and the single-page local domain (#145)
+
+UE5.8.3 fixed ref396c9f059903aed5fec78ecd3d437a40c6415368: Clipmap.cpp142–151/184–190/580–605 and Array.cpp427–435/3034–3037 supply directional/local coarse modes0disabled,1dynamic,2cached dynamic (both default2). PageMarking.usf862–876 marks local last mip when coarse marking is enabled OR the light is single-page. PerPageDispatch.ush61–76/100–112 restricts single-page work to that last mip.
+
+One public user-shader/RHI case authors two local views over a known occluder plane: full local map with coarse flag disabled, and single-page local map. The full map awaits its fine receiver requests, yielding lit1 from missing depth; the single-page map keeps its sole coarse shadow, yielding0. Actual unchanged marker red was[0,0],1failed; same fixture after guard/range correction was[1,0],1passed,0skips. Both default rules0. Necessary CPU build8.78s/0warnings/errors. Actual TRX and source/fixture hashes are retained.
+
+VirtualShadowMapSettings owns the only DirectionalCoarsePageMode/LocalCoarsePageMode values, both defaultCachedDynamic2. CalculateCoarsePageFlags emits existing CoarseClipLevel/ForceCacheDynamicCoarse flags from those values. Cache behavior consumes those same named flags in #141. SinglePage is shared C#/Slang bit7; its host selection producer belongs to #150.
+
+VirtualShadowFirstMip expresses one domain for normal MinMipLevel and single-page last mip. Fine requests, compact output, page decoder used by allocation/pool, caster invalidation and all coarse/filter depth queries consume that same domain. Dirty-page clear, completion and HiZ continue consuming the allocator's actual list. Directional typed views retain1mip, local normal maps retaintheirfullchains,viewstride208B. Existing coarse count fixtures enable the corresponding typed coarse flag; default geometry/reference/backend collection stays in parent unified acceptance.

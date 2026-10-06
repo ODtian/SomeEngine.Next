@@ -65,6 +65,7 @@ void PublishProjectedShadowView(
     if (viewIndex >= PageDemand.ViewCount)
         return;
     VirtualShadowMapParameters shadowView = ShadowViews[viewIndex];
+    mipLevel = clamp(mipLevel, VirtualShadowFirstMip(shadowView), shadowView.MipLevelCount - 1u);
     float3 shadowNdc;
     float2 shadowUv;
     if (!ProjectVirtualShadowPosition(shadowView, worldPosition, shadowNdc, shadowUv))

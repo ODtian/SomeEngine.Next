@@ -146,7 +146,7 @@ void InvalidateBoundsInView(
     if (!ProjectShadowBounds(view, worldMin, worldMax, uvMin, uvMax))
         return;
 
-    uint firstMip = view.LightKind == VSM_LIGHT_DIRECTIONAL ? 0u : view.MinMipLevel;
+    uint firstMip = VirtualShadowFirstMip(view);
     // Casters affect the view's mip domain: directional mip zero or local mips.
     uint mipCount = max(view.MipLevelCount, 1u);
 

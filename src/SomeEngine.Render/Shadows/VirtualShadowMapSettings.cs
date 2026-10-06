@@ -9,6 +9,15 @@ public enum VirtualShadowLocalMipMode
     Odd,
 }
 
+public enum VirtualShadowCoarsePageMode
+{
+    Disabled = 0,
+    /// <summary>Coarse pages receive dynamic caster updates.</summary>
+    Dynamic = 1,
+    /// <summary>Dynamic coarse pages retain their cache until fine receiver detail requests an update.</summary>
+    CachedDynamic = 2,
+}
+
 /// <summary>Virtual address-space, page-pool and atlas quality settings.</summary>
 public sealed record VirtualShadowMapSettings
 {
@@ -27,6 +36,8 @@ public sealed record VirtualShadowMapSettings
     public bool OrthographicProjectCameraTarget { get; init; } = true;
     public int DirectionalFirstCoarseClipmapLevel { get; init; } = 15;
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
+    public VirtualShadowCoarsePageMode DirectionalCoarsePageMode { get; init; } = VirtualShadowCoarsePageMode.CachedDynamic;
+    public VirtualShadowCoarsePageMode LocalCoarsePageMode { get; init; } = VirtualShadowCoarsePageMode.CachedDynamic;
     public float DirectionalResolutionLodBias { get; init; } = -2.0f;
     public float DirectionalMovingResolutionLodBias { get; init; }
     public float LocalResolutionLodBias { get; init; }

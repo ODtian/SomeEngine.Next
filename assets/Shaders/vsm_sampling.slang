@@ -47,6 +47,7 @@ static const uint VSM_VIEW_PREVIOUS_PROJECTION_VALID = 1u << 3u;
 static const uint VSM_VIEW_ORTHOGRAPHIC_RECEIVER = 1u << 4u;
 static const uint VSM_VIEW_EVEN_MIP_LEVELS = 1u << 5u;
 static const uint VSM_VIEW_ODD_MIP_LEVELS = 1u << 6u;
+static const uint VSM_VIEW_SINGLE_PAGE = 1u << 7u;
 static const uint VSM_PAGE_REQUEST_DETAIL = 1u << 0u;
 static const uint VSM_PAGE_REQUEST_COARSE = 1u << 1u;
 
@@ -91,6 +92,12 @@ uint VirtualShadowMipResolution(
     uint mipLevel)
 {
     return max(parameters.VirtualResolution >> mipLevel, parameters.PageSize);
+}
+
+uint VirtualShadowFirstMip(VirtualShadowMapParameters parameters)
+{
+    return (parameters.Flags & VSM_VIEW_SINGLE_PAGE) != 0u
+        ? parameters.MipLevelCount - 1u : parameters.MinMipLevel;
 }
 
 uint VirtualShadowMipOffset(
@@ -257,7 +264,7 @@ bool VirtualShadowDecodePageTableIndex(
                 asuint(origin.x) & mask,
                 asuint(origin.y) & mask);
             localPage = (slot - originSlot) & mask;
-            return true;
+            return level >= VirtualShadowFirstMip(parameters);
         }
         localIndex -= count;
     }
@@ -429,7 +436,7 @@ bool TryReadVirtualShadowDepthAtOrCoarser(
 {
     uint mipCount = max(parameters.MipLevelCount, 1u);
     [loop]
-    for (uint mip = min(firstMip, mipCount - 1u); mip < mipCount; mip++)
+    for (uint mip = clamp(firstMip, VirtualShadowFirstMip(parameters), mipCount - 1u); mip < mipCount; mip++)
     {
         uint resolution = VirtualShadowMipResolution(parameters, mip);
         uint2 pixel = min((uint2)(uv * float(resolution)), resolution - 1u);
@@ -469,7 +476,7 @@ uint VirtualShadowLocalMipFromNominalPixelRadius(
     float2 uv;
     if (!ProjectVirtualShadowPosition(parameters, worldPosition, ndc, uv))
     {
-        return parameters.MinMipLevel;
+        return VirtualShadowFirstMip(parameters);
     }
     float projectionScale = length(float3(parameters.LightViewProjection[0][0],
         parameters.LightViewProjection[1][0], parameters.LightViewProjection[2][0]));
@@ -481,7 +488,7 @@ uint VirtualShadowLocalMipFromNominalPixelRadius(
     uint mip = (uint)max(floor(mipFloat), 0.0);
     mip = clamp(
         mip,
-        parameters.MinMipLevel,
+        VirtualShadowFirstMip(parameters),
         max(parameters.MipLevelCount, 1u) - 1u);
     if ((parameters.Flags & VSM_VIEW_EVEN_MIP_LEVELS) != 0u)
         mip &= ~1u;
@@ -584,7 +591,7 @@ VirtualShadowFilterContext BuildVirtualShadowFilterContext(
     VirtualShadowFilterContext context = (VirtualShadowFilterContext)0;
     uint mipCount = max(parameters.MipLevelCount, 1u);
     [loop]
-    for (uint mip = min(firstMip, mipCount - 1u); mip < mipCount; mip++)
+    for (uint mip = clamp(firstMip, VirtualShadowFirstMip(parameters), mipCount - 1u); mip < mipCount; mip++)
     {
         uint resolution = VirtualShadowMipResolution(parameters, mip);
         uint2 pixel = min((uint2)(uv * float(resolution)), resolution - 1u);
@@ -867,7 +874,7 @@ bool TrySampleVirtualShadowMapFilteredProjected(
 {
     visibility = 1.0;
     uint mipCount = max(parameters.MipLevelCount, 1u);
-    uint mip = min(firstMip, mipCount - 1u);
+    uint mip = clamp(firstMip, VirtualShadowFirstMip(parameters), mipCount - 1u);
     while (mip < mipCount)
     {
         VirtualShadowFilterContext context = BuildVirtualShadowFilterContext(parameters, pageTable, mip, uv);

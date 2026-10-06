@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="39b3711b-5d3f-4453-a672-e2459a1c1ec5" name="boqi@BOQI-THE-DAEMON 2026-10-07 02:30:08" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-07T02:30:08.0217131+08:00" queuing="2026-10-07T02:30:08.0217136+08:00" start="2026-10-07T02:29:58.4753022+08:00" finish="2026-10-07T02:30:08.0306811+08:00" />
+  <TestSettings name="default" id="5a7c3ab7-08ea-4a54-be4c-b786a0498c28">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-07_02_30_08" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="b509bf1c-20e6-48ea-8eef-30d129f14482" testId="64e19fac-8ac5-60d3-9cbb-f9daba9537ed" testName="SomeEngine.Graphics.Direct3D12.Tests.ShadowCoarseCoverageTests.DisablingLocalCoarsePagesKeepsTheSinglePageShadowAvailable" computerName="BOQI-THE-DAEMON" duration="00:00:04.8388390" startTime="2026-10-07T02:30:03.0087762+08:00" endTime="2026-10-07T02:30:07.8213096+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b509bf1c-20e6-48ea-8eef-30d129f14482" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Graphics.Direct3D12.Tests.ShadowCoarseCoverageTests.DisablingLocalCoarsePagesKeepsTheSinglePageShadowAvailable" storage="f:\.codex\worktrees\rg70-directional-mips-145\someengine.next\tests\someengine.graphics.direct3d12.tests\bin\release\net10.0\someengine.graphics.direct3d12.tests.dll" id="64e19fac-8ac5-60d3-9cbb-f9daba9537ed">
+      <Execution id="b509bf1c-20e6-48ea-8eef-30d129f14482" />
+      <TestMethod codeBase="F:\.codex\worktrees\rg70-directional-mips-145\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Graphics.Direct3D12.Tests.ShadowCoarseCoverageTests" name="DisablingLocalCoarsePagesKeepsTheSinglePageShadowAvailable" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="64e19fac-8ac5-60d3-9cbb-f9daba9537ed" executionId="b509bf1c-20e6-48ea-8eef-30d129f14482" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.19]   Discovering: SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.21]   Discovered:  SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.25]   Starting:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:08.45]   Finished:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

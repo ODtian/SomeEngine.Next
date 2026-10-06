@@ -52,7 +52,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     uint sourceViewIndex = pairIndex / ViewCompact.MipLevelCount;
     uint mipLevel = pairIndex % ViewCompact.MipLevelCount;
     VirtualShadowMapParameters source = ShadowViews[sourceViewIndex];
-    if (mipLevel < source.MinMipLevel || mipLevel >= source.MipLevelCount)
+    if (mipLevel < VirtualShadowFirstMip(source) || mipLevel >= source.MipLevelCount)
         return;
     uint4 uncachedRect = UncachedPageRectBounds[pairIndex];
     if (any(uncachedRect.zw < uncachedRect.xy))

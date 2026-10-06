@@ -56,6 +56,8 @@ void MarkVirtualShadowCoarsePages(uint3 dispatchThreadId : SV_DispatchThreadID)
         return;
     }
 
-    uint lastMip = max(view.MipLevelCount, 1u) - 1u;
+    if ((view.Flags & (VSM_VIEW_COARSE_CLIP_LEVEL | VSM_VIEW_SINGLE_PAGE)) == 0u)
+        return;
+    uint lastMip = view.MipLevelCount - 1u;
     PublishPage(view, lastMip, 0u.xx);
 }
