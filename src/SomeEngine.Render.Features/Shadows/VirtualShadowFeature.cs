@@ -206,6 +206,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             try
             {
                 _viewUploadRegion = edit.AddFrameRegion("Virtual shadow view upload", primaryDepthAfter);
+                _geometry.ConfigureSurfaceReceivers(edit.AddRegion("Virtual shadow surface receivers", primaryDepthAfter));
                 ulong pageBytes = checked((ulong)settings.MaxPhysicalPages * sizeof(uint));
                 _pageOwners = edit.DeclareExternalBuffer(new BufferDesc(
                     pageBytes,
@@ -613,7 +614,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     ViewDetailCount = settings.MipLevelCount,
                     MaximumRasterWindowsPerSourceView = rasterWindows,
                 });
-                _geometry.ConfigureSurfaceReceivers(primaryDepthAfter);
                 _clusterSourceViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameShadowViews = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite);
                 _frameChangedInstances = edit.CreateBufferInput(BufferUsages.ShaderRead);
