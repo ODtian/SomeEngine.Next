@@ -1,7 +1,7 @@
 {
   "importer_id": "b0c10195-d8d1-46ab-81b8-f8c54db7d0aa",
   "importer_version": 13,
-  "input_hash": "E8C5AAB6D609750D7C81A45BA1994A5F3E3086E6FE786597288BBFBE424DE0E3",
+  "input_hash": "52CF69972D29F48D1A490CDE9AFFAAD7CEB076E85AAFDE603BCFE2E165307555",
   "inputs": [
     {
       "relative_path": "assets/Materials/Standard.material.asset",
@@ -22,7 +22,7 @@
     {
       "asset_guid": "18f67d63-e2a1-4319-ad3f-411ba7b05b94",
       "sub_asset_key": "material:index:0",
-      "input_hash": "E8C5AAB6D609750D7C81A45BA1994A5F3E3086E6FE786597288BBFBE424DE0E3",
+      "input_hash": "52CF69972D29F48D1A490CDE9AFFAAD7CEB076E85AAFDE603BCFE2E165307555",
       "dependencies": [],
       "asset_path": "ico_sphere.18f67d63e2a14319ad3f411ba7b05b94.material.asset",
       "version": "75817e14-79c4-2c31-0ca6-2da059bd1ba6",
@@ -37,11 +37,11 @@
     {
       "asset_guid": "9cc63de3-c663-4f55-8656-bd4587b0fde5",
       "sub_asset_key": "mesh:index:0",
-      "input_hash": "E8C5AAB6D609750D7C81A45BA1994A5F3E3086E6FE786597288BBFBE424DE0E3",
+      "input_hash": "52CF69972D29F48D1A490CDE9AFFAAD7CEB076E85AAFDE603BCFE2E165307555",
       "dependencies": [],
       "asset_path": "ico_sphere.9cc63de3c6634f558656bd4587b0fde5.mesh.asset",
-      "version": "8011a73c-3596-1270-db84-08c944347ecd",
-      "content_hash": "2C5592447D3C92F4DA22C90834D68F9D9AF67F8FC7BA18E78403D0F0365EF99A",
+      "version": "6e6202ef-ab32-408e-e367-d270179bc052",
+      "content_hash": "6F672534B76ABBABA5F71D211A6DEC5E55A4F761A7ADBA79088AF4F43148A58B",
       "asset_dependencies": [
         "18f67d63-e2a1-4319-ad3f-411ba7b05b94"
       ]
@@ -49,7 +49,7 @@
     {
       "asset_guid": "a6099bdc-aa52-4f50-a693-b922c43e5d39",
       "sub_asset_key": "scene:index:0",
-      "input_hash": "E8C5AAB6D609750D7C81A45BA1994A5F3E3086E6FE786597288BBFBE424DE0E3",
+      "input_hash": "52CF69972D29F48D1A490CDE9AFFAAD7CEB076E85AAFDE603BCFE2E165307555",
       "dependencies": [],
       "asset_path": "ico_sphere.a6099bdcaa524f50a693b922c43e5d39.scene.asset",
       "version": "51b34e53-711e-eb85-0574-55aae57874f7",

@@ -585,11 +585,6 @@ internal sealed partial class ClusterMeshes : IDisposable
                     $"Cluster page at byte {payloadOffset} cluster {index} requests an undefined slow material-table path.");
             }
             ValidateExtensionRange(cluster, header, payloadOffset, index);
-            if ((cluster.PackedGroup & 0xFFFF0000u) != 0)
-            {
-                throw new InvalidDataException(
-                    $"Cluster page at byte {payloadOffset} cluster {index} has non-zero reserved protocol bits.");
-            }
             ValidateFastMaterialEncoding(cluster, triangleCount, payloadOffset, index);
             ValidateVertReuseBatchEncoding(cluster, triangleCount, payloadOffset, index);
 

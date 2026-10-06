@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "d5d4a5833c232c7d74b821c324f1dbcc0d3b49ff22fceb99246111137a1268e2",
+  "input_hash": "af21ad7e11a9501e1ef329304760cd1f9efd296ae70b10213c566a45fba40869",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bin_common.slang",
@@ -41,7 +41,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "42555f29e07c376908038817f915380dd937fba3dd3d76d081975db658c3dda7"
+      "content_hash": "3c30ae82f444ff51a16b5c9f8dcd9abc0187892507af4856ccbbe1cb30c43139"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_view.slang",
@@ -133,11 +133,11 @@
     {
       "asset_guid": "70cd2572-fa34-5f52-9676-f355f8f8b6db",
       "sub_asset_key": "",
-      "input_hash": "d5d4a5833c232c7d74b821c324f1dbcc0d3b49ff22fceb99246111137a1268e2",
+      "input_hash": "af21ad7e11a9501e1ef329304760cd1f9efd296ae70b10213c566a45fba40869",
       "dependencies": [],
       "asset_path": "sw_raster.shader.asset",
-      "version": "89ad68ec-988a-e564-0dfe-b55e0e98e986",
-      "content_hash": "9947FED0486C682623A67B51DA92AE82F553F4640E925EE01F4BC763C34EFEE2",
+      "version": "ee59ea7e-43a1-ca41-d948-d87ac8a43eb7",
+      "content_hash": "AC5C561D4D5B92495D5AB7D13D4A8B36F03552689E1E774D78A0A96A2F723729",
       "asset_dependencies": []
     }
   ]

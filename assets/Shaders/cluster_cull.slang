@@ -194,7 +194,10 @@ bool IsOccludedByHiZ(ClusterScreenBounds bounds, bool usePrev, uint viewIndex, C
 bool ShouldUseSWRaster(
     float2 minUv,
     float2 maxUv,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view,
+    PackedCluster cluster,
+    RenderInstanceTransform transform,
+    float boundsExpansion)
 {
     float width = (maxUv.x - minUv.x) * view.ScreenWidth;
     float height = (maxUv.y - minUv.y) * view.ScreenHeight;
@@ -207,8 +210,19 @@ bool ShouldUseSWRaster(
     if (view.CullingEnabled == 0u)
         return false;
 
-    float maximumEdge = max(width, height);
-    return maximumEdge <= view.SoftwareRasterEdgeThreshold;
+    if (view.TargetPolicy == 0u)
+        return max(width, height) <= view.SoftwareRasterEdgeThreshold;
+
+    float maximumEdge = abs(DecodeClusterMaximumEdgeLength(cluster));
+    // Source pages cooked before edge metadata use the hardware path.
+    if (maximumEdge == 0.0) return false;
+    float maximumScale = abs(transform.Scale) *
+        max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
+    float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, transform);
+    float worldRadius = cluster.LODRadius * maximumScale + boundsExpansion;
+    float worldEdge = maximumEdge * maximumScale + 2.0 * boundsExpansion;
+    float edgePixels = worldEdge * CalculateClusterSpherePixelScale(worldCenter, worldRadius, view);
+    return edgePixels <= view.SoftwareRasterEdgeThreshold;
 }
 
 #include "cluster_raster_target_filter.slang"
@@ -488,7 +502,8 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     }
     else
     {
-        bool isSW = ShouldUseSWRaster(bounds.MinUv, bounds.MaxUv, view);
+        ClusterScreenBounds rasterBounds = view.TargetPolicy != 0u ? currentBounds : bounds;
+        bool isSW = ShouldUseSWRaster(rasterBounds.MinUv, rasterBounds.MaxUv, view, cluster, t, boundsExpansion);
         AppendVisible(
             pageOffset,
             clusterID,
@@ -604,7 +619,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     bool occluded = IsOccludedByHiZ(currentBounds, false, viewIndex, view);
     if (!occluded)
     {
-        bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, view);
+        bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, view, cluster, t, boundsExpansion);
         AppendVisible(
             pageOffset,
             clusterID,

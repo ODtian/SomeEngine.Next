@@ -695,6 +695,7 @@ public static partial class ClusterBuilder
                     (Half)EncodeFiniteLodError(meshlet.Error)),
                 TriangleStart = (ushort)starts.Triangle,
                 GroupId = (short)meshlet.GroupId,
+                MaximumEdgeLengthHalf = EncodeMaximumTriangleEdgeLength(),
                 PackedCounts = PackedCounts(
                     encoded.VertexCount,
                     meshlet.Level),
@@ -708,6 +709,32 @@ public static partial class ClusterBuilder
                 BoundMin = encoded.BoundMin,
                 BoundMax = encoded.BoundMax,
             };
+        }
+
+        private ushort EncodeMaximumTriangleEdgeLength()
+        {
+            double maximumSquared = 0.0;
+            for (int index = 0; index < LocalIndices.Count; index += 3)
+            {
+                Vector3 first = MeshInput.Positions[LocalVertices[LocalIndices[index]]];
+                Vector3 second = MeshInput.Positions[LocalVertices[LocalIndices[index + 1]]];
+                Vector3 third = MeshInput.Positions[LocalVertices[LocalIndices[index + 2]]];
+                maximumSquared = Math.Max(maximumSquared, CalculateSquaredEdgeLength(first, second));
+                maximumSquared = Math.Max(maximumSquared, CalculateSquaredEdgeLength(second, third));
+                maximumSquared = Math.Max(maximumSquared, CalculateSquaredEdgeLength(third, first));
+            }
+            double maximum = Math.Sqrt(maximumSquared);
+            Half encoded = (Half)maximum;
+            if ((double)encoded < maximum) encoded = Half.BitIncrement(encoded);
+            return BitConverter.HalfToUInt16Bits(encoded);
+        }
+
+        private static double CalculateSquaredEdgeLength(Vector3 first, Vector3 second)
+        {
+            double x = (double)first.X - second.X;
+            double y = (double)first.Y - second.Y;
+            double z = (double)first.Z - second.Z;
+            return x * x + y * y + z * z;
         }
     }
 
