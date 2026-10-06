@@ -1110,10 +1110,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         var dynamicResolution = new VirtualShadowDynamicResolutionUniforms
         {
             MaxPhysicalPages = _shadowMap.Settings.MaxPhysicalPages,
-            TargetRasterWork = _shadowMap.Settings.DynamicResolutionTargetRasterWork,
             PagePoolLoadStart = _shadowMap.Settings.DynamicResolutionPagePoolLoadStart,
-            MaxDirectionalLodBias = _shadowMap.Settings.DynamicResolutionMaxDirectionalLodBias,
-            MaxLocalLodBias = _shadowMap.Settings.DynamicResolutionMaxLocalLodBias,
+            MaxDirectionalLodBias = Math.Min(_shadowMap.Settings.DynamicResolutionMaxLodBias, _shadowMap.Settings.DynamicResolutionMaxDirectionalLodBias),
+            MaxLocalLodBias = Math.Min(_shadowMap.Settings.DynamicResolutionMaxLodBias, _shadowMap.Settings.DynamicResolutionMaxLocalLodBias),
             Enabled = _shadowMap.Settings.DynamicResolutionEnabled && viewCount != 0u ? 1u : 0u,
         };
         _uniformData.Write(ref graph, _dynamicResolutionUniforms, in dynamicResolution);
@@ -1377,11 +1376,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _ = pass.Bind(uniforms, PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(_pageLists, structureStride: sizeof(uint),
             label: "Virtual shadow available page count"), PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(
-            _policyRasterWorkCount,
-            structureStride: sizeof(uint),
-            label: "Virtual shadow dynamic resolution raster work"),
-            PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(
             _allocationFailures,
             structureStride: sizeof(uint),

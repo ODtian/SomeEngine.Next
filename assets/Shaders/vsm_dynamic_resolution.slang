@@ -5,7 +5,7 @@
 struct VirtualShadowDynamicResolutionUniforms
 {
     uint MaxPhysicalPages;
-    uint TargetRasterWork;
+    uint PadRasterWork;
     float PagePoolLoadStart;
     float MaxDirectionalLodBias;
     float MaxLocalLodBias;
@@ -15,7 +15,6 @@ struct VirtualShadowDynamicResolutionUniforms
 };
 
 ConstantBuffer<VirtualShadowDynamicResolutionUniforms> DynamicResolution;
-StructuredBuffer<uint> PolicyRasterWorkCount;
 StructuredBuffer<uint> AllocationFailures;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<float4> DynamicResolutionBias;

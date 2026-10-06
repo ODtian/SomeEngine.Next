@@ -59,10 +59,13 @@ public sealed class RenderLightSet
     public void CollectPoint(QueryCursor rows) => _points.Append(rows);
     public void CollectSpot(QueryCursor rows) => _spots.Append(rows);
     public void AddDirectional(in RenderDirectionalLight light) => _directional.Add(light, null);
+    public void AddDirectional(Entity entity, in RenderDirectionalLight light) => _directional.Set(entity, light, null);
     public void AddDirectional(in RenderDirectionalLight light, in RenderLightCookie cookie) => _directional.Add(light, cookie);
     public void AddPoint(in RenderPointLight light) => _points.Add(light, null);
+    public void AddPoint(Entity entity, in RenderPointLight light) => _points.Set(entity, light, null);
     public void AddPoint(in RenderPointLight light, in RenderLightCookie cookie) => _points.Add(light, cookie);
     public void AddSpot(in RenderSpotLight light) => _spots.Add(light, null);
+    public void AddSpot(Entity entity, in RenderSpotLight light) => _spots.Set(entity, light, null);
     public void AddSpot(in RenderSpotLight light, in RenderLightCookie cookie) => _spots.Add(light, cookie);
 
     internal bool UpdateMembership(World world, Entity entity) =>
@@ -188,7 +191,7 @@ public sealed class RenderLightSet
             return changed;
         }
 
-        private bool Set(Entity entity, T value, RenderLightCookie? cookie)
+        internal bool Set(Entity entity, T value, RenderLightCookie? cookie)
         {
             if (_rows.TryGetValue(entity, out int row))
             {

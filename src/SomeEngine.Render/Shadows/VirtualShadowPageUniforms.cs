@@ -160,7 +160,7 @@ public struct VirtualShadowPageHiZUniforms
 public struct VirtualShadowDynamicResolutionUniforms
 {
     public uint MaxPhysicalPages;
-    public uint TargetRasterWork;
+    public uint PadRasterWork;
     public float PagePoolLoadStart;
     public float MaxDirectionalLodBias;
     public float MaxLocalLodBias;

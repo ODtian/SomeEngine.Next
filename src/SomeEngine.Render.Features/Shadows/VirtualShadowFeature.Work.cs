@@ -115,7 +115,7 @@ public sealed partial class VirtualShadowFeature
             HistoryWeight = settings.WorkHistoryWeight,
             MaxDirectionalBias = settings.WorkMaxDirectionalLodBias,
             MaxLocalBias = settings.WorkMaxLocalLodBias,
-            MaxGlobalBias = Math.Max(settings.DynamicResolutionMaxDirectionalLodBias, settings.DynamicResolutionMaxLocalLodBias),
+            MaxGlobalBias = settings.DynamicResolutionMaxLodBias,
         };
         _uniformData.Write(ref graph, _workUniforms, in uniforms);
         graph.SetPassEnabled(_workResetPass, !_workHistoryReady || _forceStateReset);

@@ -38,12 +38,25 @@ VSM 设置分别持有非移动与移动精度偏置，按
 页请求与标准材质共用 `ReconstructVirtualShadowReceiverPixel`，从当前深度图
 重建接收面相邻像素的世界坐标。每个轴采用深度差较小的前景邻居，在断层处
 保持局部接收面；视口边缘沿该接收面延伸相邻坐标。
-动态分辨率的页池压力偏移作用于这个覆盖投影，使压力反馈能降低实际请求页的密度。
-DefaultGame 启用此反馈；页分配失败、页池占用和光栅工作量由 VSM 自身维护。
-`DynamicResolutionTargetRasterWork` 的单位为 8×8 页材质 batch 等价量：HW 使用
-裁剪后 page-batch 面积 / 64，SW 有界几何 batch 使用一。它不是候选数、窗口数或
-indirect instance 数；将 HW 窗口改为四页不能单凭分区数增加而降低分辨率。
-当前裁剪面积反馈可比旧的每窗口一更低，可能恢复更多细节；最终有效质量/成本仍需实测。
+页池压力以 AVAILABLE 列表的实际可用容量和分配失败形成全局偏移，阈值默认 .85。
+本帧从持久状态复制该偏移，请求和采样共同读取；超载响应为 .5，恢复经过十帧等待后响应 .1。
+工作节流由 `WorkLoadBudget` 或 `WorkTimeBudgetMilliseconds` 启用，两项默认均为零；时间预算优先。
+可见 cluster/window 在每个阶段解码完成后、材质/range batch 展开前登记一次 HW 或 SW，
+压缩目标保存原始 shadow view index。逐视图反馈沿 RenderWorld light entity、cube face 或绝对 clipmap level
+对应上一完成帧，完成帧提交该映射与 GPU 工作历史，取消帧沿最后完成数据恢复。
+原版工作成本为 `0.00012176 * HW + 0.000027 * SW`；全局强度变化为
+`clamp((cost - budget) * .5, -.01, .2)`，再限制在 0–1。
+各陰影视图以自身成本 / HW、SW 分别最大计数所对应成本分摊强度，并以默认 .9 历史权重平滑。
+工作偏移写入本帧 `VirtualShadowView.ResolutionLodBias`；请求、材质采样和质量回读共享该数据。
+默认全局偏移上限为 2，方向光/局部光工作上限均为原版 99999，页池偏移先消耗全局余量。
+`WorkTimeBudgetMilliseconds` 为正时安装 GPU 时间 query 与持久回读，测量当帧 target geometry；
+线性预算使用 5% headroom、16 帧历史、递归 .9 权重、1% 变化阈值和 8 帧变化间隔。
+超过预算的连续两帧截断旧历史，恢复时以 .9 插值；GPU 完成数据携带实际帧和已使用 fraction。
+独立光栅诊断 `RasterPageArea` 使用 HW 裁剪 page-batch 面积，SW 材质 batch 权重为 64；
+`RasterBatchEquivalents` 为面积 / 64。每视图质量同时给出 `HardwareVisibleItems`、`SoftwareVisibleItems`
+及实际 `WorkLodAddition`，把几何工作、材质批次数和有效偏置分别表达。
+固定原版依据为 `VirtualShadowMapThrottle.usf:28–165`、`VirtualShadowMapArray.cpp:2825–2931`，
+以及 `DynamicRenderScaling.cpp:23–105`、`DynamicResolution.cpp:215–413`。
 
 clipmap 使用原版绝对级别，默认 first 6 至 last 22。级别 L 的半径为
 `2^(L+1) * WorldUnitsPerCentimeter`，投影为容纳滚动对齐覆盖四个半径。

@@ -44,10 +44,7 @@ public sealed record VirtualShadowMapSettings
     public float WorkMaxLocalLodBias { get; init; } = 99999f;
     public bool WorkThrottlingEnabled => WorkLoadBudget > 0f || WorkTimeBudgetMilliseconds > 0f;
     public bool DynamicResolutionEnabled { get; init; }
-    /// <summary>Raster budget in 8×8-page material-batch equivalents. HW contributes
-    /// cropped page-batch area / 64; each bounded SW material batch contributes one.
-    /// Four-page partitioning alone therefore cannot raise resolution pressure.</summary>
-    public uint DynamicResolutionTargetRasterWork { get; init; } = 250_000;
+    public float DynamicResolutionMaxLodBias { get; init; } = 2.0f;
     public float DynamicResolutionPagePoolLoadStart { get; init; } = 0.85f;
     public float DynamicResolutionMaxDirectionalLodBias { get; init; } = 2.0f;
     public float DynamicResolutionMaxLocalLodBias { get; init; } = 2.0f;
@@ -224,12 +221,12 @@ public sealed record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(WorkMaxDirectionalLodBias));
         if (!float.IsFinite(WorkMaxLocalLodBias) || WorkMaxLocalLodBias < 0f)
             throw new ArgumentOutOfRangeException(nameof(WorkMaxLocalLodBias));
-        if (DynamicResolutionTargetRasterWork == 0u)
-            throw new ArgumentOutOfRangeException(nameof(DynamicResolutionTargetRasterWork));
         if (!float.IsFinite(DynamicResolutionPagePoolLoadStart) ||
             DynamicResolutionPagePoolLoadStart < 0.0f ||
             DynamicResolutionPagePoolLoadStart >= 1.0f)
             throw new ArgumentOutOfRangeException(nameof(DynamicResolutionPagePoolLoadStart));
+        if (!float.IsFinite(DynamicResolutionMaxLodBias) || DynamicResolutionMaxLodBias < 0f)
+            throw new ArgumentOutOfRangeException(nameof(DynamicResolutionMaxLodBias));
         if (!float.IsFinite(DynamicResolutionMaxDirectionalLodBias) ||
             DynamicResolutionMaxDirectionalLodBias < 0.0f)
             throw new ArgumentOutOfRangeException(nameof(DynamicResolutionMaxDirectionalLodBias));
