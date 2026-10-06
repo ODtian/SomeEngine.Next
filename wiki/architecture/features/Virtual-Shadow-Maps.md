@@ -42,6 +42,10 @@ indirect instance 数；将 HW 窗口改为四页不能单凭分区数增加而�
 
 clipmap 使用原版绝对级别，默认 first 6 至 last 22。级别 L 的半径为
 `2^(L+1) * WorldUnitsPerCentimeter`，投影为容纳滚动对齐覆盖四个半径。
+各级深度半径为该半径乘 `DirectionalDepthRangeScale`，默认倍率为原版的 `1000`。
+光空间 Z 中心来自该视图的实际世界原点；投影使用以该中心为中点的两倍深度半径跨度。
+`VirtualShadowMapClipmap.cpp:352–458` 记录这一逐级投影规则；公开用例
+`DirectionalLevelsCoverTheirNativeDepthRange` 从源世界点检验各级实际可覆盖的深度。
 因此默认 first 6 的半径是 1.28 米，完整投影宽度是 5.12 米；中心 2.56 米处到达投影边界。
 公开 shader 自给数据以同一字段声明其坐标单位，厘米夹具使用 `1`，米夹具使用 `0.01`。
 虚拟分辨率、可用绝对级别和分辨率偏置共同限定精度。

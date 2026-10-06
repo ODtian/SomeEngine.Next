@@ -339,6 +339,7 @@ public sealed class VirtualShadowMap : IDisposable
             Vector3 vertical = Vector3.Normalize(Vector3.Cross(direction, right));
             float cameraRight = Vector3.Dot(camera, right);
             float cameraVertical = Vector3.Dot(camera, vertical);
+            float cameraDepth = Vector3.Dot(camera, direction);
             for (int clipmapLevel = 0; clipmapLevel < clipmapLevels; clipmapLevel++)
             {
                 int absoluteClipmapLevel = checked(
@@ -360,16 +361,17 @@ public sealed class VirtualShadowMap : IDisposable
                 int pageOriginY = checked(-centerPageY - (int)virtualPagesPerRow / 2);
                 Vector3 snappedCenter =
                     right * (centerSnapX * levelRadius) +
-                    vertical * (centerSnapY * levelRadius);
+                    vertical * (centerSnapY * levelRadius) + direction * cameraDepth;
+                float depthRadius = levelRadius * Settings.DirectionalDepthRangeScale;
                 Matrix4x4 lightView = Matrix4x4.CreateLookAt(
-                    snappedCenter - direction * Settings.DirectionalLightDistance,
+                    snappedCenter - direction * depthRadius,
                     snappedCenter,
                     up);
                 Matrix4x4 lightProjection = Matrix4x4.CreateOrthographic(
                     worldExtent,
                     worldExtent,
-                    Settings.DirectionalNearPlane,
-                    Settings.DirectionalFarPlane);
+                    0.0f,
+                    2.0f * depthRadius);
                 int viewIndex = checked(lightIndex * clipmapLevels + clipmapLevel);
                 bool coarseFallback =
                     absoluteClipmapLevel >= Settings.DirectionalFirstCoarseClipmapLevel &&
