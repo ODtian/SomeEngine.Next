@@ -486,6 +486,19 @@ uint VirtualShadowLocalMipFromReceiverFootprint(
         max(parameters.MipLevelCount, 1u) - 1u);
 }
 
+uint VirtualShadowLocalSamplingMip(
+    VirtualShadowMapParameters parameters,
+    float3 worldPosition,
+    float3 worldPositionDx,
+    float3 worldPositionDy,
+    float dynamicResolutionLodBias)
+{
+    if ((parameters.Flags & VSM_VIEW_USE_RECEIVER_MASK) == 0u)
+        return 0u;
+    return VirtualShadowLocalMipFromReceiverFootprint(
+        parameters, worldPosition, worldPositionDx, worldPositionDy, dynamicResolutionLodBias);
+}
+
 float CalculateDirectionalVirtualShadowDistanceLevel(
     VirtualShadowMapParameters parameters,
     float3 worldPosition)
@@ -1016,7 +1029,7 @@ bool TrySamplePointVirtualShadowMap(
     VirtualShadowMapParameters baseView = views[firstView];
     uint faceIndex = VirtualShadowPointFace(worldPosition - baseView.LightPosition);
     VirtualShadowMapParameters view = views[firstView + faceIndex];
-    uint mipLevel = VirtualShadowLocalMipFromReceiverFootprint(
+    uint mipLevel = VirtualShadowLocalSamplingMip(
         view,
         worldPosition,
         worldPositionDx,
@@ -1070,7 +1083,7 @@ bool TrySampleSpotVirtualShadowMap(
 {
     visibility = 1.0;
     VirtualShadowMapParameters view = views[viewIndex];
-    uint mipLevel = VirtualShadowLocalMipFromReceiverFootprint(
+    uint mipLevel = VirtualShadowLocalSamplingMip(
         view,
         worldPosition,
         worldPositionDx,

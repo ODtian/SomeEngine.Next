@@ -1,0 +1,57 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="d8a804ed-95dd-498e-bcfa-595ec1356e5b" name="boqi@BOQI-THE-DAEMON 2026-10-06 22:01:10" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T22:01:10.3109985+08:00" queuing="2026-10-06T22:01:10.3109988+08:00" start="2026-10-06T22:01:03.5474815+08:00" finish="2026-10-06T22:01:10.3219386+08:00" />
+  <TestSettings name="default" id="2fc22112-4475-4446-8992-8ab53cf160e9">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_22_01_10" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="3839b89c-67d8-45fb-8dc6-02ea7c2094b9" testId="81ef43f4-d39b-5387-c56d-38d69c0aaa31" testName="SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesMipZeroWhenTheReceiverMaskIsDisabled" computerName="BOQI-THE-DAEMON" duration="00:00:01.5638404" startTime="2026-10-06T22:01:08.5424402+08:00" endTime="2026-10-06T22:01:10.0903174+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3839b89c-67d8-45fb-8dc6-02ea7c2094b9">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ&#xD;
+Expected: 0&#xD;
+Actual:   1</Message>
+          <StackTrace>   at SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesMipZeroWhenTheReceiverMaskIsDisabled() in F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\NativeShadowProjectionTests.cs:line 125&#xD;
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesMipZeroWhenTheReceiverMaskIsDisabled" storage="f:\.codex\worktrees\rg70-ticket-138\someengine.next\tests\someengine.graphics.direct3d12.tests\bin\release\net10.0\someengine.graphics.direct3d12.tests.dll" id="81ef43f4-d39b-5387-c56d-38d69c0aaa31">
+      <Execution id="3839b89c-67d8-45fb-8dc6-02ea7c2094b9" />
+      <TestMethod codeBase="F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests" name="SpotSamplingUsesMipZeroWhenTheReceiverMaskIsDisabled" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="81ef43f4-d39b-5387-c56d-38d69c0aaa31" executionId="3839b89c-67d8-45fb-8dc6-02ea7c2094b9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.20]   Discovering: SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.50]   Discovered:  SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:03.55]   Starting:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+[xUnit.net 00:00:05.50]       Assert.Equal() Failure: Values differ&#xD;
+[xUnit.net 00:00:05.50]       Expected: 0&#xD;
+[xUnit.net 00:00:05.50]       Actual:   1&#xD;
+[xUnit.net 00:00:05.50]       Stack Trace:&#xD;
+[xUnit.net 00:00:05.50]         F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\NativeShadowProjectionTests.cs(125,0): at SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesMipZeroWhenTheReceiverMaskIsDisabled()&#xD;
+[xUnit.net 00:00:05.51]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+[xUnit.net 00:00:05.51]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:05.53]   Finished:    SomeEngine.Graphics.Direct3D12.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-06T22:01:10.1068810+08:00">
+        <Text>[xUnit.net 00:00:05.50]     SomeEngine.Graphics.Direct3D12.Tests.NativeShadowProjectionTests.SpotSamplingUsesMipZeroWhenTheReceiverMaskIsDisabled [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
