@@ -15,6 +15,7 @@ using SomeEngine.Resources;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Instances;
 using SomeEngine.Serialization.Containers;
+using System.Text.Json;
 
 namespace Game.Build;
 
@@ -34,6 +35,7 @@ public static class DefaultContent
             BuildRenderInstanceLayoutSource(ClusterRenderFeature.InstanceLayout));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
             sourceFormats: [new ShaderSourceFormat([engineShaders])]);
+        await BuildEngineShadersAsync(project, shaders, engineShaders, cancellationToken).ConfigureAwait(false);
         foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -62,6 +64,34 @@ public static class DefaultContent
         }
 
         File.WriteAllText(path, normalizedContent);
+    }
+
+    private static async Task BuildEngineShadersAsync(AssetProject project, string shaders,
+        string engineShaders, CancellationToken cancellationToken)
+    {
+        string generated = Path.Combine(shaders, "generated", "EngineSources");
+        foreach (string source in Directory.EnumerateFiles(engineShaders, "*.shader").Order(StringComparer.Ordinal))
+        {
+            string name = Path.GetFileName(source);
+            if (File.Exists(Path.Combine(shaders, name))) continue;
+            cancellationToken.ThrowIfCancellationRequested();
+            string content = File.ReadAllText(source);
+            string destination = Path.Combine(generated, name);
+            WriteGeneratedFile(destination, content);
+            using JsonDocument document = JsonDocument.Parse(content);
+            foreach (JsonElement block in document.RootElement.GetProperty("Blocks").EnumerateArray())
+            {
+                if (!block.GetProperty("Fields").TryGetProperty("SourceNames", out JsonElement names)) continue;
+                foreach (JsonElement sourceName in names.EnumerateArray())
+                {
+                    string sourcePath = sourceName.GetString()!;
+                    WriteGeneratedFile(Path.Combine(generated, sourcePath),
+                        File.ReadAllText(Path.Combine(engineShaders, sourcePath)));
+                }
+            }
+            await project.BuildAsync(destination, cancellationToken: cancellationToken).ConfigureAwait(false);
+            Console.WriteLine($"Engine shader: {name}");
+        }
     }
 
     private static string BuildRenderInstanceLayoutSource(RenderInstancePropertyLayout layout)
@@ -424,6 +454,7 @@ public static class DefaultContent
 
     private static Guid ResolveRequired(AssetProject project, string sourcePath) =>
         project.Resolve(sourcePath)
+        ?? project.Resolve("assets/Shaders/generated/EngineSources/" + Path.GetFileName(sourcePath))
         ?? throw new InvalidOperationException($"Required asset '{sourcePath}' was not imported.");
 
 }
