@@ -51,6 +51,9 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
 
     uint sourceViewIndex = pairIndex / ViewCompact.MipLevelCount;
     uint mipLevel = pairIndex % ViewCompact.MipLevelCount;
+    VirtualShadowMapParameters source = ShadowViews[sourceViewIndex];
+    if (mipLevel < source.MinMipLevel || mipLevel >= source.MipLevelCount)
+        return;
     uint4 uncachedRect = UncachedPageRectBounds[pairIndex];
     if (any(uncachedRect.zw < uncachedRect.xy))
         return;
@@ -63,7 +66,6 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
         (compactIndex + 32u) / 32u,
         ignored);
 
-    VirtualShadowMapParameters source = ShadowViews[sourceViewIndex];
     ClusterViewUniforms view = ClusterSourceViews[sourceViewIndex];
 
     uint dimension = VirtualShadowMipPagesPerRow(source, mipLevel);

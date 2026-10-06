@@ -23,7 +23,7 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         view[21] = unchecked((uint)originX);
         view[25] = unchecked((uint)originY);
         view[33] = 1;
-        view[34] = 5;
+        view[34] = lightKind == 0 ? 1u : 5u;
         view[36] = lightKind == 0 ? 1u : 0u;
         view[37] = lightKind;
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
@@ -36,7 +36,7 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
             new BufferInput("RequestedPageCount", new uint[1], ResourceBindingType.BufferUav, 4),
             new BufferInput("PageReceiverMasks", new uint[pageTableEntryCount * 2], ResourceBindingType.BufferUav, 8),
         ]);
-        int expectedRequests = lightKind == 0 ? 5 : 1;
+        int expectedRequests = lightKind == 0 ? 4 : 1;
         Assert.Equal(expectedRequests, result[0].Count(value => value == 7));
         Assert.Equal((uint)expectedRequests, result[3][0]);
     }

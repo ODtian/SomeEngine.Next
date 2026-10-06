@@ -1,0 +1,10 @@
+{
+  "SourceCommit": "6c212b9b6560001235b6aa57f6ea9198eec878c2",
+  "SourceStatus": " M tests/SomeEngine.Render.Tests/VirtualShadowViewTests.cs",
+  "ProductionDll": {
+    "Path": "F:\\.codex\\worktrees\\rg70-directional-mips-145\\SomeEngine.Next\\tests\\SomeEngine.Render.Tests\\bin\\Release\\net10.0\\SomeEngine.Render.dll",
+    "SHA256": "DE78A18C55D8D3CF1AD35C456950A7F915A138927E4C534C36CA004D3C63B808",
+    "Bytes": 330752
+  },
+  "FixtureSHA256": "0C45889FF246DA7EA6B1DDC9824AEDE825ABFB85E93128AFB8231A5D5BDB26F1"
+}

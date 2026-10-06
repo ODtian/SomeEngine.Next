@@ -203,16 +203,9 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         bool detailUpgrade =
             (requestFlags & VSM_PAGE_REQUEST_DETAIL) != 0u &&
             (previousFlags & VSM_PAGE_REQUEST_DETAIL) == 0u;
-        // Clipmaps scroll by a quarter of the base page grid. Higher mips
-        // move by a fraction of their page, so a matching coarse tag alone
-        // cannot preserve the depth pixels when the projection changes.
-        uint scrollingMip = firstbithigh(VirtualShadowPagesPerRow(view)) - 2u;
-        bool coarseProjectionChanged = view.LightKind == VSM_LIGHT_DIRECTIONAL &&
-            mipLevel > scrollingMip &&
-            (view.Flags & VSM_VIEW_PREVIOUS_PROJECTION_VALID) == 0u;
         // A receiver-masked depth page is incomplete even if its projection and
         // casters did not change. Render it fully once before retaining it.
-        if (entry.w == view.CacheGeneration && !detailUpgrade && !coarseProjectionChanged &&
+        if (entry.w == view.CacheGeneration && !detailUpgrade &&
             (PageMetadata[atlasPage].w & VSM_PAGE_MASKED) == 0u)
             return;
     }
