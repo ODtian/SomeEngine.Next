@@ -1,3 +1,5 @@
+#include "vsm_page_dispatch.slang"
+
 struct VirtualShadowPageClearUniforms
 {
     uint PageSize;
@@ -8,6 +10,7 @@ struct VirtualShadowPageClearUniforms
 
 ConstantBuffer<VirtualShadowPageClearUniforms> PageClear;
 StructuredBuffer<uint4> ActivePhysicalPages;
+StructuredBuffer<uint> ActivePhysicalPageCount;
 RWTexture2D<uint> ShadowPhysicalAtlas;
 
 [shader("compute")]
@@ -16,11 +19,14 @@ void ClearVirtualShadowPages(
     uint3 groupId : SV_GroupID,
     uint3 groupThreadId : SV_GroupThreadID)
 {
-    uint physicalPage = ActivePhysicalPages[groupId.x].x;
+    uint pageIndex = VirtualShadowDispatchPage(groupId);
+    if (pageIndex >= ActivePhysicalPageCount[0]) return;
+    uint physicalPage = ActivePhysicalPages[pageIndex].x;
     uint2 physicalPageCoord = uint2(
         physicalPage % PageClear.PhysicalPagesPerRow,
         physicalPage / PageClear.PhysicalPagesPerRow);
-    uint2 basePixel = (uint2(groupId.y, groupId.z) * 8u + groupThreadId.xy) * 2u;
+    uint tiles = (max(PageClear.PageSize / 2u, 1u) + 7u) / 8u;
+    uint2 basePixel = (VirtualShadowDispatchTile(groupId, tiles) * 8u + groupThreadId.xy) * 2u;
     [unroll]
     for (uint y = 0u; y < 2u; y++)
     [unroll]

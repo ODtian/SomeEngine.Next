@@ -27,8 +27,7 @@ public sealed class FrameResourceRenderingTests(ITestOutputHelper testOutput)
         changed.SetUnlitTint(tint);
         RasterImage current = await changed.ReadNextRasterImageAsync();
         Assert.NotEqual(previous.Color, current.Color);
-        Assert.Equal(expected.Color, current.Color);
-        Assert.Equal(expected.Depth, current.Depth);
+        RasterImage.AssertEqual(expected, current);
         Assert.True(current.Metrics.FrameIndex > previous.Metrics.FrameIndex);
         testOutput.WriteLine($"Scalar update: frame {previous.Metrics.FrameIndex} -> {current.Metrics.FrameIndex}; color and depth match fresh material.");
     }

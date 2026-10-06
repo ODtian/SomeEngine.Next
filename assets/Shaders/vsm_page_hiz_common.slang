@@ -1,5 +1,6 @@
 #include "resource_effects.slang"
 #include "depth_page_hiz.slang"
+#include "vsm_page_dispatch.slang"
 
 struct VirtualShadowPageHiZUniforms
 {
@@ -11,6 +12,7 @@ struct VirtualShadowPageHiZUniforms
 
 ConstantBuffer<VirtualShadowPageHiZUniforms> PageHiZ;
 StructuredBuffer<uint4> ActivePhysicalPages;
+StructuredBuffer<uint> ActivePhysicalPageCount;
 #if VSM_PAGE_HIZ_INITIALIZE
 Texture2D<uint> ShadowPhysicalAtlas;
 #else

@@ -46,7 +46,8 @@ public sealed class FrameStageRenderingTests
         using var compressed = new GZipStream(file, CompressionMode.Decompress);
         using var expected = new MemoryStream();
         await compressed.CopyToAsync(expected);
-        Assert.Equal(expected.ToArray(), pixels);
+        ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, expected.ToArray()),
+            new(64, 64, Format.R16G16B16A16Float, pixels));
     }
 
     [Theory]
@@ -68,7 +69,8 @@ public sealed class FrameStageRenderingTests
         changed.UseMaterial(material);
         byte[] current = await changed.ReadPostProcessedColorAsync();
         Assert.NotEqual(previous, current);
-        Assert.Equal(expected, current);
+        ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, expected),
+            new(64, 64, Format.R16G16B16A16Float, current));
     }
 }
 
@@ -554,4 +556,14 @@ internal sealed class FrameStageScene : IAsyncDisposable
     }
 }
 
-internal sealed record RasterImage(byte[] Color, byte[] Depth, ClusterFrameMetrics Metrics);
+internal sealed record RasterImage(byte[] Color, byte[] Depth, ClusterFrameMetrics Metrics)
+{
+    internal static void AssertEqual(RasterImage expected, RasterImage actual,
+        [System.Runtime.CompilerServices.CallerMemberName] string test = "")
+    {
+        ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, expected.Color),
+            new(64, 64, Format.R16G16B16A16Float, actual.Color), test + "-color");
+        ImageArtifacts.AssertEqual(new(64, 64, Format.D32Float, expected.Depth),
+            new(64, 64, Format.D32Float, actual.Depth), test + "-depth");
+    }
+}

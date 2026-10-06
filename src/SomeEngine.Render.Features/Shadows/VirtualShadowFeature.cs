@@ -752,21 +752,14 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             label: "Virtual shadow raster-target HiZ page metadata"), sync);
         // Main traversal consumes prior depth before the intermediate region overwrites
         // dirty tiles. Post traversal consumes that current depth; final depth persists.
-        _ = pass.Bind(
-            graph.CreateTextureSrv(
-                _pageHiZ,
-                format: Format.R32Float,
-                dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
-                label: "Virtual shadow current raster-target HiZ"),
-            sync);
-        _ = pass.Bind(
-            graph.CreateTextureSrv(
-                _pageHiZ,
-                format: Format.R32Float,
-                dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
-                label: "Virtual shadow previous raster-target HiZ"),
-            sync);
+        BindRasterHiZ(ref graph, ref pass, sync);
+        BindRasterHiZ(ref graph, ref pass, sync);
     }
+
+    private void BindRasterHiZ(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
+        _ = pass.Bind(graph.CreateTextureSrv(_pageHiZ, format: Format.R32Float,
+            dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
+            label: "Virtual shadow raster-target HiZ"), sync);
 
     private void BindRasterPageMetadata(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
         _ = pass.Bind(graph.CreateBufferSrv(_pageMetadata, structureStride: 16), sync);
@@ -972,6 +965,7 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
             "RasterTargetPageTable" when type == ResourceBindingType.BufferSrv => BindRasterPageTable,
             "RasterTargetReceiverMasks" when type == ResourceBindingType.BufferSrv => BindRasterReceiverMasks,
             "RasterTargetPageMetadata" when type == ResourceBindingType.BufferSrv => BindRasterPageMetadata,
+            "RasterTargetCurrentHiZ" or "RasterTargetPreviousHiZ" when type == ResourceBindingType.TextureSrv => BindRasterHiZ,
             "RasterTargetOutput" when type == ResourceBindingType.TextureUav => BindPageDepthAtlas,
             "VirtualShadowViews" when type == ResourceBindingType.BufferSrv => BindShadeViews,
             "VirtualShadowPageTable" when type == ResourceBindingType.BufferSrv => BindShadePageTable,
@@ -1520,6 +1514,8 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
         _ = pass.Bind(graph.CreateBufferSrv(_activePages, structureStride: 4 * sizeof(uint),
             label: "Virtual shadow active pages to clear"), PipelineSync.ComputeShading,
             BufferContentScope.CountBoundedPrefix);
+        _ = pass.Bind(graph.CreateBufferSrv(_activePageCount, structureStride: sizeof(uint)),
+            PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateTextureUav(_atlas, format: Format.R32UInt,
             dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
             label: "Virtual shadow atlas clear target"), PipelineSync.ComputeShading,
@@ -1589,6 +1585,8 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                 label: "Virtual shadow page HiZ active pages"),
             PipelineSync.ComputeShading,
             BufferContentScope.CountBoundedPrefix);
+        _ = pass.Bind(graph.CreateBufferSrv(_activePageCount, structureStride: sizeof(uint)),
+            PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateTextureSrv(
                 _atlas,
@@ -1617,6 +1615,8 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                 label: "Virtual shadow page HiZ active pages"),
             PipelineSync.ComputeShading,
             BufferContentScope.CountBoundedPrefix);
+        _ = pass.Bind(graph.CreateBufferSrv(_activePageCount, structureStride: sizeof(uint)),
+            PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateTextureSrv(
                 _pageHiZ,

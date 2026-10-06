@@ -29,8 +29,7 @@ public sealed class StageRegionRenderingTests
         changed.AddGeometryMesh(deep);
         RasterImage first = await changed.ReadNextRasterImageAsync();
         Assert.NotEqual(before.Depth, first.Depth);
-        Assert.Equal(expected.Color, first.Color);
-        Assert.Equal(expected.Depth, first.Depth);
+        RasterImage.AssertEqual(expected, first);
     }
 
     [Theory]
@@ -51,8 +50,7 @@ public sealed class StageRegionRenderingTests
         }
         scene.SetGeometryVisible(true);
         RasterImage restored = await scene.ReadRasterImageAsync();
-        Assert.Equal(expected.Color, restored.Color);
-        Assert.Equal(expected.Depth, restored.Depth);
+        RasterImage.AssertEqual(expected, restored);
     }
 
     [Theory]
@@ -75,8 +73,7 @@ public sealed class StageRegionRenderingTests
         changed.AddMaterialMesh(changed.CreateShadeMaterial(Blue));
         await changed.DiscardNextFrameAsync();
         RasterImage next = await changed.ReadNextRasterImageAsync();
-        Assert.Equal(expected.Color, next.Color);
-        Assert.Equal(expected.Depth, next.Depth);
+        RasterImage.AssertEqual(expected, next);
     }
 
     [Theory]
@@ -93,8 +90,7 @@ public sealed class StageRegionRenderingTests
         await changed.ReadRasterImageAsync();
         changed.AddMaterialMesh(changed.CreateShadeMaterial(Blue));
         RasterImage current = await changed.ReadRasterImageAsync();
-        Assert.Equal(expected.Color, current.Color);
-        Assert.Equal(expected.Depth, current.Depth);
+        RasterImage.AssertEqual(expected, current);
     }
 
     [Theory]
@@ -108,8 +104,7 @@ public sealed class StageRegionRenderingTests
         await changed.ReadRasterImageAsync();
         changed.RemoveMaterialMesh(added);
         RasterImage current = await changed.ReadRasterImageAsync();
-        Assert.Equal(expected.Color, current.Color);
-        Assert.Equal(expected.Depth, current.Depth);
+        RasterImage.AssertEqual(expected, current);
     }
 
     [Theory]
@@ -124,8 +119,7 @@ public sealed class StageRegionRenderingTests
         await Assert.ThrowsAsync<GraphicsException>(() => scene.ReadNextRasterImageAsync());
         scene.RemoveMaterialMesh(added);
         RasterImage restored = await scene.ReadRasterImageAsync();
-        Assert.Equal(before.Color, restored.Color);
-        Assert.Equal(before.Depth, restored.Depth);
+        RasterImage.AssertEqual(before, restored);
     }
 
     private static async Task<FrameStageScene> CreateSceneAsync(string backend) =>

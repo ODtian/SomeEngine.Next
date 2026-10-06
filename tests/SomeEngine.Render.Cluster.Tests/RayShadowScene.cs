@@ -27,12 +27,7 @@ internal sealed class RayShadowScene
     internal Mesh[] Meshes { get; }
     internal Instance[] Instances { get; }
 
-    internal RayShadowScene(string source, bool sphereGrid)
-        : this(source, sphereGrid ? ShadowReferenceScene.Meshes("directional-grid", true)
-            .Select(value => Matrix4x4.CreateScale(value.Scale) * Matrix4x4.CreateTranslation(value.Position)).ToArray() : null)
-    { }
-
-    internal RayShadowScene(string source, Matrix4x4[]? transforms)
+    internal RayShadowScene(string source, Matrix4x4[]? transforms = null)
     {
         ModelRoot model = ModelRoot.Load(source);
         var vertices = new List<Vertex>();

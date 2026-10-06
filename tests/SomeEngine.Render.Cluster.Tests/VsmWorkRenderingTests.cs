@@ -32,8 +32,7 @@ public sealed class VsmWorkRenderingTests
         RasterImage actual = await changed.ReadRasterImageAsync();
         Assert.NotEqual(expected.Color, opaqueImage);
         Assert.True(actual.Metrics.Work.Complete);
-        Assert.Equal(expected.Color, actual.Color);
-        Assert.Equal(expected.Depth, actual.Depth);
+        RasterImage.AssertEqual(expected, actual);
     }
 
     [Theory]
@@ -72,11 +71,9 @@ public sealed class VsmWorkRenderingTests
             FirstConstrained = firstActual.Metrics, Settled = expected.Metrics, Constrained = actual.Metrics }));
         Assert.True(firstExpected.Metrics.Work.Complete);
         Assert.True(firstActual.Metrics.Work.Complete);
-        Assert.Equal(firstExpected.Color, firstActual.Color);
-        Assert.Equal(firstExpected.Depth, firstActual.Depth);
+        RasterImage.AssertEqual(firstExpected, firstActual);
         Assert.True(expected.Metrics.Work.Complete);
         Assert.True(actual.Metrics.Work.Complete);
-        Assert.Equal(expected.Color, actual.Color);
-        Assert.Equal(expected.Depth, actual.Depth);
+        RasterImage.AssertEqual(expected, actual);
     }
 }
