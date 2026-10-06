@@ -31,3 +31,13 @@ Evidence: artifacts/acceptance/review-fixes contains CPU TRX/logs, including fai
 The interrupted turn was resumed without resetting WIP. Measurable executable-source checkpoint **833cab9158db4ceee79fa8f1ca613a8616472cbd** was committed and verified after merging unchanged clean integration6706 (Already up to date, ancestor exit0). Final own cook68 assets; Cluster Release including Game.App0 warnings/errors; device-free suite11/11; full rule sweep24 projects/0 violations. Final quality-enabled sphere1/1 reproduces the same1.9470176% green with135592 receivers/edges unchanged; final finite five-row batch5/5 passes. Exact records live at review-fixes-validation/checkpoint; post-validation-files.csv is post-run hashes, not a fabricated pre-run freeze.
 
 GPU and own builds/tests are RELEASED/stopped. #81 is preparing its exact833 candidate; it must rebuild/cook compatible three-scene content after shader changes, revalidate corrected references and comparable semantic quality, and only then measure. Observer-only BEFORE backport must not import production repairs. No three-scene throughput, FPS, equal-work/effective-quality acceptance or issue closure is claimed by this branch. No new production work during the parent performance window.
+
+## Generated fixture cleanup — 2026-10-06
+
+Removed the 69 generated catalog and compiled asset files from the retained
+`ticket-135/gpu-window/local-lights/local-ray-spot-b2b6e1bf65414bc0885e258fc5cd7ebd/content`
+fixture after recording each file's byte size and SHA-256 in
+`F:/SomeEngine.AgentWork/rg70-remaining/removed-generated-content-hashes.csv`.
+The adjacent rendering outputs, full receiver comparisons, command records and
+test results remain the durable behavior evidence. The fixture is rebuilt through
+the public scene setup when the regression executes.
