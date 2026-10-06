@@ -15,6 +15,29 @@ namespace SomeEngine.Render.Tests;
 public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     [Fact]
+    public async Task DirectionalLevelsCoverTheirNativeDepthRange()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings { VirtualResolution = 512, AtlasSize = 256,
+                MaxShadowLights = 1, DirectionalFirstClipmapLevel = 6, DirectionalClipmapLevels = 2 });
+        var lights = new RenderLightSet();
+        lights.AddDirectional(new RenderDirectionalLight(-Vector3.UnitY, Vector3.One, 1, uint.MaxValue));
+        var receiver = new RenderView(Matrix4x4.Identity,
+            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+        shadows.BeginFrame();
+        ReadOnlySpan<VirtualShadowView> views = shadows.PrepareViews(lights, receiver, 1, 1, 1);
+        // Native level 6 radius 128 centimeters gives a Z radius 1280 meters at
+        // ZRangeScale 1000. World Y 1200 is 80 meters from the light-facing edge
+        // of its 2560-meter depth range: forward depth is 1/32. Level 7 doubles
+        // the same independent world example.
+        Vector4 first = Vector4.Transform(new Vector4(0, 1200, 0, 1), views[0].LightViewProjection);
+        Vector4 second = Vector4.Transform(new Vector4(0, 2400, 0, 1), views[1].LightViewProjection);
+        Assert.InRange(first.Z / first.W, .0312495f, .0312505f);
+        Assert.InRange(second.Z / second.W, .0312495f, .0312505f);
+    }
+
+    [Fact]
     public async Task OrthographicCameraUsesTheNativeClipmapWidthAndFirstLevel()
     {
         VirtualShadowMapShaders shaders = await CreateShaders();

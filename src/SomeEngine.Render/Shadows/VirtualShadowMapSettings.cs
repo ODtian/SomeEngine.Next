@@ -40,9 +40,7 @@ public sealed record VirtualShadowMapSettings
     // normalized-depth allowance covers one millimeter over the default directional range.
     public float DepthBias { get; init; } = 0.000001f;
     public float NormalBias { get; init; } = 0.001f;
-    public float DirectionalLightDistance { get; init; } = 500.0f;
-    public float DirectionalNearPlane { get; init; } = 0.1f;
-    public float DirectionalFarPlane { get; init; } = 1000.0f;
+    public float DirectionalDepthRangeScale { get; init; } = 1000.0f;
     public float LocalNearPlane { get; init; } = 0.05f;
     public float BlockerSearchRadiusTexels { get; init; }
     /// <summary>Zero selects one depth comparison without blocker search or filtering.</summary>
@@ -164,15 +162,8 @@ public sealed record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(DepthBias));
         if (!float.IsFinite(NormalBias) || NormalBias < 0.0f)
             throw new ArgumentOutOfRangeException(nameof(NormalBias));
-        if (!float.IsFinite(DirectionalLightDistance) || DirectionalLightDistance <= 0.0f)
-            throw new ArgumentOutOfRangeException(nameof(DirectionalLightDistance));
-        if (!float.IsFinite(DirectionalNearPlane) ||
-            !float.IsFinite(DirectionalFarPlane) ||
-            DirectionalNearPlane <= 0.0f ||
-            DirectionalFarPlane <= DirectionalNearPlane)
-        {
-            throw new ArgumentOutOfRangeException(nameof(DirectionalFarPlane));
-        }
+        if (!float.IsFinite(DirectionalDepthRangeScale) || DirectionalDepthRangeScale <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(DirectionalDepthRangeScale));
         if (!float.IsFinite(LocalNearPlane) || LocalNearPlane <= 0.0f)
             throw new ArgumentOutOfRangeException(nameof(LocalNearPlane));
         if (!float.IsFinite(BlockerSearchRadiusTexels) || BlockerSearchRadiusTexels < 0.0f)
