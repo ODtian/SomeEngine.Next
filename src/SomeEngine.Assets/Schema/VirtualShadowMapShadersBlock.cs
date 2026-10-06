@@ -5,7 +5,7 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 {
     public partial ShaderRef? ResetReceiverMasks { get; set; }
@@ -20,6 +20,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
     public partial ShaderRef? CompactViews { get; set; }
     public partial ShaderRef? InitializePageHiZ { get; set; }
     public partial ShaderRef? ReducePageHiZ { get; set; }
+    public partial ShaderRef? WorkFeedback { get; set; }
     public partial ShaderRef? DynamicResolution { get; set; }
     public partial ShaderRef? CompletePageDepth { get; set; }
 
@@ -58,6 +59,8 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
         var result = new VirtualShadowMapShaders
         {
             Name = name,
+            WorkFeedbackShader = copy.WorkFeedback is { } work ? shaders[work.Asset.Value] : null,
+            WorkFeedback = copy.WorkFeedback is { } workEntry ? Resolve(workEntry) : EntryPointReflection.Null,
             ResetReceiverMasksShader = shaders[copy.ResetReceiverMasks!.Asset.Value],
             ResetReceiverMasks = Resolve(copy.ResetReceiverMasks),
             ResetFrameShader = shaders[copy.ResetFrame!.Asset.Value],

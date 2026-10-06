@@ -374,6 +374,9 @@ public static class DefaultContent
                 CompletePageDepth = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_page_depth_complete.shader"),
                     "CompleteVirtualShadowPageDepth"),
+                WorkFeedback = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_work_feedback.shader"),
+                    "UpdateVirtualShadowWorkThrottle"),
                 DynamicResolution = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_dynamic_resolution.shader"),
                     "UpdateVirtualShadowDynamicResolution"),

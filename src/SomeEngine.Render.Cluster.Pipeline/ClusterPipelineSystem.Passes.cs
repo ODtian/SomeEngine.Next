@@ -891,6 +891,12 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.ExecuteIndirect,
                     ResourceAccess.IndirectArgument),
             ClusterIndirectDispatchParameters.Record, region: countRegion);
+        PassDefinition countAccess = graph.GetPass(countPass);
+        if (_renderContext.IsValid && epoch >= 2 && _renderContext.BindWorkTargetViews is { } bindWorkViews)
+            bindWorkViews(ref graph, ref countAccess, PipelineSync.ComputeShading);
+        else
+            _ = countAccess.Bind(graph.CreateBufferSrv(frame.NeutralPolicyView,
+                structureStride: ClusterRenderContext.TargetViewSizeInBytes), PipelineSync.ComputeShading);
 
         bindingCount = 0;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(

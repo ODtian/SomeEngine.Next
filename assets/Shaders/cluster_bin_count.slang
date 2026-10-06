@@ -68,6 +68,7 @@ void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftwa
 
 #include "cluster_bin_batches.slang"
 #include "cluster_work_status.slang"
+StructuredBuffer<ClusterRasterTargetView> WorkTargetViews;
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -91,6 +92,12 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         isSoftware);
 
     DrawRequest entry = VisibleClusters[visibleIndex];
+    if (Uniforms.PolicyTarget != 0u)
+    {
+        ClusterRasterTargetView target = WorkTargetViews[DrawRequestViewIndex(entry)];
+        if (target.Padding.y != 0u)
+            InterlockedAdd(PolicyRasterWorkCounter[1u + target.Padding.x * 2u + (isSoftware ? 1u : 0u)], 1u);
+    }
     uint4 vertReuseBatchWords;
     uint vertexCount;
     uint triangleCount;

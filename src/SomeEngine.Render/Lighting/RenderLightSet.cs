@@ -31,6 +31,10 @@ public sealed class RenderLightSet
 
     public ulong Revision { get; private set; }
 
+    public Entity GetDirectionalEntity(int lightIndex) => _directional.GetEntity(lightIndex);
+    public Entity GetPointEntity(int lightIndex) => _points.GetEntity(lightIndex);
+    public Entity GetSpotEntity(int lightIndex) => _spots.GetEntity(lightIndex);
+
     public float GetDirectionalMobility(int lightIndex) => _directional.GetMobility(lightIndex);
     public float GetPointMobility(int lightIndex) => _points.GetMobility(lightIndex);
     public float GetSpotMobility(int lightIndex) => _spots.GetMobility(lightIndex);
@@ -88,6 +92,8 @@ public sealed class RenderLightSet
         private readonly Dictionary<Entity, int> _rows = [];
         private readonly List<LightMovement> _movement = [];
 
+        internal Entity GetEntity(int index) => _entities[index];
+
         internal float GetMobility(int index) => _movement[index].Factor;
 
         internal void AdvanceMovement(ulong renderedFrame, uint activeFrameCount)
@@ -138,7 +144,7 @@ public sealed class RenderLightSet
         internal void Append(QueryCursor query)
         {
             foreach (QueryRow row in query.Rows)
-                Add(row.Read<T>(), row.TryRead<RenderLightCookie>(out var cookie) ? cookie : null);
+                Set(row.Entity, row.Read<T>(), row.TryRead<RenderLightCookie>(out var cookie) ? cookie : null);
         }
 
         internal bool UpdateMembership(World world, Entity entity)

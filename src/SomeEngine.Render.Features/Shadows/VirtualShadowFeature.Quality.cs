@@ -57,7 +57,7 @@ public sealed partial class VirtualShadowFeature
     {
         ArgumentNullException.ThrowIfNull(receive);
         if (_qualityReadbacks is null) throw new InvalidOperationException("Enable quality capture before recording a frame.");
-        _qualityReadbacks.Requests.Add(_frameIndex, new QualityRequest(_viewCount, receive));
+        _qualityReadbacks.Requests.Add(_frameIndex, new QualityRequest(_viewCount, _frameBaseShadowBias, receive));
         foreach (GraphReadbackId readback in _qualityReadbacks.Readbacks)
         {
             graph.SetReadbackEnabled(readback, true);
@@ -85,7 +85,7 @@ public sealed partial class VirtualShadowFeature
         }
     }
 
-    private sealed class QualityRequest(int viewCount, Action<VirtualShadowFrameQuality> receive)
+    private sealed class QualityRequest(int viewCount, float[] baseBias, Action<VirtualShadowFrameQuality> receive)
     {
         internal readonly byte[][] Bytes = new byte[10][];
         internal readonly Action<VirtualShadowFrameQuality> Receive = receive;
@@ -132,7 +132,12 @@ public sealed partial class VirtualShadowFeature
                     dimension = Math.Max(dimension >> 1, 1);
                 }
                 result[index] = new(view.LightKind, view.LightIndex, view.FaceIndex, view.ClipmapLevel, view.VirtualResolution,
-                    view.ResolutionLodBias, view.ResolutionLodBias + bias[view.LightKind == VirtualShadowLightKind.Directional ? 0 : 1], mips);
+                    baseBias[index], view.ResolutionLodBias + bias[view.LightKind == VirtualShadowLightKind.Directional ? 0 : 1], mips)
+                {
+                    WorkLodAddition = view.ResolutionLodBias - baseBias[index],
+                    HardwareVisibleItems = Word(QualityData.RasterArea, 1 + index * 2),
+                    SoftwareVisibleItems = Word(QualityData.RasterArea, 2 + index * 2),
+                };
             }
             return new(frame, bias[0], bias[1], Word(QualityData.RequestCount), Word(QualityData.DirtyCount),
                 Word(QualityData.Failures), Word(QualityData.Failures, 1), FreePages(),

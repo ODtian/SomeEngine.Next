@@ -7,6 +7,26 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class ShadowPagePressureTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
+    public void WorkFeedbackAppliesEachViewsContributionToItsSubmittedProjection()
+    {
+        uint[] hot = new uint[52], cool = new uint[52];
+        uint[][] observed = new D3D12TestCompute(shaderCompiler).Execute(
+            "vsm_work_feedback.slang", "UpdateVirtualShadowWorkThrottle", new(1, 1, 1),
+            [new BufferInput("WorkThrottle", [2, 1, BitConverter.SingleToUInt32Bits(.1f),
+                BitConverter.SingleToUInt32Bits(-1f), BitConverter.SingleToUInt32Bits(.9f),
+                BitConverter.SingleToUInt32Bits(99999f), BitConverter.SingleToUInt32Bits(99999f),
+                BitConverter.SingleToUInt32Bits(2f)], ResourceBindingType.ConstantBuffer, 0),
+             new BufferInput("PreviousWorkCounts", [0, 10000, 0, 1000, 0], ResourceBindingType.BufferSrv, 4),
+             new BufferInput("PreviousWorkPressure", [0, 0, 0], ResourceBindingType.BufferSrv, 4),
+             new BufferInput("PreviousWorkViewIndices", [0, 1], ResourceBindingType.BufferSrv, 4),
+             new BufferInput("FramePageBias", [0, 0], ResourceBindingType.BufferSrv, 8),
+             new BufferInput("WorkShadowViews", [.. hot, .. cool], ResourceBindingType.BufferUav, 208),
+             new BufferInput("FrameWorkPressure", [0, 0, 0], ResourceBindingType.BufferUav, 4)]);
+        Assert.InRange(BitConverter.UInt32BitsToSingle(observed[0][31]), .0399999f, .0400001f);
+        Assert.InRange(BitConverter.UInt32BitsToSingle(observed[0][83]), .0039999f, .0040001f);
+    }
+
+    [Fact]
     public void WorkPressureUsesEachViewsClusterContribution()
     {
         uint[][] observed = new D3D12TestCompute(shaderCompiler).ExecuteSource("""

@@ -52,6 +52,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private readonly IndirectCommandLayout _dispatchLayout;
     private RenderView[] _shadowViews = [];
     private VirtualShadowView[] _previousShadowViews = [];
+    private float[] _frameBaseShadowBias = [];
     private Matrix4x4[] _previousShadowViewProjections = [];
 
     private readonly GraphBufferInput _framePageTable;
@@ -301,7 +302,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination | BufferUsages.CopySource,
                     "Virtual shadow allocation failures"));
                 _policyRasterWorkCount = edit.CreateBuffer(new BufferDesc(
-                    sizeof(uint),
+                    checked((1ul + 2ul * rasterViewCapacity / settings.MipLevelCount) * sizeof(uint)),
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination | BufferUsages.CopySource,
                     "Virtual shadow policy raster work count"));
                 _dynamicResolutionBias = edit.CreatePersistentBuffer(new BufferDesc(
@@ -597,11 +598,12 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     Math.Max(settings.PageSize / 2u, 1u))
                 {
                     BindTargetPageBounds = BindRasterPageBounds,
+                    BindWorkTargetViews = BindRasterTargetViews,
                     ViewDetailCount = settings.MipLevelCount,
                     MaximumRasterWindowsPerSourceView = rasterWindows,
                 });
                 _clusterSourceViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
-                _frameShadowViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
+                _frameShadowViews = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite);
                 _frameChangedInstances = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameSamplingUniforms = edit.CreateBufferInput(BufferUsages.Constant);
                 _frameInvocationUniforms = edit.CreateBufferInput(BufferUsages.Constant);
@@ -642,11 +644,13 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     BindPageHiZReduce(ref edit, _pageHiZReducePasses[index], input, mip - 1, mip);
                     BindPageHiZReduce(ref edit, _finalPageHiZReducePasses[index], input, mip - 1, mip);
                 }
+                InstallWorkFeedback(ref edit, shaders, rasterViewCapacity / settings.MipLevelCount,
+                    primaryDepthAfter, feedback, resolutionCopyPass);
                 _uniformData = new FeatureUniformBuffer(ref edit,
                     [_frameSamplingUniforms, _frameInvocationUniforms, _initUniforms, _invalidationUniforms,
                      _coarseDemandUniforms, _demandUniforms, _poolUniforms,
                      _poolPrepareUniforms, _poolCompactUniforms, _poolFinishUniforms, _allocationUniforms,
-                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, .. _pageHiZReduceUniforms],
+                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, _workUniforms, .. _pageHiZReduceUniforms],
                     device.Capabilities.Limits.ConstantBufferAlignment, "Virtual shadow constant data");
                 PassDefinition frameComplete = edit.GetPass(_frameCompletePass);
                 _ = frameComplete.Read(
@@ -670,6 +674,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         catch
         {
             dispatchLayout?.Dispose();
+            _workFeedbackPipeline?.Dispose();
             shadowMap?.Dispose();
             throw;
         }
@@ -836,6 +841,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 _geometry.RasterRevision,
                 instanceCount);
             _viewCount = views.Length;
+            _frameBaseShadowBias = new float[views.Length];
+            for (int index = 0; index < views.Length; index++) _frameBaseShadowBias[index] = views[index].ResolutionLodBias;
             VirtualShadowMapFrameResources resources =
                 _shadowMap.AcquireFrameResources();
             graph.SetBufferInput(_framePageTable, new GraphBufferSlice(graph.Import(
@@ -869,7 +876,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
 
             graph.SetBufferInput(_frameShadowViews, graph.Upload(
                 views.IsEmpty ? [default(VirtualShadowView)] : views,
-                BufferUsages.ShaderRead,
+                BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
                 "Virtual shadow view parameters"));
             graph.SetBufferInput(_frameChangedInstances, graph.Upload<uint>(
                 _changedInstances.Count != 0 ? CollectionsMarshal.AsSpan(_changedInstances) : [0u],
@@ -914,6 +921,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 instanceCount,
                 checked((uint)_viewCount),
                 in receiverProjection);
+            StageWorkFeedback(ref graph, lights, views);
             _uniformData.Upload(ref graph);
             graph.ObserveExecution(this);
             _frameActive = true;
@@ -952,6 +960,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             ClearFrame();
             return;
         }
+        CommitWorkFeedback();
         _committedInstances = _frameInstances;
         _committedInstanceRevision = _frameInstanceRevision;
         _deformedInstances.Clear();
@@ -994,6 +1003,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             throw new InvalidOperationException("Finish or cancel the active graph frame before disposing virtual shadows.");
         _qualityReadbacks?.Requests.Clear();
         _dispatchLayout.Dispose();
+        _workFeedbackPipeline?.Dispose();
         _shadowMap.Dispose();
         Array.Clear(_shadowViews);
 
@@ -1203,6 +1213,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             PhysicalPagesPerRow = _shadowMap.Settings.PhysicalPagesPerRow,
             InstanceGroupCount = DivideRoundUp(checked((uint)instanceCount), 64u),
             HasPreviousHistory = _frameHasPreviousHistory ? 1u : 0u,
+            WorkFeedbackEnabled = _shadowMap.Settings.WorkThrottlingEnabled || _qualityReadbacks is not null ? 1u : 0u,
         };
         _uniformData.Write(ref graph, _frameInvocationUniforms, in compactUniforms);
         graph.SetPassDataIfChanged(_compactViewsPass,

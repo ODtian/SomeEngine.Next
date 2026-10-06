@@ -112,7 +112,7 @@ public struct VirtualShadowRasterWorkUniforms
     public uint PhysicalPagesPerRow;
     public uint InstanceGroupCount;
     public uint HasPreviousHistory;
-    public uint Pad0;
+    public uint WorkFeedbackEnabled;
     public uint Pad1;
 }
 
