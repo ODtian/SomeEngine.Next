@@ -270,11 +270,21 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         var receiver = new RenderView(Matrix4x4.Identity,
             Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
         shadows.BeginFrame();
-        VirtualShadowView[] views = shadows.PrepareViews(lights.RequireCurrent(), receiver, 1, 1, 1).ToArray();
+        RenderLightSet currentLights = lights.RequireCurrent();
+        VirtualShadowView[] views = shadows.PrepareViews(currentLights, receiver, 1, 1, 1).ToArray();
         // Native local bias is the nonmoving global bias plus the authored
         // per-light bias: .5 + .25 = .75, and .5 + .75 = 1.25.
-        Assert.Equal(.75f, views[0].ResolutionLodBias);
-        Assert.Equal(1.25f, views[6].ResolutionLodBias);
+        var expectedResolutionBiases = new Dictionary<Vector3, float>
+        {
+            [Vector3.Zero] = .75f,
+            [Vector3.UnitX] = 1.25f,
+        };
+        Assert.Equal(12, views.Length);
+        foreach (VirtualShadowView view in views)
+        {
+            Vector3 position = currentLights.Points[(int)view.LightIndex].Position;
+            Assert.Equal(expectedResolutionBiases[position], view.ResolutionLodBias);
+        }
     }
 
     [Fact]

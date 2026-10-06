@@ -74,13 +74,18 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceRecei
     Texture2D ARMMap;
     SamplerState MaterialSampler;
 
+    float3 sampleNormal(float2 uv, uint materialIndex)
+    {
+        return NormalMap.SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;
+    }
+
     SurfaceReceiver evaluateReceiver(uint3 pixelCoord, uint instanceID, uint materialIndex,
         SurfaceEval surface, float3 bary, Triangle triangle)
     {
         float3 baseNormal = normalize(surface.Normal);
         float3 tangent = normalize(surface.Tangent.xyz - baseNormal * dot(baseNormal, surface.Tangent.xyz));
         float3 bitangent = cross(baseNormal, tangent) * surface.Tangent.w;
-        float3 normalTS = NormalMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb * 2.0 - 1.0;
+        float3 normalTS = sampleNormal(surface.TexCoord, materialIndex);
         SurfaceReceiver receiver = (SurfaceReceiver)0;
         receiver.ShadingNormal = normalize(tangent * normalTS.x + bitangent * normalTS.y + baseNormal * normalTS.z);
         receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
@@ -117,7 +122,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceRecei
         if ((receiverData.Flags & SURFACE_RECEIVER_PRESENT) != 0u) mappedNormal = receiverData.ShadingNormal;
         else
         {
-            float3 normalTS = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;
+            float3 normalTS = sampleNormal(ctx.uv0, materialSlot);
             float3 T = normalize(ctx.worldTangent.xyz - N_geom * dot(N_geom, ctx.worldTangent.xyz));
             float3 B = cross(N_geom, T) * ctx.worldTangent.w;
             mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);

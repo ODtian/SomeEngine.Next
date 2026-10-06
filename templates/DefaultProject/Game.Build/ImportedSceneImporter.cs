@@ -88,7 +88,10 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
         string surface = File.ReadAllText(Path.Combine(defaults, "standard_material.slang"));
         surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
         surface = Replace(surface, "Texture2D ARMMap;", "Texture2D ARMMap;\n    Texture2D OcclusionMap;\n    Texture2D EmissiveMap;");
-        surface = Replace(surface, "float3 N_geom =", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom =");
+        surface = Replace(surface, "return NormalMap.SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;",
+            "float3 normal = NormalMap.SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;\n" +
+            "        normal.xy *= LoadMaterialScalars<StandardScalars>(materialIndex).NormalScale;\n" +
+            "        return normal;");
         surface = Replace(surface, "float3 baseColor = albedoSample.rgb", "float3 baseColor = SceneSrgbToLinear(albedoSample.rgb)");
         surface = Replace(surface, "float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;",
             "float ao = lerp(1.0, OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r, scalars.OcclusionStrength);\n" +

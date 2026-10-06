@@ -55,3 +55,5 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 实际构建71资产；视图通过当帧图区段上传到同一设备缓冲，工作反馈与其后消费者共用此数据。
 
 #148 第一人称完整帧公开行 `APlayersWorldRepresentationCastsIntoTheWorldThroughItsFirstPersonShadowFamily`：regular-only caller 的实际图像 red（1 failed，0 skipped，25秒，首次差异 byte16080）→Native FP family 合并 green（1 passed，0 skipped，27秒）。世界替身的完整颜色/深度与同位置普通 caster 一致，参考 caster 移开后阴影消失。固定 level10、4096分辨率、2048密度参考、零射线，以独立距离/密度计算选择同一光 frustum。此前 receiver 区段排序 RG4001、夹具 metrics 和空需求观察分别留作定位记录；af78c88a 的持久区段排序源片接合了主层和额外层。完整内容构建74资产通过，必要C#构建0警告/0错误；收尾保留同一行为参数和有效数据字节，接入 Native 调用方可见性及明确行为命名。原始日志、TRX、图像与hash位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-148/first-person/`。
+
+#153 的当前 Sponza 构建先以旧 normalTS 注入得到 Slang E30015，再以共用法线采样函数得到96资产构建成功（10.99秒）。用户 receiver 与最终着色 fallback 使用同一 glTF NormalScale 解释；必要默认内容77资产及应用构建通过。#154 的点光精度用例按公开视图到光位置关联验证两光全部六面，实际1 passed、0 skipped。原始日志、TRX和生成元数据差异在 F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/ticket-153/ 和 ticket-154/。
