@@ -10,6 +10,9 @@ VSM 构造普通 unified render views，并通过 geometry pipeline 能力使用
 由 VSM 设置产生并写入每个公开 `VirtualShadowView`；默认 `0.01` 对应米场景。
 shader 将距离转换为原版厘米，计算 `log2(distance)`，先找到未偏置级别对应的 VSM，
 再读取该 VSM 的 `ResolutionLodBias`。该偏置包含配置值与相机 viewport / projection 标度。
+Game/Render 三种 light records 的 `ShadowSettings` 使用共同 `LightShadowSettings`，
+包含本光分辨率偏置与静止/可移动语义。既有 `LightRenderExtractor` 按值提取，
+`RenderLightSet` 持有当帧光数据；方向、point、spot 投影叠加各自的偏置，scene codec 保存这些输入。
 例如距离 192 厘米、first level 6 时，未偏置 index 为 1；它的偏置为 1 时选择 index 2。
 页请求与材质采样共用 `SelectDirectionalVirtualShadowView`，从目标级别寻找覆盖该位置的投影。
 
