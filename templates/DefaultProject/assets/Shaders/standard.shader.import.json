@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "ac7e508ff6fe34d457f74fe46fdab18df7e3c4612896ccd7a57c485902b58bbf",
+  "input_hash": "9db7561e7b13cbbc960d0e7f0f746f42f3334816815d71a27fb2696b1c6906a4",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/brdf.slang",
@@ -137,15 +137,19 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_material.slang",
-      "content_hash": "9ec0e43724e068c4081d63914e59994311c89d421eed308dbc27789c224ea302"
+      "content_hash": "a8992bee5b85442f3b1eabee368173d8d49c654dec55e16dcd156999ade0c579"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_pixel.slang",
       "content_hash": "b9d00a5183d1f1e49798a64fcb7c917a7c0e2d692a9b0c37f44ac9f033506f3e"
     },
     {
+      "relative_path": "../../assets/Shaders/vsm_receiver_projection.slang",
+      "content_hash": "b805483aa53b5090eaec5c1e3620dd89c6a6b8a7d40a2dca94c4e612056bd672"
+    },
+    {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "c83dccdc8d32e3ea18853c58249aac35c490d9b604ed1cde34fee82bfd7106b0"
+      "content_hash": "fcc80475e5365b25d5d0e06963de30c0bd6f56083fb74434af00e5141358666a"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -169,7 +173,7 @@
     },
     {
       "relative_path": "assets/Shaders/standard_material.slang",
-      "content_hash": "6fe89de5fbce8b0ad96a8e07bf5ad0cf29f99c45a071c12b83adbf96f816b4ff"
+      "content_hash": "59c012daf28f9ed7a34a7785fe885ed445c04ebcbec9f053f48511a337cbbd09"
     }
   ],
   "reported_inputs": [],
@@ -177,11 +181,11 @@
     {
       "asset_guid": "e4eb98e0-2dcb-57d4-a7bb-bcb52ecae5bd",
       "sub_asset_key": "",
-      "input_hash": "ac7e508ff6fe34d457f74fe46fdab18df7e3c4612896ccd7a57c485902b58bbf",
+      "input_hash": "9db7561e7b13cbbc960d0e7f0f746f42f3334816815d71a27fb2696b1c6906a4",
       "dependencies": [],
       "asset_path": "standard.shader.asset",
-      "version": "a6a8c495-5c0e-a442-ae23-bf800b3f42ff",
-      "content_hash": "F796EB27209F8BD50268BE328048E0C299B27F373F4BABDD7265666AAA471D66",
+      "version": "a3b07562-be4f-0722-8d6e-3d24b3feb848",
+      "content_hash": "EBCA5DC9A466012E0A8C06CEBD1BC035B5DF45CD27D5F6D7A17ADCBC94EFEECD",
       "asset_dependencies": []
     }
   ]

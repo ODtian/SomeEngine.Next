@@ -68,7 +68,7 @@ public sealed class VirtualShadowInvalidationTests(D3D12TestCompiler shaderCompi
         bool allocated = true, float lightRange = 0)
     {
         // Public GPU view data: perspective projection, four pages per axis, one mip.
-        uint[] view = new uint[48];
+        uint[] view = new uint[52];
         Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, 1, lightRange > 0 ? lightRange : 10);
         MemoryMarshal.Cast<Matrix4x4, uint>(new[] { projection }.AsSpan()).CopyTo(view);
         view[16] = 512; view[17] = 128; view[18] = 512; view[19] = 4;
@@ -83,7 +83,7 @@ public sealed class VirtualShadowInvalidationTests(D3D12TestCompiler shaderCompi
         // Requests are deliberately empty: cached pages must be invalidated even when unused this frame.
         return new D3D12TestCompute(shaderCompiler).Execute("vsm_caster_invalidation.slang", "InvalidateMovedVirtualShadowCasters", new(1, 1, 1),
             [([1, 1, 16, 0, 3, 7, 1, 0], ResourceBindingType.ConstantBuffer, 0),
-             (view, ResourceBindingType.BufferSrv, 192),
+             (view, ResourceBindingType.BufferSrv, 208),
              (MemoryMarshal.Cast<Vector4, uint>(bounds.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),
              ([0], ResourceBindingType.BufferSrv, 4),
              (new uint[16], ResourceBindingType.BufferSrv, 4),
