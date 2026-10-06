@@ -653,6 +653,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BindInvalidation(ref edit, _invalidationUniforms);
                 BindCoarseMark(ref edit, _coarseDemandUniforms);
                 BindMark(ref edit, _demandUniforms);
+                InstallFroxels(ref edit, shaders, primaryDepthAfter);
                 BindPool(ref edit, _poolPass, _poolUniforms);
                 BindPool(ref edit, _poolPreparePass, _poolPrepareUniforms);
                 BindPool(ref edit, _poolCompactPass, _poolCompactUniforms);
@@ -713,6 +714,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             _prefilterRequestPipeline?.Dispose();
             _staticMergePipeline?.Dispose();
             _workFeedbackPipeline?.Dispose();
+            DisposeFroxelPipelines();
             _workTimeQueries?.Dispose();
             shadowMap?.Dispose();
             throw;
@@ -1010,6 +1012,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 instanceCount,
                 checked((uint)_viewCount),
                 in receiverProjection);
+            UpdateFroxels(ref graph, in receiverView, in geometry);
             StageWorkFeedback(ref graph, lights, views);
             StagePrefilter(ref graph, views);
             StageDistantBias(ref graph);
@@ -1111,6 +1114,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _prefilterRequestPipeline?.Dispose();
         _staticMergePipeline?.Dispose();
         _workFeedbackPipeline?.Dispose();
+        DisposeFroxelPipelines();
         if (_workTimeQueries is { } queries) _renderGraph.RetireAfterSubmittedFrames(queries);
         _shadowMap.Dispose();
         _blueNoiseFallback?.Dispose();
@@ -1456,6 +1460,11 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private void BindMark(ref RenderGraphEdit graph, GraphBufferInput uniforms)
     {
         PassDefinition pass = graph.GetPass(_markPass);
+        BindPageMarking(ref graph, ref pass, uniforms);
+    }
+
+    private void BindPageMarking(ref RenderGraphEdit graph, ref PassDefinition pass, GraphBufferInput uniforms)
+    {
         _ = pass.Bind(uniforms, PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(_frameShadowViews, structureStride: VirtualShadowView.SizeInBytes,
             label: "Virtual shadow demand views"), PipelineSync.ComputeShading);

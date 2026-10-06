@@ -68,6 +68,8 @@ public sealed partial record VirtualShadowMapSettings
     public float DepthBias { get; init; } = 0.000001f;
     public float NormalBias { get; init; } = 0.0005f;
     public uint DirectionalRayCount { get; init; } = 7;
+    public bool MarkPagesUsingFroxels { get; init; }
+    public bool HighQualityFrontLayerTranslucency { get; init; }
     public uint LocalRayCount { get; init; } = 7;
     public uint DirectionalSamplesPerRay { get; init; } = 8;
     public uint LocalSamplesPerRay { get; init; } = 8;

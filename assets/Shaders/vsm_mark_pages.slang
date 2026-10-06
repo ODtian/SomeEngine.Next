@@ -181,19 +181,16 @@ void PublishLocalShadowReceiver(uint2 pixel, float3 worldPosition, SurfaceReceiv
     }
 }
 
-[shader("compute")]
-[numthreads(8, 8, 1)]
-void MarkVirtualShadowPages(
-    uint3 dispatchThreadId : SV_DispatchThreadID)
+void MarkVirtualShadowReceiverPixel(uint2 pixel, uint requiredPrimaryFlags = 0u, uint excludedExtraFlags = 0u)
 {
-    uint2 pixel = dispatchThreadId.xy;
     if (pixel.x >= PageDemand.ReceiverWidth || pixel.y >= PageDemand.ReceiverHeight)
         return;
     uint receiverIndex = pixel.y * PageDemand.ReceiverWidth + pixel.x;
     SurfaceReceiver surfaceReceiver = ReceiverInputs[receiverIndex];
     bool declared = (surfaceReceiver.Flags & SURFACE_RECEIVER_PRESENT) != 0u;
     bool firstPerson = (surfaceReceiver.Flags & SURFACE_RECEIVER_FIRST_PERSON) != 0u;
-    bool primaryEligible = !declared || SurfaceReceiverHasLighting(surfaceReceiver);
+    bool primaryEligible = (!declared || SurfaceReceiverHasLighting(surfaceReceiver)) &&
+        (requiredPrimaryFlags == 0u || (surfaceReceiver.Flags & requiredPrimaryFlags) != 0u);
     bool backfaceCull = declared && PageDemand.CullBackfacingPixels != 0u && SurfaceReceiverUsesBackfaceCulling(surfaceReceiver);
     float depth = ReceiverDepth.Load(int4(pixel, 0, 0));
     bool primaryDepthValid = depth < 1.0;
@@ -222,7 +219,7 @@ void MarkVirtualShadowPages(
         for (uint layer = 0u; layer < PageDemand.AdditionalReceiverLayerCount; layer++)
         {
             SurfaceReceiver extra = AdditionalReceiverInputs[layer * PageDemand.ReceiverWidth * PageDemand.ReceiverHeight + receiverIndex];
-            if (!SurfaceReceiverHasLighting(extra) || extra.Depth < 0.0 || extra.Depth >= 1.0) continue;
+            if (!SurfaceReceiverHasLighting(extra) || (extra.Flags & excludedExtraFlags) != 0u || extra.Depth < 0.0 || extra.Depth >= 1.0) continue;
             float2 extraUV = (float2(pixel) + .5) / float2(PageDemand.ReceiverWidth, PageDemand.ReceiverHeight);
             float4 extraWorld = mul(float4(extraUV * float2(2.0, -2.0) + float2(-1.0, 1.0), extra.Depth, 1.0), PageDemand.ClipToWorld);
             float3 extraPosition = extraWorld.xyz / extraWorld.w;
@@ -253,9 +250,16 @@ void MarkVirtualShadowPages(
     for (uint layer = 0u; layer < PageDemand.AdditionalReceiverLayerCount; layer++)
     {
         SurfaceReceiver extra = AdditionalReceiverInputs[layer * PageDemand.ReceiverWidth * PageDemand.ReceiverHeight + receiverIndex];
-        if (!SurfaceReceiverHasLighting(extra) || (extra.Flags & SURFACE_RECEIVER_HAIR) == 0u || extra.Depth < 0.0 || extra.Depth >= 1.0) continue;
+        if (!SurfaceReceiverHasLighting(extra) || (extra.Flags & excludedExtraFlags) != 0u || (extra.Flags & SURFACE_RECEIVER_HAIR) == 0u || extra.Depth < 0.0 || extra.Depth >= 1.0) continue;
         float2 uv = (float2(pixel) + .5) / float2(PageDemand.ReceiverWidth, PageDemand.ReceiverHeight);
         float4 world = mul(float4(uv * float2(2.0,-2.0) + float2(-1.0,1.0), extra.Depth,1.0), PageDemand.ClipToWorld);
         PublishLocalShadowReceiver(pixel, world.xyz / world.w, extra, dynamicResolutionBias, false);
     }
+}
+
+[shader("compute")]
+[numthreads(8,8,1)]
+void MarkVirtualShadowPages(uint3 pixel : SV_DispatchThreadID)
+{
+    MarkVirtualShadowReceiverPixel(pixel.xy);
 }

@@ -5,9 +5,13 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages), nameof(Prefilter), nameof(PrefilterRequests), nameof(BlueNoise))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages), nameof(Prefilter), nameof(PrefilterRequests), nameof(BlueNoise), nameof(FroxelBuild), nameof(FroxelArguments), nameof(FroxelMark), nameof(FroxelPixel))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 {
+    public partial ShaderRef? FroxelBuild { get; set; }
+    public partial ShaderRef? FroxelArguments { get; set; }
+    public partial ShaderRef? FroxelMark { get; set; }
+    public partial ShaderRef? FroxelPixel { get; set; }
     public partial AssetId<TextureAsset>? BlueNoise { get; set; }
     public partial ShaderRef? ResetReceiverMasks { get; set; }
     public partial ShaderRef? ResetFrame { get; set; }
@@ -74,6 +78,14 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
             {
                 BlueNoise = noise,
                 Name = name,
+                FroxelBuildShader = copy.FroxelBuild is { } froxelBuild ? shaders[froxelBuild.Asset.Value] : null,
+                FroxelBuild = copy.FroxelBuild is { } froxelBuildEntry ? Resolve(froxelBuildEntry) : EntryPointReflection.Null,
+                FroxelArgumentsShader = copy.FroxelArguments is { } froxelArguments ? shaders[froxelArguments.Asset.Value] : null,
+                FroxelArguments = copy.FroxelArguments is { } froxelArgumentsEntry ? Resolve(froxelArgumentsEntry) : EntryPointReflection.Null,
+                FroxelMarkShader = copy.FroxelMark is { } froxelMark ? shaders[froxelMark.Asset.Value] : null,
+                FroxelMark = copy.FroxelMark is { } froxelMarkEntry ? Resolve(froxelMarkEntry) : EntryPointReflection.Null,
+                FroxelPixelShader = copy.FroxelPixel is { } froxelPixel ? shaders[froxelPixel.Asset.Value] : null,
+                FroxelPixel = copy.FroxelPixel is { } froxelPixelEntry ? Resolve(froxelPixelEntry) : EntryPointReflection.Null,
                 PrefilterRequestsShader = copy.PrefilterRequests is { } filterRequests ? shaders[filterRequests.Asset.Value] : null,
                 PrefilterRequests = copy.PrefilterRequests is { } filterRequestsEntry ? Resolve(filterRequestsEntry) : EntryPointReflection.Null,
                 PrefilterShader = copy.Prefilter is { } prefilter ? shaders[prefilter.Asset.Value] : null,

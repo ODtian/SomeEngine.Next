@@ -69,6 +69,7 @@ public sealed partial class ClusterPipelineSystem
             SurfaceReceivers = frame.SurfaceReceivers,
             AdditionalSurfaceReceivers = frame.AdditionalSurfaceReceivers,
             AdditionalReceiverLayerCount = frame.AdditionalReceiverLayerCount,
+            CurrentHiZ = frame.HiZ[0],
         };
         return phases;
     }

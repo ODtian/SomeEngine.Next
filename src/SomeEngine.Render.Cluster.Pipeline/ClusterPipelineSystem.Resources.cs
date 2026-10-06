@@ -680,6 +680,7 @@ public sealed partial class ClusterPipelineSystem
         int current = history.WriteIndex;
         graph.SetTextureInput(frame.PreviousHiZ, frame.HiZ[1 - current]);
         graph.SetTextureInput(frame.CurrentHiZ, frame.HiZ[current]);
+        GraphData.Outputs = GraphData.Outputs with { CurrentHiZ = frame.HiZ[current] };
     }
 
     private void RecordResidencyUploads(ref RenderGraphFrame graph, in ClusterRenderBinding binding)

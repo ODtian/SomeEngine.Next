@@ -246,6 +246,19 @@ double 中减去原点的光空间位置。`ClipmapCornerRelativeOffsetX/Y` 以�
 
 ## 跨帧页面顺序
 
+`MarkPagesUsingFroxels` 默认 false。启用后，从主几何最终 HiZ 的 mip0 取得深度，
+在8×8单元内按原版对数透视 slice 或线性正交 slice 去重，生成8字节 packed XY/Z。
+128字节参数由同一接收视图取得投影、相机逆视图、tile 标度、近端及深度 slice 标度。
+视图空间 AABB 经阴影视图 frustum 裁剪后按覆盖像素中心生成矩形，方向与局部光
+继续共用当前视图、光列表、DOF/分辨率偏移、页请求和接收单元掩码。
+水层采用方向光 froxel 请求；毛发和第一人称接收面继续使用像素资格路径。
+`HighQualityFrontLayerTranslucency` 和额外接收输入的 translucency 事实选择全视图像素请求。
+frame 区段生成坐标与计数，持久请求阶段消费其 indirect args；coarse 需求沿原有阶段合并。
+原版依据为固定提交的 `Froxel.cpp`、`Froxel.ush`、`FroxelBuild.ush`、
+`VirtualShadowMapArray.cpp:138–143,861–866`、`VirtualShadowMapPageMarking.usf:78–202,613–781`
+与 `NaniteHZBCull.ush:71–101`。来源 Git blob/SHA-256/字节数与直接结果位于
+仓库外 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-148/froxel/`。
+
 标准材质用用户表面着色法线执行阴影偏置和投射。偏置长度取相机距离除以投影横向标度，
 乘 `NormalBias`，下限为 `.02` 原版厘米。方向光完整光源角直径与局部光世界单位半径
 沿 `LightShadowSettings` 提取到同一304字节视图。投射结果带有效性、可见比例和遮挡距离；

@@ -374,6 +374,10 @@ public static class DefaultContent
         using var settings = new VirtualShadowMapShadersBlock
             {
                 BlueNoise = new AssetId<TextureAsset>(DefaultContentIds.ShadowBlueNoise),
+                FroxelBuild = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_build.shader"), "BuildVirtualShadowFroxels"),
+                FroxelArguments = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_build.shader"), "FinishVirtualShadowFroxelArguments"),
+                FroxelMark = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_mark.shader"), "MarkVirtualShadowFroxelPages"),
+                FroxelPixel = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_mark.shader"), "MarkVirtualShadowFroxelPixelReceivers"),
                 ResetReceiverMasks = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_receiver_mask_reset.shader"),
                     "ResetVirtualShadowReceiverMasks"),

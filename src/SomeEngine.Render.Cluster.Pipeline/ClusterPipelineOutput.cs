@@ -49,6 +49,7 @@ public readonly record struct ClusterPipelineOutputs(
     public GraphBufferId SurfaceReceivers { get; init; }
     public GraphBufferId AdditionalSurfaceReceivers { get; init; }
     public uint AdditionalReceiverLayerCount { get; init; }
+    public GraphTextureId CurrentHiZ { get; init; }
     public bool IsValid =>
         Visibility != default &&
         Depth != default &&
