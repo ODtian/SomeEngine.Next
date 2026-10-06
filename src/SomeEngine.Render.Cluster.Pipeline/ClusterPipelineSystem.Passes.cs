@@ -67,6 +67,8 @@ public sealed partial class ClusterPipelineSystem
             }, frame.Width, frame.Height, frame.ViewCount)
         {
             SurfaceReceivers = frame.SurfaceReceivers,
+            AdditionalSurfaceReceivers = frame.AdditionalSurfaceReceivers,
+            AdditionalReceiverLayerCount = frame.AdditionalReceiverLayerCount,
         };
         return phases;
     }
@@ -2020,6 +2022,10 @@ public sealed partial class ClusterPipelineSystem
         var receiverReset = new SurfaceReceiverReset(GraphData.Resources.SurfaceReceivers);
         _ = graph.AddCopyFramePass("Clear Cluster surface receivers", PassQueueSelection.AnyOfType(QueueType.Graphics),
             receiverReset, new PassOptions(RepeatCommands: true), SurfaceReceiverReset.Declare, SurfaceReceiverReset.Record,
+            region: receivers);
+        var extraReset = new SurfaceReceiverReset(GraphData.Resources.AdditionalSurfaceReceivers);
+        _ = graph.AddCopyFramePass("Clear Cluster additional surface receivers", PassQueueSelection.AnyOfType(QueueType.Graphics),
+            extraReset, new PassOptions(RepeatCommands: true), SurfaceReceiverReset.Declare, SurfaceReceiverReset.Record,
             region: receivers);
         GraphData.ShadeGroups = new GraphRegionMap<uint, ShadeGroup>(graph.AddRegion("Cluster shade materials", _regions.Shading), ShadeGroupComparer.Instance);
         GraphRegionId resolveRegion = graph.AddRegion("Cluster background resolve", _regions.Shading);

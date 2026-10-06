@@ -1,5 +1,6 @@
 #ifndef SURFACE_RECEIVER_SLANG
 #define SURFACE_RECEIVER_SLANG
+#include "surface_receiver_depth.slang"
 
 static const uint SURFACE_RECEIVER_PRESENT = 1u << 0;
 static const uint SURFACE_RECEIVER_LIGHTING = 1u << 1;
@@ -17,6 +18,14 @@ struct SurfaceReceiver
     float3 GeometricNormal;
     float Depth;
 };
+
+void WriteSurfaceReceiverLayer(RWStructuredBuffer<SurfaceReceiver> receivers, uint3 pixel,
+    uint2 screenSize, uint viewCount, uint layer, SurfaceReceiver receiver)
+{
+    uint index = ((layer * viewCount + pixel.z) * screenSize.y + pixel.y) * screenSize.x + pixel.x;
+    receiver.Flags |= SURFACE_RECEIVER_PRESENT;
+    receivers[index] = receiver;
+}
 
 interface ISurfaceReceiverEvaluate<TSurface, TTriangle>
 {

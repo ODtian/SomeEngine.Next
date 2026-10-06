@@ -49,7 +49,7 @@ public sealed class ShadowReceiverInputsTests(D3D12TestCompiler compiler)
         {
             LightViewProjection = Matrix4x4.Identity, VirtualResolution = 32, PageSize = 8, AtlasSize = 16,
             PhysicalPagesPerRow = 2, MaxPhysicalPages = 4, CacheGeneration = 7, MipLevelCount = 1,
-            ClipmapLevelCount = 1, WorldUnitsPerCentimeter = 100, LightDirection = new Vector3(0,0,-1),
+            ClipmapLevelCount = 1, ClipmapLevel = 6, FirstClipmapLevel = 6, WorldUnitsPerCentimeter = .01f, LightDirection = new Vector3(0,0,-1),
         };
         uint[] views = MemoryMarshal.Cast<byte,uint>(MemoryMarshal.AsBytes(new[] { view }.AsSpan())).ToArray();
         var demand = new VirtualShadowPageDemandUniforms

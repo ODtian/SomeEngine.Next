@@ -13,7 +13,7 @@ struct ShadeUniforms
     uint ShadingBin;
     uint ShadeBinCount;
     uint MaterialSlotCapacity;
-    uint Pad2;
+    uint ViewCount;
     uint Pad3;
 };
 
@@ -33,7 +33,15 @@ ByteAddressBuffer PageHeap;
 RWTexture2DArray<float4> OutputColor;
 RWTexture2DArray<float2> OutputMotionVectors;
 RWStructuredBuffer<SurfaceReceiver> SurfaceReceiverOutput;
+RWStructuredBuffer<SurfaceReceiver> AdditionalSurfaceReceiverOutput;
 StructuredBuffer<SurfaceReceiver> SurfaceReceiverInputs;
+
+// Layers are water, front translucency and hair. User shaders provide current-camera depth.
+void WriteAdditionalSurfaceReceiver(uint3 pixel, uint layer, SurfaceReceiver receiver)
+{
+    WriteSurfaceReceiverLayer(AdditionalSurfaceReceiverOutput, pixel,
+        uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight), Uniforms.ViewCount, layer, receiver);
+}
 
 struct TriangleInfo
 {

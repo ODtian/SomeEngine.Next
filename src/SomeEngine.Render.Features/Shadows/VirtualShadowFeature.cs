@@ -916,7 +916,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             graph.SetTextureInput(_receiverDepth, geometry.Depth);
             var receiverData = new GraphBufferSlice(geometry.SurfaceReceivers, BufferRange.Whole);
             graph.SetBufferInput(_surfaceReceivers, receiverData);
-            graph.SetBufferInput(_additionalReceivers, _additionalReceiverCount != 0u ? _additionalReceiverData : receiverData);
+            _frameAdditionalReceiverCount = _additionalReceiverCount != 0u ? _additionalReceiverCount : geometry.AdditionalReceiverLayerCount;
+            graph.SetBufferInput(_additionalReceivers, _additionalReceiverCount != 0u ? _additionalReceiverData :
+                new GraphBufferSlice(geometry.AdditionalSurfaceReceivers, BufferRange.Whole));
 
             GraphBufferSlice viewUpload = graph.Upload(
                 views.IsEmpty ? [default(VirtualShadowView)] : views,
@@ -1230,7 +1232,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 lights.Directional.Count + lights.Points.Count)),
             SpotViewOffset = _shadowMap.PendingSpotViewOffset,
             ReceiverViewIndex = 0u,
-            AdditionalReceiverLayerCount = _additionalReceiverCount,
+            AdditionalReceiverLayerCount = _frameAdditionalReceiverCount,
             CullBackfacingPixels = _shadowMap.Settings.CullBackfacingPixels ? 1u : 0u,
             FirstPersonPixelRequestBias = _shadowMap.Settings.FirstPersonPixelRequestBias,
             FirstPersonPixelRequestMinLevel = _shadowMap.Settings.FirstPersonPixelRequestMinLevel,

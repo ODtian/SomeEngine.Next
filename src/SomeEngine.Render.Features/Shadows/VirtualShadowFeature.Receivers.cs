@@ -9,6 +9,7 @@ public sealed partial class VirtualShadowFeature
     private GraphBufferInput _additionalReceivers = null!;
     private GraphBufferSlice _additionalReceiverData;
     private uint _additionalReceiverCount;
+    private uint _frameAdditionalReceiverCount;
 
     /// <summary>Supplies user-shader water, translucency or hair receiver layers in the current render view.</summary>
     public void SetAdditionalReceiverInputs(GraphBufferSlice receivers, uint layerCount)

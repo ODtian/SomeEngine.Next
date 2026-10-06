@@ -1762,6 +1762,8 @@ internal sealed class ClusterShadeStageSet
     internal ClusterBytes BinIndices { get; }
     internal IReadOnlyList<int> ChangedOffsets { get; }
     internal IEnumerable<ClusterShadeInvocation> Invocations => _bins.Values;
+    internal bool HasAdditionalReceivers => _bins.Values.Any(stage =>
+        stage.Receiver?.Resources.Contains("AdditionalSurfaceReceiverOutput") == true);
     internal uint BinCount { get; }
     internal ClusterShadeInvocation GetBin(uint bin) => _bins[bin];
     internal IReadOnlyList<uint> ChangedBins { get; }
@@ -1876,6 +1878,7 @@ internal enum ClusterShadeCoreResource : byte
     PageHeap,
     OutputColor,
     SurfaceReceiverOutput,
+    AdditionalSurfaceReceiverOutput,
     SurfaceReceiverInputs,
     OutputMotionVectors,
     MaterialScalars,
@@ -2457,7 +2460,7 @@ internal static class ClusterShadeCoreResources
             ClusterShadeCoreResource.MaterialScalars or
             ClusterShadeCoreResource.MaterialScalarOffsets => ResourceBindingType.BufferSrv,
             ClusterShadeCoreResource.SurfaceReceiverInputs => ResourceBindingType.BufferSrv,
-            ClusterShadeCoreResource.SurfaceReceiverOutput => ResourceBindingType.BufferUav,
+            ClusterShadeCoreResource.SurfaceReceiverOutput or ClusterShadeCoreResource.AdditionalSurfaceReceiverOutput => ResourceBindingType.BufferUav,
             ClusterShadeCoreResource.InstanceProperties or
             ClusterShadeCoreResource.Uniforms => ResourceBindingType.ConstantBuffer,
             ClusterShadeCoreResource.Visibility or
@@ -2489,6 +2492,7 @@ internal static class ClusterShadeCoreResources
         "PageHeap" => ClusterShadeCoreResource.PageHeap,
         "OutputColor" => ClusterShadeCoreResource.OutputColor,
         "SurfaceReceiverOutput" => ClusterShadeCoreResource.SurfaceReceiverOutput,
+        "AdditionalSurfaceReceiverOutput" => ClusterShadeCoreResource.AdditionalSurfaceReceiverOutput,
         "SurfaceReceiverInputs" => ClusterShadeCoreResource.SurfaceReceiverInputs,
         "OutputMotionVectors" => ClusterShadeCoreResource.OutputMotionVectors,
         "MaterialScalarRegion" => ClusterShadeCoreResource.MaterialScalars,
