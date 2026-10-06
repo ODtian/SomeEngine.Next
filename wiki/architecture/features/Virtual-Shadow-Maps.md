@@ -13,6 +13,11 @@ shader 将距离转换为原版厘米，计算 `log2(distance)`，先找到未�
 Game/Render 三种 light records 的 `ShadowSettings` 使用共同 `LightShadowSettings`，
 包含本光分辨率偏置与静止/可移动语义。既有 `LightRenderExtractor` 按值提取，
 `RenderLightSet` 持有当帧光数据；方向、point、spot 投影叠加各自的偏置，scene codec 保存这些输入。
+`RenderLightSetSystem` 维护渲染帧时钟和每光运动活动；默认可移动光在新增或变换更新后从因子 1
+经过 10 帧降到 0，静止光因子为 0。其全局配置由系统的 `lightActiveFrameCount` 输入提供。
+VSM 设置分别持有非移动与移动精度偏置，按
+`nonmoving + factor * (max(nonmoving, moving) - nonmoving)` 插值，再加本光偏置。
+默认移动偏置为方向光 0、局部光 1；方向光再叠加相机标度并取原版绝对偏置下界 0。
 例如距离 192 厘米、first level 6 时，未偏置 index 为 1；它的偏置为 1 时选择 index 2。
 页请求与材质采样共用 `SelectDirectionalVirtualShadowView`，从目标级别寻找覆盖该位置的投影。
 
