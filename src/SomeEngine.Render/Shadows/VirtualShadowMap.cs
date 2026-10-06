@@ -16,7 +16,7 @@ namespace SomeEngine.Render.Shadows;
 /// Owns persistent virtual-shadow page tables, physical-page allocation state, atlas storage and
 /// cross-frame readiness. Geometry pipelines consume imported frame resources but never own them.
 /// </summary>
-public sealed class VirtualShadowMap : IDisposable
+public sealed partial class VirtualShadowMap : IDisposable
 {
     public static ulong CalculatePageListBufferSize(uint capacity) => checked(4ul * (capacity + 1ul) * sizeof(uint));
     private readonly IGraphicsBackend _backend;
@@ -480,6 +480,7 @@ public sealed class VirtualShadowMap : IDisposable
                         lights.GetPointMobility(lightIndex), light.ShadowSettings.ResolutionLodBias),
                     physicalPagesPerRow,
                     pageTableEntriesPerView);
+                ConfigureLocalRepresentation(ref _views[viewIndex], receiverView, projection.M11);
                 _preparedLightViews[viewIndex] = lightView;
                 _preparedLightProjections[viewIndex] = projection;
             }
@@ -521,6 +522,7 @@ public sealed class VirtualShadowMap : IDisposable
                     lights.GetSpotMobility(lightIndex), light.ShadowSettings.ResolutionLodBias),
                 physicalPagesPerRow,
                 pageTableEntriesPerView);
+            ConfigureLocalRepresentation(ref _views[viewIndex], receiverView, projection.M11);
             _preparedLightViews[viewIndex] = lightView;
             _preparedLightProjections[viewIndex] = projection;
         }

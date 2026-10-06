@@ -19,7 +19,7 @@ public enum VirtualShadowCoarsePageMode
 }
 
 /// <summary>Virtual address-space, page-pool and atlas quality settings.</summary>
-public sealed record VirtualShadowMapSettings
+public sealed partial record VirtualShadowMapSettings
 {
     public bool Enabled { get; init; } = true;
     public uint VirtualResolution { get; init; } = 16_384;
