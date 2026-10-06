@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="cfe39d8e-6b36-465b-bdd4-dfebe81eebfc" name="boqi@BOQI-THE-DAEMON 2026-10-07 01:10:54" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-07T01:10:54.0421636+08:00" queuing="2026-10-07T01:10:54.0421640+08:00" start="2026-10-07T01:10:48.7876156+08:00" finish="2026-10-07T01:10:54.0526188+08:00" />
+  <TestSettings name="default" id="0dd8b17b-1228-463d-9644-e2c66ce04bef">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-07_01_10_54" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="a542d089-77d5-4ea2-8b07-7bfa79d673a0" testId="d8817a45-62c9-73e5-5849-070aa03029b6" testName="SomeEngine.Render.Tests.VirtualShadowViewTests.OrthographicCameraTargetCentersItsClipmapOrigin" computerName="BOQI-THE-DAEMON" duration="00:00:01.0004328" startTime="2026-10-07T01:10:52.7895648+08:00" endTime="2026-10-07T01:10:53.7677333+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a542d089-77d5-4ea2-8b07-7bfa79d673a0">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.InRange() Failure: Value not in range&#xD;
+Range:  (0.0937400013 - 0.0937599987)&#xD;
+Actual: 3.90625</Message>
+          <StackTrace>   at SomeEngine.Render.Tests.VirtualShadowViewTests.OrthographicCameraTargetCentersItsClipmapOrigin() in F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tests\SomeEngine.Render.Tests\VirtualShadowViewTests.cs:line 34&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Render.Tests.VirtualShadowViewTests.OrthographicCameraTargetCentersItsClipmapOrigin" storage="f:\.codex\worktrees\rg70-native-geometry-137\someengine.next\tests\someengine.render.tests\bin\release\net10.0\someengine.render.tests.dll" id="d8817a45-62c9-73e5-5849-070aa03029b6">
+      <Execution id="a542d089-77d5-4ea2-8b07-7bfa79d673a0" />
+      <TestMethod codeBase="F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tests\SomeEngine.Render.Tests\bin\Release\net10.0\SomeEngine.Render.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Render.Tests.VirtualShadowViewTests" name="OrthographicCameraTargetCentersItsClipmapOrigin" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="d8817a45-62c9-73e5-5849-070aa03029b6" executionId="a542d089-77d5-4ea2-8b07-7bfa79d673a0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.01] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.40]   Discovering: SomeEngine.Render.Tests&#xD;
+[xUnit.net 00:00:00.60]   Discovered:  SomeEngine.Render.Tests&#xD;
+[xUnit.net 00:00:00.65]   Starting:    SomeEngine.Render.Tests&#xD;
+[xUnit.net 00:00:03.56]       Assert.InRange() Failure: Value not in range&#xD;
+[xUnit.net 00:00:03.56]       Range:  (0.0937400013 - 0.0937599987)&#xD;
+[xUnit.net 00:00:03.56]       Actual: 3.90625&#xD;
+[xUnit.net 00:00:03.56]       Stack Trace:&#xD;
+[xUnit.net 00:00:03.57]         F:\.codex\worktrees\rg70-native-geometry-137\SomeEngine.Next\tests\SomeEngine.Render.Tests\VirtualShadowViewTests.cs(34,0): at SomeEngine.Render.Tests.VirtualShadowViewTests.OrthographicCameraTargetCentersItsClipmapOrigin()&#xD;
+[xUnit.net 00:00:03.57]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:03.64]   Finished:    SomeEngine.Render.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Error" timestamp="2026-10-07T01:10:53.7753678+08:00">
+        <Text>[xUnit.net 00:00:03.56]     SomeEngine.Render.Tests.VirtualShadowViewTests.OrthographicCameraTargetCentersItsClipmapOrigin [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

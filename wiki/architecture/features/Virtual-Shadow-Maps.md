@@ -86,6 +86,13 @@ clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 
 原版依据为 `VirtualShadowMapCacheManager.cpp:258–315`，公共用例
 `CameraDepthMovementUsesCachedRangeUntilTheNativeGuardbandIsCrossed` 检验实际世界点的投影结果。
 
+正交视图的 `RenderView.CameraTarget` 由既有相机/视图数据提供。启用
+`OrthographicProjectCameraTarget` 时，clipmap 的 XY/Z 原点及 `ClipmapWorldOrigin` 采用该目标位置；
+请求与采样的 distance level 沿该同一原点计算。Runtime 相机以位置、方向和目标距离持有实际目标，
+经 `RuntimeViewFrame` 进入 RenderWorld view。透视视图与默认目标输入沿相机原点建立投影。
+`OrthographicEstimateClipmapLevels` 与 `OrthographicClipmapLodBias` 表达原版 first-level 控制参数，
+默认分别为 true 与零；源依据为 `VirtualShadowMapClipmap.cpp:258–317,548–563`。
+
 独立验收目标以源 glTF 三角形、实例变换、透明度、几何法线射线起点为真值，
 使用同次提交的 raw/pre-TAA 输出和实际 jitter，保留全部有效接收者及边缘。
 方向光、point、spot 的参考/capture 修正由 #125 单独交付；当前源码构建不能证明最终数值质量。

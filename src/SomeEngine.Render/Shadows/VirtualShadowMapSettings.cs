@@ -15,6 +15,9 @@ public sealed record VirtualShadowMapSettings
     public uint DirectionalClipmapLevels { get; init; } = 17;
     public int DirectionalFirstClipmapLevel { get; init; } = 6;
     public uint DirectionalMinCameraViewportWidth { get; init; }
+    public bool OrthographicEstimateClipmapLevels { get; init; } = true;
+    public int OrthographicClipmapLodBias { get; init; }
+    public bool OrthographicProjectCameraTarget { get; init; } = true;
     public int DirectionalFirstCoarseClipmapLevel { get; init; } = 15;
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
     public float DirectionalResolutionLodBias { get; init; } = -2.0f;

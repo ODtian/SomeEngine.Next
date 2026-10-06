@@ -319,6 +319,8 @@ public sealed class VirtualShadowMap : IDisposable
             throw new ArgumentException("The receiver view must be invertible.", nameof(receiverView));
         Vector3 camera = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
         bool orthographicReceiver = receiverView.Projection.M44 >= 1f;
+        Vector3 clipmapOrigin = orthographicReceiver && Settings.OrthographicProjectCameraTarget &&
+            receiverView.CameraTarget is { } target ? target : camera;
         uint physicalPagesPerRow = Settings.AtlasSize / Settings.PageSize;
         uint virtualPagesPerRow = Settings.VirtualResolution / Settings.PageSize;
         uint pageTableEntriesPerView = Settings.PageTableEntriesPerView;
@@ -337,9 +339,9 @@ public sealed class VirtualShadowMap : IDisposable
                 : Vector3.UnitY;
             Vector3 right = Vector3.Normalize(Vector3.Cross(up, direction));
             Vector3 vertical = Vector3.Normalize(Vector3.Cross(direction, right));
-            float cameraRight = Vector3.Dot(camera, right);
-            float cameraVertical = Vector3.Dot(camera, vertical);
-            float cameraDepth = Vector3.Dot(camera, direction);
+            float cameraRight = Vector3.Dot(clipmapOrigin, right);
+            float cameraVertical = Vector3.Dot(clipmapOrigin, vertical);
+            float cameraDepth = Vector3.Dot(clipmapOrigin, direction);
             for (int clipmapLevel = 0; clipmapLevel < clipmapLevels; clipmapLevel++)
             {
                 int absoluteClipmapLevel = checked(
@@ -397,7 +399,7 @@ public sealed class VirtualShadowMap : IDisposable
                     VirtualPageOriginY = pageOriginY,
                     ClipmapLevel = absoluteClipmapLevel,
                     LightIndex = checked((uint)lightIndex),
-                    ClipmapWorldOrigin = camera,
+                    ClipmapWorldOrigin = clipmapOrigin,
                     ResolutionLodBias = resolutionLodBias,
                     FirstClipmapLevel = directionalCamera.FirstLevel,
                     WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
@@ -785,7 +787,9 @@ public sealed class VirtualShadowMap : IDisposable
             viewportWidth = MathF.Max(viewportWidth, MathF.Ceiling(2f * halfWidthCentimeters));
             projectionScale = 1f;
             int lastLevel = checked(firstLevel + (int)levelCount - 1);
-            firstLevel = Math.Max(0, Math.Max(firstLevel, checked((int)MathF.Floor(MathF.Log2(halfWidthCentimeters)))));
+            if (Settings.OrthographicEstimateClipmapLevels)
+                firstLevel = Math.Max(0, checked(Math.Max(firstLevel,
+                    (int)MathF.Floor(MathF.Log2(halfWidthCentimeters))) + Settings.OrthographicClipmapLodBias));
             levelCount = checked((uint)(Math.Max(firstLevel, lastLevel) - firstLevel + 1));
         }
         float resolutionScale = .5f * Settings.VirtualResolution / (viewportWidth * projectionScale);

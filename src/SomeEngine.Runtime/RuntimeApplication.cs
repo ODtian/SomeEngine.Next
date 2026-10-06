@@ -494,7 +494,8 @@ internal static class RuntimeApplication
             scene.Projection(boot.Width, boot.Height),
             boot.Width,
             boot.Height,
-            temporalFrameIndex: 0);
+            temporalFrameIndex: 0,
+            cameraTarget: scene.Camera.Target);
         Entity viewEntity = renderWorld.CreateEntity(initialView.View);
 
         using var renderDevice = new RenderDevice(backend, device, FrameTimeout);
@@ -809,7 +810,8 @@ internal static class RuntimeApplication
                     height,
                     submittedFrames,
                     temporalResolveEnabled: options.TemporalAntialiasing,
-                    cameraCut: cameraCut);
+                    cameraCut: cameraCut,
+                    cameraTarget: scene.Camera.Target);
                 viewSystem.Stage(viewFrame.View);
                 if (platform?.IsMeasuring != true) ui.DrawDebugWindow(
                     ref debugUiOpen,
