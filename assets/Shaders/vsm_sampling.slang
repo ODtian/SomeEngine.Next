@@ -880,8 +880,11 @@ bool TryFilterVirtualShadowPage(
         float2 texelCenter;
         if (!TryReadVirtualShadowDepthCached(parameters, pageTable, atlas, context,
                 uv, storedDepth, texelCenter)) return false;
-        float receiverDepth = ndc.z + dot(texelCenter - uv, receiverDepthGradient);
-        visibility = storedDepth >= 1.0 || receiverDepth <= storedDepth + parameters.DepthBias ? 1.0 : 0.0;
+        float slopeBias = 2.0 * max(0.0, -dot(texelCenter - uv, receiverDepthGradient));
+        float depthScale = length(float3(parameters.LightViewProjection[0][2],
+            parameters.LightViewProjection[1][2], parameters.LightViewProjection[2][2]));
+        slopeBias = min(slopeBias, 100.0 * parameters.WorldUnitsPerCentimeter * depthScale);
+        visibility = storedDepth >= 1.0 || ndc.z <= storedDepth + slopeBias + parameters.DepthBias ? 1.0 : 0.0;
         return true;
     }
     uint filterMip = context.MipLevel;
