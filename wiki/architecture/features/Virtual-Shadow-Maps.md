@@ -80,7 +80,23 @@ clipmap 使用原版绝对级别，默认 first 6 至 last 22。级别 L 的半�
 时先尝试较粗 mip/clipmap，再返回 false 与 lit 因子。默认局部光材质明确处理 false，
 后续帧仍请求缺失工作。旧 float 签名保留为兼容因子，不提供独立有效性证明。
 
-HiZ 只有一个图管理的持久存储：main 读取先前结果后，intermediate 更新脏页，
+`MeshSource` / `MeshInstance` 的 `DepthCacheClass` 经既有提取写入 `RenderMesh`，
+由实例几何 producer 写入共享实例存储中的单个 uint 列。默认 Dynamic，建筑导入声明 Static。
+用户的动画 vertex、domain 或 opacity 输入可声明 Dynamic；静态输入修改沿既有 caster/material 事件失效。
+当前和上帧分类随既有 world bounds 的 W 分量传给失效 shader，旧、新足迹各按实际分类更新。
+静态输入失效清除静态完成代号并刷新两类深度，动态输入失效保留静态完成代号。
+PageMetadata.y 保存完整静态深度及静态 HiZ 的完成代号；W 持有两类重绘和失效标记。
+静态 atlas 与动态/合并 atlas 共用页编号。绘制前，静态可留用页为动态纹理提供初值；
+静态失效页从零开始。SW、HW、mesh 和有限 tessellation 输出共同消费同一实例分类。
+静态光栅覆盖整页，动态光栅消费本帧接收者遮罩。main/post 绘制后的静态 merge 先于对应 HiZ。
+遮罩页每帧保持 dynamic uncached，接收掩码扩张从留用静态深度重新形成当前动态内容。
+共享 coarse 模式 2 的 ForceCacheDynamicCoarse 标记使仅 coarse 请求页留用 dynamic，
+detail 请求和 static 失效仍触发所需更新。未请求的已分配页保留其失效标记直到再次请求。
+质量回读分别给出 static/dynamic 的 HW/SW 可见 cluster/window；这些计数沿原版可见项边界产生。
+接收者、过滤、完成有效性共用 `vsm_receiver_projection.slang`、`vsm_sampling.slang`，
+generic raster adapter 共用 `cluster_policy_raster_output.slang` 与 `cluster_raster_target_output.slang`。
+
+HiZ 使用静态深度的一个图管理持久存储：main 读取先前结果后，intermediate 更新脏页，
 post 消费已保留的 deferred work，再更新 final 供下帧使用。不复制整池历史，
 不 replay 或重新从根发现 deferred work。未受影响的缓存页不复制或重建。
 参见 [[architecture/validation/Vsm-Depth-Coverage-135]]；已有分项公开输出/局部光 RT 检查，

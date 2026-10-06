@@ -35,4 +35,10 @@ float LoadClusterBoundsExpansion(ByteAddressBuffer data, uint metadata, uint ins
         CLUSTER_FLOAT32_PROPERTY_STRIDE);
 }
 
+uint LoadInstanceDepthCacheClass(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata, uint instanceId)
+{
+    return RenderInstanceLoad<uint>(data, LoadRenderInstanceMetadata(metadata, RENDER_DEPTH_CACHE_CLASS_METADATA_WORD),
+        instanceId, CLUSTER_UINT32_PROPERTY_STRIDE);
+}
+
 #endif

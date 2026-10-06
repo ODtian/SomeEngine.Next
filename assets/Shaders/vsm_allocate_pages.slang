@@ -1,5 +1,6 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
+#include "vsm_depth_cache.slang"
 #include "resource_effects.slang"
 #include "vsm_page_lists.slang"
 
@@ -182,18 +183,17 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     uint atlasPage = 0u;
     uint packedPage = VSM_PAGE_UNMAPPED;
     uint previousLayer = 0xFFFFFFFFu;
-    bool partialReceivers = sameTag && entry.w != view.CacheGeneration &&
-        (entry.w & VSM_PAGE_RECEIVER_DEPTH) == 0u &&
-        (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u;
+    bool partialReceivers = (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u &&
+        any(PageReceiverMasks[tableIndex] != 0xFFFFFFFFu.xx);
+    bool staticUncached = true;
+    bool dynamicUncached = true;
     bool previousHiZ = false;
     if (sameTag)
     {
         if (!DecodeVirtualShadowPage(entry.x, atlasPage))
             return;
-        // Metadata.y is the generation of completed whole-page HiZ, not allocation.
-        // A retagged/reused or masked/incomplete page cannot acquire prior history.
+        // Metadata.y identifies completed static depth and its full-page HiZ.
         previousHiZ = PageMetadata[atlasPage].y == view.CacheGeneration &&
-            (PageMetadata[atlasPage].w & VSM_PAGE_MASKED) == 0u &&
             (view.Flags & VSM_VIEW_PREVIOUS_PROJECTION_VALID) != 0u;
         previousLayer = previousHiZ ? atlasPage : 0xFFFFFFFFu;
         packedPage = entry.x;
@@ -203,11 +203,16 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         bool detailUpgrade =
             (requestFlags & VSM_PAGE_REQUEST_DETAIL) != 0u &&
             (previousFlags & VSM_PAGE_REQUEST_DETAIL) == 0u;
-        // A receiver-masked depth page is incomplete even if its projection and
-        // casters did not change. Render it fully once before retaining it.
-        if (entry.w == view.CacheGeneration && !detailUpgrade &&
-            (PageMetadata[atlasPage].w & VSM_PAGE_MASKED) == 0u)
-            return;
+        uint dirtyFlags = PageMetadata[atlasPage].w;
+        staticUncached = PageMetadata[atlasPage].y != view.CacheGeneration ||
+            (dirtyFlags & VSM_PAGE_INVALIDATE_STATIC) != 0u || detailUpgrade;
+        bool retainDynamicCoarse = (view.Flags & VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE) != 0u &&
+            (requestFlags & VSM_PAGE_REQUEST_DETAIL) == 0u && !staticUncached;
+        bool receiverRefresh = (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u && !retainDynamicCoarse;
+        dynamicUncached = staticUncached || entry.w != view.CacheGeneration ||
+            ((dirtyFlags & VSM_PAGE_INVALIDATE_DYNAMIC) != 0u && !retainDynamicCoarse) || receiverRefresh;
+        if (!staticUncached && !dynamicUncached) return;
+
     }
     else if (entry.x != VSM_PAGE_UNMAPPED && entry.x != VSM_PAGE_LOCKED)
     {
@@ -237,10 +242,12 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         PageReceiverMasks[tableIndex] = 0xFFFFFFFFu.xx;
     // Coarse/full receiver requests are whole-page work even on an invalidated page.
     partialReceivers = partialReceivers && any(PageReceiverMasks[tableIndex] != 0xFFFFFFFFu.xx);
-    PageMetadata[atlasPage].y = 0u;
+    if (staticUncached) PageMetadata[atlasPage].y = 0u;
     PageMetadata[atlasPage].z = requestFlags;
     PageMetadata[atlasPage].w = (partialReceivers ? VSM_PAGE_MASKED : 0u) |
-        (previousHiZ ? VSM_PAGE_PRIOR_HIZ : 0u);
+        (previousHiZ && !staticUncached ? VSM_PAGE_PRIOR_HIZ : 0u) |
+        (staticUncached ? VSM_PAGE_STATIC_UNCACHED : 0u) |
+        (dynamicUncached ? VSM_PAGE_DYNAMIC_UNCACHED : 0u);
     PublishDirtyPage(
         tableIndex,
         viewIndex,

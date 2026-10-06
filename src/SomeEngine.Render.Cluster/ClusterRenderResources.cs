@@ -707,6 +707,7 @@ public sealed class ClusterRenderResources : IDisposable
         private readonly ResolvedRenderInstanceProperty<RenderPreviousTransform> _previousTransform;
         private readonly ResolvedRenderInstanceProperty<uint> _bvhRoot;
         private readonly ResolvedRenderInstanceProperty<float> _boundsExpansion;
+        private readonly ResolvedRenderInstanceProperty<uint> _depthCacheClass;
 
         internal ClusterGeometryProducer(ClusterMeshCache meshes)
         {
@@ -718,6 +719,7 @@ public sealed class ClusterRenderResources : IDisposable
                 RenderInstanceTransformProperties.PreviousTransformKey);
             _bvhRoot = clusterProperties.Resolve<uint>(ClusterRenderFeature.BvhRootKey);
             _boundsExpansion = clusterProperties.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey);
+            _depthCacheClass = clusterProperties.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey);
         }
 
         public RenderInstancePropertyLayout Properties => ClusterRenderFeature.GeometryLayout;
@@ -742,6 +744,7 @@ public sealed class ClusterRenderResources : IDisposable
             {
                 destination.BindPerInstance(_bvhRoot);
                 destination.BindPerInstance(_boundsExpansion);
+                destination.BindPerInstance(_depthCacheClass);
             }
         }
 
@@ -755,7 +758,10 @@ public sealed class ClusterRenderResources : IDisposable
             if (previous) destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
             if (!mesh) return;
 
-            _meshes.ResolveInstanceGeometry(packet.Entities, packet.Read<RenderMesh>(),
+            Span<uint> depthClasses = destination.GetWriteSpan(_depthCacheClass);
+            ReadOnlySpan<RenderMesh> meshValues = packet.Read<RenderMesh>();
+            for (int row = 0; row < meshValues.Length; row++) depthClasses[row] = (uint)meshValues[row].DepthCacheClass;
+            _meshes.ResolveInstanceGeometry(packet.Entities, meshValues,
                 destination.GetWriteSpan(_bvhRoot), destination.GetWriteSpan(_boundsExpansion));
         }
 

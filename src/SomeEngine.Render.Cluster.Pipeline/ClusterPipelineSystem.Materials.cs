@@ -618,6 +618,7 @@ public sealed partial class ClusterPipelineSystem
                     label: $"Cluster neutral {resource.Name}"), PipelineSync.AllShading);
                 return true;
             case ("RasterTargetOutput", ResourceBindingType.TextureUav):
+            case ("RasterTargetStaticOutput", ResourceBindingType.TextureUav):
                 _ = pass.Bind(
                     graph.CreateTextureUav(
                         GraphData.Resources.NeutralPolicyOutput,

@@ -9,7 +9,10 @@
 
 #include "cluster_raster_target_resources.slang"
 #ifndef CLUSTER_TARGET_BOUNDS_ONLY
+#ifndef CLUSTER_RASTER_TARGET_METADATA_DECLARED
+#define CLUSTER_RASTER_TARGET_METADATA_DECLARED 1
 StructuredBuffer<uint4> RasterTargetPageMetadata;
+#endif
 Texture2DArray<float> RasterTargetCurrentHiZ;
 Texture2DArray<float> RasterTargetPreviousHiZ;
 #endif
@@ -169,7 +172,7 @@ bool ClusterTargetPolicyRasterBoundsWindow(
     float2 minUv,
     float2 maxUv,
     ClusterViewUniforms view,
-    out uint2 rasterWindow)
+    out uint2 rasterWindow, uint depthCacheClass = 0u)
 {
     rasterWindow = 0u.xx;
     if (!RasterBoundsCoverPixelCenters(minUv, maxUv, uint2(view.ScreenWidth, view.ScreenHeight)))
@@ -187,12 +190,12 @@ bool ClusterTargetPolicyRasterBoundsWindow(
             target, firstPixel, lastPixel, firstPage, lastPage))
         return false;
     return ClusterTargetCropRasterWindow(target, uint4(firstPage, lastPage),
-        firstPixel, lastPixel, rasterWindow);
+        firstPixel, lastPixel, rasterWindow, depthCacheClass);
 }
 
 bool ClusterTargetCropRasterWindow(
     ClusterRasterTargetView target, uint4 pages,
-    uint2 firstPixel, uint2 lastPixel, out uint2 rasterWindow)
+    uint2 firstPixel, uint2 lastPixel, out uint2 rasterWindow, uint depthCacheClass = 0u)
 {
     rasterWindow = 0u.xx;
     uint2 firstPage = pages.xy;
@@ -221,8 +224,11 @@ bool ClusterTargetCropRasterWindow(
                 uint tableIndex;
                 uint physicalPage;
                 if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, physicalPage) &&
-                    ClusterTargetReceiverAccepts(target, localPage, firstPixel, lastPixel))
+                    (depthCacheClass == 1u || ClusterTargetReceiverAccepts(target, localPage, firstPixel, lastPixel)))
                 {
+#ifndef CLUSTER_TARGET_BOUNDS_ONLY
+                    if (depthCacheClass == 1u && (RasterTargetPageMetadata[physicalPage].w & 8u) == 0u) continue;
+#endif
                     acceptedFirst = min(acceptedFirst, localPage);
                     acceptedLast = max(acceptedLast, localPage);
                     accepted = true;

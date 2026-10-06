@@ -23,6 +23,7 @@ public sealed class VirtualShadowFrameTests(D3D12TestCompiler shaderCompiler)
             new("PageRequestDispatchArguments", Enumerable.Repeat(0xdeadbeefu, gridWords - 13).ToArray(), ResourceBindingType.BufferUav, 0),
             new("AllocationFailures", Enumerable.Repeat(0xdeadbeefu, 7).ToArray(), ResourceBindingType.BufferUav, 0),
             new("PolicyRasterWorkCount", Enumerable.Repeat(0xdeadbeefu, 33).ToArray(), ResourceBindingType.BufferUav, 0),
+            new("DepthWorkCount", Enumerable.Repeat(0xdeadbeefu, 16).ToArray(), ResourceBindingType.BufferUav, 0),
         };
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_frame_reset.slang", "ResetVirtualShadowFrame",
             new DispatchArguments((uint)(gridWords + 255) / 256, 1, 1), inputs);

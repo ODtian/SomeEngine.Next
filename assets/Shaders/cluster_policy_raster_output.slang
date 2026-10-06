@@ -3,9 +3,19 @@
 
 #include "cluster_raster_shared.slang"
 #include "cluster_visibility_raster_output.slang"
+#define CLUSTER_TARGET_DEPTH_CACHE 1
 #include "cluster_raster_target_output.slang"
+#include "cluster_instance_properties.slang"
 
 StructuredBuffer<uint2> VisibleClusterRasterWindows;
+StructuredBuffer<DrawRequest> RasterOutputVisibleClusters;
+ByteAddressBuffer RasterOutputInstanceData;
+ConstantBuffer<RenderInstancePropertyMetadata> RasterOutputInstanceProperties;
+uint RasterOutputDepthCacheClass(uint visibleIndex)
+{
+    return LoadInstanceDepthCacheClass(RasterOutputInstanceData, RasterOutputInstanceProperties,
+        RasterOutputVisibleClusters[visibleIndex].InstanceID);
+}
 
 uint2 ClusterRasterTargetPixelOrigin(uint visibleClusterIndex, ClusterViewUniforms view)
 {
@@ -81,9 +91,9 @@ struct ClusterRasterOutputImageAtomic64 : IClusterRasterOutput
             WriteVisibilityWinnerImage(pixel, targetViewIndex, depth, visibilityValue);
             return;
         }
-        if (WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
+        if (WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth, RasterOutputDepthCacheClass(DecodeVisBufferVisibleClusterIndex(visibilityValue))))
             return;
-        WriteRasterTargetDepth(pixel, targetViewIndex, depth);
+        WriteRasterTargetDepth(pixel, targetViewIndex, depth, RasterOutputDepthCacheClass(DecodeVisBufferVisibleClusterIndex(visibilityValue)));
     }
 };
 
@@ -127,9 +137,9 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
                 visibilityValue);
             return;
         }
-        if (WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
+        if (WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth, RasterOutputDepthCacheClass(DecodeVisBufferVisibleClusterIndex(visibilityValue))))
             return;
-        WriteRasterTargetDepth(pixel, targetViewIndex, depth);
+        WriteRasterTargetDepth(pixel, targetViewIndex, depth, RasterOutputDepthCacheClass(DecodeVisBufferVisibleClusterIndex(visibilityValue)));
     }
 };
 
@@ -155,7 +165,7 @@ struct ClusterDicedRasterOutput<TPrimary : IClusterRasterOutput> : IClusterRaste
         if (targetPolicy == 0u)
             Primary.write(pixel, viewIndex, targetPolicy, targetViewIndex, depth, visibilityValue);
         else
-            WriteRasterTargetDepth(pixel, targetViewIndex, depth);
+            WriteRasterTargetDepth(pixel, targetViewIndex, depth, RasterOutputDepthCacheClass(DecodeVisBufferVisibleClusterIndex(visibilityValue)));
     }
 };
 
@@ -171,8 +181,8 @@ struct ClusterRasterOutputTarget : IClusterRasterOutput
     void write(int2 pixel, uint viewIndex, uint targetPolicy, uint targetViewIndex,
         float depth, uint visibilityValue)
     {
-        if (!WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
-            WriteRasterTargetDepth(pixel, targetViewIndex, depth);
+        if (!WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth, RasterOutputDepthCacheClass(DecodeVisBufferVisibleClusterIndex(visibilityValue))))
+            WriteRasterTargetDepth(pixel, targetViewIndex, depth, RasterOutputDepthCacheClass(DecodeVisBufferVisibleClusterIndex(visibilityValue)));
     }
 };
 

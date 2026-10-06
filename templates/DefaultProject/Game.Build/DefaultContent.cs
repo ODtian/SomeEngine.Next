@@ -72,6 +72,7 @@ public static class DefaultContent
             .Descriptor.MetadataWordOffset;
         int materialSlotOffset = layout.Resolve<uint>(ClusterRenderFeature.MaterialSlotOffsetKey)
             .Descriptor.MetadataWordOffset;
+        int depthCacheClass = layout.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey).Descriptor.MetadataWordOffset;
         int currentTransform = FindMetadataWordOffset(
             layout,
             RenderInstanceTransformProperties.CurrentTransformKey);
@@ -106,6 +107,7 @@ public static class DefaultContent
             static const uint CLUSTER_BOUNDS_EXPANSION_METADATA_WORD = {{boundsExpansion}}u;
             static const uint CLUSTER_BVH_ROOT_METADATA_WORD = {{bvhRoot}}u;
             static const uint CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD = {{materialSlotOffset}}u;
+            static const uint RENDER_DEPTH_CACHE_CLASS_METADATA_WORD = {{depthCacheClass}}u;
             static const uint RENDER_CURRENT_TRANSFORM_METADATA_WORD = {{currentTransform}}u;
             static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = {{previousTransform}}u;
 

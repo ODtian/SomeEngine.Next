@@ -15,7 +15,7 @@ public static class SceneSerialization
         .Register<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"))
         .Register<WorldOrigin, WorldOriginCodec>(Key(nameof(WorldOrigin), "x:f64;y:f64;z:f64"))
         .RegisterHierarchyDomain<DefaultHierarchyDomain>()
-        .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f"))
+        .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f;depthCache:u32"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
         .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f;dofPresent:u32;focus:f;infinityRadius:f;minRadius:f;maxRadius:f;depthBlurRadius:f;depthBlurExponent:f;shadowBiasStrength:f"))
         .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32"))
@@ -66,9 +66,10 @@ public static class SceneSerialization
         public void Write(ref DataWriter writer, in MeshSource value)
         {
             writer.WriteExternalReference(new(value.Mesh.Value)); writer.WriteSingle(value.BoundsExpansion);
+            writer.WriteUInt32((uint)value.DepthCacheClass);
         }
         public void Read(ref DataReader reader, out MeshSource value)
-            => value = new() { Mesh = new(reader.ReadExternalReference().Value), BoundsExpansion = reader.ReadSingle() };
+            => value = new() { Mesh = new(reader.ReadExternalReference().Value), BoundsExpansion = reader.ReadSingle(), DepthCacheClass = (DepthCacheClass)reader.ReadUInt32() };
     }
     private struct MotionCodec : ICanonicalComponentCodec<MeshMotion>
     {

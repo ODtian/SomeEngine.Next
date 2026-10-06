@@ -144,7 +144,7 @@ void EvaluateClusterRasterPixelImageAtomic64(
         WriteRasterTargetDepth(
             int2(input.Pos.xy),
             view.TargetViewIndex,
-            saturate(pixelResult.Depth));
+            saturate(pixelResult.Depth), RasterOutputDepthCacheClass(input.VisibleClusterIndex));
         discard;
     }
     WriteVisibilityWinnerImage(
@@ -176,7 +176,7 @@ void EvaluateClusterRasterPixelBufferAtomic64(
                 view.TargetViewIndex,
                 int2(input.Pos.xy)))
             discard;
-        WriteRasterTargetDepth(int2(input.Pos.xy), view.TargetViewIndex, saturate(pixelResult.Depth));
+        WriteRasterTargetDepth(int2(input.Pos.xy), view.TargetViewIndex, saturate(pixelResult.Depth), RasterOutputDepthCacheClass(input.VisibleClusterIndex));
         discard;
     }
     WriteVisibilityWinnerBuffer(
@@ -213,7 +213,7 @@ PSVisBufferOutput EvaluateClusterRasterPixelHardwareOnly(
         WriteRasterTargetDepth(
             int2(input.Pos.xy),
             view.TargetViewIndex,
-            saturate(pixelResult.Depth));
+            saturate(pixelResult.Depth), RasterOutputDepthCacheClass(input.VisibleClusterIndex));
         discard;
     }
     PSVisBufferOutput output;
@@ -335,13 +335,13 @@ void EvaluateClusterRasterPixelTarget(
     uint2 targetPixel;
     if (!ClusterRasterTargetWindowContainsPixel(
             input.VisibleClusterIndex, view.TargetViewIndex, int2(input.Pos.xy)) ||
-        !ResolveRasterTargetPixel(int2(input.Pos.xy), view.TargetViewIndex, targetPixel))
+        !ResolveRasterTargetPixel(int2(input.Pos.xy), view.TargetViewIndex, targetPixel, RasterOutputDepthCacheClass(input.VisibleClusterIndex)))
         discard;
     VisibilityPixelResult result =
         EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input);
     if (result.Visible == 0u)
         discard;
-    WriteRasterTargetPixelDepth(targetPixel, result.Depth);
+    WriteRasterTargetPixelDepth(targetPixel, result.Depth, RasterOutputDepthCacheClass(input.VisibleClusterIndex));
 }
 
 [shader("pixel")]

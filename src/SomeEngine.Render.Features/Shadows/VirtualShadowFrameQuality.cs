@@ -17,6 +17,10 @@ public sealed record VirtualShadowViewQuality(VirtualShadowLightKind LightKind, 
     VirtualShadowMipQuality[] Mips)
 {
     /// <summary>One accepted visible cluster/window, before material batch expansion.</summary>
+    public uint StaticHardwareVisibleItems { get; init; }
+    public uint StaticSoftwareVisibleItems { get; init; }
+    public uint DynamicHardwareVisibleItems { get; init; }
+    public uint DynamicSoftwareVisibleItems { get; init; }
     public uint HardwareVisibleItems { get; init; }
     public uint SoftwareVisibleItems { get; init; }
     public float WorkLodAddition { get; init; }
