@@ -818,6 +818,12 @@ public sealed class VirtualShadowMap : IDisposable
         MinMipLevel = 0u,
         Flags = VirtualShadowViewFlags.CoarseClipLevel |
             VirtualShadowViewFlags.ForceCacheDynamicCoarse |
+            (Settings.LocalMipMode switch
+            {
+                VirtualShadowLocalMipMode.Even => VirtualShadowViewFlags.EvenMipLevels,
+                VirtualShadowLocalMipMode.Odd => VirtualShadowViewFlags.OddMipLevels,
+                _ => 0u,
+            }) |
             (Settings.LocalReceiverMask ? VirtualShadowViewFlags.UseReceiverMask : 0u),
         LightKind = lightKind,
         FaceIndex = faceIndex,
