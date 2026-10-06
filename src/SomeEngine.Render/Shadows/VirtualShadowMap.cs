@@ -554,7 +554,8 @@ public sealed class VirtualShadowMap : IDisposable
                 _preparedLightProjections[index],
                 shadow.VirtualResolution,
                 shadow.VirtualResolution,
-                CameraCut: false);
+                CameraCut: false,
+                GeometryLodScale: Settings.ShadowGeometryLodScale);
         }
         return _pendingViewCount;
     }
@@ -826,7 +827,8 @@ public sealed class VirtualShadowMap : IDisposable
         (current.GeometryProjection ?? current.Projection).Equals(
             previous.GeometryProjection ?? previous.Projection) &&
         current.ViewportWidth == previous.ViewportWidth &&
-        current.ViewportHeight == previous.ViewportHeight;
+        current.ViewportHeight == previous.ViewportHeight &&
+        current.GeometryLodScale.Equals(previous.GeometryLodScale);
 
     private static uint NextCacheGeneration(uint value)
     {

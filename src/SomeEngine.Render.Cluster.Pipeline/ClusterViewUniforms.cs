@@ -14,7 +14,7 @@ internal struct ClusterViewUniforms
     internal Vector3 CameraPos;
     internal float LodThreshold;
 
-    internal uint Pad0;
+    internal float GeometryLodScale;
     internal uint MaxCandidates;
     internal float CullingRadius;
     internal uint InstanceCount;
@@ -45,7 +45,7 @@ internal struct ClusterViewUniforms
     internal uint TargetPolicy;
     internal uint TargetViewIndex;
     internal uint CullingProjectionIndex;
-    internal uint GeometryViewIndex;
+    internal float NearPlane;
     internal Matrix4x4 GeometryViewProj;
 
     internal static ClusterViewUniforms Create(
@@ -59,6 +59,8 @@ internal struct ClusterViewUniforms
         ArgumentNullException.ThrowIfNull(options);
         if (source.ViewportWidth == 0 || source.ViewportHeight == 0)
             throw new ArgumentException("A render view requires a non-empty viewport.", nameof(source));
+        if (!float.IsFinite(source.GeometryLodScale) || source.GeometryLodScale <= 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(source));
         ArgumentOutOfRangeException.ThrowIfNegative(instanceCount);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageFaultCapacity);
         if (!IsFinite(source.View) || !IsFinite(source.Projection))
@@ -83,6 +85,7 @@ internal struct ClusterViewUniforms
             ViewProj = viewProjection,
             CameraPos = cameraPosition,
             LodThreshold = options.LodThreshold,
+            GeometryLodScale = source.GeometryLodScale,
             MaxCandidates = options.MaxCandidates,
             InstanceCount = checked((uint)instanceCount),
             MaxPageFaults = checked((uint)pageFaultCapacity),
@@ -105,6 +108,7 @@ internal struct ClusterViewUniforms
             ClipToWorld = clipToWorld,
             TargetPolicy = 0u,
             TargetViewIndex = 0u,
+            NearPlane = source.Projection.M43 / source.Projection.M33,
             GeometryViewProj = source.View * (source.GeometryProjection ?? source.Projection),
         };
     }

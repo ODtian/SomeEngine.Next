@@ -195,7 +195,10 @@ bool ClusterNodePassesLod(
     float maxScale = abs(transform.Scale) *
         max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
     float worldRadius = node.LODSphere.w * maxScale;
-    return ClusterSphereError(worldCenter, worldRadius, node.LODError * maxScale, view) > view.LodThreshold;
+    float errorScale = view.TargetPolicy != 0u
+        ? abs(transform.Scale) * min(min(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z))
+        : maxScale;
+    return ClusterSphereError(worldCenter, worldRadius, node.LODError * errorScale, view) > view.LodThreshold;
 }
 
 #endif

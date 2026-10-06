@@ -76,8 +76,6 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     view.HiZMipCount = ViewCompact.PageHiZMipCount;
     view.HiZInvSize = 2.0.xx / float(max(mipResolution, 2u));
     view.TargetPolicy = 1u;
-    // Each light projection selects geometry at its own virtual-pixel scale.
-    view.GeometryViewIndex = 0u;
     view.TargetViewIndex = compactIndex;
     view.CullingProjectionIndex = sourceViewIndex + 1u;
     // A cube-face far plane also includes corners beyond the local light's sphere.

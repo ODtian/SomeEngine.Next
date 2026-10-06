@@ -72,5 +72,11 @@ clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 
 固定光源的遮挡者流送需求也由这些阴影视图产生，沿既有 RenderWorld 与驻留反馈通路接入。
 原版依据为固定提交 `396c9f059903aed5fec78ecd3d437a40c6415368` 的
 `NaniteShared.cpp:195–202` 与 `VirtualShadowMapArray.cpp:4958–4965,5008–5016`。
+透视几何误差以球的最近深度和视角界乘积作为投影距离；正交视图的该距离为一。
+像素倍率取光投影的 Y 标度与虚拟像素高。阴影层级及 cluster 的误差使用实例最小伸缩值，
+球半径使用最大伸缩值；父子几何选择消费一致的误差标度。
+`ShadowGeometryLodScale` 表达阴影视图的几何精度倍率，并通过普通 `RenderView.GeometryLodScale`
+传入相同的 typed view 上传。原版独立手算例和公开 RHI 输出见
+`artifacts/acceptance/ticket-137/projection-error/`。
 当前深度代号继续消费几何驻留与材质输入 revision；局部几何/材质失效在 #147 与静态/动态缓存
 #141 中接合每个遮挡者的实际影响范围。

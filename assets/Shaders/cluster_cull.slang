@@ -104,7 +104,10 @@ bool PassesLODFilter(
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
     float lodError = DecodeClusterLODError(cluster);
-    return ClusterSphereError(worldCenter, worldRadius, lodError * maxScale, view) <= view.LodThreshold;
+    float errorScale = view.TargetPolicy != 0u
+        ? abs(t.Scale) * min(min(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z))
+        : maxScale;
+    return ClusterSphereError(worldCenter, worldRadius, lodError * errorScale, view) <= view.LodThreshold;
 }
 
 void BuildClusterAabbScreenBoundsAndNearDepth(
@@ -368,7 +371,7 @@ bool LoadAndFilterCandidate(
             instanceID));
 
     if (!(work.KeepCoarseGeometry != 0u && view.CullingEnabled != 0u) &&
-        !PassesLODFilter(cluster, t, LoadClusterGeometryView(Views, view)))
+        !PassesLODFilter(cluster, t, view))
         return false;
 
 #if CLUSTER_CULL_PHASE == 2

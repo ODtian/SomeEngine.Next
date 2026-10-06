@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "24fa1b8aeb69f386ef0c42430cb07f227f480847464f5893065cd561c048f095",
+  "input_hash": "11e3fbf6c821ac85a6ba096fc6896c49d12351fc413bf21dcf97c67b94849d4a",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_view.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_view.slang",
-      "content_hash": "196ab6e9824d9774210d8cf79c7996925ad6e1df3a97e5346c9bc5c66c5963cf"
+      "content_hash": "3641895362aaf78444293b07d77ae27bd73d4b5e3b1887c39fd9d6eb08b5101a"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -25,11 +25,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "b3c0a99f20ca72aa7879c89178f07beae1ed9fa48c390570451ad10a881c5088"
+      "content_hash": "25beab71cbc92bb9b93ea7e32c4232d7483b9f4e7e9823717e667c96f12047a8"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_view_compact.slang",
-      "content_hash": "b9832b62451b527347e5f3073f00da0bc7aaf5d93b119f862ed29a8ae3667a73"
+      "content_hash": "360a505d4abd236f5d2dbf3021a83e4c3ddb77eed743ca71f9b0bccdb7ea451b"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_view_compact.slang",
@@ -49,11 +49,11 @@
     {
       "asset_guid": "5610ce5e-dcec-5518-affa-7a9efe3ce939",
       "sub_asset_key": "",
-      "input_hash": "24fa1b8aeb69f386ef0c42430cb07f227f480847464f5893065cd561c048f095",
+      "input_hash": "11e3fbf6c821ac85a6ba096fc6896c49d12351fc413bf21dcf97c67b94849d4a",
       "dependencies": [],
       "asset_path": "vsm_view_compact.shader.asset",
-      "version": "6e10ceae-4f37-0dbb-4dcd-716f137a6a47",
-      "content_hash": "264AF7F7577E3CFDBBABECE2C436148D6116B951C5AA0BAC6C930AE29AF57953",
+      "version": "4b9cf0c4-3fad-d155-a49e-02ecdc5775cf",
+      "content_hash": "0D9C6A5F044667963345DB0CA6718F14EDC0229CD0C178166C0F334D687A50F4",
       "asset_dependencies": []
     }
   ]
