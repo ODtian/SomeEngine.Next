@@ -483,8 +483,8 @@ internal sealed class RuntimeUiRenderer : IDisposable
             {
                 RecordedCommands[] payload = [recorded];
                 QueueSubmitDesc submission = new(default, default, payload, default, default);
-                QueueCompletion completion = DiagnosticGpuTimestamps.Submit(
-                    _backend, _backend.GetQueue(_device, QueueType.Graphics),
+                QueueCompletion completion = _backend.Submit(
+                    _backend.GetQueue(_device, QueueType.Graphics),
                     submission);
                 RuntimeWait.Position(_backend, completion, _window, ResourceTimeout);
             }

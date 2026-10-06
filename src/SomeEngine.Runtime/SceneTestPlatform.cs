@@ -49,7 +49,6 @@ public sealed class SceneTestPlatform
     private int _renderHeight;
     private string? _graphicsDevice;
     private string? _graphicsDriver;
-    internal int SampleFrameCount => _frames.Count;
     public bool IsMeasuring { get; private set; }
     public string? LastReport { get; private set; }
     public int GeometryMemoryMegabytes { get; private set; } = 256;
