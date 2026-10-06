@@ -184,6 +184,13 @@ domain 自身提供表面误差；primary 沿其已有用户配置。streaming �
 
 ## 相对世界坐标与 clipmap 地址
 
+零 ray 的直接比较采用原版几何 slope allowance：在反向深度中取
+`2 * max(0, slopeUV · texelCenterOffsetUV)`，并按100厘米的投影深度尺度限制。
+当前 forward-depth 表示使用等价的 `2 * max(0, -gradientUV · offsetUV)`。
+倾斜平面独立例的 receiver depth `.65`、stored depth `.5`、UV slope `-.4`、
+texel offset `.25` 产生 allowance `.2`，实际 public shader sampler 从 shadowed 到 lit。
+该片 TRX 与来源哈希保存在仓库外 `rg70-delivery-evidence/ticket-143/native-slope/`。
+
 `WorldOrigin` 是整个 Game world 的 double 原点，实例、相机与光源位置共用其局部 float 空间。
 `RenderView.WorldOrigin` 经唯一提取通路取得该原点，Cluster 560 字节视图记录携带当前和历史
 high/low 原点，阴影 272 字节视图记录携带同一 high/low 原点。请求、几何、光栅、HiZ 与采样
