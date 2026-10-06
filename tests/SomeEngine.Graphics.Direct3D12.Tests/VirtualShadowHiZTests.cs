@@ -80,7 +80,7 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
                     ResourceBinding.SampledTexture(atlasView),
                     ResourceBinding.StorageTexture(destinations[0]), ResourceBinding.StorageTexture(destinations[1]),
                     ResourceBinding.StorageTexture(destinations[2]), ResourceBinding.StorageTexture(destinations[3])], []));
-            backend.Dispatch(context, new DispatchArguments(2, 1, 64));
+            backend.Dispatch(context, new DispatchArguments(2, 8, 8));
             backend.Barrier(context, new TextureBarrier(hiz, new TextureSubresourceRange(3, 1, 0, 1, TextureAspects.Color),
                 PipelineSync.ComputeShading, PipelineSync.ComputeShading, ResourceAccess.UnorderedAccess, ResourceAccess.ShaderResource,
                 TextureLayout.UnorderedAccess, TextureLayout.ShaderResource));
