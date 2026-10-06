@@ -81,6 +81,7 @@ public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler)
                 view.ViewProj = orthographic
                     ? float4x4(0.3,0,0,0, 0,0.4,0,0, 0,0,0.1,0, 0.2,-0.3,0,1)
                     : float4x4(1.2,0,0,0.2, 0,0.8,0,0.3, 0.4,-0.3,-1,-1, 0.2,-0.3,-0.1,0);
+                view.GeometryViewProj = view.ViewProj;
                 float3 center = float3(-1.0+float(test)*0.05,0.35,-5.0-float(depth));
                 float projectedBound = ClusterSphereError(center,0.7,0.15,view);
                 float projectionViolation = -1e30;
