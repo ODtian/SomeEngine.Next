@@ -1,0 +1,12 @@
+[
+  {
+    "Path": "tests/SomeEngine.Render.Tests/bin/Release/net10.0/SomeEngine.Render.Tests.dll",
+    "SHA256": "6161554FCDFC62F6BAB947B980A21A117ABD7A557BC9AFCDC3F87B1829EB4EBC",
+    "Bytes": 176640
+  },
+  {
+    "Path": "tests/SomeEngine.Render.Tests/bin/Release/net10.0/SomeEngine.Render.dll",
+    "SHA256": "D86E4BA76CDB330CD5429BF44EA6B56AC175E4BD6C5D84A4C38660BCB9214E1C",
+    "Bytes": 319488
+  }
+]

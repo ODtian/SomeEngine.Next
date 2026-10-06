@@ -15,6 +15,31 @@ namespace SomeEngine.Render.Tests;
 public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     [Fact]
+    public async Task OrthographicCameraUsesTheNativeClipmapWidthAndFirstLevel()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+            new VirtualShadowMapSettings
+            {
+                VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 1,
+                DirectionalResolutionLodBias = 0f,
+            });
+        var lights = new RenderLightSet();
+        lights.AddDirectional(new RenderDirectionalLight(Vector3.UnitZ, Vector3.One, 1, uint.MaxValue,
+            new(0f, LightMobility.Static)));
+        var receiver = new RenderView(Matrix4x4.Identity, Matrix4x4.CreateOrthographic(4f, 4f, .1f, 100f), 128, 128);
+        shadows.BeginFrame();
+        VirtualShadowView[] views = shadows.PrepareViews(lights, receiver, 1, 1, 1).ToArray();
+        // Native ortho projection scale is one. Width400cm dominates viewport128,
+        // so .5*512/400=.64 gives the absolute bias lower bound zero.
+        // Half-width200cm selects first level seven, through last level22.
+        Assert.Equal(0f, views[0].ResolutionLodBias);
+        Assert.Equal(16, views.Length);
+        Vector4 clip = Vector4.Transform(new Vector4(5.12f, 0, 0, 1), views[0].LightViewProjection);
+        Assert.InRange(MathF.Abs(clip.X / clip.W), .99999f, 1.00001f);
+    }
+
+    [Fact]
     public async Task MovingPointLightBiasDecaysOverTenRenderedFramesAndRestartsAfterMovement()
     {
         using var world = new RenderWorld();
