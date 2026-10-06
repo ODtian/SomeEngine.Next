@@ -57,5 +57,10 @@ public sealed class ShadowGeometryRenderingTests
             Expected = expected.Metrics, Actual = actual.Metrics, Feedback = coarse.FeedbackStatistics }));
         Assert.True(actual.Metrics.Work.Complete);
         RasterImage.AssertEqual(expected, actual);
+        coarse.SetView(new(Matrix4x4.Identity, Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100),
+            64, 64, GeometryProjection: Matrix4x4.CreateOrthographic(.001f, .001f, .1f, 100)));
+        RasterImage cached = await coarse.ReadNextRasterImageAsync();
+        RasterImage.AssertEqual(expected, cached);
+        Assert.Equal(0ul, cached.Metrics.Work.TargetCandidateTests);
     }
 }

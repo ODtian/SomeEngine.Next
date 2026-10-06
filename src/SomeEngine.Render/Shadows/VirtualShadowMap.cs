@@ -53,8 +53,6 @@ public sealed class VirtualShadowMap : IDisposable
     private ulong _pendingRasterRevision;
     private uint _committedCacheGeneration;
     private uint _pendingCacheGeneration;
-    private RenderView _committedGeometryView;
-    private RenderView _frameGeometryView;
 
     public VirtualShadowMap(
         IGraphicsBackend backend,
@@ -306,7 +304,6 @@ public sealed class VirtualShadowMap : IDisposable
         _pendingGeometryRevision = geometryRevision;
         _pendingRasterRevision = rasterRevision;
         _pendingInstanceCount = instanceCount;
-        _frameGeometryView = receiverView;
         if (viewCount == 0)
         {
             _pendingCacheReset = !_initialized;
@@ -495,8 +492,7 @@ public sealed class VirtualShadowMap : IDisposable
             _initialized &&
             (geometryRevision != _committedGeometryRevision ||
              rasterRevision != _committedRasterRevision ||
-             instanceCount != _committedInstanceCount ||
-             !HasSameGeometrySelection(receiverView, _committedGeometryView));
+             instanceCount != _committedInstanceCount);
         _pendingCacheReset = !_initialized || viewLayoutChanged;
 
         uint generation = _committedCacheGeneration;
@@ -696,7 +692,6 @@ public sealed class VirtualShadowMap : IDisposable
         _committedInstanceCount = _pendingInstanceCount;
         _committedGeometryRevision = _pendingGeometryRevision;
         _committedRasterRevision = _pendingRasterRevision;
-        _committedGeometryView = _frameGeometryView;
         if (_committedViews.Length != _pendingViewCount)
             _committedViews = new VirtualShadowView[_pendingViewCount];
         _views.AsSpan(0, _pendingViewCount).CopyTo(_committedViews);
@@ -834,14 +829,6 @@ public sealed class VirtualShadowMap : IDisposable
         };
     }
 
-    private static bool HasSameGeometrySelection(in RenderView current, in RenderView previous) =>
-        current.View.Equals(previous.View) &&
-        (current.GeometryProjection ?? current.Projection).Equals(
-            previous.GeometryProjection ?? previous.Projection) &&
-        current.ViewportWidth == previous.ViewportWidth &&
-        current.ViewportHeight == previous.ViewportHeight &&
-        current.GeometryLodScale.Equals(previous.GeometryLodScale);
-
     private static uint NextCacheGeneration(uint value)
     {
         uint next = value + 1u;
@@ -853,7 +840,7 @@ public sealed class VirtualShadowMap : IDisposable
         in VirtualShadowView left,
         in VirtualShadowView right) =>
         (left.LightKind == VirtualShadowLightKind.Directional
-            ? HasSameLinearProjection(left.LightViewProjection, right.LightViewProjection)
+            ? HasSameDirectionalDepthProjection(left.LightViewProjection, right.LightViewProjection)
             : left.LightViewProjection.Equals(right.LightViewProjection)) &&
         left.VirtualResolution == right.VirtualResolution &&
         left.PageSize == right.PageSize &&
@@ -879,14 +866,14 @@ public sealed class VirtualShadowMap : IDisposable
         left.MinPixelsPerEdgeHardware.Equals(right.MinPixelsPerEdgeHardware) &&
         left.DicingRate.Equals(right.DicingRate);
 
-    private static bool HasSameLinearProjection(Matrix4x4 left, Matrix4x4 right) =>
+    private static bool HasSameDirectionalDepthProjection(Matrix4x4 left, Matrix4x4 right) =>
         left.M11.Equals(right.M11) && left.M12.Equals(right.M12) &&
         left.M13.Equals(right.M13) && left.M14.Equals(right.M14) &&
         left.M21.Equals(right.M21) && left.M22.Equals(right.M22) &&
         left.M23.Equals(right.M23) && left.M24.Equals(right.M24) &&
         left.M31.Equals(right.M31) && left.M32.Equals(right.M32) &&
         left.M33.Equals(right.M33) && left.M34.Equals(right.M34) &&
-        left.M44.Equals(right.M44);
+        left.M43.Equals(right.M43) && left.M44.Equals(right.M44);
 
     public void Dispose()
     {

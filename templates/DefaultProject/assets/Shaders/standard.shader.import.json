@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 29,
-  "input_hash": "254b059440b3f80626ad94e4f024715d129764b0e67317c66ee11aa2ede14a4d",
+  "input_hash": "ac7e508ff6fe34d457f74fe46fdab18df7e3c4612896ccd7a57c485902b58bbf",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/brdf.slang",
@@ -169,7 +169,7 @@
     },
     {
       "relative_path": "assets/Shaders/standard_material.slang",
-      "content_hash": "25b61a516419112f16ac066f2eb1393a72179619189f8b83bb175fd90d58eb6c"
+      "content_hash": "6fe89de5fbce8b0ad96a8e07bf5ad0cf29f99c45a071c12b83adbf96f816b4ff"
     }
   ],
   "reported_inputs": [],
@@ -177,11 +177,11 @@
     {
       "asset_guid": "e4eb98e0-2dcb-57d4-a7bb-bcb52ecae5bd",
       "sub_asset_key": "",
-      "input_hash": "254b059440b3f80626ad94e4f024715d129764b0e67317c66ee11aa2ede14a4d",
+      "input_hash": "ac7e508ff6fe34d457f74fe46fdab18df7e3c4612896ccd7a57c485902b58bbf",
       "dependencies": [],
       "asset_path": "standard.shader.asset",
-      "version": "187ec1ae-06ee-9dcb-4c3f-6a6f879302d0",
-      "content_hash": "5DF13E13D4C8C011B473548ACDE3076887579D60C0B59522B135169321D4A234",
+      "version": "a6a8c495-5c0e-a442-ae23-bf800b3f42ff",
+      "content_hash": "F796EB27209F8BD50268BE328048E0C299B27F373F4BABDD7265666AAA471D66",
       "asset_dependencies": []
     }
   ]
