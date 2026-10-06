@@ -314,10 +314,10 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
     }
 
     private static RenderDirectionalLight ExtractDirectional(in DirectionalLight source)
-        => new(source.Direction, source.Color, source.Intensity, source.LayerMask);
+        => new(source.Direction, source.Color, source.Intensity, source.LayerMask, source.ShadowSettings);
 
     private static RenderPointLight ExtractPoint(in PointLight source)
-        => new(source.Position, source.Range, source.Color, source.Intensity, source.LayerMask);
+        => new(source.Position, source.Range, source.Color, source.Intensity, source.LayerMask, source.ShadowSettings);
 
     private static RenderSpotLight ExtractSpot(in SpotLight source)
         => new(
@@ -328,7 +328,8 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             source.OuterConeCos,
             source.Color,
             source.Intensity,
-            source.LayerMask);
+            source.LayerMask,
+            source.ShadowSettings);
 
     private static RenderLightCookie ExtractCookie(in LightCookie source)
         => new(source.Texture, source.Strength, source.ScaleOffset, source.WorldToCookie);

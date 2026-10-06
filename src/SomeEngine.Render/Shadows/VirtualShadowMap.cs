@@ -328,7 +328,8 @@ public sealed class VirtualShadowMap : IDisposable
         uint pageTableEntriesPerView = Settings.PageTableEntriesPerView;
         for (int lightIndex = 0; lightIndex < directionalLightCount; lightIndex++)
         {
-            Vector3 direction = NormalizeOrZero(lights.Directional[lightIndex].Direction);
+            RenderDirectionalLight light = lights.Directional[lightIndex];
+            Vector3 direction = NormalizeOrZero(light.Direction);
             if (direction == Vector3.Zero)
                 direction = Vector3.UnitZ;
             Vector3 up = MathF.Abs(Vector3.Dot(direction, Vector3.UnitY)) > 0.95f
@@ -389,7 +390,7 @@ public sealed class VirtualShadowMap : IDisposable
                     ClipmapLevel = absoluteClipmapLevel,
                     LightIndex = checked((uint)lightIndex),
                     ClipmapWorldOrigin = camera,
-                    ResolutionLodBias = resolutionLodBias,
+                    ResolutionLodBias = resolutionLodBias + light.ShadowSettings.ResolutionLodBias,
                     FirstClipmapLevel = Settings.DirectionalFirstClipmapLevel,
                     WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
                     ClipmapLevelCount = Settings.DirectionalClipmapLevels,
@@ -438,6 +439,7 @@ public sealed class VirtualShadowMap : IDisposable
                     faceIndex,
                     light.Position,
                     light.Range,
+                    Settings.LocalResolutionLodBias + light.ShadowSettings.ResolutionLodBias,
                     physicalPagesPerRow,
                     pageTableEntriesPerView);
                 _preparedLightViews[viewIndex] = lightView;
@@ -477,6 +479,7 @@ public sealed class VirtualShadowMap : IDisposable
                 0u,
                 light.Position,
                 light.Range,
+                Settings.LocalResolutionLodBias + light.ShadowSettings.ResolutionLodBias,
                 physicalPagesPerRow,
                 pageTableEntriesPerView);
             _preparedLightViews[viewIndex] = lightView;
@@ -766,6 +769,7 @@ public sealed class VirtualShadowMap : IDisposable
         uint faceIndex,
         Vector3 lightPosition,
         float lightRange,
+        float resolutionLodBias,
         uint physicalPagesPerRow,
         uint pageTableEntriesPerView) => new()
     {
@@ -779,7 +783,7 @@ public sealed class VirtualShadowMap : IDisposable
         PageTableOffset = checked((uint)viewIndex * pageTableEntriesPerView),
         ClipmapLevel = -1,
         LightIndex = lightIndex,
-        ResolutionLodBias = Settings.LocalResolutionLodBias,
+        ResolutionLodBias = resolutionLodBias,
         FirstClipmapLevel = -1,
         ClipmapLevelCount = 1u,
         MipLevelCount = Settings.MipLevelCount,
