@@ -1,5 +1,7 @@
 # Selected-frame linear shadow references (#125)
 
+原始输出已移入仓库外验收归档；文中的 `artifacts/acceptance/` 路径对应归档内目录。归档身份与结果摘要见 [#70 验收记录](../../../docs/agents/acceptance-70.md)。
+
 ## Status and scope
 
 **Initial checkpoint: CPU-tested partial delivery. Later public capture/six-case GPU validation is recorded in [Shadow-Reference-Gpu-125](Shadow-Reference-Gpu-125.md); full #125 acceptance remains partial.** Branch `agent/rg70-reference-125`, initially clean at integration `35295fbfb429a451fb0f591fde84f76839bb9414`. No production Cluster/VSM shader, `VirtualShadowFeature`, `ClusterPipelineSystem`, or Runtime `ShadowImageTests` modification by this slice. #134 was subsequently merged; #135 retains its production responsibilities. The integration coordinator records the delivery commit separately.

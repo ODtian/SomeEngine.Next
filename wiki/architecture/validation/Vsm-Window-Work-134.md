@@ -1,5 +1,7 @@
 # Draw-valid windows and bounded raster work — #134
 
+原始输出已移入仓库外验收归档；文中的 `artifacts/acceptance/` 路径对应归档内目录。归档身份与结果摘要见 [#70 验收记录](../../../docs/agents/acceptance-70.md)。
+
 Scope: [#134](https://github.com/ODtian/SomeEngine.Next/issues/134), parent [#132](https://github.com/ODtian/SomeEngine.Next/issues/132), implement-spec [#70](https://github.com/ODtian/SomeEngine.Next/issues/70). **Source/shader and concentrated public-behavior acceptance, not final #125 RT accuracy or #127/#81 performance acceptance.**
 
 ## Version and ownership
@@ -107,7 +109,7 @@ dotnet test tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.cspr
 git diff --check
 ```
 
-[Retained acceptance files](../../../artifacts/acceptance/ticket-134) include exact console commands' output, TRX, builds, SDK, source/content hash manifest and startup log. Discovery counts below are actual result rows, not source-theory estimates; no separate list-tests command was run.
+[Retained acceptance files](../../../docs/agents/acceptance-70.md) include exact console commands' output, TRX, builds, SDK, source/content hash manifest and startup log. Discovery counts below are actual result rows, not source-theory estimates; no separate list-tests command was run.
 
 The main concentrated records below use `eef09345` source/shaders. The final declaration-only `b82a9dc9` follow-up reran the completed target-work and typed pressure seams; shader/content hashes are unchanged.
 

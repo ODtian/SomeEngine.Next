@@ -1,5 +1,7 @@
 # VSM HiZ lifetime and completed receiver depth — #135
 
+原始输出已移入仓库外验收归档；文中的 `artifacts/acceptance/` 路径对应归档内目录。归档身份与结果摘要见 [#70 验收记录](../../../docs/agents/acceptance-70.md)。
+
 Scope: [#135](https://github.com/ODtian/SomeEngine.Next/issues/135), parent [#132](https://github.com/ODtian/SomeEngine.Next/issues/132), implement-spec [#70](https://github.com/ODtian/SomeEngine.Next/issues/70). **Initial source checkpoint plus serialized GPU continuation. Concentrated public/local RT results are recorded below, but a native testhost abort blocks completion. No wrong-baseline numerical red, default three-scene RT/beauty or performance acceptance is claimed.**
 
 ## Version and access boundary
@@ -91,7 +93,7 @@ git diff --check
 
 The initial Runtime build failed with missing Alimer.Bindings/MeshOptimizer (2 warnings, 8 errors), before the pinned own submodule `8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4` was initialized. This dependency failure is not a behavioral red. The first D3D12 test-project build also exposed the inherited sloped test calling nonexistent static `ExecuteSource` (0 warnings, 1 error). Its call now uses the already supplied `D3D12TestCompute(shaderCompiler)` fixture, with unchanged assertions; the subsequent build passed. A text edit initially rejected a nonunique `#endif` match; no replacement occurred, and the corrected unique edit succeeded. Neither event is acceptance evidence.
 
-Exact final production commit, final build/check commands and source/content SHA-256 manifest are recorded with the retained [checkpoint artifacts](../../../artifacts/acceptance/ticket-135/README.md). No transient probe/script was created; generated shader packets/catalog are reproducible build products, not committed binaries or runtime validation.
+Exact final production commit, final build/check commands and source/content SHA-256 manifest are recorded with the retained [checkpoint artifacts](../../../docs/agents/acceptance-70.md). No transient probe/script was created; generated shader packets/catalog are reproducible build products, not committed binaries or runtime validation.
 
 ## Initial readiness / unchanged final gates
 

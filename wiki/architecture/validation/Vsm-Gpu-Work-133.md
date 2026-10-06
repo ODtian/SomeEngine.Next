@@ -1,5 +1,7 @@
 # Actual GPU target work and deferred lifetime — #133
 
+原始输出已移入仓库外验收归档；文中的 `artifacts/acceptance/` 路径对应归档内目录。归档身份与结果摘要见 [#70 验收记录](../../../docs/agents/acceptance-70.md)。
+
 Scope: [#133](https://github.com/ODtian/SomeEngine.Next/issues/133), parent [#132](https://github.com/ODtian/SomeEngine.Next/issues/132), implement-spec [#70](https://github.com/ODtian/SomeEngine.Next/issues/70). This is a source/shader and targeted-behavior checkpoint, **not final #125 quality or #127 performance acceptance**.
 
 ## Base and recovery
@@ -76,7 +78,7 @@ The settings packets match the recovery checkpoint. Quality was not reduced to o
 
 ## Concentrated verification
 
-Retained artifacts: [`artifacts/acceptance/ticket-133`](../../../artifacts/acceptance/ticket-133). All runs were in the owned tree, with parent authorization for content generation and targeted GPU/public rendering validation.
+Retained artifacts: [`artifacts/acceptance/ticket-133`](../../../docs/agents/acceptance-70.md). All runs were in the owned tree, with parent authorization for content generation and targeted GPU/public rendering validation.
 
 | Check | Result |
 | --- | --- |

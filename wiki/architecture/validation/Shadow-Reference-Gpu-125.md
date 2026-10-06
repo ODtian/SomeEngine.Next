@@ -1,5 +1,7 @@
 # Public linear capture and concentrated local RT validation (#125)
 
+原始输出已移入仓库外验收归档；文中的 `artifacts/acceptance/` 路径对应归档内目录。归档身份与结果摘要见 [#70 验收记录](../../../docs/agents/acceptance-70.md)。
+
 ## Result and boundary
 
 **Public selected-frame raw capture and six targeted local-light cases are validated on the delivered #134 integration. #125 remains open; the whole focused acceptance scope remains partial. GPU was explicitly released after the final six isolated runs.** No final three-scene RT/beauty/backend/performance run occurred, and no #135 production acceptance is implied.

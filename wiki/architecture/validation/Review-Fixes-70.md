@@ -1,5 +1,7 @@
 # Combined review fixes checkpoint — #70/#125/#127/#132/#135
 
+原始输出已移入仓库外验收归档；文中的 `artifacts/acceptance/` 路径对应归档内目录。归档身份与结果摘要见 [#70 验收记录](../../../docs/agents/acceptance-70.md)。
+
 This is a measurable source checkpoint, **not complete acceptance or issue closure**. Standards and Spec remain separate axes. Parent owns the subsequent three-scene rebuild/reference/quality/performance gate. #79/#80/#134 were actually reopened; historical closure is not current acceptance.
 
 ## Standards

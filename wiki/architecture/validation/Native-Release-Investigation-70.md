@@ -1,5 +1,7 @@
 # Public local-light native release investigation — #70 / #125 / #135
 
+原始输出已移入仓库外验收归档；文中的 `artifacts/acceptance/` 路径对应归档内目录。归档身份与结果摘要见 [#70 验收记录](../../../docs/agents/acceptance-70.md)。
+
 ## Verdict
 
 **Not reproduced in this concentrated window; root cause remains unknown and no native release fix is claimed.** The original three `0xC0000005` testhost aborts remain failed process runs. Passing rendering or a later completed batch does not turn those failures into passes or skips. Native reliability and actual default three-scene acceptance remain open.
