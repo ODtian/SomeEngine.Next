@@ -3,16 +3,11 @@ using System.Numerics;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
-internal sealed record ShadowReferenceComparison(int ShadowedPixels, int LitPixels, int MismatchedPixels,
-    int ComparedPixels, float MismatchFraction, float MeanVisibilityError, float MaximumVisibilityError,
-    int MissedShadowPixels, int FalseShadowPixels);
-
 internal static class ShadowReferenceImage
 {
-    internal static ShadowReferenceComparison Compare(string directory, ShadowReferenceRays rays, string light,
+    internal static ShadowReferenceComparison Compare(string directory, ShadowReferenceRays rays, int width, int height,
         int edgeExclusionPixels = 2)
     {
-        int width = ShadowReferenceScene.ImageWidth(light), height = ShadowReferenceScene.ImageHeight(light);
         float[] shadowed = ReadLinearColor(Path.Combine(directory, "shadowed.bmp"), width, height);
         float[] lit = ReadLinearColor(Path.Combine(directory, "unshadowed.bmp"), width, height);
         float[] ambient = ReadLinearColor(Path.Combine(directory, "ambient.bmp"), width, height);
@@ -26,12 +21,12 @@ internal static class ShadowReferenceImage
             {
                 int pixel = y * width + x;
                 if (!rays.ReceiverAt(x, y, out Vector3 position, out Vector3 normal)) continue;
-                Vector3 toLight = ShadowReferenceScene.IsPointLight(light) ? ShadowReferenceScene.PointLightPosition(light) - position : -rays.LightDirection;
+                Vector3 toLight = rays.ToLight(position);
                 if (Vector3.Dot(normal, Vector3.Normalize(toLight)) < .15f) continue;
                 if (lit[pixel] - ambient[pixel] < .03f) continue;
                 positions[pixel] = position;
                 normals[pixel] = normal;
-                expected[pixel] = rays.Occluded(position, normal, light) ? 0 : 1;
+                expected[pixel] = rays.Occluded(position, normal) ? 0 : 1;
                 observed[pixel] = (shadowed[pixel] - ambient[pixel]) / (lit[pixel] - ambient[pixel]);
             }
 
@@ -67,11 +62,11 @@ internal static class ShadowReferenceImage
                 csv.WriteLine(FormattableString.Invariant(
                     $"{x},{y},{position.X:R},{position.Y:R},{position.Z:R},{normal.X:R},{normal.Y:R},{normal.Z:R},{visibility},{observed[pixel]:R},{error:R}"));
             }
-        WriteBitmap(Path.Combine(directory, "triangle-reference.bmp"), width, height,
+        ShadowImageFiles.WriteGrayscale(Path.Combine(directory, "triangle-reference.bmp"), width, height,
             expected.Select(value => value < 0 ? (byte)127 : (byte)(value * 255)).ToArray());
-        WriteBitmap(Path.Combine(directory, "rendered-visibility.bmp"), width, height,
+        ShadowImageFiles.WriteGrayscale(Path.Combine(directory, "rendered-visibility.bmp"), width, height,
             observed.Select(value => (byte)Math.Clamp(value * 255, 0, 255)).ToArray());
-        WriteBitmap(Path.Combine(directory, "visibility-error.bmp"), width, height, difference);
+        ShadowImageFiles.WriteGrayscale(Path.Combine(directory, "visibility-error.bmp"), width, height, difference);
         int compared = darkCount + litCount;
         return new(darkCount, litCount, mismatched, compared, compared == 0 ? 1 : (float)mismatched / compared,
             compared == 0 ? 1 : sumError / compared, maxError, missed, falseShadows);

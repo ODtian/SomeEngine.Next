@@ -1,0 +1,23 @@
+diff --git a/tests/SomeEngine.Render.Cluster.Tests/LocalLightRayShadowTests.cs b/tests/SomeEngine.Render.Cluster.Tests/LocalLightRayShadowTests.cs
+index 3a0ae29b..aa8c6670 100644
+--- a/tests/SomeEngine.Render.Cluster.Tests/LocalLightRayShadowTests.cs
++++ b/tests/SomeEngine.Render.Cluster.Tests/LocalLightRayShadowTests.cs
+@@ -42,0 +43,18 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
++    [Fact]
++    public async Task RepeatedLocalLightStartupAndShutdownPreservesIndependentShadows()
++    {
++        for (int repetition = 0; repetition < 3; repetition++)
++        {
++            using var scene = await LocalScene.CreateAsync("spot", output);
++            var settings = new VirtualShadowMapSettings { DynamicResolutionEnabled = true };
++            SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 64, [])
++                { WaitForFrames = false, ShadowSettings = settings });
++            SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 64, [])
++                { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
++            await ShadowReferenceScene.WriteWorldAsync(scene.Content, "spot", illuminated: false);
++            SceneLinearImage ambient = await scene.CaptureAsync("ambient", new(scene.Content, 64, [])
++                { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
++            AssertAccuracy(await scene.CompareAsync(shadowed, unshadowed, ambient));
++        }
++    }
++

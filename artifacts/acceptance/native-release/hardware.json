@@ -1,0 +1,12 @@
+[
+  {
+    "Name": "NVIDIA GeForce RTX 3080",
+    "DriverVersion": "32.0.16.1074",
+    "PNPDeviceID": "PCI\\VEN_10DE&DEV_2206&SUBSYS_146D10DE&REV_A1\\4&31024D2F&0&0018"
+  },
+  {
+    "Name": "MuMu Virtual Display Adapter",
+    "DriverVersion": "20.36.41.498",
+    "PNPDeviceID": "ROOT\\DISPLAY\\0000"
+  }
+]

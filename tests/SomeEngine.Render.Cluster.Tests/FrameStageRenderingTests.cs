@@ -46,7 +46,8 @@ public sealed class FrameStageRenderingTests
         using var compressed = new GZipStream(file, CompressionMode.Decompress);
         using var expected = new MemoryStream();
         await compressed.CopyToAsync(expected);
-        Assert.Equal(expected.ToArray(), pixels);
+        ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, expected.ToArray()),
+            new(64, 64, Format.R16G16B16A16Float, pixels));
     }
 
     [Theory]
@@ -68,7 +69,8 @@ public sealed class FrameStageRenderingTests
         changed.UseMaterial(material);
         byte[] current = await changed.ReadPostProcessedColorAsync();
         Assert.NotEqual(previous, current);
-        Assert.Equal(expected, current);
+        ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, expected),
+            new(64, 64, Format.R16G16B16A16Float, current));
     }
 }
 
@@ -240,7 +242,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
 
     internal static async Task<FrameStageScene> CreateAsync(string backendName, bool shadows,
         ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null,
-        VirtualShadowMapSettings? shadowSettings = null)
+        VirtualShadowMapSettings? shadowSettings = null, DeviceFeatures optionalFeatures = DeviceFeatures.None)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -287,7 +289,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         backend.TryEnumerateAdapters(enumeration, adapters, out _);
         Device device = backend.CreateDevice(new DeviceDesc(adapters.First(item => item.HardwareAccelerated).Id,
             [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)],
-            requiredFeatures: DeviceFeatures.IndirectCommands));
+            requiredFeatures: DeviceFeatures.IndirectCommands, optionalFeatures: optionalFeatures));
         return new FrameStageScene(backend, device, mesh, standard, unlit, clusterShaders,
             shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName, shadowSettings);
     }
@@ -371,9 +373,11 @@ internal sealed class FrameStageScene : IAsyncDisposable
 
     internal void RemoveMaterialMesh(Entity entity) => _gameWorld.DestroyEntity(entity);
 
-    internal Material CreateRasterMaterial(RasterMaterialKind kind, Vector4 color)
+    internal Material CreateRasterMaterial(RasterMaterialKind kind, Vector4 color) =>
+        CreateRasterMaterial(RasterTestShaders.Create(_backendName, kind), color);
+
+    internal Material CreateRasterMaterial(Shader shader, Vector4 color)
     {
-        Shader shader = RasterTestShaders.Create(_backendName, kind);
         byte[] pixel = [(byte)(color.X * 255), (byte)(color.Y * 255), (byte)(color.Z * 255), (byte)(color.W * 255)];
         var texture = SomeEngine.Resources.Texture.Create(
             new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,
@@ -554,4 +558,14 @@ internal sealed class FrameStageScene : IAsyncDisposable
     }
 }
 
-internal sealed record RasterImage(byte[] Color, byte[] Depth, ClusterFrameMetrics Metrics);
+internal sealed record RasterImage(byte[] Color, byte[] Depth, ClusterFrameMetrics Metrics)
+{
+    internal static void AssertEqual(RasterImage expected, RasterImage actual,
+        [System.Runtime.CompilerServices.CallerMemberName] string test = "")
+    {
+        ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, expected.Color),
+            new(64, 64, Format.R16G16B16A16Float, actual.Color), test + "-color");
+        ImageArtifacts.AssertEqual(new(64, 64, Format.D32Float, expected.Depth),
+            new(64, 64, Format.D32Float, actual.Depth), test + "-depth");
+    }
+}

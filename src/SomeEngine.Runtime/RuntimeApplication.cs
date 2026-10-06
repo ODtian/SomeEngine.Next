@@ -588,7 +588,7 @@ internal static class RuntimeApplication
         }) with { Enabled = options.VirtualShadows };
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
-            metrics: options.VerifyFrameOutput);
+            metrics: options.VerifyFrameOutput || options.LinearFrameOutputPath is not null || script is not null);
         using var virtualShadows = new VirtualShadowFeature(
             backend,
             device,
@@ -847,7 +847,10 @@ internal static class RuntimeApplication
                 if (captureBeauty)
                     outputVerifier ??= new FrameOutputVerifier(backend, device, width, height, PresentationFormat);
                 if (captureLinear)
+                {
                     linearVerifier ??= new FrameOutputVerifier(backend, device, width, height, Format.R16G16B16A16Float);
+                    if (shadowSettings.Enabled) virtualShadows.EnableQualityCapture();
+                }
                 Prepare(
                     prepareSystems,
                     cluster,
@@ -902,6 +905,7 @@ internal static class RuntimeApplication
                     ClusterWorkCapacity = script?.ClusterWorkCapacity ?? 1_048_576,
                     Adapter = device.Adapter.Name, DriverVersion = device.Adapter.DriverVersion,
                 }) : null;
+                VirtualShadowFrameQuality? shadowQuality = null;
                 long executeStarted = Stopwatch.GetTimestamp();
                 FrameOutputMetrics? frameOutput = ExecuteFrame(
                     backend,
@@ -931,6 +935,7 @@ internal static class RuntimeApplication
                     frameOutputRegion,
                     captureLinear ? linearVerifier : null,
                     linearOutputRegion,
+                    captureLinear && shadowSettings.Enabled ? value => shadowQuality = value : null,
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
                     options.SynchronousFrames,
                     options.TemporalAntialiasing,
@@ -962,7 +967,13 @@ internal static class RuntimeApplication
                 }
                 if (captureLinear)
                 {
-                    SceneLinearImage captured = linearVerifier!.CopyLinearImage(capturedFrame!);
+                    ClusterRenderDiagnostics diagnostics = cluster.CaptureDiagnostics();
+                    ClusterResidencyDiagnostics residency = diagnostics.Residency;
+                    capturedFrame = capturedFrame! with { Quality = new SceneRenderingQuality(shadowQuality,
+                        pipeline.CaptureFrameMetrics(), new(diagnostics.Meshes.RegisteredMeshes, diagnostics.Meshes.PublishedMeshes,
+                            residency.RegisteredPages, residency.ResidentPages, residency.MissingPages,
+                            residency.QueuedPageLoads, residency.ActivePageLoads, residency.PageLoadFailures)) };
+                    SceneLinearImage captured = linearVerifier!.CopyLinearImage(capturedFrame);
                     if (selectedCapture && options.LinearFrameOutputPath is not null)
                     {
                         captured.Save(options.LinearFrameOutputPath);
@@ -1255,6 +1266,7 @@ internal static class RuntimeApplication
         GraphRegionId frameOutputRegion,
         FrameOutputVerifier? linearVerifier,
         GraphRegionId linearOutputRegion,
+        Action<VirtualShadowFrameQuality>? captureShadowQuality,
         RenderGraphDiagnosticsHandler? graphDiagnostics,
         bool synchronousFrames,
         bool temporalAntialiasing,
@@ -1307,6 +1319,7 @@ internal static class RuntimeApplication
                             jitterPixels: jitterPixels);
                     ui.Record(ref graphFrame, width, height);
                     if (image is null) return null;
+                    if (captureShadowQuality is not null) virtualShadows.CaptureQuality(ref graphFrame, captureShadowQuality);
                     outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue, frameOutputRegion);
                     if (reportMilestones)
                         Console.WriteLine("First frame: analyzing and submitting render graph.");

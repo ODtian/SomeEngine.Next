@@ -2,6 +2,9 @@ using System.Numerics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using SomeEngine.Core.Math;
+using SomeEngine.ECS;
+using SomeEngine.Render;
+using SomeEngine.Render.Components;
 using SomeEngine.Render.Shadows;
 using SomeEngine.Runtime;
 using Xunit.Abstractions;
@@ -16,28 +19,56 @@ public sealed class LocalLightReferenceCollection;
 public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
 {
     [Theory]
-    [InlineData("point")]
-    [InlineData("spot")]
-    [InlineData("point-range")]
-    [InlineData("spot-cone")]
-    public async Task LocalLightShadowsMatchIndependentSourceTriangles(string light)
+    [InlineData(SceneLightKind.Point, 20f, 30f, 40f)]
+    [InlineData(SceneLightKind.Spot, 20f, 30f, 40f)]
+    [InlineData(SceneLightKind.Point, 9.3f, 300f, 40f)]
+    [InlineData(SceneLightKind.Spot, 20f, 30f, 20f)]
+    public async Task LocalLightShadowsMatchIndependentSourceTriangles(SceneLightKind light, float range, float intensity, float outerDegrees)
     {
-        using var scene = await LocalScene.CreateAsync(light, output);
+        ShadowReferenceInputs inputs = CreateInputs(world =>
+        {
+            if (light == SceneLightKind.Point) world.CreateEntity(new PointLight(new(-4, 2, -3), range, Vector3.One, intensity));
+            else world.CreateEntity(new SpotLight(new(-4, 2, -3), range, Vector3.Normalize(new(4, -2, -5)),
+                MathF.Cos(MathF.PI / 12), MathF.Cos(outerDegrees * MathF.PI / 180), Vector3.One, intensity));
+        });
+        using var scene = await LocalScene.CreateAsync(inputs, light.ToString(), output);
         var settings = new VirtualShadowMapSettings { DynamicResolutionEnabled = true };
         SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 64, [])
             { WaitForFrames = false, ShadowSettings = settings });
         SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 64, [])
             { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
-        await ShadowReferenceScene.WriteWorldAsync(scene.Content, light, illuminated: false);
+        await ShadowReferenceScene.WriteWorldAsync(scene.Content, inputs with { AddLights = null });
         SceneLinearImage ambient = await scene.CaptureAsync("ambient", new(scene.Content, 64, [])
             { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
         RayShadowComparison comparison = await scene.CompareAsync(shadowed, unshadowed, ambient);
         AssertAccuracy(comparison);
-        if (light == "point-range") Assert.True(comparison.RangeRejectedPixels > 0);
-        if (light == "spot-cone") Assert.True(comparison.ConeRejectedPixels > 0);
-        if (light.StartsWith("point", StringComparison.Ordinal))
+        if (range < 10) Assert.True(comparison.RangeRejectedPixels > 0);
+        if (light == SceneLightKind.Spot && outerDegrees == 20) Assert.True(comparison.ConeRejectedPixels > 0);
+        if (light == SceneLightKind.Point)
             Assert.True(comparison.CubeFaceReceiverPixels.Count(count => count > 0) >= 2,
                 "The point fixture must cross a cube-face boundary without removing either side.");
+        scene.Complete();
+    }
+
+    [Fact]
+    public async Task RepeatedLocalLightStartupAndShutdownPreservesIndependentShadows()
+    {
+        for (int repetition = 0; repetition < 3; repetition++)
+        {
+            ShadowReferenceInputs inputs = CreateInputs(world => world.CreateEntity(new SpotLight(new(-4, 2, -3), 20,
+                Vector3.Normalize(new(4, -2, -5)), MathF.Cos(MathF.PI / 12), MathF.Cos(MathF.PI * 2 / 9), Vector3.One, 30)));
+            using var scene = await LocalScene.CreateAsync(inputs, "spot", output);
+            var settings = new VirtualShadowMapSettings { DynamicResolutionEnabled = true };
+            SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 64, [])
+                { WaitForFrames = false, ShadowSettings = settings });
+            SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 64, [])
+                { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
+            await ShadowReferenceScene.WriteWorldAsync(scene.Content, inputs with { AddLights = null });
+            SceneLinearImage ambient = await scene.CaptureAsync("ambient", new(scene.Content, 64, [])
+                { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
+            AssertAccuracy(await scene.CompareAsync(shadowed, unshadowed, ambient));
+            scene.Complete();
+        }
     }
 
     [Theory]
@@ -45,7 +76,13 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
     [InlineData("spot")]
     public async Task LocalLightPagePressureRecoversAfterMovingCasterAndCanceledRefresh(string light)
     {
-        using var scene = await LocalScene.CreateAsync(light, output);
+        ShadowReferenceInputs inputs = CreateInputs(world =>
+        {
+            if (light == "point") world.CreateEntity(new PointLight(new(-4, 2, -3), 20, Vector3.One, 30));
+            else world.CreateEntity(new SpotLight(new(-4, 2, -3), 20, Vector3.Normalize(new(4, -2, -5)),
+                MathF.Cos(MathF.PI / 12), MathF.Cos(MathF.PI * 2 / 9), Vector3.One, 30));
+        });
+        using var scene = await LocalScene.CreateAsync(inputs, light, output);
         var settings = new VirtualShadowMapSettings
         {
             VirtualResolution = 4096, AtlasSize = 1024, PageSize = 128,
@@ -68,7 +105,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
             new(31, edit => edit.CaptureLinearImage(image => image.Save(Path.Combine(scene.Directory, "unshadowed-old.rgba16")))),
             actions[1],
         ]) { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
-        await ShadowReferenceScene.WriteWorldAsync(scene.Content, light, illuminated: false);
+        await ShadowReferenceScene.WriteWorldAsync(scene.Content, inputs with { AddLights = null });
         SceneLinearImage ambient = await scene.CaptureAsync("ambient", new(scene.Content, 64,
         [
             new(31, edit => edit.CaptureLinearImage(image => image.Save(Path.Combine(scene.Directory, "ambient-old.rgba16")))),
@@ -83,7 +120,13 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
             SceneLinearImage.Load(Path.Combine(scene.Directory, "ambient-old.rgba16")), "old-footprint");
         AssertAccuracy(comparison);
         AssertAccuracy(oldFootprint);
+        scene.Complete();
     }
+
+    private static ShadowReferenceInputs CreateInputs(Action<World> addLight) => new(256, 256,
+        new SceneCamera { Position = Vector3.Zero, Target = new(0, 0, -8), Up = Vector3.UnitY,
+            VerticalFieldOfView = 1, NearPlane = .1f, FarPlane = 100 },
+        [new(new(0, 0, -8), new(4, 4, .1f), true), new(new(0, 0, -6), new(.6f), false)], addLight);
 
     private static void AssertAccuracy(RayShadowComparison comparison)
     {
@@ -96,20 +139,20 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
             $"Independent local-light visibility: {comparison}");
     }
 
-    private sealed class LocalScene(string engine, string directory, ITestOutputHelper output) : IDisposable
+    private sealed class LocalScene(string engine, ShadowEvidence evidence, ITestOutputHelper output) : IDisposable
     {
+        private string directory => evidence.Directory;
         internal string Directory => directory;
-        internal string Content => Path.Combine(directory, "content");
+        internal string Content => evidence.Content;
+        internal void Complete() => evidence.Complete();
         private readonly List<object> _captures = [];
 
-        internal static async Task<LocalScene> CreateAsync(string light, ITestOutputHelper output)
+        internal static async Task<LocalScene> CreateAsync(ShadowReferenceInputs inputs, string name, ITestOutputHelper output)
         {
             string engine = FindEngine();
-            string? evidence = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_EVIDENCE");
-            string directory = Path.Combine(evidence ?? Path.GetTempPath(), $"local-ray-{light}-{Guid.NewGuid():N}");
-            System.IO.Directory.CreateDirectory(directory);
-            var scene = new LocalScene(engine, directory, output);
-            try { await ShadowReferenceScene.BuildAsync(engine, scene.Content, light); return scene; }
+            var evidence = new ShadowEvidence("local-ray-" + name);
+            var scene = new LocalScene(engine, evidence, output);
+            try { await ShadowReferenceScene.BuildAsync(engine, scene.Content, inputs); return scene; }
             catch { scene.Dispose(); throw; }
         }
 
@@ -190,12 +233,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
             return comparison;
         }
 
-        public void Dispose()
-        {
-            if (System.IO.Directory.Exists(Content)) System.IO.Directory.Delete(Content, recursive: true);
-            if (Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_EVIDENCE") is null)
-                System.IO.Directory.Delete(directory, recursive: true);
-        }
+        public void Dispose() => evidence.Dispose();
     }
 
     private static string FindEngine()

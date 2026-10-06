@@ -513,6 +513,23 @@ internal sealed class RenderInstanceResources : IDisposable, IRenderGraphFrameEx
         }
     }
 
+    internal Span<T> GetInstanceWriteSpan<T>(int batchIndex, object allocation,
+        RenderInstancePropertyLayout properties, ResolvedRenderInstanceProperty<T> property,
+        int start, int count) where T : unmanaged
+    {
+        ValidateBatch(batchIndex, allocation);
+        properties.Validate(property, nameof(property));
+        PackedRange rows = _batchRows[batchIndex];
+        if ((uint)start > (uint)rows.Count || (uint)count > (uint)(rows.Count - start))
+            throw new ArgumentOutOfRangeException(nameof(start));
+        if (property.Encoding.StorageStride != RenderInstancePropertyValue<T>.Size)
+            throw new NotSupportedException("Typed mapped writes require tightly packed property values.");
+        PropertyStorage storage = RequireStorage(property, nameof(property));
+        BufferRange range = new(checked((ulong)(storage.InstanceBase + (rows.Start + start) * property.Encoding.StorageStride)),
+            checked((ulong)(count * property.Encoding.StorageStride)));
+        return count == 0 ? Span<T>.Empty : MemoryMarshal.Cast<byte, T>(GetWriteBytes(batchIndex, PropertyData, range));
+    }
+
     internal void WriteEncodedInstances(
         int batchSlot,
         object allocation,
@@ -1415,6 +1432,18 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         RecordChangedRows(destinationStart, source.Length);
     }
 
+    internal Span<T> GetWriteSpan<T>(RenderInstancePropertyLayout authorization,
+        ResolvedRenderInstanceProperty<T> property, int start, int count) where T : unmanaged
+    {
+        ResolvedRenderInstanceProperty<T> destination = Resolve(authorization, property);
+        RequirePerInstance(destination.Ordinal);
+        Span<T> values = RequireScope().Resources.GetInstanceWriteSpan(
+            _batchSlot, _allocation, _contract, destination, start, count);
+        _ = Interlocked.Add(ref _propertyStates[destination.Ordinal], (long)count << WrittenCountShift);
+        RecordChangedRows(start, count);
+        return values;
+    }
+
     internal void WriteEncoded(
         RenderInstancePropertyLayout authorization,
         RenderInstancePropertyDescriptor property,
@@ -1748,6 +1777,15 @@ public readonly struct RenderInstanceWriteSlice
             _destinationStart,
             Count,
             values);
+
+    /// <summary>
+    /// Reserves this slice's final mapped range for a tightly packed property. Fill every
+    /// element synchronously before publishing; never retain the span beyond preparation.
+    /// Disjoint slices support parallel producers. Abandoning composition discards the range
+    /// records and requires rewriting values, exactly as for Write.
+    /// </summary>
+    public Span<T> GetWriteSpan<T>(ResolvedRenderInstanceProperty<T> property) where T : unmanaged =>
+        RequireOwner().GetWriteSpan(Properties, property, _destinationStart, Count);
 
     /// <summary>
     /// Writes tightly packed encoded values for one declared property. This is internal transport

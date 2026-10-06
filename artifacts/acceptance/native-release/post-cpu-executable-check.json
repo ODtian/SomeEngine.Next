@@ -1,0 +1,342 @@
+[
+  {
+    "File": "Alimer.Bindings.MeshOptimizer.dll",
+    "Sha256": "F764C3291459251D406E601563CA5FE44BF37B5F815F72B998F13912B36BD331",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "dxcompiler.dll",
+    "Sha256": "B86A738ECE4C05DBE2D9BBB29668A2CCB28A0740773C9B027CDC61E8D07B4D75",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "dxil.dll",
+    "Sha256": "058F2F52A680C38B223A5615B7DF969DEF21F77E577562E5099D971DEDE992DE",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Game.App.deps.json",
+    "Sha256": "EAA94C58B17D76AADB84784E8B5B2A219F097417CA1FED1CD95A09927A889EB9",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Game.App.exe",
+    "Sha256": "D213807DD45D6450D6E4629A56002D5E3B0FFB426242C93A2E87FB3D7BD58752",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Game.App.runtimeconfig.json",
+    "Sha256": "1AE3FC161EB583DBC3ACFF1A40549EFD71C6350290C1379D8BE7C006AB0626B3",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Game.Assets.dll",
+    "Sha256": "26988694BA4DD496785894EEAD8F7A034B45DEE0D73117B07AC5239DBAC5FCA4",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Game.dll",
+    "Sha256": "7BB216023A821DEFA5CB5B8544EA517F370FCD27054F250C44BBF3DF6AB6082B",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "ImGui.NET.dll",
+    "Sha256": "1B519DBA38E8FF0AE85721086C0646C7589C7772B80BF2297A3E8EAD1F2A1C41",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "ImportedScenes.Materials.dll",
+    "Sha256": "D8497EE42A38F5D4045088DC3A7FB5E9641D3E96C38540EFB6E82DEEAA7B0599",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "meshoptimizer.dll",
+    "Sha256": "FDC5565239E78F4886DFDA94B226A236AAA966B14D619455A743068D324E492D",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.DotNet.PlatformAbstractions.dll",
+    "Sha256": "B1F4AD169FB192747F5D2D3111C01DB4257E3EC1F7F18F301F7FC4BE3B869FF3",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
+    "Sha256": "3F733FA41C8B735CF3F7A1A49B43CD41A291BCED3953BEE46E2B8018BE67F44C",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.Extensions.DependencyInjection.dll",
+    "Sha256": "407137262AEE12B0DD588258F9C2BF8C91129F119896F60BD1BCD3B67F4D5916",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.Extensions.DependencyModel.dll",
+    "Sha256": "48CB00C7CB7DEBE78133F435D66DFE92C951897C608B58FB993D73254D0973AC",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.TestPlatform.CommunicationUtilities.dll",
+    "Sha256": "E38A359AA502BB1867D6092DCA9ABA5C130DD6F9111DECEA8156AA746B2C69E6",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.TestPlatform.CoreUtilities.dll",
+    "Sha256": "F6E2495C44640D8915B2AEFC938F391C970300266DA014350FF35512A448EE84",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.TestPlatform.CrossPlatEngine.dll",
+    "Sha256": "D55399BC66DC5B451D60AD82662452CA4A5F735918135DFC91CA9B5E3E38A6AB",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.TestPlatform.PlatformAbstractions.dll",
+    "Sha256": "7B919CE4429C3B7B8FA2C36FD641B70B2F459A30ECB7C65FD80F437673CEC930",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.TestPlatform.Utilities.dll",
+    "Sha256": "01FFD64D25A4BD905AEF9594D2AA700E020273A90A77A8720AF6BEC8B4FD5444",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.VisualStudio.CodeCoverage.Shim.dll",
+    "Sha256": "A753BC15F23A957F4F91A059376E4472C6BACD1503622DE4B9B2B079AD8EA289",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.VisualStudio.TestPlatform.Common.dll",
+    "Sha256": "059AA2F335C3F7B14AC3FB7CAA1625BC2767581B9548E9FF53A246C7F2F94D6A",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Microsoft.VisualStudio.TestPlatform.ObjectModel.dll",
+    "Sha256": "F83E38EE9020BAA42E284E2299E233070FFA86CE4B10213583F9B7C8A521BCD0",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Newtonsoft.Json.dll",
+    "Sha256": "22C649F75FCE5BE7C7CCDA8880473B634EF69ECF33F5D1AB8AD892CAF47D5A07",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SharpGLTF.Core.dll",
+    "Sha256": "5126ACE1397415E7E70FF5E385DB46BADF14221C9FA2D6AFAF9C6D5041BF5870",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Silk.NET.Core.dll",
+    "Sha256": "56E4A018BD9A4E0FB94F97331191DB7E86AF98B0E23082EA36863F146E217A5C",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Silk.NET.Direct3D12.dll",
+    "Sha256": "2E3C0080E72570AD0E7DB3F1088C33BD446E1D88C8849C29A0191A6BFC54E85A",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Silk.NET.DXGI.dll",
+    "Sha256": "360B07B93D0795CAAC4BEA27C4C7F1B18DCCA69C7FC2CB2083ED546D3E112E7E",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Silk.NET.Maths.dll",
+    "Sha256": "C3B2B856435A1824F21D0467241F7EF7929980FC11A61D651166CE60828475EB",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Silk.NET.Vulkan.dll",
+    "Sha256": "5A56F1FE4DB712091B6DB94E16B6F7E71049027E48F0EE72E001846F1D7A5F45",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Silk.NET.Vulkan.Extensions.EXT.dll",
+    "Sha256": "7DA6E8B3965CE5097409C728DA86CF3D0184647B09255A9675BCC136D55CEFA0",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Silk.NET.Vulkan.Extensions.KHR.dll",
+    "Sha256": "BE226E227F8695B714DB140D5F267760C69B2D64A929B10E3D29D2787DD6EDF7",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "Silk.NET.Vulkan.Extensions.NV.dll",
+    "Sha256": "7C0FB0F4297881CB1C708DD031B51E9FB724D03043476D0683491E35057C614B",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SkiaSharp.dll",
+    "Sha256": "AAAAA18C68BA1F3A3408B00DFF28B11D5705198E17BA9D3AA59222BFD35407C8",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SlangShaderSharp.dll",
+    "Sha256": "36CB2D021B75689504758343D457E557E0E04013DAA31B62427A1DD342841868",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Assets.dll",
+    "Sha256": "3D68A474C9D6423C44D0E481A3163154684D01A37F9E9CC1A53188643776AAC5",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Assets.Importers.dll",
+    "Sha256": "41F8E1197B784BB035F8AE3A10EB3BBAC39B1F1073E29802A2C1C90B74B83990",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Core.dll",
+    "Sha256": "885E5A6240612AD87C42AAA021D21DB8F69D56CD1983DA3CB4F6DDCC9C1194F4",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Diagnostics.dll",
+    "Sha256": "C1CC853CC4943CE72A950DF1A59D183B3F576BDCEEB225F4113BAED7EE0E6094",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.ECS.dll",
+    "Sha256": "DFE2E21DE33C1CD3B01048150D571ADBB82DB8173B2CCD85A9AB6DBE39C66391",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.ECS.Serialization.dll",
+    "Sha256": "633298398F44C04E952A747173B9D612798DFC20E70498392AFCFFA71373D230",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.ECS.Systems.dll",
+    "Sha256": "53CA215E6890A31BED2F349C9C961B36E370DB1AE303B9E1C8C2F555A3D165A4",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Graphics.Direct3D12.dll",
+    "Sha256": "906D7BE60BCBB9215600CD1CC497AF9900CB8BD641A7E40732F5FFEAF5086830",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Graphics.dll",
+    "Sha256": "C7E3FA356C5B78182AA5E3F64E176D5BD761E0987E688031557704C5542FDF5A",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Graphics.Validation.dll",
+    "Sha256": "E05D7BDD97D13600C9D8E8ED2D35065BAAB0869D8617D7B643C28E5259FF1F60",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Graphics.Vulkan.dll",
+    "Sha256": "D9F27B95E18099241BCF7693FDD5DDB9349AC79217A3D2AA594CF06959A02A85",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Job.Contracts.dll",
+    "Sha256": "5328000713F7F40B2C07A35D5B81D23476616CBA0BBE8CD5686FF9DC73DC9A58",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Job.dll",
+    "Sha256": "43F9294BE5787577F19B51458B591F670E73C46EDA97831F9942523DDC1106F4",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Render.Cluster.dll",
+    "Sha256": "0081033B16F30A3EFBA9B34A41A878AB5BE24D9DED0429276F48E59F788E457C",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Render.Cluster.Pipeline.dll",
+    "Sha256": "EBF7A2C048FEDB070347B62D345A00D69163407BE31A7747B52C837BA6201C4C",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Render.Cluster.Tests.deps.json",
+    "Sha256": "E1C42671CAFEA237F7A61A52804FC429AB2FBE70482C6F8162BB0E21A1BF1C19",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Render.Cluster.Tests.dll",
+    "Sha256": "A3DC7A9CB19BCD0B40CFEE547DF67D7C56836A5F232B9B73AED9D7B6422AA2EB",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Render.Cluster.Tests.runtimeconfig.json",
+    "Sha256": "A217D17BE0661ABF2717A26937C6E379C33542CB6F292FD3FC5A2D5113A9D6DC",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Render.dll",
+    "Sha256": "E15F644ACB0F6D01738FF315362D478CC2F091C597CF8CCAD1F5152B646EA871",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Render.Features.dll",
+    "Sha256": "A2E0DC6513EF42D15C4C8C7C100DFEA15DA0BE990F8225437D941A192B85806A",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.RenderGraph.Diagnostics.dll",
+    "Sha256": "DDA01535B4D5352868C63AD543439085290DF890643B4CC07B15A2933DB8E907",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.RenderGraph.dll",
+    "Sha256": "5407A26E3DC1A4FACFE41CA6C49FB4626E91C980DBDF74792CE35728432F8D5F",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Resources.dll",
+    "Sha256": "6DB15D714650B0A5010A7AD49479C242AF872DF72CE6B9F6D7CD30F8C0DF6916",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Runtime.dll",
+    "Sha256": "3E50F8F0BD1014D12E71EF5E64E09D4A99801B6183AA1046967B9D0DB314B40B",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "SomeEngine.Serialization.dll",
+    "Sha256": "7A33E07471E2DF5824825D17F3BF4952342DCF1F3F176342E36B09DBA5574B9E",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "StbImageSharp.dll",
+    "Sha256": "0FF268F51876E7924192C70A164BAC8DA402ED0A3CA30E9D2A2840E7F0DEDA84",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "testhost.dll",
+    "Sha256": "92CBDF52DB5249112F9F53F1FCDAF9F9AA3FCE467141C688A31A7FE095E4D304",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "testhost.exe",
+    "Sha256": "FB63EB314F25584A532683DE7ABF4CA8A0B43103F3699F5D5D87317338EEDA76",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "xunit.abstractions.dll",
+    "Sha256": "3166DC70323FB30CCF1CEDB0FE86F2AD122C46D254542342D90386EFC4C9285C",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "xunit.assert.dll",
+    "Sha256": "BCD9711B22D227AC8CD4C1568E72433A0F576D2EC8AAE64AC508081892015B1D",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "xunit.core.dll",
+    "Sha256": "2F7FEEEC8C6DEC7DF684C25FB80AADB292B963D09723460F03D53C5AD2088ACC",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "xunit.execution.dotnet.dll",
+    "Sha256": "E70FEBE547C15F8155DB3E2D95C3BA4445A59CBC21A3E7541AB22ED49D3DCF7B",
+    "MatchesExecutedBytes": true
+  },
+  {
+    "File": "xunit.runner.visualstudio.testadapter.dll",
+    "Sha256": "98A7395CD6ABD03D0AC8EEB82D720C24DB00602F047CA49BD6E88E77FC6D1153",
+    "MatchesExecutedBytes": true
+  }
+]

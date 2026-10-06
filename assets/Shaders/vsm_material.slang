@@ -1,6 +1,7 @@
 #ifndef VSM_MATERIAL_SLANG
 #define VSM_MATERIAL_SLANG
 
+// Material sampling consumes current receiver coverage as well as completed depth.
 #include "vsm_sampling.slang"
 
 struct VirtualShadowSamplingUniforms

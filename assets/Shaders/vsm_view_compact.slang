@@ -1,5 +1,7 @@
+#define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 #include "vsm_raster_work_common.slang"
+#include "vsm_page_dispatch.slang"
 #include "cluster_view.slang"
 #include "cluster_raster_target_view.slang"
 #include "resource_effects.slang"
@@ -34,9 +36,10 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
             uint mipSize = max(max(ViewCompact.PageSize / 2u, 1u) >> mip, 1u);
             uint tiles = (mipSize + 7u) / 8u;
             uint offset = mip * 16u;
-            ShadowPageWorkDispatchArguments.Store(offset, activePageCount);
-            ShadowPageWorkDispatchArguments.Store(offset + 4u, tiles);
-            ShadowPageWorkDispatchArguments.Store(offset + 8u, tiles);
+            uint3 dispatch = VirtualShadowPageDispatch(activePageCount, tiles);
+            ShadowPageWorkDispatchArguments.Store(offset, dispatch.x);
+            ShadowPageWorkDispatchArguments.Store(offset + 4u, dispatch.y);
+            ShadowPageWorkDispatchArguments.Store(offset + 8u, dispatch.z);
             ShadowPageWorkDispatchArguments.Store(offset + 12u, 0u);
         }
         ClusterDispatchArguments.Store(0u, ViewCompact.InstanceGroupCount);

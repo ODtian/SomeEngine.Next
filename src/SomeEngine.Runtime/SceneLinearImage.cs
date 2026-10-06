@@ -2,6 +2,8 @@ using System.Buffers.Binary;
 using System.Numerics;
 using System.Text.Json;
 using SomeEngine.Render.Frame;
+using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.Render.Features.Shadows;
 using SomeEngine.Render.Shadows;
 
 namespace SomeEngine.Runtime;
@@ -31,7 +33,14 @@ public sealed record SceneFrame
     public string DriverVersion { get; init; } = "";
     /// <summary>Configured quality, not a measurement of adaptive resolution or resident pages.</summary>
     public VirtualShadowMapSettings ShadowSettings { get; init; } = new();
+    /// <summary>Optional completed quality from this submitted frame; absent in ordinary throughput.</summary>
+    public SceneRenderingQuality? Quality { get; init; }
 }
+
+public sealed record SceneRenderingQuality(VirtualShadowFrameQuality? Shadows, ClusterFrameMetrics Geometry,
+    SceneGeometryResidency Residency);
+public sealed record SceneGeometryResidency(int RegisteredMeshes, int PublishedMeshes,
+    uint RegisteredPages, uint ResidentPages, uint MissingPages, int QueuedPageLoads, int ActivePageLoads, ulong PageLoadFailures);
 
 public sealed record SceneMeshTransform(Guid MeshAsset, Matrix4x4 Transform);
 public enum SceneLightKind : byte { Directional, Point, Spot }

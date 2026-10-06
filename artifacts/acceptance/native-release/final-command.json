@@ -1,0 +1,6 @@
+{
+  "Source": "0755a124862bab28d5f77ec667a696b03aacccd5",
+  "ExitCode": 0,
+  "WallSeconds": 167.4335518,
+  "Command": "dotnet test tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj -c Release --no-build --filter FullyQualifiedName~LocalLightRayShadowTests --results-directory <proof>/final-batch --logger trx;LogFileName=final-batch.trx"
+}

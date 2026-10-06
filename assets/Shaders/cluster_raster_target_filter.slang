@@ -2,12 +2,14 @@
 #define CLUSTER_RASTER_TARGET_FILTER_SLANG
 
 #include "cluster_raster_target_view.slang"
+#include "cluster_bvh_cull_common.slang"
 #include "depth_page_hiz.slang"
 #include "cluster_view_access.slang"
 #include "raster_sample_bounds.slang"
 
 #include "cluster_raster_target_resources.slang"
 #ifndef CLUSTER_TARGET_BOUNDS_ONLY
+StructuredBuffer<uint4> RasterTargetPageMetadata;
 Texture2DArray<float> RasterTargetCurrentHiZ;
 Texture2DArray<float> RasterTargetPreviousHiZ;
 #endif
@@ -335,6 +337,10 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
 
                 uint physicalPage;
                 if (!ClusterTargetEntryValid(target, localPage, physicalPage))
+                    return false;
+                // Only allocation of the same world page from completed whole depth
+                // carries prior history. Newly assigned tiles may contain unrelated HiZ.
+                if (usePrevious && (RasterTargetPageMetadata[physicalPage].w & 2u) == 0u)
                     return false;
 
                 uint2 pageOrigin = localPage * target.PageSize;

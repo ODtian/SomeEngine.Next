@@ -17,6 +17,8 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="SomeEngine.Tests" />
+    <Compile Include="../Shared/ImageArtifacts.cs" Link="ImageArtifacts.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />

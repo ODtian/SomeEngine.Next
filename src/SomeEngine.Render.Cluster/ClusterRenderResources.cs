@@ -755,40 +755,41 @@ public sealed class ClusterRenderResources : IDisposable
             if (previous) destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
             if (!mesh) return;
 
-            ReadOnlySpan<RenderMesh> renderMeshes = packet.Read<RenderMesh>();
-            uint[]? rentedRoots = null;
-            float[]? rentedExpansions = null;
-            scoped Span<uint> roots;
-            scoped Span<float> expansions;
-            if (packet.Count <= 1_024)
+            _meshes.ResolveInstanceGeometry(packet.Entities, packet.Read<RenderMesh>(),
+                destination.GetWriteSpan(_bvhRoot), destination.GetWriteSpan(_boundsExpansion));
+        }
+
+        public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion)
+        {
+            WriteChangedProperty(destination, packet, _currentTransform, lastSystemVersion);
+            WriteChangedProperty(destination, packet, _previousTransform, lastSystemVersion);
+            int start = 0;
+            while (NextChangedRows<RenderMesh>(packet, lastSystemVersion, ref start, out int count))
             {
-                roots = stackalloc uint[packet.Count];
-                expansions = stackalloc float[packet.Count];
+                Write(destination.Slice(start, count), packet.Slice(start, count), false, false, true);
+                start += count;
             }
-            else
+        }
+
+        private static void WriteChangedProperty<T>(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
+            ResolvedRenderInstanceProperty<T> property, uint lastSystemVersion) where T : unmanaged
+        {
+            int start = 0;
+            while (NextChangedRows<T>(packet, lastSystemVersion, ref start, out int count))
             {
-                rentedRoots = ArrayPool<uint>.Shared.Rent(packet.Count);
-                rentedExpansions = ArrayPool<float>.Shared.Rent(packet.Count);
-                roots = rentedRoots.AsSpan(0, packet.Count);
-                expansions = rentedExpansions.AsSpan(0, packet.Count);
+                destination.Slice(start, count).Write(property, packet.Read<T>().Slice(start, count));
+                start += count;
             }
-            try
-            {
-                _meshes.ResolveInstanceGeometry(
-                    packet.Entities,
-                    renderMeshes,
-                    roots,
-                    expansions);
-                destination.Write(_bvhRoot, roots);
-                destination.Write(_boundsExpansion, expansions);
-            }
-            finally
-            {
-                if (rentedRoots is not null)
-                    ArrayPool<uint>.Shared.Return(rentedRoots);
-                if (rentedExpansions is not null)
-                    ArrayPool<float>.Shared.Return(rentedExpansions);
-            }
+        }
+
+        private static bool NextChangedRows<T>(ReadOnlyQueryPacket packet, uint lastSystemVersion,
+            ref int start, out int count) where T : struct
+        {
+            while (start < packet.Count && !packet.Slice(start, 1).ChangedSince<T>(lastSystemVersion)) start++;
+            int end = start;
+            while (end < packet.Count && packet.Slice(end, 1).ChangedSince<T>(lastSystemVersion)) end++;
+            count = end - start;
+            return count != 0;
         }
     }
 

@@ -74,6 +74,21 @@ if (graph.TryOpenNextFrame(out RenderGraphNextFrame next, timeout))
 完整范围。每个图帧资源持有自己的实际缓冲；参数输入与视图可以保留声明身份和范围，使
 当帧值变化沿用原有绑定位置。图负责映射缓冲的复用、提交与取消。
 
+## Direct GPU-read uploads and computed instance values
+
+`frame.Upload` 支持 Constant、ShaderRead、Vertex、Index 和 CopySource 读取用途。
+直接读取页的实际缓冲用途包含这些读取能力；纯复制页仍按 CopySource staging 分类。
+元素、常量、shader-buffer 与 staging placement 的对齐由同一页分配器维护。
+ImGui 顶点/索引与常量沿用图帧的完成、取消及复用边界，不维护另一条 UI 缓冲时间线。
+普通公开启动的 UI 图像在 Debug/Release D3D12 上验证；Vulkan Presentation 尚为能力跳过。
+
+`RenderInstanceWriteSlice.GetWriteSpan<T>` 为紧密存储的属性保留最终图映射范围。
+生产者须在同步 prepare 内填满范围，不能在发布后保留跨度；分离的 slice 可并行写入。
+Cluster roots/expansions 在该范围内直接计算，组件属性按各自变化行连续范围写入。
+放弃组合或下一帧仍丢弃复制记录并要求后续重写，不引入 CPU 回滚值或 GPU 回读备份。
+实际相邻不同属性的范围回归仍待完成；源码/验证边界见
+[[architecture/validation/Review-Fixes-70]]。
+
 ## Behavior evidence
 
 `tests/SomeEngine.RenderGraph.Tests/FrameUploadTests.cs` 使用 WARP 和 RenderGraph 公共 API，

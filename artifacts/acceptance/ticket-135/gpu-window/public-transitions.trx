@@ -1,0 +1,1632 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="80cf2b81-aed3-4715-8f51-c11eaea1a9a3" name="boqi@BOQI-THE-DAEMON 2026-10-06 03:03:05" runUser="BOQI-THE-DAEMON\boqi" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T03:03:05.7094059+08:00" queuing="2026-10-06T03:03:05.7094067+08:00" start="2026-10-06T03:01:50.5492820+08:00" finish="2026-10-06T03:10:24.8855158+08:00" />
+  <TestSettings name="default" id="afaf7cf8-4556-42c7-ac3c-c523f7b9cf52">
+    <Deployment runDeploymentRoot="boqi_BOQI-THE-DAEMON_2026-10-06_03_03_05" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="8af1401a-cc68-4c95-bd52-81a7e6a101a4" testId="aed1ce1f-61a9-10a1-83d0-803a13a21f9c" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;d3d12&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:09.0048878" startTime="2026-10-06T03:08:19.7700541+08:00" endTime="2026-10-06T03:08:28.7746792+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8af1401a-cc68-4c95-bd52-81a7e6a101a4" />
+    <UnitTestResult executionId="3d21b3bd-2231-492b-b7c0-abe93c7a65d8" testId="5e8d1728-d5ed-4b37-9e48-1ca74b43fd25" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.00999999978, raster: &quot;mesh&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:09.1939759" startTime="2026-10-06T03:06:01.6469047+08:00" endTime="2026-10-06T03:06:10.8397732+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3d21b3bd-2231-492b-b7c0-abe93c7a65d8" />
+    <UnitTestResult executionId="ac6c9a05-5034-454d-9d4a-df5758b496bf" testId="cec5e75e-0147-f974-560d-dbbe156397c2" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.00999999978, raster: &quot;software&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:05:18.0141638+08:00" endTime="2026-10-06T03:05:18.0141957+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ac6c9a05-5034-454d-9d4a-df5758b496bf">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="912a3974-9de3-440c-8b27-28be6d8f5b66" testId="07ec3fa6-f14f-7833-a675-d573732076cf" testName="SomeEngine.Runtime.Tests.ShadowImageTests.CanceledCasterFrameResumesWithTheSameShadowsAsFreshArrival(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.5342268" startTime="2026-10-06T03:07:54.3096434+08:00" endTime="2026-10-06T03:08:02.8442788+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="912a3974-9de3-440c-8b27-28be6d8f5b66" />
+    <UnitTestResult executionId="6e4f16d3-3f00-4309-8f67-2b2ba839dda6" testId="21cb78d9-f5cb-6871-49f8-4ff8811b59ae" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: &quot;d3d12&quot;, rasterEdgePixels: 64)" computerName="BOQI-THE-DAEMON" duration="00:00:07.8330719" startTime="2026-10-06T03:09:19.5424420+08:00" endTime="2026-10-06T03:09:27.3756633+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6e4f16d3-3f00-4309-8f67-2b2ba839dda6" />
+    <UnitTestResult executionId="62918db7-2998-4c2b-af78-566a9ba4fa37" testId="fb946e77-dd12-cc14-6bed-b3bc5dbe0a81" testName="SomeEngine.Runtime.Tests.ShadowImageTests.StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:34.0286168" startTime="2026-10-06T03:06:38.0251877+08:00" endTime="2026-10-06T03:07:12.0533774+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="62918db7-2998-4c2b-af78-566a9ba4fa37" />
+    <UnitTestResult executionId="3884b994-ac69-4c0d-9295-65c149798ade" testId="a6e613ed-53f3-cc3a-e34e-1772fecde3f1" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.StretchedGeometryCrossingTheViewEdgeMatchesStartingAtThatTransform(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:07.6123992" startTime="2026-10-06T03:09:04.2622186+08:00" endTime="2026-10-06T03:09:11.8744388+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3884b994-ac69-4c0d-9295-65c149798ade" />
+    <UnitTestResult executionId="50a3f3d7-6376-4c73-a9e2-b6a2b942656e" testId="a2a2b879-8ccf-376e-835b-f3c9701bb02e" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;d3d12&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--no-taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.5085572" startTime="2026-10-06T03:08:02.8462364+08:00" endTime="2026-10-06T03:08:11.3544420+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="50a3f3d7-6376-4c73-a9e2-b6a2b942656e" />
+    <UnitTestResult executionId="2bb4cd05-2b3f-4106-ad7c-fa438f361acf" testId="7e594f63-e3b4-ab24-3691-955b969bf125" testName="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;vulkan&quot;, raster: &quot;vertex&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:05:04.7257067+08:00" endTime="2026-10-06T03:05:04.7258739+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2bb4cd05-2b3f-4106-ad7c-fa438f361acf">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5bc6d5c5-f3ac-49a4-a051-ace80a20b621" testId="c191e4c9-8245-a992-93dd-1051d2b03a90" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: &quot;d3d12&quot;, rasterEdgePixels: 4)" computerName="BOQI-THE-DAEMON" duration="00:00:20.3454941" startTime="2026-10-06T03:09:27.3767291+08:00" endTime="2026-10-06T03:09:47.7221099+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5bc6d5c5-f3ac-49a4-a051-ace80a20b621" />
+    <UnitTestResult executionId="4c9cbe02-a526-4454-9eeb-b5180ca5e2ae" testId="ee3dc98d-1cdd-55d7-76a6-83fdf77caa8a" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletingAllGeometryShowsTheDeclaredBackground(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:05.9743587" startTime="2026-10-06T03:10:08.5628976+08:00" endTime="2026-10-06T03:10:14.5370924+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4c9cbe02-a526-4454-9eeb-b5180ca5e2ae" />
+    <UnitTestResult executionId="d8dbfd79-735c-46b3-877f-17dcb192f09b" testId="a79b7ace-f92f-9611-ddd1-fd30de8ab5eb" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.00999999978, raster: &quot;vertex&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:09.0887124" startTime="2026-10-06T03:05:52.5555105+08:00" endTime="2026-10-06T03:06:01.6445837+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d8dbfd79-735c-46b3-877f-17dcb192f09b" />
+    <UnitTestResult executionId="7750c9e6-ba72-4a3c-82a8-e1c406528c3d" testId="8b95c06a-7770-4327-2353-0d737675579a" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.00999999978, raster: &quot;software&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.7294568" startTime="2026-10-06T03:05:43.8252403+08:00" endTime="2026-10-06T03:05:52.5550052+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7750c9e6-ba72-4a3c-82a8-e1c406528c3d" />
+    <UnitTestResult executionId="370ec5fa-c237-4086-a1d5-6b40be64b39e" testId="11956661-5461-8ff3-7ba6-97c1ebe06c34" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.CameraMovementRecoversOccludedGeometryLikeRenderingWithFreshOcclusion(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:09:11.8759916+08:00" endTime="2026-10-06T03:09:11.8760249+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="370ec5fa-c237-4086-a1d5-6b40be64b39e">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="33250b3c-f2b5-4b21-a1b6-d22e1b771018" testId="a7e9e1d0-b488-0efa-7989-9ab4c62fdd57" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.CanceledGeometryFrameLeavesTheFollowingImageEqualToTheCompletedSequence(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:07.9811768" startTime="2026-10-06T03:10:14.5382497+08:00" endTime="2026-10-06T03:10:22.5190888+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="33250b3c-f2b5-4b21-a1b6-d22e1b771018" />
+    <UnitTestResult executionId="6e62120a-19e6-4f56-a495-86a6de8e95a6" testId="c4346d1a-fa41-0635-2d47-216b2d5e0935" testName="SomeEngine.Runtime.Tests.ShadowImageTests.CoarseDirectionalShadowsFollowTheCasterInTheFirstChangedFrame(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:14.2818451" startTime="2026-10-06T03:07:26.0514657+08:00" endTime="2026-10-06T03:07:40.3327283+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6e62120a-19e6-4f56-a495-86a6de8e95a6" />
+    <UnitTestResult executionId="efc6095a-c2ed-4db2-9e24-4337ac511dee" testId="253a4224-cd27-1842-0bb0-829a82b69fb7" testName="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;d3d12&quot;, raster: &quot;vertex&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:12.9924546" startTime="2026-10-06T03:04:51.7379946+08:00" endTime="2026-10-06T03:05:04.7246052+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="efc6095a-c2ed-4db2-9e24-4337ac511dee" />
+    <UnitTestResult executionId="2942e6fa-49e6-4713-8ff3-216786fa2863" testId="bafeb91a-60e2-9e1d-e72a-97096bd2817d" testName="SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:51.8905076+08:00" endTime="2026-10-06T03:08:51.8905211+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2942e6fa-49e6-4713-8ff3-216786fa2863">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="6de293ba-6a9b-4886-8626-132acefd5fc1" testId="643cce45-c329-1f7b-04f0-d89c39fae6bd" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.100000001, raster: &quot;vertex&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.6019602" startTime="2026-10-06T03:05:26.5897950+08:00" endTime="2026-10-06T03:05:35.1914198+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6de293ba-6a9b-4886-8626-132acefd5fc1" />
+    <UnitTestResult executionId="172e37da-9337-48b6-97d6-edbd2ab09f98" testId="328c3cde-af1f-2dac-49ac-53875f4b04d5" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;vulkan&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:37.6765104+08:00" endTime="2026-10-06T03:08:37.6765266+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="172e37da-9337-48b6-97d6-edbd2ab09f98">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="dc9b7d43-9439-41aa-aa2f-1ba8ad735be8" testId="74a8c329-3d88-46da-b614-c1186ce8c05b" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.AddedGeometryMatchesStartingWithThatGeometry(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:07.1954481" startTime="2026-10-06T03:08:57.0649808+08:00" endTime="2026-10-06T03:09:04.2609496+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dc9b7d43-9439-41aa-aa2f-1ba8ad735be8" />
+    <UnitTestResult executionId="036b7fbb-b344-4d41-9e10-c1ba9b798e20" testId="c92800a2-a454-e4d3-77de-866b3519bf7d" testName="SomeEngine.Runtime.Tests.ShadowImageTests.CanceledCasterFrameResumesWithTheSameShadowsAsFreshArrival(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:02.8448769+08:00" endTime="2026-10-06T03:08:02.8449309+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="036b7fbb-b344-4d41-9e10-c1ba9b798e20">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="2aace183-96d6-46fc-8d4b-5bb3354ea095" testId="34687be5-33cf-1c77-dffa-905958fedaf4" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.MovingAnOccluderRecoversTheRearGeometryInTheSameFrame(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:07.4393888" startTime="2026-10-06T03:10:01.1226354+08:00" endTime="2026-10-06T03:10:08.5618744+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2aace183-96d6-46fc-8d4b-5bb3354ea095" />
+    <UnitTestResult executionId="664ea5dd-9c87-4f1c-ad5c-decb5b198e6b" testId="b3fb3877-ae27-9549-8b97-daf0da757143" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: &quot;vulkan&quot;, rasterEdgePixels: 64)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:09:27.3760995+08:00" endTime="2026-10-06T03:09:27.3761204+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="664ea5dd-9c87-4f1c-ad5c-decb5b198e6b">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="fe5260ef-6f1a-48a2-af17-32237a17a7ba" testId="7dd6ecab-4bf4-7ad1-c6d6-10d4b2d4b1f4" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.00999999978, raster: &quot;mesh&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:06:10.8404158+08:00" endTime="2026-10-06T03:06:10.8404426+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fe5260ef-6f1a-48a2-af17-32237a17a7ba">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="872a9474-efff-47cd-81da-49d2c27e9709" testId="49223474-cffe-baea-c015-7ce4df9adbbf" testName="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;vulkan&quot;, raster: &quot;software&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:05:04.7268953+08:00" endTime="2026-10-06T03:05:04.7269208+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="872a9474-efff-47cd-81da-49d2c27e9709">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="7e25b964-127e-4985-8259-76b7f44701bf" testId="6fefdbff-39dc-5373-53f9-230030b33c23" testName="SomeEngine.Runtime.Tests.ShadowImageTests.StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:06:38.0248969+08:00" endTime="2026-10-06T03:06:38.0249126+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7e25b964-127e-4985-8259-76b7f44701bf">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5ecfb952-9ca9-49bb-a321-cd583d9fc879" testId="883488fe-63ff-c385-d3ec-2ece9dafa6a1" testName="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;d3d12&quot;, raster: &quot;default&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:13.7839501" startTime="2026-10-06T03:04:37.9475424+08:00" endTime="2026-10-06T03:04:51.7308739+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5ecfb952-9ca9-49bb-a321-cd583d9fc879" />
+    <UnitTestResult executionId="47fd44f4-4a7e-40ac-a5e4-a75773790c5e" testId="aa0ce593-cc95-1015-2103-bd4f12835a6a" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;d3d12&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:03.4690904" startTime="2026-10-06T03:08:41.2827767+08:00" endTime="2026-10-06T03:08:44.7524223+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="47fd44f4-4a7e-40ac-a5e4-a75773790c5e" />
+    <UnitTestResult executionId="695baac6-36c3-4d0d-878f-097db2da963f" testId="ff9260b5-740a-b8c2-c3da-f530f1e958ca" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.StretchedGeometryCrossingTheViewEdgeMatchesStartingAtThatTransform(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:09:11.8750878+08:00" endTime="2026-10-06T03:09:11.8751099+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="695baac6-36c3-4d0d-878f-097db2da963f">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e1710d38-9e9e-48fe-a0b5-7b9a3e292e10" testId="66a2554d-1764-beca-b410-c8a0b6600998" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;d3d12&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--no-taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.4136746" startTime="2026-10-06T03:08:11.3550480+08:00" endTime="2026-10-06T03:08:19.7689296+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e1710d38-9e9e-48fe-a0b5-7b9a3e292e10" />
+    <UnitTestResult executionId="88cdc8e5-7e92-488b-900a-530d1dec42e0" testId="65a82b92-c1e3-7ec0-67bb-eb04262c5c33" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.100000001, raster: &quot;software&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.5739553" startTime="2026-10-06T03:05:18.0151237+08:00" endTime="2026-10-06T03:05:26.5885782+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="88cdc8e5-7e92-488b-900a-530d1dec42e0" />
+    <UnitTestResult executionId="501ba86a-3835-4638-bf91-2fc1523aaa3d" testId="4f712c2e-f0b9-1a9b-ea88-8927c432146c" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.00999999978, raster: &quot;vertex&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:06:01.6465666+08:00" endTime="2026-10-06T03:06:01.6465803+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="501ba86a-3835-4638-bf91-2fc1523aaa3d">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="413a9276-3189-4628-a695-439a683ea02e" testId="029197dd-1a41-fe81-bb52-823ea51e6b51" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;vulkan&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--no-taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:37.6758213+08:00" endTime="2026-10-06T03:08:37.6758485+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="413a9276-3189-4628-a695-439a683ea02e">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="4603bb80-0c51-43c4-b9b8-762904859bdf" testId="e77434db-fd01-f096-7897-c200c6a3d4e1" testName="SomeEngine.Runtime.Tests.ShadowImageTests.DirectionalShadowsAfterCameraScrollMatchRefreshedShadows(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:06:38.0241621+08:00" endTime="2026-10-06T03:06:38.0241863+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4603bb80-0c51-43c4-b9b8-762904859bdf">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="d4b0b5fb-50f1-4741-9c50-ab8335c70133" testId="ed266ed3-3b9f-6496-4256-8baf58824201" testName="SomeEngine.Runtime.Tests.ShadowImageTests.MovingLightShadowsMatchStartingWithTheFinalLight(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:07:40.3340627+08:00" endTime="2026-10-06T03:07:40.3340800+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d4b0b5fb-50f1-4741-9c50-ab8335c70133">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="558d055a-ea52-419c-b987-af94da4ebe1d" testId="5ad36c51-983c-0f43-e595-a33e32958d16" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.100000001, raster: &quot;mesh&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.6324911" startTime="2026-10-06T03:05:35.1920028+08:00" endTime="2026-10-06T03:05:43.8246951+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="558d055a-ea52-419c-b987-af94da4ebe1d" />
+    <UnitTestResult executionId="30302d87-f81c-4a1d-8158-087b4f2d25df" testId="5deefd47-2703-d72b-7e1a-1c504a0c6711" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: &quot;vulkan&quot;, rasterEdgePixels: 4)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:09:47.7226454+08:00" endTime="2026-10-06T03:09:47.7226672+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="30302d87-f81c-4a1d-8158-087b4f2d25df">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="b9fff6d2-1c69-49c1-a35c-9c358e11f80d" testId="8b85b9fd-5c40-7592-f89b-b7e050d0fa59" testName="SomeEngine.Runtime.Tests.SceneAdapterRenderingTests.HardwareFrameLoopDeliversRequestedImages" computerName="BOQI-THE-DAEMON" duration="00:00:15.7509873" startTime="2026-10-06T03:02:49.1477518+08:00" endTime="2026-10-06T03:03:04.9368375+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b9fff6d2-1c69-49c1-a35c-9c358e11f80d" />
+    <UnitTestResult executionId="e6674a61-517f-4cc4-a7f8-32768cdbf408" testId="fad137e9-d5cb-7ee6-0d33-60f11b81733e" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;vulkan&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--no-taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:44.7528293+08:00" endTime="2026-10-06T03:08:44.7528501+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e6674a61-517f-4cc4-a7f8-32768cdbf408">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="29361bc3-aed8-4c46-a783-945da00e72ba" testId="8dcad8db-cc48-9e45-571a-f81571e179d9" testName="SomeEngine.Runtime.Tests.ShadowImageTests.MovingTheFrontCasterRecoversTheRearCasterShadowInTheSameFrame(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:13.9957120" startTime="2026-10-06T03:07:12.0539194+08:00" endTime="2026-10-06T03:07:26.0499767+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="29361bc3-aed8-4c46-a783-945da00e72ba" />
+    <UnitTestResult executionId="1814a197-82a2-4695-85b3-873ada42daa5" testId="1e92c6df-9e4c-a868-8977-53929e74714b" testName="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;vulkan&quot;, raster: &quot;default&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:04:51.7329472+08:00" endTime="2026-10-06T03:04:51.7336814+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1814a197-82a2-4695-85b3-873ada42daa5">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="4f1cdca3-4cb3-4bfd-9505-952090425fb1" testId="70fed921-0382-3a16-093c-089e0a45abb5" testName="SomeEngine.Runtime.Tests.ShadowImageTests.CoarseDirectionalShadowsFollowTheCasterInTheFirstChangedFrame(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:07:40.3333238+08:00" endTime="2026-10-06T03:07:40.3333483+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4f1cdca3-4cb3-4bfd-9505-952090425fb1">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="97fc56bd-3c0f-480d-b9bf-ba3a04511450" testId="a8db941f-cccd-830b-efc2-5766c8b15623" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.MovingAnOccluderRecoversTheRearGeometryInTheSameFrame(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:10:01.1218677+08:00" endTime="2026-10-06T03:10:01.1218899+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="97fc56bd-3c0f-480d-b9bf-ba3a04511450">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="a51f9fd9-e966-411e-b1e0-a96c3984f2eb" testId="54cd5d1f-80b6-22e5-0af1-545b4acae5cd" testName="SomeEngine.Runtime.Tests.ShadowImageTests.MovingLightShadowsMatchStartingWithTheFinalLight(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:13.9754080" startTime="2026-10-06T03:07:40.3343952+08:00" endTime="2026-10-06T03:07:54.3090989+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a51f9fd9-e966-411e-b1e0-a96c3984f2eb" />
+    <UnitTestResult executionId="37b7d2e8-813a-4f9a-8c68-766d02bb5d18" testId="8091700e-e0c4-4037-d261-48365c4de54d" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletingAllGeometryShowsTheDeclaredBackground(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:10:08.5625842+08:00" endTime="2026-10-06T03:10:08.5626257+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="37b7d2e8-813a-4f9a-8c68-766d02bb5d18">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="af6bc643-79ff-4cff-84b4-6535d967a6ea" testId="270753e4-6583-f7dc-bdff-1db017dca280" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletedGeometryMatchesStartingWithTheRemainingGeometry(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:13.3980568" startTime="2026-10-06T03:09:47.7239326+08:00" endTime="2026-10-06T03:10:01.1214057+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="af6bc643-79ff-4cff-84b4-6535d967a6ea" />
+    <UnitTestResult executionId="00ca2504-27f6-4895-a3cc-f17ffc333108" testId="aa147058-a702-9e96-d835-85b467e05d1d" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.CameraMovementRecoversOccludedGeometryLikeRenderingWithFreshOcclusion(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:07.6663135" startTime="2026-10-06T03:09:11.8763912+08:00" endTime="2026-10-06T03:09:19.5417550+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="00ca2504-27f6-4895-a3cc-f17ffc333108" />
+    <UnitTestResult executionId="57b16aa3-7a4d-4583-8b0d-fbd2b89a328d" testId="da1135ab-dffd-f97c-c613-8b0b3c5481d6" testName="SomeEngine.Runtime.Tests.ShadowImageTests.DirectionalShadowsAfterCameraScrollMatchRefreshedShadows(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:27.1829701" startTime="2026-10-06T03:06:10.8412781+08:00" endTime="2026-10-06T03:06:38.0236703+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="57b16aa3-7a4d-4583-8b0d-fbd2b89a328d" />
+    <UnitTestResult executionId="e74ba532-6849-4271-a011-13ccad2bbe35" testId="bfb17c4a-ffe9-3d71-8b01-bbf118255a74" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;vulkan&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:51.8901638+08:00" endTime="2026-10-06T03:08:51.8901782+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e74ba532-6849-4271-a011-13ccad2bbe35">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="f75449ca-8b9a-4030-9cdc-0da8f0a39eff" testId="c803b215-fe66-1805-638c-57fc4b6197ea" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;d3d12&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--no-taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:03.5166341" startTime="2026-10-06T03:08:44.7538862+08:00" endTime="2026-10-06T03:08:48.2700715+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f75449ca-8b9a-4030-9cdc-0da8f0a39eff" />
+    <UnitTestResult executionId="7d50be9d-08aa-4c38-8407-50c1e8b333b8" testId="f29b748e-54cf-569b-789c-97f6da0df8dd" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;vulkan&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--no-taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:02.8458842+08:00" endTime="2026-10-06T03:08:02.8459321+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7d50be9d-08aa-4c38-8407-50c1e8b333b8">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="c62ba441-0433-4144-a81d-2de1f8790ce8" testId="cfe065d1-ba48-10a9-7894-4a055d105219" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;d3d12&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:03.6181575" startTime="2026-10-06T03:08:48.2704825+08:00" endTime="2026-10-06T03:08:51.8890132+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c62ba441-0433-4144-a81d-2de1f8790ce8" />
+    <UnitTestResult executionId="511ca551-5849-45ac-abd1-a840a20d555c" testId="835894b8-8c17-4d77-2dbb-79f39714b1df" testName="SomeEngine.Runtime.Tests.ShadowImageTests.MovingTheFrontCasterRecoversTheRearCasterShadowInTheSameFrame(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:07:26.0505701+08:00" endTime="2026-10-06T03:07:26.0505987+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="511ca551-5849-45ac-abd1-a840a20d555c">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e23de82c-6f75-47dd-bacb-b5996ddcc39a" testId="4af97f5f-957d-3535-718a-ea493ca9d994" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.AddedGeometryMatchesStartingWithThatGeometry(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:09:04.2614572+08:00" endTime="2026-10-06T03:09:04.2614778+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e23de82c-6f75-47dd-bacb-b5996ddcc39a">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="7147a191-7f70-40eb-8911-e13f553b4685" testId="6f0517d5-245b-4185-dc8a-834a73b69a23" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.CanceledGeometryFrameLeavesTheFollowingImageEqualToTheCompletedSequence(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:10:14.5375773+08:00" endTime="2026-10-06T03:10:14.5375980+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7147a191-7f70-40eb-8911-e13f553b4685">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="d20a2523-55d3-41ed-a512-ee52c322556e" testId="4ab4134f-56da-c9ca-7de9-fed8601cacca" testName="SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: &quot;d3d12&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:05.1738606" startTime="2026-10-06T03:08:51.8908315+08:00" endTime="2026-10-06T03:08:57.0642345+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d20a2523-55d3-41ed-a512-ee52c322556e" />
+    <UnitTestResult executionId="9cdab292-1261-4766-813c-4926d76fe6d3" testId="bcc74c56-1065-cac3-2295-0b1ab0d13c33" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;vulkan&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:19.7694221+08:00" endTime="2026-10-06T03:08:19.7694432+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9cdab292-1261-4766-813c-4926d76fe6d3">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e51942ec-002c-41a8-8633-b7c6a864d4d9" testId="f91d915f-d7be-c786-cf5d-46a8f4f7be58" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.100000001, raster: &quot;software&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:05:26.5891630+08:00" endTime="2026-10-06T03:05:26.5891868+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e51942ec-002c-41a8-8633-b7c6a864d4d9">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="ccc10a5b-c6ff-405c-9a32-19064fc2f6d0" testId="92e3b7f1-951a-93a4-b9ea-923cb2022383" testName="SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletedGeometryMatchesStartingWithTheRemainingGeometry(backend: &quot;vulkan&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:09:47.7236517+08:00" endTime="2026-10-06T03:09:47.7236673+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ccc10a5b-c6ff-405c-9a32-19064fc2f6d0">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="6771132d-d113-424b-92eb-cf89fafb5f75" testId="e5b79ed5-c516-7d7f-6451-035873082dcf" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.100000001, raster: &quot;vertex&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:06:01.6461511+08:00" endTime="2026-10-06T03:06:01.6461776+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6771132d-d113-424b-92eb-cf89fafb5f75">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="31a50f8f-9686-4e22-a9c0-9b32cb04da46" testId="6115a288-a0d0-ef79-5a96-41f26396813b" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;vulkan&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:51.8895071+08:00" endTime="2026-10-06T03:08:51.8895283+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="31a50f8f-9686-4e22-a9c0-9b32cb04da46">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e626bd62-02ac-4a8f-b4d0-299c5c8c88d0" testId="14f102ef-55a4-7399-f50b-c13923b22863" testName="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.100000001, raster: &quot;mesh&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:06:01.6451763+08:00" endTime="2026-10-06T03:06:01.6453408+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e626bd62-02ac-4a8f-b4d0-299c5c8c88d0">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="36f49825-1cf6-4048-ab9a-ae233578e785" testId="dfc68b66-5e96-80cd-05bb-5959a2ba146f" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;vulkan&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--no-taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:00.0010000" startTime="2026-10-06T03:08:44.7535925+08:00" endTime="2026-10-06T03:08:44.7536204+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="36f49825-1cf6-4048-ab9a-ae233578e785">
+      <Output>
+        <ErrorInfo>
+          <Message>vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="1c947acc-8e2e-40d6-808b-d2e2fa5f7f7a" testId="9628b3c8-33c0-431f-ba21-c04c83628f33" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;d3d12&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:08.8997316" startTime="2026-10-06T03:08:28.7751816+08:00" endTime="2026-10-06T03:08:37.6752523+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1c947acc-8e2e-40d6-808b-d2e2fa5f7f7a" />
+    <UnitTestResult executionId="aaab993a-ddff-4c1c-868d-a60a7302a3f8" testId="ea0c84f7-bd3f-a3f1-3765-7a0e56b9bb34" testName="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;d3d12&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--no-taa&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:03.6059831" startTime="2026-10-06T03:08:37.6768221+08:00" endTime="2026-10-06T03:08:41.2823379+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aaab993a-ddff-4c1c-868d-a60a7302a3f8" />
+    <UnitTestResult executionId="6ad411b1-aa6d-4db0-a567-ca2276aec5ac" testId="d32a8922-6814-9468-20a6-17c7b84ca386" testName="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;d3d12&quot;, raster: &quot;software&quot;)" computerName="BOQI-THE-DAEMON" duration="00:00:13.2872692" startTime="2026-10-06T03:05:04.7277780+08:00" endTime="2026-10-06T03:05:18.0128246+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6ad411b1-aa6d-4db0-a567-ca2276aec5ac" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.100000001, raster: &quot;software&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="65a82b92-c1e3-7ec0-67bb-eb04262c5c33">
+      <Execution id="88cdc8e5-7e92-488b-900a-530d1dec42e0" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;d3d12&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="9628b3c8-33c0-431f-ba21-c04c83628f33">
+      <Execution id="1c947acc-8e2e-40d6-808b-d2e2fa5f7f7a" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.00999999978, raster: &quot;mesh&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="5e8d1728-d5ed-4b37-9e48-1ca74b43fd25">
+      <Execution id="3d21b3bd-2231-492b-b7c0-abe93c7a65d8" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.100000001, raster: &quot;vertex&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="643cce45-c329-1f7b-04f0-d89c39fae6bd">
+      <Execution id="6de293ba-6a9b-4886-8626-132acefd5fc1" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.MovingTheFrontCasterRecoversTheRearCasterShadowInTheSameFrame(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="8dcad8db-cc48-9e45-571a-f81571e179d9">
+      <Execution id="29361bc3-aed8-4c46-a783-945da00e72ba" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="MovingTheFrontCasterRecoversTheRearCasterShadowInTheSameFrame" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.CanceledCasterFrameResumesWithTheSameShadowsAsFreshArrival(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="c92800a2-a454-e4d3-77de-866b3519bf7d">
+      <Execution id="036b7fbb-b344-4d41-9e10-c1ba9b798e20" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="CanceledCasterFrameResumesWithTheSameShadowsAsFreshArrival" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;d3d12&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--no-taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="ea0c84f7-bd3f-a3f1-3765-7a0e56b9bb34">
+      <Execution id="aaab993a-ddff-4c1c-868d-a60a7302a3f8" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsPresentTheDeclaredSphereColors" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;vulkan&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="6115a288-a0d0-ef79-5a96-41f26396813b">
+      <Execution id="31a50f8f-9686-4e22-a9c0-9b32cb04da46" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsPresentTheDeclaredSphereColors" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;d3d12&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--no-taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="a2a2b879-8ccf-376e-835b-f3c9701bb02e">
+      <Execution id="50a3f3d7-6376-4c73-a9e2-b6a2b942656e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.CoarseDirectionalShadowsFollowTheCasterInTheFirstChangedFrame(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="70fed921-0382-3a16-093c-089e0a45abb5">
+      <Execution id="4f1cdca3-4cb3-4bfd-9505-952090425fb1" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="CoarseDirectionalShadowsFollowTheCasterInTheFirstChangedFrame" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="6fefdbff-39dc-5373-53f9-230030b33c23">
+      <Execution id="7e25b964-127e-4985-8259-76b7f44701bf" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletingAllGeometryShowsTheDeclaredBackground(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="8091700e-e0c4-4037-d261-48365c4de54d">
+      <Execution id="37b7d2e8-813a-4f9a-8c68-766d02bb5d18" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="DeletingAllGeometryShowsTheDeclaredBackground" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;d3d12&quot;, raster: &quot;software&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="d32a8922-6814-9468-20a6-17c7b84ca386">
+      <Execution id="6ad411b1-aa6d-4db0-a567-ca2276aec5ac" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.VsmWindowImageTests" name="SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.AddedGeometryMatchesStartingWithThatGeometry(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="4af97f5f-957d-3535-718a-ea493ca9d994">
+      <Execution id="e23de82c-6f75-47dd-bacb-b5996ddcc39a" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="AddedGeometryMatchesStartingWithThatGeometry" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.00999999978, raster: &quot;software&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="cec5e75e-0147-f974-560d-dbbe156397c2">
+      <Execution id="ac6c9a05-5034-454d-9d4a-df5758b496bf" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.MovingAnOccluderRecoversTheRearGeometryInTheSameFrame(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="34687be5-33cf-1c77-dffa-905958fedaf4">
+      <Execution id="2aace183-96d6-46fc-8d4b-5bb3354ea095" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="MovingAnOccluderRecoversTheRearGeometryInTheSameFrame" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;d3d12&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="aa0ce593-cc95-1015-2103-bd4f12835a6a">
+      <Execution id="47fd44f4-4a7e-40ac-a5e4-a75773790c5e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsPresentTheDeclaredSphereColors" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.CameraMovementRecoversOccludedGeometryLikeRenderingWithFreshOcclusion(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="11956661-5461-8ff3-7ba6-97c1ebe06c34">
+      <Execution id="370ec5fa-c237-4086-a1d5-6b40be64b39e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="CameraMovementRecoversOccludedGeometryLikeRenderingWithFreshOcclusion" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.MovingTheFrontCasterRecoversTheRearCasterShadowInTheSameFrame(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="835894b8-8c17-4d77-2dbb-79f39714b1df">
+      <Execution id="511ca551-5849-45ac-abd1-a840a20d555c" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="MovingTheFrontCasterRecoversTheRearCasterShadowInTheSameFrame" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.00999999978, raster: &quot;vertex&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="4f712c2e-f0b9-1a9b-ea88-8927c432146c">
+      <Execution id="501ba86a-3835-4638-bf91-2fc1523aaa3d" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.00999999978, raster: &quot;mesh&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="7dd6ecab-4bf4-7ad1-c6d6-10d4b2d4b1f4">
+      <Execution id="fe5260ef-6f1a-48a2-af17-32237a17a7ba" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;vulkan&quot;, raster: &quot;software&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="49223474-cffe-baea-c015-7ce4df9adbbf">
+      <Execution id="872a9474-efff-47cd-81da-49d2c27e9709" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.VsmWindowImageTests" name="SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="4ab4134f-56da-c9ca-7de9-fed8601cacca">
+      <Execution id="d20a2523-55d3-41ed-a512-ee52c322556e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RasterWorkFailureTests" name="InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.100000001, raster: &quot;vertex&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="e5b79ed5-c516-7d7f-6451-035873082dcf">
+      <Execution id="6771132d-d113-424b-92eb-cf89fafb5f75" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletingAllGeometryShowsTheDeclaredBackground(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="ee3dc98d-1cdd-55d7-76a6-83fdf77caa8a">
+      <Execution id="4c9cbe02-a526-4454-9eeb-b5180ca5e2ae" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="DeletingAllGeometryShowsTheDeclaredBackground" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;vulkan&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--no-taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="029197dd-1a41-fe81-bb52-823ea51e6b51">
+      <Execution id="413a9276-3189-4628-a695-439a683ea02e" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: &quot;vulkan&quot;, rasterEdgePixels: 64)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="b3fb3877-ae27-9549-8b97-daf0da757143">
+      <Execution id="664ea5dd-9c87-4f1c-ad5c-decb5b198e6b" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: &quot;d3d12&quot;, rasterEdgePixels: 64)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="21cb78d9-f5cb-6871-49f8-4ff8811b59ae">
+      <Execution id="6e4f16d3-3f00-4309-8f67-2b2ba839dda6" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;d3d12&quot;, raster: &quot;default&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="883488fe-63ff-c385-d3ec-2ece9dafa6a1">
+      <Execution id="5ecfb952-9ca9-49bb-a321-cd583d9fc879" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.VsmWindowImageTests" name="SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;vulkan&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--no-taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="f29b748e-54cf-569b-789c-97f6da0df8dd">
+      <Execution id="7d50be9d-08aa-4c38-8407-50c1e8b333b8" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.00999999978, raster: &quot;vertex&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="a79b7ace-f92f-9611-ddd1-fd30de8ab5eb">
+      <Execution id="d8dbfd79-735c-46b3-877f-17dcb192f09b" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;d3d12&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--no-taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="66a2554d-1764-beca-b410-c8a0b6600998">
+      <Execution id="e1710d38-9e9e-48fe-a0b5-7b9a3e292e10" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;d3d12&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--no-taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="c803b215-fe66-1805-638c-57fc4b6197ea">
+      <Execution id="f75449ca-8b9a-4030-9cdc-0da8f0a39eff" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsPresentTheDeclaredSphereColors" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;d3d12&quot;, raster: &quot;vertex&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="253a4224-cd27-1842-0bb0-829a82b69fb7">
+      <Execution id="efc6095a-c2ed-4db2-9e24-4337ac511dee" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.VsmWindowImageTests" name="SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: &quot;d3d12&quot;, rasterEdgePixels: 4)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="c191e4c9-8245-a992-93dd-1051d2b03a90">
+      <Execution id="5bc6d5c5-f3ac-49a4-a051-ace80a20b621" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.CanceledGeometryFrameLeavesTheFollowingImageEqualToTheCompletedSequence(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="a7e9e1d0-b488-0efa-7989-9ab4c62fdd57">
+      <Execution id="33250b3c-f2b5-4b21-a1b6-d22e1b771018" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="CanceledGeometryFrameLeavesTheFollowingImageEqualToTheCompletedSequence" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.100000001, raster: &quot;mesh&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="14f102ef-55a4-7399-f50b-c13923b22863">
+      <Execution id="e626bd62-02ac-4a8f-b4d0-299c5c8c88d0" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.MovingLightShadowsMatchStartingWithTheFinalLight(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="ed266ed3-3b9f-6496-4256-8baf58824201">
+      <Execution id="d4b0b5fb-50f1-4741-9c50-ab8335c70133" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="MovingLightShadowsMatchStartingWithTheFinalLight" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.StretchedGeometryCrossingTheViewEdgeMatchesStartingAtThatTransform(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="a6e613ed-53f3-cc3a-e34e-1772fecde3f1">
+      <Execution id="3884b994-ac69-4c0d-9295-65c149798ade" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="StretchedGeometryCrossingTheViewEdgeMatchesStartingAtThatTransform" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.SceneAdapterRenderingTests.HardwareFrameLoopDeliversRequestedImages" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="8b85b9fd-5c40-7592-f89b-b7e050d0fa59">
+      <Execution id="b9fff6d2-1c69-49c1-a35c-9c358e11f80d" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.SceneAdapterRenderingTests" name="HardwareFrameLoopDeliversRequestedImages" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.CanceledGeometryFrameLeavesTheFollowingImageEqualToTheCompletedSequence(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="6f0517d5-245b-4185-dc8a-834a73b69a23">
+      <Execution id="7147a191-7f70-40eb-8911-e13f553b4685" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="CanceledGeometryFrameLeavesTheFollowingImageEqualToTheCompletedSequence" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.00999999978, raster: &quot;software&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="8b95c06a-7770-4327-2353-0d737675579a">
+      <Execution id="7750c9e6-ba72-4a3c-82a8-e1c406528c3d" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.CoarseDirectionalShadowsFollowTheCasterInTheFirstChangedFrame(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="c4346d1a-fa41-0635-2d47-216b2d5e0935">
+      <Execution id="6e62120a-19e6-4f56-a495-86a6de8e95a6" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="CoarseDirectionalShadowsFollowTheCasterInTheFirstChangedFrame" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;vulkan&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="328c3cde-af1f-2dac-49ac-53875f4b04d5">
+      <Execution id="172e37da-9337-48b6-97d6-edbd2ab09f98" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletedGeometryMatchesStartingWithTheRemainingGeometry(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="270753e4-6583-f7dc-bdff-1db017dca280">
+      <Execution id="af6bc643-79ff-4cff-84b4-6535d967a6ea" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="DeletedGeometryMatchesStartingWithTheRemainingGeometry" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletedGeometryMatchesStartingWithTheRemainingGeometry(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="92e3b7f1-951a-93a4-b9ea-923cb2022383">
+      <Execution id="ccc10a5b-c6ff-405c-9a32-19064fc2f6d0" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="DeletedGeometryMatchesStartingWithTheRemainingGeometry" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;vulkan&quot;, raster: &quot;default&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="1e92c6df-9e4c-a868-8977-53929e74714b">
+      <Execution id="1814a197-82a2-4695-85b3-873ada42daa5" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.VsmWindowImageTests" name="SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;vulkan&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="bcc74c56-1065-cac3-2295-0b1ab0d13c33">
+      <Execution id="9cdab292-1261-4766-813c-4926d76fe6d3" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.AddedGeometryMatchesStartingWithThatGeometry(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="74a8c329-3d88-46da-b614-c1186ce8c05b">
+      <Execution id="dc9b7d43-9439-41aa-aa2f-1ba8ad735be8" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="AddedGeometryMatchesStartingWithThatGeometry" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.DirectionalShadowsAfterCameraScrollMatchRefreshedShadows(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="da1135ab-dffd-f97c-c613-8b0b3c5481d6">
+      <Execution id="57b16aa3-7a4d-4583-8b0d-fbd2b89a328d" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="DirectionalShadowsAfterCameraScrollMatchRefreshedShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;d3d12&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="cfe065d1-ba48-10a9-7894-4a055d105219">
+      <Execution id="c62ba441-0433-4144-a81d-2de1f8790ce8" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsPresentTheDeclaredSphereColors" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;vulkan&quot;, normalBias: 0.100000001, raster: &quot;software&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="f91d915f-d7be-c786-cf5d-46a8f4f7be58">
+      <Execution id="e51942ec-002c-41a8-8633-b7c6a864d4d9" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;vulkan&quot;, vsm: &quot;--no-vsm&quot;, temporal: &quot;--no-taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="fad137e9-d5cb-7ee6-0d33-60f11b81733e">
+      <Execution id="e6674a61-517f-4cc4-a7f8-32768cdbf408" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsPresentTheDeclaredSphereColors" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: &quot;d3d12&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="aed1ce1f-61a9-10a1-83d0-803a13a21f9c">
+      <Execution id="8af1401a-cc68-4c95-bd52-81a7e6a101a4" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.CameraMovementRecoversOccludedGeometryLikeRenderingWithFreshOcclusion(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="aa147058-a702-9e96-d835-85b467e05d1d">
+      <Execution id="00ca2504-27f6-4895-a3cc-f17ffc333108" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="CameraMovementRecoversOccludedGeometryLikeRenderingWithFreshOcclusion" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.StretchedGeometryCrossingTheViewEdgeMatchesStartingAtThatTransform(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="ff9260b5-740a-b8c2-c3da-f530f1e958ca">
+      <Execution id="695baac6-36c3-4d0d-878f-097db2da963f" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="StretchedGeometryCrossingTheViewEdgeMatchesStartingAtThatTransform" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: &quot;vulkan&quot;, rasterEdgePixels: 4)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="5deefd47-2703-d72b-7e1a-1c504a0c6711">
+      <Execution id="30302d87-f81c-4a1d-8158-087b4f2d25df" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;vulkan&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--no-taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="dfc68b66-5e96-80cd-05bb-5959a2ba146f">
+      <Execution id="36f49825-1cf6-4048-ab9a-ae233578e785" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsPresentTheDeclaredSphereColors" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.GeometryRenderingTests.MovingAnOccluderRecoversTheRearGeometryInTheSameFrame(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="a8db941f-cccd-830b-efc2-5766c8b15623">
+      <Execution id="97fc56bd-3c0f-480d-b9bf-ba3a04511450" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.GeometryRenderingTests" name="MovingAnOccluderRecoversTheRearGeometryInTheSameFrame" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.MovingLightShadowsMatchStartingWithTheFinalLight(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="54cd5d1f-80b6-22e5-0af1-545b4acae5cd">
+      <Execution id="a51f9fd9-e966-411e-b1e0-a96c3984f2eb" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="MovingLightShadowsMatchStartingWithTheFinalLight" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: &quot;d3d12&quot;, normalBias: 0.100000001, raster: &quot;mesh&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="5ad36c51-983c-0f43-e595-a33e32958d16">
+      <Execution id="558d055a-ea52-419c-b987-af94da4ebe1d" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="ReceiverMasksPreserveNormalOffsetShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.DirectionalShadowsAfterCameraScrollMatchRefreshedShadows(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="e77434db-fd01-f096-7897-c200c6a3d4e1">
+      <Execution id="4603bb80-0c51-43c4-b9b8-762904859bdf" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="DirectionalShadowsAfterCameraScrollMatchRefreshedShadows" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.CanceledCasterFrameResumesWithTheSameShadowsAsFreshArrival(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="07ec3fa6-f14f-7833-a675-d573732076cf">
+      <Execution id="912a3974-9de3-440c-8b27-28be6d8f5b66" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="CanceledCasterFrameResumesWithTheSameShadowsAsFreshArrival" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: &quot;vulkan&quot;, raster: &quot;vertex&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="7e594f63-e3b4-ab24-3691-955b969bf125">
+      <Execution id="2bb4cd05-2b3f-4106-ad7c-fa438f361acf" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.VsmWindowImageTests" name="SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: &quot;vulkan&quot;, vsm: &quot;--vsm&quot;, temporal: &quot;--taa&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="bfb17c4a-ffe9-3d71-8b01-bbf118255a74">
+      <Execution id="e74ba532-6849-4271-a011-13ccad2bbe35" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RenderingFeatureTests" name="VsmAndTemporalCombinationsPresentTheDeclaredSphereColors" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: &quot;vulkan&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="bafeb91a-60e2-9e1d-e72a-97096bd2817d">
+      <Execution id="2942e6fa-49e6-4713-8ff3-216786fa2863" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.RasterWorkFailureTests" name="InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry" />
+    </UnitTest>
+    <UnitTest name="SomeEngine.Runtime.Tests.ShadowImageTests.StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver(backend: &quot;d3d12&quot;)" storage="f:\someengine.agentwork\rg70-remaining\trees\ticket-135\tests\someengine.runtime.tests\bin\release\net10.0\someengine.runtime.tests.dll" id="fb946e77-dd12-cc14-6bed-b3bc5dbe0a81">
+      <Execution id="62918db7-2998-4c2b-af78-566a9ba4fa37" />
+      <TestMethod codeBase="F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\tests\SomeEngine.Runtime.Tests\bin\Release\net10.0\SomeEngine.Runtime.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="SomeEngine.Runtime.Tests.ShadowImageTests" name="StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="aed1ce1f-61a9-10a1-83d0-803a13a21f9c" executionId="8af1401a-cc68-4c95-bd52-81a7e6a101a4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5e8d1728-d5ed-4b37-9e48-1ca74b43fd25" executionId="3d21b3bd-2231-492b-b7c0-abe93c7a65d8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cec5e75e-0147-f974-560d-dbbe156397c2" executionId="ac6c9a05-5034-454d-9d4a-df5758b496bf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="07ec3fa6-f14f-7833-a675-d573732076cf" executionId="912a3974-9de3-440c-8b27-28be6d8f5b66" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="21cb78d9-f5cb-6871-49f8-4ff8811b59ae" executionId="6e4f16d3-3f00-4309-8f67-2b2ba839dda6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fb946e77-dd12-cc14-6bed-b3bc5dbe0a81" executionId="62918db7-2998-4c2b-af78-566a9ba4fa37" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a6e613ed-53f3-cc3a-e34e-1772fecde3f1" executionId="3884b994-ac69-4c0d-9295-65c149798ade" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a2a2b879-8ccf-376e-835b-f3c9701bb02e" executionId="50a3f3d7-6376-4c73-a9e2-b6a2b942656e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7e594f63-e3b4-ab24-3691-955b969bf125" executionId="2bb4cd05-2b3f-4106-ad7c-fa438f361acf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c191e4c9-8245-a992-93dd-1051d2b03a90" executionId="5bc6d5c5-f3ac-49a4-a051-ace80a20b621" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ee3dc98d-1cdd-55d7-76a6-83fdf77caa8a" executionId="4c9cbe02-a526-4454-9eeb-b5180ca5e2ae" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a79b7ace-f92f-9611-ddd1-fd30de8ab5eb" executionId="d8dbfd79-735c-46b3-877f-17dcb192f09b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8b95c06a-7770-4327-2353-0d737675579a" executionId="7750c9e6-ba72-4a3c-82a8-e1c406528c3d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="11956661-5461-8ff3-7ba6-97c1ebe06c34" executionId="370ec5fa-c237-4086-a1d5-6b40be64b39e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a7e9e1d0-b488-0efa-7989-9ab4c62fdd57" executionId="33250b3c-f2b5-4b21-a1b6-d22e1b771018" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c4346d1a-fa41-0635-2d47-216b2d5e0935" executionId="6e62120a-19e6-4f56-a495-86a6de8e95a6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="253a4224-cd27-1842-0bb0-829a82b69fb7" executionId="efc6095a-c2ed-4db2-9e24-4337ac511dee" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bafeb91a-60e2-9e1d-e72a-97096bd2817d" executionId="2942e6fa-49e6-4713-8ff3-216786fa2863" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="643cce45-c329-1f7b-04f0-d89c39fae6bd" executionId="6de293ba-6a9b-4886-8626-132acefd5fc1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="328c3cde-af1f-2dac-49ac-53875f4b04d5" executionId="172e37da-9337-48b6-97d6-edbd2ab09f98" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="74a8c329-3d88-46da-b614-c1186ce8c05b" executionId="dc9b7d43-9439-41aa-aa2f-1ba8ad735be8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c92800a2-a454-e4d3-77de-866b3519bf7d" executionId="036b7fbb-b344-4d41-9e10-c1ba9b798e20" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="34687be5-33cf-1c77-dffa-905958fedaf4" executionId="2aace183-96d6-46fc-8d4b-5bb3354ea095" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b3fb3877-ae27-9549-8b97-daf0da757143" executionId="664ea5dd-9c87-4f1c-ad5c-decb5b198e6b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7dd6ecab-4bf4-7ad1-c6d6-10d4b2d4b1f4" executionId="fe5260ef-6f1a-48a2-af17-32237a17a7ba" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="49223474-cffe-baea-c015-7ce4df9adbbf" executionId="872a9474-efff-47cd-81da-49d2c27e9709" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6fefdbff-39dc-5373-53f9-230030b33c23" executionId="7e25b964-127e-4985-8259-76b7f44701bf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="883488fe-63ff-c385-d3ec-2ece9dafa6a1" executionId="5ecfb952-9ca9-49bb-a321-cd583d9fc879" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="aa0ce593-cc95-1015-2103-bd4f12835a6a" executionId="47fd44f4-4a7e-40ac-a5e4-a75773790c5e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ff9260b5-740a-b8c2-c3da-f530f1e958ca" executionId="695baac6-36c3-4d0d-878f-097db2da963f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="66a2554d-1764-beca-b410-c8a0b6600998" executionId="e1710d38-9e9e-48fe-a0b5-7b9a3e292e10" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="65a82b92-c1e3-7ec0-67bb-eb04262c5c33" executionId="88cdc8e5-7e92-488b-900a-530d1dec42e0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4f712c2e-f0b9-1a9b-ea88-8927c432146c" executionId="501ba86a-3835-4638-bf91-2fc1523aaa3d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="029197dd-1a41-fe81-bb52-823ea51e6b51" executionId="413a9276-3189-4628-a695-439a683ea02e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e77434db-fd01-f096-7897-c200c6a3d4e1" executionId="4603bb80-0c51-43c4-b9b8-762904859bdf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ed266ed3-3b9f-6496-4256-8baf58824201" executionId="d4b0b5fb-50f1-4741-9c50-ab8335c70133" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5ad36c51-983c-0f43-e595-a33e32958d16" executionId="558d055a-ea52-419c-b987-af94da4ebe1d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5deefd47-2703-d72b-7e1a-1c504a0c6711" executionId="30302d87-f81c-4a1d-8158-087b4f2d25df" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8b85b9fd-5c40-7592-f89b-b7e050d0fa59" executionId="b9fff6d2-1c69-49c1-a35c-9c358e11f80d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fad137e9-d5cb-7ee6-0d33-60f11b81733e" executionId="e6674a61-517f-4cc4-a7f8-32768cdbf408" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8dcad8db-cc48-9e45-571a-f81571e179d9" executionId="29361bc3-aed8-4c46-a783-945da00e72ba" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1e92c6df-9e4c-a868-8977-53929e74714b" executionId="1814a197-82a2-4695-85b3-873ada42daa5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="70fed921-0382-3a16-093c-089e0a45abb5" executionId="4f1cdca3-4cb3-4bfd-9505-952090425fb1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a8db941f-cccd-830b-efc2-5766c8b15623" executionId="97fc56bd-3c0f-480d-b9bf-ba3a04511450" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="54cd5d1f-80b6-22e5-0af1-545b4acae5cd" executionId="a51f9fd9-e966-411e-b1e0-a96c3984f2eb" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8091700e-e0c4-4037-d261-48365c4de54d" executionId="37b7d2e8-813a-4f9a-8c68-766d02bb5d18" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="270753e4-6583-f7dc-bdff-1db017dca280" executionId="af6bc643-79ff-4cff-84b4-6535d967a6ea" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="aa147058-a702-9e96-d835-85b467e05d1d" executionId="00ca2504-27f6-4895-a3cc-f17ffc333108" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="da1135ab-dffd-f97c-c613-8b0b3c5481d6" executionId="57b16aa3-7a4d-4583-8b0d-fbd2b89a328d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bfb17c4a-ffe9-3d71-8b01-bbf118255a74" executionId="e74ba532-6849-4271-a011-13ccad2bbe35" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c803b215-fe66-1805-638c-57fc4b6197ea" executionId="f75449ca-8b9a-4030-9cdc-0da8f0a39eff" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f29b748e-54cf-569b-789c-97f6da0df8dd" executionId="7d50be9d-08aa-4c38-8407-50c1e8b333b8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cfe065d1-ba48-10a9-7894-4a055d105219" executionId="c62ba441-0433-4144-a81d-2de1f8790ce8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="835894b8-8c17-4d77-2dbb-79f39714b1df" executionId="511ca551-5849-45ac-abd1-a840a20d555c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4af97f5f-957d-3535-718a-ea493ca9d994" executionId="e23de82c-6f75-47dd-bacb-b5996ddcc39a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6f0517d5-245b-4185-dc8a-834a73b69a23" executionId="7147a191-7f70-40eb-8911-e13f553b4685" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4ab4134f-56da-c9ca-7de9-fed8601cacca" executionId="d20a2523-55d3-41ed-a512-ee52c322556e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bcc74c56-1065-cac3-2295-0b1ab0d13c33" executionId="9cdab292-1261-4766-813c-4926d76fe6d3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f91d915f-d7be-c786-cf5d-46a8f4f7be58" executionId="e51942ec-002c-41a8-8633-b7c6a864d4d9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="92e3b7f1-951a-93a4-b9ea-923cb2022383" executionId="ccc10a5b-c6ff-405c-9a32-19064fc2f6d0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e5b79ed5-c516-7d7f-6451-035873082dcf" executionId="6771132d-d113-424b-92eb-cf89fafb5f75" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6115a288-a0d0-ef79-5a96-41f26396813b" executionId="31a50f8f-9686-4e22-a9c0-9b32cb04da46" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="14f102ef-55a4-7399-f50b-c13923b22863" executionId="e626bd62-02ac-4a8f-b4d0-299c5c8c88d0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="dfc68b66-5e96-80cd-05bb-5959a2ba146f" executionId="36f49825-1cf6-4048-ab9a-ae233578e785" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9628b3c8-33c0-431f-ba21-c04c83628f33" executionId="1c947acc-8e2e-40d6-808b-d2e2fa5f7f7a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ea0c84f7-bd3f-a3f1-3765-7a0e56b9bb34" executionId="aaab993a-ddff-4c1c-868d-a60a7302a3f8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d32a8922-6814-9468-20a6-17c7b84ca386" executionId="6ad411b1-aa6d-4db0-a567-ca2276aec5ac" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="67" executed="34" passed="34" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.18]   Discovering: SomeEngine.Runtime.Tests&#xD;
+[xUnit.net 00:00:02.59]   Discovered:  SomeEngine.Runtime.Tests&#xD;
+[xUnit.net 00:00:02.67]   Starting:    SomeEngine.Runtime.Tests&#xD;
+Shader: cluster_bin_count.shader&#xD;
+Shader: cluster_bin_reserve.shader&#xD;
+Shader: cluster_bin_reset.shader&#xD;
+Shader: cluster_bin_scatter.shader&#xD;
+Shader: cluster_bvh_traverse.shader&#xD;
+Shader: cluster_bvh_traverse_seed.shader&#xD;
+Shader: cluster_cull_phase1.shader&#xD;
+Shader: cluster_cull_phase2.shader&#xD;
+Shader: cluster_cull_reset.shader&#xD;
+Shader: cluster_deferred_resume.shader&#xD;
+Shader: cluster_draw.shader&#xD;
+Shader: cluster_resolve.shader&#xD;
+Shader: cluster_scene_bounds.shader&#xD;
+Shader: cluster_tessellation_bin.shader&#xD;
+Shader: cluster_tessellation_phong.shader&#xD;
+Shader: clustered_light_grid.shader&#xD;
+Shader: debug_args_copy.shader&#xD;
+Shader: debug_sphere.shader&#xD;
+Shader: hello_triangle.shader&#xD;
+Shader: hiz_init.shader&#xD;
+Shader: hiz_reduce.shader&#xD;
+Shader: hiz_reduce_pair.shader&#xD;
+Shader: imgui.shader&#xD;
+Shader: post_tonemap.shader&#xD;
+Shader: ray_tracing_geometry.shader&#xD;
+Shader: render_debug_overlay.shader&#xD;
+Shader: shade_bin_count.shader&#xD;
+Shader: shade_bin_reserve.shader&#xD;
+Shader: shade_bin_reset.shader&#xD;
+Shader: shade_bin_scatter.shader&#xD;
+Shader: shader_contract_probe.shader&#xD;
+Shader: standard.shader&#xD;
+Shader: stream_output_geometry.shader&#xD;
+Shader: sw_raster.shader&#xD;
+Shader: temporal_resolve.shader&#xD;
+Shader: translucency_composite.shader&#xD;
+Shader: triangle.shader&#xD;
+Shader: unlit.shader&#xD;
+Shader: visibility_clear_buffer.shader&#xD;
+Shader: visibility_clear_image.shader&#xD;
+Shader: visibility_resolve_buffer.shader&#xD;
+Shader: visibility_resolve_image.shader&#xD;
+Shader: vsm_allocate_pages.shader&#xD;
+Shader: vsm_caster_invalidation.shader&#xD;
+Shader: vsm_clear_pages.shader&#xD;
+Shader: vsm_dynamic_resolution.shader&#xD;
+Shader: vsm_frame_reset.shader&#xD;
+Shader: vsm_mark_coarse_pages.shader&#xD;
+Shader: vsm_mark_pages.shader&#xD;
+Shader: vsm_page_depth_complete.shader&#xD;
+Shader: vsm_page_hiz.shader&#xD;
+Shader: vsm_page_hiz_reduce.shader&#xD;
+Shader: vsm_page_pool.shader&#xD;
+Shader: vsm_receiver_mask_reset.shader&#xD;
+Shader: vsm_state_init.shader&#xD;
+Shader: vsm_view_compact.shader&#xD;
+  ClusterPipeline: assets/Pipelines/default_cluster.clusterrender.asset&#xD;
+  VirtualShadowMap: assets/Pipelines/default_virtual_shadow.virtualshadow.asset&#xD;
+  Scene: assets/Scenes/default.scene.asset&#xD;
+  Application: assets/Runtime/default.runtime.asset&#xD;
+Built 68 project assets from project sources and the engine shader library.&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Scenes-fcb336cbe5224a6787df98f34a0dd128; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 4 frame(s).&#xD;
+Shader: cluster_bin_count.shader&#xD;
+Shader: cluster_bin_reserve.shader&#xD;
+Shader: cluster_bin_reset.shader&#xD;
+Shader: cluster_bin_scatter.shader&#xD;
+Shader: cluster_bvh_traverse.shader&#xD;
+Shader: cluster_bvh_traverse_seed.shader&#xD;
+Shader: cluster_cull_phase1.shader&#xD;
+Shader: cluster_cull_phase2.shader&#xD;
+Shader: cluster_cull_reset.shader&#xD;
+Shader: cluster_deferred_resume.shader&#xD;
+Shader: cluster_draw.shader&#xD;
+Shader: cluster_resolve.shader&#xD;
+Shader: cluster_scene_bounds.shader&#xD;
+Shader: cluster_tessellation_bin.shader&#xD;
+Shader: cluster_tessellation_phong.shader&#xD;
+Shader: clustered_light_grid.shader&#xD;
+Shader: debug_args_copy.shader&#xD;
+Shader: debug_sphere.shader&#xD;
+Shader: hello_triangle.shader&#xD;
+Shader: hiz_init.shader&#xD;
+Shader: hiz_reduce.shader&#xD;
+Shader: hiz_reduce_pair.shader&#xD;
+Shader: imgui.shader&#xD;
+Shader: post_tonemap.shader&#xD;
+Shader: ray_tracing_geometry.shader&#xD;
+Shader: render_debug_overlay.shader&#xD;
+Shader: shade_bin_count.shader&#xD;
+Shader: shade_bin_reserve.shader&#xD;
+Shader: shade_bin_reset.shader&#xD;
+Shader: shade_bin_scatter.shader&#xD;
+Shader: shader_contract_probe.shader&#xD;
+Shader: standard.shader&#xD;
+Shader: stream_output_geometry.shader&#xD;
+Shader: sw_raster.shader&#xD;
+Shader: temporal_resolve.shader&#xD;
+Shader: translucency_composite.shader&#xD;
+Shader: triangle.shader&#xD;
+Shader: unlit.shader&#xD;
+Shader: visibility_clear_buffer.shader&#xD;
+Shader: visibility_clear_image.shader&#xD;
+Shader: visibility_resolve_buffer.shader&#xD;
+Shader: visibility_resolve_image.shader&#xD;
+Shader: vsm_allocate_pages.shader&#xD;
+Shader: vsm_caster_invalidation.shader&#xD;
+Shader: vsm_clear_pages.shader&#xD;
+Shader: vsm_dynamic_resolution.shader&#xD;
+Shader: vsm_frame_reset.shader&#xD;
+Shader: vsm_mark_coarse_pages.shader&#xD;
+Shader: vsm_mark_pages.shader&#xD;
+Shader: vsm_page_depth_complete.shader&#xD;
+Shader: vsm_page_hiz.shader&#xD;
+Shader: vsm_page_hiz_reduce.shader&#xD;
+Shader: vsm_page_pool.shader&#xD;
+Shader: vsm_receiver_mask_reset.shader&#xD;
+Shader: vsm_state_init.shader&#xD;
+Shader: vsm_view_compact.shader&#xD;
+  ClusterPipeline: assets/Pipelines/default_cluster.clusterrender.asset&#xD;
+  VirtualShadowMap: assets/Pipelines/default_virtual_shadow.virtualshadow.asset&#xD;
+  Scene: assets/Scenes/default.scene.asset&#xD;
+  Application: assets/Runtime/default.runtime.asset&#xD;
+Built 68 project assets from project sources and the engine shader library.&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=4/6, missing=2, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:03:00.32]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: "vulkan", raster: "default")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=4/6, missing=2, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:03:13.31]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:03:13.32]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: "vulkan", raster: "vertex")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: "vulkan", raster: "software")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=4/6, missing=2, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:03:26.60]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.00999999978, raster: "software")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:03:35.18]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.100000001, raster: "software")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:04:10.23]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:04:10.24]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:04:10.24]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.100000001, raster: "mesh")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.100000001, raster: "vertex")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.00999999978, raster: "vertex")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:04:19.43]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.00999999978, raster: "mesh")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:04:46.61]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:04:46.61]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.DirectionalShadowsAfterCameraScrollMatchRefreshedShadows(backend: "vulkan")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\off-camera-shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 3.75&gt;..&lt;3.4, 1.7, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=2/12, missing=10, queued=0, active=8, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\off-camera-shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 3.75&gt;..&lt;3.4, 1.7, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\off-camera-shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 3.75&gt;..&lt;3.4, 1.7, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=7/12, missing=5, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\off-camera-shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 3.75&gt;..&lt;3.4, 1.7, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:05:34.64]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.MovingTheFrontCasterRecoversTheRearCasterShadowInTheSameFrame(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:05:48.92]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:05:48.92]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.CoarseDirectionalShadowsFollowTheCasterInTheFirstChangedFrame(backend: "vulkan")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.MovingLightShadowsMatchStartingWithTheFinalLight(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 23 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:06:11.43]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:06:11.43]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.ShadowImageTests.CanceledCasterFrameResumesWithTheSameShadowsAsFreshArrival(backend: "vulkan")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: "vulkan", vsm: "--vsm", temporal: "--no-taa")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:06:28.36]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: "vulkan", vsm: "--vsm", temporal: "--taa")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\shadows; sceneInstances=2, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 8&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=6/6, missing=0, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 24 frame(s).&#xD;
+[xUnit.net 00:06:46.26]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:06:46.27]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: "vulkan", vsm: "--no-vsm", temporal: "--no-taa")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: "vulkan", vsm: "--no-vsm", temporal: "--taa")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+[xUnit.net 00:06:53.34]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:06:53.34]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: "vulkan", vsm: "--no-vsm", temporal: "--no-taa")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: "vulkan", vsm: "--vsm", temporal: "--no-taa")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+[xUnit.net 00:07:00.48]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:07:00.48]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:07:00.48]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: "vulkan", vsm: "--no-vsm", temporal: "--taa")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: "vulkan", vsm: "--vsm", temporal: "--taa")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\tessellation; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+SomeEngine.Runtime.ApplicationRunException: Cluster geometry work exceeded its 4096 entry capacity (Tessellation).&#xD;
+ ---&gt; SomeEngine.Runtime.ApplicationRunException: Cluster geometry work exceeded its 4096 entry capacity (Tessellation).&#xD;
+ ---&gt; SomeEngine.Render.Cluster.Pipeline.ClusterWorkOverflowException: Cluster geometry work exceeded its 4096 entry capacity (Tessellation).&#xD;
+   at SomeEngine.Runtime.RuntimeApplication.ExecuteFrame(IGraphicsBackend backend, RenderGraph graph, RenderGraphNextFrame nextFrame, Queue graphicsQueue, QueueCompletion[] completionSlots, QueueCompletion[] completions, RenderDevice renderDevice, RenderDataLock dataLock, RenderFrameSystems systems, ClusterPipelineSystem pipeline, ClusterStreamingFeedbackConsumer streamingConsumer, VirtualShadowFeature virtualShadows, ClusterPipelineOutputs&amp; clusterOutputs, TemporalFeature temporal, RuntimePresentationPipeline presentation, RuntimeUiRenderer ui, Nullable`1 image, Int32 width, Int32 height, NativeWindow window, Boolean reportMilestones, Boolean cameraCut, Entity viewEntity, FrameOutputVerifier outputVerifier, GraphRegionId frameOutputRegion, FrameOutputVerifier linearVerifier, GraphRegionId linearOutputRegion, RenderGraphDiagnosticsHandler graphDiagnostics, Boolean synchronousFrames, Boolean temporalAntialiasing, Vector2 jitterPixels, TemporalResolveSettings temporalSettings) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Runtime\RuntimeApplication.cs:line 1330&#xD;
+   at SomeEngine.Runtime.RuntimeApplication.RunRenderer(RuntimeStartupOptions options, IGraphicsBackend backend, Device device, Swapchain swapchain, NativeWindow window, AssetLoader assets, WorldAsset sceneAsset, ClusterShaders pipelineConfiguration, VirtualShadowMapShaders virtualShadowConfiguration, Shader uiShader, Shader presentationShader, Shader lightingShader, Shader temporalShader, Func`3 loadShader, ApplicationSettingsBlock boot, String title, Boolean forceHardwareRaster, Func`3 animateMaterial, SceneTestPlatform platform, SceneScript script) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Runtime\RuntimeApplication.cs:line 906&#xD;
+   --- End of inner exception stack trace ---&#xD;
+   at SomeEngine.Runtime.RuntimeApplication.RunRenderer(RuntimeStartupOptions options, IGraphicsBackend backend, Device device, Swapchain swapchain, NativeWindow window, AssetLoader assets, WorldAsset sceneAsset, ClusterShaders pipelineConfiguration, VirtualShadowMapShaders virtualShadowConfiguration, Shader uiShader, Shader presentationShader, Shader lightingShader, Shader temporalShader, Func`3 loadShader, ApplicationSettingsBlock boot, String title, Boolean forceHardwareRaster, Func`3 animateMaterial, SceneTestPlatform platform, SceneScript script) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Runtime\RuntimeApplication.cs:line 1168&#xD;
+   at SomeEngine.Runtime.RuntimeApplication.RunScene(RuntimeStartupOptions options, Boolean useWarp, Func`3 animateMaterial, SceneTestPlatform platform, ApplicationDisplay display, RuntimeShaderResources shaderResources, SceneScript script) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Runtime\RuntimeApplication.cs:line 198&#xD;
+   at SomeEngine.Runtime.RuntimeApplication.&lt;&gt;c__DisplayClass2_0.&lt;RunAsync&gt;b__0() in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Runtime\RuntimeApplication.cs:line 50&#xD;
+   --- End of inner exception stack trace ---&#xD;
+   at SomeEngine.Runtime.RuntimeApplication.&lt;&gt;c__DisplayClass2_0.&lt;RunAsync&gt;b__0() in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Runtime\RuntimeApplication.cs:line 56&#xD;
+   at System.Threading.Tasks.Task`1.InnerInvoke()&#xD;
+   at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state)&#xD;
+--- End of stack trace from previous location ---&#xD;
+   at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state)&#xD;
+   at System.Threading.Tasks.Task.ExecuteWithThreadLocal(Task&amp; currentTaskSlot, Thread threadPoolThread)&#xD;
+--- End of stack trace from previous location ---&#xD;
+   at SomeEngine.Runtime.Application.RunCoreAsync(String[] args, Func`3 animateMaterial, SceneTestPlatform platform, SceneScript script) in F:\SomeEngine.AgentWork\rg70-remaining\trees\ticket-135\src\SomeEngine.Runtime\Program.cs:line 59&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+[xUnit.net 00:07:12.85]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.GeometryRenderingTests.AddedGeometryMatchesStartingWithThatGeometry(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+[xUnit.net 00:07:20.46]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:07:20.46]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.GeometryRenderingTests.StretchedGeometryCrossingTheViewEdgeMatchesStartingAtThatTransform(backend: "vulkan")”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.GeometryRenderingTests.CameraMovementRecoversOccludedGeometryLikeRenderingWithFreshOcclusion(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=9/12, missing=3, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 10 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=9/12, missing=3, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 10 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\streaming; sceneInstances=1, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=2/6, missing=4, queued=0, active=3, failures=0.&#xD;
+SomeEngine runtime completed 16 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\streaming; sceneInstances=1, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=5/6, missing=1, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 16 frame(s).&#xD;
+[xUnit.net 00:07:35.96]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: "vulkan", rasterEdgePixels: 64)”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\streaming; sceneInstances=1, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=2/6, missing=4, queued=0, active=3, failures=0.&#xD;
+SomeEngine runtime completed 16 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\streaming; sceneInstances=1, sceneBounds=&lt;0, 0, 6&gt;..&lt;0, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=5/6, missing=1, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 16 frame(s).&#xD;
+[xUnit.net 00:07:56.31]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+[xUnit.net 00:07:56.31]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: "vulkan", rasterEdgePixels: 4)”。&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletedGeometryMatchesStartingWithTheRemainingGeometry(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=1/1, pages=4/6, missing=2, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+[xUnit.net 00:08:09.71]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.GeometryRenderingTests.MovingAnOccluderRecoversTheRearGeometryInTheSameFrame(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=9/12, missing=3, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 10 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=4/12, missing=8, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 10 frame(s).&#xD;
+[xUnit.net 00:08:17.15]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletingAllGeometryShowsTheDeclaredBackground(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 10 frame(s).&#xD;
+[xUnit.net 00:08:23.13]       vulkan: NotSupportedException: The Vulkan adapter does not support required Device features: Presentation.&#xD;
+在测试运行中跳过测试“SomeEngine.Runtime.Tests.GeometryRenderingTests.CanceledGeometryFrameLeavesTheFollowingImageEqualToTheCompletedSequence(backend: "vulkan")”。&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+Runtime configuration 'Default Game' loaded from C:\Users\boqi\AppData\Local\Temp\SomeEngine-Rendering-0b6e9b01d0204481b184e43bfc2d2c0b\spheres; sceneInstances=2, sceneBounds=&lt;-1, 0, 6&gt;..&lt;1, 0, 6&gt;, clusterPipeline=d8e8a175-d57f-4cbd-b4ef-79784b5a362b.&#xD;
+First frame: applying extracted scene.&#xD;
+First frame: preparing streamed meshes.&#xD;
+First frame: publishing prepare systems.&#xD;
+First frame: acquiring presentation image.&#xD;
+First frame: recording render systems.&#xD;
+First frame: analyzing and submitting render graph.&#xD;
+First frame: presenting.&#xD;
+Cluster residency: meshes=2/2, pages=8/12, missing=4, queued=0, active=0, failures=0.&#xD;
+SomeEngine runtime completed 12 frame(s).&#xD;
+[xUnit.net 00:08:33.30]   Finished:    SomeEngine.Runtime.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:04:51.7363075+08:00">
+        <Text>[xUnit.net 00:03:00.32]     SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: "vulkan", raster: "default") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:05:04.7273040+08:00">
+        <Text>[xUnit.net 00:03:13.31]     SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: "vulkan", raster: "vertex") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:05:04.7275185+08:00">
+        <Text>[xUnit.net 00:03:13.32]     SomeEngine.Runtime.Tests.VsmWindowImageTests.SparseReceiversKeepOldAndNewCasterFootprintsAcrossWindowBoundaries(backend: "vulkan", raster: "software") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:05:18.0156802+08:00">
+        <Text>[xUnit.net 00:03:26.60]     SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.00999999978, raster: "software") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:05:26.5916199+08:00">
+        <Text>[xUnit.net 00:03:35.18]     SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.100000001, raster: "software") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:06:01.6470293+08:00">
+        <Text>[xUnit.net 00:04:10.23]     SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.100000001, raster: "mesh") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:06:01.6472383+08:00">
+        <Text>[xUnit.net 00:04:10.23]     SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.100000001, raster: "vertex") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:06:01.6474974+08:00">
+        <Text>[xUnit.net 00:04:10.24]     SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.00999999978, raster: "vertex") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:06:10.8419285+08:00">
+        <Text>[xUnit.net 00:04:19.43]     SomeEngine.Runtime.Tests.ShadowImageTests.ReceiverMasksPreserveNormalOffsetShadows(backend: "vulkan", normalBias: 0.00999999978, raster: "mesh") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:06:38.0253503+08:00">
+        <Text>[xUnit.net 00:04:46.61]     SomeEngine.Runtime.Tests.ShadowImageTests.DirectionalShadowsAfterCameraScrollMatchRefreshedShadows(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:06:38.0254992+08:00">
+        <Text>[xUnit.net 00:04:46.61]     SomeEngine.Runtime.Tests.ShadowImageTests.StreamedCasterOutsideTheCameraStillShadowsTheVisibleReceiver(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:07:26.0516949+08:00">
+        <Text>[xUnit.net 00:05:34.64]     SomeEngine.Runtime.Tests.ShadowImageTests.MovingTheFrontCasterRecoversTheRearCasterShadowInTheSameFrame(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:07:40.3344209+08:00">
+        <Text>[xUnit.net 00:05:48.92]     SomeEngine.Runtime.Tests.ShadowImageTests.CoarseDirectionalShadowsFollowTheCasterInTheFirstChangedFrame(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:07:40.3345934+08:00">
+        <Text>[xUnit.net 00:05:48.92]     SomeEngine.Runtime.Tests.ShadowImageTests.MovingLightShadowsMatchStartingWithTheFinalLight(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:02.8460421+08:00">
+        <Text>[xUnit.net 00:06:11.43]     SomeEngine.Runtime.Tests.ShadowImageTests.CanceledCasterFrameResumesWithTheSameShadowsAsFreshArrival(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:02.8462324+08:00">
+        <Text>[xUnit.net 00:06:11.43]     SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: "vulkan", vsm: "--vsm", temporal: "--no-taa") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:19.7706953+08:00">
+        <Text>[xUnit.net 00:06:28.36]     SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: "vulkan", vsm: "--vsm", temporal: "--taa") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:37.6768376+08:00">
+        <Text>[xUnit.net 00:06:46.26]     SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: "vulkan", vsm: "--no-vsm", temporal: "--no-taa") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:37.6769613+08:00">
+        <Text>[xUnit.net 00:06:46.27]     SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(backend: "vulkan", vsm: "--no-vsm", temporal: "--taa") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:44.7537420+08:00">
+        <Text>[xUnit.net 00:06:53.34]     SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: "vulkan", vsm: "--no-vsm", temporal: "--no-taa") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:44.7538898+08:00">
+        <Text>[xUnit.net 00:06:53.34]     SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: "vulkan", vsm: "--vsm", temporal: "--no-taa") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:51.8904536+08:00">
+        <Text>[xUnit.net 00:07:00.48]     SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: "vulkan", vsm: "--no-vsm", temporal: "--taa") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:51.8905725+08:00">
+        <Text>[xUnit.net 00:07:00.48]     SomeEngine.Runtime.Tests.RenderingFeatureTests.VsmAndTemporalCombinationsPresentTheDeclaredSphereColors(backend: "vulkan", vsm: "--vsm", temporal: "--taa") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:08:51.8907652+08:00">
+        <Text>[xUnit.net 00:07:00.48]     SomeEngine.Runtime.Tests.RasterWorkFailureTests.InsufficientSurfaceWorkMemoryDoesNotDeliverTruncatedGeometry(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:09:04.2624283+08:00">
+        <Text>[xUnit.net 00:07:12.85]     SomeEngine.Runtime.Tests.GeometryRenderingTests.AddedGeometryMatchesStartingWithThatGeometry(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:09:11.8760590+08:00">
+        <Text>[xUnit.net 00:07:20.46]     SomeEngine.Runtime.Tests.GeometryRenderingTests.StretchedGeometryCrossingTheViewEdgeMatchesStartingAtThatTransform(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:09:11.8762892+08:00">
+        <Text>[xUnit.net 00:07:20.46]     SomeEngine.Runtime.Tests.GeometryRenderingTests.CameraMovementRecoversOccludedGeometryLikeRenderingWithFreshOcclusion(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:09:27.3771063+08:00">
+        <Text>[xUnit.net 00:07:35.96]     SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: "vulkan", rasterEdgePixels: 64) [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:09:47.7236197+08:00">
+        <Text>[xUnit.net 00:07:56.31]     SomeEngine.Runtime.Tests.GeometryRenderingTests.StreamedGeometryKeepsTheSphereInteriorCoveredWhileDetailDoesNotFit(backend: "vulkan", rasterEdgePixels: 4) [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:09:47.7238979+08:00">
+        <Text>[xUnit.net 00:07:56.31]     SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletedGeometryMatchesStartingWithTheRemainingGeometry(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:10:01.1229652+08:00">
+        <Text>[xUnit.net 00:08:09.71]     SomeEngine.Runtime.Tests.GeometryRenderingTests.MovingAnOccluderRecoversTheRearGeometryInTheSameFrame(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:10:08.5635286+08:00">
+        <Text>[xUnit.net 00:08:17.15]     SomeEngine.Runtime.Tests.GeometryRenderingTests.DeletingAllGeometryShowsTheDeclaredBackground(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BOQI-THE-DAEMON" outcome="Warning" timestamp="2026-10-06T03:10:14.5384114+08:00">
+        <Text>[xUnit.net 00:08:23.13]     SomeEngine.Runtime.Tests.GeometryRenderingTests.CanceledGeometryFrameLeavesTheFollowingImageEqualToTheCompletedSequence(backend: "vulkan") [SKIP]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
