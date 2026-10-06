@@ -2,7 +2,7 @@
 
 The global page-pressure calculation now responds to reusable page capacity and allocation failures. Its target follows the submitted resolution bias plus log2(allocation / configured pool load), with the existing fast reduction and ten-frame delayed recovery.
 
-Per-VSM work pressure uses the separate native throttle path. Native VirtualShadowMapArray.cpp:2823–2825 enables that path through a positive time/load budget; the default load budget is zero. VirtualShadowMapCacheManager.cpp:675–721 provides the independent global page-pressure response.
+Native per-VSM work pressure has a separate throttle path. VirtualShadowMapArray.cpp:2823–2825 enables it through a positive time/load budget; the default load budget is zero. VirtualShadowMapCacheManager.cpp:675–721 provides the independent global page-pressure response.
 
 One public D3D12 shader case supplies ten reusable pages out of ten and growing material raster work. The previous mixed calculation raises both biases to .5; the page-only calculation preserves both at zero.
 
