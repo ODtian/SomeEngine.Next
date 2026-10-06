@@ -44,6 +44,7 @@ internal sealed class RuntimeScene : IDisposable
         float verticalFieldOfView,
         float nearPlane,
         float farPlane,
+        CameraDepthOfField? depthOfField,
         int meshInstanceCount,
         Vector3 meshPositionMin,
         Vector3 meshPositionMax)
@@ -60,12 +61,14 @@ internal sealed class RuntimeScene : IDisposable
         _verticalFieldOfView = verticalFieldOfView;
         _nearPlane = nearPlane;
         _farPlane = farPlane;
+        DepthOfField = depthOfField;
         MeshInstanceCount = meshInstanceCount;
         MeshPositionMin = meshPositionMin;
         MeshPositionMax = meshPositionMax;
     }
 
     internal RuntimeCamera Camera { get; private set; }
+    internal CameraDepthOfField? DepthOfField { get; }
 
     internal int MeshInstanceCount { get; }
 
@@ -189,7 +192,7 @@ internal sealed class RuntimeScene : IDisposable
             {
                 return new RuntimeScene(world, playbackLights, [.. materials.Values], motionQuery,
                     runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
-                    camera.FarPlane, instances.Length, meshPositionMin, meshPositionMax)
+                    camera.FarPlane, camera.DepthOfField, instances.Length, meshPositionMin, meshPositionMax)
                     { _meshes = [.. meshes.Select(pair => (pair.Key, pair.Value.Mesh, pair.Value.Source, pair.Value.Bindings))],
                         _textures = [.. textureReads.Values.Select(read => read.Value.Result)] };
             }

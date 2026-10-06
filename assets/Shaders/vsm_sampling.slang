@@ -534,10 +534,11 @@ uint SelectDirectionalVirtualShadowView(
     float3 worldPosition,
     float3 worldPositionDx,
     float3 worldPositionDy,
-    float dynamicResolutionLodBias)
+    float dynamicResolutionLodBias,
+    float receiverResolutionLodBias = 0.0)
 {
     VirtualShadowMapParameters baseView = views[firstView];
-    float distanceLevel = CalculateDirectionalVirtualShadowDistanceLevel(baseView, worldPosition);
+    float distanceLevel = CalculateDirectionalVirtualShadowDistanceLevel(baseView, worldPosition) + receiverResolutionLodBias;
     uint unbiasedLevel = (uint)max(distanceLevel, 0.0);
     float resolutionBias = unbiasedLevel < viewCount
         ? views[firstView + unbiasedLevel].ResolutionLodBias
@@ -944,13 +945,14 @@ bool TrySampleDirectionalVirtualShadowMap(
     float blockerSearchRadiusTexels,
     float maxFilterRadiusTexels,
     float3 receiverPlaneNormal,
-    out float visibility)
+    out float visibility,
+    float receiverResolutionLodBias = 0.0)
 {
     visibility = 1.0;
     if (clipmapLevelCount == 0u)
         return true;
     uint firstLevel = SelectDirectionalVirtualShadowView(views, firstView, clipmapLevelCount,
-        worldPosition, worldPositionDx, worldPositionDy, dynamicResolutionLodBias);
+        worldPosition, worldPositionDx, worldPositionDy, dynamicResolutionLodBias, receiverResolutionLodBias);
     if (firstLevel >= clipmapLevelCount)
         return true;
 
@@ -1119,13 +1121,13 @@ float SampleDirectionalVirtualShadowMap(
     uint firstView, uint clipmapLevelCount, float dynamicResolutionLodBias,
     float3 worldPosition, float3 worldPositionDx, float3 worldPositionDy,
     uint blockerSampleCount, uint filterSampleCount, float blockerSearchRadiusTexels,
-    float maxFilterRadiusTexels, float3 receiverPlaneNormal)
+    float maxFilterRadiusTexels, float3 receiverPlaneNormal, float receiverResolutionLodBias = 0.0)
 {
     float visibility;
     TrySampleDirectionalVirtualShadowMap(views, pageTable, atlas, firstView, clipmapLevelCount,
         dynamicResolutionLodBias, worldPosition, worldPositionDx, worldPositionDy,
         blockerSampleCount, filterSampleCount, blockerSearchRadiusTexels, maxFilterRadiusTexels,
-        receiverPlaneNormal, visibility);
+        receiverPlaneNormal, visibility, receiverResolutionLodBias);
     return visibility;
 }
 

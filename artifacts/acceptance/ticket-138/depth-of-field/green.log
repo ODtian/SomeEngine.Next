@@ -1,0 +1,12 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Graphics.Direct3D12.Tests; 0 violations.
+F:\.codex\worktrees\rg70-ticket-138\SomeEngine.Next\tests\SomeEngine.Graphics.Direct3D12.Tests\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.2 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+结果文件: F:\SomeEngine.AgentWork\rg70-remaining\ticket-138-validation\depth-of-field\dof-green.trx
+
+已通过! - 失败:     0，通过:     1，已跳过:     0，总计:     1，持续时间: 1 s - SomeEngine.Graphics.Direct3D12.Tests.dll (net10.0)

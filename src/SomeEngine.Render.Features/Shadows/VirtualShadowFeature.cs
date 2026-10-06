@@ -1010,6 +1010,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         return new VirtualShadowReceiverProjection
         {
             WorldToClipW = new(worldToClip.M14, worldToClip.M24, worldToClip.M34, worldToClip.M44),
+            WorldToViewDepth = new(-view.View.M13, -view.View.M23, -view.View.M33, -view.View.M43),
+            DepthOfField = view.DepthOfField.GetValueOrDefault(),
             ScreenPixelRadius = MathF.Min(1f / (view.ViewportWidth * view.Projection.M11),
                 1f / (view.ViewportHeight * view.Projection.M22)),
         };
