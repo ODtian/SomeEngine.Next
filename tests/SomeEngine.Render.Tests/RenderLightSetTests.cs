@@ -20,7 +20,7 @@ public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixtu
         var cookie = new RenderLightCookie(null!, 0.7f, Vector4.One, Matrix4x4.Identity);
         world.Add(two, cookie);
         var lights = new RenderLightSetSystem();
-        using var systems = new RenderFrameSystems(world);
+        using var systems = new RenderPrepareSystems(world);
         systems.Add(lights);
         using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
             [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
@@ -65,9 +65,12 @@ public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixtu
 
         void Update()
         {
-            Assert.True(graphics.DataLock.TryBeginRead(out var frame));
-            using (frame)
-            using (var commands = graph.BeginFrame()) systems.Update(frame, commands);
+            Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
+            using (nextFrame)
+            {
+                Assert.True(graphics.DataLock.TryBeginPrepare(out var prepare));
+                using (prepare) systems.Update(prepare, nextFrame);
+            }
         }
     }
 

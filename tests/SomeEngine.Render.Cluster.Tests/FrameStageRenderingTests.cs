@@ -94,6 +94,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private readonly RenderFrameSystems _frames;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly LightingFeature _lighting;
+    private readonly RenderLightSetSystem _lightSystem;
     private readonly VirtualShadowFeature _shadows;
     private readonly ClusterPipelineSystem _pipeline;
     private readonly ClusterStreamingFeedbackConsumer _streaming;
@@ -190,11 +191,11 @@ internal sealed class FrameStageScene : IAsyncDisposable
                 DynamicResolutionEnabled = false }, _graph, _pipeline, _lighting,
             depthAfter, targetAfter, feedbackRegion, _renderDevice);
         resources.Add(_shadows);
-        var lightSystem = new RenderLightSetSystem();
+        _lightSystem = new RenderLightSetSystem();
+        _prepare.Add(_lightSystem);
         _frames = new RenderFrameSystems(_world, _instances);
-        _frames.Add(lightSystem);
-        _frames.Add(new LightingFeatureSystem(_lighting, lightSystem, 1));
-        _frames.Add(new VirtualShadowFeatureSystem(_shadows, lightSystem));
+        _frames.Add(new LightingFeatureSystem(_lighting, _lightSystem, 1));
+        _frames.Add(new VirtualShadowFeatureSystem(_shadows, _lightSystem));
         _frames.Add(_pipeline);
         _frames.Initialize();
         _failureRegion = shading;
@@ -520,6 +521,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             _streaming.Pump();
             _prepare.Update(update, nextFrame);
         }
+        _shadows.ReconcileLights(_lightSystem.RequireCurrent());
         _pipeline.ReconcileGraph();
         Assert.True(_dataLock.TryBeginRead(out var frame));
         using (frame)
@@ -540,6 +542,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             _streaming.Pump();
             _prepare.Update(update, nextFrame);
         }
+        _shadows.ReconcileLights(_lightSystem.RequireCurrent());
         ClusterPipelineOutputs outputs = _pipeline.ReconcileGraph();
         Assert.True(_dataLock.TryBeginRead(out var frame));
         using (frame)

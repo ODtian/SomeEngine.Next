@@ -176,7 +176,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         var light = new RenderPointLight(Vector3.Zero, 10, Vector3.One, 1, uint.MaxValue);
         var entity = world.CreateEntity(light);
         var lights = new RenderLightSetSystem();
-        using var systems = new RenderFrameSystems(world);
+        using var systems = new RenderPrepareSystems(world);
         systems.Add(lights);
         using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
             [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
@@ -204,11 +204,14 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
                 world.AcquireSystemVersion();
                 world.Replace(entity, light with { Position = Vector3.UnitX });
             }
+            Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
+            using var nextFrameResources = nextFrame;
+            Assert.True(graphics.DataLock.TryBeginPrepare(out var prepare));
+            using (prepare) systems.Update(prepare, nextFrame);
             Assert.True(graphics.DataLock.TryBeginRead(out var read));
             using (read)
-            using (var frame = graph.BeginFrame())
+            using (var frame = graph.BeginFrame(nextFrame))
             {
-                systems.Update(read, frame);
                 shadows.BeginFrame();
                 VirtualShadowView view = shadows.PrepareViews(lights.RequireCurrent(), receiver, 1, 1, 1)[0];
                 Assert.InRange(view.ResolutionLodBias, expectedBiases[index] - .000001f, expectedBiases[index] + .000001f);
@@ -253,13 +256,16 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         extraction.Extract(game);
         graphics.Apply(extraction, world);
         var lights = new RenderLightSetSystem();
-        using var systems = new RenderFrameSystems(world);
+        using var systems = new RenderPrepareSystems(world);
         systems.Add(lights);
         using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
             [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
-        Assert.True(graphics.DataLock.TryBeginRead(out var read));
-        using (read)
-        using (var frame = graph.BeginFrame()) systems.Update(read, frame);
+        Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
+        using (nextFrame)
+        {
+            Assert.True(graphics.DataLock.TryBeginPrepare(out var prepare));
+            using (prepare) systems.Update(prepare, nextFrame);
+        }
         VirtualShadowMapShaders shaders = await CreateShaders();
         using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
             new VirtualShadowMapSettings

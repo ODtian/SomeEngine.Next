@@ -582,6 +582,7 @@ internal static class RuntimeApplication
         var stageResources = new GraphResourceGroup();
         stageResources.Add(lighting);
         var lightSystem = new RenderLightSetSystem();
+        _ = prepareSystems.Add(lightSystem);
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
         var streamingConsumer = new ClusterStreamingFeedbackConsumer(cluster, streamingFeedback);
         var shadowSettings = (script?.ShadowSettings ?? new VirtualShadowMapSettings
@@ -664,7 +665,6 @@ internal static class RuntimeApplication
             VirtualShadowFeature virtualShadowFeature)
         {
             var systems = new RenderFrameSystems(renderWorld, instances);
-            _ = systems.Add(lightSystem);
             _ = systems.Add(new LightingFeatureSystem(
                 lighting,
                 lightSystem,
@@ -869,7 +869,10 @@ internal static class RuntimeApplication
                 long reconcileStarted = Stopwatch.GetTimestamp();
                 ClusterPipelineOutputs clusterOutputs;
                 using (EngineTrace.Begin(ApplicationTrace.Reconcile))
+                {
+                    virtualShadows.ReconcileLights(lightSystem.RequireCurrent());
                     clusterOutputs = pipeline.ReconcileGraph();
+                }
                 double reconcileMs = Stopwatch.GetElapsedTime(reconcileStarted).TotalMilliseconds;
                 temporal ??= new TemporalFeature(
                     backend,

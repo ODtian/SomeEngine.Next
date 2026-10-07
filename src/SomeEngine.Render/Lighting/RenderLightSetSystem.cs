@@ -10,7 +10,7 @@ namespace SomeEngine.Render.Lighting;
 /// Owns light-component queries and one immutable-for-rendering light set. Geometry,
 /// light assignment, shadow and shading pipelines consume this system without querying ECS.
 /// </summary>
-public sealed class RenderLightSetSystem(uint lightActiveFrameCount = 10) : ISystem<RenderFrameSystemContext>
+public sealed class RenderLightSetSystem(uint lightActiveFrameCount = 10) : ISystem<RenderPrepareSystemContext>
 {
     private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "LightSet.Update", detail: true);
 
@@ -27,7 +27,7 @@ public sealed class RenderLightSetSystem(uint lightActiveFrameCount = 10) : ISys
         ? _lights
         : throw new InvalidOperationException("The render-light set system is not active.");
 
-    public void OnCreate(ref RenderFrameSystemContext context)
+    public void OnCreate(ref RenderPrepareSystemContext context)
     {
         if (_created)
             throw new InvalidOperationException("The render-light set system is already created.");
@@ -61,7 +61,7 @@ public sealed class RenderLightSetSystem(uint lightActiveFrameCount = 10) : ISys
         }
     }
 
-    public void OnUpdate(ref RenderFrameSystemContext context)
+    public void OnUpdate(ref RenderPrepareSystemContext context)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         if (!_created)
@@ -87,7 +87,7 @@ public sealed class RenderLightSetSystem(uint lightActiveFrameCount = 10) : ISys
         internal bool Changed;
     }
 
-    public void OnDestroy(ref RenderFrameSystemContext context)
+    public void OnDestroy(ref RenderPrepareSystemContext context)
     {
         if (!_created)
             return;
