@@ -139,8 +139,7 @@ public sealed partial class RenderDevice
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(asset);
-        EngineTexture content = asset.GetUploadContent();
-        _ = asset.TryGetDeviceData(_device, out TextureRealization? realization);
+        EngineTexture content = asset.GetUploadContent(_device, out TextureRealization? realization);
         if ((realization is null || !realization.Initialized || realization.Revision != content.Revision) &&
             !content.HasBootstrap)
             throw new InvalidOperationException("A Texture must have a resident Bootstrap before rendering.");
