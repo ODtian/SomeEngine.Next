@@ -426,12 +426,7 @@ bool TryResolveVirtualShadowPixel(
     if (wholePage) return true;
 #ifndef VSM_WHOLE_PAGE_SAMPLING
     if (entry.w == (parameters.CacheGeneration | VSM_PAGE_RECEIVER_DEPTH))
-    {
-        uint2 cell = (mipPixel & (parameters.PageSize - 1u)) * 8u / parameters.PageSize;
-        uint bit = cell.y * 8u + cell.x;
-        uint2 mask = VirtualShadowReceiverMasks[tableIndex];
-        return ((bit < 32u ? mask.x : mask.y) & (1u << (bit & 31u))) != 0u;
-    }
+        return true;
 #endif
     return false;
 }
@@ -497,10 +492,7 @@ bool TryResolveVirtualShadowResidentPixel(
         {
             if (wholePage) return true;
 #ifndef VSM_WHOLE_PAGE_SAMPLING
-            uint2 cell = (pixel & (parameters.PageSize - 1u)) * 8u / parameters.PageSize;
-            uint bit = cell.y * 8u + cell.x;
-            uint2 mask = VirtualShadowReceiverMasks[sourceIndex];
-            if (((bit < 32u ? mask.x : mask.y) & (1u << (bit & 31u))) != 0u) return true;
+            return true;
 #endif
         }
         mip = resolvedMip + 1u;

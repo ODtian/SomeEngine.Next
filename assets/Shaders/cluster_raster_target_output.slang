@@ -154,8 +154,8 @@ bool ClusterRasterTargetCachedBoundsAccepts(
 {
     if (ClusterRasterTargetPageCacheEnabled == 0u) return true;
     ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
-    // Include neighboring pixels at quantized raster edges. Pixel evaluation
-    // still performs the final request and receiver tests before writing depth.
+    // Bounds include neighboring pixels at quantized raster edges and apply
+    // receiver coverage before admitted triangles write their requested pages.
     uint2 firstPixel = uint2(clamp(floor(minimumPixel) - 1.0, 0.0.xx, windowSize - 1.0));
     uint2 lastPixel = uint2(clamp(ceil(maximumPixel) + 1.0, 0.0.xx, windowSize - 1.0));
     uint2 firstPage = firstPixel / target.PageSize;
@@ -202,12 +202,6 @@ bool ResolveCachedRasterTargetPixel(
         return false;
 
     uint2 pagePixel = virtualPixel & (target.PageSize - 1u);
-    if (depthCacheClass == 0u && !ClusterRasterTargetCachedReceiverAccepts(
-            target,
-            ClusterRasterTargetCachedReceiverMasks[cacheIndex],
-            pagePixel))
-        return false;
-
     uint2 pageCoord = uint2(
         page % target.PhysicalPagesPerRow,
         page / target.PhysicalPagesPerRow);
@@ -240,9 +234,6 @@ bool ResolveRasterTargetPixel(int2 pixel, uint targetViewIndex, out uint2 target
         return false;
 
     uint2 pagePixel = virtualPixel & (target.PageSize - 1u);
-    if (depthCacheClass == 0u && !ClusterRasterTargetReceiverAccepts(target, tableIndex, pagePixel))
-        return false;
-
     uint2 pageCoord = uint2(
         page % target.PhysicalPagesPerRow,
         page / target.PhysicalPagesPerRow);

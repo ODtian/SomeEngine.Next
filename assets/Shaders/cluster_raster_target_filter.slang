@@ -282,7 +282,7 @@ float ClusterTargetHiZMax(
         max(
             source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p2, mipSize, target.PhysicalPagesPerRow), mip)),
             source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p3, mipSize, target.PhysicalPagesPerRow), mip))));
-    return depthCacheClass == 0u ? depth.y : depth.x;
+    return depthCacheClass == 1u ? depth.x : depth.y;
 }
 
 bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
