@@ -17,8 +17,11 @@ public sealed class RasterDepthClipTests(D3D12TestCompiler shaderCompiler)
             {
                 int4 scissor(uint visible, uint policy, uint target, uint width, uint height)
                 { return int4(0,0,int(width),int(height)); }
-                void write(int2 pixel, uint view, uint policy, uint target, float depth, uint visibility)
-                { Pixels[pixel.y * 2 + pixel.x] = 1u; }
+                bool resolvePixel(int2 pixel, uint policy, uint target, uint visibility,
+                    out ClusterRasterOutputPixel outputPixel)
+                { outputPixel.Position = pixel; outputPixel.DepthCacheClass = 0u; return true; }
+                void write(ClusterRasterOutputPixel pixel, uint view, uint policy, uint target, float depth, uint visibility)
+                { Pixels[pixel.Position.y * 2 + pixel.Position.x] = 1u; }
             };
             [shader("compute")]
             [numthreads(32,1,1)]

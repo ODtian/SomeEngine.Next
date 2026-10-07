@@ -9,6 +9,12 @@ static const uint CLUSTER_RASTER_SUBPIXEL_SCALE = 1u << CLUSTER_RASTER_SUBPIXEL_
 static const float CLUSTER_RASTER_SUBPIXEL_SCALE_F = float(CLUSTER_RASTER_SUBPIXEL_SCALE);
 static const uint CLUSTER_RASTER_MAX_CLIPPED_VERTICES = 16u;
 
+struct ClusterRasterOutputPixel
+{
+    int2 Position;
+    uint DepthCacheClass;
+};
+
 interface IClusterRasterOutput
 {
     int4 scissor(
@@ -18,8 +24,15 @@ interface IClusterRasterOutput
         uint screenWidth,
         uint screenHeight);
 
-    void write(
+    bool resolvePixel(
         int2 pixel,
+        uint targetPolicy,
+        uint targetViewIndex,
+        uint visibilityValue,
+        out ClusterRasterOutputPixel outputPixel);
+
+    void write(
+        ClusterRasterOutputPixel pixel,
         uint viewIndex,
         uint targetPolicy,
         uint targetViewIndex,
@@ -419,6 +432,9 @@ struct ClusterPixelRasterTask<
                 continue;
 
             int2 pixel = triangle.MinPixel + int2(x, y);
+            ClusterRasterOutputPixel outputPixel;
+            if (!Output.resolvePixel(pixel, targetPolicy, targetViewIndex, visibilityValue, outputPixel))
+                continue;
             float depth = saturate(
                 triangle.DepthPlane.x +
                 triangle.DepthPlane.y * edge1 +
@@ -491,7 +507,7 @@ struct ClusterPixelRasterTask<
             if (pixelResult.Visible == 0u)
                 continue;
             Output.write(
-                pixel,
+                outputPixel,
                 viewIndex,
                 targetPolicy,
                 targetViewIndex,

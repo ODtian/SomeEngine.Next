@@ -177,48 +177,45 @@ bool ClusterRasterTargetCachedBoundsAccepts(
     return false;
 }
 
-bool WriteCachedRasterTargetDepth(
+bool ResolveCachedRasterTargetPixel(
     int2 pixel,
     uint targetViewIndex,
-    float depth, uint depthCacheClass = 0u)
+    out uint2 targetPixel,
+    uint depthCacheClass = 0u)
 {
     if (ClusterRasterTargetPageCacheEnabled == 0u)
-        return false;
+        return ResolveRasterTargetPixel(pixel, targetViewIndex, targetPixel, depthCacheClass);
 
+    targetPixel = 0u.xx;
     ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
     uint2 virtualPixel = uint2(pixel);
     uint2 localPage = virtualPixel / target.PageSize;
     if (any(localPage < ClusterRasterTargetCachedOrigin))
-        return true;
+        return false;
     uint2 cacheCoord = localPage - ClusterRasterTargetCachedOrigin;
     if (any(cacheCoord >= ClusterRasterTargetCachedExtent))
-        return true;
+        return false;
     uint cacheIndex =
         cacheCoord.y * CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM + cacheCoord.x;
     uint page = ClusterRasterTargetCachedPages[cacheIndex];
     if (page == CLUSTER_RASTER_TARGET_INVALID_PAGE)
-        return true;
+        return false;
 
     uint2 pagePixel = virtualPixel & (target.PageSize - 1u);
     if (depthCacheClass == 0u && !ClusterRasterTargetCachedReceiverAccepts(
             target,
             ClusterRasterTargetCachedReceiverMasks[cacheIndex],
             pagePixel))
-        return true;
+        return false;
 
     uint2 pageCoord = uint2(
         page % target.PhysicalPagesPerRow,
         page / target.PhysicalPagesPerRow);
-    uint2 targetPixel = pageCoord * target.PageSize + pagePixel;
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
-    if (depthCacheClass == 1u)
-    {
-        if ((RasterTargetPageMetadata[page].w & 8u) != 0u)
-            WriteRasterTargetPixelDepth(targetPixel, depth, depthCacheClass);
-    }
-    else
+    if (depthCacheClass == 1u && (RasterTargetPageMetadata[page].w & 8u) == 0u)
+        return false;
 #endif
-        WriteRasterTargetPixelDepth(targetPixel, depth, depthCacheClass);
+    targetPixel = pageCoord * target.PageSize + pagePixel;
     return true;
 }
 
@@ -262,16 +259,10 @@ void WriteRasterTargetPixelDepth(uint2 targetPixel, float depth, uint depthCache
     uint ignored;
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
     if (depthCacheClass == 1u)
-    {
-        if (RasterTargetStaticOutput[targetPixel] < encodedDepth)
-            InterlockedMax(RasterTargetStaticOutput[targetPixel], encodedDepth, ignored);
-    }
+        InterlockedMax(RasterTargetStaticOutput[targetPixel], encodedDepth, ignored);
     else
 #endif
-    {
-        if (RasterTargetOutput[targetPixel] < encodedDepth)
-            InterlockedMax(RasterTargetOutput[targetPixel], encodedDepth, ignored);
-    }
+        InterlockedMax(RasterTargetOutput[targetPixel], encodedDepth, ignored);
 }
 
 void WriteRasterTargetDepth(int2 pixel, uint targetViewIndex, float depth, uint depthCacheClass = 0u)

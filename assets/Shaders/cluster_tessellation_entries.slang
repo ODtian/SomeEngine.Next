@@ -235,6 +235,10 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
         TessellationPolicyViews,
         input.ViewIndex);
     input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
+    ClusterRasterOutputPixel outputPixel;
+    bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    if (!ClusterRasterQuadAcceptsPixel(accepted))
+        discard;
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
     pixelInput.Depth = view.TargetPolicy != 0u ? input.ClipDepth.x / input.ClipDepth.y : input.Pos.z;
@@ -244,19 +248,11 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
     pixelInput.TargetPolicy = view.TargetPolicy;
     pixelInput.TargetViewIndex = view.TargetViewIndex;
     VisibilityPixelResult result = visibility.evaluate(pixelInput, input.Varying);
-    if (result.Visible == 0u)
+    if (!accepted || result.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)
     {
-        if (!ClusterRasterTargetWindowContainsPixel(
-                input.VisibleClusterIndex,
-                view.TargetViewIndex,
-                int2(input.Pos.xy)))
-            discard;
-        WriteRasterTargetDepth(
-            int2(input.Pos.xy),
-            view.TargetViewIndex,
-            saturate(result.Depth), RasterOutputDepthCacheClass(input.VisibleClusterIndex));
+        WriteRasterTargetPixelDepth(uint2(outputPixel.Position), result.Depth, outputPixel.DepthCacheClass);
         discard;
     }
     ClusterTessellationHardwareOutput output;
