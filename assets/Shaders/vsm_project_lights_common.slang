@@ -3,6 +3,7 @@
 #include "render_lighting.slang"
 #include "surface_receiver.slang"
 #include "vsm_receiver_pixel.slang"
+#include "vsm_projected_pixel.slang"
 #include "resource_effects.slang"
 
 struct VirtualShadowProjectionUniforms
@@ -30,12 +31,6 @@ StructuredBuffer<uint> LightIndexList;
 RWStructuredBuffer<float> ProjectionVisibility;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<float> ProjectionAdditionalVisibility;
-
-uint2 VirtualShadowProjectionPixel(uint lane)
-{
-    return uint2((lane & 1u) | ((lane >> 1u) & 2u) | ((lane >> 2u) & 4u),
-        ((lane >> 1u) & 1u) | ((lane >> 2u) & 2u) | ((lane >> 3u) & 4u));
-}
 
 float ProjectVirtualShadowReceiver(uint3 pixel, uint light, uint receiverLayer)
 {
@@ -134,13 +129,16 @@ void ProjectVirtualShadowLocalLights(uint3 group : SV_GroupID, uint lane : SV_Gr
     if (lightReceiver >= layerSize * (1u + Projection.AdditionalReceiverLayerCount)) return;
     uint receiverLayer = lightReceiver / layerSize;
     uint lightView = lightReceiver % layerSize;
-    uint3 pixel = uint3(tile * 8u + VirtualShadowProjectionPixel(lane),
+    uint3 pixel = uint3(tile * 8u + DecodeVirtualShadowProjectionPixel(lane),
         lightView % Projection.ViewCount);
-    if (pixel.x >= Projection.Width || pixel.y >= Projection.Height) return;
-    float visibility = ProjectVirtualShadowReceiver(pixel, lightView / Projection.ViewCount, receiverLayer);
-    uint pixelIndex = (lightView * Projection.Height + pixel.y) * Projection.Width + pixel.x;
+    float visibility = 1.0;
+    if (pixel.x < Projection.Width && pixel.y < Projection.Height)
+        visibility = ProjectVirtualShadowReceiver(pixel, lightView / Projection.ViewCount, receiverLayer);
+    uint tilePixels = ((Projection.Width + 7u) / 8u) * tileCountY * 64u;
+    uint pixelIndex = (lightView * tileCountY * ((Projection.Width + 7u) / 8u) +
+        tile.y * ((Projection.Width + 7u) / 8u) + tile.x) * 64u + lane;
     if (receiverLayer == 0u) ProjectionVisibility[pixelIndex] = visibility;
-    else ProjectionAdditionalVisibility[(receiverLayer - 1u) * layerSize * Projection.Width * Projection.Height + pixelIndex] = visibility;
+    else ProjectionAdditionalVisibility[(receiverLayer - 1u) * layerSize * tilePixels + pixelIndex] = visibility;
     if (Projection.AdditionalReceiverLayerCount == 0u && all(pixel == 0u.xxx) && lightView == 0u)
         ProjectionAdditionalVisibility[0] = 1.0;
 }

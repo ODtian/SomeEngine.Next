@@ -32,6 +32,15 @@ struct VirtualShadowDepthSample
     float2 TexelCenter;
 };
 
+bool IsDirectionalVirtualShadowProjection(VirtualShadowMapParameters view)
+{
+#ifdef VSM_PROJECT_DIRECTIONAL_LIGHTS
+    return VSM_PROJECT_DIRECTIONAL_LIGHTS != 0;
+#else
+    return view.LightKind == VSM_LIGHT_DIRECTIONAL;
+#endif
+}
+
 VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pages,
     Texture2D<uint> atlas, uint requestedView, float2 uv, uint firstMip)
@@ -40,7 +49,7 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     sample.ViewIndex = requestedView;
     VirtualShadowMapParameters view = views[requestedView];
     float reverseDepth;
-    if (view.LightKind == VSM_LIGHT_DIRECTIONAL)
+    if (IsDirectionalVirtualShadowProjection(view))
     {
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED
         sample.Valid = TryReadVirtualShadowDirectionalResidentReverseDepth(views, pages,
@@ -97,10 +106,10 @@ float VirtualShadowOptimalSlopeBias(StructuredBuffer<VirtualShadowMapParameters>
     ProjectVirtualShadowPosition(source, position, ndc, uv);
     float2 slope = -CalculateVirtualShadowReceiverPlaneDepthGradient(source, ndc, normal);
     float bias = 2.0 * max(0.0, dot(slope, sample.TexelCenter - sample.UV));
-    float depthScale = source.LightKind == VSM_LIGHT_DIRECTIONAL
+    float depthScale = IsDirectionalVirtualShadowProjection(source)
         ? abs(source.ProjectionDepthScale) : abs(1.0 + source.ProjectionDepthScale);
-    bias = min(bias, 100.0 * (source.LightKind == VSM_LIGHT_DIRECTIONAL ? source.WorldUnitsPerCentimeter : 1.0) * depthScale);
-    if (source.LightKind == VSM_LIGHT_DIRECTIONAL)
+    bias = min(bias, 100.0 * (IsDirectionalVirtualShadowProjection(source) ? source.WorldUnitsPerCentimeter : 1.0) * depthScale);
+    if (IsDirectionalVirtualShadowProjection(source))
         bias *= exp2(float(sample.ViewIndex - requestedView));
     return bias;
 }
@@ -109,7 +118,7 @@ float VirtualShadowOccluderDistance(VirtualShadowMapParameters view,
     float occluderDepth, float receiverDepth, float receiverDistance)
 {
     float minimumDistance = 1e-6 * view.WorldUnitsPerCentimeter;
-    if (view.LightKind == VSM_LIGHT_DIRECTIONAL)
+    if (IsDirectionalVirtualShadowProjection(view))
         return max(minimumDistance, (occluderDepth - receiverDepth) / abs(view.ProjectionDepthScale));
     float occluderViewDistance = view.ProjectionDepthOffset /
         (1.0 - occluderDepth + view.ProjectionDepthScale);
@@ -135,7 +144,7 @@ VirtualShadowProjectionResult ProjectVirtualShadowHard(
     result.MipLevel = sample.MipLevel;
     result.RayCount = 1u;
     float clipW = mul(float4(position, 1.0), view.LightViewProjection).w;
-    float rayBiasScale = view.LightKind == VSM_LIGHT_DIRECTIONAL
+    float rayBiasScale = IsDirectionalVirtualShadowProjection(view)
         ? abs(view.ProjectionDepthScale) : abs(1.0 + view.ProjectionDepthScale) / clipW;
     float biasedDepth = sample.Depth - VirtualShadowOptimalSlopeBias(views, viewIndex, sample, position, normal)
         - max(rayStartDistance, 0.0) * rayBiasScale;
@@ -144,7 +153,7 @@ VirtualShadowProjectionResult ProjectVirtualShadowHard(
     {
         result.Visibility = 0.0;
         result.OccluderDistance = VirtualShadowOccluderDistance(view,
-            view.LightKind == VSM_LIGHT_DIRECTIONAL ? sample.Depth : biasedDepth, receiverDepth,
+            IsDirectionalVirtualShadowProjection(view) ? sample.Depth : biasedDepth, receiverDepth,
             length(position - view.LightPosition));
     }
     return result;

@@ -108,7 +108,7 @@ public sealed partial class VirtualShadowFeature
         uint height = lightCount == 0u ? 1u : checked((uint)geometry.Height);
         uint views = lightCount == 0u ? 1u : geometry.ViewCount;
         uint receiverLayers = lightCount == 0u ? 0u : _frameAdditionalReceiverCount;
-        ulong values = checked((ulong)width * height * views * lightLayers);
+        ulong values = checked((ulong)DivideRoundUp(width, 8u) * DivideRoundUp(height, 8u) * 64u * views * lightLayers);
         GraphBufferId visibility = graph.CreateBuffer(new BufferDesc(checked(values * 4u),
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Virtual shadow receiver light visibility"));
         GraphBufferId additional = graph.CreateBuffer(new BufferDesc(Math.Max(checked(values * receiverLayers * 4u), 4u),
