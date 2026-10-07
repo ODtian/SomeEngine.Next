@@ -32,6 +32,8 @@ float4 ClusterHardwareRasterPosition(float4 clip, uint visibleClusterIndex,
     float2 origin = float2(ClusterRasterTargetPixelOrigin(visibleClusterIndex, view));
     clip.xy = clip.xy * scale + clip.w * (float2(scale.x - 1.0, 1.0 - scale.y) +
         float2(-2.0, 2.0) * origin / rasterSize);
+    if (view.TargetPolicy != 0u && (RasterTargetViews[view.TargetViewIndex].Padding.y & 4u) == 0u)
+        clip.z = 0.5 * clip.w;
     return clip;
 }
 

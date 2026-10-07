@@ -56,11 +56,11 @@ float ClusterRasterClipDistance(float4 value, uint plane)
     return value.w - value.y;
 }
 
-uint ClusterRasterClipMask(float4 value)
+uint ClusterRasterClipMask(float4 value, bool clipDepth = true)
 {
     return (value.w < 1e-6 ? 1u : 0u) |
-        (value.z < 0.0 ? 2u : 0u) |
-        (value.z > value.w ? 4u : 0u) |
+        (clipDepth && value.z < 0.0 ? 2u : 0u) |
+        (clipDepth && value.z > value.w ? 4u : 0u) |
         (value.x < -value.w ? 8u : 0u) |
         (value.x > value.w ? 16u : 0u) |
         (value.y < -value.w ? 32u : 0u) |
@@ -71,7 +71,8 @@ uint ClusterRasterClipTriangle(
     float4 source[3],
     uint clipPlanes,
     out float4 clipped[CLUSTER_RASTER_MAX_CLIPPED_VERTICES],
-    out float3 clippedSourceBarycentric[CLUSTER_RASTER_MAX_CLIPPED_VERTICES])
+    out float3 clippedSourceBarycentric[CLUSTER_RASTER_MAX_CLIPPED_VERTICES],
+    bool clipDepth = true)
 {
     float4 first[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
     float4 second[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
@@ -122,7 +123,7 @@ uint ClusterRasterClipTriangle(
                     amount);
                 // Include newly rounded intersections, so later planes still handle
                 // a point that crosses a boundary through floating-point arithmetic.
-                clipPlanes |= all(isfinite(intersection)) ? ClusterRasterClipMask(intersection) : 127u;
+                clipPlanes |= all(isfinite(intersection)) ? ClusterRasterClipMask(intersection, clipDepth) : 127u;
                 if (outputCount < CLUSTER_RASTER_MAX_CLIPPED_VERTICES)
                 {
                     second[outputCount++] = intersection;
@@ -516,11 +517,12 @@ void RasterizeClusterTriangleWave<
     uint targetViewIndex,
     bool sourceActive,
     uint screenWidth,
-    uint screenHeight)
+    uint screenHeight,
+    bool clipDepth = true)
 {
-    uint mask0 = ClusterRasterClipMask(clipVerts[0]);
-    uint mask1 = ClusterRasterClipMask(clipVerts[1]);
-    uint mask2 = ClusterRasterClipMask(clipVerts[2]);
+    uint mask0 = ClusterRasterClipMask(clipVerts[0], clipDepth);
+    uint mask1 = ClusterRasterClipMask(clipVerts[1], clipDepth);
+    uint mask2 = ClusterRasterClipMask(clipVerts[2], clipDepth);
     sourceActive = sourceActive && ((mask0 & mask1 & mask2) == 0u);
     bool needsClipping = sourceActive && ((mask0 | mask1 | mask2) != 0u);
     float4 clipped[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
@@ -531,7 +533,7 @@ void RasterizeClusterTriangleWave<
             clipVerts,
             mask0 | mask1 | mask2,
             clipped,
-            clippedSourceBarycentric);
+            clippedSourceBarycentric, clipDepth);
     uint fanTriangleCount = clippedCount >= 3u ? clippedCount - 2u : 0u;
     uint waveTriangleCount = WaveActiveMax(fanTriangleCount);
 

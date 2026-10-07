@@ -395,6 +395,7 @@ struct ClusterMeshVertex
 struct ClusterRasterVertexData<TVarying>
 {
     float4 Pos : SV_POSITION;
+    float2 ClipDepth : RASTER_CLIP_DEPTH;
     TVarying Varying;
     nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
     nointerpolation uint ViewIndex : VIEW_INDEX;
@@ -403,6 +404,7 @@ struct ClusterRasterVertexData<TVarying>
 struct ClusterRasterPixelInput<TVarying>
 {
     float4 Pos : SV_POSITION;
+    float2 ClipDepth : RASTER_CLIP_DEPTH;
     TVarying Varying;
     nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
     nointerpolation uint TriangleID : TRIANGLE_ID;

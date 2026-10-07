@@ -317,3 +317,5 @@ BVH 的 `ChangedMeshes`、材质绑定的变化实体以及实际纹理通知形
 接收面 producer 位于主可见性之后、页需求之前的固定持久图区段；主层和额外层先清零，再执行用户材质。原版依据为固定396c9f05的 `PrimitiveSceneProxy.cpp:631–648`、`ShadowSceneRenderer.cpp:76–88/565–636`、`SceneView.cpp:742–757` 与 `VirtualShadowMapProjection.usf:437–485`。
 
 局部光 receiver 背光容差将原始光向量和光源半径共同换算为厘米，角度余量按 radius/sqrt(distanceSquared+1) 形成。方向光 froxel 根据距离、global/extra bias、逐VSM bias选择 clipmap，并在绝对 level 最低0后换成对应视图索引；包围体与投影 frustum 的相交关系形成实际请求。中心点的Z位置用于选择的空间距离，最终接收覆盖由包围体裁剪决定。依据固定396c9f05的 VirtualShadowMapPageMarking.ush:18–40、VirtualShadowMapPageMarking.usf:176–203 和 VirtualShadowMapProjectionSpot.ush:250–260 与 VirtualShadowMapPageMarking.usf:605。
+
+方向光caster的深度范围按原版作为写入深度的投影数据，HW覆盖使用z=.5w并独立传递原始clip.zw；PS普通perspective插值后由z/w取得实际深度。主相机与局部光形成depth-clip条件，方向光的空间剔除与SW/HW光栅消费同一显式条件。compact阶段是目标条件的生产者，视图/目标字段沿既有GPU数据进入消费者。

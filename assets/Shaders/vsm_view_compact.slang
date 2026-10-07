@@ -83,6 +83,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     view.HiZMipCount = ViewCompact.PageHiZMipCount;
     view.HiZInvSize = 2.0.xx / float(max(mipResolution, 2u));
     view.TargetPolicy = 1u;
+    view.DepthClipEnabled = source.LightKind == VSM_LIGHT_DIRECTIONAL ? 0u : 1u;
     view.TargetViewIndex = compactIndex;
     view.CullingProjectionIndex = sourceViewIndex + 1u;
     // A cube-face far plane also includes corners beyond the local light's sphere.
@@ -119,7 +120,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     target.ReceiverMaskEnabled =
         (source.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u ? 1u : 0u;
     target.RasterWindowPages = 4u;
-    target.Padding = uint2(sourceViewIndex, ViewCompact.WorkFeedbackEnabled);
+    target.Padding = uint2(sourceViewIndex, ViewCompact.WorkFeedbackEnabled | (view.DepthClipEnabled << 2u));
     target.UncachedPageRect = uncachedRect;
     RasterTargetViews[compactIndex] = target;
 }

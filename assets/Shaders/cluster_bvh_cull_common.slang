@@ -76,7 +76,7 @@ bool IsWorldAabbOutsideView(float3 worldMin, float3 worldMax, ClusterViewUniform
     float2 depthRadius = float2(dot(extent, abs(z)), dot(extent, abs(w - z)));
     float2 depthDistance = float2(clip.z, clip.w - clip.z);
     float2 depthRounding = (float2(magnitude.z, magnitude.w + magnitude.z) + depthRadius + 1.0) * 9.5367431640625e-7;
-    return any(depthDistance + depthRadius < -depthRounding);
+    return ClusterViewClipsDepth(view) && any(depthDistance + depthRadius < -depthRounding);
 }
 
 bool ProjectWorldAabb(
@@ -134,7 +134,7 @@ bool ProjectWorldAabb(
 
     return outsideLeft == 8u || outsideRight == 8u ||
         outsideBottom == 8u || outsideTop == 8u ||
-        outsideNear == 8u || outsideFar == 8u;
+        (ClusterViewClipsDepth(view) && (outsideNear == 8u || outsideFar == 8u));
 }
 
 // Reuse is local to one fixed world AABB; callers reset this data for each node.

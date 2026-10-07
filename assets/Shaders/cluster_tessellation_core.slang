@@ -954,7 +954,7 @@ void DiceTessellationPatches<
             view.TargetViewIndex,
             active,
             view.ScreenWidth,
-            view.ScreenHeight);
+            view.ScreenHeight, ClusterViewClipsDepth(view));
     }
 }
 

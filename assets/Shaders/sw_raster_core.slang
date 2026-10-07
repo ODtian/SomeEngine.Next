@@ -254,7 +254,7 @@ void SWRasterKernel<
             RasterizeClusterTriangleWave<VertexEvaluate.Vertex, VisibilityEvaluate, TOutput>(
                 visibility, rasterOutput, clips, triangleVaryings, scissor, originalIndex,
                 triangle, viewIndex, view.TargetPolicy, view.TargetViewIndex, active,
-                view.ScreenWidth, view.ScreenHeight);
+                view.ScreenWidth, view.ScreenHeight, ClusterViewClipsDepth(view));
         }
         return;
     }
@@ -343,7 +343,7 @@ void SWRasterKernel<
         view.TargetViewIndex,
         bTriValid,
         view.ScreenWidth,
-        view.ScreenHeight);
+        view.ScreenHeight, ClusterViewClipsDepth(view));
 }
 
 #endif // SW_RASTER_CORE_SLANG

@@ -59,7 +59,7 @@ internal struct ClusterViewUniforms
     internal uint PlayerId;
     internal RenderViewFamily Family;
     internal uint FirstPersonTransformEnabled;
-    private uint FirstPersonPadding;
+    internal uint DepthClipEnabled;
     internal Matrix4x4 WorldToFirstPerson;
     internal Matrix4x4 FirstPersonToWorld;
     internal Matrix4x4 PreviousWorldToFirstPerson;
@@ -111,6 +111,7 @@ internal struct ClusterViewUniforms
             RasterMode = (uint)rasterMode,
             SoftwareRasterEdgeThreshold = options.SoftwareRasterEdgeThreshold,
             CullingEnabled = cullingEnabled ? 1u : 0u,
+            DepthClipEnabled = 1u,
             PrevViewProj = viewProjection,
             HasPrevHistory = 0,
             HiZMipCount = 0,

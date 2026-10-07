@@ -58,7 +58,7 @@ struct ClusterViewUniforms
     uint PlayerId;
     uint Family;
     uint FirstPersonTransformEnabled;
-    uint FirstPersonPadding;
+    uint DepthClipEnabled;
     float4x4 WorldToFirstPerson;
     float4x4 FirstPersonToWorld;
     float4x4 PreviousWorldToFirstPerson;
@@ -93,6 +93,11 @@ float ClusterProjectedError(
         max(minimumW * (minimumW - change.z), 1e-12);
     float2 pixels = ndc * 0.5 * float2(screenSize);
     return max(pixels.x, pixels.y);
+}
+
+bool ClusterViewClipsDepth(ClusterViewUniforms view)
+{
+    return view.TargetPolicy == 0u || view.DepthClipEnabled != 0u;
 }
 
 float CalculateClusterViewPixelScale(ClusterViewUniforms view)

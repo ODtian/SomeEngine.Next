@@ -131,6 +131,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
         viewIndex);
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID, view);
     output.Pos = mul(float4(position, 1.0), view.ViewProj);
+    output.ClipDepth = output.Pos.zw;
     output.Pos = ClusterHardwareRasterPosition(output.Pos, patch.VisibleClusterIndex, view,
         ClusterRasterTargetViewport(view));
     output.Varying = visibility.interpolateVertex(
@@ -199,6 +200,7 @@ void ClusterTessellationHardwareMesh(
             DecodeTessellationPatchBarycentric(patch, 1u),
             DecodeTessellationPatchBarycentric(patch, 2u), localBary);
         float4 clip = mul(float4(domain.position(triangle, sourceBary), 1.0), view.ViewProj);
+        vertices[index].ClipDepth = clip.zw;
         vertices[index].Pos = ClusterHardwareRasterPosition(clip, patch.VisibleClusterIndex, view,
             ClusterRasterTargetViewport(view));
         vertices[index].VisibleClusterIndex = patch.VisibleClusterIndex;
@@ -235,7 +237,7 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
     input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
-    pixelInput.Depth = input.Pos.z;
+    pixelInput.Depth = view.TargetPolicy != 0u ? input.ClipDepth.x / input.ClipDepth.y : input.Pos.z;
     pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
     pixelInput.TriangleID = input.TriangleID;
     pixelInput.ViewIndex = input.ViewIndex;
@@ -271,6 +273,7 @@ ClusterTessellationHardwareOutput ClusterTessellationHardwareMeshPixel(
 {
     ClusterRasterPixelInput<VisibilityEvaluate.Varying> input;
     input.Pos = vertex.Pos;
+    input.ClipDepth = vertex.ClipDepth;
     input.Varying = vertex.Varying;
     input.VisibleClusterIndex = vertex.VisibleClusterIndex;
     input.TriangleID = primitive.TriangleID;
