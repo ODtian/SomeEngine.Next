@@ -1176,8 +1176,7 @@ public sealed partial class ClusterPipelineSystem
         }
         else
         {
-            _ = _renderDevice.PrepareTexture(ref graph, input, asset);
-            textureView = _renderDevice.GetTextureSrv(asset);
+            textureView = _renderDevice.PrepareTextureSrv(ref graph, input, asset);
         }
 
         return ResourceBinding.SampledTexture(textureView);

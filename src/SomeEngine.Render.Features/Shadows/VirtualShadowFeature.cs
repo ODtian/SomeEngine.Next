@@ -887,9 +887,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _shadowFrameActive = true;
         try
         {
-            _textureDevice.PrepareTexture(ref graph, _blueNoiseInput, _blueNoise);
             graph.SetParameterInput(_blueNoiseInput,
-                ResourceBinding.SampledTexture(_textureDevice.GetTextureSrv(_blueNoise)));
+                ResourceBinding.SampledTexture(_textureDevice.PrepareTextureSrv(ref graph, _blueNoiseInput, _blueNoise)));
             ReadOnlySpan<VirtualShadowView> views = _shadowMap.PrepareViews(
                 lights,
                 receiverView,

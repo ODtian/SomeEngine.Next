@@ -55,6 +55,12 @@ public sealed partial class RenderDevice
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(asset);
         TextureRealization realization = GetOrCreateTexture(asset);
+        return GetTextureSrv(realization, range, format, dimension, label);
+    }
+
+    private TextureSrv GetTextureSrv(TextureRealization realization, TextureSubresourceRange? range,
+        Format? format, TextureViewDimension? dimension, string? label)
+    {
         TextureShape shape = realization.Shape;
         TextureSubresourceRange resolved = range ?? shape.ResidentRange(realization.FirstResidentMip);
         ValidateResidentRange(realization, resolved);
@@ -113,15 +119,22 @@ public sealed partial class RenderDevice
 
     /// <summary>Prepares one texture for every pass bound to the parameter input.</summary>
     public RhiTexture PrepareTexture(ref RenderGraphFrame frame, GraphParameterInput input, EngineTexture asset) =>
-        PrepareTexture(ref frame, [], asset, input);
+        PrepareTexture(ref frame, [], asset, input).Resource;
+
+    /// <summary>Prepares uploads for all passes bound to the input and returns the resident sampled view.</summary>
+    public TextureSrv PrepareTextureSrv(ref RenderGraphFrame frame, GraphParameterInput input, EngineTexture asset)
+    {
+        TextureRealization realization = PrepareTexture(ref frame, [], asset, input);
+        return GetTextureSrv(realization, null, null, null, null);
+    }
 
     /// <summary>Prepares one texture and orders every supplied consumer after its uploads.</summary>
     public RhiTexture PrepareTexture(
         ref RenderGraphFrame frame,
         scoped ReadOnlySpan<GraphPassId> consumers,
-        EngineTexture asset) => PrepareTexture(ref frame, consumers, asset, null);
+        EngineTexture asset) => PrepareTexture(ref frame, consumers, asset, null).Resource;
 
-    private RhiTexture PrepareTexture(ref RenderGraphFrame frame,
+    private TextureRealization PrepareTexture(ref RenderGraphFrame frame,
         scoped ReadOnlySpan<GraphPassId> consumers, EngineTexture asset, GraphParameterInput? input)
     {
         ThrowIfDisposed();
@@ -190,7 +203,7 @@ public sealed partial class RenderDevice
 
         EnsureImported(ref frame, realization);
         OrderTextureConsumers(ref frame, realization, consumers, input);
-        return realization.Resource;
+        return realization;
     }
 
     public RhiTexture PrepareMissingTexture(
