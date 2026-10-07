@@ -176,7 +176,8 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         var light = new RenderPointLight(Vector3.Zero, 10, Vector3.One, 1, uint.MaxValue);
         var entity = world.CreateEntity(light);
         var lights = new RenderLightSetSystem();
-        using var systems = new RenderPrepareSystems(world);
+        using var extraction = new RenderExtractionSystems(world);
+        using var systems = new RenderPrepareSystems(world, extraction);
         systems.Add(lights);
         using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
             [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
@@ -197,30 +198,38 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         // five rendered frames later it is .5, ten later zero, and movement resets it.
         float[] expectedBiases = [1f, .9f, .8f, .7f, .6f, .5f, .4f, .3f, .2f, .1f, 0f, 1f];
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-        for (int index = 0; index < expectedBiases.Length; index++)
+        try
         {
-            if (index == 11)
+            for (int index = 0; index < expectedBiases.Length; index++)
             {
-                world.AcquireSystemVersion();
-                world.Replace(entity, light with { Position = Vector3.UnitX });
+                if (index == 11)
+                {
+                    world.AcquireSystemVersion();
+                    world.Replace(entity, light with { Position = Vector3.UnitX });
+                }
+                Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
+                using var nextFrameResources = nextFrame;
+                Assert.True(graphics.DataLock.TryBeginPrepare(out var prepare));
+                using (prepare) systems.Update(prepare, nextFrame);
+                Assert.True(graphics.DataLock.TryBeginRead(out var read));
+                using (read)
+                using (var frame = graph.BeginFrame(nextFrame))
+                {
+                    shadows.BeginFrame();
+                    VirtualShadowView view = shadows.PrepareViews(lights.RequireCurrent(), receiver, 1, 1, 1)[0];
+                    Assert.InRange(view.ResolutionLodBias, expectedBiases[index] - .000001f, expectedBiases[index] + .000001f);
+                    shadows.AcquireFrameResources();
+                    frame.ObserveExecution(new ViewCommit(shadows));
+                    int count = frame.Execute(completions);
+                    for (int completion = 0; completion < count; completion++)
+                        Assert.Equal(WaitStatus.Completed, graphics.Backend.WaitCpu(completions[completion], TimeSpan.FromSeconds(10)));
+                }
             }
-            Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
-            using var nextFrameResources = nextFrame;
-            Assert.True(graphics.DataLock.TryBeginPrepare(out var prepare));
-            using (prepare) systems.Update(prepare, nextFrame);
-            Assert.True(graphics.DataLock.TryBeginRead(out var read));
-            using (read)
-            using (var frame = graph.BeginFrame(nextFrame))
-            {
-                shadows.BeginFrame();
-                VirtualShadowView view = shadows.PrepareViews(lights.RequireCurrent(), receiver, 1, 1, 1)[0];
-                Assert.InRange(view.ResolutionLodBias, expectedBiases[index] - .000001f, expectedBiases[index] + .000001f);
-                shadows.AcquireFrameResources();
-                frame.ObserveExecution(new ViewCommit(shadows));
-                int count = frame.Execute(completions);
-                for (int completion = 0; completion < count; completion++)
-                    Assert.Equal(WaitStatus.Completed, graphics.Backend.WaitCpu(completions[completion], TimeSpan.FromSeconds(10)));
-            }
+        }
+        finally
+        {
+            Assert.True(graphics.DataLock.TryBeginPrepare(out var shutdown));
+            using (shutdown) systems.Shutdown(shutdown);
         }
     }
 
@@ -256,40 +265,48 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         extraction.Extract(game);
         graphics.Apply(extraction, world);
         var lights = new RenderLightSetSystem();
-        using var systems = new RenderPrepareSystems(world);
+        using var systems = new RenderPrepareSystems(world, extraction);
         systems.Add(lights);
         using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
             [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
-        Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
-        using (nextFrame)
+        try
         {
-            Assert.True(graphics.DataLock.TryBeginPrepare(out var prepare));
-            using (prepare) systems.Update(prepare, nextFrame);
-        }
-        VirtualShadowMapShaders shaders = await CreateShaders();
-        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
-            new VirtualShadowMapSettings
+            Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
+            using (nextFrame)
             {
-                VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 2,
-                LocalResolutionLodBias = .5f,
-            });
-        var receiver = new RenderView(Matrix4x4.Identity,
-            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
-        shadows.BeginFrame();
-        RenderLightSet currentLights = lights.RequireCurrent();
-        VirtualShadowView[] views = shadows.PrepareViews(currentLights, receiver, 1, 1, 1).ToArray();
-        // Native local bias is the nonmoving global bias plus the authored
-        // per-light bias: .5 + .25 = .75, and .5 + .75 = 1.25.
-        var expectedResolutionBiases = new Dictionary<Vector3, float>
+                Assert.True(graphics.DataLock.TryBeginPrepare(out var prepare));
+                using (prepare) systems.Update(prepare, nextFrame);
+            }
+            VirtualShadowMapShaders shaders = await CreateShaders();
+            using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders,
+                new VirtualShadowMapSettings
+                {
+                    VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 2,
+                    LocalResolutionLodBias = .5f,
+                });
+            var receiver = new RenderView(Matrix4x4.Identity,
+                Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+            shadows.BeginFrame();
+            RenderLightSet currentLights = lights.RequireCurrent();
+            VirtualShadowView[] views = shadows.PrepareViews(currentLights, receiver, 1, 1, 1).ToArray();
+            // Native local bias is the nonmoving global bias plus the authored
+            // per-light bias: .5 + .25 = .75, and .5 + .75 = 1.25.
+            var expectedResolutionBiases = new Dictionary<Vector3, float>
+            {
+                [Vector3.Zero] = .75f,
+                [Vector3.UnitX] = 1.25f,
+            };
+            Assert.Equal(12, views.Length);
+            foreach (VirtualShadowView view in views)
+            {
+                Vector3 position = currentLights.Points[(int)view.LightIndex].Position;
+                Assert.Equal(expectedResolutionBiases[position], view.ResolutionLodBias);
+            }
+        }
+        finally
         {
-            [Vector3.Zero] = .75f,
-            [Vector3.UnitX] = 1.25f,
-        };
-        Assert.Equal(12, views.Length);
-        foreach (VirtualShadowView view in views)
-        {
-            Vector3 position = currentLights.Points[(int)view.LightIndex].Position;
-            Assert.Equal(expectedResolutionBiases[position], view.ResolutionLodBias);
+            Assert.True(graphics.DataLock.TryBeginPrepare(out var shutdown));
+            using (shutdown) systems.Shutdown(shutdown);
         }
     }
 
