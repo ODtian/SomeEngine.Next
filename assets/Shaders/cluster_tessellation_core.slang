@@ -667,7 +667,10 @@ void FinalizeTessellationPatch(
         TessellationRasterSlots.GetDimensions(slotCount, slotStride);
         TessellationRasterBinMeta.GetDimensions(binCount, binStride);
         uint triangle = TessellationPatchTriangle(patch);
-        uint bin = SlotBin(TessellationRasterSlots, slotOffset, LocalMaterial(materials, ranges, triangle), slotCount, binCount);
+        uint clusterAddress = source.PageOffset + PageHeap.Load(source.PageOffset + 16u) +
+            DrawRequestClusterID(source) * PACKED_CLUSTER_STRIDE_BYTES;
+        uint material = LocalMaterial(PageHeap, clusterAddress, source.PageOffset, triangle);
+        uint bin = SlotBin(TessellationRasterSlots, slotOffset, material, slotCount, binCount);
         patch.TriangleAndRasterBin = triangle | (bin << 8u);
     }
     uint maximumLocalFactor = max(

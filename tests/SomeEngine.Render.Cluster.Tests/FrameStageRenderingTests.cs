@@ -577,7 +577,6 @@ internal sealed class FrameStageScene : IAsyncDisposable
                 Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
         }
         _graph.CollectCompleted();
-        _pipeline.ThrowIfWorkFailed();
     }
 
     internal async Task<RasterImage> ReadRasterImageAsync() => new(

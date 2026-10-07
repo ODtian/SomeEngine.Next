@@ -420,6 +420,7 @@ public static partial class ClusterBuilder
         private List<PackedCluster> CurrentClusters { get; } = [];
         private List<byte> CurrentVertexBlobs { get; } = [];
         private List<byte> CurrentIndices { get; } = [];
+        private List<uint> CurrentMaterialData { get; } = [];
         private Dictionary<uint, ushort> UsedMap { get; } = new(MaxVerticesPerMeshlet);
         private List<uint> LocalVertices { get; } = new(MaxVerticesPerMeshlet);
         private List<byte> LocalIndices { get; } = new(MaxTrianglesPerMeshlet * 3);
@@ -451,10 +452,19 @@ public static partial class ClusterBuilder
             ReadOnlySpan<uint> meshletIndices = globalIndices.Slice(meshlet.IndicesOffset, meshlet.IndicesCount);
             EncodedCluster encoded = EncodeLocalCluster(meshletIndices);
             ValidateVertReuseBatches(meshlet, encoded.VertexCount);
-            EnsurePageSpace(ClusterPayloadSize(encoded));
+            EnsurePageSpace(ClusterPayloadSize(encoded, meshlet));
             PageStarts starts = CurrentPageStarts();
-            AppendLocalPayload(encoded);
-            CurrentClusters.Add(CreatePackedCluster(meshlet, encoded, starts));
+            uint materialOffset = uint.MaxValue;
+            uint batchOffset = uint.MaxValue;
+            if (meshlet.MaterialRanges.Length > 3)
+            {
+                materialOffset = checked((uint)CurrentMaterialData.Count * sizeof(uint));
+                CurrentMaterialData.AddRange(meshlet.MaterialRanges);
+                batchOffset = checked((uint)CurrentMaterialData.Count * sizeof(uint));
+                CurrentMaterialData.AddRange(meshlet.VertReuseBatchWords);
+            }
+            AppendLocalPayload(encoded, meshlet);
+            CurrentClusters.Add(CreatePackedCluster(meshlet, encoded, starts, materialOffset, batchOffset));
             ClusterInfos.Add(CreateClusterInfo(meshlet, encoded));
         }
 
@@ -514,15 +524,7 @@ public static partial class ClusterBuilder
         {
             int triangleCount = LocalIndices.Count / 3;
             Span<byte> indices = CollectionsMarshal.AsSpan(LocalIndices);
-            Span<int> rangeEnds = stackalloc int[3]
-            {
-                meshlet.Range0End,
-                meshlet.Range1End,
-                triangleCount,
-            };
-            int rangeCount = meshlet.Range0End == triangleCount
-                ? 1
-                : (meshlet.Range1End == triangleCount ? 2 : 3);
+            int rangeCount = meshlet.MaterialRanges.Length;
 
             int triangleStart = 0;
             int flatBatchIndex = 0;
@@ -532,12 +534,13 @@ public static partial class ClusterBuilder
                 if (batchCount <= 0)
                     throw new InvalidDataException("A material range has no vertex-reuse batch.");
 
-                int rangeEnd = rangeEnds[rangeIndex];
+                uint range = meshlet.MaterialRanges[rangeIndex];
+                int rangeEnd = checked((int)((range & 0xFFu) + ((range >> 8) & 0xFFu)));
                 for (int batchIndex = 0; batchIndex < batchCount; batchIndex++)
                 {
                     int batchTriangleCount = checked((int)ReadVertReuseBits(
                         meshlet,
-                        12 + flatBatchIndex * 5,
+                        Math.Max(rangeCount, 3) * 4 + flatBatchIndex * 5,
                         5)) + 1;
                     int batchEnd = checked(triangleStart + batchTriangleCount);
                     if (batchTriangleCount > 32 || batchEnd > rangeEnd)
@@ -570,7 +573,8 @@ public static partial class ClusterBuilder
             int bitOffset,
             int bitCount)
         {
-            if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 || bitOffset + bitCount > 128)
+            if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 ||
+                bitOffset + bitCount > meshlet.VertReuseBatchWords.Length * 32)
                 throw new InvalidDataException("Vertex-reuse batch metadata exceeds its inline encoding.");
 
             int wordIndex = bitOffset >> 5;
@@ -584,14 +588,7 @@ public static partial class ClusterBuilder
         }
 
         private static uint VertReuseWord(in BuilderMeshlet meshlet, int index)
-            => index switch
-            {
-                0 => meshlet.VertReuseBatchWord0,
-                1 => meshlet.VertReuseBatchWord1,
-                2 => meshlet.VertReuseBatchWord2,
-                3 => meshlet.VertReuseBatchWord3,
-                _ => throw new ArgumentOutOfRangeException(nameof(index)),
-            };
+            => meshlet.VertReuseBatchWords[index];
 
         private static void ValidateVertReuseBatch(
             Span<byte> indices,
@@ -625,9 +622,12 @@ public static partial class ClusterBuilder
                     $"(max 32), cluster triangles={triangleCount}, vertices={vertexCount}.");
             }
         }
-        private int ClusterPayloadSize(EncodedCluster encoded)
+        private int ClusterPayloadSize(EncodedCluster encoded, BuilderMeshlet meshlet)
         {
-            return checked(PackedCluster.SizeInBytes + encoded.Blob.Length + LocalIndices.Count);
+            int materialBytes = meshlet.MaterialRanges.Length > 3
+                ? checked((meshlet.MaterialRanges.Length + meshlet.VertReuseBatchWords.Length) * sizeof(uint) + 3)
+                : 0;
+            return checked(PackedCluster.SizeInBytes + encoded.Blob.Length + LocalIndices.Count + materialBytes);
         }
 
         private void EnsurePageSpace(int bytesToAdd)
@@ -669,9 +669,9 @@ public static partial class ClusterBuilder
             }
         }
 
-        private void AppendLocalPayload(EncodedCluster encoded)
+        private void AppendLocalPayload(EncodedCluster encoded, BuilderMeshlet meshlet)
         {
-            int payloadSize = ClusterPayloadSize(encoded);
+            int payloadSize = ClusterPayloadSize(encoded, meshlet);
             CurrentVertexBlobs.AddRange(encoded.Blob);
             CurrentIndices.AddRange(LocalIndices);
             CurrentVertexCount = checked(CurrentVertexCount + encoded.VertexCount);
@@ -681,7 +681,7 @@ public static partial class ClusterBuilder
         private PackedCluster CreatePackedCluster(
             BuilderMeshlet meshlet,
             EncodedCluster encoded,
-            PageStarts starts)
+            PageStarts starts, uint materialOffset, uint batchOffset)
         {
             return new PackedCluster
             {
@@ -700,12 +700,13 @@ public static partial class ClusterBuilder
                     encoded.VertexCount,
                     meshlet.Level),
                 PackedMaterials = PackedMaterials(meshlet),
-                PackedRanges = PackedRanges(meshlet),
-                MaterialTableOffset = 0xFFFFFFFF,
-                VertReuseBatchWord0 = meshlet.VertReuseBatchWord0,
-                VertReuseBatchWord1 = meshlet.VertReuseBatchWord1,
-                VertReuseBatchWord2 = meshlet.VertReuseBatchWord2,
-                VertReuseBatchWord3 = meshlet.VertReuseBatchWord3,
+                PackedRanges = PackedRanges(meshlet) | (materialOffset != uint.MaxValue
+                    ? checked((uint)meshlet.MaterialRanges.Length << 16) : 0u),
+                MaterialTableOffset = materialOffset,
+                VertReuseBatchWord0 = materialOffset == uint.MaxValue ? meshlet.VertReuseBatchWords[0] : batchOffset,
+                VertReuseBatchWord1 = materialOffset == uint.MaxValue ? meshlet.VertReuseBatchWords[1] : checked((uint)meshlet.MaterialRanges.Length),
+                VertReuseBatchWord2 = materialOffset == uint.MaxValue ? meshlet.VertReuseBatchWords[2] : checked((uint)meshlet.VertReuseBatchWords.Length),
+                VertReuseBatchWord3 = materialOffset == uint.MaxValue ? meshlet.VertReuseBatchWords[3] : 0u,
                 BoundMin = encoded.BoundMin,
                 BoundMax = encoded.BoundMax,
             };
@@ -748,10 +749,21 @@ public static partial class ClusterBuilder
                 | ((uint)(byte)level << 16);
 
         private static uint PackedMaterials(BuilderMeshlet meshlet)
-            => (uint)meshlet.Mat0 | ((uint)meshlet.Mat1 << 8) | ((uint)meshlet.Mat2 << 16);
+        {
+            uint value = 0;
+            for (int range = 0; range < Math.Min(meshlet.MaterialRanges.Length, 3); range++)
+                value |= ((meshlet.MaterialRanges[range] >> 16) & 0xFFu) << (range * 8);
+            return value;
+        }
 
         private static uint PackedRanges(BuilderMeshlet meshlet)
-            => (uint)meshlet.Range0End | ((uint)meshlet.Range1End << 8);
+        {
+            uint first = meshlet.MaterialRanges[0];
+            uint second = meshlet.MaterialRanges[Math.Min(1, meshlet.MaterialRanges.Length - 1)];
+            uint firstEnd = (first & 0xFFu) + ((first >> 8) & 0xFFu);
+            uint secondEnd = (second & 0xFFu) + ((second >> 8) & 0xFFu);
+            return firstEnd | (secondEnd << 8);
+        }
 
         private ClusterInfo CreateClusterInfo(BuilderMeshlet meshlet, EncodedCluster encoded)
         {
@@ -809,6 +821,9 @@ public static partial class ClusterBuilder
             uint indicesOffset = checked(vertexBlobsOffset + (uint)vertexBlobsSize);
             int indicesSize = CurrentIndices.Count;
             uint extensionDataOffset = checked(indicesOffset + (uint)indicesSize);
+            if (CurrentMaterialData.Count != 0)
+                extensionDataOffset = checked((extensionDataOffset + 3u) & ~3u);
+            int materialSize = checked(CurrentMaterialData.Count * sizeof(uint));
             return new PageOffsets(
                 clustersOffset,
                 clustersSize,
@@ -817,8 +832,8 @@ public static partial class ClusterBuilder
                 indicesOffset,
                 indicesSize,
                 extensionDataOffset,
-                0,
-                checked((int)extensionDataOffset));
+                materialSize,
+                checked((int)extensionDataOffset + materialSize));
         }
 
         private void WritePage(PageOffsets offsets)
@@ -853,12 +868,22 @@ public static partial class ClusterBuilder
 
         private void WritePagePayload(Span<byte> pageSpan, PageOffsets offsets)
         {
+            for (int index = 0; index < CurrentClusters.Count; index++)
+            {
+                PackedCluster cluster = CurrentClusters[index];
+                if (cluster.MaterialTableOffset == uint.MaxValue) continue;
+                cluster.MaterialTableOffset += offsets.ExtensionDataOffset;
+                cluster.VertReuseBatchWord0 += offsets.ExtensionDataOffset;
+                CurrentClusters[index] = cluster;
+            }
             MemoryMarshal.Cast<PackedCluster, byte>(CollectionsMarshal.AsSpan(CurrentClusters))
                 .CopyTo(pageSpan.Slice((int)offsets.ClustersOffset, offsets.ClustersSize));
             CollectionsMarshal.AsSpan(CurrentVertexBlobs)
                 .CopyTo(pageSpan.Slice((int)offsets.VertexBlobsOffset, offsets.VertexBlobsSize));
             CollectionsMarshal.AsSpan(CurrentIndices)
                 .CopyTo(pageSpan.Slice((int)offsets.IndicesOffset, offsets.IndicesSize));
+            MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(CurrentMaterialData))
+                .CopyTo(pageSpan.Slice((int)offsets.ExtensionDataOffset, offsets.ExtensionDataSize));
         }
 
         private void ClearCurrentPage()
@@ -866,6 +891,7 @@ public static partial class ClusterBuilder
             CurrentClusters.Clear();
             CurrentVertexBlobs.Clear();
             CurrentIndices.Clear();
+            CurrentMaterialData.Clear();
             CurrentVertexCount = 0;
             CurrentBytes = PageHeaderSize;
         }

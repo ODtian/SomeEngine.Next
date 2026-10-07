@@ -11,6 +11,39 @@ namespace SomeEngine.Assets.Tests.Assets;
 public class ClusterBuilderTests
 {
     [Fact]
+    public void ProcessRawKeepsFourMaterialRangesInOneCluster()
+    {
+        Vector3[] positions = new Vector3[12];
+        uint[] indices = new uint[12];
+        float[] materialIndices = new float[12];
+        int[] sourceMaterials = [0, 64, 128, 255];
+        for (int material = 0; material < 4; material++)
+        {
+            int first = material * 3;
+            positions[first] = new(material, 0, 0);
+            positions[first + 1] = new(material + 0.5f, 0, 0);
+            positions[first + 2] = new(material, 0.5f, 0);
+            for (int vertex = first; vertex < first + 3; vertex++)
+            {
+                indices[vertex] = (uint)vertex;
+                materialIndices[vertex] = sourceMaterials[material];
+            }
+        }
+        using var asset = ClusterBuilder.ProcessRaw(positions,
+            [new RawAttribute("_MATERIAL_INDEX", materialIndices, 1, ValueType.UInt8, 1, false)],
+            indices, Enumerable.Range(0, 256).Select(_ => ClusterBuilderTestMaterials.Slot()).ToArray(),
+            "FourMaterials");
+        byte[] payload = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>()
+            .Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey].ToArray();
+        MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(payload);
+        Assert.Equal(1u, header.ClusterCount);
+        PackedCluster cluster = MemoryMarshal.Read<PackedCluster>(payload.AsSpan(checked((int)header.ClustersOffset)));
+        uint[] materials = Enumerable.Range(0, cluster.MaterialRangeCount)
+            .Select(range => (cluster.GetMaterialRange(payload, range) >> 16) & 0xFFu).ToArray();
+        Assert.Equal(new uint[] { 0, 64, 128, 255 }, materials);
+    }
+
+    [Fact]
     public void TestClusterGeneration()
     {
         // 1. Create a 32x32 plane

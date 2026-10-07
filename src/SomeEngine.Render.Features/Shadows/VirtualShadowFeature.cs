@@ -68,7 +68,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private readonly GraphBufferId _requestedPageIndices;
     private readonly GraphBufferId _requestedPageCount;
     private readonly GraphBufferId _pageReceiverMasks;
-    private readonly uint _requestEpochEntryCapacity;
+    private uint _requestEpochEntryCapacity;
+    private uint _sourceViewCapacity;
     private readonly GraphBufferId _activePages;
     private readonly GraphBufferId _activePageCount;
     private readonly GraphBufferId _uncachedPageRectBounds;
@@ -259,6 +260,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     "Virtual shadow active raster pages"));
                 _activePageCount = Counter(edit, "Virtual shadow active page count");
                 uint sourceViewCapacity = checked(settings.MaxShadowLights * settings.MaximumViewsPerLight);
+                _sourceViewCapacity = sourceViewCapacity;
                 uint pageTableEntryCapacity = checked(
                     sourceViewCapacity * settings.PageTableEntriesPerView);
                 _requestEpochEntryCapacity = pageTableEntryCapacity;
@@ -1359,6 +1361,10 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         graph.SetPassEnabled(_frameCompletePass, true);
         UpdateResidentPages(ref graph, viewCount);
         graph.SetPassEnabled(_frameResetPass, true);
+        uint resetWords = Math.Max(checked(viewCount * _shadowMap.Settings.PageHierarchyWordsPerView),
+            checked(viewCount * _shadowMap.Settings.MipLevelCount));
+        graph.SetPassDataIfChanged(_frameResetPass, new VirtualShadowDispatchPassData(
+            new DispatchArguments(Math.Max(1u, DivideRoundUp(resetWords, 256u)), 1u, 1u)));
 
     }
 

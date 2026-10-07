@@ -844,7 +844,6 @@ internal static class RuntimeApplication
                     throw new TimeoutException("The next rendering frame exceeded its resource wait timeout.");
                 using var nextFrameResources = nextFrame;
                 renderDevice.CollectCompleted();
-                pipeline.ThrowIfWorkFailed();
                 long prepareStarted = Stopwatch.GetTimestamp();
                 bool selectedCapture = captureFrame == frameIndex;
                 bool captureBeauty = options.VerifyFrameOutput || platform?.ImageRequested == true || sceneEdit?.Images.Count > 0 ||
@@ -1174,7 +1173,6 @@ internal static class RuntimeApplication
             }
             renderDevice.WaitForTrackedSubmissions(FrameTimeout);
             renderGraph.CollectCompleted();
-            pipeline.ThrowIfWorkFailed();
             if ((options.FrameOutputPath is not null && !outputSaved) ||
                 (options.LinearFrameOutputPath is not null && !linearOutputSaved))
                 throw new InvalidOperationException("The requested capture frame was not submitted.");
@@ -1348,7 +1346,6 @@ internal static class RuntimeApplication
                     if (synchronousFrames || readOutput)
                     {
                         graph.CollectCompleted();
-                        pipeline.ThrowIfWorkFailed();
                     }
                     return frameOutput;
                 }

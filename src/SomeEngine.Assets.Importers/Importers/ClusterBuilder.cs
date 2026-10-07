@@ -100,15 +100,8 @@ public static partial class ClusterBuilder
         public float SelfLodRadius;
         public int VertexCount;
 
-        public byte Mat0;
-        public byte Mat1;
-        public byte Mat2;
-        public byte Range0End;
-        public byte Range1End;
-        public uint VertReuseBatchWord0;
-        public uint VertReuseBatchWord1;
-        public uint VertReuseBatchWord2;
-        public uint VertReuseBatchWord3;
+        public uint[] MaterialRanges;
+        public uint[] VertReuseBatchWords;
     }
 
     private struct ClusterLodBounds
@@ -1316,11 +1309,7 @@ public static partial class ClusterBuilder
         public byte mat;
     }
 
-    private readonly record struct VertReuseBatchData(
-        uint Word0,
-        uint Word1,
-        uint Word2,
-        uint Word3);
+    private readonly record struct VertReuseBatchData(uint[] MaterialRanges, uint[] Words);
 
     private static void EmitSplitMeshlet(
         ReadOnlySpan<TempTri> tris,
@@ -1331,20 +1320,12 @@ public static partial class ClusterBuilder
         VertReuseBatchData vertReuseBatches = BuildVertReuseBatchInfo(tris);
 
         int startIndex = globalIndices.Count;
-        var uniqueMats = new List<byte>();
-        int range0End = 0, range1End = 0;
 
         var uniqueVerts = new HashSet<uint>();
 
         for (int i = 0; i < tris.Length; i++)
         {
             ref readonly var t = ref tris[i];
-            if (!uniqueMats.Contains(t.mat))
-            {
-                uniqueMats.Add(t.mat);
-                if (uniqueMats.Count == 2) range0End = i;
-                if (uniqueMats.Count == 3) range1End = i;
-            }
             globalIndices.Add(t.v0);
             globalIndices.Add(t.v1);
             globalIndices.Add(t.v2);
@@ -1353,8 +1334,6 @@ public static partial class ClusterBuilder
             uniqueVerts.Add(t.v2);
         }
 
-        if (uniqueMats.Count < 2) range0End = tris.Length;
-        if (uniqueMats.Count < 3) range1End = tris.Length;
 
         clusters.Add(
             new BuilderMeshlet
@@ -1364,15 +1343,8 @@ public static partial class ClusterBuilder
                 VertexCount = uniqueVerts.Count,
                 GroupId = -1,
                 ParentGroupId = -1,
-                Mat0 = uniqueMats.Count > 0 ? uniqueMats[0] : (byte)0,
-                Mat1 = uniqueMats.Count > 1 ? uniqueMats[1] : (byte)0,
-                Mat2 = uniqueMats.Count > 2 ? uniqueMats[2] : (byte)0,
-                Range0End = (byte)range0End,
-                Range1End = (byte)range1End,
-                VertReuseBatchWord0 = vertReuseBatches.Word0,
-                VertReuseBatchWord1 = vertReuseBatches.Word1,
-                VertReuseBatchWord2 = vertReuseBatches.Word2,
-                VertReuseBatchWord3 = vertReuseBatches.Word3,
+                MaterialRanges = vertReuseBatches.MaterialRanges,
+                VertReuseBatchWords = vertReuseBatches.Words,
             }
         );
     }
@@ -1385,10 +1357,8 @@ public static partial class ClusterBuilder
 
     private static VertReuseBatchData BuildVertReuseBatchInfo(ReadOnlySpan<TempTri> triangles)
     {
-        Span<uint> words = stackalloc uint[4];
-        words.Clear();
-        int triangleBitOffset = 12;
-        int rangeIndex = 0;
+        var ranges = new List<uint>();
+        var batches = new List<List<byte>>();
         int rangeStart = 0;
 
         while (rangeStart < triangles.Length)
@@ -1398,26 +1368,29 @@ public static partial class ClusterBuilder
             while (rangeEnd < triangles.Length && triangles[rangeEnd].mat == material)
                 rangeEnd++;
 
-            if (rangeIndex >= 3)
-                throw new InvalidDataException("A cluster material chunk contains more than three ranges.");
-
             List<byte> batchTriangleCounts = BuildVertReuseBatches(
                 triangles.Slice(rangeStart, rangeEnd - rangeStart));
             if (batchTriangleCounts.Count == 0 || batchTriangleCounts.Count >= 16)
                 throw new InvalidDataException("A cluster material range has an invalid vertex-reuse batch count.");
 
-            WriteVertReuseBits(words, rangeIndex * 4, (uint)batchTriangleCounts.Count, 4);
-            foreach (byte triangleCount in batchTriangleCounts)
+            ranges.Add((uint)rangeStart | ((uint)(rangeEnd - rangeStart) << 8) | ((uint)material << 16));
+            batches.Add(batchTriangleCounts);
+            rangeStart = rangeEnd;
+        }
+        int countBits = Math.Max(ranges.Count, 3) * 4;
+        int batchCount = batches.Sum(static range => range.Count);
+        uint[] words = new uint[Math.Max(4, (countBits + batchCount * 5 + 31) / 32)];
+        int triangleBitOffset = countBits;
+        for (int rangeIndex = 0; rangeIndex < batches.Count; rangeIndex++)
+        {
+            WriteVertReuseBits(words, rangeIndex * 4, (uint)batches[rangeIndex].Count, 4);
+            foreach (byte triangleCount in batches[rangeIndex])
             {
                 WriteVertReuseBits(words, triangleBitOffset, (uint)(triangleCount - 1), 5);
                 triangleBitOffset += 5;
             }
-
-            rangeIndex++;
-            rangeStart = rangeEnd;
         }
-
-        return new VertReuseBatchData(words[0], words[1], words[2], words[3]);
+        return new VertReuseBatchData(ranges.ToArray(), words);
     }
 
     private static List<byte> BuildVertReuseBatches(ReadOnlySpan<TempTri> triangles)
@@ -1480,7 +1453,7 @@ public static partial class ClusterBuilder
 
     private static void WriteVertReuseBits(Span<uint> words, int bitOffset, uint value, int bitCount)
     {
-        if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 || bitOffset + bitCount > 128)
+        if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 || bitOffset + bitCount > words.Length * 32)
             throw new InvalidDataException("Vertex-reuse batch metadata exceeds its inline encoding.");
 
         uint mask = (1u << bitCount) - 1u;
@@ -1755,7 +1728,7 @@ public static partial class ClusterBuilder
             return false;
         }
 
-        if (uniqueMaterials.Count == 3)
+        if (uniqueMaterials.Count == 64)
         {
             EmitSplitMeshlet(
                 new ReadOnlySpan<TempTri>(triangles, chunkStart, index - chunkStart),

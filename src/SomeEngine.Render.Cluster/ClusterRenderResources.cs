@@ -182,6 +182,7 @@ public sealed class ClusterRenderResources : IDisposable
     internal int PublishedMeshCount => _meshes.PublishedMeshCount;
 
     internal int HierarchyLevels => _residency.HierarchyLevels;
+    internal uint MaximumRasterBatchesPerCluster => _residency.MaximumRasterBatchesPerCluster;
 
     internal int PageFaultCapacity => _residency.PageFaultCapacity;
 

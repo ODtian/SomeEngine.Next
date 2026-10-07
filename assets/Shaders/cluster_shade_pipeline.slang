@@ -93,8 +93,7 @@ bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
         req.PageOffset + PageHeap.Load(req.PageOffset + 16u) +
         DrawRequestClusterID(req) * PACKED_CLUSTER_STRIDE_BYTES;
     uint localMaterial = LocalMaterial(
-        PageHeap.Load(clusterOffset + 68u),
-        PageHeap.Load(clusterOffset + 72u),
+        PageHeap, clusterOffset, req.PageOffset,
         tri.triangleID);
     uint slotOffset = LoadClusterMaterialSlotOffset(
         InstanceData,

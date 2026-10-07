@@ -45,7 +45,7 @@ internal struct ClusterSoftwareRasterUniforms
     internal uint Pad2;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 48)]
 internal struct ClusterRasterBinningUniforms
 {
     internal uint RasterMaxBins;
@@ -56,6 +56,10 @@ internal struct ClusterRasterBinningUniforms
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint ViewCount;
+    internal uint BinnedEntriesPerCluster;
+    internal uint Padding0;
+    internal uint Padding1;
+    internal uint Padding2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]

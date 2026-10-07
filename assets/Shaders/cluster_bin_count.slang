@@ -119,6 +119,9 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         triangleCount,
         packedMaterials,
         packedRanges);
+    uint clusterAddress = entry.PageOffset + PageHeap.Load(entry.PageOffset + 16u) +
+        DrawRequestClusterID(entry) * PACKED_CLUSTER_STRIDE_BYTES;
+    ClusterMaterialRanges materials = LoadClusterMaterialRanges(PageHeap, clusterAddress, entry.PageOffset);
     uint slotOffset = LoadClusterMaterialSlotOffset(
         InstanceData,
         LoadRenderInstanceMetadata(
@@ -128,10 +131,8 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
     BuildRasterBatches(
         visibleIndex,
         slotOffset,
-        vertReuseBatchWords,
+        materials,
         vertexCount,
         triangleCount,
-        packedMaterials,
-        packedRanges,
         isSoftware);
 }

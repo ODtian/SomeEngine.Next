@@ -14,6 +14,10 @@ struct RasterBinningUniforms
     uint ScreenWidth;
     uint ScreenHeight;
     uint ViewCount;
+    uint BinnedEntriesPerCluster;
+    uint Padding0;
+    uint Padding1;
+    uint Padding2;
 };
 
 static const uint RASTER_WORK_RANGE_BIT = 0x200u;
@@ -27,8 +31,8 @@ uint RasterWorkVisibleIndex(uint work)
 uint RasterRangeWorkIndex(uint firstMaterialRange, uint materialRangeCount)
 {
     return RASTER_WORK_RANGE_BIT |
-        (firstMaterialRange & 3u) |
-        ((materialRangeCount - 1u) << 2u);
+        (firstMaterialRange & 63u) |
+        ((materialRangeCount - 1u) << 6u);
 }
 
 bool RasterWorkIsRange(uint workIndex)
@@ -38,12 +42,12 @@ bool RasterWorkIsRange(uint workIndex)
 
 uint RasterWorkFirstMaterialRange(uint workIndex)
 {
-    return workIndex & 3u;
+    return workIndex & 63u;
 }
 
 uint RasterWorkMaterialRangeCount(uint workIndex)
 {
-    return ((workIndex >> 2u) & 3u) + 1u;
+    return ((workIndex >> 6u) & 3u) + 1u;
 }
 
 bool RasterSoftwareUsesVertReuseBatches(
@@ -91,8 +95,8 @@ void DecodeRasterWorkRange(
     uint clusterOffset = entry.PageOffset + pageHeap.Load(entry.PageOffset + 16u) +
         DrawRequestClusterID(entry) * PACKED_CLUSTER_STRIDE_BYTES;
     uint triangleCount = (pageHeap.Load(clusterOffset + 60u) >> 8u) & 0xFFu;
-    uint packedRanges = pageHeap.Load(clusterOffset + 72u);
-    uint rangeCount = MaterialRangeCount(packedRanges, triangleCount);
+    ClusterMaterialRanges materials = LoadClusterMaterialRanges(pageHeap, clusterOffset, entry.PageOffset);
+    uint rangeCount = ClusterMaterialRangeCount(materials, triangleCount);
 
     if (RasterWorkIsRange(workIndex))
     {
@@ -100,25 +104,23 @@ void DecodeRasterWorkRange(
         uint workRangeCount = RasterWorkMaterialRangeCount(workIndex);
         if (firstRange >= rangeCount || firstRange + workRangeCount > rangeCount)
             return;
-        triangleStart = firstRange == 0u
-            ? 0u
-            : MaterialRangeEnd(packedRanges, triangleCount, firstRange - 1u);
-        triangleEnd = MaterialRangeEnd(
-            packedRanges,
-            triangleCount,
-            firstRange + workRangeCount - 1u);
+        uint first = ClusterMaterialRange(pageHeap, materials, triangleCount, firstRange);
+        uint last = ClusterMaterialRange(pageHeap, materials, triangleCount, firstRange + workRangeCount - 1u);
+        triangleStart = first & 0xFFu;
+        triangleEnd = (last & 0xFFu) + ((last >> 8u) & 0xFFu);
         return;
     }
 
-    uint4 words = LoadVertReuseBatchWords(pageHeap, clusterOffset);
     uint flatBatchIndex = 0u;
     for (uint rangeIndex = 0u; rangeIndex < rangeCount; rangeIndex++)
     {
-        uint rangeEnd = MaterialRangeEnd(packedRanges, triangleCount, rangeIndex);
-        uint batchCount = VertReuseBatchCount(words, rangeIndex);
+        uint range = ClusterMaterialRange(pageHeap, materials, triangleCount, rangeIndex);
+        uint rangeEnd = (range & 0xFFu) + ((range >> 8u) & 0xFFu);
+        uint batchCount = ClusterMaterialBatchBits(pageHeap, materials, rangeIndex * 4u, 4u);
         for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
         {
-            uint count = VertReuseBatchTriangleCount(words, flatBatchIndex);
+            uint count = ClusterMaterialBatchBits(pageHeap, materials,
+                max(rangeCount, 3u) * 4u + flatBatchIndex * 5u, 5u) + 1u;
             triangleEnd = min(triangleStart + count, rangeEnd);
             if (flatBatchIndex == workIndex)
                 return;

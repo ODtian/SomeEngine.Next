@@ -16,15 +16,13 @@ void ResetBins(uint3 threadId : SV_DispatchThreadID)
     CullDrawArgs args = LoadCullDrawArgs(DrawArgs, 0u);
     uint clusterCount = args.SWCount + args.HWCount;
     uint clustersPerBin = Uniforms.MaxVisibleClusters / max(Uniforms.RasterMaxBins, 1u);
-    // The index buffer is already sized for nine raster batches per candidate.
-    // Reserve a region per bin only when every candidate could fit in any bin.
-    uint binCapacity = clusterCount <= clustersPerBin ? clustersPerBin * 9u : 0u;
+    uint binCapacity = clusterCount <= clustersPerBin ? clustersPerBin * Uniforms.BinnedEntriesPerCluster : 0u;
     ClearRaster(RasterBinMeta, threadId.x, Uniforms.RasterMaxBins);
     if (threadId.x < Uniforms.RasterMaxBins)
     {
         RasterBinMeta[threadId.x].ClusterOffset = threadId.x * binCapacity;
         RasterBinMeta[threadId.x].BinCapacity = binCapacity;
-        RasterBinMeta[threadId.x].HardwareOffset = threadId.x * binCapacity + args.SWCount * 9u;
+        RasterBinMeta[threadId.x].HardwareOffset = threadId.x * binCapacity + args.SWCount * Uniforms.BinnedEntriesPerCluster;
     }
     if (threadId.x != 0u)
         return;

@@ -806,6 +806,7 @@ public sealed partial class ClusterPipelineSystem
                 ScreenWidth = checked((uint)frame.Width),
                 ScreenHeight = checked((uint)frame.Height),
                 ViewCount = frame.ViewCount,
+                BinnedEntriesPerCluster = frame.BinnedEntriesPerCluster,
             },
             phaseOne
                 ? "Cluster phase one raster binning uniforms"

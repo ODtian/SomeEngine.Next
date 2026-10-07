@@ -88,6 +88,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     internal float StreamingQuality => _streamingQuality;
 
     internal int HierarchyLevels => _meshes.HierarchyLevels;
+    internal uint MaximumRasterBatchesPerCluster => _meshes.MaximumRasterBatchesPerCluster;
 
     internal ClusterResidency(
         IGraphicsBackend backend,

@@ -334,6 +334,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         RefreshMaterialTextures();
         if (_graphInstalled && GraphData.TraversalLevels[0].Values.Count() < _resources.HierarchyLevels)
             ReconcileTraversal();
+        if (_graphInstalled && _resources.MaximumRasterBatchesPerCluster > GraphData.Resources.BinnedEntriesPerCluster)
+            EditGraph((ref RenderGraphEdit edit) => GrowRasterWork(ref edit));
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
         bool materialResourcesChanged = CollectMaterialChanges(assignments);

@@ -54,7 +54,8 @@ public sealed partial class ClusterPipelineSystem
         uint tessellationBinCount = checked(rasterBinCount * 8u);
         uint shadeBinCount = shadeStages.BinCount;
         ulong candidates = _options.MaxCandidates;
-        ulong binnedCapacity = checked(candidates * MaxBinnedEntriesPerCluster);
+        uint entriesPerCluster = Math.Max(MaxBinnedEntriesPerCluster, _resources.MaximumRasterBatchesPerCluster);
+        ulong binnedCapacity = checked(candidates * entriesPerCluster);
         int width = output.Width;
         int height = output.Height;
         uint viewCount = output.ViewCount;
@@ -70,6 +71,7 @@ public sealed partial class ClusterPipelineSystem
             label: "Cluster HiZ history");
         var frame = new FrameResources()
         {
+            BinnedEntriesPerCluster = entriesPerCluster,
             Width = width,
             Height = height,
             ViewCount = viewCount,
@@ -560,6 +562,17 @@ public sealed partial class ClusterPipelineSystem
             new ClusterDispatchParameters(new DispatchArguments(groupsX, groupsY, 1)),
             bindingCount,
             ClusterDispatchParameters.Record);
+    }
+
+    private void GrowRasterWork(ref RenderGraphEdit graph)
+    {
+        FrameResources frame = GraphData.Resources;
+        frame.BinnedEntriesPerCluster = _resources.MaximumRasterBatchesPerCluster;
+        SetStageBuffer(ref graph, frame.BinnedClusters,
+            checked((ulong)_options.MaxCandidates * frame.BinnedEntriesPerCluster * BinnedClusterStride),
+            BufferUsages.None, "Cluster raster bin indices");
+        GraphData.Resources = frame;
+        UpdateRasterBinning(ref graph, GraphData.RasterPhases);
     }
 
     private void ReconcileStageResources(
@@ -1082,6 +1095,7 @@ public sealed partial class ClusterPipelineSystem
         internal uint RasterBinCount;
         internal uint ShadeBinCount;
         internal uint SlotCapacity;
+        internal uint BinnedEntriesPerCluster;
         internal int PageFaultCapacity;
         internal GraphBufferId PageHeap;
         internal GraphBufferId Bvh;

@@ -19,8 +19,8 @@ struct PackedCluster
     uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
     uint PackedGroup;                   // 64 — GroupId(i16):16 | MaximumEdgeLengthHalf:16
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
-    uint PackedRanges;                  // 72 — [range0End:8][range1End:8][Reserved:16]
-    uint MaterialTableOffset;           // 76 — must be 0xFFFFFFFF
+    uint PackedRanges;                  // 72 — [range0End:8][range1End:8][extendedRangeCount:16]
+    uint MaterialTableOffset;           // 76 — page-relative extended ranges, or 0xFFFFFFFF
     uint VertReuseBatchWord0;           // 80
     uint VertReuseBatchWord1;           // 84
     uint VertReuseBatchWord2;           // 88
@@ -104,6 +104,66 @@ uint MaterialRangeEnd(uint packedRanges, uint triangleCount, uint rangeIndex)
     if (rangeIndex == 1u)
         return min((packedRanges >> 8u) & 0xFFu, triangleCount);
     return triangleCount;
+}
+
+struct ClusterMaterialRanges
+{
+    uint Materials;
+    uint Ranges;
+    uint TableAddress;
+    uint4 BatchWords;
+};
+
+uint ClusterMaterialRangeCount(ClusterMaterialRanges data, uint triangleCount)
+{
+    return data.TableAddress == 0xFFFFFFFFu ? MaterialRangeCount(data.Ranges, triangleCount) : data.Ranges >> 16u;
+}
+
+uint ClusterMaterialRange(ByteAddressBuffer heap, ClusterMaterialRanges data, uint triangleCount, uint index)
+{
+    if (data.TableAddress != 0xFFFFFFFFu) return heap.Load(data.TableAddress + index * 4u);
+    uint start = index == 0u ? 0u : MaterialRangeEnd(data.Ranges, triangleCount, index - 1u);
+    uint end = MaterialRangeEnd(data.Ranges, triangleCount, index);
+    return start | ((end - start) << 8u) | (((data.Materials >> (index * 8u)) & 0xFFu) << 16u);
+}
+
+uint ClusterMaterialBatchBits(ByteAddressBuffer heap, ClusterMaterialRanges data, uint bit, uint count)
+{
+    if (data.TableAddress == 0xFFFFFFFFu) return ReadVertReuseBits(data.BatchWords, bit, count);
+    uint address = data.BatchWords.x + (bit >> 5u) * 4u;
+    uint shift = bit & 31u;
+    uint value = heap.Load(address) >> shift;
+    if (shift + count > 32u) value |= heap.Load(address + 4u) << (32u - shift);
+    return value & ((1u << count) - 1u);
+}
+
+ClusterMaterialRanges LoadClusterMaterialRanges(ByteAddressBuffer heap, uint clusterAddress, uint pageAddress)
+{
+    ClusterMaterialRanges data;
+    data.Materials = heap.Load(clusterAddress + 68u);
+    data.Ranges = heap.Load(clusterAddress + 72u);
+    data.TableAddress = heap.Load(clusterAddress + 76u);
+    data.BatchWords = heap.Load4(clusterAddress + 80u);
+    if (data.TableAddress != 0xFFFFFFFFu)
+    {
+        data.TableAddress += pageAddress;
+        data.BatchWords.x += pageAddress;
+    }
+    return data;
+}
+
+uint LocalMaterial(ByteAddressBuffer heap, uint clusterAddress, uint pageAddress, uint triangle)
+{
+    ClusterMaterialRanges data = LoadClusterMaterialRanges(heap, clusterAddress, pageAddress);
+    if (data.TableAddress == 0xFFFFFFFFu) return LocalMaterial(data.Materials, data.Ranges, triangle);
+    uint triangleCount = (heap.Load(clusterAddress + 60u) >> 8u) & 0xFFu;
+    uint count = ClusterMaterialRangeCount(data, triangleCount);
+    for (uint index = 0u; index < count; index++)
+    {
+        uint range = ClusterMaterialRange(heap, data, triangleCount, index);
+        if (triangle < (range & 0xFFu) + ((range >> 8u) & 0xFFu)) return (range >> 16u) & 0xFFu;
+    }
+    return 0u;
 }
 uint DecodeTriangleCount(PackedCluster c)
 {

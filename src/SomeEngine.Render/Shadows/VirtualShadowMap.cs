@@ -299,12 +299,9 @@ public sealed partial class VirtualShadowMap : IDisposable
         if (!_pending)
             throw new InvalidOperationException(
                 "Import the virtual-shadow resources before preparing frame views.");
-        int remainingLights = Settings.Enabled ? checked((int)Settings.MaxShadowLights) : 0;
-        int directionalLightCount = Math.Min(lights.Directional.Count, remainingLights);
-        remainingLights -= directionalLightCount;
-        int pointLightCount = Math.Min(lights.Points.Count, remainingLights);
-        remainingLights -= pointLightCount;
-        int spotLightCount = Math.Min(lights.Spots.Count, remainingLights);
+        int directionalLightCount = Settings.Enabled ? lights.Directional.Count : 0;
+        int pointLightCount = Settings.Enabled ? lights.Points.Count : 0;
+        int spotLightCount = Settings.Enabled ? lights.Spots.Count : 0;
         DirectionalCameraParameters directionalCamera = directionalLightCount != 0
             ? CalculateDirectionalCameraParameters(receiverView)
             : new(0f, Settings.DirectionalFirstClipmapLevel, Settings.DirectionalClipmapLevels);

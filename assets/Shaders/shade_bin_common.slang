@@ -30,8 +30,7 @@ uint FindShadeBin(
         cluster.PageOffset + pageHeap.Load(cluster.PageOffset + 16u) +
         DrawRequestClusterID(cluster) * PACKED_CLUSTER_STRIDE_BYTES;
     uint material = LocalMaterial(
-        pageHeap.Load(clusterOffset + 68u),
-        pageHeap.Load(clusterOffset + 72u),
+        pageHeap, clusterOffset, cluster.PageOffset,
         triangle);
     return SlotBin(
         slots,

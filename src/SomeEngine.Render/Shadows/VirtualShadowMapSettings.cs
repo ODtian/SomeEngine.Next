@@ -25,6 +25,7 @@ public sealed partial record VirtualShadowMapSettings
     public uint VirtualResolution { get; init; } = 16_384;
     public uint AtlasSize { get; init; } = 8_192;
     public uint PageSize { get; init; } = 128;
+    /// <summary>Initial light-storage capacity. Active lights grow the storage when required.</summary>
     public uint MaxShadowLights { get; init; } = 4;
     /// <summary>Scene distance represented by one native centimeter. Meter scenes use 0.01.</summary>
     public float WorldUnitsPerCentimeter { get; init; } = 0.01f;
@@ -215,7 +216,7 @@ public sealed partial record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(BlockerSampleCount));
         if (FilterSampleCount is 0 or > 16)
             throw new ArgumentOutOfRangeException(nameof(FilterSampleCount));
-        if (MaxShadowLights is 0 or > 16)
+        if (MaxShadowLights == 0)
             throw new ArgumentOutOfRangeException(nameof(MaxShadowLights));
         if (DirectionalClipmapLevels is 0 or > 32)
             throw new ArgumentOutOfRangeException(nameof(DirectionalClipmapLevels));

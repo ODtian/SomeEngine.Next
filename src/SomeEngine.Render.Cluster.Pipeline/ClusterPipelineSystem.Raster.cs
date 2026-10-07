@@ -207,6 +207,7 @@ public sealed partial class ClusterPipelineSystem
                     ScreenWidth = checked((uint)GraphData.Resources.Width),
                     ScreenHeight = checked((uint)GraphData.Resources.Height),
                     ViewCount = GraphData.Resources.ViewCount,
+                    BinnedEntriesPerCluster = GraphData.Resources.BinnedEntriesPerCluster,
                 };
                 UpdateParameters(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(uniforms));
             }

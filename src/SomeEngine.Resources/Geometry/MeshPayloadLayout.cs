@@ -37,7 +37,8 @@ public static class MeshPayloadLayout
             expectedVertexBlobsOffset + header.VertexBlobBytes);
         ulong expectedExtensionOffset = checked(
             expectedIndicesOffset + ((ulong)header.TotalTriangleCount * 3));
-        ulong pageSize = checked(expectedExtensionOffset + header.ExtensionDataSize);
+        ulong extensionOffset = header.ExtensionDataOffset;
+        ulong pageSize = checked(extensionOffset + header.ExtensionDataSize);
 
         if (header.ClusterCount == 0)
         {
@@ -47,7 +48,8 @@ public static class MeshPayloadLayout
         if (header.ClustersOffset != MeshPageHeader.Size ||
             header.VertexBlobsOffset != expectedVertexBlobsOffset ||
             header.IndicesOffset != expectedIndicesOffset ||
-            header.ExtensionDataOffset != expectedExtensionOffset)
+            (extensionOffset != expectedExtensionOffset &&
+                (header.ExtensionDataSize == 0 || extensionOffset != ((expectedExtensionOffset + 3u) & ~3ul))))
         {
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} has an inconsistent stream layout: " +
