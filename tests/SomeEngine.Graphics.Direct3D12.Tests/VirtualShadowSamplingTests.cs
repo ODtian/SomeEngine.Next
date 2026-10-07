@@ -371,19 +371,23 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void DirectionalCoarseRequestsCoverSelectedCenterAndLastMip(bool selectedLevel)
+    public void DirectionalCoarseRequestsCoverTheBaseMipOfSelectedClipLevels(bool selectedLevel)
     {
-        uint[] view = CreateView(2);
-        view[23] = 0;
-        view[34] = 5;
-        view[36] = selectedLevel ? 1u : 0u;
+        SomeEngine.Render.Shadows.VirtualShadowView[] views = [new()
+        {
+            LightViewProjection = Matrix4x4.Identity, VirtualResolution = 2048, PageSize = 128,
+            AtlasSize = 512, PhysicalPagesPerRow = 4, CacheGeneration = 7,
+            ClipmapLevel = 2, ClipmapLevelCount = 3, MipLevelCount = 5,
+            Flags = selectedLevel ? SomeEngine.Render.Shadows.VirtualShadowViewFlags.CoarseClipLevel : 0,
+            WorldUnitsPerCentimeter = 1,
+        }];
         const int pages = 341;
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
             [([1, pages, 9, 0], ResourceBindingType.ConstantBuffer, 0),
-             (view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (new uint[pages], ResourceBindingType.BufferUav, 4),
+             (MemoryMarshal.Cast<SomeEngine.Render.Shadows.VirtualShadowView,uint>(views).ToArray(), ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (new uint[pages], ResourceBindingType.BufferUav, 4),
              (new uint[pages], ResourceBindingType.BufferUav, 4), (new uint[pages], ResourceBindingType.BufferUav, 4),
              ([0], ResourceBindingType.BufferUav, 4), (new uint[pages * 2], ResourceBindingType.BufferUav, 8)]);
-        int[] expected = selectedLevel ? [119, 120, 135, 136, 340] : [340];
+        int[] expected = selectedLevel ? [119, 120, 135, 136] : [];
         Assert.Equal(expected, Enumerable.Range(0, pages).Where(index => result[0][index] == 9));
         Assert.Equal((uint)expected.Length, result[3][0]);
     }

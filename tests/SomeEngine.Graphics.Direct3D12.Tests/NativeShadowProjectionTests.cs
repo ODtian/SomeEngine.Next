@@ -10,6 +10,76 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class NativeShadowProjectionTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
+    public void AnOccluderAtTheAdjacentStoredDepthShadowsTheReceiver()
+    {
+        VirtualShadowView[] views = [new()
+        {
+            LightViewProjection = Matrix4x4.Identity, VirtualResolution = 128, PageSize = 128,
+            AtlasSize = 128, PhysicalPagesPerRow = 1, MaxPhysicalPages = 1,
+            CacheGeneration = 7, ClipmapLevelCount = 1, MipLevelCount = 1,
+            WorldUnitsPerCentimeter = .01f, ProjectionDepthScale = -1,
+        }];
+        uint[][] observed = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
+            #include "vsm_projection.slang"
+            StructuredBuffer<VirtualShadowMapParameters> Views;
+            StructuredBuffer<uint4> Pages;
+            Texture2D<uint> Atlas;
+            RWStructuredBuffer<float> Visibility;
+            [shader("compute")]
+            [numthreads(1,1,1)]
+            void ReadAdjacentOccluder()
+            {
+                VirtualShadowProjectionResult result = ProjectVirtualShadowHard(Views, Pages, Atlas,
+                    0u, float3(0,0,asfloat(0x3f000002u)), float3(0,0,1), 0u, 0.0);
+                Visibility[0] = result.Visibility;
+            }
+            """, "ReadAdjacentOccluder", new(1,1,1),
+            [(MemoryMarshal.Cast<VirtualShadowView,uint>(views).ToArray(),ResourceBindingType.BufferSrv,VirtualShadowView.SizeInBytes),
+             (new uint[] {1,0,0,7},ResourceBindingType.BufferSrv,16),
+             (new uint[1],ResourceBindingType.BufferUav,4)],
+            new SampledImage(128,128,Enumerable.Repeat(0x3efffffdu,16384).ToArray(),2));
+        Assert.Equal(0f, BitConverter.UInt32BitsToSingle(observed[0][0]));
+    }
+
+    [Theory]
+    [InlineData(VirtualShadowLightKind.Directional)]
+    [InlineData(VirtualShadowLightKind.Spot)]
+    public void ResidentDepthKeepsAnAdjacentOccluderInFrontOfTheReceiver(VirtualShadowLightKind lightKind)
+    {
+        VirtualShadowView[] views = [new()
+        {
+            LightViewProjection = Matrix4x4.Identity, VirtualResolution = 128, PageSize = 128,
+            AtlasSize = 128, PhysicalPagesPerRow = 1, MaxPhysicalPages = 1,
+            CacheGeneration = 7, ClipmapLevelCount = 1, MipLevelCount = 1,
+            WorldUnitsPerCentimeter = .01f, ProjectionDepthScale = -1, LightKind = lightKind,
+        }];
+        uint[][] observed = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #define VSM_RESIDENT_LOOKUP_ENABLED 1
+            #define VSM_WHOLE_PAGE_SAMPLING 1
+            #include "vsm_projection.slang"
+            StructuredBuffer<VirtualShadowMapParameters> Views;
+            StructuredBuffer<uint4> Pages;
+            Texture2D<uint> Atlas;
+            RWStructuredBuffer<float> Visibility;
+            [shader("compute")]
+            [numthreads(1,1,1)]
+            void ReadResidentOccluder()
+            {
+                VirtualShadowProjectionResult result = ProjectVirtualShadowHard(Views, Pages, Atlas,
+                    0u, float3(0,0,asfloat(0x3f000002u)), float3(0,0,1), 0u, 0.0);
+                Visibility[0] = result.Visibility;
+            }
+            """, "ReadResidentOccluder", new(1,1,1),
+            [(new uint[] {1,0},ResourceBindingType.BufferSrv,8),
+             (MemoryMarshal.Cast<VirtualShadowView,uint>(views).ToArray(),ResourceBindingType.BufferSrv,VirtualShadowView.SizeInBytes),
+             (new uint[] {1,0,0,7},ResourceBindingType.BufferSrv,16),
+             (new uint[1],ResourceBindingType.BufferUav,4)],
+            new SampledImage(128,128,Enumerable.Repeat(0x3efffffdu,16384).ToArray(),3));
+        Assert.Equal(0f, BitConverter.UInt32BitsToSingle(observed[0][0]));
+    }
+
+    [Fact]
     public void NativeHardProjectionPreservesThePlaneOcclusionAcrossLegacyDepthAllowances()
     {
         VirtualShadowView[] views = [new()

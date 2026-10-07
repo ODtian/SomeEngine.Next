@@ -25,4 +25,12 @@ float VirtualShadowDepthInRequestedClipmap(float coarseDepth, float4 scaleBias)
     return (coarseDepth - scaleBias.w) / scaleBias.x;
 }
 
+float VirtualShadowReverseDepthInRequestedClipmap(float coarseDepth, float4 scaleBias)
+{
+    // Preserve Native's subtract-then-divide depth mapping through shader optimization.
+    precise float reverseBias = (1.0 - scaleBias.x) - scaleBias.w;
+    precise float depth = (coarseDepth - reverseBias) / scaleBias.x;
+    return depth;
+}
+
 #endif

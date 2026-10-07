@@ -341,7 +341,7 @@ bool ProjectVirtualShadowFootprintPosition(
     return true;
 }
 
-float ReadVirtualShadowDepth(
+float ReadVirtualShadowReverseDepth(
     VirtualShadowMapParameters parameters,
     Texture2D<uint> atlas,
     uint atlasPage,
@@ -351,7 +351,13 @@ float ReadVirtualShadowDepth(
         atlasPage & (parameters.PhysicalPagesPerRow - 1u),
         atlasPage >> firstbithigh(parameters.PhysicalPagesPerRow));
     uint2 atlasPixel = atlasPageCoord * parameters.PageSize + pagePixel;
-    return 1.0 - asfloat(atlas.Load(int3(atlasPixel, 0)));
+    return asfloat(atlas.Load(int3(atlasPixel, 0)));
+}
+
+float ReadVirtualShadowDepth(VirtualShadowMapParameters parameters,
+    Texture2D<uint> atlas, uint atlasPage, uint2 pagePixel)
+{
+    return 1.0 - ReadVirtualShadowReverseDepth(parameters, atlas, atlasPage, pagePixel);
 }
 
 float2 VirtualShadowDiskSample(uint index)
@@ -430,7 +436,7 @@ bool TryResolveVirtualShadowPixel(
     return false;
 }
 
-bool TryReadVirtualShadowMipDepth(
+bool TryReadVirtualShadowMipReverseDepth(
     VirtualShadowMapParameters parameters,
     StructuredBuffer<uint4> pageTable,
     Texture2D<uint> atlas,
@@ -446,12 +452,23 @@ bool TryReadVirtualShadowMipDepth(
         storedDepth = 0.0;
         return false;
     }
-    storedDepth = ReadVirtualShadowDepth(
+    storedDepth = ReadVirtualShadowReverseDepth(
         parameters,
         atlas,
         atlasPage,
         mipPixel & (parameters.PageSize - 1u));
     return true;
+}
+
+bool TryReadVirtualShadowMipDepth(VirtualShadowMapParameters parameters,
+    StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
+    uint mipLevel, uint2 mipPixel, out float storedDepth)
+{
+    float reverseDepth;
+    bool resident = TryReadVirtualShadowMipReverseDepth(parameters, pageTable, atlas,
+        mipLevel, mipPixel, reverseDepth);
+    storedDepth = resident ? 1.0 - reverseDepth : 0.0;
+    return resident;
 }
 
 bool TryResolveVirtualShadowResidentPixel(
@@ -494,7 +511,7 @@ bool TryResolveVirtualShadowResidentPixel(
     return false;
 }
 
-bool TryReadVirtualShadowResidentDepth(VirtualShadowMapParameters parameters,
+bool TryReadVirtualShadowResidentReverseDepth(VirtualShadowMapParameters parameters,
     StructuredBuffer<uint4> pageTable, StructuredBuffer<uint2> residentPages, Texture2D<uint> atlas,
     uint firstMip, float2 uv, out float storedDepth, out uint resolvedMip)
 {
@@ -504,15 +521,26 @@ bool TryReadVirtualShadowResidentDepth(VirtualShadowMapParameters parameters,
             resolvedMip, page, whole)) { storedDepth = 0.0; return false; }
     uint resolution = VirtualShadowMipResolution(parameters, resolvedMip);
     uint2 pixel = min(uint2(uv * float(resolution)), resolution - 1u);
-    storedDepth = ReadVirtualShadowDepth(parameters, atlas, page, pixel & (parameters.PageSize - 1u));
+    storedDepth = ReadVirtualShadowReverseDepth(parameters, atlas, page, pixel & (parameters.PageSize - 1u));
     return true;
+}
+
+bool TryReadVirtualShadowResidentDepth(VirtualShadowMapParameters parameters,
+    StructuredBuffer<uint4> pageTable, StructuredBuffer<uint2> residentPages, Texture2D<uint> atlas,
+    uint firstMip, float2 uv, out float storedDepth, out uint resolvedMip)
+{
+    float reverseDepth;
+    bool resident = TryReadVirtualShadowResidentReverseDepth(parameters, pageTable, residentPages,
+        atlas, firstMip, uv, reverseDepth, resolvedMip);
+    storedDepth = resident ? 1.0 - reverseDepth : 0.0;
+    return resident;
 }
 
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED
 StructuredBuffer<uint2> VirtualShadowResidentPages;
 #endif
 
-bool TryReadVirtualShadowDepthAtOrCoarser(
+bool TryReadVirtualShadowReverseDepthAtOrCoarser(
     VirtualShadowMapParameters parameters,
     StructuredBuffer<uint4> pageTable,
     Texture2D<uint> atlas,
@@ -522,7 +550,7 @@ bool TryReadVirtualShadowDepthAtOrCoarser(
     out uint resolvedMip)
 {
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED
-    return TryReadVirtualShadowResidentDepth(parameters, pageTable, VirtualShadowResidentPages, atlas,
+    return TryReadVirtualShadowResidentReverseDepth(parameters, pageTable, VirtualShadowResidentPages, atlas,
         firstMip, uv, storedDepth, resolvedMip);
 #else
     uint mipCount = max(parameters.MipLevelCount, 1u);
@@ -531,7 +559,7 @@ bool TryReadVirtualShadowDepthAtOrCoarser(
     {
         uint resolution = VirtualShadowMipResolution(parameters, mip);
         uint2 pixel = min((uint2)(uv * float(resolution)), resolution - 1u);
-        if (TryReadVirtualShadowMipDepth(
+        if (TryReadVirtualShadowMipReverseDepth(
                 parameters, pageTable, atlas, mip, pixel, storedDepth))
         {
             resolvedMip = mip;
@@ -542,6 +570,17 @@ bool TryReadVirtualShadowDepthAtOrCoarser(
     resolvedMip = mipCount - 1u;
     return false;
 #endif
+}
+
+bool TryReadVirtualShadowDepthAtOrCoarser(VirtualShadowMapParameters parameters,
+    StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas, uint firstMip, float2 uv,
+    out float storedDepth, out uint resolvedMip)
+{
+    float reverseDepth;
+    bool resident = TryReadVirtualShadowReverseDepthAtOrCoarser(parameters, pageTable, atlas,
+        firstMip, uv, reverseDepth, resolvedMip);
+    storedDepth = resident ? 1.0 - reverseDepth : 0.0;
+    return resident;
 }
 
 float GetVirtualShadowPixelWidth(float2 pixelDx, float2 pixelDy)
@@ -1076,7 +1115,7 @@ float SampleVirtualShadowMapFiltered(
 Texture2D<float> VirtualShadowPrefilteredAtlas;
 #endif
 
-bool TryReadVirtualShadowDirectionalResidentDepth(StructuredBuffer<VirtualShadowMapParameters> views,
+bool TryReadVirtualShadowDirectionalResidentReverseDepth(StructuredBuffer<VirtualShadowMapParameters> views,
     StructuredBuffer<uint4> pageTable, StructuredBuffer<uint2> residentPages, Texture2D<uint> atlas,
     uint requestedViewIndex, float2 uv, out float storedDepth, out uint sourceViewIndex)
 {
@@ -1099,9 +1138,9 @@ bool TryReadVirtualShadowDirectionalResidentDepth(StructuredBuffer<VirtualShadow
         uint2 pixel = clamp(uint2(max(sourceUV, 0.0.xx) * float(source.VirtualResolution)),
             uint2(sourcePage) * source.PageSize, (uint2(sourcePage) + 1u) * source.PageSize - 1u);
         float depth;
-        if (TryReadVirtualShadowMipDepth(source, pageTable, atlas, 0u, pixel, depth))
+        if (TryReadVirtualShadowMipReverseDepth(source, pageTable, atlas, 0u, pixel, depth))
         {
-            storedDepth = VirtualShadowDepthInRequestedClipmap(depth, transform);
+            storedDepth = VirtualShadowReverseDepthInRequestedClipmap(depth, transform);
             sourceViewIndex = requestedViewIndex + sourceOffset;
             return true;
         }
@@ -1110,6 +1149,17 @@ bool TryReadVirtualShadowDirectionalResidentDepth(StructuredBuffer<VirtualShadow
     storedDepth = 0.0;
     sourceViewIndex = requestedViewIndex;
     return false;
+}
+
+bool TryReadVirtualShadowDirectionalResidentDepth(StructuredBuffer<VirtualShadowMapParameters> views,
+    StructuredBuffer<uint4> pageTable, StructuredBuffer<uint2> residentPages, Texture2D<uint> atlas,
+    uint requestedViewIndex, float2 uv, out float storedDepth, out uint sourceViewIndex)
+{
+    float reverseDepth;
+    bool resident = TryReadVirtualShadowDirectionalResidentReverseDepth(views, pageTable,
+        residentPages, atlas, requestedViewIndex, uv, reverseDepth, sourceViewIndex);
+    storedDepth = resident ? 1.0 - reverseDepth : 0.0;
+    return resident;
 }
 
 bool TrySampleDirectionalVirtualShadowMap(

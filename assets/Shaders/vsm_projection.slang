@@ -39,12 +39,12 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     VirtualShadowDepthSample sample = (VirtualShadowDepthSample)0;
     sample.ViewIndex = requestedView;
     VirtualShadowMapParameters view = views[requestedView];
-    float forwardDepth;
+    float reverseDepth;
     if (view.LightKind == VSM_LIGHT_DIRECTIONAL)
     {
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED
-        sample.Valid = TryReadVirtualShadowDirectionalResidentDepth(views, pages,
-            VirtualShadowResidentPages, atlas, requestedView, uv, forwardDepth, sample.ViewIndex);
+        sample.Valid = TryReadVirtualShadowDirectionalResidentReverseDepth(views, pages,
+            VirtualShadowResidentPages, atlas, requestedView, uv, reverseDepth, sample.ViewIndex);
 #else
         uint remaining = view.ClipmapLevelCount - uint(view.ClipmapLevel - view.FirstClipmapLevel);
         for (uint offset = 0u; offset < remaining; offset++)
@@ -54,8 +54,8 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
             float2 sourceUV = uv * transform.x + transform.yz;
             if (any(sourceUV < 0.0) || any(sourceUV >= 1.0)) continue;
             uint2 pixel = uint2(sourceUV * float(source.VirtualResolution));
-            if (!TryReadVirtualShadowMipDepth(source, pages, atlas, 0u, pixel, forwardDepth)) continue;
-            forwardDepth = VirtualShadowDepthInRequestedClipmap(forwardDepth, transform);
+            if (!TryReadVirtualShadowMipReverseDepth(source, pages, atlas, 0u, pixel, reverseDepth)) continue;
+            reverseDepth = VirtualShadowReverseDepthInRequestedClipmap(reverseDepth, transform);
             sample.ViewIndex = requestedView + offset;
             sample.Valid = true;
             break;
@@ -76,15 +76,15 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     }
     else
     {
-        sample.Valid = TryReadVirtualShadowDepthAtOrCoarser(view, pages, atlas, firstMip, uv,
-            forwardDepth, sample.MipLevel);
+        sample.Valid = TryReadVirtualShadowReverseDepthAtOrCoarser(view, pages, atlas, firstMip, uv,
+            reverseDepth, sample.MipLevel);
         if (!sample.Valid) return sample;
         uint resolution = VirtualShadowMipResolution(view, sample.MipLevel);
         uint2 pixel = min(uint2(uv * float(resolution)), resolution - 1u);
         sample.UV = uv;
         sample.TexelCenter = (float2(pixel) + 0.5) / float(resolution);
     }
-    sample.Depth = 1.0 - forwardDepth;
+    sample.Depth = reverseDepth;
     return sample;
 }
 
