@@ -10,6 +10,39 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class NativeShadowProjectionTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
+    public void NativeHardProjectionPreservesThePlaneOcclusionAcrossLegacyDepthAllowances()
+    {
+        VirtualShadowView[] views = [new()
+        {
+            LightViewProjection = Matrix4x4.Identity, VirtualResolution = 128, PageSize = 128,
+            AtlasSize = 128, PhysicalPagesPerRow = 1, MaxPhysicalPages = 1,
+            CacheGeneration = 7, ClipmapLevelCount = 1, MipLevelCount = 1,
+            WorldUnitsPerCentimeter = .01f, ProjectionDepthScale = -1, DepthBias = .1f,
+        }];
+        uint[][] observed = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
+            #include "vsm_projection.slang"
+            StructuredBuffer<VirtualShadowMapParameters> Views;
+            StructuredBuffer<uint4> Pages;
+            Texture2D<uint> Atlas;
+            RWStructuredBuffer<float> Visibility;
+            [shader("compute")]
+            [numthreads(1,1,1)]
+            void ReadPlaneOcclusion()
+            {
+                VirtualShadowProjectionResult result = ProjectVirtualShadowHard(Views, Pages, Atlas,
+                    0u, float3(0,0,.5), float3(0,0,1), 0u, 0.0);
+                Visibility[0] = result.Visibility;
+            }
+            """, "ReadPlaneOcclusion", new(1,1,1),
+            [(MemoryMarshal.Cast<VirtualShadowView,uint>(views).ToArray(),ResourceBindingType.BufferSrv,VirtualShadowView.SizeInBytes),
+             (new uint[] {1,0,0,7},ResourceBindingType.BufferSrv,16),
+             (new uint[1],ResourceBindingType.BufferUav,4)],
+            new SampledImage(128,128,Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.51f),16384).ToArray(),2));
+        Assert.Equal(0f, BitConverter.UInt32BitsToSingle(observed[0][0]));
+    }
+
+    [Fact]
     public void DirectionalSamplingAppliesDepthOfFieldBeforeReadingTheSelectedViewBias()
     {
         // Native distance192cm gives absolute7.x. Focus1/depth2/infinity radius8

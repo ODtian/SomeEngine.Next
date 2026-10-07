@@ -20,15 +20,15 @@ public sealed class VsmWorkRenderingTests
             MaxCandidates = 65536, EnableFrameMetricsReadback = true, ForceHardwareRaster = hardware,
             SoftwareRasterEdgeThreshold = 64,
         };
-        RasterImage expected;
-        await using (var absent = await FrameStageScene.CreateAsync(backend, true, options))
-            expected = await absent.ReadRasterImageAsync();
+        await using var absent = await FrameStageScene.CreateAsync(backend, true, options);
+        await absent.ReadRasterImageAsync();
         await using var changed = await FrameStageScene.CreateAsync(backend, true, options);
         var opaque = changed.CreateRasterMaterial(RasterMaterialKind.Ordinary, new Vector4(1, 0, 0, 1));
         var caster = changed.AddMaterialMesh(opaque);
         byte[] opaqueImage = await changed.ReadClusterColorAsync();
         changed.RemoveMaterialMesh(caster);
         changed.AddMaterialMesh(changed.CreateRasterMaterial(RasterMaterialKind.Ordinary, new Vector4(1, 0, 0, 0)));
+        RasterImage expected = await absent.ReadRasterImageAsync();
         RasterImage actual = await changed.ReadRasterImageAsync();
         Assert.NotEqual(expected.Color, opaqueImage);
         Assert.True(actual.Metrics.Work.Complete);

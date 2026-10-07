@@ -138,7 +138,7 @@ VirtualShadowProjectionResult ProjectVirtualShadowHard(
     float rayBiasScale = view.LightKind == VSM_LIGHT_DIRECTIONAL
         ? abs(view.ProjectionDepthScale) : abs(1.0 + view.ProjectionDepthScale) / clipW;
     float biasedDepth = sample.Depth - VirtualShadowOptimalSlopeBias(views, viewIndex, sample, position, normal)
-        - max(rayStartDistance, 0.0) * rayBiasScale - view.DepthBias;
+        - max(rayStartDistance, 0.0) * rayBiasScale;
     float receiverDepth = 1.0 - ndc.z;
     if (biasedDepth > receiverDepth)
     {

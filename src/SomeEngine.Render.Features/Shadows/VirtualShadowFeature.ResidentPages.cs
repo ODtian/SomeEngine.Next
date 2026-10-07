@@ -11,6 +11,7 @@ public sealed partial class VirtualShadowFeature
     private GraphBufferId _residentPages;
     private GraphBufferInput _residentUniforms = null!;
     private GraphPassId _residentPropagationPass;
+    private GraphPassId _residentInitializePass;
     private LinkedComputePipeline? _residentPipeline;
 
     [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -26,9 +27,16 @@ public sealed partial class VirtualShadowFeature
         GraphRegionId finish)
     {
         _residentUniforms = edit.CreateBufferInput(BufferUsages.Constant);
-        _residentPages = edit.CreateBuffer(new BufferDesc(checked((ulong)entryCapacity * 2u * sizeof(uint)),
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource,
+        _residentPages = edit.CreatePersistentBuffer(new BufferDesc(checked((ulong)entryCapacity * 2u * sizeof(uint)),
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination,
             "Virtual shadow completed resident ancestors"));
+        _residentInitializePass = edit.AddCopyFramePass("Initialize virtual shadow resident ancestors",
+            PassQueueSelection.AnyOfType(QueueType.Graphics), _residentPages,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition pass, ref GraphBufferId buffer) =>
+                pass.Write(buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
+            static (ref CopyPassCommandScope commands, in GraphBufferId buffer) =>
+                commands.ClearBuffer(commands.GetBuffer(buffer), BufferRange.Whole, 0), region: finish);
         _residentPipeline = LinkedComputePipeline.Create(_backend, _device, shaders.ResidentPagesShader,
             shaders.ResidentPages, "Virtual shadow resident ancestor propagation");
         _residentPropagationPass = AddComputePass(ref edit, "Propagate virtual shadow resident ancestors",

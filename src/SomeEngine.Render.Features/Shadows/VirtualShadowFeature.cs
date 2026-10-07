@@ -1173,6 +1173,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             _initializePass,
             new VirtualShadowDispatchPassData(new DispatchArguments(initGroups, 1, 1)));
         graph.SetPassEnabled(_initializePass, resetState);
+        graph.SetPassEnabled(_residentInitializePass, resetState);
         graph.SetPassEnabled(_atlasInitializePass, resetState);
         graph.SetPassEnabled(_staticAtlasInitializePass, resetState);
         graph.SetPassEnabled(_staticMergeIntermediatePass, viewCount != 0u);
