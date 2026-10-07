@@ -7,7 +7,8 @@
 
 方向光使用 `tan(SourceAngleRadians / 2) * blockerSeparation` 计算世界半影半径；局部光使用
 `SourceRadius * blockerSeparation / blockerDistance`。过滤与遮挡搜索半径都限制在配置的
-纹素范围内。默认 blocker/filter 数量为 4/8，最大纹素半径为 8；主投射调用软采样入口，
+纹素范围内；祖先或粗 mip 的搜索也保持在原请求纹素支持域内。
+默认 blocker/filter 数量为 4/8，最大纹素半径为 8；主投射调用软采样入口，
 默认 SMRT ray count 为 0。
 
 每次查询依据同一接收者平面计算目标纹素中心的深度。相同 source view 复用已算出的
