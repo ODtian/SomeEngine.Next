@@ -1,6 +1,6 @@
 using System.Numerics;
+using SomeEngine.Core.Math;
 using SomeEngine.Render.Cluster.Pipeline;
-using SomeEngine.Render.Components;
 using SomeEngine.Render.Shadows;
 
 namespace SomeEngine.Render.Cluster.Tests;
