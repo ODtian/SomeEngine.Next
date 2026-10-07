@@ -96,14 +96,20 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             IEnumerable<SampledImage> sourceImages = image is null ? images ?? [] : images is null ? [image] : [image, .. images];
             foreach (SampledImage sourceImage in sourceImages.OrderBy(value => value.BindingIndex))
             {
-                uint pitch = (sourceImage.Width * 4 + 255u) & ~255u;
+                uint texelBytes = sourceImage.PixelFormat == Format.R8UNorm ? 1u : 4u;
+                uint pitch = (sourceImage.Width * texelBytes + 255u) & ~255u;
                 Buffer upload = Keep(backend.CreateBuffer(device, new((ulong)pitch * sourceImage.Height * sourceImage.Layers, BufferUsages.CopySource), MemoryType.Upload));
                 using (MappedBuffer map = backend.Map(upload, MapType.Write, BufferRange.Whole))
                 {
                     map.Bytes.Clear();
                     for (int row = 0; row < sourceImage.Height * sourceImage.Layers; row++)
-                        MemoryMarshal.AsBytes(sourceImage.Pixels.AsSpan(row * (int)sourceImage.Width, (int)sourceImage.Width))
-                            .CopyTo(map.Bytes.Slice(row * (int)pitch));
+                    {
+                        ReadOnlySpan<uint> pixels = sourceImage.Pixels.AsSpan(row * (int)sourceImage.Width, (int)sourceImage.Width);
+                        Span<byte> destination = map.Bytes.Slice(row * (int)pitch);
+                        if (texelBytes == 1u)
+                            for (int column = 0; column < pixels.Length; column++) destination[column] = (byte)pixels[column];
+                        else MemoryMarshal.AsBytes(pixels).CopyTo(destination);
+                    }
                     map.Flush(map.Range);
                 }
                 bool writable = sourceImage.Type == ResourceBindingType.TextureUav;
@@ -172,8 +178,13 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             {
                 uint[] pixels = new uint[output.Image.Width * output.Image.Height * output.Image.Layers];
                 for (int row = 0; row < output.Image.Height * output.Image.Layers; row++)
-                    MemoryMarshal.Cast<byte, uint>(result.Bytes.Slice(checked((int)textureOffset + row * (int)output.Pitch),
-                        checked((int)output.Image.Width * 4))).CopyTo(pixels.AsSpan(row * (int)output.Image.Width));
+                {
+                    int startByte = checked((int)textureOffset + row * (int)output.Pitch);
+                    Span<uint> destination = pixels.AsSpan(row * (int)output.Image.Width, (int)output.Image.Width);
+                    if (output.Image.PixelFormat == Format.R8UNorm)
+                        for (int column = 0; column < destination.Length; column++) destination[column] = result.Bytes[startByte + column];
+                    else MemoryMarshal.Cast<byte, uint>(result.Bytes.Slice(startByte, checked((int)output.Image.Width * 4))).CopyTo(destination);
+                }
                 values.Add(pixels);
                 textureOffset += (ulong)output.Pitch * output.Image.Height * output.Image.Layers;
             }

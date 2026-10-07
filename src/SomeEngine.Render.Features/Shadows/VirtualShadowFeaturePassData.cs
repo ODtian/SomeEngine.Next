@@ -34,17 +34,17 @@ internal readonly record struct VirtualShadowResolutionCopyPassData(GraphBufferI
             commands.GetBuffer(data.Destination), 0, BiasRange.Size));
 }
 
-internal readonly record struct VirtualShadowAtlasInitializePassData(GraphTextureId Atlas)
+internal readonly record struct VirtualShadowAtlasInitializePassData(GraphTextureId Atlas, uint ArrayLayers = 1)
 {
-    private static readonly TextureSubresourceRange AtlasRange =
-        new(0, 1, 0, 1, TextureAspects.Color);
+    private TextureSubresourceRange AtlasRange =>
+        new(0, 1, 0, ArrayLayers, TextureAspects.Color);
 
     internal static void Declare(
         ref PassDefinition access,
         ref VirtualShadowAtlasInitializePassData data) =>
         _ = access.Write(
             data.Atlas,
-            AtlasRange,
+            data.AtlasRange,
             PipelineSync.Copy,
             ResourceAccess.CopyDestination,
             TextureLayout.CopyDestination,
@@ -55,7 +55,7 @@ internal readonly record struct VirtualShadowAtlasInitializePassData(GraphTextur
         in VirtualShadowAtlasInitializePassData data) =>
         commands.ClearTexture(
             commands.GetTexture(data.Atlas),
-            AtlasRange,
+            data.AtlasRange,
             System.Numerics.Vector4.Zero);
 }
 

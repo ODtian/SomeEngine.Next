@@ -21,6 +21,7 @@ public enum VirtualShadowCoarsePageMode
 /// <summary>Virtual address-space, page-pool and atlas quality settings.</summary>
 public sealed partial record VirtualShadowMapSettings
 {
+    private uint? _maxPhysicalPages;
     public bool Enabled { get; init; } = true;
     public uint VirtualResolution { get; init; } = 16_384;
     public uint AtlasSize { get; init; } = 8_192;
@@ -39,7 +40,7 @@ public sealed partial record VirtualShadowMapSettings
     public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
     public VirtualShadowCoarsePageMode DirectionalCoarsePageMode { get; init; } = VirtualShadowCoarsePageMode.CachedDynamic;
     public VirtualShadowCoarsePageMode LocalCoarsePageMode { get; init; } = VirtualShadowCoarsePageMode.CachedDynamic;
-    public float DirectionalResolutionLodBias { get; init; } = -2.0f;
+    public float DirectionalResolutionLodBias { get; init; }
     public float DirectionalMovingResolutionLodBias { get; init; }
     public float LocalResolutionLodBias { get; init; }
     public float LocalMovingResolutionLodBias { get; init; } = 1.0f;
@@ -62,6 +63,7 @@ public sealed partial record VirtualShadowMapSettings
     public float DynamicResolutionPagePoolLoadStart { get; init; } = 0.85f;
     public float DynamicResolutionMaxDirectionalLodBias { get; init; } = 2.0f;
     public float DynamicResolutionMaxLocalLodBias { get; init; } = 2.0f;
+    public bool DynamicHiZ { get; init; }
     public bool DirectionalReceiverMask { get; init; } = true;
     public bool LocalReceiverMask { get; init; } = true;
     // The receiver-plane comparison handles texel offsets. This remaining
@@ -117,7 +119,18 @@ public sealed partial record VirtualShadowMapSettings
         }
     }
     public uint PhysicalPagesPerRow => AtlasSize / PageSize;
-    public uint MaxPhysicalPages => checked(PhysicalPagesPerRow * PhysicalPagesPerRow);
+    public uint MaxPhysicalPages
+    {
+        get
+        {
+            uint row = PhysicalPagesPerRow;
+            uint requested = _maxPhysicalPages ?? Math.Min(2048u, checked(row * row));
+            return checked((requested + row - 1u) / row * row);
+        }
+        init => _maxPhysicalPages = value;
+    }
+
+    public uint AtlasHeight => checked(MaxPhysicalPages / PhysicalPagesPerRow * PageSize);
 
     public uint PageTableMipPagesPerRow(uint mip)
     {
@@ -198,7 +211,7 @@ public sealed partial record VirtualShadowMapSettings
             throw new ArgumentException(
                 "Virtual-shadow dimensions must be power-of-two page multiples ordered as page <= atlas <= virtual resolution.");
         }
-        if (MaxPhysicalPages > (1u << 18))
+        if (MaxPhysicalPages == 0 || AtlasHeight > 16384u || MaxPhysicalPages > (1u << 18))
             throw new ArgumentOutOfRangeException(nameof(AtlasSize), "Raster region indices require at most 262144 physical pages.");
         if (!float.IsFinite(DepthBias) || DepthBias < 0.0f)
             throw new ArgumentOutOfRangeException(nameof(DepthBias));

@@ -12,18 +12,13 @@ struct VirtualShadowResidentUniforms
 };
 ConstantBuffer<VirtualShadowResidentUniforms> ResidentUpdate;
 StructuredBuffer<VirtualShadowMapParameters> ResidentShadowViews;
-StructuredBuffer<uint4> CompletedPageTable;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint2> ResidentPages;
-
+RWStructuredBuffer<uint> CompletedPageTable;
 bool VirtualShadowPageHasCompletedDepth(VirtualShadowMapParameters view, uint mip, uint2 page, out uint tableIndex)
 {
     tableIndex = VirtualShadowPageTableIndex(view, mip, page);
-    uint4 entry = CompletedPageTable[tableIndex];
-    uint physicalPage;
-    return IsVirtualShadowPageTag(entry, VirtualShadowWorldPage(view, mip, page)) &&
-        (entry.w == view.CacheGeneration || entry.w == (view.CacheGeneration | VSM_PAGE_RECEIVER_DEPTH)) &&
-        DecodeVirtualShadowPage(entry.x, physicalPage);
+    uint entry = CompletedPageTable[tableIndex];
+    return VirtualShadowPageHasOwnDepth(entry);
+
 }
 
 [shader("compute")]
@@ -32,8 +27,8 @@ void PropagateVirtualShadowResidentPages(uint3 thread : SV_DispatchThreadID)
 {
     uint index = thread.x;
     if (index >= ResidentUpdate.EntryCount) return;
-    ResidentPages[index] = 0u.xx;
-    uint viewIndex = index / ResidentUpdate.EntriesPerView;
+
+    uint viewIndex = VirtualShadowViewFromPageTableIndex(ResidentShadowViews, ResidentUpdate.ViewCount, index);
     if (viewIndex >= ResidentUpdate.ViewCount) return;
     VirtualShadowMapParameters view = ResidentShadowViews[viewIndex];
     uint mip;
@@ -42,9 +37,9 @@ void PropagateVirtualShadowResidentPages(uint3 thread : SV_DispatchThreadID)
     uint sourceIndex;
     if (VirtualShadowPageHasCompletedDepth(view, mip, page, sourceIndex))
     {
-        ResidentPages[index] = uint2(sourceIndex + 1u, 0u);
         return;
     }
+    CompletedPageTable[index] = 0u;
     if (view.LightKind == VSM_LIGHT_DIRECTIONAL)
     {
         uint remaining = view.ClipmapLevelCount - uint(view.ClipmapLevel - view.FirstClipmapLevel);
@@ -57,7 +52,7 @@ void PropagateVirtualShadowResidentPages(uint3 thread : SV_DispatchThreadID)
             if (any(coarsePage < 0) || any(uint2(coarsePage) >= dimension)) continue;
             if (VirtualShadowPageHasCompletedDepth(coarse, 0u, uint2(coarsePage), sourceIndex))
             {
-                ResidentPages[index] = uint2(sourceIndex + 1u, offset);
+                CompletedPageTable[index] = VirtualShadowPageAncestor(CompletedPageTable[sourceIndex], offset);
                 return;
             }
         }
@@ -68,7 +63,7 @@ void PropagateVirtualShadowResidentPages(uint3 thread : SV_DispatchThreadID)
         {
             if (VirtualShadowPageHasCompletedDepth(view, level, page >> (level - mip), sourceIndex))
             {
-                ResidentPages[index] = uint2(sourceIndex + 1u, level - mip);
+                CompletedPageTable[index] = VirtualShadowPageAncestor(CompletedPageTable[sourceIndex], level - mip);
                 return;
             }
         }

@@ -34,7 +34,7 @@ public sealed partial class VirtualShadowFeature
         public uint PageSize, PagesPerRow, Mode, WriteLayer;
         public uint HasHistory, PreviousViewCount;
         public float HistoryWeight;
-        public uint Pad0;
+        public uint EntryCount;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 80)]
@@ -72,20 +72,21 @@ public sealed partial class VirtualShadowFeature
         _prefilterPipeline = LinkedComputePipeline.Create(_backend, _device, shaders.PrefilterShader,
             shaders.Prefilter, "Virtual shadow distant prefilter");
         uint paddedSize = checked(settings.PhysicalPagesPerRow * (settings.PageSize + 2u));
+        uint paddedHeight = checked(settings.MaxPhysicalPages / settings.PhysicalPagesPerRow * (settings.PageSize + 2u));
         TextureUsages textureUses = TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopyDestination;
         _prefilterAxisX = edit.CreatePersistentTexture(new TextureDesc(TextureDimension.Texture2D,
-            settings.AtlasSize, settings.AtlasSize, 1, 1, 1, 1, Format.R32Float, textureUses,
+            settings.AtlasSize, settings.AtlasHeight, 1, 1, 1, 1, Format.R8UNorm, textureUses,
             label: "Virtual shadow horizontal prefilter"));
         _prefilterSeparate = edit.CreatePersistentTexture(new TextureDesc(TextureDimension.Texture2D,
-            paddedSize, paddedSize, 1, 1, 2, 1, Format.R8UNorm, textureUses,
+            paddedSize, paddedHeight, 1, 1, 2, 1, Format.R8UNorm, textureUses,
             label: "Virtual shadow separate prefilter histories"));
         _prefilterMerged = edit.CreatePersistentTexture(new TextureDesc(TextureDimension.Texture2D,
-            paddedSize, paddedSize, 1, 1, 1, 1, Format.R8UNorm, textureUses,
+            paddedSize, paddedHeight, 1, 1, 1, 1, Format.R8UNorm, textureUses,
             label: "Virtual shadow merged prefilter"));
         BufferUsages bufferUses = BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination;
-        _prefilterPreviousPages = edit.CreatePersistentBuffer(new BufferDesc(checked((ulong)entryCapacity * 32u), bufferUses,
+        _prefilterPreviousPages = edit.CreatePersistentBuffer(new BufferDesc(checked((ulong)entryCapacity * 2u * sizeof(uint)), bufferUses,
             "Virtual shadow prefilter page histories"));
-        _prefilterPreviousMasks = edit.CreatePersistentBuffer(new BufferDesc(checked((ulong)entryCapacity * 16u), bufferUses,
+        _prefilterPreviousMasks = edit.CreatePersistentBuffer(new BufferDesc(checked((ulong)entryCapacity * 4u * sizeof(uint)), bufferUses,
             "Virtual shadow prefilter receiver histories"));
         _prefilterPreviousViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _prefilterProjections = edit.CreateBufferInput(BufferUsages.ShaderRead);
@@ -153,13 +154,13 @@ public sealed partial class VirtualShadowFeature
             case PrefilterResource.PreviousViews: _ = pass.Bind(edit.CreateBufferSrv(_prefilterPreviousViews, structureStride: VirtualShadowView.SizeInBytes), sync); break;
             case PrefilterResource.Projections: _ = pass.Bind(edit.CreateBufferSrv(_prefilterProjections, structureStride: 80), sync); break;
             case PrefilterResource.PageReferences: _ = pass.Bind(edit.CreateBufferSrv(_pageOwners, structureStride: 4), sync); break;
-            case PrefilterResource.Pages: _ = pass.Bind(edit.CreateBufferSrv(_framePageTable, structureStride: 16), sync); break;
+            case PrefilterResource.Pages: _ = pass.Bind(edit.CreateBufferSrv(_framePageTable, structureStride: sizeof(uint)), sync); break;
             case PrefilterResource.ReceiverMasks: _ = pass.Bind(edit.CreateBufferSrv(_pageReceiverMasks, structureStride: 8), sync); break;
-            case PrefilterResource.Depth: _ = pass.Bind(edit.CreateTextureSrv(_atlas, format: Format.R32UInt, dimension: TextureViewDimension.Texture2D), sync); break;
-            case PrefilterResource.AxisX: _ = pass.Bind(edit.CreateTextureUav(_prefilterAxisX, format: Format.R32Float, dimension: TextureViewDimension.Texture2D), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
+            case PrefilterResource.Depth: _ = pass.Bind(edit.CreateTextureSrv(_atlas, format: Format.R32UInt, dimension: TextureViewDimension.Texture2DArray), sync); break;
+            case PrefilterResource.AxisX: _ = pass.Bind(edit.CreateTextureUav(_prefilterAxisX, format: Format.R8UNorm, dimension: TextureViewDimension.Texture2D), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
             case PrefilterResource.Separate: _ = pass.Bind(edit.CreateTextureUav(_prefilterSeparate, format: Format.R8UNorm, dimension: TextureViewDimension.Texture2DArray), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
             case PrefilterResource.Merged: _ = pass.Bind(edit.CreateTextureUav(_prefilterMerged, format: Format.R8UNorm, dimension: TextureViewDimension.Texture2D), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
-            case PrefilterResource.PreviousPages: _ = pass.Bind(edit.CreateBufferUav(_prefilterPreviousPages, structureStride: 16), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
+            case PrefilterResource.PreviousPages: _ = pass.Bind(edit.CreateBufferUav(_prefilterPreviousPages, structureStride: sizeof(uint)), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
             case PrefilterResource.PreviousMasks: _ = pass.Bind(edit.CreateBufferUav(_prefilterPreviousMasks, structureStride: 8), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
         }
     }
@@ -191,7 +192,7 @@ public sealed partial class VirtualShadowFeature
         var settings = _shadowMap.Settings;
         var requests = new PrefilterRequestUniforms
         {
-            ViewCount = checked((uint)views.Length), PageTableEntryCount = checked((uint)views.Length * settings.PageTableEntriesPerView),
+            ViewCount = checked((uint)views.Length), PageTableEntryCount = ActivePageTableEntryCount,
             FrameIndex = _frameIndex, EntriesPerView = settings.PageTableEntriesPerView,
         };
         _uniformData.Write(ref graph, _prefilterUniforms[6], in requests);
@@ -204,6 +205,7 @@ public sealed partial class VirtualShadowFeature
             {
                 ViewCount = checked((uint)views.Length), EntriesPerView = settings.PageTableEntriesPerView,
                 EntryCapacity = _prefilterEntryCapacity, AtlasSize = settings.AtlasSize,
+                EntryCount = ActivePageTableEntryCount,
                 PageSize = settings.PageSize, PagesPerRow = settings.PhysicalPagesPerRow,
                 Mode = checked((uint)mode), WriteLayer = _prefilterHistoryLayer ^ 1u,
                 HasHistory = _prefilterHistoryReady && _frameHasPreviousHistory ? 1u : 0u,
@@ -212,7 +214,8 @@ public sealed partial class VirtualShadowFeature
             };
             _uniformData.Write(ref graph, _prefilterUniforms[mode], in data);
             uint width = mode is 2 or 4 ? settings.PhysicalPagesPerRow * (settings.PageSize + 2u) : settings.AtlasSize;
-            uint height = mode == 5 ? DivideRoundUp(checked((uint)views.Length * settings.PageTableEntriesPerView), width) : width;
+            uint height = mode == 5 ? DivideRoundUp(ActivePageTableEntryCount, width) :
+                mode is 2 or 4 ? settings.MaxPhysicalPages / settings.PhysicalPagesPerRow * (settings.PageSize + 2u) : settings.AtlasHeight;
             graph.SetPassDataIfChanged(_prefilterPasses[mode], new VirtualShadowDispatchPassData(
                 new DispatchArguments(DivideRoundUp(width, 8u), DivideRoundUp(height, 8u), 1)));
             graph.SetPassEnabled(_prefilterPasses[mode], views.Length != 0);

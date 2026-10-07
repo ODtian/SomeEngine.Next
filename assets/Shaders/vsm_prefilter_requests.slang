@@ -18,7 +18,7 @@ void PropagateVirtualShadowFilterRequests(uint3 thread : SV_DispatchThreadID)
 {
     uint index = thread.x;
     if (index >= FilterRequests.PageTableEntryCount || RequestedShadowPages[index] != FilterRequests.FrameIndex) return;
-    uint viewIndex = index / FilterRequests.EntriesPerView;
+    uint viewIndex = VirtualShadowViewFromPageTableIndex(ShadowViews, FilterRequests.ViewCount, index);
     VirtualShadowMapParameters view = ShadowViews[viewIndex];
     if ((view.Flags & VSM_VIEW_PREFILTERED_DISTANT) == 0u) return;
     uint mip;

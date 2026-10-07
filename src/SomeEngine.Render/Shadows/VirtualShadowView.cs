@@ -18,7 +18,7 @@ public enum VirtualShadowLightKind : uint
 public struct VirtualShadowView
 {
     public const int SizeInBytes = 304;
-    public const int PageTableEntrySizeInBytes = 16;
+    public const int PageTableEntrySizeInBytes = 4;
 
     public Matrix4x4 LightViewProjection;
     public uint VirtualResolution;

@@ -17,7 +17,7 @@ public sealed class LocalShadowValidityTests(D3D12TestCompiler compiler)
         // Authored public shader inputs; assertions observe Try's validity and visibility.
         const int queries = 9, entries = 5, pageSize = 8, atlasSize = 32;
         var views = new VirtualShadowView[queries * faces];
-        uint[] pages = new uint[queries * entries * 4], masks = new uint[queries * entries * 2];
+        uint[] pages = new uint[queries * entries], masks = new uint[queries * entries * 2];
         uint[] atlas = new uint[atlasSize * atlasSize];
         for (int query = 0; query < queries; query++)
         {
@@ -43,15 +43,17 @@ public sealed class LocalShadowValidityTests(D3D12TestCompiler compiler)
         uint[] viewWords = MemoryMarshal.Cast<VirtualShadowView, uint>(views).ToArray();
         uint[][] result = new D3D12TestCompute(compiler).ExecuteSource(Shader, entry, new(1, 1, 1),
             [(masks, ResourceBindingType.BufferSrv, 8), (viewWords, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes),
-             (pages, ResourceBindingType.BufferSrv, 16), (new uint[queries * 2], ResourceBindingType.BufferUav, 8)],
-            new SampledImage(atlasSize, atlasSize, atlas, 3));
+             (pages, ResourceBindingType.BufferSrv, 4), (new uint[queries * 2], ResourceBindingType.BufferUav, 8)],
+            new SampledImage(atlasSize, atlasSize, atlas, 3, ViewDimension: TextureViewDimension.Texture2DArray));
         float[] observations = result[0].Select(BitConverter.UInt32BitsToSingle).ToArray();
         Assert.Equal(new float[] { 0,1, 0,1, 1,0, 1,0, 1,1, 1,0, 1,0, 1,0, 0,1 }, observations);
 
         void Put(int query, int page, uint physical, uint x, uint y, uint generation)
         {
-            int offset = (query * entries + page) * 4;
-            pages[offset] = physical + 1; pages[offset + 1] = x; pages[offset + 2] = y; pages[offset + 3] = generation;
+            int offset = query * entries + page;
+            pages[offset] = VirtualShadowPageEntry.Encode(physical, 4u);
+            if ((generation & 0x7fffffffu) != 7u) pages[offset] &= ~0x80000000u;
+            if ((generation & 0x80000000u) != 0u) pages[offset] |= 0x04000000u;
         }
         void FillDepth(uint physical, float depth)
         {
@@ -64,8 +66,8 @@ public sealed class LocalShadowValidityTests(D3D12TestCompiler compiler)
     private const string Shader = """
         #include "vsm_sampling.slang"
         StructuredBuffer<VirtualShadowMapParameters> Views;
-        StructuredBuffer<uint4> Pages;
-        Texture2D<uint> Atlas;
+        StructuredBuffer<uint> Pages;
+        Texture2DArray<uint> Atlas;
         RWStructuredBuffer<float2> Observations;
         [shader("compute")]
         [numthreads(16,1,1)]

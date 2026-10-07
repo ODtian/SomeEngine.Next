@@ -22,11 +22,11 @@ StructuredBuffer<uint> ChangedInstances;
 StructuredBuffer<uint> RequestedShadowPages;
 StructuredBuffer<uint> RequestedPageFlags;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint4> PageMetadata;
+RWStructuredBuffer<VirtualShadowPageMetadata> PageMetadata;
 StructuredBuffer<uint> AllocatedPageHierarchy;
 StructuredBuffer<uint4> AllocatedPageRectBounds;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint4> ShadowPageTable;
+RWStructuredBuffer<uint> ShadowPageTable;
 
 bool OverlapsAllocatedPages(
     uint viewIndex,
@@ -142,6 +142,7 @@ void InvalidateBoundsInView(
     float3 worldMax, uint depthCacheClass, bool deferred)
 {
     if ((view.Flags & VSM_VIEW_CACHED_DISTANT_LIGHT) != 0u) return;
+    if (depthCacheClass == 0u && (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u) return;
     if (any(worldMin > worldMax) || BoundsOutsideLocalLight(view, worldMin, worldMax))
         return;
     float2 uvMin;
@@ -178,22 +179,23 @@ void InvalidateBoundsInView(
                 if (tableIndex >= Invalidation.PageTableEntryCount)
                     continue;
                 int2 worldPage = VirtualShadowWorldPage(view, mip, localPage);
-                uint4 entry = ShadowPageTable[tableIndex];
-                if (!IsVirtualShadowPageTag(entry, worldPage) ||
-                    entry.x == VSM_PAGE_UNMAPPED || entry.x == VSM_PAGE_LOCKED)
+                uint entry = ShadowPageTable[tableIndex];
+                if ((entry & VSM_PAGE_RENDERING) == 0u ||
+                    entry == VSM_PAGE_UNMAPPED || entry == VSM_PAGE_LOCKED)
                 {
                     continue;
                 }
                 uint atlasPage;
-                if (!DecodeVirtualShadowPage(entry.x, atlasPage))
+                if (!DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, atlasPage))
                     continue;
-                uint requestFlags = PageMetadata[atlasPage].z;
+                if (PageMetadata[atlasPage].Generation != view.CacheGeneration || any(PageMetadata[atlasPage].WorldPage != worldPage)) continue;
+                uint requestFlags = PageMetadata[atlasPage].RequestFlags;
                 if (RequestedShadowPages[tableIndex] == Invalidation.FrameIndex)
                     requestFlags = RequestedPageFlags[tableIndex];
                 uint ignored;
                 if (deferred)
                 {
-                    InterlockedOr(PageMetadata[atlasPage].w, VSM_PAGE_DEFERRED_INVALIDATION, ignored);
+                    InterlockedOr(PageMetadata[atlasPage].Flags, VSM_PAGE_DEFERRED_INVALIDATION, ignored);
                     continue;
                 }
                 uint invalidation = depthCacheClass == 1u ? VSM_PAGE_INVALIDATE_STATIC | VSM_PAGE_INVALIDATE_DYNAMIC
@@ -201,9 +203,9 @@ void InvalidateBoundsInView(
                 // Dynamic-only coarse retention is an explicit per-view policy.
                 if (depthCacheClass == 0u && (view.Flags & VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE) != 0u &&
                     (requestFlags & VSM_PAGE_REQUEST_DETAIL) == 0u) continue;
-                InterlockedOr(PageMetadata[atlasPage].w, invalidation, ignored);
-                if (depthCacheClass == 1u) InterlockedExchange(PageMetadata[atlasPage].y, 0u, ignored);
-                InterlockedExchange(ShadowPageTable[tableIndex].w, 0u, ignored);
+                InterlockedOr(PageMetadata[atlasPage].Flags, invalidation, ignored);
+                if (depthCacheClass == 1u) InterlockedExchange(PageMetadata[atlasPage].StaticDepthGeneration, 0u, ignored);
+                InterlockedAnd(ShadowPageTable[tableIndex], ~VSM_PAGE_ANY_DEPTH, ignored);
             }
         }
     }

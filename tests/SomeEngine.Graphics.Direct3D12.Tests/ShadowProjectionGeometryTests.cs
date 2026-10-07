@@ -35,12 +35,11 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
             WorldUnitsPerCentimeter = 1, SourceRadius = .01f, ProjectionDepthScale = projection.M33,
             ProjectionDepthOffset = projection.M43, TexelDitherScale = 1, LightDirection = Vector3.UnitZ,
         }];
-        uint[] pages = new uint[64 * 4], depth = new uint[resolution * resolution];
+        uint[] pages = new uint[64], depth = new uint[resolution * resolution];
         Vector4 plane = Vector4.Transform(new Vector4(0,0,.5f,1), view * projection);
         for (int page = 0; page < 64; page++)
         {
-            pages[page * 4] = (uint)page + 1; pages[page * 4 + 1] = (uint)(page % pagesPerRow);
-            pages[page * 4 + 2] = (uint)(page / pagesPerRow); pages[page * 4 + 3] = 7;
+            pages[page] = SomeEngine.Render.Shadows.VirtualShadowPageEntry.Encode((uint)page, pagesPerRow);
         }
         for (int y = 0; y < resolution; y++)
             for (int x = 0; x < resolution / 2; x++) depth[y * resolution + x] = BitConverter.SingleToUInt32Bits(1 - plane.Z / plane.W);
@@ -50,8 +49,8 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
             Texture2D<float4> VirtualShadowBlueNoise;
             #include "vsm_projection.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
-            Texture2D<uint> Atlas;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Atlas;
             RWStructuredBuffer<float3> Result;
             [shader("compute")]
             [numthreads(2,1,1)]
@@ -67,8 +66,8 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
             }
             """, "ReadEmitterPenumbra", new(1,1,1),
             [(MemoryMarshal.Cast<VirtualShadowView,uint>(views).ToArray(), ResourceBindingType.BufferSrv,
-                VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv,16),
-             (new uint[6], ResourceBindingType.BufferUav,12)], new SampledImage(resolution,resolution,depth,3),
+                VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 4),
+             (new uint[6], ResourceBindingType.BufferUav,12)], new SampledImage(resolution,resolution,depth,3, ViewDimension: TextureViewDimension.Texture2DArray),
              [new SampledImage(64,4096,noise,0,Format.R8G8B8A8UNorm)]);
         float[] values = actual[0].Select(BitConverter.UInt32BitsToSingle).ToArray();
         // A point emitter sees the open side. A .01-radius disc and the z=.5
@@ -92,8 +91,8 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
-            Texture2D<uint> Atlas;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Atlas;
             RWStructuredBuffer<float2> Result;
             [shader("compute")]
             [numthreads(1,1,1)]
@@ -108,9 +107,9 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
             }
             """, "ReadInclinedReceiver", new(1,1,1),
             [(MemoryMarshal.Cast<VirtualShadowView, uint>(views).ToArray(), ResourceBindingType.BufferSrv,
-                VirtualShadowView.SizeInBytes), ([1u,0u,0u,7u], ResourceBindingType.BufferSrv, 16),
+                VirtualShadowView.SizeInBytes), ([0xc0000000u], ResourceBindingType.BufferSrv, 4),
              (new uint[2], ResourceBindingType.BufferUav, 8)],
-            new SampledImage(1,1,[BitConverter.SingleToUInt32Bits(.5f)],2));
+            new SampledImage(1,1,[BitConverter.SingleToUInt32Bits(.5f)],2, ViewDimension: TextureViewDimension.Texture2DArray));
         // Plane z=.65-.2*(x+.5) has forward UV slope-.4. Its1/4-texel
         // offset gives the native positive allowance2*.1=.2, covering depth.5.
         Assert.Equal(new float[] { 1, 1 }, actual[0].Select(BitConverter.UInt32BitsToSingle).ToArray());

@@ -118,7 +118,7 @@ public struct VirtualShadowRasterWorkUniforms
     public uint InstanceGroupCount;
     public uint HasPreviousHistory;
     public uint WorkFeedbackEnabled;
-    public uint Pad1;
+    public uint StaticHiZLayerOffset;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -167,13 +167,15 @@ public struct VirtualShadowSamplingUniforms
     public VirtualShadowRaySettings LocalRays;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 public struct VirtualShadowPageHiZUniforms
 {
     public uint PageSize;
     public uint PhysicalPagesPerRow;
     public uint SourceMip;
     public uint DestinationMip;
+    public uint StaticLayerOffset;
+    private uint _padding0, _padding1, _padding2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]

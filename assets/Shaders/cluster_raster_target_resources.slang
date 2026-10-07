@@ -2,10 +2,11 @@
 #define CLUSTER_RASTER_TARGET_RESOURCES_SLANG
 
 #include "cluster_raster_target_view.slang"
+#include "vsm_page_entry.slang"
 
 StructuredBuffer<ClusterRasterTargetView> RasterTargetViews;
 StructuredBuffer<uint> RasterTargetPageHierarchy;
-StructuredBuffer<uint4> RasterTargetPageTable;
+StructuredBuffer<uint> RasterTargetPageTable;
 StructuredBuffer<uint2> RasterTargetReceiverMasks;
 
 // Draw eligibility is not sample validity: newly dirty mapped pages have generation
@@ -15,16 +16,13 @@ bool ClusterRasterTargetResolvePage(
     out uint tableIndex, out uint page)
 {
     tableIndex = ClusterRasterTargetTableIndex(target, localPage);
-    uint4 entry = RasterTargetPageTable[tableIndex];
-    int2 expectedWorldPage = ClusterRasterTargetWorldPage(target, localPage);
-    if (entry.x == 0u || entry.x == 0xFFFFFFFFu ||
-        (entry.w != 0u && entry.w != target.CacheGeneration) ||
-        asint(entry.y) != expectedWorldPage.x || asint(entry.z) != expectedWorldPage.y)
+    uint entry = RasterTargetPageTable[tableIndex];
+    if ((entry & VSM_PAGE_RENDERING) == 0u ||
+        !DecodeVirtualShadowPage(entry, target.PhysicalPagesPerRow, page))
     {
-        page = 0xFFFFFFFFu;
+        page = 0xffffffffu;
         return false;
     }
-    page = entry.x - 1u;
     return true;
 }
 

@@ -1,15 +1,15 @@
+#include "vsm_page_entry.slang"
 #ifndef CLUSTER_RASTER_TARGET_OUTPUT_SLANG
 #define CLUSTER_RASTER_TARGET_OUTPUT_SLANG
 
 #include "cluster_raster_target_view.slang"
 
 #include "cluster_raster_target_resources.slang"
-RWTexture2D<uint> RasterTargetOutput;
+RWTexture2DArray<uint> RasterTargetOutput;
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
-RWTexture2D<uint> RasterTargetStaticOutput;
 #ifndef CLUSTER_RASTER_TARGET_METADATA_DECLARED
 #define CLUSTER_RASTER_TARGET_METADATA_DECLARED 1
-StructuredBuffer<uint4> RasterTargetPageMetadata;
+StructuredBuffer<VirtualShadowPageMetadata> RasterTargetPageMetadata;
 #endif
 #endif
 
@@ -206,7 +206,7 @@ bool ResolveCachedRasterTargetPixel(
         page % target.PhysicalPagesPerRow,
         page / target.PhysicalPagesPerRow);
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
-    if (depthCacheClass == 1u && (RasterTargetPageMetadata[page].w & 8u) == 0u)
+    if (depthCacheClass == 1u && (RasterTargetPageMetadata[page].Flags & 8u) == 0u)
         return false;
 #endif
     targetPixel = pageCoord * target.PageSize + pagePixel;
@@ -238,7 +238,7 @@ bool ResolveRasterTargetPixel(int2 pixel, uint targetViewIndex, out uint2 target
         page % target.PhysicalPagesPerRow,
         page / target.PhysicalPagesPerRow);
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
-    if (depthCacheClass == 1u && (RasterTargetPageMetadata[page].w & 8u) == 0u) return false;
+    if (depthCacheClass == 1u && (RasterTargetPageMetadata[page].Flags & 8u) == 0u) return false;
 #endif
     targetPixel = pageCoord * target.PageSize + pagePixel;
     return true;
@@ -248,9 +248,9 @@ uint ReadRasterTargetPixelDepth(uint2 targetPixel, uint depthCacheClass = 0u)
 {
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
     if (depthCacheClass == 1u)
-        return RasterTargetStaticOutput[targetPixel];
+        return RasterTargetOutput[int3(targetPixel, 1)];
 #endif
-    return RasterTargetOutput[targetPixel];
+    return RasterTargetOutput[int3(targetPixel, 0)];
 }
 
 void WriteRasterTargetPixelDepth(uint2 targetPixel, float depth, uint depthCacheClass = 0u)
@@ -259,10 +259,10 @@ void WriteRasterTargetPixelDepth(uint2 targetPixel, float depth, uint depthCache
     uint ignored;
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
     if (depthCacheClass == 1u)
-        InterlockedMax(RasterTargetStaticOutput[targetPixel], encodedDepth, ignored);
+        InterlockedMax(RasterTargetOutput[int3(targetPixel, 1)], encodedDepth, ignored);
     else
 #endif
-        InterlockedMax(RasterTargetOutput[targetPixel], encodedDepth, ignored);
+        InterlockedMax(RasterTargetOutput[int3(targetPixel, 0)], encodedDepth, ignored);
 }
 
 void WriteRasterTargetDepth(int2 pixel, uint targetViewIndex, float depth, uint depthCacheClass = 0u)

@@ -29,13 +29,11 @@ public sealed partial class VirtualShadowMap : IDisposable
     private bool _frameResourcesAcquired;
     private readonly Buffer _physicalPageOwners;
     private readonly Texture _atlas;
-    private readonly Texture _staticAtlas;
     private VirtualShadowPageCacheResources? _pageCache;
     private VirtualShadowPageCacheFrameResources? _pendingPageCacheResources;
     private BufferBoundaryState[] _pageTableEndpoint = [];
     private BufferBoundaryState[] _physicalPageOwnersEndpoint;
     private TextureBoundaryState[] _atlasEndpoint;
-    private TextureBoundaryState[] _staticAtlasEndpoint;
     private VirtualShadowView[] _views = [];
     private VirtualShadowView[] _committedViews = [];
     private Matrix4x4[] _preparedLightViews = [];
@@ -55,6 +53,7 @@ public sealed partial class VirtualShadowMap : IDisposable
     private ulong _pendingRasterRevision;
     private uint _committedCacheGeneration;
     private uint _pendingCacheGeneration;
+    private uint _pendingPageTableEntryCount;
     private WorldOrigin _worldOrigin;
     private WorldOrigin _committedWorldOrigin;
     private uint _viewPlayerId;
@@ -87,7 +86,6 @@ public sealed partial class VirtualShadowMap : IDisposable
         LinkedComputePipeline? dynamicResolution = null;
         Buffer? physicalPageOwners = null;
         Texture? atlas = null;
-        Texture? staticAtlas = null;
         try
         {
             resetReceiverMasks = LinkedComputePipeline.Create(
@@ -177,23 +175,18 @@ public sealed partial class VirtualShadowMap : IDisposable
                 new TextureDesc(
                     TextureDimension.Texture2D,
                     settings.AtlasSize,
-                    settings.AtlasSize,
+                    settings.AtlasHeight,
                     1,
                     1,
-                    1,
+                    2,
                     1,
                     Format.R32UInt,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
                     label: "Virtual shadow physical atlas"));
-            staticAtlas = _backend.CreateTexture(_device, new TextureDesc(TextureDimension.Texture2D,
-                settings.AtlasSize, settings.AtlasSize, 1, 1, 1, 1, Format.R32UInt,
-                TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
-                label: "Virtual shadow static depth atlas"));
         }
         catch (Exception primary)
         {
             List<Exception>? cleanupFailures = null;
-            if (staticAtlas is not null) TryDispose(staticAtlas, ref cleanupFailures);
             if (atlas is not null) TryDispose(atlas, ref cleanupFailures);
             if (physicalPageOwners is not null)
                 TryDispose(physicalPageOwners, ref cleanupFailures);
@@ -237,11 +230,10 @@ public sealed partial class VirtualShadowMap : IDisposable
         DynamicResolutionPipeline = dynamicResolution;
         _physicalPageOwners = physicalPageOwners;
         _atlas = atlas;
-        _staticAtlas = staticAtlas;
+
 
         _physicalPageOwnersEndpoint = [Initial(_physicalPageOwners)];
         _atlasEndpoint = [Initial(_atlas)];
-        _staticAtlasEndpoint = [Initial(_staticAtlas)];
         try
         {
             _pageCache = new VirtualShadowPageCacheResources(
@@ -276,6 +268,7 @@ public sealed partial class VirtualShadowMap : IDisposable
     public bool UsesPageGranularTransformInvalidation =>
         _initialized && _pendingViewCount != 0 && !_pendingCacheReset;
     public uint PendingCacheGeneration => _pendingCacheGeneration;
+    public uint PageTableEntryCount => _pendingPageTableEntryCount;
     public ulong PendingGeometryRevision => _pendingGeometryRevision;
     public ulong PendingRasterRevision => _pendingRasterRevision;
     public uint PendingDirectionalLightCount { get; private set; }
@@ -583,6 +576,18 @@ public sealed partial class VirtualShadowMap : IDisposable
             _views[index].TexelDitherScale = 1f;
         }
 
+        uint pageTableOffset = 0;
+        for (int index = 0; index < viewCount; index++)
+        {
+            ref VirtualShadowView view = ref _views[index];
+            view.PageTableOffset = pageTableOffset;
+            pageTableOffset = checked(pageTableOffset +
+                ((view.Flags & VirtualShadowViewFlags.SinglePage) != 0u ? 1u :
+                    view.LightKind == VirtualShadowLightKind.Directional ? Settings.VirtualPagesPerView :
+                        Settings.PageTableEntriesPerView));
+        }
+        _pendingPageTableEntryCount = pageTableOffset;
+
         bool viewLayoutChanged = !_initialized || viewCount != _committedViewCount;
         bool structuralContentChanged =
             _initialized &&
@@ -731,8 +736,7 @@ public sealed partial class VirtualShadowMap : IDisposable
             throw new InvalidOperationException("Begin and prepare the virtual-shadow frame first.");
 
         ulong requiredSize = checked(
-            Math.Max(1ul, (ulong)_pendingViewCount *
-            Settings.PageTableEntriesPerView) *
+            Math.Max(1ul, _pendingPageTableEntryCount) *
             VirtualShadowView.PageTableEntrySizeInBytes);
         if (_frameResourcesAcquired)
             throw new InvalidOperationException("Virtual-shadow frame resources were already acquired.");
@@ -767,7 +771,7 @@ public sealed partial class VirtualShadowMap : IDisposable
             cache.PageLists,
             !_pageTableInitialized)
         {
-            StaticAtlas = new VirtualShadowTextureResource(_staticAtlas, _staticAtlasEndpoint),
+            StaticAtlas = new VirtualShadowTextureResource(_atlas, _atlasEndpoint),
         };
     }
 
@@ -792,8 +796,6 @@ public sealed partial class VirtualShadowMap : IDisposable
         if (!owners.IsEmpty) _physicalPageOwnersEndpoint = owners.ToArray();
         ReadOnlySpan<TextureBoundaryState> atlas = result.GetTextureStates(_atlas);
         if (!atlas.IsEmpty) _atlasEndpoint = atlas.ToArray();
-        ReadOnlySpan<TextureBoundaryState> staticAtlas = result.GetTextureStates(_staticAtlas);
-        if (!staticAtlas.IsEmpty) _staticAtlasEndpoint = staticAtlas.ToArray();
         if (!contentComplete)
         {
             if (!result.SubmittedCompletions.IsEmpty)
@@ -872,7 +874,7 @@ public sealed partial class VirtualShadowMap : IDisposable
     }
 
     private static TextureBoundaryState Initial(Texture texture) => new(
-        new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+        new TextureSubresourceRange(0, 1, 0, texture.Info.ArrayLayerCount, TextureAspects.Color),
         texture.InitialSync,
         texture.InitialAccess,
         texture.InitialLayout,
@@ -1060,7 +1062,7 @@ public sealed partial class VirtualShadowMap : IDisposable
         if (_pageCache is not null)
             TryDispose(_pageCache, ref failures);
         _pageCache = null;
-        TryDispose(_staticAtlas, ref failures);
+
         TryDispose(_atlas, ref failures);
         TryDispose(_physicalPageOwners, ref failures);
         if (_previousPageTable is not null) TryDispose(_previousPageTable, ref failures);
@@ -1085,7 +1087,6 @@ public sealed partial class VirtualShadowMap : IDisposable
         Array.Clear(_pageTableEndpoint);
         Array.Clear(_physicalPageOwnersEndpoint);
         Array.Clear(_atlasEndpoint);
-        Array.Clear(_staticAtlasEndpoint);
         Array.Clear(_views);
         Array.Clear(_committedViews);
         Array.Clear(_preparedLightViews);

@@ -1,7 +1,7 @@
 #ifndef VSM_PREFILTER_SAMPLING_SLANG
 #define VSM_PREFILTER_SAMPLING_SLANG
 
-bool TrySampleVirtualShadowPrefiltered(VirtualShadowMapParameters view, StructuredBuffer<uint4> pageTable,
+bool TrySampleVirtualShadowPrefiltered(VirtualShadowMapParameters view, StructuredBuffer<uint> pageTable,
     Texture2D<float> filteredAtlas, float2 uv, out float visibility)
 {
     visibility = 1.0;
@@ -9,11 +9,11 @@ bool TrySampleVirtualShadowPrefiltered(VirtualShadowMapParameters view, Structur
     float2 texel = uv * float(view.VirtualResolution) - .5;
     uint2 center = min(uint2(uv * float(view.VirtualResolution)), view.VirtualResolution - 1u);
     uint2 virtualPage = center / view.PageSize;
-    uint4 entry = pageTable[VirtualShadowPageTableIndex(view, 0u, virtualPage)];
+    uint entry = pageTable[VirtualShadowPageTableIndex(view, 0u, virtualPage)];
     uint atlasPage;
     if (!IsVirtualShadowPageTag(entry, VirtualShadowWorldPage(view, 0u, virtualPage)) ||
-        (entry.w != view.CacheGeneration && entry.w != (view.CacheGeneration | VSM_PAGE_RECEIVER_DEPTH)) ||
-        !DecodeVirtualShadowPage(entry.x, atlasPage)) return false;
+        !VirtualShadowPageHasOwnDepth(entry) ||
+        !DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, atlasPage)) return false;
     uint2 atlasBase = uint2(atlasPage % view.PhysicalPagesPerRow, atlasPage / view.PhysicalPagesPerRow) * (view.PageSize + 2u);
     int2 base = int2(floor(texel)) - int2(virtualPage * view.PageSize) + int2(atlasBase) + 1;
     float2 fraction = frac(texel);
@@ -24,7 +24,7 @@ bool TrySampleVirtualShadowPrefiltered(VirtualShadowMapParameters view, Structur
 }
 
 float SampleDirectionalVirtualShadowPrefiltered(StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pageTable, Texture2D<float> filteredAtlas, uint firstView, uint viewCount, float3 worldPosition)
+    StructuredBuffer<uint> pageTable, Texture2D<float> filteredAtlas, uint firstView, uint viewCount, float3 worldPosition)
 {
     if (viewCount == 0u || (views[firstView].Flags & VSM_VIEW_PREFILTERED_DISTANT) == 0u) return 1.0;
     uint level = SelectDirectionalVirtualShadowView(views, firstView, viewCount,

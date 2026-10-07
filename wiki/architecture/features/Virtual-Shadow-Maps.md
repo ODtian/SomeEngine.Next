@@ -4,6 +4,13 @@
 
 VSM 是独立 rendering feature，拥有自己的 page table、atlas/cache、marking、allocation 与 shadow policy。
 
+默认物理页预算为 2048，按 atlas 行宽向上取整；默认 8192×4096 深度数组容纳 2048 个 128² 页。
+`MaxPhysicalPages`、纹理高度、页池和 metadata 容量来自同一配置。方向光分辨率偏置声明默认 0。
+像素请求采用 Native 2×2 stride，从每个屏幕单元的左上像素读取接收输入。
+过滤请求按最大 texel 支持域扩张 page/receiver mask，并跨 point cube face 接合邻面。
+预滤 X 中间纹理使用 R8_UNORM，其舍入结果继续输入 Y 与历史计算。
+该批规则以固定 Native 396c9f05 的 PageAccessCommon、PageManagement、Array 和 CacheManager 为依据。
+
 VSM 构造普通 unified render views，并通过 geometry pipeline 能力使用 Cluster；Cluster 不知道这些 views 表示 shadow。VSM counters 和策略不进入 Cluster core ABI。
 
 参见 [[architecture/rendering/Multi-View]] · [[architecture/cluster/Cluster-Scope]]。
@@ -83,12 +90,13 @@ clipmap 使用原版绝对级别，默认 first 6 至 last 22。级别 L 的半�
 后续帧仍请求缺失工作。旧 float 签名保留为兼容因子，不提供独立有效性证明。
 
 `MeshSource` / `MeshInstance` 的 `DepthCacheClass` 经既有提取写入 `RenderMesh`，
-由实例几何 producer 写入共享实例存储中的单个 uint 列。默认 Dynamic，建筑导入声明 Static。
+由实例几何 producer 写入共享实例存储中的单个 uint 列。默认 Dynamic；静态输入由 Game world 明确声明。
 用户的动画 vertex、domain 或 opacity 输入可声明 Dynamic；静态输入修改沿既有 caster/material 事件失效。
 当前和上帧分类随既有 world bounds 的 W 分量传给失效 shader，旧、新足迹各按实际分类更新。
 静态输入失效清除静态完成代号并刷新两类深度，动态输入失效保留静态完成代号。
-PageMetadata.y 保存完整静态深度及静态 HiZ 的完成代号；W 持有两类重绘和失效标记。
-静态 atlas 与动态/合并 atlas 共用页编号。绘制前，静态可留用页为动态纹理提供初值；
+物理页 metadata 保存静态完成代号、请求标记、重绘状态和绝对世界页身份。
+开启 receiver mask 的 Dynamic 输入沿当前接收请求刷新动态深度；显式 bounds 失效供 Static/CachedDynamic 消费。
+R32_UINT 深度数组由同一个 atlas 持有：slice 0 为动态/合并深度，slice 1 为静态缓存。绘制前，静态可留用页为动态纹理提供初值；
 静态失效页从零开始。SW、HW、mesh 和有限 tessellation 输出共同消费同一实例分类。
 静态光栅覆盖整页，动态光栅消费本帧接收者遮罩。main/post 绘制后的静态 merge 先于对应 HiZ。
 遮罩页每帧保持 dynamic uncached，接收掩码扩张从留用静态深度重新形成当前动态内容。
@@ -98,12 +106,15 @@ detail 请求和 static 失效仍触发所需更新。未请求的已分配页�
 接收者、过滤、完成有效性共用 `vsm_receiver_projection.slang`、`vsm_sampling.slang`，
 generic raster adapter 共用 `cluster_policy_raster_output.slang` 与 `cluster_raster_target_output.slang`。
 
-完成深度后，`PropagateVirtualShadowResidentPages` 从主要页表产生当帧 resident 引用。
-每个引用保存已完成来源的表索引和 LOD offset；本级 rendering 映射继续由主要页表维护。
-Local 引用指向同一投影的父 mip，directional 引用指向同一光源更粗的 clipmap。
-材质的 any-LOD 查询直接读取已传播引用，本级查询读取原始完成映射。
-遮罩来源的每个采样 tap 验证其当前接收单元；覆盖不足时沿下一驻留祖先继续解析。
-引用随当帧主要页表的完成数据重建，图完成边界位于传播之后，取消与部分失败沿现有状态恢复。
+页表每项为 Native uint 编码：X/Y 各 10 位、LOD offset 6 位及深度/光栅/secondary 标记。
+接收遮罩的局部深度状态使用保留位 26；绝对世界页与 cache generation 由物理页 metadata 唯一持有。
+Directional 地址域只含 mip 0，local 地址域含完整 mip 链，SinglePage 地址域仅含一个末级表项。
+`PageTableOffset` 是各实际地址域的累加起点，灯数增长按最大地址域预分配请求与 hierarchy 存储。
+完成深度后，`PropagateVirtualShadowResidentPages` 在同一页表传播已完成祖先的 XY 与 LOD offset。
+Local 来源是同一投影的父 mip，directional 来源是同一光源更粗的 clipmap。
+本级未完成时可读取祖先；后续本级请求重新分配自己的页，祖先的物理页继续由来源持有。
+遮罩来源的每个 tap 验证当前接收单元，覆盖不足时继续沿祖先查询。
+图完成边界位于传播之后，取消与部分失败沿既有帧状态恢复。
 Directional 页地址采用 `quarterPages * corner` 的整数移位，UV 使用
 `.25 * (cornerB - scale * cornerA)`，其中 `scale = 1 / 2^levelOffset`。
 coarse 深度以 `(coarseDepth - (offsetZB - scale * offsetZA)) / scale` 返回 requested 范围。
@@ -111,7 +122,9 @@ coarse 深度以 `(coarseDepth - (offsetZB - scale * offsetZA)) / scale` 返回 
 原版依据为 `VirtualShadowMapPageManagement.usf:268–401`、
 `VirtualShadowMapPageAccessCommon.ush:355–371` 与 `VirtualShadowMapProjectionCommon.ush:245–305`。
 
-HiZ 使用静态深度的一个图管理持久存储：main 读取先前结果后，intermediate 更新脏页，
+`DynamicHiZ` 默认 false，R32_FLOAT HiZ 从静态深度形成一份 array 存储；启用时增加动态/合并层域。
+静态与动态剔除按实例分类选择对应层域，共用同一个持久纹理。
+HiZ 使用图管理持久存储：main 读取先前结果后，intermediate 更新脏页，
 post 消费已保留的 deferred work，再更新 final 供下帧使用。不复制整池历史，
 不 replay 或重新从根发现 deferred work。未受影响的缓存页不复制或重建。
 参见 [[architecture/validation/Vsm-Depth-Coverage-135]]；已有分项公开输出/局部光 RT 检查，

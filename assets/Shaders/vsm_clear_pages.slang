@@ -1,3 +1,4 @@
+#include "vsm_page_entry.slang"
 #include "vsm_page_dispatch.slang"
 #include "vsm_depth_cache.slang"
 
@@ -12,9 +13,8 @@ struct VirtualShadowPageClearUniforms
 ConstantBuffer<VirtualShadowPageClearUniforms> PageClear;
 StructuredBuffer<uint4> ActivePhysicalPages;
 StructuredBuffer<uint> ActivePhysicalPageCount;
-RWTexture2D<uint> ShadowPhysicalAtlas;
-RWTexture2D<uint> ShadowStaticAtlas;
-StructuredBuffer<uint4> ClearPageMetadata;
+RWTexture2DArray<uint> ShadowPhysicalAtlas;
+StructuredBuffer<VirtualShadowPageMetadata> ClearPageMetadata;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -37,12 +37,12 @@ void ClearVirtualShadowPages(
     {
         uint2 pagePixel = basePixel + uint2(x, y);
         uint2 atlasPixel = physicalPageCoord * PageClear.PageSize + pagePixel;
-        if (all(pagePixel < PageClear.PageSize) && all(atlasPixel < PageClear.AtlasSize))
+        if (all(pagePixel < PageClear.PageSize))
         {
-            uint flags = ClearPageMetadata[physicalPage].w;
-            uint staticDepth = ShadowStaticAtlas[atlasPixel];
-            ShadowPhysicalAtlas[atlasPixel] = InitializeVirtualShadowDynamicDepth(staticDepth, flags);
-            if ((flags & VSM_PAGE_STATIC_UNCACHED) != 0u) ShadowStaticAtlas[atlasPixel] = 0u;
+            uint flags = ClearPageMetadata[physicalPage].Flags;
+            uint staticDepth = ShadowPhysicalAtlas[int3(atlasPixel, 1)];
+            ShadowPhysicalAtlas[int3(atlasPixel, 0)] = InitializeVirtualShadowDynamicDepth(staticDepth, flags);
+            if ((flags & VSM_PAGE_STATIC_UNCACHED) != 0u) ShadowPhysicalAtlas[int3(atlasPixel, 1)] = 0u;
         }
     }
 }

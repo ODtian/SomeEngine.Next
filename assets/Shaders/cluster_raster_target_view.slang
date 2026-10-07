@@ -23,7 +23,8 @@ struct ClusterRasterTargetView
     uint2 Padding;
     uint4 UncachedPageRect;
     float2 DynamicDepthCullRange;
-    uint2 DepthCullPadding;
+    uint StaticHiZLayerOffset;
+    uint DepthCullPadding;
 };
 
 static const uint CLUSTER_RASTER_TARGET_VIEW_BYTES = 96u;

@@ -42,8 +42,8 @@ bool IsDirectionalVirtualShadowProjection(VirtualShadowMapParameters view)
 }
 
 VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
-    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pages,
-    Texture2D<uint> atlas, uint requestedView, float2 uv, uint firstMip)
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages,
+    Texture2DArray<uint> atlas, uint requestedView, float2 uv, uint firstMip)
 {
     VirtualShadowDepthSample sample = (VirtualShadowDepthSample)0;
     sample.ViewIndex = requestedView;
@@ -128,8 +128,8 @@ float VirtualShadowOccluderDistance(VirtualShadowMapParameters view,
 }
 
 VirtualShadowProjectionResult ProjectVirtualShadowHard(
-    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pages,
-    Texture2D<uint> atlas, uint viewIndex, float3 position, float3 normal,
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages,
+    Texture2DArray<uint> atlas, uint viewIndex, float3 position, float3 normal,
     uint firstMip, float rayStartDistance)
 {
     VirtualShadowProjectionResult result = EmptyVirtualShadowProjection();
@@ -205,7 +205,7 @@ float3 ProjectVirtualShadowRayPoint(VirtualShadowMapParameters view, float3 posi
 }
 
 VirtualShadowRaySample ReadVirtualShadowRayFace(StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pages, Texture2D<uint> atlas, inout VirtualShadowRay ray, float time)
+    StructuredBuffer<uint> pages, Texture2DArray<uint> atlas, inout VirtualShadowRay ray, float time)
 {
     VirtualShadowRaySample result = (VirtualShadowRaySample)0;
     uint viewIndex = ray.UseSecondFace ? ray.SecondView : ray.FirstView;
@@ -231,7 +231,7 @@ VirtualShadowRaySample ReadVirtualShadowRayFace(StructuredBuffer<VirtualShadowMa
 }
 
 VirtualShadowRaySample ReadVirtualShadowRaySample(StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pages, Texture2D<uint> atlas, inout VirtualShadowRay ray, float time)
+    StructuredBuffer<uint> pages, Texture2DArray<uint> atlas, inout VirtualShadowRay ray, float time)
 {
     VirtualShadowRaySample result = ReadVirtualShadowRayFace(views, pages, atlas, ray, time);
     if (!result.Valid && ray.UseSecondFace)
@@ -244,7 +244,7 @@ VirtualShadowRaySample ReadVirtualShadowRaySample(StructuredBuffer<VirtualShadow
 }
 
 bool TraceVirtualShadowRay(StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pages, Texture2D<uint> atlas, inout VirtualShadowRay ray,
+    StructuredBuffer<uint> pages, Texture2DArray<uint> atlas, inout VirtualShadowRay ray,
     uint steps, float stepOffset, out float hitDepth)
 {
     float historyDepth = -10000.0;
@@ -377,7 +377,7 @@ VirtualShadowRay CreateVirtualShadowLocalRay(StructuredBuffer<VirtualShadowMapPa
 }
 
 VirtualShadowProjectionResult TraceVirtualShadowLocal(
-    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pages, Texture2D<uint> atlas,
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages, Texture2DArray<uint> atlas,
     uint firstView, float3 position, float3 normal, float nominalPixelRadius, float dynamicBias,
     VirtualShadowRaySettings settings, uint2 pixel, uint frameIndex, float rayStartOffset)
 {
@@ -448,7 +448,7 @@ VirtualShadowProjectionResult TraceVirtualShadowLocal(
 }
 
 VirtualShadowProjectionResult TraceVirtualShadowDirectionalFamily(
-    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pages, Texture2D<uint> atlas,
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages, Texture2DArray<uint> atlas,
     uint firstView, uint viewCount, float3 position, float3 normal, float dynamicBias, float receiverBias,
     VirtualShadowRaySettings settings, uint2 pixel, uint frameIndex, float distanceFromCamera, float rayStartOffset)
 {
@@ -510,7 +510,7 @@ VirtualShadowProjectionResult TraceVirtualShadowDirectionalFamily(
 
 
 VirtualShadowProjectionResult TraceVirtualShadowDirectional(
-    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pages, Texture2D<uint> atlas,
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages, Texture2DArray<uint> atlas,
     uint firstView, uint viewCount, float3 position, float3 normal, float dynamicBias, float receiverBias,
     VirtualShadowRaySettings settings, uint2 pixel, uint frameIndex, float distanceFromCamera, float rayStartOffset,
     bool firstPersonReceiver = false, uint firstPersonView = 0xFFFFFFFFu)

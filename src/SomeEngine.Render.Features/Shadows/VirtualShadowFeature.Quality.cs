@@ -110,26 +110,26 @@ public sealed partial class VirtualShadowFeature
                     uint mapped = 0, whole = 0, partial = 0, unfinished = 0;
                     ulong covered = 0;
                     int originX = view.VirtualPageOriginX >> (int)mip, originY = view.VirtualPageOriginY >> (int)mip;
-                    for (uint page = 0; page < dimension * dimension; page++)
+                    bool singlePage = (view.Flags & VirtualShadowViewFlags.SinglePage) != 0u;
+                    uint mipPages = singlePage ? (mip == view.MipLevelCount - 1u ? 1u : 0u) : dimension * dimension;
+                    for (uint page = 0; page < mipPages; page++)
                     {
                         uint table = offset + page;
-                        ReadOnlySpan<uint> entry = pages.Slice(checked((int)table * 4), 4);
-                        if (entry[0] == 0 || entry[0] == uint.MaxValue || entry[0] > view.MaxPhysicalPages ||
-                            unchecked((uint)((int)entry[1] - originX)) >= dimension ||
-                            unchecked((uint)((int)entry[2] - originY)) >= dimension) continue;
+                        uint entry = pages[checked((int)table)];
+                        if ((entry & 0x40000000u) == 0u) continue;
                         mapped++;
-                        if (entry[3] == view.CacheGeneration) { whole++; covered += 64; }
-                        else if (entry[3] == (view.CacheGeneration | 0x80000000u))
+                        if ((entry & 0x80000000u) == 0u) { unfinished++; continue; }
+                        if ((entry & 0x04000000u) == 0u) { whole++; covered += 64; }
+                        else
                         {
                             partial++;
                             covered += (uint)(BitOperations.PopCount(coverage[checked((int)table * 2)]) +
                                 BitOperations.PopCount(coverage[checked((int)table * 2 + 1)]));
                         }
-                        else unfinished++;
                     }
                     mips[mip] = new(mip, Math.Max(view.VirtualResolution >> (int)mip, view.PageSize),
                         mapped, whole, partial, unfinished, covered);
-                    offset += dimension * dimension;
+                    offset += mipPages;
                     dimension = Math.Max(dimension >> 1, 1);
                 }
                 result[index] = new(view.LightKind, view.LightIndex, view.FaceIndex, view.ClipmapLevel, view.VirtualResolution,

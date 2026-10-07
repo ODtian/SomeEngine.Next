@@ -33,8 +33,8 @@ struct VirtualShadowSamplingUniforms
 };
 
 StructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;
-StructuredBuffer<uint4> VirtualShadowPageTable;
-Texture2D<uint> VirtualShadowAtlas;
+StructuredBuffer<uint> VirtualShadowPageTable;
+Texture2DArray<uint> VirtualShadowAtlas;
 ConstantBuffer<VirtualShadowSamplingUniforms> VirtualShadowSampling;
 StructuredBuffer<float2> VirtualShadowDynamicResolutionBias;
 

@@ -30,9 +30,9 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
     {
         private readonly D3D12TestCompute _compute = new(compiler);
         private readonly uint[] _view = View();
-        private uint[] _table = new uint[16];
+        private uint[] _table = new uint[4];
         private uint[] _pages = [uint.MaxValue, uint.MaxValue];
-        private uint[] _metadata = new uint[8];
+        private uint[] _metadata = new uint[16];
         private uint[] _lists = new uint[12];
         private uint _frame;
 
@@ -55,9 +55,9 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
                 uint[][] initialized = _compute.Execute("vsm_state_init.slang", "InitializeVirtualShadowState", new(1, 1, 1),
                 [
                     new BufferInput("StateInit", [4, 2, 4, 0, 0, 0], ResourceBindingType.ConstantBuffer, 0),
-                    new BufferInput("ShadowPageTable", _table, ResourceBindingType.BufferUav, 16),
+                    new BufferInput("ShadowPageTable", _table, ResourceBindingType.BufferUav, 4),
                     new BufferInput("PhysicalPageOwners", _pages, ResourceBindingType.BufferUav, 4),
-                    new BufferInput("PageMetadata", _metadata, ResourceBindingType.BufferUav, 16),
+                    new BufferInput("PageMetadata", _metadata, ResourceBindingType.BufferUav, 32),
                     new BufferInput("RequestedShadowPages", requests, ResourceBindingType.BufferUav, 4),
                     new BufferInput("RequestedPageFlags", new uint[4], ResourceBindingType.BufferUav, 4),
                     new BufferInput("RequestedPageCount", [0], ResourceBindingType.BufferUav, 4),
@@ -76,9 +76,9 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
                 new BufferInput("RequestedPageIndices", [page ?? 0u], ResourceBindingType.BufferSrv, 4),
                 new BufferInput("RequestedPageCount", [requestCount], ResourceBindingType.BufferSrv, 4),
                 new BufferInput("RequestedPageFlags", [1, 1, 1, 1], ResourceBindingType.BufferSrv, 4),
-                new BufferInput("ShadowPageTable", _table, ResourceBindingType.BufferUav, 16),
+                new BufferInput("ShadowPageTable", _table, ResourceBindingType.BufferUav, 4),
                 new BufferInput("PhysicalPageOwners", _pages, ResourceBindingType.BufferUav, 4),
-                new BufferInput("PageMetadata", _metadata, ResourceBindingType.BufferUav, 16),
+                new BufferInput("PageMetadata", _metadata, ResourceBindingType.BufferUav, 32),
                 new BufferInput("ShadowPageLists", _lists, ResourceBindingType.BufferUav, 4),
                 new BufferInput("ActivePhysicalPages", new uint[8], ResourceBindingType.BufferUav, 16),
                 new BufferInput("ActivePhysicalPageCount", [0], ResourceBindingType.BufferUav, 4),
@@ -91,9 +91,9 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
             [
                 new BufferInput("ActivePhysicalPages", allocated[4], ResourceBindingType.BufferSrv, 16),
                 new BufferInput("CompletePageCount", allocated[5], ResourceBindingType.BufferSrv, 4),
-                new BufferInput("CompletedShadowPageTable", allocated[0], ResourceBindingType.BufferUav, 16),
+                new BufferInput("CompletedShadowPageTable", allocated[0], ResourceBindingType.BufferUav, 4),
                 new BufferInput("GeometryWorkStatus", [0], ResourceBindingType.BufferSrv, 0),
-                new BufferInput("CompletedPageMetadata", allocated[2], ResourceBindingType.BufferUav, 16),
+                new BufferInput("CompletedPageMetadata", allocated[2], ResourceBindingType.BufferUav, 32),
             ]);
             _table = completed[0];
             _metadata = completed[1];
@@ -107,17 +107,17 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
                 [
                     new BufferInput("PagePool", [2, 4, _frame, phase, 4, 3, 1, 1], ResourceBindingType.ConstantBuffer, 0),
                     new BufferInput("ShadowViews", _view, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
-                    new BufferInput("ShadowPageTable", _table, ResourceBindingType.BufferSrv, 16),
+                    new BufferInput("ShadowPageTable", _table, ResourceBindingType.BufferUav, 4),
                     new BufferInput("RequestedShadowPages", requests, ResourceBindingType.BufferSrv, 4),
                     new BufferInput("RequestedPageCount", [requestCount], ResourceBindingType.BufferSrv, 4),
                     new BufferInput("PageRequestDispatchArgs", new uint[4], ResourceBindingType.BufferUav, 0),
                     new BufferInput("PhysicalPageOwners", _pages, ResourceBindingType.BufferUav, 4),
-                    new BufferInput("PageMetadata", _metadata, ResourceBindingType.BufferUav, 16),
+                    new BufferInput("PageMetadata", _metadata, ResourceBindingType.BufferUav, 32),
                     new BufferInput("ShadowPageLists", _lists, ResourceBindingType.BufferUav, 4),
                     new BufferInput("AllocatedPageHierarchy", new uint[3], ResourceBindingType.BufferUav, 4),
                     new BufferInput("AllocatedPageRectBounds", [uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
                 ]);
-                _pages = values[1]; _metadata = values[2]; _lists = values[3];
+                _table = values[0]; _pages = values[2]; _metadata = values[3]; _lists = values[4];
             }
         }
 
@@ -125,8 +125,8 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
         {
             uint[][] result = _compute.ExecuteSource(Sampling, "Observe", new(1, 1, 1),
                 [(new uint[8], ResourceBindingType.BufferSrv, 8), (_view, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
-                 (_table, ResourceBindingType.BufferSrv, 16), (new uint[6], ResourceBindingType.BufferUav, 8)],
-                new SampledImage(16, 16, Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.75f), 256).ToArray(), 3));
+                 (_table, ResourceBindingType.BufferSrv, 4), (new uint[6], ResourceBindingType.BufferUav, 8)],
+                new SampledImage(16, 16, Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.75f), 256).ToArray(), 3, ViewDimension: TextureViewDimension.Texture2DArray));
             return result[0].Select(BitConverter.UInt32BitsToSingle).ToArray();
         }
 
@@ -148,8 +148,8 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
     private const string Sampling = """
         #include "vsm_sampling.slang"
         StructuredBuffer<VirtualShadowMapParameters> Views;
-        StructuredBuffer<uint4> Pages;
-        Texture2D<uint> Atlas;
+        StructuredBuffer<uint> Pages;
+        Texture2DArray<uint> Atlas;
         RWStructuredBuffer<float2> Observations;
         [shader("compute")]
         [numthreads(4,1,1)]
@@ -159,7 +159,7 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
             float2 uv = (float2(id.x & 1u, id.x >> 1u) + .5) / 2.0;
             float3 position = float3(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, .5);
             float visibility;
-            bool valid = TrySampleSpotVirtualShadowMap(Views, Pages, Atlas, 0u, 0.0,
+            bool valid = TrySampleSpotVirtualShadowMap(Views, Pages, Atlas, 0u, 0.0, .001,
                 position, position + float3(.001,0,0), position + float3(0,.001,0),
                 1u,1u,0.0,0.0,float3(0,0,1),visibility);
             Observations[id.x] = float2(valid ? 1.0 : 0.0, visibility);

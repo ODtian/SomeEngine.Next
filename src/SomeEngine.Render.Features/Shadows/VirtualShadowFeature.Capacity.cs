@@ -48,9 +48,8 @@ public sealed partial class VirtualShadowFeature
 
     private void GrowPageSamplingStorage(ref RenderGraphEdit edit, uint entries)
     {
-        GrowLightBuffer(ref edit, _residentPages, (ulong)entries * 2u * sizeof(uint), "Virtual shadow completed resident ancestors");
         if (!_shadowMap.Settings.PrefilteredDistantEnabled) return;
-        GrowLightBuffer(ref edit, _prefilterPreviousPages, (ulong)entries * 32u, "Virtual shadow prefilter page histories");
+        GrowLightBuffer(ref edit, _prefilterPreviousPages, (ulong)entries * 2u * sizeof(uint), "Virtual shadow prefilter page histories");
         GrowLightBuffer(ref edit, _prefilterPreviousMasks, (ulong)entries * 16u, "Virtual shadow prefilter receiver histories");
         _prefilterEntryCapacity = entries;
         _prefilterHistoryReady = false;

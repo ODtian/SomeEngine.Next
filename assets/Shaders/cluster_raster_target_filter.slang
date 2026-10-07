@@ -1,3 +1,4 @@
+#include "vsm_page_entry.slang"
 #ifndef CLUSTER_RASTER_TARGET_FILTER_SLANG
 #define CLUSTER_RASTER_TARGET_FILTER_SLANG
 
@@ -11,10 +12,10 @@
 #ifndef CLUSTER_TARGET_BOUNDS_ONLY
 #ifndef CLUSTER_RASTER_TARGET_METADATA_DECLARED
 #define CLUSTER_RASTER_TARGET_METADATA_DECLARED 1
-StructuredBuffer<uint4> RasterTargetPageMetadata;
+StructuredBuffer<VirtualShadowPageMetadata> RasterTargetPageMetadata;
 #endif
-Texture2DArray<float2> RasterTargetCurrentHiZ;
-Texture2DArray<float2> RasterTargetPreviousHiZ;
+Texture2DArray<float> RasterTargetCurrentHiZ;
+Texture2DArray<float> RasterTargetPreviousHiZ;
 #endif
 
 uint2 ClusterTargetPixelMin(float2 uv, ClusterViewUniforms view)
@@ -227,7 +228,7 @@ bool ClusterTargetCropRasterWindow(
                     (depthCacheClass == 1u || ClusterTargetReceiverAccepts(target, localPage, firstPixel, lastPixel)))
                 {
 #ifndef CLUSTER_TARGET_BOUNDS_ONLY
-                    if (depthCacheClass == 1u && (RasterTargetPageMetadata[physicalPage].w & 8u) == 0u) continue;
+                    if (depthCacheClass == 1u && (RasterTargetPageMetadata[physicalPage].Flags & 8u) == 0u) continue;
 #endif
                     acceptedFirst = min(acceptedFirst, localPage);
                     acceptedLast = max(acceptedLast, localPage);
@@ -253,7 +254,7 @@ bool ClusterTargetEntryValid(
 }
 
 float ClusterTargetHiZMax(
-    Texture2DArray<float2> source,
+    Texture2DArray<float> source,
     ClusterRasterTargetView target,
     uint physicalPage,
     uint2 localPage,
@@ -275,14 +276,14 @@ float ClusterTargetHiZMax(
     uint2 p1 = uint2(p3.x, p0.y);
     uint2 p2 = uint2(p0.x, p3.y);
 
-    float2 depth = max(
-        max(
-            source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p0, mipSize, target.PhysicalPagesPerRow), mip)),
-            source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p1, mipSize, target.PhysicalPagesPerRow), mip))),
-        max(
-            source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p2, mipSize, target.PhysicalPagesPerRow), mip)),
-            source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p3, mipSize, target.PhysicalPagesPerRow), mip))));
-    return depthCacheClass == 1u ? depth.x : depth.y;
+    uint layerOffset = depthCacheClass == 1u ? target.StaticHiZLayerOffset : 0u;
+    uint3 c0 = CalculateDepthPageHiZPixel(physicalPage, p0, mipSize, target.PhysicalPagesPerRow);
+    uint3 c1 = CalculateDepthPageHiZPixel(physicalPage, p1, mipSize, target.PhysicalPagesPerRow);
+    uint3 c2 = CalculateDepthPageHiZPixel(physicalPage, p2, mipSize, target.PhysicalPagesPerRow);
+    uint3 c3 = CalculateDepthPageHiZPixel(physicalPage, p3, mipSize, target.PhysicalPagesPerRow);
+    c0.z += layerOffset; c1.z += layerOffset; c2.z += layerOffset; c3.z += layerOffset;
+    return max(max(source.Load(int4(c0, mip)), source.Load(int4(c1, mip))),
+        max(source.Load(int4(c2, mip)), source.Load(int4(c3, mip))));
 }
 
 bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
@@ -370,7 +371,7 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
                     return false;
                 // Only allocation of the same world page from completed whole depth
                 // carries prior history. Newly assigned tiles may contain unrelated HiZ.
-                if (usePrevious && (RasterTargetPageMetadata[physicalPage].w & 2u) == 0u)
+                if (usePrevious && (RasterTargetPageMetadata[physicalPage].Flags & 2u) == 0u)
                     return false;
 
                 uint2 pageOrigin = localPage * target.PageSize;

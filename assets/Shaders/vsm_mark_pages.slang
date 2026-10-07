@@ -61,19 +61,21 @@ uint PublishVirtualShadowPage(
     return tableIndex;
 }
 
-void PublishProjectedShadowView(
+bool PublishProjectedShadowViewPixels(
     uint viewIndex,
     uint mipLevel,
-    float3 worldPosition)
+    float3 worldPosition, out float2 footprintUV, out float2 footprintBorder)
 {
+    footprintUV = 0.0.xx;
+    footprintBorder = 0.0.xx;
     if (viewIndex >= PageDemand.ViewCount)
-        return;
+        return false;
     VirtualShadowMapParameters shadowView = ShadowViews[viewIndex];
     mipLevel = clamp(mipLevel, VirtualShadowFirstMip(shadowView), shadowView.MipLevelCount - 1u);
     float3 shadowNdc;
     float2 shadowUv;
     if (!ProjectVirtualShadowPosition(shadowView, worldPosition, shadowNdc, shadowUv))
-        return;
+        return false;
 
     uint mipResolution = VirtualShadowMipResolution(shadowView, mipLevel);
     float2 borderPixels = max(PageDemand.PageDilationBorderPages, shadowView.PageDilationBorder) * float(shadowView.PageSize);
@@ -96,6 +98,8 @@ void PublishProjectedShadowView(
             : 1.0.xx;
         borderPixels += uvBorder * float(mipResolution);
     }
+    footprintUV = shadowUv;
+    footprintBorder = borderPixels / float(mipResolution);
     // Material normal offsets and filtering can sample across both page and
     // receiver-cell boundaries. Mark the complete footprint, independent of
     // a material's vertex layout or its choice of shading normal.
@@ -112,6 +116,38 @@ void PublishProjectedShadowView(
         uint tableIndex = PublishVirtualShadowPage(shadowView, mipLevel, int2(page));
         if (tableIndex != 0xFFFFFFFFu && (shadowView.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
             MarkVirtualShadowReceiverRectangle(tableIndex, page, firstPixel, lastPixel, shadowView.PageSize);
+    }
+    return true;
+}
+
+void PublishProjectedShadowView(uint viewIndex, uint mipLevel, float3 worldPosition)
+{
+    float2 uv, border;
+    if (!PublishProjectedShadowViewPixels(viewIndex, mipLevel, worldPosition, uv, border)) return;
+    VirtualShadowMapParameters view = ShadowViews[viewIndex];
+    if (view.LightKind != VSM_LIGHT_POINT ||
+        (all(uv - border >= 0.0) && all(uv + border < 1.0))) return;
+    float3 axisX = normalize(float3(view.LightViewProjection[0][0],
+        view.LightViewProjection[1][0], view.LightViewProjection[2][0]));
+    float3 axisY = normalize(float3(view.LightViewProjection[0][1],
+        view.LightViewProjection[1][1], view.LightViewProjection[2][1]));
+    float3 axisW = normalize(float3(view.LightViewProjection[0][3],
+        view.LightViewProjection[1][3], view.LightViewProjection[2][3]));
+    uint firstFace = viewIndex - view.FaceIndex;
+    float distance = length(worldPosition - view.LightPosition);
+    [unroll]
+    for (uint corner = 0u; corner < 4u; corner++)
+    {
+        float2 edgeUV = uv + border * float2((corner & 1u) != 0u ? 1.0 : -1.0,
+            (corner & 2u) != 0u ? 1.0 : -1.0);
+        if (all(edgeUV >= 0.0) && all(edgeUV < 1.0)) continue;
+        float2 ndc = edgeUV * float2(2.0, -2.0) + float2(-1.0, 1.0);
+        float3 direction = normalize(axisW + ndc.x * axisX + ndc.y * axisY);
+        uint face = VirtualShadowPointFace(direction);
+        if (face == view.FaceIndex) continue;
+        float2 adjacentUV, adjacentBorder;
+        PublishProjectedShadowViewPixels(firstFace + face, mipLevel,
+            view.LightPosition + direction * distance, adjacentUV, adjacentBorder);
     }
 }
 
@@ -262,5 +298,5 @@ void MarkVirtualShadowReceiverPixel(uint2 pixel, uint requiredPrimaryFlags = 0u,
 [numthreads(8,8,1)]
 void MarkVirtualShadowPages(uint3 pixel : SV_DispatchThreadID)
 {
-    MarkVirtualShadowReceiverPixel(pixel.xy);
+    MarkVirtualShadowReceiverPixel(pixel.xy * 2u);
 }

@@ -87,22 +87,11 @@ static const uint VSM_PAGE_LOCKED = 0xFFFFFFFFu;
 static const uint VSM_PAGE_RECEIVER_DEPTH = 0x80000000u;
 static const uint VSM_PAGE_MASKED = 1u;
 static const uint VSM_PAGE_PRIOR_HIZ = 2u;
+#include "vsm_page_entry.slang"
+
 #ifndef VSM_WHOLE_PAGE_SAMPLING
 StructuredBuffer<uint2> VirtualShadowReceiverMasks;
 #endif
-
-uint PackVirtualShadowPage(uint pageEntry)
-{
-    return pageEntry;
-}
-
-bool DecodeVirtualShadowPage(uint packedEntry, out uint atlasPage)
-{
-    atlasPage = packedEntry > 0u && packedEntry != VSM_PAGE_LOCKED
-        ? packedEntry - 1u
-        : 0u;
-    return packedEntry != VSM_PAGE_UNMAPPED && packedEntry != VSM_PAGE_LOCKED;
-}
 
 uint VirtualShadowPagesPerRow(VirtualShadowMapParameters parameters)
 {
@@ -144,7 +133,8 @@ uint VirtualShadowMipOffset(
 
 uint VirtualShadowPageTableEntriesPerView(VirtualShadowMapParameters parameters)
 {
-    return VirtualShadowMipOffset(parameters, parameters.MipLevelCount);
+    return (parameters.Flags & VSM_VIEW_SINGLE_PAGE) != 0u ? 1u :
+        VirtualShadowMipOffset(parameters, parameters.MipLevelCount);
 }
 
 uint VirtualShadowPageHierarchyMipWordCount(
@@ -224,6 +214,7 @@ uint VirtualShadowPageTableIndex(
     uint mipLevel,
     uint2 localPage)
 {
+    if ((parameters.Flags & VSM_VIEW_SINGLE_PAGE) != 0u) return parameters.PageTableOffset;
     int2 worldPage = VirtualShadowWorldPage(parameters, mipLevel, localPage);
     uint2 slot = VirtualShadowTableSlot(parameters, mipLevel, worldPage);
     uint dimension = VirtualShadowMipPagesPerRow(parameters, mipLevel);
@@ -263,6 +254,20 @@ uint2 VirtualShadowMipLocalPage(
     return mipPixel >> firstbithigh(parameters.PageSize);
 }
 
+uint VirtualShadowViewFromPageTableIndex(StructuredBuffer<VirtualShadowMapParameters> views,
+    uint viewCount, uint tableIndex)
+{
+    uint first = 0u;
+    uint last = viewCount;
+    while (first < last)
+    {
+        uint middle = first + ((last - first) >> 1u);
+        if (views[middle].PageTableOffset <= tableIndex) first = middle + 1u;
+        else last = middle;
+    }
+    return first == 0u ? viewCount : first - 1u;
+}
+
 bool VirtualShadowDecodePageTableIndex(
     VirtualShadowMapParameters parameters,
     uint tableIndex,
@@ -274,6 +279,12 @@ bool VirtualShadowDecodePageTableIndex(
         mipLevel = 0u;
         localPage = 0u.xx;
         return false;
+    }
+    if ((parameters.Flags & VSM_VIEW_SINGLE_PAGE) != 0u)
+    {
+        mipLevel = parameters.MipLevelCount - 1u;
+        localPage = 0u.xx;
+        return tableIndex == parameters.PageTableOffset;
     }
     uint localIndex = tableIndex - parameters.PageTableOffset;
     [loop]
@@ -302,9 +313,9 @@ bool VirtualShadowDecodePageTableIndex(
     return false;
 }
 
-bool IsVirtualShadowPageTag(uint4 entry, int2 worldPage)
+bool IsVirtualShadowPageTag(uint entry, int2 worldPage)
 {
-    return asint(entry.y) == worldPage.x && asint(entry.z) == worldPage.y;
+    return VirtualShadowPageHasOwnDepth(entry);
 }
 
 bool ProjectVirtualShadowPosition(
@@ -343,7 +354,7 @@ bool ProjectVirtualShadowFootprintPosition(
 
 float ReadVirtualShadowReverseDepth(
     VirtualShadowMapParameters parameters,
-    Texture2D<uint> atlas,
+    Texture2DArray<uint> atlas,
     uint atlasPage,
     uint2 pagePixel)
 {
@@ -351,11 +362,11 @@ float ReadVirtualShadowReverseDepth(
         atlasPage & (parameters.PhysicalPagesPerRow - 1u),
         atlasPage >> firstbithigh(parameters.PhysicalPagesPerRow));
     uint2 atlasPixel = atlasPageCoord * parameters.PageSize + pagePixel;
-    return asfloat(atlas.Load(int3(atlasPixel, 0)));
+    return asfloat(atlas.Load(int4(atlasPixel, 0, 0)));
 }
 
 float ReadVirtualShadowDepth(VirtualShadowMapParameters parameters,
-    Texture2D<uint> atlas, uint atlasPage, uint2 pagePixel)
+    Texture2DArray<uint> atlas, uint atlasPage, uint2 pagePixel)
 {
     return 1.0 - ReadVirtualShadowReverseDepth(parameters, atlas, atlasPage, pagePixel);
 }
@@ -395,22 +406,22 @@ float2 RotateVirtualShadowDiskSample(
 
 bool TryResolveVirtualShadowPage(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
+    StructuredBuffer<uint> pageTable,
     uint mipLevel,
     uint2 localPage,
     out uint atlasPage)
 {
     int2 worldPage = VirtualShadowWorldPage(parameters, mipLevel, localPage);
-    uint4 entry = pageTable[
+    uint entry = pageTable[
         VirtualShadowPageTableIndex(parameters, mipLevel, localPage)];
     return IsVirtualShadowPageTag(entry, worldPage) &&
-        entry.w == parameters.CacheGeneration &&
-        DecodeVirtualShadowPage(entry.x, atlasPage);
+        (entry & VSM_PAGE_PARTIAL_DEPTH) == 0u &&
+        DecodeVirtualShadowPage(entry, parameters.PhysicalPagesPerRow, atlasPage);
 }
 
 bool TryResolveVirtualShadowPixel(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
+    StructuredBuffer<uint> pageTable,
     uint mipLevel,
     uint2 mipPixel,
     out uint atlasPage,
@@ -418,14 +429,14 @@ bool TryResolveVirtualShadowPixel(
 {
     uint2 localPage = mipPixel >> firstbithigh(parameters.PageSize);
     uint tableIndex = VirtualShadowPageTableIndex(parameters, mipLevel, localPage);
-    uint4 entry = pageTable[tableIndex];
-    wholePage = entry.w == parameters.CacheGeneration;
+    uint entry = pageTable[tableIndex];
+    wholePage = (entry & VSM_PAGE_PARTIAL_DEPTH) == 0u;
     if (!IsVirtualShadowPageTag(entry, VirtualShadowWorldPage(parameters, mipLevel, localPage)) ||
-        !DecodeVirtualShadowPage(entry.x, atlasPage))
+        !DecodeVirtualShadowPage(entry, parameters.PhysicalPagesPerRow, atlasPage))
         return false;
     if (wholePage) return true;
 #ifndef VSM_WHOLE_PAGE_SAMPLING
-    if (entry.w == (parameters.CacheGeneration | VSM_PAGE_RECEIVER_DEPTH))
+    if ((entry & VSM_PAGE_PARTIAL_DEPTH) != 0u)
         return true;
 #endif
     return false;
@@ -433,8 +444,8 @@ bool TryResolveVirtualShadowPixel(
 
 bool TryReadVirtualShadowMipReverseDepth(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     uint mipLevel,
     uint2 mipPixel,
     out float storedDepth)
@@ -456,7 +467,7 @@ bool TryReadVirtualShadowMipReverseDepth(
 }
 
 bool TryReadVirtualShadowMipDepth(VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable, Texture2DArray<uint> atlas,
     uint mipLevel, uint2 mipPixel, out float storedDepth)
 {
     float reverseDepth;
@@ -467,8 +478,8 @@ bool TryReadVirtualShadowMipDepth(VirtualShadowMapParameters parameters,
 }
 
 bool TryResolveVirtualShadowResidentPixel(
-    VirtualShadowMapParameters parameters, StructuredBuffer<uint4> pageTable,
-    StructuredBuffer<uint2> residentPages, uint firstMip, float2 uv,
+    VirtualShadowMapParameters parameters, StructuredBuffer<uint> pageTable,
+    StructuredBuffer<uint> residentPages, uint firstMip, float2 uv,
     out uint resolvedMip, out uint atlasPage, out bool wholePage)
 {
     uint mipCount = max(parameters.MipLevelCount, 1u);
@@ -478,17 +489,17 @@ bool TryResolveVirtualShadowResidentPixel(
         uint resolution = VirtualShadowMipResolution(parameters, mip);
         uint2 pixel = min(uint2(uv * float(resolution)), resolution - 1u);
         uint2 localPage = pixel / parameters.PageSize;
-        uint2 source = residentPages[VirtualShadowPageTableIndex(parameters, mip, localPage)];
-        if (source.x == 0u) break;
-        resolvedMip = mip + source.y;
+        uint source = pageTable[VirtualShadowPageTableIndex(parameters, mip, localPage)];
+        if ((source & VSM_PAGE_ANY_DEPTH) == 0u) { mip++; continue; }
+        resolvedMip = mip + VirtualShadowPageLevelOffset(source);
         resolution = VirtualShadowMipResolution(parameters, resolvedMip);
         pixel = min(uint2(uv * float(resolution)), resolution - 1u);
-        uint sourceIndex = source.x - 1u;
-        uint4 entry = pageTable[sourceIndex];
-        wholePage = entry.w == parameters.CacheGeneration;
-        bool completed = wholePage || entry.w == (parameters.CacheGeneration | VSM_PAGE_RECEIVER_DEPTH);
+        uint sourceIndex = VirtualShadowPageTableIndex(parameters, resolvedMip, pixel / parameters.PageSize);
+        uint entry = pageTable[sourceIndex];
+        wholePage = (entry & VSM_PAGE_PARTIAL_DEPTH) == 0u;
+        bool completed = wholePage || (entry & VSM_PAGE_PARTIAL_DEPTH) != 0u;
         if (completed && IsVirtualShadowPageTag(entry, VirtualShadowWorldPage(parameters, resolvedMip, pixel / parameters.PageSize)) &&
-            DecodeVirtualShadowPage(entry.x, atlasPage))
+            DecodeVirtualShadowPage(entry, parameters.PhysicalPagesPerRow, atlasPage))
         {
             if (wholePage) return true;
 #ifndef VSM_WHOLE_PAGE_SAMPLING
@@ -504,7 +515,7 @@ bool TryResolveVirtualShadowResidentPixel(
 }
 
 bool TryReadVirtualShadowResidentReverseDepth(VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable, StructuredBuffer<uint2> residentPages, Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
     uint firstMip, float2 uv, out float storedDepth, out uint resolvedMip)
 {
     uint page;
@@ -518,7 +529,7 @@ bool TryReadVirtualShadowResidentReverseDepth(VirtualShadowMapParameters paramet
 }
 
 bool TryReadVirtualShadowResidentDepth(VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable, StructuredBuffer<uint2> residentPages, Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
     uint firstMip, float2 uv, out float storedDepth, out uint resolvedMip)
 {
     float reverseDepth;
@@ -529,13 +540,13 @@ bool TryReadVirtualShadowResidentDepth(VirtualShadowMapParameters parameters,
 }
 
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED
-StructuredBuffer<uint2> VirtualShadowResidentPages;
+StructuredBuffer<uint> VirtualShadowResidentPages;
 #endif
 
 bool TryReadVirtualShadowReverseDepthAtOrCoarser(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     uint firstMip,
     float2 uv,
     out float storedDepth,
@@ -565,7 +576,7 @@ bool TryReadVirtualShadowReverseDepthAtOrCoarser(
 }
 
 bool TryReadVirtualShadowDepthAtOrCoarser(VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas, uint firstMip, float2 uv,
+    StructuredBuffer<uint> pageTable, Texture2DArray<uint> atlas, uint firstMip, float2 uv,
     out float storedDepth, out uint resolvedMip)
 {
     float reverseDepth;
@@ -721,7 +732,7 @@ struct VirtualShadowFilterContext
 
 VirtualShadowFilterContext BuildVirtualShadowFilterContext(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
+    StructuredBuffer<uint> pageTable,
     uint firstMip,
     float2 uv)
 {
@@ -769,8 +780,8 @@ VirtualShadowFilterContext BuildVirtualShadowFilterContext(
 
 bool TryReadVirtualShadowDepthCached(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     VirtualShadowFilterContext context,
     float2 uv,
     out float storedDepth,
@@ -806,8 +817,8 @@ bool TryReadVirtualShadowDepthCached(
 
 bool TryReadVirtualShadowDepthCached(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     VirtualShadowFilterContext context,
     float2 uv,
     out float storedDepth)
@@ -819,8 +830,8 @@ bool TryReadVirtualShadowDepthCached(
 
 bool TryReadVirtualShadowFilterDepth(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     VirtualShadowFilterContext context,
     uint2 pixel,
     uint resolution,
@@ -832,7 +843,7 @@ bool TryReadVirtualShadowFilterDepth(
     if (insidePage)
     {
         uint2 atlasPixel = atlasOrigin + (pixel & (parameters.PageSize - 1u));
-        storedDepth = 1.0 - asfloat(atlas.Load(int3(atlasPixel, 0)));
+        storedDepth = 1.0 - asfloat(atlas.Load(int4(atlasPixel, 0, 0)));
         texelCenter = (float2(pixel) + 0.5) / float(resolution);
         return true;
     }
@@ -843,8 +854,8 @@ bool TryReadVirtualShadowFilterDepth(
 
 bool TryReadVirtualShadowFilterDepth(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     VirtualShadowFilterContext context,
     uint2 pixel,
     uint resolution,
@@ -915,8 +926,8 @@ float VirtualShadowReceiverDepthAtTexel(
 
 bool TryFilterVirtualShadowPage(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     float3 ndc,
     float2 uv,
     VirtualShadowFilterContext context,
@@ -1017,8 +1028,8 @@ bool TryFilterVirtualShadowPage(
 
 bool TrySampleVirtualShadowMapFilteredProjected(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     float3 ndc,
     float2 uv,
     uint firstMip,
@@ -1046,7 +1057,7 @@ bool TrySampleVirtualShadowMapFilteredProjected(
 }
 
 float FilterVirtualShadowPage(
-    VirtualShadowMapParameters parameters, StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
+    VirtualShadowMapParameters parameters, StructuredBuffer<uint> pageTable, Texture2DArray<uint> atlas,
     float3 ndc, float2 uv, VirtualShadowFilterContext context,
     uint blockerSampleCount, uint filterSampleCount, float blockerSearchRadiusTexels,
     float maxFilterRadiusTexels, float2 receiverDepthGradient = 0.0.xx)
@@ -1059,7 +1070,7 @@ float FilterVirtualShadowPage(
 }
 
 float SampleVirtualShadowMapFilteredProjected(
-    VirtualShadowMapParameters parameters, StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
+    VirtualShadowMapParameters parameters, StructuredBuffer<uint> pageTable, Texture2DArray<uint> atlas,
     float3 ndc, float2 uv, uint firstMip,
     uint blockerSampleCount, uint filterSampleCount, float blockerSearchRadiusTexels,
     float maxFilterRadiusTexels, float2 receiverDepthGradient = 0.0.xx)
@@ -1073,8 +1084,8 @@ float SampleVirtualShadowMapFilteredProjected(
 
 float SampleVirtualShadowMapFiltered(
     VirtualShadowMapParameters parameters,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     float3 worldPosition,
     uint firstMip,
     uint blockerSampleCount,
@@ -1108,7 +1119,7 @@ Texture2D<float> VirtualShadowPrefilteredAtlas;
 #endif
 
 bool TryReadVirtualShadowDirectionalResidentReverseDepth(StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pageTable, StructuredBuffer<uint2> residentPages, Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
     uint requestedViewIndex, float2 uv, out float storedDepth, out uint sourceViewIndex)
 {
     VirtualShadowMapParameters requested = views[requestedViewIndex];
@@ -1120,9 +1131,9 @@ bool TryReadVirtualShadowDirectionalResidentReverseDepth(StructuredBuffer<Virtua
         VirtualShadowMapParameters current = views[requestedViewIndex + offset];
         int2 localPage = offset == 0u ? int2(basePage) : VirtualShadowCoarseClipmapPage(basePage, requested, current, offset);
         if (any(localPage < 0) || any(uint2(localPage) >= VirtualShadowPagesPerRow(current))) break;
-        uint2 reference = residentPages[VirtualShadowPageTableIndex(current, 0u, uint2(localPage))];
-        if (reference.x == 0u) break;
-        uint sourceOffset = offset + reference.y;
+        uint reference = pageTable[VirtualShadowPageTableIndex(current, 0u, uint2(localPage))];
+        if ((reference & VSM_PAGE_ANY_DEPTH) == 0u) { offset++; continue; }
+        uint sourceOffset = offset + VirtualShadowPageLevelOffset(reference);
         VirtualShadowMapParameters source = views[requestedViewIndex + sourceOffset];
         int2 sourcePage = sourceOffset == 0u ? int2(basePage) : VirtualShadowCoarseClipmapPage(basePage, requested, source, sourceOffset);
         float4 transform = VirtualShadowClipmapScaleBias(requested, source, sourceOffset);
@@ -1144,7 +1155,7 @@ bool TryReadVirtualShadowDirectionalResidentReverseDepth(StructuredBuffer<Virtua
 }
 
 bool TryReadVirtualShadowDirectionalResidentDepth(StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pageTable, StructuredBuffer<uint2> residentPages, Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
     uint requestedViewIndex, float2 uv, out float storedDepth, out uint sourceViewIndex)
 {
     float reverseDepth;
@@ -1156,8 +1167,8 @@ bool TryReadVirtualShadowDirectionalResidentDepth(StructuredBuffer<VirtualShadow
 
 bool TrySampleDirectionalVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     uint firstView,
     uint clipmapLevelCount,
     float dynamicResolutionLodBias,
@@ -1198,9 +1209,9 @@ bool TrySampleDirectionalVirtualShadowMap(
         VirtualShadowMapParameters current = views[firstView + firstLevel + offset];
         int2 localPage = offset == 0u ? int2(basePage) : VirtualShadowCoarseClipmapPage(basePage, requested, current, offset);
         if (any(localPage < 0) || any(uint2(localPage) >= VirtualShadowPagesPerRow(current))) break;
-        uint2 reference = VirtualShadowResidentPages[VirtualShadowPageTableIndex(current, 0u, uint2(localPage))];
-        if (reference.x == 0u) break;
-        uint sourceOffset = offset + reference.y;
+        uint reference = VirtualShadowResidentPages[VirtualShadowPageTableIndex(current, 0u, uint2(localPage))];
+        if ((reference & VSM_PAGE_ANY_DEPTH) == 0u) { offset++; continue; }
+        uint sourceOffset = offset + VirtualShadowPageLevelOffset(reference);
         VirtualShadowMapParameters source = views[firstView + firstLevel + sourceOffset];
         int2 sourcePage = sourceOffset == 0u ? int2(basePage) : VirtualShadowCoarseClipmapPage(basePage, requested, source, sourceOffset);
         float4 transform = VirtualShadowClipmapScaleBias(requested, source, sourceOffset);
@@ -1244,8 +1255,8 @@ bool TrySampleDirectionalVirtualShadowMap(
 
 float SampleDirectionalVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     uint firstView,
     uint clipmapLevelCount,
     float dynamicResolutionLodBias,
@@ -1276,8 +1287,8 @@ uint VirtualShadowPointFace(float3 lightToReceiver)
 
 bool TrySamplePointVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     uint firstView,
     float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition,
@@ -1310,8 +1321,8 @@ bool TrySamplePointVirtualShadowMap(
 
 float SamplePointVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     uint firstView,
     float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition,
@@ -1331,8 +1342,8 @@ float SamplePointVirtualShadowMap(
 
 bool TrySampleSpotVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     uint viewIndex,
     float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition,
@@ -1363,8 +1374,8 @@ bool TrySampleSpotVirtualShadowMap(
 
 float SampleSpotVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint4> pageTable,
-    Texture2D<uint> atlas,
+    StructuredBuffer<uint> pageTable,
+    Texture2DArray<uint> atlas,
     uint viewIndex,
     float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition,
@@ -1385,7 +1396,7 @@ float SampleSpotVirtualShadowMap(
 // Float factors expose visibility. Callers that need to
 // distinguish missing/unfinished depth use TrySample* and retain its boolean.
 float SampleDirectionalVirtualShadowMap(
-    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pageTable, Texture2DArray<uint> atlas,
     uint firstView, uint clipmapLevelCount, float dynamicResolutionLodBias,
     float3 worldPosition, float3 worldPositionDx, float3 worldPositionDy,
     uint blockerSampleCount, uint filterSampleCount, float blockerSearchRadiusTexels,
@@ -1400,7 +1411,7 @@ float SampleDirectionalVirtualShadowMap(
 }
 
 float SamplePointVirtualShadowMap(
-    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pageTable, Texture2DArray<uint> atlas,
     uint firstView, float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition, float3 worldPositionDx, float3 worldPositionDy,
     uint blockerSampleCount, uint filterSampleCount, float blockerSearchRadiusTexels,
@@ -1414,7 +1425,7 @@ float SamplePointVirtualShadowMap(
 }
 
 float SampleSpotVirtualShadowMap(
-    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint4> pageTable, Texture2D<uint> atlas,
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pageTable, Texture2DArray<uint> atlas,
     uint viewIndex, float dynamicResolutionLodBias, float nominalWorldPixelRadius,
     float3 worldPosition, float3 worldPositionDx, float3 worldPositionDy,
     uint blockerSampleCount, uint filterSampleCount, float blockerSearchRadiusTexels,

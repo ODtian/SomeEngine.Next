@@ -14,7 +14,7 @@ struct VirtualShadowRasterWorkUniforms
     uint InstanceGroupCount;
     uint HasPreviousHistory;
     uint WorkFeedbackEnabled;
-    uint Pad1;
+    uint StaticHiZLayerOffset;
 };
 
 #endif

@@ -7,7 +7,7 @@ namespace SomeEngine.Render.Shadows;
 internal sealed class VirtualShadowPageCacheResources : IDisposable
 {
     internal const uint UnownedPage = uint.MaxValue;
-    internal const int PageMetadataStride = 16;
+    internal const int PageMetadataStride = VirtualShadowPageMetadata.SizeInBytes;
 
     private readonly IGraphicsBackend _backend;
     private readonly Buffer _pageMetadata;

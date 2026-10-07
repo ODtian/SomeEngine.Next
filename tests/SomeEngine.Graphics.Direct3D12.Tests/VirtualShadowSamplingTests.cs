@@ -71,7 +71,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
         float distanceCentimeters, float qualityBias, float translation, int firstLevel, int selectedLevel)
     {
         VirtualShadowView[] views = new VirtualShadowView[4];
-        uint[] pages = new uint[4 * 16 * 4];
+        uint[] pages = new uint[4 * 16];
         uint[] pixels = new uint[512 * 128];
         for (int level = 0; level < views.Length; level++)
         {
@@ -85,10 +85,8 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                 ClipmapWorldOrigin = new(translation, 0, .5f - distanceCentimeters),
                 ResolutionLodBias = qualityBias, MipLevelCount = 1, WorldUnitsPerCentimeter = 1,
             };
-            int entry = (level * 16 + 10) * 4;
-            pages[entry] = (uint)level + 1;
-            pages[entry + 1] = pages[entry + 2] = 2;
-            pages[entry + 3] = 7;
+            int entry = (level * 16 + 10);
+            pages[entry] = SomeEngine.Render.Shadows.VirtualShadowPageEntry.Encode((uint)level, 4u);
             for (int row = 0; row < 128; row++)
                 Array.Fill(pixels, BitConverter.SingleToUInt32Bits(level == selectedLevel ? .75f : .25f),
                     row * 512 + level * 128, 128);
@@ -99,8 +97,8 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
-            Texture2D<uint> Atlas;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Atlas;
             StructuredBuffer<float> Translation;
             RWStructuredBuffer<float> Visibility;
             [shader("compute")]
@@ -114,9 +112,9 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             }
             """, "ReadNativeDirectionalShadow", new(1, 1, 1),
             [(MemoryMarshal.Cast<VirtualShadowView, uint>(views.AsSpan()).ToArray(), ResourceBindingType.BufferSrv,
-                VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 16),
+                VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 4),
              ([BitConverter.SingleToUInt32Bits(translation)], ResourceBindingType.BufferSrv, 4),
-             (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2));
+             (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2, ViewDimension: TextureViewDimension.Texture2DArray));
         Assert.Equal(0f, BitConverter.UInt32BitsToSingle(observed[0][0]));
     }
 
@@ -133,17 +131,15 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
         view[34] = 4;
         view[37] = 2;
         view[36] = 4;
-        uint[] pages = new uint[85 * 4];
+        uint[] pages = new uint[85];
         uint[] pixels = new uint[512 * 128];
         int tableOffset = 0;
         for (int mip = 0; mip < 4; mip++)
         {
             int dimension = 8 >> mip;
             int center = dimension / 2;
-            int entry = (tableOffset + center * dimension + center) * 4;
-            pages[entry] = (uint)mip + 1;
-            pages[entry + 1] = pages[entry + 2] = (uint)center;
-            pages[entry + 3] = 7;
+            int entry = (tableOffset + center * dimension + center);
+            pages[entry] = SomeEngine.Render.Shadows.VirtualShadowPageEntry.Encode((uint)mip, 4u);
             tableOffset += dimension * dimension;
             for (int y = 0; y < 128; y++)
                 Array.Fill(pixels, BitConverter.SingleToUInt32Bits(mip == selectedMip ? .75f : .25f),
@@ -157,8 +153,8 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
-            Texture2D<uint> Atlas;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Atlas;
             StructuredBuffer<float3> PixelOffsets;
             StructuredBuffer<float> NominalRadius;
             RWStructuredBuffer<float> Result;
@@ -171,12 +167,12 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                     world, world + PixelOffsets[0], world + PixelOffsets[1], 1u, 1u, 0.0, 0.0);
             }
             """, "SamplePixelFootprint", new(1, 1, 1),
-            [(view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 16),
+            [(view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 4),
              ([BitConverter.SingleToUInt32Bits(step), 0u, 0u,
                BitConverter.SingleToUInt32Bits(step * shear), BitConverter.SingleToUInt32Bits(step * stretch), 0u],
               ResourceBindingType.BufferSrv, 12),
              ([BitConverter.SingleToUInt32Bits(nominalRadii[pixelMip])], ResourceBindingType.BufferSrv, 4),
-             (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2));
+             (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2, ViewDimension: TextureViewDimension.Texture2DArray));
         Assert.Equal(0.0f, BitConverter.UInt32BitsToSingle(result[0][0]));
     }
 
@@ -192,14 +188,11 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
         uint[] view = CreateView(0);
         view[16] = 256;
         view[34] = 2;
-        uint[] pages = new uint[5 * 4];
+        uint[] pages = new uint[5];
         for (int page = 0; page < 5; page++)
         {
             if (page < 4 && !finePages) continue;
-            pages[page * 4] = (uint)page + 1;
-            pages[page * 4 + 1] = page < 4 ? (uint)page % 2 : 0;
-            pages[page * 4 + 2] = page < 4 ? (uint)page / 2 : 0;
-            pages[page * 4 + 3] = 7;
+            pages[page] = SomeEngine.Render.Shadows.VirtualShadowPageEntry.Encode((uint)page, 4u);
         }
         uint[] pixels = Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.2f), 512 * 256).ToArray();
         for (int page = 0; page <= 4; page += 4)
@@ -210,8 +203,8 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
-            Texture2D<uint> Atlas;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Atlas;
             StructuredBuffer<float2> Pixels;
             RWStructuredBuffer<float> Result;
             [shader("compute")]
@@ -224,9 +217,9 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                     0u, 8u, 16u, 4.0, 8.0);
             }
             """, "SampleShadow", new(1, 1, 1),
-            [(view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 16),
+            [(view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 4),
              (position, ResourceBindingType.BufferSrv, 8), (new uint[1], ResourceBindingType.BufferUav, 4)],
-            new SampledImage(512, 256, pixels, 2));
+            new SampledImage(512, 256, pixels, 2, ViewDimension: TextureViewDimension.Texture2DArray));
         float visibility = BitConverter.UInt32BitsToSingle(result[0][0]);
         if (mixed) Assert.InRange(visibility, 1.0f / 16, 15.0f / 16);
         else Assert.Equal(0.0f, visibility);
@@ -241,11 +234,10 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
         float depthGradient, float occluderSeparation, float expectedVisibility)
     {
         uint[] view = CreateView(0);
-        uint[] pages = new uint[21 * 4];
-        pages[0] = 1;
-        pages[3] = 7;
-        pages[20 * 4] = 2;
-        pages[20 * 4 + 3] = 7;
+        uint[] pages = new uint[21];
+        pages[0] = SomeEngine.Render.Shadows.VirtualShadowPageEntry.Encode(0u, 4u);
+
+        pages[20] = SomeEngine.Render.Shadows.VirtualShadowPageEntry.Encode(1u, 4u);
         uint[] pixels = new uint[512 * 128];
         for (int y = 0; y < 128; y++)
         for (int x = 0; x < 128; x++)
@@ -259,8 +251,8 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
-            Texture2D<uint> Atlas;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Atlas;
             StructuredBuffer<float> Gradient;
             RWStructuredBuffer<float> Result;
             [shader("compute")]
@@ -278,9 +270,9 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                     0u, 8u, 16u, 4.0, 8.0, float2(Gradient[0], 0.0));
             }
             """, "SampleSlopedReceiver", new(1, 1, 1),
-            [(view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 16),
+            [(view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 4),
              ([BitConverter.SingleToUInt32Bits(depthGradient)], ResourceBindingType.BufferSrv, 4),
-             (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2));
+             (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2, ViewDimension: TextureViewDimension.Texture2DArray));
         Assert.Equal(expectedVisibility, BitConverter.UInt32BitsToSingle(result[0][0]));
     }
 
@@ -294,14 +286,13 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
         view[34] = 8;
         view[37] = lightKind;
         const int lastMipOffset = 21844;
-        uint[] pages = new uint[(lastMipOffset + 1) * 4];
-        pages[lastMipOffset * 4] = 4;
-        pages[lastMipOffset * 4 + 3] = 7;
+        uint[] pages = new uint[(lastMipOffset + 1)];
+        pages[lastMipOffset] = SomeEngine.Render.Shadows.VirtualShadowPageEntry.Encode(3u, 4u);
         uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
+            StructuredBuffer<uint> Pages;
             RWStructuredBuffer<uint4> Result;
             [shader("compute")]
             [numthreads(4, 1, 1)]
@@ -315,7 +306,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                     VirtualShadowMipPagePixel(view, context.MipLevel, pixel));
             }
             """, "CheckCorners", new(1, 1, 1),
-            [(view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 16),
+            [(view, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 4),
              (new uint[16], ResourceBindingType.BufferUav, 16)]);
         for (int corner = 0; corner < 4; corner++)
         {
@@ -334,15 +325,12 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
     public void DirectionalSamplingUsesNearestResidentClipmap(int firstResident)
     {
         uint[] views = Enumerable.Range(0, 3).SelectMany(CreateView).ToArray();
-        uint[] pages = new uint[3 * 256 * 4];
+        uint[] pages = new uint[3 * 256];
         uint[] pixels = new uint[512 * 128];
         for (int level = 0; level < 3; level++)
         {
-            int entry = (level * 256 + 6 * 16 + 10) * 4;
-            pages[entry] = (uint)level + 1;
-            pages[entry + 1] = 10;
-            pages[entry + 2] = 6;
-            pages[entry + 3] = level < firstResident ? 6u : 7u;
+            int entry = (level * 256 + 6 * 16 + 10);
+            pages[entry] = level < firstResident ? 0u : SomeEngine.Render.Shadows.VirtualShadowPageEntry.Encode((uint)level, 4u);
             for (int y = 0; y < 128; y++)
                 Array.Fill(pixels, BitConverter.SingleToUInt32Bits(level == firstResident ? .75f : .25f), y * 512 + level * 128, 128);
         }
@@ -350,8 +338,8 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
-            Texture2D<uint> Atlas;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Atlas;
             RWStructuredBuffer<uint> Result;
             [shader("compute")]
             [numthreads(1, 1, 1)]
@@ -363,8 +351,8 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
                 Result[0] = visibility > 0.5 ? 1u : 0u;
             }
             """, "FindView", new(1, 1, 1),
-            [(views, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 16),
-             (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2));
+            [(views, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 4),
+             (new uint[1], ResourceBindingType.BufferUav, 4)], new SampledImage(512, 128, pixels, 2, ViewDimension: TextureViewDimension.Texture2DArray));
         Assert.Equal(firstResident == 3 ? 1u : 0u, result[0][0]);
     }
 

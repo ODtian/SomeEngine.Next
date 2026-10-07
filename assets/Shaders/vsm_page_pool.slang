@@ -16,7 +16,7 @@ struct VirtualShadowPagePoolUniforms
 
 ConstantBuffer<VirtualShadowPagePoolUniforms> PagePool;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
-StructuredBuffer<uint4> ShadowPageTable;
+RWStructuredBuffer<uint> ShadowPageTable;
 StructuredBuffer<uint> RequestedShadowPages;
 StructuredBuffer<uint> RequestedPageCount;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
@@ -24,7 +24,7 @@ RWByteAddressBuffer PageRequestDispatchArgs;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> PhysicalPageOwners;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint4> PageMetadata;
+RWStructuredBuffer<VirtualShadowPageMetadata> PageMetadata;
 #include "vsm_page_lists.slang"
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> AllocatedPageHierarchy;
@@ -70,30 +70,33 @@ void PublishAllocatedPage(
     }
 }
 
-void PublishOwnedPage(uint atlasPage, uint owner)
+bool PublishOwnedPage(uint atlasPage, uint owner)
 {
     if (owner >= PagePool.PageTableEntryCount)
-        return;
-    uint viewIndex = owner / PagePool.PageTableEntriesPerView;
+        return false;
+    uint viewIndex = PageMetadata[atlasPage].ViewIndex;
     if (viewIndex >= PagePool.ViewCount)
-        return;
+        return false;
     VirtualShadowMapParameters view = ShadowViews[viewIndex];
     uint mipLevel;
     uint2 localPage;
     if (!VirtualShadowDecodePageTableIndex(view, owner, mipLevel, localPage) ||
         mipLevel >= PagePool.MipLevelCount)
     {
-        return;
+        return false;
     }
-    uint4 entry = ShadowPageTable[owner];
+    uint entry = ShadowPageTable[owner];
     int2 worldPage = VirtualShadowWorldPage(view, mipLevel, localPage);
-    if (entry.x != PackVirtualShadowPage(atlasPage + 1u) ||
-        (entry.w & ~VSM_PAGE_RECEIVER_DEPTH) != view.CacheGeneration ||
-        !IsVirtualShadowPageTag(entry, worldPage))
+    uint page;
+    if ((entry & VSM_PAGE_RENDERING) == 0u ||
+        !DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, page) || page != atlasPage) return false;
+    if (PageMetadata[atlasPage].Generation != view.CacheGeneration || any(PageMetadata[atlasPage].WorldPage != worldPage))
     {
-        return;
+        ShadowPageTable[owner] = 0u;
+        return false;
     }
     PublishAllocatedPage(viewIndex, view, mipLevel, localPage);
+    return true;
 }
 
 groupshared uint PagePrefix[256];
@@ -193,7 +196,13 @@ void BuildVirtualShadowPagePool(uint3 threadId : SV_DispatchThreadID, uint group
         ShadowPageLists[lruIndex] = VSM_UNOWNED_PAGE;
         return;
     }
-    PublishOwnedPage(atlasPage, owner);
+    if (!PublishOwnedPage(atlasPage, owner))
+    {
+        PhysicalPageOwners[atlasPage] = VSM_UNOWNED_PAGE;
+        AppendShadowPage(VSM_PAGE_LIST_EMPTY, capacity, atlasPage);
+        ShadowPageLists[lruIndex] = VSM_UNOWNED_PAGE;
+        return;
+    }
     if (RequestedShadowPages[owner] == PagePool.FrameIndex)
     {
         AppendShadowPage(VSM_PAGE_LIST_REQUESTED, capacity, atlasPage);
