@@ -68,10 +68,10 @@ public sealed partial record VirtualShadowMapSettings
     // normalized-depth allowance covers one millimeter over the default directional range.
     public float DepthBias { get; init; } = 0.000001f;
     public float NormalBias { get; init; } = 0.0005f;
-    public uint DirectionalRayCount { get; init; } = 7;
+    public uint DirectionalRayCount { get; init; }
     public bool MarkPagesUsingFroxels { get; init; }
     public bool HighQualityFrontLayerTranslucency { get; init; }
-    public uint LocalRayCount { get; init; } = 7;
+    public uint LocalRayCount { get; init; }
     public uint DirectionalSamplesPerRay { get; init; } = 8;
     public uint LocalSamplesPerRay { get; init; } = 8;
     public uint AdaptiveRayCount { get; init; } = 1;
@@ -84,11 +84,11 @@ public sealed partial record VirtualShadowMapSettings
     public float LocalMaxSlopeBias { get; init; } = 50f;
     public float DirectionalDepthRangeScale { get; init; } = 1000.0f;
     public float LocalNearPlane { get; init; } = 0.05f;
-    public float BlockerSearchRadiusTexels { get; init; }
+    public float BlockerSearchRadiusTexels { get; init; } = 8f;
     /// <summary>Zero selects one depth comparison without blocker search or filtering.</summary>
-    public float MaxFilterRadiusTexels { get; init; }
-    public uint BlockerSampleCount { get; init; } = 8;
-    public uint FilterSampleCount { get; init; } = 16;
+    public float MaxFilterRadiusTexels { get; init; } = 8f;
+    public uint BlockerSampleCount { get; init; } = 4;
+    public uint FilterSampleCount { get; init; } = 8;
 
     public uint VirtualPagesPerRow => VirtualResolution / PageSize;
     public uint VirtualPagesPerView => checked(VirtualPagesPerRow * VirtualPagesPerRow);

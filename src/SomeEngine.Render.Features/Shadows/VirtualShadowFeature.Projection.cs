@@ -20,6 +20,7 @@ public sealed partial class VirtualShadowFeature
         internal GraphBufferInput Uniforms = null!;
         internal GraphBufferInput Visibility = null!;
         internal GraphBufferInput AdditionalVisibility = null!;
+        internal uint BytesPerPixel;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -33,13 +34,13 @@ public sealed partial class VirtualShadowFeature
     {
         _projectionViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _directionalProjection = InstallLightProjection(ref edit, shaders.ProjectDirectionalLightsShader,
-            shaders.ProjectDirectionalLights, "Project directional virtual shadows", region);
+            shaders.ProjectDirectionalLights, "Project directional virtual shadows", 4u, region);
         _localProjection = InstallLightProjection(ref edit, shaders.ProjectLocalLightsShader,
-            shaders.ProjectLocalLights, "Project local virtual shadows", region);
+            shaders.ProjectLocalLights, "Project local virtual shadows", 16u, region);
     }
 
     private LightProjection InstallLightProjection(ref RenderGraphEdit edit, Shader? shader,
-        SlangShaderSharp.EntryPointReflection entry, string label, GraphRegionId region)
+        SlangShaderSharp.EntryPointReflection entry, string label, uint bytesPerPixel, GraphRegionId region)
     {
         var projection = new LightProjection
         {
@@ -47,6 +48,7 @@ public sealed partial class VirtualShadowFeature
             Uniforms = edit.CreateBufferInput(BufferUsages.Constant),
             Visibility = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite),
             AdditionalVisibility = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite),
+            BytesPerPixel = bytesPerPixel,
         };
         try
         {
@@ -63,11 +65,11 @@ public sealed partial class VirtualShadowFeature
                                 _ = pass.Bind(projection.Uniforms, sync),
                         ("ProjectionVisibility", ResourceBindingType.BufferUav) =>
                             (ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
-                                _ = pass.Bind(graph.CreateBufferUav(projection.Visibility, structureStride: 4),
+                                _ = pass.Bind(graph.CreateBufferUav(projection.Visibility, structureStride: projection.BytesPerPixel),
                                     sync, GraphAccessMode.Write, WriteCoverage.Complete),
                         ("ProjectionAdditionalVisibility", ResourceBindingType.BufferUav) =>
                             (ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
-                                _ = pass.Bind(graph.CreateBufferUav(projection.AdditionalVisibility, structureStride: 4),
+                                _ = pass.Bind(graph.CreateBufferUav(projection.AdditionalVisibility, structureStride: projection.BytesPerPixel),
                                     sync, GraphAccessMode.Write, WriteCoverage.Complete),
                         ("ProjectionViews", ResourceBindingType.BufferSrv) => BindProjectionViews,
                         ("ProjectionDepth", ResourceBindingType.TextureSrv) => BindProjectionDepth,
@@ -108,14 +110,16 @@ public sealed partial class VirtualShadowFeature
         uint height = lightCount == 0u ? 1u : checked((uint)geometry.Height);
         uint views = lightCount == 0u ? 1u : geometry.ViewCount;
         uint receiverLayers = lightCount == 0u ? 0u : _frameAdditionalReceiverCount;
-        ulong values = checked((ulong)DivideRoundUp(width, 8u) * DivideRoundUp(height, 8u) * 64u * views * lightLayers);
-        GraphBufferId visibility = graph.CreateBuffer(new BufferDesc(checked(values * 4u),
+        uint resultLayers = projection.BytesPerPixel == 16u ? DivideRoundUp(lightLayers, 32u) : lightLayers;
+        uint dispatchLightLayers = projection.BytesPerPixel == 16u ? 1u : lightLayers;
+        ulong values = checked((ulong)DivideRoundUp(width, 8u) * DivideRoundUp(height, 8u) * 64u * views * resultLayers);
+        GraphBufferId visibility = graph.CreateBuffer(new BufferDesc(checked(values * projection.BytesPerPixel),
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Virtual shadow receiver light visibility"));
-        GraphBufferId additional = graph.CreateBuffer(new BufferDesc(Math.Max(checked(values * receiverLayers * 4u), 4u),
+        GraphBufferId additional = graph.CreateBuffer(new BufferDesc(Math.Max(checked(values * receiverLayers * projection.BytesPerPixel), projection.BytesPerPixel),
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Virtual shadow additional receiver light visibility"));
         graph.SetBufferInput(projection.Visibility, new(visibility, BufferRange.Whole));
         graph.SetBufferInput(projection.AdditionalVisibility, new(additional, BufferRange.Whole));
-        uint layers = checked(views * lightLayers * (1u + receiverLayers));
+        uint layers = checked(views * dispatchLightLayers * (1u + receiverLayers));
         uint dispatchDepth = Math.Min(layers, 65535u);
         uint layerRows = DivideRoundUp(layers, dispatchDepth);
         var uniforms = new ProjectionUniforms
@@ -146,11 +150,11 @@ public sealed partial class VirtualShadowFeature
         _ = pass.Bind(edit.CreateBufferSrv(_directionalProjection.Visibility, structureStride: 4), sync);
 
     private void BindProjectedLocalVisibility(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
-        _ = pass.Bind(edit.CreateBufferSrv(_localProjection.Visibility, structureStride: 4), sync);
+        _ = pass.Bind(edit.CreateBufferSrv(_localProjection.Visibility, structureStride: 16), sync);
 
     private void BindAdditionalProjectedDirectionalVisibility(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
         _ = pass.Bind(edit.CreateBufferSrv(_directionalProjection.AdditionalVisibility, structureStride: 4), sync);
 
     private void BindAdditionalProjectedLocalVisibility(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
-        _ = pass.Bind(edit.CreateBufferSrv(_localProjection.AdditionalVisibility, structureStride: 4), sync);
+        _ = pass.Bind(edit.CreateBufferSrv(_localProjection.AdditionalVisibility, structureStride: 16), sync);
 }
