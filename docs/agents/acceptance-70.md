@@ -1,77 +1,54 @@
 # #70 验收记录
 
-交付：[PR #136](https://github.com/ODtian/SomeEngine.Next/pull/136)。实现起点为 `be6be444f639d9e786914d4b3661f8b8e9441bd0`，对应目标分支 `codex/someui-base-7b03495`。
+交付：[PR #136](https://github.com/ODtian/SomeEngine.Next/pull/136)。目标分支为 `codex/someui-base-7b03495`，实现起点 `be6be444f639d9e786914d4b3661f8b8e9441bd0`。
 
-UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。GitHub 提交说明为 `5.8.3 release`；原版文件的 GitBlob、SHA-256、字节数和实际调用位置随各票记录。本项目修复前的源码用于对应行为的 before/after。
+原版依据为 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`，提交说明 `5.8.3 release`。各票记录实际源码调用、GitBlob、SHA-256 和字节数。当前生产源码为 `2c72fc1796355208b06e9e8ce7e0dd105b6eaaca`；`52566c6d6b0a6d23872f658f02c645d824fe0507` 接合缓存行为测试的 Native 参照状态。
 
-## 原始输出
+## 实现
 
-逐像素 CSV、回读 JSON、TRX、图片、trace 和构建日志统一存放于仓库外验收归档。源码变更保留公开行为用例、域文档和结果摘要。`artifacts/`、`TestResults/` 等生成目录沿根级 `.gitignore` 排除。
+- RenderGraph 持有区段、帧上传、回读与 GPU 完成边界；局部高频工作沿当帧子图形成。Game world → Rendering world 保持同一提取通路，用户 shader 解释材质与顶点数据。
+- VSM 按 Native 距离和 bias 选择 clipmap，覆盖厘米换算、逐光移动状态、阴影视图几何 LOD、局部 mip、正交/DOF、分层 Z 范围、缓存 guard 和 int64 世界原点。
+- 页管理覆盖顺序 LRU、静态/动态深度、resident ancestor 回退、粗页与 receiver mask、窗口划分、逐视图工作/时间预算反馈、流送优先级和局部失效。
+- 用户接收者、第一人称 family、froxel/water/translucency/hair、法线与源半径、方向/局部 SMRT、cube face、远光与预滤进入同一生产通路。SW 使用 Native 整数亚像素规则，方向光覆盖与原始深度按 Native 条件分别求值。
+- Shader 持有与代码一同构建的入口资源使用数据；安装阶段消费这份数据。Shader 构建、Cluster 与两 RHI 共用 descriptor 地址算法，ParameterBlock child 按层级处理。
 
-截至 `95285a3b9209d1ad85988690ab06d749967a4594` 的完整原始输出：
+当前布局为 Cluster view 768B、VSM view 304B、target view 80B；几何 metadata7、ShaderBlock schema11、Importer31。内容同步顺序为 DefaultCook → Game.App build → ImportedSceneBuild。
 
-- 本地归档：`F:/SomeEngine.AgentWork/rg70-delivery-evidence/acceptance-95285a3b.zip`
-- 大小：18,406,485 bytes。
-- SHA-256：`B416DA58CDB4E2F4FAF9835CF2FA18BE624B78BC3F71C3D5D10882A7B98C0F8C`。
-- 原始目录结构与文件名保留，包含各票实际命令、TRX 和必要图像。
+蓝噪声资源采用 CC0 64³ void-and-cluster 数据。UE 输入为 128²×64 spatiotemporal 数据；固定来源、维度与许可记录见 [assets/Noise/source.json](../../assets/Noise/source.json)。生产地址、R2 偏移、帧切片与局部射线步长沿对应 Native 规则消费该输入。
 
-## 当前直接行为结果
+## 当前验证
 
-| 任务 | 生产行为与实际结果 |
+| 范围 | 实际结果 |
 | --- | --- |
-| #137 | 阴影视图选择几何 LOD；固定阴影投影时修改主相机，缓存帧候选从 12 降为 0，深度和图像保持预期。 |
-| #138 | 厘米转换、逐光 bias、移动状态、正交、局部 nominal mip、mip 模式及 DOF 分别使用直接行为用例，实际 red→green。 |
-| #139 | 分层 Z 范围、缓存 guard 和正交 target origin 分别实际 red→green。 |
-| #140 | 两页池 A→B→A→空闲32帧→C 保留最近访问 A，B 再请求恢复与 fresh-state 一致。 |
-| #141 | 动态页更新时复用静态深度；实际 allocator dirty0→dirty1，同时保留静态 generation7。 |
-| #142 | 全局页压力、逐视图 HW/SW 工作、时间预算和光实体身份沿对应生产数据反馈；直接用例通过。 |
-| #143 | 零 ray 斜面比较的原版正向坡度容差实际 red→green；局部光半径为0时半平面外接收点全亮，半径 `.01` 时同点落入独立几何预期的半影范围，实际 D3D12 直接行1 passed、0 skipped。生产材质消费法线距离偏置、有效性/遮挡距离结果、方向/局部 SMRT、cube face 切换和深度历史外推；接收投影96B、页面需求240B、采样224B。原始输出在 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-143/`。 |
-| #144 | Vulkan SW 用户 UV 覆盖与运行中材质修改的直接行为通过。 |
-| #145 | 方向/局部 mip 数 `[3,3,3]→[1,1,3]`；粗页四点 `[0,1,1,1]→[0,0,0,0]`；模式条件 `[0,0]→[1,0]`。 |
-| #146 | 生产 resident propagation 后直接采样：unfinished fine 使用已完成 coarse，实际 validity1 / known plane depth .4；1 passed、规则0。原始 TRX 在 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-146/resident-lookup/`。 |
-| #147 | 单页读取预算下，高投影细节需求页面先读取；同一用例实际 FIFO red→priority green，1 passed、0 skipped。 |
-| #148 froxel | 实际 `hiz_init` mip0 → 8B packed froxel → 页请求，已知8×8单元内四个接收位置由中心请求覆盖 `[1,0,0,0]` 到原版视图 AABB/frustum 矩形覆盖 `[1,1,1,1]`，实际 red→green、1 passed、0 skipped、规则0。Features/Game.Build 构建0/0，默认内容77资产构建通过；128B参数、primary/water计数及 HQ 像素选择沿同一图区段和请求数据。原始结果在 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-148/froxel/`。 |
-| #148 | 用户 receiver32B→实际 Mark 世界点覆盖 `[1,1,1,1]→[0,1,0,1]`，subsurface 保留背光，unlit/普通背光按声明筛选。用户额外 water-current、translucency-AAprevious-depth、hair 层的覆盖 `[0,0,0,0]→[1,1,1,0]`。两个直接行各1 passed/0 skipped、规则0，Features/D3D12.Tests Release build0/0；原始输出 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-148/`。 |
-| #149 | 跨旧网格边界的四页按 UE 窗口原点处理，实际工作数 6→4。 |
-| #150 | 保守局部 mip 从1变2；完成帧年龄在光输入重排后仍先更新较旧光源，两个 CPU 行各 red→green。实际 prefilter X/Y/history kernel 的单像素遮挡从 visibility0 到独立期望 `.859375`，历史按原版最小步长推进到 `.86312157`，直接行1 passed/0 skipped、规则0。Features/D3D12.Tests Release build0/0；原始输出在 `F:/SomeEngine.AgentWork/rg70-remaining/ticket-150/`。 |
-| #151 | `2^40+1/8` 原点的投影偏移由0到独立期望 `-1/2048`，实际 red→green。公开场景入口下，近 `.1875` 与远 `2^40+.1875` 原点保留源球体的 `1/8` 间距，D3D12 raw Half 位及 beauty 像素逐位一致，1 passed、0 skipped；Runtime/Direct3D12 测试项目构建、规则检查及 NativeAOT 编译能力检查通过。 |
-| #152 | 用户材质 float3 使用 structured-buffer 布局，HDR 红/绿/蓝分量的实际渲染检查通过。 |
+| 集成源码与内容 | Release 构建 0 warnings / 0 errors；默认 77、Sponza 96、Bistro 2046 资产及 1532 实例构建完成。 |
+| 当前支持行为组 | 27 条完成：复用已通过 14 条，原失败 13 条在同条件下完成；GPU 读回与完整颜色/深度用于断言。 |
+| 入口数据与显式资源 | 公开 Shader 重载、D3D12 u3/space2 写入 17、Vulkan set2/binding3 写入 17、完整 UV 安装行为通过。 |
+| Native 光栅 | SW 亚像素覆盖 0→1；方向光跨 near 的 HW/SW 两行通过；局部光不同 w 的裁剪控制通过。 |
+| 缓存参照 | 双方 hard0；接收者与 caster 行为保留首次更新观测，独立参照达到相同 stationary-light LOD 状态。 |
+| 审查 | 固定 `be6…96bf` Standards/Spec 审查已闭环；后续修复片独立窄审查新增问题为 0。 |
 
-#143 的同一半影行进一步消费实际 CC0 RGBA8 蓝噪音纹理，标量、R2 偏移、帧切片和
-局部射线步长更新全部进入生产采样分支；1 passed、0 skipped。面源的遮挡距离落在
-独立平面几何预期 `.49–.51`，点源全亮且 SMRT 遮挡距离为0。默认内容75资产构建通过；
-接上真实用户可见性材质后，包含其 receiver entry 的76资产构建通过。
-数据为64³三维 void-and-cluster，原版输入为128²×64 spatiotemporal blue noise，差异、
-许可和固定来源保存在 `assets/Noise/source.json`。硬阴影参考通过公开 `--vsm-ray-count 0`
-选择两类 zero-ray 投射；可见性用户材质使用相同 shading normal、Native Trace 与预滤结果。
+Native adaptive 在同帧会因材质箱 wave 成员变化产生 7↔1 射线数，实际投射读回与图像差值已在 #162/#167 记录。#168 的变化通知、GPU 标量和细节页更新数据贯通；独立参照首次 moving bias0 与更新场景 stationary bias−2 的差异由 view11/view9 读回确认。测试以相同参照状态观察缓存结果，生产 Directional/Local 7 rays、Adaptive1 保留。
 
-各次源码修改以受影响的公开行为、必要构建和测试规则检查记录结果。完整路径汇合后的 DefaultGame 三场景质量与性能结果在此补记，测量使用 `tools/Measure-Scenes.ps1` 的一次不超过60秒反馈，并保持分辨率、场景行为、渲染选项、JIT 与采样方式一致。
+#160 的最高细节 GLB RT 与 Native 实际几何/纹素中心参照，正在读取同 Frame63 的 shadow target cluster、窗口、实例和页面数据完成实际归因。原始误差、有效页与深度读回均保留于正式记录。
 
-#147 的优先级预算公开行实际 FIFO red→priority green，1 passed；原始记录已随95285a3b正式归档。局部 alpha/cache 公开行跨 Native 10帧 moving 阶段固定观察：两侧 cube face 首帧各2项HW工作，进入缓存后各0；global-version对照更新A后无关B重新执行4项，actual red；局部数据范围源更新A后B保持0且完成页保留，色/深度整图与fresh一致，1 passed、0 skipped（21秒）。同一行先定位并修复 per-view counter 的 policy-bit数组越界；shader及CPU scope临时诊断已清理。原始日志/hash/TRX位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-147/local/`，收尾删除打印和集成接口接合复用该最小行为结果并完成必要构建。
+## 性能
 
-#151 新增直接证明位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-151/`。
-原版来源核对包含 Nanite 相对视图、clipmap int64 snap 与相对采样地址。
-图像用例同时验证完整内容构建和 GPU 可写视图：默认项目按引擎 shader 声明生成缺项输入，
-实际构建71资产；视图通过当帧图区段上传到同一设备缓冲，工作反馈与其后消费者共用此数据。
+使用 `tools/Measure-Scenes.ps1`。本轮 `2c72fc17` 的默认 7 rays、非 trace 结果为 Complete，三个场景均 Measured，含启动整轮 32.75 秒；报告计时 24.89 秒。
 
-#148 第一人称完整帧公开行 `APlayersWorldRepresentationCastsIntoTheWorldThroughItsFirstPersonShadowFamily`：regular-only caller 的实际图像 red（1 failed，0 skipped，25秒，首次差异 byte16080）→Native FP family 合并 green（1 passed，0 skipped，27秒）。世界替身的完整颜色/深度与同位置普通 caster 一致，参考 caster 移开后阴影消失。固定 level10、4096分辨率、2048密度参考、零射线，以独立距离/密度计算选择同一光 frustum。此前 receiver 区段排序 RG4001、夹具 metrics 和空需求观察分别留作定位记录；af78c88a 的持久区段排序源片接合了主层和额外层。完整内容构建74资产通过，必要C#构建0警告/0错误；收尾保留同一行为参数和有效数据字节，接入 Native 调用方可见性及明确行为命名。原始日志、TRX、图像与hash位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/ticket-148/first-person/`。
+| 场景 | 有效采样帧 | 平均帧时间 | P50 | P95 | 首帧 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1024 moving spheres | 322 | 6.23 ms | 6.14 ms | 6.74 ms | 370.23 ms |
+| Sponza | 179 | 11.26 ms | 11.26 ms | 11.56 ms | 1163.13 ms |
+| Amazon Bistro | 119 | 16.98 ms | 17.00 ms | 17.86 ms | 4285.50 ms |
 
-#153 的当前 Sponza 构建先以旧 normalTS 注入得到 Slang E30015，再以共用法线采样函数得到96资产构建成功（10.99秒）。用户 receiver 与最终着色 fallback 使用同一 glTF NormalScale 解释；必要默认内容77资产及应用构建通过。#154 的点光精度用例按公开视图到光位置关联验证两光全部六面，实际1 passed、0 skipped。原始日志、TRX和生成元数据差异在 F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/ticket-153/ 和 ticket-154/。
+本轮同条件 `8efbb6d4` → `2c72fc17`：Sponza 首帧 7821.42 → 1163.13 ms（下降约 85.1%）；Bistro 首帧 16729.16 → 4285.50 ms（下降约 74.4%），从收敛超时采样 0 帧到完整采样 119 帧。
 
-#155 的当前 typed304B输入经分配、清页、完成和接收者掩码采样，实际动态/静态各valid1、独立平面depth.25，1 passed、0 skipped、4秒。#156 将材质work/geometry/domain/bary求值共用，当前77资产shader闭包通过；完整FP/caster/receiver图像公开行1 passed、0 skipped、26秒。此完整帧同时完成#159蓝噪音typed资产加载及实际SRV帧绑定，原资产类型和空binding失败日志随green保留。全项目行为规则24项目、0 violations。原始记录在仓库外final/ticket-155和ticket-156。
+两侧为 RTX 3080、.NET 10.0.12、TieredCompilation=false、1280×720、TAA、async compute、mesh shader、256 MiB 几何内存、固定 1/60 步长；小球运动、导入场景静止。采样保留 32 ready / 128 rendered / 3 秒预热 / 2 秒测量。数值为 presented-frame elapsed 与 CPU stage 时间。trace 仅用于定位，另存正式数据。
 
-#157 同1厘米光源半径在1厘米/100厘米距离下，用户receiver生产Mark覆盖实际[1,1]→[1,0]，1 passed、0 skipped、4秒；光向量与source radius共同换算为厘米。#158 的方向光froxel中心Z=-.1、包围体Z=[-.6,.4]，独立plane Z=.15覆盖实际[0,0,0,0]→[1,1,1,1]，1 passed、0 skipped、3秒；选择由Native距离、global/extra/per-VSM bias和绝对level最低0形成，再由AABB/frustum裁剪请求。当前77资产DXIL/SPIRV闭包构建成功；直接行规则0。原始red/green TRX与日志位于final/ticket-157、ticket-158，内容日志位于final/spec-fixes-content。
+## 正式数据
 
-#160 当前独立平面 Nativehard 投射从遗留归一化常量偏置导致全亮1，修正为原版 slope/ray-start 两项后遮挡0，1 passed、0 skipped、1秒，77资产闭包成功。当前spheres完整源几何重跑保留miss241/4486、aggregate.8997581%、coverage99.518406%，继续该票的实际场景质量修复。#161 将resident祖先结果改为VSM持有的持久缓冲，状态重置时明确清零，关闭阴影的原UV深度gradient直接D3D12/HW行实际RG4001→1 passed、0 skipped（19秒）。#162 原透明caster与缺席caster比较当前Native7ray同48帧，直接D3D12/HW行实际RGBA16差异→1 passed、0 skipped（28秒）；全部原后端参数及图像断言保留。对应原始TRX与日志位于final/ticket-160、ticket-161、ticket-162。
+当前命令、身份、TRX、RGBA16/beauty 图像、逐像素 JSON/CSV、trace 和报告位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/`。当前性能结果在 `default-seven-performance-2c72/ready-content/`；逐票细节与审查结论同目录记录。源码保留公开行为、域文档和简洁摘要。
 
-#163 认证Native viewport*256+.5→floor整数亚像素及bounds half-subpixel−1规则接入共用SW核心，DILATE0/pixel-center/top-left保留。独立三角屏幕(.5006,0)/(.5006,2)/(2,0)由实际production像素输出验证中心(.5,.5)：旧coverage0→当前1，1 passed、0 skipped、1秒，当前77资产DXIL/SPIRV闭包成功、规则0。源码来源/blob/SHA和red/green TRX保存在final/ticket-160/raster-sources.json及final/ticket-163；场景160的实际品质因果继续沿当前数据核对。
+`95285a3b9209d1ad85988690ab06d749967a4594` 的既有输出归档：`F:/SomeEngine.AgentWork/rg70-delivery-evidence/acceptance-95285a3b.zip`，18,406,485 bytes，SHA-256 `B416DA58CDB4E2F4FAF9835CF2FA18BE624B78BC3F71C3D5D10882A7B98C0F8C`。生成目录沿根级 `.gitignore` 维护；原始 2,804,288 行生成输出保存于外部归档。
 
-#164 方向光由compact阶段形成depth-clip条件，768B Cluster视图尾部原padding承接DepthClipEnabled；80B target view的反馈低2bits保留，bit2承接同一条件。BVH/frustum、SW及HW coverage同向消费；HW普通VS/MS/tess在coverage变换前保存原clip.zw，以普通perspective插值并在PS相除写阴影深度。当前跨near-depth caster的公开完整图像行为实际red无阴影→HW/SW各green，共2 passed、0 skipped、21秒；local不同w且位于near plane前的实际SW像素输出控制为全空，1 passed、0 skipped、1秒。当前77资产DXIL/SPIRV闭包成功、必要C#与规则0。另保留最大源几何Spot参考当前agg.25087337%、miss2.1620214%、coverage100%、selfhit0的实际数据；相关原始记录在final/ticket-164。
-
-#162 的同48帧最小投射结果回读进一步记录实际像素(56,35)：两边同view0/mip5，射线数分别7/1、visibility分别6/7与1；102个像素的wave自适应射线数随材质箱成员变化。透明caster缓存行为以双方明确hard0比较完整颜色/深度，Native默认7ray与wave早退继续用于生产渲染。临时shader/测试读回已清理，原始RGBA16、帧身份和decoded.json保存在final/ticket-162/projection-values。
-#162 hard0缓存的当前残留D3D12/SW完整颜色/深度行实际1 passed、0 skipped、26秒，77资产生产shader闭包和行为规则通过；原始日志/TRX在final/ticket-162/hard-cache。
-
-#165 首帧trace定位Bistro RasterStageResolve self9.739秒、ShadeStageResolve self2.009秒；原默认7ray非trace52.86秒窗口中Bistro采样0。当前入口资源使用地址与code同一次构建，Shader唯一持有；Cluster安装读取已生成数据，第二份async metadata cache已移除。schema11/Importer31重新构建同一资产身份，默认77资产闭包成功；公开Shader资产重载按明确u3/u5 space2正确返回各入口资源，1 passed、0 skipped、799毫秒，当前UV完整图像安装直接行1 passed、0 skipped、14秒。原始数据在final/ticket-165，三场景原32ready/128rendered/3秒warmup与2秒采样继续用于当前完整性能验收。
-
-#166 当前Native资源地址space2被旧flat descriptor式重复加到space4的actualred已留存；共同SlangDescriptorLocation供Shader构建、Cluster资源访问和两RHI使用，ParameterBlock独立child遍历保留。公开D3D12调度旧source创建管线HRESULT0x80070057→当前u3/space2写17，实际1 passed、0 skipped、1秒；Vulkan明确set2/binding3同样写17，1 passed、0 skipped、1秒。临时Native/cook地址探针已清理，原始TRX/日志在final/ticket-166和ticket-165。
-#165/#166 共用地址与Importer31最终源下，D3D12/HW的完整UV图像安装行实际1 passed、0 skipped、15秒；必要C#构建与行为规则通过，日志/TRX在final/ticket-165/final-install。
+各源码修改以受影响的公开行为、必要构建及行为规则检查闭环；正式失败与后续通过数据共同记录。
