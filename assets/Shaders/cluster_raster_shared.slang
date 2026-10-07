@@ -601,20 +601,8 @@ void RasterizeClusterTriangleWave<
             task.PixelCount = 0u;
             task.Scanline = 0u;
         }
-        typealias VisibilityVarying = TVisibility.Varying;
-        if (sizeof(VisibilityVarying) != 0u)
-        {
-            // Programmable pixels retain their triangle's opaque user data in
-            // its triangle lane, matching Nanite's programmable raster path.
-            [loop]
-            for (uint pixelTask = 0u; pixelTask < task.PixelCount; pixelTask++)
-                task.RasterizePixels(visibility, pixelTask);
-        }
-        else
-        {
-            WaveQueue::DistributeWithUniform<TVisibility,
-                ClusterPixelRasterTask<TVertex, TVisibility, TOutput>>(task, visibility);
-        }
+        WaveQueue::DistributeWithUniform<TVisibility,
+            ClusterPixelRasterTask<TVertex, TVisibility, TOutput>>(task, visibility);
     }
 }
 
