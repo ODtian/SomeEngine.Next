@@ -662,6 +662,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 InstallStaticDepth(ref edit, shaders, primaryDepthAfter, targetGeometryAfter);
                 InstallResidentPages(ref edit, shaders, pageTableEntryCapacity, targetGeometryAfter);
                 InstallPrefilter(ref edit, shaders, pageTableEntryCapacity, primaryDepthAfter, targetGeometryAfter);
+                InstallProjection(ref edit, shaders, targetGeometryAfter);
                 BindClear(ref edit, _clearUniforms);
                 BindDynamicResolution(ref edit, _dynamicResolutionUniforms);
                 BindCompact(ref edit, _frameInvocationUniforms, _clusterSourceViews);
@@ -685,7 +686,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     [_frameSamplingUniforms, _frameInvocationUniforms, _initUniforms, _invalidationUniforms,
                      _coarseDemandUniforms, _demandUniforms, _poolUniforms,
                      _poolPrepareUniforms, _poolCompactUniforms, _poolFinishUniforms, _allocationUniforms,
-                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, _workUniforms, _residentUniforms, .. _prefilterUniforms, .. _pageHiZReduceUniforms],
+                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, _workUniforms, _residentUniforms, _projectionUniforms, .. _prefilterUniforms, .. _pageHiZReduceUniforms],
                     device.Capabilities.Limits.ConstantBufferAlignment, "Virtual shadow constant data");
                 PassDefinition frameComplete = edit.GetPass(_frameCompletePass);
                 _ = frameComplete.Read(
@@ -709,6 +710,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         catch
         {
             dispatchLayout?.Dispose();
+            _projectionPipeline?.Dispose();
             _residentPipeline?.Dispose();
             _prefilterPipeline?.Dispose();
             _prefilterRequestPipeline?.Dispose();
@@ -996,6 +998,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 FirstPersonViewOffset = _shadowMap.FirstPersonViewOffset,
             };
             _uniformData.Write(ref graph, _frameSamplingUniforms, in sampling);
+            StageProjection(ref graph, in geometry,
+                sampling.DirectionalLightCount + sampling.PointLightCount + sampling.SpotLightCount);
             _geometry.StageViews([receiverView], identities: [receiver]);
             int copied = _shadowMap.CopyPreparedRenderViews(_shadowViews);
             if (copied != 0)
@@ -1090,6 +1094,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             "RasterTargetStaticOutput" when type == ResourceBindingType.TextureUav => BindStaticDepthAtlas,
             "RasterTargetOutput" when type == ResourceBindingType.TextureUav => BindPageDepthAtlas,
             "VirtualShadowViews" when type == ResourceBindingType.BufferSrv => BindShadeViews,
+            "VirtualShadowProjectedVisibility" when type == ResourceBindingType.TextureSrv => BindProjectedVisibility,
+            "VirtualShadowAdditionalProjectedVisibility" when type == ResourceBindingType.TextureSrv => BindAdditionalProjectedVisibility,
             "VirtualShadowResidentPages" when type == ResourceBindingType.BufferSrv => BindResidentPages,
             "VirtualShadowPrefilteredAtlas" when type == ResourceBindingType.TextureSrv => BindPrefilteredAtlas,
             "VirtualShadowPageTable" when type == ResourceBindingType.BufferSrv => BindShadePageTable,
@@ -1112,6 +1118,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _qualityReadbacks?.Requests.Clear();
         _dispatchLayout.Dispose();
         _residentPipeline?.Dispose();
+        _projectionPipeline.Dispose();
         _prefilterPipeline?.Dispose();
         _prefilterRequestPipeline?.Dispose();
         _staticMergePipeline?.Dispose();

@@ -373,6 +373,7 @@ public static class DefaultContent
         const string outputPath = "assets/Pipelines/default_virtual_shadow.virtualshadow.asset";
         using var settings = new VirtualShadowMapShadersBlock
             {
+                ProjectLights = ShaderReference(ResolveRequired(project, "assets/Shaders/generated/EngineSources/vsm_project_lights.shader"), "ProjectVirtualShadowLights"),
                 BlueNoise = new AssetId<TextureAsset>(DefaultContentIds.ShadowBlueNoise),
                 FroxelBuild = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_build.shader"), "BuildVirtualShadowFroxels"),
                 FroxelArguments = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_build.shader"), "FinishVirtualShadowFroxelArguments"),

@@ -9,6 +9,7 @@ public sealed partial class VirtualShadowMapShadersBlock
         string subject = $"Virtual shadow map shader asset '{path}'";
         ShaderRef?[] entries =
         [
+            ProjectLights,
             ResetReceiverMasks,
             ResetFrame,
             MarkPages,
@@ -26,6 +27,7 @@ public sealed partial class VirtualShadowMapShadersBlock
         ];
         string[] names =
         [
+            nameof(ProjectLights),
             nameof(ResetReceiverMasks),
             nameof(ResetFrame),
             nameof(MarkPages),
