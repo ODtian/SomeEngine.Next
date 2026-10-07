@@ -20,9 +20,10 @@ public sealed class VsmWorkRenderingTests
             MaxCandidates = 65536, EnableFrameMetricsReadback = true, ForceHardwareRaster = hardware,
             SoftwareRasterEdgeThreshold = 64,
         };
-        await using var absent = await FrameStageScene.CreateAsync(backend, true, options);
+        var shadows = new VirtualShadowMapSettings { DirectionalRayCount = 0, LocalRayCount = 0 };
+        await using var absent = await FrameStageScene.CreateAsync(backend, true, options, shadowSettings: shadows);
         await absent.ReadRasterImageAsync();
-        await using var changed = await FrameStageScene.CreateAsync(backend, true, options);
+        await using var changed = await FrameStageScene.CreateAsync(backend, true, options, shadowSettings: shadows);
         var opaque = changed.CreateRasterMaterial(RasterMaterialKind.Ordinary, new Vector4(1, 0, 0, 1));
         var caster = changed.AddMaterialMesh(opaque);
         byte[] opaqueImage = await changed.ReadClusterColorAsync();

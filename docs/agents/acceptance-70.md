@@ -67,3 +67,6 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 #163 认证Native viewport*256+.5→floor整数亚像素及bounds half-subpixel−1规则接入共用SW核心，DILATE0/pixel-center/top-left保留。独立三角屏幕(.5006,0)/(.5006,2)/(2,0)由实际production像素输出验证中心(.5,.5)：旧coverage0→当前1，1 passed、0 skipped、1秒，当前77资产DXIL/SPIRV闭包成功、规则0。源码来源/blob/SHA和red/green TRX保存在final/ticket-160/raster-sources.json及final/ticket-163；场景160的实际品质因果继续沿当前数据核对。
 
 #164 方向光由compact阶段形成depth-clip条件，768B Cluster视图尾部原padding承接DepthClipEnabled；80B target view的反馈低2bits保留，bit2承接同一条件。BVH/frustum、SW及HW coverage同向消费；HW普通VS/MS/tess在coverage变换前保存原clip.zw，以普通perspective插值并在PS相除写阴影深度。当前跨near-depth caster的公开完整图像行为实际red无阴影→HW/SW各green，共2 passed、0 skipped、21秒；local不同w且位于near plane前的实际SW像素输出控制为全空，1 passed、0 skipped、1秒。当前77资产DXIL/SPIRV闭包成功、必要C#与规则0。另保留最大源几何Spot参考当前agg.25087337%、miss2.1620214%、coverage100%、selfhit0的实际数据；相关原始记录在final/ticket-164。
+
+#162 的同48帧最小投射结果回读进一步记录实际像素(56,35)：两边同view0/mip5，射线数分别7/1、visibility分别6/7与1；102个像素的wave自适应射线数随材质箱成员变化。透明caster缓存行为以双方明确hard0比较完整颜色/深度，Native默认7ray与wave早退继续用于生产渲染。临时shader/测试读回已清理，原始RGBA16、帧身份和decoded.json保存在final/ticket-162/projection-values。
+#162 hard0缓存的当前残留D3D12/SW完整颜色/深度行实际1 passed、0 skipped、26秒，77资产生产shader闭包和行为规则通过；原始日志/TRX在final/ticket-162/hard-cache。
