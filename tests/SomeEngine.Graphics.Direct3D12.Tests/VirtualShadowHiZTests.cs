@@ -21,8 +21,8 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline first = backend.CreateComputePipeline(device, new ComputePipelineDesc(initialize.SlangCode, initialize.Reflection, initialize.GetEntryPoint(0), initialize.GetEntryCode(0)));
         using Pipeline second = backend.CreateComputePipeline(device, new ComputePipelineDesc(reduce.SlangCode, reduce.Reflection, reduce.GetEntryPoint(0), reduce.GetEntryCode(0)));
-        using Buffer uniforms0 = Upload(backend, device, [128u, 2u, 0u, 0u], BufferUsages.Constant, 256);
-        using Buffer uniforms1 = Upload(backend, device, [128u, 2u, 3u, 4u], BufferUsages.Constant, 256);
+        using Buffer uniforms0 = Upload(backend, device, [128u, 2u, 0u, 0u, 0u, 0u, 0u, 0u], BufferUsages.Constant, 256);
+        using Buffer uniforms1 = Upload(backend, device, [128u, 2u, 3u, 4u, 0u, 0u, 0u, 0u], BufferUsages.Constant, 256);
         using BufferCbv cbv0 = backend.CreateBufferCbv(device, new BufferCbvDesc(uniforms0, new BufferRange(0, 256)));
         using BufferCbv cbv1 = backend.CreateBufferCbv(device, new BufferCbvDesc(uniforms1, new BufferRange(0, 256)));
         using Buffer active = Upload(backend, device, [1u, 101u, 0u, 999u, 0u, 202u, 0u, 999u], BufferUsages.ShaderRead, 32);
@@ -30,7 +30,7 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
         using Buffer activeCount = Upload(backend, device, [2u], BufferUsages.ShaderRead, 4);
         using BufferSrv activeCountView = backend.CreateBufferSrv(device, new BufferSrvDesc(activeCount, BufferRange.Whole, StructureStride: 4));
         var depth = new float[2][];
-        var pixels = new uint[256 * 128];
+        var pixels = new uint[2 * 256 * 128];
         for (int layer = 0; layer < 2; layer++)
         {
             depth[layer] = new float[128 * 128];
@@ -43,15 +43,16 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
                 pixels[y * 256 + layer * 128 + x] = BitConverter.SingleToUInt32Bits(1f - value);
             }
         }
+        Array.Copy(pixels, 0, pixels, 256 * 128, 256 * 128);
         using Buffer upload = Upload(backend, device, pixels, BufferUsages.CopySource, pixels.Length * sizeof(uint));
         using Texture atlas = backend.CreateTexture(device, new TextureDesc(TextureDimension.Texture2D,
-            256, 128, 1, 1, 1, 1, Format.R32UInt, TextureUsages.Sampled | TextureUsages.CopyDestination));
+            256, 128, 1, 1, 2, 1, Format.R32UInt, TextureUsages.Sampled | TextureUsages.CopyDestination));
         using TextureSrv atlasView = backend.CreateTextureSrv(device, new TextureSrvDesc(atlas,
-            new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), Format.R32UInt, TextureViewDimension.Texture2D));
+            new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color), Format.R32UInt, TextureViewDimension.Texture2DArray));
         using Texture hiz = backend.CreateTexture(device, new TextureDesc(TextureDimension.Texture2D,
-            128, 128, 1, 7, 1, 1, Format.R32G32Float, TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.CopySource));
+            128, 128, 1, 7, 1, 1, Format.R32Float, TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.CopySource));
         using TextureSrv source = backend.CreateTextureSrv(device, new TextureSrvDesc(hiz,
-            new TextureSubresourceRange(3, 1, 0, 1, TextureAspects.Color), Format.R32G32Float, TextureViewDimension.Texture2DArray));
+            new TextureSubresourceRange(3, 1, 0, 1, TextureAspects.Color), Format.R32Float, TextureViewDimension.Texture2DArray));
         TextureUav[] destinations = new TextureUav[7];
         using Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(2u * 128u * 512u, BufferUsages.CopyDestination), MemoryType.Readback);
@@ -59,15 +60,16 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
         {
             for (uint mip = 0; mip < 7; mip++)
                 destinations[mip] = backend.CreateTextureUav(device, new TextureUavDesc(hiz,
-                    new TextureSubresourceRange(mip, 1, 0, 1, TextureAspects.Color), Format.R32G32Float, TextureViewDimension.Texture2DArray));
+                    new TextureSubresourceRange(mip, 1, 0, 1, TextureAspects.Color), Format.R32Float, TextureViewDimension.Texture2DArray));
             using CommandContext context = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Compute, 0, 1));
             backend.Begin(context, new CommandRecordingDesc(64, 8, 64));
-            backend.Barrier(context, new TextureBarrier(atlas, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+            backend.Barrier(context, new TextureBarrier(atlas, new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color),
                 PipelineSync.None, PipelineSync.Copy, ResourceAccess.NoAccess, ResourceAccess.CopyDestination,
                 TextureLayout.Undefined, TextureLayout.CopyDestination));
-            backend.CopyBufferToTexture(context, new BufferTextureCopy(upload, 0, 1024, 128, atlas,
-                0, 0, TextureAspects.Color, 0, 0, 0, 256, 128, 1));
-            backend.Barrier(context, new TextureBarrier(atlas, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+            for (uint layer = 0; layer < 2; layer++)
+                backend.CopyBufferToTexture(context, new BufferTextureCopy(upload, layer * 1024u * 128u, 1024, 128, atlas,
+                    0, layer, TextureAspects.Color, 0, 0, 0, 256, 128, 1));
+            backend.Barrier(context, new TextureBarrier(atlas, new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color),
                 PipelineSync.Copy, PipelineSync.ComputeShading, ResourceAccess.CopyDestination, ResourceAccess.ShaderResource,
                 TextureLayout.CopyDestination, TextureLayout.ShaderResource));
             backend.Barrier(context, new TextureBarrier(hiz, new TextureSubresourceRange(0, 7, 0, 1, TextureAspects.Color),
@@ -77,7 +79,7 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
             backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
                 initialize.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 [ResourceBinding.ConstantBuffer(cbv0), ResourceBinding.ReadOnlyBuffer(activeView), ResourceBinding.ReadOnlyBuffer(activeCountView),
-                    ResourceBinding.SampledTexture(atlasView), ResourceBinding.SampledTexture(atlasView),
+                    ResourceBinding.SampledTexture(atlasView),
                     ResourceBinding.StorageTexture(destinations[0]), ResourceBinding.StorageTexture(destinations[1]),
                     ResourceBinding.StorageTexture(destinations[2]), ResourceBinding.StorageTexture(destinations[3])], []));
             backend.Dispatch(context, new DispatchArguments(2, 8, 8));
@@ -128,7 +130,7 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
                         expected[y * size + x] = Math.Max(Math.Max(previous[p], previous[p + 1]),
                             Math.Max(previous[p + size * 2], previous[p + size * 2 + 1]));
                         float actual = BitConverter.UInt32BitsToSingle(BinaryPrimitives.ReadUInt32LittleEndian(
-                            mapping.Bytes.Slice(readOffset + y * 512 + x * 8, 4)));
+                            mapping.Bytes.Slice(readOffset + y * 512 + x * 4, 4)));
                         Assert.Equal(expected[y * size + x], actual);
                     }
                     readOffset += Math.Max(size, 2) * 512;
