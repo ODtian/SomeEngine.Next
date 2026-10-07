@@ -12,7 +12,8 @@ public sealed class DynamicShadowRenderingTests
     public async Task MovingADynamicShadowOccluderRestoresTheCoveredCasterOnTheNextFrame()
     {
         var plane = await RasterTestGeometry.CreatePlaneAsync();
-        var options = new ClusterPipelineOptions { ForceHardwareRaster = true, MaxCandidates = 65536 };
+        var options = new ClusterPipelineOptions
+        { ForceHardwareRaster = true, MaxCandidates = 65536, EnableFrameMetricsReadback = true };
         var settings = new VirtualShadowMapSettings
         {
             VirtualResolution = 4096, AtlasSize = 2048, MaxShadowLights = 1,
