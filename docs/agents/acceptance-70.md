@@ -2,7 +2,7 @@
 
 交付：[PR #136](https://github.com/ODtian/SomeEngine.Next/pull/136)。目标分支为 `codex/someui-base-7b03495`，实现起点 `be6be444f639d9e786914d4b3661f8b8e9441bd0`。
 
-当前状态：[#172](https://github.com/ODtian/SomeEngine.Next/issues/172) 的恢复目标为 P95：1024 运动小球 ≤1 ms、Sponza ≤2 ms、Bistro ≤3 ms。当前 `78676a7c` 三场景完整测量的 P95 约 4.83 / 9.23 / 10.44 ms；PR 为 draft，性能验收继续。修复使用通用引擎路径，保持原场景输入、缓存分类、Native 行为与有效质量。已有行为结果复用，后续执行必要构建和三场景短测。
+当前状态：[#172](https://github.com/ODtian/SomeEngine.Next/issues/172) 的恢复目标为 P95：1024 运动小球 ≤1 ms、Sponza ≤2 ms、Bistro ≤3 ms。当前 `f02641a4` 三场景完整测量的 P95 为 4.8936 / 8.8709 / 10.4760 ms；PR 为 draft，性能验收继续。#180–#187 接入用户早期深度、动态深度裁剪、static/merged HiZ 与 Native receiver-mask 阶段；动态遮挡移动恢复的单条行为通过。已有行为结果复用，后续执行必要构建和三场景短测。
 
 原版依据为 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`，提交说明 `5.8.3 release`。各票记录实际源码调用、GitBlob、SHA-256 和字节数。最终源码为 `31533a97ec6bcc17177694a8d468fdd86f654cd5`；#167/#168 接合缓存行为的 Native 参照状态，#169 明确最高细节源几何参照的适用范围，#170/#171 完成反向深度精度与 directional mip0 行为。
 
