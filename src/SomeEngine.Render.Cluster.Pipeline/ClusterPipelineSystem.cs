@@ -56,7 +56,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private QueryHandle _viewQuery;
     private QueryHandle _sceneQuery;
     private ClusterPipelineSet? _pipelines;
-    private ClusterEntryUsageCache? _entryUsages;
     private ClusterRasterStages? _rasterStages;
     private ClusterShadeStages? _shadeStages;
     private ClusterRasterStageSet? _installedRasterStages;
@@ -288,7 +287,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _viewQuery = view;
             _sceneQuery = context.World.Query(_instances.EntityQuery);
             EnsurePipelineResources();
-            _entryUsages = new ClusterEntryUsageCache();
             _rasterStages = new ClusterRasterStages(
                 _backend,
                 _device,
@@ -296,13 +294,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _pipelines!.DefaultRasterVertexEncoding,
                 _pipelines.SoftwareRaster,
                 _pipelines.HardwareRaster,
-                new RasterMaterialResources(this, _stageResourceProvider),
-                _entryUsages);
+                new RasterMaterialResources(this, _stageResourceProvider));
             _shadeStages = new ClusterShadeStages(
                 _backend,
                 _device,
-                _stageResourceProvider,
-                _entryUsages);
+                _stageResourceProvider);
             _history = new ClusterCullingHistory(_outputDescription.ViewCount);
             _created = true;
         }
@@ -313,8 +309,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _shadeStages = null;
             _rasterStages?.Dispose();
             _rasterStages = null;
-            _entryUsages?.Dispose();
-            _entryUsages = null;
             _pipelines?.Dispose();
             _pipelines = null;
             _dispatchIndirectLayout?.Dispose();
@@ -884,7 +878,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Release(ref _sceneQuery, context.World, ref failures);
         Dispose(ref _shadeStages, ref failures);
         Dispose(ref _rasterStages, ref failures);
-        Dispose(ref _entryUsages, ref failures);
         DisposeMaterialSamplers(ref failures);
         Dispose(ref _pipelines, ref failures);
         _history = null;

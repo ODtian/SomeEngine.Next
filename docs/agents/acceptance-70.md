@@ -70,3 +70,8 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 
 #162 的同48帧最小投射结果回读进一步记录实际像素(56,35)：两边同view0/mip5，射线数分别7/1、visibility分别6/7与1；102个像素的wave自适应射线数随材质箱成员变化。透明caster缓存行为以双方明确hard0比较完整颜色/深度，Native默认7ray与wave早退继续用于生产渲染。临时shader/测试读回已清理，原始RGBA16、帧身份和decoded.json保存在final/ticket-162/projection-values。
 #162 hard0缓存的当前残留D3D12/SW完整颜色/深度行实际1 passed、0 skipped、26秒，77资产生产shader闭包和行为规则通过；原始日志/TRX在final/ticket-162/hard-cache。
+
+#165 首帧trace定位Bistro RasterStageResolve self9.739秒、ShadeStageResolve self2.009秒；原默认7ray非trace52.86秒窗口中Bistro采样0。当前入口资源使用地址与code同一次构建，Shader唯一持有；Cluster安装读取已生成数据，第二份async metadata cache已移除。schema11/Importer31重新构建同一资产身份，默认77资产闭包成功；公开Shader资产重载按明确u3/u5 space2正确返回各入口资源，1 passed、0 skipped、799毫秒，当前UV完整图像安装直接行1 passed、0 skipped、14秒。原始数据在final/ticket-165，三场景原32ready/128rendered/3秒warmup与2秒采样继续用于当前完整性能验收。
+
+#166 当前Native资源地址space2被旧flat descriptor式重复加到space4的actualred已留存；共同SlangDescriptorLocation供Shader构建、Cluster资源访问和两RHI使用，ParameterBlock独立child遍历保留。公开D3D12调度旧source创建管线HRESULT0x80070057→当前u3/space2写17，实际1 passed、0 skipped、1秒；Vulkan明确set2/binding3同样写17，1 passed、0 skipped、1秒。临时Native/cook地址探针已清理，原始TRX/日志在final/ticket-166和ticket-165。
+#165/#166 共用地址与Importer31最终源下，D3D12/HW的完整UV图像安装行实际1 passed、0 skipped、15秒；必要C#构建与行为规则通过，日志/TRX在final/ticket-165/final-install。

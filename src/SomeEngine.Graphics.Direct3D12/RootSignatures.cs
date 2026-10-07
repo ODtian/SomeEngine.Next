@@ -530,23 +530,16 @@ internal sealed unsafe partial class D3D12Backend
         nint spaceValue = contents.GetDescriptorSetSpaceOffset(setIndex);
         nuint spaceMarker = unchecked((nuint)spaceValue);
         nuint layoutSpace = layout.GetBindingSpace(descriptorCategory);
-        nuint leafSpace = GetDescriptorSubObjectCategorySpace(
-            contents,
-            bindingRangeIndex,
-            descriptorCategory,
-            layout.Name);
         if (spaceValue < 0 || spaceMarker == Slang.UnknownSize ||
             spaceMarker == Slang.UnboundedSize || spaceMarker > uint.MaxValue ||
             layoutSpace == Slang.UnknownSize || layoutSpace == Slang.UnboundedSize ||
             layoutSpace > uint.MaxValue || spaceMarker > uint.MaxValue - layoutSpace ||
-            leafSpace == Slang.UnknownSize || leafSpace == Slang.UnboundedSize ||
-            leafSpace > uint.MaxValue ||
-            spaceMarker + layoutSpace > uint.MaxValue - leafSpace ||
-            spaceMarker + layoutSpace + leafSpace > uint.MaxValue - registerSpaceBase)
+            spaceMarker + layoutSpace > uint.MaxValue - registerSpaceBase)
         {
             ThrowInvalidNativeDescriptorLocation(layout, bindingRangeIndex, descriptorRangeIndex);
         }
-        return checked(registerSpaceBase + checked((uint)(spaceMarker + layoutSpace + leafSpace)));
+        return checked(registerSpaceBase + (uint)SlangDescriptorLocation.FromLayout(
+            layout, contents, setIndex, descriptorRangeIndex).Space);
     }
 
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
@@ -716,39 +709,6 @@ internal sealed unsafe partial class D3D12Backend
                 GraphicsError.PipelineCreation,
                 $"Slang resource result type '{resultType.Name}' cannot be represented by a current RHI format."),
         };
-    }
-
-    private static nuint GetDescriptorSubObjectCategorySpace(
-        TypeLayoutReflection layout,
-        nint bindingRangeIndex,
-        SlangParameterCategory category,
-        string layoutName)
-    {
-        nint subObjectRangeCount = layout.SubObjectRangeCount;
-        nuint marker = unchecked((nuint)subObjectRangeCount);
-        if (subObjectRangeCount < 0 || marker == Slang.UnknownSize ||
-            marker == Slang.UnboundedSize)
-        {
-            throw new GraphicsException(
-                GraphicsError.NativeFailure,
-                $"Slang layout '{layoutName}' has an unresolved sub-object range count " +
-                "while resolving a descriptor category space.");
-        }
-        for (nint index = 0; index < subObjectRangeCount; index++)
-        {
-            if (layout.GetSubObjectRangeBindingRangeIndex(index) != bindingRangeIndex)
-                continue;
-            VariableLayoutReflection leaf = layout.GetSubObjectRangeOffset(index);
-            if (leaf == VariableLayoutReflection.Null)
-            {
-                throw new GraphicsException(
-                    GraphicsError.NativeFailure,
-                    $"Slang descriptor binding range {bindingRangeIndex} on layout " +
-                    $"'{layoutName}' has no variable layout.");
-            }
-            return leaf.GetBindingSpace(category);
-        }
-        return 0;
     }
 
     private readonly record struct DefaultRootTable(

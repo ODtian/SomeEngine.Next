@@ -304,14 +304,10 @@ internal sealed unsafe partial class VulkanBackend
                     SlangBindingType source = dataLayout.GetDescriptorSetDescriptorRangeType(setIndex, descriptorRange);
                     SlangParameterCategory category = dataLayout.GetDescriptorSetDescriptorRangeCategory(setIndex, descriptorRange);
                     (ResourceBindingType bindingType, DescriptorType descriptorType) = ToNativeBinding(source, category);
-                    uint sourceSet = checked(
-                        setBase +
-                        ResolveUInt(dataLayout.GetDescriptorSetSpaceOffset(setIndex), 0) +
-                        ResolveUInt(layout.GetBindingSpace(category), 0) +
-                        ResolveSubObjectSpace(dataLayout, bindingRange, category));
-                    uint logicalBinding = checked(
-                        ResolveUInt(dataLayout.GetDescriptorSetDescriptorRangeIndexOffset(setIndex, descriptorRange), 0) +
-                        ResolveUInt(layout.GetOffset(category), 0));
+                    SlangDescriptorLocation location = SlangDescriptorLocation.FromLayout(
+                        layout, dataLayout, setIndex, descriptorRange);
+                    uint sourceSet = checked(setBase + (uint)location.Space);
+                    uint logicalBinding = checked((uint)location.Register);
                     uint binding = NormalizeReflectedDescriptorBinding(
                         logicalBinding,
                         source,
@@ -902,23 +898,6 @@ internal sealed unsafe partial class VulkanBackend
                 (SlangScalarType.Float16, 4) => RhiFormat.R16G16B16A16Float,
                 _ => throw new GraphicsException(GraphicsError.PipelineCreation, $"Slang resource result '{type.Name}' has no RHI format."),
             };
-        }
-
-        private static uint ResolveSubObjectSpace(
-            TypeLayoutReflection layout,
-            nint bindingRange,
-            SlangParameterCategory category)
-        {
-            for (nint index = 0; index < layout.SubObjectRangeCount; index++)
-            {
-                if (layout.GetSubObjectRangeBindingRangeIndex(index) != bindingRange)
-                    continue;
-                VariableLayoutReflection variable = layout.GetSubObjectRangeOffset(index);
-                return variable == VariableLayoutReflection.Null
-                    ? 0
-                    : ResolveUInt(variable.GetBindingSpace(category), 0);
-            }
-            return 0;
         }
 
         private static bool UsesCategory(TypeLayoutReflection layout, SlangParameterCategory category)
