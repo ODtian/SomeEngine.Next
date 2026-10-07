@@ -38,6 +38,7 @@ public sealed partial class ClusterPipelineSystem
 
     private void RecordMaterialCasterChanges(ClusterMaterialAssignmentSet assignments)
     {
+        if (!assignments.ChangedMaterialIds.Any() && !assignments.ChangedOffsets.Any()) return;
         var entities = new HashSet<Entity>();
         assignments.CollectChangedEntities(entities);
         RecordCasterChange([], entities);
