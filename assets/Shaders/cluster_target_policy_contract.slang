@@ -10,6 +10,12 @@ bool ClusterTargetPolicyAccepts(
     ClusterProjectedBounds projectedBounds,
     ClusterViewUniforms view);
 
+bool ClusterTargetPolicyWorldDepthAccepts(
+    float3 worldMin,
+    float3 worldMax,
+    ClusterViewUniforms view,
+    uint depthCacheClass);
+
 bool ClusterTargetPolicyScreenBoundsOccluded(
     float2 minUv,
     float2 maxUv,

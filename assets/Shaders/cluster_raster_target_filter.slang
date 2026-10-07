@@ -283,6 +283,27 @@ float ClusterTargetHiZMax(
             source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p3, mipSize, target.PhysicalPagesPerRow), mip))));
 }
 
+bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
+    ClusterViewUniforms view, uint depthCacheClass)
+{
+    if (view.TargetPolicy == 0u || view.CullingEnabled == 0u || depthCacheClass != 0u)
+        return true;
+    ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
+    if ((target.Padding.y & 8u) == 0u)
+        return true;
+
+    // This range belongs to orthographic directional views. Preserve the user's
+    // conservative world bounds and the adopted cached depth coordinates.
+    float3 center = (worldMin + worldMax) * 0.5;
+    float3 extent = (worldMax - worldMin) * 0.5;
+    float3 depthAxis = float3(view.ViewProj[0][2], view.ViewProj[1][2], view.ViewProj[2][2]);
+    float depthCenter = dot(center, depthAxis) + view.ViewProj[3][2];
+    float depthRadius = dot(extent, abs(depthAxis));
+    float rounding = (dot(abs(center), abs(depthAxis)) + abs(view.ViewProj[3][2]) + depthRadius + 1.0) * 9.5367431640625e-7;
+    return depthCenter + depthRadius + rounding > target.DynamicDepthCullRange.x &&
+        depthCenter - depthRadius - rounding < target.DynamicDepthCullRange.y;
+}
+
 bool ClusterTargetPolicyAccepts(
     ClusterProjectedBounds projectedBounds,
     ClusterViewUniforms view)

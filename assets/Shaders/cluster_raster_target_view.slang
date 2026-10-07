@@ -22,9 +22,11 @@ struct ClusterRasterTargetView
     uint RasterWindowPages;
     uint2 Padding;
     uint4 UncachedPageRect;
+    float2 DynamicDepthCullRange;
+    uint2 DepthCullPadding;
 };
 
-static const uint CLUSTER_RASTER_TARGET_VIEW_BYTES = 80u;
+static const uint CLUSTER_RASTER_TARGET_VIEW_BYTES = 96u;
 
 uint2 ClusterPackRasterTargetPageWindow(uint4 pageWindow)
 {

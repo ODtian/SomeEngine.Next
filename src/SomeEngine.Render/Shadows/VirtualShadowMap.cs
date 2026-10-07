@@ -464,7 +464,9 @@ public sealed partial class VirtualShadowMap : IDisposable
                         DepthCullRange = !firstPerson && Settings.PrefilteredDistantEnabled
                             ? new Vector2(lightProjection.M43 + (clipmapLevel == 0 ? 0f : cullingEndDistance * .5f) * lightProjection.M33,
                                 lightProjection.M43 + cullingEndDistance * lightProjection.M33)
-                            : new Vector2(0f, float.MaxValue),
+                            : !firstPerson && Settings.DirectionalReceiverMask
+                                ? new Vector2(-float.MaxValue, lightProjection.M43 - cullingEndDistance * lightProjection.M33)
+                                : new Vector2(-float.MaxValue, float.MaxValue),
                     };
                     if (!firstPerson && Settings.PrefilteredDistantEnabled) _views[viewIndex].Flags |= VirtualShadowViewFlags.PrefilteredDistant;
                     _preparedLightViews[viewIndex] = lightView;

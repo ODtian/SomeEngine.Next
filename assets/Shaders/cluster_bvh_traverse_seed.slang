@@ -229,6 +229,10 @@ void SeedHierarchyRoots(
             if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view))
                 continue;
             view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
+            if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
+                    instanceWorldMin, instanceWorldMax, view,
+                    LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID)))
+                continue;
             ClusterProjectedBounds projectedBounds;
             bool outsideFrustum = ProjectWorldAabbForView(
                 instanceWorldMin,

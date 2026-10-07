@@ -82,7 +82,7 @@ public readonly record struct ClusterRenderContext(
     bool HardwareRasterOnly = false)
 {
     public const uint MaximumViewCount = 1u << 19;
-    public const uint TargetViewSizeInBytes = 80;
+    public const uint TargetViewSizeInBytes = 96;
     public const int ViewSizeInBytes = 768;
     public GraphResourceBinder? BindTargetPageBounds { get; init; }
     public GraphResourceBinder? BindWorkTargetViews { get; init; }

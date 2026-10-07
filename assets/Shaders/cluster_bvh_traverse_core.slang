@@ -202,6 +202,10 @@ void ProcessTraversalLevel(
         uint viewIndex = viewBase + bit;
         ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
         view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
+        if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
+                worldMin, worldMax, view,
+                LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID)))
+            continue;
         ClusterProjectedBounds projectedBounds;
         bool outside = ProjectWorldAabbForView(worldMin, worldMax, view, previousProjection, projectedBounds);
         if ((view.CullingEnabled != 0u && outside) ||

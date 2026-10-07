@@ -324,7 +324,7 @@ void EvaluateClusterRasterPixelTarget(
     input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
     ClusterRasterOutputPixel outputPixel;
     bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
-    if (!ClusterRasterQuadAcceptsPixel(accepted))
+    if (!accepted)
         discard;
     VisibilityPixelResult result =
         EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input);

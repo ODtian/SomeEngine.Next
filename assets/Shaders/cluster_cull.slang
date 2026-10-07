@@ -110,7 +110,7 @@ bool PassesLODFilter(
     return ClusterSphereError(worldCenter, worldRadius, lodError * errorScale, view) <= view.LodThreshold;
 }
 
-void BuildClusterAabbScreenBoundsAndNearDepth(
+bool BuildClusterAabbScreenBoundsAndNearDepth(
     PackedCluster cluster,
     RenderInstanceTransform transform,
     bool usePrev,
@@ -119,7 +119,8 @@ void BuildClusterAabbScreenBoundsAndNearDepth(
     out float2 minUv,
     out float2 maxUv,
     out float nearDepth,
-    out uint mipLevel)
+    out uint mipLevel,
+    uint depthCacheClass)
 {
     uint vertexCount = cluster.PackedCounts & 0xFF;
     if (vertexCount == 0)
@@ -128,7 +129,7 @@ void BuildClusterAabbScreenBoundsAndNearDepth(
         maxUv = 1.0.xx;
         nearDepth = 0.0;
         mipLevel = 0;
-        return;
+        return true;
     }
 
     float3 localMin = cluster.BoundMin;
@@ -158,9 +159,19 @@ void BuildClusterAabbScreenBoundsAndNearDepth(
     worldMin -= expansion.xxx;
     worldMax += expansion.xxx;
 
+    if (!usePrev && !ClusterTargetPolicyWorldDepthAccepts(worldMin, worldMax, view, depthCacheClass))
+    {
+        minUv = 0.0.xx;
+        maxUv = 0.0.xx;
+        nearDepth = 0.0;
+        mipLevel = 0u;
+        return false;
+    }
+
     BuildWorldAabbScreenBoundsAndNearDepth(
         worldMin, worldMax, usePrev, view,
         minUv, maxUv, nearDepth, mipLevel);
+    return true;
 }
 
 struct ClusterScreenBounds
@@ -169,14 +180,16 @@ struct ClusterScreenBounds
     float2 MaxUv;
     float NearDepth;
     uint MipLevel;
+    bool DepthAccepted;
 };
 
 ClusterScreenBounds ProjectClusterScreenBounds(PackedCluster cluster,
-    RenderInstanceTransform transform, float boundsExpansion, bool usePrev, ClusterViewUniforms view)
+    RenderInstanceTransform transform, float boundsExpansion, bool usePrev, ClusterViewUniforms view,
+    uint depthCacheClass = 1u)
 {
     ClusterScreenBounds bounds;
-    BuildClusterAabbScreenBoundsAndNearDepth(cluster, transform, usePrev, boundsExpansion, view,
-        bounds.MinUv, bounds.MaxUv, bounds.NearDepth, bounds.MipLevel);
+    bounds.DepthAccepted = BuildClusterAabbScreenBoundsAndNearDepth(cluster, transform, usePrev, boundsExpansion, view,
+        bounds.MinUv, bounds.MaxUv, bounds.NearDepth, bounds.MipLevel, depthCacheClass);
     return bounds;
 }
 
@@ -395,11 +408,17 @@ bool LoadAndFilterCandidate(
 #else
     bool needsCurrentBounds = view.TargetPolicy != 0u || view.HasPrevHistory == 0u;
 #endif
+    uint depthCacheClass = view.TargetPolicy != 0u
+        ? LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID) : 1u;
     if (needsCurrentBounds && view.CullingEnabled != 0u)
-        currentBounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, false, view);
+    {
+        currentBounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, false, view, depthCacheClass);
+        if (!currentBounds.DepthAccepted)
+            return false;
+    }
     if (view.TargetPolicy != 0u && !ClusterTargetPolicyRasterBoundsWindow(
             currentBounds.MinUv, currentBounds.MaxUv, view, rasterWindow,
-            LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID)))
+            depthCacheClass))
         return false;
     if (view.CullingEnabled == 0u)
     {
