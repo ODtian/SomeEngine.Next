@@ -116,7 +116,6 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     result.Valid = true;
     result.ViewIndex = center.ViewIndex;
     result.MipLevel = center.MipLevel;
-    result.Visibility = centerBlocked ? 0.0 : 1.0;
     VirtualShadowMapParameters source = views[center.ViewIndex];
     float4 clip = mul(float4(position, 1.0), source.LightViewProjection);
     float projectionScale = .5 * length(float3(source.LightViewProjection[0][0],
