@@ -48,7 +48,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
         cancellationToken.ThrowIfCancellationRequested();
         copy.Validate(name);
         Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(
-            copy.References(),
+            copy.GetShaderAssetIds(),
             loader,
             slang,
             sessionDescription,
@@ -133,5 +133,17 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
             noise?.Dispose();
             throw;
         }
+    }
+
+    private IEnumerable<Guid> GetShaderAssetIds()
+    {
+        ShaderRef?[] entries =
+        [
+            ResetReceiverMasks, ResetFrame, MarkPages, MarkCoarsePages, AllocatePages, ClearPages,
+            InitializeState, InvalidateCasters, BuildPagePool, CompactViews, InitializePageHiZ,
+            ReducePageHiZ, DynamicResolution, CompletePageDepth, WorkFeedback, MergeStatic,
+            ResidentPages, Prefilter, PrefilterRequests, FroxelBuild, FroxelArguments, FroxelMark, FroxelPixel,
+        ];
+        return entries.OfType<ShaderRef>().Select(static reference => reference.Asset.Value);
     }
 }

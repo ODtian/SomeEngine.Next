@@ -271,6 +271,39 @@ void WriteClusterMotion<
             : ClusterMotionClipToUv(currentClip) - ClusterMotionClipToUv(previousClip);
 }
 
+bool TryEvaluateMaterialPixel<TVE, TDomain>(uniform TVE vertexEval, uniform TDomain domain, uint3 tid,
+    out uint3 pixelCoord, out TriangleInfo tri, out ClusterViewUniforms view,
+    out TDomain.TriangleData triangle, out float3 bary, out TDomain.Surface evaluated)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
+{
+    uint group = tid.x / 64u + tid.y * 65535u, lane = tid.x % 64u;
+    uint tiles = BinCounts[Uniforms.ShadingBin * 2u];
+    uint quads = BinCounts[Uniforms.ShadingBin * 2u + 1u];
+    bool fullTile = group < tiles;
+    uint workIndex = fullTile ? group : (group - tiles) * 16u + lane / 4u;
+    if (!fullTile && workIndex >= quads) return false;
+    uint2 work = PixelCoordBuffer[BinOffsets[Uniforms.ShadingBin * 2u + (fullTile ? 0u : 1u)] + workIndex];
+    uint row = work.x / Uniforms.ScreenWidth;
+    pixelCoord = uint3(work.x % Uniforms.ScreenWidth,
+        row % Uniforms.ScreenHeight, row / Uniforms.ScreenHeight);
+    uint corner = lane & 3u;
+    if (!fullTile && (work.y & (1u << corner)) == 0u) return false;
+    // Consecutive groups of four lanes always cover a spatial quad.
+    uint quad = lane / 4u;
+    pixelCoord.xy += uint2(corner & 1u, corner >> 1u);
+    if (fullTile) pixelCoord.xy += uint2(quad % 4u, quad / 4u) * 2u;
+    if (!decodeTriangle(pixelCoord, tri)) return false;
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
+    triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
+    SurfaceBarycentrics coordinates = ResolveBarycentrics<TVE.Vertex, TDomain>(
+        domain, pixelCoord, view, triangle);
+    if (coordinates.Valid == 0u) return false;
+    bary = coordinates.Value;
+    evaluated = domain.eval(triangle, bary);
+    return true;
+}
+
 void CSShadeCore<
     TVE,
     TDomain,
@@ -283,38 +316,14 @@ void CSShadeCore<
     where TDomain : IDomainEvaluate<TVE.Vertex>
     where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
 {
-    uint group = tid.x / 64u + tid.y * 65535u, lane = tid.x % 64u;
-    uint tiles = BinCounts[Uniforms.ShadingBin * 2u];
-    uint quads = BinCounts[Uniforms.ShadingBin * 2u + 1u];
-    bool fullTile = group < tiles;
-    uint workIndex = fullTile ? group : (group - tiles) * 16u + lane / 4u;
-    if (!fullTile && workIndex >= quads) return;
-    uint2 work = PixelCoordBuffer[BinOffsets[Uniforms.ShadingBin * 2u + (fullTile ? 0u : 1u)] + workIndex];
-    uint row = work.x / Uniforms.ScreenWidth;
-    uint3 pixelCoord = uint3(work.x % Uniforms.ScreenWidth,
-        row % Uniforms.ScreenHeight, row / Uniforms.ScreenHeight);
-    uint corner = lane & 3u;
-    if (!fullTile && (work.y & (1u << corner)) == 0u) return;
-    // Consecutive groups of four lanes always cover a spatial quad.
-    uint quad = lane / 4u;
-    pixelCoord.xy += uint2(corner & 1u, corner >> 1u);
-    if (fullTile) pixelCoord.xy += uint2(quad % 4u, quad / 4u) * 2u;
-
+    uint3 pixelCoord;
     TriangleInfo tri;
-    if (!decodeTriangle(pixelCoord, tri))
-        return;
-    ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
-
-    TDomain.TriangleData triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
-    SurfaceBarycentrics coordinates = ResolveBarycentrics<TVE.Vertex, TDomain>(
-        domain,
-        pixelCoord,
-        view,
-        triangle);
-    if (coordinates.Valid == 0u)
-        return;
-    float3 bary = coordinates.Value;
-    TDomain.Surface surfaceEval = domain.eval(triangle, bary);
+    ClusterViewUniforms view;
+    TDomain.TriangleData triangle;
+    float3 bary;
+    TDomain.Surface surfaceEval;
+    if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
+        pixelCoord, tri, view, triangle, bary, surfaceEval)) return;
     WriteClusterMotion<TVE, TDomain>(
         vertexEval,
         domain,
@@ -369,29 +378,16 @@ void CSEvaluateSurfaceReceiver<TVE, TDomain, TSurface>(uniform TVE vertexEval, u
     where TDomain : IDomainEvaluate<TVE.Vertex>
     where TSurface : ISurfaceReceiverEvaluate<TDomain.Surface, TDomain.TriangleData>
 {
-    uint group = tid.x / 64u + tid.y * 65535u, lane = tid.x % 64u;
-    uint tiles = BinCounts[Uniforms.ShadingBin * 2u];
-    uint quads = BinCounts[Uniforms.ShadingBin * 2u + 1u];
-    bool fullTile = group < tiles;
-    uint workIndex = fullTile ? group : (group - tiles) * 16u + lane / 4u;
-    if (!fullTile && workIndex >= quads) return;
-    uint2 work = PixelCoordBuffer[BinOffsets[Uniforms.ShadingBin * 2u + (fullTile ? 0u : 1u)] + workIndex];
-    uint row = work.x / Uniforms.ScreenWidth;
-    uint3 pixel = uint3(work.x % Uniforms.ScreenWidth, row % Uniforms.ScreenHeight, row / Uniforms.ScreenHeight);
-    uint corner = lane & 3u;
-    if (!fullTile && (work.y & (1u << corner)) == 0u) return;
-    uint quad = lane / 4u;
-    pixel.xy += uint2(corner & 1u, corner >> 1u);
-    if (fullTile) pixel.xy += uint2(quad % 4u, quad / 4u) * 2u;
+    uint3 pixel;
     TriangleInfo tri;
-    if (!decodeTriangle(pixel, tri)) return;
-    ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
-    TDomain.TriangleData triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
-    SurfaceBarycentrics coordinates = ResolveBarycentrics<TVE.Vertex, TDomain>(domain, pixel, view, triangle);
-    if (coordinates.Valid == 0u) return;
-    TDomain.Surface evaluated = domain.eval(triangle, coordinates.Value);
+    ClusterViewUniforms view;
+    TDomain.TriangleData triangle;
+    float3 bary;
+    TDomain.Surface evaluated;
+    if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
+        pixel, tri, view, triangle, bary, evaluated)) return;
     SurfaceReceiver receiver = surface.evaluateReceiver(pixel, tri.instanceID, tri.materialSlot,
-        evaluated, coordinates.Value, triangle);
+        evaluated, bary, triangle);
     ClusterViewUniforms sourceView = Views[tri.viewIndex];
     receiver.ShadingNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
         sourceView, receiver.ShadingNormal);
