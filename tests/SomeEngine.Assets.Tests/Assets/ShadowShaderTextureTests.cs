@@ -14,7 +14,8 @@ public sealed class ShadowShaderTextureTests
             using var asset = new VirtualShadowMapShadersAsset();
             VirtualShadowMapShadersBlock settings = asset.GetBlock<VirtualShadowMapShadersBlock>();
             var shader = new ShaderRef { Asset = new(Guid.NewGuid()), EntryPoint = "Compute" };
-            settings.ProjectLights = shader;
+            settings.ProjectDirectionalLights = shader;
+            settings.ProjectLocalLights = shader;
             settings.ResetReceiverMasks = shader;
             settings.ResetFrame = shader;
             settings.MarkPages = shader;

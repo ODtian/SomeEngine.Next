@@ -10,9 +10,9 @@ struct VirtualShadowProjectionUniforms
     uint Width;
     uint Height;
     uint ViewCount;
-    uint LightCapacity;
+    uint LightLayerCount;
     uint AdditionalReceiverLayerCount;
-    uint Pad0;
+    uint DispatchWidth;
     uint Pad1;
     uint Pad2;
 };
@@ -27,9 +27,9 @@ StructuredBuffer<GPULight> LightBuffer;
 StructuredBuffer<uint2> ClusteredLightGrid;
 StructuredBuffer<uint> LightIndexList;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2DArray<float> ProjectionVisibility;
+RWStructuredBuffer<float> ProjectionVisibility;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2DArray<float> ProjectionAdditionalVisibility;
+RWStructuredBuffer<float> ProjectionAdditionalVisibility;
 
 uint2 VirtualShadowProjectionPixel(uint lane)
 {
@@ -39,10 +39,13 @@ uint2 VirtualShadowProjectionPixel(uint lane)
 
 float ProjectVirtualShadowReceiver(uint3 pixel, uint light, uint receiverLayer)
 {
-    uint directional = VirtualShadowSampling.DirectionalLightCount;
     uint points = VirtualShadowSampling.PointLightCount;
     uint spots = VirtualShadowSampling.SpotLightCount;
-    if (light >= directional + points + spots) return 1.0;
+#if VSM_PROJECT_DIRECTIONAL_LIGHTS
+    if (light >= VirtualShadowSampling.DirectionalLightCount) return 1.0;
+#else
+    if (light >= points + spots) return 1.0;
+#endif
     uint receiverIndex = (pixel.z * Projection.Height + pixel.y) * Projection.Width + pixel.x;
     SurfaceReceiver receiver = receiverLayer == 0u ? ProjectionReceivers[receiverIndex] :
         ProjectionAdditionalReceivers[(receiverLayer - 1u) * Projection.ViewCount * Projection.Width * Projection.Height + receiverIndex];
@@ -57,17 +60,23 @@ float ProjectVirtualShadowReceiver(uint3 pixel, uint light, uint receiverLayer)
     float3 normal = receiver.ShadingNormal;
     float3 towardCamera = view.CameraPos - position;
     if (dot(normal, towardCamera) <= 0.0) return 1.0;
-    uint sourceLight = light < directional ? light : light < directional + points
-        ? VirtualShadowSampling.PointLightBufferOffset + light - directional
-        : VirtualShadowSampling.SpotLightBufferOffset + light - directional - points;
+#if VSM_PROJECT_DIRECTIONAL_LIGHTS
+    uint sourceLight = light;
+#else
+    uint sourceLight = light < points ? VirtualShadowSampling.PointLightBufferOffset + light
+        : VirtualShadowSampling.SpotLightBufferOffset + light - points;
+#endif
     GPULight source = LightBuffer[sourceLight];
-    float3 towardLight = light < directional ? -source.Direction : source.Position - position;
+#if VSM_PROJECT_DIRECTIONAL_LIGHTS
+    float3 towardLight = -source.Direction;
+#else
+    float3 towardLight = source.Position - position;
+#endif
     if (dot(normal, towardLight) <= 0.0) return 1.0;
-    if (light >= directional)
-    {
+#if !VSM_PROJECT_DIRECTIONAL_LIGHTS
         float distanceSquared = dot(towardLight, towardLight);
         if (source.Range <= 0.0 || distanceSquared >= source.Range * source.Range) return 1.0;
-        if (light >= directional + points && dot(source.Direction, source.Direction) > 1e-8 && source.OuterConeCos > 0.0 &&
+        if (light >= points && dot(source.Direction, source.Direction) > 1e-8 && source.OuterConeCos > 0.0 &&
             dot(-towardLight * rsqrt(max(distanceSquared, 1e-8)), source.Direction) <= source.OuterConeCos) return 1.0;
         ClusteredLightGridParameters lighting = LightingViews[pixel.z];
         float viewDepth = max(-mul(float4(position, 1.0), lighting.View).z, lighting.ZParams.x);
@@ -77,12 +86,11 @@ float ProjectVirtualShadowReceiver(uint3 pixel, uint light, uint receiverLayer)
         for (uint index = 0u; index < count; index++)
             included = included || LightIndexList[cell * lighting.MaxLightsPerCluster + index] == sourceLight;
         if (!included) return 1.0;
-    }
+#endif
     float bias = CalculateVirtualShadowNormalBiasLength(VirtualShadowSampling.ReceiverProjection,
         position, VirtualShadowSampling.NormalBias, VirtualShadowViews[0].WorldUnitsPerCentimeter);
     position += normal * bias;
-    if (light < directional)
-    {
+#if VSM_PROJECT_DIRECTIONAL_LIGHTS
         uint firstView = light * VirtualShadowSampling.DirectionalClipmapLevels;
         uint levels = min(VirtualShadowSampling.DirectionalClipmapLevels, VirtualShadowSampling.ViewCount - firstView);
         VirtualShadowProjectionResult result = TraceVirtualShadowDirectional(VirtualShadowViews, VirtualShadowPageTable,
@@ -96,28 +104,40 @@ float ProjectVirtualShadowReceiver(uint3 pixel, uint light, uint receiverLayer)
                 : 0xffffffffu);
         return result.Visibility * SampleDirectionalVirtualShadowPrefiltered(VirtualShadowViews, VirtualShadowPageTable,
             VirtualShadowPrefilteredAtlas, firstView, levels, position);
-    }
-    uint firstView = light < directional + points
-        ? VirtualShadowSampling.PointViewOffset + (light - directional) * 6u
-        : VirtualShadowSampling.SpotViewOffset + light - directional - points;
+#else
+    uint firstView = light < points ? VirtualShadowSampling.PointViewOffset + light * 6u
+        : VirtualShadowSampling.SpotViewOffset + light - points;
     return TraceVirtualShadowLocal(VirtualShadowViews, VirtualShadowPageTable, VirtualShadowAtlas,
         firstView, position, normal, CalculateVirtualShadowNominalWorldPixelRadius(
             VirtualShadowSampling.ReceiverProjection, footprint.Position), VirtualShadowDynamicResolutionBias[0].y,
         VirtualShadowSampling.LocalRays, pixel.xy, VirtualShadowSampling.FrameIndex, 0.0).Visibility;
+#endif
 }
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void ProjectVirtualShadowLights(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+#if VSM_PROJECT_DIRECTIONAL_LIGHTS
+void ProjectVirtualShadowDirectionalLights(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+#else
+void ProjectVirtualShadowLocalLights(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+#endif
 {
-    uint layerSize = Projection.LightCapacity * Projection.ViewCount;
-    uint receiverLayer = group.z / layerSize;
-    uint lightView = group.z % layerSize;
-    uint3 pixel = uint3(group.xy * 8u + VirtualShadowProjectionPixel(lane), lightView % Projection.ViewCount);
+    uint tileCountX = (Projection.Width + 7u) / 8u;
+    uint tileCountY = (Projection.Height + 7u) / 8u;
+    uint groupIndex = group.y * Projection.DispatchWidth + group.x;
+    uint tile = groupIndex % (tileCountX * tileCountY);
+    uint lightReceiver = groupIndex / (tileCountX * tileCountY);
+    uint layerSize = Projection.LightLayerCount * Projection.ViewCount;
+    if (lightReceiver >= layerSize * (1u + Projection.AdditionalReceiverLayerCount)) return;
+    uint receiverLayer = lightReceiver / layerSize;
+    uint lightView = lightReceiver % layerSize;
+    uint3 pixel = uint3(uint2(tile % tileCountX, tile / tileCountX) * 8u + VirtualShadowProjectionPixel(lane),
+        lightView % Projection.ViewCount);
     if (pixel.x >= Projection.Width || pixel.y >= Projection.Height) return;
     float visibility = ProjectVirtualShadowReceiver(pixel, lightView / Projection.ViewCount, receiverLayer);
-    if (receiverLayer == 0u) ProjectionVisibility[uint3(pixel.xy, lightView)] = visibility;
-    else ProjectionAdditionalVisibility[uint3(pixel.xy, (receiverLayer - 1u) * layerSize + lightView)] = visibility;
+    uint pixelIndex = (lightView * Projection.Height + pixel.y) * Projection.Width + pixel.x;
+    if (receiverLayer == 0u) ProjectionVisibility[pixelIndex] = visibility;
+    else ProjectionAdditionalVisibility[(receiverLayer - 1u) * layerSize * Projection.Width * Projection.Height + pixelIndex] = visibility;
     if (Projection.AdditionalReceiverLayerCount == 0u && all(pixel == 0u.xxx) && lightView == 0u)
-        ProjectionAdditionalVisibility[uint3(0,0,0)] = 1.0;
+        ProjectionAdditionalVisibility[0] = 1.0;
 }

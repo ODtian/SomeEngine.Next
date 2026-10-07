@@ -11,7 +11,8 @@ public sealed partial class VirtualShadowMapShadersBlock
             throw new InvalidDataException($"{subject} field '{nameof(BlueNoise)}' is missing.");
         ShaderRef?[] entries =
         [
-            ProjectLights,
+            ProjectDirectionalLights,
+            ProjectLocalLights,
             ResetReceiverMasks,
             ResetFrame,
             MarkPages,
@@ -29,7 +30,8 @@ public sealed partial class VirtualShadowMapShadersBlock
         ];
         string[] names =
         [
-            nameof(ProjectLights),
+            nameof(ProjectDirectionalLights),
+            nameof(ProjectLocalLights),
             nameof(ResetReceiverMasks),
             nameof(ResetFrame),
             nameof(MarkPages),

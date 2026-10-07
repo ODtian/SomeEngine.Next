@@ -681,7 +681,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     [_frameSamplingUniforms, _frameInvocationUniforms, _initUniforms, _invalidationUniforms,
                      _coarseDemandUniforms, _demandUniforms, _poolUniforms,
                      _poolPrepareUniforms, _poolCompactUniforms, _poolFinishUniforms, _allocationUniforms,
-                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, _workUniforms, _residentUniforms, _projectionUniforms, .. _prefilterUniforms, .. _pageHiZReduceUniforms],
+                     _clearUniforms, _dynamicResolutionUniforms, _pageHiZInitializeUniforms, _workUniforms, _residentUniforms, _directionalProjection.Uniforms, _localProjection.Uniforms, .. _prefilterUniforms, .. _pageHiZReduceUniforms],
                     device.Capabilities.Limits.ConstantBufferAlignment, "Virtual shadow constant data");
                 PassDefinition frameComplete = edit.GetPass(_frameCompletePass);
                 _ = frameComplete.Read(
@@ -705,7 +705,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         catch
         {
             dispatchLayout?.Dispose();
-            _projectionPipeline?.Dispose();
+            _directionalProjection?.Pipeline.Dispose();
+            _localProjection?.Pipeline.Dispose();
             _residentPipeline?.Dispose();
             _prefilterPipeline?.Dispose();
             _prefilterRequestPipeline?.Dispose();
@@ -993,7 +994,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             };
             _uniformData.Write(ref graph, _frameSamplingUniforms, in sampling);
             StageProjection(ref graph, in geometry,
-                sampling.DirectionalLightCount + sampling.PointLightCount + sampling.SpotLightCount);
+                sampling.DirectionalLightCount, sampling.PointLightCount + sampling.SpotLightCount);
             _geometry.StageViews([receiverView], identities: [receiver]);
             int copied = _shadowMap.CopyPreparedRenderViews(_shadowViews);
             if (copied != 0)
@@ -1088,8 +1089,10 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             "RasterTargetStaticOutput" when type == ResourceBindingType.TextureUav => BindStaticDepthAtlas,
             "RasterTargetOutput" when type == ResourceBindingType.TextureUav => BindPageDepthAtlas,
             "VirtualShadowViews" when type == ResourceBindingType.BufferSrv => BindShadeViews,
-            "VirtualShadowProjectedVisibility" when type == ResourceBindingType.TextureSrv => BindProjectedVisibility,
-            "VirtualShadowAdditionalProjectedVisibility" when type == ResourceBindingType.TextureSrv => BindAdditionalProjectedVisibility,
+            "VirtualShadowProjectedDirectionalVisibility" when type == ResourceBindingType.BufferSrv => BindProjectedDirectionalVisibility,
+            "VirtualShadowProjectedLocalVisibility" when type == ResourceBindingType.BufferSrv => BindProjectedLocalVisibility,
+            "VirtualShadowAdditionalProjectedDirectionalVisibility" when type == ResourceBindingType.BufferSrv => BindAdditionalProjectedDirectionalVisibility,
+            "VirtualShadowAdditionalProjectedLocalVisibility" when type == ResourceBindingType.BufferSrv => BindAdditionalProjectedLocalVisibility,
             "VirtualShadowResidentPages" when type == ResourceBindingType.BufferSrv => BindResidentPages,
             "VirtualShadowPrefilteredAtlas" when type == ResourceBindingType.TextureSrv => BindPrefilteredAtlas,
             "VirtualShadowPageTable" when type == ResourceBindingType.BufferSrv => BindShadePageTable,
@@ -1112,7 +1115,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _qualityReadbacks?.Requests.Clear();
         _dispatchLayout.Dispose();
         _residentPipeline?.Dispose();
-        _projectionPipeline.Dispose();
+        _directionalProjection.Pipeline.Dispose();
+        _localProjection.Pipeline.Dispose();
         _prefilterPipeline?.Dispose();
         _prefilterRequestPipeline?.Dispose();
         _staticMergePipeline?.Dispose();

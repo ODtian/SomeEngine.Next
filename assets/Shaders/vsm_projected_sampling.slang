@@ -3,8 +3,10 @@
 
 #include "vsm_material.slang"
 
-Texture2DArray<float> VirtualShadowProjectedVisibility;
-Texture2DArray<float> VirtualShadowAdditionalProjectedVisibility;
+StructuredBuffer<float> VirtualShadowProjectedDirectionalVisibility;
+StructuredBuffer<float> VirtualShadowProjectedLocalVisibility;
+StructuredBuffer<float> VirtualShadowAdditionalProjectedDirectionalVisibility;
+StructuredBuffer<float> VirtualShadowAdditionalProjectedLocalVisibility;
 
 uint VirtualShadowProjectedLightIndex(uint lightIndex)
 {
@@ -19,20 +21,27 @@ uint VirtualShadowProjectedLightIndex(uint lightIndex)
     return 0xffffffffu;
 }
 
-float ReadVirtualShadowProjectedVisibility(uint3 pixel, uint lightIndex, uint viewCount)
+float ReadVirtualShadowProjectedVisibility(uint3 pixel, uint lightIndex, uint3 screen)
 {
     uint light = VirtualShadowProjectedLightIndex(lightIndex);
-    return light == 0xffffffffu ? 1.0 :
-        VirtualShadowProjectedVisibility.Load(int4(pixel.xy, light * viewCount + pixel.z, 0));
+    if (light == 0xffffffffu) return 1.0;
+    bool directional = light < VirtualShadowSampling.DirectionalLightCount;
+    uint lightLayer = directional ? light : light - VirtualShadowSampling.DirectionalLightCount;
+    uint index = ((lightLayer * screen.z + pixel.z) * screen.y + pixel.y) * screen.x + pixel.x;
+    return directional ? VirtualShadowProjectedDirectionalVisibility[index] : VirtualShadowProjectedLocalVisibility[index];
 }
 
-float ReadVirtualShadowAdditionalProjectedVisibility(uint3 pixel, uint lightIndex, uint viewCount, uint layer)
+float ReadVirtualShadowAdditionalProjectedVisibility(uint3 pixel, uint lightIndex, uint3 screen, uint layer)
 {
     uint light = VirtualShadowProjectedLightIndex(lightIndex);
-    uint width, height, layers;
-    VirtualShadowProjectedVisibility.GetDimensions(width, height, layers);
-    return light == 0xffffffffu ? 1.0 : VirtualShadowAdditionalProjectedVisibility.Load(
-        int4(pixel.xy, layer * layers + light * viewCount + pixel.z, 0));
+    if (light == 0xffffffffu) return 1.0;
+    bool directional = light < VirtualShadowSampling.DirectionalLightCount;
+    uint lights = directional ? VirtualShadowSampling.DirectionalLightCount :
+        VirtualShadowSampling.PointLightCount + VirtualShadowSampling.SpotLightCount;
+    uint lightLayer = directional ? light : light - VirtualShadowSampling.DirectionalLightCount;
+    uint index = (((layer * lights + lightLayer) * screen.z + pixel.z) * screen.y + pixel.y) * screen.x + pixel.x;
+    return directional ? VirtualShadowAdditionalProjectedDirectionalVisibility[index] :
+        VirtualShadowAdditionalProjectedLocalVisibility[index];
 }
 
 #endif

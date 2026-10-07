@@ -138,7 +138,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceRecei
             GPULight light = LightBuffer[lightIndex];
             if (dot(mappedNormal, -light.Direction) <= 0.0)
                 continue;
-            float shadow = ReadVirtualShadowProjectedVisibility(ctx.pixelCoord, lightIndex, Uniforms.ViewCount);
+            float shadow = ReadVirtualShadowProjectedVisibility(ctx.pixelCoord, lightIndex,
+                uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount));
             finalColor += EvaluateDirectionalLight(
                 baseColor,
                 metallic,
@@ -171,7 +172,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceRecei
             if (spotLight && EvaluateSpotCone(toLight * rsqrt(max(distanceSq, MIN_DISTANCE_SQ)),
                     light.Direction, light.InnerConeCos, light.OuterConeCos) <= 0.0)
                 continue;
-            float shadow = ReadVirtualShadowProjectedVisibility(ctx.pixelCoord, lightIndex, Uniforms.ViewCount);
+            float shadow = ReadVirtualShadowProjectedVisibility(ctx.pixelCoord, lightIndex,
+                uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount));
             float3 radiance = light.Color * (light.Intensity * shadow);
             if (spotLight)
             {
