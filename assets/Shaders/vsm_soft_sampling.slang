@@ -109,11 +109,11 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     VirtualShadowDepthSample center;
     bool centerBlocked;
     float centerSeparation;
-    if (!ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
-            position, plane.UV, normal, plane, center, centerBlocked, centerSeparation)) return result;
-    if (center.ViewIndex != plane.ViewIndex)
+    bool centerValid = ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
+        position, plane.UV, normal, plane, center, centerBlocked, centerSeparation);
+    if (centerValid && center.ViewIndex != plane.ViewIndex)
         plane = BuildVirtualShadowSoftPlane(views, center.ViewIndex, position, normal);
-    result.Valid = true;
+    if (!centerValid) { center.ViewIndex = requestedView; center.MipLevel = mip; }
     result.ViewIndex = center.ViewIndex;
     result.MipLevel = center.MipLevel;
     VirtualShadowMapParameters source = views[center.ViewIndex];
@@ -137,6 +137,7 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     float sine, cosine;
     sincos(angle, sine, cosine);
     uint blockerCount = centerBlocked ? 1u : 0u;
+    uint validSearches = centerValid ? 1u : 0u;
     float separationSum = centerBlocked ? centerSeparation : 0.0;
     uint searchCount = clamp(blockerSampleCount, 1u, VSM_SOFT_MAX_BLOCKER_QUERIES);
     for (uint index = 1u; index < searchCount; index++)
@@ -150,18 +151,18 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
         float separation;
         if (!ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
                 position, queryUV, normal, plane, sample, blocked, separation))
-        {
-            result.Valid = false;
-            return result;
-        }
+            continue;
+        validSearches++;
         if (blocked) { blockerCount++; separationSum += separation; }
     }
-    if (blockerCount == 0u) { result.Visibility = 1.0; return result; }
+    if (validSearches == 0u) return result;
+    if (blockerCount == 0u) { result.Valid = true; result.Visibility = 1.0; return result; }
     float averageSeparation = separationSum / float(blockerCount);
     float radius = IsDirectionalVirtualShadowProjection(view) ? emitter * averageSeparation :
         emitter * averageSeparation / max(distanceToLight - averageSeparation, minimumDistance);
     radius = min(radius, maxRadiusWorld);
     float visible = 0.0;
+    uint validFilters = 0u;
     uint samples = clamp(filterSampleCount, 1u, VSM_SOFT_MAX_FILTER_QUERIES);
     for (uint index = 0u; index < samples; index++)
     {
@@ -172,13 +173,12 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
         float separation;
         if (!ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
                 position, queryUV, normal, plane, sample, blocked, separation))
-        {
-            result.Valid = false;
-            return result;
-        }
+            continue;
+        validFilters++;
         visible += blocked ? 0.0 : 1.0;
     }
-    result.Visibility = visible / float(samples);
+    result.Valid = validFilters != 0u;
+    if (result.Valid) result.Visibility = visible / float(validFilters);
     result.OccluderDistance = averageSeparation;
     return result;
 }

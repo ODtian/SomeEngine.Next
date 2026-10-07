@@ -65,6 +65,7 @@ public sealed partial class VirtualShadowFeature
                                 _ = pass.Bind(projection.Uniforms, sync),
                         ("ProjectionVisibility", ResourceBindingType.BufferUav) =>
                             (ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
+                                // Every value is initialized within this pass before its pixel updates it.
                                 _ = pass.Bind(graph.CreateBufferUav(projection.Visibility, structureStride: projection.BytesPerPixel),
                                     sync, GraphAccessMode.Write, WriteCoverage.Complete),
                         ("ProjectionAdditionalVisibility", ResourceBindingType.BufferUav) =>
