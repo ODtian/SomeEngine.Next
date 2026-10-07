@@ -210,17 +210,15 @@ bool WriteCachedRasterTargetDepth(
         page % target.PhysicalPagesPerRow,
         page / target.PhysicalPagesPerRow);
     uint2 targetPixel = pageCoord * target.PageSize + pagePixel;
-    uint encodedDepth = asuint(1.0 - saturate(depth));
-    uint ignored;
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
     if (depthCacheClass == 1u)
     {
         if ((RasterTargetPageMetadata[page].w & 8u) != 0u)
-            InterlockedMax(RasterTargetStaticOutput[targetPixel], encodedDepth, ignored);
+            WriteRasterTargetPixelDepth(targetPixel, depth, depthCacheClass);
     }
     else
 #endif
-        InterlockedMax(RasterTargetOutput[targetPixel], encodedDepth, ignored);
+        WriteRasterTargetPixelDepth(targetPixel, depth, depthCacheClass);
     return true;
 }
 
@@ -263,10 +261,17 @@ void WriteRasterTargetPixelDepth(uint2 targetPixel, float depth, uint depthCache
     uint encodedDepth = asuint(1.0 - saturate(depth));
     uint ignored;
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
-    if (depthCacheClass == 1u) InterlockedMax(RasterTargetStaticOutput[targetPixel], encodedDepth, ignored);
+    if (depthCacheClass == 1u)
+    {
+        if (RasterTargetStaticOutput[targetPixel] < encodedDepth)
+            InterlockedMax(RasterTargetStaticOutput[targetPixel], encodedDepth, ignored);
+    }
     else
 #endif
-        InterlockedMax(RasterTargetOutput[targetPixel], encodedDepth, ignored);
+    {
+        if (RasterTargetOutput[targetPixel] < encodedDepth)
+            InterlockedMax(RasterTargetOutput[targetPixel], encodedDepth, ignored);
+    }
 }
 
 void WriteRasterTargetDepth(int2 pixel, uint targetViewIndex, float depth, uint depthCacheClass = 0u)
