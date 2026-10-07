@@ -2,7 +2,7 @@
 
 交付：[PR #136](https://github.com/ODtian/SomeEngine.Next/pull/136)。目标分支为 `codex/someui-base-7b03495`，实现起点 `be6be444f639d9e786914d4b3661f8b8e9441bd0`。
 
-当前状态：[#172](https://github.com/ODtian/SomeEngine.Next/issues/172) 继续恢复用户确认的原始稳态帧耗时：1024 小球 1 ms、Sponza 2 ms、Bistro 3 ms；PR 为 draft。当前 P50 为 6.1332 / 11.4271 / 17.0105 ms；首帧改善单独记录，#70 性能验收继续。后续修复保持已确认的 Native 行为与有效质量。
+当前状态：[#172](https://github.com/ODtian/SomeEngine.Next/issues/172) 继续恢复用户确认的原始稳态帧耗时：1024 小球 1 ms、Sponza 2 ms、Bistro 3 ms；PR 为 draft。第一性能片 `86c1ec52` 将 P50 从 6.1332 / 11.4271 / 17.0105 ms 降到 4.1417 / 9.6640 / 15.1825 ms，三场景 Complete，含启动 32.55 秒；15 项受影响公开行为通过，窄审 Standards/Spec 均为 0。#174 独立屏幕投射与 #175 通用阴影 target/缓存生命周期继续实现。优化按引擎通用执行链覆盖全部场景，几何、运动、材质和缓存分类保持原有语义。首帧改善单独记录，#70 性能验收继续，修复保持已确认的 Native 行为与有效质量。
 
 原版依据为 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`，提交说明 `5.8.3 release`。各票记录实际源码调用、GitBlob、SHA-256 和字节数。最终源码为 `31533a97ec6bcc17177694a8d468fdd86f654cd5`；#167/#168 接合缓存行为的 Native 参照状态，#169 明确最高细节源几何参照的适用范围，#170/#171 完成反向深度精度与 directional mip0 行为。
 
