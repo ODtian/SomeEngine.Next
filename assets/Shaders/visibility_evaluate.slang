@@ -26,6 +26,9 @@ struct VisibilityPixelInput
 {
     uint3 PixelCoord;
     float Depth;
+    // Reversed integer depth already stored at the resolved target pixel.
+    // A shader retaining input.Depth can reject covered target pixels itself.
+    uint EncodedTargetDepth;
     uint VisibleClusterIndex;
     uint TriangleID;
     uint ViewIndex;
@@ -107,7 +110,8 @@ struct OpaqueVisibilityEvaluate<TVertex> : IVisibilityEvaluate<TVertex>
     VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
     {
         VisibilityPixelResult result;
-        result.Visible = 1u;
+        result.Visible = input.TargetPolicy == 0u ||
+            input.EncodedTargetDepth < asuint(1.0 - saturate(input.Depth)) ? 1u : 0u;
         result.Depth = input.Depth;
         return result;
     }

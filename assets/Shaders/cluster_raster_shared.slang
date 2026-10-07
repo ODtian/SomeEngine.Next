@@ -31,6 +31,8 @@ interface IClusterRasterOutput
         uint visibilityValue,
         out ClusterRasterOutputPixel outputPixel);
 
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy);
+
     void write(
         ClusterRasterOutputPixel pixel,
         uint viewIndex,
@@ -498,6 +500,7 @@ struct ClusterPixelRasterTask<
             VisibilityPixelInput pixelInput;
             pixelInput.PixelCoord = uint3(pixel, viewIndex);
             pixelInput.Depth = depth;
+            pixelInput.EncodedTargetDepth = Output.readDepth(outputPixel, targetPolicy);
             pixelInput.VisibleClusterIndex = visibleClusterIndex;
             pixelInput.TriangleID = triangleID;
             pixelInput.ViewIndex = viewIndex;

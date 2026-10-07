@@ -242,6 +242,7 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
     pixelInput.Depth = view.TargetPolicy != 0u ? input.ClipDepth.x / input.ClipDepth.y : input.Pos.z;
+    pixelInput.EncodedTargetDepth = ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted);
     pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
     pixelInput.TriangleID = input.TriangleID;
     pixelInput.ViewIndex = input.ViewIndex;

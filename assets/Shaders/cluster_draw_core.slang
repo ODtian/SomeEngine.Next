@@ -42,16 +42,15 @@ struct PSVisBufferOutput
 
 VisibilityPixelResult EvaluateHardwareRasterPixel<TVertex, TVisibility>(
     uniform TVisibility visibility,
-    ClusterRasterPixelInput<TVisibility.Varying> input)
+    ClusterRasterPixelInput<TVisibility.Varying> input,
+    ClusterViewUniforms view,
+    uint encodedTargetDepth)
     where TVisibility : IVisibilityEvaluate<TVertex>
 {
-    ClusterViewUniforms view = LoadClusterView(
-        HardwareRasterViews,
-        HardwareRasterPolicyViews,
-        input.ViewIndex);
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
     pixelInput.Depth = view.TargetPolicy != 0u ? input.ClipDepth.x / input.ClipDepth.y : input.Pos.z;
+    pixelInput.EncodedTargetDepth = encodedTargetDepth;
     pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
     pixelInput.TriangleID = input.TriangleID;
     pixelInput.ViewIndex = input.ViewIndex;

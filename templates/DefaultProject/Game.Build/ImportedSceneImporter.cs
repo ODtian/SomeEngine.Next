@@ -180,8 +180,13 @@ struct SceneMask : IVisibilityEvaluate<StandardVertex>
     VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
     {
         VisibilityPixelResult result;
-        result.Visible = AlbedoMap.SampleLevel(MaterialSampler, varying.UV, 0.0).a >= ALPHA_CUTOFF ? 1u : 0u;
         result.Depth = input.Depth;
+        if (input.TargetPolicy != 0u && input.EncodedTargetDepth >= asuint(1.0 - saturate(input.Depth)))
+        {
+            result.Visible = 0u;
+            return result;
+        }
+        result.Visible = AlbedoMap.SampleLevel(MaterialSampler, varying.UV, 0.0).a >= ALPHA_CUTOFF ? 1u : 0u;
         return result;
     }
 };

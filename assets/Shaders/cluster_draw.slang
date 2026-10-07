@@ -164,7 +164,7 @@ void EvaluatePSVisBufferImageAtomic64(
         discard;
     VisibilityPixelResult pixelResult =
         EvaluateHardwareRasterPixel<StaticVertexEval.Vertex, DefaultVisibilityEvaluate>(
-            visibility, input);
+            visibility, input, view, ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
     if (!accepted || pixelResult.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)
@@ -191,7 +191,7 @@ void EvaluatePSVisBufferBufferAtomic64(
         discard;
     VisibilityPixelResult pixelResult =
         EvaluateHardwareRasterPixel<StaticVertexEval.Vertex, DefaultVisibilityEvaluate>(
-            visibility, input);
+            visibility, input, view, ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
     if (!accepted || pixelResult.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)
@@ -220,7 +220,7 @@ PSVisBufferOutput EvaluatePSVisBufferHardwareOnly(
         discard;
     VisibilityPixelResult pixelResult =
         EvaluateHardwareRasterPixel<StaticVertexEval.Vertex, DefaultVisibilityEvaluate>(
-            visibility, input);
+            visibility, input, view, ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
     if (!accepted || pixelResult.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)

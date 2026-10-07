@@ -131,7 +131,8 @@ void EvaluateClusterRasterPixelImageAtomic64(
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
-        EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input);
+        EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input, view,
+            ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
     if (!accepted || pixelResult.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)
@@ -158,7 +159,8 @@ void EvaluateClusterRasterPixelBufferAtomic64(
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
-        EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input);
+        EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input, view,
+            ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
     if (!accepted || pixelResult.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)
@@ -187,7 +189,8 @@ PSVisBufferOutput EvaluateClusterRasterPixelHardwareOnly(
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
-        EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input);
+        EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input, view,
+            ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
     if (!accepted || pixelResult.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)
@@ -327,7 +330,8 @@ void EvaluateClusterRasterPixelTarget(
     if (!accepted)
         discard;
     VisibilityPixelResult result =
-        EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input);
+        EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input, view,
+            ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
     if (!accepted || result.Visible == 0u)
         discard;
     WriteRasterTargetPixelDepth(uint2(outputPixel.Position), result.Depth, outputPixel.DepthCacheClass);

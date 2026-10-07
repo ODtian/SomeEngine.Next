@@ -99,8 +99,20 @@ bool ClusterRasterQuadAcceptsPixel(bool accepted)
         QuadReadAcrossDiagonal(value)) != 0u;
 }
 
+uint ReadClusterRasterTargetDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, bool accepted = true)
+{
+    if (targetPolicy == 0u || !accepted)
+        return 0u;
+    return ReadRasterTargetPixelDepth(uint2(pixel.Position), pixel.DepthCacheClass);
+}
+
 struct ClusterRasterOutputImageAtomic64 : IClusterRasterOutput
 {
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy)
+    {
+        return ReadClusterRasterTargetDepth(pixel, targetPolicy);
+    }
+
     int4 scissor(
         uint visibleClusterIndex,
         uint targetPolicy,
@@ -145,6 +157,11 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
 {
     uint Width;
     uint Height;
+
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy)
+    {
+        return ReadClusterRasterTargetDepth(pixel, targetPolicy);
+    }
 
     int4 scissor(
         uint visibleClusterIndex,
@@ -199,6 +216,12 @@ struct ClusterDicedRasterOutput<TPrimary : IClusterRasterOutput> : IClusterRaste
 {
     TPrimary Primary;
 
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy)
+    {
+        return targetPolicy == 0u ? Primary.readDepth(pixel, targetPolicy)
+            : ReadClusterRasterTargetDepth(pixel, targetPolicy);
+    }
+
     int4 scissor(uint visibleClusterIndex, uint targetPolicy, uint targetViewIndex,
         uint screenWidth, uint screenHeight)
     {
@@ -230,6 +253,11 @@ struct ClusterDicedRasterOutput<TPrimary : IClusterRasterOutput> : IClusterRaste
 // This output is selected only for a raster stream whose views target depth pages.
 struct ClusterRasterOutputTarget : IClusterRasterOutput
 {
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy)
+    {
+        return ReadClusterRasterTargetDepth(pixel, targetPolicy);
+    }
+
     int4 scissor(uint visibleClusterIndex, uint targetPolicy, uint targetViewIndex,
         uint screenWidth, uint screenHeight)
     {

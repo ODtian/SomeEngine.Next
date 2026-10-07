@@ -20,6 +20,7 @@ public sealed class RasterSubpixelCoverageTests(D3D12TestCompiler shaderCompiler
                 bool resolvePixel(int2 pixel, uint policy, uint target, uint visibility,
                     out ClusterRasterOutputPixel outputPixel)
                 { outputPixel.Position = pixel; outputPixel.DepthCacheClass = 0u; return true; }
+                uint readDepth(ClusterRasterOutputPixel pixel, uint policy) { return 0u; }
                 void write(ClusterRasterOutputPixel pixel, uint view, uint policy, uint target, float depth, uint visibility)
                 { Pixels[pixel.Position.y * 2 + pixel.Position.x] = 1u; }
             };

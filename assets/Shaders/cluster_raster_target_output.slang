@@ -253,6 +253,15 @@ bool ResolveRasterTargetPixel(int2 pixel, uint targetViewIndex, out uint2 target
     return true;
 }
 
+uint ReadRasterTargetPixelDepth(uint2 targetPixel, uint depthCacheClass = 0u)
+{
+#ifdef CLUSTER_TARGET_DEPTH_CACHE
+    if (depthCacheClass == 1u)
+        return RasterTargetStaticOutput[targetPixel];
+#endif
+    return RasterTargetOutput[targetPixel];
+}
+
 void WriteRasterTargetPixelDepth(uint2 targetPixel, float depth, uint depthCacheClass = 0u)
 {
     uint encodedDepth = asuint(1.0 - saturate(depth));
