@@ -315,3 +315,5 @@ BVH 的 `ChangedMeshes`、材质绑定的变化实体以及实际纹理通知形
 第一人称相机矩阵保存于768字节 Cluster 视图尾部，含当前、逆向与前帧变换；前560字节保持既有字段偏移。变换作用于用户 shader 返回的位置，三角 domain 的重建和运动矢量使用对应投影；用户声明的接收面法线与内置标准材质的世界位置消费同一变换。第一人称阴影与普通 clipmap 共用 caster 数据、页池与图集，使用独立的页地址范围与视图 family。默认第一人称层级8–18，细页需求由 receiver 标记，每帧刷新深度。世界接收面合并两份有效投射结果的最暗遮挡，第一人称接收面消费普通世界阴影。玩家编号变化、取消和完成沿已有帧边界接合。
 
 接收面 producer 位于主可见性之后、页需求之前的固定持久图区段；主层和额外层先清零，再执行用户材质。原版依据为固定396c9f05的 `PrimitiveSceneProxy.cpp:631–648`、`ShadowSceneRenderer.cpp:76–88/565–636`、`SceneView.cpp:742–757` 与 `VirtualShadowMapProjection.usf:437–485`。
+
+局部光 receiver 背光容差将原始光向量和光源半径共同换算为厘米，角度余量按 radius/sqrt(distanceSquared+1) 形成。方向光 froxel 根据距离、global/extra bias、逐VSM bias选择 clipmap，并在绝对 level 最低0后换成对应视图索引；包围体与投影 frustum 的相交关系形成实际请求。中心点的Z位置用于选择的空间距离，最终接收覆盖由包围体裁剪决定。依据固定396c9f05的 VirtualShadowMapPageMarking.ush:18–40、VirtualShadowMapPageMarking.usf:176–203 和 VirtualShadowMapPageMarking.usf:250–260。

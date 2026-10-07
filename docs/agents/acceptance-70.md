@@ -59,3 +59,5 @@ UE 原版统一采用 Epic UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`。
 #153 的当前 Sponza 构建先以旧 normalTS 注入得到 Slang E30015，再以共用法线采样函数得到96资产构建成功（10.99秒）。用户 receiver 与最终着色 fallback 使用同一 glTF NormalScale 解释；必要默认内容77资产及应用构建通过。#154 的点光精度用例按公开视图到光位置关联验证两光全部六面，实际1 passed、0 skipped。原始日志、TRX和生成元数据差异在 F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/ticket-153/ 和 ticket-154/。
 
 #155 的当前 typed304B输入经分配、清页、完成和接收者掩码采样，实际动态/静态各valid1、独立平面depth.25，1 passed、0 skipped、4秒。#156 将材质work/geometry/domain/bary求值共用，当前77资产shader闭包通过；完整FP/caster/receiver图像公开行1 passed、0 skipped、26秒。此完整帧同时完成#159蓝噪音typed资产加载及实际SRV帧绑定，原资产类型和空binding失败日志随green保留。全项目行为规则24项目、0 violations。原始记录在仓库外final/ticket-155和ticket-156。
+
+#157 同1厘米光源半径在1厘米/100厘米距离下，用户receiver生产Mark覆盖实际[1,1]→[1,0]，1 passed、0 skipped、4秒；光向量与source radius共同换算为厘米。#158 的方向光froxel中心Z=-.1、包围体Z=[-.6,.4]，独立plane Z=.15覆盖实际[0,0,0,0]→[1,1,1,1]，1 passed、0 skipped、3秒；选择由Native距离、global/extra/per-VSM bias和绝对level最低0形成，再由AABB/frustum裁剪请求。当前77资产DXIL/SPIRV闭包构建成功；直接行规则0。原始red/green TRX与日志位于final/ticket-157、ticket-158，内容日志位于final/spec-fixes-content。

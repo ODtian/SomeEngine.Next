@@ -633,6 +633,20 @@ uint VirtualShadowDirectionalLevelFromReceiverFootprint(
     return (uint)max(floor(level + dynamicResolutionLodBias), 0.0);
 }
 
+uint CalculateDirectionalVirtualShadowBiasedLevel(
+    StructuredBuffer<VirtualShadowMapParameters> views, uint firstView, uint viewCount,
+    float3 worldPosition, float dynamicResolutionLodBias, float receiverResolutionLodBias)
+{
+    VirtualShadowMapParameters baseView = views[firstView];
+    float level = CalculateDirectionalVirtualShadowDistanceLevel(baseView, worldPosition) +
+        dynamicResolutionLodBias + receiverResolutionLodBias;
+    uint viewIndex = (uint)max(level, 0.0);
+    float resolutionBias = viewIndex < viewCount
+        ? views[firstView + viewIndex].ResolutionLodBias : baseView.ResolutionLodBias;
+    float minimumLevel = max(-float(baseView.FirstClipmapLevel), 0.0);
+    return (uint)max(floor(level + resolutionBias), minimumLevel);
+}
+
 uint SelectDirectionalVirtualShadowView(
     StructuredBuffer<VirtualShadowMapParameters> views,
     uint firstView,

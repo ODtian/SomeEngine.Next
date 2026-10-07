@@ -83,8 +83,8 @@ void MarkVirtualShadowFroxelPages(uint index : SV_DispatchThreadID)
     for (uint light = 0u; light < lights; light++)
     {
         uint firstView = light * levels;
-        uint level = SelectDirectionalVirtualShadowView(ShadowViews, firstView, levels,
-            center, center, center, DynamicResolutionBias[0].x,
+        uint level = CalculateDirectionalVirtualShadowBiasedLevel(ShadowViews, firstView, levels,
+            center, DynamicResolutionBias[0].x,
             CalculateVirtualShadowReceiverResolutionBias(PageDemand.ReceiverProjection, center));
         if (level < levels) PublishVirtualShadowFroxelBounds(firstView + level,0u,minimum,maximum);
     }

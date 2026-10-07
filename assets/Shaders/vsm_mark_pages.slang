@@ -165,7 +165,8 @@ void PublishLocalShadowReceiver(uint2 pixel, float3 worldPosition, SurfaceReceiv
         {
             continue;
         }
-        if (backfaceCull && SurfaceReceiverIsBackfaceToLocal(surfaceReceiver, normalize(toLight),
+        if (backfaceCull && SurfaceReceiverIsBackfaceToLocal(surfaceReceiver,
+                toLight / shadowView.WorldUnitsPerCentimeter,
                 shadowView.SourceRadius / shadowView.WorldUnitsPerCentimeter)) continue;
         if (shadowView.LightKind == VSM_LIGHT_SPOT &&
             dot(normalize(toLight), -shadowView.LightDirection) < LightBuffer[lightIndex].OuterConeCos) continue;
