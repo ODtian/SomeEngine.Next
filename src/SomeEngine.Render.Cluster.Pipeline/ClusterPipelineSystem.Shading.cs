@@ -101,6 +101,8 @@ public sealed partial class ClusterPipelineSystem
             ShadeBinCount = GraphData.Resources.ShadeBinCount,
             SlotCapacity = GraphData.Resources.SlotCapacity,
             BinItemCapacity = CalculateShadeBinItemCapacity(GraphData.Resources),
+            AdditionalReceiverLayerCount = GraphData.Resources.AdditionalReceiverLayerCount,
+            ViewCount = GraphData.Resources.ViewCount,
         };
         UpdateParameters(ref graph, GraphData.ShadeBinUniforms, MemoryMarshal.AsBytes(value));
     }

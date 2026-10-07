@@ -13,8 +13,8 @@ struct ShadeBinUniforms
     uint ShadeBinCount;
     uint SlotCapacity;
     uint BinItemCapacity;
-    uint Pad1;
-    uint Pad2;
+    uint AdditionalReceiverLayerCount;
+    uint ViewCount;
     uint Pad3;
 };
 

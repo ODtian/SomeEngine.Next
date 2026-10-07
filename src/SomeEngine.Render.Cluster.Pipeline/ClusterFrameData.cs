@@ -88,8 +88,8 @@ internal struct ClusterShadeBinUniforms
     internal uint ShadeBinCount;
     internal uint SlotCapacity;
     internal uint BinItemCapacity;
-    internal uint Pad1;
-    internal uint Pad2;
+    internal uint AdditionalReceiverLayerCount;
+    internal uint ViewCount;
     internal uint Pad3;
 }
 

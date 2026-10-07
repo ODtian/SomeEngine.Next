@@ -191,6 +191,9 @@ domain 自身提供表面误差；primary 沿其已有用户配置。streaming �
 材质消费；standard 材质先计算 NormalMap 的 shading normal，并保存独立三角形 geometric normal。
 最终 standard 光照复用同一 shading normal。unlit 用户材质声明其参与结果。
 采用此 entry 时框架补 `Present` 标记；已有用户 shader 沿有效 opaque depth 继续提供默认接收能力。
+材质分箱的全屏 GPU 遍历先为当前视图的 primary 和额外层写入完整空 receiver 数据，再由用户
+receiver entry 填写有效像素。背景、透明覆盖和空材质分箱通过同一遍历形成当帧的空参与状态；
+阴影请求与最终光照读取这次生成的相同数据。
 
 请求消费用户声明的 shading normal，按原版方向/局部发光面背光条件处理，subsurface、hair 和
 多 normal basis 通过对应 flags 表达背光资格。geometric normal 留作用户和独立参考的几何语义，
