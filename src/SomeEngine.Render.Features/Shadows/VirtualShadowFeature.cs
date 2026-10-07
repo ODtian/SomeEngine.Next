@@ -116,7 +116,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private readonly GraphRegionId _viewUploadRegion;
     private readonly GraphParameterInput _blueNoiseInput;
     private readonly SomeEngine.Resources.Texture _blueNoise;
-    private readonly SomeEngine.Resources.Texture? _blueNoiseFallback;
     private readonly RenderDevice _textureDevice;
     private readonly GraphBufferInput _frameSamplingUniforms;
     private readonly GraphBufferInput _frameInvocationUniforms;
@@ -186,12 +185,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(graph);
         _renderGraph = graph;
-        _blueNoiseFallback = shaders.BlueNoise is null ? SomeEngine.Resources.Texture.Create(
-            new TextureDesc(TextureDimension.Texture2D, 1,1,1,1,1,1, Format.R8G8B8A8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination),
-            [new TexturePixels(new SomeEngine.Resources.TextureMipTile
-                { Width = 1, Height = 1, RowPitch = 4, SlicePitch = 4, DecodedLength = 4 }, new byte[] { 0, 0, 0, 255 })],
-            SomeEngine.Graphics.TextureViewDimension.Texture2D) : null;
-        _blueNoise = shaders.BlueNoise ?? _blueNoiseFallback!;
+        _blueNoise = shaders.BlueNoise ?? throw new ArgumentException(
+            "Virtual shadow shaders require a blue-noise texture.", nameof(shaders));
         _textureDevice = textureDevice;
         _qualityRegion = targetGeometryAfter;
         _qualityDemandRegion = primaryDepthAfter;
@@ -1126,7 +1121,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         DisposeFroxelPipelines();
         if (_workTimeQueries is { } queries) _renderGraph.RetireAfterSubmittedFrames(queries);
         _shadowMap.Dispose();
-        _blueNoiseFallback?.Dispose();
         Array.Clear(_shadowViews);
 
         _frameHasPreviousHistory = false;

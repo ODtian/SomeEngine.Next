@@ -7,6 +7,8 @@ public sealed partial class VirtualShadowMapShadersBlock
     internal void Validate(string path)
     {
         string subject = $"Virtual shadow map shader asset '{path}'";
+        if (BlueNoise is null || BlueNoise.Value.IsEmpty)
+            throw new InvalidDataException($"{subject} field '{nameof(BlueNoise)}' is missing.");
         ShaderRef?[] entries =
         [
             ProjectLights,

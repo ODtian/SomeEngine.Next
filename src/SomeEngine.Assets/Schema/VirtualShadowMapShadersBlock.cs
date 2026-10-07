@@ -67,9 +67,8 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
         }
 
         SomeEngine.Resources.Texture? noise = null;
-        if (copy.BlueNoise is { } noiseId)
+        using (TextureAsset asset = await TextureAsset.OpenAsync(loader, copy.BlueNoise!.Value, cancellationToken).ConfigureAwait(false))
         {
-            using TextureAsset asset = await TextureAsset.OpenAsync(loader, noiseId, cancellationToken).ConfigureAwait(false);
             TextureBlock pixels = await asset.GetBlockAsync<TextureBlock>(cancellationToken).ConfigureAwait(false);
             noise = await pixels.CreateAsync(asset.Name, cancellationToken).ConfigureAwait(false);
         }
