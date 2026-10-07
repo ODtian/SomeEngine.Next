@@ -28,9 +28,9 @@ RWStructuredBuffer<float> ProjectionVisibility;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<float> ProjectionAdditionalVisibility;
 #else
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<uint4> ProjectionVisibility;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<uint4> ProjectionAdditionalVisibility;
 #endif
 
