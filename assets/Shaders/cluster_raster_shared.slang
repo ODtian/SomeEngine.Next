@@ -173,12 +173,12 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
     float3 inverseW = rcp(float3(clipVerts[0].w, clipVerts[1].w, clipVerts[2].w));
     float2 screenScale = float2(0.5, -0.5) * float2(screenWidth, screenHeight);
     float2 screenBias = float2(0.5, 0.5) * float2(screenWidth, screenHeight);
-    float2 v0 = (clipVerts[0].xy * inverseW.x * screenScale + screenBias) *
-        CLUSTER_RASTER_SUBPIXEL_SCALE_F;
-    float2 v1 = (clipVerts[1].xy * inverseW.y * screenScale + screenBias) *
-        CLUSTER_RASTER_SUBPIXEL_SCALE_F;
-    float2 v2 = (clipVerts[2].xy * inverseW.z * screenScale + screenBias) *
-        CLUSTER_RASTER_SUBPIXEL_SCALE_F;
+    float2 v0 = floor((clipVerts[0].xy * inverseW.x * screenScale + screenBias) *
+        CLUSTER_RASTER_SUBPIXEL_SCALE_F + 0.5);
+    float2 v1 = floor((clipVerts[1].xy * inverseW.y * screenScale + screenBias) *
+        CLUSTER_RASTER_SUBPIXEL_SCALE_F + 0.5);
+    float2 v2 = floor((clipVerts[2].xy * inverseW.z * screenScale + screenBias) *
+        CLUSTER_RASTER_SUBPIXEL_SCALE_F + 0.5);
 
     tri.Screen0 = v0 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
     tri.Screen1 = v1 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
@@ -195,10 +195,10 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
     float2 minimum = min(v0, min(v1, v2));
     float2 maximum = max(v0, max(v1, v2));
     tri.MinPixel = int2(floor(
-        (minimum + (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u)) /
+        (minimum + (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
         CLUSTER_RASTER_SUBPIXEL_SCALE_F));
     tri.MaxPixel = int2(floor(
-        (maximum - (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u)) /
+        (maximum - (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
         CLUSTER_RASTER_SUBPIXEL_SCALE_F));
     tri.MinPixel = max(tri.MinPixel, scissorRect.xy);
     tri.MaxPixel = min(tri.MaxPixel, scissorRect.zw - 1);
