@@ -49,17 +49,17 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
         using TextureSrv atlasView = backend.CreateTextureSrv(device, new TextureSrvDesc(atlas,
             new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), Format.R32UInt, TextureViewDimension.Texture2D));
         using Texture hiz = backend.CreateTexture(device, new TextureDesc(TextureDimension.Texture2D,
-            128, 128, 1, 7, 1, 1, Format.R32Float, TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.CopySource));
+            128, 128, 1, 7, 1, 1, Format.R32G32Float, TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.CopySource));
         using TextureSrv source = backend.CreateTextureSrv(device, new TextureSrvDesc(hiz,
-            new TextureSubresourceRange(3, 1, 0, 1, TextureAspects.Color), Format.R32Float, TextureViewDimension.Texture2DArray));
+            new TextureSubresourceRange(3, 1, 0, 1, TextureAspects.Color), Format.R32G32Float, TextureViewDimension.Texture2DArray));
         TextureUav[] destinations = new TextureUav[7];
         using Buffer readback = backend.CreateBuffer(device,
-            new BufferDesc(2u * 128u * 256u, BufferUsages.CopyDestination), MemoryType.Readback);
+            new BufferDesc(2u * 128u * 512u, BufferUsages.CopyDestination), MemoryType.Readback);
         try
         {
             for (uint mip = 0; mip < 7; mip++)
                 destinations[mip] = backend.CreateTextureUav(device, new TextureUavDesc(hiz,
-                    new TextureSubresourceRange(mip, 1, 0, 1, TextureAspects.Color), Format.R32Float, TextureViewDimension.Texture2DArray));
+                    new TextureSubresourceRange(mip, 1, 0, 1, TextureAspects.Color), Format.R32G32Float, TextureViewDimension.Texture2DArray));
             using CommandContext context = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Compute, 0, 1));
             backend.Begin(context, new CommandRecordingDesc(64, 8, 64));
             backend.Barrier(context, new TextureBarrier(atlas, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
@@ -77,7 +77,7 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
             backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
                 initialize.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 [ResourceBinding.ConstantBuffer(cbv0), ResourceBinding.ReadOnlyBuffer(activeView), ResourceBinding.ReadOnlyBuffer(activeCountView),
-                    ResourceBinding.SampledTexture(atlasView),
+                    ResourceBinding.SampledTexture(atlasView), ResourceBinding.SampledTexture(atlasView),
                     ResourceBinding.StorageTexture(destinations[0]), ResourceBinding.StorageTexture(destinations[1]),
                     ResourceBinding.StorageTexture(destinations[2]), ResourceBinding.StorageTexture(destinations[3])], []));
             backend.Dispatch(context, new DispatchArguments(2, 8, 8));
@@ -104,9 +104,9 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
             for (uint mip = 0; mip < 7; mip++)
             {
                 uint size = 64u >> checked((int)mip);
-                backend.CopyTextureToBuffer(context, new BufferTextureCopy(readback, offset, 256, size, hiz,
+                backend.CopyTextureToBuffer(context, new BufferTextureCopy(readback, offset, 512, size, hiz,
                     mip, 0, TextureAspects.Color, page * size, 0, 0, size, size, 1));
-                offset += Math.Max(size, 2u) * 256u;
+                offset += Math.Max(size, 2u) * 512u;
             }
             using RecordedCommands commands = backend.End(context);
             QueueCompletion completion = backend.Submit(backend.GetQueue(device, QueueType.Compute),
@@ -128,10 +128,10 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
                         expected[y * size + x] = Math.Max(Math.Max(previous[p], previous[p + 1]),
                             Math.Max(previous[p + size * 2], previous[p + size * 2 + 1]));
                         float actual = BitConverter.UInt32BitsToSingle(BinaryPrimitives.ReadUInt32LittleEndian(
-                            mapping.Bytes.Slice(readOffset + y * 256 + x * 4, 4)));
+                            mapping.Bytes.Slice(readOffset + y * 512 + x * 8, 4)));
                         Assert.Equal(expected[y * size + x], actual);
                     }
-                    readOffset += Math.Max(size, 2) * 256;
+                    readOffset += Math.Max(size, 2) * 512;
                     previous = expected;
                 }
             }

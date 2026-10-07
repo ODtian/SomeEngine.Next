@@ -193,7 +193,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     {
         if (!DecodeVirtualShadowPage(entry.x, atlasPage))
             return;
-        // Metadata.y identifies completed static depth and its full-page HiZ.
+        // Metadata.y identifies completed static depth and both conservative HiZ depths.
         previousHiZ = PageMetadata[atlasPage].y == view.CacheGeneration &&
             (view.Flags & VSM_VIEW_PREVIOUS_PROJECTION_VALID) != 0u;
         previousLayer = previousHiZ ? atlasPage : 0xFFFFFFFFu;

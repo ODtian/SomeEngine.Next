@@ -15,21 +15,22 @@ StructuredBuffer<uint4> ActivePhysicalPages;
 StructuredBuffer<uint> ActivePhysicalPageCount;
 #if VSM_PAGE_HIZ_INITIALIZE
 Texture2D<uint> ShadowPhysicalAtlas;
+Texture2D<uint> ShadowDynamicAtlas;
 #else
-Texture2DArray<float> VirtualShadowPageHiZSource;
+Texture2DArray<float2> VirtualShadowPageHiZSource;
 #endif
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2DArray<float> VirtualShadowPageHiZDestination;
+RWTexture2DArray<float2> VirtualShadowPageHiZDestination;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2DArray<float> VirtualShadowPageHiZDestination1;
+RWTexture2DArray<float2> VirtualShadowPageHiZDestination1;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2DArray<float> VirtualShadowPageHiZDestination2;
+RWTexture2DArray<float2> VirtualShadowPageHiZDestination2;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2DArray<float> VirtualShadowPageHiZDestination3;
+RWTexture2DArray<float2> VirtualShadowPageHiZDestination3;
 
-groupshared float PageHiZTile[64];
+groupshared float2 PageHiZTile[64];
 
-void StoreVirtualShadowPageHiZ(float depth, uint physicalPage, uint2 pixel, uint2 thread)
+void StoreVirtualShadowPageHiZ(float2 depth, uint physicalPage, uint2 pixel, uint2 thread)
 {
     uint baseSize = max(PageHiZ.PageSize / 2u, 1u);
     uint destinationSize = max(baseSize >> PageHiZ.DestinationMip, 1u);

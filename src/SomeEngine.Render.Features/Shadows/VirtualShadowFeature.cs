@@ -240,7 +240,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     checked((uint)pageHiZMipCount),
                     PageHiZLayerCount,
                     1,
-                    Format.R32Float,
+                    Format.R32G32Float,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
                     label: "Virtual shadow physical-page HiZ"));
                 BufferUsages cacheUsages = BufferUsages.ShaderRead | BufferUsages.ShaderWrite |
@@ -803,7 +803,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     }
 
     private void BindRasterHiZ(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
-        _ = pass.Bind(graph.CreateTextureSrv(_pageHiZ, format: Format.R32Float,
+        _ = pass.Bind(graph.CreateTextureSrv(_pageHiZ, format: Format.R32G32Float,
             dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
             label: "Virtual shadow raster-target HiZ"), sync);
 
@@ -1734,6 +1734,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
                 label: "Virtual shadow page HiZ source atlas"),
             PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateTextureSrv(_atlas, format: Format.R32UInt,
+            dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
+            label: "Virtual shadow page HiZ dynamic source atlas"), PipelineSync.ComputeShading);
         BindPageHiZDestinations(ref graph, ref pass, 0u);
     }
 
@@ -1766,7 +1769,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     0,
                     PageHiZLayerCount,
                     TextureAspects.Color),
-                Format.R32Float,
+                Format.R32G32Float,
                 SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 "Virtual shadow page HiZ source mip"),
             PipelineSync.ComputeShading);
@@ -1784,7 +1787,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     _pageHiZ,
                     new TextureSubresourceRange(Math.Min(firstMip + offset, lastMip), 1,
                         0, PageHiZLayerCount, TextureAspects.Color),
-                    Format.R32Float,
+                    Format.R32G32Float,
                     SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                     "Virtual shadow page HiZ destination mip"),
                 PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Partial);

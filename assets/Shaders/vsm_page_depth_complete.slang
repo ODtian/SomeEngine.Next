@@ -22,7 +22,7 @@ void CompleteVirtualShadowPageDepth(uint3 thread : SV_DispatchThreadID)
     bool masked = (flags & VSM_PAGE_MASKED) != 0u;
     entry.w = page.w | (masked ? VSM_PAGE_RECEIVER_DEPTH : 0u);
     CompletedShadowPageTable[page.y] = entry;
-    // Final static HiZ precedes this marker and remains whole-page proof.
+    // Final static and combined HiZ precede this marker and retain far uncovered pixels.
     CompletedPageMetadata[page.x].y = page.w;
     CompletedPageMetadata[page.x].w = (masked ? VSM_PAGE_MASKED | VSM_PAGE_DYNAMIC_UNCACHED : 0u) |
         (flags & VSM_PAGE_DEFERRED_INVALIDATION);

@@ -73,7 +73,8 @@ uint ClusterSeedBoundsState(
     float3 worldMax,
     ClusterProjectedBounds projectedBounds,
     uint viewIndex,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view,
+    uint depthCacheClass = 1u)
 {
     if (!ClusterSeedTargetAccepts(projectedBounds, view))
         return 0u;
@@ -91,7 +92,7 @@ uint ClusterSeedBoundsState(
             worldMin,
             worldMax,
             true,
-            view);
+            view, depthCacheClass);
     }
     else
     {
@@ -251,7 +252,7 @@ void SeedHierarchyRoots(
                     instanceWorldMax,
                     projectedBounds,
                     viewIndex,
-                    view);
+                    view, LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID));
             if (boundsState == 0u)
                 continue;
             if (boundsState == 2u)

@@ -13,8 +13,8 @@
 #define CLUSTER_RASTER_TARGET_METADATA_DECLARED 1
 StructuredBuffer<uint4> RasterTargetPageMetadata;
 #endif
-Texture2DArray<float> RasterTargetCurrentHiZ;
-Texture2DArray<float> RasterTargetPreviousHiZ;
+Texture2DArray<float2> RasterTargetCurrentHiZ;
+Texture2DArray<float2> RasterTargetPreviousHiZ;
 #endif
 
 uint2 ClusterTargetPixelMin(float2 uv, ClusterViewUniforms view)
@@ -253,13 +253,14 @@ bool ClusterTargetEntryValid(
 }
 
 float ClusterTargetHiZMax(
-    Texture2DArray<float> source,
+    Texture2DArray<float2> source,
     ClusterRasterTargetView target,
     uint physicalPage,
     uint2 localPage,
     uint2 firstPixel,
     uint2 lastPixel,
-    uint mip)
+    uint mip,
+    uint depthCacheClass)
 {
     uint2 pageOrigin = localPage * target.PageSize;
     uint2 localFirst = firstPixel > pageOrigin
@@ -274,13 +275,14 @@ float ClusterTargetHiZMax(
     uint2 p1 = uint2(p3.x, p0.y);
     uint2 p2 = uint2(p0.x, p3.y);
 
-    return max(
+    float2 depth = max(
         max(
             source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p0, mipSize, target.PhysicalPagesPerRow), mip)),
             source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p1, mipSize, target.PhysicalPagesPerRow), mip))),
         max(
             source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p2, mipSize, target.PhysicalPagesPerRow), mip)),
             source.Load(int4(CalculateDepthPageHiZPixel(physicalPage, p3, mipSize, target.PhysicalPagesPerRow), mip))));
+    return depthCacheClass == 0u ? depth.y : depth.x;
 }
 
 bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
@@ -323,7 +325,8 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
     float2 maxUv,
     float nearDepth,
     bool usePrevious,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view,
+    uint depthCacheClass)
 {
     if (view.TargetPolicy == 0u || view.HiZMipCount == 0u)
         return false;
@@ -391,7 +394,7 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
                         localPage,
                         firstPixel,
                         lastPixel,
-                        hizMip);
+                        hizMip, depthCacheClass);
                 }
                 else
                 {
@@ -402,11 +405,10 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
                         localPage,
                         firstPixel,
                         lastPixel,
-                        hizMip);
+                        hizMip, depthCacheClass);
                 }
                 tested = true;
-                float epsilon = 5e-5 +
-                    1.0 / float(max(target.PageSize, 1u));
+                float epsilon = (abs(nearDepth) + abs(hizDepth) + 1.0) * 9.5367431640625e-7;
                 if (nearDepth <= hizDepth + epsilon)
                     return false;
             }
@@ -419,7 +421,8 @@ bool ClusterTargetPolicyWorldBoundsOccluded(
     float3 worldMin,
     float3 worldMax,
     bool usePrevious,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view,
+    uint depthCacheClass)
 {
     if (usePrevious && view.HasPrevHistory == 0u)
         return false;
@@ -442,7 +445,7 @@ bool ClusterTargetPolicyWorldBoundsOccluded(
         maxUv,
         nearDepth,
         usePrevious,
-        view);
+        view, depthCacheClass);
 }
 
 #endif // CLUSTER_TARGET_BOUNDS_ONLY

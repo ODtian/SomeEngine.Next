@@ -21,7 +21,8 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
     float2 maxUv,
     float nearDepth,
     bool usePrevious,
-    ClusterViewUniforms view);
+    ClusterViewUniforms view,
+    uint depthCacheClass = 1u);
 
 bool ClusterTargetPolicyScreenBoundsAccepts(
     float2 minUv,
@@ -38,6 +39,7 @@ bool ClusterTargetPolicyWorldBoundsOccluded(
     float3 worldMin,
     float3 worldMax,
     bool usePrevious,
-    ClusterViewUniforms view);
+    ClusterViewUniforms view,
+    uint depthCacheClass = 1u);
 
 #endif

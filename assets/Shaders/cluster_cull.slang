@@ -193,12 +193,13 @@ ClusterScreenBounds ProjectClusterScreenBounds(PackedCluster cluster,
     return bounds;
 }
 
-bool IsOccludedByHiZ(ClusterScreenBounds bounds, bool usePrev, uint viewIndex, ClusterViewUniforms view)
+bool IsOccludedByHiZ(ClusterScreenBounds bounds, bool usePrev, uint viewIndex, ClusterViewUniforms view,
+    uint depthCacheClass)
 {
     if (view.CullingEnabled == 0u || view.HiZMipCount == 0u)
         return false;
     if (view.TargetPolicy != 0u)
-        return ClusterTargetPolicyScreenBoundsOccluded(bounds.MinUv, bounds.MaxUv, bounds.NearDepth, usePrev, view);
+        return ClusterTargetPolicyScreenBoundsOccluded(bounds.MinUv, bounds.MaxUv, bounds.NearDepth, usePrev, view, depthCacheClass);
     float hizDepth = SampleHiZMax(HiZTexture, bounds.MinUv, bounds.MaxUv, bounds.MipLevel, viewIndex, view);
     float epsilon = 5e-5 + 0.5 * max(view.HiZInvSize.x, view.HiZInvSize.y);
     return bounds.NearDepth > hizDepth + epsilon;
@@ -514,7 +515,8 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     if (view.HasPrevHistory != 0u && view.CullingEnabled != 0u)
     {
         bounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, true, view);
-        occluded = IsOccludedByHiZ(bounds, true, viewIndex, view);
+        occluded = IsOccludedByHiZ(bounds, true, viewIndex, view,
+            LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID));
     }
     // Missing history cannot occlude geometry. Draw it now; only actual previous-frame
     // occlusion belongs in the second-pass candidate list.
@@ -639,7 +641,8 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     if (!valid)
         return;
 
-    bool occluded = IsOccludedByHiZ(currentBounds, false, viewIndex, view);
+    bool occluded = IsOccludedByHiZ(currentBounds, false, viewIndex, view,
+        LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID));
     if (!occluded)
     {
         bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, view, cluster, t, boundsExpansion);

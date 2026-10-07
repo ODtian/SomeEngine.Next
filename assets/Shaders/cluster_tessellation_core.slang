@@ -303,7 +303,8 @@ bool IsTessellationBoundsVisible(
         // Policy view IDs are not primary-camera texture layers. Target history
         // is qualified per requested page by the same resolver as traversal.
         return view.CullingEnabled == 0u || !ClusterTargetPolicyWorldBoundsOccluded(
-            minimum, maximum, usePrevious, view);
+            minimum, maximum, usePrevious, view,
+            LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceId));
     }
     float2 minUv;
     float2 maxUv;

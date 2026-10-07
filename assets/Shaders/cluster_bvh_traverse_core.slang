@@ -81,7 +81,8 @@ uint ClusterHierarchyNodeState(
     float3 worldMax,
     ClusterProjectedBounds projectedBounds,
     uint viewIndex,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view,
+    uint depthCacheClass)
 {
     if (!ClusterTargetPolicyAccepts(projectedBounds, view))
         return 0u;
@@ -100,7 +101,7 @@ uint ClusterHierarchyNodeState(
             worldMin,
             worldMax,
             usePrevious,
-            view);
+            view, depthCacheClass);
     }
     else
     {
@@ -211,7 +212,8 @@ void ProcessTraversalLevel(
         if ((view.CullingEnabled != 0u && outside) ||
             !ClusterNodePassesLod(node, transform, view))
             continue;
-        uint state = ClusterHierarchyNodeState(worldMin, worldMax, projectedBounds, viewIndex, view);
+        uint state = ClusterHierarchyNodeState(worldMin, worldMax, projectedBounds, viewIndex, view,
+            LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID));
         if (state == 2u)
             AppendDeferredTraversalNode(
                 MakeClusterTraversalNode(nodeIndex, instanceID, viewIndex, 1u), TraversalLevel.MaxNodes);
