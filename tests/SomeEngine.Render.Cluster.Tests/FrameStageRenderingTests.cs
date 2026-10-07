@@ -337,10 +337,10 @@ internal sealed class FrameStageScene : IAsyncDisposable
 
     internal Entity AddReceiver(TransformQvvs transform) => AddMesh(_mesh, transform);
 
-    internal void UseDirectionalLight(Vector3 direction)
+    internal void UseDirectionalLight(Vector3 direction, LightShadowSettings shadowSettings = default)
     {
         _gameWorld.Remove<PointLight>(_light);
-        _gameWorld.Add(_light, new DirectionalLight(direction, Vector3.One, 3));
+        _gameWorld.Add(_light, new DirectionalLight(direction, Vector3.One, 3, ShadowSettings: shadowSettings));
     }
 
     internal void UseMaterial(string material) => SetMaterial(material switch

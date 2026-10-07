@@ -53,7 +53,7 @@ public sealed partial class VirtualShadowMap : IDisposable
     private ulong _pendingRasterRevision;
     private uint _committedCacheGeneration;
     private uint _pendingCacheGeneration;
-    private uint _pendingPageTableEntryCount;
+    private uint _framePageTableEntryCount;
     private WorldOrigin _worldOrigin;
     private WorldOrigin _committedWorldOrigin;
     private uint _viewPlayerId;
@@ -268,7 +268,7 @@ public sealed partial class VirtualShadowMap : IDisposable
     public bool UsesPageGranularTransformInvalidation =>
         _initialized && _pendingViewCount != 0 && !_pendingCacheReset;
     public uint PendingCacheGeneration => _pendingCacheGeneration;
-    public uint PageTableEntryCount => _pendingPageTableEntryCount;
+    public uint PageTableEntryCount => _framePageTableEntryCount;
     public ulong PendingGeometryRevision => _pendingGeometryRevision;
     public ulong PendingRasterRevision => _pendingRasterRevision;
     public uint PendingDirectionalLightCount { get; private set; }
@@ -586,7 +586,7 @@ public sealed partial class VirtualShadowMap : IDisposable
                     view.LightKind == VirtualShadowLightKind.Directional ? Settings.VirtualPagesPerView :
                         Settings.PageTableEntriesPerView));
         }
-        _pendingPageTableEntryCount = pageTableOffset;
+        _framePageTableEntryCount = pageTableOffset;
 
         bool viewLayoutChanged = !_initialized || viewCount != _committedViewCount;
         bool structuralContentChanged =
@@ -736,7 +736,7 @@ public sealed partial class VirtualShadowMap : IDisposable
             throw new InvalidOperationException("Begin and prepare the virtual-shadow frame first.");
 
         ulong requiredSize = checked(
-            Math.Max(1ul, _pendingPageTableEntryCount) *
+            Math.Max(1ul, _framePageTableEntryCount) *
             VirtualShadowView.PageTableEntrySizeInBytes);
         if (_frameResourcesAcquired)
             throw new InvalidOperationException("Virtual-shadow frame resources were already acquired.");

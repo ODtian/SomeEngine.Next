@@ -39,7 +39,7 @@ public sealed class SoftShadowSamplingTests(D3D12TestCompiler compiler)
             }
             """, "ReadSoftDepthEdge", new(1, 1, 1),
             [(MemoryMarshal.Cast<VirtualShadowView, uint>(views).ToArray(), ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
-             (new uint[] { 0xc0000000u }, ResourceBindingType.BufferSrv, 4),
+             (new uint[] { VirtualShadowPageEntry.Encode(0, 1) }, ResourceBindingType.BufferSrv, 4),
              (new uint[32], ResourceBindingType.BufferUav, 4)],
             new SampledImage(128, 128, depth, 2, ViewDimension: TextureViewDimension.Texture2DArray));
         float[] visibility = observed[0].Select(BitConverter.UInt32BitsToSingle).ToArray();

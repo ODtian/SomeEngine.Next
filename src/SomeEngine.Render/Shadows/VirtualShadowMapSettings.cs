@@ -21,7 +21,7 @@ public enum VirtualShadowCoarsePageMode
 /// <summary>Virtual address-space, page-pool and atlas quality settings.</summary>
 public sealed partial record VirtualShadowMapSettings
 {
-    private uint? _maxPhysicalPages;
+    private uint? _atlasPageCapacity;
     public bool Enabled { get; init; } = true;
     public uint VirtualResolution { get; init; } = 16_384;
     public uint AtlasSize { get; init; } = 8_192;
@@ -124,10 +124,10 @@ public sealed partial record VirtualShadowMapSettings
         get
         {
             uint row = PhysicalPagesPerRow;
-            uint requested = _maxPhysicalPages ?? Math.Min(2048u, checked(row * row));
+            uint requested = _atlasPageCapacity ?? Math.Min(2048u, checked(row * row));
             return checked((requested + row - 1u) / row * row);
         }
-        init => _maxPhysicalPages = value;
+        init => _atlasPageCapacity = value;
     }
 
     public uint AtlasHeight => checked(MaxPhysicalPages / PhysicalPagesPerRow * PageSize);

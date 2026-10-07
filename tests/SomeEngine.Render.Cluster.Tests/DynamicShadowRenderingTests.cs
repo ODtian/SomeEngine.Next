@@ -29,7 +29,8 @@ public sealed class DynamicShadowRenderingTests
         TransformQvvs outside = new(new Vector3(20, 4, -4), Quaternion.Identity) { Stretch = new(1.6f, 1.6f, .1f) };
         scene.SetMeshTransform(1, outside);
         scene.AddGeometryMesh(plane, new(new Vector3(0, 2, -6), Quaternion.Identity) { Stretch = new(.6f, .6f, .1f) });
-        scene.UseDirectionalLight(Vector3.Normalize(new(0, -1, -1)));
+        // A zero-angle emitter keeps the first-frame cache comparison deterministic.
+        scene.UseDirectionalLight(Vector3.Normalize(new(0, -1, -1)), new(SourceAngleDegrees: 0f));
 
         RasterImage exposed = await scene.ReadNextRasterImageAsync();
         for (int frame = 1; frame < 4; frame++) exposed = await scene.ReadNextRasterImageAsync();
