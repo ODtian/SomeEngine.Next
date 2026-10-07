@@ -12,8 +12,8 @@ struct VirtualShadowProjectionUniforms
     uint ViewCount;
     uint LightLayerCount;
     uint AdditionalReceiverLayerCount;
-    uint DispatchWidth;
-    uint Pad1;
+    uint DispatchDepth;
+    uint LightLayerRowCount;
     uint Pad2;
 };
 
@@ -122,16 +122,19 @@ void ProjectVirtualShadowDirectionalLights(uint3 group : SV_GroupID, uint lane :
 void ProjectVirtualShadowLocalLights(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
 #endif
 {
-    uint tileCountX = (Projection.Width + 7u) / 8u;
     uint tileCountY = (Projection.Height + 7u) / 8u;
-    uint groupIndex = group.y * Projection.DispatchWidth + group.x;
-    uint tile = groupIndex % (tileCountX * tileCountY);
-    uint lightReceiver = groupIndex / (tileCountX * tileCountY);
+    uint2 tile = group.xy;
+    uint lightReceiver = group.z;
+    if (Projection.LightLayerRowCount > 1u)
+    {
+        lightReceiver += (group.y / tileCountY) * Projection.DispatchDepth;
+        tile.y = group.y % tileCountY;
+    }
     uint layerSize = Projection.LightLayerCount * Projection.ViewCount;
     if (lightReceiver >= layerSize * (1u + Projection.AdditionalReceiverLayerCount)) return;
     uint receiverLayer = lightReceiver / layerSize;
     uint lightView = lightReceiver % layerSize;
-    uint3 pixel = uint3(uint2(tile % tileCountX, tile / tileCountX) * 8u + VirtualShadowProjectionPixel(lane),
+    uint3 pixel = uint3(tile * 8u + VirtualShadowProjectionPixel(lane),
         lightView % Projection.ViewCount);
     if (pixel.x >= Projection.Width || pixel.y >= Projection.Height) return;
     float visibility = ProjectVirtualShadowReceiver(pixel, lightView / Projection.ViewCount, receiverLayer);

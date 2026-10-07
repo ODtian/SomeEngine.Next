@@ -26,7 +26,7 @@ public sealed partial class VirtualShadowFeature
     private struct ProjectionUniforms
     {
         public uint Width, Height, ViewCount, LightLayerCount;
-        public uint AdditionalReceiverLayerCount, DispatchWidth, Pad1, Pad2;
+        public uint AdditionalReceiverLayerCount, DispatchDepth, LightLayerRowCount, Pad2;
     }
 
     private void InstallProjection(ref RenderGraphEdit edit, VirtualShadowMapShaders shaders, GraphRegionId region)
@@ -115,17 +115,18 @@ public sealed partial class VirtualShadowFeature
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Virtual shadow additional receiver light visibility"));
         graph.SetBufferInput(projection.Visibility, new(visibility, BufferRange.Whole));
         graph.SetBufferInput(projection.AdditionalVisibility, new(additional, BufferRange.Whole));
-        uint groups = checked(DivideRoundUp(width, 8u) * DivideRoundUp(height, 8u) *
-            views * lightLayers * (1u + receiverLayers));
-        uint dispatchWidth = Math.Min(groups, 65535u);
+        uint layers = checked(views * lightLayers * (1u + receiverLayers));
+        uint dispatchDepth = Math.Min(layers, 65535u);
+        uint layerRows = DivideRoundUp(layers, dispatchDepth);
         var uniforms = new ProjectionUniforms
         {
             Width = width, Height = height, ViewCount = views, LightLayerCount = lightLayers,
-            AdditionalReceiverLayerCount = receiverLayers, DispatchWidth = dispatchWidth,
+            AdditionalReceiverLayerCount = receiverLayers, DispatchDepth = dispatchDepth,
+            LightLayerRowCount = layerRows,
         };
         _uniformData.Write(ref graph, projection.Uniforms, in uniforms);
         graph.SetPassData(projection.Pass, new VirtualShadowDispatchPassData(new(
-            dispatchWidth, DivideRoundUp(groups, dispatchWidth), 1u)));
+            DivideRoundUp(width, 8u), checked(DivideRoundUp(height, 8u) * layerRows), dispatchDepth)));
     }
 
     private void BindProjectionViews(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
