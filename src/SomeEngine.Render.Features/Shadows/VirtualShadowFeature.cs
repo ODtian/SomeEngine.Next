@@ -831,7 +831,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             graph.CreateTextureUav(
                 _atlas,
                 format: Format.R32UInt,
-                dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
+                dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Virtual shadow raster depth atlas"),
             sync,
             GraphAccessMode.ReadWrite,
@@ -1810,7 +1810,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private void BindShadeAtlas(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(graph.CreateTextureSrv(_atlas, format: Format.R32UInt,
-            dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
+            dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
             label: "Standard shade virtual shadow atlas"), sync);
     }
 
