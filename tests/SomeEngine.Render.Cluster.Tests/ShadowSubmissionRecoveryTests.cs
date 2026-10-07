@@ -19,7 +19,7 @@ public sealed class ShadowSubmissionRecoveryTests
     {
         var options = new ClusterPipelineOptions { MaxCandidates = 65536, EnableFrameMetricsReadback = true, ForceHardwareRaster = true };
         var settings = new VirtualShadowMapSettings { VirtualResolution = 4096, AtlasSize = 2048,
-            MaxShadowLights = 1, DynamicResolutionEnabled = false };
+            MaxShadowLights = 1, DynamicResolutionEnabled = false, DirectionalRayCount = 0, LocalRayCount = 0 };
         await using var changed = await FrameStageScene.CreateAsync(backend, true, options, shadowSettings: settings);
         if (light == SceneLightKind.Spot) changed.UseSpotLight(new SpotLight(new(-4, 2, -3), 20, Vector3.Normalize(new(4, -2, -5)),
             MathF.Cos(MathF.PI / 12), MathF.Cos(MathF.PI * 2 / 9), Vector3.One, 30));

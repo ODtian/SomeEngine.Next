@@ -37,7 +37,9 @@ public sealed class CasterMaterialChangeTests
         Configure(fresh);
         fresh.SetMeshTransform(1, new(new Vector3(.4f, 4, -4), Quaternion.Identity) { Stretch = new(2, 1.5f, .1f) });
         fresh.UseMaterial(1, fresh.CreateRasterMaterial(RasterMaterialKind.Ordinary, Vector4.One));
-        RasterImage expected = await fresh.ReadNextRasterImageAsync();
+        // The independent reference reaches the same stationary-light LOD;
+        // the changed scene is observed in its first frame after the edit.
+        RasterImage expected = await fresh.ReadRasterImageAsync();
         Assert.NotEqual(before, expected.Color);
         RasterImage.AssertEqual(expected, first);
     }
@@ -75,7 +77,9 @@ public sealed class CasterMaterialChangeTests
         expectedMaterial.BaseColorTint = new(1, 1, 1, 0);
         expectedMaterial.AlbedoMap = expectedTexture;
         fresh.UseMaterial(1, expectedMaterial);
-        RasterImage expected = await fresh.ReadNextRasterImageAsync();
+        // The independent reference reaches the same stationary-light LOD;
+        // the changed scene is observed at the texture completion boundary.
+        RasterImage expected = await fresh.ReadRasterImageAsync();
         Assert.NotEqual(before, expected.Color);
         RasterImage.AssertEqual(expected, first);
     }
@@ -89,7 +93,8 @@ public sealed class CasterMaterialChangeTests
     }
     private static VirtualShadowMapSettings Shadows() => new() { VirtualResolution = 4096, AtlasSize = 2048,
         WorldUnitsPerCentimeter = 1f,
-        MaxShadowLights = 1, DirectionalClipmapLevels = 16, DirectionalFirstClipmapLevel = -4,
+        MaxShadowLights = 1, DirectionalRayCount = 0, LocalRayCount = 0,
+        DirectionalClipmapLevels = 16, DirectionalFirstClipmapLevel = -4,
         DirectionalFirstCoarseClipmapLevel = 8, DirectionalLastCoarseClipmapLevel = 11, DynamicResolutionEnabled = false };
     private static async Task<Shader> LoadShaderAsync(string backend)
     {

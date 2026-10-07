@@ -46,7 +46,7 @@ public sealed class VsmWorkRenderingTests
             VirtualResolution = 4096, AtlasSize = 2048, MaxShadowLights = 1,
             DirectionalClipmapLevels = 16, DirectionalFirstClipmapLevel = -4,
             DirectionalFirstCoarseClipmapLevel = 8, DirectionalLastCoarseClipmapLevel = 11,
-            DynamicResolutionEnabled = false,
+            DynamicResolutionEnabled = false, DirectionalRayCount = 0, LocalRayCount = 0,
         };
         void Configure(FrameStageScene scene)
         {
