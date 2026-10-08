@@ -17,9 +17,7 @@ struct VirtualShadowReceiverProjection
 {
     float4 WorldToClipW;
     float ScreenPixelRadius;
-    uint Pad0;
-    uint Pad1;
-    uint Pad2;
+    float3 WorldTranslation;
     float4 WorldToViewDepth;
     CameraDepthOfField DepthOfField;
     float3 CameraPosition;
@@ -37,7 +35,7 @@ float CalculateVirtualShadowNormalBiasLength(VirtualShadowReceiverProjection pro
 float CalculateVirtualShadowNominalWorldPixelRadius(
     VirtualShadowReceiverProjection projection, float3 worldPosition)
 {
-    return dot(float4(worldPosition, 1.0), projection.WorldToClipW) * projection.ScreenPixelRadius;
+    return dot(float4(worldPosition + projection.WorldTranslation, 1.0), projection.WorldToClipW) * projection.ScreenPixelRadius;
 }
 
 float CalculateVirtualShadowCircleOfConfusion(CameraDepthOfField optics, float sceneDepth)
@@ -58,7 +56,7 @@ float CalculateVirtualShadowReceiverResolutionBias(VirtualShadowReceiverProjecti
 {
     if (projection.DepthOfField.ShadowResolutionBiasStrength == 0.0)
         return 0.0;
-    float sceneDepth = dot(float4(worldPosition, 1.0), projection.WorldToViewDepth);
+    float sceneDepth = dot(float4(worldPosition + projection.WorldTranslation, 1.0), projection.WorldToViewDepth);
     if (sceneDepth < 0.0)
         return 0.0;
     return CalculateVirtualShadowDepthOfFieldBias(sceneDepth,
