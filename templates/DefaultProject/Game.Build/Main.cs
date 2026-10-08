@@ -1,5 +1,11 @@
 using Game.Build;
 
+if (args is ["--refresh-scene-shaders", var applicationDirectory, var sceneDirectory, var engineRoot])
+{
+    await ImportedSceneBuild.RefreshShadersAsync(applicationDirectory, sceneDirectory, engineRoot);
+    return;
+}
+
 if (args is ["--import-scene", var application, var source, var output, var engineDirectory])
 {
     await ImportedSceneBuild.BuildAsync(application, source, output, engineDirectory);

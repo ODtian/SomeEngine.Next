@@ -15,6 +15,16 @@ namespace Game.Build;
 
 public static class ImportedSceneBuild
 {
+    public static async Task RefreshShadersAsync(string applicationDirectory, string projectRoot, string engineRoot)
+    {
+        var project = new AssetProject(Path.GetFullPath(projectRoot), [],
+            sourceFormats: [new ShaderSourceFormat([Path.GetFullPath(Path.Combine(engineRoot, "assets/Shaders"))])]);
+        CopySharedShaders(project, Path.GetFullPath(applicationDirectory));
+        foreach (string source in Directory.EnumerateFiles(Path.Combine(project.RootPath, "assets/Shaders"), "scene_*.shader"))
+            await project.BuildAsync(source);
+        Console.WriteLine($"Refreshed scene shaders: {project.RootPath}");
+    }
+
     public static async Task BuildAsync(string applicationDirectory, string sourcePath, string projectRoot, string engineRoot)
     {
         applicationDirectory = Path.GetFullPath(applicationDirectory);
@@ -54,15 +64,7 @@ public static class ImportedSceneBuild
         }, "imported-scenes-3;" + ImportedSceneCapabilities.BuildVersion, ImportedSceneImporter.ImporterId);
         var project = new AssetProject(projectRoot, [importer],
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);
-        AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
-        foreach (AssetEntry entry in applicationAssets.Assets.Values)
-        {
-            if (!entry.Path.StartsWith("assets/Shaders/", StringComparison.OrdinalIgnoreCase)
-                && !entry.Path.StartsWith("assets/Pipelines/", StringComparison.OrdinalIgnoreCase)) continue;
-            string destination = Path.Combine(projectRoot, entry.Path);
-            CopyIfChanged(Path.Combine(applicationDirectory, entry.Path), destination);
-            project.RegisterAsset(entry);
-        }
+        CopySharedShaders(project, applicationDirectory);
         ModelRoot model = ModelRoot.Load(copiedSource);
         foreach (var material in model.LogicalMaterials)
             foreach (var channel in material.Channels)
@@ -93,6 +95,18 @@ public static class ImportedSceneBuild
             assets = metadata.Outputs.Count, importSeconds,
         }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Imported {name}: {instances} mesh instances, {metadata.Outputs.Count} assets in {importSeconds:F2}s. {projectRoot}");
+    }
+
+    private static void CopySharedShaders(AssetProject project, string applicationDirectory)
+    {
+        AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
+        foreach (AssetEntry entry in applicationAssets.Assets.Values)
+        {
+            if (!entry.Path.StartsWith("assets/Shaders/", StringComparison.OrdinalIgnoreCase)
+                && !entry.Path.StartsWith("assets/Pipelines/", StringComparison.OrdinalIgnoreCase)) continue;
+            CopyIfChanged(Path.Combine(applicationDirectory, entry.Path), Path.Combine(project.RootPath, entry.Path));
+            project.RegisterAsset(entry);
+        }
     }
 
     private static void CopyFiles(string source, string destination)
