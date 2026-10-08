@@ -777,10 +777,17 @@ public sealed class ClusterRenderResources : IDisposable
                 destination.GetWriteSpan(_bvhRoot), destination.GetWriteSpan(_boundsExpansion));
         }
 
-        public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion)
+        public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
+            uint lastSystemVersion, bool allTransformsChanged = false)
         {
-            WriteChangedProperty(destination, packet, _currentTransform, lastSystemVersion);
-            WriteChangedProperty(destination, packet, _previousTransform, lastSystemVersion);
+            if (allTransformsChanged)
+                Write(destination, packet, true, true, false);
+            else
+            {
+                WriteChangedProperty(destination, packet, _currentTransform, lastSystemVersion);
+                WriteChangedProperty(destination, packet, _previousTransform, lastSystemVersion);
+            }
+            if (!packet.ChangedSince<RenderMesh>(lastSystemVersion)) return;
             int start = 0;
             while (NextChangedRows<RenderMesh>(packet, lastSystemVersion, ref start, out int count))
             {
@@ -792,6 +799,11 @@ public sealed class ClusterRenderResources : IDisposable
         private static void WriteChangedProperty<T>(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
             ResolvedRenderInstanceProperty<T> property, uint lastSystemVersion) where T : unmanaged
         {
+            if (packet.AllRowsChangedSince<T>(lastSystemVersion))
+            {
+                destination.Write(property, packet.Read<T>());
+                return;
+            }
             int start = 0;
             while (NextChangedRows<T>(packet, lastSystemVersion, ref start, out int count))
             {
