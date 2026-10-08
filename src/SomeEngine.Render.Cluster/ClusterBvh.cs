@@ -21,7 +21,6 @@ internal readonly record struct ClusterBvhRegistration(
     uint NodeCount,
     int PageCount,
     uint[] LeafReferences,
-    int[][] NodesByPage,
     Memory<byte> Nodes,
     int HierarchyLevels);
 
@@ -30,9 +29,7 @@ internal readonly record struct ClusterBvhLeafIndex(
     uint FirstNode,
     uint NodeCount,
     uint FirstPage,
-    int PageCount,
     uint[] LeafReferences,
-    int[][] NodesByPage,
     Memory<byte> Nodes);
 
 internal readonly record struct ClusterBvhDestination(ulong Offset, Memory<byte> Memory);
@@ -184,19 +181,6 @@ internal sealed class ClusterBvh
         Span<ClusterBVHNode> patched = MemoryMarshal.Cast<byte, ClusterBVHNode>(destination.Memory.Span);
         int hierarchyDepth = ValidateTopology(patched);
         uint[] localPageByNode = PatchNodes(patched, firstNode, firstPage, pages);
-        var nodesByPage = new int[pages.Count][];
-        var pageCounts = new int[pages.Count];
-        foreach (uint reference in localPageByNode)
-            if (reference != uint.MaxValue) pageCounts[reference >> 8]++;
-        for (int page = 0; page < pages.Count; page++)
-            nodesByPage[page] = new int[pageCounts[page]];
-        Array.Clear(pageCounts);
-        for (int node = 0; node < localPageByNode.Length; node++)
-        {
-            uint page = localPageByNode[node] == uint.MaxValue ? uint.MaxValue : localPageByNode[node] >> 8;
-            if (page != uint.MaxValue) nodesByPage[page][pageCounts[page]++] = node;
-        }
-
         uint root = firstNode;
         return new ClusterBvhRegistration(
             mesh,
@@ -207,7 +191,6 @@ internal sealed class ClusterBvh
             nodeCount32,
             pages.Count,
             localPageByNode,
-            nodesByPage,
             destination.Memory,
             Math.Max(1, hierarchyDepth - 1));
     }
@@ -226,9 +209,7 @@ internal sealed class ClusterBvh
             registration.FirstNode,
             registration.NodeCount,
             registration.FirstPage,
-            registration.PageCount,
             registration.LeafReferences,
-            registration.NodesByPage,
             registration.Nodes));
         _registeredPageCount = checked(
             registration.FirstPage + checked((uint)registration.PageCount));
@@ -440,34 +421,6 @@ internal sealed class ClusterBvh
 
         result = default;
         return false;
-    }
-
-    private ClusterBvhLeafIndex GetLeafIndexByPage(uint pageId)
-    {
-        int low = 0;
-        int high = _leafIndexes.Count - 1;
-        while (low <= high)
-        {
-            int middle = low + ((high - low) / 2);
-            ClusterBvhLeafIndex candidate = _leafIndexes[middle];
-            if (pageId < candidate.FirstPage)
-            {
-                high = middle - 1;
-                continue;
-            }
-            if (pageId - candidate.FirstPage >= checked((uint)candidate.PageCount))
-            {
-                low = middle + 1;
-                continue;
-            }
-
-            return candidate;
-        }
-
-        throw new ArgumentOutOfRangeException(
-            nameof(pageId),
-            pageId,
-            "Cluster page id is outside the BVH leaf index.");
     }
 
     private static int ValidateTopology(ReadOnlySpan<ClusterBVHNode> nodes)
