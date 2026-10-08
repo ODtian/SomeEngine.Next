@@ -7,6 +7,22 @@
 static const uint VSM_SOFT_MAX_BLOCKER_QUERIES = 4u;
 static const uint VSM_SOFT_MAX_FILTER_QUERIES = 8u;
 
+float VirtualShadowDepthRoundingRadius(float depth)
+{
+    float magnitude = abs(depth);
+    uint bits = asuint(magnitude);
+    float previous = asfloat(bits == 0u ? 0u : bits - 1u);
+    float next = asfloat(bits + 1u);
+    return 0.5 * max(magnitude - previous, next - magnitude);
+}
+
+float VirtualShadowReverseDepthRoundingRadius(float reverseDepth)
+{
+    // The atlas stores a rounded normalized depth followed by 1 - depth.
+    return VirtualShadowDepthRoundingRadius(1.0 - reverseDepth)
+        + VirtualShadowDepthRoundingRadius(reverseDepth);
+}
+
 struct VirtualShadowSoftPlane
 {
     uint ViewIndex;
@@ -89,10 +105,16 @@ bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> vie
         float4 transform = VirtualShadowClipmapScaleBias(views[queryView], source, sample.ViewIndex - queryView);
         stored = stored * transform.x + 1.0 - transform.x - transform.w;
     }
-    float receiver = 1.0 - (plane.Ndc.z + dot(sample.TexelCenter - plane.UV, plane.Gradient));
-    blocked = stored > receiver;
+    precise float receiver = 1.0 - plane.Ndc.z;
+    float planeOffset = dot(sample.TexelCenter - plane.UV, plane.Gradient);
+    precise float depthDifference = (stored - receiver) + planeOffset;
+    float roundingRadius = VirtualShadowReverseDepthRoundingRadius(stored)
+        + VirtualShadowReverseDepthRoundingRadius(receiver);
+    blocked = depthDifference > roundingRadius;
     if (blocked)
-        separation = VirtualShadowOccluderDistance(source, stored, receiver, length(position - source.LightPosition));
+        separation = IsDirectionalVirtualShadowProjection(baseView)
+            ? depthDifference / max(abs(source.ProjectionDepthScale), 1e-20)
+            : VirtualShadowOccluderDistance(source, stored, receiver - planeOffset, length(position - source.LightPosition));
     return true;
 }
 
