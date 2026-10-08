@@ -23,6 +23,8 @@
 
 三项保留边界：Cluster 内部容量为 64 顶点 / 124 三角形；用户 shader 解释自己的顶点、材质、可见性与表面；SMRT 搁置，软采样每个 VSM family 最多 4 次遮挡深度查询加 8 次过滤。特殊表面语义由调用渲染管线提供，VSM 维护通用页管理和采样。
 
-#201 统一页扩展材质表的 4 字节对齐读取，公开资产输入及范围读取行为 2/2 通过，自动规则检查 0 违规。默认内容通过 `Game.Build` 从项目来源重建；Sponza 与 Amazon Bistro 通过 `ImportedSceneBuild` 从原始来源重建。引擎根目录保留 shader 库和原始 IcoSphere GLB/来源身份，默认资产由 DefaultProject 的唯一正式入口生成；资产存储 benchmark 同步读取该目录。
+#201 在源码 `e3a97e66c1c78dea5f4136f6d12393a1e52207ad` 完成汇合：页扩展材质表统一 4 字节对齐读取，VS/MS/SW/细分近端投射、prefilter 历史坐标、primary/secondary 页资格及带区共同接合，流送状态区间按 cluster header/240B 节点维护。引擎根目录保留 shader 库和原始 IcoSphere GLB/来源身份，默认资产由 DefaultProject 的唯一正式入口生成；资产存储 benchmark 与测试夹具同步读取该目录。
+
+正常入口从来源构建 81 项默认资产、96 项 Sponza、2046 项 Amazon Bistro（1532 实例），场景几何、运动与材质算法保持。完整解决方案构建 0 警告/0 错误，公开资产输入/范围读取 2/2、材质更新 D3D12 HW/SW 2/2、远平移 Auto/prefilter 1/1、粗细交接 1/1 通过，自动规则检查 0 违规；两轴评审的原始发现及新增 hunk 复核均完成修正。三景 Complete/Measured，反馈与 1/2/3ms 目标记录在性能交付页。
 
 三场景性能采用 [性能交付记录](acceptance-performance.md) 的框架计时，RenderGraph 验收沿用 [#70 交付记录](acceptance-70.md)。当次构建、行为、原始报告及身份保存于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/cluster-189/ticket-201/`。

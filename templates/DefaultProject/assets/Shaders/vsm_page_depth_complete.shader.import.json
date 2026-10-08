@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 31,
-  "input_hash": "e0e44a4822ba994817ede470f702bcc29e0430349145d2464d2c7d80f4c131da",
+  "input_hash": "5f886f43ac03d2656b98a2e38ad9f8ba4976a5e8248a1963db7d0a48b459874b",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/vsm_depth_cache.slang",
@@ -9,15 +9,15 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_depth_complete.slang",
-      "content_hash": "2fc74bfe45bcbc3e35ebfb54990597b579a05e3ef1e725f74a5b7329d0278de2"
+      "content_hash": "4816a1b12d7b9deea594fa8822a108627734703c8ae9e8af78561d9b20cf231a"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_entry.slang",
-      "content_hash": "cc1844d3a5c8cdddec0f077fa6f576fdbd4a581f8534988ecf461748ebe3c642"
+      "content_hash": "04ef1782c57bcaeed7c32a30e15c51b7ce49996a59645c3a84a3e0843767aac7"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_prefilter_sampling.slang",
-      "content_hash": "5d2c2a9f0a298d65778e29bc5e3d1039e88831ee5fd5d2773193a4af783cafba"
+      "content_hash": "60408a81ad55d29cc3cfe2ad48c486038cc5cb1b3d42d2f6baa2d8db7763a7e0"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_mask_bits.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_mask_common.slang",
-      "content_hash": "f299eb6c1a26e642d563d674e57d266c7212135c495fb8f9c75454106e3078c0"
+      "content_hash": "c4af1d91169d31bbb94bdf605a713992e046e2cd77a9edcdfa04fee29f4ec3c8"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_resident_math.slang",
@@ -33,7 +33,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "318bd1fdd891ec1e4d8ae19e610c4c6a7d335d1f51785600487496e329d95410"
+      "content_hash": "cf64e8e328f378c9f09e7b49718f3b6f476b0e1d8afa27a2c0654fec3069b7f8"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_page_depth_complete.slang",
@@ -49,11 +49,11 @@
     {
       "asset_guid": "aaa14d7e-fd33-4254-abfd-46f5de51cbcb",
       "sub_asset_key": "",
-      "input_hash": "e0e44a4822ba994817ede470f702bcc29e0430349145d2464d2c7d80f4c131da",
+      "input_hash": "5f886f43ac03d2656b98a2e38ad9f8ba4976a5e8248a1963db7d0a48b459874b",
       "dependencies": [],
       "asset_path": "vsm_page_depth_complete.shader.asset",
-      "version": "0dae7087-6cbc-4d7f-8614-756734e43b05",
-      "content_hash": "BC43E289CF271CF605DAFE24E1ECB4448BF814FF9C5A48A4CA81C455D5933D1F",
+      "version": "cadecc2d-a5a7-0b14-935e-f36bb804512c",
+      "content_hash": "27D49FBBF3BC84B70DE4E91EDEA1FFD51300A21E0D44819D989716966AF0683C",
       "asset_dependencies": []
     }
   ]

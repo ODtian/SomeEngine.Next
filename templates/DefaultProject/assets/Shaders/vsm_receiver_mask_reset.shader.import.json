@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 31,
-  "input_hash": "0245d055a2f5c70a088aba41d56d9059737e41c622280f3e3c331ea14c5de337",
+  "input_hash": "1c2502eafb72cfc007fa2c79ea2ed021b3fdc5aa3ed3b25a29edf3d1702660e9",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -9,11 +9,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_entry.slang",
-      "content_hash": "cc1844d3a5c8cdddec0f077fa6f576fdbd4a581f8534988ecf461748ebe3c642"
+      "content_hash": "04ef1782c57bcaeed7c32a30e15c51b7ce49996a59645c3a84a3e0843767aac7"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_prefilter_sampling.slang",
-      "content_hash": "5d2c2a9f0a298d65778e29bc5e3d1039e88831ee5fd5d2773193a4af783cafba"
+      "content_hash": "60408a81ad55d29cc3cfe2ad48c486038cc5cb1b3d42d2f6baa2d8db7763a7e0"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_mask_bits.slang",
@@ -21,7 +21,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_mask_common.slang",
-      "content_hash": "f299eb6c1a26e642d563d674e57d266c7212135c495fb8f9c75454106e3078c0"
+      "content_hash": "c4af1d91169d31bbb94bdf605a713992e046e2cd77a9edcdfa04fee29f4ec3c8"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_mask_reset.slang",
@@ -33,7 +33,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "318bd1fdd891ec1e4d8ae19e610c4c6a7d335d1f51785600487496e329d95410"
+      "content_hash": "cf64e8e328f378c9f09e7b49718f3b6f476b0e1d8afa27a2c0654fec3069b7f8"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_receiver_mask_reset.slang",
@@ -53,11 +53,11 @@
     {
       "asset_guid": "1bf5adf5-909d-59ff-899f-1480df49cbf9",
       "sub_asset_key": "",
-      "input_hash": "0245d055a2f5c70a088aba41d56d9059737e41c622280f3e3c331ea14c5de337",
+      "input_hash": "1c2502eafb72cfc007fa2c79ea2ed021b3fdc5aa3ed3b25a29edf3d1702660e9",
       "dependencies": [],
       "asset_path": "vsm_receiver_mask_reset.shader.asset",
-      "version": "89fa92dc-b4a8-5fa5-05ef-ff85d5bef7d4",
-      "content_hash": "A2AA750ED6BDF50B38A89303D517010D21D869CC0235D76C57A66D6B2010D4B2",
+      "version": "d393a214-7590-6a7b-822f-b35f363bb50a",
+      "content_hash": "04FD833FDFFF92FA6C5669EC45C4FE077E30F0F69290CD378D20B99266B9BFDC",
       "asset_dependencies": []
     }
   ]

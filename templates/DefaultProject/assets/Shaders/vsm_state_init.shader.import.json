@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 31,
-  "input_hash": "f7eff995b5045557d19540b9ccb13abf4ab5efe81dc56116f2b10adb60bcd02c",
+  "input_hash": "085ff4a8178b986d904f292754662e8d8e66810260e79761f35f817adf0fb257",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_entry.slang",
-      "content_hash": "cc1844d3a5c8cdddec0f077fa6f576fdbd4a581f8534988ecf461748ebe3c642"
+      "content_hash": "04ef1782c57bcaeed7c32a30e15c51b7ce49996a59645c3a84a3e0843767aac7"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_lists.slang",
@@ -17,7 +17,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_prefilter_sampling.slang",
-      "content_hash": "5d2c2a9f0a298d65778e29bc5e3d1039e88831ee5fd5d2773193a4af783cafba"
+      "content_hash": "60408a81ad55d29cc3cfe2ad48c486038cc5cb1b3d42d2f6baa2d8db7763a7e0"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_mask_bits.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_mask_common.slang",
-      "content_hash": "f299eb6c1a26e642d563d674e57d266c7212135c495fb8f9c75454106e3078c0"
+      "content_hash": "c4af1d91169d31bbb94bdf605a713992e046e2cd77a9edcdfa04fee29f4ec3c8"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_resident_math.slang",
@@ -33,7 +33,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "318bd1fdd891ec1e4d8ae19e610c4c6a7d335d1f51785600487496e329d95410"
+      "content_hash": "cf64e8e328f378c9f09e7b49718f3b6f476b0e1d8afa27a2c0654fec3069b7f8"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_state_init.slang",
@@ -57,11 +57,11 @@
     {
       "asset_guid": "1e7496e8-29c3-5314-93f3-b651809d52cc",
       "sub_asset_key": "",
-      "input_hash": "f7eff995b5045557d19540b9ccb13abf4ab5efe81dc56116f2b10adb60bcd02c",
+      "input_hash": "085ff4a8178b986d904f292754662e8d8e66810260e79761f35f817adf0fb257",
       "dependencies": [],
       "asset_path": "vsm_state_init.shader.asset",
-      "version": "84bead72-3058-044f-f30a-0c7abe00722a",
-      "content_hash": "11EEA4217BFB61D89FB61F31983730273EB964EFDFCFB557A748769475BEEC2E",
+      "version": "04542386-8843-3fe9-e75d-c0ab389e2767",
+      "content_hash": "77D1A08F62EE928353762FECFF5A122AFB0D0FDD41E9E15EF796C28612A9926C",
       "asset_dependencies": []
     }
   ]
