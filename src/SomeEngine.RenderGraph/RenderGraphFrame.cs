@@ -370,4 +370,10 @@ public ref partial struct RenderGraphFrame
 
     /// <summary>Supplies an existing RHI binding after importing its resources into this frame.</summary>
     public void SetParameterInput(GraphParameterInput input, ResourceBinding value) => State.SetParameterInput(input, value);
+
+    /// <summary>Updates a retained shader connection. Its registered resources and binding remain in use until changed.</summary>
+    public void SetPersistentParameterInput(GraphParameterInput input, ResourceBinding value) => State.SetPersistentParameterInput(input, value);
+
+    /// <summary>Returns the registered texture's submitted state holder for reuse within and across graphs.</summary>
+    public GraphTextureState? GetTextureState(Texture texture) => State.GetTextureState(texture);
 }

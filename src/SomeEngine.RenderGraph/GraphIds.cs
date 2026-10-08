@@ -283,4 +283,5 @@ public sealed class GraphParameterInput
 
     internal ulong Graph { get; }
     public ResourceBindingType Type { get; }
+    internal ParameterInputValue? PersistentValue { get; set; }
 }

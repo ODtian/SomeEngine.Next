@@ -5,6 +5,91 @@ namespace SomeEngine.RenderGraph.Tests;
 public sealed class FrameBufferRangesTests
 {
     [Fact]
+    public void FrameShaderInputReturnsToItsRetainedResourceOnTheFollowingFrame()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using Buffer retained = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(4, BufferUsages.ShaderRead), MemoryType.Upload);
+        using Buffer temporary = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(4, BufferUsages.ShaderRead), MemoryType.Upload);
+        using BufferSrv retainedView = support.Backend.CreateBufferSrv(support.Device,
+            new BufferSrvDesc(retained, BufferRange.Whole));
+        using BufferSrv temporaryView = support.Backend.CreateBufferSrv(support.Device,
+            new BufferSrvDesc(temporary, BufferRange.Whole));
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        GraphParameterInput input;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.RegisterExternalBuffer(retained, [new BufferBoundaryState(BufferRange.Whole,
+                retained.InitialSync, retained.InitialAccess, ResourceContentState.Defined)]);
+            edit.RegisterExternalBuffer(temporary, [new BufferBoundaryState(BufferRange.Whole,
+                temporary.InitialSync, temporary.InitialAccess, ResourceContentState.Defined)]);
+            input = edit.CreateParameterInput(ResourceBindingType.BufferSrv);
+            edit.AddCopyFramePass("use the current shader resource", PassQueueSelection.Exact(support.GraphicsQueue),
+                input, new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref GraphParameterInput value) => pass.Bind(value, PipelineSync.ComputeShading),
+                static (ref CopyPassCommandScope commands, in GraphParameterInput value) => { });
+            edit.Commit();
+        }
+        var submitted = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        var used = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        using (RenderGraphFrame frame = graph.BeginFrame())
+        {
+            frame.SetPersistentParameterInput(input, ResourceBinding.ReadOnlyBuffer(retainedView));
+            frame.SetParameterInput(input, ResourceBinding.ReadOnlyBuffer(temporaryView));
+            frame.Execute(submitted);
+            support.Wait(submitted);
+        }
+        QueueCompletion temporaryUse = submitted[0];
+        Assert.Equal(1, graph.CopyRangeCompletions(temporary, BufferRange.Whole, used));
+        Assert.Equal(temporaryUse, used[0]);
+        using (RenderGraphFrame frame = graph.BeginFrame())
+        {
+            frame.Execute(submitted);
+            support.Wait(submitted);
+        }
+        Assert.Equal(1, graph.CopyRangeCompletions(retained, BufferRange.Whole, used));
+        Assert.Equal(submitted[0], used[0]);
+        Assert.Equal(1, graph.CopyRangeCompletions(temporary, BufferRange.Whole, used));
+        Assert.Equal(temporaryUse, used[0]);
+    }
+
+    [Fact]
+    public void PersistentShaderInputKeepsItsResourceAcrossFrames()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using Buffer resource = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(4, BufferUsages.ShaderRead), MemoryType.Upload);
+        using BufferSrv view = support.Backend.CreateBufferSrv(support.Device,
+            new BufferSrvDesc(resource, BufferRange.Whole));
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
+        GraphParameterInput input;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.RegisterExternalBuffer(resource, [new BufferBoundaryState(BufferRange.Whole,
+                resource.InitialSync, resource.InitialAccess, ResourceContentState.Defined)]);
+            input = edit.CreateParameterInput(ResourceBindingType.BufferSrv);
+            edit.AddCopyFramePass("use the retained shader resource", PassQueueSelection.Exact(support.GraphicsQueue),
+                input, new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref GraphParameterInput value) => pass.Bind(value, PipelineSync.ComputeShading),
+                static (ref CopyPassCommandScope commands, in GraphParameterInput value) => { });
+            edit.Commit();
+        }
+        var submitted = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        var used = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int index = 0; index < 4; index++)
+        {
+            using RenderGraphFrame frame = graph.BeginFrame();
+            if (index == 0) frame.SetPersistentParameterInput(input, ResourceBinding.ReadOnlyBuffer(view));
+            frame.Execute(submitted);
+            support.Wait(submitted);
+            Assert.Equal(1, graph.CopyRangeCompletions(resource, BufferRange.Whole, used));
+            Assert.Equal(submitted[0], used[0]);
+        }
+    }
+
+    [Fact]
     public void PersistentBufferIdentityReportsOnlyItsUsedRanges()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();

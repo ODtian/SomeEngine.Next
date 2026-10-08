@@ -15,6 +15,7 @@ public sealed partial class RenderDevice
     private readonly HashSet<EngineTexture> _textures =
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<(RenderGraph.RenderGraph Graph, ulong Frame), TextureTransfers> _textureTransfers = [];
+    private readonly Dictionary<(RenderGraph.RenderGraph Graph, ulong Frame), TextureFrame> _textureFrames = [];
     private TextureRealization? _missingTexture;
 
     public RhiTexture MissingTexture
@@ -82,6 +83,12 @@ public sealed partial class RenderDevice
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(asset);
         TextureRealization realization = GetOrCreateTexture(asset);
+        return GetTextureUav(realization, range, format, dimension, label);
+    }
+
+    private TextureUav GetTextureUav(TextureRealization realization, in TextureSubresourceRange range,
+        Format? format = null, TextureViewDimension? dimension = null, string? label = null)
+    {
         if (!realization.Resource.Info.Usages.HasFlag(TextureUsages.Storage))
             throw new NotSupportedException("The Texture format does not support storage views.");
         TextureShape shape = realization.Shape;
@@ -126,6 +133,37 @@ public sealed partial class RenderDevice
     {
         TextureRealization realization = PrepareTexture(ref frame, [], asset, input);
         return GetTextureSrv(realization, null, null, null, null);
+    }
+
+    /// <summary>Prepares one texture once and orders all shader connections after its uploads.</summary>
+    public TextureViews PrepareTextureForInputs(ref RenderGraphFrame frame, scoped ReadOnlySpan<GraphParameterInput> inputs, EngineTexture asset)
+    {
+        TextureRealization realization = PrepareTexture(ref frame, [], asset, null);
+        TextureSrv? srv = null;
+        TextureUav? uav = null;
+        foreach (GraphParameterInput input in inputs)
+        {
+            if (realization.UploadPasses.Count != 0) OrderTextureConsumers(ref frame, realization, [], input);
+            if (input.Type == ResourceBindingType.TextureSrv && srv is null)
+                srv = GetTextureSrv(realization, null, null, null, null);
+            if (input.Type == ResourceBindingType.TextureUav && uav is null)
+                uav = GetTextureUav(realization, new TextureSubresourceRange(0, 1, 0,
+                    realization.Resource.Info.ArrayLayerCount, TextureAspects.Color));
+        }
+        return new(realization.Resource, srv, uav);
+    }
+
+    public readonly record struct TextureViews(RhiTexture Texture, TextureSrv? Srv, TextureUav? Uav);
+
+    /// <summary>Prepares the existing missing texture for every supplied shader connection.</summary>
+    public TextureSrv PrepareMissingTextureForInputs(ref RenderGraphFrame frame, scoped ReadOnlySpan<GraphParameterInput> inputs)
+    {
+        PrepareMissingTexture(ref frame, [], null);
+        TextureRealization realization = RequireMissingTexture();
+        if (realization.UploadPasses.Count != 0)
+            foreach (GraphParameterInput input in inputs) OrderTextureConsumers(ref frame, realization, [], input);
+        return GetTextureSrv(realization, realization.Shape.FullRange,
+            realization.Shape.SampledFormat, realization.Shape.SampledDimension, null);
     }
 
     /// <summary>Prepares one texture and orders every supplied consumer after its uploads.</summary>
@@ -468,15 +506,24 @@ public sealed partial class RenderDevice
             realization.FrameIdentity == frame.FrameIdentity)
             return;
         realization.AddFrame();
-        frame.RetireAfterFrame(new TextureFrameCompletion(realization));
+        var frameKey = (frame.Owner, frame.FrameIdentity);
+        if (!_textureFrames.TryGetValue(frameKey, out TextureFrame? textures))
+        {
+            textures = new TextureFrame(this, frameKey);
+            _textureFrames.Add(frameKey, textures);
+            frame.RetireAfterFrame(textures);
+            frame.ObserveExecution(textures);
+        }
+        textures.Textures.Add(realization);
         realization.FrameGraph = frame.Owner;
         realization.FrameIdentity = frame.FrameIdentity;
         realization.UploadPasses.Clear();
         realization.FinalizationScheduled = false;
         realization.FinalizationPass = default;
-        TextureBoundaryState[] boundaries = CreateBoundaryStates(realization);
-        realization.GraphResource = frame.Import(realization.Resource, boundaries);
-        frame.ObserveExecution(realization);
+        GraphTextureState? states = frame.GetTextureState(realization.Resource);
+        realization.GraphResource = states is not null && ReferenceEquals(states, realization.GraphStates)
+            ? states.Texture : frame.Import(realization.Resource, CreateBoundaryStates(realization));
+        realization.GraphStates = frame.GetTextureState(realization.Resource);
     }
 
     private void EnsureFinalizationPass(
@@ -500,20 +547,21 @@ public sealed partial class RenderDevice
         realization.FinalizationScheduled = true;
     }
 
-    private TextureBoundaryState[] CreateBoundaryStates(TextureRealization realization)
+    private ReadOnlySpan<TextureBoundaryState> CreateBoundaryStates(TextureRealization realization)
     {
+        if (realization.GraphStates is not null) return realization.GraphStates.States;
         if (realization.BoundaryStates.Length != 0) return realization.BoundaryStates;
         if (!realization.Initialized)
         {
-            return
-            [
+            return new TextureBoundaryState[]
+            {
                 new TextureBoundaryState(
                     realization.Shape.FullRange,
                     realization.Resource.InitialSync,
                     realization.Resource.InitialAccess,
                     realization.Resource.InitialLayout,
                     ResourceContentState.Undefined),
-            ];
+            };
         }
 
         Queue graphicsQueue = _backend.GetQueue(_device, QueueType.Graphics);
@@ -526,8 +574,8 @@ public sealed partial class RenderDevice
                 break;
             }
         }
-        return
-        [
+        return new TextureBoundaryState[]
+        {
             new TextureBoundaryState(
                 realization.Shape.ResidentRange(realization.FirstResidentMip),
                 PipelineSync.AllShading,
@@ -536,7 +584,7 @@ public sealed partial class RenderDevice
                 ResourceContentState.Defined,
                 graphicsQueue,
                 readyAfter),
-        ];
+        };
     }
 
     private TextureTransfers GetTextureTransfers(ref RenderGraphFrame frame)
@@ -833,18 +881,15 @@ public sealed partial class RenderDevice
         try
         {
             ReadOnlySpan<TextureBoundaryState> states = result.GetTextureStates(realization.GraphResource);
-            if (!states.IsEmpty) realization.BoundaryStates = states.ToArray();
+            if (realization.GraphStates is null && !states.IsEmpty) realization.BoundaryStates = states.ToArray();
             bool wroteContents = false;
             foreach (GraphPassId pass in realization.UploadPasses)
                 wroteContents |= result.TryGetPassCompletion(pass, out _);
             FinishUpload(realization, realization.FinalizationScheduled &&
                 result.TryGetPassCompletion(realization.FinalizationPass, out _), wroteContents);
-            if (!result.SubmittedCompletions.IsEmpty) TrackSubmission(result.SubmittedCompletions);
         }
         finally
         {
-            if (realization.FrameGraph is not null)
-                _textureTransfers.Remove((realization.FrameGraph, realization.FrameIdentity));
             realization.FrameGraph = null;
             realization.FrameIdentity = 0;
             realization.GraphResource = default;
@@ -872,10 +917,37 @@ public sealed partial class RenderDevice
         else data.RequestRelease();
     }
 
-    private sealed class TextureFrameCompletion(TextureRealization texture) : IDisposable
+    private sealed class TextureFrame(RenderDevice renderDevice, (RenderGraph.RenderGraph Graph, ulong Frame) key)
+        : IDisposable, IRenderGraphFrameExecutionObserver
     {
-        private TextureRealization? _texture = texture;
-        public void Dispose() => Interlocked.Exchange(ref _texture, null)?.CompleteFrame();
+        internal readonly List<TextureRealization> Textures = [];
+        private bool _released;
+        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+        {
+            List<Exception>? errors = null;
+            try
+            {
+                if (!result.SubmittedCompletions.IsEmpty)
+                    try { renderDevice.TrackSubmission(result.SubmittedCompletions); }
+                    catch (Exception error) { (errors ??= []).Add(error); }
+                foreach (TextureRealization texture in Textures)
+                    try { renderDevice.FinishTextureFrame(texture, result); }
+                    catch (Exception error) { (errors ??= []).Add(error); }
+            }
+            finally
+            {
+                renderDevice._textureFrames.Remove(key);
+                renderDevice._textureTransfers.Remove(key);
+            }
+            if (errors is not null) throw new AggregateException("Texture frame completion failed.", errors);
+        }
+        public void Dispose()
+        {
+            if (_released) return;
+            _released = true;
+            foreach (TextureRealization texture in Textures) texture.CompleteFrame();
+            Textures.Clear();
+        }
     }
 
     private sealed class TextureTransfers
@@ -897,7 +969,7 @@ public sealed partial class RenderDevice
         Format Format,
         TextureViewDimension Dimension);
 
-    private sealed class TextureRealization : IDisposable, IRenderGraphFrameExecutionObserver, ITextureDeviceData
+    private sealed class TextureRealization : IDisposable, ITextureDeviceData
     {
         private readonly RenderDevice _owner;
 
@@ -911,6 +983,7 @@ public sealed partial class RenderDevice
 
         internal EngineTexture? TextureObject { get; set; }
         internal TextureBoundaryState[] BoundaryStates { get; set; } = [];
+        internal GraphTextureState? GraphStates { get; set; }
         SomeEngine.Graphics.Texture ITextureDeviceData.Texture => Resource;
         uint ITextureDeviceData.FirstAvailableMip => FirstResidentMip;
         void ITextureDeviceData.Release() => _owner.ReleaseTexture(this);
@@ -985,9 +1058,6 @@ public sealed partial class RenderDevice
             PendingUploadedChunks.Clear();
             RollbackUploadedChunks = null;
         }
-
-        void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result) =>
-            _owner.FinishTextureFrame(this, result);
 
         public void Dispose()
         {

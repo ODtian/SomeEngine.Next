@@ -23,6 +23,7 @@ internal sealed class FrameSlot : IDisposable
         _state?.ChangeProperty(identity, kind, refreshViews);
     internal void BoundaryChanged(GraphIdentity identity, GraphStoreKind kind) => _state?.BoundaryChanged(identity, kind);
     internal void CommandDataChanged(GraphIdentity identity) => _state?.CommandDataChanged(identity);
+    internal void ParameterInputChanged(GraphParameterInput input) => _state?.ParameterInputChanged(input);
 
     internal FrameSlot(int index)
     {

@@ -38,6 +38,13 @@ Frame data 是在既有图结构中变化的值和绑定。
 
 ## Buffer ranges
 
+`SetPersistentParameterInput` 在可写帧边界更新持久 shader 连接；已登记资源的值由输入对象持有，
+变化只刷新相关访问与录制数据。`SetParameterInput` 提供当帧值，下一帧恢复持久值。
+上传替换资源时使用当帧连接，登记完成后显式更新持久连接。
+
+`GetTextureState` 返回已登记纹理的只读提交状态引用。状态由图的纹理声明维护，
+同图复用直接沿用该引用，跨图首次使用沿普通 `Import` 交付其提交边界。
+
 `RenderGraphFrame.SetBufferRanges(GraphBufferId, BufferRangeSet)` 为缓冲设置当帧可读范围集合。
 一个集合覆盖当帧所有使用该缓冲的读取 descriptor，包括持久 pass 和当帧 pass；图沿普通
 范围访问处理依赖、同步和完成点。集合属于当帧，图身份和 descriptor 的原有范围保留。
