@@ -104,11 +104,43 @@ bool PassesLODFilter(
         ((cluster.PackedCounts >> 24u) & 2u) != 0u;
 }
 
-bool BuildClusterAabbScreenBoundsAndNearDepth(
+struct ClusterWorldBounds
+{
+    float3 Min;
+    float3 Max;
+    uint VertexCount;
+};
+
+ClusterWorldBounds TransformClusterBounds(
     PackedCluster cluster,
     RenderInstanceTransform transform,
+    float boundsExpansion)
+{
+    ClusterWorldBounds bounds = (ClusterWorldBounds)0;
+    bounds.VertexCount = cluster.PackedCounts & 0xFF;
+    if (bounds.VertexCount == 0u) return bounds;
+    bounds.Min = 1e20.xxx;
+    bounds.Max = -1e20.xxx;
+    [unroll]
+    for (uint corner = 0u; corner < 8u; corner++)
+    {
+        float3 local = float3(
+            (corner & 1u) != 0u ? cluster.BoundMax.x : cluster.BoundMin.x,
+            (corner & 2u) != 0u ? cluster.BoundMax.y : cluster.BoundMin.y,
+            (corner & 4u) != 0u ? cluster.BoundMax.z : cluster.BoundMin.z);
+        float3 world = TransformInstanceLocalPosition(local, transform);
+        bounds.Min = min(bounds.Min, world);
+        bounds.Max = max(bounds.Max, world);
+    }
+    float expansion = max(0.0, boundsExpansion);
+    bounds.Min -= expansion.xxx;
+    bounds.Max += expansion.xxx;
+    return bounds;
+}
+
+bool ProjectClusterAabb(
+    ClusterWorldBounds worldBounds,
     bool usePrev,
-    float boundsExpansion,
     ClusterViewUniforms view,
     out float2 minUv,
     out float2 maxUv,
@@ -116,8 +148,7 @@ bool BuildClusterAabbScreenBoundsAndNearDepth(
     out uint mipLevel,
     uint depthCacheClass)
 {
-    uint vertexCount = cluster.PackedCounts & 0xFF;
-    if (vertexCount == 0)
+    if (worldBounds.VertexCount == 0u)
     {
         minUv = 0.0.xx;
         maxUv = 1.0.xx;
@@ -126,34 +157,7 @@ bool BuildClusterAabbScreenBoundsAndNearDepth(
         return true;
     }
 
-    float3 localMin = cluster.BoundMin;
-    float3 localMax = cluster.BoundMax;
-
-    float3 localCorners[8];
-    localCorners[0] = float3(localMin.x, localMin.y, localMin.z);
-    localCorners[1] = float3(localMax.x, localMin.y, localMin.z);
-    localCorners[2] = float3(localMin.x, localMax.y, localMin.z);
-    localCorners[3] = float3(localMax.x, localMax.y, localMin.z);
-    localCorners[4] = float3(localMin.x, localMin.y, localMax.z);
-    localCorners[5] = float3(localMax.x, localMin.y, localMax.z);
-    localCorners[6] = float3(localMin.x, localMax.y, localMax.z);
-    localCorners[7] = float3(localMax.x, localMax.y, localMax.z);
-
-    float3 worldMin = 1e20.xxx;
-    float3 worldMax = -1e20.xxx;
-    [unroll]
-    for (uint cornerIdx = 0; cornerIdx < 8; cornerIdx++)
-    {
-        float3 worldPos = TransformInstanceLocalPosition(localCorners[cornerIdx], transform);
-        worldMin = min(worldMin, worldPos);
-        worldMax = max(worldMax, worldPos);
-    }
-
-    float expansion = max(0.0, boundsExpansion);
-    worldMin -= expansion.xxx;
-    worldMax += expansion.xxx;
-
-    if (!usePrev && !ClusterTargetPolicyWorldDepthAccepts(worldMin, worldMax, view, depthCacheClass))
+    if (!usePrev && !ClusterTargetPolicyWorldDepthAccepts(worldBounds.Min, worldBounds.Max, view, depthCacheClass))
     {
         minUv = 0.0.xx;
         maxUv = 0.0.xx;
@@ -163,7 +167,7 @@ bool BuildClusterAabbScreenBoundsAndNearDepth(
     }
 
     BuildWorldAabbScreenBoundsAndNearDepth(
-        worldMin, worldMax, usePrev, view,
+        worldBounds.Min, worldBounds.Max, usePrev, view,
         minUv, maxUv, nearDepth, mipLevel);
     return true;
 }
@@ -177,12 +181,12 @@ struct ClusterScreenBounds
     bool DepthAccepted;
 };
 
-ClusterScreenBounds ProjectClusterScreenBounds(PackedCluster cluster,
-    RenderInstanceTransform transform, float boundsExpansion, bool usePrev, ClusterViewUniforms view,
+ClusterScreenBounds ProjectClusterScreenBounds(ClusterWorldBounds worldBounds,
+    bool usePrev, ClusterViewUniforms view,
     uint depthCacheClass = 1u)
 {
     ClusterScreenBounds bounds;
-    bounds.DepthAccepted = BuildClusterAabbScreenBoundsAndNearDepth(cluster, transform, usePrev, boundsExpansion, view,
+    bounds.DepthAccepted = ProjectClusterAabb(worldBounds, usePrev, view,
         bounds.MinUv, bounds.MaxUv, bounds.NearDepth, bounds.MipLevel, depthCacheClass);
     return bounds;
 }
@@ -222,11 +226,8 @@ bool ShouldUseSWRaster(
     return edgePixels <= view.SoftwareRasterEdgeThreshold;
 }
 
-uint ClusterDepthBucket(uint pageOffset, uint clusterIndex, uint instanceId, ClusterViewUniforms view)
+uint ClusterDepthBucket(PackedCluster cluster, RenderInstanceTransform transform, ClusterViewUniforms view)
 {
-    PackedCluster cluster = LoadCluster(pageOffset, clusterIndex);
-    RenderInstanceTransform transform = LoadRenderTransform(InstanceData,
-        LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD), instanceId);
     float3 center = TransformInstanceLocalPosition((cluster.BoundMin + cluster.BoundMax) * 0.5, transform);
     float z = -mul(float4(ClusterPositionForView(center, view), 1.0), view.View).z;
     // UE's 1000..100000 cm logarithmic range expressed in project metres.
@@ -347,6 +348,7 @@ bool LoadAndFilterCandidate(
     out RenderInstanceTransform t,
     out float boundsExpansion,
     out uint2 rasterWindow,
+    out ClusterWorldBounds worldBounds,
     out ClusterScreenBounds currentBounds)
 {
     pageOffset = 0;
@@ -358,6 +360,7 @@ bool LoadAndFilterCandidate(
     t = (RenderInstanceTransform)0;
     boundsExpansion = 0.0;
     rasterWindow = 0u.xx;
+    worldBounds = (ClusterWorldBounds)0;
     currentBounds = (ClusterScreenBounds)0;
     currentBounds.MaxUv = 1.0.xx;
 
@@ -400,7 +403,8 @@ bool LoadAndFilterCandidate(
         ? LoadTargetDepthCacheClass(instanceID) : 1u;
     if (view.CullingEnabled != 0u)
     {
-        currentBounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, false, view, depthCacheClass);
+        worldBounds = TransformClusterBounds(cluster, t, boundsExpansion);
+        currentBounds = ProjectClusterScreenBounds(worldBounds, false, view, depthCacheClass);
         if (!currentBounds.DepthAccepted)
             return false;
     }
@@ -425,10 +429,10 @@ void AppendVisibleWindow(uint pageOffset, uint clusterID, uint instanceID,
 // its virtual resolution. Empty windows never enter the raster bins.
 void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
     uint viewIndex, uint2 rasterWindow, bool isSW, uint maxCandidates,
-    ClusterScreenBounds currentBounds)
+    ClusterScreenBounds currentBounds, PackedCluster cluster, RenderInstanceTransform transform)
 {
     ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
-    uint depthBucket = ClusterDepthBucket(pageOffset, clusterID, instanceID, view);
+    uint depthBucket = ClusterDepthBucket(cluster, transform, view);
     uint requiredPageFlags = ClusterTargetPolicyRequiredPageFlags(currentBounds.NearDepth, view);
     uint flags = requiredPageFlags != 0u ? 2u : 0u;
     if (view.TargetPolicy == 0u)
@@ -484,6 +488,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     RenderInstanceTransform t;
     float boundsExpansion;
     uint2 rasterWindow;
+    ClusterWorldBounds worldBounds;
     ClusterScreenBounds currentBounds;
     bool valid = LoadAndFilterCandidate(
             dispatchThreadID.x,
@@ -496,6 +501,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
             t,
             boundsExpansion,
             rasterWindow,
+            worldBounds,
             currentBounds);
     if (!valid)
         return;
@@ -504,7 +510,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     bool occluded = false;
     if (view.HasPrevHistory != 0u && view.CullingEnabled != 0u)
     {
-        bounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, true, view);
+        bounds = ProjectClusterScreenBounds(worldBounds, true, view);
         occluded = IsOccludedByHiZ(bounds, true, viewIndex, view,
             view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
     }
@@ -527,7 +533,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
             rasterWindow,
             isSW,
             view.MaxCandidates,
-            currentBounds);
+            currentBounds, cluster, t);
     }
 }
 #elif CLUSTER_CULL_PHASE == 2
@@ -614,6 +620,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     RenderInstanceTransform t;
     float boundsExpansion;
     uint2 rasterWindow;
+    ClusterWorldBounds worldBounds;
     ClusterScreenBounds currentBounds;
     bool valid = LoadAndFilterCandidate(
             dispatchThreadID.x,
@@ -626,6 +633,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
             t,
             boundsExpansion,
             rasterWindow,
+            worldBounds,
             currentBounds);
     if (!valid)
         return;
@@ -643,7 +651,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
             rasterWindow,
             isSW,
             view.MaxCandidates,
-            currentBounds);
+            currentBounds, cluster, t);
     }
 }
 #endif

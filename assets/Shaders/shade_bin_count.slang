@@ -17,8 +17,6 @@ RWStructuredBuffer<ShadePixelWork> PixelCoordinates;
 RWStructuredBuffer<SurfaceReceiver> SurfaceReceivers;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<SurfaceReceiver> AdditionalSurfaceReceivers;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWByteAddressBuffer MaterialSurfaces;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> SurfaceCounts;
 
@@ -32,8 +30,6 @@ void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIn
     {
         uint receiverIndex = (threadId.z * Uniforms.ScreenHeight + threadId.y) * Uniforms.ScreenWidth + threadId.x;
         SurfaceReceivers[receiverIndex] = (SurfaceReceiver)0;
-        for (uint offset = 0u; offset < Uniforms.SurfaceDataStride; offset += 4u)
-            MaterialSurfaces.Store(receiverIndex * Uniforms.SurfaceDataStride + offset, 0u);
         uint receiverLayerSize = Uniforms.ScreenWidth * Uniforms.ScreenHeight * Uniforms.ViewCount;
         for (uint layer = 0u; layer < Uniforms.AdditionalReceiverLayerCount; layer++)
             AdditionalSurfaceReceivers[layer * receiverLayerSize + receiverIndex] = (SurfaceReceiver)0;
