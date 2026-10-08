@@ -29,6 +29,7 @@ struct VirtualShadowSoftPlane
     float3 Ndc;
     float2 UV;
     float2 Gradient;
+    float DepthOffset;
 };
 
 VirtualShadowSoftPlane BuildVirtualShadowSoftPlane(StructuredBuffer<VirtualShadowMapParameters> views,
@@ -39,6 +40,13 @@ VirtualShadowSoftPlane BuildVirtualShadowSoftPlane(StructuredBuffer<VirtualShado
     VirtualShadowMapParameters view = views[viewIndex];
     ProjectVirtualShadowPosition(view, position, plane.Ndc, plane.UV);
     plane.Gradient = CalculateVirtualShadowReceiverPlaneDepthGradient(view, position, normal);
+    plane.DepthOffset = 0.0;
+    if (IsDirectionalVirtualShadowProjection(view))
+    {
+        float3 viewPosition = position + view.WorldTranslation;
+        plane.DepthOffset = dot(viewPosition, float3(view.ShadowUv[0][2], view.ShadowUv[1][2], view.ShadowUv[2][2]))
+            + (view.ShadowUv[3][2] - 0.5);
+    }
     return plane;
 }
 
@@ -107,13 +115,17 @@ bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> vie
     }
     precise float receiver = 1.0 - plane.Ndc.z;
     float planeOffset = dot(sample.UV - plane.UV, plane.Gradient);
-    precise float depthDifference = (stored - receiver) + planeOffset;
+    precise float centerDepthDifference = IsDirectionalVirtualShadowProjection(baseView)
+        ? (stored - 0.5) + plane.DepthOffset : stored - receiver;
+    precise float depthDifference = centerDepthDifference + planeOffset;
     float slopeBias = VirtualShadowOptimalSlopeBias(views, sample.ViewIndex, sample, position, normal);
     float roundingRadius = VirtualShadowReverseDepthRoundingRadius(stored)
         + VirtualShadowReverseDepthRoundingRadius(receiver);
     blocked = depthDifference - slopeBias > roundingRadius;
     if (blocked)
-        separation = VirtualShadowOccluderDistance(source, stored, receiver, length(position - source.LightPosition));
+        separation = IsDirectionalVirtualShadowProjection(baseView)
+            ? max(1e-6 * source.WorldUnitsPerCentimeter, centerDepthDifference / abs(source.ProjectionDepthScale))
+            : VirtualShadowOccluderDistance(source, stored, receiver, length(position - source.LightPosition));
     return true;
 }
 
