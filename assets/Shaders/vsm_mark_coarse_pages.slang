@@ -44,7 +44,7 @@ void MarkVirtualShadowCoarsePages(uint3 dispatchThreadId : SV_DispatchThreadID)
         // Coarse coverage follows the current camera origin inside the snapped
         // projection. The four page addresses surround this projected origin.
         uint dimension = VirtualShadowMipPagesPerRow(view, 0u);
-        float4 originClip = mul(float4(view.ClipmapWorldOrigin, 1.0), view.LightViewProjection);
+        float4 originClip = ProjectVirtualShadowClip(view, view.ClipmapWorldOrigin);
         float2 originUv = originClip.xy / originClip.w * float2(0.5, -0.5) + 0.5;
         float2 pageAddress = originUv * float(dimension);
         uint2 low = (uint2)floor(pageAddress - 0.5);

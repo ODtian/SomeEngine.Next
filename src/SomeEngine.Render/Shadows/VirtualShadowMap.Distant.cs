@@ -79,7 +79,8 @@ public sealed partial class VirtualShadowMap
     }
 
     private static bool HasSameDistantProjection(VirtualShadowView current, VirtualShadowView previous) =>
-        current.LightKind == previous.LightKind && current.LightPosition == previous.LightPosition &&
+        current.LightKind == previous.LightKind && current.WorldOriginHigh == previous.WorldOriginHigh &&
+        current.WorldOriginLow == previous.WorldOriginLow &&
         current.LightRange == previous.LightRange && current.LightViewProjection == previous.LightViewProjection &&
         current.VirtualResolution == previous.VirtualResolution && current.PageSize == previous.PageSize &&
         (previous.Flags & VirtualShadowViewFlags.DistantLight) != 0u;
