@@ -21,6 +21,7 @@ public sealed class DynamicShadowRenderingTests
             DirectionalClipmapLevels = 16, DirectionalFirstClipmapLevel = -4,
             DirectionalResolutionLodBias = 0, DirectionalMovingResolutionLodBias = 0,
             DirectionalReceiverMask = true, DirectionalRayCount = 0, LocalRayCount = 0,
+            PrefilteredDistantProjectEnable = true, PrefilteredDistant = true,
             DirectionalCoarsePageMode = VirtualShadowCoarsePageMode.Disabled,
             DynamicResolutionEnabled = false,
         };
