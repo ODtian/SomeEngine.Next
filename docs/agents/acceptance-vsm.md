@@ -23,6 +23,6 @@
 
 三项保留边界：Cluster 内部容量为 64 顶点 / 124 三角形；用户 shader 解释自己的顶点、材质、可见性与表面；SMRT 搁置，软采样每个 VSM family 最多 4 次遮挡深度查询加 8 次过滤。特殊表面语义由调用渲染管线提供，VSM 维护通用页管理和采样。
 
-#201 统一页扩展材质表的 4 字节对齐读取，公开资产输入及范围读取行为 2/2 通过，自动规则检查 0 违规。默认内容通过 `Game.Build` 从项目来源重建；Sponza 与 Amazon Bistro 通过 `ImportedSceneBuild` 从原始来源重建。根目录 IcoSphere 样例保留原始 GLB 与来源身份，Cluster 产物通过 DefaultProject 的正式入口生成。
+#201 统一页扩展材质表的 4 字节对齐读取，公开资产输入及范围读取行为 2/2 通过，自动规则检查 0 违规。默认内容通过 `Game.Build` 从项目来源重建；Sponza 与 Amazon Bistro 通过 `ImportedSceneBuild` 从原始来源重建。引擎根目录保留 shader 库和原始 IcoSphere GLB/来源身份，默认资产由 DefaultProject 的唯一正式入口生成；资产存储 benchmark 同步读取该目录。
 
 三场景性能采用 [性能交付记录](acceptance-performance.md) 的框架计时，RenderGraph 验收沿用 [#70 交付记录](acceptance-70.md)。当次构建、行为、原始报告及身份保存于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/cluster-189/ticket-201/`。
