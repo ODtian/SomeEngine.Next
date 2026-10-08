@@ -258,8 +258,8 @@ void AppendVisibleWindow(
     uint activeCount = WaveMaskBitCount(activeMask);
     uint totalBase = 0u;
     if (lane == leader)
-        totalBase = ReserveClusterWork(DrawArgs, 12u, activeCount,
-            maxCandidates - min(baseCount, maxCandidates), 8u);
+        totalBase = ReserveClusterVisibleWork(DrawArgs, 12u, activeCount,
+            maxCandidates - min(baseCount, maxCandidates));
     totalBase = WaveReadLaneAt(totalBase, leader);
     bool admitted = baseCount + totalBase + WaveMaskPrefix(activeMask, lane) < maxCandidates;
     if (!admitted)
@@ -564,8 +564,8 @@ void AppendVisibleWindow(
     uint activeCount = WaveMaskBitCount(activeMask);
     uint totalBase = 0u;
     if (lane == leader)
-        totalBase = ReserveClusterWork(PhaseDrawArgs, 12u, activeCount,
-            maxCandidates - min(baseCount, maxCandidates), 8u);
+        totalBase = ReserveClusterVisibleWork(PhaseDrawArgs, 12u, activeCount,
+            maxCandidates - min(baseCount, maxCandidates));
     totalBase = WaveReadLaneAt(totalBase, leader);
     bool admitted = baseCount + totalBase + WaveMaskPrefix(activeMask, lane) < maxCandidates;
     if (!admitted)

@@ -174,7 +174,7 @@ public sealed partial class ClusterPipelineSystem
         frame.DrawArgs = frame.AddBuffer(ref graph, 16, BufferUsages.CopySource, "Cluster phase-one counts");
         frame.PageFaults = frame.AddBuffer(
             ref graph,
-            checked(sizeof(uint) + (ulong)pageFaultCapacity * 16u +
+            checked(2u * sizeof(uint) + (ulong)pageFaultCapacity * 16u +
                 (ulong)residency.GeometryPageCount * sizeof(uint)),
             BufferUsages.CopySource,
             "Cluster page faults");
@@ -575,7 +575,7 @@ public sealed partial class ClusterPipelineSystem
         FrameResources frame = GraphData.Resources;
         frame.PagePriorityCapacity = _resources.GeometryPageCount;
         SetStageBuffer(ref graph, frame.PageFaults,
-            checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * 16u +
+            checked(2u * sizeof(uint) + (ulong)frame.PageFaultCapacity * 16u +
                 (ulong)frame.PagePriorityCapacity * sizeof(uint)),
             BufferUsages.CopySource, "Cluster page faults");
         GraphData.Resources = frame;

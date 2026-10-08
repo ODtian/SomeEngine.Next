@@ -1,4 +1,5 @@
 using SomeEngine.Graphics;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
@@ -29,6 +30,7 @@ internal sealed class ApplicationRunException(ApplicationFailure failure, int co
 
     internal static ApplicationFailure Classify(Exception error, ApplicationFailure fallback)
     {
+        if (error is ClusterWorkOverflowException) return ApplicationFailure.Rendering;
         if (error is GraphicsException graphics)
             return graphics.Error == GraphicsError.DeviceLost ? ApplicationFailure.DeviceLost : ApplicationFailure.Graphics;
         if (error is NotSupportedException or DllNotFoundException) return ApplicationFailure.Unsupported;

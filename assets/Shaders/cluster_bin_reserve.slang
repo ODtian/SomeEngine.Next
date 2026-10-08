@@ -36,8 +36,8 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID)
     if (WaveIsFirstLane())
     {
         if (waveTotal != 0u)
-            totalBase = ReserveClusterWork(ReserveCounters, waveTotal,
-                Uniforms.MaxVisibleClusters * Uniforms.BinnedEntriesPerCluster, 16u);
+            totalBase = ReserveClusterRasterBatches(ReserveCounters, waveTotal,
+                Uniforms.MaxVisibleClusters * Uniforms.BinnedEntriesPerCluster);
         if (waveSoftware != 0u)
             InterlockedAdd(ReserveCounters[1], waveSoftware, softwareBase);
         if (Uniforms.CollectMetrics != 0u)

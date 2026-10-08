@@ -9,7 +9,8 @@ uint PackClusterStreamingPriority(float projectedError, float lodThreshold, uint
 
 uint ClusterPageRequestPriorityOffset(uint capacity, uint page)
 {
-    return 4u + capacity * 16u + page * 4u;
+    // Count, fixed request records, and the completed-frame work result precede priorities.
+    return 8u + capacity * 16u + page * 4u;
 }
 
 #endif
