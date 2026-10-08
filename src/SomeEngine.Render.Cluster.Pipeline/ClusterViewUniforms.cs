@@ -158,6 +158,28 @@ internal struct ClusterViewUniforms
         };
     }
 
+    internal void UpdateFrameData(in RenderView source, ClusterViewRasterMode rasterMode, bool cullingEnabled,
+        int instanceCount, int pageFaultCapacity, float streamingQuality)
+    {
+        GeometryLodScale = source.GeometryLodScale * streamingQuality;
+        InstanceCount = checked((uint)instanceCount);
+        MaxPageFaults = checked((uint)pageFaultCapacity);
+        RasterMode = (uint)rasterMode;
+        CullingEnabled = cullingEnabled ? 1u : 0u;
+        PrevViewProj = ViewProj;
+        HasPrevHistory = 0;
+        HiZMipCount = 0;
+        HiZInvSize = default;
+        PrevView = View;
+        PrevP00 = P00;
+        PrevP11 = P11;
+        PreviousWorldOriginHigh = WorldOriginHigh;
+        PreviousWorldOriginLow = WorldOriginLow;
+        PreviousWorldToFirstPerson = WorldToFirstPerson;
+        PreviousWorldTranslation = WorldTranslation;
+        PreviousDataTranslation = default;
+    }
+
     private static bool IsFinite(in Matrix4x4 value) =>
         float.IsFinite(value.M11) && float.IsFinite(value.M12)
         && float.IsFinite(value.M13) && float.IsFinite(value.M14)

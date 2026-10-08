@@ -24,6 +24,7 @@ VirtualShadowProjectionResult EmptyVirtualShadowProjection()
 
 struct VirtualShadowDepthSample
 {
+    // Depth and sample coordinates all belong to the actual atlas source view.
     bool Valid;
     float Depth;
     uint ViewIndex;
@@ -41,6 +42,29 @@ bool IsDirectionalVirtualShadowProjection(VirtualShadowMapParameters view)
 #endif
 }
 
+float VirtualShadowDepthRoundingRadius(float depth)
+{
+    float magnitude = abs(depth);
+    uint bits = asuint(magnitude);
+    float previous = asfloat(bits == 0u ? 0u : bits - 1u);
+    float next = asfloat(bits + 1u);
+    return 0.5 * max(magnitude - previous, next - magnitude);
+}
+
+float VirtualShadowReverseDepthRoundingRadius(float reverseDepth)
+{
+    // The atlas stores a rounded normalized depth followed by 1 - depth.
+    return VirtualShadowDepthRoundingRadius(1.0 - reverseDepth)
+        + VirtualShadowDepthRoundingRadius(reverseDepth);
+}
+
+float CalculateVirtualShadowDirectionalDepthOffset(VirtualShadowMapParameters view, float3 position)
+{
+    float3 viewPosition = position + view.WorldTranslation;
+    return dot(viewPosition, float3(view.ShadowUv[0][2], view.ShadowUv[1][2], view.ShadowUv[2][2]))
+        + (view.ShadowUv[3][2] - 0.5);
+}
+
 VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages,
     Texture2DArray<uint> atlas, uint requestedView, float2 uv, uint firstMip)
@@ -52,7 +76,7 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     if (IsDirectionalVirtualShadowProjection(view))
     {
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED
-        sample.Valid = TryReadVirtualShadowDirectionalResidentReverseDepth(views, pages,
+        sample.Valid = TryReadVirtualShadowDirectionalResidentSourceReverseDepth(views, pages,
             VirtualShadowResidentPages, atlas, requestedView, uv, reverseDepth, sample.ViewIndex);
 #else
         uint remaining = view.ClipmapLevelCount - uint(view.ClipmapLevel - view.FirstClipmapLevel);
@@ -64,7 +88,6 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
             if (any(sourceUV < 0.0) || any(sourceUV >= 1.0)) continue;
             uint2 pixel = uint2(sourceUV * float(source.VirtualResolution));
             if (!TryReadVirtualShadowMipReverseDepth(source, pages, atlas, 0u, pixel, reverseDepth)) continue;
-            reverseDepth = VirtualShadowReverseDepthInRequestedClipmap(reverseDepth, transform);
             sample.ViewIndex = requestedView + offset;
             sample.Valid = true;
             break;
@@ -143,18 +166,30 @@ VirtualShadowProjectionResult ProjectVirtualShadowHard(
     result.ViewIndex = sample.ViewIndex;
     result.MipLevel = sample.MipLevel;
     result.RayCount = 1u;
-    float clipW = ProjectVirtualShadowClip(view, position).w;
-    float rayBiasScale = IsDirectionalVirtualShadowProjection(view)
-        ? abs(view.ProjectionDepthScale) : abs(1.0 + view.ProjectionDepthScale) / clipW;
-    float biasedDepth = sample.Depth - VirtualShadowOptimalSlopeBias(views, viewIndex, sample, position, normal)
-        - max(rayStartDistance, 0.0) * rayBiasScale;
+    VirtualShadowMapParameters source = views[sample.ViewIndex];
+    ProjectVirtualShadowPosition(source, position, ndc, uv);
+    float clipW = ProjectVirtualShadowClip(source, position).w;
+    float rayBiasScale = IsDirectionalVirtualShadowProjection(source)
+        ? abs(source.ProjectionDepthScale) : abs(1.0 + source.ProjectionDepthScale) / clipW;
+    float nativeSlopeBias = VirtualShadowOptimalSlopeBias(views, sample.ViewIndex, sample, position, normal);
+    float rayBias = max(rayStartDistance, 0.0) * rayBiasScale;
+    float slopeBias = nativeSlopeBias + rayBias;
+    float biasedDepth = sample.Depth - nativeSlopeBias - rayBias;
     float receiverDepth = 1.0 - ndc.z;
-    if (biasedDepth > receiverDepth)
+    precise float depthDifference = IsDirectionalVirtualShadowProjection(source)
+        ? (sample.Depth - 0.5) + CalculateVirtualShadowDirectionalDepthOffset(source, position)
+        : sample.Depth - receiverDepth;
+    float roundingRadius = IsDirectionalVirtualShadowProjection(source)
+        ? VirtualShadowReverseDepthRoundingRadius(sample.Depth) + VirtualShadowReverseDepthRoundingRadius(receiverDepth)
+        : 0.0;
+    bool blocked = IsDirectionalVirtualShadowProjection(source)
+        ? depthDifference - slopeBias > roundingRadius : biasedDepth > receiverDepth;
+    if (blocked)
     {
         result.Visibility = 0.0;
-        result.OccluderDistance = VirtualShadowOccluderDistance(view,
-            IsDirectionalVirtualShadowProjection(view) ? sample.Depth : biasedDepth, receiverDepth,
-            length(position - view.LightPosition));
+        result.OccluderDistance = IsDirectionalVirtualShadowProjection(source)
+            ? max(1e-6 * source.WorldUnitsPerCentimeter, depthDifference / abs(source.ProjectionDepthScale))
+            : VirtualShadowOccluderDistance(source, biasedDepth, receiverDepth, length(position - source.LightPosition));
     }
     return result;
 }
@@ -220,6 +255,12 @@ VirtualShadowRaySample ReadVirtualShadowRayFace(StructuredBuffer<VirtualShadowMa
             viewIndex, uvDepth.xy, ray.MinMip);
         result.Valid = depth.Valid;
         result.Depth = depth.Depth;
+        if (depth.Valid && depth.ViewIndex != viewIndex && IsDirectionalVirtualShadowProjection(views[viewIndex]))
+        {
+            float4 transform = VirtualShadowClipmapScaleBias(views[viewIndex], views[depth.ViewIndex],
+                depth.ViewIndex - viewIndex);
+            result.Depth = VirtualShadowReverseDepthInRequestedClipmap(result.Depth, transform);
+        }
         if (depth.Valid)
         {
             ray.AnyValid = true;

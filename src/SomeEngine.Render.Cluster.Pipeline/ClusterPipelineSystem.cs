@@ -63,6 +63,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private ClusterCullingHistory? _history;
     private ClusterViewUniforms[] _packedViews;
     private RenderView[] _stagedViews;
+    private bool[] _viewDataValid;
+    private WorldOrigin _viewDataOrigin;
+    private bool _hasViewDataOrigin;
     private Entity[] _stagedViewEntities;
     private Matrix4x4[] _stagedPreviousViewProjections;
     private bool[] _stagedHasPreviousView;
@@ -122,6 +125,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _visibilityMode = _options.SelectVisibilityMode(device.Capabilities);
         _packedViews = new ClusterViewUniforms[checked((int)outputDescription.ViewCount)];
         _stagedViews = new RenderView[checked((int)outputDescription.ViewCount)];
+        _viewDataValid = new bool[_stagedViews.Length];
         _stagedViewEntities = new Entity[_stagedViews.Length];
         _stagedPreviousViewProjections = new Matrix4x4[_stagedViews.Length];
         _stagedHasPreviousView = new bool[_stagedViews.Length];
@@ -224,7 +228,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
         EnsureStagedViewStorage(required);
 
-        views.CopyTo(_stagedViews.AsSpan(_stagedViewCount));
+        StoreViews(views, _stagedViewCount);
         if (identities.IsEmpty) _stagedViewEntities.AsSpan(_stagedViewCount, views.Length).Clear();
         else identities.CopyTo(_stagedViewEntities.AsSpan(_stagedViewCount));
         if (previousViewProjections.IsEmpty)
@@ -245,12 +249,24 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _stagedViewCount = required;
     }
 
+    private void StoreViews(scoped ReadOnlySpan<RenderView> views, int first)
+    {
+        EnsureStagedViewStorage(checked(first + views.Length));
+        for (int index = 0; index < views.Length; index++)
+        {
+            int target = first + index;
+            if (!_stagedViews[target].Equals(views[index])) _viewDataValid[target] = false;
+            _stagedViews[target] = views[index];
+        }
+    }
+
     private void EnsureStagedViewStorage(int required)
     {
         if (_stagedViews.Length >= required)
             return;
         Array.Resize(ref _packedViews, required);
         Array.Resize(ref _stagedViews, required);
+        Array.Resize(ref _viewDataValid, required);
         Array.Resize(ref _stagedViewEntities, required);
         Array.Resize(ref _stagedPreviousViewProjections, required);
         Array.Resize(ref _stagedHasPreviousView, required);
@@ -468,6 +484,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 views = CollectionsMarshal.AsSpan(viewCollector.Views);
                 viewEntities = CollectionsMarshal.AsSpan(viewCollector.Entities);
                 primaryViewCount = views.Length;
+                StoreViews(views, 0);
             }
             if (primaryViewCount != checked((int)_outputDescription.ViewCount))
             {
@@ -502,7 +519,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         finally
         {
             viewCollector.Clear();
-            _stagedViews.AsSpan(0, _stagedViewCount).Clear();
             _stagedPolicies.AsSpan(0, _stagedViewCount).Clear();
             _stagedPolicyViewIndices.AsSpan(0, _stagedViewCount).Clear();
             _stagedViewCount = 0;
@@ -527,7 +543,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         try
         {
             Span<ClusterViewUniforms> packedViews = _packedViews;
-            packedViews.Clear();
+            WorldOrigin dataOrigin = views[0].WorldOrigin;
+            if (!_hasViewDataOrigin || _viewDataOrigin != dataOrigin)
+            {
+                Array.Clear(_viewDataValid);
+                _viewDataOrigin = dataOrigin;
+                _hasViewDataOrigin = true;
+            }
             history.Prepare(views[..primaryViewCount], viewEntities[..primaryViewCount]);
             historyPrepared = true;
             for (int viewIndex = 0; viewIndex < views.Length; viewIndex++)
@@ -537,15 +559,15 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     (isTargetView && _renderContext.HardwareRasterOnly)
                     ? ClusterViewRasterMode.Hardware
                     : ClusterViewRasterMode.Adaptive;
-                packedViews[viewIndex] = ClusterViewUniforms.Create(
-                    in views[viewIndex],
-                    _options,
-                    rasterMode,
-                    _cullingEnabled,
-                    binding.DispatchExtent,
-                    binding.PageFaultCapacity,
-                    views[0].WorldOrigin);
-                packedViews[viewIndex].GeometryLodScale *= _resources.Residency.StreamingQuality;
+                if (!_viewDataValid[viewIndex])
+                {
+                    packedViews[viewIndex] = ClusterViewUniforms.Create(
+                        in views[viewIndex], _options, rasterMode, _cullingEnabled,
+                        binding.DispatchExtent, binding.PageFaultCapacity, dataOrigin);
+                    _viewDataValid[viewIndex] = true;
+                }
+                packedViews[viewIndex].UpdateFrameData(in views[viewIndex], rasterMode, _cullingEnabled,
+                    binding.DispatchExtent, binding.PageFaultCapacity, _resources.Residency.StreamingQuality);
                 packedViews[viewIndex].TargetPolicy = isTargetView
                     ? _stagedPolicies[viewIndex]
                     : 0u;
@@ -914,6 +936,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _graphInstalled = false;
         ClearPendingFrame();
         Array.Clear(_stagedViews);
+        Array.Clear(_viewDataValid);
+        _hasViewDataOrigin = false;
         Array.Clear(_stagedPolicies);
         Array.Clear(_stagedPolicyViewIndices);
         _stagedViewCount = 0;

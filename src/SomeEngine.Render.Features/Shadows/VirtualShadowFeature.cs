@@ -867,9 +867,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _changedInstances.AddRange(_rasterChangedInstances);
         _rasterChangedInstances.AddRange(_deformedInstances);
         _rasterChangedInstances.Sort();
-        // Batch changes already arrive in increasing row order. Only external
-        // deformation notices add unordered or duplicate rows to that sequence.
-        if (_deformedInstances.Count != 0 || _changedInstances.Count != 0)
+        // Batch changes already arrive in increasing row order. Raster and
+        // deformation notices can add unordered or duplicate rows.
+        if (_rasterChangedInstances.Count != 0)
         {
             _changedInstances.AddRange(_deformedInstances);
             _changedInstances.Sort();
@@ -891,9 +891,10 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             _streamingChangedInstances[streamingCount++] = row;
         }
         _streamingChangedInstances.RemoveRange(streamingCount, _streamingChangedInstances.Count - streamingCount);
-        for (int index = 0; index < immediateCount; index++)
-            if (_rasterChangedInstances.BinarySearch(_changedInstances[index]) >= 0)
-                _changedInstances[index] |= 0x40000000u;
+        if (_rasterChangedInstances.Count != 0)
+            for (int index = 0; index < immediateCount; index++)
+                if (_rasterChangedInstances.BinarySearch(_changedInstances[index]) >= 0)
+                    _changedInstances[index] |= 0x40000000u;
         _changedInstances.AddRange(_streamingChangedInstances);
         for (uint index = 0; index < _lodCasterBounds.Count / 2; index++)
             _changedInstances.Add(0x80000000u | index);
