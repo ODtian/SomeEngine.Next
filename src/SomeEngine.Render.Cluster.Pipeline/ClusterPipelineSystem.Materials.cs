@@ -1050,10 +1050,12 @@ public sealed partial class ClusterPipelineSystem
                 return;
             case ClusterShadeCoreResource.MaterialSurfaceOutputs:
                 _ = pass.Bind(graph.CreateBufferUav(frame.MaterialSurfaces), PipelineSync.ComputeShading,
-                    GraphAccessMode.Write, WriteCoverage.Partial);
+                    GraphAccessMode.Write, WriteCoverage.Partial, ResourceContentState.Defined,
+                    BufferContentScope.CountBoundedRanges);
                 return;
             case ClusterShadeCoreResource.MaterialSurfaceInputs:
-                _ = pass.Bind(graph.CreateBufferSrv(frame.MaterialSurfaces), PipelineSync.ComputeShading);
+                _ = pass.Bind(graph.CreateBufferSrv(frame.MaterialSurfaces), PipelineSync.ComputeShading,
+                    BufferContentScope.CountBoundedRanges);
                 return;
             case ClusterShadeCoreResource.SurfaceReceiverOutput:
                 _ = pass.Bind(graph.CreateBufferUav(frame.SurfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading,
