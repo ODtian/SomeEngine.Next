@@ -218,7 +218,8 @@ domain 自身提供表面误差；primary 沿其已有用户配置。streaming �
 DepthOffset记录该用户结果相对源表面的偏移。first-person转换沿既有view/instance输入执行。
 
 材质分箱计数实际像素，按每种材质的固定记录尺寸分配同一个 `MaterialSurfaces` 缓冲。
-像素work保留结果索引；最终 `shadeSurface` 读取相同结果与receiver。
+像素work保留结果索引；最终 `shadeSurface` 读取相同结果与receiver，返回该像素的 `float4` 颜色。
+管线按work的唯一像素坐标写入颜色，各材质bin的核心颜色写入使用 `DisjointWrites`；用户附加资源仍按自己的访问声明同步。
 标准材质的着色记录为48字节，Unlit为24字节；完整triangle/domain只在producer局部存在。
 标准材质的NormalMap、AlbedoMap、ARMMap在producer采样；motion也在此阶段形成。
 全屏GPU材质计数遍历初始化背景与空参与数据，随后producer填入有效像素。

@@ -331,7 +331,7 @@ void CSShade<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain dom
     SurfaceReceiver receiver = SurfaceReceiverInputs[index];
     if ((receiver.Flags & SURFACE_RECEIVER_PRESENT) == 0u) return;
     TSurface.Data data = MaterialSurfaceInputs.Load<TSurface.Data>(MaterialSurfaceOffsets[Uniforms.ShadingBin] + surfaceIndex * Uniforms.SurfaceDataStride);
-    surface.shadeSurface(coord, Uniforms.DebugMode, data, receiver, OutputColor);
+    OutputColor[coord] = surface.shadeSurface(coord, Uniforms.DebugMode, data, receiver);
 }
 
 void CSEvaluateSurface<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain domain,

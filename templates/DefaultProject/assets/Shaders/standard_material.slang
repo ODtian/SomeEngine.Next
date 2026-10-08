@@ -107,10 +107,9 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         return data;
     }
 
-    void shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver,
-        RWTexture2DArray<float4> outputColor)
+    float4 shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver)
     {
-        if (debugMode != 0u) { outputColor[pixelCoord] = float4(data.DebugColor,1); return; }
+        if (debugMode != 0u) return float4(data.DebugColor,1);
         float3 mappedNormal = receiver.ShadingNormal;
         float3 baseColor = data.BaseColor;
         float roughness = data.Roughness;
@@ -123,8 +122,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 
         if (dot(mappedNormal, V) <= 0.0)
         {
-            outputColor[pixelCoord] = float4(finalColor, 1.0);
-            return;
+            return float4(finalColor, 1.0);
         }
 
         for (uint lightIndex = 0u; lightIndex < lighting.DirectionalCount; lightIndex++)
@@ -202,7 +200,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             }
         }
 
-        outputColor[pixelCoord] = float4(finalColor, 1.0);
+        return float4(finalColor, 1.0);
     }
 
 };
