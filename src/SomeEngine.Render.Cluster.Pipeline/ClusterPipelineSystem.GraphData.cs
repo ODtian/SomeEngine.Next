@@ -20,7 +20,7 @@ public sealed partial class ClusterPipelineSystem
         internal ImmutableDictionary<GraphBufferId, (BufferDesc Description, GraphPassId UploadPass)> BufferDescriptions =
             ImmutableDictionary<GraphBufferId, (BufferDesc, GraphPassId)>.Empty;
         internal ImmutableDictionary<GraphBufferId, ImmutableList<BufferWrite>> BufferWrites = ImmutableDictionary<GraphBufferId, ImmutableList<BufferWrite>>.Empty;
-        internal ImmutableDictionary<GraphBufferInput, ShaderParameters> Parameters = ImmutableDictionary<GraphBufferInput, ShaderParameters>.Empty;
+        internal ClusterBytes ParameterData = ClusterBytes.Zero(0);
         internal GraphBufferId ShaderParameterBytes;
         internal int ParameterByteCount;
         internal ImmutableDictionary<int, ImmutableStack<int>> ParameterFreeOffsets = ImmutableDictionary<int, ImmutableStack<int>>.Empty;
@@ -37,6 +37,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphRegionId TargetFirstReference;
         internal GraphRegionId TargetSecondReference;
         internal GraphRegionId PrimaryGeometry;
+        internal GraphRegionId EmptyReceivers;
         internal GraphRegionId HistoryInitialization;
         internal GraphRegionId SceneInitialization;
         internal GraphRegionId SceneBoundsRegion;
@@ -55,7 +56,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphRegionMap<uint, ShadeGroup> ReceiverGroups = null!;
         internal List<ClusterLayerDispatch> LayerDispatches = [];
         internal List<ClusterLayerDispatch> WinnerDispatches = [];
-        internal GraphBufferInput ShadeBinUniforms = null!;
+        internal GraphBufferSlice ShadeBinUniforms;
         internal ImmutableDictionary<(Material Material, uint Property), MaterialInput> MaterialInputs = ImmutableDictionary<(Material Material, uint Property), MaterialInput>.Empty;
         internal ImmutableHashSet<(Material Material, uint Property)> MaterialInputChanges = ImmutableHashSet<(Material Material, uint Property)>.Empty;
         internal MaterialTexture? MissingMaterialTexture;
@@ -63,13 +64,13 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferInput ShadeScalars = null!;
         internal GraphBufferId ScalarBytes;
         internal GraphBufferId ScalarOffsets;
-        internal GraphBufferInput PrimarySeedUniforms = null!;
-        internal GraphBufferInput TargetSeedUniforms = null!;
+        internal GraphBufferSlice PrimarySeedUniforms;
+        internal GraphBufferSlice TargetSeedUniforms;
         internal GraphBufferId SceneChunks;
         internal GraphBufferId InstanceWorldBounds;
         internal GraphBufferId SceneInstanceData;
         internal GraphBufferInput SceneInstances = null!;
-        internal GraphBufferInput SceneUniforms = null!;
+        internal GraphBufferSlice SceneUniforms;
         internal ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> MaterialBuffers =
             ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer>.Empty;
         internal ImmutableDictionary<SomeEngine.Resources.Texture, MaterialTexture> MaterialTextures =

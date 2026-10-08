@@ -499,6 +499,16 @@ public sealed partial class ClusterPipelineSystem
                 TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.CopySource,
                 label: "Cluster motion vectors"));
         RecordBufferInitialization(ref graph, in frame);
+        GraphData.EmptyReceivers = graph.AddRegion("Cluster empty surface receivers", _regions.PrimaryGeometry);
+        foreach (GraphBufferId buffer in new[] { frame.SurfaceReceivers, frame.AdditionalSurfaceReceivers })
+        {
+            graph.AddCopyFramePass("Clear empty Cluster surface receivers", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                new ClusterBufferClearParameters(buffer), new PassOptions(RepeatCommands: true),
+                static (ref PassDefinition pass, ref ClusterBufferClearParameters data) =>
+                    pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Complete),
+                ClusterBufferClearParameters.Record, region: GraphData.EmptyReceivers);
+        }
         RecordTargetInitialization(ref graph, in frame);
         RecordVisibilityWinnerClear(ref graph, in frame);
         return frame;
@@ -515,7 +525,7 @@ public sealed partial class ClusterPipelineSystem
 
         ClusterComputePipeline pipeline = _pipelines?.WinnerClear
             ?? throw new InvalidOperationException("The selected A64 visibility mode has no clear pipeline.");
-        GraphBufferInput uniforms = UploadUniform(
+        GraphBufferSlice uniforms = UploadUniform(
             ref graph,
             new ClusterVisibilityWinnerUniforms
             {
@@ -790,14 +800,7 @@ public sealed partial class ClusterPipelineSystem
     {
         graph.SetBufferData(GraphData.Resources.PackedViews, MemoryMarshal.AsBytes(packedViews));
         Span<byte> parametersBytes = graph.GetBufferDataWriteSpan(GraphData.ShaderParameterBytes);
-        parametersBytes.Clear();
-        foreach ((GraphBufferInput input, ShaderParameters parameters) in GraphData.Parameters)
-        {
-            graph.SetBufferInput(input, new GraphBufferSlice(GraphData.ShaderParameterBytes,
-                new BufferRange(checked((ulong)parameters.Offset), checked((ulong)parameters.Capacity))));
-            if (input == GraphData.SceneUniforms || input == GraphData.PrimarySeedUniforms || input == GraphData.TargetSeedUniforms) continue;
-            parameters.Bytes.CopyTo(parametersBytes.Slice(parameters.Offset));
-        }
+        GraphData.ParameterData.CopyTo(parametersBytes);
         if (_options.EnableFrameMetricsReadback)
         {
             ulong frameIndex = checked(++_metricFrameIndex);
@@ -818,8 +821,8 @@ public sealed partial class ClusterPipelineSystem
             }, GraphData.TargetSeedUniforms);
     }
 
-    private void WriteUniform<T>(Span<byte> bytes, in T value, GraphBufferInput input)
-        where T : unmanaged => MemoryMarshal.Write(bytes.Slice(GraphData.Parameters[input].Offset), in value);
+    private void WriteUniform<T>(Span<byte> bytes, in T value, GraphBufferSlice input)
+        where T : unmanaged => MemoryMarshal.Write(bytes.Slice(checked((int)input.Range.Offset)), in value);
 
     private void RecordBufferInitialization(
         ref RenderGraphEdit graph,
@@ -1030,7 +1033,7 @@ public sealed partial class ClusterPipelineSystem
         }
     }
 
-    private GraphBufferInput UploadUniform<T>(
+    private GraphBufferSlice UploadUniform<T>(
         ref RenderGraphEdit graph,
         T value,
         string name)
@@ -1039,7 +1042,7 @@ public sealed partial class ClusterPipelineSystem
         int valueSize = Unsafe.SizeOf<T>();
         Span<byte> bytes = stackalloc byte[valueSize];
         MemoryMarshal.Write(bytes, in value);
-        GraphBufferInput input = CreateParameters(ref graph, bytes, name);
+        GraphBufferSlice input = CreateParameters(ref graph, bytes, name);
         _rasterInputs?.Uniforms.Add(input);
         return input;
     }

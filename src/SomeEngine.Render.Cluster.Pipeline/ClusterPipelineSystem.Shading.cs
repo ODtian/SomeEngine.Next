@@ -17,7 +17,7 @@ public sealed partial class ClusterPipelineSystem
 
     private sealed record ShadeGroup(ClusterShadeInvocation Stage)
     {
-        internal GraphBufferInput Uniforms = null!;
+        internal GraphBufferSlice Uniforms;
     }
 
     private sealed class ShadeGroupComparer : IEqualityComparer<ShadeGroup>
