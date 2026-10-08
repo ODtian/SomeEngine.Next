@@ -40,8 +40,7 @@ interface ISurfaceEvaluate<TSurface, TTriangle>
     Data evaluateSurface(SurfacePixel pixel, TSurface surface, float3 bary,
         TTriangle triangle, out SurfaceReceiver receiver);
 
-    void shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver,
-        RWTexture2DArray<float4> outputColor);
+    float4 shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver);
 };
 
 static const uint MATERIAL_SCALAR_HEADER_BYTES = 16;

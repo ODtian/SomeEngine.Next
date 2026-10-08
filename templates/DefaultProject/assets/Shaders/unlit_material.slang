@@ -45,10 +45,9 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         return data;
     }
 
-    void shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver,
-        RWTexture2DArray<float4> outputColor)
+    float4 shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver)
     {
-        outputColor[pixelCoord] = float4(debugMode != 0u ? data.DebugColor : data.Color, 1);
+        return float4(debugMode != 0u ? data.DebugColor : data.Color, 1);
     }
 };
 #endif

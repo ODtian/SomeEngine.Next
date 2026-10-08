@@ -20,6 +20,8 @@ public static class ImportedSceneBuild
         var project = new AssetProject(Path.GetFullPath(projectRoot), [],
             sourceFormats: [new ShaderSourceFormat([Path.GetFullPath(Path.Combine(engineRoot, "assets/Shaders"))])]);
         CopySharedShaders(project, Path.GetFullPath(applicationDirectory));
+        ImportedSceneImporter.WriteSurfaceShader(Path.Combine(project.RootPath, "assets/Shaders"),
+            Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"));
         foreach (string source in Directory.EnumerateFiles(Path.Combine(project.RootPath, "assets/Shaders"), "scene_*.shader"))
             await project.BuildAsync(source);
         Console.WriteLine($"Refreshed scene shaders: {project.RootPath}");

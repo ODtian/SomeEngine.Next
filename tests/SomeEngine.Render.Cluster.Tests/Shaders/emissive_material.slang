@@ -28,10 +28,9 @@ struct EmissiveMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         EmissiveScalars values = LoadMaterialScalars<EmissiveScalars>(pixel.MaterialIndex);
         Data data; data.Color = values.EmissiveFactor; return data;
     }
-    void shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver,
-        RWTexture2DArray<float4> outputColor)
+    float4 shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver)
     {
-        outputColor[pixelCoord] = float4(data.Color, 1.0);
+        return float4(data.Color, 1.0);
     }
 };
 

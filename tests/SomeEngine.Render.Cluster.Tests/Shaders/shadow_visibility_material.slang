@@ -69,8 +69,7 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             dot(receiver.ShadingNormal, -LightBuffer[0].Direction) >= 0.15 ? 1u : 0u;
         return data;
     }
-    void shadeSurface(uint3 pixel, uint debugMode, Data data, SurfaceReceiver receiver,
-        RWTexture2DArray<float4> color)
+    float4 shadeSurface(uint3 pixel, uint debugMode, Data data, SurfaceReceiver receiver)
     {
         uint levelCount = min(VirtualShadowSampling.DirectionalClipmapLevels, VirtualShadowSampling.ViewCount);
         float visibility = 1.0;
@@ -89,7 +88,7 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             visibility = projection.Visibility * SampleDirectionalVirtualShadowPrefiltered(VirtualShadowViews,
                 VirtualShadowPageTable, VirtualShadowPrefilteredAtlas, 0u, levelCount, position).Visibility;
         }
-        color[pixel] = float4(visibility, 1.0, data.ShadingFacesLight != 0u ? 1.0 : 0.0, 1.0);
+        return float4(visibility, 1.0, data.ShadingFacesLight != 0u ? 1.0 : 0.0, 1.0);
     }
 
 };

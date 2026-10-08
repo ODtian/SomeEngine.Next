@@ -1042,7 +1042,8 @@ public sealed partial class ClusterPipelineSystem
                         label: "Cluster material shade output"),
                     PipelineSync.ComputeShading,
                     GraphAccessMode.Write,
-                    WriteCoverage.Partial);
+                    WriteCoverage.Partial,
+                    unorderedAccessHazards: UnorderedAccessHazardMode.DisjointWrites);
                 return;
             case ClusterShadeCoreResource.MaterialSurfaceOffsets:
                 BindReadOnly(ref graph, ref pass, frame.SurfaceDataOffsets, sizeof(uint), "MaterialSurfaceOffsets");
