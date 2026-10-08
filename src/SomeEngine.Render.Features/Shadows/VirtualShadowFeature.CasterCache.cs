@@ -10,7 +10,6 @@ public sealed partial class VirtualShadowFeature
     private GraphBufferInput _frameDepthCacheClasses = null!;
     private GraphBufferInput _framePreviousDepthCacheClasses = null!;
     private GraphBufferInput _frameLodBounds = null!;
-    private DepthCacheClass[] _casterCacheInputs = [];
     private byte[] _casterCacheAges = [];
     private byte[] _frameCasterCacheAges = [];
     private uint[] _casterStaticBits = [];
@@ -21,9 +20,8 @@ public sealed partial class VirtualShadowFeature
     private void UpdateCasterCacheClasses(ref RenderGraphFrame graph, int instanceCount)
     {
         bool newInstances = !ReferenceEquals(_frameInstances, _committedInstances);
-        if (_casterCacheInputs.Length != instanceCount) _casterCacheInputs = new DepthCacheClass[instanceCount];
         _lodCasterBounds.Clear();
-        _geometry.CollectCasterCacheInputs(_casterCacheInputs, _lodCasterBounds);
+        ReadOnlySpan<DepthCacheClass> classes = _geometry.CollectCasterCacheInputs(_lodCasterBounds);
         if (_frameCasterCacheAges.Length != instanceCount) _frameCasterCacheAges = new byte[instanceCount];
         int wordCount = Math.Max((instanceCount + 31) / 32, 1);
         if (_frameCasterStaticBits.Length != wordCount) _frameCasterStaticBits = new uint[wordCount];
@@ -37,8 +35,8 @@ public sealed partial class VirtualShadowFeature
             if (changed) changedIndex++;
             byte age = newInstances ? (byte)101 : changed || _invalidateAllCasters ? (byte)0 : (byte)Math.Min(_casterCacheAges[row] + 1, 101);
             _frameCasterCacheAges[row] = age;
-            bool isStatic = _casterCacheInputs[row] == DepthCacheClass.Static ||
-                _casterCacheInputs[row] == DepthCacheClass.Auto && age > 100;
+            bool isStatic = classes[row] == DepthCacheClass.Static ||
+                classes[row] == DepthCacheClass.Auto && age > 100;
             if (isStatic) _frameCasterStaticBits[row / 32] |= 1u << (row & 31);
             if (!newInstances && isStatic && (_casterStaticBits[row / 32] & (1u << (row & 31))) == 0u && !changed)
                 _returnedStaticCasters.Add((uint)row);

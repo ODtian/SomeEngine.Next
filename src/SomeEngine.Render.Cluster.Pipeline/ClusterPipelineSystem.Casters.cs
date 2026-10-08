@@ -10,17 +10,59 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
+    private DepthCacheClass[] _casterCacheClasses = [];
+    private RenderInstanceBatches<RenderInstanceSingleGroup>? _casterInputInstances;
+    private uint _casterInputVersion;
+    private bool _hasFirstPersonWorldMeshes;
+
     /// <summary>Reports world-space first-person representations in the current render entities.</summary>
     public bool HasFirstPersonWorldMeshes()
     {
-        bool found = false;
-        _resources.World.ExecuteQuery(_sceneQuery, ref found,
-            static (QueryCursor query, ref bool value) =>
+        RefreshCasterInputs();
+        return _hasFirstPersonWorldMeshes;
+    }
+
+    private void RefreshCasterInputs()
+    {
+        RenderInstanceBatches<RenderInstanceSingleGroup> instances = _instances.Current!;
+        bool membershipChanged = !ReferenceEquals(instances, _casterInputInstances);
+        if (!membershipChanged && _casterInputVersion == _resources.World.CurrentTick) return;
+        var inputs = new CasterInputChanges(this, instances, membershipChanged);
+        _resources.World.ExecuteQuery(_sceneQuery, _casterInputVersion, ref inputs,
+            static (QueryCursor query, ref CasterInputChanges data) => data.Collect(query));
+    }
+
+    private readonly struct CasterInputChanges(ClusterPipelineSystem pipeline,
+        RenderInstanceBatches<RenderInstanceSingleGroup> instances, bool membershipChanged)
+    {
+        internal void Collect(QueryCursor query)
+        {
+            bool meshChanged = membershipChanged;
+            if (!meshChanged)
+                foreach (QueryChunkView chunk in query.Chunks)
+                    if (chunk.HasChangedSinceLastSystemVersion<RenderMesh>())
+                    {
+                        meshChanged = true;
+                        break;
+                    }
+            if (meshChanged)
             {
-                foreach (QueryRow row in query.Rows)
-                    value |= row.Read<RenderMesh>().FirstPerson.Kind == FirstPersonMeshKind.WorldRepresentation;
-            });
-        return found;
+                if (pipeline._casterCacheClasses.Length != instances.AddressCount)
+                    pipeline._casterCacheClasses = new DepthCacheClass[instances.AddressCount];
+                bool firstPerson = false;
+                int entityIndex = 0;
+                foreach (QueryChunkView chunk in query.Chunks)
+                    foreach (RenderMesh mesh in chunk.Read<RenderMesh>())
+                    {
+                        firstPerson |= mesh.FirstPerson.Kind == FirstPersonMeshKind.WorldRepresentation;
+                        foreach (var address in instances.RowsForEntity(entityIndex++))
+                            pipeline._casterCacheClasses[address.Row] = mesh.DepthCacheClass;
+                    }
+                pipeline._hasFirstPersonWorldMeshes = firstPerson;
+                pipeline._casterInputInstances = instances;
+            }
+            pipeline._casterInputVersion = query.CurrentSystemVersion;
+        }
     }
 
     private sealed record CasterChange(ulong Revision, Mesh[] Meshes, HashSet<Entity> Entities, bool All);
@@ -115,43 +157,52 @@ public sealed partial class ClusterPipelineSystem
         }
     }
 
-    /// <summary>Copies caller cache choices and the current world-space bounds of changed LOD groups.</summary>
-    public void CollectCasterCacheInputs(DepthCacheClass[] classes, List<Vector4> lodBounds)
+    /// <summary>Reads caller cache choices and collects world-space bounds only for changed LOD groups.</summary>
+    public ReadOnlySpan<DepthCacheClass> CollectCasterCacheInputs(List<Vector4> lodBounds)
     {
-        var inputs = new CasterCacheInputs(_instances.Current!, _resources.Residency, classes, _resources.LodChanges.ToArray(), lodBounds);
-        _resources.World.ExecuteQuery(_sceneQuery, ref inputs,
-            static (QueryCursor query, ref CasterCacheInputs data) => data.Collect(query));
+        RefreshCasterInputs();
+        ReadOnlyMemory<ClusterLodChange> changes = _resources.LodChanges;
+        if (!changes.IsEmpty)
+        {
+            var inputs = new CasterLodBounds(_instances.Current!, _resources.Residency, changes.Span, lodBounds);
+            _resources.World.ExecuteQuery(_sceneQuery, ref inputs,
+                static (QueryCursor query, ref CasterLodBounds data) => data.Collect(query));
+        }
+        return _casterCacheClasses;
     }
 
-    private struct CasterCacheInputs(RenderInstanceBatches<RenderInstanceSingleGroup> batches,
-        ClusterResidency residency, DepthCacheClass[] classes, ClusterLodChange[] changes, List<Vector4> bounds)
+    private ref struct CasterLodBounds(RenderInstanceBatches<RenderInstanceSingleGroup> batches,
+        ClusterResidency residency, ReadOnlySpan<ClusterLodChange> changes, List<Vector4> bounds)
     {
+        private readonly ReadOnlySpan<ClusterLodChange> _changes = changes;
         private int _entityIndex;
         internal void Collect(QueryCursor query)
         {
-            foreach (QueryRow row in query.Rows)
+            foreach (QueryChunkView chunk in query.Chunks)
             {
-                RenderMesh mesh = row.Read<RenderMesh>();
-                RenderTransform transform = row.Read<RenderTransform>();
-                uint root = 0;
-                bool hasRoot = changes.Length != 0 && residency.TryGetPublishedRoot(mesh.Mesh, out root);
-                foreach (var address in batches.RowsForEntity(_entityIndex))
+                ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
+                ReadOnlySpan<RenderTransform> transforms = chunk.Read<RenderTransform>();
+                for (int row = 0; row < meshes.Length; row++, _entityIndex++)
                 {
-                    classes[address.Row] = mesh.DepthCacheClass;
-                    foreach (ClusterLodChange change in changes)
+                    RenderMesh mesh = meshes[row];
+                    if (!residency.TryGetPublishedRoot(mesh.Mesh, out uint root)) continue;
+                    foreach (ClusterLodChange change in _changes)
                     {
-                        if (!hasRoot || change.RootNode != root || !ReferenceEquals(change.Mesh, mesh.Mesh)) continue;
+                        if (change.RootNode != root || !ReferenceEquals(change.Mesh, mesh.Mesh)) continue;
+                        RenderTransform transform = transforms[row];
                         Vector3 scale = transform.Stretch * transform.Scale;
                         Vector3 center = Vector3.Transform(new Vector3(change.Bounds.X, change.Bounds.Y, change.Bounds.Z) * scale,
                             transform.Rotation) + transform.Position;
                         Vector3 absoluteScale = Vector3.Abs(scale);
                         float radius = change.Bounds.W * Math.Max(absoluteScale.X, Math.Max(absoluteScale.Y, absoluteScale.Z)) +
                             Math.Max(mesh.BoundsExpansion, 0f);
-                        bounds.Add(new Vector4(center - new Vector3(radius), address.Row));
-                        bounds.Add(new Vector4(center + new Vector3(radius), address.Row));
+                        foreach (var address in batches.RowsForEntity(_entityIndex))
+                        {
+                            bounds.Add(new Vector4(center - new Vector3(radius), address.Row));
+                            bounds.Add(new Vector4(center + new Vector3(radius), address.Row));
+                        }
                     }
                 }
-                _entityIndex++;
             }
         }
     }
