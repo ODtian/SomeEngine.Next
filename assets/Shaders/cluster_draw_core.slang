@@ -49,7 +49,7 @@ VisibilityPixelResult EvaluateHardwareRasterPixel<TVertex, TVisibility>(
 {
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
-    pixelInput.Depth = ReadHardwareRasterDepth(input.Pos, input.ClipDepth, view);
+    pixelInput.Depth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
     pixelInput.EncodedTargetDepth = encodedTargetDepth;
     pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
     pixelInput.TriangleID = input.TriangleID;
@@ -221,7 +221,7 @@ ClusterRasterPixelInput<TVisibility.Varying> BuildVisBufferVertex<TVE, TVisibili
     output.Pos = mul(
         float4(ClusterPositionForView(position, view), 1.0),
         view.ViewProj);
-    output.ClipDepth = CalculateHardwareRasterDepthInput(position, output.Pos, view);
+    output.ClipDepth = CalculateClusterRasterDepthInput(position, output.Pos, view);
     output.Pos = ClusterHardwareRasterPosition(output.Pos, visibleClusterIndex, view,
         float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight));
     VisibilityVertexInput visibilityInput;
@@ -306,7 +306,7 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         ClusterRasterVertexData<TVisibility.Varying> output = {};
         float3 position = evaluator.getPosition(value);
         output.Pos = mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
-        output.ClipDepth = CalculateHardwareRasterDepthInput(position, output.Pos, view);
+        output.ClipDepth = CalculateClusterRasterDepthInput(position, output.Pos, view);
         output.Pos = ClusterHardwareRasterPosition(output.Pos, visible, view,
             float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight));
         VisibilityVertexInput visibilityInput;

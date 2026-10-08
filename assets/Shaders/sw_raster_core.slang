@@ -220,7 +220,9 @@ void SWRasterKernel<
                 VertexEvalContext ctx = MakeSWRasterVertexEvalContext(
                     vertexBlobAddress, vertexBlobSize, localVertex, realInstanceID, transform);
                 VertexEvaluate.Vertex vertex = evaluator.evaluate(ctx);
-                float4 clip = mul(float4(ClusterPositionForView(evaluator.getPosition(vertex), view), 1.0), view.ViewProj);
+                float3 worldPosition = evaluator.getPosition(vertex);
+                float4 clip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
+                clip.zw = CalculateClusterRasterDepthInput(worldPosition, clip, view);
                 VisibilityVertexInput input;
                 input.VisibleClusterIndex = originalIndex;
                 input.InstanceID = realInstanceID;
@@ -306,7 +308,9 @@ void SWRasterKernel<
             realInstanceID,
             transform);
         VertexEvaluate.Vertex vertex = evaluator.evaluate(ctx);
-        producerClip = mul(float4(ClusterPositionForView(evaluator.getPosition(vertex), view), 1.0), view.ViewProj);
+        float3 worldPosition = evaluator.getPosition(vertex);
+        producerClip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
+        producerClip.zw = CalculateClusterRasterDepthInput(worldPosition, producerClip, view);
         VisibilityVertexInput visibilityInput;
         visibilityInput.VisibleClusterIndex = originalIndex;
         visibilityInput.InstanceID = realInstanceID;
