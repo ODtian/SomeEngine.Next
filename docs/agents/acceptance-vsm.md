@@ -20,6 +20,8 @@
 
 本轮 QEM 三景资产已通过正式 `Game.Build` / glTF 入口完成来源重建：DefaultGame 81 项项目资产、Sponza 96 项来源资产、Amazon Bistro 2046 项来源资产与 1532 个实例；来源文件及 `.meta` 身份和参数保持原字节。内容构建源码为 `b8eab4a78138db1d82ff18683ef611b7efb2d485`，当前 shader 与 App 源码为 `a8225b96000ccd478ac0bd3beb2e725d53378931`，App 构建 0 警告 / 0 错误；Default 的 68 项 shader 通过正式 AssetCook shader 入口构建，两景共享与场景 shader 通过 `--refresh-scene-shaders` 更新。三景全部网格 SHA256 与 QEM 正式交付记录一致，几何身份单列于 `geometry-files.json`。正式内容、构建结果、来源身份及全部登记资产 SHA256 保存在 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/cluster-189/qem-assets-194/` 的 `content/`、`build-results.json`、`source.json`、`source-metadata.json`、`identity.json` 与 `content-files.json`；三景资产构建状态均为 `Complete`。
 
+局部光源修复 `8348ec37261e28181cf31316f49f1b2855d7b88c` 统一原页请求与读取的 nominal mip，receiver mask 保持 cell 覆盖职责；SourceRadius 与有效遮挡距离决定发光范围，原 8 纹素配置用于有限查询支持，等面积对称盘保持 4/8 查询预算。原 Point/Spot 两行在 source radius 0.5、2048 等固角样本、完整接收域和原阈值下 2/2 通过：平均误差 1.0303537% / 1.1301176%，错误像素比例 1.28015755% / 1.3762866%，接收覆盖均 100%、self hit 均 0。原始 red/green 图像、CSV、比较及解析支持数据保存在 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/rt-gt/local-current/`；测试规则检查 0 违规。
+
 原 49 项对应如下；各票正文记录具体算法、数据关系与消费者。
 
 | 原编号 | 交付归属 |

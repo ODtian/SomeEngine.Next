@@ -79,6 +79,23 @@ bool PublishProjectedShadowViewPixels(
 
     uint mipResolution = VirtualShadowMipResolution(shadowView, mipLevel);
     float2 borderPixels = max(PageDemand.PageDilationBorderPages, shadowView.PageDilationBorder) * float(shadowView.PageSize);
+    if (shadowView.LightKind != VSM_LIGHT_DIRECTIONAL && shadowView.SourceRadius > 0.0)
+    {
+        float radius = CalculateVirtualShadowLocalSourceSupport(shadowView, worldPosition);
+        float4 clip = ProjectVirtualShadowClip(shadowView, worldPosition);
+        float3 x = float3(shadowView.LightViewProjection[0][0],
+            shadowView.LightViewProjection[1][0], shadowView.LightViewProjection[2][0]);
+        float3 y = float3(shadowView.LightViewProjection[0][1],
+            shadowView.LightViewProjection[1][1], shadowView.LightViewProjection[2][1]);
+        float3 w = float3(shadowView.LightViewProjection[0][3],
+            shadowView.LightViewProjection[1][3], shadowView.LightViewProjection[2][3]);
+        float minimumW = clip.w - length(w) * radius;
+        float2 border = minimumW > 1e-6
+            ? 0.5 * (float2(length(x), length(y)) * radius * clip.w +
+                abs(clip.xy) * length(w) * radius) / (clip.w * minimumW)
+            : 1.0.xx;
+        borderPixels += border * float(mipResolution);
+    }
     if (PageDemand.NormalBias > 0.0)
     {
         float4 clip = ProjectVirtualShadowClip(shadowView, worldPosition);

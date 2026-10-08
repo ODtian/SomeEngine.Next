@@ -383,27 +383,18 @@ float ReadVirtualShadowDepth(VirtualShadowMapParameters parameters,
     return 1.0 - ReadVirtualShadowReverseDepth(parameters, atlas, atlasPage, pagePixel);
 }
 
-float2 VirtualShadowDiskSample(uint index)
+float2 VirtualShadowDiskSample(uint index, uint sampleCount)
 {
-    switch (index & 15u)
-    {
-        case 0u: return float2(-0.613392, 0.617481);
-        case 1u: return float2(0.170019, -0.040254);
-        case 2u: return float2(-0.299417, 0.791925);
-        case 3u: return float2(0.645680, 0.493210);
-        case 4u: return float2(-0.651784, -0.717887);
-        case 5u: return float2(0.421003, 0.027070);
-        case 6u: return float2(-0.817194, -0.271096);
-        case 7u: return float2(-0.705374, -0.668203);
-        case 8u: return float2(0.977050, -0.108615);
-        case 9u: return float2(0.063326, 0.142369);
-        case 10u: return float2(0.203528, 0.214331);
-        case 11u: return float2(-0.667531, 0.326090);
-        case 12u: return float2(-0.098422, -0.295755);
-        case 13u: return float2(-0.885922, 0.215369);
-        case 14u: return float2(0.566637, 0.605213);
-        default: return float2(0.039766, -0.396100);
-    }
+    uint pairs = sampleCount >> 1u;
+    if (pairs == 0u || index == pairs * 2u) return 0.0.xx;
+    uint pair = index >> 1u;
+    // Opposite samples share one equal-area radial stratum. The complete
+    // requested count has zero first moment, including a final odd center.
+    float radius = sqrt((float(pair) + 0.5) / float(pairs));
+    float sine, cosine;
+    sincos(float(pair) * 2.39996322973, sine, cosine);
+    float2 sample = radius * float2(cosine, sine);
+    return (index & 1u) == 0u ? sample : -sample;
 }
 
 float2 RotateVirtualShadowDiskSample(
@@ -649,10 +640,18 @@ uint VirtualShadowLocalSamplingMip(
     float nominalWorldPixelRadius,
     float dynamicResolutionLodBias)
 {
-    if ((parameters.Flags & VSM_VIEW_USE_RECEIVER_MASK) == 0u)
-        return 0u;
     return VirtualShadowLocalMipFromNominalPixelRadius(
         parameters, worldPosition, nominalWorldPixelRadius, dynamicResolutionLodBias);
+}
+
+float CalculateVirtualShadowLocalSourceSupport(VirtualShadowMapParameters view, float3 position)
+{
+    float distance = length(position - view.LightPosition);
+    float clipW = abs(ProjectVirtualShadowClip(view, position).w);
+    float nearDistance = abs(view.ProjectionDepthOffset / view.ProjectionDepthScale)
+        * distance / max(clipW, 1e-20);
+    float sourceDistance = max(view.SourceRadius, nearDistance);
+    return view.SourceRadius * max(distance - sourceDistance, 0.0) / max(sourceDistance, 1e-20);
 }
 
 float CalculateDirectionalVirtualShadowDistanceLevel(
@@ -964,7 +963,7 @@ bool TryFilterVirtualShadowPage(
     for (uint index = 0u; index < searchCount; index++)
     {
         float2 offset = RotateVirtualShadowDiskSample(
-            VirtualShadowDiskSample(index), sine, cosine) * blockerSearchRadiusTexels;
+            VirtualShadowDiskSample(index, searchCount), sine, cosine) * blockerSearchRadiusTexels;
         uint2 samplePixel = (uint2)clamp(
             floor(virtualPosition + offset),
             0.0,
@@ -998,7 +997,7 @@ bool TryFilterVirtualShadowPage(
     for (uint index = 0u; index < sampleCount; index++)
     {
         float2 offset = RotateVirtualShadowDiskSample(
-            VirtualShadowDiskSample(index), sine, cosine) * filterRadius;
+            VirtualShadowDiskSample(index, sampleCount), sine, cosine) * filterRadius;
         uint2 samplePixel = (uint2)clamp(
             floor(virtualPosition + offset),
             0.0,
