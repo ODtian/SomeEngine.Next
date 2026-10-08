@@ -28,7 +28,22 @@ internal sealed class ClusterGraph
         Edges[second][first] = Edges[second].GetValueOrDefault(first) + weight;
     }
 
-    internal static ClusterGraph Triangles(ReadOnlySpan<uint> indices, ReadOnlySpan<Vector3> positions,
+    internal static void AddTriangleEdges(Dictionary<(Vector3 First, Vector3 Second), List<int>> edges,
+        ReadOnlySpan<uint> indices, ReadOnlySpan<Vector3> positions, int element, Action<int>? connectOpposite = null)
+    {
+        for (int corner = 0; corner < indices.Length; corner++)
+        {
+            Vector3 first = positions[checked((int)indices[corner])];
+            Vector3 second = positions[checked((int)indices[corner - corner % 3 + (corner + 1) % 3])];
+            if (connectOpposite is not null && edges.TryGetValue((second, first), out List<int>? opposite))
+                foreach (int neighbor in opposite) connectOpposite(neighbor);
+            if (!edges.TryGetValue((first, second), out List<int>? elements))
+                edges.Add((first, second), elements = []);
+            elements.Add(element);
+        }
+    }
+
+    internal static ClusterGraph BuildTriangleGraph(ReadOnlySpan<uint> indices, ReadOnlySpan<Vector3> positions,
         float[] materialIndices)
     {
         var graph = new ClusterGraph(indices.Length / 3);
@@ -41,21 +56,12 @@ internal sealed class ClusterGraph
             graph.Include(first); graph.Include(second); graph.Include(third);
             graph.Centers[triangle] = (first + second + third) / 3;
             graph.Groups[triangle] = (int)materialIndices[indices[triangle * 3]];
-            AddEdge(first, second, triangle);
-            AddEdge(second, third, triangle);
-            AddEdge(third, first, triangle);
+            AddTriangleEdges(edgeTriangles, indices.Slice(triangle * 3, 3), positions, triangle,
+                neighbor => graph.Connect(triangle, neighbor, 4 * 65));
         }
         graph.ConnectNearbyComponents();
         return graph;
 
-        void AddEdge(Vector3 first, Vector3 second, int triangle)
-        {
-            if (edgeTriangles.TryGetValue((second, first), out List<int>? neighbors))
-                foreach (int neighbor in neighbors) graph.Connect(triangle, neighbor, 4 * 65);
-            if (!edgeTriangles.TryGetValue((first, second), out List<int>? triangles))
-                edgeTriangles.Add((first, second), triangles = []);
-            triangles.Add(triangle);
-        }
     }
 
     internal void ConnectNearbyComponents()

@@ -714,7 +714,7 @@ public static partial class ClusterBuilder
                         CollectionsMarshal.AsSpan(mergedIndices), locks);
                     result = simplifier.Simplify(parentCount * targetClusterSize);
                     float[] material = result.Attributes[mesh.Attributes.FindIndex(static attribute => attribute.Name == "_MATERIAL_INDEX")];
-                    ClusterGraph graph = ClusterGraph.Triangles(result.Indices, result.Positions, material);
+                    ClusterGraph graph = ClusterGraph.BuildTriangleGraph(result.Indices, result.Positions, material);
                     partitions = graph.Partition(config.MaxTriangles - 4, config.MaxTriangles);
                     if (partitions.Count <= parentCount) break;
                     targetClusterSize -= 2;
@@ -1034,7 +1034,7 @@ public static partial class ClusterBuilder
             throw new InvalidDataException("Cluster triangle indices are not divisible by three.");
 
         uint[] triangleIndices = indices.ToArray();
-        ClusterGraph graph = ClusterGraph.Triangles(triangleIndices, positions, materialIndicesArray);
+        ClusterGraph graph = ClusterGraph.BuildTriangleGraph(triangleIndices, positions, materialIndicesArray);
         foreach (int[] partition in graph.Partition(config.MaxTriangles - 4, config.MaxTriangles))
         {
             TempTri[] triangles = new TempTri[partition.Length];

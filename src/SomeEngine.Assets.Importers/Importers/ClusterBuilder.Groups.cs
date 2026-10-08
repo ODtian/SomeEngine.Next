@@ -20,18 +20,14 @@ public static partial class ClusterBuilder
             for (int corner = 0; corner < triangles.Length; corner++)
             {
                 Vector3 first = positions[triangles[corner]];
-                Vector3 second = positions[triangles[corner - corner % 3 + (corner + 1) % 3]];
                 minimum = Vector3.Min(minimum, first); maximum = Vector3.Max(maximum, first);
-                if (edges.TryGetValue((second, first), out List<int>? neighbors))
-                    foreach (int neighbor in neighbors)
-                        if (neighbor != index)
-                        {
-                            var pair = (neighbor, index);
-                            sharedEdges[pair] = sharedEdges.GetValueOrDefault(pair) + 1;
-                        }
-                if (!edges.TryGetValue((first, second), out List<int>? adjacent)) edges.Add((first, second), adjacent = []);
-                adjacent.Add(index);
             }
+            ClusterGraph.AddTriangleEdges(edges, triangles, positions, index, neighbor =>
+            {
+                if (neighbor == index) return;
+                var pair = (neighbor, index);
+                sharedEdges[pair] = sharedEdges.GetValueOrDefault(pair) + 1;
+            });
             graph.Include(minimum); graph.Include(maximum);
             graph.Centers[index] = (minimum + maximum) * .5f;
         }
@@ -56,12 +52,7 @@ public static partial class ClusterBuilder
         {
             BuilderMeshlet data = clusters[current[cluster]];
             ReadOnlySpan<uint> triangles = CollectionsMarshal.AsSpan(indices).Slice(data.IndicesOffset, data.IndicesCount);
-            for (int corner = 0; corner < triangles.Length; corner++)
-            {
-                var edge = (positions[triangles[corner]], positions[triangles[corner - corner % 3 + (corner + 1) % 3]]);
-                if (!edges.TryGetValue(edge, out List<int>? adjacent)) edges.Add(edge, adjacent = []);
-                adjacent.Add(clusterGroups[cluster]);
-            }
+            ClusterGraph.AddTriangleEdges(edges, triangles, positions, clusterGroups[cluster]);
         }
         var locked = new HashSet<Vector3>();
         foreach (var pair in edges)

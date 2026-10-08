@@ -23,9 +23,9 @@ public sealed partial class ClusterPipelineSystem
         graph.OrderAfter(GraphData.SceneBounds.Pass, GraphData.LeafFlagPass);
     }
 
-    private void BindLeafFlagFixups(ref RenderGraphFrame graph, ClusterResidencyPublication? publication)
+    private void BindLeafFlagFixups(ref RenderGraphFrame graph, ClusterResidencyPublication? residencyUpdates)
     {
-        ReadOnlySpan<ClusterLeafFlagFixup> data = publication?.Meshes.LeafFlagFixups ?? [];
+        ReadOnlySpan<ClusterLeafFlagFixup> data = residencyUpdates?.Meshes.LeafFlagFixups ?? [];
         if (data.IsEmpty)
         {
             graph.SetBufferInput(GraphData.LeafFlagParameters, new GraphBufferSlice(GraphData.LeafFlagEmptyParameters, BufferRange.Whole));

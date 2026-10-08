@@ -328,7 +328,7 @@ bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
 
     // This range belongs to orthographic directional views. Preserve the user's
     // conservative world bounds and the adopted cached depth coordinates.
-    float3 center = (worldMin + worldMax) * 0.5;
+    float3 center = ClusterPositionForView((worldMin + worldMax) * 0.5, view);
     float3 extent = (worldMax - worldMin) * 0.5;
     float3 depthAxis = float3(view.ViewProj[0][2], view.ViewProj[1][2], view.ViewProj[2][2]);
     float depthCenter = dot(center, depthAxis) + view.ViewProj[3][2];

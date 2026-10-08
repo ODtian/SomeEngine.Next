@@ -26,7 +26,7 @@ internal sealed class ClusterMeshSimplifier
         internal bool Removed;
     }
     private readonly record struct PositionPair(int First, int Second, int FirstVersion, int SecondVersion);
-    private sealed record Merge(float Error, float Priority, Vector3 Position, int[] Triangles,
+    private sealed record VertexMergeData(float Error, float Priority, Vector3 Position, int[] Triangles,
         int[] Wedges, float[][] Attributes);
 
     private readonly List<MeshPosition> _positions = [];
@@ -166,9 +166,9 @@ internal sealed class ClusterMeshSimplifier
             MeshPosition first = _positions[pair.First], second = _positions[pair.Second];
             if (first.Version != pair.FirstVersion || second.Version != pair.SecondVersion ||
                 first.Triangles.Count == 0 || second.Triangles.Count == 0) continue;
-            Merge merge = EvaluateMerge(pair.First, pair.Second);
-            maxError = Math.Max(maxError, merge.Error);
-            ApplyMerge(pair.First, pair.Second, merge);
+            VertexMergeData mergeData = EvaluateMerge(pair.First, pair.Second);
+            maxError = Math.Max(maxError, mergeData.Error);
+            ApplyMerge(pair.First, pair.Second, mergeData);
         }
         // MeshSimplify::Simplify removes remaining triangles when regular edge pairs are exhausted.
         for (int triangle = 0; _remainingTriangles > targetTriangles && triangle < _triangles.Count; triangle++)
@@ -183,11 +183,11 @@ internal sealed class ClusterMeshSimplifier
         var version = (_positions[first].Version, _positions[second].Version);
         if (_pairVersions.TryGetValue((first, second), out var previous) && previous == version) return;
         _pairVersions[(first, second)] = version;
-        Merge merge = EvaluateMerge(first, second);
-        _pairs.Enqueue(new PositionPair(first, second, version.Item1, version.Item2), merge.Priority);
+        VertexMergeData mergeData = EvaluateMerge(first, second);
+        _pairs.Enqueue(new PositionPair(first, second, version.Item1, version.Item2), mergeData.Priority);
     }
 
-    private Merge EvaluateMerge(int first, int second)
+    private VertexMergeData EvaluateMerge(int first, int second)
     {
         MeshPosition a = _positions[first], b = _positions[second];
         int[] triangles = a.Triangles.Concat(b.Triangles).Distinct().Order().ToArray();
@@ -295,7 +295,7 @@ internal sealed class ClusterMeshSimplifier
         }
         error = Math.Min(error, area);
         if (triangles.Length == 1 || triangles.Length == 2 && degree == 4) error = area;
-        return new Merge((float)error, (float)error + penalty, position, triangles, wedgeByTriangle, values);
+        return new VertexMergeData((float)error, (float)error + penalty, position, triangles, wedgeByTriangle, values);
 
         int Find(int index)
         {
@@ -355,24 +355,24 @@ internal sealed class ClusterMeshSimplifier
         }
     }
 
-    private void ApplyMerge(int first, int second, Merge merge)
+    private void ApplyMerge(int first, int second, VertexMergeData mergeData)
     {
         var affectedPositions = new HashSet<int>();
-        for (int index = 0; index < merge.Triangles.Length; index++)
-            foreach (int vertex in _triangles[merge.Triangles[index]].Vertices)
+        for (int index = 0; index < mergeData.Triangles.Length; index++)
+            foreach (int vertex in _triangles[mergeData.Triangles[index]].Vertices)
             {
                 MeshVertex data = _vertices[vertex];
                 affectedPositions.Add(data.Position);
                 if (data.Position != first && data.Position != second) continue;
                 data.Position = first;
-                data.Attributes = merge.Attributes[merge.Wedges[index]];
+                data.Attributes = mergeData.Attributes[mergeData.Wedges[index]];
             }
-        _positions[first].Value = merge.Position;
+        _positions[first].Value = mergeData.Position;
         _positions[first].Locked |= _positions[second].Locked;
         _positions[first].Triangles.UnionWith(_positions[second].Triangles);
         _positions[second].Triangles.Clear();
         foreach (int position in affectedPositions) _positions[position].Version++;
-        foreach (int triangle in merge.Triangles) FixTriangle(triangle);
+        foreach (int triangle in mergeData.Triangles) FixTriangle(triangle);
         var adjacent = new HashSet<int>();
         foreach (int position in affectedPositions) adjacent.UnionWith(_positions[position].Triangles);
         foreach (int triangle in adjacent)

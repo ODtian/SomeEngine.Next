@@ -26,17 +26,20 @@ public sealed class DynamicShadowRenderingTests
             DynamicResolutionEnabled = false,
         };
         await using var scene = await FrameStageScene.CreateAsync("D3D12", true, options, plane, settings);
-        scene.SetMeshTransform(0, new(new Vector3(0, 0, -8), Quaternion.Identity) { Stretch = new(3, 3, .1f) });
-        TransformQvvs outside = new(new Vector3(20, 4, -4), Quaternion.Identity) { Stretch = new(1.6f, 1.6f, .1f) };
+        Vector3 translation = new(0, 1000, 1000);
+        scene.SetView(new(Matrix4x4.CreateTranslation(-translation),
+            Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), 64, 64));
+        scene.SetMeshTransform(0, new(new Vector3(0, 0, -8) + translation, Quaternion.Identity) { Stretch = new(3, 3, .1f) });
+        TransformQvvs outside = new(new Vector3(20, 4, -4) + translation, Quaternion.Identity) { Stretch = new(1.6f, 1.6f, .1f) };
         scene.SetMeshTransform(1, outside);
-        scene.AddGeometryMesh(plane, new(new Vector3(0, 2, -6), Quaternion.Identity) { Stretch = new(.6f, .6f, .1f) });
+        scene.AddGeometryMesh(plane, new(new Vector3(0, 2, -6) + translation, Quaternion.Identity) { Stretch = new(.6f, .6f, .1f) });
         // A zero-angle emitter keeps the first-frame cache comparison deterministic.
         scene.UseDirectionalLight(Vector3.Normalize(new(0, -1, -1)), new(SourceAngleDegrees: 0f));
 
         RasterImage exposed = await scene.ReadNextRasterImageAsync();
         for (int frame = 1; frame < 4; frame++) exposed = await scene.ReadNextRasterImageAsync();
 
-        scene.SetMeshTransform(1, new(new Vector3(0, 4, -4), Quaternion.Identity) { Stretch = new(1.6f, 1.6f, .1f) });
+        scene.SetMeshTransform(1, new(new Vector3(0, 4, -4) + translation, Quaternion.Identity) { Stretch = new(1.6f, 1.6f, .1f) });
         RasterImage covered = await scene.ReadNextRasterImageAsync();
         for (int frame = 1; frame < 4; frame++) covered = await scene.ReadNextRasterImageAsync();
         Assert.NotEqual(exposed.Color, covered.Color);
