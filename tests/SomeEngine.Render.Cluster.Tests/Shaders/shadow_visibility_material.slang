@@ -87,7 +87,7 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                 VirtualShadowSampling.BlockerSampleCount, VirtualShadowSampling.FilterSampleCount,
                 VirtualShadowSampling.MaxFilterRadiusTexels, pixel.xy, VirtualShadowSampling.FrameIndex);
             visibility = projection.Visibility * SampleDirectionalVirtualShadowPrefiltered(VirtualShadowViews,
-                VirtualShadowPageTable, VirtualShadowPrefilteredAtlas, 0u, levelCount, position);
+                VirtualShadowPageTable, VirtualShadowPrefilteredAtlas, 0u, levelCount, position).Visibility;
         }
         color[pixel] = float4(visibility, 1.0, data.ShadingFacesLight != 0u ? 1.0 : 0.0, 1.0);
     }

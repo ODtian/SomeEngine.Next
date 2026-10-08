@@ -78,7 +78,7 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
         viewIndex);
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, realInstanceID, view);
     output.Pos = mul(
-        float4(eval.getPosition(vertex), 1.0),
+        float4(ClusterPositionForView(eval.getPosition(vertex), view), 1.0),
         view.ViewProj);
     output.ClusterID = clusterID;
     output.Normal = vertex.worldNormal;

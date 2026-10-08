@@ -218,7 +218,7 @@ ClusterRasterPixelInput<TVisibility.Varying> BuildVisBufferVertex<TVE, TVisibili
         viewIndex);
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, realInstanceID, view);
     output.Pos = mul(
-        float4(evaluator.getPosition(vertex), 1.0),
+        float4(ClusterPositionForView(evaluator.getPosition(vertex), view), 1.0),
         view.ViewProj);
     output.ClipDepth = output.Pos.zw;
     output.Pos = ClusterHardwareRasterPosition(output.Pos, visibleClusterIndex, view,

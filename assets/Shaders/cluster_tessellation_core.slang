@@ -890,7 +890,7 @@ void DiceTessellationPatches<
             float3 localBary = TessellationGridBarycentric(factor, edgeFactors, vertexIndex);
             float3 sourceBary = TransformPatchBarycentric(patchBary0, patchBary1, patchBary2, localBary);
             float4 position = mul(
-                float4(domain.position(triangle, sourceBary), 1.0), view.ViewProj);
+                float4(ClusterPositionForView(domain.position(triangle, sourceBary), view), 1.0), view.ViewProj);
             VisibilityEvaluate.Varying generatedVarying = visibility.interpolateVertex(
                 sourceVaryings[0],
                 sourceVaryings[1],
