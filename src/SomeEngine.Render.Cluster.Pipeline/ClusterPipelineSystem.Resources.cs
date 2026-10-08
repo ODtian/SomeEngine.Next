@@ -437,7 +437,7 @@ public sealed partial class ClusterPipelineSystem
                     1,
                     1,
                     Format.R32UInt,
-                    TextureUsages.Storage | TextureUsages.ColorAttachment,
+                    TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.Sampled,
                     label: "Cluster neutral target output"));
                 if (_visibilityMode == ClusterVisibilityMode.HardwareOnly && _renderContext.IsValid)
                 {

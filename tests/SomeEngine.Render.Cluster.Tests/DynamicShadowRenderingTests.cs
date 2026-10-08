@@ -9,7 +9,7 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class DynamicShadowRenderingTests
 {
     [Fact]
-    public async Task MovingADynamicShadowOccluderRestoresTheCoveredCasterOnTheNextFrame()
+    public async Task AnAutomaticShadowCasterMovesAgainAfterReturningToStaticCache()
     {
         var plane = await RasterTestGeometry.CreatePlaneAsync();
         var options = new ClusterPipelineOptions
@@ -44,5 +44,12 @@ public sealed class DynamicShadowRenderingTests
         scene.SetMeshTransform(1, outside);
         RasterImage restored = await scene.ReadNextRasterImageAsync();
         RasterImage.AssertEqual(exposed, restored);
+        for (int frame = 0; frame < 102; frame++) restored = await scene.ReadNextRasterImageAsync();
+        RasterImage.AssertEqual(exposed, restored);
+        scene.SetMeshTransform(1, new(new Vector3(0, 4, -4), Quaternion.Identity) { Stretch = new(1.6f, 1.6f, .1f) });
+        RasterImage coveredAgain = await scene.ReadNextRasterImageAsync();
+        RasterImage.AssertEqual(covered, coveredAgain);
+        scene.SetMeshTransform(1, outside);
+        RasterImage.AssertEqual(exposed, await scene.ReadNextRasterImageAsync());
     }
 }

@@ -27,9 +27,62 @@ RWStructuredBuffer<VirtualShadowPageMetadata> PageMetadata;
 RWStructuredBuffer<uint4> ActivePhysicalPages;
 RWStructuredBuffer<uint> ActivePhysicalPageCount;
 RWStructuredBuffer<uint4> UncachedPageRectBounds;
-RWStructuredBuffer<uint> RasterTargetPageHierarchy;
+RWStructuredBuffer<uint2> RasterTargetPageHierarchy;
 RWStructuredBuffer<uint> ShadowAllocationFailures;
-RWStructuredBuffer<uint2> PageReceiverMasks;
+RWTexture2D<uint> PageReceiverMasks;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip1;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip2;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip3;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip4;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip5;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip6;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip7;
+
+
+void ReduceReceiverMask(RWTexture2D<uint> destination, inout uint mask, inout uint2 address)
+{
+    uint2 fraction = address & 1u;
+    mask = ShrinkVirtualShadowReceiverMask(mask) << (fraction.y * 8u + fraction.x * 2u);
+    address >>= 1u;
+    uint ignored;
+    InterlockedOr(destination[address], mask, ignored);
+}
+
+void BuildReceiverMaskHierarchy(VirtualShadowMapParameters view, uint mipLevel, uint2 localPage)
+{
+    if ((view.Flags & VSM_VIEW_USE_RECEIVER_MASK) == 0u) return;
+    uint4 masks = LoadVirtualShadowReceiverMask(PageReceiverMasks, view, mipLevel, localPage);
+    uint mask = ShrinkVirtualShadowReceiverMask(masks.x) |
+        (ShrinkVirtualShadowReceiverMask(masks.y) << 2u) |
+        (ShrinkVirtualShadowReceiverMask(masks.z) << 8u) |
+        (ShrinkVirtualShadowReceiverMask(masks.w) << 10u);
+    uint2 address = (VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u) >> 1u;
+    uint pages = VirtualShadowPagesPerRow(view);
+    uint ignored;
+    if (pages >= 2u) InterlockedOr(PageReceiverMaskMip1[address], mask, ignored);
+    if (pages >= 4u) ReduceReceiverMask(PageReceiverMaskMip2, mask, address);
+    if (pages >= 8u) ReduceReceiverMask(PageReceiverMaskMip3, mask, address);
+    if (pages >= 16u) ReduceReceiverMask(PageReceiverMaskMip4, mask, address);
+    if (pages >= 32u) ReduceReceiverMask(PageReceiverMaskMip5, mask, address);
+    if (pages >= 64u) ReduceReceiverMask(PageReceiverMaskMip6, mask, address);
+    if (pages >= 128u) ReduceReceiverMask(PageReceiverMaskMip7, mask, address);
+}
+
+void FillReceiverMask(VirtualShadowMapParameters view, uint mipLevel, uint2 localPage)
+{
+    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u;
+    PageReceiverMasks[address] = 0xffffu;
+    PageReceiverMasks[address + uint2(1, 0)] = 0xffffu;
+    PageReceiverMasks[address + uint2(0, 1)] = 0xffffu;
+    PageReceiverMasks[address + 1u.xx] = 0xffffu;
+}
 
 bool VirtualShadowPageMetadataMatches(uint entry, VirtualShadowMapParameters view, int2 worldPage)
 {
@@ -149,10 +202,11 @@ void PublishDirtyPage(
             hierarchyOffset +
             hierarchyPage.y * wordsPerRow +
             hierarchyPage.x / 32u;
-        InterlockedOr(
-            RasterTargetPageHierarchy[wordIndex],
-            1u << (hierarchyPage.x & 31u),
-            ignored);
+        uint flags = PageMetadata[atlasPage].Flags;
+        if ((flags & VSM_PAGE_DYNAMIC_UNCACHED) != 0u)
+            InterlockedOr(RasterTargetPageHierarchy[wordIndex].x, 1u << (hierarchyPage.x & 31u), ignored);
+        if ((flags & VSM_PAGE_STATIC_UNCACHED) != 0u)
+            InterlockedOr(RasterTargetPageHierarchy[wordIndex].y, 1u << (hierarchyPage.x & 31u), ignored);
         hierarchyOffset += dimension * wordsPerRow;
         if (dimension == 1u)
             break;
@@ -183,6 +237,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     if (!VirtualShadowDecodePageTableIndex(view, tableIndex, mipLevel, localPage))
         return;
     int2 expectedWorldPage = VirtualShadowWorldPage(view, mipLevel, localPage);
+    BuildReceiverMaskHierarchy(view, mipLevel, localPage);
 
     uint entry = ShadowPageTable[tableIndex];
     bool sameTag = entry != VSM_PAGE_UNMAPPED &&
@@ -192,7 +247,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     uint packedPage = VSM_PAGE_UNMAPPED;
     uint previousLayer = 0xFFFFFFFFu;
     bool partialReceivers = (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u &&
-        any(PageReceiverMasks[tableIndex] != 0xFFFFFFFFu.xx);
+        any(LoadVirtualShadowReceiverMask(PageReceiverMasks, view, mipLevel, localPage) != 0xffffu.xxxx);
     bool staticUncached = true;
     bool dynamicUncached = true;
     bool keepDeferred = false;
@@ -266,9 +321,9 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     PageMetadata[atlasPage].ViewIndex = viewIndex;
     PageMetadata[atlasPage].LastRequestedFrame = PageAllocation.FrameIndex;
     if (!partialReceivers)
-        PageReceiverMasks[tableIndex] = 0xFFFFFFFFu.xx;
+        FillReceiverMask(view, mipLevel, localPage);
     // Coarse/full receiver requests are whole-page work even on an invalidated page.
-    partialReceivers = partialReceivers && any(PageReceiverMasks[tableIndex] != 0xFFFFFFFFu.xx);
+    partialReceivers = partialReceivers && any(LoadVirtualShadowReceiverMask(PageReceiverMasks, view, mipLevel, localPage) != 0xffffu.xxxx);
     if (staticUncached) PageMetadata[atlasPage].StaticDepthGeneration = 0u;
     PageMetadata[atlasPage].RequestFlags = requestFlags;
     PageMetadata[atlasPage].Flags = (partialReceivers ? VSM_PAGE_MASKED : 0u) |

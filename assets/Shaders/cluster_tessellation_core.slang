@@ -304,7 +304,7 @@ bool IsTessellationBoundsVisible(
         // is qualified per requested page by the same resolver as traversal.
         return view.CullingEnabled == 0u || !ClusterTargetPolicyWorldBoundsOccluded(
             minimum, maximum, usePrevious, view,
-            LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceId));
+            LoadTargetDepthCacheClass(instanceId));
     }
     float2 minUv;
     float2 maxUv;

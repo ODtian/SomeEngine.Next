@@ -37,8 +37,6 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
         uint instance = Scene.UseInstanceGroups != 0u ? SceneInstances[index] : index;
         uint root = LoadClusterBvhRoot(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BVH_ROOT_METADATA_WORD), instance);
-        float currentDepthClass = float(LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instance));
-        float previousDepthClass = currentDepthClass;
         float3 previousMin = worldMin;
         float3 previousMax = worldMax;
         if (root != 0xFFFFFFFFu)
@@ -57,14 +55,13 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
         }
         if (Scene.HasPreviousBounds != 0u)
         {
-            previousDepthClass = InstanceWorldBounds[instance * 4u].w;
             previousMin = InstanceWorldBounds[instance * 4u].xyz;
             previousMax = InstanceWorldBounds[instance * 4u + 1u].xyz;
         }
-        InstanceWorldBounds[instance * 4u] = float4(worldMin, currentDepthClass);
-        InstanceWorldBounds[instance * 4u + 1u] = float4(worldMax, currentDepthClass);
-        InstanceWorldBounds[instance * 4u + 2u] = float4(previousMin + Scene.PreviousWorldTranslation, previousDepthClass);
-        InstanceWorldBounds[instance * 4u + 3u] = float4(previousMax + Scene.PreviousWorldTranslation, previousDepthClass);
+        InstanceWorldBounds[instance * 4u] = float4(worldMin, 0.0);
+        InstanceWorldBounds[instance * 4u + 1u] = float4(worldMax, 0.0);
+        InstanceWorldBounds[instance * 4u + 2u] = float4(previousMin + Scene.PreviousWorldTranslation, 0.0);
+        InstanceWorldBounds[instance * 4u + 3u] = float4(previousMax + Scene.PreviousWorldTranslation, 0.0);
     }
     if (Scene.UseInstanceGroups == 0u)
         return;

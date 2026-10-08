@@ -8,8 +8,9 @@ namespace SomeEngine.Render.Components;
 
 public enum DepthCacheClass : uint
 {
-    Dynamic = 0,
+    Auto = 0,
     Static = 1,
+    Dynamic = 2,
 }
 
 /// <summary>Separates camera-deformed geometry from the player's world-space shadow representation.</summary>

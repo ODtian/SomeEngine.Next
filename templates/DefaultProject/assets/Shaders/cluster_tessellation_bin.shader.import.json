@@ -1,11 +1,15 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 29,
-  "input_hash": "74fa305b8b90cd95d6c531cf465dc32e7cc7223c1ba7103634e360808f0868bd",
+  "importer_version": 31,
+  "input_hash": "1be18b137f072d614101e503687925cf4a70b7f4a7a1ead711798016e6e127f5",
   "inputs": [
     {
+      "relative_path": "../../assets/Shaders/cluster_hierarchy.slang",
+      "content_hash": "976685517fc9f950b25e4a097ebc3bf457536a8643463a738cdf3fee7802595b"
+    },
+    {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "3c30ae82f444ff51a16b5c9f8dcd9abc0187892507af4856ccbbe1cb30c43139"
+      "content_hash": "5a6d7541617c13957945a67fecd22fd872a97e8d32f0dac1130d682928c82adc"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_tessellation_bin.slang",
@@ -33,7 +37,7 @@
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+      "content_hash": "ca411c4e64e36d5e042244e087f1d2726187cb2f1434ccdd46b78d4f0a9040ee"
     }
   ],
   "reported_inputs": [],
@@ -41,11 +45,11 @@
     {
       "asset_guid": "ab50e035-870d-5e6b-9ecc-0d7325cb6f49",
       "sub_asset_key": "",
-      "input_hash": "74fa305b8b90cd95d6c531cf465dc32e7cc7223c1ba7103634e360808f0868bd",
+      "input_hash": "1be18b137f072d614101e503687925cf4a70b7f4a7a1ead711798016e6e127f5",
       "dependencies": [],
       "asset_path": "cluster_tessellation_bin.shader.asset",
-      "version": "b54cf322-022a-16b1-def4-0039b15d52c5",
-      "content_hash": "F1D423CEF6DC258B7696EC6E15AEDEC209FA2BE0A8400CB76087945A1685B726",
+      "version": "617b60ea-fda4-fa37-70d1-10257c49ceca",
+      "content_hash": "7887B94B2FDBC7CE695F6D5C28542ED229569EE8092DFCF8874A286DFF491E83",
       "asset_dependencies": []
     }
   ]

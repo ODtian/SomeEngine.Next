@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 29,
-  "input_hash": "765ad1221b7fc7604f84be88bda8adfa88308f46112b2936f79e5c0130f8087d",
+  "importer_version": 31,
+  "input_hash": "b16d17c8d3a8ce83443c4db2d42ef6ff963eceb1d64ae3df697b22d01618265f",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/render_lighting.slang",
@@ -12,12 +12,36 @@
       "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
+      "relative_path": "../../assets/Shaders/surface_receiver.slang",
+      "content_hash": "f57a0b6bc06548f4d5d81f4028f94be02ad5da9abcceaa30b59793f1d7265734"
+    },
+    {
+      "relative_path": "../../assets/Shaders/surface_receiver_depth.slang",
+      "content_hash": "0b2bb5b145c741ecd6ee2c76ba5e2d9d8f4f977defdca76141feeed77e6c4578"
+    },
+    {
       "relative_path": "../../assets/Shaders/vsm_mark_pages.slang",
-      "content_hash": "d14e1d0664c273d42eb04d65db4472adf2d7e4c1a656c11cdfc224ea2c89f370"
+      "content_hash": "eca41aa4e37e1a609bf51a3fa6f134837ec335336ac3a7bade643a6f75951380"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_page_entry.slang",
+      "content_hash": "cc1844d3a5c8cdddec0f077fa6f576fdbd4a581f8534988ecf461748ebe3c642"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_request_common.slang",
-      "content_hash": "f93d7939690ab88353654636b769ced48fad7b6744bf03f79c5db819abcdd1df"
+      "content_hash": "82720da71a424e9b05bde7704487f6154d6f2d5ebc268926535441e63e1ef21b"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_prefilter_sampling.slang",
+      "content_hash": "5d2c2a9f0a298d65778e29bc5e3d1039e88831ee5fd5d2773193a4af783cafba"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_receiver_mask_bits.slang",
+      "content_hash": "0b6345cb7b8ec83b3bf1c1861f2c7953c27cc0c87257aa804ce375df47cfe841"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_receiver_mask_common.slang",
+      "content_hash": "f299eb6c1a26e642d563d674e57d266c7212135c495fb8f9c75454106e3078c0"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_pixel.slang",
@@ -25,11 +49,15 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_projection.slang",
-      "content_hash": "b805483aa53b5090eaec5c1e3620dd89c6a6b8a7d40a2dca94c4e612056bd672"
+      "content_hash": "f6d520090b5c4160a3782f0fa8717488823fc783859b7b00b41b1704e641defe"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_resident_math.slang",
+      "content_hash": "a979f0dc057972d769a16482a796add0b925b53b21242c84fa9bb5a42a5e18bd"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "fcc80475e5365b25d5d0e06963de30c0bd6f56083fb74434af00e5141358666a"
+      "content_hash": "318bd1fdd891ec1e4d8ae19e610c4c6a7d335d1f51785600487496e329d95410"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -41,7 +69,7 @@
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+      "content_hash": "ca411c4e64e36d5e042244e087f1d2726187cb2f1434ccdd46b78d4f0a9040ee"
     },
     {
       "relative_path": "assets/Shaders/vsm_mark_pages.shader",
@@ -53,11 +81,11 @@
     {
       "asset_guid": "6c441d68-a857-5643-9923-2d03131e0a37",
       "sub_asset_key": "",
-      "input_hash": "765ad1221b7fc7604f84be88bda8adfa88308f46112b2936f79e5c0130f8087d",
+      "input_hash": "b16d17c8d3a8ce83443c4db2d42ef6ff963eceb1d64ae3df697b22d01618265f",
       "dependencies": [],
       "asset_path": "vsm_mark_pages.shader.asset",
-      "version": "f9c15141-5bdb-6e29-a9ad-e3d697ecf771",
-      "content_hash": "9A91EA73E8938A610C4FF9FED9D22184D2FCB48D68C2ADCAFB9D6D61869CE1D4",
+      "version": "59417457-93c8-dcad-fc28-7762e66dfcfd",
+      "content_hash": "D256BCB04EDDD84EC8358EDCDE2C17198C6C8F26B3DC932FB9D8B42C5F7BF8EC",
       "asset_dependencies": []
     }
   ]

@@ -48,6 +48,7 @@ void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftwa
 RWStructuredBuffer<uint> DepthBuckets;
 
 StructuredBuffer<ClusterRasterTargetView> WorkTargetViews;
+#include "cluster_depth_cache.slang"
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> DepthWorkCounter;
 
@@ -80,7 +81,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
             InterlockedAdd(PolicyRasterWorkCounter[1u + target.Padding.x * 2u + (isSoftware ? 1u : 0u)], 1u);
         if ((target.Padding.y & 2u) != 0u)
         {
-            uint depthClass = LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, entry.InstanceID) == 1u ? 1u : 0u;
+            uint depthClass = LoadTargetDepthCacheClass(entry.InstanceID) == 1u ? 1u : 0u;
             InterlockedAdd(DepthWorkCounter[target.Padding.x * 4u + depthClass * 2u + (isSoftware ? 1u : 0u)], 1u);
         }
     }

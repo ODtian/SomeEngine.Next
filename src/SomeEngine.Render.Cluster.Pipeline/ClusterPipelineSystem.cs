@@ -791,7 +791,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 GraphData.Resources.NeutralPolicyView,
-                structureStride: sizeof(uint),
+                structureStride: 2u * sizeof(uint),
                 label: "Cluster neutral raster page masks"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
@@ -800,12 +800,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 structureStride: 4 * sizeof(uint),
                 label: "Cluster neutral raster page table"),
             PipelineSync.ComputeShading);
-        _ = pass.Bind(
-            graph.CreateBufferSrv(
-                GraphData.Resources.NeutralPolicyView,
-                structureStride: 2 * sizeof(uint),
-                label: "Cluster neutral raster receiver masks"),
-            PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateTextureSrv(GraphData.Resources.NeutralPolicyOutput,
+            format: Format.R32UInt, dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.NeutralPolicyView,
+            structureStride: sizeof(uint), label: "Cluster neutral effective caster classes"), PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 GraphData.Resources.NeutralPolicyView,
