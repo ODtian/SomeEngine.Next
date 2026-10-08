@@ -56,12 +56,6 @@ internal struct ClusterViewUniforms
     internal float PreviousOriginHighPadding;
     internal Vector3 PreviousWorldOriginLow;
     internal float PreviousOriginLowPadding;
-    internal Vector3 WorldTranslation;
-    internal float WorldTranslationPadding;
-    internal Vector3 PreviousWorldTranslation;
-    internal float PreviousWorldTranslationPadding;
-    internal Vector3 PreviousDataTranslation;
-    internal float PreviousDataTranslationPadding;
     internal uint PlayerId;
     internal RenderViewFamily Family;
     internal uint FirstPersonTransformEnabled;

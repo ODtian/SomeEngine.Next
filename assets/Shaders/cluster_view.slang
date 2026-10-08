@@ -55,12 +55,6 @@ struct ClusterViewUniforms
     float PreviousOriginHighPadding;
     float3 PreviousWorldOriginLow;
     float PreviousOriginLowPadding;
-    float3 WorldTranslation;
-    float WorldTranslationPadding;
-    float3 PreviousWorldTranslation;
-    float PreviousWorldTranslationPadding;
-    float3 PreviousDataTranslation;
-    float PreviousDataTranslationPadding;
     uint PlayerId;
     uint Family;
     uint FirstPersonTransformEnabled;
@@ -68,6 +62,12 @@ struct ClusterViewUniforms
     float4x4 WorldToFirstPerson;
     float4x4 FirstPersonToWorld;
     float4x4 PreviousWorldToFirstPerson;
+    float3 WorldTranslation;
+    float WorldTranslationPadding;
+    float3 PreviousWorldTranslation;
+    float PreviousWorldTranslationPadding;
+    float3 PreviousDataTranslation;
+    float PreviousDataTranslationPadding;
 };
 
 float3 ClusterPositionForView(float3 position, ClusterViewUniforms view)
