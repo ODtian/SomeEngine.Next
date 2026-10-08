@@ -28,9 +28,33 @@ internal static class RayShadowImage
         internal float NearPlane;
         internal float FarPlane;
         internal float OuterConeCos;
+        internal float SourceAngleRadians;
+        internal float SourceRadius;
+        internal uint SampleCount;
+        internal uint SamplePadding;
     }
 
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    internal readonly record struct SoftPixel(float Visibility, uint Flags);
+
+    internal static uint SourceSampleCount => uint.TryParse(
+        Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_REFERENCE_SAMPLES"), out uint value) ? value : 2048u;
+
     internal static async Task<uint[]> TraceAsync(string engine, RayShadowScene scene, Inputs inputs, bool vulkan)
+    {
+        byte[] pixels = await TraceBytesAsync(engine, scene, inputs, vulkan, "TraceRayShadow", sizeof(uint));
+        return MemoryMarshal.Cast<byte, uint>(pixels).ToArray();
+    }
+
+    internal static async Task<SoftPixel[]> TraceSoftAsync(string engine, RayShadowScene scene, Inputs inputs, bool vulkan)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(inputs.SampleCount);
+        byte[] pixels = await TraceBytesAsync(engine, scene, inputs, vulkan, "TraceSoftRayShadow", Marshal.SizeOf<SoftPixel>());
+        return MemoryMarshal.Cast<byte, SoftPixel>(pixels).ToArray();
+    }
+
+    private static async Task<byte[]> TraceBytesAsync(string engine, RayShadowScene scene, Inputs inputs, bool vulkan,
+        string entryName, int pixelBytes)
     {
         using IGraphicsBackend backend = new ValidationLayer(vulkan
             ? VulkanGraphicsBackend.Create() : D3D12GraphicsBackend.Create(),
@@ -140,7 +164,7 @@ internal static class RayShadowImage
             using var source = new ShaderSourceBlock { SourceNames = ["ray_shadow_reference.slang"] };
             SomeEngine.Resources.Shader shader = await source.CreateAsync(TestShaderLoading.Slang, description, "RT shadow ground truth");
             var reflection = shader.GetSlangReflection(0);
-            var entry = shader.RequireSlangEntry(0, "TraceRayShadow", SlangStage.Compute);
+            var entry = shader.RequireSlangEntry(0, entryName, SlangStage.Compute);
             GraphicsPipeline pipeline = Keep(backend.CreateComputePipeline(device,
                 new(shader.SlangCode, reflection, entry, shader.GetSlangEntryBytes(0, entry),
                     CodeBlob: shader.GetSlangEntryBlob(0, entry))));
@@ -151,7 +175,7 @@ internal static class RayShadowImage
                 MemoryMarshal.Write(mapping.Bytes, in inputs);
                 mapping.Flush(mapping.Range);
             }
-            ulong outputBytes = inputs.Width * (ulong)inputs.Height * 4;
+            ulong outputBytes = inputs.Width * (ulong)inputs.Height * checked((uint)pixelBytes);
             Buffer output = Keep(backend.CreateBuffer(device,
                 new BufferDesc(outputBytes, BufferUsages.ShaderWrite | BufferUsages.CopySource), MemoryType.DeviceLocal));
             Buffer readback = Keep(backend.CreateBuffer(device, new BufferDesc(outputBytes, BufferUsages.CopyDestination), MemoryType.Readback));
@@ -182,7 +206,7 @@ internal static class RayShadowImage
             }
             using MappedBuffer result = backend.Map(readback, MapType.Read, BufferRange.Whole);
             result.Invalidate(result.Range);
-            return MemoryMarshal.Cast<byte, uint>(result.Bytes).ToArray();
+            return result.Bytes.ToArray();
         }
         finally
         {

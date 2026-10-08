@@ -6,7 +6,7 @@ using Xunit.Abstractions;
 namespace SomeEngine.Render.Cluster.Tests;
 
 [Trait("Category", "Hardware")]
-public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
+public sealed partial class DefaultGameRayShadowTests(ITestOutputHelper output)
 {
     private const int CaptureFrames = 64;
 
