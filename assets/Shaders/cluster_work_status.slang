@@ -14,10 +14,14 @@ void AddClusterWorkMetric(uint offset, uint count)
 {
     uint bytes;
     WorkStatus.GetDimensions(bytes);
-    if (bytes < 96u || count == 0u) return;
+    if (bytes < 96u) return;
+    // Callers use one counter offset in each branch. Accepted bin totals are
+    // bounded by MaxCandidates * nine material batches; unit-work sums fit a wave.
+    uint waveCount = WaveActiveSum(count);
+    if (!WaveIsFirstLane() || waveCount == 0u) return;
     uint previous;
-    WorkStatus.InterlockedAdd(offset, count, previous);
-    if (previous > 0xFFFFFFFFu - count)
+    WorkStatus.InterlockedAdd(offset, waveCount, previous);
+    if (previous > 0xFFFFFFFFu - waveCount)
     {
         uint ignored;
         WorkStatus.InterlockedAdd(offset + 4u, 1u, ignored);
