@@ -1153,6 +1153,11 @@ internal sealed partial class FrameExecutor
         _analysisChanged = true;
         _changedAnalysisPasses.Add(index);
         _scheduleSeeds.Add(index);
+        if (previous.Identity.IsValid && previous.QueuePolicy != pass.QueuePolicy)
+        {
+            _scheduleSeeds.UnionWith(_predecessors[index]);
+            _scheduleSeeds.UnionWith(_successors[index]);
+        }
         ChangeRecording(index);
     }
 

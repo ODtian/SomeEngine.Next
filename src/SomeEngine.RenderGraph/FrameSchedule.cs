@@ -127,13 +127,50 @@ internal sealed partial class FrameExecutor
     {
         FramePass row = _passes[pass];
         _frame.Graph.ResolveQueueCandidates(row.QueuePolicy, row.Kind, _queueCandidateScratch);
-        if (row.Queue is not null && _queueCandidateScratch.Contains(row.Queue)) return;
+        bool chooseCopyQueue = row.Kind == GraphPassKind.Copy && row.QueuePolicy.AllowsAnyType;
+        if (!chooseCopyQueue && row.Queue is not null && _queueCandidateScratch.Contains(row.Queue)) return;
         Queue? chosen = null;
+        int producerTransfers = int.MaxValue;
+        int consumerTransfers = int.MaxValue;
         foreach (Queue candidate in _queueCandidateScratch)
-            if (QueueBefore(candidate, chosen)) chosen = candidate;
+        {
+            int producers = chooseCopyQueue ? CountPredecessorQueueTransfers(pass, candidate) : 0;
+            int consumers = chooseCopyQueue ? CountConsumerQueueTransfers(pass, candidate) : 0;
+            if (producers > producerTransfers || producers == producerTransfers && consumers > consumerTransfers) continue;
+            bool equal = producers == producerTransfers && consumers == consumerTransfers;
+            if (equal && (ReferenceEquals(chosen, row.Queue) ||
+                !ReferenceEquals(candidate, row.Queue) && !QueueBefore(candidate, chosen))) continue;
+            chosen = candidate;
+            producerTransfers = producers;
+            consumerTransfers = consumers;
+        }
         row.Queue = chosen ?? throw new InvalidOperationException("RG9002: No Queue satisfies the Pass declaration.");
+        if (ReferenceEquals(_passes[pass].Queue, chosen)) return;
         _passes[pass] = row;
         _executionOrder.Changed.Add(pass);
+    }
+
+    private int CountPredecessorQueueTransfers(int pass, Queue queue)
+    {
+        int transfers = 0;
+        foreach (int predecessor in _predecessors[pass])
+            if (_live[predecessor] && !ReferenceEquals(_passes[predecessor].Queue, queue)) transfers++;
+        return transfers;
+    }
+
+    private int CountConsumerQueueTransfers(int pass, Queue queue)
+    {
+        if (_passes[pass].Kind != GraphPassKind.Copy) return 0;
+        int transfers = 0;
+        foreach (int consumer in _successors[pass])
+        {
+            if (!_live[consumer]) continue;
+            PassQueueSelection selection = _passes[consumer].QueuePolicy;
+            if (selection.AllowsAnyType) continue;
+            if (selection.IsExact ? !ReferenceEquals(selection.Queue, queue) : selection.Type != queue.Type)
+                transfers++;
+        }
+        return transfers;
     }
 
     private void RepairOrder(long first, long last)
@@ -224,14 +261,20 @@ internal sealed partial class FrameExecutor
                     _passes[pass].Kind,
                     _queueCandidateScratch);
                 int minimumTransfers = int.MaxValue;
+                int minimumConsumerTransfers = int.MaxValue;
                 if (_passes[pass].QueuePolicy.AllowsAnyType)
                 {
                     foreach (Queue candidate in _queueCandidateScratch)
                     {
-                        int transfers = 0;
-                        foreach (int predecessor in _predecessors[pass])
-                            if (_live[predecessor] && !ReferenceEquals(_passes[predecessor].Queue, candidate)) transfers++;
-                        minimumTransfers = Math.Min(minimumTransfers, transfers);
+                        int transfers = CountPredecessorQueueTransfers(pass, candidate);
+                        int consumers = CountConsumerQueueTransfers(pass, candidate);
+                        if (transfers < minimumTransfers)
+                        {
+                            minimumTransfers = transfers;
+                            minimumConsumerTransfers = consumers;
+                        }
+                        else if (transfers == minimumTransfers)
+                            minimumConsumerTransfers = Math.Min(minimumConsumerTransfers, consumers);
                     }
                 }
                 foreach (Queue queue in _queueCandidateScratch)
@@ -247,6 +290,7 @@ internal sealed partial class FrameExecutor
                         if (!ReferenceEquals(_passes[predecessor].Queue, queue)) transfers++;
                     }
                     if (transfers > minimumTransfers) continue;
+                    if (CountConsumerQueueTransfers(pass, queue) > minimumConsumerTransfers) continue;
                     long start = Math.Max(queueAvailable, predecessorFinish);
                     int rank = criticalRanks[pass];
                     long declaration = _passes[pass].DeclarationOrdinal;
