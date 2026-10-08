@@ -921,7 +921,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Dispose(ref _drawIndexedIndirectLayout, ref failures);
         _metricFrameIndex = 0;
         _latestFrameMetrics = null;
-        AcceptMaterialTextures(_graphData.MaterialTextures.Clear());
+        AcceptMaterialTextures(_graphData.MaterialTextures.Clear(), shutdown: true);
+        _missingTextureInputsToPrepare = false;
         lock (_materialTextureChangeGate) _changedMaterialTextures.Clear();
         _materialScalars = ClusterMaterialScalars.Empty;
         _casterChanges.Clear();

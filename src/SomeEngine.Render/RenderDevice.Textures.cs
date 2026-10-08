@@ -46,6 +46,35 @@ public sealed partial class RenderDevice
         return GetOrCreateTexture(asset).Resource;
     }
 
+    /// <summary>Retains an allocation while a persistent graph connection uses it.</summary>
+    public TextureReference RetainTexture(EngineTexture asset)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(asset);
+        return RetainTexture(GetOrCreateTexture(asset));
+    }
+
+    /// <summary>Retains the shared missing texture for a persistent graph connection.</summary>
+    public TextureReference RetainMissingTexture() => RetainTexture(RequireMissingTexture());
+
+    private static TextureReference RetainTexture(TextureRealization texture)
+    {
+        texture.AddReference();
+        return new TextureReference(texture.Resource, texture.ReleaseReference);
+    }
+
+    public sealed class TextureReference : IDisposable
+    {
+        private Action? _release;
+        internal TextureReference(RhiTexture resource, Action release)
+        {
+            Resource = resource;
+            _release = release;
+        }
+        public RhiTexture Resource { get; }
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+    }
+
     public TextureSrv GetTextureSrv(
         EngineTexture asset,
         TextureSubresourceRange? range = null,
@@ -137,8 +166,14 @@ public sealed partial class RenderDevice
 
     /// <summary>Prepares one texture once and orders all shader connections after its uploads.</summary>
     public TextureViews PrepareTextureForInputs(ref RenderGraphFrame frame, scoped ReadOnlySpan<GraphParameterInput> inputs, EngineTexture asset)
+        => PrepareTextureForInputs(ref frame, inputs, asset, out _);
+
+    /// <summary>Reports uploads which must finish before this connection can retain its inputs.</summary>
+    public TextureViews PrepareTextureForInputs(ref RenderGraphFrame frame, scoped ReadOnlySpan<GraphParameterInput> inputs,
+        EngineTexture asset, out bool hasFrameUploads)
     {
         TextureRealization realization = PrepareTexture(ref frame, [], asset, null);
+        hasFrameUploads = realization.PendingFrameGraph is not null;
         TextureSrv? srv = null;
         TextureUav? uav = null;
         foreach (GraphParameterInput input in inputs)
@@ -157,9 +192,14 @@ public sealed partial class RenderDevice
 
     /// <summary>Prepares the existing missing texture for every supplied shader connection.</summary>
     public TextureSrv PrepareMissingTextureForInputs(ref RenderGraphFrame frame, scoped ReadOnlySpan<GraphParameterInput> inputs)
+        => PrepareMissingTextureForInputs(ref frame, inputs, out _);
+
+    public TextureSrv PrepareMissingTextureForInputs(ref RenderGraphFrame frame, scoped ReadOnlySpan<GraphParameterInput> inputs,
+        out bool hasFrameUploads)
     {
         PrepareMissingTexture(ref frame, [], null);
         TextureRealization realization = RequireMissingTexture();
+        hasFrameUploads = realization.PendingFrameGraph is not null;
         if (realization.UploadPasses.Count != 0)
             foreach (GraphParameterInput input in inputs) OrderTextureConsumers(ref frame, realization, [], input);
         return GetTextureSrv(realization, realization.Shape.FullRange,
@@ -505,7 +545,7 @@ public sealed partial class RenderDevice
         if (ReferenceEquals(realization.FrameGraph, frame.Owner) &&
             realization.FrameIdentity == frame.FrameIdentity)
             return;
-        realization.AddFrame();
+        realization.AddReference();
         var frameKey = (frame.Owner, frame.FrameIdentity);
         if (!_textureFrames.TryGetValue(frameKey, out TextureFrame? textures))
         {
@@ -949,7 +989,7 @@ public sealed partial class RenderDevice
         {
             if (_released) return;
             _released = true;
-            foreach (TextureRealization texture in Textures) texture.CompleteFrame();
+            foreach (TextureRealization texture in Textures) texture.ReleaseReference();
             Textures.Clear();
         }
     }
@@ -993,22 +1033,22 @@ public sealed partial class RenderDevice
         void ITextureDeviceData.Release() => _owner.ReleaseTexture(this);
         void ITextureDeviceData.ConfirmUpdate() => _owner.ConfirmTextureUpdate(this);
         void ITextureDeviceData.CancelUpdate() => _owner.CancelTextureUpdate(this);
-        private readonly object _framesGate = new();
-        private int _activeFrames;
+        private readonly object _referenceGate = new();
+        private int _references;
         private bool _releaseRequested;
         private bool _retirementQueued;
-        internal void AddFrame() { lock (_framesGate) _activeFrames++; }
-        internal void CompleteFrame()
+        internal void AddReference() { lock (_referenceGate) _references++; }
+        internal void ReleaseReference()
         {
-            lock (_framesGate)
+            lock (_referenceGate)
             {
-                _activeFrames--;
+                _references--;
                 QueueRelease();
             }
         }
         internal void RequestRelease()
         {
-            lock (_framesGate)
+            lock (_referenceGate)
             {
                 _releaseRequested = true;
                 QueueRelease();
@@ -1016,7 +1056,7 @@ public sealed partial class RenderDevice
         }
         private void QueueRelease()
         {
-            if (!_releaseRequested || _activeFrames != 0 || _retirementQueued) return;
+            if (!_releaseRequested || _references != 0 || _retirementQueued) return;
             _retirementQueued = true;
             _owner.Retire(this);
         }
