@@ -70,8 +70,10 @@ public ref partial struct PassDefinition
 
     public GraphBufferAccessId Write(GraphBufferInput buffer, in BufferRange range,
         PipelineSync sync, ResourceAccess access, WriteCoverage coverage,
-        ResourceContentState? resultContents = null, BufferContentScope contentScope = BufferContentScope.FullRange) =>
-        AddBufferInputAccess(buffer, range, sync, access, GraphAccessMode.Write, coverage, resultContents, contentScope);
+        ResourceContentState? resultContents = null, BufferContentScope contentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
+        AddBufferInputAccess(buffer, range, sync, access, GraphAccessMode.Write, coverage, resultContents, contentScope,
+            unorderedAccessHazards);
 
     public GraphBufferAccessId ReadWrite(GraphBufferInput buffer, in BufferRange range,
         PipelineSync sync, ResourceAccess access, ResourceContentState? resultContents = null,
@@ -135,7 +137,7 @@ public ref partial struct PassDefinition
         GraphBufferAccessId access = mode switch
         {
             GraphAccessMode.Read => Read(view, sync, contentScope),
-            GraphAccessMode.Write => Write(view, sync, coverage, resultContents, contentScope),
+            GraphAccessMode.Write => Write(view, sync, coverage, resultContents, contentScope, unorderedAccessHazards),
             GraphAccessMode.ReadWrite => ReadWrite(
                 view, sync, resultContents, contentScope, unorderedAccessHazards),
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
@@ -167,7 +169,7 @@ public ref partial struct PassDefinition
         GraphTextureAccessId access = mode switch
         {
             GraphAccessMode.Read => Read(view, sync, layout),
-            GraphAccessMode.Write => Write(view, sync, coverage, resultContents, layout),
+            GraphAccessMode.Write => Write(view, sync, coverage, resultContents, layout, unorderedAccessHazards),
             GraphAccessMode.ReadWrite => ReadWrite(
                 view, sync, resultContents, layout, unorderedAccessHazards),
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
@@ -233,7 +235,8 @@ public ref partial struct PassDefinition
                 else if (binding.Mode == GraphAccessMode.Write)
                 {
                     _ = Write(new GraphBufferUavId(binding.Value), binding.Sync,
-                        binding.Coverage, binding.ResultContents, binding.BufferContentScope);
+                        binding.Coverage, binding.ResultContents, binding.BufferContentScope,
+                        binding.UnorderedAccessHazards);
                 }
                 else
                 {
@@ -271,7 +274,8 @@ public ref partial struct PassDefinition
                 else if (binding.Mode == GraphAccessMode.Write)
                 {
                     _ = Write(new GraphTextureUavId(binding.Value), binding.Sync,
-                        binding.Coverage, binding.ResultContents, binding.Layout);
+                        binding.Coverage, binding.ResultContents, binding.Layout,
+                        binding.UnorderedAccessHazards);
                 }
                 else
                 {
@@ -318,9 +322,10 @@ public ref partial struct PassDefinition
         WriteCoverage coverage,
         ResourceContentState? resultContents = null,
         bool dynamicRange = false,
-        BufferContentScope contentScope = BufferContentScope.FullRange) =>
+        BufferContentScope contentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         AddBufferAccess(buffer, GraphAccessMode.Write, coverage,
-            sync, access, range, dynamicRange, resultContents, contentScope);
+            sync, access, range, dynamicRange, resultContents, contentScope, unorderedAccessHazards);
 
     /// <summary>Declares shared sparse reads independently of descriptor reachability.</summary>
     public void ReadRanges(
@@ -368,9 +373,10 @@ public ref partial struct PassDefinition
         TextureLayout layout,
         WriteCoverage coverage,
         ResourceContentState? resultContents = null,
-        bool dynamicRange = false) =>
+        bool dynamicRange = false,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         AddTextureAccess(texture, GraphAccessMode.Write, coverage,
-            sync, access, layout, range, dynamicRange, resultContents);
+            sync, access, layout, range, dynamicRange, resultContents, unorderedAccessHazards);
 
     public GraphTextureAccessId ReadWrite(
         GraphTextureId texture,
@@ -399,9 +405,10 @@ public ref partial struct PassDefinition
         PipelineSync sync,
         WriteCoverage coverage,
         ResourceContentState? resultContents = null,
-        BufferContentScope contentScope = BufferContentScope.FullRange) =>
+        BufferContentScope contentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         WriteBufferView(view.Value, sync, ResourceAccess.UnorderedAccess,
-            coverage, false, resultContents, contentScope);
+            coverage, false, resultContents, contentScope, unorderedAccessHazards);
 
     public GraphBufferAccessId Read(
         GraphBufferUavId view,
@@ -430,9 +437,10 @@ public ref partial struct PassDefinition
         PipelineSync sync,
         WriteCoverage coverage,
         ResourceContentState? resultContents = null,
-        TextureLayout layout = TextureLayout.UnorderedAccess) =>
+        TextureLayout layout = TextureLayout.UnorderedAccess,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         WriteTextureView(view.Value, sync, ResourceAccess.UnorderedAccess,
-            layout, coverage, false, resultContents);
+            layout, coverage, false, resultContents, unorderedAccessHazards);
 
     public GraphTextureAccessId Read(
         GraphTextureUavId view,
@@ -986,9 +994,10 @@ public ref partial struct PassDefinition
 
     public GraphTextureAccessId Write(GraphTextureInput texture, in TextureSubresourceRange range,
         PipelineSync sync, ResourceAccess access, TextureLayout layout, WriteCoverage coverage,
-        ResourceContentState? resultContents = null) =>
+        ResourceContentState? resultContents = null,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         AddTextureInputAccess(texture, GraphAccessMode.Write, coverage, sync, access,
-            layout, range, resultContents, UnorderedAccessHazardMode.Ordered);
+            layout, range, resultContents, unorderedAccessHazards);
 
     public void Bind(GraphParameterInput input, PipelineSync sync)
     {
