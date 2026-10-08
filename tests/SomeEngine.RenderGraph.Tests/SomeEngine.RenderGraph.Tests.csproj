@@ -21,7 +21,7 @@
     <ProjectReference Include="../../src/SomeEngine.Graphics.Validation/SomeEngine.Graphics.Validation.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="../../assets/Shaders/hello_triangle.shader.asset"
+    <None Include="../../templates/DefaultProject/assets/Shaders/hello_triangle.shader.asset"
           Link="Content/Shaders/hello_triangle.shader.asset"
           CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../external/dxc/bin/x64/dxcompiler.dll">
