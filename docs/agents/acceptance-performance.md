@@ -4,15 +4,15 @@
 
 目标为 P95：1024 运动小球 ≤1ms、Sponza ≤2ms、Amazon Bistro ≤3ms。
 
-2026-10-09 本批源码 `a8225b96000ccd478ac0bd3beb2e725d53378931` 合入 CPU 准备、提取、RG 独立写范围及完整物理距离采样更新，复用原三景 QEM 几何，完成正式三景 shader / App 更新后，通过 `tools/Measure-Scenes.ps1` 执行一次统一反馈。报告 `Complete=true`，三景均 `Measured`，框架流程计时 26.5128376 秒，脚本含启动 34.32 秒，外层命令计时 37.8278496 秒。
+2026-10-09 本批源码 `594c66efd4621671517c2fec179c6b4beda42220` 修复材质核心颜色写入归属和通用队列选择：材质返回当前像素颜色，管线写入唯一坐标；自动 copy 队列在前驱传输成本后计入显式消费队列。公开颜色行为 2/2、队列行为 8/8 通过。复用原三景 QEM 几何与原配置，通过 `tools/Measure-Scenes.ps1` 执行一次统一反馈；测量期间两个阴影实现代理暂停重 CPU 工作。报告 `Complete=true`，三景均 `Measured`，框架计时 26.1214475 秒，脚本含启动 33.71 秒。
 
 | 当前场景 | P50（ms） | P95（ms） | 采样帧 | P95 目标（ms） |
 | --- | ---: | ---: | ---: | ---: |
-| 1024 运动小球 | 2.0844 | 2.6202 | 930 | 1 |
-| Sponza | 2.9551 | 3.2384 | 673 | 2 |
-| Amazon Bistro | 3.9829 | 4.3895 | 502 | 3 |
+| 1024 运动小球 | 1.8699 | 2.0529 | 1063 | 1 |
+| Sponza | 2.6415 | 2.8549 | 756 | 2 |
+| Amazon Bistro | 3.2019 | 3.5558 | 617 | 3 |
 
-三景 queued/active loads、backpressure、dropped faults 均为 0，按框架连续 ready 条件完成收敛；驻留页分别为 7/7、98/98、2541/2972。配置保持原 1280×720、TieredCompilation=false、固定 1/60、3 秒预热、2 秒采样、原运动/光源、TAA/async compute/mesh shader、4+8 查询及 8 texels 半径；原始报告记录全部实际开关。原始报告、精确指标、时间和源码/App/2393 项资产身份位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/cluster-189/qem-assets-194/feedback/` 的 `results.json`、`summary.json`、`run.json`、`identity.json` 与两个 files 清单。1/2/3ms 性能目标继续推进，RT 精度修复继续由 #189 验收。
+三景 queued/active loads、backpressure、dropped faults 均为 0，按框架连续 ready 条件完成收敛；驻留页分别为 7/7、98/98、2541/2972。配置保持原 1280×720、TieredCompilation=false、固定 1/60、3 秒预热、2 秒采样、原运动/光源、TAA/async compute/mesh shader、4+8 查询及 8 texels 配置；1536 项网格 SHA256 与正式 QEM 内容相同。原始反馈位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/reduce-render-cost-190/queue-feedback/results.json`，源码与 App 身份位于同目录上级的 `queue-identity.json`、`queue-application-files.json`。前次 `a8225b96` 的 P95 为 2.6202 / 3.2384 / 4.3895ms，其完整来源及 2393 项资产身份保存在 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/cluster-189/qem-assets-194/feedback/`。1/2/3ms 性能目标继续推进，RT 精度修复继续由 #189 验收。
 当前 #190 继续实现，#189 的 RT GT 继续验收。下表属于 `e3a97e66` 的旧提交记录；随后 RT GT 定位到该提交的 Sponza 七层几何只遍历六层，主体接收面覆盖为 18.55%。集成 `98f70878` 已恢复完整遍历，修复阴影深度精度并持久化材质资源连接。后续统一性能反馈采用修复后的完整几何与正确阴影结果。
 
 当次源码 `e3a97e66c1c78dea5f4136f6d12393a1e52207ad`，三场景均 Complete/Measured，非 trace 原始采样 26.2796009 秒，含启动整轮 34.21 秒。
