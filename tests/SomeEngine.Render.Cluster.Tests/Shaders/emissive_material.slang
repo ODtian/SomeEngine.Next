@@ -12,19 +12,26 @@ struct EmissiveScalars
     float3 EmissiveFactor;
 };
 
+[MaterialSurfaceData]
+struct EmissiveSurfaceData { float3 Color; };
+
 struct EmissiveMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
-    void evaluateSurface(uint3 pixelCoord, uint instanceID, uint materialIndex,
-        SurfaceEval surface, float3 bary, Triangle triangle, RWTexture2DArray<float4> outputColor)
+    typealias Data = EmissiveSurfaceData;
+    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle, out SurfaceReceiver receiver)
     {
-        EmissiveScalars values = LoadMaterialScalars<EmissiveScalars>(materialIndex);
-        outputColor[pixelCoord] = float4(values.EmissiveFactor, 1.0);
+        receiver = (SurfaceReceiver)0;
+        receiver.Position = pixel.PositionFromDepth;
+        receiver.Depth = pixel.Depth;
+        receiver.ShadingNormal = surface.Normal;
+        EmissiveScalars values = LoadMaterialScalars<EmissiveScalars>(pixel.MaterialIndex);
+        Data data; data.Color = values.EmissiveFactor; return data;
     }
-
-    void evaluateDebug(uint debugMode, uint3 pixelCoord, uint instanceID, uint materialIndex,
-        SurfaceEval surface, float3 bary, Triangle triangle, RWTexture2DArray<float4> outputColor)
+    void shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver,
+        RWTexture2DArray<float4> outputColor)
     {
-        evaluateSurface(pixelCoord, instanceID, materialIndex, surface, bary, triangle, outputColor);
+        outputColor[pixelCoord] = float4(data.Color, 1.0);
     }
 };
 

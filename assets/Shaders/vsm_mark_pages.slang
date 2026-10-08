@@ -201,9 +201,9 @@ void PublishLocalShadowReceiver(uint2 pixel, float3 worldPosition, SurfaceReceiv
         {
             continue;
         }
-        if (backfaceCull && SurfaceReceiverIsBackfaceToLocal(surfaceReceiver,
+        if (!SurfaceReceiverReceivesLocalShadow(surfaceReceiver,
                 toLight / shadowView.WorldUnitsPerCentimeter,
-                shadowView.SourceRadius / shadowView.WorldUnitsPerCentimeter)) continue;
+                shadowView.SourceRadius / shadowView.WorldUnitsPerCentimeter, backfaceCull)) continue;
         if (shadowView.LightKind == VSM_LIGHT_SPOT &&
             dot(normalize(toLight), -shadowView.LightDirection) < LightBuffer[lightIndex].OuterConeCos) continue;
         uint mipLevel = VirtualShadowLocalMipFromNominalPixelRadius(
@@ -224,27 +224,12 @@ void MarkVirtualShadowReceiverPixel(uint2 pixel, uint requiredPrimaryFlags = 0u,
         return;
     uint receiverIndex = pixel.y * PageDemand.ReceiverWidth + pixel.x;
     SurfaceReceiver surfaceReceiver = ReceiverInputs[receiverIndex];
-    bool declared = (surfaceReceiver.Flags & SURFACE_RECEIVER_PRESENT) != 0u;
     bool firstPerson = (surfaceReceiver.Flags & SURFACE_RECEIVER_FIRST_PERSON) != 0u;
-    bool primaryEligible = (!declared || SurfaceReceiverHasLighting(surfaceReceiver)) &&
+    bool primaryEligible = SurfaceReceiverHasLighting(surfaceReceiver) &&
         (requiredPrimaryFlags == 0u || (surfaceReceiver.Flags & requiredPrimaryFlags) != 0u);
-    bool backfaceCull = declared && PageDemand.CullBackfacingPixels != 0u && SurfaceReceiverUsesBackfaceCulling(surfaceReceiver);
-    float depth = ReceiverDepth.Load(int4(pixel, 0, 0));
-    bool primaryDepthValid = depth < 1.0;
-    if ((surfaceReceiver.Flags & SURFACE_RECEIVER_HAIR) != 0u)
-    {
-        depth = surfaceReceiver.Depth;
-        primaryDepthValid = depth >= 0.0 && depth < 1.0;
-    }
-    if (!primaryDepthValid && PageDemand.AdditionalReceiverLayerCount == 0u)
-        return;
-
-    VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
-        ReceiverDepth, uint3(pixel, 0u), uint2(PageDemand.ReceiverWidth, PageDemand.ReceiverHeight),
-        depth, PageDemand.ClipToWorld);
-    float3 worldPosition = receiver.Position;
-    float3 worldPositionDx = receiver.PositionDx;
-    float3 worldPositionDy = receiver.PositionDy;
+    bool backfaceCull = PageDemand.CullBackfacingPixels != 0u;
+    if (!primaryEligible && PageDemand.AdditionalReceiverLayerCount == 0u) return;
+    float3 worldPosition = surfaceReceiver.Position;
     float2 dynamicResolutionBias = DynamicResolutionBias[0];
 
     // Each directional family starts at face zero; regular and FP families
@@ -257,18 +242,18 @@ void MarkVirtualShadowReceiverPixel(uint2 pixel, uint requiredPrimaryFlags = 0u,
         {
             SurfaceReceiver extra = AdditionalReceiverInputs[layer * PageDemand.ReceiverWidth * PageDemand.ReceiverHeight + receiverIndex];
             if (!SurfaceReceiverHasLighting(extra) || (extra.Flags & excludedExtraFlags) != 0u || extra.Depth < 0.0 || extra.Depth >= 1.0) continue;
-            float2 extraUV = (float2(pixel) + .5) / float2(PageDemand.ReceiverWidth, PageDemand.ReceiverHeight);
-            float4 extraWorld = mul(float4(extraUV * float2(2.0, -2.0) + float2(-1.0, 1.0), extra.Depth, 1.0), PageDemand.ClipToWorld);
-            float3 extraPosition = extraWorld.xyz / extraWorld.w;
+            if (!SurfaceReceiverReceivesDirectionalShadow(extra, -baseView.LightDirection,
+                baseView.SourceAngleRadians, backfaceCull)) continue;
+            float3 extraPosition = extra.Position;
             uint level = SelectDirectionalVirtualShadowView(ShadowViews, baseViewIndex, baseView.ClipmapLevelCount,
                 extraPosition, extraPosition, extraPosition, dynamicResolutionBias.x);
             if (level < baseView.ClipmapLevelCount) PublishProjectedShadowView(baseViewIndex + level, 0u, extraPosition);
         }
-        if (!primaryEligible || !primaryDepthValid ||
+        if (!primaryEligible ||
             (firstPerson && (PageDemand.FirstPersonPixelRequestBias < 0.0 || (baseView.Flags & VSM_VIEW_FIRST_PERSON_SHADOW) != 0u)) ||
-            (backfaceCull && SurfaceReceiverIsBackfaceToDirectional(surfaceReceiver, -baseView.LightDirection, baseView.SourceAngleRadians))) continue;
+            !SurfaceReceiverReceivesDirectionalShadow(surfaceReceiver, -baseView.LightDirection, baseView.SourceAngleRadians, backfaceCull)) continue;
         uint relativeLevel = SelectDirectionalVirtualShadowView(ShadowViews, baseViewIndex,
-            baseView.ClipmapLevelCount, worldPosition, worldPositionDx, worldPositionDy, dynamicResolutionBias.x,
+            baseView.ClipmapLevelCount, worldPosition, worldPosition, worldPosition, dynamicResolutionBias.x,
             CalculateVirtualShadowReceiverResolutionBias(PageDemand.ReceiverProjection, worldPosition) +
                 (firstPerson ? PageDemand.FirstPersonPixelRequestBias : 0.0));
         if (firstPerson) relativeLevel = max(relativeLevel, uint(max(PageDemand.FirstPersonPixelRequestMinLevel - baseView.FirstClipmapLevel, 0)));
@@ -282,15 +267,13 @@ void MarkVirtualShadowReceiverPixel(uint2 pixel, uint requiredPrimaryFlags = 0u,
         }
     }
 
-    if (primaryEligible && primaryDepthValid && (!firstPerson || PageDemand.FirstPersonPixelRequestBias >= 0.0))
+    if (primaryEligible && (!firstPerson || PageDemand.FirstPersonPixelRequestBias >= 0.0))
         PublishLocalShadowReceiver(pixel, worldPosition, surfaceReceiver, dynamicResolutionBias, backfaceCull);
     for (uint layer = 0u; layer < PageDemand.AdditionalReceiverLayerCount; layer++)
     {
         SurfaceReceiver extra = AdditionalReceiverInputs[layer * PageDemand.ReceiverWidth * PageDemand.ReceiverHeight + receiverIndex];
-        if (!SurfaceReceiverHasLighting(extra) || (extra.Flags & excludedExtraFlags) != 0u || (extra.Flags & SURFACE_RECEIVER_HAIR) == 0u || extra.Depth < 0.0 || extra.Depth >= 1.0) continue;
-        float2 uv = (float2(pixel) + .5) / float2(PageDemand.ReceiverWidth, PageDemand.ReceiverHeight);
-        float4 world = mul(float4(uv * float2(2.0,-2.0) + float2(-1.0,1.0), extra.Depth,1.0), PageDemand.ClipToWorld);
-        PublishLocalShadowReceiver(pixel, world.xyz / world.w, extra, dynamicResolutionBias, false);
+        if (!SurfaceReceiverHasLighting(extra) || (extra.Flags & excludedExtraFlags) != 0u || extra.Depth < 0.0 || extra.Depth >= 1.0) continue;
+        PublishLocalShadowReceiver(pixel, extra.Position, extra, dynamicResolutionBias, backfaceCull);
     }
 }
 

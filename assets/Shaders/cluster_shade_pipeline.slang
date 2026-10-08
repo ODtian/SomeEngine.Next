@@ -4,6 +4,7 @@
 #include "vertex_consumer_cache.slang"
 #include "material_interfaces.slang"
 #include "cluster_view.slang"
+#include "shade_bin_common.slang"
 
 struct ShadeUniforms
 {
@@ -14,12 +15,15 @@ struct ShadeUniforms
     uint ShadeBinCount;
     uint MaterialSlotCapacity;
     uint ViewCount;
-    uint Pad3;
+    uint SurfaceDataStride;
+    uint VisibilityDepth;
+    uint3 SurfacePadding;
 };
 
 ConstantBuffer<ShadeUniforms> Uniforms;
 
-StructuredBuffer<uint2> PixelCoordBuffer;
+StructuredBuffer<ShadePixelWork> PixelCoordBuffer;
+StructuredBuffer<uint> MaterialSurfaceOffsets;
 StructuredBuffer<uint> BinOffsets;
 StructuredBuffer<uint> BinCounts;
 StructuredBuffer<ClusterViewUniforms> Views;
@@ -35,6 +39,8 @@ RWTexture2DArray<float2> OutputMotionVectors;
 RWStructuredBuffer<SurfaceReceiver> SurfaceReceiverOutput;
 RWStructuredBuffer<SurfaceReceiver> AdditionalSurfaceReceiverOutput;
 StructuredBuffer<SurfaceReceiver> SurfaceReceiverInputs;
+RWByteAddressBuffer MaterialSurfaceOutputs;
+ByteAddressBuffer MaterialSurfaceInputs;
 
 // Layers are water, front translucency and hair. User shaders provide current-camera depth.
 void WriteAdditionalSurfaceReceiver(uint3 pixel, uint layer, SurfaceReceiver receiver)
@@ -224,6 +230,7 @@ SurfaceBarycentrics ResolveBarycentrics<TVertex, TDomain>(
     input.ParentValue = seed;
     input.ParentDx = seedX - seed;
     input.ParentDy = seedY - seed;
+    input.WorldTranslation = view.WorldTranslation;
     input.ViewProjection = view.ViewProj;
     input.ScreenSize = uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
     return domain.reconstruct(triangle, input);
@@ -272,26 +279,11 @@ void WriteClusterMotion<
 
 bool TryEvaluateMaterialPixel<TVE, TDomain>(uniform TVE vertexEval, uniform TDomain domain, uint3 tid,
     out uint3 pixelCoord, out TriangleInfo tri, out ClusterViewUniforms view,
-    out TDomain.TriangleData triangle, out float3 bary, out TDomain.Surface evaluated)
+    out TDomain.TriangleData triangle, out float3 bary, out TDomain.Surface evaluated, out uint surfaceIndex)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
-    uint group = tid.x / 64u + tid.y * 65535u, lane = tid.x % 64u;
-    uint tiles = BinCounts[Uniforms.ShadingBin * 2u];
-    uint quads = BinCounts[Uniforms.ShadingBin * 2u + 1u];
-    bool fullTile = group < tiles;
-    uint workIndex = fullTile ? group : (group - tiles) * 16u + lane / 4u;
-    if (!fullTile && workIndex >= quads) return false;
-    uint2 work = PixelCoordBuffer[BinOffsets[Uniforms.ShadingBin * 2u + (fullTile ? 0u : 1u)] + workIndex];
-    uint row = work.x / Uniforms.ScreenWidth;
-    pixelCoord = uint3(work.x % Uniforms.ScreenWidth,
-        row % Uniforms.ScreenHeight, row / Uniforms.ScreenHeight);
-    uint corner = lane & 3u;
-    if (!fullTile && (work.y & (1u << corner)) == 0u) return false;
-    // Consecutive groups of four lanes always cover a spatial quad.
-    uint quad = lane / 4u;
-    pixelCoord.xy += uint2(corner & 1u, corner >> 1u);
-    if (fullTile) pixelCoord.xy += uint2(quad % 4u, quad / 4u) * 2u;
+    if (!TryReadMaterialPixel(tid, pixelCoord, surfaceIndex)) return false;
     if (!decodeTriangle(pixelCoord, tri)) return false;
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
     triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
@@ -303,99 +295,84 @@ bool TryEvaluateMaterialPixel<TVE, TDomain>(uniform TVE vertexEval, uniform TDom
     return true;
 }
 
-void CSShadeCore<
-    TVE,
-    TDomain,
-    TSurface>(
-    uniform TVE vertexEval,
-    uniform TDomain domain,
-    uniform TSurface surface,
-    uint3 tid)
-    where TVE : IVertexEvaluate
-    where TDomain : IDomainEvaluate<TVE.Vertex>
-    where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
+
+bool TryReadMaterialPixel(uint3 tid, out uint3 pixelCoord, out uint surfaceIndex)
 {
-    uint3 pixelCoord;
-    TriangleInfo tri;
-    ClusterViewUniforms view;
-    TDomain.TriangleData triangle;
-    float3 bary;
-    TDomain.Surface surfaceEval;
-    if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
-        pixelCoord, tri, view, triangle, bary, surfaceEval)) return;
-    WriteClusterMotion<TVE, TDomain>(
-        vertexEval,
-        domain,
-        tri,
-        view,
-        triangle,
-        bary,
-        pixelCoord);
-
-    if (Uniforms.DebugMode != 0)
-    {
-        surface.evaluateDebug(
-            Uniforms.DebugMode,
-            pixelCoord,
-            tri.instanceID,
-            tri.materialSlot,
-            surfaceEval,
-            bary,
-            triangle,
-            OutputColor);
-        return;
-    }
-
-    surface.evaluateSurface(
-        pixelCoord,
-        tri.instanceID,
-        tri.materialSlot,
-        surfaceEval,
-        bary,
-        triangle,
-        OutputColor);
+    uint group = tid.x / 64u + tid.y * 65535u, lane = tid.x % 64u;
+    uint tiles = BinCounts[Uniforms.ShadingBin * 2u];
+    uint quads = BinCounts[Uniforms.ShadingBin * 2u + 1u];
+    bool fullTile = group < tiles;
+    uint workIndex = fullTile ? group : (group - tiles) * 16u + lane / 4u;
+    pixelCoord = 0u.xxx;
+    surfaceIndex = 0u;
+    if (!fullTile && workIndex >= quads) return false;
+    ShadePixelWork work = PixelCoordBuffer[BinOffsets[Uniforms.ShadingBin * 2u + (fullTile ? 0u : 1u)] + workIndex];
+    uint row = work.PixelIndex / Uniforms.ScreenWidth;
+    pixelCoord = uint3(work.PixelIndex % Uniforms.ScreenWidth, row % Uniforms.ScreenHeight, row / Uniforms.ScreenHeight);
+    uint corner = lane & 3u;
+    if (!fullTile && (work.Mask & (1u << corner)) == 0u) return false;
+    uint quad = lane / 4u;
+    pixelCoord.xy += uint2(corner & 1u, corner >> 1u);
+    if (fullTile) pixelCoord.xy += uint2(quad % 4u, quad / 4u) * 2u;
+    surfaceIndex = work.SurfaceDataIndex + (fullTile ? lane : countbits(work.Mask & ((1u << corner) - 1u)));
+    return pixelCoord.x < Uniforms.ScreenWidth && pixelCoord.y < Uniforms.ScreenHeight;
 }
 
-void CSShade<
-    TVE,
-    TDomain,
-    TSurface>(
-    uniform TVE vertexEval,
-    uniform TDomain domain,
-    uniform TSurface surface,
-    uint3 tid)
-    where TVE : IVertexEvaluate
-    where TDomain : IDomainEvaluate<TVE.Vertex>
-    where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
-{
-    CSShadeCore<TVE, TDomain, TSurface>(vertexEval, domain, surface, tid);
-}
-
-void CSEvaluateSurfaceReceiver<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain domain,
+void CSShade<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain domain,
     uniform TSurface surface, uint3 tid)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
-    where TSurface : ISurfaceReceiverEvaluate<TDomain.Surface, TDomain.TriangleData>
+    where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
 {
-    uint3 pixel;
+    uint3 coord;
+    uint surfaceIndex;
+    if (!TryReadMaterialPixel(tid, coord, surfaceIndex)) return;
+    uint index = (coord.z * Uniforms.ScreenHeight + coord.y) * Uniforms.ScreenWidth + coord.x;
+    SurfaceReceiver receiver = SurfaceReceiverInputs[index];
+    if ((receiver.Flags & SURFACE_RECEIVER_PRESENT) == 0u) return;
+    TSurface.Data data = MaterialSurfaceInputs.Load<TSurface.Data>(MaterialSurfaceOffsets[Uniforms.ShadingBin] + surfaceIndex * Uniforms.SurfaceDataStride);
+    surface.shadeSurface(coord, Uniforms.DebugMode, data, receiver, OutputColor);
+}
+
+void CSEvaluateSurface<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain domain,
+    uniform TSurface surface, uint3 tid)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
+    where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
+{
+    uint3 coord;
     TriangleInfo tri;
     ClusterViewUniforms view;
     TDomain.TriangleData triangle;
     float3 bary;
     TDomain.Surface evaluated;
+    uint surfaceIndex;
     if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
-        pixel, tri, view, triangle, bary, evaluated)) return;
-    SurfaceReceiver receiver = surface.evaluateReceiver(pixel, tri.instanceID, tri.materialSlot,
-        evaluated, bary, triangle);
+        coord, tri, view, triangle, bary, evaluated, surfaceIndex)) return;
+    SurfacePixel pixel;
+    pixel.PixelCoord = coord;
+    pixel.InstanceID = tri.instanceID;
+    pixel.MaterialIndex = tri.materialSlot;
+    pixel.DebugMode = Uniforms.DebugMode;
+    pixel.VisibilityDepth = Uniforms.VisibilityDepth;
+    pixel.Depth = DepthBuffer.Load(int4(coord, 0));
+    pixel.PositionFromDepth = ReconstructWorldPositionAt(float2(coord.xy) + .5, pixel.Depth, view);
+    SurfaceReceiver receiver;
+    TSurface.Data data = surface.evaluateSurface(pixel, evaluated, bary, triangle, receiver);
     ClusterViewUniforms sourceView = Views[tri.viewIndex];
+    receiver.Position = TransformFirstPersonWorldPosition(InstanceData, InstanceProperties, tri.instanceID,
+        sourceView, receiver.Position);
     receiver.ShadingNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
         sourceView, receiver.ShadingNormal);
     receiver.GeometricNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
         sourceView, receiver.GeometricNormal);
     receiver.Flags |= SURFACE_RECEIVER_PRESENT;
-    if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, tri.instanceID).x & 3u) == 1u) receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
-    uint index = (pixel.z * Uniforms.ScreenHeight + pixel.y) * Uniforms.ScreenWidth + pixel.x;
+    if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, tri.instanceID).x & 3u) == 1u)
+        receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
+    uint index = (coord.z * Uniforms.ScreenHeight + coord.y) * Uniforms.ScreenWidth + coord.x;
     SurfaceReceiverOutput[index] = receiver;
+    MaterialSurfaceOutputs.Store<TSurface.Data>(MaterialSurfaceOffsets[Uniforms.ShadingBin] + surfaceIndex * Uniforms.SurfaceDataStride, data);
+    WriteClusterMotion<TVE, TDomain>(vertexEval, domain, tri, view, triangle, bary, coord);
 }
 
 #endif

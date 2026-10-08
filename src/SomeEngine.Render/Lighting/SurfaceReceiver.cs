@@ -17,11 +17,14 @@ public enum SurfaceReceiverFlags : uint
 }
 
 /// <summary>User-shader receiver data. Depth uses the primary camera's normalized depth convention.</summary>
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 public struct SurfaceReceiver
 {
+    public const int SizeInBytes = 48;
     public Vector3 ShadingNormal;
     public SurfaceReceiverFlags Flags;
     public Vector3 GeometricNormal;
     public float Depth;
+    public Vector3 Position;
+    public float DepthOffset;
 }

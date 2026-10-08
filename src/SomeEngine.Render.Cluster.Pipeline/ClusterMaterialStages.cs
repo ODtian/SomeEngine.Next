@@ -13,7 +13,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 internal static class ClusterMaterialEntries
 {
     internal const string Shade = "ClusterShade";
-    internal const string SurfaceReceivers = "ClusterSurfaceReceivers";
+    internal const string SurfaceData = "ClusterSurfaceData";
     internal const string SoftwareRasterImageAtomic64 = "ClusterRasterSoftwareImageAtomic64";
     internal const string SoftwareRasterBufferAtomic64 = "ClusterRasterSoftwareBufferAtomic64";
     internal const string SoftwareMeshletImageAtomic64 = "ClusterRasterSoftwareMeshletImageAtomic64";
@@ -1321,6 +1321,7 @@ internal sealed class ClusterShadeStages : IDisposable
     private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterComputePipeline> _pipelines = [];
     private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterLinkedStageLayout> _linkedLayouts = [];
     private readonly Dictionary<ClusterShadeCompatibilityKey, ScalarLayout> _scalarLayouts = [];
+    private readonly Dictionary<ClusterShadeCompatibilityKey, uint> _surfaceDataSizes = [];
     private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterShadeCoreResource[]> _coreResourceLayouts = [];
     private ClusterBinIndexMap<ClusterShadeBinKey, ClusterShadeInvocation> _binIndices =
         new(static (before, after) => ReferenceEquals(before.Material, after.Material) &&
@@ -1371,22 +1372,21 @@ internal sealed class ClusterShadeStages : IDisposable
                 continue;
             }
             ClusterShadeInvocation invocation = CreateInvocation(material, encoding);
-            Shader shader = ClusterMaterialEntries.RequireShader(material);
-            if (ClusterMaterialEntries.HasEntry(shader, _device.Capabilities.CompileTarget, ClusterMaterialEntries.SurfaceReceivers, SlangStage.Compute))
-                invocation = invocation with { Receiver = CreateInvocation(material, encoding, ClusterMaterialEntries.SurfaceReceivers) };
+            invocation = invocation with { SurfaceShader = CreateInvocation(material, encoding, ClusterMaterialEntries.SurfaceData) };
             HashSet<uint> properties = [];
             ClusterMaterialEntries.AddResourceProperties(properties, invocation.MaterialBindings);
-            if (invocation.Receiver is { } receiver) ClusterMaterialEntries.AddResourceProperties(properties, receiver.MaterialBindings);
-            scalarLayouts = scalarLayouts.SetItem(address, invocation.Scalars);
+            if (invocation.SurfaceShader is { } receiver) ClusterMaterialEntries.AddResourceProperties(properties, receiver.MaterialBindings);
+            scalarLayouts = scalarLayouts.SetItem(address, invocation.Scalars.PayloadByteSize != 0u
+                ? invocation.Scalars : invocation.SurfaceShader!.Scalars);
             var key = new ClusterShadeBinKey(invocation.Key, encoding,
                 invocation.Scalars.LayoutHash, invocation.Scalars.PayloadByteSize, invocation.CommandBindings,
-                invocation.Receiver?.Key, invocation.Receiver?.CommandBindings);
+                invocation.SurfaceShader?.Key, invocation.SurfaceShader?.CommandBindings);
             if (resourceProperties.TryGetValue(material.MaterialId, out var existing)) properties.UnionWith(existing);
             resourceProperties = resourceProperties.SetItem(material.MaterialId, properties);
             bins.Set(address, key, invocation);
         }
         var invocations = bins.GetStages(static (stage, index) => stage with
-            { BinIndex = index, Receiver = stage.Receiver is { } receiver ? receiver with { BinIndex = index } : null });
+            { BinIndex = index, SurfaceShader = stage.SurfaceShader is { } receiver ? receiver with { BinIndex = index } : null });
         var result = new ClusterShadeStageSet(bins.GetIndices(
             assignments.SlotCapacity, _resolved.BinIndices, addresses),
             invocations, bins.Range, scalarLayouts, [.. bins.Changes], [.. addresses]);
@@ -1435,6 +1435,8 @@ internal sealed class ClusterShadeStages : IDisposable
                     ? ResolveScalarLayout(shader, targetIndex)
                     : ScalarLayout.Empty);
             _coreResourceLayouts.Add(key, ResolveShadeCoreResources(resources));
+            TypeLayoutReflection surfaceLayout = ResolveMaterialTypeLayout(shader, targetIndex, "MaterialSurfaceData");
+            _surfaceDataSizes.Add(key, checked(((uint)surfaceLayout.GetSize(SlangParameterCategory.Uniform) + 3u) & ~3u));
         }
         ScalarLayout scalars = _scalarLayouts[key];
         ScalarLayout.ScalarMaterialLayout scalarMaterialLayout = scalars.Resolve(material);
@@ -1465,7 +1467,7 @@ internal sealed class ClusterShadeStages : IDisposable
             scalarMaterialLayout,
             materialBindings,
             featureResourceBinders,
-            commandBindings);
+            commandBindings) { SurfaceDataSize = _surfaceDataSizes[key], VisibilityDepth = ClusterGeometryRequirements.RequireVisibilityDepth(shader) };
     }
 
     private static ClusterShadeCoreResource[] ResolveShadeCoreResources(
@@ -1527,29 +1529,35 @@ internal sealed class ClusterShadeStages : IDisposable
 
     private static ScalarLayout ResolveScalarLayout(Shader shader, int targetIndex)
     {
+        TypeLayoutReflection layout = ResolveMaterialTypeLayout(shader, targetIndex, "MaterialScalars");
+        return ScalarLayout.FromSlang(layout.Type.Name, layout);
+    }
+
+    private static TypeLayoutReflection ResolveMaterialTypeLayout(Shader shader, int targetIndex, string attributeName)
+    {
         var materialTypeNames = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (int unitIndex = 0; unitIndex < shader.SlangSourceUnitCount; unitIndex++)
             Visit(shader.GetSlangSourceUnit(unitIndex).GetModuleReflection());
         if (materialTypeNames.Count == 0)
             throw new InvalidDataException(
-                $"Shader '{shader.Name}' exposes no MaterialScalars type after IR restoration.");
+                $"Shader '{shader.Name}' exposes no {attributeName} type after IR restoration.");
         if (materialTypeNames.Count != 1)
         {
             throw new InvalidDataException(
-                $"Shader '{shader.Name}' exposes multiple MaterialScalars types.");
+                $"Shader '{shader.Name}' exposes multiple {attributeName} types.");
         }
 
         string typeName = materialTypeNames[0];
         ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
         TypeReflection type = reflection.FindTypeByName(typeName)
             ?? throw new InvalidDataException(
-                $"Shader '{shader.Name}' has no linked MaterialScalars type '{typeName}'.");
+                $"Shader '{shader.Name}' has no linked {attributeName} type '{typeName}'.");
         // MaterialScalarRegion.Load<T> reads the buffer layout of T.
         TypeLayoutReflection layout = reflection.GetTypeLayout(type, LayoutRules.DefaultStructuredBuffer)
             ?? throw new InvalidDataException(
-                $"Shader '{shader.Name}' has no layout for MaterialScalars type '{type.Name}'.");
-        return ScalarLayout.FromSlang(type.Name, layout);
+                $"Shader '{shader.Name}' has no layout for {attributeName} type '{type.Name}'.");
+        return layout;
 
         void Visit(DeclReflection declaration)
         {
@@ -1558,7 +1566,7 @@ internal sealed class ClusterShadeStages : IDisposable
             if (declaration.Kind == DeclReflectionKind.Struct)
             {
                 TypeReflection candidate = declaration.Type;
-                if (candidate != TypeReflection.Null && HasAttribute(candidate, "MaterialScalars") &&
+                if (candidate != TypeReflection.Null && HasAttribute(candidate, attributeName) &&
                     !string.IsNullOrWhiteSpace(candidate.Name) &&
                     seen.Add(candidate.Name))
                 {
@@ -1658,7 +1666,8 @@ internal sealed class ClusterShadeStageSet
     internal IReadOnlyList<int> ChangedOffsets { get; }
     internal IEnumerable<ClusterShadeInvocation> Invocations => _bins.Values;
     internal bool HasAdditionalReceivers => _bins.Values.Any(stage =>
-        stage.Receiver?.Resources.Contains("AdditionalSurfaceReceiverOutput") == true);
+        stage.SurfaceShader?.Resources.Contains("AdditionalSurfaceReceiverOutput") == true);
+    internal uint SurfaceDataStride => Math.Max(4u, _bins.Values.Aggregate(0u, static (size, stage) => Math.Max(size, stage.SurfaceDataSize)));
     internal uint BinCount { get; }
     internal ClusterShadeInvocation GetBin(uint bin) => _bins[bin];
     internal IReadOnlyList<uint> ChangedBins { get; }
@@ -1679,7 +1688,9 @@ internal sealed record ClusterShadeInvocation(
     GraphResourceBinder?[] FeatureResourceBinders,
     ClusterCommandBindingKey CommandBindings)
 {
-    internal ClusterShadeInvocation? Receiver { get; init; }
+    internal ClusterShadeInvocation? SurfaceShader { get; init; }
+    internal uint SurfaceDataSize { get; init; }
+    internal ClusterVisibilityDepth VisibilityDepth { get; init; }
 }
 
 internal readonly record struct ClusterMaterialStageBinding(
@@ -1772,6 +1783,9 @@ internal enum ClusterShadeCoreResource : byte
     SurfaceReceiverOutput,
     AdditionalSurfaceReceiverOutput,
     SurfaceReceiverInputs,
+    MaterialSurfaceOffsets,
+    MaterialSurfaceOutputs,
+    MaterialSurfaceInputs,
     OutputMotionVectors,
     MaterialScalars,
     MaterialScalarOffsets,
@@ -2074,8 +2088,10 @@ internal static class ClusterShadeCoreResources
             ClusterShadeCoreResource.PageHeap or
             ClusterShadeCoreResource.MaterialScalars or
             ClusterShadeCoreResource.MaterialScalarOffsets => ResourceBindingType.BufferSrv,
-            ClusterShadeCoreResource.SurfaceReceiverInputs => ResourceBindingType.BufferSrv,
-            ClusterShadeCoreResource.SurfaceReceiverOutput or ClusterShadeCoreResource.AdditionalSurfaceReceiverOutput => ResourceBindingType.BufferUav,
+            ClusterShadeCoreResource.SurfaceReceiverInputs or ClusterShadeCoreResource.MaterialSurfaceInputs or
+                ClusterShadeCoreResource.MaterialSurfaceOffsets => ResourceBindingType.BufferSrv,
+            ClusterShadeCoreResource.SurfaceReceiverOutput or ClusterShadeCoreResource.AdditionalSurfaceReceiverOutput or
+                ClusterShadeCoreResource.MaterialSurfaceOutputs => ResourceBindingType.BufferUav,
             ClusterShadeCoreResource.InstanceProperties or
             ClusterShadeCoreResource.Uniforms => ResourceBindingType.ConstantBuffer,
             ClusterShadeCoreResource.Visibility or
@@ -2109,6 +2125,9 @@ internal static class ClusterShadeCoreResources
         "SurfaceReceiverOutput" => ClusterShadeCoreResource.SurfaceReceiverOutput,
         "AdditionalSurfaceReceiverOutput" => ClusterShadeCoreResource.AdditionalSurfaceReceiverOutput,
         "SurfaceReceiverInputs" => ClusterShadeCoreResource.SurfaceReceiverInputs,
+        "MaterialSurfaceOffsets" => ClusterShadeCoreResource.MaterialSurfaceOffsets,
+        "MaterialSurfaceOutputs" => ClusterShadeCoreResource.MaterialSurfaceOutputs,
+        "MaterialSurfaceInputs" => ClusterShadeCoreResource.MaterialSurfaceInputs,
         "OutputMotionVectors" => ClusterShadeCoreResource.OutputMotionVectors,
         "MaterialScalarRegion" => ClusterShadeCoreResource.MaterialScalars,
         "MaterialScalarOffsets" => ClusterShadeCoreResource.MaterialScalarOffsets,

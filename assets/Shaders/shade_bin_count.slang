@@ -12,11 +12,16 @@ StructuredBuffer<VisibleCluster> VisibleClusters;
 StructuredBuffer<uint> ShadeSlots;
 ByteAddressBuffer PageHeap;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint2> PixelCoordinates;
+RWStructuredBuffer<ShadePixelWork> PixelCoordinates;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<SurfaceReceiver> SurfaceReceivers;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<SurfaceReceiver> AdditionalSurfaceReceivers;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWByteAddressBuffer MaterialSurfaces;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> SurfaceCounts;
+
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -27,6 +32,8 @@ void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIn
     {
         uint receiverIndex = (threadId.z * Uniforms.ScreenHeight + threadId.y) * Uniforms.ScreenWidth + threadId.x;
         SurfaceReceivers[receiverIndex] = (SurfaceReceiver)0;
+        for (uint offset = 0u; offset < Uniforms.SurfaceDataStride; offset += 4u)
+            MaterialSurfaces.Store(receiverIndex * Uniforms.SurfaceDataStride + offset, 0u);
         uint receiverLayerSize = Uniforms.ScreenWidth * Uniforms.ScreenHeight * Uniforms.ViewCount;
         for (uint layer = 0u; layer < Uniforms.AdditionalReceiverLayerCount; layer++)
             AdditionalSurfaceReceivers[layer * receiverLayerSize + receiverIndex] = (SurfaceReceiver)0;
@@ -47,6 +54,8 @@ void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIn
     uint mask;
     bool fullTile;
     if (!ClassifyShadeTile(bin, lane, mask, fullTile)) return;
+    uint surfaceIndex;
+    InterlockedAdd(SurfaceCounts[bin], fullTile ? 64u : countbits(mask), surfaceIndex);
     uint counter = bin * 2u + (fullTile ? 0u : 1u);
     if (Uniforms.BinItemCapacity == 0u)
     {
@@ -66,5 +75,9 @@ void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIn
         (fullTile ? item : Uniforms.BinItemCapacity - 1u - item);
     uint2 topLeft = fullTile ? threadId.xy & ~7u.xx : threadId.xy & ~1u.xx;
     uint coordinate = (threadId.z * Uniforms.ScreenHeight + topLeft.y) * Uniforms.ScreenWidth + topLeft.x;
-    PixelCoordinates[offset] = uint2(coordinate, mask);
+    ShadePixelWork work;
+    work.PixelIndex = coordinate;
+    work.Mask = mask;
+    work.SurfaceDataIndex = surfaceIndex;
+    PixelCoordinates[offset] = work;
 }

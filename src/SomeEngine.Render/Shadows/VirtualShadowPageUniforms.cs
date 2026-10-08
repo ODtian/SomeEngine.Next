@@ -141,7 +141,7 @@ public struct VirtualShadowRaySettings
     public float MaxSlopeBias;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 224)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 240)]
 public struct VirtualShadowSamplingUniforms
 {
     public uint ViewCount;
@@ -163,6 +163,8 @@ public struct VirtualShadowSamplingUniforms
     public VirtualShadowReceiverProjection ReceiverProjection;
     public VirtualShadowRaySettings DirectionalRays;
     public VirtualShadowRaySettings LocalRays;
+    public uint CullBackfacingPixels;
+    private uint _receiverPadding0, _receiverPadding1, _receiverPadding2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
