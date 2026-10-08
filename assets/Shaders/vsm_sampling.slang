@@ -1106,7 +1106,7 @@ float SampleVirtualShadowMapFiltered(
 Texture2D<float> VirtualShadowPrefilteredAtlas;
 #endif
 
-bool TryReadVirtualShadowDirectionalResidentReverseDepth(StructuredBuffer<VirtualShadowMapParameters> views,
+bool TryReadVirtualShadowDirectionalResidentSourceReverseDepth(StructuredBuffer<VirtualShadowMapParameters> views,
     StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
     uint requestedViewIndex, float2 uv, out float storedDepth, out uint sourceViewIndex)
 {
@@ -1131,7 +1131,7 @@ bool TryReadVirtualShadowDirectionalResidentReverseDepth(StructuredBuffer<Virtua
         float depth;
         if (TryReadVirtualShadowMipReverseDepth(source, pageTable, atlas, 0u, pixel, depth))
         {
-            storedDepth = VirtualShadowReverseDepthInRequestedClipmap(depth, transform);
+            storedDepth = depth;
             sourceViewIndex = requestedViewIndex + sourceOffset;
             return true;
         }
@@ -1140,6 +1140,21 @@ bool TryReadVirtualShadowDirectionalResidentReverseDepth(StructuredBuffer<Virtua
     storedDepth = 0.0;
     sourceViewIndex = requestedViewIndex;
     return false;
+}
+
+bool TryReadVirtualShadowDirectionalResidentReverseDepth(StructuredBuffer<VirtualShadowMapParameters> views,
+    StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
+    uint requestedViewIndex, float2 uv, out float storedDepth, out uint sourceViewIndex)
+{
+    bool resident = TryReadVirtualShadowDirectionalResidentSourceReverseDepth(views, pageTable,
+        residentPages, atlas, requestedViewIndex, uv, storedDepth, sourceViewIndex);
+    if (resident && sourceViewIndex != requestedViewIndex)
+    {
+        float4 transform = VirtualShadowClipmapScaleBias(views[requestedViewIndex], views[sourceViewIndex],
+            sourceViewIndex - requestedViewIndex);
+        storedDepth = VirtualShadowReverseDepthInRequestedClipmap(storedDepth, transform);
+    }
+    return resident;
 }
 
 bool TryReadVirtualShadowDirectionalResidentDepth(StructuredBuffer<VirtualShadowMapParameters> views,
