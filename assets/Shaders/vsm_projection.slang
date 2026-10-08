@@ -104,7 +104,7 @@ float VirtualShadowOptimalSlopeBias(StructuredBuffer<VirtualShadowMapParameters>
     float3 ndc;
     float2 uv;
     ProjectVirtualShadowPosition(source, position, ndc, uv);
-    float2 slope = -CalculateVirtualShadowReceiverPlaneDepthGradient(source, ndc, normal);
+    float2 slope = -CalculateVirtualShadowReceiverPlaneDepthGradient(source, position, normal);
     float bias = 2.0 * max(0.0, dot(slope, sample.TexelCenter - sample.UV));
     float depthScale = IsDirectionalVirtualShadowProjection(source)
         ? abs(source.ProjectionDepthScale) : abs(1.0 + source.ProjectionDepthScale);
@@ -464,7 +464,7 @@ VirtualShadowProjectionResult TraceVirtualShadowDirectionalFamily(
     float3 tangent, bitangent;
     tangent = cross(axis, abs(axis.x) > 1e-6 ? float3(1,0,0) : float3(0,1,0));
     bitangent = cross(tangent, axis);
-    float2 slope = clamp(-CalculateVirtualShadowReceiverPlaneDepthGradient(view, ndc, normal), -.05.xx, .05.xx);
+    float2 slope = clamp(-CalculateVirtualShadowReceiverPlaneDepthGradient(view, position, normal), -.05.xx, .05.xx);
     float ditherScale = .5 / float(view.VirtualResolution) * settings.TexelDitherScale * view.TexelDitherScale *
         (distanceFromCamera / view.WorldUnitsPerCentimeter) / exp2(float(view.ClipmapLevel) - view.ResolutionLodBias);
     float rayLength = settings.RayLengthScale * distanceFromCamera;
