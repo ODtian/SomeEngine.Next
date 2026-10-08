@@ -214,7 +214,7 @@ bool ClusterNodePassesLod(
     float errorScale = abs(transform.Scale) * min(min(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
     return ClusterSphereError(worldCenter, worldRadius, node.MaxParentLODError * errorScale, view) > view.LodThreshold &&
         (!ClusterSliceLeaf(node) || node.MinLODError <= 0.0 ||
-        ClusterSphereError(worldCenter, worldRadius, node.MinLODError * errorScale, view) <= view.LodThreshold);
+        ClusterSphereErrorBounds(worldCenter, worldRadius, node.MinLODError * errorScale, view).x <= view.LodThreshold);
 }
 
 #endif
