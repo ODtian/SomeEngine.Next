@@ -22,7 +22,7 @@ VirtualShadowSoftPlane BuildVirtualShadowSoftPlane(StructuredBuffer<VirtualShado
     plane.ViewIndex = viewIndex;
     VirtualShadowMapParameters view = views[viewIndex];
     ProjectVirtualShadowPosition(view, position, plane.Ndc, plane.UV);
-    plane.Gradient = CalculateVirtualShadowReceiverPlaneDepthGradient(view, plane.Ndc, normal);
+    plane.Gradient = CalculateVirtualShadowReceiverPlaneDepthGradient(view, position, normal);
     return plane;
 }
 

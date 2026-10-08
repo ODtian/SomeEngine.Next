@@ -135,6 +135,10 @@ public sealed class DefaultGameRayShadowTests(ITestOutputHelper output)
                 $"The scene must cover both geometric shadow and light receivers. {comparison}");
             Assert.True(comparison.RenderedReceiverCoverage >= .98f, $"Receiver coverage: {comparison}");
             Assert.Equal(0, comparison.SelfHitPixels);
+            Assert.True(all.MeanVisibilityError <= .02f, $"Mean visibility error: {comparison}");
+            Assert.True(all.MismatchFraction <= .02f, $"Visibility mismatch: {comparison}");
+            Assert.True(comparison.FalseShadowFraction <= .02f, $"False shadow: {comparison}");
+            Assert.True(comparison.MissedShadowFraction <= .02f, $"Missed shadow: {comparison}");
             evidence.Complete();
         }
     }
