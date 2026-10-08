@@ -34,6 +34,10 @@ public sealed class VirtualShadowMapShaders : IDisposable
     public EntryPointReflection ResidentPages { get; init; }
     public Shader? PrefilterShader { get; init; }
     public EntryPointReflection Prefilter { get; init; }
+    public Shader? PrefilterResetShader { get; init; }
+    public EntryPointReflection PrefilterReset { get; init; }
+    public Shader? PrefilterSelectShader { get; init; }
+    public EntryPointReflection PrefilterSelect { get; init; }
     public Shader? PrefilterRequestsShader { get; init; }
     public EntryPointReflection PrefilterRequests { get; init; }
     public Shader? MergeStaticShader { get; init; }

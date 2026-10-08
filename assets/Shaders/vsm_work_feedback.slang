@@ -18,7 +18,7 @@ ConstantBuffer<VirtualShadowWorkThrottleUniforms> WorkThrottle;
 StructuredBuffer<uint> PreviousWorkCounts;
 StructuredBuffer<float> PreviousWorkPressure;
 StructuredBuffer<uint> PreviousWorkViewIndices;
-StructuredBuffer<float2> FramePageBias;
+StructuredBuffer<float> FramePageBias;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<VirtualShadowMapParameters> WorkShadowViews;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
@@ -66,7 +66,7 @@ void UpdateVirtualShadowWorkThrottle()
         FrameWorkPressure[1u + index] = pressure;
         VirtualShadowMapParameters view = WorkShadowViews[index];
         bool directional = view.LightKind == VSM_LIGHT_DIRECTIONAL;
-        float pageBias = directional ? FramePageBias[0].x : FramePageBias[0].y;
+        float pageBias = FramePageBias[0];
         float limit = directional ? WorkThrottle.MaxDirectionalBias : WorkThrottle.MaxLocalBias;
         view.ResolutionLodBias += pressure * max(0.0, min(WorkThrottle.MaxGlobalBias, limit) - pageBias);
         WorkShadowViews[index] = view;

@@ -106,7 +106,7 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
             void ReadNativeDirectionalShadow()
             {
                 float3 position = float3(Translation[0], 0.0, 0.5);
-                Visibility[0] = SampleDirectionalVirtualShadowMap(Views, Pages, Atlas, 0u, 4u, 0.0,
+                Visibility[0] = SampleDirectionalVirtualShadowMap(Views, Pages, Atlas, 0u, 4u, 2.0,
                     position, position + float3(1.0, 0.0, 0.0), position + float3(0.0, 1.0, 0.0),
                     1u, 1u, 0.0, 0.0);
             }

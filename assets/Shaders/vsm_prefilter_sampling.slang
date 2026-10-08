@@ -23,20 +23,37 @@ bool TrySampleVirtualShadowPrefiltered(VirtualShadowMapParameters view, Structur
     return true;
 }
 
-float SampleDirectionalVirtualShadowPrefiltered(StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint> pageTable, Texture2D<float> filteredAtlas, uint firstView, uint viewCount, float3 worldPosition)
+struct VirtualShadowPrefilterResult
 {
-    if (viewCount == 0u || (views[firstView].Flags & VSM_VIEW_PREFILTERED_DISTANT) == 0u) return 1.0;
+    bool Valid;
+    float Visibility;
+    float OccluderDistance;
+    uint ViewIndex;
+};
+
+VirtualShadowPrefilterResult SampleDirectionalVirtualShadowPrefiltered(
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pageTable,
+    Texture2D<float> filteredAtlas, uint firstView, uint viewCount, float3 worldPosition)
+{
+    VirtualShadowPrefilterResult result = (VirtualShadowPrefilterResult)0;
+    result.Visibility = 1.0;
+    result.OccluderDistance = -1.0;
+    if (viewCount == 0u || (views[firstView].Flags & VSM_VIEW_PREFILTERED_DISTANT) == 0u) return result;
     uint level = SelectDirectionalVirtualShadowView(views, firstView, viewCount,
         worldPosition, worldPosition, worldPosition, 0.0) + 1u;
-    if (level >= viewCount) return 1.0;
+    if (level >= viewCount) return result;
     VirtualShadowMapParameters view = views[firstView + level];
     float3 ndc;
     float2 uv;
-    float visibility = 1.0;
-    if (ProjectVirtualShadowPosition(view, worldPosition, ndc, uv))
-        TrySampleVirtualShadowPrefiltered(view, pageTable, filteredAtlas, uv, visibility);
-    return visibility;
+    if (ProjectVirtualShadowPosition(view, worldPosition, ndc, uv) &&
+        TrySampleVirtualShadowPrefiltered(view, pageTable, filteredAtlas, uv, result.Visibility))
+    {
+        result.Valid = true;
+        result.ViewIndex = firstView + level;
+        result.OccluderDistance = max(1e-6 * view.WorldUnitsPerCentimeter,
+            (view.DepthCullRange.y - view.DepthCullRange.x) / max(abs(view.ProjectionDepthScale), 1e-20));
+    }
+    return result;
 }
 
 #endif

@@ -98,7 +98,7 @@ public sealed class ShadowReceiverLayersTests(D3D12TestCompiler compiler)
              new("LightBuffer", new uint[36], ResourceBindingType.BufferSrv, 144),
              new("ClusteredLightGrid", [0,0], ResourceBindingType.BufferSrv, 8),
              new("LightIndexList", [0], ResourceBindingType.BufferSrv, 4),
-             new("DynamicResolutionBias", [0,0], ResourceBindingType.BufferSrv, 8),
+             new("DynamicResolutionBias", [0], ResourceBindingType.BufferSrv, 4),
              new("ReceiverInputs", receiverData[0], ResourceBindingType.BufferSrv, SurfaceReceiver.SizeInBytes),
              new("AdditionalReceiverInputs", receiverData[1], ResourceBindingType.BufferSrv, SurfaceReceiver.SizeInBytes),
              new("RequestedShadowPages", new uint[21], ResourceBindingType.BufferUav, 4),

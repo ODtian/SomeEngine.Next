@@ -184,8 +184,8 @@ public struct VirtualShadowDynamicResolutionUniforms
     public uint MaxPhysicalPages;
     public uint PadRasterWork;
     public float PagePoolLoadStart;
-    public float MaxDirectionalLodBias;
-    public float MaxLocalLodBias;
+    public float MaxLodBias;
+    public uint PadLodBias;
     public uint Enabled;
     public uint Pad0;
     public uint Pad1;

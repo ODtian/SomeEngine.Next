@@ -306,12 +306,9 @@ float4 VirtualShadowRayRandom(uint2 pixel, uint frameIndex, uint rayIndex, uint 
     float2 offset = frac(float(rayIndex) * float2(.754877669, .569840296));
     float2 secondOffset = frac(float(rayIndex + rayCount) * float2(.754877669, .569840296));
 #ifdef VSM_BLUE_NOISE_TEXTURE
-    uint width, height;
-    VirtualShadowBlueNoise.GetDimensions(width, height);
-    uint frames = height / width;
-    uint2 first = (pixel + uint2(offset * float(width))) & (width - 1u);
-    uint2 second = (pixel + uint2(secondOffset * float(width))) & (width - 1u);
-    uint row = (frameIndex & (frames - 1u)) * width;
+    uint2 first = (pixel + uint2(offset * 128.0)) & 127u;
+    uint2 second = (pixel + uint2(secondOffset * 128.0)) & 127u;
+    uint row = (frameIndex & 63u) * 128u;
     return float4(VirtualShadowBlueNoise.Load(int3(first.x, first.y + row, 0)).gb,
         VirtualShadowBlueNoise.Load(int3(second.x, second.y + row, 0)).gb);
 #else
@@ -333,10 +330,8 @@ float2 VirtualShadowLocalDisk(float2 random)
 float VirtualShadowRayStepOffset(uint2 pixel, uint frameIndex)
 {
 #ifdef VSM_BLUE_NOISE_TEXTURE
-    uint width, height;
-    VirtualShadowBlueNoise.GetDimensions(width, height);
-    uint2 address = pixel & (width - 1u);
-    uint row = (frameIndex & (height / width - 1u)) * width;
+    uint2 address = pixel & 127u;
+    uint row = (frameIndex & 63u) * 128u;
     return VirtualShadowBlueNoise.Load(int3(address.x, address.y + row, 0)).r;
 #else
     return VirtualShadowRayRandom(pixel, frameIndex, 0u, 1u).w;

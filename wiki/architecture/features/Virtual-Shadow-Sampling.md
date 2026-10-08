@@ -9,7 +9,7 @@
 `SourceRadius * blockerSeparation / blockerDistance`。过滤与遮挡搜索半径都限制在配置的
 纹素范围内；祖先或粗 mip 的搜索也保持在原请求纹素支持域内。
 默认 blocker/filter 数量为 4/8，最大纹素半径为 8；主投射调用软采样入口，
-默认 SMRT ray count 为 0。
+默认 SMRT ray count 为 0。方向光先查询远处预过滤结果，完全遮挡时结束；其余接收面继续同一软过滤并合成远处遮挡。
 
 每次查询依据同一接收者平面计算目标纹素中心的深度。相同 source view 复用已算出的
 平面梯度，祖先或相邻 cube face 使用各自投射。跨页查询消费完成深度与祖先规则；
@@ -25,7 +25,7 @@
 
 量化前对部分阴影加入幅度 `1/15` 的蓝噪声抖动，再四舍五入到 0–15。用户材质通过
 `ReadVirtualShadowProjectedVisibility` 或额外层读取入口取得解码后的可见性。方向光继续
-保存 FP32 结果。32B 用户 receiver 保留为请求、投射与最终材质共用的主要数据。
+保存 FP32 结果。48B 用户 receiver 保留为请求、投射与最终材质共用的主要数据。
 
 采样实现位于 `assets/Shaders/vsm_soft_sampling.slang`，像素投射与打包位于
 `vsm_project_lights_common.slang`，读取位于 `vsm_projected_sampling.slang`。Feature 负责
