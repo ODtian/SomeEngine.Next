@@ -113,9 +113,7 @@ bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> vie
         + VirtualShadowReverseDepthRoundingRadius(receiver);
     blocked = depthDifference - slopeBias > roundingRadius;
     if (blocked)
-        separation = IsDirectionalVirtualShadowProjection(baseView)
-            ? depthDifference / max(abs(source.ProjectionDepthScale), 1e-20)
-            : VirtualShadowOccluderDistance(source, stored, receiver - planeOffset, length(position - source.LightPosition));
+        separation = VirtualShadowOccluderDistance(source, stored, receiver, length(position - source.LightPosition));
     return true;
 }
 
