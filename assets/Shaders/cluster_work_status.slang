@@ -16,7 +16,7 @@ void AddClusterWorkMetric(uint offset, uint count)
     WorkStatus.GetDimensions(bytes);
     if (bytes < 96u) return;
     // Callers use one counter offset in each branch. Accepted bin totals are
-    // bounded by MaxCandidates * nine material batches; unit-work sums fit a wave.
+    // bounded by MaxCandidates * 255 material batches; unit-work sums fit a wave.
     uint waveCount = WaveActiveSum(count);
     if (!WaveIsFirstLane() || waveCount == 0u) return;
     uint previous;
@@ -32,6 +32,46 @@ void RejectClusterWork(uint kind)
 {
     uint ignored;
     WorkStatus.InterlockedOr(0u, kind, ignored);
+}
+
+// Cull contributes one item per active lane. The atomic read stops later window
+// iterations at saturation; between reads and completed overflow clamps, at most
+// MaxCandidates lanes contribute. capacity + MaxCandidates <= 2 * 64 * 65535.
+uint ReserveClusterVisibleWork(RWByteAddressBuffer counter, uint offset, uint amount, uint capacity)
+{
+    uint current;
+    counter.InterlockedAdd(offset, 0u, current);
+    if (current >= capacity)
+    {
+        RejectClusterWork(8u);
+        return capacity;
+    }
+
+    uint first;
+    counter.InterlockedAdd(offset, amount, first);
+    if (amount > capacity - min(first, capacity))
+    {
+        uint ignored;
+        counter.InterlockedMin(offset, capacity, ignored);
+        RejectClusterWork(8u);
+    }
+    return min(first, capacity);
+}
+
+// Each accepted visible item expands into at most 255 batches: every batch
+// covers at least one triangle, and the cluster triangle count occupies 8 bits.
+// The complete bin sum is <= 64 * 65535 * 255 = 1069531200, including rejections.
+uint ReserveClusterRasterBatches(RWStructuredBuffer<uint> counter, uint amount, uint capacity)
+{
+    uint first;
+    InterlockedAdd(counter[0], amount, first);
+    if (amount > capacity - min(first, capacity))
+    {
+        uint ignored;
+        InterlockedMin(counter[0], capacity, ignored);
+        RejectClusterWork(16u);
+    }
+    return min(first, capacity);
 }
 
 // Keep all queue counts in [0, capacity]. Even an arbitrarily large rejected

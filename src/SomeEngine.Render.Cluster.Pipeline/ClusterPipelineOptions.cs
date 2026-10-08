@@ -21,9 +21,9 @@ public sealed record ClusterPipelineOptions
 
     /// <summary>
     /// Bounds candidates, visible geometry items/page windows, the final surface-patch pool,
-    /// and each level of a compatible surface group's work queue. Material expansion has
-    /// nine batches per visible item. Rejected required work fails the frame through
-    /// ClusterWorkOverflowException; increasing material count does not multiply work memory.
+    /// and each level of a compatible surface group's work queue. Raster-batch storage uses
+    /// the largest per-cluster batch count in resident geometry. Rejected required work
+    /// fails the frame through ClusterWorkOverflowException.
     /// </summary>
     public uint MaxCandidates { get; init; } = 1_048_576;
 

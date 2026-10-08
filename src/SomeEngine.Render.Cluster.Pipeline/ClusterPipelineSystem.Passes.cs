@@ -236,10 +236,22 @@ public sealed partial class ClusterPipelineSystem
             static (ref PassDefinition _, ref DispatchArguments _) => { },
             static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch),
             region: _regions.Feedback);
+        ulong workOffset = checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * 16u);
+        var workCopy = new ClusterBufferCopyParameters(frame.WorkStatus, 0, frame.PageFaults, workOffset, sizeof(uint));
+        GraphPassId work = graph.AddCopyFramePass("Copy Cluster work result", PassQueueSelection.AnyCompatible(), workCopy,
+            new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            static (ref PassDefinition access, ref ClusterBufferCopyParameters data) =>
+            {
+                access.Read(data.Source, new BufferRange(data.SourceOffset, data.ByteCount),
+                    PipelineSync.Copy, ResourceAccess.CopySource);
+                access.Write(data.Destination, new BufferRange(data.DestinationOffset, data.ByteCount),
+                    PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            }, ClusterBufferCopyParameters.Record, region: _regions.Feedback);
+        graph.OrderAfter(work, requests);
         GraphData.PageFaultReadback = graph.AddReadback(frame.PageFaults,
-            new BufferRange(0, checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * 16u)),
+            new BufferRange(0, workOffset + sizeof(uint)),
             new PageFaultReceiver(this), "Read back Cluster page requests", _regions.Feedback);
-        graph.OrderAfter(GraphData.PageFaultReadback, requests);
+        graph.OrderAfter(GraphData.PageFaultReadback, work);
     }
 
     private GraphRegionMap<int, bool> RecordTraversal(
