@@ -186,6 +186,7 @@ public sealed class ClusterRenderResources : IDisposable
 
     internal int PageFaultCapacity => _residency.PageFaultCapacity;
     internal uint GeometryPageCount => _residency.GeometryPageCount;
+    public ReadOnlyMemory<ClusterLodChange> LodChanges => _residency.LodChanges;
 
     internal void EnterInstanceComposition() => EnterActiveOperation();
 

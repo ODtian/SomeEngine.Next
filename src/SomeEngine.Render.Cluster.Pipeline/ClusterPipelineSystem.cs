@@ -852,6 +852,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     uploaded &= result.TryGetPassCompletion(GraphData.PageUpload, out _);
                 if (publication.Meshes.Bvh.Uploads.Length != 0)
                     uploaded &= result.TryGetPassCompletion(GraphData.BvhUpload, out _);
+                if (publication.Meshes.LeafFlagFixups.Length != 0)
+                    uploaded &= result.TryGetPassCompletion(GraphData.LeafFlagPass, out _);
                 if (uploaded)
                     _resources.CommitResidencyPublication(publication, CaptureRetirementCompletions(publication));
                 else

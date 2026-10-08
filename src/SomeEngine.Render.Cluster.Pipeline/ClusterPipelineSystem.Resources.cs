@@ -713,6 +713,7 @@ public sealed partial class ClusterPipelineSystem
 
     private void RecordResidencyUploads(ref RenderGraphFrame graph, in ClusterRenderBinding binding)
     {
+        BindLeafFlagFixups(ref graph, binding.Publication);
         if (binding.Publication is not { } publication) return;
         foreach (ClusterStagedUpload upload in publication.Meshes.PageUploads)
             graph.WriteBuffer(GraphData.Resources.PageHeap, upload.Offset, upload.Bytes.Span);

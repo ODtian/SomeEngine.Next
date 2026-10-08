@@ -29,6 +29,7 @@ public sealed partial class ClusterPipelineSystem
         RecordWorkStatus(ref graph, frame);
         RecordCullStateReset(ref graph, frame);
         InstallSceneBounds(ref graph);
+        InstallLeafFlagFixups(ref graph);
         GraphData.PrimaryGeometry = graph.AddRegion("Cluster primary geometry work", _regions.PrimaryGeometry);
         GraphRegionId primaryTraversal = graph.AddRegion("Cluster primary traversal", GraphData.PrimaryGeometry);
         GraphData.TraversalLevels = GraphData.TraversalLevels.Add(0, RecordTraversal(ref graph, frame, frame.PackedViews,

@@ -227,7 +227,7 @@ void ProcessTraversalLevel(
             float largestScale = abs(transform.Scale) * max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
             float smallestScale = abs(transform.Scale) * min(min(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
             float errorScale = smallestScale;
-            float error = ClusterSphereError(lodCenter, node.LODBounds.w * largestScale, node.MinLODError * errorScale, view);
+            float error = ClusterSphereError(lodCenter, node.LODBounds.w * largestScale, abs(node.MinLODError) * errorScale, view);
             streamingPriority = max(streamingPriority,
                 PackClusterStreamingPriority(error, view.LodThreshold, view.StreamingPriorityCategory));
         }
