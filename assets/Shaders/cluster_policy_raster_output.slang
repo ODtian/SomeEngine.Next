@@ -7,14 +7,12 @@
 #include "cluster_raster_target_output.slang"
 #include "cluster_instance_properties.slang"
 
-StructuredBuffer<uint2> VisibleClusterRasterWindows;
-StructuredBuffer<DrawRequest> RasterOutputVisibleClusters;
 ByteAddressBuffer RasterOutputInstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> RasterOutputInstanceProperties;
 uint RasterOutputDepthCacheClass(uint visibleIndex)
 {
     return LoadInstanceDepthCacheClass(RasterOutputInstanceData, RasterOutputInstanceProperties,
-        RasterOutputVisibleClusters[visibleIndex].InstanceID);
+        VisibleClusterRequest(RasterOutputVisibleClusters[visibleIndex]).InstanceID);
 }
 
 uint2 ClusterRasterTargetPixelOrigin(uint visibleClusterIndex, ClusterViewUniforms view)
@@ -22,7 +20,7 @@ uint2 ClusterRasterTargetPixelOrigin(uint visibleClusterIndex, ClusterViewUnifor
     if (view.TargetPolicy == 0u) return 0u.xx;
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
     if (target.RasterWindowPages == 0u) return 0u.xx;
-    return ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindows[visibleClusterIndex]).xy * target.PageSize;
+    return ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindow(RasterOutputVisibleClusters[visibleClusterIndex])).xy * target.PageSize;
 }
 
 float4 ClusterHardwareRasterPosition(float4 clip, uint visibleClusterIndex,
@@ -57,7 +55,7 @@ bool ClusterRasterTargetWindowContainsPixel(
         return false;
     ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
     uint4 pageWindow = ClusterUnpackRasterTargetPageWindow(
-        VisibleClusterRasterWindows[visibleClusterIndex]);
+        VisibleClusterRasterWindow(RasterOutputVisibleClusters[visibleClusterIndex]));
     uint2 localPage = uint2(pixel) / target.PageSize;
     return all(localPage >= pageWindow.xy) && all(localPage <= pageWindow.zw);
 }
@@ -108,9 +106,10 @@ uint ReadClusterRasterTargetDepth(ClusterRasterOutputPixel pixel, uint targetPol
 
 struct ClusterRasterOutputImageAtomic64 : IClusterRasterOutput
 {
-    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy)
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex)
     {
-        return ReadClusterRasterTargetDepth(pixel, targetPolicy);
+        return targetPolicy != 0u ? ReadClusterRasterTargetDepth(pixel, targetPolicy)
+            : uint(VisibilityWinnerImage[uint3(pixel.Position, targetViewIndex)] >> 32u);
     }
 
     int4 scissor(
@@ -158,9 +157,10 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
     uint Width;
     uint Height;
 
-    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy)
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex)
     {
-        return ReadClusterRasterTargetDepth(pixel, targetPolicy);
+        return targetPolicy != 0u ? ReadClusterRasterTargetDepth(pixel, targetPolicy)
+            : VisibilityWinnerBuffer.Load(((targetViewIndex * Height + uint(pixel.Position.y)) * Width + uint(pixel.Position.x)) * 8u + 4u);
     }
 
     int4 scissor(
@@ -216,9 +216,9 @@ struct ClusterDicedRasterOutput<TPrimary : IClusterRasterOutput> : IClusterRaste
 {
     TPrimary Primary;
 
-    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy)
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex)
     {
-        return targetPolicy == 0u ? Primary.readDepth(pixel, targetPolicy)
+        return targetPolicy == 0u ? Primary.readDepth(pixel, targetPolicy, targetViewIndex)
             : ReadClusterRasterTargetDepth(pixel, targetPolicy);
     }
 
@@ -228,7 +228,7 @@ struct ClusterDicedRasterOutput<TPrimary : IClusterRasterOutput> : IClusterRaste
         if (targetPolicy == 0u)
             return Primary.scissor(visibleClusterIndex, targetPolicy, targetViewIndex, screenWidth, screenHeight);
         return RasterTargetWindowScissor(ClusterUnpackRasterTargetPageWindow(
-            VisibleClusterRasterWindows[visibleClusterIndex]), RasterTargetViews[targetViewIndex]);
+            VisibleClusterRasterWindow(RasterOutputVisibleClusters[visibleClusterIndex])), RasterTargetViews[targetViewIndex]);
     }
 
     bool resolvePixel(int2 pixel, uint targetPolicy, uint targetViewIndex,
@@ -253,7 +253,7 @@ struct ClusterDicedRasterOutput<TPrimary : IClusterRasterOutput> : IClusterRaste
 // This output is selected only for a raster stream whose views target depth pages.
 struct ClusterRasterOutputTarget : IClusterRasterOutput
 {
-    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy)
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex)
     {
         return ReadClusterRasterTargetDepth(pixel, targetPolicy);
     }

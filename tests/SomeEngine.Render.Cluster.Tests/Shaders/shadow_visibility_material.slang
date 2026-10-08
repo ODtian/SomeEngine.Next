@@ -8,6 +8,7 @@
 StructuredBuffer<GPULight> LightBuffer;
 
 struct ShadowVisibilityVarying { float2 UV : TEXCOORD0; };
+[VisibilityDepth("masked")]
 struct ShadowVisibilityMask : IVisibilityEvaluate<StandardVertex>
 {
     typealias Varying = ShadowVisibilityVarying;

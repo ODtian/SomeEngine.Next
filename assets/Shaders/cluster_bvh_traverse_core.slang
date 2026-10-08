@@ -223,7 +223,7 @@ void ProcessTraversalLevel(
             float3 lodCenter = TransformInstanceLocalPosition(node.LODSphere.xyz, transform);
             float largestScale = abs(transform.Scale) * max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
             float smallestScale = abs(transform.Scale) * min(min(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
-            float errorScale = view.TargetPolicy != 0u ? smallestScale : largestScale;
+            float errorScale = smallestScale;
             float error = ClusterSphereError(lodCenter, node.LODSphere.w * largestScale, node.LODError * errorScale, view);
             streamingPriority = max(streamingPriority,
                 PackClusterStreamingPriority(error, view.LodThreshold, view.StreamingPriorityCategory));

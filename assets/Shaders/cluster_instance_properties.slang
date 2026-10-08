@@ -81,11 +81,16 @@ ClusterViewUniforms ApplyFirstPersonViewTransform(ByteAddressBuffer data, Render
     if ((firstPerson.x & 3u) == 1u && view.FirstPersonTransformEnabled != 0u)
     {
         // Compose with the public position result so user vertex and domain types remain opaque.
-        view.ViewProj = mul(view.WorldToFirstPerson, view.ViewProj);
-        view.PrevViewProj = mul(view.PreviousWorldToFirstPerson, view.PrevViewProj);
-        view.GeometryViewProj = mul(view.WorldToFirstPerson, view.GeometryViewProj);
-        view.View = mul(view.WorldToFirstPerson, view.View);
-        view.PrevView = mul(view.PreviousWorldToFirstPerson, view.PrevView);
+        float4x4 nearTransform = view.WorldToFirstPerson;
+        nearTransform[3].xyz += view.WorldTranslation - mul(view.WorldTranslation, (float3x3)nearTransform);
+        float4x4 previousNearTransform = view.PreviousWorldToFirstPerson;
+        previousNearTransform[3].xyz += view.PreviousWorldTranslation -
+            mul(view.PreviousWorldTranslation, (float3x3)previousNearTransform);
+        view.ViewProj = mul(nearTransform, view.ViewProj);
+        view.PrevViewProj = mul(previousNearTransform, view.PrevViewProj);
+        view.GeometryViewProj = mul(nearTransform, view.GeometryViewProj);
+        view.View = mul(nearTransform, view.View);
+        view.PrevView = mul(previousNearTransform, view.PrevView);
         view.ClipToWorld = mul(view.ClipToWorld, view.FirstPersonToWorld);
     }
     return view;

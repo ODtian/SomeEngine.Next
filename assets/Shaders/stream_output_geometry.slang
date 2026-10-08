@@ -10,7 +10,7 @@ struct GeometryExportUniforms
 ConstantBuffer<GeometryExportUniforms> ExportUniforms;
 ByteAddressBuffer PhaseOneCounts;
 ByteAddressBuffer PhaseTwoCounts;
-StructuredBuffer<DrawRequest> VisibleClusters;
+StructuredBuffer<VisibleCluster> VisibleClusters;
 RWStructuredBuffer<DrawRequest> StreamOutputClusters;
 RWByteAddressBuffer StreamOutputCount;
 
@@ -29,5 +29,5 @@ void BuildStreamOutput(uint3 dispatchThreadId : SV_DispatchThreadID)
         PhaseTwoCounts,
         ExportUniforms.Capacity,
         dispatchThreadId.x);
-    StreamOutputClusters[dispatchThreadId.x] = VisibleClusters[visibleIndex];
+    StreamOutputClusters[dispatchThreadId.x] = VisibleClusterRequest(VisibleClusters[visibleIndex]);
 }

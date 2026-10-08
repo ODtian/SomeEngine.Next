@@ -8,7 +8,7 @@ ByteAddressBuffer InstanceData;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<RasterBinEntry> RasterBinMeta;
 ConstantBuffer<RasterBinningUniforms> Uniforms;
-StructuredBuffer<DrawRequest> VisibleClusters;
+StructuredBuffer<VisibleCluster> VisibleClusters;
 ByteAddressBuffer DrawArgs;
 ByteAddressBuffer ClusterReadOffsetArgs;
 ByteAddressBuffer ClusterReadOffsetArgs1;
@@ -16,59 +16,37 @@ ByteAddressBuffer ClusterReadOffsetArgs2;
 StructuredBuffer<uint> RasterSlots;
 ByteAddressBuffer PageHeap;
 
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> BinnedClusterIndexBuffer;
-StructuredBuffer<uint2> VisibleClusterRasterWindows;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> PolicyRasterWorkCounter;
 #include "cluster_raster_target_view.slang"
 
-void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware)
+void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware, bool depthBuckets)
 {
     if (!IsBin(bin)) return;
     if (Uniforms.PolicyTarget != 0u)
     {
-        uint4 pages = ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindows[visibleIndex]);
+        uint4 pages = ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindow(VisibleClusters[visibleIndex]));
         uint2 extent = pages.zw - pages.xy + 1u;
         // Page-batch area is invariant under partitioning. Software remains one
         // bounded geometry batch; do not lower resolution just for more HW windows.
         uint area = isSoftware ? 64u : extent.x * extent.y;
         InterlockedAdd(PolicyRasterWorkCounter[0], area);
     }
-    uint capacity = RasterBinMeta[bin].BinCapacity;
-    if (capacity == 0u)
+    CountRaster(RasterBinMeta, bin, isSoftware);
+    if (depthBuckets)
     {
-        CountRaster(RasterBinMeta, bin, isSoftware);
-        return;
+        uint ignored;
+        InterlockedOr(RasterBinMeta[bin].DepthBucketEnabled, 1u, ignored);
+        InterlockedAdd(DepthBuckets[bin * 512u + (isSoftware ? 0u : 256u) +
+            VisibleClusterDepthBucket(VisibleClusters[visibleIndex])], 1u, ignored);
     }
-    uint key = (bin << 1u) | (isSoftware ? 1u : 0u);
-    uint4 matching = WaveMatchingLanes(key);
-    uint lane = WaveGetLaneIndex();
-    uint leader = WaveMaskFirstLane(matching);
-    uint first = 0u;
-    if (lane == leader)
-    {
-        if (isSoftware)
-            InterlockedAdd(RasterBinMeta[bin].BinSWCount, WaveMaskBitCount(matching), first);
-        else
-            InterlockedAdd(RasterBinMeta[bin].BinHWCount, WaveMaskBitCount(matching), first);
-    }
-    uint item = WaveReadLaneAt(first, leader) + WaveMaskPrefix(matching, lane);
-    // Keep both lists in append order. The hardware region starts after the
-    // maximum software work derived from this phase's visible-cluster count.
-    uint index = (isSoftware ? RasterBinMeta[bin].ClusterOffset : RasterBinMeta[bin].HardwareOffset) + item;
-    uint entries, stride;
-    BinnedClusterIndexBuffer.GetDimensions(entries, stride);
-    if (index >= entries)
-    {
-        RejectClusterWork(16u);
-        return;
-    }
-    BinnedClusterIndexBuffer[index] = visibleIndex | (workIndex << 22u);
 }
 
 #include "cluster_bin_batches.slang"
 #include "cluster_work_status.slang"
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> DepthBuckets;
+
 StructuredBuffer<ClusterRasterTargetView> WorkTargetViews;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> DepthWorkCounter;
@@ -94,7 +72,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         visibleIndex,
         isSoftware);
 
-    DrawRequest entry = VisibleClusters[visibleIndex];
+    DrawRequest entry = VisibleClusterRequest(VisibleClusters[visibleIndex]);
     if (Uniforms.PolicyTarget != 0u)
     {
         ClusterRasterTargetView target = WorkTargetViews[ClusterPhysicalViewIndex(DrawRequestViewIndex(entry))];

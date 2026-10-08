@@ -55,6 +55,12 @@ struct ClusterViewUniforms
     float PreviousOriginHighPadding;
     float3 PreviousWorldOriginLow;
     float PreviousOriginLowPadding;
+    float3 WorldTranslation;
+    float WorldTranslationPadding;
+    float3 PreviousWorldTranslation;
+    float PreviousWorldTranslationPadding;
+    float3 PreviousDataTranslation;
+    float PreviousDataTranslationPadding;
     uint PlayerId;
     uint Family;
     uint FirstPersonTransformEnabled;
@@ -63,6 +69,16 @@ struct ClusterViewUniforms
     float4x4 FirstPersonToWorld;
     float4x4 PreviousWorldToFirstPerson;
 };
+
+float3 ClusterPositionForView(float3 position, ClusterViewUniforms view)
+{
+    return position + view.WorldTranslation;
+}
+
+float3 ClusterPreviousPositionForView(float3 position, ClusterViewUniforms view)
+{
+    return position + view.PreviousDataTranslation + view.PreviousWorldTranslation;
+}
 
 float3 TranslateClusterWorldPosition(float3 position, float3 originHigh,
     float3 originLow, ClusterViewUniforms view)
@@ -108,7 +124,7 @@ float CalculateClusterViewPixelScale(ClusterViewUniforms view)
 float CalculateClusterSphereEdgeScale(float3 center, float radius, ClusterViewUniforms view)
 {
     if (ClusterProjectionScales(view).z <= 1e-8) return 1.0;
-    float3 viewCenter = mul(float4(center, 1.0), view.View).xyz;
+    float3 viewCenter = mul(float4(ClusterPositionForView(center, view), 1.0), view.View).xyz;
     float depth = -viewCenter.z;
     float nearDepth = view.NearPlane;
     if (depth + radius <= nearDepth) return 0.0;
@@ -138,13 +154,7 @@ float CalculateClusterSpherePixelScale(float3 center, float radius, ClusterViewU
 float ClusterSphereError(float3 center, float sphereRadius, float error, ClusterViewUniforms view)
 {
     if (error <= 1e-8) return 0.0;
-    if (view.TargetPolicy != 0u)
-        return error * view.GeometryLodScale * CalculateClusterSpherePixelScale(center, sphereRadius, view);
-    float4 clip = mul(float4(center, 1.0), view.GeometryViewProj);
-    float3 scales = ClusterProjectionScales(view);
-    return ClusterProjectedError(clip.w - sphereRadius * scales.z,
-        abs(clip.xy) + sphereRadius * scales.xy, error, scales,
-        uint2(view.ScreenWidth, view.ScreenHeight)) * view.GeometryLodScale;
+    return error * view.GeometryLodScale * CalculateClusterSpherePixelScale(center, sphereRadius, view);
 }
 
 #endif

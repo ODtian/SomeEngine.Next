@@ -340,6 +340,7 @@ struct RasterBinEntry
     uint HWCursor;
     uint SWOffset;     // Exclusive prefix sum of SW clusters only across bins
     uint HardwareOffset;
+    uint DepthBucketEnabled;
 };
 
 // 12-byte geometry work item. Cluster ids are bounded to 12 bits by the packed-page ABI;
@@ -374,19 +375,88 @@ uint DrawRequestViewIndex(DrawRequest request)
     return request.ClusterAndView >> 12u;
 }
 
-// Candidate-only data survives deferred culling. Visible raster work keeps
-// the compact DrawRequest and has already made its LOD decision.
+// A visible item adds one packed page window to the three identity words.
+// The instance word follows UE's 24-bit instance range; its upper byte is depth.
+struct VisibleCluster
+{
+    uint PageAndFlags;
+    uint InstanceAndDepth;
+    uint ClusterAndView;
+    uint RasterWindow;
+};
+
+DrawRequest VisibleClusterRequest(VisibleCluster cluster)
+{
+    DrawRequest request;
+    request.PageOffset = cluster.PageAndFlags & ~15u;
+    request.InstanceID = cluster.InstanceAndDepth & 0xFFFFFFu;
+    request.ClusterAndView = cluster.ClusterAndView;
+    return request;
+}
+
+uint DrawRequestViewIndex(VisibleCluster cluster)
+{
+    return cluster.ClusterAndView >> 12u;
+}
+uint DrawRequestClusterID(VisibleCluster cluster)
+{
+    return cluster.ClusterAndView & 0xFFFu;
+}
+uint VisibleClusterDepthBucket(VisibleCluster cluster)
+{
+    return cluster.InstanceAndDepth >> 24u;
+}
+
+uint2 VisibleClusterRasterWindow(VisibleCluster cluster)
+{
+    uint2 first = uint2(cluster.RasterWindow & 0x1FFFu, (cluster.RasterWindow >> 13u) & 0x1FFFu);
+    uint2 last = first + uint2((cluster.RasterWindow >> 26u) & 7u, cluster.RasterWindow >> 29u);
+    return uint2(first.x | (first.y << 16u), last.x | (last.y << 16u));
+}
+
+VisibleCluster MakeVisibleCluster(DrawRequest request, uint2 window, uint depthBucket, uint flags)
+{
+    uint2 first = uint2(window.x & 0xFFFFu, window.x >> 16u);
+    uint2 last = uint2(window.y & 0xFFFFu, window.y >> 16u);
+    uint2 extent = last - first;
+    VisibleCluster result;
+    result.PageAndFlags = request.PageOffset | (flags & 15u);
+    result.InstanceAndDepth = request.InstanceID | (depthBucket << 24u);
+    result.ClusterAndView = request.ClusterAndView;
+    result.RasterWindow = first.x | (first.y << 13u) | (extent.x << 26u) | (extent.y << 29u);
+    return result;
+}
+
+// Page allocation is 16-byte aligned. Leaf flags occupy the low address bits;
+// deferred hierarchy work retains its tagged node index in the same three words.
 struct ClusterCandidate
 {
-    DrawRequest Request;
-    uint KeepCoarseGeometry;
+    uint PageAndFlags;
+    uint InstanceID;
+    uint ClusterAndView;
 };
+
+DrawRequest CandidateRequest(ClusterCandidate candidate)
+{
+    DrawRequest request;
+    request.PageOffset = (candidate.PageAndFlags & 0x80000000u) != 0u
+        ? candidate.PageAndFlags : candidate.PageAndFlags & ~15u;
+    request.InstanceID = candidate.InstanceID;
+    request.ClusterAndView = candidate.ClusterAndView;
+    return request;
+}
+
+uint CandidateKeepsCoarseGeometry(ClusterCandidate candidate)
+{
+    return (candidate.PageAndFlags & 0x80000000u) != 0u ? 0u : candidate.PageAndFlags & 1u;
+}
 
 ClusterCandidate MakeClusterCandidate(DrawRequest request, uint keepCoarseGeometry)
 {
     ClusterCandidate result;
-    result.Request = request;
-    result.KeepCoarseGeometry = keepCoarseGeometry;
+    result.PageAndFlags = request.PageOffset | keepCoarseGeometry;
+    result.InstanceID = request.InstanceID;
+    result.ClusterAndView = request.ClusterAndView;
     return result;
 }
 

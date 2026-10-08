@@ -284,15 +284,6 @@ public sealed partial class ClusterPipelineSystem
                     sync,
                     BufferContentScope.CountBoundedPrefix);
                 return;
-            case ClusterTessellationCoreResource.RasterWindows:
-                _ = pass.Bind(
-                    graph.CreateBufferSrv(
-                        frame.VisibleClusterRasterWindows,
-                        structureStride: VisibleClusterRasterWindowStride,
-                        label: "Cluster tessellation raster windows"),
-                    sync,
-                    BufferContentScope.CountBoundedPrefix);
-                return;
             case ClusterTessellationCoreResource.BinnedClusters:
                 _ = pass.Bind(
                     graph.CreateBufferUav(
@@ -698,15 +689,6 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.ComputeShading,
                     BufferContentScope.CountBoundedPrefix);
                 return;
-            case ClusterSoftwareRasterCoreResource.RasterWindows:
-                _ = pass.Bind(
-                    graph.CreateBufferSrv(
-                        frame.VisibleClusterRasterWindows,
-                        structureStride: VisibleClusterRasterWindowStride,
-                        label: "Cluster software raster windows"),
-                    PipelineSync.ComputeShading,
-                    BufferContentScope.CountBoundedPrefix);
-                return;
             case ClusterSoftwareRasterCoreResource.BinnedClusters:
                 _ = pass.Bind(
                     graph.CreateBufferSrv(
@@ -838,15 +820,6 @@ public sealed partial class ClusterPipelineSystem
                         frame.VisibleClusters,
                         structureStride: VisibleClusterStride,
                         label: "Cluster hardware raster visible clusters"),
-                    PipelineSync.AllShading,
-                    BufferContentScope.CountBoundedPrefix);
-                return;
-            case ClusterHardwareRasterCoreResource.RasterWindows:
-                _ = pass.Bind(
-                    graph.CreateBufferSrv(
-                        frame.VisibleClusterRasterWindows,
-                        structureStride: VisibleClusterRasterWindowStride,
-                        label: "Cluster hardware raster windows"),
                     PipelineSync.AllShading,
                     BufferContentScope.CountBoundedPrefix);
                 return;

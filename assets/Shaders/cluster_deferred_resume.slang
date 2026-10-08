@@ -45,7 +45,7 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
     uint count = min(rawCount, ResumeUniforms.MaxWorkItems);
     bool valid = threadId.x < count;
     ClusterCandidate candidate = valid ? DeferredWork[threadId.x] : (ClusterCandidate)0;
-    DrawRequest work = candidate.Request;
+    DrawRequest work = CandidateRequest(candidate);
     bool isNode = valid && IsDeferredTraversalNode(work);
     bool isCluster = valid && !isNode;
 

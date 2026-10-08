@@ -12,7 +12,7 @@
 ConstantBuffer<TessellationUniforms> TessellationUniformData;
 StructuredBuffer<ClusterViewUniforms> TessellationViews;
 StructuredBuffer<ClusterViewUniforms> TessellationPolicyViews;
-StructuredBuffer<DrawRequest> TessellationVisibleClusters;
+StructuredBuffer<VisibleCluster> TessellationVisibleClusters;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> TessellationBinnedClusterIndexBuffer;
 StructuredBuffer<RasterBinEntry> TessellationRasterBinMeta;
@@ -53,7 +53,7 @@ bool HasTessellationTriangle(
     uint visibleClusterIndex,
     uint originalTriangle)
 {
-    DrawRequest request = TessellationVisibleClusters[visibleClusterIndex];
+    DrawRequest request = VisibleClusterRequest(TessellationVisibleClusters[visibleClusterIndex]);
     uint vertexBlobAddress;
     uint vertexBlobSize;
     uint triangleStart;
@@ -78,7 +78,7 @@ TDomain.TriangleData LoadTessellationTriangle<TVE, TDomain>(
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
-    DrawRequest request = TessellationVisibleClusters[visibleClusterIndex];
+    DrawRequest request = VisibleClusterRequest(TessellationVisibleClusters[visibleClusterIndex]);
     uint vertexBlobAddress;
     uint vertexBlobSize;
     uint triangleStart;
@@ -128,7 +128,7 @@ DomainEvaluate.TriangleData LoadTessellationTriangleWithVisibility(
     uint originalTriangle,
     out VisibilityEvaluate.Varying varyings[3])
 {
-    DrawRequest request = TessellationVisibleClusters[visibleClusterIndex];
+    DrawRequest request = VisibleClusterRequest(TessellationVisibleClusters[visibleClusterIndex]);
     uint vertexBlobAddress;
     uint vertexBlobSize;
     uint triangleStart;
@@ -193,8 +193,8 @@ uint TessellationRequestedEdgeFactor(float edgePixels, float targetPixels)
 
 float CalculateTessellationEdgePixels(float3 first, float3 second, ClusterViewUniforms view)
 {
-    float3 firstView = mul(float4(first, 1.0), view.View).xyz;
-    float3 secondView = mul(float4(second, 1.0), view.View).xyz;
+    float3 firstView = mul(float4(ClusterPositionForView(first, view), 1.0), view.View).xyz;
+    float3 secondView = mul(float4(ClusterPositionForView(second, view), 1.0), view.View).xyz;
     float edgeDepth = ClusterProjectionScales(view).z <= 1e-8
         ? 1.0 : max(min(-firstView.z, -secondView.z), view.NearPlane);
     return length(firstView - secondView) * CalculateClusterViewPixelScale(view) *
@@ -239,9 +239,9 @@ void EvaluateTessellationPatch<TVertex, TDomain>(
         position1,
         position2);
 
-    float4 clip0 = mul(float4(position0, 1.0), view.ViewProj);
-    float4 clip1 = mul(float4(position1, 1.0), view.ViewProj);
-    float4 clip2 = mul(float4(position2, 1.0), view.ViewProj);
+    float4 clip0 = mul(float4(ClusterPositionForView(position0, view), 1.0), view.ViewProj);
+    float4 clip1 = mul(float4(ClusterPositionForView(position1, view), 1.0), view.ViewProj);
+    float4 clip2 = mul(float4(ClusterPositionForView(position2, view), 1.0), view.ViewProj);
     float2 screen0 = TessellationScreenPosition(clip0, view);
     float2 screen1 = TessellationScreenPosition(clip1, view);
     float2 screen2 = TessellationScreenPosition(clip2, view);
@@ -348,7 +348,7 @@ void SeedTessellationRasterBin<TVE : IVertexEvaluate>(
         ? bin.ClusterOffset + localBatch : bin.HardwareOffset + localBatch - bin.BinSWCount;
     uint batch = TessellationBinnedClusterIndexBuffer[binnedIndex];
     uint visibleClusterIndex = RasterWorkVisibleIndex(batch);
-    DrawRequest request = TessellationVisibleClusters[visibleClusterIndex];
+    DrawRequest request = VisibleClusterRequest(TessellationVisibleClusters[visibleClusterIndex]);
     uint viewIndex = DrawRequestViewIndex(request);
 
     uint rangeStart, rangeEnd;
@@ -442,7 +442,7 @@ bool IsTessellationPatchVisible<TVertex, TDomain>(
         domain.bounds(triangle, minimum, maximum);
     else
         domain.patchBounds(triangle, bary0, bary1, bary2, minimum, maximum);
-    return IsTessellationBoundsVisible(minimum, maximum, viewIndex, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID);
+    return IsTessellationBoundsVisible(minimum, maximum, viewIndex, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID);
 }
 
 TessellationPatch MakeTessellationChild(
@@ -657,7 +657,7 @@ void FinalizeTessellationPatch(
         // Compatible split entries can share a work queue even when their pixel
         // stages differ. Recover the final raster bin from existing instance/mesh
         // material data, keeping the 16-byte intermediate work representation.
-        DrawRequest source = TessellationVisibleClusters[patch.VisibleClusterIndex];
+        DrawRequest source = VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]);
         uint4 vertReuseBatchWords;
         uint triangleCount, materials, ranges;
         ReadClusterBinData(PageHeap, source, vertReuseBatchWords, triangleCount, materials, ranges);
@@ -726,7 +726,7 @@ void ProcessTessellationPatch<TVE, TDomain>(
     EvaluateTessellationPatch<TVE.Vertex, TDomain>(
         domain,
         triangle,
-        ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID,
+        ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID,
             LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex)),
         bary0,
         bary1,
@@ -861,7 +861,7 @@ void DiceTessellationPatches<
                 TessellationPatchTriangle(patch),
                 sourceVaryings);
             viewIndex = DrawRequestViewIndex(TessellationVisibleClusters[patch.VisibleClusterIndex]);
-            view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID,
+            view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID,
                 LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex));
         }
     }

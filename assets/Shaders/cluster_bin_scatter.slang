@@ -7,7 +7,7 @@ ByteAddressBuffer InstanceData;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<RasterBinEntry> RasterBinMeta;
 ConstantBuffer<RasterBinningUniforms> Uniforms;
-StructuredBuffer<DrawRequest> VisibleClusters;
+StructuredBuffer<VisibleCluster> VisibleClusters;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> BinnedClusterIndexBuffer;
 ByteAddressBuffer DrawArgs;
@@ -17,14 +17,17 @@ ByteAddressBuffer ClusterReadOffsetArgs2;
 StructuredBuffer<uint> RasterSlots;
 ByteAddressBuffer PageHeap;
 
-void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware)
+void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware, bool depthBuckets)
 {
-    if (!ScatterRaster(RasterBinMeta, BinnedClusterIndexBuffer, bin, visibleIndex, workIndex, isSoftware))
+    if (!ScatterRaster(RasterBinMeta, BinnedClusterIndexBuffer, bin, visibleIndex, workIndex, isSoftware, DepthBuckets, VisibleClusterDepthBucket(VisibleClusters[visibleIndex])))
         RejectClusterWork(16u);
 }
 
 #include "cluster_bin_batches.slang"
 #include "cluster_work_status.slang"
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> DepthBuckets;
+
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -47,7 +50,7 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         visibleIndex,
         isSoftware);
 
-    DrawRequest entry = VisibleClusters[visibleIndex];
+    DrawRequest entry = VisibleClusterRequest(VisibleClusters[visibleIndex]);
     uint4 vertReuseBatchWords;
     uint vertexCount;
     uint triangleCount;

@@ -20,9 +20,7 @@ RWByteAddressBuffer DrawArgs;
 ByteAddressBuffer BaseDrawArgs0;
 ByteAddressBuffer BaseDrawArgs1;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<DrawRequest> VisibleClusters;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint2> VisibleClusterRasterWindows;
+RWStructuredBuffer<VisibleCluster> VisibleClusters;
 Texture2DArray<float> HiZTexture;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<ClusterCandidate> NextCandidates;
@@ -35,9 +33,7 @@ ByteAddressBuffer BaseDrawArgs0;
 ByteAddressBuffer BaseDrawArgs1;
 ByteAddressBuffer BaseDrawArgs2;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<DrawRequest> VisibleClusters;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint2> VisibleClusterRasterWindows;
+RWStructuredBuffer<VisibleCluster> VisibleClusters;
 Texture2DArray<float> HiZTexture;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer PhaseDrawArgs;
@@ -205,6 +201,17 @@ bool IsOccludedByHiZ(ClusterScreenBounds bounds, bool usePrev, uint viewIndex, C
     return bounds.NearDepth > hizDepth + epsilon;
 }
 
+bool ClusterSphereNeedsClipping(float3 localCenter, float localRadius,
+    RenderInstanceTransform transform, float boundsExpansion, ClusterViewUniforms view)
+{
+    if (!ClusterViewClipsDepth(view)) return false;
+    float scale = abs(transform.Scale) * max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
+    float3 center = TransformInstanceLocalPosition(localCenter, transform);
+    float radius = localRadius * scale + boundsExpansion;
+    float z = -mul(float4(ClusterPositionForView(center, view), 1.0), view.View).z;
+    return z - radius <= view.NearPlane;
+}
+
 bool ShouldUseSWRaster(
     float2 minUv,
     float2 maxUv,
@@ -213,23 +220,11 @@ bool ShouldUseSWRaster(
     RenderInstanceTransform transform,
     float boundsExpansion)
 {
-    float width = (maxUv.x - minUv.x) * view.ScreenWidth;
-    float height = (maxUv.y - minUv.y) * view.ScreenHeight;
-    if (width > 64.0 || height > 64.0)
+    if (view.RasterMode == 1u || view.CullingEnabled == 0u) return false;
+    if (ClusterSphereNeedsClipping(cluster.LODCenter, cluster.LODRadius, transform, boundsExpansion, view))
         return false;
-    if (view.RasterMode == 1u)
-        return false;
-    if (view.RasterMode == 2u)
-        return true;
-    if (view.CullingEnabled == 0u)
-        return false;
-
-    if (view.TargetPolicy == 0u)
-        return max(width, height) <= view.SoftwareRasterEdgeThreshold;
-
+    if (view.RasterMode == 2u) return true;
     float maximumEdge = abs(DecodeClusterMaximumEdgeLength(cluster));
-    // Source pages cooked before edge metadata use the hardware path.
-    if (maximumEdge == 0.0) return false;
     float maximumScale = abs(transform.Scale) *
         max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, transform);
@@ -237,6 +232,17 @@ bool ShouldUseSWRaster(
     float worldEdge = maximumEdge * maximumScale + 2.0 * boundsExpansion;
     float edgePixels = worldEdge * CalculateClusterSpherePixelScale(worldCenter, worldRadius, view);
     return edgePixels <= view.SoftwareRasterEdgeThreshold;
+}
+
+uint ClusterDepthBucket(uint pageOffset, uint clusterIndex, uint instanceId, ClusterViewUniforms view)
+{
+    PackedCluster cluster = LoadCluster(pageOffset, clusterIndex);
+    RenderInstanceTransform transform = LoadRenderTransform(InstanceData,
+        LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD), instanceId);
+    float3 center = TransformInstanceLocalPosition((cluster.BoundMin + cluster.BoundMax) * 0.5, transform);
+    float z = -mul(float4(ClusterPositionForView(center, view), 1.0), view.View).z;
+    // UE's 1000..100000 cm logarithmic range expressed in project metres.
+    return min(uint(max(floor(log2(clamp(z, 10.0, 1000.0) / 10.0) * (256.0 / log2(100.0))), 0.0)), 255u);
 }
 
 #include "cluster_raster_target_filter.slang"
@@ -248,6 +254,7 @@ void AppendVisibleWindow(
     uint instanceID,
     uint viewIndex,
     uint2 rasterWindow,
+    uint depthBucket,
     bool isSW,
     uint maxCandidates)
 {
@@ -294,8 +301,7 @@ void AppendVisibleWindow(
         uint globalIdx = baseSWCount + outIdx;
         if (globalIdx < maxCandidates)
         {
-            VisibleClusters[globalIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
-            VisibleClusterRasterWindows[globalIdx] = rasterWindow;
+            VisibleClusters[globalIdx] = MakeVisibleCluster(MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), rasterWindow, depthBucket, 1u);
         }
     }
     else
@@ -303,8 +309,7 @@ void AppendVisibleWindow(
         uint hwIdx = maxCandidates - 1 - baseHWCount - outIdx;
         if (baseHWCount + outIdx < maxCandidates)
         {
-            VisibleClusters[hwIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
-            VisibleClusterRasterWindows[hwIdx] = rasterWindow;
+            VisibleClusters[hwIdx] = MakeVisibleCluster(MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), rasterWindow, depthBucket, 0u);
         }
     }
 }
@@ -376,7 +381,7 @@ bool LoadAndFilterCandidate(
         return false;
 
     ClusterCandidate work = CandidateClusters[threadId];
-    DrawRequest candidate = work.Request;
+    DrawRequest candidate = CandidateRequest(work);
     pageOffset = candidate.PageOffset;
     clusterID = DrawRequestClusterID(candidate);
     instanceID = candidate.InstanceID;
@@ -400,14 +405,14 @@ bool LoadAndFilterCandidate(
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
             instanceID));
 
-    if (!(work.KeepCoarseGeometry != 0u && view.CullingEnabled != 0u) &&
+    if (!(CandidateKeepsCoarseGeometry(work) != 0u && view.CullingEnabled != 0u) &&
         !PassesLODFilter(cluster, t, view))
         return false;
 
 #if CLUSTER_CULL_PHASE == 2
     bool needsCurrentBounds = true;
 #else
-    bool needsCurrentBounds = view.TargetPolicy != 0u || view.HasPrevHistory == 0u;
+    bool needsCurrentBounds = true;
 #endif
     uint depthCacheClass = view.TargetPolicy != 0u
         ? LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID) : 1u;
@@ -431,7 +436,7 @@ bool LoadAndFilterCandidate(
 
 #if CLUSTER_CULL_PHASE == 2
 void AppendVisibleWindow(uint pageOffset, uint clusterID, uint instanceID,
-    uint viewIndex, uint2 rasterWindow, bool isSW, uint maxCandidates);
+    uint viewIndex, uint2 rasterWindow, uint depthBucket, bool isSW, uint maxCandidates);
 #endif
 
 // Hardware work is bounded by the target's raster window, independently of
@@ -441,17 +446,18 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
     ClusterScreenBounds currentBounds)
 {
     ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
-    if (isSW || view.TargetPolicy == 0u)
+    uint depthBucket = ClusterDepthBucket(pageOffset, clusterID, instanceID, view);
+    if (view.TargetPolicy == 0u)
     {
         if (view.TargetPolicy != 0u) AddClusterWorkMetric(48u, 1u);
-        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, isSW, maxCandidates);
+        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, depthBucket, isSW, maxCandidates);
         return;
     }
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
-    uint windowSize = target.RasterWindowPages;
+    uint windowSize = isSW ? 8u : target.RasterWindowPages;
     if (windowSize == 0u)
     {
-        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, false, maxCandidates);
+        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, depthBucket, isSW, maxCandidates);
         return;
     }
     uint4 pages = ClusterUnpackRasterTargetPageWindow(rasterWindow);
@@ -474,7 +480,7 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
         {
             AddClusterWorkMetric(32u, 1u);
             AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex,
-                clipped, false, maxCandidates);
+                clipped, depthBucket, isSW, maxCandidates);
         }
         else AddClusterWorkMetric(24u, 1u);
     }
@@ -523,11 +529,11 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     if (occluded)
     {
         AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates,
-            CandidateClusters[dispatchThreadID.x].KeepCoarseGeometry);
+            CandidateKeepsCoarseGeometry(CandidateClusters[dispatchThreadID.x]));
     }
     else
     {
-        ClusterScreenBounds rasterBounds = view.TargetPolicy != 0u ? currentBounds : bounds;
+        ClusterScreenBounds rasterBounds = currentBounds;
         bool isSW = ShouldUseSWRaster(rasterBounds.MinUv, rasterBounds.MaxUv, view, cluster, t, boundsExpansion);
         AppendVisible(
             pageOffset,
@@ -548,6 +554,7 @@ void AppendVisibleWindow(
     uint instanceID,
     uint viewIndex,
     uint2 rasterWindow,
+    uint depthBucket,
     bool isSW,
     uint maxCandidates)
 {
@@ -597,8 +604,7 @@ void AppendVisibleWindow(
         uint globalIdx = baseSWCount + localIdx;
         if (globalIdx < maxCandidates)
         {
-            VisibleClusters[globalIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
-            VisibleClusterRasterWindows[globalIdx] = rasterWindow;
+            VisibleClusters[globalIdx] = MakeVisibleCluster(MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), rasterWindow, depthBucket, 1u);
         }
     }
     else
@@ -606,8 +612,7 @@ void AppendVisibleWindow(
         uint hwIdx = maxCandidates - 1 - baseHWCount - localIdx;
         if (localIdx < maxCandidates)
         {
-            VisibleClusters[hwIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
-            VisibleClusterRasterWindows[hwIdx] = rasterWindow;
+            VisibleClusters[hwIdx] = MakeVisibleCluster(MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), rasterWindow, depthBucket, 0u);
         }
     }
 }

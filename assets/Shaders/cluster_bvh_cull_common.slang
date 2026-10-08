@@ -62,8 +62,8 @@ bool IsWorldAabbOutsideView(float3 worldMin, float3 worldMax, ClusterViewUniform
     }
     float3 center = (worldMin + worldMax) * 0.5;
     float3 extent = (worldMax - worldMin) * 0.5;
-    float4 clip = mul(float4(center, 1.0), view.ViewProj);
-    float4 magnitude = mul(float4(abs(center), 1.0), abs(view.ViewProj));
+    float4 clip = mul(float4(ClusterPositionForView(center, view), 1.0), view.ViewProj);
+    float4 magnitude = mul(float4(abs(ClusterPositionForView(center, view)), 1.0), abs(view.ViewProj));
     float3 x = float3(view.ViewProj[0][0], view.ViewProj[1][0], view.ViewProj[2][0]);
     float3 y = float3(view.ViewProj[0][1], view.ViewProj[1][1], view.ViewProj[2][1]);
     float3 z = float3(view.ViewProj[0][2], view.ViewProj[1][2], view.ViewProj[2][2]);
@@ -107,7 +107,7 @@ bool ProjectWorldAabb(
             (corner & 1u) != 0u ? worldMax.x : worldMin.x,
             (corner & 2u) != 0u ? worldMax.y : worldMin.y,
             (corner & 4u) != 0u ? worldMax.z : worldMin.z);
-        float4 clip = mul(float4(world, 1.0), view.ViewProj);
+        float4 clip = mul(float4(ClusterPositionForView(world, view), 1.0), view.ViewProj);
         if (clip.w <= 1e-5)
         {
             projectedBounds.CrossesNearPlane = true;

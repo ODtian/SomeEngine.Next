@@ -15,7 +15,7 @@ struct RasterBinningUniforms
     uint ScreenHeight;
     uint ViewCount;
     uint BinnedEntriesPerCluster;
-    uint Padding0;
+    uint DepthBucketsEnabled;
     uint Padding1;
     uint Padding2;
 };

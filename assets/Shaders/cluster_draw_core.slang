@@ -19,7 +19,7 @@ struct DrawUniforms
 struct DrawDispatchUniforms
 {
     uint DrawArgsByteOffset;
-    uint Pad0;
+    uint EarlyDepthEnabled;
     uint Pad1;
     uint Pad2;
 };
@@ -30,7 +30,7 @@ StructuredBuffer<ClusterViewUniforms> HardwareRasterPolicyViews;
 ConstantBuffer<DrawDispatchUniforms> HardwareRasterDispatchUniformData;
 
 StructuredBuffer<uint> HardwareRasterBinnedClusterIndexBuffer;
-StructuredBuffer<DrawRequest> HardwareRasterVisibleClusters;
+StructuredBuffer<VisibleCluster> HardwareRasterVisibleClusters;
 ByteAddressBuffer HardwareRasterVisibleClusterMeta;
 groupshared float4 HardwareRasterClipPositions[64];
 
@@ -105,7 +105,7 @@ bool DecodeDrawVertex(
     uint binEntry = HardwareRasterBinnedClusterIndexBuffer[binnedIndex];
     visibleClusterIndex = RasterWorkVisibleIndex(binEntry);
 
-    DrawRequest req = HardwareRasterVisibleClusters[visibleClusterIndex];
+    DrawRequest req = VisibleClusterRequest(HardwareRasterVisibleClusters[visibleClusterIndex]);
     viewIndex = DrawRequestViewIndex(req);
     uint pageOffset = req.PageOffset;
     clusterID = DrawRequestClusterID(req);
@@ -268,7 +268,7 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         uint batch = HardwareRasterBinnedClusterIndexBuffer[args.StartInstance + batchIndex];
         visible = RasterWorkVisibleIndex(batch);
         fullRange = TriangleCapacity > 32 && RasterWorkIsRange(batch >> 22u);
-        request = HardwareRasterVisibleClusters[visible];
+        request = VisibleClusterRequest(HardwareRasterVisibleClusters[visible]);
         DecodeRasterWorkRange(PageHeap, request, batch, first, end);
         LoadClusterInfo(PageHeap, request.PageOffset, DrawRequestClusterID(request),
             address, size, triangleStart, counts);
@@ -303,7 +303,7 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
             request.InstanceID, transform);
         TVE.Vertex value = evaluator.evaluate(context);
         ClusterRasterVertexData<TVisibility.Varying> output = {};
-        output.Pos = mul(float4(evaluator.getPosition(value), 1.0), view.ViewProj);
+        output.Pos = mul(float4(ClusterPositionForView(evaluator.getPosition(value), view), 1.0), view.ViewProj);
         output.ClipDepth = output.Pos.zw;
         output.Pos = ClusterHardwareRasterPosition(output.Pos, visible, view,
             float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight));

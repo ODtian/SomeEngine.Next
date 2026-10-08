@@ -84,6 +84,7 @@ internal static class RasterTestShaders
     // The visibility texture gives each material its own raster bin while tessellated materials
     // share the split shader and its resource bindings. Every test texture has opaque alpha.
     private const string VisibilitySource = """
+        [VisibilityDepth("masked")]
         struct TextureVisibility : IVisibilityEvaluate<StandardVertex>
         {
             typealias Varying = EmptyVisibilityVarying;

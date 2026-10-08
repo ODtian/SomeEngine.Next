@@ -27,7 +27,7 @@ internal struct ClusterVisibilityWinnerUniforms
 internal struct ClusterDrawDispatchUniforms
 {
     internal uint DrawArgsByteOffset;
-    internal uint Pad0;
+    internal uint EarlyDepthEnabled;
     internal uint Pad1;
     internal uint Pad2;
 }
@@ -40,7 +40,7 @@ internal struct ClusterSoftwareRasterUniforms
     internal uint MaxBins;
     internal uint DebugDump;
     internal uint CurrentBin;
-    internal uint Pad0;
+    internal uint EarlyDepthEnabled;
     internal uint Pad1;
     internal uint Pad2;
 }
@@ -57,7 +57,7 @@ internal struct ClusterRasterBinningUniforms
     internal uint ScreenHeight;
     internal uint ViewCount;
     internal uint BinnedEntriesPerCluster;
-    internal uint Padding0;
+    internal uint DepthBucketsEnabled;
     internal uint Padding1;
     internal uint Padding2;
 }
