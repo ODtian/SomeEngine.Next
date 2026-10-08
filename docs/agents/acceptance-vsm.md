@@ -8,7 +8,7 @@
 
 后续集成 `b8eab4a7` 修复简化器重复顶点焊接与沿边最小二乘、共用 HW/SW/细分深度偏移，并合并 wave 工作统计。原小球在相同 0.25px 下由 68 cluster / 4026 三角形降至 6 / 366，原几何与属性保持。实际纹素重射证明旧 HW 小球 457 个漏影约占有效接收域 0.34%，其中 365 个纹素本身真实照亮；RT 像素判据据此统一为完整有效接收域的平均误差和错误比例。新简化资产的默认软阴影仍由平均误差 3.5250%、错误比例 5.8182% 直接触发失败，采样修复继续进行。
 
-本轮 QEM 三景资产已通过正式 `Game.Build` / glTF 入口完成来源重建：DefaultGame 81 项项目资产、Sponza 96 项来源资产、Amazon Bistro 2046 项来源资产与 1532 个实例；来源文件及 `.meta` 身份和参数保持原字节。内容构建源码为 `b8eab4a78138db1d82ff18683ef611b7efb2d485`，当前 App 源码为 `816cfa1fca7076530c32d156950064aae592bee9`，App 构建 0 警告 / 0 错误，两景共享与场景 shader 已通过 `--refresh-scene-shaders` 完成更新。正式内容、构建结果、来源身份及全部登记资产 SHA256 保存在 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/cluster-189/qem-assets-194/` 的 `content/`、`build-results.json`、`source.json`、`source-metadata.json`、`identity.json` 与 `content-files.json`；三景资产构建状态均为 `Complete`。
+本轮 QEM 三景资产已通过正式 `Game.Build` / glTF 入口完成来源重建：DefaultGame 81 项项目资产、Sponza 96 项来源资产、Amazon Bistro 2046 项来源资产与 1532 个实例；来源文件及 `.meta` 身份和参数保持原字节。内容构建源码为 `b8eab4a78138db1d82ff18683ef611b7efb2d485`，当前 shader 与 App 源码为 `467bc879129b062e579a5dba752c7f96c16622d5`，App 构建 0 警告 / 0 错误；Default 的 68 项 shader 通过正式 AssetCook shader 入口构建，两景共享与场景 shader 通过 `--refresh-scene-shaders` 更新。三景全部网格 SHA256 与 QEM 正式交付记录一致，几何身份单列于 `geometry-files.json`。正式内容、构建结果、来源身份及全部登记资产 SHA256 保存在 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/cluster-189/qem-assets-194/` 的 `content/`、`build-results.json`、`source.json`、`source-metadata.json`、`identity.json` 与 `content-files.json`；三景资产构建状态均为 `Complete`。
 
 原 49 项对应如下；各票正文记录具体算法、数据关系与消费者。
 
