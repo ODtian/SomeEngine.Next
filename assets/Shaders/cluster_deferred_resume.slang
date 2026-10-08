@@ -61,7 +61,7 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
             waveBase = ReserveClusterWork(TraversalArguments, 12u,
                 waveCount, ResumeUniforms.MaxWorkItems, 1u);
             uint published = min(waveBase + waveCount, ResumeUniforms.MaxWorkItems);
-            PublishDispatch(TraversalArguments, published, 4u);
+            PublishDispatch(TraversalArguments, published, 16u);
             TraversalArguments.Store(16u, 0u);
             TraversalArguments.Store(20u, 0u);
             TraversalArguments.Store(24u, published);

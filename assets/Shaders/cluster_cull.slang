@@ -94,16 +94,15 @@ bool PassesLODFilter(
     // Without a conservative deformation error we cannot select an approximate
     // mesh LOD. Emit the original level once instead of overlapping every LOD.
     if (view.CullingEnabled == 0u)
-        return ((cluster.PackedCounts >> 16u) & 0xFFu) == 0u;
+        return ((cluster.PackedCounts >> 24u) & 4u) != 0u;
 
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
     float lodError = DecodeClusterLODError(cluster);
-    float errorScale = view.TargetPolicy != 0u
-        ? abs(t.Scale) * min(min(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z))
-        : maxScale;
-    return ClusterSphereError(worldCenter, worldRadius, lodError * errorScale, view) <= view.LodThreshold;
+    float errorScale = abs(t.Scale) * min(min(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
+    return ClusterSphereError(worldCenter, worldRadius, lodError * errorScale, view) <= view.LodThreshold ||
+        ((cluster.PackedCounts >> 24u) & 2u) != 0u;
 }
 
 bool BuildClusterAabbScreenBoundsAndNearDepth(
@@ -201,27 +200,17 @@ bool IsOccludedByHiZ(ClusterScreenBounds bounds, bool usePrev, uint viewIndex, C
     return bounds.NearDepth > hizDepth + epsilon;
 }
 
-bool ClusterSphereNeedsClipping(float3 localCenter, float localRadius,
-    RenderInstanceTransform transform, float boundsExpansion, ClusterViewUniforms view)
-{
-    if (!ClusterViewClipsDepth(view)) return false;
-    float scale = abs(transform.Scale) * max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
-    float3 center = TransformInstanceLocalPosition(localCenter, transform);
-    float radius = localRadius * scale + boundsExpansion;
-    float z = -mul(float4(ClusterPositionForView(center, view), 1.0), view.View).z;
-    return z - radius <= view.NearPlane;
-}
-
 bool ShouldUseSWRaster(
     float2 minUv,
     float2 maxUv,
+    float nearDepth,
     ClusterViewUniforms view,
     PackedCluster cluster,
     RenderInstanceTransform transform,
     float boundsExpansion)
 {
     if (view.RasterMode == 1u || view.CullingEnabled == 0u) return false;
-    if (ClusterSphereNeedsClipping(cluster.LODCenter, cluster.LODRadius, transform, boundsExpansion, view))
+    if (ClusterViewClipsDepth(view) && nearDepth <= 0.0)
         return false;
     if (view.RasterMode == 2u) return true;
     float maximumEdge = abs(DecodeClusterMaximumEdgeLength(cluster));
@@ -320,7 +309,7 @@ void AppendCandidate(
     uint instanceID,
     uint viewIndex,
     uint maxCandidates,
-    uint keepCoarseGeometry)
+    uint flags)
 {
     uint4 activeMask = WaveActiveBallot(true);
     uint lane = WaveGetLaneIndex();
@@ -344,7 +333,7 @@ void AppendCandidate(
         NextCandidateArgs.InterlockedMax(0, groups, unused);
     }
     NextCandidates[outIdx] = MakeClusterCandidate(
-        MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), keepCoarseGeometry);
+        MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), flags);
 }
 #endif
 
@@ -405,18 +394,12 @@ bool LoadAndFilterCandidate(
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
             instanceID));
 
-    if (!(CandidateKeepsCoarseGeometry(work) != 0u && view.CullingEnabled != 0u) &&
-        !PassesLODFilter(cluster, t, view))
+    if (!PassesLODFilter(cluster, t, view))
         return false;
 
-#if CLUSTER_CULL_PHASE == 2
-    bool needsCurrentBounds = true;
-#else
-    bool needsCurrentBounds = true;
-#endif
     uint depthCacheClass = view.TargetPolicy != 0u
         ? LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID) : 1u;
-    if (needsCurrentBounds && view.CullingEnabled != 0u)
+    if (view.CullingEnabled != 0u)
     {
         currentBounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, false, view, depthCacheClass);
         if (!currentBounds.DepthAccepted)
@@ -529,12 +512,12 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     if (occluded)
     {
         AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates,
-            CandidateKeepsCoarseGeometry(CandidateClusters[dispatchThreadID.x]));
+            CandidateFlags(CandidateClusters[dispatchThreadID.x]));
     }
     else
     {
         ClusterScreenBounds rasterBounds = currentBounds;
-        bool isSW = ShouldUseSWRaster(rasterBounds.MinUv, rasterBounds.MaxUv, view, cluster, t, boundsExpansion);
+        bool isSW = ShouldUseSWRaster(rasterBounds.MinUv, rasterBounds.MaxUv, rasterBounds.NearDepth, view, cluster, t, boundsExpansion);
         AppendVisible(
             pageOffset,
             clusterID,
@@ -650,7 +633,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
         LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID));
     if (!occluded)
     {
-        bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, view, cluster, t, boundsExpansion);
+        bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, currentBounds.NearDepth, view, cluster, t, boundsExpansion);
         AppendVisible(
             pageOffset,
             clusterID,

@@ -263,7 +263,7 @@ public sealed partial class ClusterPipelineSystem
                     ClusterViewUniforms.SizeInBytes),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
-                CreateReadOnlyBufferView(graph, frame.Bvh, stride: 64)));
+                CreateReadOnlyBufferView(graph, frame.Bvh)));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
@@ -375,7 +375,7 @@ public sealed partial class ClusterPipelineSystem
                 CreateReadOnlyBufferView(edit, packedViews, ClusterViewUniforms.SizeInBytes),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
-                CreateReadOnlyBufferView(edit, data.Bvh, stride: 64)));
+                CreateReadOnlyBufferView(edit, data.Bvh)));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(edit, data.InstanceData), PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(

@@ -16,7 +16,7 @@ struct ClusterTraversalSeedUniforms
 };
 
 StructuredBuffer<ClusterViewUniforms> Views;
-StructuredBuffer<ClusterBVHNode> GlobalBVH;
+ByteAddressBuffer GlobalBVH;
 ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 RWStructuredBuffer<ClusterTraversalNode> TraversalNodes;
@@ -196,11 +196,9 @@ void SeedHierarchyRoots(
     valid = valid && rootIndex != 0xFFFFFFFFu;
     float3 instanceWorldMin = 1e30.xxx;
     float3 instanceWorldMax = -1e30.xxx;
-    ClusterBVHNode root = (ClusterBVHNode)0;
     RenderInstanceTransform transform = (RenderInstanceTransform)0;
     if (valid)
     {
-        root = GlobalBVH[rootIndex];
         transform = LoadRenderTransform(
             InstanceData,
             LoadRenderInstanceMetadata(
@@ -243,8 +241,6 @@ void SeedHierarchyRoots(
                 projectedBounds);
             if (view.CullingEnabled != 0u && outsideFrustum)
                 continue;
-            if (!ClusterNodePassesLod(root, transform, view))
-                continue;
             uint boundsState = (occludedGroupViews & (1u << bit)) != 0u
                 ? (ClusterSeedTargetAccepts(projectedBounds, view) ? 2u : 0u)
                 : ClusterSeedBoundsState(
@@ -279,7 +275,7 @@ void SeedHierarchyRoots(
             TraversalSeed.ArgsOffset + 24u,
             admittedCount,
             ignoredRemaining);
-        uint groupCount = (publishedCount + 3u) / 4u;
+        uint groupCount = (publishedCount + 15u) / 16u;
         uint ignored;
         NodeIndirectArgs.InterlockedMax(
             TraversalSeed.ArgsOffset,

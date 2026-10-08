@@ -26,7 +26,7 @@ struct ClusterProjectedBounds
 };
 
 void ClusterNodeWorldBounds(
-    ClusterBVHNode node,
+    ClusterHierarchySlice node,
     RenderInstanceTransform transform,
     float boundsExpansion,
     out float3 worldMin,
@@ -35,8 +35,8 @@ void ClusterNodeWorldBounds(
     float localExpansion = ClusterLocalExpansionForWorldRadius(
         transform,
         boundsExpansion);
-    float3 localMin = node.BoundMin.xyz - localExpansion.xxx;
-    float3 localMax = node.BoundMax.xyz + localExpansion.xxx;
+    float3 localMin = node.BoundsCenter - node.BoundsExtent - localExpansion.xxx;
+    float3 localMax = node.BoundsCenter + node.BoundsExtent + localExpansion.xxx;
     worldMin = 1e30.xxx;
     worldMax = -1e30.xxx;
     [unroll]
@@ -49,6 +49,22 @@ void ClusterNodeWorldBounds(
         float3 world = TransformInstanceLocalPosition(local, transform);
         worldMin = min(worldMin, world);
         worldMax = max(worldMax, world);
+    }
+}
+
+void ClusterRootWorldBounds(ByteAddressBuffer hierarchy, uint root,
+    RenderInstanceTransform transform, float expansion, out float3 low, out float3 high)
+{
+    low = 1e30.xxx;
+    high = -1e30.xxx;
+    for (uint child = 0u; child < 4u; child++)
+    {
+        ClusterHierarchySlice slice = LoadClusterNode(hierarchy, root, child);
+        if (!ClusterSliceEnabled(slice)) continue;
+        float3 childLow, childHigh;
+        ClusterNodeWorldBounds(slice, transform, expansion, childLow, childHigh);
+        low = min(low, childLow);
+        high = max(high, childHigh);
     }
 }
 
@@ -163,7 +179,7 @@ bool ProjectWorldAabbForView(
 }
 
 bool ProjectClusterNode(
-    ClusterBVHNode node,
+    ClusterHierarchySlice node,
     RenderInstanceTransform transform,
     float boundsExpansion,
     ClusterViewUniforms view,
@@ -185,20 +201,18 @@ bool ProjectClusterNode(
 }
 
 bool ClusterNodePassesLod(
-    ClusterBVHNode node,
+    ClusterHierarchySlice node,
     RenderInstanceTransform transform,
     ClusterViewUniforms view)
 {
     if (view.CullingEnabled == 0u)
         return true;
-    float3 worldCenter = TransformInstanceLocalPosition(node.LODSphere.xyz, transform);
+    float3 worldCenter = TransformInstanceLocalPosition(node.LODBounds.xyz, transform);
     float maxScale = abs(transform.Scale) *
         max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
-    float worldRadius = node.LODSphere.w * maxScale;
-    float errorScale = view.TargetPolicy != 0u
-        ? abs(transform.Scale) * min(min(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z))
-        : maxScale;
-    return ClusterSphereError(worldCenter, worldRadius, node.LODError * errorScale, view) > view.LodThreshold;
+    float worldRadius = node.LODBounds.w * maxScale;
+    float errorScale = abs(transform.Scale) * min(min(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
+    return ClusterSphereError(worldCenter, worldRadius, node.MaxParentLODError * errorScale, view) > view.LodThreshold;
 }
 
 #endif

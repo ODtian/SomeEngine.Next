@@ -78,6 +78,7 @@ public sealed partial class ClusterPipelineSystem
             ShadeBinCount = shadeBinCount,
             SlotCapacity = assignments.SlotCapacity,
             PageFaultCapacity = pageFaultCapacity,
+            PagePriorityCapacity = residency.GeometryPageCount,
             PageHeap = geometryBuffers.PageHeap,
             Bvh = geometryBuffers.Bvh,
             InstanceData = instanceResources.PropertyData,
@@ -173,7 +174,7 @@ public sealed partial class ClusterPipelineSystem
         frame.PageFaults = frame.AddBuffer(
             ref graph,
             checked(sizeof(uint) + (ulong)pageFaultCapacity * 16u +
-                (residency.BvhDescription.Size / 64u) * sizeof(uint)),
+                (ulong)residency.GeometryPageCount * sizeof(uint)),
             BufferUsages.CopySource,
             "Cluster page faults");
         frame.Phase2CandidateArgs = frame.AddBuffer(
@@ -557,6 +558,17 @@ public sealed partial class ClusterPipelineSystem
             new ClusterDispatchParameters(new DispatchArguments(groupsX, groupsY, 1)),
             bindingCount,
             ClusterDispatchParameters.Record);
+    }
+
+    private void GrowPageRequestPriorities(ref RenderGraphEdit graph)
+    {
+        FrameResources frame = GraphData.Resources;
+        frame.PagePriorityCapacity = _resources.GeometryPageCount;
+        SetStageBuffer(ref graph, frame.PageFaults,
+            checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * 16u +
+                (ulong)frame.PagePriorityCapacity * sizeof(uint)),
+            BufferUsages.CopySource, "Cluster page faults");
+        GraphData.Resources = frame;
     }
 
     private void GrowRasterWork(ref RenderGraphEdit graph)
@@ -1099,6 +1111,7 @@ public sealed partial class ClusterPipelineSystem
         internal uint SlotCapacity;
         internal uint BinnedEntriesPerCluster;
         internal int PageFaultCapacity;
+        internal uint PagePriorityCapacity;
         internal GraphBufferId PageHeap;
         internal GraphBufferId Bvh;
         internal GraphBufferId WorkStatus;
