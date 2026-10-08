@@ -237,10 +237,12 @@ texel offset `.25` 产生 allowance `.2`，实际 public shader sampler 从 shad
 该片 TRX 与来源哈希保存在仓库外 `rg70-delivery-evidence/ticket-143/native-slope/`。
 
 `WorldOrigin` 是整个 Game world 的 double 原点，实例、相机与光源位置共用其局部 float 空间。
-`RenderView.WorldOrigin` 经唯一提取通路取得该原点，Cluster 560 字节视图记录携带当前和历史
-high/low 原点，阴影 272 字节视图记录携带同一 high/low 原点。请求、几何、光栅、HiZ 与采样
-消费此局部空间中的矩阵和位置。原点变化使下一帧采用新的主视图历史起点与阴影缓存代号，
-成功完成提交后保存新原点；取消继续保留前次提交的原点。
+`RenderView.WorldOrigin` 经唯一提取通路取得该原点。Cluster 816 字节视图记录携带各视图的近端
+high/low 原点、当前与历史平移；用户位置继续采用 Game 原点的 float offset，投射时先进入
+该视图的近端坐标。阴影 384 字节视图记录采用每层 clipmap 或局部灯的近端原点，保存
+对应投射与预计算 UV 法线变换。请求、光栅、HiZ 和采样消费同一坐标关系。
+世界原点迁移时，阴影历史位置与深度中心换算到当前数据空间，绝对页地址及实际内容变化
+决定缓存更新。成功提交保存该帧原点；取消继续保留前次提交的数据。
 
 方向 clipmap 用 double 光空间位置与 int64 网格 snap 建立绝对页地址；`WorldPageOriginX/Y`
 保留 64 位地址，`VirtualPageOriginX/Y` 保存其低 32 位环形页 tag。建立 float 投影前先在

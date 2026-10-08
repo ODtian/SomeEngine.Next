@@ -25,7 +25,7 @@ void PublishVirtualShadowFroxelBounds(uint viewIndex, uint mip, float3 minimumVi
             (corner & 2u) != 0u ? maximumView.y : minimumView.y,
             (corner & 4u) != 0u ? maximumView.z : minimumView.z);
         float4 world = mul(float4(position,1.0), FroxelParameters.ViewToWorld);
-        float4 clip = mul(world, view.LightViewProjection);
+        float4 clip = ProjectVirtualShadowClip(view, world.xyz / world.w);
         corners[corner] = clip;
         outsideLeft += uint(clip.x < -clip.w); outsideRight += uint(clip.x > clip.w);
         outsideBottom += uint(clip.y < -clip.w); outsideTop += uint(clip.y > clip.w);

@@ -143,7 +143,7 @@ VirtualShadowProjectionResult ProjectVirtualShadowHard(
     result.ViewIndex = sample.ViewIndex;
     result.MipLevel = sample.MipLevel;
     result.RayCount = 1u;
-    float clipW = mul(float4(position, 1.0), view.LightViewProjection).w;
+    float clipW = ProjectVirtualShadowClip(view, position).w;
     float rayBiasScale = IsDirectionalVirtualShadowProjection(view)
         ? abs(view.ProjectionDepthScale) : abs(1.0 + view.ProjectionDepthScale) / clipW;
     float biasedDepth = sample.Depth - VirtualShadowOptimalSlopeBias(views, viewIndex, sample, position, normal)
@@ -199,7 +199,7 @@ struct VirtualShadowRaySample
 
 float3 ProjectVirtualShadowRayPoint(VirtualShadowMapParameters view, float3 position)
 {
-    float4 clip = mul(float4(position, 1.0), view.LightViewProjection);
+    float4 clip = ProjectVirtualShadowClip(view, position);
     float3 ndc = clip.xyz / clip.w;
     return float3(ndc.xy * float2(.5, -.5) + .5, 1.0 - ndc.z);
 }

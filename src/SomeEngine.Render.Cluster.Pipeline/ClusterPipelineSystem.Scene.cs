@@ -12,18 +12,23 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
-    [StructLayout(LayoutKind.Sequential, Size = 16)]
+    [StructLayout(LayoutKind.Sequential, Size = 32)]
     private struct ClusterSceneUniforms
     {
         internal uint InstanceCount;
         internal uint HasPreviousBounds;
         internal uint UseInstanceGroups;
+        private uint Padding;
+        internal Vector3 PreviousWorldTranslation;
+        private float TranslationPadding;
     }
 
     private ClusterSceneUniforms _sceneValues;
     private RenderInstanceBatch? _sceneBatch;
     private ulong _sceneInstanceRevision;
     private ulong _sceneGeometryRevision;
+    private WorldOrigin _sceneOrigin;
+    private WorldOrigin _frameSceneOrigin;
     private Vector3[] _scenePositions = [];
     private uint[] _sceneRemap = [];
     private uint[] _sceneInstances = [];
@@ -52,7 +57,7 @@ public sealed partial class ClusterPipelineSystem
         GraphData.SceneInstanceData = CreateBufferData(ref graph,
             ClusterBytes.Zero(_options.UseInstanceGroups ? checked((int)Math.Max(capacity, 1u) * sizeof(uint)) : sizeof(uint)),
             BufferUsages.ShaderRead, "Cluster spatial instance indices");
-        GraphData.SceneUniforms = CreateParameters(ref graph, new byte[16], "Cluster scene bounds parameters");
+        GraphData.SceneUniforms = CreateParameters(ref graph, new byte[32], "Cluster scene bounds parameters");
         PassDefinition pass = graph.GetPass(GraphData.SceneBounds.Pass);
         _ = pass.Bind(GraphData.SceneUniforms, PipelineSync.ComputeShading);
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
@@ -67,10 +72,13 @@ public sealed partial class ClusterPipelineSystem
         _sceneBatch = null;
     }
 
-    private void BindSceneBounds(ref RenderGraphFrame graph, RenderWorld world, RenderInstanceBatch batch, bool hasTargetViews)
+    private void BindSceneBounds(ref RenderGraphFrame graph, RenderWorld world, RenderInstanceBatch batch, bool hasTargetViews,
+        WorldOrigin worldOrigin)
     {
         bool hasPrevious = ReferenceEquals(_sceneBatch, batch);
-        bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision || _sceneGeometryRevision != GeometryRevision;
+        bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision ||
+            _sceneGeometryRevision != GeometryRevision || _sceneOrigin != worldOrigin;
+        _frameSceneOrigin = worldOrigin;
         // Movement changes bounds, not the instance membership of the spatial groups.
         // Keep their order until batch replacement changes the row mapping; the GPU refits
         // the existing groups below. Geometry residency changes also preserve that mapping.
@@ -101,6 +109,7 @@ public sealed partial class ClusterPipelineSystem
         {
             InstanceCount = checked((uint)batch.InstanceCount), HasPreviousBounds = hasPrevious ? 1u : 0u,
             UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
+            PreviousWorldTranslation = hasPrevious ? _sceneOrigin.RelativeTo(worldOrigin) : Vector3.Zero,
         };
         graph.SetPassData(GraphData.SceneBounds.Pass, new ClusterDispatchParameters(new DispatchArguments(
             (checked((uint)batch.InstanceCount) + 63u) / 64u, 1, 1)));
