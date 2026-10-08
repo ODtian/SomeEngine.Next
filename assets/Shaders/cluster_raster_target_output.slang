@@ -70,7 +70,7 @@ int4 PrepareRasterTargetScissor(
     uint screenWidth,
     uint screenHeight,
     uint threadIndex,
-    uint threadCount)
+    uint threadCount, uint requiredPageFlags = 0u)
 {
     ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
     uint4 pageWindow = ClusterUnpackRasterTargetPageWindow(
@@ -97,7 +97,8 @@ int4 PrepareRasterTargetScissor(
             uint page = CLUSTER_RASTER_TARGET_INVALID_PAGE;
             uint4 receiverMask = 0u.xxxx;
             uint2 localPage = pageWindow.xy + cacheCoord;
-            if (ClusterRasterTargetPageRequested(target, localPage))
+            if (ClusterRasterTargetPageRequested(target, localPage) &&
+                (requiredPageFlags == 0u || (RasterTargetPageTable[ClusterRasterTargetTableIndex(target, localPage)] & requiredPageFlags) != 0u))
             {
                 uint tableIndex;
                 if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, page))
@@ -127,7 +128,8 @@ int4 PrepareRasterTargetScissor(uint visibleClusterIndex, uint targetViewIndex,
     uint screenWidth, uint screenHeight, uint threadIndex, uint threadCount)
 {
     return PrepareRasterTargetScissor(VisibleClusterRasterWindow(RasterOutputVisibleClusters[visibleClusterIndex]), targetViewIndex,
-        screenWidth, screenHeight, threadIndex, threadCount);
+        screenWidth, screenHeight, threadIndex, threadCount,
+        (RasterOutputVisibleClusters[visibleClusterIndex].PageAndFlags & 2u) != 0u ? VSM_PAGE_PRIMARY : 0u);
 }
 
 int4 PrepareRasterTargetScissor(

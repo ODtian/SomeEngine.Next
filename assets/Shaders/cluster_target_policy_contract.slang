@@ -29,13 +29,15 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
 bool ClusterTargetPolicyScreenBoundsAccepts(
     float2 minUv,
     float2 maxUv,
-    ClusterViewUniforms view, uint depthCacheClass = 2u);
+    ClusterViewUniforms view, uint depthCacheClass = 2u, uint requiredPageFlags = 0u);
 
 bool ClusterTargetPolicyRasterBoundsWindow(
     float2 minUv,
     float2 maxUv,
     ClusterViewUniforms view,
-    out uint2 rasterWindow);
+    out uint2 rasterWindow, uint depthCacheClass = 0u, uint requiredPageFlags = 0u);
+
+uint ClusterTargetPolicyRequiredPageFlags(float nearDepth, ClusterViewUniforms view);
 
 bool ClusterTargetPolicyWorldBoundsOccluded(
     float3 worldMin,

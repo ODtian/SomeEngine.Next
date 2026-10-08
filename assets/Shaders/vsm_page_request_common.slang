@@ -23,6 +23,7 @@ void PublishVirtualShadowRequest(
 {
     if (tableIndex >= pageTableEntryCount)
         return;
+    if ((flags & VSM_PAGE_REQUEST_SECONDARY) == 0u) flags |= VSM_PAGE_REQUEST_PRIMARY;
 
     // Receiver pixels in a wave frequently request the same page. Only one
     // lane needs to publish each identical request; other lanes still mark

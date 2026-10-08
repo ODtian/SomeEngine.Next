@@ -240,6 +240,13 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     BuildReceiverMaskHierarchy(view, mipLevel, localPage);
 
     uint entry = ShadowPageTable[tableIndex];
+    if (entry != VSM_PAGE_UNMAPPED && entry != VSM_PAGE_LOCKED)
+    {
+        entry = (entry & ~(VSM_PAGE_PRIMARY | VSM_PAGE_SECONDARY)) |
+            ((requestFlags & VSM_PAGE_REQUEST_PRIMARY) != 0u ? VSM_PAGE_PRIMARY : 0u) |
+            ((requestFlags & VSM_PAGE_REQUEST_SECONDARY) != 0u ? VSM_PAGE_SECONDARY : 0u);
+        ShadowPageTable[tableIndex] = entry;
+    }
     bool sameTag = entry != VSM_PAGE_UNMAPPED &&
         entry != VSM_PAGE_LOCKED &&
         VirtualShadowPageMetadataMatches(entry, view, expectedWorldPage);
@@ -267,9 +274,11 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         bool detailUpgrade =
             (requestFlags & VSM_PAGE_REQUEST_DETAIL) != 0u &&
             (previousFlags & VSM_PAGE_REQUEST_DETAIL) == 0u;
+        bool primaryUpgrade = (requestFlags & VSM_PAGE_REQUEST_PRIMARY) != 0u &&
+            (previousFlags & VSM_PAGE_REQUEST_PRIMARY) == 0u;
         uint dirtyFlags = PageMetadata[atlasPage].Flags;
         staticUncached = PageMetadata[atlasPage].StaticDepthGeneration != view.CacheGeneration ||
-            (dirtyFlags & VSM_PAGE_INVALIDATE_STATIC) != 0u || detailUpgrade;
+            (dirtyFlags & VSM_PAGE_INVALIDATE_STATIC) != 0u || detailUpgrade || primaryUpgrade;
         bool retainDynamicCoarse = (view.Flags & VSM_VIEW_CACHED_DISTANT_LIGHT) != 0u ||
             (view.Flags & VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE) != 0u &&
             (requestFlags & VSM_PAGE_REQUEST_DETAIL) == 0u && !staticUncached;
@@ -315,6 +324,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     }
 
     ShadowPageTable[tableIndex] = (packedPage & 0x000fffffu) | VSM_PAGE_RENDERING |
+        ((requestFlags & VSM_PAGE_REQUEST_PRIMARY) != 0u ? VSM_PAGE_PRIMARY : 0u) |
         ((requestFlags & VSM_PAGE_REQUEST_SECONDARY) != 0u ? VSM_PAGE_SECONDARY : 0u);
     PageMetadata[atlasPage].WorldPage = expectedWorldPage;
     PageMetadata[atlasPage].Generation = view.CacheGeneration;

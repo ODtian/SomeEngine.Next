@@ -65,7 +65,8 @@ bool ClusterSeedTargetAccepts(ClusterProjectedBounds bounds, ClusterViewUniforms
     float2 maxUv = float2(bounds.NdcMax.x, -bounds.NdcMin.y) * 0.5 + 0.5;
     if (!RasterBoundsCoverPixelCenters(minUv, maxUv, uint2(view.ScreenWidth, view.ScreenHeight)))
         return false;
-    return ClusterTargetPolicyScreenBoundsAccepts(minUv, maxUv, view, depthCacheClass);
+    return ClusterTargetPolicyScreenBoundsAccepts(minUv, maxUv, view, depthCacheClass,
+        ClusterTargetPolicyRequiredPageFlags(bounds.NearDepth, view));
 }
 
 uint ClusterSeedBoundsState(

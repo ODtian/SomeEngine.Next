@@ -88,6 +88,7 @@ static const uint VSM_VIEW_FIRST_PERSON_SHADOW = 1u << 11u;
 static const uint VSM_PAGE_REQUEST_DETAIL = 1u << 0u;
 static const uint VSM_PAGE_REQUEST_COARSE = 1u << 1u;
 static const uint VSM_PAGE_REQUEST_SECONDARY = 1u << 2u;
+static const uint VSM_PAGE_REQUEST_PRIMARY = 1u << 3u;
 
 static const uint VSM_PAGE_UNMAPPED = 0u;
 static const uint VSM_PAGE_LOCKED = 0xFFFFFFFFu;

@@ -154,7 +154,7 @@ bool ClusterTargetReceiverHierarchyAccepts(ClusterRasterTargetView target, uint2
 bool ClusterTargetPolicyScreenBoundsAccepts(
     float2 minUv,
     float2 maxUv,
-    ClusterViewUniforms view, uint depthCacheClass)
+    ClusterViewUniforms view, uint depthCacheClass, uint requiredPageFlags = 0u)
 {
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
     uint2 firstPixel;
@@ -168,6 +168,18 @@ bool ClusterTargetPolicyScreenBoundsAccepts(
     if (!ClusterTargetPageBounds(
             target, firstPixel, lastPixel, firstPage, lastPage))
         return false;
+    if (requiredPageFlags != 0u)
+    {
+        for (uint y = firstPage.y; y <= lastPage.y; y++)
+        for (uint x = firstPage.x; x <= lastPage.x; x++)
+        {
+            uint2 page = uint2(x, y);
+            if (ClusterTargetPageRequested(target, page, depthCacheClass) &&
+                (RasterTargetPageTable[ClusterRasterTargetTableIndex(target, page)] & requiredPageFlags) != 0u &&
+                (depthCacheClass == 1u || ClusterTargetReceiverAccepts(target, page, firstPixel, lastPixel))) return true;
+        }
+        return false;
+    }
     uint2 pageExtent = lastPage - firstPage + 1u;
     uint maximumExtent = max(pageExtent.x, pageExtent.y);
     uint hierarchyLevel =
@@ -201,7 +213,7 @@ bool ClusterTargetPolicyRasterBoundsWindow(
     float2 minUv,
     float2 maxUv,
     ClusterViewUniforms view,
-    out uint2 rasterWindow, uint depthCacheClass = 0u)
+    out uint2 rasterWindow, uint depthCacheClass = 0u, uint requiredPageFlags = 0u)
 {
     rasterWindow = 0u.xx;
     if (!RasterBoundsCoverPixelCenters(minUv, maxUv, uint2(view.ScreenWidth, view.ScreenHeight)))
@@ -217,14 +229,14 @@ bool ClusterTargetPolicyRasterBoundsWindow(
     uint2 lastPage = lastPixel / target.PageSize;
     uint2 clippedWindow;
     if (!ClusterTargetCropRasterWindow(target, uint4(firstPage, lastPage),
-            firstPixel, lastPixel, clippedWindow, depthCacheClass)) return false;
+            firstPixel, lastPixel, clippedWindow, depthCacheClass, requiredPageFlags)) return false;
     rasterWindow = ClusterPackRasterTargetPageWindow(uint4(firstPage, lastPage));
     return true;
 }
 
 bool ClusterTargetCropRasterWindow(
     ClusterRasterTargetView target, uint4 pages,
-    uint2 firstPixel, uint2 lastPixel, out uint2 rasterWindow, uint depthCacheClass = 0u)
+    uint2 firstPixel, uint2 lastPixel, out uint2 rasterWindow, uint depthCacheClass = 0u, uint requiredPageFlags = 0u)
 {
     rasterWindow = 0u.xx;
     uint2 firstPage = max(pages.xy, target.UncachedPageRect.xy);
@@ -258,6 +270,7 @@ bool ClusterTargetCropRasterWindow(
                 uint physicalPage;
                 if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, physicalPage))
                 {
+                    if (requiredPageFlags != 0u && (RasterTargetPageTable[tableIndex] & requiredPageFlags) == 0u) continue;
 #ifndef CLUSTER_TARGET_BOUNDS_ONLY
                     if (depthCacheClass == 1u && (RasterTargetPageMetadata[physicalPage].Flags & 8u) == 0u) continue;
 #endif
@@ -320,10 +333,11 @@ float ClusterTargetHiZMax(
 bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
     ClusterViewUniforms view, uint depthCacheClass)
 {
-    if (view.TargetPolicy == 0u || view.CullingEnabled == 0u || depthCacheClass != 0u)
+    if (view.TargetPolicy == 0u || view.CullingEnabled == 0u)
         return true;
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
-    if ((target.Padding.y & 8u) == 0u)
+    bool distant = (target.Padding.y & 16u) != 0u;
+    if (!distant && (depthCacheClass != 0u || (target.Padding.y & 8u) == 0u))
         return true;
 
     // This range belongs to orthographic directional views. Preserve the user's
@@ -334,8 +348,16 @@ bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
     float depthCenter = dot(center, depthAxis) + view.ViewProj[3][2];
     float depthRadius = dot(extent, abs(depthAxis));
     float rounding = (dot(abs(center), abs(depthAxis)) + abs(view.ViewProj[3][2]) + depthRadius + 1.0) * 9.5367431640625e-7;
+    if (distant) return depthCenter + depthRadius + rounding > target.DynamicDepthCullRange.y;
     return depthCenter + depthRadius + rounding > target.DynamicDepthCullRange.x &&
         depthCenter - depthRadius - rounding < target.DynamicDepthCullRange.y;
+}
+
+uint ClusterTargetPolicyRequiredPageFlags(float nearDepth, ClusterViewUniforms view)
+{
+    if (view.TargetPolicy == 0u || view.CullingEnabled == 0u) return 0u;
+    ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
+    return (target.Padding.y & 16u) != 0u && nearDepth > target.DynamicDepthCullRange.x ? VSM_PAGE_PRIMARY : 0u;
 }
 
 bool ClusterTargetPolicyAccepts(
@@ -349,7 +371,7 @@ bool ClusterTargetPolicyAccepts(
     return ClusterTargetPolicyScreenBoundsAccepts(
         float2(projectedBounds.NdcMin.x, -projectedBounds.NdcMax.y) * 0.5 + 0.5,
         float2(projectedBounds.NdcMax.x, -projectedBounds.NdcMin.y) * 0.5 + 0.5,
-        view, depthCacheClass);
+        view, depthCacheClass, ClusterTargetPolicyRequiredPageFlags(projectedBounds.NearDepth, view));
 }
 
 bool ClusterTargetPolicyScreenBoundsOccluded(

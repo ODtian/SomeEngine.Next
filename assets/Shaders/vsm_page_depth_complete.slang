@@ -20,7 +20,7 @@ void CompleteVirtualShadowPageDepth(uint3 thread : SV_DispatchThreadID)
     uint entry = CompletedShadowPageTable[page.y];
     uint flags = CompletedPageMetadata[page.x].Flags;
     bool masked = (flags & VSM_PAGE_MASKED) != 0u;
-    entry = (entry & (0x000fffffu | VSM_PAGE_SECONDARY)) | VSM_PAGE_RENDERING | VSM_PAGE_ANY_DEPTH |
+    entry = (entry & (0x000fffffu | VSM_PAGE_PRIMARY | VSM_PAGE_SECONDARY)) | VSM_PAGE_RENDERING | VSM_PAGE_ANY_DEPTH |
         (masked ? VSM_PAGE_PARTIAL_DEPTH : 0u);
     CompletedShadowPageTable[page.y] = entry;
     // Final static and combined HiZ precede this marker and retain far uncovered pixels.

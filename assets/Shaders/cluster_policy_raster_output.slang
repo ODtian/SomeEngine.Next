@@ -72,6 +72,12 @@ bool ResolveClusterRasterOutputPixel(int2 pixel, uint targetPolicy, uint targetV
     bool accepted = usePageCache
         ? ResolveCachedRasterTargetPixel(pixel, targetViewIndex, targetPixel, outputPixel.DepthCacheClass)
         : ResolveRasterTargetPixel(pixel, targetViewIndex, targetPixel, outputPixel.DepthCacheClass);
+    if (accepted && (RasterOutputVisibleClusters[visibleClusterIndex].PageAndFlags & 2u) != 0u)
+    {
+        ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
+        uint tableIndex = ClusterRasterTargetTableIndex(target, uint2(pixel) / target.PageSize);
+        accepted = (RasterTargetPageTable[tableIndex] & VSM_PAGE_PRIMARY) != 0u;
+    }
     outputPixel.Position = int2(targetPixel);
     return accepted;
 }

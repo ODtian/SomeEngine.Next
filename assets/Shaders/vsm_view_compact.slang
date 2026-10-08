@@ -126,9 +126,11 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     bool dynamicDepthCull = source.LightKind == VSM_LIGHT_DIRECTIONAL &&
         (source.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u &&
         (source.Flags & (VSM_VIEW_PREFILTERED_DISTANT | VSM_VIEW_FIRST_PERSON_SHADOW)) == 0u;
-    target.DynamicDepthCullRange = dynamicDepthCull ? source.DepthCullRange : float2(-3.402823466e+38, 3.402823466e+38);
+    bool distantDepthCull = (source.Flags & VSM_VIEW_PREFILTERED_DISTANT) != 0u;
+    target.DynamicDepthCullRange = dynamicDepthCull || distantDepthCull ? source.DepthCullRange : float2(-3.402823466e+38, 3.402823466e+38);
     uint2 maskOrigin = VirtualShadowReceiverMaskOrigin(source, mipLevel);
     target.ReceiverMaskOrigin = (maskOrigin.x << 16u) | maskOrigin.y;
     if (dynamicDepthCull) target.Padding.y |= 8u;
+    if (distantDepthCull) target.Padding.y |= 16u;
     RasterTargetViews[compactIndex] = target;
 }

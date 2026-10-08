@@ -4,6 +4,7 @@
 static const uint VSM_PAGE_ANY_DEPTH = 0x80000000u;
 static const uint VSM_PAGE_RENDERING = 0x40000000u;
 static const uint VSM_PAGE_SECONDARY = 0x20000000u;
+static const uint VSM_PAGE_PRIMARY = 0x10000000u;
 static const uint VSM_PAGE_PARTIAL_DEPTH = 0x04000000u;
 
 struct VirtualShadowPageMetadata
