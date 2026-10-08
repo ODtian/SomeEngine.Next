@@ -295,7 +295,7 @@ public sealed partial class ClusterPipelineSystem
                 PipelineSync.ComputeShading,
                 GraphAccessMode.ReadWrite,
                 WriteCoverage.Complete));
-            GraphBufferInput seedUniforms = UploadUniform(
+            GraphBufferSlice seedUniforms = UploadUniform(
                 ref graph,
                 new ClusterTraversalSeedUniforms
                 {
@@ -372,7 +372,7 @@ public sealed partial class ClusterPipelineSystem
                 : data.TraversalNodes0;
             uint currentOffset = checked(level * (uint)TraversalArgumentStride);
             uint nextOffset = checked((level + 1u) * (uint)TraversalArgumentStride);
-            GraphBufferInput levelUniforms = UploadUniform(
+            GraphBufferSlice levelUniforms = UploadUniform(
                 ref edit,
                 new ClusterTraversalLevelUniforms
                 {
@@ -506,7 +506,7 @@ public sealed partial class ClusterPipelineSystem
             ClusterDeferredResumeResetParameters.Declare,
             ClusterDeferredResumeResetParameters.Record, region: region == default ? _regions.PrimaryGeometry : region);
 
-        GraphBufferInput uniforms = UploadUniform(
+        GraphBufferSlice uniforms = UploadUniform(
             ref graph,
             new ClusterDeferredResumeUniforms { MaxWorkItems = _options.MaxCandidates },
             $"Cluster {epochLabel} deferred-resume uniforms");
@@ -788,7 +788,7 @@ public sealed partial class ClusterPipelineSystem
         GraphRegionId countRegion = graph.AddRegion("Count work", region);
         GraphRegionId reserveRegion = graph.AddRegion("Reserve bins", region);
         GraphRegionId scatterRegion = graph.AddRegion("Scatter work", region);
-        GraphBufferInput binningUniforms = UploadUniform(
+        GraphBufferSlice binningUniforms = UploadUniform(
             ref graph,
             new ClusterRasterBinningUniforms
             {
@@ -1035,7 +1035,7 @@ public sealed partial class ClusterPipelineSystem
     {
         ClusterTessellationInvocation tessellation = invocation.Tessellation!;
         uint bin = invocation.BinIndex;
-        GraphBufferInput uniforms = UploadUniform(
+        GraphBufferSlice uniforms = UploadUniform(
             ref graph,
             CreateTessellationUniforms(frame, bin, phaseOne, 0u),
             phaseOne
@@ -1192,7 +1192,7 @@ public sealed partial class ClusterPipelineSystem
         GraphRegionId region)
     {
         uint binCount = checked(frame.RasterBinCount * 8u);
-        GraphBufferInput uniforms = UploadUniform(
+        GraphBufferSlice uniforms = UploadUniform(
             ref graph,
             new ClusterTessellationBinUniforms
             {
@@ -1296,7 +1296,7 @@ public sealed partial class ClusterPipelineSystem
     private int BindTessellationBinResources(
         ref RenderGraphEdit graph,
         in FrameResources frame,
-        GraphBufferInput uniforms,
+        GraphBufferSlice uniforms,
         GraphBufferId sourcePatches,
         GraphBufferId destinationPatches,
         GraphBufferId sourceArguments,
@@ -1395,7 +1395,7 @@ public sealed partial class ClusterPipelineSystem
         uint bin = invocation.BinIndex;
         for (uint level = 0u; level < (uint)TessellationSplitLevelCount; level++)
         {
-            GraphBufferInput uniforms = UploadUniform(
+            GraphBufferSlice uniforms = UploadUniform(
                 ref graph,
                 CreateTessellationUniforms(frame, sharedBins ? uint.MaxValue : bin, phaseOne, level),
                 phaseOne
@@ -1441,7 +1441,7 @@ public sealed partial class ClusterPipelineSystem
             if (invocation.Tessellation is not { } tessellation)
                 continue;
             uint bin = invocation.BinIndex;
-            GraphBufferInput uniforms = UploadUniform(
+            GraphBufferSlice uniforms = UploadUniform(
                 ref graph,
                 CreateTessellationUniforms(frame, bin, phaseOne, 0u),
                 phaseOne
@@ -1543,7 +1543,7 @@ public sealed partial class ClusterPipelineSystem
                 throw new InvalidOperationException(
                     "Hardware-only tessellation has no fixed-function raster pipeline.");
             uint bin = invocation.BinIndex;
-            GraphBufferInput uniforms = UploadUniform(
+            GraphBufferSlice uniforms = UploadUniform(
                 ref graph,
                 CreateTessellationUniforms(frame, bin, phaseOne, 0u),
                 phaseOne
@@ -1618,7 +1618,7 @@ public sealed partial class ClusterPipelineSystem
         {
             ClusterRasterInvocation invocation = stages[invocationIndex];
             uint bin = invocation.BinIndex;
-            GraphBufferInput pushConstants = UploadUniform(
+            GraphBufferSlice pushConstants = UploadUniform(
                 ref graph,
                 new ClusterSoftwareRasterUniforms
                 {
@@ -1695,7 +1695,7 @@ public sealed partial class ClusterPipelineSystem
                 : "Cluster phase two winner depth view");
         ClusterRasterPipeline pipeline = _pipelines!.WinnerResolve
             ?? throw new InvalidOperationException("The selected visibility mode has no winner resolve pipeline.");
-        GraphBufferInput uniforms = UploadUniform(
+        GraphBufferSlice uniforms = UploadUniform(
             ref graph,
             new ClusterVisibilityWinnerUniforms
             {
@@ -1844,7 +1844,7 @@ public sealed partial class ClusterPipelineSystem
         int rasterHeight = policyTarget
             ? checked((int)_renderContext.RasterHeight)
             : frame.Height;
-        GraphBufferInput drawUniforms = UploadUniform(
+        GraphBufferSlice drawUniforms = UploadUniform(
             ref graph,
             new ClusterDrawUniforms
             {
@@ -1861,7 +1861,7 @@ public sealed partial class ClusterPipelineSystem
         {
             ClusterRasterInvocation invocation = stages[invocationIndex];
             uint bin = invocation.BinIndex;
-            GraphBufferInput dispatchUniforms = UploadUniform(
+            GraphBufferSlice dispatchUniforms = UploadUniform(
                 ref graph,
                 new ClusterDrawDispatchUniforms
                 {
@@ -2027,7 +2027,7 @@ public sealed partial class ClusterPipelineSystem
         GraphData.ReceiverGroups = new GraphRegionMap<uint, ShadeGroup>(graph.AddRegion("Cluster surface receiver materials", receivers), ShadeGroupComparer.Instance);
         GraphData.ShadeGroups = new GraphRegionMap<uint, ShadeGroup>(graph.AddRegion("Cluster shade materials", _regions.Shading), ShadeGroupComparer.Instance);
         GraphRegionId resolveRegion = graph.AddRegion("Cluster background resolve", _regions.Shading);
-        GraphBufferInput binUniforms = UploadUniform(
+        GraphBufferSlice binUniforms = UploadUniform(
             ref graph,
             new ClusterShadeBinUniforms
             {
@@ -2233,7 +2233,7 @@ public sealed partial class ClusterPipelineSystem
 
             // Material bins define geometry pixels; this final write fills every background pixel.
             // Together they define the complete color and motion outputs while retaining the bin writes.
-            GraphBufferInput resolveUniforms = UploadUniform(
+            GraphBufferSlice resolveUniforms = UploadUniform(
                 ref graph,
                 new ClusterResolveUniforms
                 {
@@ -2431,7 +2431,7 @@ public sealed partial class ClusterPipelineSystem
 
     private static GraphBufferCbvId CreateConstantBufferView(
         RenderGraphEdit graph,
-        GraphBufferInput input) => graph.CreateBufferCbv(input);
+        GraphBufferSlice input) => graph.CreateBufferCbv(input.Buffer, input.Range);
 
     private static GraphBufferCbvId CreateConstantBufferView(
         RenderGraphEdit graph,

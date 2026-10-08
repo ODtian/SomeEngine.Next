@@ -12,8 +12,8 @@ public sealed partial class ClusterPipelineSystem
     private sealed class RasterInputs
     {
         internal readonly List<GraphBufferId> Buffers = [];
-        internal readonly List<GraphBufferInput> Uniforms = [];
-        internal GraphBufferInput? SoftwareUniforms;
+        internal readonly List<GraphBufferSlice> Uniforms = [];
+        internal GraphBufferSlice? SoftwareUniforms;
         internal RasterBinning? PatchBinning;
         internal MeshRaster? MeshDraw;
     }
@@ -72,7 +72,7 @@ public sealed partial class ClusterPipelineSystem
     private void ReleaseRasterInputs(ref RenderGraphEdit graph, RasterInputs inputs)
     {
         foreach (GraphBufferId buffer in inputs.Buffers) RemoveBufferData(ref graph, buffer);
-        foreach (GraphBufferInput uniform in inputs.Uniforms) RemoveParameters(uniform);
+        foreach (GraphBufferSlice uniform in inputs.Uniforms) RemoveParameters(uniform);
     }
 
     private GraphRegionMap<uint, RasterBin> ReconcileRasterBins(ref RenderGraphEdit graph,
@@ -189,7 +189,7 @@ public sealed partial class ClusterPipelineSystem
 
 
     private sealed record RasterBinning(
-        GraphBufferInput Uniforms, GraphPassId Reset, GraphPassId Reserve, bool PolicyTarget);
+        GraphBufferSlice Uniforms, GraphPassId Reset, GraphPassId Reserve, bool PolicyTarget);
 
     private void UpdateRasterBinning(ref RenderGraphEdit graph, ImmutableDictionary<int, RasterPhase> phases)
     {
