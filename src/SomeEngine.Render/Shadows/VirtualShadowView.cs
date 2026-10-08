@@ -17,7 +17,7 @@ public enum VirtualShadowLightKind : uint
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 public struct VirtualShadowView
 {
-    public const int SizeInBytes = 384;
+    public const int SizeInBytes = 448;
     public const int PageTableEntrySizeInBytes = 4;
 
     private Matrix4x4 _lightViewProjection;
@@ -29,7 +29,8 @@ public struct VirtualShadowView
             _lightViewProjection = value;
             Matrix4x4 clipToUv = new(.5f, 0, 0, 0, 0, -.5f, 0, 0,
                 0, 0, 1, 0, .5f, .5f, 0, 1);
-            Matrix4x4.Invert(value * clipToUv, out Matrix4x4 uvToWorld);
+            _shadowUv = value * clipToUv;
+            Matrix4x4.Invert(_shadowUv, out Matrix4x4 uvToWorld);
             _shadowUvNormal = Matrix4x4.Transpose(uvToWorld);
         }
     }
@@ -90,6 +91,8 @@ public struct VirtualShadowView
     private float TranslationPadding;
     private Matrix4x4 _shadowUvNormal;
     public readonly Matrix4x4 ShadowUvNormal => _shadowUvNormal;
+    private Matrix4x4 _shadowUv;
+    public readonly Matrix4x4 ShadowUv => _shadowUv;
 
     /// <summary>Projects a position expressed relative to the current world data origin.</summary>
     public readonly Vector4 ProjectPosition(Vector3 position) =>
