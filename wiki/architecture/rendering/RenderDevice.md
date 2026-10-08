@@ -34,6 +34,7 @@ CPU 数据访问由 [[Frame-CPU-Overlap]] 中的 `RenderDataLock` 表达；图�
 一个纹理帧对象保护全部本帧引用并统一登记提交完成点；取消、替换和 GPU 完成沿该边界回收。
 已登记纹理的提交末态由图维护，设备持有其只读状态引用；跨图首次使用交付该引用中的边界，
 当帧导入资源的边界在设备侧保存至后续登记。
+纹理准备直接复用本帧取得的状态引用；完成处理按当帧上传事务登记上传结果，纹理帧继续保护全部引用。
 
 ## Relations
 [[architecture/assets/Texture-Device-Realization]] · [[architecture/render-graph/Resource-Access]]

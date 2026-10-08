@@ -523,7 +523,7 @@ public sealed partial class RenderDevice
         GraphTextureState? states = frame.GetTextureState(realization.Resource);
         realization.GraphResource = states is not null && ReferenceEquals(states, realization.GraphStates)
             ? states.Texture : frame.Import(realization.Resource, CreateBoundaryStates(realization));
-        realization.GraphStates = frame.GetTextureState(realization.Resource);
+        realization.GraphStates = states;
     }
 
     private void EnsureFinalizationPass(
@@ -880,8 +880,12 @@ public sealed partial class RenderDevice
     {
         try
         {
-            ReadOnlySpan<TextureBoundaryState> states = result.GetTextureStates(realization.GraphResource);
-            if (realization.GraphStates is null && !states.IsEmpty) realization.BoundaryStates = states.ToArray();
+            if (realization.GraphStates is null)
+            {
+                ReadOnlySpan<TextureBoundaryState> states = result.GetTextureStates(realization.GraphResource);
+                if (!states.IsEmpty) realization.BoundaryStates = states.ToArray();
+            }
+            if (realization.PendingFrameGraph is null) return;
             bool wroteContents = false;
             foreach (GraphPassId pass in realization.UploadPasses)
                 wroteContents |= result.TryGetPassCompletion(pass, out _);
