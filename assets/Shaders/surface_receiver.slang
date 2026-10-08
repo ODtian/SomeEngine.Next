@@ -17,6 +17,8 @@ struct SurfaceReceiver
     uint Flags;
     float3 GeometricNormal;
     float Depth;
+    float3 Position;
+    float DepthOffset;
 };
 
 void WriteSurfaceReceiverLayer(RWStructuredBuffer<SurfaceReceiver> receivers, uint3 pixel,
@@ -27,15 +29,11 @@ void WriteSurfaceReceiverLayer(RWStructuredBuffer<SurfaceReceiver> receivers, ui
     receivers[index] = receiver;
 }
 
-interface ISurfaceReceiverEvaluate<TSurface, TTriangle>
-{
-    SurfaceReceiver evaluateReceiver(uint3 pixelCoord, uint instanceID, uint materialIndex,
-        TSurface surface, float3 bary, TTriangle triangle);
-};
 
 bool SurfaceReceiverHasLighting(SurfaceReceiver receiver)
 {
-    return (receiver.Flags & SURFACE_RECEIVER_LIGHTING) != 0u;
+    return (receiver.Flags & (SURFACE_RECEIVER_PRESENT | SURFACE_RECEIVER_LIGHTING)) ==
+        (SURFACE_RECEIVER_PRESENT | SURFACE_RECEIVER_LIGHTING) && receiver.Depth >= 0.0 && receiver.Depth < 1.0;
 }
 
 bool SurfaceReceiverUsesBackfaceCulling(SurfaceReceiver receiver)
@@ -54,6 +52,22 @@ bool SurfaceReceiverIsBackfaceToLocal(SurfaceReceiver receiver, float3 towardLig
     float distanceSquared = dot(towardLight, towardLight);
     float sinAlpha = sqrt(saturate(sourceRadiusCentimeters * sourceRadiusCentimeters / (distanceSquared + 1.0)));
     return dot(receiver.ShadingNormal, towardLight * rsqrt(distanceSquared)) < -sinAlpha;
+}
+
+bool SurfaceReceiverReceivesDirectionalShadow(SurfaceReceiver receiver, float3 towardLight,
+    float sourceAngleRadians, bool cullBackfaces)
+{
+    return SurfaceReceiverHasLighting(receiver) && (!cullBackfaces ||
+        !SurfaceReceiverUsesBackfaceCulling(receiver) ||
+        !SurfaceReceiverIsBackfaceToDirectional(receiver, towardLight, sourceAngleRadians));
+}
+
+bool SurfaceReceiverReceivesLocalShadow(SurfaceReceiver receiver, float3 towardLightCentimeters,
+    float sourceRadiusCentimeters, bool cullBackfaces)
+{
+    return SurfaceReceiverHasLighting(receiver) && (!cullBackfaces ||
+        !SurfaceReceiverUsesBackfaceCulling(receiver) ||
+        !SurfaceReceiverIsBackfaceToLocal(receiver, towardLightCentimeters, sourceRadiusCentimeters));
 }
 
 #endif

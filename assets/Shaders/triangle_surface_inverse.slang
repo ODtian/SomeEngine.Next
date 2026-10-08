@@ -150,7 +150,7 @@ bool ResolveParametricScreenDerivatives(
     out float3 barycentricDx,
     out float3 barycentricDy)
 {
-    float4 clip = mul(float4(evaluation.Position, 1.0), input.ViewProjection);
+    float4 clip = mul(float4(evaluation.Position + input.WorldTranslation, 1.0), input.ViewProjection);
     float4 clipDu = mul(float4(evaluation.DpDu, 0.0), input.ViewProjection);
     float4 clipDv = mul(float4(evaluation.DpDv, 0.0), input.ViewProjection);
     float inverseW2 = abs(clip.w) > 1e-8 ? rcp(clip.w * clip.w) : 0.0;

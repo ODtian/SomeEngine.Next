@@ -972,6 +972,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 FilterSampleCount = _shadowMap.Settings.FilterSampleCount,
                 BlockerSearchRadiusTexels = _shadowMap.Settings.BlockerSearchRadiusTexels,
                 MaxFilterRadiusTexels = _shadowMap.Settings.MaxFilterRadiusTexels,
+                CullBackfacingPixels = _shadowMap.Settings.CullBackfacingPixels ? 1u : 0u,
                 NormalBias = _shadowMap.Settings.NormalBias,
                 FrameIndex = _frameIndex,
                 DirectionalRays = new()
@@ -1497,8 +1498,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             structureStride: 2 * sizeof(float),
             label: "Virtual shadow dynamic resolution bias"),
             PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(_surfaceReceivers, structureStride: 32), PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(_additionalReceivers, structureStride: 32), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(_surfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(_additionalReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferUav(_requestedPages, structureStride: sizeof(uint),
             label: "Virtual shadow request flags"), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);

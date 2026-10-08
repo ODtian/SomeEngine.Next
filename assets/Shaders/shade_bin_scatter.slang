@@ -13,7 +13,9 @@ StructuredBuffer<uint> ShadeSlots;
 RWStructuredBuffer<uint> ScatterCounts;
 ByteAddressBuffer PageHeap;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint2> PixelCoordinates;
+RWStructuredBuffer<ShadePixelWork> PixelCoordinates;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> SurfaceScatterCounts;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -37,6 +39,8 @@ void ScatterShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_Group
     uint mask;
     bool fullTile;
     if (!ClassifyShadeTile(bin, lane, mask, fullTile)) return;
+    uint surfaceIndex;
+    InterlockedAdd(SurfaceScatterCounts[bin], fullTile ? 64u : countbits(mask), surfaceIndex);
     uint counter = bin * 2u + (fullTile ? 0u : 1u);
     uint2 topLeft = fullTile ? threadId.xy & ~7u.xx : threadId.xy & ~1u.xx;
     uint coordinate = (threadId.z * Uniforms.ScreenHeight + topLeft.y) * Uniforms.ScreenWidth + topLeft.x;
@@ -47,6 +51,9 @@ void ScatterShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_Group
     if (waveLane == leader)
         InterlockedAdd(ScatterCounts[counter], WaveMaskBitCount(matching), writeBase);
     writeBase = WaveReadLaneAt(writeBase, leader);
-    PixelCoordinates[BinOffsets[counter] + writeBase + WaveMaskPrefix(matching, waveLane)] =
-        uint2(coordinate, mask);
+    ShadePixelWork work;
+    work.PixelIndex = coordinate;
+    work.Mask = mask;
+    work.SurfaceDataIndex = surfaceIndex;
+    PixelCoordinates[BinOffsets[counter] + writeBase + WaveMaskPrefix(matching, waveLane)] = work;
 }

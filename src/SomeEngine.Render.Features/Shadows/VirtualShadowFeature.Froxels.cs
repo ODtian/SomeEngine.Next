@@ -1,3 +1,4 @@
+using SomeEngine.Render.Lighting;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
@@ -116,9 +117,9 @@ public sealed partial class VirtualShadowFeature
         _ = pass.Bind(graph.CreateBufferCbv(uniforms),PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateTextureSrv(geometry.CurrentHiZ,new(0,1,0,1,TextureAspects.Color),Format.R32Float,
             SomeEngine.Graphics.TextureViewDimension.Texture2DArray),PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(geometry.SurfaceReceivers,structureStride:32),PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(geometry.SurfaceReceivers,structureStride:SurfaceReceiver.SizeInBytes),PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(_additionalReceiverCount != 0 ? _additionalReceiverData :
-            new GraphBufferSlice(geometry.AdditionalSurfaceReceivers,BufferRange.Whole),structureStride:32),PipelineSync.ComputeShading);
+            new GraphBufferSlice(geometry.AdditionalSurfaceReceivers,BufferRange.Whole),structureStride:SurfaceReceiver.SizeInBytes),PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferUav(froxels,structureStride:8),PipelineSync.ComputeShading,
             GraphAccessMode.Write,WriteCoverage.Partial,resultContents:ResourceContentState.Defined,contentScope:BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(graph.CreateBufferUav(_froxelArguments,structureStride:4),PipelineSync.ComputeShading,

@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Render.Shadows;
+using SomeEngine.Render.Lighting;
 using Xunit;
 using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 
@@ -47,8 +48,8 @@ public sealed class ShadowFroxelReceiverTests(D3D12TestCompiler compiler)
              new("ClusteredLightGrid",[0,0],ResourceBindingType.BufferSrv,8),
              new("LightIndexList",[0],ResourceBindingType.BufferSrv,4),
              new("DynamicResolutionBias",[0,0],ResourceBindingType.BufferSrv,8),
-             new("ReceiverInputs",new uint[256 * 8],ResourceBindingType.BufferSrv,32),
-             new("AdditionalReceiverInputs",new uint[8],ResourceBindingType.BufferSrv,32),
+             new("ReceiverInputs",MemoryMarshal.Cast<SurfaceReceiver,uint>(Enumerable.Range(0,256).Select(index => new SurfaceReceiver { Flags = SurfaceReceiverFlags.Present | SurfaceReceiverFlags.Lighting, Depth = .5f, Position = new(0,0,.5f) }).ToArray()).ToArray(),ResourceBindingType.BufferSrv,SurfaceReceiver.SizeInBytes),
+             new("AdditionalReceiverInputs",new uint[12],ResourceBindingType.BufferSrv,SurfaceReceiver.SizeInBytes),
              new("RequestedShadowPages",new uint[21],ResourceBindingType.BufferUav,4),
              new("RequestedPageFlags",new uint[21],ResourceBindingType.BufferUav,4),
              new("RequestedPageIndices",new uint[21],ResourceBindingType.BufferUav,4),
@@ -103,8 +104,8 @@ public sealed class ShadowFroxelReceiverTests(D3D12TestCompiler compiler)
         uint[] froxelUniforms = MemoryMarshal.Cast<VirtualShadowFroxelParameters,uint>(new[] { parameters }).ToArray();
         uint[][] froxels = compute.ExecuteImages("vsm_froxel_build.slang", "BuildVirtualShadowFroxels", new(2,2,1),
             [new("FroxelParameters",froxelUniforms,ResourceBindingType.ConstantBuffer,0),
-             new("FroxelReceivers",new uint[256 * 8],ResourceBindingType.BufferSrv,32),
-             new("FroxelAdditionalReceivers",new uint[8],ResourceBindingType.BufferSrv,32),
+             new("FroxelReceivers",MemoryMarshal.Cast<SurfaceReceiver,uint>(Enumerable.Range(0,256).Select(index => new SurfaceReceiver { Flags = SurfaceReceiverFlags.Present | SurfaceReceiverFlags.Lighting, Depth = .5f, Position = new(0,0,.5f) }).ToArray()).ToArray(),ResourceBindingType.BufferSrv,SurfaceReceiver.SizeInBytes),
+             new("FroxelAdditionalReceivers",new uint[12],ResourceBindingType.BufferSrv,SurfaceReceiver.SizeInBytes),
              new("OutFroxels",new uint[256 * 2],ResourceBindingType.BufferUav,8),
              new("OutFroxelArguments",new uint[16],ResourceBindingType.BufferUav,4)],
             [new(16,16,hiZ[0],0,Format.R32Float,TextureViewDimension.Texture2DArray,Name:"FroxelHiZ")]);
@@ -136,8 +137,8 @@ public sealed class ShadowFroxelReceiverTests(D3D12TestCompiler compiler)
              new("ClusteredLightGrid",[0,0],ResourceBindingType.BufferSrv,8),
              new("LightIndexList",[0],ResourceBindingType.BufferSrv,4),
              new("DynamicResolutionBias",[0,0],ResourceBindingType.BufferSrv,8),
-             new("ReceiverInputs",new uint[256 * 8],ResourceBindingType.BufferSrv,32),
-             new("AdditionalReceiverInputs",new uint[8],ResourceBindingType.BufferSrv,32),
+             new("ReceiverInputs",MemoryMarshal.Cast<SurfaceReceiver,uint>(Enumerable.Range(0,256).Select(index => new SurfaceReceiver { Flags = SurfaceReceiverFlags.Present | SurfaceReceiverFlags.Lighting, Depth = .5f, Position = new(0,0,.5f) }).ToArray()).ToArray(),ResourceBindingType.BufferSrv,SurfaceReceiver.SizeInBytes),
+             new("AdditionalReceiverInputs",new uint[12],ResourceBindingType.BufferSrv,SurfaceReceiver.SizeInBytes),
              new("RequestedShadowPages",new uint[21],ResourceBindingType.BufferUav,4),
              new("RequestedPageFlags",new uint[21],ResourceBindingType.BufferUav,4),
              new("RequestedPageIndices",new uint[21],ResourceBindingType.BufferUav,4),

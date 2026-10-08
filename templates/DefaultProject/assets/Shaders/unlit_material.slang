@@ -8,103 +8,47 @@ struct UnlitScalars
     float4 BaseColorTint;
 };
 
-struct UnlitPixelContext
+[MaterialSurfaceData]
+struct UnlitSurfaceData
 {
-    uint3 pixelCoord;
-    uint instanceID;
-    float3 worldNormal;
-    float2 uv0;
+    float3 Color;
+    float3 DebugColor;
 };
 
-UnlitPixelContext BuildUnlitPixelContext(
-    uint3 pixelCoord,
-    uint instanceID,
-    SurfaceEval surface)
+struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
-    UnlitPixelContext ctx;
-    ctx.pixelCoord = pixelCoord;
-    ctx.instanceID = instanceID;
-    ctx.worldNormal = surface.Normal;
-    ctx.uv0 = surface.TexCoord;
-    return ctx;
-}
-
-struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceReceiverEvaluate<SurfaceEval, Triangle>
-{
+    typealias Data = UnlitSurfaceData;
     Texture2D AlbedoMap;
     SamplerState MaterialSampler;
 
-    SurfaceReceiver evaluateReceiver(uint3 pixelCoord, uint instanceID, uint materialIndex,
-        SurfaceEval surface, float3 bary, Triangle triangle)
+    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle, out SurfaceReceiver receiver)
     {
-        return (SurfaceReceiver)0;
+        receiver = (SurfaceReceiver)0;
+        receiver.Position = pixel.VisibilityDepth == 2u ? pixel.PositionFromDepth : surface.Position;
+        receiver.Depth = pixel.Depth;
+        receiver.ShadingNormal = surface.Normal;
+        receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
+            triangle.Position2 - triangle.Position0), surface.Normal);
+        UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(pixel.MaterialIndex);
+        Data data;
+        data.Color = AlbedoMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb * scalars.BaseColorTint.rgb;
+        data.DebugColor = float3(1,0,1);
+        if (pixel.DebugMode == 8u) data.DebugColor = bary;
+        if (pixel.DebugMode == 9u) data.DebugColor = surface.Normal * .5 + .5;
+        if (pixel.DebugMode == 10u)
+        {
+            float checker = step(.5, frac(surface.TexCoord.x * 8)) != step(.5, frac(surface.TexCoord.y * 8)) ? .8 : .2;
+            data.DebugColor = float3(surface.TexCoord, checker);
+        }
+        if (pixel.DebugMode == 11u) data.DebugColor = abs(surface.Position - EvalLinearPosition(triangle, bary)) * 3;
+        return data;
     }
 
-    void evaluateSurface(
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
-        SurfaceEval surface,
-        float3 bary,
-        Triangle triangle,
+    void shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver,
         RWTexture2DArray<float4> outputColor)
     {
-        UnlitPixelContext ctx = BuildUnlitPixelContext(
-            pixelCoord,
-            instanceID,
-            surface);
-        float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
-        UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(materialSlot);
-        outputColor[ctx.pixelCoord] = float4(
-            albedoSample.rgb * scalars.BaseColorTint.rgb,
-            1.0);
-    }
-
-    void evaluateDebug(
-        uint debugMode,
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
-        SurfaceEval surface,
-        float3 bary,
-        Triangle triangle,
-        RWTexture2DArray<float4> outputColor)
-    {
-        if (debugMode == 8)
-        {
-            outputColor[pixelCoord] = float4(bary, 1.0);
-            return;
-        }
-
-        UnlitPixelContext ctx = BuildUnlitPixelContext(
-            pixelCoord,
-            instanceID,
-            surface);
-
-        if (debugMode == 9)
-        {
-            outputColor[pixelCoord] = float4(ctx.worldNormal * 0.5 + 0.5, 1.0);
-            return;
-        }
-
-        if (debugMode == 10)
-        {
-            float checker = step(0.5, frac(ctx.uv0.x * 8.0)) != step(0.5, frac(ctx.uv0.y * 8.0)) ? 0.8 : 0.2;
-            outputColor[pixelCoord] = float4(ctx.uv0.x, ctx.uv0.y, checker, 1.0);
-            return;
-        }
-
-        if (debugMode == 11)
-        {
-            float3 pos = surface.Position;
-            float3 basePos = EvalLinearPosition(triangle, bary);
-            outputColor[pixelCoord] = float4(abs(pos - basePos) * 3.0, 1.0);
-            return;
-        }
-
-        outputColor[pixelCoord] = float4(1.0, 0.0, 1.0, 1.0);
+        outputColor[pixelCoord] = float4(debugMode != 0u ? data.DebugColor : data.Color, 1);
     }
 };
-
-
 #endif

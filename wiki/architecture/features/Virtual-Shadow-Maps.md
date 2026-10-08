@@ -195,37 +195,30 @@ domain 自身提供表面误差；primary 沿其已有用户配置。streaming �
 当前深度代号继续消费几何驻留与材质输入 revision；局部几何/材质失效在 #147 与静态/动态缓存
 #141 中接合每个遮挡者的实际影响范围。
 
-## 用户 receiver 输入
+## 用户表面数据
 
-用户 shader 通过 `ISurfaceReceiverEvaluate<TSurface, TTriangle>.evaluateReceiver` 返回
-32字节 `SurfaceReceiver`：shading normal、参与/模型 flags、geometric normal 和额外层的 camera depth。
-可选 `ClusterSurfaceReceivers` entry 复用 primary visibility 的材质分箱与用户 vertex/domain 求值，
-位于 primary visibility 完成之后、阴影请求之前。图中的单一 receiver buffer 由 VSM 请求和最终
-材质消费；standard 材质先计算 NormalMap 的 shading normal，并保存独立三角形 geometric normal。
-最终 standard 光照复用同一 shading normal。unlit 用户材质声明其参与结果。
-采用此 entry 时框架补 `Present` 标记；已有用户 shader 沿有效 opaque depth 继续提供默认接收能力。
-材质分箱的全屏 GPU 遍历先为当前视图的 primary 和额外层写入完整空 receiver 数据，再由用户
-receiver entry 填写有效像素。背景、透明覆盖和空材质分箱通过同一遍历形成当帧的空参与状态；
-阴影请求与最终光照读取这次生成的相同数据。
+`ISurfaceEvaluate<TSurface, TTriangle>` 的 `Data` 由用户定义，并以 `MaterialSurfaceData` 标记布局。
+必需的 `ClusterSurfaceData` entry 只求值一次用户 vertex/domain 和表面数据：
+`evaluateSurface` 返回紧凑着色结果，同时给出48字节 `SurfaceReceiver`。
+位置为当前Game世界原点的float位移，normal为世界轴方向；Depth是用户visibility入口写出的最终camera深度，
+DepthOffset记录该用户结果相对源表面的偏移。first-person转换沿既有view/instance输入执行。
 
-请求消费用户声明的 shading normal，按原版方向/局部发光面背光条件处理，subsurface、hair 和
-多 normal basis 通过对应 flags 表达背光资格。geometric normal 留作用户和独立参考的几何语义，
-原版当前投射 caller 使用 shading normal；`VirtualShadowMapProjection.usf:122–143` 的几何估计
-helper 在该固定源码中标为 unused。first person 请求采用默认 bias2 与 absolute minimum level8。
-`SetAdditionalReceiverInputs` 接受用户 shader 在既有图中生成的 water/translucency/hair 层，
-每层按 camera pixel 顺序提供同一32字节数据，depth 采用当前 camera projection。
-用户 receiver entry 也可调用 `WriteAdditionalSurfaceReceiver` 写入三层，由同一材质主要持有者
-登记其资源使用并维护额外缓冲；默认 opaque 使用一个空数据记录。额外层实际写入时按
-water、front translucency、hair 顺序存放，每层包含所有 primary views 的 camera pixels。
-`TrySurfaceReceiverPreviousPixel` 消费包含实际 AA 偏移的 current-to-previous clip 矩阵和前帧 UV 边界，
-`TryReadSurfaceReceiverPreviousDepth` 消费用户解码的覆盖值，保持原版 front-layer 历史 depth 输入语义。
-water/translucency 请求方向光，hair 同时沿实际 clustered local light 列表产生局部请求。
-公开用户 shader 用例在 opaque 声明无 lighting 后，当前 water depth、AA 重投影的前帧 translucency depth
-和 hair depth 继续保留其世界点覆盖，实际 `[0,0,0,0]→[1,1,1,0]`。原版额外深度来源为
-`VirtualShadowMapPageMarking.usf:394–477`，shader 输出与 C# DTO 共用一个32字节布局。
-方向与局部页边界参数默认 `.05`，typed view 的原 padding 持有对应值，保持448字节视图记录。
-原版核对范围为 `VirtualShadowMapPageMarking.usf:349–414,480–612` 与
-`VirtualShadowMapPageMarking.ush:82–143`。
+材质分箱计数实际像素，按每种材质的固定记录尺寸分配同一个 `MaterialSurfaces` 缓冲。
+像素work保留结果索引；最终 `shadeSurface` 读取相同结果与receiver。
+标准材质的着色记录为48字节，Unlit为24字节；完整triangle/domain只在producer局部存在。
+标准材质的NormalMap、AlbedoMap、ARMMap在producer采样；motion也在此阶段形成。
+全屏GPU材质计数遍历初始化背景与空参与数据，随后producer填入有效像素。
+
+页请求和投射共同使用用户提供的Position、Depth、normal和lighting资格；方向/局部背面判断共用
+`surface_receiver.slang`。subsurface、hair和多normal basis通过用户flags表达对应条件。
+投射按Native对hair使用朝光方向，对subsurface保留原接收位置。
+特殊水、透明、头发及其他接收结果由调用者写入共享额外层；层中存储同一48字节查询数据。
+Froxel消费同一接收资格和最终深度，front-layer高质量条件沿既有pixel选择入口工作。
+`TrySurfaceReceiverPreviousPixel` 与 `TryReadSurfaceReceiverPreviousDepth` 继续提供当前/前帧深度接合。
+
+对应Native是Nanite材质求值后的场景表面数据与VSM消费者，固定源码
+`VirtualShadowMapProjection.usf:75–105,297–355`、`VirtualShadowMapPageMarking.usf:349–414,480–612`。
+表面语义及最终光照由用户shader定义，管线持有资源并调度生产与消费。
 
 ## 相对世界坐标与 clipmap 地址
 

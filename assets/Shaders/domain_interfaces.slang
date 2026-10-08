@@ -19,6 +19,7 @@ struct SurfaceReconstructionInput
     float3 ParentValue;
     float3 ParentDx;
     float3 ParentDy;
+    float3 WorldTranslation;
     float4x4 ViewProjection;
     uint2 ScreenSize;
 };

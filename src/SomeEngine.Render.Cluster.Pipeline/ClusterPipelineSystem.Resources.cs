@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Lighting;
 using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
 
@@ -346,6 +347,10 @@ public sealed partial class ClusterPipelineSystem
             BufferUsages.CopySource,
             "Cluster software raster debug output");
 
+        frame.SurfaceCounts = frame.AddBuffer(ref graph, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface counts");
+        frame.SurfaceScatterCounts = frame.AddBuffer(ref graph, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface scatter counts");
+        frame.SurfaceDataOffsets = frame.AddBuffer(ref graph, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface data offsets");
+        frame.SurfaceDataSizes = graph.CreateBufferInput(BufferUsages.ShaderRead);
         frame.ShadeBinCounts = frame.AddBuffer(
                 ref graph,
                 checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
@@ -368,12 +373,12 @@ public sealed partial class ClusterPipelineSystem
                 "Cluster shade scatter counts");
             frame.ShadeReserveCounters = frame.AddBuffer(
                 ref graph,
-                sizeof(uint),
+                2u * sizeof(uint),
                 BufferUsages.CopySource,
                 "Cluster shade reserve counter");
         frame.PixelCoordinates = frame.AddBuffer(
                 ref graph,
-                checked((ulong)width * (ulong)height * viewCount * 2ul * sizeof(uint)),
+                checked((ulong)width * (ulong)height * viewCount * 3ul * sizeof(uint)),
                 BufferUsages.None,
                 "Cluster shade tiles and quads");
 
@@ -460,11 +465,14 @@ public sealed partial class ClusterPipelineSystem
                         label: "Cluster policy hardware depth scratch"));
                 }
             }
-        frame.SurfaceReceivers = graph.CreateBuffer(new BufferDesc(checked((ulong)width * (ulong)height * viewCount * 32u),
+        frame.SurfaceDataStride = shadeStages.SurfaceDataStride;
+        frame.MaterialSurfaces = graph.CreateBuffer(new BufferDesc(checked((ulong)width * (ulong)height * viewCount * frame.SurfaceDataStride),
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Cluster material surfaces"));
+        frame.SurfaceReceivers = graph.CreateBuffer(new BufferDesc(checked((ulong)width * (ulong)height * viewCount * SurfaceReceiver.SizeInBytes),
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, "Cluster surface receivers"));
         frame.AdditionalReceiverLayerCount = shadeStages.HasAdditionalReceivers ? 3u : 0u;
         frame.AdditionalSurfaceReceivers = graph.CreateBuffer(new BufferDesc(
-            Math.Max(32u, checked((ulong)width * (ulong)height * viewCount * 32u * frame.AdditionalReceiverLayerCount)),
+            Math.Max((ulong)SurfaceReceiver.SizeInBytes, checked((ulong)width * (ulong)height * viewCount * SurfaceReceiver.SizeInBytes * frame.AdditionalReceiverLayerCount)),
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, "Cluster additional surface receivers"));
         frame.SceneColor = graph.CreateTexture(new TextureDesc(
                 TextureDimension.Texture2D,
@@ -601,12 +609,20 @@ public sealed partial class ClusterPipelineSystem
         uint tessellationBinCount = checked(rasterBinCount * 8u);
         uint shadeBinCount = shadeStages.BinCount;
 
+        uint surfaceStride = shadeStages.SurfaceDataStride;
+        if (surfaceStride != frame.SurfaceDataStride)
+        {
+            frame.SurfaceDataStride = surfaceStride;
+            SetStageBuffer(ref graph, frame.MaterialSurfaces,
+                checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * surfaceStride),
+                BufferUsages.None, "Cluster material surfaces");
+        }
         uint additionalLayers = shadeStages.HasAdditionalReceivers ? 3u : 0u;
         if (additionalLayers != frame.AdditionalReceiverLayerCount)
         {
             frame.AdditionalReceiverLayerCount = additionalLayers;
             SetStageBuffer(ref graph, frame.AdditionalSurfaceReceivers,
-                Math.Max(32u, checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * 32u * additionalLayers)),
+                Math.Max((ulong)SurfaceReceiver.SizeInBytes, checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * SurfaceReceiver.SizeInBytes * additionalLayers)),
                 BufferUsages.None, "Cluster additional surface receivers");
             GraphData.Outputs = GraphData.Outputs with { AdditionalReceiverLayerCount = additionalLayers };
         }
@@ -657,6 +673,9 @@ public sealed partial class ClusterPipelineSystem
         }
         if (shadeCapacityChanged)
         {
+            SetStageBuffer(ref graph, frame.SurfaceCounts, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface counts");
+            SetStageBuffer(ref graph, frame.SurfaceScatterCounts, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface scatter counts");
+            SetStageBuffer(ref graph, frame.SurfaceDataOffsets, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface data offsets");
             SetStageBuffer(ref graph, frame.ShadeBinCounts,
                 checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
                 BufferUsages.None, "Cluster shade bin counts");
@@ -1189,6 +1208,12 @@ public sealed partial class ClusterPipelineSystem
         internal GraphTextureId PolicyVisibilityScratch;
         internal GraphTextureId PolicyDepthScratch;
         internal GraphTextureId SceneColor;
+        internal GraphBufferId SurfaceCounts;
+        internal GraphBufferId SurfaceScatterCounts;
+        internal GraphBufferId SurfaceDataOffsets;
+        internal GraphBufferInput SurfaceDataSizes = null!;
+        internal GraphBufferId MaterialSurfaces;
+        internal uint SurfaceDataStride;
         internal GraphBufferId SurfaceReceivers;
         internal GraphBufferId AdditionalSurfaceReceivers;
         internal uint AdditionalReceiverLayerCount;
