@@ -19,6 +19,9 @@ ConstantBuffer<VirtualShadowInvalidationUniforms> Invalidation;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
 StructuredBuffer<float4> InstanceWorldBounds;
 StructuredBuffer<uint> ChangedInstances;
+#include "cluster_depth_cache.slang"
+StructuredBuffer<uint> PreviousDepthCacheClasses;
+StructuredBuffer<float4> LodWorldBounds;
 StructuredBuffer<uint> RequestedShadowPages;
 StructuredBuffer<uint> RequestedPageFlags;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -220,6 +223,18 @@ void InvalidateMovedVirtualShadowCasters(uint3 group : SV_GroupID, uint lane : S
         return;
     uint instanceId = ChangedInstances[changedIndex];
     bool deferred = changedIndex >= Invalidation.ChangedInstanceCount - Invalidation.DeferredChangedInstanceCount;
+    if ((instanceId & 0x80000000u) != 0u)
+    {
+        uint index = instanceId & 0x7fffffffu;
+        float3 low = LodWorldBounds[index * 2u].xyz;
+        float3 high = LodWorldBounds[index * 2u + 1u].xyz;
+        uint depthClass = LoadTargetDepthCacheClass(uint(LodWorldBounds[index * 2u].w));
+        for (uint viewIndex = lane; viewIndex < Invalidation.ViewCount; viewIndex += 64u)
+            InvalidateBoundsInView(viewIndex, ShadowViews[viewIndex], low, high, depthClass, true);
+        return;
+    }
+    bool rasterInputsChanged = (instanceId & 0x40000000u) != 0u;
+    instanceId &= 0x3fffffffu;
     float3 currentMin = InstanceWorldBounds[instanceId * 4u].xyz;
     float3 currentMax = InstanceWorldBounds[instanceId * 4u + 1u].xyz;
     float3 previousMin = InstanceWorldBounds[instanceId * 4u + 2u].xyz;
@@ -228,7 +243,9 @@ void InvalidateMovedVirtualShadowCasters(uint3 group : SV_GroupID, uint lane : S
     for (uint viewIndex = lane; viewIndex < Invalidation.ViewCount; viewIndex += 64u)
     {
         VirtualShadowMapParameters view = ShadowViews[viewIndex];
-        InvalidateBoundsInView(viewIndex, view, currentMin, currentMax, uint(InstanceWorldBounds[instanceId * 4u].w), deferred);
-        InvalidateBoundsInView(viewIndex, view, previousMin, previousMax, uint(InstanceWorldBounds[instanceId * 4u + 2u].w), deferred);
+        uint currentClass = rasterInputsChanged ? 1u : LoadTargetDepthCacheClass(instanceId);
+        InvalidateBoundsInView(viewIndex, view, currentMin, currentMax, currentClass, deferred);
+        uint previousClass = rasterInputsChanged ? 1u : (PreviousDepthCacheClasses[instanceId >> 5u] >> (instanceId & 31u)) & 1u;
+        InvalidateBoundsInView(viewIndex, view, previousMin, previousMax, previousClass, deferred);
     }
 }

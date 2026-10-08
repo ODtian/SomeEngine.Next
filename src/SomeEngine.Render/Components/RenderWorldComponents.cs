@@ -107,7 +107,7 @@ public readonly record struct RenderInstance : IComponent;
 /// </summary>
 public readonly record struct RenderMesh(Mesh Mesh, float BoundsExpansion,
     SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource = null,
-    DepthCacheClass DepthCacheClass = DepthCacheClass.Dynamic,
+    DepthCacheClass DepthCacheClass = DepthCacheClass.Auto,
     FirstPersonMeshData FirstPerson = default) : IComponent;
 
 public enum RenderViewFamily : uint

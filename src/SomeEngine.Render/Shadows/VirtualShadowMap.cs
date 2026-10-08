@@ -285,7 +285,8 @@ public sealed partial class VirtualShadowMap : IDisposable
         ulong geometryRevision,
         ulong rasterRevision,
         int instanceCount,
-        bool hasFirstPersonCasters = false)
+        bool hasFirstPersonCasters = false,
+        uint receiverMaskColumns = 1u)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(lights);
@@ -662,6 +663,11 @@ public sealed partial class VirtualShadowMap : IDisposable
             for (int index = 0; index < viewCount; index++) _views[index].CacheGeneration = generation;
         }
         _pendingCacheGeneration = generation;
+        for (int index = 0; index < viewCount; index++)
+        {
+            _views[index].ReceiverMaskOriginX = (uint)index % receiverMaskColumns * Settings.VirtualPagesPerRow * 2u;
+            _views[index].ReceiverMaskOriginY = (uint)index / receiverMaskColumns * Settings.VirtualPagesPerRow * 3u;
+        }
         return _views.AsSpan(0, viewCount);
     }
 

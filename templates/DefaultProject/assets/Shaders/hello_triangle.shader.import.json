@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 29,
-  "input_hash": "44257c9503f5e478d89ccb58dc07a4241beaba0e6e0059c5dea78af6dff4468a",
+  "importer_version": 31,
+  "input_hash": "26a9f68481e7d72a404af4d270ebc8f2a0c5606a800562fec8ff117236ed5a29",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/hello_triangle.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+      "content_hash": "ca411c4e64e36d5e042244e087f1d2726187cb2f1434ccdd46b78d4f0a9040ee"
     },
     {
       "relative_path": "assets/Shaders/hello_triangle.shader",
@@ -25,11 +25,11 @@
     {
       "asset_guid": "40101228-9501-58ff-b81a-08767d408801",
       "sub_asset_key": "",
-      "input_hash": "44257c9503f5e478d89ccb58dc07a4241beaba0e6e0059c5dea78af6dff4468a",
+      "input_hash": "26a9f68481e7d72a404af4d270ebc8f2a0c5606a800562fec8ff117236ed5a29",
       "dependencies": [],
       "asset_path": "hello_triangle.shader.asset",
-      "version": "09d2205e-8ad4-accc-0ca6-f39e26a96294",
-      "content_hash": "DC0ECDA4C04DDF6D7901B20AF2059A4C0310A17A1466F5359F6E0C0EBE02BB80",
+      "version": "50ca5e57-e964-f4d1-c2b3-d79533d23afa",
+      "content_hash": "EE7C5782E84F584EA2AC643D10836AF64EF349C43DE4B36E44762B1C1201488C",
       "asset_dependencies": []
     }
   ]

@@ -36,9 +36,9 @@ struct VirtualShadowMapParameters
     float DepthRadius;
     float2 DepthCullRange;
     float3 WorldOriginHigh;
-    float OriginHighPadding;
+    uint ReceiverMaskOriginX;
     float3 WorldOriginLow;
-    float OriginLowPadding;
+    uint ReceiverMaskOriginY;
     int ClipmapCornerRelativeOffsetX;
     int ClipmapCornerRelativeOffsetY;
     uint2 WorldPageOriginX;
@@ -99,7 +99,7 @@ static const uint VSM_PAGE_PRIOR_HIZ = 2u;
 #include "vsm_page_entry.slang"
 
 #ifndef VSM_WHOLE_PAGE_SAMPLING
-StructuredBuffer<uint2> VirtualShadowReceiverMasks;
+Texture2D<uint> VirtualShadowReceiverMasks;
 #endif
 
 uint VirtualShadowPagesPerRow(VirtualShadowMapParameters parameters)
@@ -113,6 +113,8 @@ uint VirtualShadowMipPagesPerRow(
 {
     return max(VirtualShadowPagesPerRow(parameters) >> mipLevel, 1u);
 }
+
+#include "vsm_receiver_mask_common.slang"
 
 uint VirtualShadowMipResolution(
     VirtualShadowMapParameters parameters,

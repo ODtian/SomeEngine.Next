@@ -1995,8 +1995,9 @@ internal sealed class ClusterLinkedStageLayout
                     (resource.Name, resource.Type) is
                     ("RasterTargetViews", ResourceBindingType.BufferSrv) or
                     ("RasterTargetPageHierarchy", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetDepthCacheClasses", ResourceBindingType.BufferSrv) or
                     ("RasterTargetPageTable", ResourceBindingType.BufferSrv) or
-                    ("RasterTargetReceiverMasks", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetReceiverMasks", ResourceBindingType.TextureSrv) or
                     ("RasterTargetPageMetadata", ResourceBindingType.BufferSrv) or
                     ("RasterTargetOutput", ResourceBindingType.TextureUav) or
                     ("RasterTargetStaticOutput", ResourceBindingType.TextureUav))

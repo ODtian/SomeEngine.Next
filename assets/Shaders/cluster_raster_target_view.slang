@@ -24,7 +24,7 @@ struct ClusterRasterTargetView
     uint4 UncachedPageRect;
     float2 DynamicDepthCullRange;
     uint StaticHiZLayerOffset;
-    uint DepthCullPadding;
+    uint ReceiverMaskOrigin;
 };
 
 static const uint CLUSTER_RASTER_TARGET_VIEW_BYTES = 96u;
@@ -95,16 +95,5 @@ uint ClusterRasterTargetHierarchyIndex(
         row * ((dimension + 31u) / 32u) + word;
 }
 
-bool ClusterRasterReceiverRectangleAccepts(uint2 receiverMask, uint2 firstCell, uint2 lastCell)
-{
-    uint columnMask = (0xFFu << firstCell.x) & (0xFFu >> (7u - lastCell.x));
-    uint columns = columnMask * 0x01010101u;
-    uint lowerFirst = firstCell.y < 4u ? 0xFFFFFFFFu << (firstCell.y * 8u) : 0u;
-    uint lowerLast = lastCell.y < 3u ? 0xFFFFFFFFu >> ((3u - lastCell.y) * 8u) : 0xFFFFFFFFu;
-    uint upperFirst = firstCell.y > 3u ? 0xFFFFFFFFu << ((firstCell.y - 4u) * 8u) : 0xFFFFFFFFu;
-    uint upperLast = lastCell.y > 3u ? 0xFFFFFFFFu >> ((7u - lastCell.y) * 8u) : 0u;
-    uint2 rectangle = uint2(lowerFirst & lowerLast, upperFirst & upperLast) & columns;
-    return any((receiverMask & rectangle) != 0u.xx);
-}
 
 #endif

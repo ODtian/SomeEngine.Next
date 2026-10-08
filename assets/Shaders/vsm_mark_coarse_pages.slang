@@ -25,7 +25,7 @@ void PublishPage(
         CoarsePageDemand.FrameIndex,
         CoarsePageDemand.PageTableEntryCount);
     if ((view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
-        MarkVirtualShadowFullReceiverMask(tableIndex);
+        MarkVirtualShadowFullReceiverMask(view, mipLevel, localPage);
 }
 
 [shader("compute")]

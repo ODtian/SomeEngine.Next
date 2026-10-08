@@ -397,7 +397,7 @@ bool LoadAndFilterCandidate(
         return false;
 
     uint depthCacheClass = view.TargetPolicy != 0u
-        ? LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID) : 1u;
+        ? LoadTargetDepthCacheClass(instanceID) : 1u;
     if (view.CullingEnabled != 0u)
     {
         currentBounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, false, view, depthCacheClass);
@@ -458,7 +458,7 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
         uint2 clipped;
         AddClusterWorkMetric(16u, 1u);
         if (ClusterTargetCropRasterWindow(target, uint4(first, last), firstPixel, lastPixel, clipped,
-                LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID)))
+                LoadTargetDepthCacheClass(instanceID)))
         {
             AddClusterWorkMetric(32u, 1u);
             AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex,
@@ -504,7 +504,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     {
         bounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, true, view);
         occluded = IsOccludedByHiZ(bounds, true, viewIndex, view,
-            LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID));
+            view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
     }
     // Missing history cannot occlude geometry. Draw it now; only actual previous-frame
     // occlusion belongs in the second-pass candidate list.
@@ -629,7 +629,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
         return;
 
     bool occluded = IsOccludedByHiZ(currentBounds, false, viewIndex, view,
-        LoadInstanceDepthCacheClass(InstanceData, InstanceProperties, instanceID));
+        view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
     if (!occluded)
     {
         bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, currentBounds.NearDepth, view, cluster, t, boundsExpansion);

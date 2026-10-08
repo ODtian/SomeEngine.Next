@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 29,
-  "input_hash": "a6dfa74343db418a420c0ea6bdbae3b29bb68d805a489a0eb742c5a42cc34488",
+  "importer_version": 31,
+  "input_hash": "daab376dfcc1125a9d6a8c18f10c9393ffa206466f6427e9338b4dfe9acc4e8e",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/depth_page_hiz.slang",
@@ -17,11 +17,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_hiz_common.slang",
-      "content_hash": "3b18a5ee6c1f3d31371972d600fd68f9b49f3a7ce5ada18277c93d860b38babf"
+      "content_hash": "19f4677580b9dba37e798f78a19c2c38f9456ce45f5006e4ad6d543dd2b209c3"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_hiz_reduce.slang",
-      "content_hash": "2c129c0e6b03d967fd55f5679951526cdaadbe3b0404f076359eab3147614da9"
+      "content_hash": "26ba60096408a0c9f866ba62e318dfc5cea2a55d11e18bfaf5f1387812c86d7b"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_page_hiz_reduce.slang",
@@ -29,7 +29,7 @@
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+      "content_hash": "ca411c4e64e36d5e042244e087f1d2726187cb2f1434ccdd46b78d4f0a9040ee"
     },
     {
       "relative_path": "assets/Shaders/vsm_page_hiz_reduce.shader",
@@ -41,11 +41,11 @@
     {
       "asset_guid": "c54545f1-3b34-5be8-b087-af5ede9f704c",
       "sub_asset_key": "",
-      "input_hash": "a6dfa74343db418a420c0ea6bdbae3b29bb68d805a489a0eb742c5a42cc34488",
+      "input_hash": "daab376dfcc1125a9d6a8c18f10c9393ffa206466f6427e9338b4dfe9acc4e8e",
       "dependencies": [],
       "asset_path": "vsm_page_hiz_reduce.shader.asset",
-      "version": "ef4ddde4-ed43-b232-4673-05a2e09cd334",
-      "content_hash": "222B88B901B70EEEB6F11A8454FFFB42F7DBBADEE2CDB8C85793F525F1BDF220",
+      "version": "b753863f-d457-221b-03ac-8868fb2a9f3c",
+      "content_hash": "D36C6D7DB1C9B8D345D47D187B69F437C533E36DA10D0E35A5674145464124E4",
       "asset_dependencies": []
     }
   ]

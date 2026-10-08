@@ -86,6 +86,7 @@ public readonly record struct ClusterRenderContext(
     public const int ViewSizeInBytes = 816;
     public GraphResourceBinder? BindTargetPageBounds { get; init; }
     public GraphResourceBinder? BindWorkTargetViews { get; init; }
+    public GraphResourceBinder? BindDepthCacheClasses { get; init; }
     public GraphBufferId DepthWorkCounter { get; init; }
     public uint ViewDetailCount { get; init; } = 1u;
     /// <summary>Maximum number of raster windows across all details of one source view.</summary>
