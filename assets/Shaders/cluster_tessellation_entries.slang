@@ -131,7 +131,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
         viewIndex);
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID, view);
     output.Pos = mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
-    output.ClipDepth = output.Pos.zw;
+    output.ClipDepth = CalculateHardwareRasterDepthInput(position, output.Pos, view);
     output.Pos = ClusterHardwareRasterPosition(output.Pos, patch.VisibleClusterIndex, view,
         ClusterRasterTargetViewport(view));
     output.Varying = visibility.interpolateVertex(
@@ -199,8 +199,9 @@ void ClusterTessellationHardwareMesh(
             DecodeTessellationPatchBarycentric(patch, 0u),
             DecodeTessellationPatchBarycentric(patch, 1u),
             DecodeTessellationPatchBarycentric(patch, 2u), localBary);
-        float4 clip = mul(float4(ClusterPositionForView(domain.position(triangle, sourceBary), view), 1.0), view.ViewProj);
-        vertices[index].ClipDepth = clip.zw;
+        float3 position = domain.position(triangle, sourceBary);
+        float4 clip = mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
+        vertices[index].ClipDepth = CalculateHardwareRasterDepthInput(position, clip, view);
         vertices[index].Pos = ClusterHardwareRasterPosition(clip, patch.VisibleClusterIndex, view,
             ClusterRasterTargetViewport(view));
         vertices[index].VisibleClusterIndex = patch.VisibleClusterIndex;
@@ -241,7 +242,7 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
         discard;
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
-    pixelInput.Depth = view.TargetPolicy != 0u ? input.ClipDepth.x / input.ClipDepth.y : input.Pos.z;
+    pixelInput.Depth = ReadHardwareRasterDepth(input.Pos, input.ClipDepth, view);
     pixelInput.EncodedTargetDepth = ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted);
     pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
     pixelInput.TriangleID = input.TriangleID;

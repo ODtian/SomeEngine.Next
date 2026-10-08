@@ -192,7 +192,7 @@ internal sealed class ClusterBvh
             pages.Count,
             localPageByNode,
             destination.Memory,
-            Math.Max(1, hierarchyDepth - 1));
+            hierarchyDepth);
     }
 
     public uint Commit(in ClusterBvhRegistration registration)

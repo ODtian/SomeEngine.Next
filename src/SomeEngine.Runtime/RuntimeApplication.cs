@@ -590,7 +590,12 @@ internal static class RuntimeApplication
             DynamicResolutionEnabled = true,
         }) with { Enabled = options.VirtualShadows };
         if (options.ShadowRayCount is { } rayCount)
-            shadowSettings = shadowSettings with { DirectionalRayCount = rayCount, LocalRayCount = rayCount };
+            shadowSettings = shadowSettings with
+            {
+                DirectionalRayCount = rayCount,
+                LocalRayCount = rayCount,
+                MaxFilterRadiusTexels = rayCount == 0 ? 0 : shadowSettings.MaxFilterRadiusTexels,
+            };
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
             metrics: options.VerifyFrameOutput || options.LinearFrameOutputPath is not null || script is not null);

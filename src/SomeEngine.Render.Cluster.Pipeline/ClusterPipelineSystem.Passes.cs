@@ -2100,9 +2100,6 @@ public sealed partial class ClusterPipelineSystem
             CreateStorageBufferView(graph, frame.AdditionalSurfaceReceivers, SurfaceReceiver.SizeInBytes),
             PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.MaterialSurfaces, 0),
-            PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.SurfaceCounts, sizeof(uint)),
             PipelineSync.ComputeShading, GraphAccessMode.ReadWrite, WriteCoverage.Partial));
         ClusterDispatchParameters count = new(new DispatchArguments(
