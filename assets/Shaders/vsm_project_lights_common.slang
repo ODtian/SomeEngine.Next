@@ -40,6 +40,7 @@ struct VirtualShadowProjectionReceiver
     float3 Position;
     float NormalBiasLength;
     float3 Normal;
+    float3 GeometricNormal;
     float NominalPixelRadius;
     float ResolutionBias;
     uint Flags;
@@ -54,6 +55,7 @@ VirtualShadowProjectionReceiver ReadVirtualShadowProjectionReceiver(uint3 pixel,
     if (!SurfaceReceiverHasLighting(receiver)) return result;
     result.Position = receiver.Position;
     result.Normal = receiver.ShadingNormal;
+    result.GeometricNormal = receiver.GeometricNormal;
     result.NormalBiasLength = CalculateVirtualShadowNormalBiasLength(VirtualShadowSampling.ReceiverProjection,
         result.Position, VirtualShadowSampling.NormalBias, VirtualShadowViews[0].WorldUnitsPerCentimeter);
     result.NominalPixelRadius = CalculateVirtualShadowNominalWorldPixelRadius(
@@ -76,6 +78,7 @@ float ProjectVirtualShadowReceiver(uint3 pixel, uint light, VirtualShadowProject
     surface.Flags = receiver.Flags;
     surface.Depth = 0.0;
     surface.ShadingNormal = receiver.Normal;
+    surface.GeometricNormal = receiver.GeometricNormal;
     if (!SurfaceReceiverReceivesDirectionalShadow(surface, -source.Direction,
         VirtualShadowViews[firstView].SourceAngleRadians, VirtualShadowSampling.CullBackfacingPixels != 0u)) return 1.0;
     float3 normal = (receiver.Flags & SURFACE_RECEIVER_HAIR) != 0u ? -source.Direction : receiver.Normal;
@@ -122,6 +125,7 @@ float ProjectVirtualShadowLocalReceiver(uint3 pixel, uint light, uint sourceLigh
     surface.Flags = receiver.Flags;
     surface.Depth = 0.0;
     surface.ShadingNormal = receiver.Normal;
+    surface.GeometricNormal = receiver.GeometricNormal;
     if (!SurfaceReceiverReceivesLocalShadow(surface, towardLight / view.WorldUnitsPerCentimeter,
         view.SourceRadius / view.WorldUnitsPerCentimeter, VirtualShadowSampling.CullBackfacingPixels != 0u)) return 1.0;
     float3 normal = (receiver.Flags & SURFACE_RECEIVER_HAIR) != 0u ? normalize(towardLight) : receiver.Normal;
