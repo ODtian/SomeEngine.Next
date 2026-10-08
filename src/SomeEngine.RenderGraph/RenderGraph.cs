@@ -2,6 +2,13 @@
 
 public sealed partial class RenderGraph : IDisposable
 {
+    internal void SetParameterInputValue(GraphParameterInput input, in ParameterInputValue value)
+    {
+        if (input.PersistentValue == value) return;
+        input.PersistentValue = value;
+        foreach (FrameSlot frame in _frameSlots) frame.ParameterInputChanged(input);
+    }
+
     internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind, bool refreshViews = true)
     {
         foreach (FrameSlot frame in _frameSlots) frame.ChangeProperty(identity, kind, refreshViews);

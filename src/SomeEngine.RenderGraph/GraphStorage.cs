@@ -276,6 +276,8 @@ internal sealed class GraphBuffer
 
 internal sealed class GraphTexture
 {
+    private GraphTextureState? _state;
+    internal GraphTextureState GetState(GraphTextureId id) => _state ??= new(this, id);
     internal required TextureDimension Dimension;
     internal required uint Width;
     internal required uint Height;

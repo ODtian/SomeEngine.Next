@@ -53,6 +53,8 @@ internal sealed partial class RenderGraphFrameState
         _sealed = false;
         _finished = false;
         _executorActive = false;
+        foreach (GraphParameterInput input in _temporaryParameterInputs) ParameterInputChanged(input);
+        _temporaryParameterInputs.Clear();
     }
 
     internal RenderGraph Graph { get; }
@@ -699,6 +701,13 @@ internal sealed partial class RenderGraphFrameState
         _dynamicTextures[index] = row;
         _importedTextures.Add(texture, id);
         return id;
+    }
+
+    internal GraphTextureState? GetTextureState(Texture texture)
+    {
+        EnsureAuthoring();
+        return StructureIndex.ResourceIdentities.TryGetValue(texture, out GraphIdentity identity)
+            ? StructureIndex.Structure.Textures.Get(identity).GetState(new(identity)) : null;
     }
 
     internal GraphBufferId GetImported(Buffer buffer)
@@ -1669,8 +1678,42 @@ internal sealed partial class RenderGraphFrameState
     }
 
     private readonly ConditionalWeakTable<GraphParameterInput, InputData<ParameterInputValue>> _parameterInputs = new();
+    private readonly HashSet<GraphParameterInput> _temporaryParameterInputs = [];
 
     internal void SetParameterInput(GraphParameterInput input, ResourceBinding binding)
+    {
+        ParameterInputValue next = CreateParameterInputValue(input, binding);
+        InputData<ParameterInputValue> data = _parameterInputs.GetValue(input, static _ => new());
+        bool changed = data.Frame == 0 || data.Value != next;
+        data.Value = next;
+        data.Frame = Identity;
+        if (input.PersistentValue.HasValue) _temporaryParameterInputs.Add(input);
+        if (changed) ParameterInputChanged(input);
+    }
+
+    internal void SetPersistentParameterInput(GraphParameterInput input, ResourceBinding binding)
+    {
+        ParameterInputValue next = CreateParameterInputValue(input, binding);
+        if (next.Resource.IsValid && next.Resource.Owner != Graph.Identity ||
+            next.Secondary.IsValid && next.Secondary.Owner != Graph.Identity)
+            throw new ArgumentException("Retained shader inputs require registered graph resources.", nameof(binding));
+        if (_parameterInputs.TryGetValue(input, out var data))
+        {
+            if (data.Frame == Identity) ParameterInputChanged(input);
+            data.Frame = 0;
+        }
+        _temporaryParameterInputs.Remove(input);
+        Graph.SetParameterInputValue(input, next);
+    }
+
+    internal void ParameterInputChanged(GraphParameterInput input)
+    {
+        foreach (GraphIdentity access in StructureIndex.ParameterInputAccesses.GetValueOrDefault(input, []))
+            _executor.ChangeAccess(access);
+        _executor.ChangeParameterInput(input);
+    }
+
+    private ParameterInputValue CreateParameterInputValue(GraphParameterInput input, ResourceBinding binding)
     {
         EnsureAuthoring();
         DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity && input.Type == binding.Type,
@@ -1732,23 +1775,15 @@ internal sealed partial class RenderGraphFrameState
                     "The RHI resource is not supported by a parameter input.");
                 break;
         }
-        var next = new ParameterInputValue(binding, primary, range, textureRange,
+        return new ParameterInputValue(binding, primary, range, textureRange,
             secondary, secondaryBufferRange, secondaryTextureRange);
-        InputData<ParameterInputValue> data = _parameterInputs.GetValue(input, static _ => new());
-        bool changed = data.Frame == 0 || data.Value != next;
-        data.Value = next;
-        data.Frame = Identity;
-        if (!changed) return;
-        foreach (GraphIdentity access in StructureIndex.ParameterInputAccesses.GetValueOrDefault(input, []))
-            _executor.ChangeAccess(access);
-        _executor.ChangeParameterInput(input);
     }
 
     internal ParameterInputValue ResolveParameterInput(GraphParameterInput input)
     {
         bool found = _parameterInputs.TryGetValue(input, out InputData<ParameterInputValue>? data) && data.Frame == Identity;
-        DevelopmentCheck.Require(found, "A shader parameter input has no value for this frame.");
-        return found ? data!.Value : default;
+        DevelopmentCheck.Require(found || input.PersistentValue.HasValue, "A shader parameter input requires a resource value.");
+        return found ? data!.Value : input.PersistentValue.GetValueOrDefault();
     }
 }
 

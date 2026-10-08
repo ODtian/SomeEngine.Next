@@ -8,7 +8,12 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
-    private readonly record struct MaterialTexture(GraphTextureId Id, RhiTexture Texture, int References, bool RegisteredHere);
+    private readonly record struct MaterialTexture(GraphTextureId Id, RhiTexture Texture, int References, bool RegisteredHere)
+    {
+        internal ImmutableArray<GraphParameterInput> Inputs { get; init; }
+        internal TextureSrv? Srv { get; init; }
+        internal TextureUav? Uav { get; init; }
+    }
     private readonly object _materialTextureChangeGate = new();
     private readonly HashSet<EngineTexture> _changedMaterialTextures = [];
 
@@ -59,6 +64,30 @@ public sealed partial class ClusterPipelineSystem
             }
             else textures = textures.Add(texture, RegisterMaterialTexture(ref edit, texture, change));
         }
+        var textureInputs = new Dictionary<EngineTexture, List<GraphParameterInput>>();
+        var missingInputs = new List<GraphParameterInput>();
+        foreach (((var material, uint property), MaterialInput input) in GraphData.MaterialInputs)
+        {
+            if (input.Input.Type is not (ResourceBindingType.TextureSrv or ResourceBindingType.TextureUav)) continue;
+            if (material.GetTexture(property) is { } asset)
+            {
+                if (!textureInputs.TryGetValue(asset, out var members)) textureInputs.Add(asset, members = []);
+                members.Add(input.Input);
+            }
+            else if (input.Input.Type == ResourceBindingType.TextureUav)
+                throw new InvalidDataException($"Material '{material.Name}' slot '{input.Name}' requires a Texture for writable access.");
+            else missingInputs.Add(input.Input);
+        }
+        foreach ((EngineTexture asset, List<GraphParameterInput> inputs) in textureInputs)
+            textures = textures.SetItem(asset, textures[asset] with { Inputs = inputs.ToImmutableArray(), Srv = null, Uav = null });
+        if (missingInputs.Count != 0)
+        {
+            MaterialTexture missing = GraphData.MissingMaterialTexture ??
+                new MaterialTexture(edit.RegisterExternalTexture(_renderDevice.MissingTexture, []), _renderDevice.MissingTexture, 1, true);
+            GraphData.MissingMaterialTexture = missing with { Inputs = missingInputs.ToImmutableArray(), Srv = null };
+        }
+        else GraphData.MissingMaterialTexture = GraphData.MissingMaterialTexture is { } missing
+            ? missing with { Inputs = [] } : null;
         return textures;
     }
 
@@ -101,7 +130,7 @@ public sealed partial class ClusterPipelineSystem
             {
                 if (ReferenceEquals(_renderDevice.GetTexture(asset), current.Texture)) continue;
                 if (current.RegisteredHere) edit.Remove(current.Id);
-                textures = textures.SetItem(asset, RegisterMaterialTexture(ref edit, asset, current.References));
+                textures = textures.SetItem(asset, RegisterMaterialTexture(ref edit, asset, current.References) with { Inputs = current.Inputs });
             }
             edit.Commit();
             _graphData.MaterialTextures = textures;
@@ -116,5 +145,38 @@ public sealed partial class ClusterPipelineSystem
             throw;
         }
         finally { edit.Dispose(); }
+    }
+
+    private void UpdateMaterialTextureInputs(ref RenderGraphFrame frame)
+    {
+        var textures = GraphData.MaterialTextures;
+        foreach ((EngineTexture asset, MaterialTexture material) in GraphData.MaterialTextures)
+        {
+            if (material.Inputs.IsDefaultOrEmpty) continue;
+            RenderDevice.TextureViews views = _renderDevice.PrepareTextureForInputs(ref frame, material.Inputs.AsSpan(), asset);
+            TextureSrv? srv = views.Srv;
+            TextureUav? uav = views.Uav;
+            bool registered = _graph.TryGetTextureId(views.Texture, out _);
+            if (registered && ReferenceEquals(srv, material.Srv) && ReferenceEquals(uav, material.Uav)) continue;
+            foreach (GraphParameterInput input in material.Inputs)
+            {
+                ResourceBinding value = input.Type == ResourceBindingType.TextureSrv
+                    ? ResourceBinding.SampledTexture(srv!) : ResourceBinding.StorageTexture(uav!);
+                if (registered) frame.SetPersistentParameterInput(input, value);
+                else frame.SetParameterInput(input, value);
+            }
+            if (registered) textures = textures.SetItem(asset, material with { Srv = srv, Uav = uav });
+        }
+        GraphData.MaterialTextures = textures;
+        if (GraphData.MissingMaterialTexture is { Inputs.IsDefaultOrEmpty: false } missing)
+        {
+            TextureSrv srv = _renderDevice.PrepareMissingTextureForInputs(ref frame, missing.Inputs.AsSpan());
+            if (!ReferenceEquals(srv, missing.Srv))
+            {
+                foreach (GraphParameterInput input in missing.Inputs)
+                    frame.SetPersistentParameterInput(input, ResourceBinding.SampledTexture(srv));
+                GraphData.MissingMaterialTexture = missing with { Srv = srv };
+            }
+        }
     }
 }

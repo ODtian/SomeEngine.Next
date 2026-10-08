@@ -30,5 +30,10 @@ Runtime 在图执行成功后直接登记返回的完成点；部分提交的失
 CPU 数据访问由 [[Frame-CPU-Overlap]] 中的 `RenderDataLock` 表达；图的上传页、回读页与帧
 完成边界由 RenderGraph 持有。GPU 完成只控制资源复用与回收，CPU 读写权限只由作用域控制。
 
+材质纹理按唯一对象准备一次，相关 shader 输入共享这次 SRV/UAV 和上传依赖。
+一个纹理帧对象保护全部本帧引用并统一登记提交完成点；取消、替换和 GPU 完成沿该边界回收。
+已登记纹理的提交末态由图维护，设备持有其只读状态引用；跨图首次使用交付该引用中的边界，
+当帧导入资源的边界在设备侧保存至后续登记。
+
 ## Relations
 [[architecture/assets/Texture-Device-Realization]] · [[architecture/render-graph/Resource-Access]]
