@@ -22,28 +22,6 @@ uint2 ClusterRasterTargetPixelOrigin(uint visibleClusterIndex, ClusterViewUnifor
     return ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindow(RasterOutputVisibleClusters[visibleClusterIndex])).xy * target.PageSize;
 }
 
-float GetHardwareRasterDepthOffset(ClusterViewUniforms view)
-{
-    return !ClusterViewClipsDepth(view) ? 0.5 : 0.0;
-}
-
-float2 CalculateHardwareRasterDepthInput(float3 worldPosition, float4 clip, ClusterViewUniforms view)
-{
-    float offset = GetHardwareRasterDepthOffset(view);
-    if (offset == 0.0) return clip.zw;
-    // Interpolate the small depth offset first. Adding the center at each
-    // vertex rounds away depth changes before the raster interpolation.
-    float3 position = ClusterPositionForView(worldPosition, view);
-    float depth = dot(position, float3(view.ViewProj[0][2], view.ViewProj[1][2], view.ViewProj[2][2])) +
-        (view.ViewProj[3][2] - offset);
-    return float2(depth, clip.w);
-}
-
-float ReadHardwareRasterDepth(float4 pixelPosition, float2 clipDepth, ClusterViewUniforms view)
-{
-    return view.TargetPolicy != 0u ? clipDepth.x / clipDepth.y + GetHardwareRasterDepthOffset(view) : pixelPosition.z;
-}
-
 float4 ClusterHardwareRasterPosition(float4 clip, uint visibleClusterIndex,
     ClusterViewUniforms view, float2 rasterSize)
 {
