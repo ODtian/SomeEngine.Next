@@ -77,7 +77,7 @@ public sealed class RenderDeviceTextureTests
     }
 
     [Fact]
-    public void MultipleTexturesPreserveContentAcrossCanceledAndSubmittedFrames()
+    public void RegisteredTexturesPreserveContentAcrossCanceledAndSubmittedFrames()
     {
         if (!OperatingSystem.IsWindows()) return;
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -97,6 +97,14 @@ public sealed class RenderDeviceTextureTests
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         try
         {
+            RenderGraphEdit edit = graph.BeginEdit();
+            try
+            {
+                foreach (EngineTexture texture in textures)
+                    edit.RegisterExternalTexture(renderDevice.GetTexture(texture), []);
+                edit.Commit();
+            }
+            finally { edit.Dispose(); }
             for (int frameIndex = 0; frameIndex < 3; frameIndex++)
             {
                 RenderGraphFrame frame = graph.BeginFrame();
