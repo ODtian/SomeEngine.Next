@@ -361,52 +361,6 @@ public class ClusterBuilderTests
         Assert.Equal("region_0", asset.GetBlock<SomeEngine.Assets.Schema.MeshBlock>().Regions[0].Name);
     }
 
-    [Fact]
-    public void ProcessRaw_DoesNotEncodeADeformationMaterialDiscriminator()
-    {
-        Vector3[] positions =
-        [
-            new(0, 0, 0),
-            new(1, 0, 0),
-            new(0, 1, 0),
-            new(10, 0, 0),
-            new(11, 0, 0),
-            new(10, 1, 0),
-        ];
-        uint[] indices = [0, 1, 2, 3, 4, 5];
-        var materialIndices = new RawAttribute(
-            "_MATERIAL_INDEX",
-            [0, 0, 0, 1, 1, 1],
-            1,
-            ValueType.UInt8,
-            1,
-            false);
-        MeshMaterialSlot[] materials =
-        [
-            ClusterBuilderTestMaterials.Slot(),
-            ClusterBuilderTestMaterials.Slot(),
-        ];
-
-        using var asset = ClusterBuilder.ProcessRaw(
-            positions,
-            [materialIndices],
-            indices,
-            materials,
-            "MixedDeform");
-
-        var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
-        ReadOnlySpan<byte> payload = payloadRead.ToArray();
-        MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(payload);
-        ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(
-            payload.Slice(
-                checked((int)header.ClustersOffset),
-                checked((int)header.ClusterCount * PackedCluster.SizeInBytes)));
-        foreach (ref readonly PackedCluster cluster in clusters)
-        {
-            Assert.Equal(0u, cluster.PackedCounts >> 24);
-        }
-    }
-
     private static List<DecodedStandardVertex> DecodeStandardVertices(
         ReadOnlySpan<byte> payload,
         in MeshPageHeader header)

@@ -392,6 +392,8 @@ internal sealed class ClusterMeshSimplifier
         int p0 = _vertices[triangle.Vertices[0]].Position, p1 = _vertices[triangle.Vertices[1]].Position, p2 = _vertices[triangle.Vertices[2]].Position;
         if (p0 == p1 || p1 == p2 || p2 == p0 || Vector3.Cross(_positions[p1].Value - _positions[p0].Value,
             _positions[p2].Value - _positions[p0].Value).LengthSquared() < 1e-24f) { RemoveTriangle(index); return; }
+        // Equal attributes share one wedge before the next edge pair is evaluated.
+        WeldTriangleVertices(triangle);
         foreach (int otherIndex in _positions[p0].Triangles.ToArray())
         {
             if (otherIndex >= index || _triangles[otherIndex].Removed) continue;
@@ -406,6 +408,24 @@ internal sealed class ClusterMeshSimplifier
                 }
                 if (duplicate) { RemoveTriangle(index); return; }
             }
+        }
+    }
+    private void WeldTriangleVertices(MeshTriangle triangle)
+    {
+        for (int corner = 0; corner < 3; corner++)
+        {
+            int vertex = triangle.Vertices[corner];
+            MeshVertex data = _vertices[vertex];
+            foreach (int adjacent in _positions[data.Position].Triangles)
+            {
+                MeshTriangle other = _triangles[adjacent];
+                if (other.Removed) continue;
+                foreach (int candidate in other.Vertices)
+                    if (candidate < vertex && _vertices[candidate].Position == data.Position &&
+                        data.Attributes.AsSpan().SequenceEqual(_vertices[candidate].Attributes))
+                        vertex = candidate;
+            }
+            triangle.Vertices[corner] = vertex;
         }
     }
     private void RemoveTriangle(int index)
@@ -559,11 +579,24 @@ internal sealed class ClusterMeshSimplifier
             for (int row = 0; row < 3; row++)
                 for (int column = 0; column < 3; column++) product[row] +=
                     (Matrix[row * 3 + column] - _gradientProducts[row * 3 + column] / Area) * direction[column];
-            double denominator = Dot(direction, product);
-            if (Math.Abs(denominator) < 1e-12) return false;
-            double numerator = 0;
-            for (int axis = 0; axis < 3; axis++) numerator += direction[axis] * (_gradientConstants[axis] / Area - Linear[axis]);
-            position = edge * (float)Math.Clamp(numerator / denominator, 0, 1);
+            // Solve the three position equations along the edge, including the volume equation.
+            double squaredProduct = Dot(product, product);
+            if (squaredProduct < 1e-16) return false;
+            double[] rhs = new double[3];
+            for (int axis = 0; axis < 3; axis++) rhs[axis] = _gradientConstants[axis] / Area - Linear[axis];
+            double amount = Dot(product, rhs) / squaredProduct;
+            double squaredNormal = Dot(VolumeNormal, VolumeNormal);
+            if (squaredNormal > 1e-12)
+            {
+                double normalDirection = Dot(VolumeNormal, direction);
+                double productNormal = Dot(product, VolumeNormal);
+                double determinant = (squaredProduct + normalDirection * normalDirection) * squaredNormal - productNormal * productNormal;
+                if (Math.Abs(determinant) > 1e-16)
+                    amount = (squaredNormal * (Dot(product, rhs) - VolumeDistance * normalDirection) -
+                        productNormal * Dot(VolumeNormal, rhs)) / determinant;
+            }
+            amount = Math.Clamp(amount, 0, 1);
+            position = new((float)(edge.X * amount), (float)(edge.Y * amount), (float)(edge.Z * amount));
             return true;
         }
         internal double Evaluate(Vector3 position, float[] attributes, float[] weights, bool calculate)
