@@ -14,14 +14,21 @@ internal static class RasterTestGeometry
         Mesh mesh = await CreateAsync();
         var original = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, SomeEngine.Resources.Geometry.ClusterBVHNode>(mesh.Bvh.Span).ToArray();
         var nodes = new SomeEngine.Resources.Geometry.ClusterBVHNode[original.Length + extraLevels];
-        original.CopyTo(nodes, 0);
-        for (int level = 0; level < extraLevels; level++)
-            nodes[original.Length + level] = new SomeEngine.Resources.Geometry.ClusterBVHNode
+        original.CopyTo(nodes, extraLevels);
+        for (int index = extraLevels; index < nodes.Length; index++)
+            for (int child = 0; child < 4; child++)
             {
-                BoundMin = original[^1].BoundMin, BoundMax = original[^1].BoundMax,
-                LODSphere = original[^1].LODSphere, LODError = original[^1].LODError,
-                ChildPointer = checked((uint)(original.Length + level - 1)), ChildCount = 1, NodeType = 0,
-            };
+                var slice = nodes[index].GetChild(child);
+                if (slice.IsEnabled && !slice.IsLeaf) { slice.ChildReference += extraLevels; nodes[index].SetChild(child, slice); }
+            }
+        for (int level = 0; level < extraLevels; level++)
+        {
+            var slice = original[0].GetChild(0);
+            slice.PageRangeKey = uint.MaxValue;
+            slice.ChildReference = (uint)(level + 1);
+            slice.GroupPartData = (511u << 16) | 0xFFFFu;
+            nodes[level].SetChild(0, slice);
+        }
         var pages = Enumerable.Range(0, mesh.PageCount).Select(index =>
         {
             Assert.True(mesh.TryGetPage(index, out var bytes));

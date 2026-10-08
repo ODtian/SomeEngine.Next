@@ -51,7 +51,7 @@ public sealed class VertexReuseBatchTests
             int vertexCount = (int)(cluster.PackedCounts & 255u);
             int triangleCount = (int)((cluster.PackedCounts >> 8) & 255u);
             ReadOnlySpan<byte> triangles = page.Slice(
-                checked((int)header.IndicesOffset + cluster.TriangleStart), triangleCount * 3);
+                checked((int)(header.IndicesOffset + cluster.TriangleStart * 3u)), triangleCount * 3);
             int firstEnd = (int)(cluster.PackedRanges & 255u);
             int secondEnd = (int)((cluster.PackedRanges >> 8) & 255u);
             int ranges = firstEnd == triangleCount ? 1 : secondEnd == triangleCount ? 2 : 3;

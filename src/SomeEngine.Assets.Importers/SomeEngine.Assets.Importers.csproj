@@ -6,6 +6,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
     <NoWarn>$(NoWarn);CS0618</NoWarn>
+    <MetisRoot>$(MSBuildThisFileDirectory)..\..\external\metis</MetisRoot>
+    <MetisLibrary Condition="$([MSBuild]::IsOSPlatform('Windows'))">metis.dll</MetisLibrary>
+    <MetisLibrary Condition="$([MSBuild]::IsOSPlatform('Linux'))">libmetis.so</MetisLibrary>
+    <MetisLibrary Condition="$([MSBuild]::IsOSPlatform('OSX'))">libmetis.dylib</MetisLibrary>
   </PropertyGroup>
 
   <ItemGroup>
@@ -47,4 +51,16 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <ItemGroup>
+    <MetisSource Include="$(MetisRoot)\**\*.c;$(MetisRoot)\**\*.h;$(MetisRoot)\CMakeLists.txt"
+                 Exclude="$(MetisRoot)\build\**" />
+    <Content Include="$(MetisRoot)\native\$(NETCoreSdkRuntimeIdentifier)\$(MetisLibrary)"
+             Link="$(MetisLibrary)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildMetis" BeforeTargets="AssignTargetPaths"
+          Inputs="@(MetisSource)" Outputs="$(MetisRoot)\native\$(NETCoreSdkRuntimeIdentifier)\$(MetisLibrary)">
+    <Exec Command="cmake -S &quot;$(MetisRoot)&quot; -B &quot;$(MetisRoot)\build\$(NETCoreSdkRuntimeIdentifier)&quot; -DCMAKE_BUILD_TYPE=Release -DCMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE=&quot;$(MetisRoot)\native\$(NETCoreSdkRuntimeIdentifier)&quot; -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=&quot;$(MetisRoot)\native\$(NETCoreSdkRuntimeIdentifier)&quot;" />
+    <Exec Command="cmake --build &quot;$(MetisRoot)\build\$(NETCoreSdkRuntimeIdentifier)&quot; --config Release --parallel" />
+  </Target>
 </Project>

@@ -18,9 +18,11 @@ public struct MeshPageHeader
     public uint ExtensionDataOffset; // 28
     public ulong VertexEncodingHash; // 32
     public uint ExtensionDataSize;   // 40
-    public uint Reserved;            // 44
+    public uint Flags;            // 44
 
     public const int Size = 48;
     public const int MaxPageSize = 131072;
+    public const int RootPageSize = 32768;
+    public const uint RootPage = 1;
 }
 

@@ -16,7 +16,7 @@ struct PackedCluster
     float3 BoundMin;                    // 32 — conservative object-space AABB min
     float3 BoundMax;                    // 44 — conservative object-space AABB max
     uint PackedLodErrorTriangleStart;   // 56 — LODErrorHalf:16 | TriangleStart:16
-    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
+    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Flags:8]
     uint PackedMaximumEdgeLength;                   // 64 — Reserved:16 | MaximumEdgeLengthHalf:16
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
     uint PackedRanges;                  // 72 — [range0End:8][range1End:8][extendedRangeCount:16]
@@ -50,10 +50,8 @@ float DecodeClusterMaximumEdgeLength(PackedCluster cluster)
 
 uint DecodeTriangleStart(PackedCluster c)
 {
-    return c.PackedLodErrorTriangleStart >> 16;
+    return (c.PackedLodErrorTriangleStart >> 16) * 3u;
 }
-
-
 
 uint4 VertReuseBatchWords(PackedCluster cluster)
 {

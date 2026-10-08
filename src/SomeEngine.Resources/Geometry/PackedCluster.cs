@@ -40,8 +40,8 @@ public struct PackedCluster
     // 60: [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
     public uint PackedCounts;
 
-    // 64: [GroupId(i16):16][MaximumEdgeLengthHalf:16]
-    public uint PackedGroup;
+    // 64: [Reserved:16][MaximumEdgeLengthHalf:16]
+    public uint PackedMaximumEdgeLength;
 
     // 68: [mat0:8][mat1:8][mat2:8][Reserved:8]
     public uint PackedMaterials;
@@ -60,6 +60,14 @@ public struct PackedCluster
     public uint VertReuseBatchWord3;
 
     public const int SizeInBytes = 96;
+    public const uint RootLeaf = 1;
+    public const uint StreamingLeaf = 2;
+    public const uint FullLeaf = 4;
+    public uint Flags
+    {
+        readonly get => PackedCounts >> 24;
+        set => PackedCounts = (PackedCounts & 0xFFFFFFu) | (value << 24);
+    }
 
     public readonly int MaterialRangeCount => MaterialTableOffset != uint.MaxValue
         ? checked((int)(PackedRanges >> 16))
@@ -112,15 +120,9 @@ public struct PackedCluster
             (PackedLodErrorTriangleStart & 0xFFFF0000u) | value;
     }
 
-    public short GroupId
-    {
-        readonly get => unchecked((short)PackedGroup);
-        set => PackedGroup = (PackedGroup & 0xFFFF0000u) | unchecked((ushort)value);
-    }
-
     public ushort MaximumEdgeLengthHalf
     {
-        readonly get => (ushort)(PackedGroup >> 16);
-        set => PackedGroup = (PackedGroup & 0xFFFFu) | ((uint)value << 16);
+        readonly get => (ushort)(PackedMaximumEdgeLength >> 16);
+        set => PackedMaximumEdgeLength = (PackedMaximumEdgeLength & 0xFFFFu) | ((uint)value << 16);
     }
 }

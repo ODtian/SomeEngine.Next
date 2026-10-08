@@ -185,6 +185,7 @@ public sealed class ClusterRenderResources : IDisposable
     internal uint MaximumRasterBatchesPerCluster => _residency.MaximumRasterBatchesPerCluster;
 
     internal int PageFaultCapacity => _residency.PageFaultCapacity;
+    internal uint GeometryPageCount => _residency.GeometryPageCount;
 
     internal void EnterInstanceComposition() => EnterActiveOperation();
 

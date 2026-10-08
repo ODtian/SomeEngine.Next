@@ -74,8 +74,10 @@ internal sealed class TestAssets
         var cluster = new PackedCluster { VertexBlobSize = 1, PackedCounts = 1 | (1u << 8),
             ExtensionOffset = uint.MaxValue, MaterialTableOffset = uint.MaxValue };
         MemoryMarshal.Write(bytes.AsSpan(MeshPageHeader.Size), in cluster);
-        var bvh = new ClusterBVHNode { NodeType = 1 };
-        bvh.SetLeafData(0, 1);
+        var bvh = new ClusterBVHNode();
+        var child = new ClusterHierarchySlice { PageRangeKey = 1u, GroupPartData = (1u << 16) | 0xFFFFu };
+        child.SetErrors(0, float.MaxValue);
+        bvh.SetChild(0, child);
         MemoryMarshal.Write(bytes.AsSpan(bvhOffset), in bvh);
         return SomeEngine.Resources.Mesh.Create(name, encoding, bytes.AsMemory(), (ulong)bvhOffset);
     }

@@ -49,6 +49,10 @@ internal sealed partial class ClusterMeshes : IDisposable
     {
         get { lock (_gate) return _maximumRasterBatchesPerCluster; }
     }
+    internal uint GeometryPageCount
+    {
+        get { lock (_gate) return _pages.Count; }
+    }
     private static long s_nextEpochId;
 
     private readonly PageHeap _heap;
@@ -575,7 +579,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                     $"Cluster page at byte {payloadOffset} has invalid encoded counts in cluster {index}.");
             }
             if (cluster.VertexBlobOffset != expectedVertexBlobStart ||
-                cluster.TriangleStart != expectedIndexStart)
+                cluster.TriangleStart * 3u != expectedIndexStart)
             {
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} has non-canonical stream starts in cluster {index}: " +
@@ -596,7 +600,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             float lodError = (float)BitConverter.UInt16BitsToHalf(cluster.LODErrorHalf);
             if (!IsFinite(cluster.LODCenter) ||
                 !float.IsFinite(cluster.LODRadius) || cluster.LODRadius < 0 ||
-                !float.IsFinite(lodError) || lodError < 0 ||
+                float.IsNaN(lodError) || lodError < 0 ||
                 !IsFinite(cluster.BoundMin) || !IsFinite(cluster.BoundMax) ||
                 cluster.BoundMin.X > cluster.BoundMax.X ||
                 cluster.BoundMin.Y > cluster.BoundMax.Y ||
@@ -613,7 +617,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             maximumRasterBatches = Math.Max(maximumRasterBatches,
                 ValidateVertReuseBatchEncoding(page, cluster, triangleCount, payloadOffset, index));
 
-            int indicesStart = checked((int)header.IndicesOffset + cluster.TriangleStart);
+            int indicesStart = checked((int)(header.IndicesOffset + cluster.TriangleStart * 3u));
             int indicesLength = checked((int)triangleCount * 3);
             foreach (byte vertexIndex in page.Slice(indicesStart, indicesLength))
             {

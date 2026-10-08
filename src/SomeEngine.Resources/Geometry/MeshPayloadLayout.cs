@@ -40,7 +40,7 @@ public static class MeshPayloadLayout
         ulong extensionOffset = header.ExtensionDataOffset;
         ulong pageSize = checked(extensionOffset + header.ExtensionDataSize);
 
-        if (header.ClusterCount == 0)
+        if (header.ClusterCount == 0 || header.ClusterCount > ((header.Flags & MeshPageHeader.RootPage) != 0 ? 64u : 256u))
         {
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} must contain at least one cluster record.");
@@ -56,12 +56,12 @@ public static class MeshPayloadLayout
                 $"clusters={header.ClustersOffset}, vertexBlobs={header.VertexBlobsOffset}, " +
                 $"indices={header.IndicesOffset}, extensions={header.ExtensionDataOffset}.");
         }
-        if (header.VertexEncodingHash == 0 || header.Reserved != 0)
+        if (header.VertexEncodingHash == 0 || (header.Flags & ~MeshPageHeader.RootPage) != 0)
         {
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} has invalid opaque vertex metadata.");
         }
-        if (pageSize < MeshPageHeader.Size || pageSize > MeshPageHeader.MaxPageSize)
+        if (pageSize < MeshPageHeader.Size || pageSize > (ulong)((header.Flags & MeshPageHeader.RootPage) != 0 ? MeshPageHeader.RootPageSize : MeshPageHeader.MaxPageSize))
         {
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} declares invalid size {pageSize}; valid pages are " +

@@ -8,8 +8,8 @@ internal sealed class PageHeap
 
     public PageHeap(uint capacityBytes = CapacityBytes)
     {
-        if (capacityBytes == 0 || (capacityBytes & 15) != 0)
-            throw new ArgumentOutOfRangeException(nameof(capacityBytes), "Page heap capacity must be positive and 16-byte aligned.");
+        if (capacityBytes == 0 || (capacityBytes & 511) != 0)
+            throw new ArgumentOutOfRangeException(nameof(capacityBytes), "Page heap capacity must be positive and 512-byte aligned.");
 
         _capacityBytes = capacityBytes;
         _freeBlocks.Add(new FreeBlock(0, capacityBytes));
@@ -124,8 +124,8 @@ internal sealed class PageHeap
 
     private void ValidateFreeRange(uint offset, uint size, out ulong end)
     {
-        if ((offset & 15) != 0)
-            throw new ArgumentException("Page heap offsets must be 16-byte aligned.", nameof(offset));
+        if ((offset & 511) != 0)
+            throw new ArgumentException("Page heap offsets must be 512-byte aligned.", nameof(offset));
         if (size == 0)
             throw new ArgumentOutOfRangeException(nameof(size));
         uint alignedSize = AllocationSize(size);
@@ -154,7 +154,7 @@ internal sealed class PageHeap
 
     private static uint Align(uint size)
     {
-        ulong aligned = ((ulong)size + 15) & ~15ul;
+        ulong aligned = ((ulong)size + 511) & ~511ul;
         if (aligned > uint.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(size), "Page allocation size exceeds the 32-bit heap address space.");
         return (uint)aligned;
