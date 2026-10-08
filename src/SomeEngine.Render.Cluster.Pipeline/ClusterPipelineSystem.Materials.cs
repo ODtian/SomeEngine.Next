@@ -1050,7 +1050,7 @@ public sealed partial class ClusterPipelineSystem
             case ClusterShadeCoreResource.MaterialSurfaceOutputs:
                 _ = pass.Bind(graph.CreateBufferUav(frame.MaterialSurfaces), PipelineSync.ComputeShading,
                     GraphAccessMode.Write, WriteCoverage.Partial, ResourceContentState.Defined,
-                    BufferContentScope.CountBoundedRanges);
+                    BufferContentScope.CountBoundedRanges, UnorderedAccessHazardMode.DisjointWrites);
                 return;
             case ClusterShadeCoreResource.MaterialSurfaceInputs:
                 _ = pass.Bind(graph.CreateBufferSrv(frame.MaterialSurfaces), PipelineSync.ComputeShading,
@@ -1058,7 +1058,8 @@ public sealed partial class ClusterPipelineSystem
                 return;
             case ClusterShadeCoreResource.SurfaceReceiverOutput:
                 _ = pass.Bind(graph.CreateBufferUav(frame.SurfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading,
-                    GraphAccessMode.Write, WriteCoverage.Partial);
+                    GraphAccessMode.Write, WriteCoverage.Partial,
+                    unorderedAccessHazards: UnorderedAccessHazardMode.DisjointWrites);
                 return;
             case ClusterShadeCoreResource.AdditionalSurfaceReceiverOutput:
                 _ = pass.Bind(graph.CreateBufferUav(frame.AdditionalSurfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading,
@@ -1076,7 +1077,8 @@ public sealed partial class ClusterPipelineSystem
                         label: "Cluster material motion output"),
                     PipelineSync.ComputeShading,
                     GraphAccessMode.Write,
-                    WriteCoverage.Partial);
+                    WriteCoverage.Partial,
+                    unorderedAccessHazards: UnorderedAccessHazardMode.DisjointWrites);
                 return;
             case ClusterShadeCoreResource.MaterialScalars:
                 _ = pass.Bind(graph.CreateBufferSrv(scalarBuffer), PipelineSync.ComputeShading);
