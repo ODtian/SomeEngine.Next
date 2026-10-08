@@ -350,7 +350,9 @@ public sealed partial class ClusterPipelineSystem
         frame.SurfaceCounts = frame.AddBuffer(ref graph, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface counts");
         frame.SurfaceScatterCounts = frame.AddBuffer(ref graph, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface scatter counts");
         frame.SurfaceDataOffsets = frame.AddBuffer(ref graph, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface data offsets");
-        frame.SurfaceDataSizes = graph.CreateBufferInput(BufferUsages.ShaderRead);
+        frame.SurfaceDataSizes = CreateBufferData(ref graph,
+            MemoryMarshal.AsBytes(GetSurfaceDataSizes(shadeStages).AsSpan()),
+            BufferUsages.ShaderRead, "Cluster material surface sizes");
         frame.ShadeBinCounts = frame.AddBuffer(
                 ref graph,
                 checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
@@ -608,6 +610,9 @@ public sealed partial class ClusterPipelineSystem
         }
         uint tessellationBinCount = checked(rasterBinCount * 8u);
         uint shadeBinCount = shadeStages.BinCount;
+        byte[] surfaceSizes = MemoryMarshal.AsBytes(GetSurfaceDataSizes(shadeStages).AsSpan()).ToArray();
+        UpdateBufferData(ref graph, frame.SurfaceDataSizes, ClusterBytes.FromBytes(surfaceSizes),
+            [new BufferRange(0, checked((ulong)surfaceSizes.Length))]);
 
         uint surfaceStride = shadeStages.SurfaceDataStride;
         if (surfaceStride != frame.SurfaceDataStride)
@@ -1212,7 +1217,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId SurfaceCounts;
         internal GraphBufferId SurfaceScatterCounts;
         internal GraphBufferId SurfaceDataOffsets;
-        internal GraphBufferInput SurfaceDataSizes = null!;
+        internal GraphBufferId SurfaceDataSizes;
         internal GraphBufferId MaterialSurfaces;
         internal uint SurfaceDataStride;
         internal GraphBufferId SurfaceReceivers;

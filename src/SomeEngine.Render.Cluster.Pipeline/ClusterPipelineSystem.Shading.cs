@@ -7,6 +7,14 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
+    private static uint[] GetSurfaceDataSizes(ClusterShadeStageSet stages)
+    {
+        uint[] sizes = new uint[Math.Max(1u, stages.BinCount)];
+        foreach (ClusterShadeInvocation stage in stages.Invocations)
+            sizes[stage.BinIndex] = stage.SurfaceDataSize;
+        return sizes;
+    }
+
     private sealed record ShadeGroup(ClusterShadeInvocation Stage)
     {
         internal GraphBufferInput Uniforms = null!;

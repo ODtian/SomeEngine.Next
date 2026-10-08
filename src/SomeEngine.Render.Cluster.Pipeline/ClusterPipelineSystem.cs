@@ -618,11 +618,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     in binding,
                     history);
             _resources.InstanceResources.BindFrame(ref graph);
-            uint[] surfaceSizes = new uint[Math.Max(1u, _installedShadeStages!.BinCount)];
-            foreach (ClusterShadeInvocation surfaceStage in _installedShadeStages.Invocations)
-                surfaceSizes[surfaceStage.BinIndex] = surfaceStage.SurfaceDataSize;
-            graph.SetBufferInput(GraphData.Resources.SurfaceDataSizes,
-                graph.Upload<uint>(surfaceSizes, BufferUsages.ShaderRead, "Cluster material surface sizes"));
             using (SomeEngine.Diagnostics.EngineTrace.Begin(SceneBoundsTrace))
                 BindSceneBounds(ref graph, context.World, batch, policyViewCount != 0, views[0].WorldOrigin);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyUploadsTrace))
