@@ -69,6 +69,12 @@ internal struct ClusterViewUniforms
     internal Matrix4x4 WorldToFirstPerson;
     internal Matrix4x4 FirstPersonToWorld;
     internal Matrix4x4 PreviousWorldToFirstPerson;
+    internal Vector3 WorldTranslation;
+    private float WorldTranslationPadding;
+    internal Vector3 PreviousWorldTranslation;
+    private float PreviousWorldTranslationPadding;
+    internal Vector3 PreviousDataTranslation;
+    private float PreviousDataTranslationPadding;
 
     internal static ClusterViewUniforms Create(
         in RenderView source,
@@ -76,7 +82,8 @@ internal struct ClusterViewUniforms
         ClusterViewRasterMode rasterMode,
         bool cullingEnabled,
         int instanceCount,
-        int pageFaultCapacity)
+        int pageFaultCapacity,
+        WorldOrigin dataOrigin)
     {
         ArgumentNullException.ThrowIfNull(options);
         if (source.ViewportWidth == 0 || source.ViewportHeight == 0)
@@ -90,11 +97,16 @@ internal struct ClusterViewUniforms
         if (!Matrix4x4.Invert(source.View, out Matrix4x4 worldFromView))
             throw new ArgumentException("The render-view matrix must be invertible.", nameof(source));
 
-        Matrix4x4 viewProjection = source.View * source.Projection;
+        Vector3 cameraPosition = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
+        WorldOrigin viewOrigin = new(source.WorldOrigin.X + cameraPosition.X,
+            source.WorldOrigin.Y + cameraPosition.Y, source.WorldOrigin.Z + cameraPosition.Z);
+        Vector3 worldTranslation = dataOrigin.RelativeTo(viewOrigin);
+        Matrix4x4 view = Matrix4x4.CreateTranslation(cameraPosition) * source.View;
+        Matrix4x4 viewProjection = view * source.Projection;
         if (!Matrix4x4.Invert(viewProjection, out Matrix4x4 clipToWorld))
             throw new ArgumentException("The render-view projection must be invertible.", nameof(source));
-        Vector3 cameraPosition = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
-        source.WorldOrigin.Split(out Vector3 originHigh, out Vector3 originLow);
+        cameraPosition += source.WorldOrigin.RelativeTo(dataOrigin);
+        viewOrigin.Split(out Vector3 originHigh, out Vector3 originLow);
         Matrix4x4 firstPersonTransform = source.FirstPerson?.CalculateWorldToFirstPerson(source.View) ?? Matrix4x4.Identity;
         Matrix4x4.Invert(firstPersonTransform, out Matrix4x4 firstPersonInverse);
         if (!IsFinite(viewProjection)
@@ -122,21 +134,21 @@ internal struct ClusterViewUniforms
             HasPrevHistory = 0,
             HiZMipCount = 0,
             HiZInvSize = default,
-            View = source.View,
+            View = view,
             P00 = source.Projection.M11,
             P11 = source.Projection.M22,
             ScreenWidth = source.ViewportWidth,
             ScreenHeight = source.ViewportHeight,
-            PrevView = source.View,
+            PrevView = view,
             PrevP00 = source.Projection.M11,
             PrevP11 = source.Projection.M22,
             TessellationEdgePixels = 0.0f,
             StreamingPriorityCategory = source.StreamingPriorityCategory,
-            ClipToWorld = clipToWorld,
+            ClipToWorld = clipToWorld * Matrix4x4.CreateTranslation(-worldTranslation),
             TargetPolicy = 0u,
             TargetViewIndex = 0u,
             NearPlane = source.Projection.M43 / source.Projection.M33,
-            GeometryViewProj = source.View * (source.GeometryProjection ?? source.Projection),
+            GeometryViewProj = view * (source.GeometryProjection ?? source.Projection),
             WorldOriginHigh = originHigh,
             WorldOriginLow = originLow,
             PreviousWorldOriginHigh = originHigh,
@@ -147,6 +159,8 @@ internal struct ClusterViewUniforms
             WorldToFirstPerson = firstPersonTransform,
             FirstPersonToWorld = firstPersonInverse,
             PreviousWorldToFirstPerson = firstPersonTransform,
+            WorldTranslation = worldTranslation,
+            PreviousWorldTranslation = worldTranslation,
         };
     }
 

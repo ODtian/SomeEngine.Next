@@ -9,6 +9,8 @@ struct ClusterSceneUniforms
     uint HasPreviousBounds;
     uint UseInstanceGroups;
     uint Pad1;
+    float3 PreviousWorldTranslation;
+    float TranslationPadding;
 };
 ConstantBuffer<ClusterSceneUniforms> Scene;
 StructuredBuffer<ClusterBVHNode> GlobalBVH;
@@ -62,8 +64,8 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
         }
         InstanceWorldBounds[instance * 4u] = float4(worldMin, currentDepthClass);
         InstanceWorldBounds[instance * 4u + 1u] = float4(worldMax, currentDepthClass);
-        InstanceWorldBounds[instance * 4u + 2u] = float4(previousMin, previousDepthClass);
-        InstanceWorldBounds[instance * 4u + 3u] = float4(previousMax, previousDepthClass);
+        InstanceWorldBounds[instance * 4u + 2u] = float4(previousMin + Scene.PreviousWorldTranslation, previousDepthClass);
+        InstanceWorldBounds[instance * 4u + 3u] = float4(previousMax + Scene.PreviousWorldTranslation, previousDepthClass);
     }
     if (Scene.UseInstanceGroups == 0u)
         return;

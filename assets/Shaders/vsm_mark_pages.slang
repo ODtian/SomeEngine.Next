@@ -81,7 +81,7 @@ bool PublishProjectedShadowViewPixels(
     float2 borderPixels = max(PageDemand.PageDilationBorderPages, shadowView.PageDilationBorder) * float(shadowView.PageSize);
     if (PageDemand.NormalBias > 0.0)
     {
-        float4 clip = mul(float4(worldPosition, 1.0), shadowView.LightViewProjection);
+        float4 clip = ProjectVirtualShadowClip(shadowView, worldPosition);
         float3 x = float3(shadowView.LightViewProjection[0][0],
             shadowView.LightViewProjection[1][0], shadowView.LightViewProjection[2][0]);
         float3 y = float3(shadowView.LightViewProjection[0][1],
