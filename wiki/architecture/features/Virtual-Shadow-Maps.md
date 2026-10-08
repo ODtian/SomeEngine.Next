@@ -91,11 +91,15 @@ clipmap 使用原版绝对级别，默认 first 6 至 last 22。级别 L 的半�
 时先尝试较粗 mip/clipmap，再返回 false 与 lit 因子。默认局部光材质明确处理 false，
 后续帧仍请求缺失工作。旧 float 签名保留为兼容因子，不提供独立有效性证明。
 
-`MeshSource` / `MeshInstance` 的 `DepthCacheClass` 经既有提取写入 `RenderMesh`，
-由实例几何 producer 写入共享实例存储中的单个 uint 列。默认 Dynamic；静态输入由 Game world 明确声明。
-用户的动画 vertex、domain 或 opacity 输入可声明 Dynamic；静态输入修改沿既有 caster/material 事件失效。
-当前和上帧分类随既有 world bounds 的 W 分量传给失效 shader，旧、新足迹各按实际分类更新。
-静态输入失效清除静态完成代号并刷新两类深度，动态输入失效保留静态完成代号。
+`MeshSource` / `MeshInstance` 的 `DepthCacheClass` 经既有提取写入 `RenderMesh`。
+输入为 Auto=0、Static=1、Dynamic=2，默认 Auto。VirtualShadowFeature 持有实际变化年龄及
+当前/上次完成帧的有效静态位集，每 32 个实例使用一个 uint。新增 Auto 内容归静态；
+变换、几何、材质或外部 caster 输入实际变化后归动态，连续安静超过 100 帧后归静态并刷新静态深度。
+显式 Static/Dynamic 保持用户选择。裁剪、分箱、SW/HW/mesh/tessellation 共用有效分类；
+成功完成阴影帧后提交年龄和位集，取消帧继续从上次完成状态处理变化。
+静态足迹失效刷新两类深度，动态足迹失效保留静态完成代号。旧、新足迹分别使用完成帧与本帧分类。
+几何、材质和外部光栅输入变化沿整实例足迹强制刷新两类深度，覆盖已留用的 coarse 缓存；流送 `LodChanges` 的对象空间 sphere 按当前实例变换形成局部范围，
+沿已有 deferred invalidation budget 更新受影响页，和流送页/BVH/leaf flags 的完成及取消边界一致。
 物理页 metadata 保存静态完成代号、请求标记、重绘状态和绝对世界页身份。
 开启 receiver mask 的 Dynamic 输入沿当前接收请求刷新动态深度；显式 bounds 失效供 Static/CachedDynamic 消费。
 R32_UINT 深度数组由同一个 atlas 持有：slice 0 为动态/合并深度，slice 1 为静态缓存。绘制前，静态可留用页为动态纹理提供初值；
@@ -107,6 +111,14 @@ detail 请求和 static 失效仍触发所需更新。未请求的已分配页�
 质量回读分别给出 static/dynamic 的 HW/SW 可见 cluster/window；这些计数沿原版可见项边界产生。
 接收者、过滤、完成有效性共用 `vsm_receiver_projection.slang`、`vsm_sampling.slang`，
 generic raster adapter 共用 `cluster_policy_raster_output.slang` 与 `cluster_raster_target_output.slang`。
+
+receiver mask 为同一 R32UInt 2D 纹理的细格和粗 mip。每页四个低 16 位的 4×4 mask 组成 8×8；
+每视图页域按 P×1.5P 的 mip-tail 拼排，mask 占 2P×3P，并按容量组成纹理网格。
+纹理最多七个粗 mip 逐次把 4×4 缩为 2×2，按子块位置合并。VSM448B 保存 mask origin，
+target96B 保存打包的 mip 域 origin；mask 地址使用本帧 local page，深度页表继续使用绝对页 ring。
+实例/BVH 粗层先按 Dynamic/Static 两组脏页位选择工作，再查接收区域粗 mip；细页及光栅使用同一 8×8 数据。
+已分配页 hierarchy 继续记录全部分配，供足迹失效使用。局部光默认关闭 receiver mask，方向光默认开启。
+质量回读取纹理 mip0，按各页当前局部地址汇总四个 4×4 单元。
 
 页表每项为 Native uint 编码：X/Y 各 10 位、LOD offset 6 位及深度/光栅/secondary 标记。
 接收遮罩的局部深度状态使用保留位 26；绝对世界页与 cache generation 由物理页 metadata 唯一持有。

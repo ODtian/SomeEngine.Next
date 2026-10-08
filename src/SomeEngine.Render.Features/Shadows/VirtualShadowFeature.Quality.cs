@@ -12,6 +12,9 @@ public sealed partial class VirtualShadowFeature
     private readonly GraphRegionId _qualityRegion;
     private readonly GraphRegionId _qualityDemandRegion;
     private QualityReadbacks? _qualityReadbacks;
+    private GraphBufferId _qualityReceiverCoverage;
+    private GraphPassId _qualityReceiverCopyPass;
+    private uint ReceiverCoverageRowPitch => (ReceiverMaskWidth * 4u + 255u) & ~255u;
 
     /// <summary>Installs optional quality readbacks. Ordinary throughput never calls this method.</summary>
     public void EnableQualityCapture()
@@ -35,7 +38,15 @@ public sealed partial class VirtualShadowFeature
             AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _pageOwners);
             AddQualityReadback(ref edit, readbacks, QualityData.RasterArea, _policyRasterWorkCount);
             AddQualityReadback(ref edit, readbacks, QualityData.DepthWork, _depthWorkCount);
-            AddQualityReadback(ref edit, readbacks, QualityData.ReceiverCoverage, _pageReceiverMasks);
+            _qualityReceiverCoverage = edit.CreateBuffer(new BufferDesc(
+                (ulong)ReceiverCoverageRowPitch * ReceiverMaskHeight, BufferUsages.CopyDestination | BufferUsages.CopySource,
+                "Virtual shadow quality receiver cells"));
+            _qualityReceiverCopyPass = edit.AddCopyFramePass("Copy virtual shadow quality receiver cells",
+                PassQueueSelection.AnyOfType(QueueType.Copy),
+                new ReceiverCoverageCopy(_pageReceiverMasks, _qualityReceiverCoverage, ReceiverMaskWidth, ReceiverMaskHeight, ReceiverCoverageRowPitch),
+                new PassOptions(Culling: PassCullingMode.NeverCull), ReceiverCoverageCopy.Declare, ReceiverCoverageCopy.Record,
+                region: _qualityRegion);
+            AddQualityReadback(ref edit, readbacks, QualityData.ReceiverCoverage, _qualityReceiverCoverage);
             AddQualityReadback(ref edit, readbacks, QualityData.Views, _frameShadowViews, BufferRange.Whole);
             AddQualityReadback(ref edit, readbacks, QualityData.Pages, _framePageTable, BufferRange.Whole);
             AddQualityReadback(ref edit, readbacks, QualityData.Work, _geometryWorkStatus, new BufferRange(0, 4));
@@ -58,7 +69,10 @@ public sealed partial class VirtualShadowFeature
     {
         ArgumentNullException.ThrowIfNull(receive);
         if (_qualityReadbacks is null) throw new InvalidOperationException("Enable quality capture before recording a frame.");
-        _qualityReadbacks.Requests.Add(_frameIndex, new QualityRequest(_viewCount, _frameBaseShadowBias, receive));
+        _qualityReadbacks.Requests.Add(_frameIndex, new QualityRequest(_viewCount, _frameBaseShadowBias, ReceiverCoverageRowPitch / 4u, receive));
+        graph.SetPassDataIfChanged(_qualityReceiverCopyPass, new ReceiverCoverageCopy(_pageReceiverMasks,
+            _qualityReceiverCoverage, ReceiverMaskWidth, ReceiverMaskHeight, ReceiverCoverageRowPitch));
+        graph.SetPassEnabled(_qualityReceiverCopyPass, true);
         foreach (GraphReadbackId readback in _qualityReadbacks.Readbacks)
         {
             graph.SetReadbackEnabled(readback, true);
@@ -86,7 +100,7 @@ public sealed partial class VirtualShadowFeature
         }
     }
 
-    private sealed class QualityRequest(int viewCount, float[] baseBias, Action<VirtualShadowFrameQuality> receive)
+    private sealed class QualityRequest(int viewCount, float[] baseBias, uint coverageRowWords, Action<VirtualShadowFrameQuality> receive)
     {
         internal readonly byte[][] Bytes = new byte[11][];
         internal readonly Action<VirtualShadowFrameQuality> Receive = receive;
@@ -123,8 +137,18 @@ public sealed partial class VirtualShadowFeature
                         else
                         {
                             partial++;
-                            covered += (uint)(BitOperations.PopCount(coverage[checked((int)table * 2)]) +
-                                BitOperations.PopCount(coverage[checked((int)table * 2 + 1)]));
+                            uint mask = dimension - 1u;
+                            uint x = ((page % dimension) - unchecked((uint)originX)) & mask;
+                            uint y = ((page / dimension) - unchecked((uint)originY)) & mask;
+                            uint basePages = view.VirtualResolution / view.PageSize;
+                            uint tailX = mip == 0u ? 0u : basePages - (basePages >> ((int)mip - 1));
+                            uint tailY = mip == 0u ? 0u : basePages;
+                            uint address = view.ReceiverMaskOriginX + 2u * (tailX + x) +
+                                (view.ReceiverMaskOriginY + 2u * (tailY + y)) * coverageRowWords;
+                            covered += (uint)(BitOperations.PopCount(coverage[(int)address]) +
+                                BitOperations.PopCount(coverage[(int)address + 1]) +
+                                BitOperations.PopCount(coverage[(int)(address + coverageRowWords)]) +
+                                BitOperations.PopCount(coverage[(int)(address + coverageRowWords) + 1]));
                         }
                     }
                     mips[mip] = new(mip, Math.Max(view.VirtualResolution >> (int)mip, view.PageSize),
@@ -158,5 +182,20 @@ public sealed partial class VirtualShadowFeature
         }
 
         private uint Word(QualityData kind, int word = 0) => MemoryMarshal.Cast<byte, uint>(Bytes[(int)kind])[word];
+    }
+
+    private readonly record struct ReceiverCoverageCopy(GraphTextureId Source, GraphBufferId Destination,
+        uint Width, uint Height, uint RowPitch)
+    {
+        internal static void Declare(ref PassDefinition pass, ref ReceiverCoverageCopy data)
+        {
+            _ = pass.Read(data.Source, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+            _ = pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+        }
+        internal static void Record(ref CopyPassCommandScope commands, in ReceiverCoverageCopy data) =>
+            commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Destination), 0,
+                data.RowPitch, data.Height, commands.GetTexture(data.Source), 0, 0, TextureAspects.Color,
+                0, 0, 0, data.Width, data.Height, 1));
     }
 }

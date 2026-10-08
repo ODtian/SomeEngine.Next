@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 29,
-  "input_hash": "30197b62c2a54db10287e3ccdc96b8d19a01d4119b442406337fce1e511211b1",
+  "importer_version": 31,
+  "input_hash": "ed5014b92cf802504bbe963d20869affb54ba601ac379e8ed9f2256eeb5a6029",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/imgui.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+      "content_hash": "ca411c4e64e36d5e042244e087f1d2726187cb2f1434ccdd46b78d4f0a9040ee"
     },
     {
       "relative_path": "assets/Shaders/imgui.shader",
@@ -25,11 +25,11 @@
     {
       "asset_guid": "3dc64d6f-9f36-5c94-b823-7a249deea078",
       "sub_asset_key": "",
-      "input_hash": "30197b62c2a54db10287e3ccdc96b8d19a01d4119b442406337fce1e511211b1",
+      "input_hash": "ed5014b92cf802504bbe963d20869affb54ba601ac379e8ed9f2256eeb5a6029",
       "dependencies": [],
       "asset_path": "imgui.shader.asset",
-      "version": "1019aab0-7d49-e17e-7e69-4f0234359e56",
-      "content_hash": "6E98F91DCDCDDDD0A60403F1F85247D80807ABC025DD0C45E24159A3C183E5AD",
+      "version": "54795402-fb54-6578-8170-490e7b431597",
+      "content_hash": "249A448135D6567D98521D4C57CF1C85CA658DD38109A8929804BBC9ACCCEF47",
       "asset_dependencies": []
     }
   ]

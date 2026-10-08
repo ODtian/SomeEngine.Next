@@ -592,13 +592,14 @@ public sealed partial class ClusterPipelineSystem
                         label: "Cluster neutral raster target view"),
                     PipelineSync.AllShading);
                 return true;
+            case ("RasterTargetDepthCacheClasses", ResourceBindingType.BufferSrv):
             case ("RasterTargetPageHierarchy", ResourceBindingType.BufferSrv):
             case ("RasterTargetPageTable", ResourceBindingType.BufferSrv):
-            case ("RasterTargetReceiverMasks", ResourceBindingType.BufferSrv):
             case ("RasterTargetPageMetadata", ResourceBindingType.BufferSrv):
                 uint stride = resource.Name switch
                 {
-                    "RasterTargetPageHierarchy" => sizeof(uint),
+                    "RasterTargetPageHierarchy" => 2u * sizeof(uint),
+                    "RasterTargetDepthCacheClasses" => sizeof(uint),
                     "RasterTargetPageTable" or "RasterTargetPageMetadata" => 4u * sizeof(uint),
                     _ => 2u * sizeof(uint),
                 };
@@ -609,6 +610,10 @@ public sealed partial class ClusterPipelineSystem
                         label: $"Cluster neutral {resource.Name}"),
                     PipelineSync.AllShading);
                 return true;
+            case ("RasterTargetReceiverMasks", ResourceBindingType.TextureSrv):
+                _ = pass.Bind(graph.CreateTextureSrv(GraphData.Resources.NeutralPolicyOutput,
+                    format: Format.R32UInt, dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D), PipelineSync.AllShading);
+                return true;
             case ("RasterTargetCurrentHiZ", ResourceBindingType.TextureSrv):
             case ("RasterTargetPreviousHiZ", ResourceBindingType.TextureSrv):
                 _ = pass.Bind(graph.CreateTextureSrv(GraphData.Resources.PreviousHiZ,
@@ -618,22 +623,7 @@ public sealed partial class ClusterPipelineSystem
                 return true;
             case ("RasterTargetOutput", ResourceBindingType.TextureUav):
             case ("RasterTargetStaticOutput", ResourceBindingType.TextureUav):
-                _ = pass.Bind(
-                    graph.CreateTextureUav(
-                        GraphData.Resources.NeutralPolicyOutput,
-                        new TextureSubresourceRange(
-                            0,
-                            1,
-                            0,
-                            1,
-                            TextureAspects.Color),
-                        format: Format.R32UInt,
-                        dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
-                        label: "Cluster neutral raster target output"),
-                    PipelineSync.AllShading,
-                    GraphAccessMode.ReadWrite,
-                    WriteCoverage.Partial,
-                    unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
+                pass.Bind(GraphParameterResourceBinding.Null(ResourceBindingType.TextureUav));
                 return true;
             default:
                 return false;

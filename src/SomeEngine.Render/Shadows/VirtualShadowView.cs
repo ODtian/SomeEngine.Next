@@ -67,9 +67,9 @@ public struct VirtualShadowView
     public float DepthRadius;
     public Vector2 DepthCullRange;
     public Vector3 WorldOriginHigh;
-    private float OriginHighPadding;
+    public uint ReceiverMaskOriginX;
     public Vector3 WorldOriginLow;
-    private float OriginLowPadding;
+    public uint ReceiverMaskOriginY;
     /// <summary>Corner offset in level radii from the common coarsest-level reference grid.</summary>
     public int ClipmapCornerRelativeOffsetX;
     public int ClipmapCornerRelativeOffsetY;

@@ -20,43 +20,39 @@ static const uint CLUSTER_RASTER_TARGET_PAGE_CACHE_COUNT =
 static const uint CLUSTER_RASTER_TARGET_INVALID_PAGE = 0xFFFFFFFFu;
 
 groupshared uint ClusterRasterTargetCachedPages[CLUSTER_RASTER_TARGET_PAGE_CACHE_COUNT];
-groupshared uint2 ClusterRasterTargetCachedReceiverMasks[CLUSTER_RASTER_TARGET_PAGE_CACHE_COUNT];
+groupshared uint4 ClusterRasterTargetCachedReceiverMasks[CLUSTER_RASTER_TARGET_PAGE_CACHE_COUNT];
 groupshared uint2 ClusterRasterTargetCachedOrigin;
 groupshared uint2 ClusterRasterTargetCachedExtent;
 groupshared uint ClusterRasterTargetPageCacheEnabled;
 
 bool ClusterRasterTargetPageRequested(
     ClusterRasterTargetView target,
-    uint2 localPage)
+    uint2 localPage, uint depthCacheClass = 2u)
 {
     uint word = localPage.x / 32u;
     uint bit = 1u << (localPage.x & 31u);
-    return (RasterTargetPageHierarchy[
-        ClusterRasterTargetHierarchyIndex(
-            target, 0u, localPage.y, word)] & bit) != 0u;
+    return (ClusterTargetDirtyPageWord(ClusterRasterTargetHierarchyIndex(
+            target, 0u, localPage.y, word), depthCacheClass) & bit) != 0u;
 }
 
 bool ClusterRasterTargetReceiverAccepts(
     ClusterRasterTargetView target,
-    uint tableIndex,
+    uint2 localPage,
     uint2 pagePixel)
 {
     if (target.ReceiverMaskEnabled == 0u)
         return true;
 
-    uint2 mask = RasterTargetReceiverMasks[tableIndex];
+    uint4 mask = LoadClusterTargetReceiverMask(target, localPage);
     uint2 cell = min(
         pagePixel * 8u / max(target.PageSize, 1u),
         7u.xx);
-    uint bit = cell.y * 8u + cell.x;
-    return bit < 32u
-        ? (mask.x & (1u << bit)) != 0u
-        : (mask.y & (1u << (bit - 32u))) != 0u;
+    return VirtualShadowReceiverMaskCell(mask, cell);
 }
 
 bool ClusterRasterTargetCachedReceiverAccepts(
     ClusterRasterTargetView target,
-    uint2 receiverMask,
+    uint4 receiverMask,
     uint2 pagePixel)
 {
     if (target.ReceiverMaskEnabled == 0u)
@@ -65,10 +61,7 @@ bool ClusterRasterTargetCachedReceiverAccepts(
     uint2 cell = min(
         pagePixel * 8u / max(target.PageSize, 1u),
         7u.xx);
-    uint bit = cell.y * 8u + cell.x;
-    return bit < 32u
-        ? (receiverMask.x & (1u << bit)) != 0u
-        : (receiverMask.y & (1u << (bit - 32u))) != 0u;
+    return VirtualShadowReceiverMaskCell(receiverMask, cell);
 }
 
 int4 PrepareRasterTargetScissor(
@@ -102,7 +95,7 @@ int4 PrepareRasterTargetScissor(
                 pageIndex / extent.x);
             uint cacheIndex = cacheCoord.y * CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM + cacheCoord.x;
             uint page = CLUSTER_RASTER_TARGET_INVALID_PAGE;
-            uint2 receiverMask = 0u.xx;
+            uint4 receiverMask = 0u.xxxx;
             uint2 localPage = pageWindow.xy + cacheCoord;
             if (ClusterRasterTargetPageRequested(target, localPage))
             {
@@ -110,8 +103,8 @@ int4 PrepareRasterTargetScissor(
                 if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, page))
                 {
                     receiverMask = target.ReceiverMaskEnabled != 0u
-                        ? RasterTargetReceiverMasks[tableIndex]
-                        : 0xFFFFFFFFu.xx;
+                        ? LoadClusterTargetReceiverMask(target, localPage)
+                        : 0xffffu.xxxx;
                 }
             }
             ClusterRasterTargetCachedPages[cacheIndex] = page;
@@ -172,7 +165,7 @@ bool ClusterRasterTargetCachedBoundsAccepts(
         uint2 pageLast = min(lastPixel - pageOrigin, target.PageSize - 1u);
         uint2 firstCell = min(pageFirst * 8u / target.PageSize, 7u.xx);
         uint2 lastCell = min(pageLast * 8u / target.PageSize, 7u.xx);
-        if (ClusterRasterReceiverRectangleAccepts(
+        if (VirtualShadowReceiverMaskRectangle(
                 ClusterRasterTargetCachedReceiverMasks[index], firstCell, lastCell)) return true;
     }
     return false;
@@ -226,7 +219,7 @@ bool ResolveRasterTargetPixel(int2 pixel, uint targetViewIndex, out uint2 target
 
     uint2 virtualPixel = uint2(pixel);
     uint2 localPage = virtualPixel / target.PageSize;
-    if (!ClusterRasterTargetPageRequested(target, localPage))
+    if (!ClusterRasterTargetPageRequested(target, localPage, depthCacheClass))
         return false;
 
     uint tableIndex;

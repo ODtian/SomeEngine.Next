@@ -896,6 +896,11 @@ public sealed partial class ClusterPipelineSystem
         else
             _ = countAccess.Bind(graph.CreateBufferSrv(frame.NeutralPolicyView,
                 structureStride: ClusterRenderContext.TargetViewSizeInBytes), PipelineSync.ComputeShading);
+        if (_renderContext.IsValid && epoch >= 2 && _renderContext.BindDepthCacheClasses is { } bindDepthClasses)
+            bindDepthClasses(ref graph, ref countAccess, PipelineSync.ComputeShading);
+        else
+            _ = countAccess.Bind(graph.CreateBufferSrv(frame.NeutralPolicyView,
+                structureStride: sizeof(uint)), PipelineSync.ComputeShading);
         GraphBufferId depthWorkCounter = _renderContext.IsValid && epoch >= 2 && _renderContext.DepthWorkCounter != default
             ? _renderContext.DepthWorkCounter : frame.NeutralPolicyCounter;
         _ = countAccess.Bind(graph.CreateBufferUav(depthWorkCounter, structureStride: sizeof(uint)), PipelineSync.ComputeShading,

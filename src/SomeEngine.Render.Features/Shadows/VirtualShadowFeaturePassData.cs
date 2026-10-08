@@ -120,28 +120,6 @@ internal readonly record struct VirtualShadowIndirectPassData(
 }
 
 
-internal readonly record struct VirtualShadowReceiverMaskResetPassData(
-    GraphBufferId ReceiverMasks)
-{
-    internal static void Declare(
-        ref PassDefinition access,
-        ref VirtualShadowReceiverMaskResetPassData data) =>
-        _ = access.Write(
-            data.ReceiverMasks,
-            BufferRange.Whole,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            WriteCoverage.Complete);
-
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in VirtualShadowReceiverMaskResetPassData data)
-    {
-        Buffer buffer = commands.GetBuffer(data.ReceiverMasks);
-        commands.ClearBuffer(buffer, new BufferRange(0, buffer.Info.Size));
-    }
-}
-
 internal readonly record struct VirtualShadowBufferResetPassData(GraphBufferId Buffer)
 {
     internal static void Declare(

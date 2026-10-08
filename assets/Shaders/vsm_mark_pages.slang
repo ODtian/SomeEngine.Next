@@ -115,7 +115,7 @@ bool PublishProjectedShadowViewPixels(
         uint2 page = uint2(x, y);
         uint tableIndex = PublishVirtualShadowPage(shadowView, mipLevel, int2(page));
         if (tableIndex != 0xFFFFFFFFu && (shadowView.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
-            MarkVirtualShadowReceiverRectangle(tableIndex, page, firstPixel, lastPixel, shadowView.PageSize);
+            MarkVirtualShadowReceiverRectangle(shadowView, mipLevel, page, firstPixel, lastPixel);
     }
     return true;
 }

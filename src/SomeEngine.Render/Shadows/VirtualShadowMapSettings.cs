@@ -63,7 +63,7 @@ public sealed partial record VirtualShadowMapSettings
     public float DynamicResolutionPagePoolLoadStart { get; init; } = 0.85f;
     public bool DynamicHiZ { get; init; }
     public bool DirectionalReceiverMask { get; init; } = true;
-    public bool LocalReceiverMask { get; init; } = true;
+    public bool LocalReceiverMask { get; init; } = false;
     // The receiver-plane comparison handles texel offsets. This remaining
     // normalized-depth allowance covers one millimeter over the default directional range.
     public float DepthBias { get; init; } = 0.000001f;
