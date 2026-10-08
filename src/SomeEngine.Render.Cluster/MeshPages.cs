@@ -497,13 +497,13 @@ internal sealed class MeshPages
         _residentLru.AddLast(node);
     }
 
-    public bool TryVictim(uint protectedPageId, out uint pageId)
+    public bool TryVictim(uint protectedPageId, Func<uint, bool> canEvict, out uint pageId)
     {
         LinkedListNode<uint>? node = _residentLru.First;
         while (node != null)
         {
             pageId = node.Value;
-            if (pageId != protectedPageId && !_lowestDetailPageIds.Contains(pageId))
+            if (pageId != protectedPageId && !_lowestDetailPageIds.Contains(pageId) && canEvict(pageId))
                 return true;
 
             node = node.Next;

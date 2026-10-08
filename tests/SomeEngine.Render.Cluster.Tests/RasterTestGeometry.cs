@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Collections.Immutable;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -36,7 +37,11 @@ internal static class RasterTestGeometry
         }).ToArray();
         return Mesh.Create("Deep octahedron", mesh.VertexEncoding, mesh.PageDigests,
             System.Runtime.InteropServices.MemoryMarshal.AsBytes(nodes.AsSpan()).ToArray(), pages,
-            mesh.Bounds, mesh.Regions, mesh.LowestDetailPageIndices);
+            mesh.Bounds, mesh.Regions, mesh.LowestDetailPageIndices,
+            mesh.ClusterGroups.Select(group => group with
+            {
+                HierarchyParts = group.HierarchyParts.Select(part => part with { NodeIndex = part.NodeIndex + extraLevels }).ToImmutableArray(),
+            }).ToArray());
     }
 
     internal static async Task<Mesh> CreatePlaneAsync()

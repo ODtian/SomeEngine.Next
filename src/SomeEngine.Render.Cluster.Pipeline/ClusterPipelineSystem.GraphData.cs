@@ -28,6 +28,12 @@ public sealed partial class ClusterPipelineSystem
         internal GraphReadbackId FrameMetricsReadback;
         internal GraphPassId PageUpload;
         internal GraphPassId BvhUpload;
+        internal GraphRegionId LeafFlagRegion;
+        internal GraphPassId LeafFlagPass;
+        internal GraphBufferInput LeafFlagParameters = null!;
+        internal GraphBufferInput LeafFlagData = null!;
+        internal GraphBufferId LeafFlagEmptyData;
+        internal GraphBufferId LeafFlagEmptyParameters;
         internal GraphRegionId TargetFirstReference;
         internal GraphRegionId TargetSecondReference;
         internal GraphRegionId PrimaryGeometry;
