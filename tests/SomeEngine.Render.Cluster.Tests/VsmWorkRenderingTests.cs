@@ -20,7 +20,7 @@ public sealed class VsmWorkRenderingTests
             MaxCandidates = 65536, EnableFrameMetricsReadback = true, ForceHardwareRaster = hardware,
             SoftwareRasterEdgeThreshold = 64,
         };
-        var shadows = new VirtualShadowMapSettings { DirectionalRayCount = 0, LocalRayCount = 0 };
+        var shadows = new VirtualShadowMapSettings { MaxFilterRadiusTexels = 0 };
         await using var absent = await FrameStageScene.CreateAsync(backend, true, options, shadowSettings: shadows);
         await absent.ReadRasterImageAsync();
         await using var changed = await FrameStageScene.CreateAsync(backend, true, options, shadowSettings: shadows);
@@ -46,7 +46,7 @@ public sealed class VsmWorkRenderingTests
             VirtualResolution = 4096, AtlasSize = 2048, MaxShadowLights = 1,
             DirectionalClipmapLevels = 16, DirectionalFirstClipmapLevel = -4,
             DirectionalFirstCoarseClipmapLevel = 8, DirectionalLastCoarseClipmapLevel = 11,
-            DynamicResolutionEnabled = false, DirectionalRayCount = 0, LocalRayCount = 0,
+            DynamicResolutionEnabled = false, MaxFilterRadiusTexels = 0,
         };
         void Configure(FrameStageScene scene)
         {

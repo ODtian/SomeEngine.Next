@@ -33,7 +33,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
         });
         using var scene = await LocalScene.CreateAsync(inputs, light.ToString(), output);
         var settings = new VirtualShadowMapSettings { DynamicResolutionEnabled = true,
-            DirectionalRayCount = 0, LocalRayCount = 0 };
+            MaxFilterRadiusTexels = 0 };
         SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 64, [])
             { WaitForFrames = false, ShadowSettings = settings });
         SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 64, [])
@@ -60,7 +60,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
                 Vector3.Normalize(new(4, -2, -5)), MathF.Cos(MathF.PI / 12), MathF.Cos(MathF.PI * 2 / 9), Vector3.One, 30)));
             using var scene = await LocalScene.CreateAsync(inputs, "spot", output);
             var settings = new VirtualShadowMapSettings { DynamicResolutionEnabled = true,
-                DirectionalRayCount = 0, LocalRayCount = 0 };
+                MaxFilterRadiusTexels = 0 };
             SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 64, [])
                 { WaitForFrames = false, ShadowSettings = settings });
             SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 64, [])
@@ -89,7 +89,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
         {
             VirtualResolution = 4096, AtlasSize = 1024, PageSize = 128,
             MaxShadowLights = 1, DynamicResolutionEnabled = false,
-            DirectionalRayCount = 0, LocalRayCount = 0,
+            MaxFilterRadiusTexels = 0,
         };
         SceneAction[] actions =
         [
@@ -139,7 +139,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
         });
         using var scene = await LocalScene.CreateAsync(inputs, "first-resumed-" + light, output);
         var settings = new VirtualShadowMapSettings { VirtualResolution = 4096, AtlasSize = 1024, PageSize = 128,
-            MaxShadowLights = 1, DynamicResolutionEnabled = false, DirectionalRayCount = 0, LocalRayCount = 0 };
+            MaxShadowLights = 1, DynamicResolutionEnabled = false, MaxFilterRadiusTexels = 0 };
         SceneAction[] actions = [new(32, edit =>
         {
             edit.SetEntityTransform(edit.MeshEntities[1], new TransformQvvs(new(-1, 0, -6), Quaternion.Identity, .6f));
@@ -178,7 +178,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
             world => world.CreateEntity(new PointLight(Vector3.Zero, 20, Vector3.One, 30)));
         using var scene = await LocalScene.CreateAsync(inputs, "point-face-" + face, output);
         var settings = new VirtualShadowMapSettings { VirtualResolution = 4096, AtlasSize = 2048, PageSize = 128,
-            MaxShadowLights = 1, DynamicResolutionEnabled = false, DirectionalRayCount = 0, LocalRayCount = 0 };
+            MaxShadowLights = 1, DynamicResolutionEnabled = false, MaxFilterRadiusTexels = 0 };
         SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 64, [])
             { WaitForFrames = false, ShadowSettings = settings });
         SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 64, [])

@@ -20,7 +20,7 @@ public sealed class FirstPersonShadowRenderingTests
             FirstPersonFirstClipmapLevel = 10, FirstPersonLastClipmapLevel = 10, DirectionalMinCameraViewportWidth = 2048,
             DirectionalCoarsePageMode = VirtualShadowCoarsePageMode.Disabled,
             DirectionalReceiverMask = false, DirectionalResolutionLodBias = 0, DirectionalMovingResolutionLodBias = 0,
-            DirectionalRayCount = 0, DynamicResolutionEnabled = false };
+            MaxFilterRadiusTexels = 0, DynamicResolutionEnabled = false };
         var view = new RenderView(Matrix4x4.Identity, Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100),
             64, 64, PlayerId: 1);
         await using var firstPerson = await FrameStageScene.CreateAsync("D3D12", true, options, plane, settings);

@@ -20,7 +20,7 @@ public sealed class DirectionalDepthRangeRenderingTests
             DirectionalFirstClipmapLevel = 10, DirectionalClipmapLevels = 1,
             DirectionalResolutionLodBias = 0, DirectionalMovingResolutionLodBias = 0,
             DirectionalMinCameraViewportWidth = 2048, DirectionalDepthRangeScale = .2f,
-            DirectionalReceiverMask = false, DirectionalRayCount = 0, LocalRayCount = 0,
+            DirectionalReceiverMask = false, MaxFilterRadiusTexels = 0,
             DirectionalCoarsePageMode = VirtualShadowCoarsePageMode.Disabled,
         };
         await using var scene = await FrameStageScene.CreateAsync("D3D12",true,options,shadowSettings:settings);
