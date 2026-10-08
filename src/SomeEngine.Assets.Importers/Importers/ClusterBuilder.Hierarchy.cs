@@ -34,6 +34,8 @@ public static partial class ClusterBuilder
                 minError = Math.Min(minError, clusters[index].OwnError);
             }
             var range = pageRanges[initial.ParentGroupId];
+            if (range.Last - range.First + 1 > 31)
+                throw new InvalidDataException("A cluster group exceeds the Native page range count.");
             var slice = new ClusterHierarchySlice
             {
                 LODBounds = initial.LODSphere,
@@ -157,14 +159,13 @@ public static partial class ClusterBuilder
     private static HierarchyBranch CombineHierarchy(HierarchyBranch[] children)
     {
         Vector3 min = new(float.MaxValue), max = new(float.MinValue);
-        Vector4 sphere = children[0].Slice.LODBounds;
+        Vector4 sphere = ClusterSphere.FromSpheres(children.Select(static child => child.Slice.LODBounds).ToArray());
         float minError = float.MaxValue, maxError = 0;
         foreach (HierarchyBranch child in children)
         {
             ClusterHierarchySlice value = child.Slice;
             min = Vector3.Min(min, value.BoundsCenter - value.BoundsExtent);
             max = Vector3.Max(max, value.BoundsCenter + value.BoundsExtent);
-            sphere = MergeHierarchySpheres(sphere, value.LODBounds);
             minError = Math.Min(minError, value.MinLODError);
             maxError = Math.Max(maxError, value.MaxParentLODError);
         }
@@ -175,16 +176,6 @@ public static partial class ClusterBuilder
         } };
         result.Slice.SetErrors(minError, maxError);
         return result;
-    }
-
-    private static Vector4 MergeHierarchySpheres(Vector4 first, Vector4 second)
-    {
-        Vector3 a = new(first.X, first.Y, first.Z), b = new(second.X, second.Y, second.Z);
-        float distance = Vector3.Distance(a, b);
-        if (first.W >= distance + second.W) return first;
-        if (second.W >= distance + first.W) return second;
-        float radius = (distance + first.W + second.W) * .5f;
-        return new(a + (b - a) * ((radius - first.W) / Math.Max(distance, 1e-20f)), radius);
     }
 
     private static uint EncodeHierarchy(HierarchyBranch branch, List<ClusterBVHNode> nodes)

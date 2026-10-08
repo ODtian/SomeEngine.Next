@@ -1156,74 +1156,26 @@ public static partial class ClusterBuilder
         }
     }
 
-    private static ClusterLodBounds BoundsCompute(
-        ReadOnlySpan<Vector3> positions,
-        ReadOnlySpan<uint> indices,
-        float error
-    )
+    private static ClusterLodBounds BoundsCompute(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> indices, float error)
     {
-        var posSpan = MemoryMarshal.Cast<Vector3, float>(positions);
-        var b = Meshopt.ComputeClusterBounds(indices, posSpan, (nuint)Unsafe.SizeOf<Vector3>());
-
-        Vector3 center;
-        unsafe
-        {
-            center = *(Vector3*)b.center;
-        }
-
-        return new ClusterLodBounds
-        {
-            Center = center,
-            Radius = b.radius,
-            Error = error,
-        };
+        var used = new HashSet<uint>();
+        var points = new List<Vector3>();
+        foreach (uint index in indices) if (used.Add(index)) points.Add(positions[(int)index]);
+        Vector4 sphere = ClusterSphere.FromPoints(CollectionsMarshal.AsSpan(points));
+        return new ClusterLodBounds { Center = new(sphere.X, sphere.Y, sphere.Z), Radius = sphere.W, Error = error };
     }
 
-    private static ClusterLodBounds BoundsMerge(
-        List<BuilderMeshlet> clusters,
-        ReadOnlySpan<int> group
-    )
+    private static ClusterLodBounds BoundsMerge(List<BuilderMeshlet> clusters, ReadOnlySpan<int> group)
     {
-        var centers = ArrayPool<float>.Shared.Rent(group.Length * 3);
-        var radii = ArrayPool<float>.Shared.Rent(group.Length);
-
-        try
+        var spheres = new Vector4[group.Length];
+        float maximumError = 0;
+        for (int index = 0; index < group.Length; index++)
         {
-            float maxError = 0;
-            for (int i = 0; i < group.Length; i++)
-            {
-                var c = clusters[group[i]];
-                centers[i * 3 + 0] = c.SelfLodCenter.X;
-                centers[i * 3 + 1] = c.SelfLodCenter.Y;
-                centers[i * 3 + 2] = c.SelfLodCenter.Z;
-                radii[i] = c.SelfLodRadius;
-                maxError = Math.Max(maxError, c.Error);
-            }
-
-            var merged = Meshopt.ComputeSphereBounds(
-                centers.AsSpan(0, group.Length * 3),
-                sizeof(float) * 3,
-                radii.AsSpan(0, group.Length),
-                sizeof(float)
-            );
-
-            Vector3 mergedCenter;
-            unsafe
-            {
-                mergedCenter = *(Vector3*)merged.center;
-            }
-            return new ClusterLodBounds
-            {
-                Center = mergedCenter,
-                Radius = merged.radius,
-                Error = maxError,
-            };
+            BuilderMeshlet cluster = clusters[group[index]];
+            spheres[index] = new(cluster.SelfLodCenter, cluster.SelfLodRadius);
+            maximumError = Math.Max(maximumError, cluster.Error);
         }
-        finally
-        {
-            ArrayPool<float>.Shared.Return(centers);
-            ArrayPool<float>.Shared.Return(radii);
-        }
+        Vector4 sphere = ClusterSphere.FromSpheres(spheres);
+        return new ClusterLodBounds { Center = new(sphere.X, sphere.Y, sphere.Z), Radius = sphere.W, Error = maximumError };
     }
 }
-
