@@ -87,6 +87,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     private uint _underBudgetFrames;
 
     internal float StreamingQuality => _streamingQuality;
+    internal ReadOnlyMemory<ClusterLodChange> LodChanges => _activePublication?.Meshes.LodChanges ?? [];
 
     internal int HierarchyLevels => _meshes.HierarchyLevels;
     internal uint MaximumRasterBatchesPerCluster => _meshes.MaximumRasterBatchesPerCluster;
@@ -121,7 +122,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             stream = new PageStream(meshes, maxInFlightLoads: selected.MaxConcurrentPageLoads);
 
             _pageHeapDescription = new BufferDesc(selected.PageHeapCapacityBytes,
-                BufferUsages.ShaderRead | BufferUsages.CopyDestination, "Cluster page heap");
+                BufferUsages.ShaderRead | BufferUsages.CopyDestination | BufferUsages.ShaderWrite, "Cluster page heap");
             _bvhDescription = new BufferDesc(selected.BvhCapacityBytes,
                 BufferUsages.ShaderRead | BufferUsages.CopyDestination, "Cluster BVH");
             _backend = backend;

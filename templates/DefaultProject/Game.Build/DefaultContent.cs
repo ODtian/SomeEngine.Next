@@ -172,6 +172,10 @@ public static class DefaultContent
                     ResolveRequired(project, "assets/Shaders/cluster_bvh_traverse.shader"),
                     "TraverseHierarchyLevel"),
                 ComputeOperation(
+                    ClusterShaderOperationRole.LeafFlagFixups,
+                    ResolveRequired(project, "assets/Shaders/cluster_leaf_flags.shader"),
+                    "ApplyClusterLeafFlags"),
+                ComputeOperation(
                     ClusterShaderOperationRole.PageRequests,
                     ResolveRequired(project, "assets/Shaders/cluster_page_request_complete.shader"),
                     "CompleteClusterPageRequests"),

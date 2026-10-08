@@ -21,7 +21,6 @@ internal readonly record struct ClusterBvhRegistration(
     uint NodeCount,
     int PageCount,
     uint[] LeafReferences,
-    int[][] NodesByPage,
     Memory<byte> Nodes,
     int HierarchyLevels);
 
@@ -30,9 +29,7 @@ internal readonly record struct ClusterBvhLeafIndex(
     uint FirstNode,
     uint NodeCount,
     uint FirstPage,
-    int PageCount,
     uint[] LeafReferences,
-    int[][] NodesByPage,
     Memory<byte> Nodes);
 
 internal readonly record struct ClusterBvhDestination(ulong Offset, Memory<byte> Memory);
@@ -184,19 +181,6 @@ internal sealed class ClusterBvh
         Span<ClusterBVHNode> patched = MemoryMarshal.Cast<byte, ClusterBVHNode>(destination.Memory.Span);
         int hierarchyDepth = ValidateTopology(patched);
         uint[] localPageByNode = PatchNodes(patched, firstNode, firstPage, pages);
-        var nodesByPage = new int[pages.Count][];
-        var pageCounts = new int[pages.Count];
-        foreach (uint reference in localPageByNode)
-            if (reference != uint.MaxValue) pageCounts[reference >> 8]++;
-        for (int page = 0; page < pages.Count; page++)
-            nodesByPage[page] = new int[pageCounts[page]];
-        Array.Clear(pageCounts);
-        for (int node = 0; node < localPageByNode.Length; node++)
-        {
-            uint page = localPageByNode[node] == uint.MaxValue ? uint.MaxValue : localPageByNode[node] >> 8;
-            if (page != uint.MaxValue) nodesByPage[page][pageCounts[page]++] = node;
-        }
-
         uint root = firstNode;
         return new ClusterBvhRegistration(
             mesh,
@@ -207,7 +191,6 @@ internal sealed class ClusterBvh
             nodeCount32,
             pages.Count,
             localPageByNode,
-            nodesByPage,
             destination.Memory,
             Math.Max(1, hierarchyDepth - 1));
     }
@@ -226,9 +209,7 @@ internal sealed class ClusterBvh
             registration.FirstNode,
             registration.NodeCount,
             registration.FirstPage,
-            registration.PageCount,
             registration.LeafReferences,
-            registration.NodesByPage,
             registration.Nodes));
         _registeredPageCount = checked(
             registration.FirstPage + checked((uint)registration.PageCount));
@@ -256,56 +237,25 @@ internal sealed class ClusterBvh
         _pendingRootMeshes.EnsureCapacity(checked(_pendingRootMeshes.Count + 1));
     }
 
-    public void ReservePagePatch(uint pageId)
-    {
-        ClusterBvhLeafIndex index = GetLeafIndexByPage(pageId);
-        uint localPage = pageId - index.FirstPage;
-        int leafCount = index.NodesByPage[localPage].Length;
-        _pendingPatches.EnsureCapacity(checked(_pendingPatches.Count + leafCount));
-    }
+    internal void PatchPart(uint node, uint child, uint reference)
+        => PatchPartWord(node, child, ChildReferenceByteOffset, reference);
 
-    public void PatchPage(uint pageId, uint pagePointer)
+    internal void PatchPartErrors(uint node, uint child, uint errors)
+        => PatchPartWord(node, child, 76, errors);
+
+    private void PatchPartWord(uint node, uint child, uint wordOffset, uint value)
     {
-        ClusterBvhLeafIndex index = GetLeafIndexByPage(pageId);
-        uint localPage = pageId - index.FirstPage;
-        foreach (int leaf in index.NodesByPage[localPage])
-        {
-            int localNode = leaf / 4, child = leaf & 3;
-            int referenceOffset = checked(localNode * (int)NodeBytes + (int)ChildReferenceByteOffset + child * 16);
-            ulong offset = checked((ulong)index.FirstNode * NodeBytes + (uint)referenceOffset);
-            uint value = pagePointer == PageFaultMarker ? PageFaultMarker :
-                ((pagePointer >> 9) << 8) | (index.LeafReferences[leaf] & 255u);
-            _pendingPatches.Add(new ClusterBvhPatch(offset, value, index.Nodes.Slice(referenceOffset, sizeof(uint))));
-        }
+        if (!TryFindLeafIndexByNode(node, out ClusterBvhLeafIndex mesh))
+            throw new InvalidOperationException("A hierarchy fixup references an unknown mesh node.");
+        int localNode = checked((int)(node - mesh.FirstNode));
+        int referenceOffset = checked(localNode * (int)NodeBytes + (int)wordOffset + (int)child * 16);
+        if (BinaryPrimitives.ReadUInt32LittleEndian(mesh.Nodes.Span.Slice(referenceOffset, sizeof(uint))) == value) return;
+        ulong offset = checked((ulong)mesh.FirstNode * NodeBytes + (uint)referenceOffset);
+        _pendingPatches.Add(new ClusterBvhPatch(offset, value, mesh.Nodes.Slice(referenceOffset, sizeof(uint))));
     }
 
     public ClusterBvhCheckpoint CaptureChanges()
         => new(_pendingPatches.Count);
-
-    internal void CollectPageDependencies(HashSet<uint> pages)
-    {
-        foreach (uint pageId in pages.ToArray())
-            foreach (uint dependency in PageDependencies(pageId)) pages.Add(dependency);
-    }
-
-    internal void CollectPageDependencies(Dictionary<uint, uint> priorities)
-    {
-        foreach ((uint page, uint priority) in priorities.ToArray())
-            foreach (uint dependency in PageDependencies(page))
-                if (!priorities.TryGetValue(dependency, out uint previous) || priority > previous)
-                    priorities[dependency] = priority;
-    }
-
-    private IEnumerable<uint> PageDependencies(uint pageId)
-    {
-        ClusterBvhLeafIndex mesh = GetLeafIndexByPage(pageId);
-        foreach (int leaf in mesh.NodesByPage[pageId - mesh.FirstPage])
-        {
-            ClusterBVHNode node = MemoryMarshal.Read<ClusterBVHNode>(mesh.Nodes.Span.Slice(leaf / 4 * (int)NodeBytes));
-            ClusterHierarchySlice slice = node.GetChild(leaf & 3);
-            for (uint page = slice.FirstPage; page < slice.FirstPage + slice.PageCount; page++) yield return page;
-        }
-    }
 
     public void RestoreChanges(in ClusterBvhCheckpoint checkpoint)
     {
@@ -326,17 +276,10 @@ internal sealed class ClusterBvh
             BinaryPrimitives.WriteUInt32LittleEndian(
                 patch.Destination.Span,
                 patch.Value);
+            _storage.Stage(patch.Offset, sizeof(uint));
             uint node = checked((uint)(patch.Offset / NodeBytes));
             if (TryFindLeafIndexByNode(node, out ClusterBvhLeafIndex mesh))
                 changedMeshes.Add(mesh.FirstNode);
-        }
-        foreach (ClusterBvhLeafIndex mesh in _leafIndexes)
-        {
-            if (!changedMeshes.Contains(mesh.FirstNode) && !_pendingRootMeshes.Contains(mesh.Mesh))
-                continue;
-            ulong offset = checked((ulong)mesh.FirstNode * NodeBytes);
-            int length = checked((int)(mesh.NodeCount * NodeBytes));
-            _storage.Stage(offset, length);
         }
         foreach (Mesh mesh in _pendingRootMeshes)
         {
@@ -478,34 +421,6 @@ internal sealed class ClusterBvh
 
         result = default;
         return false;
-    }
-
-    private ClusterBvhLeafIndex GetLeafIndexByPage(uint pageId)
-    {
-        int low = 0;
-        int high = _leafIndexes.Count - 1;
-        while (low <= high)
-        {
-            int middle = low + ((high - low) / 2);
-            ClusterBvhLeafIndex candidate = _leafIndexes[middle];
-            if (pageId < candidate.FirstPage)
-            {
-                high = middle - 1;
-                continue;
-            }
-            if (pageId - candidate.FirstPage >= checked((uint)candidate.PageCount))
-            {
-                low = middle + 1;
-                continue;
-            }
-
-            return candidate;
-        }
-
-        throw new ArgumentOutOfRangeException(
-            nameof(pageId),
-            pageId,
-            "Cluster page id is outside the BVH leaf index.");
     }
 
     private static int ValidateTopology(ReadOnlySpan<ClusterBVHNode> nodes)

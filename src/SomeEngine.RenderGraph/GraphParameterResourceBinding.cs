@@ -133,6 +133,12 @@ public readonly struct GraphParameterResourceBinding
             GraphAccessMode.Read, WriteCoverage.Partial, PipelineSync.None,
             TextureLayout.Undefined, null, requiresExplicitAccess: true);
 
+    /// <summary>Binds a Buffer UAV whose accessed ranges are declared by the pass.</summary>
+    public static GraphParameterResourceBinding WritableBufferDescriptor(GraphBufferUavId view) =>
+        ForGraphView(ResourceBindingType.BufferUav, view.Value,
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial, PipelineSync.None,
+            TextureLayout.Undefined, null, requiresExplicitAccess: true);
+
     public static GraphParameterResourceBinding WritableBuffer(
         GraphBufferUavId view,
         PipelineSync sync,

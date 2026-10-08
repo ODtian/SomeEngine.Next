@@ -40,7 +40,9 @@ internal sealed record ClusterMeshPublication(
     uint[] ResidentPages,
     PageRetirement[] Retirements,
     ClusterStagedUpload[] PageUploads,
-    BufferRange[] ResidentPageRanges);
+    BufferRange[] ResidentPageRanges,
+    ClusterLeafFlagFixup[] LeafFlagFixups,
+    ClusterLodChange[] LodChanges);
 
 internal sealed partial class ClusterMeshes : IDisposable
 {
@@ -59,6 +61,7 @@ internal sealed partial class ClusterMeshes : IDisposable
     private readonly object _gate = new();
     private readonly ClusterBvh _bvh;
     private readonly MeshPages _pages = new();
+    private readonly ClusterPageFixups _fixups = new();
     private readonly ResidencyBudgetLedger _residency;
     private readonly IClusterPageStorage _pageStorage;
     private readonly Dictionary<uint, StagedPageLoad> _stagingLoads = new();
@@ -201,7 +204,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            _bvh.CollectPageDependencies(pages);
+            _fixups.ExpandDependencies(pages);
         }
     }
 
@@ -210,7 +213,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            _bvh.CollectPageDependencies(priorities);
+            _fixups.ExpandDependencies(priorities);
         }
     }
 
@@ -239,18 +242,17 @@ internal sealed partial class ClusterMeshes : IDisposable
         {
             if (IsPreparedRetirement(pageID))
                 return new PageFaultResolution(PageFaultResolutionKind.Pending, pageID, size);
-            _bvh.ReservePagePatch(pageID);
             ClusterBvhCheckpoint bvhCheckpoint = _bvh.CaptureChanges();
             if (!_pages.TryCancelPendingEviction(pageID, out uint offset))
                 throw new InvalidOperationException("Pending page eviction could not be cancelled atomically.");
             try
             {
-                _bvh.PatchPage(pageID, offset);
+                _fixups.PageChanged(pageID);
             }
             catch
             {
                 _bvh.RestoreChanges(bvhCheckpoint);
-                if (!_pages.StageEviction(pageID, out _))
+                if (_fixups.HasResidentDependents(pageID, PageAvailable) || !_pages.StageEviction(pageID, out _))
                     throw new InvalidOperationException("Cancelled page eviction could not be rolled back atomically.");
                 throw;
             }
@@ -440,7 +442,6 @@ internal sealed partial class ClusterMeshes : IDisposable
                 ResidencyReservation gpuReservation = load.Reservation
                     ?? throw new InvalidOperationException($"Cluster page {pageID} staging destination was already committed.");
                 _pageAllocations.EnsureCapacity(checked(_pageAllocations.Count + 1));
-                _bvh.ReservePagePatch(pageID);
                 ClusterBvhCheckpoint bvhCheckpoint = _bvh.CaptureChanges();
                 bool staged = false;
                 bool backingTracked = false;
@@ -451,7 +452,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                     _pageStorage.Stage(load.Offset, checked((int)PageHeap.AllocationSize(load.Size)));
                     _pageAllocations.Add(pageID, new PageAllocation(load.Offset, load.Size));
                     backingTracked = true;
-                    _bvh.PatchPage(pageID, load.Offset);
+                    _fixups.PageChanged(pageID);
                     load.Reservation = null;
                     _stagingLoads.Remove(pageID);
                     AdvanceRevision();
@@ -520,14 +521,13 @@ internal sealed partial class ClusterMeshes : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            _bvh.ReservePagePatch(pageID);
-            if (!_pages.StageEviction(pageID, out _))
+            if (_fixups.HasResidentDependents(pageID, PageAvailable) || !_pages.StageEviction(pageID, out _))
                 return false;
 
             ClusterBvhCheckpoint bvhCheckpoint = _bvh.CaptureChanges();
             try
             {
-                _bvh.PatchPage(pageID, ClusterBvh.PageFaultMarker);
+                _fixups.PageChanged(pageID);
             }
             catch
             {
@@ -832,7 +832,7 @@ internal sealed partial class ClusterMeshes : IDisposable
 
     private bool TryEvictPage(uint protectedPageID)
     {
-        return _pages.TryVictim(protectedPageID, out uint pageID)
+        return _pages.TryVictim(protectedPageID, page => !_fixups.HasResidentDependents(page, PageAvailable), out uint pageID)
             && EvictPage(pageID);
     }
 
@@ -865,6 +865,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             _pendingPageRetirements.EnsureCapacity(checked(
                 _pendingPageRetirements.Count + retirements.Length));
             _heap.ReserveFrees(retirements.Length);
+            var fixups = _fixups.Apply(PageAvailable, PageOffset, _bvh);
             ClusterBvhPublication bvh = _bvh.PreparePublication();
 
             _preparedPublication = new ClusterMeshPublication(
@@ -872,7 +873,8 @@ internal sealed partial class ClusterMeshes : IDisposable
                 residentPages,
                 retirements,
                 _pageStorage.CaptureStagedUploads(),
-                BuildResidentPageRanges(residentPages, retirements));
+                BuildResidentPageRanges(residentPages, retirements), fixups.Flags, fixups.Changes);
+            _fixups.Accept(fixups);
             return _preparedPublication;
         }
     }
@@ -993,6 +995,16 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
         if (cleanupFailure is not null)
             RecordCleanupFailure(ClusterCleanupStage.Publication, cleanupFailure);
+    }
+
+    private bool PageAvailable(uint page) => !_pages.IsRetiring(page) &&
+        (_pages.IsResident(page) || _pages.IsLoadPending(page));
+
+    private uint PageOffset(uint page)
+    {
+        if (!_pageAllocations.TryGetValue(page, out PageAllocation allocation))
+            throw new InvalidOperationException("A geometry fixup requires a resident page allocation.");
+        return allocation.Offset;
     }
 
     private BufferRange[] _residentPageRanges = [];
@@ -1238,6 +1250,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             _preparedPublication = null;
             _pages.CommitDisposal(pageDisposal);
             cleanupFailure = _bvh.Clear();
+            _fixups.Clear();
             _heap.Reset();
         }
 

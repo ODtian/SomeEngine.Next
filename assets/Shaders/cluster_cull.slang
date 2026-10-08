@@ -91,10 +91,9 @@ bool PassesLODFilter(
     RenderInstanceTransform t,
     ClusterViewUniforms view)
 {
-    // Without a conservative deformation error we cannot select an approximate
-    // mesh LOD. Emit the original level once instead of overlapping every LOD.
+    // Current leaves provide complete coverage while detail pages are streaming.
     if (view.CullingEnabled == 0u)
-        return ((cluster.PackedCounts >> 24u) & 4u) != 0u;
+        return ((cluster.PackedCounts >> 24u) & 6u) != 0u;
 
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
