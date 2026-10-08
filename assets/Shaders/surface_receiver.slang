@@ -44,14 +44,14 @@ bool SurfaceReceiverUsesBackfaceCulling(SurfaceReceiver receiver)
 
 bool SurfaceReceiverIsBackfaceToDirectional(SurfaceReceiver receiver, float3 towardLight, float sourceAngleRadians)
 {
-    return dot(receiver.ShadingNormal, towardLight) < -max(abs(sin(sourceAngleRadians * .5)), .1);
+    return dot(receiver.GeometricNormal, towardLight) < -max(abs(sin(sourceAngleRadians * .5)), .1);
 }
 
 bool SurfaceReceiverIsBackfaceToLocal(SurfaceReceiver receiver, float3 towardLight, float sourceRadiusCentimeters)
 {
     float distanceSquared = dot(towardLight, towardLight);
     float sinAlpha = sqrt(saturate(sourceRadiusCentimeters * sourceRadiusCentimeters / (distanceSquared + 1.0)));
-    return dot(receiver.ShadingNormal, towardLight * rsqrt(distanceSquared)) < -sinAlpha;
+    return dot(receiver.GeometricNormal, towardLight * rsqrt(distanceSquared)) < -sinAlpha;
 }
 
 bool SurfaceReceiverReceivesDirectionalShadow(SurfaceReceiver receiver, float3 towardLight,
