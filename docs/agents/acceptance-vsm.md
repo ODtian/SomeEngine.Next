@@ -24,7 +24,7 @@
 
 源码 `cb6b531ae6261f206ea01d5746c64d806f98b109` 的既有硬阴影、公开来源比较与局部光 RT 批次完成 24 项：21 通过、3 失败；4 项局部光启动/恢复及 Spot 范围行为等待修复后补齐。六行硬阴影中的小球与 Sponza 两种模式共 4 行通过，Bistro 默认/诊断模式错误比例分别为 4.3210853% / 4.3386668%；七项公开来源比较中 6 项通过，directional-grid 软阴影平均误差 2.0353781%、错误比例 2.293044%；已完成的 11 项局部光行为均通过。原 2% 判定及全部有效接收像素保持，测试规则检查 0 违规。批次在完成结果边界停止，逐项结果、4 项待验收名称、原 App/资产身份及失败图像保存于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/rt-gt/final-hard-local/` 的 `progress.json`、`entrypoint-identity.json` 与各 case 目录。
 
-同目录 `opaque-caster-lod.json` 记录 132 个 Opaque 来源 caster 的公共资产解码与纹素射线：原来源深度全部在 2 bit 内复现，叶层及完全驻留的选中阴影 LOD 均 132/132 命中，选中 cluster 最大投影误差 0.24986263，沿用 0.25 阈值与阴影几何比例 0.5。CPU 选择器使用 `ChildReference` 指定的几何页；早期使用 group 请求页范围产生的 122/10 诊断已由此结果纠正。旧 lossless R32 记录关联其 `d5c9926678` 源码；当前 `07874636` 的硬阴影 CSV 对齐后其中 129 点仍有误差，当前帧工作完成且容量、分配、加载错误为 0。通用深度比较修复及当前帧纹素读数继续驱动 Bistro 验收。
+同目录 `opaque-caster-lod.json` 记录 132 个 Opaque 来源 caster 的公共资产解码与纹素射线：原来源深度全部在 2 bit 内复现，叶层及初始 Cluster 视图 0.25 阈值下均 132/132 命中，选中 cluster 最大投影误差 0.24986263，阴影几何比例 0.5。CPU 选择器使用 `ChildReference` 指定的几何页；早期使用 group 请求页范围产生的 122/10 诊断已由此结果纠正。实际 GPU 后继 `vsm_view_compact.slang` 将阈值覆写为 `MaxPixelsPerEdge=1`；`actual-shadow-lod.json` 按最终 1/0.5 重算相同 132 个当前纹素，目标 caster 127 条命中、120 条选中深度与实际 R32 在 2 bit 内吻合。`caster417-geometry.json` 与 `current-caster-raster.json` 将剩余差异限定到单页、单个零误差 Cluster 的近面三角形及实际更远深度，继续定位候选、分箱和写入阶段。当前 `07874636` 帧工作完成且容量、分配、加载错误为 0；原 RT 判定继续驱动 Bistro 验收。
 
 原 49 项对应如下；各票正文记录具体算法、数据关系与消费者。
 
