@@ -165,7 +165,7 @@ public sealed partial class ClusterPipelineSystem
         ref PassDefinition pass,
         ClusterRasterInvocation invocation,
         ClusterRasterStageResources<ClusterTessellationCoreResource> stage,
-        GraphBufferInput uniformBuffer,
+        GraphBufferSlice uniformBuffer,
         bool phaseOne,
         uint nextLevelArgument,
         PipelineSync sync,
@@ -231,7 +231,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterTessellationCoreResource resource,
-        GraphBufferInput uniformBuffer,
+        GraphBufferSlice uniformBuffer,
         bool phaseOne,
         uint nextLevelArgument,
         PipelineSync sync,
@@ -254,7 +254,7 @@ public sealed partial class ClusterPipelineSystem
                     sync);
                 return;
             case ClusterTessellationCoreResource.Uniforms:
-                _ = pass.Bind(graph.CreateBufferCbv(uniformBuffer),
+                _ = pass.Bind(uniformBuffer,
                     sync);
                 return;
             case ClusterTessellationCoreResource.Views:
@@ -458,7 +458,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterRasterInvocation invocation,
-        GraphBufferInput uniformBuffer,
+        GraphBufferSlice uniformBuffer,
         bool policyTarget)
     {
         ClusterRasterStageResources<ClusterSoftwareRasterCoreResource> stage =
@@ -519,8 +519,8 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterRasterInvocation invocation,
-        GraphBufferInput uniformBuffer,
-        GraphBufferInput dispatchUniformBuffer,
+        GraphBufferSlice uniformBuffer,
+        GraphBufferSlice dispatchUniformBuffer,
         bool policyTarget)
     {
         ClusterRasterStageResources<ClusterHardwareRasterCoreResource> stage =
@@ -633,7 +633,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterSoftwareRasterCoreResource resource,
-        GraphBufferInput uniformBuffer,
+        GraphBufferSlice uniformBuffer,
         bool policyTarget)
     {
         FrameResources frame = GetRasterFrameResources(GraphData.Resources, policyTarget);
@@ -653,7 +653,7 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.ComputeShading);
                 return;
             case ClusterSoftwareRasterCoreResource.Uniforms:
-                _ = pass.Bind(graph.CreateBufferCbv(uniformBuffer),
+                _ = pass.Bind(uniformBuffer,
                     PipelineSync.ComputeShading);
                 return;
             case ClusterSoftwareRasterCoreResource.Views:
@@ -750,8 +750,8 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterHardwareRasterCoreResource resource,
-        GraphBufferInput uniformBuffer,
-        GraphBufferInput dispatchUniformBuffer,
+        GraphBufferSlice uniformBuffer,
+        GraphBufferSlice dispatchUniformBuffer,
         bool policyTarget)
     {
         FrameResources frame = GetRasterFrameResources(GraphData.Resources, policyTarget);
@@ -771,7 +771,7 @@ public sealed partial class ClusterPipelineSystem
                     PipelineSync.AllShading);
                 return;
             case ClusterHardwareRasterCoreResource.Uniforms:
-                _ = pass.Bind(graph.CreateBufferCbv(uniformBuffer),
+                _ = pass.Bind(uniformBuffer,
                     PipelineSync.AllShading);
                 return;
             case ClusterHardwareRasterCoreResource.Views:
@@ -788,7 +788,8 @@ public sealed partial class ClusterPipelineSystem
             case ClusterHardwareRasterCoreResource.DispatchUniforms:
                 _ = pass.Bind(
                     graph.CreateBufferCbv(
-                        dispatchUniformBuffer,
+                        dispatchUniformBuffer.Buffer,
+                        dispatchUniformBuffer.Range,
                         label: "Cluster hardware raster dispatch uniforms"),
                     PipelineSync.AllShading);
                 return;
@@ -887,7 +888,7 @@ public sealed partial class ClusterPipelineSystem
             graph.CreateBufferSrv(frame.PageHeap, label: label)));
     }
 
-    private GraphBufferInput BindShadeResources(
+    private GraphBufferSlice BindShadeResources(
         ref RenderGraphEdit graph, GraphPassId passId, ClusterShadeInvocation invocation,
         ClusterShadeStageSet stages)
     {
@@ -895,7 +896,7 @@ public sealed partial class ClusterPipelineSystem
         GraphData.ShadeScalars ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
         PassDefinition pass = graph.GetPass(passId);
         pass.SetParameterBlock(invocation.Pipeline.ParameterLayout);
-        GraphBufferInput uniformBuffer = UploadUniform(ref graph,
+        GraphBufferSlice uniformBuffer = UploadUniform(ref graph,
             ShadeUniforms(invocation.BinIndex, stages), "Cluster shade parameters");
         ReadOnlySpan<ClusterLinkedStageResource> resources = invocation.Resources.Resources;
         for (int resourceIndex = 0; resourceIndex < resources.Length; resourceIndex++)
@@ -946,7 +947,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterShadeCoreResource resource,
-        GraphBufferInput uniformBuffer,
+        GraphBufferSlice uniformBuffer,
         GraphBufferInput scalarBuffer,
         GraphBufferInput scalarOffsetBuffer)
     {

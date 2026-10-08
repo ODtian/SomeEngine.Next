@@ -121,13 +121,13 @@ float CalculateClusterViewPixelScale(ClusterViewUniforms view)
     return 0.5 * ClusterProjectionScales(view).y * float(view.ScreenHeight);
 }
 
-float CalculateClusterSphereEdgeScale(float3 center, float radius, ClusterViewUniforms view)
+float2 CalculateClusterSphereEdgeScales(float3 center, float radius, ClusterViewUniforms view)
 {
-    if (ClusterProjectionScales(view).z <= 1e-8) return 1.0;
+    if (ClusterProjectionScales(view).z <= 1e-8) return 1.0.xx;
     float3 viewCenter = mul(float4(ClusterPositionForView(center, view), 1.0), view.View).xyz;
     float depth = -viewCenter.z;
     float nearDepth = view.NearPlane;
-    if (depth + radius <= nearDepth) return 0.0;
+    if (depth + radius <= nearDepth) return 0.0.xx;
 
     // The nearest sphere tangent bounds edge projection by forward depth and
     // viewing angle. View-space forward depth is positive after the RH conversion.
@@ -136,14 +136,31 @@ float CalculateClusterSphereEdgeScale(float3 center, float radius, ClusterViewUn
     float tangentDistance = sqrt(max(distanceSquared - radius * radius, 0.0));
     float minimumCosine = (tangentDistance * depth - radius * sideDistance) /
         max(distanceSquared, 1e-12);
+    float maximumCosine = (tangentDistance * depth + radius * sideDistance) /
+        max(distanceSquared, 1e-12);
+    float nearOffset = nearDepth - depth;
+    if (distanceSquared < radius * radius || maximumCosine * tangentDistance < nearDepth)
+    {
+        float sideExtent = sqrt(max(radius * radius - nearOffset * nearOffset, 0.0));
+        float nearSide = max(sideDistance - sideExtent, 0.0);
+        maximumCosine = nearDepth / sqrt(nearSide * nearSide + nearDepth * nearDepth);
+    }
     if (distanceSquared < radius * radius || minimumCosine * tangentDistance < nearDepth)
     {
-        float nearOffset = nearDepth - depth;
         float sideExtent = sqrt(max(radius * radius - nearOffset * nearOffset, 0.0));
         float farSide = sideDistance + sideExtent;
         minimumCosine = nearDepth / sqrt(farSide * farSide + nearDepth * nearDepth);
     }
-    return max(depth - radius, nearDepth) * minimumCosine;
+    bool spansForwardAxis = radius * radius - sideDistance * sideDistance >=
+        max(nearOffset, 0.0) * max(nearOffset, 0.0);
+    maximumCosine = spansForwardAxis ? 1.0 : maximumCosine;
+    return float2(max(depth - radius, nearDepth) * minimumCosine,
+        max(depth + radius, nearDepth) * maximumCosine);
+}
+
+float CalculateClusterSphereEdgeScale(float3 center, float radius, ClusterViewUniforms view)
+{
+    return CalculateClusterSphereEdgeScales(center, radius, view).x;
 }
 
 float CalculateClusterSpherePixelScale(float3 center, float radius, ClusterViewUniforms view)
@@ -155,6 +172,14 @@ float ClusterSphereError(float3 center, float sphereRadius, float error, Cluster
 {
     if (error <= 1e-8) return 0.0;
     return error * view.GeometryLodScale * CalculateClusterSpherePixelScale(center, sphereRadius, view);
+}
+
+float2 ClusterSphereErrorBounds(float3 center, float sphereRadius, float error, ClusterViewUniforms view)
+{
+    if (error <= 1e-8) return 0.0.xx;
+    float2 edgeScales = CalculateClusterSphereEdgeScales(center, sphereRadius, view);
+    float numerator = error * view.GeometryLodScale * CalculateClusterViewPixelScale(view);
+    return numerator / max(edgeScales.yx, 1e-12.xx);
 }
 
 #endif

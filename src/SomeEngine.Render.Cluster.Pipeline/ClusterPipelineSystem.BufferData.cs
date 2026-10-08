@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using SomeEngine.Core.Diagnostics;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 
@@ -7,7 +8,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 public sealed partial class ClusterPipelineSystem
 {
     private readonly record struct BufferWrite(BufferRange Range, ClusterBytes Bytes);
-    private readonly record struct ShaderParameters(byte[] Bytes, int Offset, int Capacity);
+    private readonly record struct ShaderParameters(int Offset, int Capacity);
 
     private GraphBufferId CreateBufferData(ref RenderGraphEdit edit, ClusterBytes bytes,
         BufferUsages usages, string label)
@@ -60,11 +61,12 @@ public sealed partial class ClusterPipelineSystem
         GraphData.BufferWrites = GraphData.BufferWrites.Remove(buffer);
     }
 
-    private GraphBufferInput CreateParameters(ref RenderGraphEdit edit,
+    private GraphBufferSlice CreateParameters(ref RenderGraphEdit edit,
         scoped ReadOnlySpan<byte> bytes, string label)
     {
-        GraphBufferInput input = edit.CreateBufferInput(BufferUsages.Constant);
-        GraphData.Parameters = GraphData.Parameters.Add(input, AllocateParameters(ref edit, bytes));
+        ShaderParameters parameters = AllocateParameters(ref edit, bytes);
+        GraphBufferSlice input = new(GraphData.ShaderParameterBytes,
+            new BufferRange(checked((ulong)parameters.Offset), checked((ulong)parameters.Capacity)));
         return input;
     }
 
@@ -88,28 +90,33 @@ public sealed partial class ClusterPipelineSystem
                 GraphData.ShaderParameterBytes = edit.DeclareExternalBuffer(description, MemoryType.Upload);
             else edit.SetBufferDescription(GraphData.ShaderParameterBytes, description, MemoryType.Upload);
         }
-        return new ShaderParameters(bytes.ToArray(), offset, capacity);
+        var parameters = new ShaderParameters(offset, capacity);
+        WriteParameterData(parameters, bytes);
+        return parameters;
     }
 
-    private void UpdateParameters(ref RenderGraphEdit edit, GraphBufferInput input, scoped ReadOnlySpan<byte> bytes)
+    private void UpdateParameters(ref RenderGraphEdit edit, GraphBufferSlice input, scoped ReadOnlySpan<byte> bytes)
     {
-        ShaderParameters previous = GraphData.Parameters[input];
-        if (bytes.Length <= previous.Capacity)
-            GraphData.Parameters = GraphData.Parameters.SetItem(input, previous with { Bytes = bytes.ToArray() });
-        else
-        {
-            ReleaseParameters(previous);
-            GraphData.Parameters = GraphData.Parameters.SetItem(input, AllocateParameters(ref edit, bytes));
-        }
+        ShaderParameters parameters = new(checked((int)input.Range.Offset), checked((int)input.Range.Size));
+        DevelopmentCheck.Require(bytes.Length <= parameters.Capacity,
+            "Each shader parameter record keeps the size of its declared type.");
+        WriteParameterData(parameters, bytes);
+    }
+
+    private void WriteParameterData(ShaderParameters parameters, scoped ReadOnlySpan<byte> bytes)
+    {
+        byte[] record = new byte[parameters.Capacity];
+        bytes.CopyTo(record);
+        GraphData.ParameterData = GraphData.ParameterData.WithChanges(GraphData.ParameterByteCount,
+            [(parameters.Offset, record)]);
     }
 
     private void ReleaseParameters(ShaderParameters parameters) => GraphData.ParameterFreeOffsets =
         GraphData.ParameterFreeOffsets.SetItem(parameters.Capacity,
             GraphData.ParameterFreeOffsets.GetValueOrDefault(parameters.Capacity, ImmutableStack<int>.Empty).Push(parameters.Offset));
 
-    private void RemoveParameters(GraphBufferInput input)
+    private void RemoveParameters(GraphBufferSlice input)
     {
-        ReleaseParameters(GraphData.Parameters[input]);
-        GraphData.Parameters = GraphData.Parameters.Remove(input);
+        ReleaseParameters(new(checked((int)input.Range.Offset), checked((int)input.Range.Size)));
     }
 }
