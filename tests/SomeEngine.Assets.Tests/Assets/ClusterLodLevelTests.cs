@@ -16,7 +16,7 @@ public sealed class ClusterLodLevelTests
         ClusterMeshBlock geometry = asset.GetBlock<ClusterMeshBlock>();
         var mesh = await geometry.CreateAsync(asset.GetBlock<MeshBlock>(), asset.Name);
         await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
-        var coarseErrors = new Dictionary<int, float>();
+        var coarseErrors = new Dictionary<(uint Page, uint Cluster), float>();
         for (int page = 0; page < mesh.PageCount; page++)
         {
             byte[] bytes = new byte[checked((int)mesh.PageDigests[page].Length)];
@@ -24,18 +24,20 @@ public sealed class ClusterLodLevelTests
             MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(bytes);
             ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(
                 bytes.AsSpan(checked((int)header.ClustersOffset), checked((int)header.ClusterCount * PackedCluster.SizeInBytes)));
-            foreach (PackedCluster cluster in clusters)
-                if (((cluster.PackedCounts >> 16) & 0xff) != 0)
-                    coarseErrors[cluster.GroupId] = (float)BitConverter.UInt16BitsToHalf(cluster.LODErrorHalf);
+            for (int cluster = 0; cluster < clusters.Length; cluster++)
+                coarseErrors[((uint)page, (uint)cluster)] = (float)BitConverter.UInt16BitsToHalf(clusters[cluster].LODErrorHalf);
         }
         ReadOnlySpan<ClusterBVHNode> nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(mesh.Bvh.Span);
         int transitions = 0;
-        foreach (ClusterBVHNode node in nodes)
+        foreach (MeshClusterGroup group in geometry.ClusterGroups)
         {
-            if (node.NodeType != 1 || node.BoundMax.W == 0) continue;
-            int parent = (int)node.BoundMax.W - 1;
-            Assert.Equal(coarseErrors[parent], node.LODError);
-            transitions++;
+            if (group.Parents.IsEmpty) continue;
+            float error = coarseErrors[(group.Parents[0].PageIndex, group.Parents[0].ClusterIndex)];
+            foreach (MeshHierarchyPart part in group.HierarchyParts)
+            {
+                Assert.Equal(error, nodes[(int)part.NodeIndex].GetChild((int)part.ChildIndex).MaxParentLODError);
+                transitions++;
+            }
         }
         Assert.True(transitions > 0, "The generated mesh must exercise coarse-to-fine LOD transitions.");
     }

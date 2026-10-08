@@ -23,65 +23,17 @@ public sealed class ClusterBuilderOptions
     public IClusterVertexEncoder VertexEncoder { get; init; } = StandardClusterVertexEncoder.Instance;
 }
 
-public struct ClusterLodConfig
+public readonly record struct ClusterLodConfig(int MaxVertices, int MaxTriangles)
 {
-    public int MaxVertices;
-    public int MinTriangles;
-    public int MaxTriangles;
-    public bool PartitionSpatial;
-    public bool PartitionSort;
-    public int PartitionSize;
-    public bool ClusterSpatial;
-    public float ClusterFillWeight;
-    public float ClusterSplitFactor;
-    public float SimplifyRatio;
-    public float SimplifyThreshold;
-    public float SimplifyErrorFactorSloppy;
-    public float SimplifyErrorEdgeLimit;
-    public bool SimplifyPermissive;
-    public bool SimplifyFallbackPermissive;
-    public bool SimplifyFallbackSloppy;
-    public bool SimplifyRegularize;
-    public bool OptimizeBounds;
-    public bool OptimizeClusters;
-
-    public static ClusterLodConfig GetDefault(int maxTriangles = 124)
-    {
-        return new ClusterLodConfig
-        {
-            MaxVertices = 64,
-            MinTriangles = maxTriangles / 3,
-            MaxTriangles = maxTriangles,
-            PartitionSpatial = true,
-            PartitionSort = false,
-            PartitionSize = 16,
-            ClusterSpatial = false,
-            ClusterFillWeight = 0.5f,
-            ClusterSplitFactor = 2.0f,
-            SimplifyRatio = 0.5f,
-            SimplifyThreshold = 0.85f,
-            SimplifyErrorFactorSloppy = 2.0f,
-            SimplifyErrorEdgeLimit = 0.0f,
-            SimplifyPermissive = true,
-            SimplifyFallbackPermissive = false,
-            SimplifyFallbackSloppy = true,
-            SimplifyRegularize = false,
-            OptimizeBounds = true,
-            OptimizeClusters = true,
-        };
-    }
+    public static ClusterLodConfig GetDefault(int maxTriangles = 124) => new(64, maxTriangles);
 }
 
 public static partial class ClusterBuilder
 {
     private const int MaxVerticesPerMeshlet = 64;
     private const int MaxTrianglesPerMeshlet = 124;
-    private const float ConeWeight = 0.0f;
-    private const int GroupSize = 4;
-    private const float SimplifyRatio = 0.5f;
     private const int PageSize = 128 * 1024; // 128KB
     private const int PageHeaderSize = MeshPageHeader.Size;
-    private const int MaxEncodedTriangleStart = ushort.MaxValue;
 
     private struct BuilderMeshlet
     {
@@ -117,18 +69,13 @@ public static partial class ClusterBuilder
         public Vector3 BoundMax;
         public Vector4 LODSphere; // xyz: center, w: radius
         public float LODError;
+        public float OwnError;
+        public int Level;
         public uint PageIndex;
         public uint ClusterStart;
         public int GroupId;
         public int ParentGroupId;
     }
-
-    private readonly record struct BvhBounds(
-        Vector3 Min,
-        Vector3 Max,
-        Vector3 Center,
-        float Radius,
-        float Error);
 
     private sealed class MeshAssemblyState
     {
@@ -137,13 +84,6 @@ public static partial class ClusterBuilder
         public Dictionary<string, List<float>> Attributes { get; } = [];
         public List<float> MaterialIndices { get; } = [];
         public List<MeshMaterialSlot> MaterialSlots { get; } = [];
-    }
-
-    private sealed class LodWorkspace
-    {
-        public List<int> GroupOffsets { get; } = [];
-        public List<uint> MergedIndices { get; } = [];
-        public List<uint> SimplifiedIndices { get; } = [];
     }
 
     private readonly record struct AttributeDefinition(
@@ -182,172 +122,7 @@ public static partial class ClusterBuilder
         return ExpandBits((uint)p.X) * 4 + ExpandBits((uint)p.Y) * 2 + ExpandBits((uint)p.Z);
     }
 
-    private static List<ClusterBVHNode> BuildBvh(List<ClusterInfo> clusters)
-    {
-        var nodes = new List<ClusterBVHNode>();
-        if (clusters.Count == 0)
-        {
-            return nodes;
-        }
 
-        List<int> currentLevelIndices = CreateBvhLeafNodes(clusters, nodes);
-        AddBvhInternalLevels(nodes, currentLevelIndices);
-        return nodes;
-    }
-
-    private static List<int> CreateBvhLeafNodes(
-        List<ClusterInfo> clusters,
-        List<ClusterBVHNode> nodes)
-    {
-        var currentLevelIndices = new List<int>();
-        int clusterIndex = 0;
-        while (clusterIndex < clusters.Count)
-        {
-            int count = CountLeafClusters(clusters, clusterIndex);
-            nodes.Add(CreateBvhLeafNode(clusters, clusterIndex, count));
-            currentLevelIndices.Add(nodes.Count - 1);
-            clusterIndex += count;
-        }
-
-        return currentLevelIndices;
-    }
-
-    private static int CountLeafClusters(List<ClusterInfo> clusters, int start)
-    {
-        uint currentPage = clusters[start].PageIndex;
-        int currentParent = clusters[start].ParentGroupId;
-        int currentGroup = clusters[start].GroupId;
-        int count = 0;
-        while (start + count < clusters.Count
-            && clusters[start + count].PageIndex == currentPage
-            && clusters[start + count].ParentGroupId == currentParent
-            && clusters[start + count].GroupId == currentGroup
-            && count < 128)
-        {
-            count++;
-        }
-
-        return count;
-    }
-
-    private static ClusterBVHNode CreateBvhLeafNode(
-        List<ClusterInfo> clusters,
-        int start,
-        int count)
-    {
-        BvhBounds bounds = ComputeLeafBounds(clusters, start, count);
-        ClusterInfo first = clusters[start];
-        var node = new ClusterBVHNode
-        {
-            BoundMin = new Vector4(bounds.Min, first.GroupId + 1),
-            BoundMax = new Vector4(bounds.Max, first.ParentGroupId + 1),
-            LODSphere = first.LODSphere,
-            LODError = first.LODError,
-            ChildPointer = first.PageIndex,
-            NodeType = 1,
-        };
-        node.SetLeafData(first.ClusterStart, (uint)count);
-        return node;
-    }
-
-    private static BvhBounds ComputeLeafBounds(
-        List<ClusterInfo> clusters,
-        int start,
-        int count)
-    {
-        Vector3 min = new(float.MaxValue);
-        Vector3 max = new(float.MinValue);
-        for (int offset = 0; offset < count; offset++)
-        {
-            ClusterInfo cluster = clusters[start + offset];
-            min = Vector3.Min(min, cluster.BoundMin);
-            max = Vector3.Max(max, cluster.BoundMax);
-        }
-
-        return new BvhBounds(min, max, Vector3.Zero, 0, 0);
-    }
-
-    private static void AddBvhInternalLevels(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices)
-    {
-        while (currentLevelIndices.Count > 1)
-        {
-            var nextLevelIndices = new List<int>();
-            for (int start = 0; start < currentLevelIndices.Count; start += 16)
-            {
-                int count = Math.Min(16, currentLevelIndices.Count - start);
-                nodes.Add(CreateBvhInternalNode(nodes, currentLevelIndices, start, count));
-                nextLevelIndices.Add(nodes.Count - 1);
-            }
-
-            currentLevelIndices = nextLevelIndices;
-        }
-    }
-
-    private static ClusterBVHNode CreateBvhInternalNode(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
-        int start,
-        int count)
-    {
-        BvhBounds bounds = ComputeInternalBounds(nodes, currentLevelIndices, start, count);
-        return new ClusterBVHNode
-        {
-            ChildPointer = (uint)currentLevelIndices[start],
-            ChildCount = (uint)count,
-            NodeType = 0,
-            BoundMin = new Vector4(bounds.Min, 0),
-            BoundMax = new Vector4(bounds.Max, 0),
-            LODSphere = new Vector4(bounds.Center.X, bounds.Center.Y, bounds.Center.Z, bounds.Radius),
-            LODError = bounds.Error,
-        };
-    }
-
-    private static BvhBounds ComputeInternalBounds(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
-        int start,
-        int count)
-    {
-        Vector3 min = new(float.MaxValue);
-        Vector3 max = new(float.MinValue);
-        float maxError = 0;
-        Vector3 centerSum = Vector3.Zero;
-        for (int offset = 0; offset < count; offset++)
-        {
-            ClusterBVHNode child = nodes[currentLevelIndices[start + offset]];
-            min = Vector3.Min(min, ToVector3(child.BoundMin));
-            max = Vector3.Max(max, ToVector3(child.BoundMax));
-            maxError = Math.Max(maxError, child.LODError);
-            centerSum += ToVector3(child.LODSphere);
-        }
-
-        Vector3 center = centerSum / count;
-        float radius = ComputeInternalLodRadius(nodes, currentLevelIndices, start, count, center);
-        return new BvhBounds(min, max, center, radius, maxError);
-    }
-
-    private static float ComputeInternalLodRadius(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
-        int start,
-        int count,
-        Vector3 center)
-    {
-        float radius = 0;
-        for (int offset = 0; offset < count; offset++)
-        {
-            ClusterBVHNode child = nodes[currentLevelIndices[start + offset]];
-            float distance = Vector3.Distance(center, ToVector3(child.LODSphere)) + child.LODSphere.W;
-            radius = Math.Max(radius, distance);
-        }
-
-        return radius;
-    }
-
-    private static Vector3 ToVector3(Vector4 value)
-        => new(value.X, value.Y, value.Z);
 }
 
 public static partial class ClusterBuilder
@@ -911,339 +686,110 @@ public static partial class ClusterBuilder
             vertexEncoder ?? StandardClusterVertexEncoder.Instance);
     }
 
-    private static void BuildClusterLod(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        ReadOnlySpan<uint> indices,
-        float[] materialIndicesArray,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices
-    )
+    private static void BuildClusterLod(ClusterLodConfig config, ClusterMeshData mesh,
+        ReadOnlySpan<uint> indices, List<BuilderMeshlet> clusters, List<uint> globalIndices)
     {
-        var locks = ArrayPool<byte>.Shared.Rent(positions.Length);
-        var remap = ArrayPool<uint>.Shared.Rent(positions.Length);
-        try
+        Clusterize(config, indices, mesh.Positions.AsSpan(0, mesh.VertexCount), ExtractMaterialIndices(mesh), clusters, globalIndices);
+        int nextGroupId = InitializeLeafClusters(mesh.Positions.AsSpan(0, mesh.VertexCount), clusters, globalIndices);
+        List<int> current = Enumerable.Range(0, clusters.Count).ToList();
+        var mergedIndices = new List<uint>();
+        while (current.Count > 1)
         {
-            GeneratePositionRemap(positions, remap.AsSpan(0, positions.Length));
-            Clusterize(
-                config,
-                indices,
-                positions,
-                materialIndicesArray,
-                clusters,
-                globalIndices);
-            int nextGroupId = InitializeLeafClusters(positions, clusters, globalIndices);
-            ReduceClusterLod(
-                config,
-                positions,
-                materialIndicesArray,
-                clusters,
-                globalIndices,
-                locks.AsSpan(0, positions.Length),
-                remap.AsSpan(0, positions.Length),
-                nextGroupId);
+            List<int[]> groups = PartitionClusterGroups(mesh.Positions, clusters, globalIndices, current);
+            byte[] locks = LockGroupBoundaries(mesh.Positions, mesh.VertexCount, clusters, globalIndices, current, groups);
+            var next = new List<int>();
+            foreach (int[] groupIndices in groups)
+            {
+                int[] group = groupIndices.Select(index => current[index]).ToArray();
+                if (group.Length == 1) { next.Add(group[0]); continue; }
+                MergeGroupIndices(globalIndices, clusters, group, mergedIndices);
+                ClusterLodBounds groupBounds = BoundsMerge(clusters, group);
+                int parentCount = Math.Max(1, (mergedIndices.Count / 3 + config.MaxTriangles * 2 - 1) / (config.MaxTriangles * 2));
+                int targetClusterSize = config.MaxTriangles - 2;
+                ClusterMeshSimplifier.Result result;
+                List<int[]> partitions;
+                do
+                {
+                    var simplifier = new ClusterMeshSimplifier(mesh.Positions, mesh.Attributes,
+                        CollectionsMarshal.AsSpan(mergedIndices), locks);
+                    result = simplifier.Simplify(parentCount * targetClusterSize);
+                    float[] material = result.Attributes[mesh.Attributes.FindIndex(static attribute => attribute.Name == "_MATERIAL_INDEX")];
+                    ClusterGraph graph = ClusterGraph.Triangles(result.Indices, result.Positions, material);
+                    partitions = graph.Partition(config.MaxTriangles - 4, config.MaxTriangles);
+                    if (partitions.Count <= parentCount) break;
+                    targetClusterSize -= 2;
+                } while (targetClusterSize > config.MaxTriangles / 2);
+                float error = Math.Max(groupBounds.Error, result.Error);
+                int groupId = nextGroupId++;
+                foreach (int index in group)
+                {
+                    BuilderMeshlet child = clusters[index];
+                    child.ParentError = error; child.ParentGroupId = groupId;
+                    child.LodCenter = groupBounds.Center; child.LodRadius = groupBounds.Radius;
+                    clusters[index] = child;
+                }
+                uint firstVertex = mesh.Append(result);
+                int firstParent = clusters.Count;
+                float[] materials = ExtractMaterialIndices(mesh);
+                foreach (int[] partition in partitions)
+                {
+                    var triangles = new TempTri[partition.Length];
+                    for (int triangle = 0; triangle < partition.Length; triangle++)
+                    {
+                        int offset = partition[triangle] * 3;
+                        uint a = result.Indices[offset] + firstVertex, b = result.Indices[offset + 1] + firstVertex, c = result.Indices[offset + 2] + firstVertex;
+                        triangles[triangle] = new TempTri { v0 = a, v1 = b, v2 = c, mat = (byte)materials[a] };
+                    }
+                    SortTrianglesByMaterial(triangles);
+                    EmitMaterialChunks(triangles, clusters, globalIndices);
+                }
+                int level = group.Max(index => clusters[index].Level) + 1;
+                for (int index = firstParent; index < clusters.Count; index++)
+                {
+                    BuilderMeshlet parent = clusters[index];
+                    ClusterLodBounds bounds = BoundsCompute(mesh.Positions.AsSpan(0, mesh.VertexCount),
+                        CollectionsMarshal.AsSpan(globalIndices).Slice(parent.IndicesOffset, parent.IndicesCount), 0);
+                    parent.Level = level; parent.Error = error; parent.GroupId = groupId; parent.ParentGroupId = -1;
+                    parent.Center = bounds.Center; parent.Radius = bounds.Radius;
+                    parent.LodCenter = parent.SelfLodCenter = groupBounds.Center;
+                    parent.LodRadius = parent.SelfLodRadius = groupBounds.Radius;
+                    clusters[index] = parent;
+                    next.Add(index);
+                }
+            }
+            current = next;
         }
-        finally
+        foreach (int index in current)
         {
-            ArrayPool<byte>.Shared.Return(locks);
-            ArrayPool<uint>.Shared.Return(remap);
+            BuilderMeshlet root = clusters[index]; root.ParentError = float.MaxValue; root.ParentGroupId = -1;
+            clusters[index] = root;
         }
     }
 
-    private static void GeneratePositionRemap(
-        ReadOnlySpan<Vector3> positions,
-        Span<uint> remap)
+    private static int InitializeLeafClusters(ReadOnlySpan<Vector3> positions,
+        List<BuilderMeshlet> clusters, List<uint> globalIndices)
     {
-        Meshopt.GeneratePositionRemap(
-            remap,
-            MemoryMarshal.Cast<Vector3, float>(positions),
-            (nuint)Unsafe.SizeOf<Vector3>());
-    }
-
-    private static int InitializeLeafClusters(
-        ReadOnlySpan<Vector3> positions,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices)
-    {
-        int nextGroupId = 0;
         for (int index = 0; index < clusters.Count; index++)
         {
             BuilderMeshlet cluster = clusters[index];
-            ReadOnlySpan<uint> clusterIndices = CollectionsMarshal
-                .AsSpan(globalIndices)
-                .Slice(cluster.IndicesOffset, cluster.IndicesCount);
-            ClusterLodBounds bounds = BoundsCompute(positions, clusterIndices, 0);
-            clusters[index] = InitializeLeafCluster(cluster, bounds, nextGroupId++);
+            ClusterLodBounds bounds = BoundsCompute(positions, CollectionsMarshal.AsSpan(globalIndices)
+                .Slice(cluster.IndicesOffset, cluster.IndicesCount), 0);
+            cluster.Center = cluster.LodCenter = cluster.SelfLodCenter = bounds.Center;
+            cluster.Radius = cluster.LodRadius = cluster.SelfLodRadius = bounds.Radius;
+            cluster.Error = 0; cluster.Level = 0; cluster.GroupId = index; cluster.ParentGroupId = -1;
+            clusters[index] = cluster;
         }
-
-        return nextGroupId;
+        return clusters.Count;
     }
 
-    private static BuilderMeshlet InitializeLeafCluster(
-        BuilderMeshlet cluster,
-        ClusterLodBounds bounds,
-        int groupId)
-    {
-        cluster.Center = bounds.Center;
-        cluster.Radius = bounds.Radius;
-        cluster.LodCenter = bounds.Center;
-        cluster.LodRadius = bounds.Radius;
-        cluster.SelfLodCenter = bounds.Center;
-        cluster.SelfLodRadius = bounds.Radius;
-        cluster.Error = 0;
-        cluster.Level = 0;
-        cluster.GroupId = groupId;
-        return cluster;
-    }
-
-    private static void ReduceClusterLod(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        float[] materialIndicesArray,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices,
-        Span<byte> locks,
-        ReadOnlySpan<uint> remap,
-        int nextGroupId)
-    {
-        List<int> pending = CreatePendingClusters(clusters.Count);
-        var workspace = new LodWorkspace();
-        int depth = 0;
-        while (pending.Count > 1)
-        {
-            pending = ReduceClusterLodDepth(
-                config,
-                positions,
-                materialIndicesArray,
-                clusters,
-                globalIndices,
-                locks,
-                remap,
-                pending,
-                workspace,
-                ref nextGroupId,
-                depth++);
-        }
-
-        AssignRootParentError(clusters, pending);
-    }
-
-    private static List<int> CreatePendingClusters(int clusterCount)
-    {
-        var pending = new List<int>(clusterCount);
-        for (int index = 0; index < clusterCount; index++)
-        {
-            pending.Add(index);
-        }
-
-        return pending;
-    }
-
-    private static List<int> ReduceClusterLodDepth(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        float[] materialIndicesArray,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices,
-        Span<byte> locks,
-        ReadOnlySpan<uint> remap,
-        List<int> pending,
-        LodWorkspace workspace,
-        ref int nextGroupId,
-        int depth)
-    {
-        Partition(config, positions, clusters, globalIndices, pending, remap, workspace.GroupOffsets);
-        LockBoundary(locks, clusters, globalIndices, pending, workspace.GroupOffsets, remap);
-        var nextPending = new List<int>();
-        Span<int> pendingSpan = CollectionsMarshal.AsSpan(pending);
-        for (int groupIndex = 0; groupIndex < workspace.GroupOffsets.Count - 1; groupIndex++)
-        {
-            Span<int> group = PendingGroup(pendingSpan, workspace.GroupOffsets, groupIndex);
-            ReduceClusterGroup(
-                config,
-                positions,
-                materialIndicesArray,
-                clusters,
-                globalIndices,
-                locks,
-                group,
-                workspace,
-                nextPending,
-                ref nextGroupId,
-                depth);
-        }
-
-        return nextPending;
-    }
-
-    private static Span<int> PendingGroup(
-        Span<int> pending,
-        List<int> groupOffsets,
-        int groupIndex)
-    {
-        int start = groupOffsets[groupIndex];
-        int count = groupOffsets[groupIndex + 1] - start;
-        return pending.Slice(start, count);
-    }
-
-    private static void ReduceClusterGroup(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        float[] materialIndicesArray,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices,
-        Span<byte> locks,
-        Span<int> group,
-        LodWorkspace workspace,
-        List<int> nextPending,
-        ref int nextGroupId,
-        int depth)
-    {
-        MergeGroupIndices(globalIndices, clusters, group, workspace.MergedIndices);
-        int targetSize = (int)((workspace.MergedIndices.Count / 3) * config.SimplifyRatio) * 3;
-        ClusterLodBounds groupBounds = BoundsMerge(clusters, group);
-        Simplify(config, positions, CollectionsMarshal.AsSpan(workspace.MergedIndices), locks, targetSize, out float error, workspace.SimplifiedIndices);
-        if (workspace.SimplifiedIndices.Count > workspace.MergedIndices.Count * config.SimplifyThreshold)
-        {
-            MarkUnmergedGroup(clusters, group);
-            return;
-        }
-
-        float groupError = groupBounds.Error + error;
-        int groupId = nextGroupId++;
-        AssignGroupParent(clusters, group, groupBounds, groupError, groupId);
-        BuildParentClusters(
-            config,
-            positions,
-            materialIndicesArray,
-            clusters,
-            globalIndices,
-            workspace.SimplifiedIndices,
-            groupBounds,
-            groupError,
-            groupId,
-            depth,
-            nextPending);
-    }
-
-    private static void MergeGroupIndices(
-        List<uint> globalIndices,
-        List<BuilderMeshlet> clusters,
-        Span<int> group,
-        List<uint> destination)
+    private static void MergeGroupIndices(List<uint> globalIndices, List<BuilderMeshlet> clusters,
+        ReadOnlySpan<int> group, List<uint> destination)
     {
         destination.Clear();
-        Span<uint> globalSpan = CollectionsMarshal.AsSpan(globalIndices);
-        foreach (int clusterIndex in group)
-        {
-            BuilderMeshlet cluster = clusters[clusterIndex];
-            ReadOnlySpan<uint> clusterIndices = globalSpan.Slice(cluster.IndicesOffset, cluster.IndicesCount);
-            for (int index = 0; index < clusterIndices.Length; index++)
-            {
-                destination.Add(clusterIndices[index]);
-            }
-        }
+        foreach (int cluster in group)
+            destination.AddRange(CollectionsMarshal.AsSpan(globalIndices).Slice(clusters[cluster].IndicesOffset, clusters[cluster].IndicesCount));
     }
 
-    private static void MarkUnmergedGroup(List<BuilderMeshlet> clusters, Span<int> group)
-    {
-        foreach (int index in group)
-        {
-            BuilderMeshlet cluster = clusters[index];
-            cluster.ParentError = float.MaxValue;
-            clusters[index] = cluster;
-        }
-    }
-
-    private static void AssignGroupParent(
-        List<BuilderMeshlet> clusters,
-        Span<int> group,
-        ClusterLodBounds bounds,
-        float error,
-        int groupId)
-    {
-        foreach (int index in group)
-        {
-            BuilderMeshlet cluster = clusters[index];
-            cluster.ParentError = error;
-            cluster.ParentGroupId = groupId;
-            cluster.LodCenter = bounds.Center;
-            cluster.LodRadius = bounds.Radius;
-            clusters[index] = cluster;
-        }
-    }
-
-    private static void BuildParentClusters(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        float[] materialIndicesArray,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices,
-        List<uint> simplifiedIndices,
-        ClusterLodBounds bounds,
-        float error,
-        int groupId,
-        int depth,
-        List<int> nextPending)
-    {
-        int start = clusters.Count;
-        Clusterize(
-            config,
-            CollectionsMarshal.AsSpan(simplifiedIndices),
-            positions,
-            materialIndicesArray,
-            clusters,
-            globalIndices);
-        for (int index = start; index < clusters.Count; index++)
-        {
-            clusters[index] = InitializeParentCluster(
-                clusters[index],
-                positions,
-                globalIndices,
-                bounds,
-                error,
-                groupId,
-                depth + 1);
-            nextPending.Add(index);
-        }
-    }
-
-    private static BuilderMeshlet InitializeParentCluster(
-        BuilderMeshlet cluster,
-        ReadOnlySpan<Vector3> positions,
-        List<uint> globalIndices,
-        ClusterLodBounds bounds,
-        float error,
-        int groupId,
-        int level)
-    {
-        ReadOnlySpan<uint> clusterIndices = CollectionsMarshal
-            .AsSpan(globalIndices)
-            .Slice(cluster.IndicesOffset, cluster.IndicesCount);
-        ClusterLodBounds selfBounds = BoundsCompute(positions, clusterIndices, 0);
-        cluster.Level = level;
-        cluster.Center = selfBounds.Center;
-        cluster.Radius = selfBounds.Radius;
-        cluster.Error = error;
-        cluster.GroupId = groupId;
-        cluster.LodCenter = bounds.Center;
-        cluster.LodRadius = bounds.Radius;
-        cluster.SelfLodCenter = bounds.Center;
-        cluster.SelfLodRadius = bounds.Radius;
-        return cluster;
-    }
-
-    private static void AssignRootParentError(List<BuilderMeshlet> clusters, List<int> pending)
-    {
-        if (pending.Count != 1)
-        {
-            return;
-        }
-
-        BuilderMeshlet cluster = clusters[pending[0]];
-        cluster.ParentError = float.MaxValue;
-        clusters[pending[0]] = cluster;
-    }
 }
 
 public static partial class ClusterBuilder
@@ -1487,169 +1033,20 @@ public static partial class ClusterBuilder
         if (indices.Length % 3 != 0)
             throw new InvalidDataException("Cluster triangle indices are not divisible by three.");
 
-        MeshletScratch scratch = RentMeshletScratch(config, indices.Length);
-        try
+        uint[] triangleIndices = indices.ToArray();
+        ClusterGraph graph = ClusterGraph.Triangles(triangleIndices, positions, materialIndicesArray);
+        foreach (int[] partition in graph.Partition(config.MaxTriangles - 4, config.MaxTriangles))
         {
-            nuint meshletCount = BuildMeshlets(config, indices, positions, scratch);
-            EmitMeshlets(
-                scratch,
-                meshletCount,
-                materialIndicesArray,
-                clusters,
-                globalIndices,
-                config.OptimizeClusters);
+            TempTri[] triangles = new TempTri[partition.Length];
+            for (int index = 0; index < partition.Length; index++)
+            {
+                int first = partition[index] * 3;
+                uint v0 = triangleIndices[first], v1 = triangleIndices[first + 1], v2 = triangleIndices[first + 2];
+                triangles[index] = new TempTri { v0 = v0, v1 = v1, v2 = v2, mat = checked((byte)materialIndicesArray[v0]) };
+            }
+            SortTrianglesByMaterial(triangles);
+            EmitMaterialChunks(triangles, clusters, globalIndices);
         }
-        finally
-        {
-            scratch.Return();
-        }
-    }
-
-    private static byte ResolveTriangleMaterial(
-        uint vertex,
-        float[] materialIndices,
-        int materialCount)
-    {
-        if (vertex >= materialIndices.Length)
-            throw new InvalidDataException($"Vertex {vertex} has no material index.");
-        float encoded = materialIndices[vertex];
-        if (!float.IsFinite(encoded) ||
-            encoded < 0 ||
-            encoded >= materialCount ||
-            encoded != MathF.Truncate(encoded))
-        {
-            throw new InvalidDataException($"Vertex {vertex} has invalid material index {encoded}.");
-        }
-        int material = (int)encoded;
-        return checked((byte)material);
-    }
-
-    private static MeshletScratch RentMeshletScratch(ClusterLodConfig config, int indexCount)
-    {
-        nuint maxMeshlets = Meshopt.BuildMeshletsBound(
-            (nuint)indexCount,
-            (nuint)config.MaxVertices,
-            (nuint)config.MaxTriangles);
-        return new MeshletScratch(
-            ArrayPool<MeshOptimizer.Meshlet>.Shared.Rent((int)maxMeshlets),
-            ArrayPool<uint>.Shared.Rent((int)maxMeshlets * config.MaxVertices),
-            ArrayPool<byte>.Shared.Rent((int)maxMeshlets * config.MaxTriangles * 3));
-    }
-
-    private static nuint BuildMeshlets(
-        ClusterLodConfig config,
-        ReadOnlySpan<uint> indices,
-        ReadOnlySpan<Vector3> positions,
-        MeshletScratch scratch)
-    {
-        ReadOnlySpan<float> positionSpan = MemoryMarshal.Cast<Vector3, float>(positions);
-        return config.ClusterSpatial
-            ? BuildSpatialMeshlets(config, indices, positionSpan, scratch)
-            : BuildFlexibleMeshlets(config, indices, positionSpan, scratch);
-    }
-
-    private static nuint BuildSpatialMeshlets(
-        ClusterLodConfig config,
-        ReadOnlySpan<uint> indices,
-        ReadOnlySpan<float> positions,
-        MeshletScratch scratch)
-        => Meshopt.BuildMeshletsSpatial(
-            scratch.Meshlets.AsSpan(),
-            scratch.Vertices.AsSpan(),
-            scratch.Triangles.AsSpan(),
-            indices,
-            positions,
-            (nuint)Unsafe.SizeOf<Vector3>(),
-            (nuint)config.MaxVertices,
-            (nuint)config.MinTriangles,
-            (nuint)config.MaxTriangles,
-            config.ClusterFillWeight);
-
-    private static nuint BuildFlexibleMeshlets(
-        ClusterLodConfig config,
-        ReadOnlySpan<uint> indices,
-        ReadOnlySpan<float> positions,
-        MeshletScratch scratch)
-        => Meshopt.BuildMeshletsFlex(
-            scratch.Meshlets.AsSpan(),
-            scratch.Vertices.AsSpan(),
-            scratch.Triangles.AsSpan(),
-            indices,
-            positions,
-            (nuint)Unsafe.SizeOf<Vector3>(),
-            (nuint)config.MaxVertices,
-            (nuint)config.MinTriangles,
-            (nuint)config.MaxTriangles,
-            0.0f,
-            config.ClusterSplitFactor);
-
-    private static void EmitMeshlets(
-        MeshletScratch scratch,
-        nuint meshletCount,
-        float[] materialIndicesArray,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices,
-        bool optimizeClusters)
-    {
-        for (int index = 0; index < (int)meshletCount; index++)
-        {
-            EmitMeshlet(scratch, index, materialIndicesArray, clusters, globalIndices, optimizeClusters);
-        }
-    }
-
-    private static void EmitMeshlet(
-        MeshletScratch scratch,
-        int meshletIndex,
-        float[] materialIndicesArray,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices,
-        bool optimizeClusters)
-    {
-        ref MeshOptimizer.Meshlet meshlet = ref scratch.Meshlets[meshletIndex];
-        if (optimizeClusters)
-        {
-            OptimizeMeshlet(scratch, meshlet);
-        }
-
-        TempTri[] triangles = ReadMeshletTriangles(scratch, meshlet, materialIndicesArray);
-        SortTrianglesByMaterial(triangles);
-        EmitMaterialChunks(triangles, clusters, globalIndices);
-    }
-
-    private static void OptimizeMeshlet(MeshletScratch scratch, MeshOptimizer.Meshlet meshlet)
-    {
-        Meshopt.OptimizeMeshlet(
-            scratch.Vertices.AsSpan((int)meshlet.vertex_offset, (int)meshlet.vertex_count),
-            scratch.Triangles.AsSpan((int)meshlet.triangle_offset, (int)meshlet.triangle_count * 3),
-            meshlet.triangle_count,
-            meshlet.vertex_count);
-    }
-
-    private static TempTri[] ReadMeshletTriangles(
-        MeshletScratch scratch,
-        MeshOptimizer.Meshlet meshlet,
-        float[] materialIndicesArray)
-    {
-        TempTri[] triangles = new TempTri[meshlet.triangle_count];
-        for (uint triangleIndex = 0; triangleIndex < meshlet.triangle_count; triangleIndex++)
-        {
-            triangles[triangleIndex] = ReadMeshletTriangle(scratch, meshlet, triangleIndex, materialIndicesArray);
-        }
-
-        return triangles;
-    }
-
-    private static TempTri ReadMeshletTriangle(
-        MeshletScratch scratch,
-        MeshOptimizer.Meshlet meshlet,
-        uint triangleIndex,
-        float[] materialIndicesArray)
-    {
-        int triangleOffset = (int)meshlet.triangle_offset + (int)triangleIndex * 3;
-        uint v0 = scratch.Vertices[(int)meshlet.vertex_offset + scratch.Triangles[triangleOffset + 0]];
-        uint v1 = scratch.Vertices[(int)meshlet.vertex_offset + scratch.Triangles[triangleOffset + 1]];
-        uint v2 = scratch.Vertices[(int)meshlet.vertex_offset + scratch.Triangles[triangleOffset + 2]];
-        return new TempTri { v0 = v0, v1 = v1, v2 = v2, mat = (byte)materialIndicesArray[v0] };
     }
 
     private static void SortTrianglesByMaterial(TempTri[] triangles)
@@ -1668,7 +1065,9 @@ public static partial class ClusterBuilder
     private static void CopyMaterialBuckets(List<TempTri>[] buckets, TempTri[] triangles)
     {
         int destination = 0;
-        for (int material = 0; material < buckets.Length; material++)
+        foreach (int material in Enumerable.Range(0, buckets.Length)
+            .Where(material => buckets[material] is not null)
+            .OrderByDescending(material => buckets[material].Count).ThenBy(static material => material))
         {
             if (buckets[material] == null)
             {
@@ -1756,501 +1155,6 @@ public static partial class ClusterBuilder
                 globalIndices);
         }
     }
-
-    private readonly record struct MeshletScratch(
-        MeshOptimizer.Meshlet[] Meshlets,
-        uint[] Vertices,
-        byte[] Triangles)
-    {
-        public void Return()
-        {
-            ArrayPool<MeshOptimizer.Meshlet>.Shared.Return(Meshlets);
-            ArrayPool<uint>.Shared.Return(Vertices);
-            ArrayPool<byte>.Shared.Return(Triangles);
-        }
-    }
-
-
-
-    private static int Partition(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices,
-        List<int> pending,
-        ReadOnlySpan<uint> remap,
-        List<int> groupOffsets
-    )
-    {
-        groupOffsets.Clear();
-        if (pending.Count <= config.PartitionSize)
-        {
-            AddSinglePartition(pending, groupOffsets);
-            return 1;
-        }
-
-        int totalIndexCount = TotalPartitionIndexCount(clusters, pending);
-        PartitionScratch scratch = RentPartitionScratch(pending.Count, totalIndexCount);
-        try
-        {
-            FillPartitionInputs(scratch, clusters, globalIndices, pending, remap);
-            nuint partitionCount = ExecutePartition(config, positions, scratch, totalIndexCount, pending.Count);
-            scratch.Remap = CreatePartitionRemap(config, positions, clusters, pending, scratch.Partitions, partitionCount);
-            ApplyPartitionOrder(pending, groupOffsets, scratch, partitionCount);
-            return (int)partitionCount;
-        }
-        finally
-        {
-            scratch.Return();
-        }
-    }
-
-    private static void AddSinglePartition(List<int> pending, List<int> groupOffsets)
-    {
-        groupOffsets.Add(0);
-        groupOffsets.Add(pending.Count);
-    }
-
-    private static int TotalPartitionIndexCount(List<BuilderMeshlet> clusters, List<int> pending)
-    {
-        int total = 0;
-        for (int index = 0; index < pending.Count; index++)
-        {
-            total += clusters[pending[index]].IndicesCount;
-        }
-
-        return total;
-    }
-
-    private static PartitionScratch RentPartitionScratch(int pendingCount, int totalIndexCount)
-    {
-        return new PartitionScratch(
-            ArrayPool<uint>.Shared.Rent(totalIndexCount),
-            ArrayPool<uint>.Shared.Rent(pendingCount),
-            ArrayPool<uint>.Shared.Rent(pendingCount),
-            ArrayPool<int>.Shared.Rent(pendingCount));
-    }
-
-    private static void FillPartitionInputs(
-        PartitionScratch scratch,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices,
-        List<int> pending,
-        ReadOnlySpan<uint> remap)
-    {
-        int offset = 0;
-        Span<uint> globalIndicesSpan = CollectionsMarshal.AsSpan(globalIndices);
-        for (int index = 0; index < pending.Count; index++)
-        {
-            BuilderMeshlet cluster = clusters[pending[index]];
-            scratch.Counts[index] = (uint)cluster.IndicesCount;
-            offset = CopyPartitionIndices(cluster, globalIndicesSpan, remap, scratch.Indices, offset);
-        }
-    }
-
-    private static int CopyPartitionIndices(
-        BuilderMeshlet cluster,
-        Span<uint> globalIndices,
-        ReadOnlySpan<uint> remap,
-        uint[] destination,
-        int offset)
-    {
-        ReadOnlySpan<uint> source = globalIndices.Slice(cluster.IndicesOffset, cluster.IndicesCount);
-        for (int index = 0; index < source.Length; index++)
-        {
-            destination[offset++] = remap[(int)source[index]];
-        }
-
-        return offset;
-    }
-
-    private static nuint ExecutePartition(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        PartitionScratch scratch,
-        int totalIndexCount,
-        int pendingCount)
-    {
-        ReadOnlySpan<float> positionSpan = MemoryMarshal.Cast<Vector3, float>(positions);
-        return Meshopt.PartitionClusters(
-            scratch.Partitions.AsSpan(0, pendingCount),
-            scratch.Indices.AsSpan(0, totalIndexCount),
-            scratch.Counts.AsSpan(0, pendingCount),
-            config.PartitionSpatial ? positionSpan : default,
-            (nuint)Unsafe.SizeOf<Vector3>(),
-            (nuint)config.PartitionSize);
-    }
-
-    private static uint[]? CreatePartitionRemap(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        List<BuilderMeshlet> clusters,
-        List<int> pending,
-        uint[] clusterPart,
-        nuint partitionCount)
-    {
-        if (!config.PartitionSort)
-        {
-            return null;
-        }
-
-        float[] partitionPoints = ArrayPool<float>.Shared.Rent((int)partitionCount * 3);
-        uint[] partitionRemap = ArrayPool<uint>.Shared.Rent((int)partitionCount);
-        try
-        {
-            FillPartitionPoints(partitionPoints, clusters, pending, clusterPart);
-            Meshopt.SpatialSortRemap(
-                partitionRemap.AsSpan(0, (int)partitionCount),
-                partitionPoints.AsSpan(0, (int)partitionCount * 3),
-                (nuint)Unsafe.SizeOf<Vector3>());
-            return partitionRemap;
-        }
-        finally
-        {
-            ArrayPool<float>.Shared.Return(partitionPoints);
-        }
-    }
-
-    private static void FillPartitionPoints(
-        float[] partitionPoints,
-        List<BuilderMeshlet> clusters,
-        List<int> pending,
-        uint[] clusterPart)
-    {
-        for (int index = 0; index < pending.Count; index++)
-        {
-            Vector3 center = clusters[pending[index]].Center;
-            int offset = (int)clusterPart[index] * 3;
-            partitionPoints[offset + 0] = center.X;
-            partitionPoints[offset + 1] = center.Y;
-            partitionPoints[offset + 2] = center.Z;
-        }
-    }
-
-    private static void ApplyPartitionOrder(
-        List<int> pending,
-        List<int> groupOffsets,
-        PartitionScratch scratch,
-        nuint partitionCount)
-    {
-        int count = (int)partitionCount;
-        int[] partitionSizes = ArrayPool<int>.Shared.Rent(count);
-        int[] offsets = ArrayPool<int>.Shared.Rent(count);
-        try
-        {
-            Array.Clear(partitionSizes, 0, count);
-            CountPartitionSizes(scratch, pending.Count, partitionSizes);
-            FillPartitionOffsets(partitionSizes, count, offsets, groupOffsets);
-            CopySortedPending(pending, scratch, offsets);
-        }
-        finally
-        {
-            ArrayPool<int>.Shared.Return(partitionSizes);
-            ArrayPool<int>.Shared.Return(offsets);
-        }
-    }
-
-    private static void CountPartitionSizes(
-        PartitionScratch scratch,
-        int pendingCount,
-        int[] partitionSizes)
-    {
-        for (int index = 0; index < pendingCount; index++)
-        {
-            uint partitionId = RemappedPartitionId(scratch, index);
-            partitionSizes[(int)partitionId]++;
-        }
-    }
-
-    private static uint RemappedPartitionId(PartitionScratch scratch, int index)
-    {
-        uint partitionId = scratch.Partitions[index];
-        return scratch.Remap == null ? partitionId : scratch.Remap[partitionId];
-    }
-
-    private static void FillPartitionOffsets(
-        int[] partitionSizes,
-        int partitionCount,
-        int[] offsets,
-        List<int> groupOffsets)
-    {
-        int runningOffset = 0;
-        groupOffsets.Add(0);
-        for (int index = 0; index < partitionCount; index++)
-        {
-            offsets[index] = runningOffset;
-            runningOffset += partitionSizes[index];
-            groupOffsets.Add(runningOffset);
-        }
-    }
-
-    private static void CopySortedPending(
-        List<int> pending,
-        PartitionScratch scratch,
-        int[] offsets)
-    {
-        for (int index = 0; index < pending.Count; index++)
-        {
-            uint partitionId = RemappedPartitionId(scratch, index);
-            int destination = offsets[partitionId]++;
-            scratch.SortedPending[destination] = pending[index];
-        }
-
-        new Span<int>(scratch.SortedPending, 0, pending.Count).CopyTo(CollectionsMarshal.AsSpan(pending));
-    }
-}
-
-public static partial class ClusterBuilder
-{
-
-
-    private sealed class PartitionScratch
-    {
-        public PartitionScratch(uint[] indices, uint[] counts, uint[] partitions, int[] sortedPending)
-        {
-            Indices = indices;
-            Counts = counts;
-            Partitions = partitions;
-            SortedPending = sortedPending;
-        }
-
-        public uint[] Indices { get; }
-        public uint[] Counts { get; }
-        public uint[] Partitions { get; }
-        public int[] SortedPending { get; }
-        public uint[]? Remap { get; set; }
-
-        public void Return()
-        {
-            ArrayPool<uint>.Shared.Return(Indices);
-            ArrayPool<uint>.Shared.Return(Counts);
-            ArrayPool<uint>.Shared.Return(Partitions);
-            ArrayPool<int>.Shared.Return(SortedPending);
-            if (Remap != null)
-            {
-                ArrayPool<uint>.Shared.Return(Remap);
-            }
-        }
-    }
-
-
-
-    private static void LockBoundary(
-        Span<byte> locks,
-        List<BuilderMeshlet> clusters,
-        List<uint> globalIndices,
-        List<int> pending,
-        List<int> groupOffsets,
-        ReadOnlySpan<uint> remap
-    )
-    {
-        const byte LockBit = 1 << 0;
-        const byte SeenBit = 1 << 7;
-        const byte SimplifyProtect = 2; // meshopt_SimplifyVertex_Protect
-
-        for (int i = 0; i < locks.Length; i++)
-            locks[i] &= unchecked((byte)~(LockBit | SeenBit));
-
-        var globalIndicesSpan = CollectionsMarshal.AsSpan(globalIndices);
-
-        for (int g = 0; g < groupOffsets.Count - 1; g++)
-        {
-            int start = groupOffsets[g];
-            int count = groupOffsets[g + 1] - start;
-            var group = CollectionsMarshal.AsSpan(pending).Slice(start, count);
-
-            foreach (int clusterIdx in group)
-            {
-                var c = clusters[clusterIdx];
-                var indices = globalIndicesSpan.Slice(c.IndicesOffset, c.IndicesCount);
-                foreach (var v in indices)
-                {
-                    uint r = remap[(int)v];
-                    locks[(int)r] |= (byte)((locks[(int)r] & SeenBit) >> 7);
-                }
-            }
-            foreach (int clusterIdx in group)
-            {
-                var c = clusters[clusterIdx];
-                var indices = globalIndicesSpan.Slice(c.IndicesOffset, c.IndicesCount);
-                foreach (var v in indices)
-                {
-                    uint r = remap[(int)v];
-                    locks[(int)r] |= SeenBit;
-                }
-            }
-        }
-
-        for (int i = 0; i < locks.Length; i++)
-        {
-            locks[i] = (byte)((locks[i] & LockBit) | (locks[i] & SimplifyProtect));
-        }
-    }
-
-    private static void Simplify(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        ReadOnlySpan<uint> indices,
-        ReadOnlySpan<byte> locks,
-        int targetCount,
-        out float error,
-        List<uint> outputIndices
-    )
-    {
-        outputIndices.Clear();
-        if (targetCount >= indices.Length)
-        {
-            CopySimplifiedIndices(indices, outputIndices);
-            error = 0;
-            return;
-        }
-
-        uint[] simplified = ArrayPool<uint>.Shared.Rent(indices.Length);
-        try
-        {
-            nuint newCount = SimplifyWithFallback(
-                config,
-                positions,
-                indices,
-                locks,
-                targetCount,
-                simplified,
-                out error);
-            error = ClampSimplifyError(config, positions, indices, error);
-            CopySimplifiedIndices(simplified.AsSpan(0, (int)newCount), outputIndices);
-        }
-        finally
-        {
-            ArrayPool<uint>.Shared.Return(simplified);
-        }
-    }
-
-    private static nuint SimplifyWithFallback(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        ReadOnlySpan<uint> indices,
-        ReadOnlySpan<byte> locks,
-        int targetCount,
-        uint[] simplified,
-        out float error)
-    {
-        ReadOnlySpan<float> positionSpan = MemoryMarshal.Cast<Vector3, float>(positions);
-        nuint newCount = Meshopt.SimplifyWithAttributes(
-            simplified.AsSpan(),
-            indices,
-            positionSpan,
-            (nuint)Unsafe.SizeOf<Vector3>(),
-            null,
-            0,
-            null,
-            0,
-            locks,
-            (nuint)targetCount,
-            float.MaxValue,
-            SimplifyOptions(config),
-            out error);
-        return TrySloppySimplify(config, indices, positionSpan, targetCount, simplified, newCount, ref error);
-    }
-
-    private static SimplificationOptions SimplifyOptions(ClusterLodConfig config)
-    {
-        var options = SimplificationOptions.SimplifyLockBorder;
-        options |= (SimplificationOptions)2;
-        options |= (SimplificationOptions)4;
-        if (config.SimplifyPermissive)
-        {
-            options |= (SimplificationOptions)32;
-        }
-
-        if (config.SimplifyRegularize)
-        {
-            options |= (SimplificationOptions)16;
-        }
-
-        return options;
-    }
-
-    private static nuint TrySloppySimplify(
-        ClusterLodConfig config,
-        ReadOnlySpan<uint> indices,
-        ReadOnlySpan<float> positions,
-        int targetCount,
-        uint[] simplified,
-        nuint newCount,
-        ref float error)
-    {
-        if (newCount <= (nuint)targetCount || !config.SimplifyFallbackSloppy)
-        {
-            return newCount;
-        }
-
-        nuint fallbackCount = Meshopt.SimplifySloppy(
-            simplified.AsSpan(),
-            indices,
-            positions,
-            (nuint)Unsafe.SizeOf<Vector3>(),
-            (nuint)targetCount,
-            float.MaxValue,
-            out error);
-        error *= config.SimplifyErrorFactorSloppy;
-        return fallbackCount;
-    }
-
-    private static float ClampSimplifyError(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        ReadOnlySpan<uint> indices,
-        float error)
-    {
-        if (config.SimplifyErrorEdgeLimit <= 0)
-        {
-            return error;
-        }
-
-        float maxEdgeSq = MaxTriangleEdgeMetric(positions, indices);
-        return Math.Min(error, (float)Math.Sqrt(maxEdgeSq) * config.SimplifyErrorEdgeLimit);
-    }
-
-    private static float MaxTriangleEdgeMetric(
-        ReadOnlySpan<Vector3> positions,
-        ReadOnlySpan<uint> indices)
-    {
-        float maxEdgeSq = 0;
-        for (int index = 0; index < indices.Length; index += 3)
-        {
-            maxEdgeSq = Math.Max(maxEdgeSq, TriangleEdgeMetric(positions, indices, index));
-        }
-
-        return maxEdgeSq;
-    }
-
-    private static float TriangleEdgeMetric(
-        ReadOnlySpan<Vector3> positions,
-        ReadOnlySpan<uint> indices,
-        int index)
-    {
-        Vector3 va = positions[(int)indices[index + 0]];
-        Vector3 vb = positions[(int)indices[index + 1]];
-        Vector3 vc = positions[(int)indices[index + 2]];
-        float eab = Vector3.DistanceSquared(va, vb);
-        float eac = Vector3.DistanceSquared(va, vc);
-        float ebc = Vector3.DistanceSquared(vb, vc);
-        float maxEdge = Math.Max(Math.Max(eab, eac), ebc);
-        float minEdge = Math.Min(Math.Min(eab, eac), ebc);
-        return Math.Max(minEdge, maxEdge / 4.0f);
-    }
-
-    private static void CopySimplifiedIndices(
-        ReadOnlySpan<uint> indices,
-        List<uint> outputIndices)
-    {
-        foreach (uint index in indices)
-        {
-            outputIndices.Add(index);
-        }
-    }
-
-
 
     private static ClusterLodBounds BoundsCompute(
         ReadOnlySpan<Vector3> positions,

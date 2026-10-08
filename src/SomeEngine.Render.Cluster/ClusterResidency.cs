@@ -42,6 +42,7 @@ internal readonly record struct ClusterResidencyBinding(
     BufferDesc PageHeapDescription,
     BufferDesc BvhDescription,
     int PageFaultCapacity,
+    uint GeometryPageCount,
     BufferRange[] ResidentPageRanges,
     BufferRange BvhRange,
     ClusterResidencyPublication? Publication);
@@ -171,6 +172,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     internal bool IsRegistrationOwner => _meshes.IsRegistrationOwner;
 
     internal int PageFaultCapacity => _pageFaultCapacity;
+    internal uint GeometryPageCount => _meshes.GeometryPageCount;
 
     internal void InstallGeometryBuffers(global::SomeEngine.RenderGraph.RenderGraph graph)
     {
@@ -193,6 +195,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             _pageHeapDescription,
             _bvhDescription,
             _pageFaultCapacity,
+            _meshes.GeometryPageCount,
             _activePublication?.Meshes.ResidentPageRanges ?? _meshes.CaptureResidentPageRanges(),
             _meshes.CaptureBvhRange(),
             _activePublication);

@@ -85,8 +85,10 @@ public sealed class MeshTests
         };
         MemoryMarshal.Write(bytes.AsSpan(MeshPageHeader.Size), in cluster);
         bytes[bvhOffset - 3] = 0; bytes[bvhOffset - 2] = 1; bytes[bvhOffset - 1] = 2;
-        var node = new ClusterBVHNode { NodeType = 1 };
-        node.SetLeafData(0, 1);
+        var node = new ClusterBVHNode();
+        var child = new ClusterHierarchySlice { PageRangeKey = 1u, GroupPartData = (1u << 16) | 0xFFFFu };
+        child.SetErrors(0, float.MaxValue);
+        node.SetChild(0, child);
         MemoryMarshal.Write(bytes.AsSpan(bvhOffset), in node);
         return bytes;
     }

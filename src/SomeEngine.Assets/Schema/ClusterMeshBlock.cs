@@ -9,7 +9,7 @@ namespace SomeEngine.Assets.Schema;
 /// <summary>Cluster geometry, its authenticated page descriptions and lazily acquired payload.</summary>
 [AssetBlock("SomeEngine.Assets.Schema.ClusterMeshBlock"), BinarySerializable]
 [BinaryFields(nameof(VertexEncoding), nameof(PayloadKey), nameof(PayloadLength), nameof(BvhOffset),
-    nameof(PageDigests), nameof(LowestDetailPageIndices), nameof(BvhLength), nameof(BvhSha256))]
+    nameof(PageDigests), nameof(LowestDetailPageIndices), nameof(BvhLength), nameof(BvhSha256), nameof(ClusterGroups))]
 public sealed partial class ClusterMeshBlock : AssetBlock
 {
     public static ulong PayloadChunkKey { get; } = BinaryFieldKey.FromName("SomeEngine.Assets.Schema.Mesh.Payload");
@@ -19,6 +19,7 @@ public sealed partial class ClusterMeshBlock : AssetBlock
     public partial ulong BvhOffset { get; set; }
     public partial IList<MeshPayloadPageDigest> PageDigests { get; set; }
     public partial IList<uint> LowestDetailPageIndices { get; set; }
+    public partial IList<MeshClusterGroup> ClusterGroups { get; set; }
     public partial ulong BvhLength { get; set; }
     public partial ImmutableArray<byte> BvhSha256 { get; set; }
 
@@ -46,7 +47,7 @@ public sealed partial class ClusterMeshBlock : AssetBlock
             BvhSha256 = digest;
             PageDigests = descriptions;
             if (LowestDetailPageIndices.Count == 0)
-                LowestDetailPageIndices = [checked((uint)descriptions.Length - 1u)];
+                LowestDetailPageIndices = [0];
         }
     }
 
@@ -125,7 +126,7 @@ public sealed partial class ClusterMeshBlock : AssetBlock
             ready[index] = await source.ReadPageAsync(checked((int)index), cancellationToken).ConfigureAwait(false);
         return Mesh.Create(name, copy.VertexEncoding, copy.PageDigests.ToImmutableArray(), bvh, ready,
             lowestDetailPageIndices: copy.LowestDetailPageIndices.ToArray(),
-            bounds: shape.Bounds, regions: shape.Regions.ToImmutableArray());
+            bounds: shape.Bounds, regions: shape.Regions.ToImmutableArray(), clusterGroups: copy.ClusterGroups.ToImmutableArray());
     }
 
     public async ValueTask LoadPagesAsync(Mesh mesh, IEnumerable<int> pageIndices, CancellationToken cancellationToken = default)

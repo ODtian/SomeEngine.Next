@@ -16,8 +16,8 @@ struct PackedCluster
     float3 BoundMin;                    // 32 — conservative object-space AABB min
     float3 BoundMax;                    // 44 — conservative object-space AABB max
     uint PackedLodErrorTriangleStart;   // 56 — LODErrorHalf:16 | TriangleStart:16
-    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
-    uint PackedGroup;                   // 64 — GroupId(i16):16 | MaximumEdgeLengthHalf:16
+    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Flags:8]
+    uint PackedMaximumEdgeLength;                   // 64 — Reserved:16 | MaximumEdgeLengthHalf:16
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
     uint PackedRanges;                  // 72 — [range0End:8][range1End:8][extendedRangeCount:16]
     uint MaterialTableOffset;           // 76 — page-relative extended ranges, or 0xFFFFFFFF
@@ -45,19 +45,12 @@ float DecodeClusterLODError(PackedCluster c)
 
 float DecodeClusterMaximumEdgeLength(PackedCluster cluster)
 {
-    return f16tof32(cluster.PackedGroup >> 16u);
+    return f16tof32(cluster.PackedMaximumEdgeLength >> 16u);
 }
 
 uint DecodeTriangleStart(PackedCluster c)
 {
-    return c.PackedLodErrorTriangleStart >> 16;
-}
-
-int DecodeGroupId(PackedCluster c)
-{
-    // Sign-extend from 16-bit
-    int raw = int(c.PackedGroup & 0xFFFFu);
-    return (raw << 16) >> 16;
+    return (c.PackedLodErrorTriangleStart >> 16) * 3u;
 }
 
 uint4 VertReuseBatchWords(PackedCluster cluster)

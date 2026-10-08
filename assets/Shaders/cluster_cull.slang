@@ -76,7 +76,7 @@ PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
     c.BoundMax = LoadFloat3(PageHeap, offset + 44);
     c.PackedLodErrorTriangleStart = PageHeap.Load(offset + 56);
     c.PackedCounts = PageHeap.Load(offset + 60);
-    c.PackedGroup = PageHeap.Load(offset + 64);
+    c.PackedMaximumEdgeLength = PageHeap.Load(offset + 64);
     c.PackedMaterials = PageHeap.Load(offset + 68);
     c.PackedRanges = PageHeap.Load(offset + 72);
     c.MaterialTableOffset = PageHeap.Load(offset + 76);
