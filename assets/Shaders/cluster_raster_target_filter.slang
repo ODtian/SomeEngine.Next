@@ -55,11 +55,11 @@ uint ClusterTargetHierarchyWordMask(
     uint row,
     uint word,
     uint firstColumn,
-    uint lastColumn)
+    uint lastColumn, uint depthCacheClass = 2u)
 {
-    uint mask = RasterTargetPageHierarchy[
+    uint mask = ClusterTargetDirtyPageWord(
         ClusterRasterTargetHierarchyIndex(
-            target, hierarchyLevel, row, word)];
+            target, hierarchyLevel, row, word), depthCacheClass);
     if (word == firstColumn / 32u)
         mask &= 0xFFFFFFFFu << (firstColumn & 31u);
     if (word == lastColumn / 32u)
@@ -77,8 +77,8 @@ bool ClusterTargetReceiverAccepts(
         return true;
 
     uint tableIndex = ClusterRasterTargetTableIndex(target, localPage);
-    uint2 receiverMask = RasterTargetReceiverMasks[tableIndex];
-    if (all(receiverMask == 0u.xx))
+    uint4 receiverMask = LoadClusterTargetReceiverMask(target, localPage);
+    if (all(receiverMask == 0u.xxxx))
         return false;
 
     uint2 pageOrigin = localPage * target.PageSize;
@@ -93,18 +93,17 @@ bool ClusterTargetReceiverAccepts(
     uint2 lastCell = min(
         localLast * 8u / max(target.PageSize, 1u),
         7u.xx);
-    return ClusterRasterReceiverRectangleAccepts(receiverMask, firstCell, lastCell);
+    return VirtualShadowReceiverMaskRectangle(receiverMask, firstCell, lastCell);
 }
 
 bool ClusterTargetPageRequested(
     ClusterRasterTargetView target,
-    uint2 localPage)
+    uint2 localPage, uint depthCacheClass = 2u)
 {
     uint word = localPage.x / 32u;
     uint bit = 1u << (localPage.x & 31u);
-    return (RasterTargetPageHierarchy[
-        ClusterRasterTargetHierarchyIndex(
-            target, 0u, localPage.y, word)] & bit) != 0u;
+    return (ClusterTargetDirtyPageWord(ClusterRasterTargetHierarchyIndex(
+            target, 0u, localPage.y, word), depthCacheClass) & bit) != 0u;
 }
 
 bool ClusterTargetPageBounds(
@@ -123,10 +122,39 @@ bool ClusterTargetPageBounds(
     return all(firstPage <= lastPage);
 }
 
+
+bool ClusterTargetReceiverHierarchyAccepts(ClusterRasterTargetView target, uint2 firstPixel, uint2 lastPixel)
+{
+    if (target.ReceiverMaskEnabled == 0u) return true;
+    uint cellShift = firstbithigh(target.PageSize) - 3u;
+    uint2 firstTexel = firstPixel >> (cellShift + 2u);
+    uint2 lastTexel = lastPixel >> (cellShift + 2u);
+    uint maximumExtent = max(lastTexel.x - firstTexel.x + 1u, lastTexel.y - firstTexel.y + 1u);
+    uint mip = maximumExtent > 2u ? uint(firstbithigh(maximumExtent - 1u)) : 0u;
+    mip = min(mip, 7u);
+    uint2 origin = ClusterTargetReceiverMaskOrigin(target);
+    uint2 firstCell = ((origin << 2u) + (firstPixel >> cellShift)) >> mip;
+    uint2 lastCell = ((origin << 2u) + (lastPixel >> cellShift)) >> mip;
+    firstTexel = firstCell >> 2u;
+    lastTexel = lastCell >> 2u;
+    for (uint y = firstTexel.y; y <= lastTexel.y; y++)
+    for (uint x = firstTexel.x; x <= lastTexel.x; x++)
+    {
+        uint2 texel = uint2(x, y);
+        uint2 low = max(firstCell, texel * 4u) - texel * 4u;
+        uint2 high = min(lastCell, texel * 4u + 3u) - texel * 4u;
+        uint columns = (0xfu << low.x) & (0xfu >> (3u - high.x));
+        uint rows = (0xffffu << (low.y * 4u)) & (0xffffu >> ((3u - high.y) * 4u));
+        uint mask = RasterTargetReceiverMasks.Load(int3(texel, mip));
+        if ((mask & (columns * 0x1111u) & rows) != 0u) return true;
+    }
+    return false;
+}
+
 bool ClusterTargetPolicyScreenBoundsAccepts(
     float2 minUv,
     float2 maxUv,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view, uint depthCacheClass)
 {
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
     uint2 firstPixel;
@@ -162,8 +190,8 @@ bool ClusterTargetPolicyScreenBoundsAccepts(
                     row,
                     word,
                     firstCell.x,
-                    lastCell.x) != 0u)
-                return true;
+                    lastCell.x, depthCacheClass) != 0u)
+                return depthCacheClass == 1u || ClusterTargetReceiverHierarchyAccepts(target, firstPixel, lastPixel);
         }
     }
     return false;
@@ -185,13 +213,13 @@ bool ClusterTargetPolicyRasterBoundsWindow(
             minUv, maxUv, view, target, firstPixel, lastPixel))
         return false;
 
-    uint2 firstPage;
-    uint2 lastPage;
-    if (!ClusterTargetPageBounds(
-            target, firstPixel, lastPixel, firstPage, lastPage))
-        return false;
-    return ClusterTargetCropRasterWindow(target, uint4(firstPage, lastPage),
-        firstPixel, lastPixel, rasterWindow, depthCacheClass);
+    uint2 firstPage = firstPixel / target.PageSize;
+    uint2 lastPage = lastPixel / target.PageSize;
+    uint2 clippedWindow;
+    if (!ClusterTargetCropRasterWindow(target, uint4(firstPage, lastPage),
+            firstPixel, lastPixel, clippedWindow, depthCacheClass)) return false;
+    rasterWindow = ClusterPackRasterTargetPageWindow(uint4(firstPage, lastPage));
+    return true;
 }
 
 bool ClusterTargetCropRasterWindow(
@@ -199,8 +227,12 @@ bool ClusterTargetCropRasterWindow(
     uint2 firstPixel, uint2 lastPixel, out uint2 rasterWindow, uint depthCacheClass = 0u)
 {
     rasterWindow = 0u.xx;
-    uint2 firstPage = pages.xy;
-    uint2 lastPage = pages.zw;
+    uint2 firstPage = max(pages.xy, target.UncachedPageRect.xy);
+    uint2 lastPage = min(pages.zw, target.UncachedPageRect.zw);
+    if (any(firstPage > lastPage)) return false;
+    if (depthCacheClass != 1u && !ClusterTargetReceiverHierarchyAccepts(target,
+        max(firstPixel, firstPage * target.PageSize),
+        min(lastPixel, (lastPage + 1u) * target.PageSize - 1u))) return false;
     uint2 acceptedFirst = lastPage;
     uint2 acceptedLast = firstPage;
     bool accepted = false;
@@ -216,7 +248,7 @@ bool ClusterTargetCropRasterWindow(
                 row,
                 word,
                 firstPage.x,
-                lastPage.x);
+                lastPage.x, depthCacheClass);
             while (mask != 0u)
             {
                 uint column = word * 32u + firstbitlow(mask);
@@ -224,8 +256,7 @@ bool ClusterTargetCropRasterWindow(
                 uint2 localPage = uint2(column, row);
                 uint tableIndex;
                 uint physicalPage;
-                if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, physicalPage) &&
-                    (depthCacheClass == 1u || ClusterTargetReceiverAccepts(target, localPage, firstPixel, lastPixel)))
+                if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, physicalPage))
                 {
 #ifndef CLUSTER_TARGET_BOUNDS_ONLY
                     if (depthCacheClass == 1u && (RasterTargetPageMetadata[physicalPage].Flags & 8u) == 0u) continue;
@@ -309,16 +340,16 @@ bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
 
 bool ClusterTargetPolicyAccepts(
     ClusterProjectedBounds projectedBounds,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view, uint depthCacheClass)
 {
     if (view.TargetPolicy == 0u)
         return true;
     if (view.CullingEnabled == 0u || projectedBounds.CrossesNearPlane)
-        return ClusterTargetPolicyScreenBoundsAccepts(0.0.xx, 1.0.xx, view);
+        return ClusterTargetPolicyScreenBoundsAccepts(0.0.xx, 1.0.xx, view, depthCacheClass);
     return ClusterTargetPolicyScreenBoundsAccepts(
         float2(projectedBounds.NdcMin.x, -projectedBounds.NdcMax.y) * 0.5 + 0.5,
         float2(projectedBounds.NdcMax.x, -projectedBounds.NdcMin.y) * 0.5 + 0.5,
-        view);
+        view, depthCacheClass);
 }
 
 bool ClusterTargetPolicyScreenBoundsOccluded(
@@ -356,13 +387,13 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
         for (uint word = firstWord; word <= lastWord; word++)
         {
             uint mask = ClusterTargetHierarchyWordMask(
-                target, 0u, row, word, firstPage.x, lastPage.x);
+                target, 0u, row, word, firstPage.x, lastPage.x, depthCacheClass);
             while (mask != 0u)
             {
                 uint column = word * 32u + firstbitlow(mask);
                 mask &= mask - 1u;
                 uint2 localPage = uint2(column, row);
-                if (!ClusterTargetReceiverAccepts(
+                if (depthCacheClass != 1u && !ClusterTargetReceiverAccepts(
                         target, localPage, firstPixel, lastPixel))
                     continue;
 

@@ -1,15 +1,19 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 29,
-  "input_hash": "14c7ba81d3b941c31d687d63698ce4f040967d96e40505bfa9caf44047bac702",
+  "importer_version": 31,
+  "input_hash": "e38e7b033a3630a153b439b6d912d8547c8b178d753eab13337236a2434f0068",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_deferred_resume.slang",
-      "content_hash": "68537a6e1b135555913f755fe744dac8ffce72a9d9845d694eca5ce7f263bd69"
+      "content_hash": "756e43dcbb2bb38e11e809389a26546d0a1d67f24d2f6f38b9e5e7d46f0e8e49"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_hierarchy.slang",
+      "content_hash": "976685517fc9f950b25e4a097ebc3bf457536a8643463a738cdf3fee7802595b"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "3c30ae82f444ff51a16b5c9f8dcd9abc0187892507af4856ccbbe1cb30c43139"
+      "content_hash": "5a6d7541617c13957945a67fecd22fd872a97e8d32f0dac1130d682928c82adc"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_work_status.slang",
@@ -33,7 +37,7 @@
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+      "content_hash": "ca411c4e64e36d5e042244e087f1d2726187cb2f1434ccdd46b78d4f0a9040ee"
     }
   ],
   "reported_inputs": [],
@@ -41,11 +45,11 @@
     {
       "asset_guid": "1c40ffb4-67dc-523b-bc03-c033d51f1c86",
       "sub_asset_key": "",
-      "input_hash": "14c7ba81d3b941c31d687d63698ce4f040967d96e40505bfa9caf44047bac702",
+      "input_hash": "e38e7b033a3630a153b439b6d912d8547c8b178d753eab13337236a2434f0068",
       "dependencies": [],
       "asset_path": "cluster_deferred_resume.shader.asset",
-      "version": "aff3ab2e-bb40-66c6-4103-5741f91ffef9",
-      "content_hash": "992E45844A63DC9EADA408B00E996D27EB9D5BB02688BF020E71B7818D34F046",
+      "version": "5e592eab-fedc-7895-3dc7-1c97bc69251a",
+      "content_hash": "F5308A6F05899C90295037256445111A98E93CFEF8259EAE000C331612CC05B9",
       "asset_dependencies": []
     }
   ]

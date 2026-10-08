@@ -11,8 +11,7 @@ ByteAddressBuffer RasterOutputInstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> RasterOutputInstanceProperties;
 uint RasterOutputDepthCacheClass(uint visibleIndex)
 {
-    return LoadInstanceDepthCacheClass(RasterOutputInstanceData, RasterOutputInstanceProperties,
-        VisibleClusterRequest(RasterOutputVisibleClusters[visibleIndex]).InstanceID);
+    return LoadTargetDepthCacheClass(VisibleClusterRequest(RasterOutputVisibleClusters[visibleIndex]).InstanceID);
 }
 
 uint2 ClusterRasterTargetPixelOrigin(uint visibleClusterIndex, ClusterViewUniforms view)

@@ -13,7 +13,7 @@ RWStructuredBuffer<uint> RequestedPageIndices;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> RequestedPageCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint2> PageReceiverMasks;
+RWTexture2D<uint> PageReceiverMasks;
 
 void PublishVirtualShadowRequest(
     uint tableIndex,
@@ -47,47 +47,48 @@ void PublishVirtualShadowRequest(
         RequestedPageIndices[outputIndex] = tableIndex;
 }
 
-void MarkVirtualShadowReceiverMask(
-    uint tableIndex,
-    uint2 virtualPixel,
-    uint pageSize)
-{
-    uint maskShift = firstbithigh(pageSize) - 3u;
-    uint2 pagePixel = virtualPixel & (pageSize - 1u);
-    uint2 cell = min(pagePixel >> maskShift, 7u.xx);
-    uint bit = cell.y * 8u + cell.x;
-    uint4 matchingCells = WaveMatchingLanes(tableIndex) & WaveMatchingLanes(bit);
-    if (WaveGetLaneIndex() != WaveMaskFirstLane(matchingCells))
-        return;
-    uint ignored;
-    if (bit < 32u)
-        InterlockedOr(PageReceiverMasks[tableIndex].x, 1u << bit, ignored);
-    else
-        InterlockedOr(PageReceiverMasks[tableIndex].y, 1u << (bit - 32u), ignored);
-}
 
-void MarkVirtualShadowFullReceiverMask(uint tableIndex)
+void MarkVirtualShadowReceiverCell(VirtualShadowMapParameters view, uint mipLevel, uint2 localPage, uint2 cell)
 {
-    PageReceiverMasks[tableIndex] = 0xFFFFFFFFu.xx;
-}
-
-void MarkVirtualShadowReceiverRectangle(
-    uint tableIndex, uint2 localPage, uint2 firstPixel, uint2 lastPixel, uint pageSize)
-{
-    uint2 pageOrigin = localPage * pageSize;
-    uint shift = firstbithigh(pageSize) - 3u;
-    uint2 firstCell = (max(firstPixel, pageOrigin) - pageOrigin) >> shift;
-    uint2 lastCell = (min(lastPixel, pageOrigin + pageSize - 1u) - pageOrigin) >> shift;
-    uint columns = (0xffu << firstCell.x) & (0xffu >> (7u - lastCell.x));
-    uint2 mask = 0u.xx;
-    for (uint row = firstCell.y; row <= lastCell.y; row++)
-        if (row < 4u) mask.x |= columns << (row * 8u);
-        else mask.y |= columns << ((row - 4u) * 8u);
-    uint4 matching = WaveMatchingLanes(tableIndex) & WaveMatchingLanes(mask.x) & WaveMatchingLanes(mask.y);
+    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u + (cell >> 2u);
+    uint bit = (cell.y & 3u) * 4u + (cell.x & 3u);
+    uint4 matching = WaveMatchingLanes(address.x) & WaveMatchingLanes(address.y) & WaveMatchingLanes(bit);
     if (WaveGetLaneIndex() != WaveMaskFirstLane(matching)) return;
     uint ignored;
-    InterlockedOr(PageReceiverMasks[tableIndex].x, mask.x, ignored);
-    InterlockedOr(PageReceiverMasks[tableIndex].y, mask.y, ignored);
+    InterlockedOr(PageReceiverMasks[address], 1u << bit, ignored);
+}
+
+void MarkVirtualShadowFullReceiverMask(VirtualShadowMapParameters view, uint mipLevel, uint2 localPage)
+{
+    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u;
+    PageReceiverMasks[address] = 0xffffu;
+    PageReceiverMasks[address + uint2(1, 0)] = 0xffffu;
+    PageReceiverMasks[address + uint2(0, 1)] = 0xffffu;
+    PageReceiverMasks[address + 1u.xx] = 0xffffu;
+}
+
+void MarkVirtualShadowReceiverRectangle(VirtualShadowMapParameters view, uint mipLevel,
+    uint2 localPage, uint2 firstPixel, uint2 lastPixel)
+{
+    uint2 pageOrigin = localPage * view.PageSize;
+    uint shift = firstbithigh(view.PageSize) - 3u;
+    uint2 firstCell = (max(firstPixel, pageOrigin) - pageOrigin) >> shift;
+    uint2 lastCell = (min(lastPixel, pageOrigin + view.PageSize - 1u) - pageOrigin) >> shift;
+    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u;
+    for (uint y = firstCell.y >> 2u; y <= lastCell.y >> 2u; y++)
+    for (uint x = firstCell.x >> 2u; x <= lastCell.x >> 2u; x++)
+    {
+        uint2 low = max(firstCell, uint2(x, y) * 4u) - uint2(x, y) * 4u;
+        uint2 high = min(lastCell, uint2(x, y) * 4u + 3u) - uint2(x, y) * 4u;
+        uint columns = (0xfu << low.x) & (0xfu >> (3u - high.x));
+        uint rows = (0xffffu << (low.y * 4u)) & (0xffffu >> ((3u - high.y) * 4u));
+        uint mask = (columns * 0x1111u) & rows;
+        uint2 texel = address + uint2(x, y);
+        uint4 matching = WaveMatchingLanes(texel.x) & WaveMatchingLanes(texel.y) & WaveMatchingLanes(mask);
+        if (WaveGetLaneIndex() != WaveMaskFirstLane(matching)) continue;
+        uint ignored;
+        InterlockedOr(PageReceiverMasks[texel], mask, ignored);
+    }
 }
 
 #endif

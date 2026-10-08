@@ -3,12 +3,14 @@
 
 #include "cluster_bvh_cull_common.slang"
 
+uint LoadTargetDepthCacheClass(uint instanceId);
+
 // Cluster core code depends only on conservative policy operations. The shader
 // asset that instantiates the core supplies the concrete target representation
 // and every feature-specific resource.
 bool ClusterTargetPolicyAccepts(
     ClusterProjectedBounds projectedBounds,
-    ClusterViewUniforms view);
+    ClusterViewUniforms view, uint depthCacheClass);
 
 bool ClusterTargetPolicyWorldDepthAccepts(
     float3 worldMin,
@@ -27,7 +29,7 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
 bool ClusterTargetPolicyScreenBoundsAccepts(
     float2 minUv,
     float2 maxUv,
-    ClusterViewUniforms view);
+    ClusterViewUniforms view, uint depthCacheClass = 2u);
 
 bool ClusterTargetPolicyRasterBoundsWindow(
     float2 minUv,

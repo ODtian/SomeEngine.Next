@@ -155,7 +155,7 @@ public sealed partial class VirtualShadowFeature
             case PrefilterResource.Projections: _ = pass.Bind(edit.CreateBufferSrv(_prefilterProjections, structureStride: 80), sync); break;
             case PrefilterResource.PageReferences: _ = pass.Bind(edit.CreateBufferSrv(_pageOwners, structureStride: 4), sync); break;
             case PrefilterResource.Pages: _ = pass.Bind(edit.CreateBufferSrv(_framePageTable, structureStride: sizeof(uint)), sync); break;
-            case PrefilterResource.ReceiverMasks: _ = pass.Bind(edit.CreateBufferSrv(_pageReceiverMasks, structureStride: 8), sync); break;
+            case PrefilterResource.ReceiverMasks: _ = pass.Bind(edit.CreateTextureSrv(_pageReceiverMasks, format: Format.R32UInt, dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D), sync); break;
             case PrefilterResource.Depth: _ = pass.Bind(edit.CreateTextureSrv(_atlas, format: Format.R32UInt, dimension: TextureViewDimension.Texture2DArray), sync); break;
             case PrefilterResource.AxisX: _ = pass.Bind(edit.CreateTextureUav(_prefilterAxisX, format: Format.R8UNorm, dimension: TextureViewDimension.Texture2D), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
             case PrefilterResource.Separate: _ = pass.Bind(edit.CreateTextureUav(_prefilterSeparate, format: Format.R8UNorm, dimension: TextureViewDimension.Texture2DArray), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;

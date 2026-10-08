@@ -4,6 +4,7 @@ using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Systems;
 using SomeEngine.Resources;
+using System.Numerics;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -67,7 +68,8 @@ public sealed partial class ClusterPipelineSystem
         if (_resources.Residency.GetBinding().Publication is { } publication &&
             publication.Sequence != _lastGeometryChangeSequence)
         {
-            RecordCasterChange(publication.Meshes.Bvh.ChangedMeshes, []);
+            var lodMeshes = _resources.LodChanges.Span.ToArray().Select(change => change.Mesh).ToHashSet();
+            RecordCasterChange(publication.Meshes.Bvh.ChangedMeshes.Where(mesh => !lodMeshes.Contains(mesh)).ToArray(), []);
             _lastGeometryChangeSequence = publication.Sequence;
         }
         float quality = _resources.Residency.StreamingQuality;
@@ -104,10 +106,51 @@ public sealed partial class ClusterPipelineSystem
             foreach (QueryRow row in query.Rows)
             {
                 bool materialChanged = entities.Contains(row.Entity);
-                bool lodChanged = all || meshes.Contains(row.Read<RenderMesh>().Mesh);
-                if (materialChanged || lodChanged)
+                bool geometryChanged = meshes.Contains(row.Read<RenderMesh>().Mesh);
+                if (materialChanged || geometryChanged || all)
                     foreach (var address in batches.RowsForEntity(_entityIndex))
-                        (materialChanged ? rows : streamingRows).Add(checked((uint)address.Row));
+                        (materialChanged || geometryChanged ? rows : streamingRows).Add(checked((uint)address.Row));
+                _entityIndex++;
+            }
+        }
+    }
+
+    /// <summary>Copies caller cache choices and the current world-space bounds of changed LOD groups.</summary>
+    public void CollectCasterCacheInputs(DepthCacheClass[] classes, List<Vector4> lodBounds)
+    {
+        var inputs = new CasterCacheInputs(_instances.Current!, _resources.Residency, classes, _resources.LodChanges.ToArray(), lodBounds);
+        _resources.World.ExecuteQuery(_sceneQuery, ref inputs,
+            static (QueryCursor query, ref CasterCacheInputs data) => data.Collect(query));
+    }
+
+    private struct CasterCacheInputs(RenderInstanceBatches<RenderInstanceSingleGroup> batches,
+        ClusterResidency residency, DepthCacheClass[] classes, ClusterLodChange[] changes, List<Vector4> bounds)
+    {
+        private int _entityIndex;
+        internal void Collect(QueryCursor query)
+        {
+            foreach (QueryRow row in query.Rows)
+            {
+                RenderMesh mesh = row.Read<RenderMesh>();
+                RenderTransform transform = row.Read<RenderTransform>();
+                uint root = 0;
+                bool hasRoot = changes.Length != 0 && residency.TryGetPublishedRoot(mesh.Mesh, out root);
+                foreach (var address in batches.RowsForEntity(_entityIndex))
+                {
+                    classes[address.Row] = mesh.DepthCacheClass;
+                    foreach (ClusterLodChange change in changes)
+                    {
+                        if (!hasRoot || change.RootNode != root || !ReferenceEquals(change.Mesh, mesh.Mesh)) continue;
+                        Vector3 scale = transform.Stretch * transform.Scale;
+                        Vector3 center = Vector3.Transform(new Vector3(change.Bounds.X, change.Bounds.Y, change.Bounds.Z) * scale,
+                            transform.Rotation) + transform.Position;
+                        Vector3 absoluteScale = Vector3.Abs(scale);
+                        float radius = change.Bounds.W * Math.Max(absoluteScale.X, Math.Max(absoluteScale.Y, absoluteScale.Z)) +
+                            Math.Max(mesh.BoundsExpansion, 0f);
+                        bounds.Add(new Vector4(center - new Vector3(radius), address.Row));
+                        bounds.Add(new Vector4(center + new Vector3(radius), address.Row));
+                    }
+                }
                 _entityIndex++;
             }
         }

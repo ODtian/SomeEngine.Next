@@ -62,7 +62,7 @@ void PublishVirtualShadowFroxelBounds(uint viewIndex, uint mip, float3 minimumVi
         uint2 page = uint2(x,y);
         uint table = PublishVirtualShadowPage(view,mip,int2(page));
         if (table != 0xffffffffu && (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
-            MarkVirtualShadowReceiverRectangle(table,page,firstPixel,lastPixel,view.PageSize);
+            MarkVirtualShadowReceiverRectangle(view,mip,page,firstPixel,lastPixel);
     }
 }
 
