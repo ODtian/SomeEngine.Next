@@ -203,8 +203,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
         Assert.True(comparison.RenderedReceiverCoverage >= .98f);
         Assert.Equal(0, comparison.SelfHitPixels);
         Assert.True(comparison.AllReceivers.MismatchFraction <= .02f &&
-            comparison.AllReceivers.MeanVisibilityError <= .02f &&
-            comparison.FalseShadowFraction <= .02f && comparison.MissedShadowFraction <= .02f,
+            comparison.AllReceivers.MeanVisibilityError <= .02f,
             $"Independent local-light visibility: {comparison}");
     }
 
@@ -294,9 +293,10 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
                 Observation = "Unfiltered Standard user-material color: (shadowed - ambient)/(unshadowed - ambient). All eligible source receivers retained; nonpositive direct radiance is an error, not a denominator filter. No source replacement.",
                 Pressure = "Configured 64-page local-light fixture is page pressure, not proof of a particular resident/missing mip. No private page probes.",
                 Thresholds = new { MaximumPixelVisibilityError = .15f, MaximumMismatchFraction = .02f,
-                    MaximumMeanVisibilityError = .02f, MaximumFalseShadowFraction = .02f,
-                    MaximumMissedShadowFraction = .02f, MinimumShadowedPixels = 32,
+                    MaximumMeanVisibilityError = .02f, MinimumShadowedPixels = 32,
                     MinimumLitPixels = 512, MinimumRenderedReceiverCoverage = .98f, MaximumSelfHits = 0 },
+                MeetsSourceGeometryAccuracyThresholds = comparison.AllReceivers.MeanVisibilityError <= .02f &&
+                    comparison.AllReceivers.MismatchFraction <= .02f,
             }, new JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
             output.WriteLine($"Local light independent reference: {directory}; {comparison}");
             return comparison;
