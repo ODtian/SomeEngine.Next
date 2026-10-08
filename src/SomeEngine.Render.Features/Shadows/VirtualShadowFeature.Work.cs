@@ -65,7 +65,7 @@ public sealed partial class VirtualShadowFeature
         _ = pass.Bind(edit.CreateBufferSrv(_previousWorkCounts, structureStride: sizeof(uint)), PipelineSync.ComputeShading);
         _ = pass.Bind(edit.CreateBufferSrv(_previousWorkPressure, structureStride: sizeof(float)), PipelineSync.ComputeShading);
         _ = pass.Bind(edit.CreateBufferSrv(_previousWorkViewIndices, structureStride: sizeof(uint)), PipelineSync.ComputeShading);
-        _ = pass.Bind(edit.CreateBufferSrv(_frameResolutionBias, structureStride: 2u * sizeof(float)), PipelineSync.ComputeShading);
+        _ = pass.Bind(edit.CreateBufferSrv(_frameResolutionBias, structureStride: sizeof(float)), PipelineSync.ComputeShading);
         _ = pass.Bind(edit.CreateBufferUav(_frameShadowViews, structureStride: VirtualShadowView.SizeInBytes),
             PipelineSync.ComputeShading, GraphAccessMode.ReadWrite, WriteCoverage.Complete);
         _ = pass.Bind(edit.CreateBufferUav(_frameWorkPressure, structureStride: sizeof(float)),

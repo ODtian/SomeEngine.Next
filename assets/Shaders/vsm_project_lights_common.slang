@@ -81,17 +81,16 @@ float ProjectVirtualShadowReceiver(uint3 pixel, uint light, VirtualShadowProject
     float3 normal = (receiver.Flags & SURFACE_RECEIVER_HAIR) != 0u ? -source.Direction : receiver.Normal;
     float3 shadowPosition = receiver.Position;
     if ((receiver.Flags & SURFACE_RECEIVER_SUBSURFACE) == 0u) shadowPosition += normal * receiver.NormalBiasLength;
-    VirtualShadowProjectionResult result = SampleVirtualShadowDirectionalSoft(VirtualShadowViews, VirtualShadowPageTable,
-        VirtualShadowAtlas, firstView, levels, shadowPosition, normal,
-        VirtualShadowDynamicResolutionBias[0].x, receiver.ResolutionBias,
+    VirtualShadowProjectionResult result = SampleVirtualShadowDirectionalFilteredSoft(VirtualShadowViews, VirtualShadowPageTable,
+        VirtualShadowAtlas, VirtualShadowPrefilteredAtlas, firstView, levels, shadowPosition, normal,
+        receiver.ResolutionBias,
         VirtualShadowSampling.BlockerSampleCount, VirtualShadowSampling.FilterSampleCount,
         VirtualShadowSampling.MaxFilterRadiusTexels, pixel.xy, VirtualShadowSampling.FrameIndex,
         (receiver.Flags & SURFACE_RECEIVER_FIRST_PERSON) != 0u,
         VirtualShadowSampling.FirstPersonViewOffset < VirtualShadowSampling.ViewCount
             ? VirtualShadowSampling.FirstPersonViewOffset + light * VirtualShadowViews[VirtualShadowSampling.FirstPersonViewOffset].ClipmapLevelCount
             : 0xffffffffu);
-    return result.Visibility * SampleDirectionalVirtualShadowPrefiltered(VirtualShadowViews, VirtualShadowPageTable,
-        VirtualShadowPrefilteredAtlas, firstView, levels, shadowPosition);
+    return result.Visibility;
 }
 #else
 uint VirtualShadowLocalLightIndex(uint sourceLight)
@@ -130,7 +129,7 @@ float ProjectVirtualShadowLocalReceiver(uint3 pixel, uint light, uint sourceLigh
     if ((receiver.Flags & SURFACE_RECEIVER_SUBSURFACE) == 0u) shadowPosition += normal * receiver.NormalBiasLength;
     return SampleVirtualShadowLocalSoft(VirtualShadowViews, VirtualShadowPageTable, VirtualShadowAtlas,
         firstView, shadowPosition, normal, receiver.NominalPixelRadius,
-        VirtualShadowDynamicResolutionBias[0].y, VirtualShadowSampling.BlockerSampleCount,
+        VirtualShadowDynamicResolutionBias[0], VirtualShadowSampling.BlockerSampleCount,
         VirtualShadowSampling.FilterSampleCount, VirtualShadowSampling.MaxFilterRadiusTexels,
         pixel.xy, VirtualShadowSampling.FrameIndex).Visibility;
 }

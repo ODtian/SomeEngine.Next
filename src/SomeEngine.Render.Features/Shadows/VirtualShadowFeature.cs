@@ -325,10 +325,10 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination,
                     "Virtual shadow static/dynamic visible work"));
                 _dynamicResolutionBias = edit.CreatePersistentBuffer(new BufferDesc(
-                    4u * sizeof(float),
+                    2u * sizeof(float),
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination,
                     "Virtual shadow dynamic resolution bias"));
-                _frameResolutionBias = edit.CreateBuffer(new BufferDesc(2u * sizeof(float),
+                _frameResolutionBias = edit.CreateBuffer(new BufferDesc(sizeof(float),
                     BufferUsages.ShaderRead | BufferUsages.CopyDestination | BufferUsages.CopySource,
                     "Virtual shadow resolution bias for this frame"));
                 _rasterInvocationViews = edit.CreateBuffer(new BufferDesc(
@@ -709,6 +709,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             _residentPipeline?.Dispose();
             _prefilterPipeline?.Dispose();
             _prefilterRequestPipeline?.Dispose();
+            _prefilterResetPipeline?.Dispose();
+            _prefilterSelectPipeline?.Dispose();
             _staticMergePipeline?.Dispose();
             _workFeedbackPipeline?.Dispose();
             DisposeFroxelPipelines();
@@ -1133,6 +1135,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _localProjection.Pipeline.Dispose();
         _prefilterPipeline?.Dispose();
         _prefilterRequestPipeline?.Dispose();
+        _prefilterResetPipeline?.Dispose();
+        _prefilterSelectPipeline?.Dispose();
         _staticMergePipeline?.Dispose();
         _workFeedbackPipeline?.Dispose();
         DisposeFroxelPipelines();
@@ -1249,8 +1253,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         {
             MaxPhysicalPages = _shadowMap.Settings.MaxPhysicalPages,
             PagePoolLoadStart = _shadowMap.Settings.DynamicResolutionPagePoolLoadStart,
-            MaxDirectionalLodBias = Math.Min(_shadowMap.Settings.DynamicResolutionMaxLodBias, _shadowMap.Settings.DynamicResolutionMaxDirectionalLodBias),
-            MaxLocalLodBias = Math.Min(_shadowMap.Settings.DynamicResolutionMaxLodBias, _shadowMap.Settings.DynamicResolutionMaxLocalLodBias),
+            MaxLodBias = _shadowMap.Settings.DynamicResolutionMaxLodBias,
             Enabled = _shadowMap.Settings.DynamicResolutionEnabled && viewCount != 0u ? 1u : 0u,
         };
         _uniformData.Write(ref graph, _dynamicResolutionUniforms, in dynamicResolution);
@@ -1509,7 +1512,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             label: "Virtual shadow receiver depth"), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(
             _frameResolutionBias,
-            structureStride: 2 * sizeof(float),
+            structureStride: sizeof(float),
             label: "Virtual shadow dynamic resolution bias"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(_surfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading);
@@ -1546,7 +1549,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferUav(
             _dynamicResolutionBias,
-            structureStride: 4 * sizeof(float),
+            structureStride: 2 * sizeof(float),
             label: "Virtual shadow dynamic resolution output"),
             PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite,
@@ -1848,7 +1851,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     {
         _ = pass.Bind(graph.CreateBufferSrv(
             _frameResolutionBias,
-            structureStride: 2 * sizeof(float),
+            structureStride: sizeof(float),
             label: "Standard shade virtual shadow dynamic resolution bias"), sync);
     }
 

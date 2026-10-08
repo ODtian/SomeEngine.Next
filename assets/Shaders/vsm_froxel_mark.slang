@@ -84,7 +84,7 @@ void MarkVirtualShadowFroxelPages(uint index : SV_DispatchThreadID)
     {
         uint firstView = light * levels;
         uint level = CalculateDirectionalVirtualShadowBiasedLevel(ShadowViews, firstView, levels,
-            center, DynamicResolutionBias[0].x,
+            center, DynamicResolutionBias[0],
             CalculateVirtualShadowReceiverResolutionBias(PageDemand.ReceiverProjection, center));
         if (level < levels) PublishVirtualShadowFroxelBounds(firstView + level,0u,minimum,maximum);
     }
@@ -114,7 +114,7 @@ void MarkVirtualShadowFroxelPages(uint index : SV_DispatchThreadID)
         if (dot(toLight,toLight) > view.LightRange * view.LightRange) continue;
         if (view.LightKind == VSM_LIGHT_SPOT && dot(normalize(toLight),-view.LightDirection) < LightBuffer[light].OuterConeCos) continue;
         uint mip = VirtualShadowLocalMipFromNominalPixelRadius(view,center,
-            CalculateVirtualShadowNominalWorldPixelRadius(PageDemand.ReceiverProjection,center), DynamicResolutionBias[0].y);
+            CalculateVirtualShadowNominalWorldPixelRadius(PageDemand.ReceiverProjection,center), DynamicResolutionBias[0] + CalculateVirtualShadowReceiverResolutionBias(PageDemand.ReceiverProjection,center));
         PublishVirtualShadowFroxelBounds(viewIndex,mip,minimum,maximum);
     }
 }

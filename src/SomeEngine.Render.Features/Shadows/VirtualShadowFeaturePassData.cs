@@ -20,7 +20,7 @@ internal readonly record struct VirtualShadowViewCopyPassData(GraphBufferSlice S
 
 internal readonly record struct VirtualShadowResolutionCopyPassData(GraphBufferId Source, GraphBufferId Destination)
 {
-    private static readonly BufferRange BiasRange = new(0, 2u * sizeof(float));
+    private static readonly BufferRange BiasRange = new(0, sizeof(float));
 
     internal static void Declare(ref PassDefinition pass, ref VirtualShadowResolutionCopyPassData data)
     {

@@ -4,29 +4,9 @@
 #include "vsm_prefilter_math.slang"
 #include "resource_effects.slang"
 
-struct VirtualShadowPrefilterUniforms
-{
-    uint ViewCount;
-    uint EntriesPerView;
-    uint EntryCapacity;
-    uint AtlasSize;
-    uint PageSize;
-    uint PagesPerRow;
-    uint Mode;
-    uint WriteLayer;
-    uint HasHistory;
-    uint PreviousViewCount;
-    float HistoryWeight;
-    uint EntryCount;
-};
-struct VirtualShadowPrefilterProjection
-{
-    float4x4 ShadowToWorld;
-    uint PreviousFirstView;
-    uint Pad0;
-    uint Pad1;
-    uint Pad2;
-};
+#include "vsm_prefilter_common.slang"
+#include "vsm_receiver_mask_common.slang"
+
 ConstantBuffer<VirtualShadowPrefilterUniforms> Prefilter;
 StructuredBuffer<VirtualShadowMapParameters> FilterViews;
 StructuredBuffer<VirtualShadowMapParameters> PreviousFilterViews;
@@ -37,30 +17,16 @@ Texture2DArray<uint> FilterDepthAtlas;
 RWTexture2D<float> FilterAxisX;
 RWTexture2DArray<float> FilterSeparate;
 RWTexture2D<float> FilterMerged;
-StructuredBuffer<uint2> FilterReceiverMasks;
+Texture2D<uint> FilterReceiverMasks;
 
 
 RWStructuredBuffer<uint> FilterPreviousPageTable;
 
-RWStructuredBuffer<uint2> FilterPreviousReceiverMasks;
+RWTexture2DArray<uint> FilterPreviousReceiverMasks;
 
 
-bool VirtualShadowFilterPage(uint atlasPage, out VirtualShadowMapParameters view, out uint viewIndex, out uint2 page)
-{
-    view = (VirtualShadowMapParameters)0;
-    page = 0u.xx;
-    viewIndex = 0u;
-    uint index = FilterPageReferences[atlasPage];
-    if (index >= Prefilter.EntryCount) return false;
-    viewIndex = VirtualShadowViewFromPageTableIndex(FilterViews, Prefilter.ViewCount, index);
-    view = FilterViews[viewIndex];
-    uint mip;
-    uint entry = FilterPageTable[index];
-    return (view.Flags & VSM_VIEW_PREFILTERED_DISTANT) != 0u &&
-        VirtualShadowDecodePageTableIndex(view, index, mip, page) && mip == 0u &&
-        (entry & VSM_PAGE_ANY_DEPTH) != 0u && IsVirtualShadowPageTag(entry, VirtualShadowWorldPage(view, 0u, page)) &&
-        VirtualShadowPageHasOwnDepth(entry);
-}
+StructuredBuffer<uint> FilterPages;
+ByteAddressBuffer FilterPageCount;
 
 uint2 VirtualShadowFilterAtlasPixel(VirtualShadowMapParameters view, uint atlasPage, uint2 localPixel, bool border)
 {
@@ -139,9 +105,9 @@ float VirtualShadowFilterPrevious(VirtualShadowMapParameters view, uint viewInde
     if ((FilterPreviousPageTable[previousIndex] & VSM_PAGE_PARTIAL_DEPTH) != 0u)
     {
         uint2 cell = (previousPixel & (previous.PageSize - 1u)) * 8u / previous.PageSize;
-        uint bit = cell.y * 8u + cell.x;
-        uint2 mask = FilterPreviousReceiverMasks[previousIndex];
-        if (((bit < 32u ? mask.x : mask.y) & (1u << (bit & 31u))) == 0u) return current;
+        uint4 mask = LoadVirtualShadowReceiverMask(FilterPreviousReceiverMasks, previous, 0u,
+            previousPixel / previous.PageSize, Prefilter.WriteLayer ^ 1u);
+        if (!VirtualShadowReceiverMaskCell(mask, cell)) return current;
     }
     float factor;
     if (!VirtualShadowFilterSample(previous, true, previousUV, factor)) return current;
@@ -150,38 +116,54 @@ float VirtualShadowFilterPrevious(VirtualShadowMapParameters view, uint viewInde
 
 [shader("compute")]
 [numthreads(8,8,1)]
-void PrefilterVirtualShadowDistant(uint3 thread : SV_DispatchThreadID)
+void PrefilterVirtualShadowDistant(uint3 thread : SV_DispatchThreadID, uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
 {
+    uint work = group.x + group.y * 65535u;
+    uint selectedCount = FilterPageCount.Load(12u);
     if (Prefilter.Mode == 5u)
     {
-        uint index = thread.x + thread.y * Prefilter.AtlasSize;
-        if (index >= Prefilter.EntryCount) return;
+        if (lane != 0u || work >= selectedCount) return;
+        uint atlasPage = FilterPages[work];
+        uint index = FilterPageReferences[atlasPage];
+        VirtualShadowMapParameters view;
+        uint viewIndex;
+        uint2 page;
+        if (!ResolveVirtualShadowFilterPage(FilterViews, FilterPageReferences, FilterPageTable,
+            Prefilter.ViewCount, Prefilter.EntryCount, atlasPage, view, viewIndex, page)) return;
         uint destination = Prefilter.WriteLayer * Prefilter.EntryCapacity + index;
         FilterPreviousPageTable[destination] = FilterPageTable[index];
-        FilterPreviousReceiverMasks[destination] = FilterReceiverMasks[index];
+        uint4 masks = LoadVirtualShadowReceiverMask(FilterReceiverMasks, view, 0u, page);
+        uint2 address = VirtualShadowReceiverMaskOrigin(view, 0u) + page * 2u;
+        FilterPreviousReceiverMasks[uint3(address, Prefilter.WriteLayer)] = masks.x;
+        FilterPreviousReceiverMasks[uint3(address + uint2(1,0), Prefilter.WriteLayer)] = masks.y;
+        FilterPreviousReceiverMasks[uint3(address + uint2(0,1), Prefilter.WriteLayer)] = masks.z;
+        FilterPreviousReceiverMasks[uint3(address + 1u.xx, Prefilter.WriteLayer)] = masks.w;
         return;
     }
     bool border = Prefilter.Mode == 2u || Prefilter.Mode == 4u;
     uint stride = Prefilter.PageSize + (border ? 2u : 0u);
-    if (any(thread.xy >= Prefilter.PagesPerRow * stride)) return;
-    uint2 atlasAddress = thread.xy / stride;
-    uint atlasPage = atlasAddress.y * Prefilter.PagesPerRow + atlasAddress.x;
-    uint pageCount, pageStride;
-    FilterPageReferences.GetDimensions(pageCount, pageStride);
-    if (atlasPage >= pageCount) return;
-    uint2 pixel = thread.xy % stride;
+    uint tiles = (stride + 7u) / 8u;
+    uint listIndex = work / (tiles * tiles);
+    if (listIndex >= selectedCount) return;
+    uint tile = work % (tiles * tiles);
+    uint atlasPage = FilterPages[listIndex];
+    uint2 pixel = uint2(tile % tiles, tile / tiles) * 8u + thread.xy % 8u;
+    if (any(pixel >= stride)) return;
+    uint2 atlasAddress = uint2(atlasPage % Prefilter.PagesPerRow, atlasPage / Prefilter.PagesPerRow);
+    uint2 destinationPixel = atlasAddress * stride + pixel;
     VirtualShadowMapParameters view;
     uint viewIndex;
     uint2 page;
-    if (!VirtualShadowFilterPage(atlasPage, view, viewIndex, page)) return;
+    if (!ResolveVirtualShadowFilterPage(FilterViews, FilterPageReferences, FilterPageTable,
+        Prefilter.ViewCount, Prefilter.EntryCount, atlasPage, view, viewIndex, page)) return;
     if (border)
     {
         if (all(pixel > 0u) && all(pixel <= view.PageSize)) return;
         uint2 sourcePixel;
         uint source = VirtualShadowFilterNeighbor(view, page, int2(pixel) - 1, sourcePixel);
         uint2 sourcePosition = VirtualShadowFilterAtlasPixel(view, source, sourcePixel, true);
-        if (Prefilter.Mode == 2u) FilterSeparate[uint3(thread.xy, Prefilter.WriteLayer)] = FilterSeparate[uint3(sourcePosition, Prefilter.WriteLayer)];
-        else FilterMerged[thread.xy] = FilterMerged[sourcePosition];
+        if (Prefilter.Mode == 2u) FilterSeparate[uint3(destinationPixel, Prefilter.WriteLayer)] = FilterSeparate[uint3(sourcePosition, Prefilter.WriteLayer)];
+        else FilterMerged[destinationPixel] = FilterMerged[sourcePosition];
         return;
     }
     uint2 padded = VirtualShadowFilterAtlasPixel(view, atlasPage, pixel, true);
@@ -213,6 +195,6 @@ void PrefilterVirtualShadowDistant(uint3 thread : SV_DispatchThreadID)
         samples[tap + 2] = value;
     }
     float factor = VirtualShadowPrefilterFiveSamples(samples[0], samples[1], samples[2], samples[3], samples[4]);
-    if (Prefilter.Mode == 0u) FilterAxisX[thread.xy] = factor;
+    if (Prefilter.Mode == 0u) FilterAxisX[destinationPixel] = factor;
     else FilterSeparate[uint3(padded, Prefilter.WriteLayer)] = VirtualShadowFilterPrevious(view, viewIndex, page, pixel, factor);
 }

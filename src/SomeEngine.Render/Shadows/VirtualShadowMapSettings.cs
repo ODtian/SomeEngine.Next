@@ -61,8 +61,6 @@ public sealed partial record VirtualShadowMapSettings
     public bool DynamicResolutionEnabled { get; init; }
     public float DynamicResolutionMaxLodBias { get; init; } = 2.0f;
     public float DynamicResolutionPagePoolLoadStart { get; init; } = 0.85f;
-    public float DynamicResolutionMaxDirectionalLodBias { get; init; } = 2.0f;
-    public float DynamicResolutionMaxLocalLodBias { get; init; } = 2.0f;
     public bool DynamicHiZ { get; init; }
     public bool DirectionalReceiverMask { get; init; } = true;
     public bool LocalReceiverMask { get; init; } = false;
@@ -271,12 +269,6 @@ public sealed partial record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(DynamicResolutionPagePoolLoadStart));
         if (!float.IsFinite(DynamicResolutionMaxLodBias) || DynamicResolutionMaxLodBias < 0f)
             throw new ArgumentOutOfRangeException(nameof(DynamicResolutionMaxLodBias));
-        if (!float.IsFinite(DynamicResolutionMaxDirectionalLodBias) ||
-            DynamicResolutionMaxDirectionalLodBias < 0.0f)
-            throw new ArgumentOutOfRangeException(nameof(DynamicResolutionMaxDirectionalLodBias));
-        if (!float.IsFinite(DynamicResolutionMaxLocalLodBias) ||
-            DynamicResolutionMaxLocalLodBias < 0.0f)
-            throw new ArgumentOutOfRangeException(nameof(DynamicResolutionMaxLocalLodBias));
 
         if (MipLevelCount > 16u)
             throw new ArgumentOutOfRangeException(nameof(VirtualResolution),

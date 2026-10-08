@@ -157,7 +157,7 @@ public sealed partial class VirtualShadowFeature
                     dimension = Math.Max(dimension >> 1, 1);
                 }
                 result[index] = new(view.LightKind, view.LightIndex, view.FaceIndex, view.ClipmapLevel, view.VirtualResolution,
-                    baseBias[index], view.ResolutionLodBias + bias[view.LightKind == VirtualShadowLightKind.Directional ? 0 : 1], mips)
+                    baseBias[index], view.ResolutionLodBias + bias[0], mips)
                 {
                     WorkLodAddition = view.ResolutionLodBias - baseBias[index],
                     HardwareVisibleItems = Word(QualityData.RasterArea, 1 + index * 2),
@@ -168,7 +168,7 @@ public sealed partial class VirtualShadowFeature
                     StaticSoftwareVisibleItems = Word(QualityData.DepthWork, index * 4 + 3),
                 };
             }
-            return new(frame, bias[0], bias[1], Word(QualityData.RequestCount), Word(QualityData.DirtyCount),
+            return new(frame, bias[0], bias[0], Word(QualityData.RequestCount), Word(QualityData.DirtyCount),
                 Word(QualityData.Failures), Word(QualityData.Failures, 1), FreePages(),
                 Word(QualityData.RasterArea), (ClusterWorkOverflow)Word(QualityData.Work), result);
         }

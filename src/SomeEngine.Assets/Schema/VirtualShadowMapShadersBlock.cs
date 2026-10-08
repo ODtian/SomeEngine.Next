@@ -5,7 +5,7 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages), nameof(Prefilter), nameof(PrefilterRequests), nameof(BlueNoise), nameof(FroxelBuild), nameof(FroxelArguments), nameof(FroxelMark), nameof(FroxelPixel), nameof(ProjectDirectionalLights), nameof(ProjectLocalLights))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages), nameof(Prefilter), nameof(PrefilterRequests), nameof(PrefilterReset), nameof(PrefilterSelect), nameof(BlueNoise), nameof(FroxelBuild), nameof(FroxelArguments), nameof(FroxelMark), nameof(FroxelPixel), nameof(ProjectDirectionalLights), nameof(ProjectLocalLights))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 {
     public partial ShaderRef? ProjectDirectionalLights { get; set; }
@@ -23,6 +23,8 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
     public partial ShaderRef? ResidentPages { get; set; }
     public partial ShaderRef? Prefilter { get; set; }
     public partial ShaderRef? PrefilterRequests { get; set; }
+    public partial ShaderRef? PrefilterReset { get; set; }
+    public partial ShaderRef? PrefilterSelect { get; set; }
     public partial ShaderRef? MergeStatic { get; set; }
     public partial ShaderRef? ClearPages { get; set; }
     public partial ShaderRef? InitializeState { get; set; }
@@ -93,6 +95,10 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
                 FroxelPixel = copy.FroxelPixel is { } froxelPixelEntry ? Resolve(froxelPixelEntry) : EntryPointReflection.Null,
                 PrefilterRequestsShader = copy.PrefilterRequests is { } filterRequests ? shaders[filterRequests.Asset.Value] : null,
                 PrefilterRequests = copy.PrefilterRequests is { } filterRequestsEntry ? Resolve(filterRequestsEntry) : EntryPointReflection.Null,
+                PrefilterResetShader = copy.PrefilterReset is { } filterReset ? shaders[filterReset.Asset.Value] : null,
+                PrefilterReset = copy.PrefilterReset is { } filterResetEntry ? Resolve(filterResetEntry) : EntryPointReflection.Null,
+                PrefilterSelectShader = copy.PrefilterSelect is { } filterSelect ? shaders[filterSelect.Asset.Value] : null,
+                PrefilterSelect = copy.PrefilterSelect is { } filterSelectEntry ? Resolve(filterSelectEntry) : EntryPointReflection.Null,
                 PrefilterShader = copy.Prefilter is { } prefilter ? shaders[prefilter.Asset.Value] : null,
                 Prefilter = copy.Prefilter is { } prefilterEntry ? Resolve(prefilterEntry) : EntryPointReflection.Null,
                 ResidentPagesShader = copy.ResidentPages is { } resident ? shaders[resident.Asset.Value] : null,
@@ -147,7 +153,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
             ResetReceiverMasks, ResetFrame, MarkPages, MarkCoarsePages, AllocatePages, ClearPages,
             InitializeState, InvalidateCasters, BuildPagePool, CompactViews, InitializePageHiZ,
             ReducePageHiZ, DynamicResolution, CompletePageDepth, WorkFeedback, MergeStatic,
-            ResidentPages, Prefilter, PrefilterRequests, FroxelBuild, FroxelArguments, FroxelMark, FroxelPixel, ProjectDirectionalLights, ProjectLocalLights,
+            ResidentPages, Prefilter, PrefilterRequests, PrefilterReset, PrefilterSelect, FroxelBuild, FroxelArguments, FroxelMark, FroxelPixel, ProjectDirectionalLights, ProjectLocalLights,
         ];
         return entries.OfType<ShaderRef>().Select(static reference => reference.Asset.Value);
     }

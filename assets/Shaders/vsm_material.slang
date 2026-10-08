@@ -38,6 +38,6 @@ StructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;
 StructuredBuffer<uint> VirtualShadowPageTable;
 Texture2DArray<uint> VirtualShadowAtlas;
 ConstantBuffer<VirtualShadowSamplingUniforms> VirtualShadowSampling;
-StructuredBuffer<float2> VirtualShadowDynamicResolutionBias;
+StructuredBuffer<float> VirtualShadowDynamicResolutionBias;
 
 #endif

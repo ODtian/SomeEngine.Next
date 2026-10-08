@@ -53,7 +53,9 @@ VSM 设置分别持有非移动与移动精度偏置，按
 重建接收面相邻像素的世界坐标。每个轴采用深度差较小的前景邻居，在断层处
 保持局部接收面；视口边缘沿该接收面延伸相邻坐标。
 页池压力以 AVAILABLE 列表的实际可用容量和分配失败形成全局偏移，阈值默认 .85。
-本帧从持久状态复制该偏移，请求和采样共同读取；超载响应为 .5，恢复经过十帧等待后响应 .1。
+本帧从持久状态复制单个全局偏移：方向请求先合成全局与接收者偏置，再取得对应视图的每灯偏置；
+方向采样按距离、接收者和每灯偏置选择，由祖先表读取实际驻留内容。局部请求与接收覆盖模式的
+采样消费同一全局偏移。超载响应为 .5，恢复经过十帧等待后响应 .1。
 工作节流由 `WorkLoadBudget` 或 `WorkTimeBudgetMilliseconds` 启用，两项默认均为零；时间预算优先。
 可见 cluster/window 在每个阶段解码完成后、材质/range batch 展开前登记一次 HW 或 SW，
 压缩目标保存原始 shadow view index。逐视图反馈沿 RenderWorld light entity、cube face 或绝对 clipmap level
@@ -292,18 +294,12 @@ ray 数为零时使用带坡度容差的深度比较。方向和局部 SMRT 使�
 `VirtualShadowMapProjectionCommon.ush`、`VirtualShadowMapProjectionSpot.ush`、
 `VirtualShadowMapProjectionDirectional.ush` 与 `VirtualShadowMapSMRTTemplate.ush`。
 
-SMRT 的随机输入由阴影设置资产引用蓝噪音纹理，经现有 `Texture` 和 `RenderDevice`
-路径上传。标量取红通道，两个向量通道取绿蓝通道；像素与帧号按实际纹理维度包裹，
-frame slice 按纵向行排列。R2 偏移选择每条射线的向量样本，方向光使用同一标量步长，
-局部光按原版 `EvolveSobolSeed` 更新后续射线步长。默认资产来自 Christoph Peters
-的 CC0 三维 void-and-cluster 数据，由 [Calinou 分发](https://github.com/Calinou/free-blue-noise-textures)
-的固定提交保存为紧凑 RGBA8。实际尺寸为64×64×64，原版纹理输入为128×128×64的
-spatiotemporal blue noise，维度和统计性质分别记录于 `assets/Noise/source.json`。
-完整许可、来源 Git blob、源数据和转换结果的 SHA-256 保存在同目录。
-
-默认方向和局部 ray 数均为7，采样步数均为8。公开 `--vsm-ray-count` 同时设置两类
-ray 数，0选择硬深度比较；`SceneScript.ShadowSettings` 提供逐类 ray 数和原版参数。
-DefaultGame 的硬阴影源三角形参考明确使用0；软阴影采用光源面上的独立射线积分真值。
+软阴影与局部结果量化的随机输入由阴影设置资产引用时空蓝噪声纹理，经现有 `Texture` 和
+`RenderDevice` 路径上传。128×128×64 的 scalar/vec2 数据纵向保存为128×8192 RGBA8：
+标量取红通道，向量取绿蓝通道；像素地址使用 `xy & 127`，帧号使用 `frame & 63`。
+资产来自 NVIDIA-RTX/STBN 固定提交，转换来源与完整 NVIDIA RTX SDK 许可保存在
+`assets/Noise/source.json` 和 `LICENSE.txt`。每 family 延续4次遮挡估计加8次软过滤，
+最大纹素支持半径8；主投射沿 `Virtual-Shadow-Sampling.md` 的统一软采样入口。
 
 局部光的最小 mip 使用光包围球最近深度、接收相机像素半径和光投影标度计算，
 并消费同一局部 mip 奇偶模式。`DistantLightMode` 默认 `Conservative`，保守估计到达末级时
@@ -320,7 +316,9 @@ DefaultGame 的硬阴影源三角形参考明确使用0；软阴影采用光源�
 需求和接收覆盖。两轴 `[1,4,6,4,1]/16` 过滤消费实际完成的深度，缺少邻页时使用当前页边缘。
 历史从当前分界中点重建世界位置，投影到同光源的前帧视图，确认前帧页与接收覆盖后混合；
 变化幅度以原版 `1/255` 最小步长推进。独立 R8 页带一个 texel 边框，较粗层的过滤遮挡相乘
-形成当前层结果，随后更新合并页边框供材质双线性采样。两份持久图历史随成功完成的帧切换，
+形成当前层结果，随后更新合并页边框供材质双线性采样。当前请求中的 secondary 页经过一次实际图集页筛选，
+行列过滤、边框、clipmap合并与历史保存使用同一页列表和间接参数启动。采样首先查询远处
+预过滤结果，完全遮挡时结束，其余接收面继续4+8软采样并合成远处遮挡。两份持久图历史随成功完成的帧切换，
 取消继续使用前次完成层。全局页压力通过完成帧回读进入保守局部 mip，沿实际请求使用的同一 bias。
 原版依据为 `VirtualShadowMapClipmap.cpp:443–475`、`VirtualShadowMapPageManagement.usf:403–495` 与
 `VirtualShadowMapPhysicalPageManagement.usf:1091–1577`。

@@ -10,6 +10,46 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class SoftShadowSamplingTests(D3D12TestCompiler compiler)
 {
     [Fact]
+    public void FilteredDistantUmbraProvidesTheDirectionalProjection()
+    {
+        VirtualShadowView view = new()
+        {
+            LightViewProjection = Matrix4x4.Identity, VirtualResolution = 8, PageSize = 8,
+            AtlasSize = 8, PhysicalPagesPerRow = 1, MaxPhysicalPages = 1,
+            ClipmapLevelCount = 2, MipLevelCount = 1, ProjectionDepthScale = -1,
+            WorldUnitsPerCentimeter = 100, LightDirection = Vector3.UnitZ,
+            Flags = VirtualShadowViewFlags.PrefilteredDistant,
+        };
+        VirtualShadowView[] views = [view, view with { PageTableOffset = 1, ClipmapLevel = 1 }];
+        uint[][] result = new D3D12TestCompute(compiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
+            #include "vsm_soft_sampling.slang"
+            StructuredBuffer<VirtualShadowMapParameters> Views;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Depth;
+            Texture2D<float> Filtered;
+            RWStructuredBuffer<uint> Result;
+            [shader("compute")]
+            [numthreads(1,1,1)]
+            void ReadDistantUmbra()
+            {
+                VirtualShadowProjectionResult sample = SampleVirtualShadowDirectionalFilteredSoft(
+                    Views, Pages, Depth, Filtered, 0u, 2u, float3(0,0,.5), float3(0,0,-1),
+                    0.0, 4u, 8u, 8.0, uint2(0), 0u);
+                Result[0] = sample.Valid;
+                Result[1] = asuint(sample.Visibility);
+                Result[2] = sample.ViewIndex;
+            }
+            """, "ReadDistantUmbra", new(1, 1, 1),
+            [(MemoryMarshal.Cast<VirtualShadowView, uint>(views).ToArray(), ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
+             (new uint[] { 0, VirtualShadowPageEntry.Encode(0, 1) }, ResourceBindingType.BufferSrv, 4),
+             (new uint[3], ResourceBindingType.BufferUav, 4)],
+            images: [new SampledImage(8, 8, new uint[64], 2, ViewDimension: TextureViewDimension.Texture2DArray),
+                new SampledImage(10, 10, new uint[100], 3, Format.R32Float)]);
+        Assert.Equal([1u, 0u, 1u], result[0]);
+    }
+
+    [Fact]
     public void AFiniteDirectionalEmitterProducesAPenumbraAroundADepthEdge()
     {
         VirtualShadowView[] views = [new()

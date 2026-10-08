@@ -2,6 +2,7 @@
 #define VSM_SOFT_SAMPLING_SLANG
 
 #include "vsm_projection.slang"
+#include "vsm_prefilter_sampling.slang"
 
 static const uint VSM_SOFT_MAX_BLOCKER_QUERIES = 4u;
 static const uint VSM_SOFT_MAX_FILTER_QUERIES = 8u;
@@ -233,6 +234,37 @@ VirtualShadowProjectionResult SampleVirtualShadowLocalSoft(StructuredBuffer<Virt
     return SampleVirtualShadowSoftView(views, pages, atlas, firstView, requested,
         view.LightKind == VSM_LIGHT_POINT ? 6u : 1u, position, normal, mip,
         blockerSamples, filterSamples, maxRadiusTexels, pixel, frameIndex);
+}
+
+VirtualShadowProjectionResult SampleVirtualShadowDirectionalFilteredSoft(
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages,
+    Texture2DArray<uint> atlas, Texture2D<float> filteredAtlas, uint firstView, uint viewCount,
+    float3 position, float3 normal, float receiverBias, uint blockerSamples, uint filterSamples,
+    float maxRadiusTexels, uint2 pixel, uint frameIndex,
+    bool firstPersonReceiver = false, uint firstPersonView = 0xffffffffu)
+{
+    VirtualShadowPrefilterResult distant = SampleDirectionalVirtualShadowPrefiltered(
+        views, pages, filteredAtlas, firstView, viewCount, position);
+    VirtualShadowProjectionResult filtered = EmptyVirtualShadowProjection();
+    filtered.Visibility = distant.Visibility;
+    filtered.Valid = distant.Valid;
+    filtered.ViewIndex = distant.ViewIndex;
+    filtered.OccluderDistance = distant.OccluderDistance;
+    filtered.MipLevel = 0u;
+    if (filtered.Valid && filtered.Visibility <= 0.0001) return filtered;
+    // Directional sampling follows the receiver/per-light choice. Pool pressure
+    // changes requested residency; the existing mapped-coarse lookup supplies it.
+    VirtualShadowProjectionResult soft = SampleVirtualShadowDirectionalSoft(views, pages, atlas,
+        firstView, viewCount, position, normal, 0.0, receiverBias, blockerSamples, filterSamples,
+        maxRadiusTexels, pixel, frameIndex, firstPersonReceiver, firstPersonView);
+    if (filtered.Valid)
+    {
+        if (soft.Visibility < 1.0)
+            filtered.OccluderDistance = lerp(filtered.OccluderDistance, soft.OccluderDistance, filtered.Visibility);
+        filtered.Visibility *= soft.Visibility;
+        return filtered;
+    }
+    return soft;
 }
 
 #endif

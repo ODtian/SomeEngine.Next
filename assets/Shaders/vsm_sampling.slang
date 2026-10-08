@@ -718,16 +718,12 @@ uint SelectDirectionalVirtualShadowView(
         : baseView.ResolutionLodBias;
     float pixelLevel = distanceLevel + resolutionBias;
     uint firstLevel = (uint)max(floor(pixelLevel), 0.0);
-    uint pressureLevels = (uint)max(
-        floor(pixelLevel + dynamicResolutionLodBias) - floor(pixelLevel), 0.0);
     for (uint level = firstLevel; level < viewCount; level++)
     {
         float3 ndc;
         float2 uv;
         if (ProjectVirtualShadowPosition(views[firstView + level], worldPosition, ndc, uv))
-            // Pool pressure reduces the density of the covering projection.
-            // A smaller projection outside the receiver cannot absorb that bias.
-            return min(level + pressureLevels, viewCount - 1u);
+            return level;
     }
     return viewCount;
 }
@@ -1186,7 +1182,12 @@ bool TrySampleDirectionalVirtualShadowMap(
     float distantVisibility = 1.0;
 #ifdef VSM_PREFILTERED_LOOKUP_ENABLED
     distantVisibility = SampleDirectionalVirtualShadowPrefiltered(views, pageTable, VirtualShadowPrefilteredAtlas,
-        firstView, clipmapLevelCount, worldPosition);
+        firstView, clipmapLevelCount, worldPosition).Visibility;
+    if (distantVisibility <= 0.0001)
+    {
+        visibility = distantVisibility;
+        return true;
+    }
 #endif
 
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED

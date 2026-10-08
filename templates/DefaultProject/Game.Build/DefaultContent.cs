@@ -405,6 +405,12 @@ public static class DefaultContent
                 Prefilter = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_prefilter.shader"),
                     "PrefilterVirtualShadowDistant"),
+                PrefilterReset = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_prefilter_work.shader"),
+                    "ResetVirtualShadowFilterWork"),
+                PrefilterSelect = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_prefilter_work.shader"),
+                    "SelectVirtualShadowFilterPages"),
                 PrefilterRequests = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_prefilter_requests.shader"),
                     "PropagateVirtualShadowFilterRequests"),

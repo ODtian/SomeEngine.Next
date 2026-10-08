@@ -49,7 +49,7 @@ public sealed partial class VirtualShadowFeature
         public void OnReadback(ReadOnlySpan<byte> bytes, ulong tag)
         {
             if (!feature._distantBiasFrames.TryGetValue(tag, out DistantBiasFrame? frame)) return;
-            frame.LocalBias = MemoryMarshal.Cast<byte, float>(bytes)[1];
+            frame.LocalBias = MemoryMarshal.Cast<byte, float>(bytes)[0];
             feature.AcceptDistantBias(tag, frame);
         }
     }
