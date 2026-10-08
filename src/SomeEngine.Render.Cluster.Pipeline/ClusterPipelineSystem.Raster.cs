@@ -208,6 +208,7 @@ public sealed partial class ClusterPipelineSystem
                     ScreenHeight = checked((uint)GraphData.Resources.Height),
                     ViewCount = GraphData.Resources.ViewCount,
                     BinnedEntriesPerCluster = GraphData.Resources.BinnedEntriesPerCluster,
+                    DepthBucketsEnabled = GraphData.Resources.DepthBucketsEnabled ? 1u : 0u,
                 };
                 UpdateParameters(ref graph, binning.Uniforms, MemoryMarshal.AsBytes(uniforms));
             }
@@ -243,6 +244,7 @@ public sealed partial class ClusterPipelineSystem
                         MaxBins = GraphData.Resources.RasterBinCount,
                         DebugDump = _options.EnableFrameMetricsReadback ? 1u : 0u,
                         CurrentBin = bin.Stage.BinIndex,
+                        EarlyDepthEnabled = bin.Stage.UsesEarlyDepth ? 1u : 0u,
                     };
                     UpdateParameters(ref graph, uniforms, MemoryMarshal.AsBytes(software));
                 }

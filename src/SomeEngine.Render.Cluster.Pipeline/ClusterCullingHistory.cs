@@ -64,7 +64,7 @@ internal sealed class ClusterCullingHistory
             ref readonly RenderView view = ref views[index];
             _usePreviousView[index] = _hasPreviousView[index] && !view.CameraCut &&
                 identities[index] != Entity.Null && identities[index] == _previousViewEntities[index] &&
-                view.WorldOrigin == _previousOrigins[index] && view.PlayerId == _previousPlayers[index];
+                view.PlayerId == _previousPlayers[index];
 
             _pendingViews[index] = view.View;
             _pendingProjections[index] = view.Projection;

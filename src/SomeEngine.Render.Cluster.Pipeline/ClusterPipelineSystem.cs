@@ -541,7 +541,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     rasterMode,
                     _cullingEnabled,
                     binding.DispatchExtent,
-                    binding.PageFaultCapacity);
+                    binding.PageFaultCapacity,
+                    views[0].WorldOrigin);
                 packedViews[viewIndex].GeometryLodScale *= _resources.Residency.StreamingQuality;
                 packedViews[viewIndex].TargetPolicy = isTargetView
                     ? _stagedPolicies[viewIndex]
@@ -556,17 +557,24 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                         out WorldOrigin previousOrigin))
                 {
                     ref ClusterViewUniforms uniforms = ref packedViews[viewIndex];
-                    uniforms.PrevViewProj = previousView * previousProjection;
+                    Matrix4x4.Invert(previousView, out Matrix4x4 previousInverse);
+                    Vector3 previousCamera = new(previousInverse.M41, previousInverse.M42, previousInverse.M43);
+                    WorldOrigin previousViewOrigin = new(previousOrigin.X + previousCamera.X,
+                        previousOrigin.Y + previousCamera.Y, previousOrigin.Z + previousCamera.Z);
+                    Matrix4x4 previousNearView = Matrix4x4.CreateTranslation(previousCamera) * previousView;
+                    uniforms.PrevViewProj = previousNearView * previousProjection;
+                    uniforms.PreviousWorldTranslation = views[0].WorldOrigin.RelativeTo(previousViewOrigin);
+                    uniforms.PreviousDataTranslation = previousOrigin.RelativeTo(views[0].WorldOrigin);
                     uniforms.HasPrevHistory = 1;
                     uniforms.HiZMipCount = checked((uint)ClusterCullingHistory.CalculateMipCount(_outputDescription.Width, _outputDescription.Height));
                     uniforms.HiZInvSize = new Vector2(
                         1.0f / _outputDescription.Width,
                         1.0f / _outputDescription.Height);
-                    uniforms.PrevView = previousView;
+                    uniforms.PrevView = previousNearView;
                     uniforms.PreviousWorldToFirstPerson = history.PreviousFirstPersonTransform(viewIndex);
                     uniforms.PrevP00 = previousProjection.M11;
                     uniforms.PrevP11 = previousProjection.M22;
-                    previousOrigin.Split(out uniforms.PreviousWorldOriginHigh, out uniforms.PreviousWorldOriginLow);
+                    previousViewOrigin.Split(out uniforms.PreviousWorldOriginHigh, out uniforms.PreviousWorldOriginLow);
                 }
                 else if (isTargetView && _renderContext.IsValid)
                 {
@@ -609,7 +617,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     history);
             _resources.InstanceResources.BindFrame(ref graph);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(SceneBoundsTrace))
-                BindSceneBounds(ref graph, context.World, batch, policyViewCount != 0);
+                BindSceneBounds(ref graph, context.World, batch, policyViewCount != 0, views[0].WorldOrigin);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyUploadsTrace))
                 RecordResidencyUploads(ref graph, in binding);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyReadsTrace))
@@ -833,6 +841,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _sceneBatch = CurrentInstances;
                 _sceneInstanceRevision = _sceneBatch?.ContentRevision ?? 0;
                 _sceneGeometryRevision = GeometryRevision;
+                _sceneOrigin = _frameSceneOrigin;
             }
             if (_pendingResidencyPublication is { } publication)
             {

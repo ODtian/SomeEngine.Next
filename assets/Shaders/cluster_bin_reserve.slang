@@ -14,6 +14,9 @@ RWByteAddressBuffer TessellationSeedDispatchArgs;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> ReserveCounters;
 #include "cluster_work_status.slang"
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
+RWStructuredBuffer<uint> DepthBuckets;
+
 static const uint BLOCK_SIZE = 128u;
 
 [shader("compute")]
@@ -34,7 +37,7 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID)
     {
         if (waveTotal != 0u)
             totalBase = ReserveClusterWork(ReserveCounters, waveTotal,
-                Uniforms.MaxVisibleClusters * 9u, 16u);
+                Uniforms.MaxVisibleClusters * Uniforms.BinnedEntriesPerCluster, 16u);
         if (waveSoftware != 0u)
             InterlockedAdd(ReserveCounters[1], waveSoftware, softwareBase);
         if (Uniforms.CollectMetrics != 0u)
@@ -47,7 +50,7 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID)
     softwareBase = WaveReadLaneFirst(softwareBase);
     AddClusterWorkMetric(64u, hardwareCount);
     AddClusterWorkMetric(72u, softwareCount);
-    if (totalBase + waveTotal > Uniforms.MaxVisibleClusters * 9u)
+    if (totalBase + waveTotal > Uniforms.MaxVisibleClusters * Uniforms.BinnedEntriesPerCluster)
     {
         // No indirect consumer may execute a range not retained in the index buffer.
         RasterBinMeta[bin].BinSWCount = 0u;
@@ -68,6 +71,21 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID)
         WavePrefixSum(softwareCount) + softwareCount,
         softwareCount,
         hardwareCount);
+    if (RasterBinMeta[bin].DepthBucketEnabled != 0u)
+    {
+        uint softwarePrefix = 0u, hardwarePrefix = 0u;
+        for (uint bucket = 0u; bucket < 256u; bucket++)
+        {
+            uint softwareIndex = bin * 512u + bucket;
+            uint hardwareIndex = softwareIndex + 256u;
+            uint softwareItems = DepthBuckets[softwareIndex];
+            uint hardwareItems = DepthBuckets[hardwareIndex];
+            DepthBuckets[softwareIndex] = softwarePrefix;
+            DepthBuckets[hardwareIndex] = hardwarePrefix;
+            softwarePrefix += softwareItems;
+            hardwarePrefix += hardwareItems;
+        }
+    }
     uint argumentOffset = bin * 12u;
     uint groupsX = min(totalCount, 65535u);
     uint groupsY = max(1u, (totalCount + 65534u) / 65535u);

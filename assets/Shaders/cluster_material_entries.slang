@@ -128,11 +128,16 @@ void EvaluateClusterRasterPixelImageAtomic64(
     input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
     ClusterRasterOutputPixel outputPixel;
     bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = accepted ? (view.TargetPolicy != 0u
+        ? ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy) : uint(VisibilityWinnerImage[uint3(outputPixel.Position, view.TargetViewIndex)] >> 32u)) : 0u;
+    float rasterDepth = view.TargetPolicy != 0u ? input.ClipDepth.x / input.ClipDepth.y : input.Pos.z;
+    if (HardwareRasterDispatchUniformData.EarlyDepthEnabled != 0u)
+        accepted = accepted && asuint(1.0 - saturate(rasterDepth)) >= encodedDepth;
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
         EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input, view,
-            ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
+            encodedDepth);
     if (!accepted || pixelResult.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)
@@ -156,11 +161,16 @@ void EvaluateClusterRasterPixelBufferAtomic64(
     input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
     ClusterRasterOutputPixel outputPixel;
     bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = accepted ? (view.TargetPolicy != 0u
+        ? ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy) : VisibilityWinnerBuffer.Load(((view.TargetViewIndex * HardwareRasterUniformData.ScreenHeight + uint(outputPixel.Position.y)) * HardwareRasterUniformData.ScreenWidth + uint(outputPixel.Position.x)) * 8u + 4u)) : 0u;
+    float rasterDepth = view.TargetPolicy != 0u ? input.ClipDepth.x / input.ClipDepth.y : input.Pos.z;
+    if (HardwareRasterDispatchUniformData.EarlyDepthEnabled != 0u)
+        accepted = accepted && asuint(1.0 - saturate(rasterDepth)) >= encodedDepth;
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
         EvaluateHardwareRasterPixel<VertexEvaluate.Vertex, VisibilityEvaluate>(visibility, input, view,
-            ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
+            encodedDepth);
     if (!accepted || pixelResult.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)

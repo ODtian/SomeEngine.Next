@@ -90,7 +90,7 @@ bool ProjectShadowBounds(
             (corner & 1u) != 0u ? worldMax.x : worldMin.x,
             (corner & 2u) != 0u ? worldMax.y : worldMin.y,
             (corner & 4u) != 0u ? worldMax.z : worldMin.z);
-        float4 clip = mul(float4(position, 1.0), view.LightViewProjection);
+        float4 clip = ProjectVirtualShadowClip(view, position);
         minW = min(minW, clip.w);
         maxW = max(maxW, clip.w);
         sideDistances = min(sideDistances, float4(clip.xy, -clip.xy) - clip.w);

@@ -129,8 +129,8 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
         TessellationViews,
         TessellationPolicyViews,
         viewIndex);
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID, view);
-    output.Pos = mul(float4(position, 1.0), view.ViewProj);
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID, view);
+    output.Pos = mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
     output.ClipDepth = output.Pos.zw;
     output.Pos = ClusterHardwareRasterPosition(output.Pos, patch.VisibleClusterIndex, view,
         ClusterRasterTargetViewport(view));
@@ -191,7 +191,7 @@ void ClusterTessellationHardwareMesh(
     SetMeshOutputCounts(vertexCount, triangleCount);
     uint viewIndex = DrawRequestViewIndex(TessellationVisibleClusters[patch.VisibleClusterIndex]);
     ClusterViewUniforms view = LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex);
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, TessellationVisibleClusters[patch.VisibleClusterIndex].InstanceID, view);
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID, view);
     for (uint index = lane; index < vertexCount; index += 32u)
     {
         float3 localBary = TessellationGridBarycentric(factor, TessellationPatchEdgeFactors(patch), index);
@@ -199,7 +199,7 @@ void ClusterTessellationHardwareMesh(
             DecodeTessellationPatchBarycentric(patch, 0u),
             DecodeTessellationPatchBarycentric(patch, 1u),
             DecodeTessellationPatchBarycentric(patch, 2u), localBary);
-        float4 clip = mul(float4(domain.position(triangle, sourceBary), 1.0), view.ViewProj);
+        float4 clip = mul(float4(ClusterPositionForView(domain.position(triangle, sourceBary), view), 1.0), view.ViewProj);
         vertices[index].ClipDepth = clip.zw;
         vertices[index].Pos = ClusterHardwareRasterPosition(clip, patch.VisibleClusterIndex, view,
             ClusterRasterTargetViewport(view));

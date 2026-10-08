@@ -1,11 +1,11 @@
 #ifndef CLUSTER_BIN_BATCHES_SLANG
 #define CLUSTER_BIN_BATCHES_SLANG
 
-void EmitRasterBatch(uint bin, uint visible, uint workIndex, bool software, inout uint batchCount)
+void EmitRasterBatch(uint bin, uint visible, uint workIndex, bool software, bool depthBuckets, inout uint batchCount)
 {
     if (!IsBin(bin)) return;
     batchCount++;
-    WriteRasterBatch(bin, visible, workIndex, software);
+    WriteRasterBatch(bin, visible, workIndex, software, depthBuckets);
 }
 
 void BuildRasterBatches(
@@ -30,6 +30,8 @@ void BuildRasterBatches(
         uint rangeEnd = (range & 0xFFu) + ((range >> 8u) & 0xFFu);
         uint material = (range >> 16u) & 0xFFu;
         uint bin = RasterKey(RasterSlots, Uniforms, slotOffset, material);
+        bool depthBuckets = Uniforms.DepthBucketsEnabled != 0u &&
+            (GetStageSlot(RasterSlots, slotOffset, material, Uniforms.SlotCapacity) & 0x10000000u) != 0u;
         uint batchCount = ClusterMaterialBatchBits(PageHeap, materials, rangeIndex * 4u, 4u);
         bool useVertReuseBatches = RasterUsesVertReuseBatches(
             RasterSlots, Uniforms, slotOffset, material, isSoftware, vertexCount, triangleCount);
@@ -52,7 +54,7 @@ void BuildRasterBatches(
             }
 
             EmitRasterBatch(bin, visibleIndex,
-                RasterRangeWorkIndex(rangeIndex, mergedRangeCount), isSoftware, emittedBatches);
+                RasterRangeWorkIndex(rangeIndex, mergedRangeCount), isSoftware, depthBuckets, emittedBatches);
             flatBatchIndex += mergedBatchCount;
             rangeIndex += mergedRangeCount;
             uint last = ClusterMaterialRange(PageHeap, materials, triangleCount, rangeIndex - 1u);
@@ -62,7 +64,7 @@ void BuildRasterBatches(
 
         for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
         {
-            EmitRasterBatch(bin, visibleIndex, flatBatchIndex, isSoftware, emittedBatches);
+            EmitRasterBatch(bin, visibleIndex, flatBatchIndex, isSoftware, depthBuckets, emittedBatches);
             triangleStart = min(
                 triangleStart + ClusterMaterialBatchBits(PageHeap, materials,
                     max(rangeCount, 3u) * 4u + flatBatchIndex * 5u, 5u) + 1u,

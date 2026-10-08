@@ -4,6 +4,7 @@
 #include "unlit_material.slang"
 
 struct VertexUv { float2 UV : TEXCOORD0; };
+[VisibilityDepth("offset")]
 struct VertexUvDepth : IVisibilityEvaluate<StandardVertex>
 {
     typealias Varying = VertexUv;

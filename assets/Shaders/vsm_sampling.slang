@@ -51,6 +51,10 @@ struct VirtualShadowMapParameters
     float ProjectionDepthScale;
     float ProjectionDepthOffset;
     float TexelDitherScale;
+    float3 WorldTranslation;
+    float TranslationPadding;
+    float4x4 ShadowUvNormal;
+    float4x4 ShadowUv;
 };
 
 // Positions passed to this file are offsets from the owning Game world's origin.
@@ -58,7 +62,12 @@ struct VirtualShadowMapParameters
 float3 TranslateVirtualShadowWorldPosition(float3 position, float3 originHigh,
     float3 originLow, VirtualShadowMapParameters view)
 {
-    return position + ((originHigh - view.WorldOriginHigh) + (originLow - view.WorldOriginLow));
+    return position + ((originHigh - view.WorldOriginHigh) + (originLow - view.WorldOriginLow)) - view.WorldTranslation;
+}
+
+float4 ProjectVirtualShadowClip(VirtualShadowMapParameters view, float3 worldPosition)
+{
+    return mul(float4(worldPosition + view.WorldTranslation, 1.0), view.LightViewProjection);
 }
 
 static const uint VSM_LIGHT_DIRECTIONAL = 0u;
@@ -324,15 +333,16 @@ bool ProjectVirtualShadowPosition(
     out float3 ndc,
     out float2 uv)
 {
-    float4 clip = mul(float4(worldPosition, 1.0), parameters.LightViewProjection);
+    float4 clip = mul(float4(worldPosition + parameters.WorldTranslation, 1.0), parameters.ShadowUv);
     if (clip.w <= 0.0)
     {
         ndc = float3(0.0);
         uv = float2(0.0);
         return false;
     }
-    ndc = clip.xyz / clip.w;
-    uv = ndc.xy * float2(0.5, -0.5) + 0.5;
+    float3 projected = clip.xyz / clip.w;
+    uv = projected.xy;
+    ndc = float3(uv * float2(2.0, -2.0) + float2(-1.0, 1.0), projected.z);
     return all(uv >= 0.0) && all(uv < 1.0) && ndc.z >= 0.0 && ndc.z <= 1.0;
 }
 
@@ -341,14 +351,13 @@ bool ProjectVirtualShadowFootprintPosition(
     float3 worldPosition,
     out float2 uv)
 {
-    float4 clip = mul(float4(worldPosition, 1.0), parameters.LightViewProjection);
+    float4 clip = mul(float4(worldPosition + parameters.WorldTranslation, 1.0), parameters.ShadowUv);
     if (clip.w <= 1e-8)
     {
         uv = 0.0.xx;
         return false;
     }
-    float2 ndc = clip.xy / clip.w;
-    uv = ndc * float2(0.5, -0.5) + 0.5;
+    uv = clip.xy / clip.w;
     return true;
 }
 
@@ -614,7 +623,7 @@ uint VirtualShadowLocalMipFromNominalPixelRadius(
     }
     float projectionScale = length(float3(parameters.LightViewProjection[0][0],
         parameters.LightViewProjection[1][0], parameters.LightViewProjection[2][0]));
-    float4 lightClip = mul(float4(worldPosition, 1.0), parameters.LightViewProjection);
+    float4 lightClip = ProjectVirtualShadowClip(parameters, worldPosition);
     float footprint = abs(nominalWorldPixelRadius * projectionScale / lightClip.w) *
         float(2u * parameters.VirtualResolution);
     float mipFloat = log2(footprint) +
@@ -874,9 +883,9 @@ float2 CalculateVirtualShadowReceiverDepthGradient(
     float3 worldPositionDx,
     float3 worldPositionDy)
 {
-    float4 clip = mul(float4(worldPosition, 1.0), parameters.LightViewProjection);
-    float4 clipDx = mul(float4(worldPositionDx, 1.0), parameters.LightViewProjection);
-    float4 clipDy = mul(float4(worldPositionDy, 1.0), parameters.LightViewProjection);
+    float4 clip = ProjectVirtualShadowClip(parameters, worldPosition);
+    float4 clipDx = ProjectVirtualShadowClip(parameters, worldPositionDx);
+    float4 clipDy = ProjectVirtualShadowClip(parameters, worldPositionDy);
     if (min(clipDx.w, clipDy.w) <= 1e-8) return 0.0.xx;
     float3 ndc = clip.xyz / clip.w;
     float3 ndcDx = clipDx.xyz / clipDx.w - ndc;
@@ -890,32 +899,13 @@ float2 CalculateVirtualShadowReceiverDepthGradient(
 }
 
 float2 CalculateVirtualShadowReceiverPlaneDepthGradient(
-    VirtualShadowMapParameters parameters, float3 ndc, float3 normal)
+    VirtualShadowMapParameters parameters, float3 worldPosition, float3 normal)
 {
-    normal *= rsqrt(max(dot(normal, normal), 1e-30));
-    float3 tangent = cross(normal, abs(normal.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0));
-    tangent *= rsqrt(max(dot(tangent, tangent), 1e-30));
-    float3 bitangent = cross(normal, tangent);
-    float3 clipW = float3(parameters.LightViewProjection[0][3],
-        parameters.LightViewProjection[1][3], parameters.LightViewProjection[2][3]);
-    float3 clipX = float3(parameters.LightViewProjection[0][0],
-        parameters.LightViewProjection[1][0], parameters.LightViewProjection[2][0]) - ndc.x * clipW;
-    float3 clipY = float3(parameters.LightViewProjection[0][1],
-        parameters.LightViewProjection[1][1], parameters.LightViewProjection[2][1]) - ndc.y * clipW;
-    float3 clipZ = float3(parameters.LightViewProjection[0][2],
-        parameters.LightViewProjection[1][2], parameters.LightViewProjection[2][2]) - ndc.z * clipW;
-    // Differentiate the light projection directly. Camera pixel jitter and the
-    // precision of adjacent reconstructed world positions leave this plane unchanged.
-    float2 uvDx = float2(dot(tangent, clipX), dot(tangent, clipY)) * float2(0.5, -0.5);
-    float2 uvDy = float2(dot(bitangent, clipX), dot(bitangent, clipY)) * float2(0.5, -0.5);
-    float depthDx = dot(tangent, clipZ);
-    float depthDy = dot(bitangent, clipZ);
-    float determinant = uvDx.x * uvDy.y - uvDx.y * uvDy.x;
-    if (abs(determinant) < 1e-15) return 0.0.xx;
-    return float2(depthDx * uvDy.y - depthDy * uvDx.y,
-        uvDx.x * depthDy - uvDy.x * depthDx) / determinant;
+    float3 viewPosition = worldPosition + parameters.WorldTranslation;
+    float4 normalPlane = float4(normal, -dot(normal, viewPosition));
+    float4 uvPlane = mul(normalPlane, parameters.ShadowUvNormal);
+    return abs(uvPlane.z) > 1e-15 ? -uvPlane.xy / uvPlane.z : 0.0.xx;
 }
-
 float VirtualShadowReceiverDepthAtTexel(
     float depth, float2 uv, float2 depthGradient, uint2 pixel, uint resolution)
 {
@@ -1222,7 +1212,7 @@ bool TrySampleDirectionalVirtualShadowMap(
         float3 sourceNdc = float3(sourceUV * float2(2.0, -2.0) + float2(-1.0, 1.0), requestedNdc.z * transform.x + transform.w);
         if (TrySampleVirtualShadowMapFilteredProjected(source, pageTable, atlas, sourceNdc, lookupUV, 0u,
                 blockerSampleCount, filterSampleCount, blockerSearchRadiusTexels, maxFilterRadiusTexels,
-                visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(source, sourceNdc, receiverPlaneNormal)))
+                visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(source, worldPosition, receiverPlaneNormal)))
         {
             visibility *= distantVisibility;
             return true;
@@ -1241,7 +1231,7 @@ bool TrySampleDirectionalVirtualShadowMap(
                     views[firstView + level], pageTable, atlas, ndc, uv, 0u,
                     blockerSampleCount, filterSampleCount, blockerSearchRadiusTexels, maxFilterRadiusTexels,
                     visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(
-                        views[firstView + level], ndc, receiverPlaneNormal)))
+                        views[firstView + level], worldPosition, receiverPlaneNormal)))
             {
                 visibility *= distantVisibility;
                 return true;
@@ -1316,7 +1306,7 @@ bool TrySamplePointVirtualShadowMap(
     return TrySampleVirtualShadowMapFilteredProjected(
         view, pageTable, atlas, ndc, uv, mipLevel,
         blockerSampleCount, filterSampleCount, blockerSearchRadiusTexels, maxFilterRadiusTexels,
-        visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(view, ndc, receiverPlaneNormal));
+        visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(view, worldPosition, receiverPlaneNormal));
 }
 
 float SamplePointVirtualShadowMap(
@@ -1369,7 +1359,7 @@ bool TrySampleSpotVirtualShadowMap(
     return TrySampleVirtualShadowMapFilteredProjected(
         view, pageTable, atlas, ndc, uv, mipLevel,
         blockerSampleCount, filterSampleCount, blockerSearchRadiusTexels, maxFilterRadiusTexels,
-        visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(view, ndc, receiverPlaneNormal));
+        visibility, CalculateVirtualShadowReceiverPlaneDepthGradient(view, worldPosition, receiverPlaneNormal));
 }
 
 float SampleSpotVirtualShadowMap(

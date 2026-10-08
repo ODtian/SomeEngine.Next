@@ -33,10 +33,9 @@ public sealed partial class ClusterPipelineSystem
         VisibilityProbeReadbackOffset + VisibilityProbeRowPitch;
     private const uint MaxBinnedEntriesPerCluster = 9;
     private const uint ClusterVertexCapacity = 64;
-    private const int RasterBinStride = 32;
-    private const int VisibleClusterStride = 12;
-    private const int VisibleClusterRasterWindowStride = 2 * sizeof(uint);
-    private const int CandidateStride = 16;
+    private const int RasterBinStride = 36;
+    private const int VisibleClusterStride = 16;
+    private const int CandidateStride = 12;
     private const int BinnedClusterStride = 4;
     private const int TraversalNodeStride = 16;
     private const int TraversalArgumentStride = 32;
@@ -207,19 +206,11 @@ public sealed partial class ClusterPipelineSystem
             checked(candidates * VisibleClusterStride),
             BufferUsages.None,
             "Cluster visible clusters");
-        frame.VisibleClusterRasterWindows = frame.AddBuffer(
-            ref graph,
-            checked(candidates * VisibleClusterRasterWindowStride),
-            BufferUsages.None,
-            "Cluster visible raster windows");
         if (_renderContext.IsValid)
         {
             frame.TargetVisibleClusters = frame.AddBuffer(ref graph,
                 checked(candidates * VisibleClusterStride), BufferUsages.None,
                 "Cluster target visible clusters");
-            frame.TargetRasterWindows = frame.AddBuffer(ref graph,
-                checked(candidates * VisibleClusterRasterWindowStride), BufferUsages.None,
-                "Cluster target raster windows");
             // The target main pass appends once. Neither primary nor target scratch resets
             // may overwrite this list before the target post-HiZ pass consumes it.
             frame.TargetDeferredWork = frame.AddBuffer(ref graph,
@@ -239,6 +230,10 @@ public sealed partial class ClusterPipelineSystem
             checked(binnedCapacity * BinnedClusterStride),
             BufferUsages.None,
             "Cluster raster bin indices");
+        frame.DepthBucketsEnabled = _options.EnableDepthBuckets && rasterStages.Invocations.Any(static stage => stage.PixelVisibility);
+        frame.DepthBuckets = frame.AddBuffer(ref graph,
+            frame.DepthBucketsEnabled ? checked((ulong)rasterBinCount * 512u * sizeof(uint)) : sizeof(uint),
+            BufferUsages.None, "Cluster depth buckets");
         frame.HardwareIndirectArgs = frame.AddBuffer(
             ref graph,
             checked((ulong)rasterBinCount * ClusterIndirectAbi.HardwareRasterStride),
@@ -583,6 +578,14 @@ public sealed partial class ClusterPipelineSystem
     {
         FrameResources frame = GraphData.Resources;
         uint rasterBinCount = rasterStages.BinCount;
+        bool depthBucketsEnabled = _options.EnableDepthBuckets && rasterStages.Invocations.Any(static stage => stage.PixelVisibility);
+        if (depthBucketsEnabled != frame.DepthBucketsEnabled || rasterBinCount != frame.RasterBinCount)
+        {
+            frame.DepthBucketsEnabled = depthBucketsEnabled;
+            SetStageBuffer(ref graph, frame.DepthBuckets,
+                depthBucketsEnabled ? checked((ulong)rasterBinCount * 512u * sizeof(uint)) : sizeof(uint),
+                BufferUsages.None, "Cluster depth buckets");
+        }
         uint tessellationBinCount = checked(rasterBinCount * 8u);
         uint shadeBinCount = shadeStages.BinCount;
 
@@ -1078,7 +1081,6 @@ public sealed partial class ClusterPipelineSystem
         if (target)
         {
             resources.VisibleClusters = frame.TargetVisibleClusters;
-            resources.VisibleClusterRasterWindows = frame.TargetRasterWindows;
             resources.Phase2CandidateClusters = frame.TargetDeferredWork;
             resources.Phase2CandidateCount = frame.TargetDeferredCount;
             resources.Phase2CandidateArgs = frame.TargetDeferredArgs;
@@ -1136,9 +1138,9 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId TargetDeferredCount;
         internal GraphBufferId TargetDeferredArgs;
         internal GraphBufferId TargetVisibleClusters;
-        internal GraphBufferId TargetRasterWindows;
-        internal GraphBufferId VisibleClusterRasterWindows;
         internal GraphBufferId RasterBinMeta;
+        internal GraphBufferId DepthBuckets;
+        internal bool DepthBucketsEnabled;
         internal GraphBufferId BinnedClusters;
         internal GraphBufferId HardwareIndirectArgs;
         internal GraphBufferId RasterWorkArguments;

@@ -26,6 +26,7 @@ struct OffsetVertex : IVertexEvaluate
 };
 
 struct MaskUv { float2 UV : TEXCOORD0; };
+[VisibilityDepth("masked")]
 struct PatternMask : IVisibilityEvaluate<StandardVertex>
 {
     typealias Varying = MaskUv;

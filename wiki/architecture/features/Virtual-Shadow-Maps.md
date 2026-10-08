@@ -223,7 +223,7 @@ water/translucency 请求方向光，hair 同时沿实际 clustered local light 
 公开用户 shader 用例在 opaque 声明无 lighting 后，当前 water depth、AA 重投影的前帧 translucency depth
 和 hair depth 继续保留其世界点覆盖，实际 `[0,0,0,0]→[1,1,1,0]`。原版额外深度来源为
 `VirtualShadowMapPageMarking.usf:394–477`，shader 输出与 C# DTO 共用一个32字节布局。
-方向与局部页边界参数默认 `.05`，typed view 的原 padding 持有对应值，保持304字节视图记录。
+方向与局部页边界参数默认 `.05`，typed view 的原 padding 持有对应值，保持448字节视图记录。
 原版核对范围为 `VirtualShadowMapPageMarking.usf:349–414,480–612` 与
 `VirtualShadowMapPageMarking.ush:82–143`。
 
@@ -237,10 +237,12 @@ texel offset `.25` 产生 allowance `.2`，实际 public shader sampler 从 shad
 该片 TRX 与来源哈希保存在仓库外 `rg70-delivery-evidence/ticket-143/native-slope/`。
 
 `WorldOrigin` 是整个 Game world 的 double 原点，实例、相机与光源位置共用其局部 float 空间。
-`RenderView.WorldOrigin` 经唯一提取通路取得该原点，Cluster 560 字节视图记录携带当前和历史
-high/low 原点，阴影 272 字节视图记录携带同一 high/low 原点。请求、几何、光栅、HiZ 与采样
-消费此局部空间中的矩阵和位置。原点变化使下一帧采用新的主视图历史起点与阴影缓存代号，
-成功完成提交后保存新原点；取消继续保留前次提交的原点。
+`RenderView.WorldOrigin` 经唯一提取通路取得该原点。Cluster 816 字节视图记录携带各视图的近端
+high/low 原点、当前与历史平移；用户位置继续采用 Game 原点的 float offset，投射时先进入
+该视图的近端坐标。阴影 448 字节视图记录采用每层 clipmap 或局部灯的近端原点，保存
+对应投射、预计算 UV 与法线变换。请求、光栅、HiZ 和采样消费同一坐标关系。
+世界原点迁移时，阴影历史位置与深度中心换算到当前数据空间，绝对页地址及实际内容变化
+决定缓存更新。成功提交保存该帧原点；取消继续保留前次提交的数据。
 
 方向 clipmap 用 double 光空间位置与 int64 网格 snap 建立绝对页地址；`WorldPageOriginX/Y`
 保留 64 位地址，`VirtualPageOriginX/Y` 保存其低 32 位环形页 tag。建立 float 投影前先在
@@ -277,7 +279,7 @@ frame 区段生成坐标与计数，持久请求阶段消费其 indirect args；
 
 标准材质用用户表面着色法线执行阴影偏置和投射。偏置长度取相机距离除以投影横向标度，
 乘 `NormalBias`，下限为 `.02` 原版厘米。方向光完整光源角直径与局部光世界单位半径
-沿 `LightShadowSettings` 提取到同一304字节视图。投射结果带有效性、可见比例和遮挡距离；
+沿 `LightShadowSettings` 提取到同一448字节视图。投射结果带有效性、可见比例和遮挡距离；
 ray 数为零时使用带坡度容差的深度比较。方向和局部 SMRT 使用平方步长、深度历史、
 受限斜率外推与波内自适应停止，点光射线在起终点所在 cube face 间切换。
 接收投影保存相机位置和投影横向标度，页面需求与材质采样消费同一提取结果。
@@ -308,7 +310,7 @@ DefaultGame 的硬阴影源三角形参考明确使用0；软阴影采用光源�
 
 方向光预滤由 `PrefilteredDistantProjectEnable` 与 `PrefilteredDistant` 两个设置共同启用，
 两者默认 false；历史权重默认 `.87`。启用后 regular clipmap 采用原版缩紧的远端范围，
-每帧刷新其深度，并在同一304字节视图的 `DepthCullRange` 保存相邻层的深度分界。
+每帧刷新其深度，并在同一448字节视图的 `DepthCullRange` 保存相邻层的深度分界。
 细页接收需求按整数 corner 地址将8×8接收单元压缩到所有较粗层，并保持 secondary/detail
 需求和接收覆盖。两轴 `[1,4,6,4,1]/16` 过滤消费实际完成的深度，缺少邻页时使用当前页边缘。
 历史从当前分界中点重建世界位置，投影到同光源的前帧视图，确认前帧页与接收覆盖后混合；
@@ -328,7 +330,7 @@ BVH 的 `ChangedMeshes`、材质绑定的变化实体以及实际纹理通知形
 
 第一人称分类由 `MeshInstance.FirstPerson` 沿 Mesh 提取进入同一实例属性列。8字节 `FirstPersonMeshData` 保存类别、玩家编号和调用方可见性，`RenderView.PlayerId` 选择当前玩家；`SceneCamera` 与场景序列化承接这些输入。`FirstPerson` 几何进入主视图并使用相机 FOV/scale 变换，玩家可见性由调用方设置。`WorldRepresentation` 为玩家的世界替身：玩家自己的主视图与普通阴影视图隐藏，独立第一人称阴影视图接收；其他玩家按普通场景对象读取。主视图、普通阴影与第一人称阴影通过同一视图的 `Family` 选择实例。
 
-第一人称相机矩阵保存于768字节 Cluster 视图尾部，含当前、逆向与前帧变换；前560字节保持既有字段偏移。变换作用于用户 shader 返回的位置，三角 domain 的重建和运动矢量使用对应投影；用户声明的接收面法线与内置标准材质的世界位置消费同一变换。第一人称阴影与普通 clipmap 共用 caster 数据、页池与图集，使用独立的页地址范围与视图 family。默认第一人称层级8–18，细页需求由 receiver 标记，每帧刷新深度。世界接收面合并两份有效投射结果的最暗遮挡，第一人称接收面消费普通世界阴影。玩家编号变化、取消和完成沿已有帧边界接合。
+第一人称相机矩阵保存在 Cluster 视图中，包含当前、逆向与前帧变换。变换作用于用户 shader 返回的位置，三角 domain 的重建和运动矢量使用对应投影；用户声明的接收面法线与内置标准材质的世界位置消费同一变换。第一人称阴影与普通 clipmap 共用 caster 数据、页池与图集，使用独立的页地址范围与视图 family。默认第一人称层级8–18，细页需求由 receiver 标记，每帧刷新深度。世界接收面合并两份有效投射结果的最暗遮挡，第一人称接收面消费普通世界阴影。玩家编号变化、取消和完成沿已有帧边界接合。
 
 接收面 producer 位于主可见性之后、页需求之前的固定持久图区段；主层和额外层先清零，再执行用户材质。原版依据为固定396c9f05的 `PrimitiveSceneProxy.cpp:631–648`、`ShadowSceneRenderer.cpp:76–88/565–636`、`SceneView.cpp:742–757` 与 `VirtualShadowMapProjection.usf:437–485`。
 

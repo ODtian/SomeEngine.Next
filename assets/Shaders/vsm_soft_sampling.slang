@@ -117,14 +117,14 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     result.ViewIndex = center.ViewIndex;
     result.MipLevel = center.MipLevel;
     VirtualShadowMapParameters source = views[center.ViewIndex];
-    float4 clip = mul(float4(position, 1.0), source.LightViewProjection);
+    float4 clip = ProjectVirtualShadowClip(source, position);
     float projectionScale = .5 * length(float3(source.LightViewProjection[0][0],
         source.LightViewProjection[1][0], source.LightViewProjection[2][0])) / max(abs(clip.w), 1e-20);
     float texelsPerWorldUnit = projectionScale * float(VirtualShadowMipResolution(source, center.MipLevel));
     float footprintTexelsPerWorldUnit = texelsPerWorldUnit;
     if (center.ViewIndex != requestedView || center.MipLevel != mip)
     {
-        float4 requestedClip = mul(float4(position, 1.0), view.LightViewProjection);
+        float4 requestedClip = ProjectVirtualShadowClip(view, position);
         float requestedScale = .5 * length(float3(view.LightViewProjection[0][0],
             view.LightViewProjection[1][0], view.LightViewProjection[2][0])) / max(abs(requestedClip.w), 1e-20);
         footprintTexelsPerWorldUnit = max(footprintTexelsPerWorldUnit,

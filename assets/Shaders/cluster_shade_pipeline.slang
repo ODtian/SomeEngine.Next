@@ -27,7 +27,7 @@ StructuredBuffer<ClusterViewUniforms> Views;
 Texture2DArray<uint> VisBuffer;
 Texture2DArray<float> DepthBuffer;
 
-StructuredBuffer<DrawRequest> VisibleClusters;
+StructuredBuffer<VisibleCluster> VisibleClusters;
 ByteAddressBuffer PageHeap;
 
 RWTexture2DArray<float4> OutputColor;
@@ -71,7 +71,7 @@ bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
     tri.visibleClusterIndex = DecodeVisBufferVisibleClusterIndex(visData);
     tri.triangleID = DecodeVisBufferTriangleID(visData);
 
-    DrawRequest req = VisibleClusters[tri.visibleClusterIndex];
+    DrawRequest req = VisibleClusterRequest(VisibleClusters[tri.visibleClusterIndex]);
     if (DrawRequestViewIndex(req) != pixelCoord.z)
         return false;
     tri.instanceID = req.InstanceID;
@@ -179,9 +179,9 @@ float3 computeTriangleBarycentricAt<TVertex, TDomain>(
     TDomain.TriangleData triangle)
     where TDomain : IDomainEvaluate<TVertex>
 {
-    ScreenProjection sp0 = ProjectToScreenProjection(domain.cornerPosition(triangle, 0u), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    ScreenProjection sp1 = ProjectToScreenProjection(domain.cornerPosition(triangle, 1u), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    ScreenProjection sp2 = ProjectToScreenProjection(domain.cornerPosition(triangle, 2u), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    ScreenProjection sp0 = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 0u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    ScreenProjection sp1 = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 1u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    ScreenProjection sp2 = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 2u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
     return ComputePerspectiveBarycentric(pixelPosition, sp0, sp1, sp2);
 }
 
@@ -262,8 +262,8 @@ void WriteClusterMotion<
         1u);
     float3 currentPosition = domain.position(currentTriangle, bary);
     float3 previousPosition = domain.position(previousTriangle, bary);
-    float4 currentClip = mul(float4(currentPosition, 1.0), view.ViewProj);
-    float4 previousClip = mul(float4(previousPosition, 1.0), view.PrevViewProj);
+    float4 currentClip = mul(float4(ClusterPositionForView(currentPosition, view), 1.0), view.ViewProj);
+    float4 previousClip = mul(float4(ClusterPreviousPositionForView(previousPosition, view), 1.0), view.PrevViewProj);
     OutputMotionVectors[pixelCoord] =
         abs(currentClip.w) < 1e-6 || abs(previousClip.w) < 1e-6
             ? 0.0.xx

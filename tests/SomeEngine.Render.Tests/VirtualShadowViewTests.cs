@@ -29,7 +29,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
             WorldOrigin: new(1099511627776.125, 0, 0));
         shadows.BeginFrame();
         VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
-        Vector4 clip = Vector4.Transform(new Vector4(0, 0, 0, 1), view.LightViewProjection);
+        Vector4 clip = view.ProjectPosition(Vector3.Zero);
         // Native level6 has radius128. The integer-aligned far origin plus1/8
         // projects to -1/2048 in the horizontal light axis.
         Assert.Equal(-.00048828125f, clip.X / clip.W);
@@ -71,7 +71,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
             128, 128, CameraTarget: target);
         shadows.BeginFrame();
         VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
-        Vector4 clip = Vector4.Transform(new Vector4(target, 1), view.LightViewProjection);
+        Vector4 clip = view.ProjectPosition(target);
         // Radius 1.28 snaps the target center to 10.24. The .24 difference
         // over the 2.56 projection half-width gives an absolute NDC .09375.
         Assert.InRange(MathF.Abs(clip.Y / clip.W), .09374f, .09376f);
@@ -107,7 +107,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
                 Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
             shadows.BeginFrame();
             VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
-            Vector4 clip = Vector4.Transform(new Vector4(0, 0, 0, 1), view.LightViewProjection);
+            Vector4 clip = view.ProjectPosition(Vector3.Zero);
             // Level 6 has radius 1.28 and Z radius 1280. Movement 1100 is inside
             // 0.9*1280-1.28; movement 1200 adopts the new center, so world zero
             // projects to (1280+1200)/2560 = .96875.
@@ -138,8 +138,8 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         // ZRangeScale 1000. World Y 1200 is 80 meters from the light-facing edge
         // of its 2560-meter depth range: forward depth is 1/32. Level 7 doubles
         // the same independent world example.
-        Vector4 first = Vector4.Transform(new Vector4(0, 1200, 0, 1), views[0].LightViewProjection);
-        Vector4 second = Vector4.Transform(new Vector4(0, 2400, 0, 1), views[1].LightViewProjection);
+        Vector4 first = views[0].ProjectPosition(new(0, 1200, 0));
+        Vector4 second = views[1].ProjectPosition(new(0, 2400, 0));
         Assert.InRange(first.Z / first.W, .0312495f, .0312505f);
         Assert.InRange(second.Z / second.W, .0312495f, .0312505f);
     }
@@ -165,7 +165,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         // Half-width200cm selects first level seven, through last level22.
         Assert.Equal(0f, views[0].ResolutionLodBias);
         Assert.Equal(16, views.Length);
-        Vector4 clip = Vector4.Transform(new Vector4(5.12f, 0, 0, 1), views[0].LightViewProjection);
+        Vector4 clip = views[0].ProjectPosition(new(5.12f, 0, 0));
         Assert.InRange(MathF.Abs(clip.X / clip.W), .99999f, 1.00001f);
     }
 
@@ -328,7 +328,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
         // Native first level six has a radius of 128 centimeters. The snapped
         // projection spans four radii, or 5.12 meters, so 2.56 is its edge.
-        Vector4 clip = Vector4.Transform(new Vector4(2.56f, 0, 0, 1), view.LightViewProjection);
+        Vector4 clip = view.ProjectPosition(new(2.56f, 0, 0));
         Assert.InRange(MathF.Abs(clip.X / clip.W), .99999f, 1.00001f);
     }
 
@@ -414,7 +414,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
             shadows.BeginFrame();
             VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
             shadows.AcquireFrameResources();
-            Vector4 clip = Vector4.Transform(new Vector4(.5f, 0, .5f, 1), view.LightViewProjection);
+            Vector4 clip = view.ProjectPosition(new(.5f, 0, .5f));
             Vector2 uv = new Vector2(clip.X, -clip.Y) / (2 * clip.W) + new Vector2(.5f);
             Assert.InRange(uv.X, 0, .99999f);
             Assert.InRange(uv.Y, 0, .99999f);

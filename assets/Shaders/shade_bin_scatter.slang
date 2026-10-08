@@ -7,7 +7,7 @@ ConstantBuffer<ShadeBinUniforms> Uniforms;
 Texture2DArray<uint> VisBuffer;
 [ResourceEffect(ResourceEffects.Read, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> BinOffsets;
-StructuredBuffer<DrawRequest> VisibleClusters;
+StructuredBuffer<VisibleCluster> VisibleClusters;
 StructuredBuffer<uint> ShadeSlots;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> ScatterCounts;
@@ -25,7 +25,7 @@ void ScatterShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_Group
         uint visibility = VisBuffer[threadId];
         if (!IsVisBufferEmpty(visibility))
         {
-            DrawRequest cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
+            DrawRequest cluster = VisibleClusterRequest(VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)]);
             if (DrawRequestViewIndex(cluster) == threadId.z)
             {
                 uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.InstanceID);

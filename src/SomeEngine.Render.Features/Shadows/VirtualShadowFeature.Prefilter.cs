@@ -176,6 +176,7 @@ public sealed partial class VirtualShadowFeature
         for (int index = 0; index < views.Length; index++)
         {
             Matrix4x4.Invert(views[index].LightViewProjection, out projections[index].ShadowToWorld);
+            projections[index].ShadowToWorld *= Matrix4x4.CreateTranslation(-views[index].WorldTranslation);
             projections[index].PreviousFirstView = uint.MaxValue;
             ShadowWorkView key = _frameWorkViews[index];
             if (_committedWorkViews.TryGetValue(key, out uint previous) && previous < _previousShadowViews.Length)

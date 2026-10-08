@@ -9,9 +9,7 @@ public struct VirtualShadowReceiverProjection
 {
     public Vector4 WorldToClipW;
     public float ScreenPixelRadius;
-    public uint Pad0;
-    public uint Pad1;
-    public uint Pad2;
+    public Vector3 WorldTranslation;
     public Vector4 WorldToViewDepth;
     public CameraDepthOfField DepthOfField;
     public Vector3 CameraPosition;

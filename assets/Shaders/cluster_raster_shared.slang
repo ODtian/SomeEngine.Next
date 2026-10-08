@@ -31,7 +31,7 @@ interface IClusterRasterOutput
         uint visibilityValue,
         out ClusterRasterOutputPixel outputPixel);
 
-    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy);
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex);
 
     void write(
         ClusterRasterOutputPixel pixel,
@@ -297,6 +297,7 @@ struct ClusterPixelRasterTask<
     uint TargetViewIndex;
     uint PixelCount;
     uint Scanline;
+    uint EarlyDepthEnabled;
     TOutput Output;
 
     [mutating] uint GetTaskCount()
@@ -363,6 +364,7 @@ struct ClusterPixelRasterTask<
         result.TargetPolicy = WaveReadLaneAt(TargetPolicy, sourceLane);
         result.TargetViewIndex = WaveReadLaneAt(TargetViewIndex, sourceLane);
         result.Scanline = WaveReadLaneAt(Scanline, sourceLane);
+        result.EarlyDepthEnabled = WaveReadLaneAt(EarlyDepthEnabled, sourceLane);
         result.Varying0 = visibility.readLane(Varying0, sourceLane);
         result.Varying1 = visibility.readLane(Varying1, sourceLane);
         result.Varying2 = visibility.readLane(Varying2, sourceLane);
@@ -441,6 +443,9 @@ struct ClusterPixelRasterTask<
                 triangle.DepthPlane.x +
                 triangle.DepthPlane.y * edge1 +
                 triangle.DepthPlane.z * edge2);
+            uint encodedDepth = Output.readDepth(outputPixel, targetPolicy, targetViewIndex);
+            if (EarlyDepthEnabled != 0u && asuint(1.0 - depth) < encodedDepth)
+                continue;
             float3 fanLinear = ClusterRasterLinearBarycentric(
                 triangle,
                 float2(pixel) + 0.5);
@@ -500,7 +505,7 @@ struct ClusterPixelRasterTask<
             VisibilityPixelInput pixelInput;
             pixelInput.PixelCoord = uint3(pixel, viewIndex);
             pixelInput.Depth = depth;
-            pixelInput.EncodedTargetDepth = Output.readDepth(outputPixel, targetPolicy);
+            pixelInput.EncodedTargetDepth = encodedDepth;
             pixelInput.VisibleClusterIndex = visibleClusterIndex;
             pixelInput.TriangleID = triangleID;
             pixelInput.ViewIndex = viewIndex;
@@ -537,7 +542,7 @@ void RasterizeClusterTriangleWave<
     bool sourceActive,
     uint screenWidth,
     uint screenHeight,
-    bool clipDepth = true)
+    bool clipDepth = true, uint earlyDepthEnabled = 0u)
 {
     uint mask0 = ClusterRasterClipMask(clipVerts[0], clipDepth);
     uint mask1 = ClusterRasterClipMask(clipVerts[1], clipDepth);
@@ -602,6 +607,7 @@ void RasterizeClusterTriangleWave<
         task.ViewIndex = viewIndex;
         task.TargetPolicy = targetPolicy;
         task.TargetViewIndex = targetViewIndex;
+        task.EarlyDepthEnabled = earlyDepthEnabled;
         task.Output = output;
         if (active && rasterTriangle.Valid != 0u)
         {
@@ -609,7 +615,7 @@ void RasterizeClusterTriangleWave<
             int height = rasterTriangle.MaxPixel.y - rasterTriangle.MinPixel.y + 1;
             // Narrow triangles are cheaper as rectangle tasks.  Wider triangles
             // use one wave task per scanline, bounding queue pressure while the
-            // Cluster classifier guarantees the enclosing box is at most 64x64.
+            // A scanline task bounds queue pressure independently of cluster extent.
             task.Scanline = width > 4 ? 1u : 0u;
             task.PixelCount = task.Scanline != 0u
                 ? uint(height)

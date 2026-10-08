@@ -646,7 +646,7 @@ internal static class RuntimeApplication
             {
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
-                SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 4,
+                SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 32,
                 MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics,

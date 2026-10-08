@@ -393,8 +393,8 @@ public sealed partial class VirtualShadowMap : IDisposable
                     float depthRadius = levelRadius * Settings.DirectionalDepthRangeScale;
                     float cullingEndDistance = levelRadius * MathF.Pow(2f, -resolutionLodBias);
                     Matrix4x4 lightView = Matrix4x4.CreateLookAt(
-                        snappedCenter,
-                        snappedCenter + direction,
+                        Vector3.Zero,
+                        direction,
                         up);
                     Matrix4x4 lightProjection = Matrix4x4.CreateOrthographic(
                         worldExtent,
@@ -415,6 +415,7 @@ public sealed partial class VirtualShadowMap : IDisposable
                     _views[viewIndex] = new VirtualShadowView
                     {
                         LightViewProjection = lightView * lightProjection,
+                        WorldTranslation = -snappedCenter,
                         VirtualResolution = Settings.VirtualResolution,
                         PageSize = Settings.PageSize,
                         AtlasSize = Settings.AtlasSize,
@@ -477,8 +478,8 @@ public sealed partial class VirtualShadowMap : IDisposable
             {
                 GetPointLightFace(faceIndex, out Vector3 forward, out Vector3 up);
                 Matrix4x4 lightView = Matrix4x4.CreateLookAt(
-                    light.Position,
-                    light.Position + forward,
+                    Vector3.Zero,
+                    forward,
                     up);
                 int viewIndex = checked(pointViewOffset + lightIndex * 6 + (int)faceIndex);
                 uint gpuLightIndex = checked((uint)(lights.Directional.Count + lightIndex));
@@ -513,8 +514,8 @@ public sealed partial class VirtualShadowMap : IDisposable
                 ? Vector3.UnitX
                 : Vector3.UnitY;
             Matrix4x4 lightView = Matrix4x4.CreateLookAt(
-                light.Position,
-                light.Position + direction,
+                Vector3.Zero,
+                direction,
                 up);
             Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
                 2.0f * MathF.Acos(light.OuterConeCos),
@@ -542,9 +543,12 @@ public sealed partial class VirtualShadowMap : IDisposable
             _preparedLightProjections[viewIndex] = projection;
         }
 
-        receiverView.WorldOrigin.Split(out Vector3 worldOriginHigh, out Vector3 worldOriginLow);
         for (int index = 0; index < viewCount; index++)
         {
+            Vector3 viewCenter = -_views[index].WorldTranslation;
+            WorldOrigin viewOrigin = new(_worldOrigin.X + viewCenter.X,
+                _worldOrigin.Y + viewCenter.Y, _worldOrigin.Z + viewCenter.Z);
+            viewOrigin.Split(out Vector3 worldOriginHigh, out Vector3 worldOriginLow);
             _views[index].WorldOriginHigh = worldOriginHigh;
             _views[index].WorldOriginLow = worldOriginLow;
             _views[index].PageDilationBorder = _views[index].LightKind == VirtualShadowLightKind.Directional
@@ -594,7 +598,7 @@ public sealed partial class VirtualShadowMap : IDisposable
             (geometryRevision != _committedGeometryRevision ||
              rasterRevision != _committedRasterRevision ||
              instanceCount != _committedInstanceCount);
-        _pendingCacheReset = !_initialized || viewLayoutChanged || _worldOrigin != _committedWorldOrigin || _viewPlayerId != _committedViewPlayerId;
+        _pendingCacheReset = !_initialized || viewLayoutChanged || _viewPlayerId != _committedViewPlayerId;
 
         uint generation = _committedCacheGeneration;
         if (_pendingCacheReset || structuralContentChanged)
@@ -607,7 +611,8 @@ public sealed partial class VirtualShadowMap : IDisposable
         {
             for (int index = 0; index < viewCount; index++)
             {
-                if (HasSameClipmapConfiguration(_views[index], _committedViews[index]))
+                VirtualShadowView cached = RebaseCommittedView(_committedViews[index]);
+                if (HasSameClipmapConfiguration(_views[index], cached))
                 {
                     _views[index].CacheGeneration = _committedViews[index].CacheGeneration;
                     continue;
@@ -625,12 +630,14 @@ public sealed partial class VirtualShadowMap : IDisposable
             for (int index = 0; index < viewCount; index++)
                 _views[index].CacheGeneration = generation;
         }
-        if (_initialized && viewCount == _committedViewCount && _worldOrigin == _committedWorldOrigin)
+        if (_initialized && viewCount == _committedViewCount)
         {
             for (int index = 0; index < viewCount; index++)
             {
                 if (_views[index].LightViewProjection.Equals(
-                        _committedViews[index].LightViewProjection))
+                        _committedViews[index].LightViewProjection) &&
+                    _views[index].WorldOriginHigh == _committedViews[index].WorldOriginHigh &&
+                    _views[index].WorldOriginLow == _committedViews[index].WorldOriginLow)
                 {
                     _views[index].Flags |= VirtualShadowViewFlags.PreviousProjectionValid;
                 }
@@ -678,7 +685,11 @@ public sealed partial class VirtualShadowMap : IDisposable
                 shadow.VirtualResolution,
                 CameraCut: false,
                 GeometryLodScale: shadow.GeometryLodScale,
-                WorldOrigin: _worldOrigin, PlayerId: _viewPlayerId,
+                WorldOrigin: new WorldOrigin(
+                    (double)shadow.WorldOriginHigh.X + shadow.WorldOriginLow.X,
+                    (double)shadow.WorldOriginHigh.Y + shadow.WorldOriginLow.Y,
+                    (double)shadow.WorldOriginHigh.Z + shadow.WorldOriginLow.Z),
+                PlayerId: _viewPlayerId,
                 Family: (shadow.Flags & VirtualShadowViewFlags.FirstPersonShadow) != 0u
                     ? RenderViewFamily.FirstPersonShadow : RenderViewFamily.Shadow);
         }
@@ -706,9 +717,13 @@ public sealed partial class VirtualShadowMap : IDisposable
                 nameof(lightViewProjections));
         }
 
-        _committedViews.AsSpan(0, _committedViewCount).CopyTo(destination);
         for (int index = 0; index < _committedViewCount; index++)
-            lightViewProjections[index] = _committedViews[index].LightViewProjection;
+        {
+            VirtualShadowView previous = RebaseCommittedView(_committedViews[index]);
+            destination[index] = previous;
+            Vector3 translation = previous.WorldTranslation - _views[index].WorldTranslation;
+            lightViewProjections[index] = Matrix4x4.CreateTranslation(translation) * previous.LightViewProjection;
+        }
         return true;
     }
 
@@ -928,6 +943,7 @@ public sealed partial class VirtualShadowMap : IDisposable
         uint pageTableEntriesPerView) => new()
     {
         LightViewProjection = lightView * lightProjection,
+        WorldTranslation = -lightPosition,
         VirtualResolution = Settings.VirtualResolution,
         PageSize = Settings.PageSize,
         AtlasSize = Settings.AtlasSize,
@@ -1000,9 +1016,9 @@ public sealed partial class VirtualShadowMap : IDisposable
         int viewIndex, int clipmapLevel, uint lightIndex,
         float center, float depthRadius, float levelRadius, Matrix4x4 projection)
     {
-        if (!_initialized || viewIndex >= _committedViewCount || _worldOrigin != _committedWorldOrigin)
+        if (!_initialized || viewIndex >= _committedViewCount)
             return center;
-        VirtualShadowView cached = _committedViews[viewIndex];
+        VirtualShadowView cached = RebaseCommittedView(_committedViews[viewIndex]);
         bool sameLevel = cached.LightKind == VirtualShadowLightKind.Directional &&
             cached.LightIndex == lightIndex && cached.ClipmapLevel == clipmapLevel &&
             cached.DepthRadius.Equals(depthRadius) &&
@@ -1011,11 +1027,21 @@ public sealed partial class VirtualShadowMap : IDisposable
             ? cached.DepthCenterZ : center;
     }
 
+    private VirtualShadowView RebaseCommittedView(VirtualShadowView view)
+    {
+        Vector3 translation = _committedWorldOrigin.RelativeTo(_worldOrigin);
+        view.LightPosition += translation;
+        view.ClipmapWorldOrigin += translation;
+        view.WorldTranslation -= translation;
+        view.DepthCenterZ += Vector3.Dot(translation, view.LightDirection);
+        return view;
+    }
+
     private static bool HasSameClipmapConfiguration(
         in VirtualShadowView left,
         in VirtualShadowView right) =>
         (left.LightKind == VirtualShadowLightKind.Directional
-            ? HasSameDirectionalDepthProjection(left.LightViewProjection, right.LightViewProjection)
+            ? HasSameDirectionalProjectionAxes(left.LightViewProjection, right.LightViewProjection)
             : left.LightViewProjection.Equals(right.LightViewProjection)) &&
         left.VirtualResolution == right.VirtualResolution &&
         left.PageSize == right.PageSize &&
@@ -1041,9 +1067,6 @@ public sealed partial class VirtualShadowMap : IDisposable
         left.MinPixelsPerEdgeHardware.Equals(right.MinPixelsPerEdgeHardware) &&
         left.DicingRate.Equals(right.DicingRate) &&
         left.DepthCenterZ.Equals(right.DepthCenterZ) && left.DepthRadius.Equals(right.DepthRadius);
-
-    private static bool HasSameDirectionalDepthProjection(Matrix4x4 left, Matrix4x4 right) =>
-        HasSameDirectionalProjectionAxes(left, right) && left.M43.Equals(right.M43);
 
     private static bool HasSameDirectionalProjectionAxes(Matrix4x4 left, Matrix4x4 right) =>
         left.M11.Equals(right.M11) && left.M12.Equals(right.M12) &&

@@ -28,7 +28,7 @@ uint SlotBin(
     uint maxBins)
 {
     uint key = GetStageSlot(slots, slotOffset, localMaterialIndex, capacity);
-    return ValidBin(key & 0x1FFFFFFFu, maxBins);
+    return ValidBin(key & 0x0FFFFFFFu, maxBins);
 }
 
 void WriteDispatch(
@@ -53,6 +53,7 @@ void ClearRaster(
     bins[bin].ClusterOffset = 0;
     bins[bin].BinCapacity = 0;
     bins[bin].HardwareOffset = 0;
+    bins[bin].DepthBucketEnabled = 0;
 }
 
 void CountRaster(
@@ -106,14 +107,12 @@ void ReserveRaster(
     if (bin >= maxBins) return;
 
     uint total = swCount + hwCount;
-    uint capacity = bins[bin].BinCapacity;
-    bool direct = capacity != 0u;
-    uint totalOffset = direct ? bins[bin].ClusterOffset : totalBase + totalInc - total;
+    uint totalOffset = totalBase + totalInc - total;
     uint swOffset = swBase + swInc - swCount;
-    uint hardwareOffset = direct ? bins[bin].HardwareOffset : totalOffset + swCount;
+    uint hardwareOffset = totalOffset + swCount;
 
     bins[bin].ClusterOffset = totalOffset;
-    bins[bin].BinCapacity = direct ? capacity : total;
+    bins[bin].BinCapacity = total;
     bins[bin].SWCursor = 0;
     bins[bin].HWCursor = 0;
     bins[bin].SWOffset = swOffset;
@@ -134,7 +133,9 @@ bool ScatterRaster(
     uint bin,
     uint visible,
     uint workIndex,
-    bool sw)
+    bool sw,
+    RWStructuredBuffer<uint> depthBuckets,
+    uint depthBucket)
 {
     if (!IsBin(bin)) return true;
 
@@ -154,6 +155,14 @@ bool ScatterRaster(
     uint local = localBase + WaveMaskPrefix(matching, WaveGetLaneIndex());
     uint count = sw ? bins[bin].BinSWCount : bins[bin].BinHWCount;
     uint index = offset + (sw ? 0u : bins[bin].BinSWCount) + local;
+    if (bins[bin].DepthBucketEnabled != 0u)
+    {
+        uint bucketItem;
+        InterlockedAdd(depthBuckets[bin * 512u + (sw ? 0u : 256u) + depthBucket], 1u, bucketItem);
+        index = offset + (sw ? 0u : bins[bin].BinSWCount) + bucketItem;
+    }
+    else if (sw)
+        index = offset + bins[bin].BinSWCount - 1u - local;
     uint capacity, stride;
     indices.GetDimensions(capacity, stride);
     if (local >= count || index >= capacity) return false;

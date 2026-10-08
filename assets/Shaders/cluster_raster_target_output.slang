@@ -5,6 +5,7 @@
 #include "cluster_raster_target_view.slang"
 
 #include "cluster_raster_target_resources.slang"
+StructuredBuffer<VisibleCluster> RasterOutputVisibleClusters;
 RWTexture2DArray<uint> RasterTargetOutput;
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
 #ifndef CLUSTER_RASTER_TARGET_METADATA_DECLARED
@@ -132,7 +133,7 @@ int4 RasterTargetWindowScissor(uint4 pageWindow, ClusterRasterTargetView target)
 int4 PrepareRasterTargetScissor(uint visibleClusterIndex, uint targetViewIndex,
     uint screenWidth, uint screenHeight, uint threadIndex, uint threadCount)
 {
-    return PrepareRasterTargetScissor(VisibleClusterRasterWindows[visibleClusterIndex], targetViewIndex,
+    return PrepareRasterTargetScissor(VisibleClusterRasterWindow(RasterOutputVisibleClusters[visibleClusterIndex]), targetViewIndex,
         screenWidth, screenHeight, threadIndex, threadCount);
 }
 

@@ -1138,16 +1138,19 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
 
     private static VirtualShadowReceiverProjection CalculateReceiverProjection(in RenderView view)
     {
-        Matrix4x4 worldToClip = view.View * view.Projection;
         Matrix4x4.Invert(view.View, out Matrix4x4 viewToWorld);
+        Vector3 cameraPosition = new(viewToWorld.M41, viewToWorld.M42, viewToWorld.M43);
+        Matrix4x4 nearView = Matrix4x4.CreateTranslation(cameraPosition) * view.View;
+        Matrix4x4 worldToClip = nearView * view.Projection;
         return new VirtualShadowReceiverProjection
         {
             WorldToClipW = new(worldToClip.M14, worldToClip.M24, worldToClip.M34, worldToClip.M44),
-            WorldToViewDepth = new(-view.View.M13, -view.View.M23, -view.View.M33, -view.View.M43),
+            WorldToViewDepth = new(-nearView.M13, -nearView.M23, -nearView.M33, -nearView.M43),
+            WorldTranslation = -cameraPosition,
             DepthOfField = view.DepthOfField.GetValueOrDefault(),
             ScreenPixelRadius = MathF.Min(1f / (view.ViewportWidth * view.Projection.M11),
                 1f / (view.ViewportHeight * view.Projection.M22)),
-            CameraPosition = new(viewToWorld.M41, viewToWorld.M42, viewToWorld.M43),
+            CameraPosition = cameraPosition,
             CotanHalfFieldOfView = view.Projection.M11,
         };
     }

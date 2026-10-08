@@ -17,10 +17,23 @@ public enum VirtualShadowLightKind : uint
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 public struct VirtualShadowView
 {
-    public const int SizeInBytes = 304;
+    public const int SizeInBytes = 448;
     public const int PageTableEntrySizeInBytes = 4;
 
-    public Matrix4x4 LightViewProjection;
+    private Matrix4x4 _lightViewProjection;
+    public Matrix4x4 LightViewProjection
+    {
+        readonly get => _lightViewProjection;
+        set
+        {
+            _lightViewProjection = value;
+            Matrix4x4 clipToUv = new(.5f, 0, 0, 0, 0, -.5f, 0, 0,
+                0, 0, 1, 0, .5f, .5f, 0, 1);
+            _shadowUv = value * clipToUv;
+            Matrix4x4.Invert(_shadowUv, out Matrix4x4 uvToWorld);
+            _shadowUvNormal = Matrix4x4.Transpose(uvToWorld);
+        }
+    }
     public uint VirtualResolution;
     public uint PageSize;
     public uint AtlasSize;
@@ -73,6 +86,17 @@ public struct VirtualShadowView
     public float ProjectionDepthScale;
     public float ProjectionDepthOffset;
     public float TexelDitherScale;
+    /// <summary>Translation from the current world data into this view's near coordinates.</summary>
+    public Vector3 WorldTranslation;
+    private float TranslationPadding;
+    private Matrix4x4 _shadowUvNormal;
+    public readonly Matrix4x4 ShadowUvNormal => _shadowUvNormal;
+    private Matrix4x4 _shadowUv;
+    public readonly Matrix4x4 ShadowUv => _shadowUv;
+
+    /// <summary>Projects a position expressed relative to the current world data origin.</summary>
+    public readonly Vector4 ProjectPosition(Vector3 position) =>
+        Vector4.Transform(new Vector4(position + WorldTranslation, 1), _lightViewProjection);
 }
 
 public static class VirtualShadowViewFlags
