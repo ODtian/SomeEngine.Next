@@ -20,7 +20,7 @@ Build that project and its content first if its Release output does not exist.
 The script builds `Game.Build` into `samples/ImportedScenes/Build`;
 it does not rebuild or replace DefaultProject's scene or its output directory.
 Downloads and generated applications are excluded from Git. Source checksums
-remain beside the downloaded files; import counts and repeat-import results are
+remain beside the downloaded files; import counts and build duration are
 written to `Apps/<scene>/scene-import.json`.
 
 DefaultGame uses WASD to move, right mouse button to look, Space/Ctrl vertically,

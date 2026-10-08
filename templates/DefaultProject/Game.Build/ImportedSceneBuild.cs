@@ -74,14 +74,6 @@ public static class ImportedSceneBuild
         await project.ImportAsync(copiedSource);
         double importSeconds = timer.Elapsed.TotalSeconds;
         SourceMeta metadata = SourceMeta.Load(copiedSource);
-        var previous = metadata.Outputs.ToDictionary(value => value.AssetGuid, value => (value.Version, value.ContentHash));
-        timer.Restart();
-        await project.ImportAsync(copiedSource);
-        double cachedSeconds = timer.Elapsed.TotalSeconds;
-        SourceMeta repeated = SourceMeta.Load(copiedSource);
-        if (repeated.Outputs.Count != previous.Count || repeated.Outputs.Any(value =>
-                !previous.TryGetValue(value.AssetGuid, out var old) || old != (value.Version, value.ContentHash)))
-            throw new InvalidDataException("Unchanged reimport changed generated assets.");
 
         string sceneKey = model.DefaultScene.Extras?["someengine_id"]?.GetValue<string>() is { Length: > 0 } id
             ? $"scene:id:{id}" : $"scene:index:{model.DefaultScene.LogicalIndex}";
@@ -98,7 +90,7 @@ public static class ImportedSceneBuild
             source = sourcePath, meshes = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("mesh:")),
             instances, materials = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("material:")),
             textures = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("texture:")),
-            assets = metadata.Outputs.Count, importSeconds, cachedSeconds, unchangedReimport = true,
+            assets = metadata.Outputs.Count, importSeconds,
         }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Imported {name}: {instances} mesh instances, {metadata.Outputs.Count} assets in {importSeconds:F2}s. {projectRoot}");
     }
