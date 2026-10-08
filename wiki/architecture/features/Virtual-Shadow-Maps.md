@@ -223,7 +223,7 @@ water/translucency 请求方向光，hair 同时沿实际 clustered local light 
 公开用户 shader 用例在 opaque 声明无 lighting 后，当前 water depth、AA 重投影的前帧 translucency depth
 和 hair depth 继续保留其世界点覆盖，实际 `[0,0,0,0]→[1,1,1,0]`。原版额外深度来源为
 `VirtualShadowMapPageMarking.usf:394–477`，shader 输出与 C# DTO 共用一个32字节布局。
-方向与局部页边界参数默认 `.05`，typed view 的原 padding 持有对应值，保持384字节视图记录。
+方向与局部页边界参数默认 `.05`，typed view 的原 padding 持有对应值，保持448字节视图记录。
 原版核对范围为 `VirtualShadowMapPageMarking.usf:349–414,480–612` 与
 `VirtualShadowMapPageMarking.ush:82–143`。
 
@@ -239,8 +239,8 @@ texel offset `.25` 产生 allowance `.2`，实际 public shader sampler 从 shad
 `WorldOrigin` 是整个 Game world 的 double 原点，实例、相机与光源位置共用其局部 float 空间。
 `RenderView.WorldOrigin` 经唯一提取通路取得该原点。Cluster 816 字节视图记录携带各视图的近端
 high/low 原点、当前与历史平移；用户位置继续采用 Game 原点的 float offset，投射时先进入
-该视图的近端坐标。阴影 384 字节视图记录采用每层 clipmap 或局部灯的近端原点，保存
-对应投射与预计算 UV 法线变换。请求、光栅、HiZ 和采样消费同一坐标关系。
+该视图的近端坐标。阴影 448 字节视图记录采用每层 clipmap 或局部灯的近端原点，保存
+对应投射、预计算 UV 与法线变换。请求、光栅、HiZ 和采样消费同一坐标关系。
 世界原点迁移时，阴影历史位置与深度中心换算到当前数据空间，绝对页地址及实际内容变化
 决定缓存更新。成功提交保存该帧原点；取消继续保留前次提交的数据。
 
@@ -279,7 +279,7 @@ frame 区段生成坐标与计数，持久请求阶段消费其 indirect args；
 
 标准材质用用户表面着色法线执行阴影偏置和投射。偏置长度取相机距离除以投影横向标度，
 乘 `NormalBias`，下限为 `.02` 原版厘米。方向光完整光源角直径与局部光世界单位半径
-沿 `LightShadowSettings` 提取到同一384字节视图。投射结果带有效性、可见比例和遮挡距离；
+沿 `LightShadowSettings` 提取到同一448字节视图。投射结果带有效性、可见比例和遮挡距离；
 ray 数为零时使用带坡度容差的深度比较。方向和局部 SMRT 使用平方步长、深度历史、
 受限斜率外推与波内自适应停止，点光射线在起终点所在 cube face 间切换。
 接收投影保存相机位置和投影横向标度，页面需求与材质采样消费同一提取结果。
@@ -310,7 +310,7 @@ DefaultGame 的硬阴影源三角形参考明确使用0；软阴影采用光源�
 
 方向光预滤由 `PrefilteredDistantProjectEnable` 与 `PrefilteredDistant` 两个设置共同启用，
 两者默认 false；历史权重默认 `.87`。启用后 regular clipmap 采用原版缩紧的远端范围，
-每帧刷新其深度，并在同一384字节视图的 `DepthCullRange` 保存相邻层的深度分界。
+每帧刷新其深度，并在同一448字节视图的 `DepthCullRange` 保存相邻层的深度分界。
 细页接收需求按整数 corner 地址将8×8接收单元压缩到所有较粗层，并保持 secondary/detail
 需求和接收覆盖。两轴 `[1,4,6,4,1]/16` 过滤消费实际完成的深度，缺少邻页时使用当前页边缘。
 历史从当前分界中点重建世界位置，投影到同光源的前帧视图，确认前帧页与接收覆盖后混合；

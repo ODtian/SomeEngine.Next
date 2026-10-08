@@ -54,6 +54,7 @@ struct VirtualShadowMapParameters
     float3 WorldTranslation;
     float TranslationPadding;
     float4x4 ShadowUvNormal;
+    float4x4 ShadowUv;
 };
 
 // Positions passed to this file are offsets from the owning Game world's origin.
@@ -332,15 +333,16 @@ bool ProjectVirtualShadowPosition(
     out float3 ndc,
     out float2 uv)
 {
-    float4 clip = ProjectVirtualShadowClip(parameters, worldPosition);
+    float4 clip = mul(float4(worldPosition + parameters.WorldTranslation, 1.0), parameters.ShadowUv);
     if (clip.w <= 0.0)
     {
         ndc = float3(0.0);
         uv = float2(0.0);
         return false;
     }
-    ndc = clip.xyz / clip.w;
-    uv = ndc.xy * float2(0.5, -0.5) + 0.5;
+    float3 projected = clip.xyz / clip.w;
+    uv = projected.xy;
+    ndc = float3(uv * float2(2.0, -2.0) + float2(-1.0, 1.0), projected.z);
     return all(uv >= 0.0) && all(uv < 1.0) && ndc.z >= 0.0 && ndc.z <= 1.0;
 }
 
@@ -349,14 +351,13 @@ bool ProjectVirtualShadowFootprintPosition(
     float3 worldPosition,
     out float2 uv)
 {
-    float4 clip = ProjectVirtualShadowClip(parameters, worldPosition);
+    float4 clip = mul(float4(worldPosition + parameters.WorldTranslation, 1.0), parameters.ShadowUv);
     if (clip.w <= 1e-8)
     {
         uv = 0.0.xx;
         return false;
     }
-    float2 ndc = clip.xy / clip.w;
-    uv = ndc * float2(0.5, -0.5) + 0.5;
+    uv = clip.xy / clip.w;
     return true;
 }
 
