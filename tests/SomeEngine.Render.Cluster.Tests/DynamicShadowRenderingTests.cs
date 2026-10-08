@@ -49,7 +49,7 @@ public sealed class DynamicShadowRenderingTests
         RasterImage.AssertEqual(exposed, restored);
         for (int frame = 0; frame < 102; frame++) restored = await scene.ReadNextRasterImageAsync();
         RasterImage.AssertEqual(exposed, restored);
-        scene.SetMeshTransform(1, new(new Vector3(0, 4, -4), Quaternion.Identity) { Stretch = new(1.6f, 1.6f, .1f) });
+        scene.SetMeshTransform(1, new(new Vector3(0, 4, -4) + translation, Quaternion.Identity) { Stretch = new(1.6f, 1.6f, .1f) });
         RasterImage coveredAgain = await scene.ReadNextRasterImageAsync();
         RasterImage.AssertEqual(covered, coveredAgain);
         scene.SetMeshTransform(1, outside);
