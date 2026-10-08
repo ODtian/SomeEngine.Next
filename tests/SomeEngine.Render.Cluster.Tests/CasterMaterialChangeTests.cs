@@ -93,7 +93,7 @@ public sealed class CasterMaterialChangeTests
     }
     private static VirtualShadowMapSettings Shadows() => new() { VirtualResolution = 4096, AtlasSize = 2048,
         WorldUnitsPerCentimeter = 1f,
-        MaxShadowLights = 1, DirectionalRayCount = 0, LocalRayCount = 0,
+        MaxShadowLights = 1, MaxFilterRadiusTexels = 0,
         DirectionalClipmapLevels = 16, DirectionalFirstClipmapLevel = -4,
         DirectionalFirstCoarseClipmapLevel = 8, DirectionalLastCoarseClipmapLevel = 11, DynamicResolutionEnabled = false };
     private static async Task<Shader> LoadShaderAsync(string backend)
