@@ -106,11 +106,12 @@ bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> vie
         stored = stored * transform.x + 1.0 - transform.x - transform.w;
     }
     precise float receiver = 1.0 - plane.Ndc.z;
-    float planeOffset = dot(sample.TexelCenter - plane.UV, plane.Gradient);
+    float planeOffset = dot(sample.UV - plane.UV, plane.Gradient);
     precise float depthDifference = (stored - receiver) + planeOffset;
+    float slopeBias = VirtualShadowOptimalSlopeBias(views, sample.ViewIndex, sample, position, normal);
     float roundingRadius = VirtualShadowReverseDepthRoundingRadius(stored)
         + VirtualShadowReverseDepthRoundingRadius(receiver);
-    blocked = depthDifference > roundingRadius;
+    blocked = depthDifference - slopeBias > roundingRadius;
     if (blocked)
         separation = IsDirectionalVirtualShadowProjection(baseView)
             ? depthDifference / max(abs(source.ProjectionDepthScale), 1e-20)
