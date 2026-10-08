@@ -29,7 +29,7 @@ internal sealed partial class FrameExecutor
     private ResourceContentState[] _contentsScratch = [];
     private BufferContentScope[] _bufferContentScopeScratch = [];
     private List<int>[] _readerScratch = [];
-    private List<int>[] _atomicWriterScratch = [];
+    private List<int>[] _sharedWriterScratch = [];
     private TextureLayout?[] _layoutScratch = [];
     private int[] _criticalRanks = [];
     private int[] _scheduleIndegrees = [];

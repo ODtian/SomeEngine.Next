@@ -24,7 +24,7 @@ internal sealed partial class FrameExecutor
         Array.Fill(_writerScratch, -1, 0, segmentCount);
         Array.Clear(_contentsScratch, 0, segmentCount);
         Array.Clear(_bufferContentScopeScratch, 0, segmentCount);
-        PrepareAtomicWriterScratch(segmentCount);
+        PrepareSharedWriterScratch(segmentCount);
         InitializeBufferContents(
             buffer,
             _bufferCoordinateScratch.AsSpan(0, coordinateCount),
@@ -62,22 +62,23 @@ internal sealed partial class FrameExecutor
                     }
                     if (reads && _writerScratch[segment] >= 0)
                         AddValueDependency(access.PassIndex, _writerScratch[segment]);
-                    if (reads && access.UnorderedAccessHazards !=
-                        UnorderedAccessHazardMode.AtomicMergeable)
-                        foreach (int writer in _atomicWriterScratch[segment])
+                    if (reads && access.UnorderedAccessHazards == UnorderedAccessHazardMode.Ordered)
+                        foreach (int writer in _sharedWriterScratch[segment])
                             AddValueDependency(access.PassIndex, writer);
 
                     if (access.Mode != GraphAccessMode.Read)
                     {
-                        if (access.UnorderedAccessHazards ==
-                            UnorderedAccessHazardMode.AtomicMergeable)
+                        if (access.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered)
                         {
-                            AddUnique(_atomicWriterScratch[segment], access.PassIndex);
-                            _contentsScratch[segment] = ResourceContentState.Defined;
-                            _bufferContentScopeScratch[segment] = access.BufferContentScope;
+                            AddUnique(_sharedWriterScratch[segment], access.PassIndex);
+                            if (access.Mode == GraphAccessMode.ReadWrite || access.ResultContents.HasValue)
+                            {
+                                _contentsScratch[segment] = ResourceContentState.Defined;
+                                _bufferContentScopeScratch[segment] = access.BufferContentScope;
+                            }
                             continue;
                         }
-                        _atomicWriterScratch[segment].Clear();
+                        _sharedWriterScratch[segment].Clear();
                         _writerScratch[segment] = access.PassIndex;
                         if (access.ResultContents.HasValue)
                         {
@@ -108,7 +109,7 @@ internal sealed partial class FrameExecutor
             for (int segment = 0; segment < segmentCount; segment++)
             {
                 if (_writerScratch[segment] >= 0) AddLiveRoot(_writerScratch[segment]);
-                foreach (int writer in _atomicWriterScratch[segment]) AddLiveRoot(writer);
+                foreach (int writer in _sharedWriterScratch[segment]) AddLiveRoot(writer);
             }
         }
     }
@@ -128,7 +129,7 @@ internal sealed partial class FrameExecutor
         EnsureCapacity(ref _contentsScratch, cellCount);
         Array.Fill(_writerScratch, -1, 0, cellCount);
         Array.Clear(_contentsScratch, 0, cellCount);
-        PrepareAtomicWriterScratch(cellCount);
+        PrepareSharedWriterScratch(cellCount);
         InitializeTextureContents(texture, _contentsScratch.AsSpan(0, cellCount));
 
         SortAccessesByValueOrder(accesses);
@@ -149,20 +150,19 @@ internal sealed partial class FrameExecutor
                 }
                 if (reads && _writerScratch[cell] >= 0)
                     AddValueDependency(access.PassIndex, _writerScratch[cell]);
-                if (reads && access.UnorderedAccessHazards !=
-                    UnorderedAccessHazardMode.AtomicMergeable)
-                    foreach (int writer in _atomicWriterScratch[cell])
+                if (reads && access.UnorderedAccessHazards == UnorderedAccessHazardMode.Ordered)
+                    foreach (int writer in _sharedWriterScratch[cell])
                         AddValueDependency(access.PassIndex, writer);
                 if (access.Mode != GraphAccessMode.Read)
                 {
-                    if (access.UnorderedAccessHazards ==
-                        UnorderedAccessHazardMode.AtomicMergeable)
+                    if (access.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered)
                     {
-                        AddUnique(_atomicWriterScratch[cell], access.PassIndex);
-                        _contentsScratch[cell] = ResourceContentState.Defined;
+                        AddUnique(_sharedWriterScratch[cell], access.PassIndex);
+                        if (access.Mode == GraphAccessMode.ReadWrite || access.ResultContents.HasValue)
+                            _contentsScratch[cell] = ResourceContentState.Defined;
                         continue;
                     }
-                    _atomicWriterScratch[cell].Clear();
+                    _sharedWriterScratch[cell].Clear();
                     _writerScratch[cell] = access.PassIndex;
                     if (access.ResultContents.HasValue)
                     {
@@ -183,7 +183,7 @@ internal sealed partial class FrameExecutor
             for (int cell = 0; cell < cellCount; cell++)
             {
                 if (_writerScratch[cell] >= 0) AddLiveRoot(_writerScratch[cell]);
-                foreach (int writer in _atomicWriterScratch[cell]) AddLiveRoot(writer);
+                foreach (int writer in _sharedWriterScratch[cell]) AddLiveRoot(writer);
             }
         }
     }
@@ -296,7 +296,7 @@ internal sealed partial class FrameExecutor
         EnsureCapacity(ref _writerScratch, segmentCount);
         Array.Fill(_writerScratch, -1, 0, segmentCount);
         PrepareReaderScratch(segmentCount);
-        PrepareAtomicWriterScratch(segmentCount);
+        PrepareSharedWriterScratch(segmentCount);
         SortAccessesByValueOrder(accesses);
 
         foreach (int accessIndex in accesses)
@@ -315,7 +315,7 @@ internal sealed partial class FrameExecutor
                     {
                         if (_writerScratch[segment] >= 0)
                             AddEdge(_writerScratch[segment], access.PassIndex);
-                        foreach (int writer in _atomicWriterScratch[segment])
+                        foreach (int writer in _sharedWriterScratch[segment])
                             AddEdge(writer, access.PassIndex);
                         AddUnique(_readerScratch[segment], access.PassIndex);
                         continue;
@@ -325,18 +325,17 @@ internal sealed partial class FrameExecutor
                         AddEdge(_writerScratch[segment], access.PassIndex);
                     foreach (int reader in _readerScratch[segment]) AddEdge(reader, access.PassIndex);
                     _readerScratch[segment].Clear();
-                    if (access.UnorderedAccessHazards ==
-                        UnorderedAccessHazardMode.AtomicMergeable)
+                    if (access.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered)
                     {
-                        foreach (int writer in _atomicWriterScratch[segment])
-                            if (!CanMergeAtomicAccesses(writer, access.PassIndex))
+                        foreach (int writer in _sharedWriterScratch[segment])
+                            if (!CanOverlapWrites(writer, access.PassIndex))
                                 AddEdge(writer, access.PassIndex);
-                        AddUnique(_atomicWriterScratch[segment], access.PassIndex);
+                        AddUnique(_sharedWriterScratch[segment], access.PassIndex);
                         continue;
                     }
-                    foreach (int writer in _atomicWriterScratch[segment])
+                    foreach (int writer in _sharedWriterScratch[segment])
                         AddEdge(writer, access.PassIndex);
-                    _atomicWriterScratch[segment].Clear();
+                    _sharedWriterScratch[segment].Clear();
                     _writerScratch[segment] = access.PassIndex;
                 }
             }
@@ -366,7 +365,7 @@ internal sealed partial class FrameExecutor
         EnsureCapacity(ref _writerScratch, cellCount);
         Array.Fill(_writerScratch, -1, 0, cellCount);
         PrepareReaderScratch(cellCount);
-        PrepareAtomicWriterScratch(cellCount);
+        PrepareSharedWriterScratch(cellCount);
         EnsureCapacity(ref _layoutScratch, cellCount);
         Array.Clear(_layoutScratch, 0, cellCount);
         SortAccessesByValueOrder(accesses);
@@ -379,7 +378,7 @@ internal sealed partial class FrameExecutor
                 if (access.Mode == GraphAccessMode.Read)
                 {
                     if (_writerScratch[cell] >= 0) AddEdge(_writerScratch[cell], access.PassIndex);
-                    foreach (int writer in _atomicWriterScratch[cell])
+                    foreach (int writer in _sharedWriterScratch[cell])
                         AddEdge(writer, access.PassIndex);
                     if (_layoutScratch[cell].HasValue &&
                         _layoutScratch[cell].GetValueOrDefault() != access.TextureLayout)
@@ -392,19 +391,18 @@ internal sealed partial class FrameExecutor
                 if (_writerScratch[cell] >= 0) AddEdge(_writerScratch[cell], access.PassIndex);
                 foreach (int reader in _readerScratch[cell]) AddEdge(reader, access.PassIndex);
                 _readerScratch[cell].Clear();
-                if (access.UnorderedAccessHazards ==
-                    UnorderedAccessHazardMode.AtomicMergeable)
+                if (access.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered)
                 {
-                    foreach (int writer in _atomicWriterScratch[cell])
-                        if (!CanMergeAtomicAccesses(writer, access.PassIndex))
+                    foreach (int writer in _sharedWriterScratch[cell])
+                        if (!CanOverlapWrites(writer, access.PassIndex))
                             AddEdge(writer, access.PassIndex);
-                    AddUnique(_atomicWriterScratch[cell], access.PassIndex);
+                    AddUnique(_sharedWriterScratch[cell], access.PassIndex);
                     _layoutScratch[cell] = access.TextureLayout;
                     continue;
                 }
-                foreach (int writer in _atomicWriterScratch[cell])
+                foreach (int writer in _sharedWriterScratch[cell])
                     AddEdge(writer, access.PassIndex);
-                _atomicWriterScratch[cell].Clear();
+                _sharedWriterScratch[cell].Clear();
                 _writerScratch[cell] = access.PassIndex;
                 _layoutScratch[cell] = access.TextureLayout;
             }
@@ -834,15 +832,15 @@ internal sealed partial class FrameExecutor
         }
     }
 
-    private void PrepareAtomicWriterScratch(int count)
+    private void PrepareSharedWriterScratch(int count)
     {
-        if (_atomicWriterScratch.Length < count)
-            EnsureCapacity(ref _atomicWriterScratch, count);
+        if (_sharedWriterScratch.Length < count)
+            EnsureCapacity(ref _sharedWriterScratch, count);
         for (int index = 0; index < count; index++)
-            (_atomicWriterScratch[index] ??= []).Clear();
+            (_sharedWriterScratch[index] ??= []).Clear();
     }
 
-    private bool CanMergeAtomicAccesses(int leftPass, int rightPass)
+    private bool CanOverlapWrites(int leftPass, int rightPass)
     {
         FramePass left = _passes[leftPass];
         FramePass right = _passes[rightPass];
