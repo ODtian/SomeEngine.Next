@@ -25,7 +25,8 @@ struct VirtualShadowPrefilterProjection
     uint Pad2;
 };
 bool ResolveVirtualShadowFilterPage(StructuredBuffer<VirtualShadowMapParameters> views,
-    StructuredBuffer<uint> pageReferences, StructuredBuffer<uint> pageTable, uint viewCount, uint entryCount, uint atlasPage, out VirtualShadowMapParameters view, out uint viewIndex, out uint2 page)
+    StructuredBuffer<uint> pageReferences, StructuredBuffer<uint> pageTable, uint viewCount, uint entryCount,
+    uint atlasPage, out VirtualShadowMapParameters view, out uint viewIndex, out uint2 page)
 {
     view = (VirtualShadowMapParameters)0;
     page = 0u.xx;

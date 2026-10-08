@@ -20,7 +20,7 @@ public sealed partial class VirtualShadowFeature
     private GraphTextureId _prefilterSeparate;
     private GraphTextureId _prefilterMerged;
     private GraphBufferId _prefilterPreviousPages;
-    private GraphBufferId _prefilterPreviousMasks;
+    private GraphTextureId _prefilterPreviousMasks;
     private GraphBufferInput _prefilterPreviousViews = null!;
     private GraphBufferInput _prefilterProjections = null!;
     private GraphBufferInput[] _prefilterUniforms = [];
@@ -93,8 +93,7 @@ public sealed partial class VirtualShadowFeature
         BufferUsages bufferUses = BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination;
         _prefilterPreviousPages = edit.CreatePersistentBuffer(new BufferDesc(checked((ulong)entryCapacity * 2u * sizeof(uint)), bufferUses,
             "Virtual shadow prefilter page histories"));
-        _prefilterPreviousMasks = edit.CreatePersistentBuffer(new BufferDesc(checked((ulong)entryCapacity * 4u * sizeof(uint)), bufferUses,
-            "Virtual shadow prefilter receiver histories"));
+        _prefilterPreviousMasks = edit.CreatePersistentTexture(PrefilterReceiverHistoryDescription);
         _prefilterPreviousViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _prefilterProjections = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _prefilterUniforms = new GraphBufferInput[9];
@@ -197,15 +196,23 @@ public sealed partial class VirtualShadowFeature
             case PrefilterResource.Projections: _ = pass.Bind(edit.CreateBufferSrv(_prefilterProjections, structureStride: 80), sync); break;
             case PrefilterResource.PageReferences: _ = pass.Bind(edit.CreateBufferSrv(_pageOwners, structureStride: 4), sync); break;
             case PrefilterResource.Pages: _ = pass.Bind(edit.CreateBufferSrv(_framePageTable, structureStride: sizeof(uint)), sync); break;
-            case PrefilterResource.ReceiverMasks: _ = pass.Bind(edit.CreateBufferSrv(_pageReceiverMasks, structureStride: 8), sync); break;
+            case PrefilterResource.ReceiverMasks: _ = pass.Bind(edit.CreateTextureSrv(_pageReceiverMasks,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), Format.R32UInt, TextureViewDimension.Texture2D), sync); break;
             case PrefilterResource.Depth: _ = pass.Bind(edit.CreateTextureSrv(_atlas, format: Format.R32UInt, dimension: TextureViewDimension.Texture2DArray), sync); break;
             case PrefilterResource.AxisX: _ = pass.Bind(edit.CreateTextureUav(_prefilterAxisX, format: Format.R8UNorm, dimension: TextureViewDimension.Texture2D), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
             case PrefilterResource.Separate: _ = pass.Bind(edit.CreateTextureUav(_prefilterSeparate, format: Format.R8UNorm, dimension: TextureViewDimension.Texture2DArray), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
             case PrefilterResource.Merged: _ = pass.Bind(edit.CreateTextureUav(_prefilterMerged, format: Format.R8UNorm, dimension: TextureViewDimension.Texture2D), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
             case PrefilterResource.PreviousPages: _ = pass.Bind(edit.CreateBufferUav(_prefilterPreviousPages, structureStride: sizeof(uint)), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
-            case PrefilterResource.PreviousMasks: _ = pass.Bind(edit.CreateBufferUav(_prefilterPreviousMasks, structureStride: 8), sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
+            case PrefilterResource.PreviousMasks: _ = pass.Bind(edit.CreateTextureUav(_prefilterPreviousMasks,
+                new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color), Format.R32UInt, TextureViewDimension.Texture2DArray),
+                sync, GraphAccessMode.ReadWrite, WriteCoverage.Partial); break;
         }
     }
+
+    private TextureDesc PrefilterReceiverHistoryDescription => new(TextureDimension.Texture2D,
+        ReceiverMaskWidth, ReceiverMaskHeight, 1, 1, 2, 1, Format.R32UInt,
+        TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopyDestination,
+        label: "Virtual shadow prefilter receiver histories");
 
     private void StagePrefilter(ref RenderGraphFrame graph, scoped ReadOnlySpan<VirtualShadowView> views)
     {
@@ -297,7 +304,7 @@ public sealed partial class VirtualShadowFeature
     }
 
     private readonly record struct PrefilterInitializeData(GraphTextureId AxisX, GraphTextureId Separate, GraphTextureId Merged,
-        GraphBufferId Pages, GraphBufferId Masks, GraphBufferId WorkPages, GraphBufferId Arguments)
+        GraphBufferId Pages, GraphTextureId Masks, GraphBufferId WorkPages, GraphBufferId Arguments)
     {
         public static void Declare(ref PassDefinition pass, ref PrefilterInitializeData data)
         {
@@ -308,7 +315,8 @@ public sealed partial class VirtualShadowFeature
             _ = pass.Write(data.Merged, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), PipelineSync.Copy,
                 ResourceAccess.CopyDestination, TextureLayout.CopyDestination, WriteCoverage.Complete);
             _ = pass.Write(data.Pages, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            _ = pass.Write(data.Masks, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            _ = pass.Write(data.Masks, new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color), PipelineSync.Copy,
+                ResourceAccess.CopyDestination, TextureLayout.CopyDestination, WriteCoverage.Complete);
             _ = pass.Write(data.WorkPages, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             _ = pass.Write(data.Arguments, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
         }
@@ -318,9 +326,9 @@ public sealed partial class VirtualShadowFeature
             commands.ClearTexture(commands.GetTexture(data.Separate), new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color), default);
             commands.ClearTexture(commands.GetTexture(data.Merged), new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), default);
             var pages = commands.GetBuffer(data.Pages);
-            var masks = commands.GetBuffer(data.Masks);
             commands.ClearBuffer(pages, new BufferRange(0, pages.Info.Size));
-            commands.ClearBuffer(masks, new BufferRange(0, masks.Info.Size));
+            commands.ClearTexture(commands.GetTexture(data.Masks),
+                new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color), default);
             var workPages = commands.GetBuffer(data.WorkPages);
             var arguments = commands.GetBuffer(data.Arguments);
             commands.ClearBuffer(workPages, new BufferRange(0, workPages.Info.Size));

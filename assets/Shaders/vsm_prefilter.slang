@@ -5,6 +5,7 @@
 #include "resource_effects.slang"
 
 #include "vsm_prefilter_common.slang"
+#include "vsm_receiver_mask_common.slang"
 
 ConstantBuffer<VirtualShadowPrefilterUniforms> Prefilter;
 StructuredBuffer<VirtualShadowMapParameters> FilterViews;
@@ -16,12 +17,12 @@ Texture2DArray<uint> FilterDepthAtlas;
 RWTexture2D<float> FilterAxisX;
 RWTexture2DArray<float> FilterSeparate;
 RWTexture2D<float> FilterMerged;
-StructuredBuffer<uint2> FilterReceiverMasks;
+Texture2D<uint> FilterReceiverMasks;
 
 
 RWStructuredBuffer<uint> FilterPreviousPageTable;
 
-RWStructuredBuffer<uint2> FilterPreviousReceiverMasks;
+RWTexture2DArray<uint> FilterPreviousReceiverMasks;
 
 
 StructuredBuffer<uint> FilterPages;
@@ -104,9 +105,9 @@ float VirtualShadowFilterPrevious(VirtualShadowMapParameters view, uint viewInde
     if ((FilterPreviousPageTable[previousIndex] & VSM_PAGE_PARTIAL_DEPTH) != 0u)
     {
         uint2 cell = (previousPixel & (previous.PageSize - 1u)) * 8u / previous.PageSize;
-        uint bit = cell.y * 8u + cell.x;
-        uint2 mask = FilterPreviousReceiverMasks[previousIndex];
-        if (((bit < 32u ? mask.x : mask.y) & (1u << (bit & 31u))) == 0u) return current;
+        uint4 mask = LoadVirtualShadowReceiverMask(FilterPreviousReceiverMasks, previous, 0u,
+            previousPixel / previous.PageSize, Prefilter.WriteLayer ^ 1u);
+        if (!VirtualShadowReceiverMaskCell(mask, cell)) return current;
     }
     float factor;
     if (!VirtualShadowFilterSample(previous, true, previousUV, factor)) return current;
@@ -122,10 +123,21 @@ void PrefilterVirtualShadowDistant(uint3 thread : SV_DispatchThreadID, uint3 gro
     if (Prefilter.Mode == 5u)
     {
         if (lane != 0u || work >= selectedCount) return;
-        uint index = FilterPageReferences[FilterPages[work]];
+        uint atlasPage = FilterPages[work];
+        uint index = FilterPageReferences[atlasPage];
+        VirtualShadowMapParameters view;
+        uint viewIndex;
+        uint2 page;
+        if (!ResolveVirtualShadowFilterPage(FilterViews, FilterPageReferences, FilterPageTable,
+            Prefilter.ViewCount, Prefilter.EntryCount, atlasPage, view, viewIndex, page)) return;
         uint destination = Prefilter.WriteLayer * Prefilter.EntryCapacity + index;
         FilterPreviousPageTable[destination] = FilterPageTable[index];
-        FilterPreviousReceiverMasks[destination] = FilterReceiverMasks[index];
+        uint4 masks = LoadVirtualShadowReceiverMask(FilterReceiverMasks, view, 0u, page);
+        uint2 address = VirtualShadowReceiverMaskOrigin(view, 0u) + page * 2u;
+        FilterPreviousReceiverMasks[uint3(address, Prefilter.WriteLayer)] = masks.x;
+        FilterPreviousReceiverMasks[uint3(address + uint2(1,0), Prefilter.WriteLayer)] = masks.y;
+        FilterPreviousReceiverMasks[uint3(address + uint2(0,1), Prefilter.WriteLayer)] = masks.z;
+        FilterPreviousReceiverMasks[uint3(address + 1u.xx, Prefilter.WriteLayer)] = masks.w;
         return;
     }
     bool border = Prefilter.Mode == 2u || Prefilter.Mode == 4u;

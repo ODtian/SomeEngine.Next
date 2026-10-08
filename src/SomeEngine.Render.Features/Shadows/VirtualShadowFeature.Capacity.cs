@@ -50,7 +50,7 @@ public sealed partial class VirtualShadowFeature
     {
         if (!_shadowMap.Settings.PrefilteredDistantEnabled) return;
         GrowLightBuffer(ref edit, _prefilterPreviousPages, (ulong)entries * 2u * sizeof(uint), "Virtual shadow prefilter page histories");
-        GrowLightBuffer(ref edit, _prefilterPreviousMasks, (ulong)entries * 16u, "Virtual shadow prefilter receiver histories");
+        edit.SetTextureDescription(_prefilterPreviousMasks, PrefilterReceiverHistoryDescription);
         _prefilterEntryCapacity = entries;
         _prefilterHistoryReady = false;
     }

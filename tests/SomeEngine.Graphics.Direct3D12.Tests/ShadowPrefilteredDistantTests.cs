@@ -31,9 +31,7 @@ public sealed class ShadowPrefilteredDistantTests(D3D12TestCompiler compiler)
             new("FilterProjections", projections, ResourceBindingType.BufferSrv, 80),
             new("FilterPageReferences", [0,uint.MaxValue,uint.MaxValue,uint.MaxValue], ResourceBindingType.BufferSrv, 4),
             new("FilterPageTable", [VirtualShadowPageEntry.Encode(0, 2)], ResourceBindingType.BufferSrv, 4),
-            new("FilterReceiverMasks", [uint.MaxValue,uint.MaxValue], ResourceBindingType.BufferSrv, 8),
             new("FilterPreviousPageTable", [VirtualShadowPageEntry.Encode(0, 2),0], ResourceBindingType.BufferUav, 4),
-            new("FilterPreviousReceiverMasks", [uint.MaxValue,uint.MaxValue,0,0], ResourceBindingType.BufferUav, 8),
             new("FilterRequestFlags", [4], ResourceBindingType.BufferSrv, 4),
             new("FilterRequestFrames", [0], ResourceBindingType.BufferSrv, 4),
             new("FilterPages", new uint[4], ResourceBindingType.BufferSrv, 4),
@@ -49,6 +47,9 @@ public sealed class ShadowPrefilteredDistantTests(D3D12TestCompiler compiler)
             new(16,16,new uint[256],0,Format.R8UNorm, Type: ResourceBindingType.TextureUav, Name: "FilterAxisX"),
             new(20,20,new uint[800],0,Format.R32Float, TextureViewDimension.Texture2DArray, ResourceBindingType.TextureUav, 2, "FilterSeparate"),
             new(20,20,new uint[400],0,Format.R32Float, Type: ResourceBindingType.TextureUav, Name: "FilterMerged"),
+            new(2,3,Enumerable.Repeat(0xffffu,6).ToArray(),0,Name: "FilterReceiverMasks"),
+            new(2,3,Enumerable.Repeat(0xffffu,12).ToArray(),0,ViewDimension: TextureViewDimension.Texture2DArray,
+                Type: ResourceBindingType.TextureUav, Layers: 2, Name: "FilterPreviousReceiverMasks"),
         ];
         var compute = new D3D12TestCompute(compiler);
         string[] workNames = ["Prefilter", "FilterViews", "FilterPageReferences", "FilterPageTable",
@@ -65,10 +66,10 @@ public sealed class ShadowPrefilteredDistantTests(D3D12TestCompiler compiler)
         buffers = buffers.Where(input => !workOnly.Contains(input.Name)).ToArray();
         uniforms[6] = 0;
         uint[][] horizontal = compute.ExecuteImages("vsm_prefilter.slang", "PrefilterVirtualShadowDistant", new(1,1,1), buffers, images);
-        images[1] = images[1] with { Pixels = horizontal[2] };
+        images[1] = images[1] with { Pixels = horizontal[1] };
         uniforms[6] = 1;
         uint[][] filtered = compute.ExecuteImages("vsm_prefilter.slang", "PrefilterVirtualShadowDistant", new(1,1,1), buffers, images);
-        float visibility = BitConverter.UInt32BitsToSingle(filtered[3][400 + 5 * 20 + 5]);
+        float visibility = BitConverter.UInt32BitsToSingle(filtered[2][400 + 5 * 20 + 5]);
         // Native R8 rounds the X-axis center .625 to 159/255; the Y-axis
         // six-weight contribution yields the known 219/255 visibility.
         Assert.InRange(visibility, .858823f, .858825f);
@@ -78,7 +79,7 @@ public sealed class ShadowPrefilteredDistantTests(D3D12TestCompiler compiler)
         Array.Fill(history, BitConverter.SingleToUInt32Bits(.8587f), 0, 400);
         images[2] = images[2] with { Pixels = history };
         uint[][] blended = compute.ExecuteImages("vsm_prefilter.slang", "PrefilterVirtualShadowDistant", new(1,1,1), buffers, images);
-        float temporalVisibility = BitConverter.UInt32BitsToSingle(blended[3][400 + 5 * 20 + 5]);
+        float temporalVisibility = BitConverter.UInt32BitsToSingle(blended[2][400 + 5 * 20 + 5]);
         Assert.InRange(temporalVisibility, .862621f, .862623f);
     }
 }
