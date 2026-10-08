@@ -276,7 +276,7 @@ internal sealed class ClusterBvh
             BinaryPrimitives.WriteUInt32LittleEndian(
                 patch.Destination.Span,
                 patch.Value);
-            _storage.Stage(patch.Offset, sizeof(uint));
+            _storage.Stage(patch.Offset / NodeBytes * NodeBytes, checked((int)NodeBytes));
             uint node = checked((uint)(patch.Offset / NodeBytes));
             if (TryFindLeafIndexByNode(node, out ClusterBvhLeafIndex mesh))
                 changedMeshes.Add(mesh.FirstNode);

@@ -1,5 +1,6 @@
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
+using SomeEngine.Resources.Geometry;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -43,8 +44,19 @@ public sealed partial class ClusterPipelineSystem
             (uint)((data.Length + 63) / 64), 1, 1)));
         graph.SetRegionEnabled(GraphData.LeafFlagRegion, !data.IsEmpty);
         PassDefinition pass = graph.GetPass(GraphData.LeafFlagPass);
-        foreach (ref readonly ClusterLeafFlagFixup fixup in data)
-            _ = pass.ReadWrite(GraphData.Resources.PageHeap, new BufferRange(fixup.ClusterByteAddress + 60u, 4u),
+        uint[] addresses = data.ToArray().Select(static fixup => fixup.ClusterByteAddress + 60u).ToArray();
+        Array.Sort(addresses);
+        uint first = addresses[0], end = first + sizeof(uint);
+        for (int index = 1; index <= addresses.Length; index++)
+        {
+            if (index < addresses.Length && addresses[index] <= end + PackedCluster.SizeInBytes - sizeof(uint))
+            {
+                end = addresses[index] + sizeof(uint);
+                continue;
+            }
+            _ = pass.ReadWrite(GraphData.Resources.PageHeap, new BufferRange(first, end - first),
                 PipelineSync.ComputeShading, ResourceAccess.UnorderedAccess);
+            if (index < addresses.Length) { first = addresses[index]; end = first + sizeof(uint); }
+        }
     }
 }
