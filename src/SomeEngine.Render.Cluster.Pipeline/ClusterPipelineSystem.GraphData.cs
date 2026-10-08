@@ -57,6 +57,8 @@ public sealed partial class ClusterPipelineSystem
         internal List<ClusterLayerDispatch> WinnerDispatches = [];
         internal GraphBufferInput ShadeBinUniforms = null!;
         internal ImmutableDictionary<(Material Material, uint Property), MaterialInput> MaterialInputs = ImmutableDictionary<(Material Material, uint Property), MaterialInput>.Empty;
+        internal ImmutableHashSet<(Material Material, uint Property)> MaterialInputChanges = ImmutableHashSet<(Material Material, uint Property)>.Empty;
+        internal MaterialTexture? MissingMaterialTexture;
         internal GraphBufferInput ShadeScalarOffsets = null!;
         internal GraphBufferInput ShadeScalars = null!;
         internal GraphBufferId ScalarBytes;

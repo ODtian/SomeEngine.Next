@@ -6,7 +6,6 @@ using SomeEngine.Core.Diagnostics;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 using EngineTexture = SomeEngine.Resources.Texture;
-using RhiTexture = SomeEngine.Graphics.Texture;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -1124,6 +1123,7 @@ public sealed partial class ClusterPipelineSystem
         uint property, string name, ResourceBindingType type)
     {
         var key = (material, property);
+        GraphData.MaterialInputChanges = GraphData.MaterialInputChanges.Add(key);
         if (GraphData.MaterialInputs.TryGetValue(key, out MaterialInput input))
         {
             DevelopmentCheck.Require(input.Input.Type == type,
@@ -1133,53 +1133,6 @@ public sealed partial class ClusterPipelineSystem
         input = new MaterialInput(graph.CreateParameterInput(type), name);
         GraphData.MaterialInputs = GraphData.MaterialInputs.Add(key, input);
         return input;
-    }
-
-    private ResourceBinding GetMaterialTextureSrv(
-        ref RenderGraphFrame graph,
-        GraphParameterInput input,
-        Material material,
-        uint materialSlot,
-        string name)
-    {
-        EngineTexture? asset = material.GetTexture(materialSlot);
-
-        TextureSrv textureView;
-        if (asset is null)
-        {
-            _ = _renderDevice.PrepareMissingTexture(ref graph, input);
-            textureView = _renderDevice.MissingTextureSrv;
-        }
-        else
-        {
-            textureView = _renderDevice.PrepareTextureSrv(ref graph, input, asset);
-        }
-
-        return ResourceBinding.SampledTexture(textureView);
-    }
-
-    private ResourceBinding GetMaterialTextureUav(
-        ref RenderGraphFrame graph,
-        GraphParameterInput input,
-        Material material,
-        uint materialSlot,
-        string name)
-    {
-        EngineTexture asset = material.GetTexture(materialSlot) ?? throw new InvalidDataException(
-            $"Material '{material.Name}' slot '{name}' must contain a Texture for writable access.");
-        RhiTexture textureResource = _renderDevice.PrepareTexture(ref graph, input, asset);
-        TextureInfo info = textureResource.Info;
-        var range = new TextureSubresourceRange(
-            0,
-            1,
-            0,
-            info.ArrayLayerCount,
-            TextureAspects.Color);
-        TextureUav textureView = _renderDevice.GetTextureUav(
-            asset,
-            range,
-            label: $"Cluster material {name}");
-        return ResourceBinding.StorageTexture(textureView);
     }
 
     private ResourceBinding GetMaterialBufferSrv(
@@ -1292,19 +1245,21 @@ public sealed partial class ClusterPipelineSystem
 
     private void UpdateMaterialInputs(ref RenderGraphFrame graph)
     {
-        foreach (((Material material, uint property), MaterialInput input) in GraphData.MaterialInputs)
+        foreach ((Material material, uint property) in GraphData.MaterialInputChanges)
         {
+            if (!GraphData.MaterialInputs.TryGetValue((material, property), out MaterialInput input) ||
+                input.Input.Type is ResourceBindingType.TextureSrv or ResourceBindingType.TextureUav) continue;
             ResourceBinding value = input.Input.Type switch
             {
-                ResourceBindingType.TextureSrv => GetMaterialTextureSrv(ref graph, input.Input, material, property, input.Name),
-                ResourceBindingType.TextureUav => GetMaterialTextureUav(ref graph, input.Input, material, property, input.Name),
                 ResourceBindingType.BufferSrv => GetMaterialBufferSrv(material, property, input.Name),
                 ResourceBindingType.BufferUav => GetMaterialBufferUav(material, property, input.Name),
                 ResourceBindingType.ConstantBuffer => GetMaterialConstantBuffer(material, property, input.Name),
                 ResourceBindingType.AccelerationStructure => GetMaterialAccelerationStructure(material, property, input.Name),
                 _ => ResourceBinding.SampledWith(ResolveMaterialSampler(material, property, input.Name)),
             };
-            graph.SetParameterInput(input.Input, value);
+            graph.SetPersistentParameterInput(input.Input, value);
         }
+        GraphData.MaterialInputChanges = GraphData.MaterialInputChanges.Clear();
+        UpdateMaterialTextureInputs(ref graph);
     }
 }
