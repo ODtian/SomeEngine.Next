@@ -7,22 +7,6 @@
 static const uint VSM_SOFT_MAX_BLOCKER_QUERIES = 4u;
 static const uint VSM_SOFT_MAX_FILTER_QUERIES = 8u;
 
-float VirtualShadowDepthRoundingRadius(float depth)
-{
-    float magnitude = abs(depth);
-    uint bits = asuint(magnitude);
-    float previous = asfloat(bits == 0u ? 0u : bits - 1u);
-    float next = asfloat(bits + 1u);
-    return 0.5 * max(magnitude - previous, next - magnitude);
-}
-
-float VirtualShadowReverseDepthRoundingRadius(float reverseDepth)
-{
-    // The atlas stores a rounded normalized depth followed by 1 - depth.
-    return VirtualShadowDepthRoundingRadius(1.0 - reverseDepth)
-        + VirtualShadowDepthRoundingRadius(reverseDepth);
-}
-
 struct VirtualShadowSoftPlane
 {
     uint ViewIndex;
@@ -42,11 +26,7 @@ VirtualShadowSoftPlane BuildVirtualShadowSoftPlane(StructuredBuffer<VirtualShado
     plane.Gradient = CalculateVirtualShadowReceiverPlaneDepthGradient(view, position, normal);
     plane.DepthOffset = 0.0;
     if (IsDirectionalVirtualShadowProjection(view))
-    {
-        float3 viewPosition = position + view.WorldTranslation;
-        plane.DepthOffset = dot(viewPosition, float3(view.ShadowUv[0][2], view.ShadowUv[1][2], view.ShadowUv[2][2]))
-            + (view.ShadowUv[3][2] - 0.5);
-    }
+        plane.DepthOffset = CalculateVirtualShadowDirectionalDepthOffset(view, position);
     return plane;
 }
 
@@ -131,11 +111,6 @@ bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> vie
     if (plane.ViewIndex != sample.ViewIndex)
         plane = BuildVirtualShadowSoftPlane(views, sample.ViewIndex, position, normal);
     float stored = sample.Depth;
-    if (IsDirectionalVirtualShadowProjection(baseView) && sample.ViewIndex != queryView)
-    {
-        float4 transform = VirtualShadowClipmapScaleBias(views[queryView], source, sample.ViewIndex - queryView);
-        stored = stored * transform.x + 1.0 - transform.x - transform.w;
-    }
     precise float receiver = 1.0 - plane.Ndc.z;
     float planeOffset = dot(sample.UV - plane.UV, plane.Gradient);
     precise float centerDepthDifference = IsDirectionalVirtualShadowProjection(baseView)
