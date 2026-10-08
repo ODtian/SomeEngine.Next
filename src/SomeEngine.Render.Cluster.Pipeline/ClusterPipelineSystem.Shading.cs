@@ -36,8 +36,8 @@ public sealed partial class ClusterPipelineSystem
     private GraphRegionMap<uint, ShadeGroup> UpdateMaterialGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages,
         GraphRegionMap<uint, ShadeGroup> previousGroups, bool receivers)
     {
-        var desired = stages.Invocations.Where(stage => !receivers || stage.Receiver is not null)
-            .ToDictionary(static stage => stage.BinIndex, stage => new ShadeGroup(receivers ? stage.Receiver! : stage));
+        var desired = stages.Invocations
+            .ToDictionary(static stage => stage.BinIndex, stage => new ShadeGroup(receivers ? stage.SurfaceShader! : stage));
         foreach (ShadeGroup group in previousGroups.Values)
             if (!desired.TryGetValue(group.Stage.BinIndex, out ShadeGroup? next) ||
                 !ShadeGroupComparer.Instance.Equals(group, next))
@@ -57,7 +57,8 @@ public sealed partial class ClusterPipelineSystem
                 value.Uniforms = BindShadeResources(ref edit, pass, value.Stage, stages);
             });
         if (_installedShadeStages is { } previous &&
-            (previous.BinCount != stages.BinCount || previous.BinIndices.Length != stages.BinIndices.Length))
+            (previous.BinCount != stages.BinCount || previous.BinIndices.Length != stages.BinIndices.Length ||
+                previous.SurfaceDataStride != stages.SurfaceDataStride))
         {
             Span<ClusterShadeUniforms> value = stackalloc ClusterShadeUniforms[1];
             foreach (ShadeGroup group in groups.Values)
@@ -77,6 +78,8 @@ public sealed partial class ClusterPipelineSystem
         ShadeBinCount = stages.BinCount,
         MaterialSlotCapacity = checked((uint)(stages.BinIndices.Length / sizeof(uint))),
         ViewCount = GraphData.Resources.ViewCount,
+        SurfaceDataStride = stages.GetBin(bin).SurfaceDataSize,
+        VisibilityDepth = (uint)stages.GetBin(bin).VisibilityDepth,
     };
 
     private static uint CalculateShadeBinItemCapacity(in FrameResources frame)
@@ -103,6 +106,7 @@ public sealed partial class ClusterPipelineSystem
             BinItemCapacity = CalculateShadeBinItemCapacity(GraphData.Resources),
             AdditionalReceiverLayerCount = GraphData.Resources.AdditionalReceiverLayerCount,
             ViewCount = GraphData.Resources.ViewCount,
+            SurfaceDataStride = GraphData.Resources.SurfaceDataStride,
         };
         UpdateParameters(ref graph, GraphData.ShadeBinUniforms, MemoryMarshal.AsBytes(value));
     }

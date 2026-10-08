@@ -1,3 +1,4 @@
+using SomeEngine.Render.Lighting;
 using System.Collections.Immutable;
 using System.Numerics;
 using SomeEngine.Graphics;
@@ -2019,6 +2020,7 @@ public sealed partial class ClusterPipelineSystem
                 BinItemCapacity = CalculateShadeBinItemCapacity(frame),
                 AdditionalReceiverLayerCount = frame.AdditionalReceiverLayerCount,
                 ViewCount = frame.ViewCount,
+                SurfaceDataStride = frame.SurfaceDataStride,
             },
             "Cluster shade bin uniforms");
         int bindingCount = 0;
@@ -2039,6 +2041,9 @@ public sealed partial class ClusterPipelineSystem
             PipelineSync.ComputeShading,
             GraphAccessMode.Write,
             WriteCoverage.Complete));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.SurfaceCounts, sizeof(uint)),
+            PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete));
         ClusterDispatchParameters clear = new(new DispatchArguments(
             Math.Max(1u, (frame.ShadeBinCount + 127u) / 128u), 1, 1));
         GraphPassId clearPass = AddComputePass(ref graph, "Clear Cluster shade bins",
@@ -2076,18 +2081,24 @@ public sealed partial class ClusterPipelineSystem
             PipelineSync.ComputeShading));
         AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.PixelCoordinates, 2 * sizeof(uint)),
+            CreateStorageBufferView(graph, frame.PixelCoordinates, 3 * sizeof(uint)),
             PipelineSync.ComputeShading,
             GraphAccessMode.Write,
             WriteCoverage.Partial,
             ResourceContentState.Defined,
             BufferContentScope.CountBoundedRanges));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.SurfaceReceivers, 32),
+            CreateStorageBufferView(graph, frame.SurfaceReceivers, SurfaceReceiver.SizeInBytes),
             PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.AdditionalSurfaceReceivers, 32),
+            CreateStorageBufferView(graph, frame.AdditionalSurfaceReceivers, SurfaceReceiver.SizeInBytes),
             PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.MaterialSurfaces, 0),
+            PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.SurfaceCounts, sizeof(uint)),
+            PipelineSync.ComputeShading, GraphAccessMode.ReadWrite, WriteCoverage.Partial));
         ClusterDispatchParameters count = new(new DispatchArguments(
             Groups(frame.Width, 8), Groups(frame.Height, 8), 1));
         GraphPassId countPass = AddComputePass(
@@ -2128,6 +2139,16 @@ public sealed partial class ClusterPipelineSystem
             PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite,
             WriteCoverage.Partial));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.SurfaceCounts, sizeof(uint)), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            graph.CreateBufferSrv(frame.SurfaceDataSizes, structureStride: sizeof(uint)), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.SurfaceDataOffsets, sizeof(uint)),
+            PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.SurfaceScatterCounts, sizeof(uint)),
+            PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete));
         ClusterDispatchParameters reserve = new(new DispatchArguments(
             Math.Max(1u, (frame.ShadeBinCount + 127u) / 128u), 1, 1));
         GraphPassId reservePass = AddComputePass(ref graph, "Reserve Cluster shade bins",
@@ -2172,12 +2193,15 @@ public sealed partial class ClusterPipelineSystem
             WriteCoverage.Partial));
         AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.PixelCoordinates, 2 * sizeof(uint)),
+            CreateStorageBufferView(graph, frame.PixelCoordinates, 3 * sizeof(uint)),
             PipelineSync.ComputeShading,
             GraphAccessMode.Write,
             WriteCoverage.Partial,
             ResourceContentState.Defined,
             BufferContentScope.CountBoundedRanges));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.SurfaceScatterCounts, sizeof(uint)),
+            PipelineSync.ComputeShading, GraphAccessMode.ReadWrite, WriteCoverage.Partial));
         ClusterDispatchParameters scatter = new(new DispatchArguments(
             Groups(frame.Width, 8), Groups(frame.Height, 8), 1));
         GraphData.ShadeScatter = graph.AddRegion("Cluster shade scatter", GraphData.ShadeBinning);

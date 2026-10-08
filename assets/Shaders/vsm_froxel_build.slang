@@ -35,7 +35,7 @@ void BuildVirtualShadowFroxels(uint3 tile : SV_GroupID, uint3 local : SV_GroupTh
     if (inView)
     {
         SurfaceReceiver receiver = FroxelReceivers[pixelIndex];
-        bool eligible = (receiver.Flags & SURFACE_RECEIVER_PRESENT) == 0u || SurfaceReceiverHasLighting(receiver);
+        bool eligible = SurfaceReceiverHasLighting(receiver);
         if (eligible && (receiver.Flags & (SURFACE_RECEIVER_HAIR | SURFACE_RECEIVER_FIRST_PERSON)) == 0u)
             slice = VirtualShadowFroxelSlice(FroxelParameters, FroxelHiZ.Load(int4(pixel, 0, 0)));
     }

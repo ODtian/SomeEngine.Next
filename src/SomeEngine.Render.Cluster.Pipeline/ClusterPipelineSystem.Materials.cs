@@ -1,3 +1,4 @@
+using SomeEngine.Render.Lighting;
 using System.Collections.Immutable;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -59,12 +60,12 @@ public sealed partial class ClusterPipelineSystem
             if (_installedShadeStages is not null && _installedShadeStages.TryGetBin(bin, out var before))
             {
                 CountBuffers(before.CommandBindings, -1);
-                if (before.Receiver is { } receiver) CountBuffers(receiver.CommandBindings, -1);
+                if (before.SurfaceShader is { } receiver) CountBuffers(receiver.CommandBindings, -1);
             }
             if (shadeStages.TryGetBin(bin, out var after))
             {
                 CountBuffers(after.CommandBindings, 1);
-                if (after.Receiver is { } receiver) CountBuffers(receiver.CommandBindings, 1);
+                if (after.SurfaceShader is { } receiver) CountBuffers(receiver.CommandBindings, 1);
             }
         }
         void CountBuffers(ClusterCommandBindingKey bindings, int change)
@@ -994,7 +995,7 @@ public sealed partial class ClusterPipelineSystem
                     ref graph,
                     ref pass,
                     frame.PixelCoordinates,
-                    2 * sizeof(uint),
+                    3 * sizeof(uint),
                     "PixelCoordBuffer",
                     BufferContentScope.CountBoundedRanges);
                 return;
@@ -1054,16 +1055,26 @@ public sealed partial class ClusterPipelineSystem
                     GraphAccessMode.Write,
                     WriteCoverage.Partial);
                 return;
+            case ClusterShadeCoreResource.MaterialSurfaceOffsets:
+                BindReadOnly(ref graph, ref pass, frame.SurfaceDataOffsets, sizeof(uint), "MaterialSurfaceOffsets");
+                return;
+            case ClusterShadeCoreResource.MaterialSurfaceOutputs:
+                _ = pass.Bind(graph.CreateBufferUav(frame.MaterialSurfaces), PipelineSync.ComputeShading,
+                    GraphAccessMode.Write, WriteCoverage.Partial);
+                return;
+            case ClusterShadeCoreResource.MaterialSurfaceInputs:
+                _ = pass.Bind(graph.CreateBufferSrv(frame.MaterialSurfaces), PipelineSync.ComputeShading);
+                return;
             case ClusterShadeCoreResource.SurfaceReceiverOutput:
-                _ = pass.Bind(graph.CreateBufferUav(frame.SurfaceReceivers, structureStride: 32), PipelineSync.ComputeShading,
+                _ = pass.Bind(graph.CreateBufferUav(frame.SurfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading,
                     GraphAccessMode.Write, WriteCoverage.Partial);
                 return;
             case ClusterShadeCoreResource.AdditionalSurfaceReceiverOutput:
-                _ = pass.Bind(graph.CreateBufferUav(frame.AdditionalSurfaceReceivers, structureStride: 32), PipelineSync.ComputeShading,
+                _ = pass.Bind(graph.CreateBufferUav(frame.AdditionalSurfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading,
                     GraphAccessMode.Write, WriteCoverage.Partial);
                 return;
             case ClusterShadeCoreResource.SurfaceReceiverInputs:
-                _ = pass.Bind(graph.CreateBufferSrv(frame.SurfaceReceivers, structureStride: 32), PipelineSync.ComputeShading);
+                _ = pass.Bind(graph.CreateBufferSrv(frame.SurfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading);
                 return;
             case ClusterShadeCoreResource.OutputMotionVectors:
                 _ = pass.Bind(

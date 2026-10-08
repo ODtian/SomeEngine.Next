@@ -38,7 +38,7 @@ struct VirtualShadowProjectionReceiver
 {
     bool Valid;
     float3 Position;
-    float3 ShadowPosition;
+    float NormalBiasLength;
     float3 Normal;
     float NominalPixelRadius;
     float ResolutionBias;
@@ -52,17 +52,10 @@ VirtualShadowProjectionReceiver ReadVirtualShadowProjectionReceiver(uint3 pixel,
     SurfaceReceiver receiver = receiverLayer == 0u ? ProjectionReceivers[index] :
         ProjectionAdditionalReceivers[(receiverLayer - 1u) * Projection.ViewCount * Projection.Width * Projection.Height + index];
     if (!SurfaceReceiverHasLighting(receiver)) return result;
-    float depth = receiverLayer == 0u ? ProjectionDepth.Load(int4(pixel, 0)) : receiver.Depth;
-    if (depth < 0.0 || depth >= 1.0) return result;
-    ClusterViewUniforms view = ProjectionViews[pixel.z];
-    VirtualShadowReceiverPixel footprint = ReconstructVirtualShadowReceiverPixel(ProjectionDepth, pixel,
-        uint2(Projection.Width, Projection.Height), depth, view.ClipToWorld);
-    result.Position = footprint.Position;
+    result.Position = receiver.Position;
     result.Normal = receiver.ShadingNormal;
-    if (dot(result.Normal, view.CameraPos - result.Position) <= 0.0) return result;
-    float bias = CalculateVirtualShadowNormalBiasLength(VirtualShadowSampling.ReceiverProjection,
+    result.NormalBiasLength = CalculateVirtualShadowNormalBiasLength(VirtualShadowSampling.ReceiverProjection,
         result.Position, VirtualShadowSampling.NormalBias, VirtualShadowViews[0].WorldUnitsPerCentimeter);
-    result.ShadowPosition = result.Position + result.Normal * bias;
     result.NominalPixelRadius = CalculateVirtualShadowNominalWorldPixelRadius(
         VirtualShadowSampling.ReceiverProjection, result.Position);
     result.ResolutionBias = CalculateVirtualShadowReceiverResolutionBias(
@@ -77,11 +70,19 @@ float ProjectVirtualShadowReceiver(uint3 pixel, uint light, VirtualShadowProject
 {
     if (!receiver.Valid || light >= VirtualShadowSampling.DirectionalLightCount) return 1.0;
     GPULight source = LightBuffer[light];
-    if (dot(receiver.Normal, -source.Direction) <= 0.0) return 1.0;
     uint firstView = light * VirtualShadowSampling.DirectionalClipmapLevels;
     uint levels = min(VirtualShadowSampling.DirectionalClipmapLevels, VirtualShadowSampling.ViewCount - firstView);
+    SurfaceReceiver surface = (SurfaceReceiver)0;
+    surface.Flags = receiver.Flags;
+    surface.Depth = 0.0;
+    surface.ShadingNormal = receiver.Normal;
+    if (!SurfaceReceiverReceivesDirectionalShadow(surface, -source.Direction,
+        VirtualShadowViews[firstView].SourceAngleRadians, VirtualShadowSampling.CullBackfacingPixels != 0u)) return 1.0;
+    float3 normal = (receiver.Flags & SURFACE_RECEIVER_HAIR) != 0u ? -source.Direction : receiver.Normal;
+    float3 shadowPosition = receiver.Position;
+    if ((receiver.Flags & SURFACE_RECEIVER_SUBSURFACE) == 0u) shadowPosition += normal * receiver.NormalBiasLength;
     VirtualShadowProjectionResult result = SampleVirtualShadowDirectionalSoft(VirtualShadowViews, VirtualShadowPageTable,
-        VirtualShadowAtlas, firstView, levels, receiver.ShadowPosition, receiver.Normal,
+        VirtualShadowAtlas, firstView, levels, shadowPosition, normal,
         VirtualShadowDynamicResolutionBias[0].x, receiver.ResolutionBias,
         VirtualShadowSampling.BlockerSampleCount, VirtualShadowSampling.FilterSampleCount,
         VirtualShadowSampling.MaxFilterRadiusTexels, pixel.xy, VirtualShadowSampling.FrameIndex,
@@ -90,7 +91,7 @@ float ProjectVirtualShadowReceiver(uint3 pixel, uint light, VirtualShadowProject
             ? VirtualShadowSampling.FirstPersonViewOffset + light * VirtualShadowViews[VirtualShadowSampling.FirstPersonViewOffset].ClipmapLevelCount
             : 0xffffffffu);
     return result.Visibility * SampleDirectionalVirtualShadowPrefiltered(VirtualShadowViews, VirtualShadowPageTable,
-        VirtualShadowPrefilteredAtlas, firstView, levels, receiver.ShadowPosition);
+        VirtualShadowPrefilteredAtlas, firstView, levels, shadowPosition);
 }
 #else
 uint VirtualShadowLocalLightIndex(uint sourceLight)
@@ -110,15 +111,25 @@ float ProjectVirtualShadowLocalReceiver(uint3 pixel, uint light, uint sourceLigh
     GPULight source = LightBuffer[sourceLight];
     float3 towardLight = source.Position - receiver.Position;
     float distanceSquared = dot(towardLight, towardLight);
-    if (source.Range <= 0.0 || distanceSquared >= source.Range * source.Range || dot(receiver.Normal, towardLight) <= 0.0)
+    if (source.Range <= 0.0 || distanceSquared >= source.Range * source.Range)
         return 1.0;
     uint points = VirtualShadowSampling.PointLightCount;
     if (light >= points && dot(source.Direction, source.Direction) > 1e-8 && source.OuterConeCos > 0.0 &&
         dot(-towardLight * rsqrt(max(distanceSquared, 1e-8)), source.Direction) <= source.OuterConeCos) return 1.0;
     uint firstView = light < points ? VirtualShadowSampling.PointViewOffset + light * 6u :
         VirtualShadowSampling.SpotViewOffset + light - points;
+    VirtualShadowMapParameters view = VirtualShadowViews[firstView];
+    SurfaceReceiver surface = (SurfaceReceiver)0;
+    surface.Flags = receiver.Flags;
+    surface.Depth = 0.0;
+    surface.ShadingNormal = receiver.Normal;
+    if (!SurfaceReceiverReceivesLocalShadow(surface, towardLight / view.WorldUnitsPerCentimeter,
+        view.SourceRadius / view.WorldUnitsPerCentimeter, VirtualShadowSampling.CullBackfacingPixels != 0u)) return 1.0;
+    float3 normal = (receiver.Flags & SURFACE_RECEIVER_HAIR) != 0u ? normalize(towardLight) : receiver.Normal;
+    float3 shadowPosition = receiver.Position;
+    if ((receiver.Flags & SURFACE_RECEIVER_SUBSURFACE) == 0u) shadowPosition += normal * receiver.NormalBiasLength;
     return SampleVirtualShadowLocalSoft(VirtualShadowViews, VirtualShadowPageTable, VirtualShadowAtlas,
-        firstView, receiver.ShadowPosition, receiver.Normal, receiver.NominalPixelRadius,
+        firstView, shadowPosition, normal, receiver.NominalPixelRadius,
         VirtualShadowDynamicResolutionBias[0].y, VirtualShadowSampling.BlockerSampleCount,
         VirtualShadowSampling.FilterSampleCount, VirtualShadowSampling.MaxFilterRadiusTexels,
         pixel.xy, VirtualShadowSampling.FrameIndex).Visibility;

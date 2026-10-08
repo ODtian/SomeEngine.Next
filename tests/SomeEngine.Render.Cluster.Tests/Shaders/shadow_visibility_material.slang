@@ -3,6 +3,7 @@
 #include "triangle_surface.slang"
 #include "render_lighting.slang"
 #include "vsm_material.slang"
+#include "vsm_soft_sampling.slang"
 #include "vsm_receiver_pixel.slang"
 
 StructuredBuffer<GPULight> LightBuffer;
@@ -32,8 +33,12 @@ struct ShadowVisibilityMask : IVisibilityEvaluate<StandardVertex>
     }
 };
 
-struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurfaceReceiverEvaluate<SurfaceEval, Triangle>
+[MaterialSurfaceData]
+struct ShadowVisibilityData { uint ShadingFacesLight; };
+
+struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
+    typealias Data = ShadowVisibilityData;
     Texture2D<float4> NormalMap;
     SamplerState MaterialSampler;
 
@@ -48,48 +53,45 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ISurf
             cross(normal, tangent) * surface.Tangent.w * tangentNormal.y + normal * tangentNormal.z);
     }
 
-    SurfaceReceiver evaluateReceiver(uint3 pixel, uint instance, uint material, SurfaceEval surface,
-        float3 bary, Triangle triangle)
+    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle, out SurfaceReceiver receiver)
     {
-        SurfaceReceiver receiver = (SurfaceReceiver)0;
+        receiver = (SurfaceReceiver)0;
+        receiver.Position = pixel.PositionFromDepth;
+        receiver.Depth = pixel.Depth;
         receiver.ShadingNormal = CalculateShadingNormal(surface);
         receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
             triangle.Position2 - triangle.Position0), normalize(surface.Normal));
         if (dot(receiver.GeometricNormal, surface.Normal) < 0.0) receiver.GeometricNormal = -receiver.GeometricNormal;
         receiver.Flags = SURFACE_RECEIVER_LIGHTING;
-        return receiver;
+        Data data;
+        data.ShadingFacesLight = dot(receiver.ShadingNormal, Views[pixel.PixelCoord.z].CameraPos - receiver.Position) > 0.0 &&
+            dot(receiver.ShadingNormal, -LightBuffer[0].Direction) >= 0.15 ? 1u : 0u;
+        return data;
     }
-
-    void evaluateDebug(uint debugMode, uint3 pixel, uint instance, uint material, SurfaceEval surface,
-        float3 bary, Triangle triangle, RWTexture2DArray<float4> color)
+    void shadeSurface(uint3 pixel, uint debugMode, Data data, SurfaceReceiver receiver,
+        RWTexture2DArray<float4> color)
     {
-        evaluateSurface(pixel, instance, material, surface, bary, triangle, color);
-    }
-
-    void evaluateSurface(uint3 pixel, uint instance, uint material, SurfaceEval surface,
-        float3 bary, Triangle triangle, RWTexture2DArray<float4> color)
-    {
-        ClusterViewUniforms view = Views[pixel.z];
-        uint receiverIndex = pixel.z * view.ScreenWidth * view.ScreenHeight + pixel.y * view.ScreenWidth + pixel.x;
-        SurfaceReceiver receiver = SurfaceReceiverInputs[receiverIndex];
-        float3 mappedNormal = (receiver.Flags & SURFACE_RECEIVER_PRESENT) != 0u
-            ? receiver.ShadingNormal : CalculateShadingNormal(surface);
-        float biasLength = CalculateVirtualShadowNormalBiasLength(VirtualShadowSampling.ReceiverProjection,
-            surface.Position, VirtualShadowSampling.NormalBias, VirtualShadowViews[0].WorldUnitsPerCentimeter);
-        float3 position = surface.Position + mappedNormal * biasLength;
         uint levelCount = min(VirtualShadowSampling.DirectionalClipmapLevels, VirtualShadowSampling.ViewCount);
-        VirtualShadowProjectionResult projection = TraceVirtualShadowDirectional(VirtualShadowViews,
-            VirtualShadowPageTable, VirtualShadowAtlas, 0u, levelCount, position, mappedNormal,
-            VirtualShadowDynamicResolutionBias[0].x,
-            CalculateVirtualShadowReceiverResolutionBias(VirtualShadowSampling.ReceiverProjection, surface.Position),
-            VirtualShadowSampling.DirectionalRays, pixel.xy, VirtualShadowSampling.FrameIndex,
-            length(position - VirtualShadowSampling.ReceiverProjection.CameraPosition), 0.0);
-        float visibility = projection.Visibility * SampleDirectionalVirtualShadowPrefiltered(VirtualShadowViews,
-            VirtualShadowPageTable, VirtualShadowPrefilteredAtlas, 0u, levelCount, position);
-        bool shadingFacesLight = dot(mappedNormal, view.CameraPos - surface.Position) > 0.0 &&
-            dot(mappedNormal, -LightBuffer[0].Direction) >= 0.15;
-        color[pixel] = float4(visibility, 1.0, shadingFacesLight ? 1.0 : 0.0, 1.0);
+        float visibility = 1.0;
+        if (SurfaceReceiverReceivesDirectionalShadow(receiver, -LightBuffer[0].Direction,
+            VirtualShadowViews[0].SourceAngleRadians, VirtualShadowSampling.CullBackfacingPixels != 0u))
+        {
+            float biasLength = CalculateVirtualShadowNormalBiasLength(VirtualShadowSampling.ReceiverProjection,
+                receiver.Position, VirtualShadowSampling.NormalBias, VirtualShadowViews[0].WorldUnitsPerCentimeter);
+            float3 position = receiver.Position + receiver.ShadingNormal * biasLength;
+            VirtualShadowProjectionResult projection = SampleVirtualShadowDirectionalSoft(VirtualShadowViews,
+                VirtualShadowPageTable, VirtualShadowAtlas, 0u, levelCount, position, receiver.ShadingNormal,
+                VirtualShadowDynamicResolutionBias[0].x,
+                CalculateVirtualShadowReceiverResolutionBias(VirtualShadowSampling.ReceiverProjection, receiver.Position),
+                VirtualShadowSampling.BlockerSampleCount, VirtualShadowSampling.FilterSampleCount,
+                VirtualShadowSampling.MaxFilterRadiusTexels, pixel.xy, VirtualShadowSampling.FrameIndex);
+            visibility = projection.Visibility * SampleDirectionalVirtualShadowPrefiltered(VirtualShadowViews,
+                VirtualShadowPageTable, VirtualShadowPrefilteredAtlas, 0u, levelCount, position);
+        }
+        color[pixel] = float4(visibility, 1.0, data.ShadingFacesLight != 0u ? 1.0 : 0.0, 1.0);
     }
+
 };
 
 typedef StaticVertexEval VertexEvaluate;

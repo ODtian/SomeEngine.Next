@@ -30,6 +30,8 @@ struct VirtualShadowSamplingUniforms
     VirtualShadowReceiverProjection ReceiverProjection;
     VirtualShadowRaySettings DirectionalRays;
     VirtualShadowRaySettings LocalRays;
+    uint CullBackfacingPixels;
+    uint3 ReceiverPadding;
 };
 
 StructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;

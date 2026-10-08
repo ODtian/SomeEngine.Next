@@ -1,3 +1,4 @@
+using SomeEngine.Render.Lighting;
 using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
@@ -142,10 +143,10 @@ public sealed partial class VirtualShadowFeature
             dimension: TextureViewDimension.Texture2DArray), sync);
 
     private void BindProjectionReceivers(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
-        _ = pass.Bind(edit.CreateBufferSrv(_surfaceReceivers, structureStride: 32), sync);
+        _ = pass.Bind(edit.CreateBufferSrv(_surfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), sync);
 
     private void BindProjectionAdditionalReceivers(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
-        _ = pass.Bind(edit.CreateBufferSrv(_additionalReceivers, structureStride: 32), sync);
+        _ = pass.Bind(edit.CreateBufferSrv(_additionalReceivers, structureStride: SurfaceReceiver.SizeInBytes), sync);
 
     private void BindProjectedDirectionalVisibility(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
         _ = pass.Bind(edit.CreateBufferSrv(_directionalProjection.Visibility, structureStride: 4), sync);

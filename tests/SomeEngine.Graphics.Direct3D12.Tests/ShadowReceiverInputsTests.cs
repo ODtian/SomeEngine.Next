@@ -26,7 +26,7 @@ public sealed class ShadowReceiverInputsTests(D3D12TestCompiler compiler)
         uint[] views = MemoryMarshal.Cast<VirtualShadowView,uint>(viewData).ToArray();
         var demand = new VirtualShadowPageDemandUniforms
         {
-            ClipToWorld = Matrix4x4.Identity, ReceiverWidth = 2, ReceiverHeight = 1,
+            ClipToWorld = Matrix4x4.Identity, ReceiverWidth = 4, ReceiverHeight = 1,
             ViewCount = 12, PageTableEntryCount = 48, PointLightCount = 2, FrameIndex = 1,
             CullBackfacingPixels = 1,
         };
@@ -35,7 +35,12 @@ public sealed class ShadowReceiverInputsTests(D3D12TestCompiler compiler)
         {
             ShadingNormal = new(MathF.Sqrt(.9375f),0,-.25f), GeometricNormal = Vector3.UnitZ,
             Flags = SurfaceReceiverFlags.Present | SurfaceReceiverFlags.Lighting,
-        }, 2).ToArray();
+        }, 4).ToArray();
+        for (int pixel = 0; pixel < receiverData.Length; pixel++)
+        {
+            receiverData[pixel].Depth = .5f;
+            receiverData[pixel].Position = new(pixel < 2 ? -.5f : .5f, 0, .5f);
+        }
         uint[] lighting = new uint[48];
         lighting[32] = 2; lighting[33] = lighting[34] = lighting[35] = 1;
         lighting[36] = BitConverter.SingleToUInt32Bits(.01f); lighting[40] = 1;
@@ -48,14 +53,14 @@ public sealed class ShadowReceiverInputsTests(D3D12TestCompiler compiler)
              new("ClusteredLightGrid",[0,2],ResourceBindingType.BufferSrv,8),
              new("LightIndexList",[0,1],ResourceBindingType.BufferSrv,4),
              new("DynamicResolutionBias",[0,0],ResourceBindingType.BufferSrv,8),
-             new("ReceiverInputs",MemoryMarshal.Cast<SurfaceReceiver,uint>(receiverData).ToArray(),ResourceBindingType.BufferSrv,32),
-             new("AdditionalReceiverInputs",new uint[8],ResourceBindingType.BufferSrv,32),
+             new("ReceiverInputs",MemoryMarshal.Cast<SurfaceReceiver,uint>(receiverData).ToArray(),ResourceBindingType.BufferSrv,SurfaceReceiver.SizeInBytes),
+             new("AdditionalReceiverInputs",new uint[12],ResourceBindingType.BufferSrv,SurfaceReceiver.SizeInBytes),
              new("RequestedShadowPages",new uint[48],ResourceBindingType.BufferUav,4),
              new("RequestedPageFlags",new uint[48],ResourceBindingType.BufferUav,4),
              new("RequestedPageIndices",new uint[48],ResourceBindingType.BufferUav,4),
              new("RequestedPageCount",[0],ResourceBindingType.BufferUav,4),
              new("PageReceiverMasks",new uint[96],ResourceBindingType.BufferUav,8)],
-            [new(2,1,Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.5f),2).ToArray(),0,
+            [new(8,1,Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.5f),8).ToArray(),0,
                 Format.R32Float,TextureViewDimension.Texture2DArray,Name:"ReceiverDepth")]);
         uint[][] coverage = compute.ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1
@@ -87,7 +92,7 @@ public sealed class ShadowReceiverInputsTests(D3D12TestCompiler compiler)
             #include "surface_receiver.slang"
             struct Surface { float3 Normal; uint Model; };
             struct Triangle { float3 Normal; };
-            struct ReceiverMaterial : ISurfaceReceiverEvaluate<Surface,Triangle>
+            struct ReceiverMaterial
             {
                 SurfaceReceiver evaluateReceiver(uint3 pixel, uint instance, uint material,
                     Surface surface, float3 bary, Triangle triangle)
@@ -102,19 +107,21 @@ public sealed class ShadowReceiverInputsTests(D3D12TestCompiler compiler)
             };
             RWStructuredBuffer<SurfaceReceiver> ReceiverData;
             [shader("compute")]
-            [numthreads(4,1,1)]
+            [numthreads(8,1,1)]
             void EmitReceivers(uint3 pixel : SV_DispatchThreadID)
             {
                 Surface surface;
-                surface.Model = pixel.x;
-                surface.Normal = pixel.x < 2u ? float3(0,0,-1) : float3(0,0,1);
+                surface.Model = pixel.x / 2u;
+                surface.Normal = surface.Model < 2u ? float3(0,0,-1) : float3(0,0,1);
                 Triangle triangle; triangle.Normal = float3(0,0,1);
                 ReceiverMaterial material;
                 SurfaceReceiver receiver = material.evaluateReceiver(pixel, 0u, pixel.x, surface, 0.0.xxx, triangle);
                 receiver.Flags |= SURFACE_RECEIVER_PRESENT;
+                receiver.Depth = .5;
+                receiver.Position = float3((float(surface.Model) + .5) / 4.0 * 2.0 - 1.0, 0.0, .5);
                 ReceiverData[pixel.x] = receiver;
             }
-            """, "EmitReceivers", new(1,1,1), [(new uint[32], ResourceBindingType.BufferUav, 32)]);
+            """, "EmitReceivers", new(1,1,1), [(new uint[96], ResourceBindingType.BufferUav, SurfaceReceiver.SizeInBytes)]);
         var view = new VirtualShadowView
         {
             LightViewProjection = Matrix4x4.Identity, VirtualResolution = 32, PageSize = 8, AtlasSize = 16,
@@ -124,7 +131,7 @@ public sealed class ShadowReceiverInputsTests(D3D12TestCompiler compiler)
         uint[] views = MemoryMarshal.Cast<byte,uint>(MemoryMarshal.AsBytes(new[] { view }.AsSpan())).ToArray();
         var demand = new VirtualShadowPageDemandUniforms
         {
-            ClipToWorld = Matrix4x4.Identity, ReceiverWidth = 4, ReceiverHeight = 1, ViewCount = 1,
+            ClipToWorld = Matrix4x4.Identity, ReceiverWidth = 8, ReceiverHeight = 1, ViewCount = 1,
             PageTableEntryCount = 21, DirectionalLightCount = 1, DirectionalClipmapLevels = 1, FrameIndex = 1,
             CullBackfacingPixels = 1, FirstPersonPixelRequestBias = 2, FirstPersonPixelRequestMinLevel = 8,
         };
@@ -140,14 +147,14 @@ public sealed class ShadowReceiverInputsTests(D3D12TestCompiler compiler)
              new("ClusteredLightGrid", [0,0], ResourceBindingType.BufferSrv, 8),
              new("LightIndexList", [0], ResourceBindingType.BufferSrv, 4),
              new("DynamicResolutionBias", [0,0], ResourceBindingType.BufferSrv, 8),
-             new("ReceiverInputs", receiverData[0], ResourceBindingType.BufferSrv, 32),
-             new("AdditionalReceiverInputs", new uint[8], ResourceBindingType.BufferSrv, 32),
+             new("ReceiverInputs", receiverData[0], ResourceBindingType.BufferSrv, SurfaceReceiver.SizeInBytes),
+             new("AdditionalReceiverInputs", new uint[12], ResourceBindingType.BufferSrv, SurfaceReceiver.SizeInBytes),
              new("RequestedShadowPages", new uint[21], ResourceBindingType.BufferUav, 4),
              new("RequestedPageFlags", new uint[21], ResourceBindingType.BufferUav, 4),
              new("RequestedPageIndices", new uint[21], ResourceBindingType.BufferUav, 4),
              new("RequestedPageCount", [0], ResourceBindingType.BufferUav, 4),
              new("PageReceiverMasks", new uint[42], ResourceBindingType.BufferUav, 8)],
-            [new(4,1,Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.5f),4).ToArray(),0,
+            [new(8,1,Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.5f),8).ToArray(),0,
                 Format.R32Float,TextureViewDimension.Texture2DArray, Name: "ReceiverDepth")]);
         uint[][] coverage = compute.ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1

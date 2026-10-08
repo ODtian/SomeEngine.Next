@@ -94,10 +94,10 @@ internal struct ClusterShadeBinUniforms
     internal uint BinItemCapacity;
     internal uint AdditionalReceiverLayerCount;
     internal uint ViewCount;
-    internal uint Pad3;
+    internal uint SurfaceDataStride;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 48)]
 internal struct ClusterShadeUniforms
 {
     internal uint DebugMode;
@@ -107,7 +107,9 @@ internal struct ClusterShadeUniforms
     internal uint ShadeBinCount;
     internal uint MaterialSlotCapacity;
     internal uint ViewCount;
-    internal uint Pad3;
+    internal uint SurfaceDataStride;
+    internal uint VisibilityDepth;
+    private uint _surfacePadding0, _surfacePadding1, _surfacePadding2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]

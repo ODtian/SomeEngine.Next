@@ -6,6 +6,13 @@
 #include "cluster_bin_io.slang"
 #include "visbuffer_encoding.slang"
 
+struct ShadePixelWork
+{
+    uint PixelIndex;
+    uint Mask;
+    uint SurfaceDataIndex;
+};
+
 struct ShadeBinUniforms
 {
     uint ScreenWidth;
@@ -15,7 +22,7 @@ struct ShadeBinUniforms
     uint BinItemCapacity;
     uint AdditionalReceiverLayerCount;
     uint ViewCount;
-    uint Pad3;
+    uint SurfaceDataStride;
 };
 
 uint FindShadeBin(

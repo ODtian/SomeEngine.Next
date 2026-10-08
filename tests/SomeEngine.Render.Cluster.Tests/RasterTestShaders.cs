@@ -50,7 +50,7 @@ internal static class RasterTestShaders
         string projectShaders = Path.Combine(root, "templates", "DefaultProject", "assets", "Shaders");
         string material = File.ReadAllText(Path.Combine(projectShaders, "unlit_material.slang"))
             .Replace("struct UnlitMaterial :", "extern float3 missingShadeColor();\nstruct UnlitMaterial :")
-            .Replace("albedoSample.rgb * scalars.BaseColorTint.rgb", "missingShadeColor()");
+            .Replace("AlbedoMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb * scalars.BaseColorTint.rgb", "missingShadeColor()");
         string source = File.ReadAllText(Path.Combine(projectShaders, "unlit.slang"))
             .Replace("#include \"unlit_material.slang\"", material);
         var description = TestShaderLoading.CreateSessionDescription(
