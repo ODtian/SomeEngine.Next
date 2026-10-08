@@ -332,6 +332,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new InvalidOperationException("The Cluster pipeline was not created.");
         ClusterMaterialAssignmentSet assignments = _materialAssignments.Current;
         RefreshMaterialTextures();
+        if (_graphInstalled && _resources.GeometryPageCount > GraphData.Resources.PagePriorityCapacity)
+            EditGraph((ref RenderGraphEdit edit) => GrowPageRequestPriorities(ref edit));
         if (_graphInstalled && GraphData.TraversalLevels[0].Values.Count() < _resources.HierarchyLevels)
             ReconcileTraversal();
         if (_graphInstalled && _resources.MaximumRasterBatchesPerCluster > GraphData.Resources.BinnedEntriesPerCluster)

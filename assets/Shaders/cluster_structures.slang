@@ -17,7 +17,7 @@ struct PackedCluster
     float3 BoundMax;                    // 44 — conservative object-space AABB max
     uint PackedLodErrorTriangleStart;   // 56 — LODErrorHalf:16 | TriangleStart:16
     uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
-    uint PackedGroup;                   // 64 — GroupId(i16):16 | MaximumEdgeLengthHalf:16
+    uint PackedMaximumEdgeLength;                   // 64 — Reserved:16 | MaximumEdgeLengthHalf:16
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
     uint PackedRanges;                  // 72 — [range0End:8][range1End:8][extendedRangeCount:16]
     uint MaterialTableOffset;           // 76 — page-relative extended ranges, or 0xFFFFFFFF
@@ -45,7 +45,7 @@ float DecodeClusterLODError(PackedCluster c)
 
 float DecodeClusterMaximumEdgeLength(PackedCluster cluster)
 {
-    return f16tof32(cluster.PackedGroup >> 16u);
+    return f16tof32(cluster.PackedMaximumEdgeLength >> 16u);
 }
 
 uint DecodeTriangleStart(PackedCluster c)
@@ -53,12 +53,7 @@ uint DecodeTriangleStart(PackedCluster c)
     return c.PackedLodErrorTriangleStart >> 16;
 }
 
-int DecodeGroupId(PackedCluster c)
-{
-    // Sign-extend from 16-bit
-    int raw = int(c.PackedGroup & 0xFFFFu);
-    return (raw << 16) >> 16;
-}
+
 
 uint4 VertReuseBatchWords(PackedCluster cluster)
 {
@@ -170,16 +165,7 @@ uint DecodeTriangleCount(PackedCluster c)
     return (c.PackedCounts >> 8) & 0xFF;
 }
 
-struct ClusterBVHNode
-{
-    float4 BoundMin;
-    float4 BoundMax;
-    float4 LODSphere; // xyz: Center, w: Radius
-    float LODError;
-    uint ChildPointer;
-    uint ChildCount;
-    uint NodeType; // 0=Internal, 1=Leaf
-};
+#include "cluster_hierarchy.slang"
 
 // Each stage owns an independent dense material-slot mapping. The Cluster instance ABI stores
 // only the assignment-sequence offset; stage compatibility never enters the instance record.
@@ -439,22 +425,22 @@ struct ClusterCandidate
 DrawRequest CandidateRequest(ClusterCandidate candidate)
 {
     DrawRequest request;
-    request.PageOffset = (candidate.PageAndFlags & 0x80000000u) != 0u
+    request.PageOffset = (candidate.PageAndFlags & 2u) != 0u
         ? candidate.PageAndFlags : candidate.PageAndFlags & ~15u;
     request.InstanceID = candidate.InstanceID;
     request.ClusterAndView = candidate.ClusterAndView;
     return request;
 }
 
-uint CandidateKeepsCoarseGeometry(ClusterCandidate candidate)
+uint CandidateFlags(ClusterCandidate candidate)
 {
-    return (candidate.PageAndFlags & 0x80000000u) != 0u ? 0u : candidate.PageAndFlags & 1u;
+    return (candidate.PageAndFlags & 2u) != 0u ? 0u : candidate.PageAndFlags & 1u;
 }
 
-ClusterCandidate MakeClusterCandidate(DrawRequest request, uint keepCoarseGeometry)
+ClusterCandidate MakeClusterCandidate(DrawRequest request, uint flags)
 {
     ClusterCandidate result;
-    result.PageAndFlags = request.PageOffset | keepCoarseGeometry;
+    result.PageAndFlags = request.PageOffset | flags;
     result.InstanceID = request.InstanceID;
     result.ClusterAndView = request.ClusterAndView;
     return result;
@@ -486,35 +472,49 @@ uint ClusterTraversalViewIndex(ClusterTraversalNode node)
     return node.ViewIndex;
 }
 
-// The phase-two buffer is a compact tagged union shared by hierarchy and leaf work. A
-// hierarchy item reserves the top bit of the first word; resident page offsets and BVH node
-// indices are both constrained below 2 GiB by the cooked Cluster address ABI.
-static const uint CLUSTER_DEFERRED_NODE_BIT = 0x80000000u;
-static const uint CLUSTER_DEFERRED_INDEX_MASK = 0x7FFFFFFFu;
+// Deferred work uses the page-alignment bits as tags. A 240B byte-addressed
+// hierarchy fits 25-bit node indices; two upper bits retain the selected slice.
+static const uint CLUSTER_DEFERRED_NODE_BIT = 2u;
+static const uint CLUSTER_TRAVERSAL_SLICE_BIT = 0x80000000u;
+static const uint CLUSTER_TRAVERSAL_NODE_MASK = 0x01FFFFFFu;
+
+uint ClusterTraversalNodeIndex(ClusterTraversalNode node)
+{
+    return node.NodeIndex & CLUSTER_TRAVERSAL_NODE_MASK;
+}
+uint ClusterTraversalSliceIndex(ClusterTraversalNode node)
+{
+    return (node.NodeIndex >> 29u) & 3u;
+}
+bool ClusterTraversalHasSlice(ClusterTraversalNode node)
+{
+    return (node.NodeIndex & CLUSTER_TRAVERSAL_SLICE_BIT) != 0u;
+}
+uint ClusterTraversalSlice(uint nodeIndex, uint childIndex)
+{
+    return nodeIndex | (childIndex << 29u) | CLUSTER_TRAVERSAL_SLICE_BIT;
+}
 
 DrawRequest MakeDeferredTraversalNode(ClusterTraversalNode node)
 {
     DrawRequest result;
-    result.PageOffset = CLUSTER_DEFERRED_NODE_BIT |
-        (node.NodeIndex & CLUSTER_DEFERRED_INDEX_MASK);
+    result.PageOffset = (ClusterTraversalNodeIndex(node) << 4u) |
+        (ClusterTraversalSliceIndex(node) << 29u) | CLUSTER_DEFERRED_NODE_BIT |
+        (ClusterTraversalHasSlice(node) ? 8u : 0u);
     result.InstanceID = node.InstanceID;
     result.ClusterAndView = node.ViewIndex;
     return result;
 }
-
 bool IsDeferredTraversalNode(DrawRequest work)
 {
     return (work.PageOffset & CLUSTER_DEFERRED_NODE_BIT) != 0u;
 }
-
 ClusterTraversalNode DecodeDeferredTraversalNode(DrawRequest work)
 {
-    ClusterTraversalNode result;
-    result.NodeIndex = work.PageOffset & CLUSTER_DEFERRED_INDEX_MASK;
-    result.InstanceID = work.InstanceID;
-    result.ViewIndex = work.ClusterAndView;
-    result.ViewMask = 1u;
-    return result;
+    uint nodeIndex = (work.PageOffset >> 4u) & CLUSTER_TRAVERSAL_NODE_MASK;
+    nodeIndex |= work.PageOffset & 0x60000000u;
+    nodeIndex |= (work.PageOffset & 8u) << 28u;
+    return MakeClusterTraversalNode(nodeIndex, work.InstanceID, work.ClusterAndView, 1u);
 }
 
 struct ClusterMeshVertex

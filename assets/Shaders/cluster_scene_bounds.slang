@@ -13,7 +13,7 @@ struct ClusterSceneUniforms
     float TranslationPadding;
 };
 ConstantBuffer<ClusterSceneUniforms> Scene;
-StructuredBuffer<ClusterBVHNode> GlobalBVH;
+ByteAddressBuffer GlobalBVH;
 ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 StructuredBuffer<uint> SceneInstances;
@@ -43,17 +43,16 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
         float3 previousMax = worldMax;
         if (root != 0xFFFFFFFFu)
         {
-            ClusterBVHNode node = GlobalBVH[root];
             RenderInstanceTransform current = LoadRenderTransform(InstanceData,
                 LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD), instance);
             float expansion = max(0.0, LoadClusterBoundsExpansion(InstanceData,
                 LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD), instance));
-            ClusterNodeWorldBounds(node, current, expansion, worldMin, worldMax);
+            ClusterRootWorldBounds(GlobalBVH, root, current, expansion, worldMin, worldMax);
             if (Scene.HasPreviousBounds == 0u)
             {
                 RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
                     LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instance);
-                ClusterNodeWorldBounds(node, previous, expansion, previousMin, previousMax);
+                ClusterRootWorldBounds(GlobalBVH, root, previous, expansion, previousMin, previousMax);
             }
         }
         if (Scene.HasPreviousBounds != 0u)

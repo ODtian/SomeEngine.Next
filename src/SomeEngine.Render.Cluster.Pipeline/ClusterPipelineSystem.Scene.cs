@@ -61,7 +61,7 @@ public sealed partial class ClusterPipelineSystem
         PassDefinition pass = graph.GetPass(GraphData.SceneBounds.Pass);
         _ = pass.Bind(GraphData.SceneUniforms, PipelineSync.ComputeShading);
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
-            graph.CreateBufferSrv(GraphData.Resources.Bvh, structureStride: 64, label: "Cluster scene BVH")));
+            graph.CreateBufferSrv(GraphData.Resources.Bvh, label: "Cluster scene BVH")));
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.InstanceData), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferCbv(GraphData.Resources.InstanceProperties, GraphData.Resources.InstancePropertiesRange), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.SceneInstances, structureStride: 4), PipelineSync.ComputeShading);
