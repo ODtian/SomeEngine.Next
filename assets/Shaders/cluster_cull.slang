@@ -283,10 +283,10 @@ void AppendVisibleWindow(
     }
     routeBase = WaveReadLaneAt(routeBase, routeLeader);
     uint outIdx = routeBase + WaveMaskPrefix(routeMask, lane);
-    if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
-        AddClusterWorkMetric(isSW ? 56u : 40u, 1u);
     if (isSW)
     {
+        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+            AddClusterWorkMetric(56u, 1u);
         uint globalIdx = baseSWCount + outIdx;
         if (globalIdx < maxCandidates)
         {
@@ -295,6 +295,8 @@ void AppendVisibleWindow(
     }
     else
     {
+        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+            AddClusterWorkMetric(40u, 1u);
         uint hwIdx = maxCandidates - 1 - baseHWCount - outIdx;
         if (baseHWCount + outIdx < maxCandidates)
         {
@@ -587,10 +589,10 @@ void AppendVisibleWindow(
     }
     routeBase = WaveReadLaneAt(routeBase, routeLeader);
     localIdx = routeBase + WaveMaskPrefix(routeMask, lane);
-    if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
-        AddClusterWorkMetric(isSW ? 56u : 40u, 1u);
     if (isSW)
     {
+        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+            AddClusterWorkMetric(56u, 1u);
         uint globalIdx = baseSWCount + localIdx;
         if (globalIdx < maxCandidates)
         {
@@ -599,6 +601,8 @@ void AppendVisibleWindow(
     }
     else
     {
+        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+            AddClusterWorkMetric(40u, 1u);
         uint hwIdx = maxCandidates - 1 - baseHWCount - localIdx;
         if (localIdx < maxCandidates)
         {
