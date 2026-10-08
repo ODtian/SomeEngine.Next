@@ -92,11 +92,11 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             "float3 normal = NormalMap.SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;\n" +
             "        normal.xy *= LoadMaterialScalars<StandardScalars>(materialIndex).NormalScale;\n" +
             "        return normal;");
-        surface = Replace(surface, "float3 baseColor = albedoSample.rgb", "float3 baseColor = SceneSrgbToLinear(albedoSample.rgb)");
-        surface = Replace(surface, "float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;",
-            "float ao = lerp(1.0, OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r, scalars.OcclusionStrength);\n" +
-            "        float3 emission = SceneSrgbToLinear(EmissiveMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb) * scalars.EmissiveFactor;\n" +
-            "        float3 finalColor = baseColor * ao * 0.03 + emission;");
+        surface = Replace(surface, "data.BaseColor = albedo.rgb", "data.BaseColor = SceneSrgbToLinear(albedo.rgb)");
+        surface = Replace(surface, "data.Occlusion = arm.r;",
+            "data.Occlusion = lerp(1.0, OcclusionMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0).r, scalars.OcclusionStrength);");
+        surface = Replace(surface, "data.Emissive = scalars.EmissiveFactor;",
+            "data.Emissive = SceneSrgbToLinear(EmissiveMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb) * scalars.EmissiveFactor;");
         surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
         WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
         foreach (float cutoff in model.LogicalMaterials.Select(Cutoff).Distinct())
