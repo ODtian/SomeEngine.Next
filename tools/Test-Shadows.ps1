@@ -39,5 +39,5 @@ try {
     }
     $env:SOMEENGINE_SHADOW_SOURCE = (& git rev-parse HEAD)
     Invoke-CheckedDotnet @('test', 'tests/SomeEngine.Render.Cluster.Tests', '-c', 'Release', '--filter',
-        'FullyQualifiedName~DefaultGameRayShadowTests|FullyQualifiedName~DefaultGameShadowReferenceTests|FullyQualifiedName~VirtualShadowRenderingTests')
+        'FullyQualifiedName~DefaultGameRayShadowTests|FullyQualifiedName~DefaultGameShadowReferenceTests|FullyQualifiedName~LocalLightRayShadowTests|FullyQualifiedName~RayShadowImageSoftLocalTests|FullyQualifiedName~RayShadowImageSamplingTests|FullyQualifiedName~VirtualShadowRenderingTests')
 } finally { Pop-Location }

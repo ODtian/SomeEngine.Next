@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 31,
-  "input_hash": "1b2a6fab31baa1ced8f3747154005c52fcf033bd3355da8d2aafdd2f479f873f",
+  "input_hash": "178a754c84b18b691da816ec34d9f7ef232106eb8c5a0ba0ce1dd17f9d64a177",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bin_common.slang",
@@ -21,11 +21,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_draw.slang",
-      "content_hash": "ade51b8de232050039e7d11305cab738378b6b5a47ae76d238394fecace9bff3"
+      "content_hash": "94a0d78895d15430f75b85c95c97644dfef00f7de61e6b70f1291e2c09a0da95"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_draw_core.slang",
-      "content_hash": "9eaec8d04e5e2ae7ef3733bc53d971c4817e0466bd0edee8460ee371dd6a2a7f"
+      "content_hash": "0f1611d9dc2933ac02568b11fb0c08bc3304862839d445b04a194fa40f62abb5"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_hierarchy.slang",
@@ -41,7 +41,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_policy_raster_output.slang",
-      "content_hash": "e84fd9ae481b409d11a7062006641884a09c73ca8d635abc474dd8d4b7302267"
+      "content_hash": "d7c20c6612702876b0f057b567bb9efd02abeeea20d3b52ddd38312bf7ab2c9a"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_shared.slang",
@@ -49,7 +49,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_output.slang",
-      "content_hash": "ea81d159ab21df4393ce1fe184662796aab6e0d458f695b024beae39f16ee765"
+      "content_hash": "a54a8124c204f84f054154ba32802bafae70d025aebedaaf1e7024a97bf3790f"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_resources.slang",
@@ -133,7 +133,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_entry.slang",
-      "content_hash": "04ef1782c57bcaeed7c32a30e15c51b7ce49996a59645c3a84a3e0843767aac7"
+      "content_hash": "6ee61bbbb6ec605b974407be17416c08a6e867af5dc94244dfc397a0b84111b8"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_receiver_mask_bits.slang",
@@ -165,11 +165,11 @@
     {
       "asset_guid": "02aab510-490b-5d12-97c4-18e2419976c0",
       "sub_asset_key": "",
-      "input_hash": "1b2a6fab31baa1ced8f3747154005c52fcf033bd3355da8d2aafdd2f479f873f",
+      "input_hash": "178a754c84b18b691da816ec34d9f7ef232106eb8c5a0ba0ce1dd17f9d64a177",
       "dependencies": [],
       "asset_path": "cluster_draw.shader.asset",
-      "version": "41612121-89d0-cd37-00dd-d0ed1b639a17",
-      "content_hash": "77533F27BF26FA5F6DCA6EC57AF7C74372C90B5E5D798C090B09F641732E9483",
+      "version": "4058e2d6-6669-aba4-177a-ac9cbb6e4da3",
+      "content_hash": "7CFD4FA652A86B4005BB568E0AAA3DFB31A3D9CF40498B2DEFE277E576AF92EE",
       "asset_dependencies": []
     }
   ]
