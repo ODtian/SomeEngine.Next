@@ -96,9 +96,18 @@ public sealed partial class ClusterPipelineSystem
         {
             update(ref edit);
             edit.Commit();
-            AcceptMaterialTextures(_editingGraphData.MaterialTextures);
+            AcceptMaterialTextures(_editingGraphData.MaterialTextures, _editingGraphData.MissingMaterialTexture);
             _graphData = _editingGraphData;
         }
-        finally { edit.Dispose(); _editingGraphData = null; }
+        finally
+        {
+            foreach (RenderDevice.TextureReference reference in _newTextureReferences)
+                if (!_graphData.MaterialTextures.Values.Any(value => ReferenceEquals(value.Reference, reference)) &&
+                    !ReferenceEquals(_graphData.MissingMaterialTexture?.Reference, reference))
+                    reference.Dispose();
+            _newTextureReferences.Clear();
+            edit.Dispose();
+            _editingGraphData = null;
+        }
     }
 }
