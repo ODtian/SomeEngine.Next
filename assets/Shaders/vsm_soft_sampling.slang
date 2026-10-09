@@ -74,6 +74,18 @@ float2 ProjectVirtualShadowLocalSourceTap(VirtualShadowMapParameters view, float
     return clip.xy / clip.w * float2(0.5, -0.5) + 0.5;
 }
 
+float2 CalculateVirtualShadowSolarDiskOffset(float2 disk, float sourceArea, float sourceTangent,
+    float radiusWorld)
+{
+    // Disk strata describe solid angle. Project each stratum onto the blocker
+    // plane using tan(angle), rather than treating it as a flat emitter disk.
+    float radialSquared = dot(disk, disk);
+    float angularArea = radialSquared * sourceArea;
+    float tangent = sqrt(max(angularArea * (2.0 - angularArea), 0.0)) /
+        max(1.0 - angularArea, 1e-20);
+    return disk * (radiusWorld * tangent / max(sourceTangent * sqrt(radialSquared), 1e-20));
+}
+
 bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> views,
     StructuredBuffer<uint> pages, Texture2DArray<uint> atlas,
     uint firstView, uint requestedView, uint viewCount, uint mip, float3 position,
@@ -154,6 +166,13 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     float projectionScale = .5 * length(float3(source.LightViewProjection[0][0],
         source.LightViewProjection[1][0], source.LightViewProjection[2][0])) / max(abs(clip.w), 1e-20);
     float texelsPerWorldUnit = projectionScale * float(VirtualShadowMipResolution(source, center.MipLevel));
+    float4 uvClip = mul(float4(position + source.WorldTranslation, 1.0), source.ShadowUv);
+    float2 uvPerWorldUnit = float2(
+        length(float3(source.ShadowUv[0][0], source.ShadowUv[1][0], source.ShadowUv[2][0])),
+        length(float3(source.ShadowUv[0][1], source.ShadowUv[1][1], source.ShadowUv[2][1]))) /
+        max(abs(uvClip.w), 1e-20);
+    float sourceCosine = rsqrt(1.0 + emitter * emitter);
+    float sourceArea = emitter * emitter * sourceCosine * sourceCosine / (1.0 + sourceCosine);
     float footprintTexelsPerWorldUnit = texelsPerWorldUnit;
     if (center.ViewIndex != requestedView || center.MipLevel != mip)
     {
@@ -164,7 +183,6 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
             requestedScale * float(VirtualShadowMipResolution(view, mip)));
     }
     float maxRadiusWorld = maxRadiusTexels / max(footprintTexelsPerWorldUnit, 1e-20);
-    uint resolution = VirtualShadowMipResolution(source, center.MipLevel);
     requestedView = center.ViewIndex;
     mip = center.MipLevel;
     float minimumDistance = 1e-6 * view.WorldUnitsPerCentimeter;
@@ -189,7 +207,7 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
         float2 disk = RotateVirtualShadowDiskSample(triangle, sine, cosine);
         float searchSeparation = distanceToLight * searchRadius / max(emitter + searchRadius, minimumDistance);
         float2 queryUV = IsDirectionalVirtualShadowProjection(view)
-            ? plane.UV + disk * (searchRadius * texelsPerWorldUnit / float(resolution))
+            ? plane.UV + CalculateVirtualShadowSolarDiskOffset(disk, sourceArea, emitter, searchRadius) * uvPerWorldUnit
             : ProjectVirtualShadowLocalSourceTap(source, position, searchSeparation, disk);
         VirtualShadowDepthSample sample;
         bool blocked;
@@ -218,7 +236,7 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     {
         float2 disk = RotateVirtualShadowDiskSample(VirtualShadowDiskSample(index, samples), sine, cosine);
         float2 queryUV = IsDirectionalVirtualShadowProjection(view)
-            ? plane.UV + disk * (radius * texelsPerWorldUnit / float(resolution))
+            ? plane.UV + CalculateVirtualShadowSolarDiskOffset(disk, sourceArea, emitter, radius) * uvPerWorldUnit
             : ProjectVirtualShadowLocalSourceTap(source, position, averageSeparation, disk);
         VirtualShadowDepthSample sample;
         bool blocked;
