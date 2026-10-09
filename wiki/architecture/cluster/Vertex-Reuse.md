@@ -13,3 +13,7 @@ Vertex reuse batch 只覆盖一个 material range，并对 triangle 数和 uniqu
 每组由一个 lane 调用用户顶点评估和 `IDomainEvaluate.makeTriangle`；用户域的 `readLane`
 运输完整 `TriangleData`。管线从域提供的三个角点构造自己的投影数据，按同一三角形匹配共享
 屏幕原点、边、逆面积及逆 W。各像素继续生成中心与梯度并调用用户 `reconstruct`。
+
+管线先按完整 visibility 值与 view 匹配 wave 内 lanes，leader 解码一次页头、cluster 拓扑、材质映射和
+三个顶点索引，并运输管线自己的 `TriangleInfo`。当前三角形和投影复用这个 leader；运动求值按实际
+active lanes 与当前/前帧键选择 leader，覆盖用户 `reconstruct` 提前结束部分像素的情形。
