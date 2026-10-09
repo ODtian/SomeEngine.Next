@@ -130,11 +130,11 @@ internal sealed unsafe partial class D3D12Backend
         {
             _repeatRestrictions = (!_collectingCommands ? 1 : 0) | (_transientObjects.Count != 0 ? 2 : 0) |
                 (_capturedBundles.Count != 0 ? 4 : 0) | (SwapchainUseCount != 0 ? 8 : 0) |
-                (_captures.SparseCount != 0 ? 16 : 0) | (_temporaryRtvUsed != 0 ? 32 : 0) | (_temporaryDsvUsed != 0 ? 64 : 0);
+                (_captures.SparseCount != 0 ? 16 : 0);
+            // Attachment arenas belong to this command slot and reset at its next Begin after completion.
             bool reusable = _collectingCommands &&
                 _transientObjects.Count == 0 && _capturedBundles.Count == 0 &&
-                SwapchainUseCount == 0 && _captures.SparseCount == 0 &&
-                _temporaryRtvUsed == 0 && _temporaryDsvUsed == 0;
+                SwapchainUseCount == 0 && _captures.SparseCount == 0;
             if (reusable)
             {
                 _captures.AppendReferences(_commandReferences);

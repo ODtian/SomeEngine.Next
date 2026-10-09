@@ -37,16 +37,16 @@ public sealed partial class VirtualShadowFeature
         GraphBufferId results = edit.CreateBuffer(new BufferDesc(2u * sizeof(ulong), BufferUsages.CopyDestination | BufferUsages.CopySource,
             "Virtual shadow geometry timestamps"));
         GraphPassId start = edit.AddGeneralFramePass("Start virtual shadow geometry timing", PassQueueSelection.AnyOfType(QueueType.Graphics),
-            new WorkTimestamp(queries, 0), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            new WorkTimestamp(queries, 0), new PassOptions(Culling: PassCullingMode.NeverCull),
             WorkTimestamp.Declare, WorkTimestamp.Record, region: prepare);
         edit.OrderAfter(start, _clearPass);
         GraphPassId end = edit.AddGeneralFramePass("End virtual shadow geometry timing", PassQueueSelection.AnyOfType(QueueType.Graphics),
-            new WorkTimestamp(queries, 1), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            new WorkTimestamp(queries, 1), new PassOptions(Culling: PassCullingMode.NeverCull),
             WorkTimestamp.Declare, WorkTimestamp.Record, region: finish);
         _workTimeEndPass = end;
         edit.OrderAfter(end, _rasterCompletePass);
         GraphPassId resolve = edit.AddGeneralFramePass("Resolve virtual shadow geometry timing", PassQueueSelection.AnyOfType(QueueType.Graphics),
-            new WorkTimestampResults(queries, results), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            new WorkTimestampResults(queries, results), new PassOptions(Culling: PassCullingMode.NeverCull),
             WorkTimestampResults.Declare, WorkTimestampResults.Record, region: feedback);
         edit.OrderAfter(resolve, end);
         edit.OrderAfter(_frameCompletePass, resolve);

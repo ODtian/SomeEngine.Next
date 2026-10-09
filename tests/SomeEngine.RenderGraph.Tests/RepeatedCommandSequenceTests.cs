@@ -6,53 +6,68 @@ namespace SomeEngine.RenderGraph.Tests;
 public sealed class RepeatedCommandSequenceTests
 {
     [Fact]
-    public void ChangingOneRepeatedWriteKeepsTheOtherWriteRecorded()
+    public void RepeatedAttachmentClearKeepsItsRecordedCommandsBesideAFrameWrite()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using var graph = new RenderGraph(support.Backend, support.Device,
             [support.GraphicsQueue], new RenderGraphDesc(MaximumFramesInFlight: 1));
         using Buffer output = support.Backend.CreateBuffer(support.Device,
-            new BufferDesc(8, BufferUsages.CopyDestination), MemoryType.Readback);
+            new BufferDesc(260, BufferUsages.CopyDestination), MemoryType.Readback);
+        int clearRecords = 0;
         GraphBufferId destination;
         GraphPassId changing;
-        int fixedRecords = 0;
+        TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             destination = edit.RegisterExternalBuffer(output,
                 [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
-            GraphPassId first = edit.AddCopyFramePass("write fixed word", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                new BufferWord(destination, 0, 7), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
-                static (ref PassDefinition pass, ref BufferWord data) => pass.Write(data.Buffer,
-                    new BufferRange(data.Offset, 4), PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
-                (ref CopyPassCommandScope commands, in BufferWord data) =>
+            GraphTextureId texture = edit.CreatePersistentTexture(new TextureDesc(TextureDimension.Texture2D,
+                1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment | TextureUsages.CopySource));
+            GraphPassId clear = edit.AddCopyFramePass("clear repeated attachment", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                texture, new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                (ref PassDefinition pass, ref GraphTextureId data) => pass.Write(data, range,
+                    PipelineSync.RenderTarget, ResourceAccess.RenderTarget, TextureLayout.RenderTarget, WriteCoverage.Complete),
+                (ref CopyPassCommandScope commands, in GraphTextureId data) =>
                 {
-                    fixedRecords++;
-                    commands.ClearBuffer(commands.GetBuffer(data.Buffer), new BufferRange(data.Offset, 4), data.Value);
+                    clearRecords++;
+                    commands.ClearTexture(commands.GetTexture(data), range, new(1, 0, 0, 1));
                 });
-            changing = edit.AddCopyFramePass("write changing word", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                new BufferWord(destination, 4, 11), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            changing = edit.AddCopyFramePass("write frame word", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                new BufferWord(destination, 256, 11), new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition pass, ref BufferWord data) => pass.Write(data.Buffer,
                     new BufferRange(data.Offset, 4), PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
                 static (ref CopyPassCommandScope commands, in BufferWord data) =>
                     commands.ClearBuffer(commands.GetBuffer(data.Buffer), new BufferRange(data.Offset, 4), data.Value));
-            edit.OrderAfter(changing, first);
+            edit.OrderAfter(changing, clear);
+            edit.AddCopyFramePass("read attachment", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                (texture, destination), new PassOptions(Culling: PassCullingMode.NeverCull),
+                (ref PassDefinition pass, ref (GraphTextureId Texture, GraphBufferId Buffer) data) =>
+                {
+                    pass.Read(data.Texture, range, PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                    pass.Write(data.Buffer, new BufferRange(0, 256), PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Partial);
+                },
+                static (ref CopyPassCommandScope commands, in (GraphTextureId Texture, GraphBufferId Buffer) data) =>
+                    commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Buffer), 0, 256, 1,
+                        commands.GetTexture(data.Texture), 0, 0, TextureAspects.Color, 0, 0, 0, 1, 1, 1)));
             edit.Commit();
         }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         for (uint value = 11; value <= 12; value++) Execute(value);
-        int recordings = fixedRecords;
+        int recordings = clearRecords;
         Execute(13);
-        Assert.Equal(recordings, fixedRecords);
-
+        Assert.Equal(recordings, clearRecords);
         void Execute(uint value)
         {
-            using RenderGraphFrame frame = graph.BeginFrame();
-            frame.SetPassDataIfChanged(changing, new BufferWord(destination, 4, value));
-            frame.Execute(completions);
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                frame.SetPassDataIfChanged(changing, new BufferWord(destination, 256, value));
+                frame.Execute(completions);
+            }
             support.Wait(completions);
             using MappedBuffer mapping = support.Backend.Map(output, MapType.Read, BufferRange.Whole);
             mapping.Invalidate(mapping.Range);
-            Assert.Equal(new uint[] { 7, value }, MemoryMarshal.Cast<byte, uint>(mapping.Bytes).ToArray());
+            Assert.Equal(new byte[] { 255, 0, 0, 255 }, mapping.Bytes[..4].ToArray());
+            Assert.Equal(value, MemoryMarshal.Read<uint>(mapping.Bytes[256..]));
         }
     }
 

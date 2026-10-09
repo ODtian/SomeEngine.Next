@@ -120,7 +120,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 "Temporal resolve",
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new TemporalResolvePassData(resolvedAttachment, width, height),
-                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                new PassOptions(Culling: PassCullingMode.NeverCull),
                 pipeline.Pipeline,
                 pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 default,
