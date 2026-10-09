@@ -1,15 +1,15 @@
 using SlangShaderSharp;
 using SomeEngine.Graphics;
 
-namespace SomeEngine.Render.Features;
+namespace SomeEngine.Render;
 
 /// <summary>
 /// Captures the target-specific descriptor order once when a feature pipeline is created. Frame
 /// recording uses the resulting compact keys and performs no reflection or string lookup.
 /// </summary>
-internal static class FeatureResourceLayout
+public static class ShaderResourceLayout
 {
-    internal static TKey[] Resolve<TKey>(
+    public static TKey[] Resolve<TKey>(
         VariableLayoutReflection layout,
         Func<string, ResourceBindingType, TKey?> resolve)
         where TKey : struct

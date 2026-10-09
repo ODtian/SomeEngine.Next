@@ -175,7 +175,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 {
                     bool clear = assignment == 0;
                     PassDefinition pass = edit.GetPass(clear ? _clearPass : _buildPass);
-                    int[] resources = FeatureResourceLayout.Resolve<int>(
+                    int[] resources = ShaderResourceLayout.Resolve<int>(
                         clear ? clearPipeline.ParameterLayout : pipeline.ParameterLayout,
                         static (name, type) => (name, type) switch
                         {

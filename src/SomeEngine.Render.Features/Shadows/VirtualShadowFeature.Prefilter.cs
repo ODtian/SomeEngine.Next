@@ -120,7 +120,7 @@ public sealed partial class VirtualShadowFeature
         PrefilterResource[] bindings = ResolvePrefilterBindings(_prefilterPipeline);
 
         static PrefilterResource[] ResolvePrefilterBindings(LinkedComputePipeline pipeline) =>
-            FeatureResourceLayout.Resolve<PrefilterResource>(pipeline.ParameterLayout,
+            ShaderResourceLayout.Resolve<PrefilterResource>(pipeline.ParameterLayout,
             static (name, _) => name switch
             {
                 "Prefilter" => PrefilterResource.Uniforms,

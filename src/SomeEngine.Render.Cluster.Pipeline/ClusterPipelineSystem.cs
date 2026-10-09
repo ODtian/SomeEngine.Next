@@ -350,8 +350,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         RefreshMaterialTextures();
         if (_graphInstalled && _resources.GeometryPageCount > GraphData.Resources.PagePriorityCapacity)
             EditGraph((ref RenderGraphEdit edit) => GrowPageRequestPriorities(ref edit));
-        if (_graphInstalled && GraphData.TraversalLevels[0].Values.Count() < _resources.HierarchyLevels)
-            ReconcileTraversal();
         if (_graphInstalled && _resources.MaximumRasterBatchesPerCluster > GraphData.Resources.BinnedEntriesPerCluster)
             EditGraph((ref RenderGraphEdit edit) => GrowRasterWork(ref edit));
         bool assignmentsChanged = !_graphInstalled ||
@@ -655,6 +653,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     primaryViewCount);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(RasterInputsTrace))
                 UpdateRasterDispatches(ref graph);
+            uint workerGroups = Math.Max(1u, Math.Min((_options.MaxCandidates + 15u) / 16u,
+                (checked((uint)binding.DispatchExtent) + 15u) / 16u));
+            foreach (GraphPassId phase in GraphData.Resources.Work.Phases)
+                if (phase != default)
+                    graph.SetPassData(phase, new ClusterDispatchParameters(new DispatchArguments(workerGroups, 1, 1)));
             UpdateShadeInputs(ref graph, _installedShadeStages!);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(MaterialInputsTrace))
                 UpdateMaterialInputs(ref graph);
@@ -846,6 +849,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
     {
         if (!_hasPendingFrame) return;
+        CullWork work = GraphData.Resources.Work;
+        if (result.TryGetPassCompletion(work.Initialize, out _)) work.Initialized = true;
+        for (int phase = 0; phase < work.Phases.Length; phase++)
+            if ((work.FramePhases & (1u << phase)) != 0u && !result.TryGetPassCompletion(work.Phases[phase], out _))
+                work.Initialized = false;
         if (result.SubmittedCompletions.IsEmpty)
         {
             Discard();
