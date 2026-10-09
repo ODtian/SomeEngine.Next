@@ -13,7 +13,8 @@ internal sealed class RayShadowScene
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
     internal readonly record struct Geometry(uint VertexStart, uint IndexStart,
         uint AlphaStart, uint AlphaWidth, uint AlphaHeight,
-        uint NormalStart, uint NormalWidth, uint NormalHeight, float AlphaCutoff, float NormalScale);
+        uint NormalStart, uint NormalWidth, uint NormalHeight, float AlphaCutoff, float NormalScale,
+        uint DoubleSided = 0);
 
     internal sealed record Mesh(GeometryRange[] Geometries);
     internal readonly record struct GeometryRange(uint VertexStart, uint VertexCount,
@@ -74,7 +75,8 @@ internal sealed class RayShadowScene
                     ? primitive.Material.AlphaCutoff / Math.Max(alpha?.Color.W ?? 1, 1e-8f) : -1;
                 geometries.Add(new(vertexStart, indexStart, alphaImage.Item1, alphaImage.Item2, alphaImage.Item3,
                     normalImage.Item1, normalImage.Item2, normalImage.Item3, cutoff,
-                    transforms is not null ? 1 : normal?.GetFactor("NormalScale") ?? 1));
+                    transforms is not null ? 1 : normal?.GetFactor("NormalScale") ?? 1,
+                    primitive.Material?.DoubleSided == true ? 1u : 0u));
                 ranges.Add(new(vertexStart, (uint)positions.Count, indexStart,
                     (uint)indices.Count - indexStart, cutoff < 0));
             }

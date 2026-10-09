@@ -185,7 +185,8 @@ internal static class RayShadowImage
                 ResourceBinding.AccelerationStructure(Keep(backend.CreateAccelerationStructureSrv(device, new(top)))),
                 ResourceBinding.ReadOnlyBuffer(Keep(backend.CreateBufferSrv(device, new(vertexBuffer, BufferRange.Whole)))),
                 ResourceBinding.ReadOnlyBuffer(Keep(backend.CreateBufferSrv(device, new(indexBuffer, BufferRange.Whole, StructureStride: 4)))),
-                ResourceBinding.ReadOnlyBuffer(Keep(backend.CreateBufferSrv(device, new(geometryBuffer, BufferRange.Whole, StructureStride: 40)))),
+                ResourceBinding.ReadOnlyBuffer(Keep(backend.CreateBufferSrv(device, new(geometryBuffer, BufferRange.Whole,
+                    StructureStride: (uint)Marshal.SizeOf<RayShadowScene.Geometry>())))),
                 ResourceBinding.ReadOnlyBuffer(Keep(backend.CreateBufferSrv(device, new(texels, BufferRange.Whole)))),
                 ResourceBinding.WritableBuffer(Keep(backend.CreateBufferUav(device, new(output, BufferRange.Whole, StructureStride: 4)))),
             ];

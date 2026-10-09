@@ -35,6 +35,7 @@ struct RayGeometry
     uint NormalHeight;
     float AlphaCutoff;
     float NormalScale;
+    uint DoubleSided;
 };
 ConstantBuffer<RayShadowInputs> Inputs;
 RaytracingAccelerationStructure Scene;
@@ -92,6 +93,11 @@ bool AlphaAccepts(uint instance, uint geometryIndex, uint primitive, float2 bary
     return SampleTexels(geometry.AlphaStart, geometry.AlphaWidth, geometry.AlphaHeight, uv).a >= geometry.AlphaCutoff;
 }
 
+bool MaterialSideAccepts(uint instance, uint geometryIndex, bool frontFace)
+{
+    return Geometries[instance + geometryIndex].DoubleSided != 0u || frontFace;
+}
+
 float3 TransformRayNormal(float3 normal, float3x3 worldToObject)
 {
     return normalize(mul(normal, worldToObject));
@@ -142,10 +148,13 @@ void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
     primary.TMin = length(nearWorld.xyz / nearWorld.w - primary.Origin);
     float4 farWorld = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 1.0, 1.0), Inputs.ClipToWorld);
     primary.TMax = length(farWorld.xyz / farWorld.w - primary.Origin);
-    RayQuery<RAY_FLAG_NONE> camera;
+    // Every source triangle goes through its authored material side and alpha rules.
+    RayQuery<RAY_FLAG_FORCE_NON_OPAQUE> camera;
     camera.TraceRayInline(Scene, RAY_FLAG_NONE, 255u, primary);
     while (camera.Proceed())
         if (camera.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+            MaterialSideAccepts(camera.CandidateInstanceID(), camera.CandidateGeometryIndex(),
+                camera.CandidateTriangleFrontFace()) &&
             AlphaAccepts(camera.CandidateInstanceID(), camera.CandidateGeometryIndex(),
                 camera.CandidatePrimitiveIndex(), camera.CandidateTriangleBarycentrics()))
             camera.CommitNonOpaqueTriangleHit();
@@ -205,10 +214,13 @@ void TraceRayShadow(uint3 pixel : SV_DispatchThreadID)
     shadow.Direction = normalize(toLight);
     shadow.TMin = 0.0;
     shadow.TMax = Inputs.LightKind == 0u ? 1000000.0 : length(toLight);
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> ray;
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_NON_OPAQUE> ray;
     ray.TraceRayInline(Scene, RAY_FLAG_NONE, 255u, shadow);
     while (ray.Proceed())
         if (ray.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+            // Receiver-to-light rays meet the back of a light-facing raster triangle.
+            MaterialSideAccepts(ray.CandidateInstanceID(), ray.CandidateGeometryIndex(),
+                !ray.CandidateTriangleFrontFace()) &&
             AlphaAccepts(ray.CandidateInstanceID(), ray.CandidateGeometryIndex(),
                 ray.CandidatePrimitiveIndex(), ray.CandidateTriangleBarycentrics()))
             ray.CommitNonOpaqueTriangleHit();
@@ -269,10 +281,12 @@ float TraceEmitterVisibility(float3 position, float3 geometricNormal, uint2 pixe
             distance * distance * sine * sine, 0.0));
         shadow.TMax = Inputs.LightKind == 0u ? 1000000.0 : Inputs.SourceRadius > 0.0 ?
             distance * cosine + (insideEmitter ? surfaceDistance : -surfaceDistance) : distance;
-        RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> ray;
+        RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_NON_OPAQUE> ray;
         ray.TraceRayInline(Scene, RAY_FLAG_NONE, 255u, shadow);
         while (ray.Proceed())
             if (ray.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+                MaterialSideAccepts(ray.CandidateInstanceID(), ray.CandidateGeometryIndex(),
+                    !ray.CandidateTriangleFrontFace()) &&
                 AlphaAccepts(ray.CandidateInstanceID(), ray.CandidateGeometryIndex(),
                     ray.CandidatePrimitiveIndex(), ray.CandidateTriangleBarycentrics()))
                 ray.CommitNonOpaqueTriangleHit();
@@ -300,10 +314,12 @@ void TraceSoftRayShadow(uint3 pixel : SV_DispatchThreadID)
     primary.TMin = length(nearWorld.xyz / nearWorld.w - primary.Origin);
     float4 farWorld = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 1.0, 1.0), Inputs.ClipToWorld);
     primary.TMax = length(farWorld.xyz / farWorld.w - primary.Origin);
-    RayQuery<RAY_FLAG_NONE> camera;
+    RayQuery<RAY_FLAG_FORCE_NON_OPAQUE> camera;
     camera.TraceRayInline(Scene, RAY_FLAG_NONE, 255u, primary);
     while (camera.Proceed())
         if (camera.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+            MaterialSideAccepts(camera.CandidateInstanceID(), camera.CandidateGeometryIndex(),
+                camera.CandidateTriangleFrontFace()) &&
             AlphaAccepts(camera.CandidateInstanceID(), camera.CandidateGeometryIndex(),
                 camera.CandidatePrimitiveIndex(), camera.CandidateTriangleBarycentrics()))
             camera.CommitNonOpaqueTriangleHit();
