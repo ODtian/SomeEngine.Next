@@ -695,7 +695,7 @@ public static partial class ClusterBuilder
         var mergedIndices = new List<uint>();
         while (current.Count > 1)
         {
-            List<int[]> groups = PartitionClusterGroups(mesh.Positions, clusters, globalIndices, current);
+            List<int[]> groups = PartitionClusterGroups(mesh.Positions.AsSpan(0, mesh.VertexCount), clusters, globalIndices, current);
             byte[] locks = LockGroupBoundaries(mesh.Positions, mesh.VertexCount, clusters, globalIndices, current, groups);
             var next = new List<int>();
             foreach (int[] groupIndices in groups)
@@ -707,18 +707,30 @@ public static partial class ClusterBuilder
                 int parentCount = Math.Max(1, (mergedIndices.Count / 3 + config.MaxTriangles * 2 - 1) / (config.MaxTriangles * 2));
                 int targetClusterSize = config.MaxTriangles - 2;
                 ClusterMeshSimplifier.Result result;
-                List<int[]> partitions;
+                var parents = new List<BuilderMeshlet>();
+                var parentIndices = new List<uint>();
                 do
                 {
                     var simplifier = new ClusterMeshSimplifier(mesh.Positions, mesh.Attributes,
                         CollectionsMarshal.AsSpan(mergedIndices), locks);
                     result = simplifier.Simplify(parentCount * targetClusterSize);
                     float[] material = result.Attributes[mesh.Attributes.FindIndex(static attribute => attribute.Name == "_MATERIAL_INDEX")];
-                    ClusterGraph graph = ClusterGraph.BuildTriangleGraph(result.Indices, result.Positions, material);
-                    partitions = graph.Partition(config.MaxTriangles - 4, config.MaxTriangles);
-                    if (partitions.Count <= parentCount) break;
+                    parents.Clear();
+                    parentIndices.Clear();
+                    Clusterize(config, result.Indices, result.Positions, material, parents, parentIndices);
+                    if (parents.Count <= parentCount) break;
                     targetClusterSize -= 2;
                 } while (targetClusterSize > config.MaxTriangles / 2);
+                if (parents.Count >= group.Length)
+                {
+                    foreach (int index in group)
+                    {
+                        BuilderMeshlet root = clusters[index];
+                        root.ParentError = float.MaxValue;
+                        clusters[index] = root;
+                    }
+                    continue;
+                }
                 float error = Math.Max(groupBounds.Error, result.Error);
                 int groupId = nextGroupId++;
                 foreach (int index in group)
@@ -730,18 +742,14 @@ public static partial class ClusterBuilder
                 }
                 uint firstVertex = mesh.Append(result);
                 int firstParent = clusters.Count;
-                float[] materials = ExtractMaterialIndices(mesh);
-                foreach (int[] partition in partitions)
+                int firstIndex = globalIndices.Count;
+                foreach (uint index in parentIndices)
+                    globalIndices.Add(index + firstVertex);
+                foreach (BuilderMeshlet data in parents)
                 {
-                    var triangles = new TempTri[partition.Length];
-                    for (int triangle = 0; triangle < partition.Length; triangle++)
-                    {
-                        int offset = partition[triangle] * 3;
-                        uint a = result.Indices[offset] + firstVertex, b = result.Indices[offset + 1] + firstVertex, c = result.Indices[offset + 2] + firstVertex;
-                        triangles[triangle] = new TempTri { v0 = a, v1 = b, v2 = c, mat = (byte)materials[a] };
-                    }
-                    SortTrianglesByMaterial(triangles);
-                    EmitMaterialChunks(triangles, clusters, globalIndices);
+                    BuilderMeshlet parent = data;
+                    parent.IndicesOffset += firstIndex;
+                    clusters.Add(parent);
                 }
                 int level = group.Max(index => clusters[index].Level) + 1;
                 for (int index = firstParent; index < clusters.Count; index++)
@@ -1033,19 +1041,40 @@ public static partial class ClusterBuilder
         if (indices.Length % 3 != 0)
             throw new InvalidDataException("Cluster triangle indices are not divisible by three.");
 
-        uint[] triangleIndices = indices.ToArray();
-        ClusterGraph graph = ClusterGraph.BuildTriangleGraph(triangleIndices, positions, materialIndicesArray);
-        foreach (int[] partition in graph.Partition(config.MaxTriangles - 4, config.MaxTriangles))
+        int capacity = checked((int)Meshopt.BuildMeshletsBound((nuint)indices.Length,
+            (nuint)config.MaxVertices, (nuint)config.MaxTriangles));
+        MeshOptimizer.Meshlet[] meshlets = ArrayPool<MeshOptimizer.Meshlet>.Shared.Rent(capacity);
+        uint[] vertices = ArrayPool<uint>.Shared.Rent(checked(capacity * config.MaxVertices));
+        byte[] triangleIndices = ArrayPool<byte>.Shared.Rent(checked(capacity * config.MaxTriangles * 3));
+        try
         {
-            TempTri[] triangles = new TempTri[partition.Length];
-            for (int index = 0; index < partition.Length; index++)
+            int count = checked((int)Meshopt.BuildMeshletsSpatial(meshlets, vertices, triangleIndices,
+                indices, MemoryMarshal.Cast<Vector3, float>(positions), (nuint)Unsafe.SizeOf<Vector3>(),
+                (nuint)config.MaxVertices, (nuint)(config.MaxTriangles / 3), (nuint)config.MaxTriangles, .5f));
+            for (int cluster = 0; cluster < count; cluster++)
             {
-                int first = partition[index] * 3;
-                uint v0 = triangleIndices[first], v1 = triangleIndices[first + 1], v2 = triangleIndices[first + 2];
-                triangles[index] = new TempTri { v0 = v0, v1 = v1, v2 = v2, mat = checked((byte)materialIndicesArray[v0]) };
+                MeshOptimizer.Meshlet meshlet = meshlets[cluster];
+                Span<uint> clusterVertices = vertices.AsSpan((int)meshlet.vertex_offset, (int)meshlet.vertex_count);
+                Span<byte> clusterTriangles = triangleIndices.AsSpan((int)meshlet.triangle_offset, (int)meshlet.triangle_count * 3);
+                Meshopt.OptimizeMeshlet(clusterVertices, clusterTriangles, meshlet.triangle_count, meshlet.vertex_count);
+                var triangles = new TempTri[meshlet.triangle_count];
+                for (int triangle = 0; triangle < triangles.Length; triangle++)
+                {
+                    uint first = clusterVertices[clusterTriangles[triangle * 3]];
+                    uint second = clusterVertices[clusterTriangles[triangle * 3 + 1]];
+                    uint third = clusterVertices[clusterTriangles[triangle * 3 + 2]];
+                    triangles[triangle] = new TempTri { v0 = first, v1 = second, v2 = third,
+                        mat = checked((byte)materialIndicesArray[first]) };
+                }
+                SortTrianglesByMaterial(triangles);
+                EmitMaterialChunks(triangles, clusters, globalIndices);
             }
-            SortTrianglesByMaterial(triangles);
-            EmitMaterialChunks(triangles, clusters, globalIndices);
+        }
+        finally
+        {
+            ArrayPool<MeshOptimizer.Meshlet>.Shared.Return(meshlets);
+            ArrayPool<uint>.Shared.Return(vertices);
+            ArrayPool<byte>.Shared.Return(triangleIndices);
         }
     }
 
