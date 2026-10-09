@@ -17,8 +17,13 @@ public sealed class DebugUiImageTests(RenderingContentFixture content)
         await SomeEngine.SceneContent.SceneContent.SetOutputSizeAsync(scene.DirectoryPath, 640, 480);
         string directory = Path.Combine(Path.GetTempPath(), "someengine-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
+        // This is the test executable's settings file, never the application's.
+        // The rendering collection serializes these in-process startup checks.
+        string layoutPath = Path.Combine(AppContext.BaseDirectory, "imgui.ini");
+        byte[]? previousLayout = File.Exists(layoutPath) ? File.ReadAllBytes(layoutPath) : null;
         try
         {
+            File.WriteAllText(layoutPath, "[Window][SomeEngine Test Platform]\nPos=24,24\nSize=460,580\nCollapsed=0\n");
             string[] startup = ["--hardware-adapter", "--graphics-backend", backend,
                 "--hidden-window", "--static-scene", "--fixed-step", "0.016666667",
                 "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"];
@@ -27,21 +32,20 @@ public sealed class DebugUiImageTests(RenderingContentFixture content)
             SceneImage firstWithoutUi = await CaptureAsync([.. startup, "--capture-frame", "7", "--no-debug-ui"], Path.Combine(directory, "first-without-ui.bmp"), scene.DirectoryPath);
             SceneImage laterWithoutUi = await CaptureAsync([.. startup, "--capture-frame", "11", "--no-debug-ui"], Path.Combine(directory, "later-without-ui.bmp"), scene.DirectoryPath);
             // Verify that changes in the scene cannot satisfy the frame-upload assertion.
-            SceneImages.AssertEqual(FrameText(firstWithoutUi), FrameText(laterWithoutUi));
-            SceneImages.AssertNotEqual(FrameText(laterWithoutUi), FrameText(later));
-            SceneImages.AssertNotEqual(FrameText(first), FrameText(later));
+            // Compare complete images so font scaling does not move text outside a crop.
+            SceneImages.AssertEqual(firstWithoutUi, laterWithoutUi);
+            SceneImages.AssertNotEqual(laterWithoutUi, later);
+            SceneImages.AssertNotEqual(first, later);
         }
-        finally { Directory.Delete(directory, true); }
-    }
-
-    private static SceneImage FrameText(SceneImage image)
-    {
-        const int left = 32, top = 46, width = 224, height = 32;
-        byte[] pixels = new byte[width * height * 4];
-        for (int row = 0; row < height; row++)
-            image.Pixels.Span.Slice(((top + row) * image.Width + left) * 4, width * 4)
-                .CopyTo(pixels.AsSpan(row * width * 4));
-        return new(image.Frame, width, height, pixels);
+        finally
+        {
+            try
+            {
+                if (previousLayout is null) File.Delete(layoutPath);
+                else File.WriteAllBytes(layoutPath, previousLayout);
+            }
+            finally { Directory.Delete(directory, true); }
+        }
     }
 
     private static async Task<SceneImage> CaptureAsync(string[] arguments, string path, string contentDirectory)
