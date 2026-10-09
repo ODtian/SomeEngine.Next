@@ -4,6 +4,7 @@
 #include "cluster_bvh_cull_common.slang"
 #include "resource_effects.slang"
 #include "wave_aggregation.slang"
+#include "cluster_view_work.slang"
 
 struct ClusterTraversalSeedUniforms
 {
@@ -40,6 +41,8 @@ groupshared float3 ClusterSceneWorldMin[64];
 groupshared float3 ClusterSceneWorldMax[64];
 groupshared uint ClusterSceneActiveViewMask;
 groupshared uint ClusterSceneOccludedViewMask;
+groupshared uint ClusterRootActiveViews[64];
+groupshared uint ClusterRootDeferredViews[64];
 
 uint ClusterSeedViewCount()
 {
@@ -123,15 +126,20 @@ void SeedHierarchyRoots(
     uint3 groupID : SV_GroupID,
     uint groupThreadIndex : SV_GroupThreadID)
 {
-    uint sortedIndex = groupID.x * 64u + groupThreadIndex;
     bool useInstanceGroups = TraversalSeed.UseInstanceGroups != 0u;
     uint instanceID = 0xFFFFFFFFu;
-    uint viewSlotBase = groupID.y * 32u;
+    uint viewGroup = ClusterViewWorkGroupIndex(groupID);
+    uint viewSlotBase = (viewGroup / 16u) * 32u;
     uint compactViewCount = ClusterSeedViewCount();
     uint remainingViews = viewSlotBase < compactViewCount
         ? compactViewCount - viewSlotBase
         : 0u;
     uint activeViewCount = min(remainingViews, 32u);
+    uint viewLanes = ClusterParallelViewLanes(activeViewCount);
+    uint instanceTile = viewGroup % 16u;
+    uint instanceInGroup = groupThreadIndex / viewLanes;
+    uint viewLane = groupThreadIndex % viewLanes;
+    uint sortedIndex = groupID.x * 64u + instanceTile * (64u / viewLanes) + instanceInGroup;
     uint firstViewIndex = ClusterSeedViewIndex(viewSlotBase);
     bool valid = activeViewCount != 0u &&
         sortedIndex < LoadClusterCullView(Views, PolicyClusterViews, firstViewIndex).InstanceCount;
@@ -217,7 +225,7 @@ void SeedHierarchyRoots(
     if (valid)
     {
         [loop]
-        for (uint bit = 0u; bit < activeViewCount; bit++)
+        for (uint bit = viewLane; bit < activeViewCount; bit += viewLanes)
         {
             if ((activeGroupViews & (1u << bit)) == 0u)
                 continue;
@@ -257,6 +265,21 @@ void SeedHierarchyRoots(
             else
                 activeViewMask |= 1u << bit;
         }
+    }
+
+    if (viewLanes > 1u)
+    {
+        if (viewLane == 0u)
+        {
+            ClusterRootActiveViews[instanceInGroup] = 0u;
+            ClusterRootDeferredViews[instanceInGroup] = 0u;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        InterlockedOr(ClusterRootActiveViews[instanceInGroup], activeViewMask);
+        InterlockedOr(ClusterRootDeferredViews[instanceInGroup], deferredViewMask);
+        GroupMemoryBarrierWithGroupSync();
+        activeViewMask = viewLane == 0u ? ClusterRootActiveViews[instanceInGroup] : 0u;
+        deferredViewMask = viewLane == 0u ? ClusterRootDeferredViews[instanceInGroup] : 0u;
     }
 
     uint outputCount = activeViewMask != 0u ? 1u : 0u;

@@ -41,6 +41,6 @@ Indirect draw/dispatch 只是 Cluster triangle raster pipeline 当前内部命�
 
 ## 层级和页请求
 
-GPU层级按240B节点的四个slice读取。每64线程处理16个parent，实例和32-view mask沿队列传播；前一帧HiZ遮挡的工作记录具体slice，第二阶段通过当前HiZ恢复后继续展开。场景bounds由根节点实际启用slice聚合，主视图与目标视图使用同一读取和LOD算法。
+GPU层级按240B节点的四个slice读取。每64线程按实际view mask分配parent、child和view测试，单view处理16个parent；实例和压缩32-view mask沿队列传播。组内合并可见mask与streaming priority后，每个child仍发布一个节点。前一帧HiZ遮挡的工作记录具体slice，第二阶段通过当前HiZ恢复后继续展开。场景bounds由根节点实际启用slice聚合，主视图与目标视图使用同一读取和LOD算法。
 
 PackedCluster flags消费Native `STREAMING_LEAF=2`和`FULL_LEAF=4`；当前可用leaf提供缺页时的粗层，完整leaf界定原始几何。页请求记录`node*4+child`和全局几何页范围，优先级缓冲按主holder的实际GeometryPageCount随注册增长。候选中的hierarchy标签借用页地址对齐位，保留完整uint页地址。

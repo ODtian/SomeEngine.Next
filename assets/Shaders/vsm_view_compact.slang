@@ -4,6 +4,7 @@
 #include "vsm_page_dispatch.slang"
 #include "cluster_view.slang"
 #include "cluster_raster_target_view.slang"
+#include "cluster_view_work.slang"
 #include "resource_effects.slang"
 
 ConstantBuffer<VirtualShadowRasterWorkUniforms> ViewCompact;
@@ -43,7 +44,8 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
             ShadowPageWorkDispatchArguments.Store(offset + 12u, 0u);
         }
         ClusterDispatchArguments.Store(0u, ViewCompact.InstanceGroupCount);
-        ClusterDispatchArguments.Store(8u, 1u);
+        uint ignored;
+        ClusterDispatchArguments.InterlockedMax(8u, 1u, ignored);
     }
 
     if (pairIndex >= pairCount)
@@ -61,10 +63,12 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     uint compactIndex;
     ClusterDispatchArguments.InterlockedAdd(12u, 1u, compactIndex);
     uint ignored;
+    uint viewGroups = ClusterViewWorkGroups(compactIndex + 1u);
     ClusterDispatchArguments.InterlockedMax(
         4u,
-        (compactIndex + 32u) / 32u,
+        min(viewGroups, 65535u),
         ignored);
+    ClusterDispatchArguments.InterlockedMax(8u, (viewGroups + 65534u) / 65535u, ignored);
 
     ClusterViewUniforms view = ClusterSourceViews[sourceViewIndex];
 
