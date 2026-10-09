@@ -7,8 +7,13 @@ LOD 关系不替代 spatial hierarchy；它只表达几何细节层级与 select
 导入器以 meshoptimizer 创建、分组及简化 cluster。简化输入同时包含原位置和
 `RawAttribute` 属性，保留原顶点及属性索引；normal、tangent、color、UV 和用户属性
 共同参与边折叠选择及误差。权重沿用固定 UE `Cluster.cpp:973–1020` 的定义，
-从 UE 三角尺寸单位换算到 meshopt 当前组的包围盒单位。输出误差为世界绝对单位，
+从 UE 三角尺寸单位换算到 meshopt 当前组的包围盒单位。输出误差为原网格坐标绝对单位，渲染阶段按实例变换换算；
 父层误差取本次简化误差与子层误差的最大值，供所有视图的同一 LOD 选择使用。
+
+材质 shader 通过编译常量 `CLUSTER_RASTER_TWO_SIDED` 选择单面或双面；默认单面。
+`CLUSTER_TARGET_RASTER_TWO_SIDED` 默认沿用材质选择，可由用户 shader 为目标深度视图
+单独声明。共享入口将两项选择写入 `RasterFaces` 属性，HW 在建立 PSO 时消费该属性，
+SW 使用同一编译常量形成覆盖及重心插值。glTF 导入从原材质 `DoubleSided` 生成对应变体。
 
 参见 [[Spatial-BVH]]。
 

@@ -216,7 +216,8 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
     float4 clipVerts[3],
     int4 scissorRect,
     uint screenWidth,
-    uint screenHeight)
+    uint screenHeight,
+    bool cullBackfaces)
 {
     ClusterRasterTriangle tri = {};
     float3 inverseW = rcp(float3(clipVerts[0].w, clipVerts[1].w, clipVerts[2].w));
@@ -238,8 +239,12 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
     tri.Edge12 = v1 - v2;
     tri.Edge20 = v2 - v0;
     float determinant = tri.Edge01.y * tri.Edge20.x - tri.Edge01.x * tri.Edge20.y;
-    if (determinant >= 0.0)
+    if (determinant == 0.0 || (cullBackfaces && determinant >= 0.0))
         return tri;
+    float winding = cullBackfaces || determinant < 0.0 ? 1.0 : -1.0;
+    tri.Edge01 *= winding;
+    tri.Edge12 *= winding;
+    tri.Edge20 *= winding;
 
     float2 minimum = min(v0, min(v1, v2));
     float2 maximum = max(v0, max(v1, v2));
@@ -626,7 +631,8 @@ void RasterizeClusterTriangleWave<
                 : 0.0.xxx,
         };
         ClusterRasterTriangle rasterTriangle = active
-            ? SetupClusterRasterTriangle(fan, scissorRect, screenWidth, screenHeight)
+            ? SetupClusterRasterTriangle(fan, scissorRect, screenWidth, screenHeight,
+                targetPolicy == 0u ? CLUSTER_RASTER_TWO_SIDED == 0 : CLUSTER_TARGET_RASTER_TWO_SIDED == 0)
             : (ClusterRasterTriangle)0;
 
         ClusterPixelRasterTask<TVertex, TVisibility, TOutput> task;

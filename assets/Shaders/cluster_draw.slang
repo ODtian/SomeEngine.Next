@@ -126,12 +126,14 @@ void MSVisBufferMeshlet(
         vertex, visibility, groupId, lane, vertices, indices, primitives);
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 float4 PSMain(PSInput input) : SV_TARGET
 {
     return float4(input.Color, 1.0);
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 float4 PSOverdraw(PSInput input) : SV_TARGET
 {
@@ -244,6 +246,7 @@ PSVisBufferOutput EvaluatePSVisBufferHardwareOnly(
     return output;
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void PSMeshVisBufferImageAtomic64(
     ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertex,
@@ -253,6 +256,7 @@ void PSMeshVisBufferImageAtomic64(
         MakeMeshPixelInput<DefaultVisibilityEvaluate.Varying>(vertex, primitive));
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void PSMeshVisBufferBufferAtomic64(
     ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertex,
@@ -262,6 +266,7 @@ void PSMeshVisBufferBufferAtomic64(
         MakeMeshPixelInput<DefaultVisibilityEvaluate.Varying>(vertex, primitive));
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 PSVisBufferOutput PSMeshVisBufferHardwareOnly(
     ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertex,
@@ -272,6 +277,7 @@ PSVisBufferOutput PSMeshVisBufferHardwareOnly(
 }
 
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void PSVisBufferImageAtomic64(
     ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
@@ -279,6 +285,7 @@ void PSVisBufferImageAtomic64(
     EvaluatePSVisBufferImageAtomic64(input);
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void PSVisBufferBufferAtomic64(
     ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
@@ -286,6 +293,7 @@ void PSVisBufferBufferAtomic64(
     EvaluatePSVisBufferBufferAtomic64(input);
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 PSVisBufferOutput PSVisBufferHardwareOnly(
     ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)

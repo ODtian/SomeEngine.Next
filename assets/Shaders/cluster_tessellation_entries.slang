@@ -263,6 +263,7 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
     return output;
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 ClusterTessellationHardwareOutput ClusterTessellationHardwareMeshPixel(
     uniform VisibilityEvaluate visibility,
@@ -281,6 +282,7 @@ ClusterTessellationHardwareOutput ClusterTessellationHardwareMeshPixel(
 }
 
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 ClusterTessellationHardwareOutput ClusterTessellationHardwarePixel(
     uniform VisibilityEvaluate visibility,

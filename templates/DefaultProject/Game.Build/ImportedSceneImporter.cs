@@ -21,7 +21,7 @@ namespace Game.Build;
 public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("a91c86d1-551d-48e3-8e33-a25e30e2c2f4");
-    private readonly Dictionary<float, Guid> _shaders = [];
+    private readonly Dictionary<(float Cutoff, bool TwoSided), Guid> _shaders = [];
     private AssetId<TextureAsset> _white;
     public override async ValueTask ImportMaterialAsync(GltfMaterial source, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
@@ -68,7 +68,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
         content.SetParameter(new("OcclusionMap", MaterialParameterKind.Texture) { Texture = occlusionId });
         content.SetParameter(new("NormalScale", MaterialParameterKind.Float) { Float = source.FindChannel("Normal")?.GetFactor("NormalScale") ?? 1 });
         content.SetParameter(new("OcclusionStrength", MaterialParameterKind.Float) { Float = occlusion?.GetFactor("OcclusionStrength") ?? 1 });
-        content.Shader = new(_shaders[Cutoff(source)]);
+        content.Shader = new(_shaders[(Cutoff(source), source.DoubleSided)]);
         MaterialBlock block = content.Duplicate();
         try { output.SetBlock(block); }
         catch { block.Dispose(); throw; }
@@ -86,12 +86,13 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             File.Copy(file, destination, overwrite: true);
         }
         WriteSurfaceShader(directory, defaults);
-        foreach (float cutoff in model.LogicalMaterials.Select(Cutoff).Distinct())
+        foreach (var (cutoff, twoSided) in model.LogicalMaterials.Select(material => (Cutoff(material), material.DoubleSided)).Distinct())
         {
             string suffix = cutoff < 0 ? "opaque" : "mask_" + BitConverter.SingleToInt32Bits(cutoff).ToString("x8");
-            string shaderName = "scene_" + suffix;
+            string shaderName = "scene_" + suffix + (twoSided ? "_both" : "");
             string shader = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
                 .Replace("\"standard_material.slang\"", "\"scene_material.slang\"");
+            if (twoSided) shader = "#define CLUSTER_RASTER_TWO_SIDED 1\n" + shader;
             if (cutoff >= 0)
                 shader = Replace(shader, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
                     MaskShader.Replace("ALPHA_CUTOFF", cutoff.ToString("R", CultureInfo.InvariantCulture)) + "\ntypedef SceneMask VisibilityEvaluate;");
@@ -105,7 +106,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(shaderName + ".slang");
             WriteIfChanged(definitionPath, definition.ToJsonString());
             await project.BuildAsync(definitionPath);
-            _shaders.Add(cutoff, shaderId);
+            _shaders.Add((cutoff, twoSided), shaderId);
         }
         string templatePath = Path.Combine(project.RootPath, "assets/Materials/Standard.material.asset");
         using var template = await MaterialAsset.OpenAsync(templatePath);

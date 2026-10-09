@@ -315,6 +315,16 @@ internal sealed class ClusterPipelineSet : IDisposable
                         "MSVisBufferMeshlet",
                         SlangStage.Mesh)
                         ? "MSVisBufferMeshlet" : "MSVisBuffer";
+            if (role == ClusterShaderOperationRole.HardwareVisibilityRaster)
+            {
+                EntryPointReflection rasterPixel = shader.RequireSlangEntry(
+                    shader.RequireSlangTarget(device.Capabilities.CompileTarget),
+                    pixelEntry ?? pixel.Entry.Name, SlangStage.Fragment);
+                rasterizerState = rasterizerState with
+                {
+                    Cull = ClusterGeometryRequirements.UsesBothRasterFaces(rasterPixel) ? CullType.None : CullType.Back,
+                };
+            }
             created = ClusterRasterPipeline.Create(
                 backend,
                 device,
