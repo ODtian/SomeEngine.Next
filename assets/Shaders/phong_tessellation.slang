@@ -125,6 +125,8 @@ struct PhongTessellation : IDomainEvaluate<StandardVertex>
     typealias TriangleData = Triangle;
     typealias Surface = SurfaceEval;
 
+    Triangle readLane(Triangle triangle, uint lane) { return ReadTriangleLane(triangle, lane); }
+
     Triangle makeTriangle(
         StandardVertex first,
         StandardVertex second,

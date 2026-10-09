@@ -60,7 +60,10 @@ interface IDomainEvaluate<TVertex>
     associatedtype TriangleData;
     associatedtype Surface;
 
+    // Construction depends on the supplied vertices. Matching triangles may share
+    // one construction; the domain transports its complete representation.
     TriangleData makeTriangle(TVertex first, TVertex second, TVertex third);
+    TriangleData readLane(TriangleData triangle, uint lane);
     float3 cornerPosition(TriangleData triangle, uint corner);
     float3 position(TriangleData triangle, float3 barycentric);
     Surface eval(TriangleData triangle, float3 barycentric);
