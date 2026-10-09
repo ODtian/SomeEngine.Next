@@ -337,7 +337,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     uint leafOffset = WavePrefixSum(leafCount);
     uint waveLeafCount = WaveActiveSum(leafCount);
     uint candidateBase = 0u;
-    if (WaveIsFirstLane())
+    if (WaveIsFirstLane() && waveLeafCount != 0u)
 #ifdef CLUSTER_PERSISTENT_CULL
         candidateBase = ReservePersistentClusters(waveLeafCount);
 #else
