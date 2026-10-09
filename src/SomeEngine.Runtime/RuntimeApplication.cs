@@ -569,6 +569,7 @@ internal static class RuntimeApplication
             edit.Commit();
         }
         var outputDescription = new ClusterPipelineOutputDescription(boot.Width, boot.Height, 1);
+        float rasterEdgePixels = script?.RasterEdgePixels ?? 32;
         using var lighting = new LightingFeature(
             backend,
             device,
@@ -651,7 +652,7 @@ internal static class RuntimeApplication
             {
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
-                SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 32,
+                SoftwareRasterEdgeThreshold = rasterEdgePixels,
                 MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics,
@@ -916,7 +917,7 @@ internal static class RuntimeApplication
                     UnjitteredProjection = scene.Projection(width, height), JitterPixels = viewFrame.JitterPixels,
                     Options = options, ShadowSettings = shadowSettings,
                     TemporalSettings = script?.TemporalSettings ?? TemporalResolveSettings.Default,
-                    RasterEdgePixels = script?.RasterEdgePixels ?? 4,
+                    RasterEdgePixels = rasterEdgePixels,
                     ClusterWorkCapacity = script?.ClusterWorkCapacity ?? 1_048_576,
                     Adapter = device.Adapter.Name, DriverVersion = device.Adapter.DriverVersion,
                 }) : null;

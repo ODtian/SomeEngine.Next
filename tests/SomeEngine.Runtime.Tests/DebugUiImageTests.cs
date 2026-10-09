@@ -13,19 +13,35 @@ public sealed class DebugUiImageTests(RenderingContentFixture content)
     {
         // The script overload deliberately hides debug UI. Exercise ordinary
         // public startup instead, with its default debug window enabled.
+        using var scene = new SceneContentCopy(content.Spheres);
+        await SomeEngine.SceneContent.SceneContent.SetOutputSizeAsync(scene.DirectoryPath, 640, 480);
         string directory = Path.Combine(Path.GetTempPath(), "someengine-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {
             string[] startup = ["--hardware-adapter", "--graphics-backend", backend,
-                "--hidden-window", "--static-scene", "--fixed-step", "0.016666667", "--no-vsync", "--frames", "4"];
-            SceneImage first = await CaptureAsync([.. startup, "--capture-frame", "1"], Path.Combine(directory, "first.bmp"), content.Spheres);
-            SceneImage later = await CaptureAsync([.. startup, "--capture-frame", "3"], Path.Combine(directory, "later.bmp"), content.Spheres);
-            SceneImage withoutUi = await CaptureAsync([.. startup, "--capture-frame", "3", "--no-debug-ui"], Path.Combine(directory, "without-ui.bmp"), content.Spheres);
-            SceneImages.AssertNotEqual(withoutUi, later);
-            SceneImages.AssertNotEqual(first, later);
+                "--hidden-window", "--static-scene", "--fixed-step", "0.016666667",
+                "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"];
+            SceneImage first = await CaptureAsync([.. startup, "--capture-frame", "7"], Path.Combine(directory, "first.bmp"), scene.DirectoryPath);
+            SceneImage later = await CaptureAsync([.. startup, "--capture-frame", "11"], Path.Combine(directory, "later.bmp"), scene.DirectoryPath);
+            SceneImage firstWithoutUi = await CaptureAsync([.. startup, "--capture-frame", "7", "--no-debug-ui"], Path.Combine(directory, "first-without-ui.bmp"), scene.DirectoryPath);
+            SceneImage laterWithoutUi = await CaptureAsync([.. startup, "--capture-frame", "11", "--no-debug-ui"], Path.Combine(directory, "later-without-ui.bmp"), scene.DirectoryPath);
+            // Verify that changes in the scene cannot satisfy the frame-upload assertion.
+            SceneImages.AssertEqual(FrameText(firstWithoutUi), FrameText(laterWithoutUi));
+            SceneImages.AssertNotEqual(FrameText(laterWithoutUi), FrameText(later));
+            SceneImages.AssertNotEqual(FrameText(first), FrameText(later));
         }
         finally { Directory.Delete(directory, true); }
+    }
+
+    private static SceneImage FrameText(SceneImage image)
+    {
+        const int left = 32, top = 46, width = 224, height = 32;
+        byte[] pixels = new byte[width * height * 4];
+        for (int row = 0; row < height; row++)
+            image.Pixels.Span.Slice(((top + row) * image.Width + left) * 4, width * 4)
+                .CopyTo(pixels.AsSpan(row * width * 4));
+        return new(image.Frame, width, height, pixels);
     }
 
     private static async Task<SceneImage> CaptureAsync(string[] arguments, string path, string contentDirectory)
