@@ -27,6 +27,17 @@ internal sealed class RayShadowScene
     internal Mesh[] Meshes { get; }
     internal Instance[] Instances { get; }
 
+    internal RayShadowScene(Vertex[] vertices, uint[] indices, Geometry[] geometries,
+        uint[] texels, Mesh[] meshes, Instance[] instances)
+    {
+        Vertices = vertices;
+        Indices = indices;
+        Geometries = geometries;
+        Texels = texels;
+        Meshes = meshes;
+        Instances = instances;
+    }
+
     internal RayShadowScene(string source, Matrix4x4[]? transforms = null)
     {
         ModelRoot model = ModelRoot.Load(source);

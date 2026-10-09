@@ -350,6 +350,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(material)),
     });
 
+    internal void UseStandardShader(Shader shader) => _standard.Shader = shader;
+
     private void SetMaterial(Material material)
     {
         for (int index = 0; index < _meshes.Length; index++) UseMaterial(index, material);
