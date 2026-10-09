@@ -47,9 +47,9 @@ public static partial class ClusterBuilder
                 prepared,
                 meshletBuild,
                 vertexEncoder);
-            uint[] lowestDetailPageIndices = [0];
             List<ClusterBVHNode> hierarchy = BuildBvh(clusterInfos);
             MeshClusterGroup[] groups = BuildMeshGroups(clusterInfos, hierarchy);
+            uint[] lowestDetailPageIndices = CollectBaseGeometryPages(groups);
             long bvhOffset = WriteBvh(stream, hierarchy);
             byte[] content = stream.ToArray();
             return CreateMeshAsset(
@@ -65,6 +65,18 @@ public static partial class ClusterBuilder
         {
             scratch.Return();
         }
+    }
+
+    private static uint[] CollectBaseGeometryPages(MeshClusterGroup[] groups)
+    {
+        var pages = new HashSet<uint>();
+        foreach (MeshClusterGroup group in groups)
+        {
+            if (!group.Parents.IsEmpty) continue;
+            for (uint page = group.FirstPage; page < group.FirstPage + group.PageCount; page++)
+                pages.Add(page);
+        }
+        return pages.Order().ToArray();
     }
 
     private static ClusterMeshData PrepareRawMesh(
