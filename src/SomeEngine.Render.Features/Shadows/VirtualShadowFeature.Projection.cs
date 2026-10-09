@@ -56,7 +56,7 @@ public sealed partial class VirtualShadowFeature
             projection.Pass = AddComputePass(ref edit, label, projection.Pipeline,
                 new VirtualShadowDispatchPassData(default), region);
             var binders = new List<GraphResourceBinder>();
-            int[] resources = FeatureResourceLayout.Resolve<int>(projection.Pipeline.ParameterLayout,
+            int[] resources = ShaderResourceLayout.Resolve<int>(projection.Pipeline.ParameterLayout,
                 (name, type) =>
                 {
                     GraphResourceBinder? binder = (name, type) switch

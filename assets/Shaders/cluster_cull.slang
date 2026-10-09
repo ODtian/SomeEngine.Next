@@ -7,13 +7,15 @@
 #include "wave_aggregation.slang"
 #include "wave_queue.slang"
 
+#ifndef CLUSTER_PERSISTENT_CULL
 StructuredBuffer<ClusterViewUniforms> Views;
 
 ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
-ByteAddressBuffer PageHeap;
 StructuredBuffer<ClusterCandidate> CandidateClusters;
 StructuredBuffer<uint> CandidateCount;
+#endif
+ByteAddressBuffer PageHeap;
 #if CLUSTER_CULL_PHASE == 1
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer DrawArgs;
@@ -21,27 +23,37 @@ ByteAddressBuffer BaseDrawArgs0;
 ByteAddressBuffer BaseDrawArgs1;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<VisibleCluster> VisibleClusters;
+#ifndef CLUSTER_PERSISTENT_CULL
 Texture2DArray<float> HiZTexture;
+#endif
+#ifndef CLUSTER_PERSISTENT_CULL
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<ClusterCandidate> NextCandidates;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> NextCandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer NextCandidateArgs;
+#else
+ByteAddressBuffer BaseDrawArgs2;
+#endif
 #elif CLUSTER_CULL_PHASE == 2
 ByteAddressBuffer BaseDrawArgs0;
 ByteAddressBuffer BaseDrawArgs1;
 ByteAddressBuffer BaseDrawArgs2;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<VisibleCluster> VisibleClusters;
+#ifndef CLUSTER_PERSISTENT_CULL
 Texture2DArray<float> HiZTexture;
+#endif
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer PhaseDrawArgs;
 #else
 #error CLUSTER_CULL_PHASE must be 1 or 2
 #endif
 
+#ifndef CLUSTER_PERSISTENT_CULL
 StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
+#endif
 
 float3 LoadFloat3(ByteAddressBuffer buffer, uint offset)
 {
@@ -250,7 +262,14 @@ void AppendVisibleWindow(
     CullDrawArgs base0 = LoadCullDrawArgs(BaseDrawArgs0, 0u);
     CullDrawArgs base1 = LoadCullDrawArgs(BaseDrawArgs1, 0u);
     uint baseSWCount = base0.SWCount + base1.SWCount;
+#ifdef CLUSTER_PERSISTENT_CULL
+    CullDrawArgs base2 = LoadCullDrawArgs(BaseDrawArgs2, 0u);
+    baseSWCount += base2.SWCount;
+#endif
     uint baseHWCount = base0.HWCount + base1.HWCount;
+#ifdef CLUSTER_PERSISTENT_CULL
+    baseHWCount += base2.HWCount;
+#endif
     uint baseCount = baseSWCount + baseHWCount;
     uint4 activeMask = WaveActiveBallot(true);
     uint lane = WaveGetLaneIndex();
@@ -477,9 +496,7 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
 }
 
 #if CLUSTER_CULL_PHASE == 1
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
+void CullClusterCandidate(uint candidateIndex)
 {
     uint pageOffset;
     uint clusterID;
@@ -493,7 +510,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     ClusterWorldBounds worldBounds;
     ClusterScreenBounds currentBounds;
     bool valid = LoadAndFilterCandidate(
-            dispatchThreadID.x,
+            candidateIndex,
             pageOffset,
             clusterID,
             instanceID,
@@ -508,6 +525,20 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     if (!valid)
         return;
 
+#ifdef CLUSTER_PERSISTENT_CULL
+    if (TraversalLevel.TraversalMode == 2u)
+    {
+        if (!IsOccludedByHiZ(currentBounds, false, viewIndex, view,
+                view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u))
+        {
+            bool software = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, currentBounds.NearDepth,
+                view, cluster, t, boundsExpansion);
+            AppendVisible(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, software,
+                view.MaxCandidates, currentBounds, cluster, t);
+        }
+        return;
+    }
+#endif
     ClusterScreenBounds bounds = currentBounds;
     bool occluded = false;
     if (view.HasPrevHistory != 0u && view.CullingEnabled != 0u)
@@ -521,7 +552,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     if (occluded)
     {
         AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates,
-            CandidateFlags(CandidateClusters[dispatchThreadID.x]));
+            CandidateFlags(CandidateClusters[candidateIndex]));
     }
     else
     {
@@ -538,6 +569,15 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
             currentBounds, cluster, t);
     }
 }
+
+#ifndef CLUSTER_PERSISTENT_CULL
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void CullPhaseOne(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    CullClusterCandidate(dispatchThreadID.x);
+}
+#endif
 #elif CLUSTER_CULL_PHASE == 2
 
 void AppendVisibleWindow(

@@ -64,12 +64,19 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
             PublishDispatch(TraversalArguments, published, 16u);
             TraversalArguments.Store(16u, 0u);
             TraversalArguments.Store(20u, 0u);
-            TraversalArguments.Store(24u, published);
+            uint accepted = min(waveCount, ResumeUniforms.MaxWorkItems - min(waveBase, ResumeUniforms.MaxWorkItems));
+            uint ignored;
+            TraversalArguments.InterlockedAdd(CLUSTER_NODE_OUTSTANDING, accepted, ignored);
         }
         waveBase = WaveReadLaneAt(waveBase, leader);
         uint output = waveBase + WaveMaskPrefix(nodeMask, lane);
         if (output < ResumeUniforms.MaxWorkItems)
+        {
             TraversalNodes[output] = DecodeDeferredTraversalNode(work);
+            DeviceMemoryBarrier();
+            uint ignored;
+            InterlockedExchange(TraversalReady[output], 1u, ignored);
+        }
     }
 
     uint4 clusterMask = WaveActiveBallot(isCluster);
@@ -84,12 +91,17 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
             waveBase = ReserveClusterWork(CandidateCount, waveCount, ResumeUniforms.MaxWorkItems, 2u);
             uint published = min(waveBase + waveCount, ResumeUniforms.MaxWorkItems);
             PublishDispatch(CandidateArgs, published, 64u);
+            PublishDispatch(TraversalArguments, published, 64u);
         }
         waveBase = WaveReadLaneAt(waveBase, leader);
         uint output = waveBase + WaveMaskPrefix(clusterMask, lane);
         if (output < ResumeUniforms.MaxWorkItems)
+        {
             CandidateClusters[output] = candidate;
+            PublishClusterBatchRange(output, 1u, ResumeUniforms.MaxWorkItems);
+        }
     }
 }
 
 #include "cluster_work_status.slang"
+#include "cluster_work_queue.slang"
