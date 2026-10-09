@@ -1,8 +1,8 @@
 namespace SomeEngine.Runtime.Tests;
 
 [Trait("Category", "Hardware")]
-[Collection("Rendering content")]
-public sealed class FrameCaptureSettingsTests(RenderingContentFixture content)
+[Collection("Scene content")]
+public sealed class FrameCaptureSettingsTests(SceneContentFixture content)
 {
     [SceneTheory]
     [InlineData("d3d12")]
@@ -18,7 +18,7 @@ public sealed class FrameCaptureSettingsTests(RenderingContentFixture content)
                 "--hidden-window", "--static-scene", "--fixed-step", "0.016666667",
                 "--no-vsync", "--no-taa", "--no-vsm", "--no-debug-ui",
                 "--frames", "4", "--linear-frame-output", path];
-            var platform = new SceneTestPlatform([new TestScene("Capture settings", content.Spheres)],
+            var platform = new SceneTestPlatform([new TestScene("Capture settings", content.DirectoryPath)],
                 RuntimeStartupOptions.Parse(arguments));
             Assert.Equal(0, await Application.RunAsync(arguments, platform: platform));
             SceneLinearImage captured = SceneLinearImage.Load(path);
@@ -33,7 +33,7 @@ public sealed class FrameCaptureSettingsTests(RenderingContentFixture content)
     public async Task ScriptedLinearCaptureReportsItsSelectedRasterThreshold(string backend)
     {
         SceneLinearImage? captured = null;
-        var script = new SceneScript(content.Spheres, 4,
+        var script = new SceneScript(content.DirectoryPath, 4,
             [new(3, edit => edit.CaptureLinearImage(image => captured = image))])
         {
             RasterEdgePixels = 12,

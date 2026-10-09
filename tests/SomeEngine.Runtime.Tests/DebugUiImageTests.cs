@@ -3,8 +3,8 @@ using SkiaSharp;
 namespace SomeEngine.Runtime.Tests;
 
 [Trait("Category", "Hardware")]
-[Collection("Rendering content")]
-public sealed class DebugUiImageTests(RenderingContentFixture content)
+[Collection("Scene content")]
+public sealed class DebugUiImageTests(SceneContentFixture content)
 {
     [SceneTheory]
     [InlineData("d3d12")]
@@ -13,12 +13,12 @@ public sealed class DebugUiImageTests(RenderingContentFixture content)
     {
         // The script overload deliberately hides debug UI. Exercise ordinary
         // public startup instead, with its default debug window enabled.
-        using var scene = new SceneContentCopy(content.Spheres);
+        using var scene = new SceneContentCopy(content.DirectoryPath);
         await SomeEngine.SceneContent.SceneContent.SetOutputSizeAsync(scene.DirectoryPath, 640, 480);
         string directory = Path.Combine(Path.GetTempPath(), "someengine-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         // This is the test executable's settings file, never the application's.
-        // The rendering collection serializes these in-process startup checks.
+        // The scene collection serializes these in-process startup checks.
         string layoutPath = Path.Combine(AppContext.BaseDirectory, "imgui.ini");
         byte[]? previousLayout = File.Exists(layoutPath) ? File.ReadAllBytes(layoutPath) : null;
         try
