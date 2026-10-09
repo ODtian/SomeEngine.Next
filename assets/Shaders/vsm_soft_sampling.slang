@@ -197,7 +197,12 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
                 position, queryUV, normal, plane, sample, blocked, separation))
             continue;
         validSearches++;
-        if (blocked) { blockerCount++; separationSum += separation; }
+        // A directional emitter can reach this query only inside the cone at
+        // the actual blocker depth. A wider search can also find nearby objects
+        // outside that cone; those objects do not determine this penumbra.
+        bool insideSource = !IsDirectionalVirtualShadowProjection(view) ||
+            length(disk) * searchRadius <= emitter * separation;
+        if (blocked && insideSource) { blockerCount++; separationSum += separation; }
     }
     if (validSearches == 0u) return result;
     if (blockerCount == 0u) { result.Valid = true; result.Visibility = 1.0; return result; }
