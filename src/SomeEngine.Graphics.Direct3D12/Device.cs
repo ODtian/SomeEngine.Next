@@ -1100,7 +1100,8 @@ internal sealed unsafe partial class D3D12Backend
                     ShaderBufferAlignment: 16,
                     TextureDataPitchAlignment: 256,
                     TextureDataPlacementAlignment: 512,
-                    MaximumConstantBufferRange: 65_536),
+                    MaximumConstantBufferRange: 65_536,
+                    MaximumComputeThreadsPerGroup: 1_024),
                 supportsBundles: true,
                 supportsPipelineStatistics: true,
                 supportsStreamOutputStatistics: true,
@@ -1113,7 +1114,8 @@ internal sealed unsafe partial class D3D12Backend
                 // Keep the persistent queue disabled until the backend can prove a stronger
                 // device-specific scheduling contract.
                 supportsComputeForwardProgress: false,
-                supportsConcurrentBufferReads: features.EnhancedBarriers);
+                supportsConcurrentBufferReads: features.EnhancedBarriers,
+                shaderLaneCount: features.Options1.TotalLaneCount);
 
         private static DynamicStates GetSupportedDynamicStates(
             in D3D12FeatureSupport features)
@@ -1263,7 +1265,7 @@ internal sealed unsafe partial class D3D12Backend
             uint nodeCount,
             DeviceFeatures availableFeatures,
             in FeatureDataD3D12Options options,
-            bool int64ShaderOps,
+            in FeatureDataD3D12Options1 options1,
             in FeatureDataD3D12Options2 options2,
             in FeatureDataD3D12Options5 options5,
             in FeatureDataD3D12Options6 options6,
@@ -1282,7 +1284,7 @@ internal sealed unsafe partial class D3D12Backend
             NodeCount = nodeCount;
             AvailableFeatures = availableFeatures;
             Options = options;
-            Int64ShaderOps = int64ShaderOps;
+            Options1 = options1;
             Options2 = options2;
             Options5 = options5;
             Options6 = options6;
@@ -1302,7 +1304,8 @@ internal sealed unsafe partial class D3D12Backend
         internal uint NodeCount { get; }
         internal DeviceFeatures AvailableFeatures { get; }
         internal FeatureDataD3D12Options Options { get; }
-        internal bool Int64ShaderOps { get; }
+        internal FeatureDataD3D12Options1 Options1 { get; }
+        internal bool Int64ShaderOps => Options1.Int64ShaderOps;
         internal FeatureDataD3D12Options2 Options2 { get; }
         internal FeatureDataD3D12Options5 Options5 { get; }
         internal FeatureDataD3D12Options6 Options6 { get; }
@@ -1345,7 +1348,8 @@ internal sealed unsafe partial class D3D12Backend
             FeatureDataD3D12Options options = QueryFeature<FeatureDataD3D12Options>(
                 device,
                 NativeFeature.D3D12Options);
-            bool int64ShaderOps = QueryInt64ShaderOps(device);
+            FeatureDataD3D12Options1 options1 = QueryFeature<FeatureDataD3D12Options1>(
+                device, NativeFeature.D3D12Options1);
             FeatureDataD3D12Options2 options2 = QueryFeature<FeatureDataD3D12Options2>(
                 device,
                 NativeFeature.D3D12Options2);
@@ -1428,7 +1432,7 @@ device, NativeFeature.ShaderModel,
                 nodeCount,
                 features,
                 options,
-                int64ShaderOps,
+                options1,
                 options2,
                 options5,
                 options6,
@@ -1444,11 +1448,6 @@ device, NativeFeature.ShaderModel,
                 sparseTexture3DFormats,
                 samplerFeedbackFormats);
         }
-
-        private static bool QueryInt64ShaderOps(ID3D12Device10* device) =>
-            QueryFeature<FeatureDataD3D12Options1>(
-                device,
-                NativeFeature.D3D12Options1).Int64ShaderOps;
 
         private static FormatSupport[] QueryFormatSupport(
             ID3D12Device10* device,
