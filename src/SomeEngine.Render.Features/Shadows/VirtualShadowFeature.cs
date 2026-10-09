@@ -1755,6 +1755,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(graph.CreateBufferSrv(_activePageCount, structureStride: sizeof(uint)),
             PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(_pageMetadata,
+            structureStride: VirtualShadowPageMetadata.SizeInBytes,
+            label: "Virtual shadow page HiZ depth validity"), PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateTextureSrv(
                 _atlas,
@@ -1785,6 +1788,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(graph.CreateBufferSrv(_activePageCount, structureStride: sizeof(uint)),
             PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(_pageMetadata,
+            structureStride: VirtualShadowPageMetadata.SizeInBytes,
+            label: "Virtual shadow page HiZ depth validity"), PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateTextureSrv(
                 _pageHiZ,

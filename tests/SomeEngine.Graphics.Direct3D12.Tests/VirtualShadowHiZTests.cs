@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using SlangShaderSharp;
 using Xunit;
 using Buffer = SomeEngine.Graphics.Buffer;
+using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
@@ -29,6 +30,9 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
         using BufferSrv activeView = backend.CreateBufferSrv(device, new BufferSrvDesc(active, BufferRange.Whole, StructureStride: 16));
         using Buffer activeCount = Upload(backend, device, [2u], BufferUsages.ShaderRead, 4);
         using BufferSrv activeCountView = backend.CreateBufferSrv(device, new BufferSrvDesc(activeCount, BufferRange.Whole, StructureStride: 4));
+        using Buffer metadata = Upload(backend, device, [0u, 0u, 0u, 8u, 0u, 0u, 999u, 0u,
+            0u, 0u, 0u, 8u, 0u, 0u, 999u, 0u], BufferUsages.ShaderRead, 64);
+        using BufferSrv metadataView = backend.CreateBufferSrv(device, new BufferSrvDesc(metadata, BufferRange.Whole, StructureStride: 32));
         var depth = new float[2][];
         var pixels = new uint[2 * 256 * 128];
         for (int layer = 0; layer < 2; layer++)
@@ -78,7 +82,7 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
             backend.SetPipeline(context, first);
             backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
                 initialize.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
-                [ResourceBinding.ConstantBuffer(cbv0), ResourceBinding.ReadOnlyBuffer(activeView), ResourceBinding.ReadOnlyBuffer(activeCountView),
+                [ResourceBinding.ConstantBuffer(cbv0), ResourceBinding.ReadOnlyBuffer(activeView), ResourceBinding.ReadOnlyBuffer(activeCountView), ResourceBinding.ReadOnlyBuffer(metadataView),
                     ResourceBinding.SampledTexture(atlasView),
                     ResourceBinding.StorageTexture(destinations[0]), ResourceBinding.StorageTexture(destinations[1]),
                     ResourceBinding.StorageTexture(destinations[2]), ResourceBinding.StorageTexture(destinations[3])], []));
@@ -89,7 +93,7 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
             backend.SetPipeline(context, second);
             backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
                 reduce.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
-                [ResourceBinding.ConstantBuffer(cbv1), ResourceBinding.ReadOnlyBuffer(activeView), ResourceBinding.ReadOnlyBuffer(activeCountView),
+                [ResourceBinding.ConstantBuffer(cbv1), ResourceBinding.ReadOnlyBuffer(activeView), ResourceBinding.ReadOnlyBuffer(activeCountView), ResourceBinding.ReadOnlyBuffer(metadataView),
                     ResourceBinding.SampledTexture(source),
                     ResourceBinding.StorageTexture(destinations[4]), ResourceBinding.StorageTexture(destinations[5]),
                     ResourceBinding.StorageTexture(destinations[6]), ResourceBinding.StorageTexture(destinations[6])], []));
@@ -145,6 +149,138 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
             foreach (TextureUav? view in destinations) view?.Dispose();
         }
     }
+
+    [Fact]
+    public void Dynamic_only_pages_keep_each_existing_static_mip()
+    {
+        const uint pageSize = 16;
+        uint[] atlas = new uint[32 * 16 * 2];
+        for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 32; x++)
+            atlas[32 * 16 + y * 32 + x] = BitConverter.SingleToUInt32Bits(x < 16 ? .25f : .75f);
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteImages(
+            "vsm_page_hiz.slang", "InitializeVirtualShadowPageHiZ", new(2, 1, 1),
+            HiZInputs(pageSize, 2, 0, 0, 0, [4u, 8u]),
+            [new(32, 16, atlas, 4, ViewDimension: TextureViewDimension.Texture2DArray,
+                Layers: 2, Name: "ShadowPhysicalAtlas"),
+             HiZOutput(8, 2, 1, .5f, 0), HiZOutput(4, 2, 1, .5625f, 1),
+             HiZOutput(2, 2, 1, .625f, 2), HiZOutput(1, 2, 1, .6875f, 3)]);
+
+        // Distinct saved values prove the cached page was not rewritten, while
+        // the neighboring static-dirty page must read and reduce the new atlas.
+        for (int mip = 0; mip < 4; mip++)
+        {
+            int size = 8 >> mip;
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size * 2; x++)
+                Assert.Equal(x < size ? .5f + mip * .0625f : .25f,
+                    BitConverter.UInt32BitsToSingle(result[mip][y * size * 2 + x]));
+        }
+    }
+
+    [Fact]
+    public void Dynamic_only_pages_keep_their_existing_top_static_mips()
+    {
+        uint[] source = new uint[16 * 8];
+        for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 16; x++)
+            source[y * 16 + x] = BitConverter.SingleToUInt32Bits(x < 8 ? .25f : .375f);
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteImages(
+            "vsm_page_hiz_reduce.slang", "ReduceVirtualShadowPageHiZ", new(2, 1, 1),
+            HiZInputs(128, 2, 3, 4, 0, [4u, 8u]),
+            [new(16, 8, source, 4, PixelFormat: Format.R32Float,
+                ViewDimension: TextureViewDimension.Texture2DArray, Name: "VirtualShadowPageHiZSource"),
+             HiZOutput(4, 2, 1, .5f, 0), HiZOutput(2, 2, 1, .5625f, 1),
+             HiZOutput(1, 2, 1, .625f, 2), HiZOutput(1, 2, 1, .6875f, 3)]);
+
+        for (int mip = 0; mip < 3; mip++)
+        {
+            int size = 4 >> mip;
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size * 2; x++)
+                Assert.Equal(x < size ? .5f + mip * .0625f : .375f,
+                    BitConverter.UInt32BitsToSingle(result[mip][y * size * 2 + x]));
+        }
+        Assert.All(result[3], value => Assert.Equal(.6875f, BitConverter.UInt32BitsToSingle(value)));
+    }
+
+    [Fact]
+    public void Dynamic_HiZ_updates_both_depth_layers_on_dynamic_only_pages()
+    {
+        uint[] atlas = Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.875f), 16 * 16)
+            .Concat(Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.25f), 16 * 16)).ToArray();
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteImages(
+            "vsm_page_hiz.slang", "InitializeVirtualShadowPageHiZ", new(1, 1, 1),
+            HiZInputs(16, 1, 0, 0, 1, [4u]),
+            [new(16, 16, atlas, 4, ViewDimension: TextureViewDimension.Texture2DArray,
+                Layers: 2, Name: "ShadowPhysicalAtlas"),
+             HiZOutput(8, 1, 2, .5f, 0), HiZOutput(4, 1, 2, .5f, 1),
+             HiZOutput(2, 1, 2, .5f, 2), HiZOutput(1, 1, 2, .5f, 3)]);
+
+        for (int mip = 0; mip < 4; mip++)
+        {
+            int layerPixels = (8 >> mip) * Math.Max(8 >> mip, 2);
+            for (int pixel = 0; pixel < (8 >> mip) * (8 >> mip); pixel++)
+            {
+                Assert.Equal(.125f, BitConverter.UInt32BitsToSingle(result[mip][pixel]));
+                Assert.Equal(.75f, BitConverter.UInt32BitsToSingle(result[mip][layerPixels + pixel]));
+            }
+        }
+    }
+
+    [Fact]
+    public void Dynamic_HiZ_reduces_both_top_depth_layers_on_dynamic_only_pages()
+    {
+        uint[] source = Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.125f), 8 * 8)
+            .Concat(Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.75f), 8 * 8)).ToArray();
+        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteImages(
+            "vsm_page_hiz_reduce.slang", "ReduceVirtualShadowPageHiZ", new(1, 1, 1),
+            HiZInputs(128, 1, 3, 4, 1, [4u]),
+            [new(8, 8, source, 4, PixelFormat: Format.R32Float,
+                ViewDimension: TextureViewDimension.Texture2DArray, Layers: 2, Name: "VirtualShadowPageHiZSource"),
+             HiZOutput(4, 1, 2, .5f, 0), HiZOutput(2, 1, 2, .5f, 1),
+             HiZOutput(1, 1, 2, .5f, 2), HiZOutput(1, 1, 2, .5f, 3)]);
+
+        for (int mip = 0; mip < 3; mip++)
+        {
+            int layerPixels = (4 >> mip) * Math.Max(4 >> mip, 2);
+            for (int pixel = 0; pixel < (4 >> mip) * (4 >> mip); pixel++)
+            {
+                Assert.Equal(.125f, BitConverter.UInt32BitsToSingle(result[mip][pixel]));
+                Assert.Equal(.75f, BitConverter.UInt32BitsToSingle(result[mip][layerPixels + pixel]));
+            }
+        }
+        Assert.All(result[3], value => Assert.Equal(.5f, BitConverter.UInt32BitsToSingle(value)));
+    }
+
+    private static BufferInput[] HiZInputs(uint pageSize, uint pagesPerRow, uint sourceMip,
+        uint destinationMip, uint staticLayerOffset, uint[] pageFlags)
+    {
+        uint[] active = new uint[pageFlags.Length * 4];
+        uint[] metadata = new uint[pageFlags.Length * 8];
+        for (uint page = 0; page < pageFlags.Length; page++)
+        {
+            active[page * 4] = page;
+            active[page * 4 + 1] = page;
+            active[page * 4 + 3] = 7;
+            metadata[page * 8 + 1] = 7;
+            metadata[page * 8 + 3] = pageFlags[page];
+            metadata[page * 8 + 6] = 7;
+        }
+        return [new("PageHiZ", [pageSize, pagesPerRow, sourceMip, destinationMip, staticLayerOffset, 0, 0, 0],
+                ResourceBindingType.ConstantBuffer, 0),
+            new("ActivePhysicalPages", active, ResourceBindingType.BufferSrv, 16),
+            new("ActivePhysicalPageCount", [checked((uint)pageFlags.Length)], ResourceBindingType.BufferSrv, 4),
+            new("PageHiZMetadata", metadata, ResourceBindingType.BufferSrv, 32)];
+    }
+
+    private static SampledImage HiZOutput(uint size, uint pagesPerRow, uint layers, float initialValue, int mip) =>
+        // Keep each readback layer on a 512-byte footprint boundary.
+        new(size * pagesPerRow, Math.Max(size, 2u),
+            Enumerable.Repeat(BitConverter.SingleToUInt32Bits(initialValue), checked((int)(size * Math.Max(size, 2u) * pagesPerRow * layers))).ToArray(),
+            5 + mip, PixelFormat: Format.R32Float, ViewDimension: TextureViewDimension.Texture2DArray,
+            Type: ResourceBindingType.TextureUav, Layers: layers,
+            Name: mip == 0 ? "VirtualShadowPageHiZDestination" : $"VirtualShadowPageHiZDestination{mip}");
 
     private static Buffer Upload(IGraphicsBackend backend, Device device, ReadOnlySpan<uint> values, BufferUsages usages, int bytes)
     {

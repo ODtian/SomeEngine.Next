@@ -1,6 +1,8 @@
 #include "resource_effects.slang"
 #include "depth_page_hiz.slang"
 #include "vsm_page_dispatch.slang"
+#include "vsm_page_entry.slang"
+#include "vsm_depth_cache.slang"
 
 struct VirtualShadowPageHiZUniforms
 {
@@ -15,6 +17,7 @@ struct VirtualShadowPageHiZUniforms
 ConstantBuffer<VirtualShadowPageHiZUniforms> PageHiZ;
 StructuredBuffer<uint4> ActivePhysicalPages;
 StructuredBuffer<uint> ActivePhysicalPageCount;
+StructuredBuffer<VirtualShadowPageMetadata> PageHiZMetadata;
 #if VSM_PAGE_HIZ_INITIALIZE
 Texture2DArray<uint> ShadowPhysicalAtlas;
 #else
@@ -28,6 +31,14 @@ RWTexture2DArray<float> VirtualShadowPageHiZDestination1;
 RWTexture2DArray<float> VirtualShadowPageHiZDestination2;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWTexture2DArray<float> VirtualShadowPageHiZDestination3;
+
+bool NeedsVirtualShadowPageHiZUpdate(uint physicalPage)
+{
+    // Allocation keeps static depth only after its page identity and completion
+    // match. Dynamic-only redraws leave both static depth and its HiZ unchanged.
+    return PageHiZ.StaticLayerOffset != 0u ||
+        (PageHiZMetadata[physicalPage].Flags & VSM_PAGE_STATIC_UNCACHED) != 0u;
+}
 
 void WriteVirtualShadowPageHiZ(RWTexture2DArray<float> output, uint3 address, float2 depth)
 {

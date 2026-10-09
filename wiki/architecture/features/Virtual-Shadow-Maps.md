@@ -141,6 +141,15 @@ coarse 深度以 `(coarseDepth - (offsetZB - scale * offsetZA)) / scale` 返回 
 HiZ 使用图管理持久存储：main 读取先前结果后，intermediate 更新脏页，
 post 消费已保留的 deferred work，再更新 final 供下帧使用。不复制整池历史，
 不 replay 或重新从根发现 deferred work。未受影响的缓存页不复制或重建。
+静态 HiZ 的 intermediate/final 两条链按分配器产生的 `STATIC_UNCACHED` 状态判断是否更新。
+动态脏页的静态深度可留用时，两条链均保留已有各级结果；判断先于 atlas/mip 读取与组内归约。
+开启 `DynamicHiZ` 时仍刷新动态/合并及静态层。新分配、物理页换主、世界页或缓存代号变化、
+静态输入失效和未完成静态深度继续重建。完成 producer 位于最终 HiZ 之后，失败工作不能发布静态完成代号。
+metadata、atlas 与 HiZ 在同一个 reset 条件下初始化；部分提交失败强制下一帧 reset，
+未提交取消不改变已完成缓存。保留现有 active-page 调度，不增加 CPU 回读或独立缓存版本。
+固定 UE5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368` 的
+[`VirtualShadowMapPhysicalPageManagement.usf:1644–1680`](https://github.com/EpicGames/UnrealEngine/blob/396c9f059903aed5fec78ecd3d437a40c6415368/Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapPhysicalPageManagement.usf#L1644-L1680)
+同样按静态脏页及需要的动态脏页筛选 HiZ 更新；本实现保留当前调度，仅跳过无变化页的 shader 工作。
 参见 [[architecture/validation/Vsm-Depth-Coverage-135]]；已有分项公开输出/局部光 RT 检查，
 完整 GPU 验收仍被 native testhost 中止及未完成的默认三场景/错误版本回归等门禁阻挡。
 

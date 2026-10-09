@@ -10,6 +10,7 @@ void InitializeVirtualShadowPageHiZ(
     uint pageIndex = VirtualShadowDispatchPage(groupId, tiles);
     if (pageIndex >= ActivePhysicalPageCount[0]) return;
     uint physicalPage = ActivePhysicalPages[pageIndex].x;
+    if (!NeedsVirtualShadowPageHiZUpdate(physicalPage)) return;
     uint2 pixel = VirtualShadowDispatchTile(groupId, tiles) * 8u + groupThreadId.xy;
     uint2 atlasPage = uint2(physicalPage % PageHiZ.PhysicalPagesPerRow,
         physicalPage / PageHiZ.PhysicalPagesPerRow) * PageHiZ.PageSize;

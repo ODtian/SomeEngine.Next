@@ -11,6 +11,7 @@ void ReduceVirtualShadowPageHiZ(
     uint pageIndex = VirtualShadowDispatchPage(groupId, tiles);
     if (pageIndex >= ActivePhysicalPageCount[0]) return;
     uint physicalPage = ActivePhysicalPages[pageIndex].x;
+    if (!NeedsVirtualShadowPageHiZUpdate(physicalPage)) return;
     uint2 pixel = VirtualShadowDispatchTile(groupId, tiles) * 8u + groupThreadId.xy;
     uint sourceSize = max(max(PageHiZ.PageSize / 2u, 1u) >> PageHiZ.SourceMip, 1u);
     uint2 source = min(pixel * 2u, sourceSize - 1u);
