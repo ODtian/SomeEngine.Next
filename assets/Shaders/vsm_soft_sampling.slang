@@ -74,8 +74,8 @@ float2 ProjectVirtualShadowLocalSourceTap(VirtualShadowMapParameters view, float
     return clip.xy / clip.w * float2(0.5, -0.5) + 0.5;
 }
 
-float2 VirtualShadowSolarDiskOffset(float2 disk, float sourceArea, float sourceTangent,
-    float radius)
+float2 CalculateVirtualShadowSolarDiskOffset(float2 disk, float sourceArea, float sourceTangent,
+    float radiusWorld)
 {
     // Disk strata describe solid angle. Project each stratum onto the blocker
     // plane using tan(angle), rather than treating it as a flat emitter disk.
@@ -83,7 +83,7 @@ float2 VirtualShadowSolarDiskOffset(float2 disk, float sourceArea, float sourceT
     float angularArea = radialSquared * sourceArea;
     float tangent = sqrt(max(angularArea * (2.0 - angularArea), 0.0)) /
         max(1.0 - angularArea, 1e-20);
-    return disk * (radius * tangent / max(sourceTangent * sqrt(radialSquared), 1e-20));
+    return disk * (radiusWorld * tangent / max(sourceTangent * sqrt(radialSquared), 1e-20));
 }
 
 bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> views,
@@ -207,7 +207,7 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
         float2 disk = RotateVirtualShadowDiskSample(triangle, sine, cosine);
         float searchSeparation = distanceToLight * searchRadius / max(emitter + searchRadius, minimumDistance);
         float2 queryUV = IsDirectionalVirtualShadowProjection(view)
-            ? plane.UV + VirtualShadowSolarDiskOffset(disk, sourceArea, emitter, searchRadius) * uvPerWorldUnit
+            ? plane.UV + CalculateVirtualShadowSolarDiskOffset(disk, sourceArea, emitter, searchRadius) * uvPerWorldUnit
             : ProjectVirtualShadowLocalSourceTap(source, position, searchSeparation, disk);
         VirtualShadowDepthSample sample;
         bool blocked;
@@ -236,7 +236,7 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     {
         float2 disk = RotateVirtualShadowDiskSample(VirtualShadowDiskSample(index, samples), sine, cosine);
         float2 queryUV = IsDirectionalVirtualShadowProjection(view)
-            ? plane.UV + VirtualShadowSolarDiskOffset(disk, sourceArea, emitter, radius) * uvPerWorldUnit
+            ? plane.UV + CalculateVirtualShadowSolarDiskOffset(disk, sourceArea, emitter, radius) * uvPerWorldUnit
             : ProjectVirtualShadowLocalSourceTap(source, position, averageSeparation, disk);
         VirtualShadowDepthSample sample;
         bool blocked;
