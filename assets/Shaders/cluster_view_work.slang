@@ -20,4 +20,48 @@ uint ClusterViewWorkGroupIndex(uint3 groupID)
     return groupID.y + groupID.z * 65535u;
 }
 
+uint ClusterViewWaveSpan(uint viewLanes, uint stride)
+{
+    return min(viewLanes, max(1u, WaveGetLaneCount() / stride));
+}
+
+uint ClusterViewWaveFirstLane(uint viewLanes, uint stride)
+{
+    uint lane = WaveGetLaneIndex();
+    return lane - ((lane / stride) % ClusterViewWaveSpan(viewLanes, stride)) * stride;
+}
+
+uint MergeClusterViewMaskWave(uint mask, uint viewLanes, uint stride)
+{
+    uint first = ClusterViewWaveFirstLane(viewLanes, stride);
+    uint count = ClusterViewWaveSpan(viewLanes, stride);
+    uint result = 0u;
+    for (uint view = 0u; view < count; view++)
+        result |= WaveReadLaneAt(mask, first + view * stride);
+    return result;
+}
+
+uint MergeClusterViewPriorityWave(uint priority, uint viewLanes, uint stride)
+{
+    uint first = ClusterViewWaveFirstLane(viewLanes, stride);
+    uint count = ClusterViewWaveSpan(viewLanes, stride);
+    uint result = 1u;
+    for (uint view = 0u; view < count; view++)
+        result = max(result, WaveReadLaneAt(priority, first + view * stride));
+    return result;
+}
+
+uint DistributeClusterViewMask(uint mask, uint viewLane, uint viewLanes)
+{
+    uint result = 0u;
+    uint ordinal = 0u;
+    while (mask != 0u)
+    {
+        uint bit = firstbitlow(mask);
+        mask &= mask - 1u;
+        if ((ordinal++ & (viewLanes - 1u)) == viewLane) result |= 1u << bit;
+    }
+    return result;
+}
+
 #endif
