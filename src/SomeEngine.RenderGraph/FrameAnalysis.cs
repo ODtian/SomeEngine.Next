@@ -759,7 +759,8 @@ internal sealed partial class FrameExecutor
         return unique;
     }
 
-    private readonly HashSet<BufferRangeSet> _coordinateRangeSets = [];
+    // Whole entries resolve against each descriptor's own view range.
+    private readonly HashSet<(BufferRangeSet Ranges, BufferRange ViewRange)> _coordinateRangeSets = [];
 
     private int BuildBufferCoordinates(in FrameBuffer buffer, List<int> accesses)
     {
@@ -769,7 +770,8 @@ internal sealed partial class FrameExecutor
         foreach (int accessIndex in accesses)
         {
             FrameResourceAccess access = _accesses[accessIndex];
-            if (access.SharedBufferRanges is null || _coordinateRangeSets.Add(access.SharedBufferRanges))
+            if (access.SharedBufferRanges is null ||
+                _coordinateRangeSets.Add((access.SharedBufferRanges, access.BufferRange)))
                 rangeCount = checked(rangeCount + access.BufferRanges.Count);
         }
         int required = checked((rangeCount + endpointCount) * 2 + 2);
@@ -793,7 +795,8 @@ internal sealed partial class FrameExecutor
         foreach (int accessIndex in accesses)
         {
             FrameResourceAccess access = _accesses[accessIndex];
-            if (access.SharedBufferRanges is not null && !_coordinateRangeSets.Add(access.SharedBufferRanges)) continue;
+            if (access.SharedBufferRanges is not null &&
+                !_coordinateRangeSets.Add((access.SharedBufferRanges, access.BufferRange))) continue;
             foreach (BufferRange range in access.BufferRanges)
             {
                 _bufferCoordinateScratch[count++] = range.Offset;
