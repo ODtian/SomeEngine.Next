@@ -40,6 +40,7 @@ internal sealed class ClusterMeshSimplifier
     private readonly float _positionScale;
     private readonly Vector3 _origin;
     private int _remainingTriangles;
+    private float _maxError;
     private readonly Result _backup;
     private readonly float _backupArea, _inputArea;
 
@@ -160,20 +161,19 @@ internal sealed class ClusterMeshSimplifier
 
     internal Result Simplify(int targetTriangles)
     {
-        float maxError = 0;
         while (_remainingTriangles > targetTriangles && _pairs.TryDequeue(out PositionPair pair, out _))
         {
             MeshPosition first = _positions[pair.First], second = _positions[pair.Second];
             if (first.Version != pair.FirstVersion || second.Version != pair.SecondVersion ||
                 first.Triangles.Count == 0 || second.Triangles.Count == 0) continue;
             VertexMergeData mergeData = EvaluateMerge(pair.First, pair.Second);
-            maxError = Math.Max(maxError, mergeData.Error);
+            _maxError = Math.Max(_maxError, mergeData.Error);
             ApplyMerge(pair.First, pair.Second, mergeData);
         }
         // MeshSimplify::Simplify removes remaining triangles when regular edge pairs are exhausted.
         for (int triangle = 0; _remainingTriangles > targetTriangles && triangle < _triangles.Count; triangle++)
             RemoveTriangle(triangle);
-        return Compact(maxError);
+        return Compact();
     }
 
     private void AddPair(int first, int second)
@@ -436,7 +436,7 @@ internal sealed class ClusterMeshSimplifier
         foreach (int vertex in triangle.Vertices) _positions[_vertices[vertex].Position].Triangles.Remove(index);
     }
 
-    private Result Compact(float error)
+    private Result Compact()
     {
         var positions = new List<Vector3>();
         var values = _attributes.Select(_ => new List<float>()).ToArray();
@@ -462,9 +462,9 @@ internal sealed class ClusterMeshSimplifier
             }
         }
         if (indices.Count == 0)
-            return _backup with { Error = MathF.Sqrt(Math.Max(error, _inputArea - _backupArea)) / _positionScale };
+            return _backup with { Error = MathF.Sqrt(Math.Max(_maxError, _inputArea - _backupArea)) / _positionScale };
         return new Result(positions.ToArray(), values.Select(static value => value.ToArray()).ToArray(), indices.ToArray(),
-            MathF.Sqrt(Math.Max(error, 0)) / _positionScale);
+            MathF.Sqrt(Math.Max(_maxError, 0)) / _positionScale);
     }
 
     private sealed class VertexComparer : IEqualityComparer<MeshVertex>

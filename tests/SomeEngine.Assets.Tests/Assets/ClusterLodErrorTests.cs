@@ -9,6 +9,21 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class ClusterLodErrorTests
 {
     [Fact]
+    public void ReducedMeshRetainsTheGreatestSurfaceError()
+    {
+        var sphere = PrimitiveMeshGenerator.CreateIcoSphere(2);
+        var random = new Random(7);
+        Vector3[] positions = sphere.Vertices
+            .Select(position => position * (float)(.5 + random.NextDouble())).ToArray();
+        using MeshAsset asset = ClusterBuilder.ProcessRaw(positions,
+            [sphere.Attributes.Single(attribute => attribute.Name == "NORMAL")],
+            sphere.Indices, ClusterBuilderTestMaterials.Slots(), "Uneven sphere");
+
+        // The reference reduction reaches this error before its final triangle count.
+        Assert.InRange(FirstReducedError(asset), .11055f, .11065f);
+    }
+
+    [Fact]
     public void RepeatedEqualAttributeVerticesKeepTheSameSurfaceDetail()
     {
         var sphere = PrimitiveMeshGenerator.CreateIcoSphere(3);
