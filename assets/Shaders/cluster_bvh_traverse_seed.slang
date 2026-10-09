@@ -270,17 +270,26 @@ void SeedHierarchyRoots(
 
     if (viewLanes > 1u)
     {
-        if (viewLane == 0u)
+        activeViewMask = MergeClusterViewMaskWave(activeViewMask, viewLanes, 1u);
+        deferredViewMask = MergeClusterViewMaskWave(deferredViewMask, viewLanes, 1u);
+        if (viewLanes > WaveGetLaneCount())
         {
-            ClusterRootActiveViews[instanceInGroup] = 0u;
-            ClusterRootDeferredViews[instanceInGroup] = 0u;
+            if (viewLane == 0u)
+            {
+                ClusterRootActiveViews[instanceInGroup] = 0u;
+                ClusterRootDeferredViews[instanceInGroup] = 0u;
+            }
+            GroupMemoryBarrierWithGroupSync();
+            if (WaveGetLaneIndex() == ClusterViewWaveFirstLane(viewLanes, 1u))
+            {
+                InterlockedOr(ClusterRootActiveViews[instanceInGroup], activeViewMask);
+                InterlockedOr(ClusterRootDeferredViews[instanceInGroup], deferredViewMask);
+            }
+            GroupMemoryBarrierWithGroupSync();
+            activeViewMask = ClusterRootActiveViews[instanceInGroup];
+            deferredViewMask = ClusterRootDeferredViews[instanceInGroup];
         }
-        GroupMemoryBarrierWithGroupSync();
-        InterlockedOr(ClusterRootActiveViews[instanceInGroup], activeViewMask);
-        InterlockedOr(ClusterRootDeferredViews[instanceInGroup], deferredViewMask);
-        GroupMemoryBarrierWithGroupSync();
-        activeViewMask = viewLane == 0u ? ClusterRootActiveViews[instanceInGroup] : 0u;
-        deferredViewMask = viewLane == 0u ? ClusterRootDeferredViews[instanceInGroup] : 0u;
+        if (viewLane != 0u) { activeViewMask = 0u; deferredViewMask = 0u; }
     }
 
     uint outputCount = activeViewMask != 0u ? 1u : 0u;

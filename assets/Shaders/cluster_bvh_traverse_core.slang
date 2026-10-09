@@ -221,7 +221,10 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     validNode = validNode && instanceID < firstView.InstanceCount;
     RenderInstanceTransform transform = (RenderInstanceTransform)0;
     float boundsExpansion = 0.0;
-    if (validNode)
+    uint firstViewLane = WaveGetLaneIndex();
+    if (viewLanes > 1u) firstViewLane = ClusterViewWaveFirstLane(viewLanes, CLUSTER_BVH_FANOUT);
+    bool computeBounds = viewLanes == 1u || WaveGetLaneIndex() == firstViewLane;
+    if (validNode && computeBounds)
     {
         transform = LoadRenderTransform(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD), instanceID);
@@ -232,20 +235,28 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     uint streamingPriority = 1u;
     float3 worldMin = 0.0.xxx;
     float3 worldMax = 0.0.xxx;
-    if (validNode)
+    ClusterNodeLodBounds lodBounds = (ClusterNodeLodBounds)0;
+    if (validNode && computeBounds)
+    {
         ClusterNodeWorldBounds(node, transform, boundsExpansion, worldMin, worldMax);
+        lodBounds = ComputeClusterNodeLodBounds(node, transform);
+    }
+    if (viewLanes > 1u)
+    {
+        worldMin = WaveReadLaneAt(worldMin, firstViewLane);
+        worldMax = WaveReadLaneAt(worldMax, firstViewLane);
+        lodBounds.Center = WaveReadLaneAt(lodBounds.Center, firstViewLane);
+        lodBounds.Radius = WaveReadLaneAt(lodBounds.Radius, firstViewLane);
+        lodBounds.ErrorScale = WaveReadLaneAt(lodBounds.ErrorScale, firstViewLane);
+    }
     uint inputViews = validNode ? parent.ViewMask : 0u;
     ClusterBoundsProjection previousProjection = (ClusterBoundsProjection)0;
-    uint remainingViews = WaveActiveBitOr(inputViews);
-    uint viewOrdinal = 0u;
-    while (remainingViews != 0u)
+    uint remainingViews = viewLanes == 1u ? inputViews : DistributeClusterViewMask(inputViews, viewLane, viewLanes);
+    while (WaveActiveAnyTrue(remainingViews != 0u))
     {
+        if (remainingViews == 0u) continue;
         uint bit = firstbitlow(remainingViews);
         remainingViews &= remainingViews - 1u;
-        bool assigned = (viewOrdinal++ % viewLanes) == viewLane;
-        if (!assigned) continue;
-        if ((inputViews & (1u << bit)) == 0u)
-            continue;
         uint viewIndex = viewBase + bit;
         ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
         view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
@@ -256,7 +267,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         ClusterProjectedBounds projectedBounds;
         bool outside = ProjectWorldAabbForView(worldMin, worldMax, view, previousProjection, projectedBounds);
         if ((view.CullingEnabled != 0u && outside) ||
-            !ClusterNodePassesLod(node, transform, view))
+            !ClusterNodePassesLod(node, lodBounds, view))
             continue;
         uint state = ClusterHierarchyNodeState(worldMin, worldMax, projectedBounds, viewIndex, view,
             view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
@@ -266,11 +277,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         else if (state != 0u)
         {
             activeViews |= 1u << bit;
-            float3 lodCenter = TransformInstanceLocalPosition(node.LODBounds.xyz, transform);
-            float largestScale = abs(transform.Scale) * max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
-            float smallestScale = abs(transform.Scale) * min(min(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
-            float errorScale = smallestScale;
-            float error = ClusterSphereError(lodCenter, node.LODBounds.w * largestScale, abs(node.MinLODError) * errorScale, view);
+            float error = ClusterSphereError(lodBounds.Center, lodBounds.Radius, abs(node.MinLODError) * lodBounds.ErrorScale, view);
             streamingPriority = max(streamingPriority,
                 PackClusterStreamingPriority(error, view.LodThreshold, view.StreamingPriorityCategory));
         }
@@ -279,17 +286,26 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
 #ifdef CLUSTER_PERSISTENT_CULL
     if (viewLanes > 1u)
     {
-        if (viewLane == 0u)
+        activeViews = MergeClusterViewMaskWave(activeViews, viewLanes, CLUSTER_BVH_FANOUT);
+        streamingPriority = MergeClusterViewPriorityWave(streamingPriority, viewLanes, CLUSTER_BVH_FANOUT);
+        if (viewLanes * CLUSTER_BVH_FANOUT > WaveGetLaneCount())
         {
-            TraversalActiveViews[groupChild] = 0u;
-            TraversalStreamingPriorities[groupChild] = 1u;
+            if (viewLane == 0u)
+            {
+                TraversalActiveViews[groupChild] = 0u;
+                TraversalStreamingPriorities[groupChild] = 1u;
+            }
+            GroupMemoryBarrierWithGroupSync();
+            if (WaveGetLaneIndex() == firstViewLane)
+            {
+                InterlockedOr(TraversalActiveViews[groupChild], activeViews);
+                InterlockedMax(TraversalStreamingPriorities[groupChild], streamingPriority);
+            }
+            GroupMemoryBarrierWithGroupSync();
+            activeViews = TraversalActiveViews[groupChild];
+            streamingPriority = TraversalStreamingPriorities[groupChild];
         }
-        GroupMemoryBarrierWithGroupSync();
-        InterlockedOr(TraversalActiveViews[groupChild], activeViews);
-        InterlockedMax(TraversalStreamingPriorities[groupChild], streamingPriority);
-        GroupMemoryBarrierWithGroupSync();
-        activeViews = viewLane == 0u ? TraversalActiveViews[groupChild] : 0u;
-        streamingPriority = TraversalStreamingPriorities[groupChild];
+        if (viewLane != 0u) activeViews = 0u;
     }
 #endif
 
