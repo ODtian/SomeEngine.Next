@@ -51,6 +51,8 @@ void WriteAdditionalSurfaceReceiver(uint3 pixel, uint layer, SurfaceReceiver rec
 
 struct TriangleInfo
 {
+    uint visibility;
+    uint sourceLane;
     uint visibleClusterIndex;
     uint triangleID;
     uint instanceID;
@@ -64,21 +66,14 @@ struct TriangleInfo
     uint materialSlot;
 };
 
-bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
+bool LoadTriangleInfo(uint visibility, uint viewIndex, out TriangleInfo tri)
 {
     tri = {};
-    if (pixelCoord.x >= Uniforms.ScreenWidth || pixelCoord.y >= Uniforms.ScreenHeight)
-        return false;
-
-    uint visData = VisBuffer[pixelCoord];
-    if (IsVisBufferEmpty(visData))
-        return false;
-
-    tri.visibleClusterIndex = DecodeVisBufferVisibleClusterIndex(visData);
-    tri.triangleID = DecodeVisBufferTriangleID(visData);
+    tri.visibleClusterIndex = DecodeVisBufferVisibleClusterIndex(visibility);
+    tri.triangleID = DecodeVisBufferTriangleID(visibility);
 
     DrawRequest req = VisibleClusterRequest(VisibleClusters[tri.visibleClusterIndex]);
-    if (DrawRequestViewIndex(req) != pixelCoord.z)
+    if (DrawRequestViewIndex(req) != viewIndex)
         return false;
     tri.instanceID = req.InstanceID;
     tri.viewIndex = DrawRequestViewIndex(req);
@@ -122,6 +117,47 @@ bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
     return true;
 }
 
+TriangleInfo ReadTriangleInfoLane(TriangleInfo value, uint lane)
+{
+    value.visibleClusterIndex = WaveReadLaneAt(value.visibleClusterIndex, lane);
+    value.triangleID = WaveReadLaneAt(value.triangleID, lane);
+    value.instanceID = WaveReadLaneAt(value.instanceID, lane);
+    value.vi0 = WaveReadLaneAt(value.vi0, lane);
+    value.vi1 = WaveReadLaneAt(value.vi1, lane);
+    value.vi2 = WaveReadLaneAt(value.vi2, lane);
+    value.vertexBlobAddress = WaveReadLaneAt(value.vertexBlobAddress, lane);
+    value.vertexBlobSize = WaveReadLaneAt(value.vertexBlobSize, lane);
+    value.vertexCount = WaveReadLaneAt(value.vertexCount, lane);
+    value.viewIndex = WaveReadLaneAt(value.viewIndex, lane);
+    value.materialSlot = WaveReadLaneAt(value.materialSlot, lane);
+    return value;
+}
+
+bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
+{
+    tri = {};
+    if (pixelCoord.x >= Uniforms.ScreenWidth || pixelCoord.y >= Uniforms.ScreenHeight) return false;
+    uint visibility = VisBuffer[pixelCoord];
+    if (IsVisBufferEmpty(visibility)) return false;
+    uint leader = WaveMaskFirstLane(WaveMatchingLanes(visibility) & WaveMatchingLanes(pixelCoord.z));
+    uint valid = 0u;
+    if (WaveGetLaneIndex() == leader) valid = LoadTriangleInfo(visibility, pixelCoord.z, tri) ? 1u : 0u;
+    valid = WaveReadLaneAt(valid, leader);
+    tri = ReadTriangleInfoLane(tri, leader);
+    tri.visibility = visibility;
+    tri.sourceLane = leader;
+    return valid != 0u;
+}
+
+uint GetTriangleWaveLeader(TriangleInfo tri, uint previousFrame)
+{
+    uint4 frameLanes = WaveMatchingLanes(previousFrame);
+    if ((frameLanes[tri.sourceLane >> 5u] & (1u << (tri.sourceLane & 31u))) != 0u)
+        return tri.sourceLane;
+    // Surface reconstruction can end individual lanes before motion evaluation.
+    return WaveMaskFirstLane(WaveMatchingLanes(tri.visibility) & WaveMatchingLanes(tri.viewIndex) & frameLanes);
+}
+
 VertexEvalContext makeVertexEvalContext(
     TriangleInfo tri,
     RenderInstanceTransform transform,
@@ -148,9 +184,7 @@ TDomain.TriangleData evaluateTriangleWithTransform<TVE, TDomain>(
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
-    uint4 matching = WaveMatchingLanes(tri.visibleClusterIndex) & WaveMatchingLanes(tri.triangleID)
-        & WaveMatchingLanes(isPreviousFrame);
-    uint leader = WaveMaskFirstLane(matching);
+    uint leader = GetTriangleWaveLeader(tri, isPreviousFrame);
     TDomain.TriangleData triangle;
     if (WaveGetLaneIndex() == leader)
     {
@@ -193,8 +227,7 @@ PipelineTriangleProjection ProjectTriangleWave<TVertex, TDomain>(
     TriangleInfo info)
     where TDomain : IDomainEvaluate<TVertex>
 {
-    uint4 matching = WaveMatchingLanes(info.visibleClusterIndex) & WaveMatchingLanes(info.triangleID);
-    uint leader = WaveMaskFirstLane(matching);
+    uint leader = info.sourceLane;
     PipelineTriangleProjection projection;
     if (WaveGetLaneIndex() == leader)
     {
