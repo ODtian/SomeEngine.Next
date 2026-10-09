@@ -30,4 +30,190 @@
   <Target Name="CheckTestRules" BeforeTargets="VSTest" DependsOnTargets="BuildTestRuleChecker" Condition="'$(IsTestProject)' == 'true'">
     <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/TestRules/bin/$(Configuration)/net10.0/SomeEngine.TestRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(AssemblyName)&quot;" />
   </Target>
+
+  <!-- The SDK's size/timestamp check cannot distinguish a regular copy from
+       a link, or two equal-content dependency versions. Inspect only selected
+       output entries; standard Copy still performs the strict link operation. -->
+  <UsingTask TaskName="ReadDependencyFileLinks" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Files ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <FilesToKeep ParameterType="Microsoft.Build.Framework.ITaskItem[]" />
+      <FileLinks ParameterType="Microsoft.Build.Framework.ITaskItem[]" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Linq" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="Microsoft.Build.Framework" />
+      <Using Namespace="Microsoft.Build.Utilities" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var comparison = Path.DirectorySeparatorChar == (char)92
+            ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var protectedFiles = new HashSet<string>(
+            (FilesToKeep ?? Array.Empty<ITaskItem>()).Select(file => Path.GetFullPath(file.ItemSpec)), comparison);
+        // RoslynCodeTaskFactory compiles against netstandard2.0; the pinned
+        // .NET SDK host supplies the newer public FileInfo.LinkTarget API.
+        var linkTargetProperty = typeof(FileInfo).GetProperty("LinkTarget");
+        if (linkTargetProperty == null)
+        {
+            Log.LogError("Dependency links require the .NET SDK MSBuild host (dotnet build).");
+            return false;
+        }
+        var links = new Dictionary<string, ITaskItem>(comparison);
+        foreach (var file in Files)
+        {
+            string destination = Path.GetFullPath(file.ItemSpec);
+            if (protectedFiles.Contains(destination))
+            {
+                Log.LogError("Publish destination overlaps a source dependency: {0}", destination);
+                return false;
+            }
+            var item = new TaskItem(file) { ItemSpec = destination };
+            string source = item.GetMetadata("SourcePath");
+            if (comparison.Equals(source, destination))
+                continue;
+            string target = (string)linkTargetProperty.GetValue(new FileInfo(destination));
+            string existingTarget = target == null ? string.Empty
+                : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(destination), target));
+            item.SetMetadata("ExistingLinkTarget", existingTarget);
+            item.SetMetadata("LinkMatchesSource", (comparison.Equals(source, existingTarget) && File.Exists(source)).ToString());
+            links[destination] = item;
+        }
+        FileLinks = links.Values.ToArray();
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <!-- These pinned test packages declare their required host/adapter files as
+       ordinary Content/None instead of SDK copy-local dependency items. Mark
+       those declarations only; package origin alone does not imply immutability. -->
+  <Target Name="MarkPackageDependencyContent" BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <Content Update="@(Content)"
+          Condition="'%(Content.DefiningProjectName)' == 'Microsoft.TestPlatform.TestHost' and
+                     ('%(Content.Filename)%(Content.Extension)' == 'testhost.exe' or '%(Content.Filename)%(Content.Extension)' == 'testhost.dll' or
+                      '%(Content.Filename)%(Content.Extension)' == 'testhost.x86.exe' or '%(Content.Filename)%(Content.Extension)' == 'testhost.x86.dll')">
+        <DependencyBinary>true</DependencyBinary>
+      </Content>
+      <None Update="@(None)"
+          Condition="'%(None.DefiningProjectName)' == 'xunit.runner.visualstudio' and
+                     ('%(None.Filename)%(None.Extension)' == 'xunit.abstractions.dll' or '%(None.Filename)%(None.Extension)' == 'xunit.runner.visualstudio.testadapter.dll')">
+        <DependencyBinary>true</DependencyBinary>
+      </None>
+    </ItemGroup>
+  </Target>
+  <Target Name="PreserveDependencyContentMetadata" AfterTargets="_PopulateCommonStateForGetCopyToOutputDirectoryItems">
+    <PropertyGroup Condition="'$(_GCTODIKeepMetadata)' != ''">
+      <_GCTODIKeepMetadata>$(_GCTODIKeepMetadata);DependencyBinary</_GCTODIKeepMetadata>
+    </PropertyGroup>
+  </Target>
+  <!-- Keep dependency payloads at their existing source paths. Only the output
+       directory entries are links; writable content and this project's own
+       products continue through the SDK's normal copy tasks. -->
+  <Target Name="LinkDevelopmentDependencyBinaries"
+          BeforeTargets="_CopyFilesMarkedCopyLocal;_CopyOutOfDateSourceItemsToOutputDirectory;_CopyOutOfDateSourceItemsToOutputDirectoryAlways;_CopyDifferingSourceItemsToOutputDirectory"
+          DependsOnTargets="GetCopyToOutputDirectoryItems">
+    <Error Condition="'$(UseCommonOutputDirectory)' == 'true'" Text="Dependency links require per-project output directories; UseCommonOutputDirectory is not supported." />
+    <ItemGroup>
+      <_DevelopmentReferenceFiles Include="@(ReferenceCopyLocalPaths)">
+        <TargetPath>%(ReferenceCopyLocalPaths.DestinationSubDirectory)%(ReferenceCopyLocalPaths.Filename)%(ReferenceCopyLocalPaths.Extension)</TargetPath>
+        <DependencyBinary>true</DependencyBinary>
+      </_DevelopmentReferenceFiles>
+      <_DevelopmentNewestFiles Include="@(_SourceItemsToCopyToOutputDirectory)" />
+      <_DevelopmentAlwaysFiles Include="@(_SourceItemsToCopyToOutputDirectoryAlways)" />
+      <_DevelopmentDifferentFiles Include="@(_SourceItemsToCopyToOutputDirectoryIfDifferent)" />
+      <!-- Preserve SDK copy order. The last declaration for each destination
+           decides whether that output is a dependency link or writable content. -->
+      <_DevelopmentOutputFiles Include="@(_DevelopmentReferenceFiles);@(_DevelopmentNewestFiles);@(_DevelopmentAlwaysFiles);@(_DevelopmentDifferentFiles)" />
+      <_DevelopmentOutputFiles Update="@(_DevelopmentOutputFiles)">
+        <SourcePath>%(_DevelopmentOutputFiles.FullPath)</SourcePath>
+        <DestinationPath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(OutDir)', '%(_DevelopmentOutputFiles.TargetPath)'))</DestinationPath>
+      </_DevelopmentOutputFiles>
+    </ItemGroup>
+    <ReadDependencyFileLinks Files="@(_DevelopmentOutputFiles->'%(DestinationPath)')">
+      <Output TaskParameter="FileLinks" ItemName="_DevelopmentOutputFileLinks" />
+    </ReadDependencyFileLinks>
+    <ItemGroup>
+      <_DevelopmentDependencyLinks Include="@(_DevelopmentOutputFileLinks)"
+          Condition="'%(_DevelopmentOutputFileLinks.DependencyBinary)' == 'true'" />
+      <_ChangedDevelopmentDependencyLinks Include="@(_DevelopmentDependencyLinks)"
+          Condition="'%(_DevelopmentDependencyLinks.LinkMatchesSource)' != 'true'" />
+      <_DevelopmentOrdinaryFileLinks Include="@(_DevelopmentOutputFileLinks)"
+          Condition="'%(_DevelopmentOutputFileLinks.DependencyBinary)' != 'true' and '%(_DevelopmentOutputFileLinks.ExistingLinkTarget)' != ''" />
+      <FileWritesShareable Include="@(_DevelopmentDependencyLinks)" />
+    </ItemGroup>
+    <!-- A dependency can become ordinary content. Remove its previous link
+         before the SDK's timestamp check or writable content copy. -->
+    <Delete Files="@(_DevelopmentOrdinaryFileLinks)" />
+    <Copy SourceFiles="@(_ChangedDevelopmentDependencyLinks->'%(SourcePath)')"
+          DestinationFiles="@(_ChangedDevelopmentDependencyLinks)"
+          UseHardlinksIfPossible="false" UseSymboliclinksIfPossible="true"
+          ErrorIfLinkFails="true" SkipUnchangedFiles="false" Retries="0">
+      <Output TaskParameter="WroteAtLeastOneFile" PropertyName="_DevelopmentDependencyLinksChanged" />
+    </Copy>
+    <Touch Files="@(CopyUpToDateMarker)" AlwaysCreate="true"
+           Condition="'$(_DevelopmentDependencyLinksChanged)' == 'true'" />
+    <ItemGroup>
+      <FileWrites Include="@(CopyUpToDateMarker)" />
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" />
+      <_SourceItemsToCopyToOutputDirectory Remove="@(_SourceItemsToCopyToOutputDirectory)"
+          Condition="'%(_SourceItemsToCopyToOutputDirectory.DependencyBinary)' == 'true'" />
+      <_SourceItemsToCopyToOutputDirectoryAlways Remove="@(_SourceItemsToCopyToOutputDirectoryAlways)"
+          Condition="'%(_SourceItemsToCopyToOutputDirectoryAlways.DependencyBinary)' == 'true'" />
+      <_SourceItemsToCopyToOutputDirectoryIfDifferent Remove="@(_SourceItemsToCopyToOutputDirectoryIfDifferent)"
+          Condition="'%(_SourceItemsToCopyToOutputDirectoryIfDifferent.DependencyBinary)' == 'true'" />
+      <_SourceItemsToCopyToOutputDirectory Remove="@(_DevelopmentDependencyLinks)" MatchOnMetadata="TargetPath" MatchOnMetadataOptions="PathLike" />
+      <_SourceItemsToCopyToOutputDirectoryAlways Remove="@(_DevelopmentDependencyLinks)" MatchOnMetadata="TargetPath" MatchOnMetadataOptions="PathLike" />
+      <_SourceItemsToCopyToOutputDirectoryIfDifferent Remove="@(_DevelopmentDependencyLinks)" MatchOnMetadata="TargetPath" MatchOnMetadataOptions="PathLike" />
+    </ItemGroup>
+  </Target>
+  <Target Name="RestoreDevelopmentDependencyItems" AfterTargets="CopyFilesToOutputDirectory">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Include="@(_DevelopmentReferenceFiles)" />
+      <_SourceItemsToCopyToOutputDirectory Remove="@(_SourceItemsToCopyToOutputDirectory)" />
+      <_SourceItemsToCopyToOutputDirectoryAlways Remove="@(_SourceItemsToCopyToOutputDirectoryAlways)" />
+      <_SourceItemsToCopyToOutputDirectoryIfDifferent Remove="@(_SourceItemsToCopyToOutputDirectoryIfDifferent)" />
+      <_SourceItemsToCopyToOutputDirectory Include="@(_DevelopmentNewestFiles)" />
+      <_SourceItemsToCopyToOutputDirectoryAlways Include="@(_DevelopmentAlwaysFiles)" />
+      <_SourceItemsToCopyToOutputDirectoryIfDifferent Include="@(_DevelopmentDifferentFiles)" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)development-dependency-links.txt"
+        Lines="@(_DevelopmentDependencyLinks->'%(SourcePath)&#x9;%(Identity)')"
+        Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <FileWrites Include="$(IntermediateOutputPath)development-dependency-links.txt" />
+    </ItemGroup>
+  </Target>
+  <PropertyGroup>
+    <CreateHardLinksForPublishFilesIfPossible Condition="'$(CreateHardLinksForPublishFilesIfPossible)' == ''">false</CreateHardLinksForPublishFilesIfPossible>
+    <CreateSymbolicLinksForPublishFilesIfPossible Condition="'$(CreateSymbolicLinksForPublishFilesIfPossible)' == ''">false</CreateSymbolicLinksForPublishFilesIfPossible>
+  </PropertyGroup>
+  <Target Name="ValidatePublishFileCopies" BeforeTargets="PrepareForPublish;ComputeFilesToPublish">
+    <PropertyGroup>
+      <_DevelopmentOutputDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)'))</_DevelopmentOutputDirectory>
+      <_DeploymentOutputDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(PublishDir)'))</_DeploymentOutputDirectory>
+    </PropertyGroup>
+    <Error Condition="'$(CreateHardLinksForPublishFilesIfPossible)' == 'true' or '$(CreateSymbolicLinksForPublishFilesIfPossible)' == 'true'"
+        Text="Publish produces independent regular files; publish link options must be disabled." />
+    <Error Condition="'$(_DeploymentOutputDirectory)' == '$(_DevelopmentOutputDirectory)'"
+        Text="PublishDir must be separate from the development output directory." />
+  </Target>
+  <Target Name="RemovePreviousPublishLinks"
+          BeforeTargets="_CopyResolvedFilesToPublishPreserveNewest;_CopyResolvedFilesToPublishAlways">
+    <ReadDependencyFileLinks Files="@(ResolvedFileToPublish->'$(PublishDir)%(RelativePath)')"
+                             FilesToKeep="@(ResolvedFileToPublish)">
+      <Output TaskParameter="FileLinks" ItemName="_ExistingPublishFiles" />
+    </ReadDependencyFileLinks>
+    <Delete Files="@(_ExistingPublishFiles)"
+            Condition="'%(_ExistingPublishFiles.ExistingLinkTarget)' != ''" />
+  </Target>
+  <Target Name="RemovePreviousPublishBundleLink" BeforeTargets="GenerateSingleFileBundle"
+          Condition="'$(PublishedSingleFilePath)' != ''">
+    <ReadDependencyFileLinks Files="$(PublishedSingleFilePath)" FilesToKeep="@(FilesToBundle);@(ResolvedFileToPublish)">
+      <Output TaskParameter="FileLinks" ItemName="_ExistingPublishBundle" />
+    </ReadDependencyFileLinks>
+    <Delete Files="@(_ExistingPublishBundle)"
+            Condition="'%(_ExistingPublishBundle.ExistingLinkTarget)' != ''" />
+  </Target>
 </Project>
