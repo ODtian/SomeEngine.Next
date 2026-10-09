@@ -47,26 +47,18 @@ public sealed class DefaultGameShadowReferenceTests(ITestOutputHelper output)
         string content = evidence.Content;
         await ShadowReferenceScene.BuildAsync(engine, content, inputs);
         string application = Path.Combine(engine, "templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe");
-        SceneLinearImage shadowed = await CaptureAsync("shadowed", "--vsm");
-        SceneLinearImage unshadowed = await CaptureAsync("unshadowed", "--no-vsm");
-        await ShadowReferenceScene.WriteWorldAsync(content, inputs with { AddLights = null });
-        SceneLinearImage ambient = await CaptureAsync("ambient", "--no-vsm");
-        SceneFrame frame = shadowed.Frame;
-        Assert.Equal(frame.View, unshadowed.Frame.View);
-        Assert.Equal(frame.View, ambient.Frame.View);
-        Assert.Equal(frame.Projection, unshadowed.Frame.Projection);
-        Assert.Equal(frame.Projection, ambient.Frame.Projection);
-        Assert.Equal(frame.Meshes, unshadowed.Frame.Meshes);
-        Assert.Equal(frame.Meshes, ambient.Frame.Meshes);
-        var actual = new Vector3[frame.Width * frame.Height];
-        for (int pixel = 0; pixel < actual.Length; pixel++)
-        {
-            int channel = pixel * 4;
-            float direct = (float)unshadowed.Pixels.Span[channel] - (float)ambient.Pixels.Span[channel];
-            float shaded = (float)shadowed.Pixels.Span[channel] - (float)ambient.Pixels.Span[channel];
-            actual[pixel] = new(direct > 0 ? shaded / direct : float.NaN,
-                (float)shadowed.Pixels.Span[channel + 3], direct > 0 ? 1 : 0);
-        }
+        SceneLinearImage beauty = await CaptureAsync("scene", "--vsm");
+        await ShadowVisibilityContent.BuildStandardAsync(engine, Path.Combine(engine, "templates/DefaultProject"), content);
+        SceneLinearImage visibility = await CaptureAsync("vsm-shadow", "--vsm");
+        SceneFrame frame = visibility.Frame;
+        Assert.Equal(beauty.Frame.View, frame.View);
+        Assert.Equal(beauty.Frame.Projection, frame.Projection);
+        Assert.Equal(beauty.Frame.Meshes, frame.Meshes);
+        Assert.Equal(beauty.Frame.Lights, frame.Lights);
+        Assert.Equal(beauty.Frame.ShadowSettings, frame.ShadowSettings);
+        Assert.Equal(beauty.Frame.JitterPixels, frame.JitterPixels);
+        Assert.Equal(beauty.Frame.SceneSeconds, frame.SceneSeconds);
+        var actual = ShadowImageFiles.ReadRawLinearPixels(Path.Combine(directory, "vsm-shadow.rgba16"), frame.Width, frame.Height);
         var rays = new RayShadowScene(Path.Combine(engine, "templates/DefaultProject/assets/Models/ico_sphere.glb"),
             frame.Meshes.Select(mesh => mesh.Transform).ToArray());
         Assert.True(Matrix4x4.Invert(frame.View * frame.Projection, out Matrix4x4 clipToWorld));
@@ -105,6 +97,7 @@ public sealed class DefaultGameShadowReferenceTests(ITestOutputHelper output)
             Frame = frame, Options = options, Comparison = comparison,
             SourceEmitter = emitter.ShadowSettings, ReferenceSamples = areaEmitter ? rayInputs.SampleCount : 1u,
             Reference = "Original source glTF BLAS/TLAS, UV alpha, actual captured transforms/camera and geometric-normal ULP origin; authored solar disk or spherical emitter; every eligible receiver contributes",
+            Observation = "Raw VSM projected visibility with the original Standard vertex, visibility and receiver evaluation; every source receiver remains measurable when its BRDF direct light is zero",
             Thresholds = new { MaximumPixelVisibilityError = .15f, MaximumMismatchFraction = .02f,
                 MaximumMeanVisibilityError = .02f, MinimumRenderedReceiverCoverage = .98f, MaximumSelfHits = 0 },
             MeetsSourceGeometryAccuracyThresholds = meetsAccuracy,
