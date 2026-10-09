@@ -16,6 +16,37 @@ internal static class ShadowVisibilityContent
         ImportedScenes.SceneMaterialAsset.Register();
         return true;
     });
+
+    internal static async Task BuildStandardAsync(string engine, string sourceContent, string content)
+    {
+        _ = Registered.Value;
+        string shaders = Path.Combine(content, "assets", "Shaders");
+        string sourceShaders = Path.Combine(sourceContent, "assets", "Shaders");
+        foreach (string source in Directory.EnumerateFiles(sourceShaders, "*.slang", SearchOption.AllDirectories))
+        {
+            string target = Path.Combine(shaders, Path.GetRelativePath(sourceShaders, source));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(source, target, overwrite: true);
+        }
+        string tests = Path.Combine(engine, "tests", "SomeEngine.Render.Cluster.Tests", "Shaders");
+        const string name = "shadow_reference_visibility";
+        File.Copy(Path.Combine(tests, name + ".slang"), Path.Combine(shaders, name + ".slang"), overwrite: true);
+        Guid shader = Guid.NewGuid();
+        JsonNode definition = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(tests, "shadow_visibility.shader")))!;
+        definition["Fields"]!["Id"] = shader.ToString();
+        definition["Fields"]!["Name"] = "Source material shadow visibility";
+        definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(name + ".slang");
+        string file = Path.Combine(shaders, name + ".shader");
+        await File.WriteAllTextAsync(file, definition.ToJsonString());
+        var project = new AssetProject(content, [],
+            sourceFormats: [new ShaderSourceFormat([Path.Combine(engine, "assets", "Shaders")])]);
+        await project.BuildAsync(file);
+        AssetEntry entry = project.Manifest.List(MaterialAsset.FileType).Single(value => value.Name == "Standard");
+        using MaterialAsset material = await MaterialAsset.OpenAsync(Path.Combine(content, entry.Path));
+        material.GetBlock<MaterialBlock>().Shader = new(shader);
+        project.RegisterAsset(await material.SaveAsync(Path.Combine(content, entry.Path)));
+    }
+
     internal static async Task BuildAsync(string engine, string sourceContent, string content, string geometry,
         bool spheres)
     {
