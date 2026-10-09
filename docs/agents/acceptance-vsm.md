@@ -11,7 +11,9 @@
 | 默认 1024 小球软阴影 | 1.5673187% | 1.8828545% | 99.74187% | 通过 |
 | directional-grid 软阴影 | 1.525943% | 1.8054428% | 99.74522% | 通过 |
 
-两项 self hit 均为 0；网格保留全部 136587 个原接收像素，包括原图像相减无法测量的 1153 个零直射光像素。其余六项观察迁移用例与四项局部光行为继续验收，Bistro 的硬/软阴影误差继续驱动修复。证据位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/performance-190-current/rt-gt/directional-source-cone/` 与 `raw-standard-visibility/`。[#189 本次结果](https://github.com/ODtian/SomeEngine.Next/issues/189#issuecomment-6072490457)。以下保留各提交原始结果。
+两项 self hit 均为 0；网格保留全部 136587 个原接收像素，包括原图像相减无法测量的 1153 个零直射光像素。其余六项观察迁移用例继续验收，Bistro 的硬/软阴影误差继续驱动修复。证据位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/performance-190-current/rt-gt/directional-source-cone/` 与 `raw-standard-visibility/`。[#189 本次结果](https://github.com/ODtian/SomeEngine.Next/issues/189#issuecomment-6072490457)。
+
+源码 `453ff4fba4f28217cc48bfc3f435b22f240e2099` 使用最新正常 App/DLL 与 DefaultGame 库补齐原四项局部光行为，4/4 通过：Spot 范围 20/强度 30/外锥 40°，三次启动关闭，Point/Spot 首个恢复帧。Spot 范围及每次启动关闭的平均/错误像素比例均为 0.7151063%，Point/Spot 恢复帧分别为 0.4035759% / 0.8282691%；六份捕获比较的覆盖均为 100%、self hit 均为 0，恢复帧实际为 33、submitted frame 为 32。原参数与 2% 阈值保持，测试规则 0 违规。正式结果、TRX、图像及来源内容身份位于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/rt-gt/remaining-local-453ff/` 的 `result.json` 与逐 case 目录。以下保留各提交原始结果。
 源码 `a8225b96` 修复完整层级遍历、接收面世界坐标调用、共用 HW/SW/细分正交深度精度、QEM 重复顶点焊接与沿边最小二乘、持久材质输入、工作容量错误报告和独立接收像素写入。小球在原 0.25px 下由每球 68 cluster / 4026 三角形降至 6 / 366，来源几何与属性保持。采样按实际遮挡深度计算物理距离；页请求、投影和采样共用用户几何法线判断接收资格，表面偏移及原斜率偏置使用用户着色法线。
 
 当前默认软阴影直接使用原始来源 BLAS/TLAS、2048 次面积光源积分、实际提交相机及变换，保留全部有效接收像素、半影和边界。逐像素可见性误差大于 0.15 记为错误；平均误差与错误比例各须 ≤2%，接收覆盖须 ≥98%，自身命中为 0。
