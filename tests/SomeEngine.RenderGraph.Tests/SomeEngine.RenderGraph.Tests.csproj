@@ -24,11 +24,11 @@
     <None Include="../../templates/DefaultProject/assets/Shaders/hello_triangle.shader.asset"
           Link="Content/Shaders/hello_triangle.shader.asset"
           CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll">
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" DependencyBinary="true">
       <Link>dxcompiler.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="../../external/dxc/bin/x64/dxil.dll">
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" DependencyBinary="true">
       <Link>dxil.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
