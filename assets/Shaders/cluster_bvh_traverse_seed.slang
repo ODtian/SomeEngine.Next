@@ -131,6 +131,7 @@ void SeedHierarchyRoots(
     uint viewGroup = ClusterViewWorkGroupIndex(groupID);
     uint viewSlotBase = (viewGroup / 16u) * 32u;
     uint compactViewCount = ClusterSeedViewCount();
+    if (viewGroup >= ClusterViewWorkGroups(compactViewCount)) return;
     uint remainingViews = viewSlotBase < compactViewCount
         ? compactViewCount - viewSlotBase
         : 0u;
