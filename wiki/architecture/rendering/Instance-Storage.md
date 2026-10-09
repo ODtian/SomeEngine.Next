@@ -13,6 +13,9 @@ RenderWorld 保存实例属性的来源组件。`RenderInstanceStorageSystem` �
 带填充的编码分别写入值和填充字节。元数据按属性的字范围写入。
 
 每个批更新持有一组 `RenderGraphBufferWrites`。发布批时提交范围，取消批更新时释放这组记录。
+逐实例绑定在发布时只提交实际写过的列；可选列没有变化行时保留原绑定和值，整批没有变化时
+不提交上传、不推进内容修订。声明为完整替换的列仍必须绑定并写完所有行。
+材质序列偏移直接在映射跨度中解析，不经过 CPU 临时数组。
 同帧其它批的写入继续生效。上传复制先于图中的实例读者，范围外数据保留在持久缓冲中。
 缓冲首次使用时，清零范围取本帧上传范围的补集，直接在图上传页中填零，与实例值一同复制；每个字节完成一次 CPU 写入和一次 GPU 复制。
 图根据自己的跨帧缓冲状态安排后续访问。
@@ -29,7 +32,8 @@ RenderWorld 保存实例属性的来源组件。`RenderInstanceStorageSystem` �
 ## Behavior evidence
 
 `InstancePreparationTests` 使用 WARP、自给的 ECS 组件和公共持久回读，验证单行变化、批成员替换、
-取消批更新、连续动态帧和放弃下一帧后的重新写入。`ClusterSpatialSortingTests` 使用完整 SM 6.6
+取消批更新、连续动态帧和放弃下一帧后的重新写入。`InstanceSparseUpdateTests` 通过同一公开
+读回验证多组局部更新、未写列保留共享绑定、空更新与不完整替换。`ClusterSpatialSortingTests` 使用完整 SM 6.6
 Cluster 着色组合和硬件适配器，读取多个 ECS archetype 的空间分组渲染结果。
 
 ## Relations

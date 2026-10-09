@@ -422,26 +422,7 @@ internal sealed class RenderInstanceResources : IDisposable, IRenderGraphFrameEx
             checked((uint)SharedAddress(storage, batchSlot));
     }
 
-    internal void BindPerInstance<T>(
-        int batchSlot,
-        object allocation,
-        RenderInstancePropertyLayout contract,
-        ResolvedRenderInstanceProperty<T> property)
-        where T : unmanaged
-    {
-        ValidateBatch(batchSlot, allocation);
-        contract.Validate(property, nameof(property));
-        PropertyStorage storage = RequireStorage(property, nameof(property));
-        RequireLinearBinding(storage.Descriptor, nameof(property));
-        PackedRange rows = _batchRows[batchSlot];
-        int address = checked(storage.InstanceBase + rows.Start * property.Encoding.StorageStride);
-        BufferRange metadataRange = PropertyMetadataRange(batchSlot, property.Descriptor);
-        Span<byte> metadataMapping = GetWriteBytes(batchSlot, BatchMetadata, metadataRange);
-        MemoryMarshal.Cast<byte, uint>(metadataMapping)[0] =
-            checked((uint)address) | RenderInstanceLinearMetadata.PerInstanceBit;
-    }
-
-    internal void BindEncodedPerInstance(
+    internal void WritePerInstanceBinding(
         int batchSlot,
         object allocation,
         RenderInstancePropertyLayout contract,
@@ -1374,11 +1355,6 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
     {
         ResolvedRenderInstanceProperty<T> destination = Resolve(authorization, property);
         RequireUnbound(destination.Ordinal);
-        RequireScope().Resources.BindPerInstance(
-            _batchSlot,
-            _allocation,
-            _contract,
-            destination);
         _propertyStates[destination.Ordinal] =
             (_propertyStates[destination.Ordinal] & ~BindingMask) | PerInstance;
     }
@@ -1393,11 +1369,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         RenderInstancePropertyDescriptor destination =
             _contract.RequireCompatible(authorized, nameof(property));
         RequireUnbound(destination.Ordinal);
-        RequireScope().Resources.BindEncodedPerInstance(
-            _batchSlot,
-            _allocation,
-            _contract,
-            destination);
+        _ = RequireScope();
         _propertyStates[destination.Ordinal] =
             (_propertyStates[destination.Ordinal] & ~BindingMask) | PerInstance;
     }
@@ -1567,6 +1539,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
     {
         RenderInstanceWriteScope scope = RequireScope();
         bool touched = false;
+        bool written = false;
         for (int ordinal = 0; ordinal < _propertyStates.Length; ordinal++)
         {
             long state = Volatile.Read(ref _propertyStates[ordinal]);
@@ -1581,14 +1554,9 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
                 }
                 touched = true;
                 long updateWrittenCount = state >> WrittenCountShift;
-                if (binding == PerInstance && updateWrittenCount == 0 && _instanceCount != 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Updated render instance property '{_contract.Properties[ordinal].Key}' " +
-                        "was bound per-instance but no rows were written.");
-                }
                 if (binding == PerInstance && (state & Required) != 0 && updateWrittenCount != _instanceCount)
                     throw new InvalidOperationException($"Replaced instance property '{_contract.Properties[ordinal].Key}' must contain every instance value.");
+                written |= binding != PerInstance || updateWrittenCount != 0 || (state & Required) != 0;
                 continue;
             }
 
@@ -1612,6 +1580,23 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         {
             throw new InvalidOperationException(
                 "A render-instance batch update did not bind or write any authorized property.");
+        }
+
+        if (_existingBatch is not null && !written)
+        {
+            scope.Resources.CancelBatchUpdate(_batchSlot, _allocation);
+            Complete(scope);
+            return _existingBatch;
+        }
+
+        // An optional column with no written rows retains its previous binding. This also
+        // lets a group untouched by the sparse update keep its values and content revision.
+        for (int ordinal = 0; ordinal < _propertyStates.Length; ordinal++)
+        {
+            long state = _propertyStates[ordinal];
+            if ((state & BindingMask) == PerInstance &&
+                (_mode == CompositionMode.Create || (state >> WrittenCountShift) != 0 || (state & Required) != 0))
+                scope.Resources.WritePerInstanceBinding(_batchSlot, _allocation, _contract, _contract.Properties[ordinal]);
         }
 
         RenderInstanceBatch result;
@@ -1740,6 +1725,10 @@ public readonly struct RenderInstanceWriteSlice
         RequireOwner().BindShared(Properties, property, in value);
     }
 
+    /// <summary>
+    /// Selects a per-instance column for writing. During an update, an optional column with
+    /// no written rows keeps its previous binding and values. Replaced columns require every row.
+    /// </summary>
     public void BindPerInstance<T>(ResolvedRenderInstanceProperty<T> property)
         where T : unmanaged
     {
