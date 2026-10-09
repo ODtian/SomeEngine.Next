@@ -12,6 +12,9 @@
 node 消费者以 CAS 领取已发布就绪的父节点前缀，每次至多十六个父节点，每个父节点检查四个子切片。
 每组按已发布节点的实际 view mask 把线程分配给 parent、child 和 view；单 view 使用十六 parent × 四 child，
 多个 view 共享子切片测试，并在组内合并可见 mask 与 streaming priority 后仍发布一个压缩节点。
+每个 lane 排空自己分配的实际 view mask，多个 view 的投射、LOD 与 HiZ 在同一 wave 同时执行。
+同 child 的 world bounds 与 LOD 派生由 wave 中一个 lane 计算并广播；mask 和 priority 先在 wave 内合并，
+跨越多个 wave 的 child 再做组内合并。根工作的 instance × view 块使用同样的 wave 合并。
 根工作以六十四实例和三十二 view 为批次，按实际 view 数拆实例子块并并行 view 测试，合并后保留一个 root。
 CPU dispatch 使用 `ClusterRenderContext.GetViewWorkGroupCount`，设备 producer 使用 `cluster_view_work.slang` 的
 `ClusterViewWorkGroups`：X 为 `ceil(instanceCount / 64)`，view 组数为每完整三十二 view 的十六组加尾部 view 数
