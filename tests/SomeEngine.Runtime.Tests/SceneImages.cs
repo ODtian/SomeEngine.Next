@@ -45,6 +45,13 @@ internal static class SceneImages
         }
     }
 
+    internal static void AssertNotEqual(SceneImage expected, SceneImage actual,
+        [CallerMemberName] string test = "")
+    {
+        try { Assert.NotEqual(expected.Pixels.ToArray(), actual.Pixels.ToArray()); }
+        catch (XunitException) { SaveFailure(expected, actual, test); throw; }
+    }
+
     internal static void AssertEqualRegion(SceneImage expected, SceneImage actual, int left, int top, int width, int height,
         [CallerMemberName] string test = "")
     {

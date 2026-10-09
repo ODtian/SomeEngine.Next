@@ -15,6 +15,7 @@ using SomeEngine.Resources;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Instances;
 using SomeEngine.Serialization.Containers;
+using System.Text.Json;
 
 namespace Game.Build;
 
@@ -34,13 +35,14 @@ public static class DefaultContent
             BuildRenderInstanceLayoutSource(ClusterRenderFeature.InstanceLayout));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
             sourceFormats: [new ShaderSourceFormat([engineShaders])]);
+        await BuildEngineShadersAsync(project, shaders, engineShaders, cancellationToken).ConfigureAwait(false);
         foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
             await project.BuildAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Shader: {Path.GetFileName(source)}");
         }
-        await DefaultTextures.BuildAsync(project, cancellationToken).ConfigureAwait(false);
+        await DefaultTextures.BuildAsync(project, engineRoot, cancellationToken).ConfigureAwait(false);
         await DefaultMaterials.BuildAsync(project, cancellationToken).ConfigureAwait(false);
         Guid pipeline = BuildClusterShaders(project);
         Guid shadows = BuildShadowShaders(project);
@@ -64,6 +66,34 @@ public static class DefaultContent
         File.WriteAllText(path, normalizedContent);
     }
 
+    private static async Task BuildEngineShadersAsync(AssetProject project, string shaders,
+        string engineShaders, CancellationToken cancellationToken)
+    {
+        string generated = Path.Combine(shaders, "generated", "EngineSources");
+        foreach (string source in Directory.EnumerateFiles(engineShaders, "*.shader").Order(StringComparer.Ordinal))
+        {
+            string name = Path.GetFileName(source);
+            if (File.Exists(Path.Combine(shaders, name))) continue;
+            cancellationToken.ThrowIfCancellationRequested();
+            string content = File.ReadAllText(source);
+            string destination = Path.Combine(generated, name);
+            WriteGeneratedFile(destination, content);
+            using JsonDocument document = JsonDocument.Parse(content);
+            foreach (JsonElement block in document.RootElement.GetProperty("Blocks").EnumerateArray())
+            {
+                if (!block.GetProperty("Fields").TryGetProperty("SourceNames", out JsonElement names)) continue;
+                foreach (JsonElement sourceName in names.EnumerateArray())
+                {
+                    string sourcePath = sourceName.GetString()!;
+                    WriteGeneratedFile(Path.Combine(generated, sourcePath),
+                        File.ReadAllText(Path.Combine(engineShaders, sourcePath)));
+                }
+            }
+            await project.BuildAsync(destination, cancellationToken: cancellationToken).ConfigureAwait(false);
+            Console.WriteLine($"Engine shader: {name}");
+        }
+    }
+
     private static string BuildRenderInstanceLayoutSource(RenderInstancePropertyLayout layout)
     {
         int boundsExpansion = layout.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey)
@@ -72,6 +102,8 @@ public static class DefaultContent
             .Descriptor.MetadataWordOffset;
         int materialSlotOffset = layout.Resolve<uint>(ClusterRenderFeature.MaterialSlotOffsetKey)
             .Descriptor.MetadataWordOffset;
+        int depthCacheClass = layout.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey).Descriptor.MetadataWordOffset;
+        int firstPerson = layout.Resolve<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey).Descriptor.MetadataWordOffset;
         int currentTransform = FindMetadataWordOffset(
             layout,
             RenderInstanceTransformProperties.CurrentTransformKey);
@@ -106,6 +138,8 @@ public static class DefaultContent
             static const uint CLUSTER_BOUNDS_EXPANSION_METADATA_WORD = {{boundsExpansion}}u;
             static const uint CLUSTER_BVH_ROOT_METADATA_WORD = {{bvhRoot}}u;
             static const uint CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD = {{materialSlotOffset}}u;
+            static const uint RENDER_DEPTH_CACHE_CLASS_METADATA_WORD = {{depthCacheClass}}u;
+            static const uint RENDER_FIRST_PERSON_METADATA_WORD = {{firstPerson}}u;
             static const uint RENDER_CURRENT_TRANSFORM_METADATA_WORD = {{currentTransform}}u;
             static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = {{previousTransform}}u;
 
@@ -136,7 +170,15 @@ public static class DefaultContent
                 ComputeOperation(
                     ClusterShaderOperationRole.BvhTraversal,
                     ResolveRequired(project, "assets/Shaders/cluster_bvh_traverse.shader"),
-                    "TraverseHierarchyLevel"),
+                    "CullClusterWork"),
+                ComputeOperation(
+                    ClusterShaderOperationRole.LeafFlagFixups,
+                    ResolveRequired(project, "assets/Shaders/cluster_leaf_flags.shader"),
+                    "ApplyClusterLeafFlags"),
+                ComputeOperation(
+                    ClusterShaderOperationRole.PageRequests,
+                    ResolveRequired(project, "assets/Shaders/cluster_page_request_complete.shader"),
+                    "CompleteClusterPageRequests"),
                 ComputeOperation(
                     ClusterShaderOperationRole.BvhTraversalInitialize,
                     ResolveRequired(project, "assets/Shaders/cluster_bvh_traverse_seed.shader"),
@@ -335,6 +377,13 @@ public static class DefaultContent
         const string outputPath = "assets/Pipelines/default_virtual_shadow.virtualshadow.asset";
         using var settings = new VirtualShadowMapShadersBlock
             {
+                ProjectDirectionalLights = ShaderReference(ResolveRequired(project, "assets/Shaders/generated/EngineSources/vsm_project_lights.shader"), "ProjectVirtualShadowDirectionalLights"),
+                ProjectLocalLights = ShaderReference(ResolveRequired(project, "assets/Shaders/generated/EngineSources/vsm_project_local_lights.shader"), "ProjectVirtualShadowLocalLights"),
+                BlueNoise = new AssetId<TextureAsset>(DefaultContentIds.ShadowBlueNoise),
+                FroxelBuild = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_build.shader"), "BuildVirtualShadowFroxels"),
+                FroxelArguments = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_build.shader"), "FinishVirtualShadowFroxelArguments"),
+                FroxelMark = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_mark.shader"), "MarkVirtualShadowFroxelPages"),
+                FroxelPixel = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_mark.shader"), "MarkVirtualShadowFroxelPixelReceivers"),
                 ResetReceiverMasks = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_receiver_mask_reset.shader"),
                     "ResetVirtualShadowReceiverMasks"),
@@ -350,6 +399,24 @@ public static class DefaultContent
                 AllocatePages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_allocate_pages.shader"),
                     "AllocateVirtualShadowPages"),
+                ResidentPages = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_resident_propagation.shader"),
+                    "PropagateVirtualShadowResidentPages"),
+                Prefilter = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_prefilter.shader"),
+                    "PrefilterVirtualShadowDistant"),
+                PrefilterReset = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_prefilter_work.shader"),
+                    "ResetVirtualShadowFilterWork"),
+                PrefilterSelect = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_prefilter_work.shader"),
+                    "SelectVirtualShadowFilterPages"),
+                PrefilterRequests = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_prefilter_requests.shader"),
+                    "PropagateVirtualShadowFilterRequests"),
+                MergeStatic = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_merge_static.shader"),
+                    "MergeVirtualShadowStaticDepth"),
                 ClearPages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_clear_pages.shader"),
                     "ClearVirtualShadowPages"),
@@ -371,6 +438,12 @@ public static class DefaultContent
                 ReducePageHiZ = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_page_hiz_reduce.shader"),
                     "ReduceVirtualShadowPageHiZ"),
+                CompletePageDepth = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_page_depth_complete.shader"),
+                    "CompleteVirtualShadowPageDepth"),
+                WorkFeedback = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_work_feedback.shader"),
+                    "UpdateVirtualShadowWorkThrottle"),
                 DynamicResolution = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_dynamic_resolution.shader"),
                     "UpdateVirtualShadowDynamicResolution"),
@@ -409,6 +482,7 @@ public static class DefaultContent
 
     private static Guid ResolveRequired(AssetProject project, string sourcePath) =>
         project.Resolve(sourcePath)
+        ?? project.Resolve("assets/Shaders/generated/EngineSources/" + Path.GetFileName(sourcePath))
         ?? throw new InvalidOperationException($"Required asset '{sourcePath}' was not imported.");
 
 }

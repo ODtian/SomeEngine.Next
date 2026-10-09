@@ -2,6 +2,13 @@
 
 public sealed partial class RenderGraph : IDisposable
 {
+    internal void SetParameterInputValue(GraphParameterInput input, in ParameterInputValue value)
+    {
+        if (input.PersistentValue == value) return;
+        input.PersistentValue = value;
+        foreach (FrameSlot frame in _frameSlots) frame.ParameterInputChanged(input);
+    }
+
     internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind, bool refreshViews = true)
     {
         foreach (FrameSlot frame in _frameSlots) frame.ChangeProperty(identity, kind, refreshViews);
@@ -153,39 +160,13 @@ public sealed partial class RenderGraph : IDisposable
         out RenderGraphFrame frame,
         in RenderGraphFrameOptions options = default)
     {
-        EnsureAvailable();
-        CollectCompleted();
-        lock (_structureGate)
+        if (!TryOpenNextFrame(out RenderGraphNextFrame next, TimeSpan.Zero))
         {
-            if (_frameToken != 0)
-                throw new InvalidOperationException("A CPU frame is already active.");
-            for (int probe = 0; probe < _frameSlots.Length; probe++)
-            {
-                int index = (_preferredFrameIndex + probe) % _frameSlots.Length;
-                FrameSlot slot = _frameSlots[index];
-                if (!slot.IsReady(_backend)) continue;
-                slot.Reset(_backend);
-                // Reuse completed execution storage before initializing another
-                // copy of its graph cache, heaps and recorded commands.
-                _preferredFrameIndex = index;
-                ulong identity = AllocateOwnerIdentity();
-                _frameToken = checked((long)identity);
-                try
-                {
-                    frame = new RenderGraphFrame(slot.BeginExecution(
-                        this, identity, options, _structureIndex, StructureVersion));
-                    return true;
-                }
-                catch
-                {
-                    _frameToken = 0;
-                    throw;
-                }
-            }
+            frame = default;
+            return false;
         }
-
-        frame = default;
-        return false;
+        using (next) frame = BeginFrame(next, options);
+        return true;
     }
 
     public RenderGraphFrame BeginFrame(in RenderGraphFrameOptions options = default)
@@ -225,6 +206,25 @@ public sealed partial class RenderGraph : IDisposable
             _persistentResources.CollectCompleted();
         foreach (FrameSlot slot in _frameSlots)
             slot.CollectCompleted(_backend);
+    }
+
+    public int GetRangeCompletionCount(GraphBufferId buffer, in BufferRange range) =>
+        GetRangeCompletionCount(GetPersistentBuffer(buffer), range);
+
+    public int CopyRangeCompletions(GraphBufferId buffer, in BufferRange range, Span<QueueCompletion> destination) =>
+        CopyRangeCompletions(GetPersistentBuffer(buffer), range, destination);
+
+    private Buffer GetPersistentBuffer(GraphBufferId buffer)
+    {
+        EnsureAvailable();
+        lock (_structureGate)
+        {
+            DevelopmentCheck.Require(buffer.Value.Owner == Identity && _structure.Buffers.Contains(buffer.Value),
+                "The buffer must belong to this graph.");
+            GraphBuffer data = _structure.Buffers.Get(buffer.Value);
+            return data.PersistentResource ?? data.RegisteredResource ??
+                throw new InvalidOperationException("Range completions require a persistent buffer.");
+        }
     }
 
     /// <summary>
@@ -484,6 +484,10 @@ public sealed partial class RenderGraph : IDisposable
 
     private void CarryFrameValues(GraphStructure previous, GraphStructure next, GraphEditChanges changes)
     {
+        next.RootRegion.Enabled = previous.RootRegion.Enabled;
+        foreach (GraphIdentity identity in changes.Regions)
+            if (previous.Regions.Contains(identity) && next.Regions.Contains(identity))
+                next.Regions.Get(identity).Enabled = previous.Regions.Get(identity).Enabled;
         foreach (GraphIdentity identity in changes.Passes.Concat(changes.Labels))
             if (previous.Passes.Contains(identity) && next.Passes.Contains(identity))
                 next.Passes.Get(identity).Enabled = previous.Passes.Get(identity).Enabled;

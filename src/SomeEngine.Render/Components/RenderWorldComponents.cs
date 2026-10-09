@@ -106,7 +106,27 @@ public readonly record struct RenderInstance : IComponent;
 /// without creating a second instance store.
 /// </summary>
 public readonly record struct RenderMesh(Mesh Mesh, float BoundsExpansion,
-    SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource = null) : IComponent;
+    SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource = null,
+    DepthCacheClass DepthCacheClass = DepthCacheClass.Auto,
+    FirstPersonMeshData FirstPerson = default) : IComponent;
+
+public enum RenderViewFamily : uint
+{
+    Primary = 0,
+    Shadow = 1,
+    FirstPersonShadow = 2,
+}
+
+/// <summary>Camera deformation with FOV correction tan(scene FOV/2)/tan(first-person FOV/2).</summary>
+public readonly record struct FirstPersonCamera(float FieldOfViewCorrection = 1f, float Scale = 1f)
+{
+    public FirstPersonCamera() : this(1f, 1f) { }
+    public Matrix4x4 CalculateWorldToFirstPerson(Matrix4x4 view)
+    {
+        Matrix4x4.Invert(view, out Matrix4x4 inverse);
+        return view * Matrix4x4.CreateScale(FieldOfViewCorrection * Scale, FieldOfViewCorrection * Scale, Scale) * inverse;
+    }
+}
 
 /// <summary>
 /// Pipeline-neutral view input stored as an ordinary RenderWorld component. A view entity may
@@ -119,4 +139,13 @@ public readonly record struct RenderView(
     Matrix4x4 Projection,
     uint ViewportWidth,
     uint ViewportHeight,
-    bool CameraCut = false) : IComponent;
+    bool CameraCut = false,
+    Matrix4x4? GeometryProjection = null,
+    float GeometryLodScale = 1.0f,
+    Vector3? CameraTarget = null,
+    CameraDepthOfField? DepthOfField = null,
+    WorldOrigin WorldOrigin = default,
+    uint StreamingPriorityCategory = 3u,
+    uint PlayerId = 0,
+    FirstPersonCamera? FirstPerson = null,
+    RenderViewFamily Family = RenderViewFamily.Primary) : IComponent;

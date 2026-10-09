@@ -17,10 +17,15 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="SomeEngine.Tests" />
+    <Compile Include="../Shared/ImageArtifacts.cs" Link="ImageArtifacts.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <ProjectReference Include="../../src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
     <ProjectReference Include="../../templates/DefaultProject/Game.Assets/Game.Assets.csproj" />
+    <ProjectReference Include="../../samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Graphics.Direct3D12\SomeEngine.Graphics.Direct3D12.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Graphics.Validation\SomeEngine.Graphics.Validation.csproj" />
@@ -45,6 +50,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../templates/DefaultProject/Game/Game.csproj" />
+    <ProjectReference Include="../../templates/DefaultProject/Game.App/Game.App.csproj" ReferenceOutputAssembly="false" />
     <Using Include="Game.Content" />
   </ItemGroup>
   <ItemGroup>

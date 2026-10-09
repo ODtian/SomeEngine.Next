@@ -19,7 +19,7 @@ void LoadClusterInfo(ByteAddressBuffer pageHeap, uint pageOffset, uint clusterId
     uint clusterOffset = pageOffset + clustersOffset + clusterId * PACKED_CLUSTER_STRIDE_BYTES;
     vertexBlobAddress = pageOffset + vertexBlobsOffset + pageHeap.Load(clusterOffset + 0u);
     vertexBlobSize = pageHeap.Load(clusterOffset + 4u);
-    tStart = pageHeap.Load(clusterOffset + 56u) >> 16;
+    tStart = (pageHeap.Load(clusterOffset + 56u) >> 16) * 3u;
     packedCounts = pageHeap.Load(clusterOffset + 60u);
 }
 

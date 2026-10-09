@@ -9,9 +9,11 @@ struct ClusterSceneUniforms
     uint HasPreviousBounds;
     uint UseInstanceGroups;
     uint Pad1;
+    float3 PreviousWorldTranslation;
+    float TranslationPadding;
 };
 ConstantBuffer<ClusterSceneUniforms> Scene;
-StructuredBuffer<ClusterBVHNode> GlobalBVH;
+ByteAddressBuffer GlobalBVH;
 ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 StructuredBuffer<uint> SceneInstances;
@@ -39,17 +41,16 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
         float3 previousMax = worldMax;
         if (root != 0xFFFFFFFFu)
         {
-            ClusterBVHNode node = GlobalBVH[root];
             RenderInstanceTransform current = LoadRenderTransform(InstanceData,
                 LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD), instance);
             float expansion = max(0.0, LoadClusterBoundsExpansion(InstanceData,
                 LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD), instance));
-            ClusterNodeWorldBounds(node, current, expansion, worldMin, worldMax);
+            ClusterRootWorldBounds(GlobalBVH, root, current, expansion, worldMin, worldMax);
             if (Scene.HasPreviousBounds == 0u)
             {
                 RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
                     LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instance);
-                ClusterNodeWorldBounds(node, previous, expansion, previousMin, previousMax);
+                ClusterRootWorldBounds(GlobalBVH, root, previous, expansion, previousMin, previousMax);
             }
         }
         if (Scene.HasPreviousBounds != 0u)
@@ -59,8 +60,8 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
         }
         InstanceWorldBounds[instance * 4u] = float4(worldMin, 0.0);
         InstanceWorldBounds[instance * 4u + 1u] = float4(worldMax, 0.0);
-        InstanceWorldBounds[instance * 4u + 2u] = float4(previousMin, 0.0);
-        InstanceWorldBounds[instance * 4u + 3u] = float4(previousMax, 0.0);
+        InstanceWorldBounds[instance * 4u + 2u] = float4(previousMin + Scene.PreviousWorldTranslation, 0.0);
+        InstanceWorldBounds[instance * 4u + 3u] = float4(previousMax + Scene.PreviousWorldTranslation, 0.0);
     }
     if (Scene.UseInstanceGroups == 0u)
         return;

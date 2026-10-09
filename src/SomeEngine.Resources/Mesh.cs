@@ -18,6 +18,7 @@ public sealed class Mesh
     public ImmutableArray<MeshPayloadPageDigest> PageDigests { get; private set; } = [];
     public ImmutableArray<uint> LowestDetailPageIndices { get; private set; } = [];
     public ImmutableArray<MeshRegion> Regions { get; private set; } = [];
+    public ImmutableArray<MeshClusterGroup> ClusterGroups { get; private set; } = [];
     public ImmutableArray<byte> BvhSha256 { get; private set; } = [];
     public ulong BvhOffset { get; private set; }
     public ulong BvhLength => checked((ulong)_bvh.Length);
@@ -37,7 +38,7 @@ public sealed class Mesh
             return new Mesh
             {
                 Name = Name, Bounds = Bounds, VertexEncoding = VertexEncoding, PageDigests = PageDigests,
-                LowestDetailPageIndices = LowestDetailPageIndices, Regions = Regions, BvhSha256 = BvhSha256,
+                LowestDetailPageIndices = LowestDetailPageIndices, Regions = Regions, ClusterGroups = ClusterGroups, BvhSha256 = BvhSha256,
                 BvhOffset = BvhOffset, Revision = Revision, _bvh = _bvh,
                 _pages = (ReadOnlyMemory<byte>[])_pages.Clone(),
             };
@@ -58,10 +59,11 @@ public sealed class Mesh
 
     public static Mesh Create(string name, string vertexEncoding, IReadOnlyList<MeshPayloadPageDigest> descriptions,
         ReadOnlyMemory<byte> bvh, IReadOnlyList<ReadOnlyMemory<byte>>? readyPages = null, Bounds? bounds = null,
-        IReadOnlyList<MeshRegion>? regions = null, IReadOnlyList<uint>? lowestDetailPageIndices = null)
+        IReadOnlyList<MeshRegion>? regions = null, IReadOnlyList<uint>? lowestDetailPageIndices = null,
+        IReadOnlyList<MeshClusterGroup>? clusterGroups = null)
     {
         ImmutableArray<MeshPayloadPageDigest> pages = descriptions.ToImmutableArray();
-        ImmutableArray<uint> lowest = lowestDetailPageIndices?.ToImmutableArray() ?? [checked((uint)pages.Length - 1u)];
+        ImmutableArray<uint> lowest = lowestDetailPageIndices?.ToImmutableArray() ?? [0];
         long offset = MeshIntegrity.Validate(pages, bvh.Length, vertexEncoding);
         uint previous = uint.MaxValue;
         foreach (uint index in lowest)
@@ -85,6 +87,7 @@ public sealed class Mesh
         {
             Name = name, VertexEncoding = vertexEncoding, Bounds = bounds, PageDigests = pages,
             LowestDetailPageIndices = lowest, Regions = regions?.ToImmutableArray() ?? [],
+            ClusterGroups = clusterGroups?.ToImmutableArray() ?? [],
             BvhOffset = checked((ulong)offset), BvhSha256 = MeshIntegrity.Hash(bvh), _bvh = bvh, _pages = bytes,
         };
     }
@@ -137,7 +140,7 @@ public sealed class Mesh
         lock (_gate)
         {
             Name = data.Name; Bounds = data.Bounds; VertexEncoding = data.VertexEncoding;
-            PageDigests = data.PageDigests; LowestDetailPageIndices = data.LowestDetailPageIndices;
+            PageDigests = data.PageDigests; LowestDetailPageIndices = data.LowestDetailPageIndices; ClusterGroups = data.ClusterGroups;
             Regions = data.Regions; BvhSha256 = data.BvhSha256; BvhOffset = data.BvhOffset;
             _pages = data._pages; _bvh = data._bvh;
             Revision = checked(Revision + 1); _capturedContent = null;

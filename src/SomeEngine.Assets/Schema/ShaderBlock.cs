@@ -1,6 +1,9 @@
 using System.Globalization;
 using System.Text;
+using System.Buffers.Binary;
+using System.Collections.Immutable;
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 
@@ -14,7 +17,7 @@ namespace SomeEngine.Assets.Schema;
 [BinaryFields(nameof(ImportTrace), nameof(SchemaVersion))]
 public sealed partial class ShaderBlock : AssetBlock
 {
-    public const uint Version = 10;
+    public const uint Version = 11;
 
     public partial ImportTrace? ImportTrace { get; set; }
     public partial uint SchemaVersion { get; set; }
@@ -55,6 +58,42 @@ public sealed partial class ShaderBlock : AssetBlock
         ReadOnlySpan<byte> code) =>
         SetCode(EntryCodeKey(sessionDescription, targetIndex, entryIndex), code);
 
+    private static ulong EntryUsageKey(SessionDesc description, int target, int entry) =>
+        BinaryFieldKey.FromName("SomeEngine.Assets.Schema.Shader.EntryUsage." +
+            CodeSettings(description, GetTarget(description, target)) + "." +
+            entry.ToString(CultureInfo.InvariantCulture));
+
+    public void SetEntryUsage(SessionDesc description, int target, int entry,
+        IReadOnlySet<SlangDescriptorLocation> used)
+    {
+        byte[] bytes = new byte[checked(4 + used.Count * 20)];
+        BinaryPrimitives.WriteInt32LittleEndian(bytes, used.Count);
+        int offset = 4;
+        foreach (SlangDescriptorLocation location in used.OrderBy(value => value.Category)
+            .ThenBy(value => value.Space).ThenBy(value => value.Register))
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(offset), (int)location.Category);
+            BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(offset + 4), location.Space);
+            BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(offset + 12), location.Register);
+            offset += 20;
+        }
+        SetCode(EntryUsageKey(description, target, entry), bytes);
+    }
+
+    private static ImmutableHashSet<SlangDescriptorLocation> ReadEntryUsage(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length < 4) throw new InvalidDataException("Shader resource usage data is incomplete.");
+        int count = BinaryPrimitives.ReadInt32LittleEndian(bytes);
+        if (count < 0 || count != (bytes.Length - 4) / 20 || (bytes.Length - 4) % 20 != 0)
+            throw new InvalidDataException("Shader resource usage data has an invalid length.");
+        var result = ImmutableHashSet.CreateBuilder<SlangDescriptorLocation>();
+        for (int offset = 4; offset < bytes.Length; offset += 20)
+            result.Add(new((SlangParameterCategory)BinaryPrimitives.ReadInt32LittleEndian(bytes[offset..]),
+                BinaryPrimitives.ReadUInt64LittleEndian(bytes[(offset + 4)..]),
+                BinaryPrimitives.ReadUInt64LittleEndian(bytes[(offset + 12)..])));
+        return result.ToImmutable();
+    }
+
     public async ValueTask<Shader> CreateAsync(
         ShaderSourceBlock source,
         IGlobalSession slang,
@@ -86,7 +125,8 @@ public sealed partial class ShaderBlock : AssetBlock
         for (int targetIndex = 0; targetIndex < shader.SlangTargetCount; targetIndex++)
         for (int entryIndex = 0; entryIndex < shader.SlangEntryCount; entryIndex++)
         {
-            if (copy.ContentKeys.Contains(EntryCodeKey(
+            if (copy.ContentKeys.Contains(EntryUsageKey(sessionDescription, targetIndex, entryIndex)) &&
+                copy.ContentKeys.Contains(EntryCodeKey(
                     sessionDescription,
                     targetIndex,
                     entryIndex)))
@@ -104,6 +144,7 @@ public sealed partial class ShaderBlock : AssetBlock
         var targetCode = new List<byte[]?>(shader.SlangTargetCount);
         var entryCode = new List<byte[]>(
             checked(shader.SlangTargetCount * shader.SlangEntryCount));
+        var usedParameters = new List<ImmutableHashSet<SlangDescriptorLocation>>(entryCode.Capacity);
         for (int targetIndex = 0; targetIndex < shader.SlangTargetCount; targetIndex++)
         {
             ulong targetKey = TargetCodeKey(sessionDescription, targetIndex);
@@ -119,10 +160,12 @@ public sealed partial class ShaderBlock : AssetBlock
                     copy,
                     EntryCodeKey(sessionDescription, targetIndex, entryIndex),
                     cancellationToken).ConfigureAwait(false));
+                usedParameters.Add(ReadEntryUsage(await AcquireCodeAsync(copy,
+                    EntryUsageKey(sessionDescription, targetIndex, entryIndex), cancellationToken).ConfigureAwait(false)));
             }
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return shader.WithManagedCode(targetCode, entryCode);
+        return shader.WithManagedCode(targetCode, entryCode, usedParameters);
     }
 
     protected override void ValidateContent()

@@ -9,7 +9,7 @@
 ```text
 ShaderAsset
   +-- ShaderSourceBlock  可异步取得的 Slang 编译输入
-  +-- ShaderBlock        可异步取得的已生成代码
+  +-- ShaderBlock        可异步取得的已生成代码和入口资源使用地址
              \\          /
               \\        /
                -> Shader   同步、驻留的使用对象
@@ -17,7 +17,7 @@ ShaderAsset
 
 可读 `.shader` 的 `ShaderSourceBlock.SourceNames` 指定相对于定义文件的根源码。内容构建通过 Slang 读取源码及 include/import，将每个 `IModule.Serialize` 的结果保存到 Block；二进制 Asset 从这些 Slang 数据恢复模块，无需重新打开构建机器上的源码。
 
-`ShaderBlock` 保存由 Slang 生成的代码 chunk。chunk key 由实际 `SessionDesc`/`TargetDesc` 编译设置与入口序号得到；整 target 代码允许缺失，逐入口代码仍可独立取得。Block 不保存入口、阶段、资源、类型或布局的引擎副本。
+`ShaderBlock` 保存由 Slang 生成的代码与对应入口资源使用地址。chunk key 由实际 `SessionDesc`/`TargetDesc` 编译设置与入口序号得到；整 target 代码允许缺失，逐入口代码仍可独立取得。类型和布局由直接 Slang 反射提供；资源使用地址描述已生成代码的实际引用。
 
 ## 两条取得行为
 
@@ -33,12 +33,17 @@ ShaderAsset
 
 1. 通过同一 `ShaderSourceBlock` 恢复直接 Slang 对象与反射；
 2. 异步取得与调用方编译设置匹配的代码 chunk；
-3. 将代码物化为实际长度的最终 `byte[]`，交给 `Shader` 通过普通 GC 引用持有；
+3. 将代码物化为实际长度的最终 `byte[]`，同时取得各 target/entry 已构建的资源使用地址，交给 `Shader` 持有；
 4. 返回同一种 `Shader`。
 
 释放 `ShaderAsset`、Block 副本或 `AssetFile` 后，已有 `Shader` 仍持有其 `ISession`、`IModule`、`IEntryPoint`、`IComponentType` 以及最终托管代码或直接 `ISlangBlob`。普通入口、反射和代码访问都是同步的。`Shader` 不实现 `IDisposable`，更新创建完整新实例，由消费方交换外层引用。
 
 `ShaderBlock` 的保存代码直接读入最终数组，通过统一 AssetByteCache 预算缓存，后续创建复用缓存结果。ShaderSourceBlock 的 CompileAsync 复用 CreateAsync 的编译主体，返回直接 Shader、序列化 Slang 数据和编译器实际读到的字节摘要。Importer 保存这些结果，并由项目核对输入版本。进程级 Importer 编译服务持有全局 Slang 会话，共同 Block 入口按会话串行访问。
+
+入口的资源使用地址与代码在同一次 Slang 编译中形成，随 `ShaderBlock` schema11 保存。
+`Shader` 同时持有此数据与入口名称/阶段索引。Cluster 安装按用户 shader 的已构建使用地址
+声明资源访问，场景切换读取同一 Shader 数据。ShaderSourceBlock 的直接编译在返回 Shader
+前形成相同资源使用数据。Importer31 与 schema11 通过资产版本重新构建现有来源。
 
 ## 引用与配置
 
@@ -47,6 +52,11 @@ ShaderAsset
 `ClusterShadersAsset` 与 `VirtualShadowMapShadersAsset` 是角色到 `ShaderRef` 的配置集合，不是新的 Shader 身份。它们创建的资源组分别持有 `Shader` 和由该 `Shader` 锚定的 `EntryPointReflection`。
 
 ## 构建与失效
+
+默认项目的 `DefaultContent.BuildAsync` 枚举引擎 `.shader` 声明，项目已有的同名定义直接编译；
+缺项按声明中的 `SourceNames` 生成到 `assets/Shaders/generated/EngineSources/`，随后通过
+同一 `AssetProject.BuildAsync` 导入。管线配置解析项目路径及其生成来源。引擎新增 VSM、
+驻留传播或页需求 shader 时，这一构建入口从其唯一源声明产生项目输入。
 
 `.shader` 是人类可编辑来源，只有 `SourceNames` 属于定义。构建 target 是工具选择，不进入 `Shader` 语义。`SlangShaderImporter` 使用官方 Slang API 编译、保存模块 IR 和可用代码，并记录实际读取的依赖。
 

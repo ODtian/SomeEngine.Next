@@ -87,6 +87,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
             rowsPerPacket);
     }
 
+    public QueryDefinition EntityQuery => _entities;
+
     public RenderInstanceBatches<RenderInstanceSingleGroup>? Current => _builder.Current;
 
     public void OnCreate(ref RenderPrepareSystemContext context)
@@ -290,13 +292,15 @@ public sealed class ClusterInstanceSystem<TProducer> :
             int fields = columns.Fields;
             bool all = (fields & InstanceColumnChanges.InitialValues) != 0;
             uint lastVersion = columns.LastVersion;
-            producer.First.Write(destination.Restrict(producer.First.Properties), packet,
-                all || (fields & InstanceColumnChanges.CurrentTransform) != 0 && packet.ChangedSince<RenderTransform>(lastVersion),
-                all || (fields & InstanceColumnChanges.PreviousTransform) != 0 && packet.ChangedSince<RenderPreviousTransform>(lastVersion),
-                all || (fields & InstanceColumnChanges.Mesh) != 0 && packet.ChangedSince<RenderMesh>(lastVersion));
-            if (all || (fields & InstanceColumnChanges.Additional) != 0 &&
-                producer.Second.GetChanges(packet, lastVersion) != RenderInstanceChanges.None)
-                producer.Second.Write(destination.Restrict(producer.Second.Properties), packet);
+            if (all)
+            {
+                producer.Write(destination, packet);
+                return;
+            }
+            producer.First.WriteChanged(destination.Restrict(producer.First.Properties), packet,
+                lastVersion, columns.AllTransformsChanged);
+            if ((fields & InstanceColumnChanges.Additional) != 0)
+                producer.Second.WriteChanged(destination.Restrict(producer.Second.Properties), packet, lastVersion);
         }
     }
 }

@@ -253,19 +253,22 @@ static MeshAsset CreateMesh()
         IndicesOffset = (uint)(vertices + 1),
         ExtensionDataOffset = (uint)bvhOffset,
         VertexEncodingHash = VertexEncodingCompatibility.Hash(encoding),
+        Flags = MeshPageHeader.RootPage,
     };
     MemoryMarshal.Write(bytes, in header);
     var cluster = new PackedCluster
     {
         VertexBlobSize = 1,
-        PackedCounts = 1 | (1u << 8),
+        PackedCounts = 1 | (1u << 8) | ((PackedCluster.RootLeaf | PackedCluster.StreamingLeaf | PackedCluster.FullLeaf) << 24),
         ExtensionOffset = uint.MaxValue,
         MaterialTableOffset = uint.MaxValue
     };
     MemoryMarshal.Write(bytes.AsSpan(MeshPageHeader.Size), in cluster);
     bytes[vertices] = 1;
-    var bvh = new ClusterBVHNode { NodeType = 1 };
-    bvh.SetLeafData(0, 1);
+    var bvh = new ClusterBVHNode();
+    var leaf = new ClusterHierarchySlice { PageRangeKey = 1, GroupPartData = 1u << 16 };
+    leaf.SetErrors(0, float.PositiveInfinity);
+    bvh.SetChild(0, leaf);
     MemoryMarshal.Write(bytes.AsSpan(bvhOffset), in bvh);
     var result = new MeshAsset { Name = "mesh" };
     using var geometry = new MeshBlock();
@@ -273,6 +276,8 @@ static MeshAsset CreateMesh()
     try
     {
         clusters.SetPayload(bytes, (ulong)bvhOffset);
+        clusters.ClusterGroups = [new MeshClusterGroup { PageCount = 1,
+            HierarchyParts = [new MeshHierarchyPart()] }];
         result.SetBlock(geometry);
         result.SetBlock(clusters);
         return result;

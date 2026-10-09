@@ -11,6 +11,7 @@ public sealed class RenderingContentFixture : IAsyncLifetime
     public string ShaderReplacement => Path.Combine(_directory, "shader");
     public string Streaming => Path.Combine(_directory, "streaming");
     public string Shadows => Path.Combine(_directory, "shadows");
+    public string OffCameraShadows => Path.Combine(_directory, "off-camera-shadows");
 
     public async Task InitializeAsync()
     {
@@ -24,6 +25,7 @@ public sealed class RenderingContentFixture : IAsyncLifetime
             await SomeEngine.SceneContent.BehaviorScenes.CreateShaderReplacementSpheresAsync(Spheres, ShaderReplacement, source);
             await SomeEngine.SceneContent.BehaviorScenes.CreateStreamingSphereAsync(Spheres, Streaming);
             await SomeEngine.SceneContent.BehaviorScenes.CreateShadowReceiverAsync(Spheres, Shadows);
+            await SomeEngine.SceneContent.BehaviorScenes.CreateOffCameraShadowCasterAsync(Shadows, OffCameraShadows);
         }
         catch { await DisposeAsync(); throw; }
     }

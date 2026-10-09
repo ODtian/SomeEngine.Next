@@ -14,10 +14,3 @@ public sealed class BufferRangeSet
     public int Count => _ranges.Length;
     public ReadOnlySpan<BufferRange> Ranges => _ranges;
 }
-
-internal readonly record struct BufferRangeRead(
-    GraphIdentity Pass,
-    GraphIdentity Buffer,
-    BufferRangeSet Ranges,
-    PipelineSync Sync,
-    ResourceAccess Access);

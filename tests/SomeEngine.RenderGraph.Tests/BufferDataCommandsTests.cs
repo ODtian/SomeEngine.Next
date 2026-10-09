@@ -159,7 +159,10 @@ public sealed class BufferDataCommandsTests
     [InlineData(FrameSubmissionMode.Pipelined)]
     [InlineData(FrameSubmissionMode.RecordAllThenSubmit)]
     [InlineData(FrameSubmissionMode.RecordAhead)]
-    public void BufferDataAndCommandEditsReachEveryFrame(FrameSubmissionMode mode)
+    [InlineData(FrameSubmissionMode.Pipelined, true)]
+    [InlineData(FrameSubmissionMode.RecordAllThenSubmit, true)]
+    [InlineData(FrameSubmissionMode.RecordAhead, true)]
+    public void BufferDataAndCommandEditsReachEveryFrame(FrameSubmissionMode mode, bool mapped = false)
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: false);
         using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
@@ -206,7 +209,8 @@ public sealed class BufferDataCommandsTests
             ulong offset = index < 5 ? 0u : 16u;
             using (RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(SubmissionMode: mode)))
             {
-                frame.SetBufferData(source, bytes);
+                if (mapped) bytes.CopyTo(frame.GetBufferDataWriteSpan(source));
+                else frame.SetBufferData(source, bytes);
                 frame.SetBufferInput(input, new GraphBufferSlice(source, BufferRange.Whole));
                 frame.SetPassDataIfChanged(pass, new CopyData(input, destination, offset));
                 frame.Execute(completions);

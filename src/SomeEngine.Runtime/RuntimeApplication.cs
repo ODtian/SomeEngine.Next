@@ -38,7 +38,7 @@ internal static class RuntimeApplication
     internal static Task<int> RunAsync(RuntimeStartupOptions options, bool useWarp,
         Func<Material, float, bool>? animateMaterial = null, SceneTestPlatform? platform = null, SceneScript? script = null) => Task.Factory.StartNew(() =>
     {
-        var shaderResources = new RuntimeShaderResources();
+        using var shaderResources = new RuntimeShaderResources();
         using var display = new ApplicationDisplay();
         int frames = 0;
         do
@@ -475,7 +475,7 @@ internal static class RuntimeApplication
         using World mainWorld = RuntimeWait.Task(sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
             new(Execution: new WorldJobs(JobSystem.Default))).AsTask(), window, FrameTimeout);
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
-        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
+        using var extraction = new RenderExtractionSystems(renderWorld, new WorldOriginRenderExtractor(), new MeshRenderExtractor(), new LightRenderExtractor());
 
         RuntimeScene scene = RuntimeWait.Task(
             RuntimeScene.CreateAsync(mainWorld, assets, loadShader).AsTask(),
@@ -494,15 +494,16 @@ internal static class RuntimeApplication
             scene.Projection(boot.Width, boot.Height),
             boot.Width,
             boot.Height,
-            temporalFrameIndex: 0);
+            temporalFrameIndex: 0,
+            cameraTarget: scene.Camera.Target,
+            depthOfField: scene.DepthOfField, playerId: scene.PlayerId, firstPerson: scene.FirstPerson);
         Entity viewEntity = renderWorld.CreateEntity(initialView.View);
 
         using var renderDevice = new RenderDevice(backend, device, FrameTimeout);
-        using var coordinator = new RenderFrameCoordinator(renderDevice, FrameTimeout);
+        var dataLock = new RenderDataLock();
         var instances = new RenderInstanceStorageSystem(
             backend,
             device,
-            coordinator,
             renderWorld,
             ClusterRenderFeature.InstanceLayout,
             script is null ? new RenderInstanceOptions
@@ -513,7 +514,6 @@ internal static class RuntimeApplication
         var cluster = new ClusterRenderResources(
             backend,
             device,
-            coordinator,
             renderWorld,
             instances,
             platform is null && script is null ? null : new ClusterRenderOptions
@@ -545,11 +545,31 @@ internal static class RuntimeApplication
             device,
             options.AsyncCompute ? [graphicsQueue, computeQueue, copyQueue] : [graphicsQueue, copyQueue],
             new RenderGraphDesc(
-                // Instance and readback storage already limit this renderer to two in-flight
-                // frames. Match that count instead of rotating a third copy of graph data.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
+        GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
+        GraphRegionId targetGeometryAfterRegion, shadingRegion, temporalRegion, presentationRegion, uiRegion, feedbackRegion;
+        GraphRegionId frameOutputRegion, linearOutputRegion;
+        using (RenderGraphEdit edit = renderGraph.BeginEdit())
+        {
+            _ = edit.AddRegion("Frame uploads");
+            sceneRegion = edit.AddRegion("Scene");
+            primaryGeometryRegion = edit.AddRegion("Primary view geometry");
+            primaryDepthAfterRegion = edit.AddRegion("After primary view depth");
+            targetGeometryRegion = edit.AddRegion("Target view geometry");
+            targetGeometryAfterRegion = edit.AddRegion("After target view geometry");
+            shadingRegion = edit.AddRegion("Shading");
+            linearOutputRegion = edit.AddFrameRegion("Linear frame output");
+            GraphRegionId postProcessing = edit.AddRegion("Post processing");
+            temporalRegion = edit.AddRegion("Temporal", postProcessing);
+            presentationRegion = edit.AddRegion("Presentation", postProcessing);
+            uiRegion = edit.AddRegion("UI", postProcessing);
+            frameOutputRegion = edit.AddFrameRegion("Frame output", postProcessing);
+            feedbackRegion = edit.AddRegion("Feedback");
+            edit.Commit();
+        }
         var outputDescription = new ClusterPipelineOutputDescription(boot.Width, boot.Height, 1);
+        float rasterEdgePixels = script?.RasterEdgePixels ?? 32;
         using var lighting = new LightingFeature(
             backend,
             device,
@@ -558,16 +578,28 @@ internal static class RuntimeApplication
             outputDescription.Height,
             outputDescription.ViewCount,
             lightingShader,
-            boot.LightingEntryPoint);
+            boot.LightingEntryPoint,
+            region: sceneRegion);
         var stageResources = new GraphResourceGroup();
         stageResources.Add(lighting);
         var lightSystem = new RenderLightSetSystem();
+        _ = prepareSystems.Add(lightSystem);
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
         var streamingConsumer = new ClusterStreamingFeedbackConsumer(cluster, streamingFeedback);
-        var shadowSettings = (script?.ShadowSettings ?? new VirtualShadowMapSettings()) with { Enabled = options.VirtualShadows };
+        var shadowSettings = (script?.ShadowSettings ?? new VirtualShadowMapSettings
+        {
+            DynamicResolutionEnabled = true,
+        }) with { Enabled = options.VirtualShadows };
+        if (options.ShadowRayCount is { } rayCount)
+            shadowSettings = shadowSettings with
+            {
+                DirectionalRayCount = rayCount,
+                LocalRayCount = rayCount,
+                MaxFilterRadiusTexels = rayCount == 0 ? 0 : shadowSettings.MaxFilterRadiusTexels,
+            };
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
-            metrics: options.VerifyFrameOutput);
+            metrics: options.VerifyFrameOutput || options.LinearFrameOutputPath is not null || script is not null);
         using var virtualShadows = new VirtualShadowFeature(
             backend,
             device,
@@ -575,7 +607,11 @@ internal static class RuntimeApplication
             shadowSettings,
             renderGraph,
             pipeline,
-            lighting);
+            lighting,
+            primaryDepthAfterRegion,
+            targetGeometryAfterRegion,
+            feedbackRegion,
+            renderDevice);
         stageResources.Add(virtualShadows);
         RenderFrameSystems frameSystems = CreateFrameSystems(
             pipeline,
@@ -583,10 +619,10 @@ internal static class RuntimeApplication
         var graphCompletionSlots = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         var graphCompletions = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         FrameOutputVerifier? outputVerifier = null;
+        FrameOutputVerifier? linearVerifier = null;
         RuntimeUiRenderer? ui = null;
         RuntimePresentationPipeline? presentation = null;
         TemporalFeature? temporal = null;
-        GraphPassId temporalProducer = default;
         Task? nextGameUpdate = null;
         var input = new RuntimeInput();
         int width = boot.Width;
@@ -608,6 +644,7 @@ internal static class RuntimeApplication
             materialAssignments,
             pipelineConfiguration,
             renderGraph,
+            new ClusterGraphRegions(primaryGeometryRegion, targetGeometryRegion, shadingRegion, feedbackRegion),
             description,
             streamingFeedback,
             stageResources,
@@ -615,7 +652,8 @@ internal static class RuntimeApplication
             {
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
-                SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 4,
+                SoftwareRasterEdgeThreshold = rasterEdgePixels,
+                MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics,
             });
@@ -633,7 +671,6 @@ internal static class RuntimeApplication
             VirtualShadowFeature virtualShadowFeature)
         {
             var systems = new RenderFrameSystems(renderWorld, instances);
-            _ = systems.Add(lightSystem);
             _ = systems.Add(new LightingFeatureSystem(
                 lighting,
                 lightSystem,
@@ -649,10 +686,12 @@ internal static class RuntimeApplication
         uint submittedFrames = 0;
         var sceneEdit = script is null ? null : new SceneEdit(scene, window);
         int actionIndex = 0;
+        int? captureFrame = options.CaptureFrame ?? (options.FrameLimit > 0 ? options.FrameLimit - 1 : null);
+        bool outputSaved = false, linearOutputSaved = false;
         try
         {
             frameSystems.Initialize();
-            outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
+            outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && captureFrame is null)
                 ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                 : null;
             ui = new RuntimeUiRenderer(
@@ -679,61 +718,6 @@ internal static class RuntimeApplication
             {
                 long frameStarted = Stopwatch.GetTimestamp();
                 using var frameTrace = EngineTrace.BeginFrame(++traceFrameIndex);
-                bool instanceAdmitted = instances.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] instanceRetirementFences);
-                bool readbackAdmitted = pipeline.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] readbackRetirementFences);
-                bool uiAdmitted = ui.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] uiRetirementFences);
-                long admissionWaitStarted = Environment.TickCount64;
-                while (!instanceAdmitted ||
-                       !readbackAdmitted ||
-                       !uiAdmitted)
-                {
-                    TimeSpan remaining = FrameTimeout -
-                        TimeSpan.FromMilliseconds(
-                            Environment.TickCount64 - admissionWaitStarted);
-                    if (remaining <= TimeSpan.Zero)
-                    {
-                        throw new TimeoutException(
-                            "Frame-resource admission did not become available before the runtime timeout.");
-                    }
-                    TimeSpan waitSlice = remaining > TimeSpan.FromMilliseconds(2)
-                        ? TimeSpan.FromMilliseconds(2)
-                        : remaining;
-
-                    QueueCompletion[] retirementFences = !instanceAdmitted
-                        ? instanceRetirementFences
-                        : !readbackAdmitted
-                            ? readbackRetirementFences
-                            : uiRetirementFences;
-                    _ = WaitForAll(backend, retirementFences, waitSlice);
-
-                    _ = window.PumpMessages();
-                    if (!instanceAdmitted)
-                    {
-                        instanceAdmitted = instances.TryAdmitFrameResources(
-                            out _,
-                            out instanceRetirementFences);
-                    }
-                    if (!readbackAdmitted)
-                    {
-                        readbackAdmitted = pipeline.TryAdmitFrameResources(
-                            out _,
-                            out readbackRetirementFences);
-                    }
-                    if (!uiAdmitted)
-                    {
-                        uiAdmitted = ui.TryAdmitFrameResources(
-                            out _,
-                            out uiRetirementFences);
-                    }
-                }
-                backend.CollectCompleted(device);
-                coordinator.AdmitFrameResources();
                 // Shared asset content can change only after the Game World extraction reader exits.
                 if (nextGameUpdate is not null)
                 {
@@ -793,6 +777,8 @@ internal static class RuntimeApplication
                 {
                     outputVerifier?.Dispose();
                     outputVerifier = null;
+                    linearVerifier?.Dispose();
+                    linearVerifier = null;
                     ReconfigureSwapchain(
                         backend,
                         swapchain,
@@ -803,7 +789,7 @@ internal static class RuntimeApplication
                     width = clientWidth;
                     height = clientHeight;
                     cameraCut = true;
-                    outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
+                    outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && captureFrame is null)
                         ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                         : null;
                 }
@@ -834,7 +820,9 @@ internal static class RuntimeApplication
                     height,
                     submittedFrames,
                     temporalResolveEnabled: options.TemporalAntialiasing,
-                    cameraCut: cameraCut);
+                    cameraCut: cameraCut,
+                    cameraTarget: scene.Camera.Target,
+                    depthOfField: scene.DepthOfField, playerId: scene.PlayerId, firstPerson: scene.FirstPerson);
                 viewSystem.Stage(viewFrame.View);
                 if (platform?.IsMeasuring != true) ui.DrawDebugWindow(
                     ref debugUiOpen,
@@ -858,23 +846,40 @@ internal static class RuntimeApplication
                         scene.Update(sceneSeconds);
                     extraction.Extract(mainWorld);
                 }
+                if (!renderGraph.TryOpenNextFrame(out RenderGraphNextFrame nextFrame, FrameTimeout))
+                    throw new TimeoutException("The next rendering frame exceeded its resource wait timeout.");
+                using var nextFrameResources = nextFrame;
+                renderDevice.CollectCompleted();
                 long prepareStarted = Stopwatch.GetTimestamp();
-                if (platform?.ImageRequested == true || sceneEdit?.Images.Count > 0)
+                bool selectedCapture = captureFrame == frameIndex;
+                bool captureBeauty = options.VerifyFrameOutput || platform?.ImageRequested == true || sceneEdit?.Images.Count > 0 ||
+                    (options.FrameOutputPath is not null && (selectedCapture || captureFrame is null));
+                bool captureLinear = sceneEdit?.LinearImages.Count > 0 ||
+                    (selectedCapture && options.LinearFrameOutputPath is not null);
+                if (captureBeauty)
                     outputVerifier ??= new FrameOutputVerifier(backend, device, width, height, PresentationFormat);
+                if (captureLinear)
+                {
+                    linearVerifier ??= new FrameOutputVerifier(backend, device, width, height, Format.R16G16B16A16Float);
+                    if (shadowSettings.Enabled) virtualShadows.EnableQualityCapture();
+                }
                 Prepare(
                     prepareSystems,
                     cluster,
                     streamingConsumer,
-                    coordinator,
+                    dataLock,
+                    nextFrame,
                     window,
                     reportMilestones);
                 double prepareMs = Stopwatch.GetElapsedTime(prepareStarted).TotalMilliseconds;
                 long reconcileStarted = Stopwatch.GetTimestamp();
                 ClusterPipelineOutputs clusterOutputs;
                 using (EngineTrace.Begin(ApplicationTrace.Reconcile))
+                {
+                    virtualShadows.ReconcileLights(lightSystem.RequireCurrent());
                     clusterOutputs = pipeline.ReconcileGraph();
+                }
                 double reconcileMs = Stopwatch.GetElapsedTime(reconcileStarted).TotalMilliseconds;
-                bool connectPostProcessing = temporal is null;
                 temporal ??= new TemporalFeature(
                     backend,
                     device,
@@ -883,21 +888,8 @@ internal static class RuntimeApplication
                     boot.Height,
                     temporalShader,
                     boot.TemporalVertexEntry,
-                    boot.TemporalPixelEntry);
-                if (connectPostProcessing || temporalProducer != pipeline.ShadeCompletePass)
-                {
-                    RenderGraphEdit edit = renderGraph.BeginEdit();
-                    try
-                    {
-                        temporal.OrderAfter(ref edit, pipeline.ShadeCompletePass);
-                        edit.Commit();
-                        temporalProducer = pipeline.ShadeCompletePass;
-                    }
-                    finally
-                    {
-                        edit.Dispose();
-                    }
-                }
+                    boot.TemporalPixelEntry,
+                    region: temporalRegion);
                 presentation ??= new RuntimePresentationPipeline(
                     backend,
                     device,
@@ -906,24 +898,40 @@ internal static class RuntimeApplication
                     temporal.Output.Format,
                     temporal.Output.Width,
                     temporal.Output.Height,
-                    temporal.Output.CompletePass,
                     presentationShader,
                     boot.PresentationVertexEntry,
                     boot.PresentationPixelEntry,
-                    PresentationFormat);
-                ui.InstallGraph(renderGraph, presentation.Target);
+                    PresentationFormat,
+                    presentationRegion);
+                ui.InstallGraph(renderGraph, presentation.Target, uiRegion);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
                 SwapchainImage? image = sceneEdit?.FrameCanceled == true
                     ? null : AcquireImage(backend, swapchain, window);
+                SceneFrame? capturedFrame = captureLinear ? scene.CaptureFrame(new SceneFrame
+                {
+                    Frame = frameIndex, SubmittedFrame = submittedFrames, SceneSeconds = sceneSeconds,
+                    Width = width, Height = height, CameraPosition = scene.Camera.Position,
+                    WorldOrigin = renderWorld.WorldOrigin,
+                    View = scene.Camera.View, Projection = viewFrame.View.Projection,
+                    UnjitteredProjection = scene.Projection(width, height), JitterPixels = viewFrame.JitterPixels,
+                    Options = options, ShadowSettings = shadowSettings,
+                    TemporalSettings = script?.TemporalSettings ?? TemporalResolveSettings.Default,
+                    RasterEdgePixels = rasterEdgePixels,
+                    ClusterWorkCapacity = script?.ClusterWorkCapacity ?? 1_048_576,
+                    Adapter = device.Adapter.Name, DriverVersion = device.Adapter.DriverVersion,
+                }) : null;
+                VirtualShadowFrameQuality? shadowQuality = null;
                 long executeStarted = Stopwatch.GetTimestamp();
                 FrameOutputMetrics? frameOutput = ExecuteFrame(
                     backend,
                     renderGraph,
+                    nextFrame,
                     graphicsQueue,
                     graphCompletionSlots,
                     graphCompletions,
-                    coordinator,
+                    renderDevice,
+                    dataLock,
                     frameSystems,
                     pipeline,
                     streamingConsumer,
@@ -939,7 +947,11 @@ internal static class RuntimeApplication
                     reportMilestones,
                     cameraCut,
                     viewEntity,
-                    outputVerifier,
+                    captureBeauty ? outputVerifier : null,
+                    frameOutputRegion,
+                    captureLinear ? linearVerifier : null,
+                    linearOutputRegion,
+                    captureLinear && shadowSettings.Enabled ? value => shadowQuality = value : null,
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
                     options.SynchronousFrames,
                     options.TemporalAntialiasing,
@@ -964,6 +976,42 @@ internal static class RuntimeApplication
                         throw new ApplicationRunException(ApplicationFailure.ImageCallback, checked((int)submittedFrames), error);
                     }
                     if (!options.VerifyFrameOutput && options.FrameOutputPath is null && platform?.ImageRequested != true)
+                    {
+                        outputVerifier.Dispose();
+                        outputVerifier = null;
+                    }
+                }
+                if (captureLinear)
+                {
+                    ClusterRenderDiagnostics diagnostics = cluster.CaptureDiagnostics();
+                    ClusterResidencyDiagnostics residency = diagnostics.Residency;
+                    capturedFrame = capturedFrame! with { Quality = new SceneRenderingQuality(shadowQuality,
+                        pipeline.CaptureFrameMetrics(), new(diagnostics.Meshes.RegisteredMeshes, diagnostics.Meshes.PublishedMeshes,
+                            residency.RegisteredPages, residency.ResidentPages, residency.MissingPages,
+                            residency.QueuedPageLoads, residency.ActivePageLoads, residency.PageLoadFailures)) };
+                    SceneLinearImage captured = linearVerifier!.CopyLinearImage(capturedFrame);
+                    if (selectedCapture && options.LinearFrameOutputPath is not null)
+                    {
+                        captured.Save(options.LinearFrameOutputPath);
+                        linearOutputSaved = true;
+                    }
+                    try
+                    {
+                        if (sceneEdit is not null)
+                            foreach (Action<SceneLinearImage> receive in sceneEdit.LinearImages) receive(captured);
+                    }
+                    catch (Exception error)
+                    {
+                        throw new ApplicationRunException(ApplicationFailure.ImageCallback, checked((int)submittedFrames), error);
+                    }
+                    linearVerifier.Dispose();
+                    linearVerifier = null;
+                }
+                if (selectedCapture && options.FrameOutputPath is not null)
+                {
+                    outputVerifier!.SaveImage(options.FrameOutputPath);
+                    outputSaved = true;
+                    if (!options.VerifyFrameOutput && platform?.ImageRequested != true)
                     {
                         outputVerifier.Dispose();
                         outputVerifier = null;
@@ -1035,8 +1083,11 @@ internal static class RuntimeApplication
 
             if (frameIndex > 0)
             {
-                if (options.FrameOutputPath is not null)
+                if (options.FrameOutputPath is not null && captureFrame is null)
+                {
                     outputVerifier!.SaveImage(options.FrameOutputPath);
+                    outputSaved = true;
+                }
                 ClusterRenderDiagnostics diagnostics = cluster.CaptureDiagnostics();
                 ClusterResidencyDiagnostics residency = diagnostics.Residency;
                 Console.WriteLine(
@@ -1129,6 +1180,11 @@ internal static class RuntimeApplication
                     }
                 }
             }
+            renderDevice.WaitForTrackedSubmissions(FrameTimeout);
+            renderGraph.CollectCompleted();
+            if ((options.FrameOutputPath is not null && !outputSaved) ||
+                (options.LinearFrameOutputPath is not null && !linearOutputSaved))
+                throw new InvalidOperationException("The requested capture frame was not submitted.");
             Console.WriteLine($"SomeEngine runtime completed {submittedFrames} frame(s).");
             return checked((int)submittedFrames);
         }
@@ -1141,13 +1197,14 @@ internal static class RuntimeApplication
         {
             if (nextGameUpdate is not null)
                 RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+            renderDevice.WaitForTrackedSubmissions(FrameTimeout);
             outputVerifier?.Dispose();
-            coordinator.WaitForTrackedSubmissions();
+            linearVerifier?.Dispose();
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();
             frameSystems.Dispose();
-            Shutdown(prepareSystems, cluster, instances, coordinator);
+            Shutdown(prepareSystems, cluster, instances, dataLock);
             scene.Dispose();
             if (device.Status == DeviceStatus.Active)
                 backend.CollectCompleted(device);
@@ -1158,12 +1215,13 @@ internal static class RuntimeApplication
         RenderPrepareSystems systems,
         ClusterRenderResources cluster,
         ClusterStreamingFeedbackConsumer streamingFeedback,
-        RenderFrameCoordinator coordinator,
+        RenderDataLock dataLock,
+        RenderGraphNextFrame nextFrame,
         NativeWindow window,
         bool reportMilestones)
     {
         using var trace = EngineTrace.Begin(ApplicationTrace.Prepare);
-        if (!coordinator.TryBeginPrepare(out RenderPrepareScope? scope))
+        if (!dataLock.TryBeginPrepare(out RenderPrepareScope? scope))
             throw new InvalidOperationException("The render prepare boundary is not available.");
         using (scope)
         {
@@ -1191,19 +1249,19 @@ internal static class RuntimeApplication
             if (reportMilestones)
                 Console.WriteLine("First frame: publishing prepare systems.");
             using (EngineTrace.Begin(ApplicationTrace.PrepareSystems))
-                systems.Update(scope);
-            using (EngineTrace.Begin(ApplicationTrace.PrepareCommit))
-                scope.Commit();
+                systems.Update(scope, nextFrame);
         }
     }
 
     private static FrameOutputMetrics? ExecuteFrame(
         IGraphicsBackend backend,
         global::SomeEngine.RenderGraph.RenderGraph graph,
+        RenderGraphNextFrame nextFrame,
         Queue graphicsQueue,
         QueueCompletion[] completionSlots,
         QueueCompletion[] completions,
-        RenderFrameCoordinator coordinator,
+        RenderDevice renderDevice,
+        RenderDataLock dataLock,
         RenderFrameSystems systems,
         ClusterPipelineSystem pipeline,
         ClusterStreamingFeedbackConsumer streamingConsumer,
@@ -1220,6 +1278,10 @@ internal static class RuntimeApplication
         bool cameraCut,
         Entity viewEntity,
         FrameOutputVerifier? outputVerifier,
+        GraphRegionId frameOutputRegion,
+        FrameOutputVerifier? linearVerifier,
+        GraphRegionId linearOutputRegion,
+        Action<VirtualShadowFrameQuality>? captureShadowQuality,
         RenderGraphDiagnosticsHandler? graphDiagnostics,
         bool synchronousFrames,
         bool temporalAntialiasing,
@@ -1227,24 +1289,21 @@ internal static class RuntimeApplication
         TemporalResolveSettings temporalSettings)
     {
         using var trace = EngineTrace.Begin(ApplicationTrace.Execute);
-        if (!coordinator.TryBeginFrame(out RenderFrame? frame))
+        if (!dataLock.TryBeginRead(out RenderReadScope? readScope))
         {
-            RenderFrameSynchronizationDiagnostics state = coordinator.CaptureDiagnostics();
+            RenderDataAccessDiagnostics state = dataLock.CaptureDiagnostics();
             throw new InvalidOperationException(
-                "The render frame boundary is not available: " +
-                $"prepareOpen={state.PrepareOpen}, frameOpen={state.FrameOpen}, " +
-                $"readers={state.OpenReaderCount}, retained={state.RetainedPositionCount}, " +
-                $"pendingTimelines={state.PendingTimelineCount}, " +
-                $"retryTimelines={state.RetryRequiredTimelineCount}.");
+                "Render-data reading conflicted with prepare: " +
+                $"prepareOpen={state.PrepareOpen}, readers={state.OpenReaderCount}.");
         }
 
-        using (frame)
+        using (readScope)
         {
             FrameOutputMetrics? frameOutput = null;
             completionSlots.AsSpan().Clear();
             try
             {
-                RenderGraphFrame graphFrame = graph.BeginFrame(
+                RenderGraphFrame graphFrame = graph.BeginFrame(nextFrame,
                     new RenderGraphFrameOptions(
                         SubmissionMode: FrameSubmissionMode.RecordAhead,
                         Diagnostics: graphDiagnostics));
@@ -1254,13 +1313,14 @@ internal static class RuntimeApplication
                         Console.WriteLine("First frame: recording render systems.");
                     if (image is { } acquired) presentation.Bind(ref graphFrame, acquired, graphicsQueue);
                     using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
-                        systems.Update(frame, graphFrame);
-                    graphFrame.ObserveExecution(streamingConsumer);
+                        systems.Update(readScope, graphFrame);
                     var motion = new MotionFeatureOutput(
                         clusterOutputs.MotionVectors,
                         clusterOutputs.Width,
                         clusterOutputs.Height,
                         clusterOutputs.ViewCount);
+                    if (image is not null)
+                        linearVerifier?.Record(ref graphFrame, clusterOutputs.MaterialColor, graphicsQueue, linearOutputRegion);
                     using (EngineTrace.Begin(ApplicationTrace.TemporalRecording))
                         temporal.Record(
                             ref graphFrame,
@@ -1274,7 +1334,8 @@ internal static class RuntimeApplication
                             jitterPixels: jitterPixels);
                     ui.Record(ref graphFrame, width, height);
                     if (image is null) return null;
-                    outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue);
+                    if (captureShadowQuality is not null) virtualShadows.CaptureQuality(ref graphFrame, captureShadowQuality);
+                    outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue, frameOutputRegion);
                     if (reportMilestones)
                         Console.WriteLine("First frame: analyzing and submitting render graph.");
 
@@ -1284,14 +1345,16 @@ internal static class RuntimeApplication
                         completions,
                         submittedQueueCount);
                     ReadOnlySpan<QueueCompletion> execution = completions.AsSpan(0, completionCount);
-                    using (EngineTrace.Begin(ApplicationTrace.FrameCompletion))
-                        frame.Complete(execution);
-                    if (synchronousFrames && outputVerifier is null)
+                    renderDevice.TrackSubmission(execution);
+                    readScope.Dispose();
+                    bool readOutput = outputVerifier is not null || linearVerifier is not null;
+                    if (synchronousFrames || readOutput)
                         Wait(backend, execution, window, synchronousFrames);
-                    if (outputVerifier is not null)
+                    if (outputVerifier is not null) frameOutput = outputVerifier.Read();
+                    linearVerifier?.ReadPixels();
+                    if (synchronousFrames || readOutput)
                     {
-                        Wait(backend, execution, window, synchronousFrames);
-                        frameOutput = outputVerifier.Read();
+                        graph.CollectCompleted();
                     }
                     return frameOutput;
                 }
@@ -1311,7 +1374,7 @@ internal static class RuntimeApplication
                     if (completionCount != 0)
                     {
                         ReadOnlySpan<QueueCompletion> accepted = completions.AsSpan(0, completionCount);
-                        if (!frame.IsClosed) frame.Complete(accepted);
+                        renderDevice.TrackSubmission(accepted);
                     }
                 }
                 catch (Exception cleanup)
@@ -1368,49 +1431,19 @@ internal static class RuntimeApplication
         if (eventDriven) _ = window.PumpMessages();
     }
 
-    private static bool WaitForAll(
-        IGraphicsBackend backend,
-        ReadOnlySpan<QueueCompletion> completions,
-        TimeSpan timeout)
-    {
-        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
-            throw new ArgumentOutOfRangeException(nameof(timeout));
-        if (timeout == TimeSpan.Zero)
-        {
-            foreach (ref readonly QueueCompletion completion in completions)
-                if (!backend.IsComplete(completion))
-                    return false;
-            return true;
-        }
-
-        long started = Environment.TickCount64;
-        foreach (ref readonly QueueCompletion completion in completions)
-        {
-            TimeSpan remaining = timeout == Timeout.InfiniteTimeSpan
-                ? Timeout.InfiniteTimeSpan
-                : timeout - TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
-            if (remaining < TimeSpan.Zero)
-                remaining = TimeSpan.Zero;
-            if (backend.WaitCpu(completion, remaining) != WaitStatus.Completed)
-                return false;
-        }
-        return true;
-    }
-
     private static void Shutdown(
         RenderPrepareSystems prepareSystems,
         ClusterRenderResources cluster,
         RenderInstanceStorageSystem instances,
-        RenderFrameCoordinator coordinator)
+        RenderDataLock dataLock)
     {
-        if (!coordinator.TryBeginPrepare(out RenderPrepareScope? scope))
+        if (!dataLock.TryBeginPrepare(out RenderPrepareScope? scope))
             throw new InvalidOperationException("The final render prepare boundary is not available.");
         using (scope)
         {
             prepareSystems.Shutdown(scope);
             cluster.Shutdown(scope);
             instances.Shutdown(scope);
-            scope.Commit();
         }
         prepareSystems.Dispose();
         cluster.Dispose();

@@ -38,7 +38,7 @@ public static partial class ClusterBuilder
         var scratch = new RawMeshScratch(rawPos.Length);
         try
         {
-            PreparedRawMesh prepared = PrepareRawMesh(rawPos, rawAttributes, rawIndices, scratch);
+            ClusterMeshData prepared = PrepareRawMesh(rawPos, rawAttributes, rawIndices, scratch);
             MeshletBuild meshletBuild = BuildMeshletData(prepared, materialSlots);
             SortMeshlets(meshletBuild.Meshlets, meshletBuild.Bounds);
             List<ClusterInfo> clusterInfos = WriteMeshPages(
@@ -47,15 +47,10 @@ public static partial class ClusterBuilder
                 prepared,
                 meshletBuild,
                 vertexEncoder);
-            uint[] lowestDetailPageIndices = clusterInfos
-                .Where(static cluster => cluster.LODError >= (float)Half.MaxValue)
-                .Select(static cluster => cluster.PageIndex)
-                .Distinct()
-                .Order()
-                .ToArray();
-            if (lowestDetailPageIndices.Length == 0)
-                lowestDetailPageIndices = [clusterInfos.Max(static cluster => cluster.PageIndex)];
-            long bvhOffset = WriteBvh(stream, clusterInfos);
+            List<ClusterBVHNode> hierarchy = BuildBvh(clusterInfos);
+            MeshClusterGroup[] groups = BuildMeshGroups(clusterInfos, hierarchy);
+            uint[] lowestDetailPageIndices = CollectBaseGeometryPages(groups);
+            long bvhOffset = WriteBvh(stream, hierarchy);
             byte[] content = stream.ToArray();
             return CreateMeshAsset(
                 name,
@@ -64,7 +59,7 @@ public static partial class ClusterBuilder
                 meshletBuild.Bounds,
                 vertexEncoder.Compatibility,
                 bvhOffset,
-                lowestDetailPageIndices);
+                lowestDetailPageIndices, groups);
         }
         finally
         {
@@ -72,7 +67,19 @@ public static partial class ClusterBuilder
         }
     }
 
-    private static PreparedRawMesh PrepareRawMesh(
+    private static uint[] CollectBaseGeometryPages(MeshClusterGroup[] groups)
+    {
+        var pages = new HashSet<uint>();
+        foreach (MeshClusterGroup group in groups)
+        {
+            if (!group.Parents.IsEmpty) continue;
+            for (uint page = group.FirstPage; page < group.FirstPage + group.PageCount; page++)
+                pages.Add(page);
+        }
+        return pages.Order().ToArray();
+    }
+
+    private static ClusterMeshData PrepareRawMesh(
         Vector3[] rawPositions,
         List<RawAttribute> rawAttributes,
         uint[] rawIndices,
@@ -92,7 +99,7 @@ public static partial class ClusterBuilder
             scratch.Indices.AsSpan(0, rawIndices.Length),
             scratch.Indices.AsSpan(0, rawIndices.Length),
             vertexCount);
-        return new PreparedRawMesh(
+        return new ClusterMeshData(
             scratch.Positions,
             scratch.Indices,
             (int)vertexCount,
@@ -185,25 +192,26 @@ public static partial class ClusterBuilder
     }
 
     private static MeshletBuild BuildMeshletData(
-        PreparedRawMesh prepared,
+        ClusterMeshData prepared,
         IReadOnlyList<MeshMaterialSlot> materialSlots)
     {
+        if (prepared.Attributes.All(static attribute => attribute.Name != "_MATERIAL_INDEX"))
+            prepared.Attributes.Add(new RawAttribute("_MATERIAL_INDEX", new float[prepared.VertexCount], 1, ValueType.UInt8, 1, false));
         var meshlets = new List<BuilderMeshlet>();
         var globalIndices = new List<uint>();
-        float[] materialIndices = ExtractMaterialIndices(prepared);
         BuildClusterLod(
-            ClusterLodConfig.GetDefault() with { ClusterSpatial = true },
-            new ReadOnlySpan<Vector3>(prepared.Positions, 0, prepared.VertexCount),
+            ClusterLodConfig.GetDefault(),
+            prepared,
             new ReadOnlySpan<uint>(prepared.Indices, 0, prepared.IndexCount),
-            materialIndices,
             meshlets,
             globalIndices);
+        ConstrainMeshlets(prepared, meshlets, globalIndices);
         RemoveInternalMaterialAttribute(prepared.Attributes);
         MeshBoundsInfo bounds = ComputeMeshBounds(prepared.Positions, prepared.VertexCount);
         return new MeshletBuild(meshlets, globalIndices, bounds);
     }
 
-    private static float[] ExtractMaterialIndices(PreparedRawMesh prepared)
+    private static float[] ExtractMaterialIndices(ClusterMeshData prepared)
     {
         RawAttribute? materialIndex = prepared.Attributes.FirstOrDefault(static attr => attr.Name == "_MATERIAL_INDEX");
         return materialIndex?.Data ?? new float[prepared.VertexCount];
@@ -237,32 +245,33 @@ public static partial class ClusterBuilder
             maxExtent);
     }
 
-    private static void SortMeshlets(
-        List<BuilderMeshlet> meshlets,
-        MeshBoundsInfo bounds)
+    private static void SortMeshlets(List<BuilderMeshlet> meshlets, MeshBoundsInfo bounds)
     {
-        meshlets.Sort((left, right) => CompareMeshlets(left, right, bounds));
-    }
-
-    private static int CompareMeshlets(
-        BuilderMeshlet left,
-        BuilderMeshlet right,
-        MeshBoundsInfo bounds)
-    {
-        if (left.ParentGroupId != right.ParentGroupId)
+        var groups = meshlets.GroupBy(static cluster => cluster.ParentGroupId).ToArray();
+        Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
+        foreach (var group in groups)
         {
-            return left.ParentGroupId.CompareTo(right.ParentGroupId);
+            minimum = Vector3.Min(minimum, group.First().LodCenter);
+            maximum = Vector3.Max(maximum, group.First().LodCenter);
         }
+        float size = Math.Max(Math.Max(Math.Max((maximum - minimum).X, (maximum - minimum).Y), (maximum - minimum).Z), 1e-20f);
+        BuilderMeshlet[] ordered = groups.OrderByDescending(static group => group.Max(static cluster => cluster.Level))
+            .ThenBy(group => GroupMorton(group.First()))
+            .SelectMany(static group => group.OrderBy(static cluster => cluster.Center.X + cluster.Center.Y + cluster.Center.Z)).ToArray();
+        meshlets.Clear(); meshlets.AddRange(ordered);
 
-        uint leftCode = Morton3D((left.LodCenter - bounds.Min) / bounds.Extent);
-        uint rightCode = Morton3D((right.LodCenter - bounds.Min) / bounds.Extent);
-        return leftCode.CompareTo(rightCode);
+        uint GroupMorton(BuilderMeshlet cluster)
+        {
+            Vector3 center = (cluster.LodCenter - minimum) / size + new Vector3(.5f / 1023);
+            uint code = Morton3D(center);
+            return (cluster.Level & 1) != 0 ? code ^ uint.MaxValue : code;
+        }
     }
 
     private static List<ClusterInfo> WriteMeshPages(
         Stream stream,
         byte[] pageBuffer,
-        PreparedRawMesh prepared,
+        ClusterMeshData prepared,
         MeshletBuild meshletBuild,
         IClusterVertexEncoder vertexEncoder)
     {
@@ -270,9 +279,8 @@ public static partial class ClusterBuilder
         return writer.Write();
     }
 
-    private static long WriteBvh(Stream stream, List<ClusterInfo> clusterInfos)
+    private static long WriteBvh(Stream stream, List<ClusterBVHNode> bvhNodes)
     {
-        List<ClusterBVHNode> bvhNodes = BuildBvh(clusterInfos);
         long bvhOffset = stream.Position;
         Span<ClusterBVHNode> bvhSpan = CollectionsMarshal.AsSpan(bvhNodes);
         ReadOnlySpan<byte> bvhBytes = MemoryMarshal.Cast<ClusterBVHNode, byte>(bvhSpan);
@@ -287,7 +295,7 @@ public static partial class ClusterBuilder
         MeshBoundsInfo bounds,
         string vertexEncoding,
         long bvhOffset,
-        uint[] lowestDetailPageIndices)
+        uint[] lowestDetailPageIndices, MeshClusterGroup[] groups)
     {
         using var geometry = new MeshBlock
         {
@@ -304,6 +312,7 @@ public static partial class ClusterBuilder
         {
             VertexEncoding = vertexEncoding,
             LowestDetailPageIndices = lowestDetailPageIndices,
+            ClusterGroups = groups,
         };
         clusters.SetPayload(payload, checked((ulong)bvhOffset));
         var meshAsset = new MeshAsset { Name = name };
@@ -398,7 +407,7 @@ public static partial class ClusterBuilder
         public MeshPageWriter(
             Stream stream,
             byte[] pageBuffer,
-            PreparedRawMesh mesh,
+            ClusterMeshData mesh,
             MeshletBuild meshletBuild,
             IClusterVertexEncoder vertexEncoder)
         {
@@ -412,7 +421,7 @@ public static partial class ClusterBuilder
 
         private Stream Stream { get; }
         private byte[] PageBuffer { get; }
-        private PreparedRawMesh MeshInput { get; }
+        private ClusterMeshData MeshInput { get; }
         private MeshletBuild MeshletBuild { get; }
         private IClusterVertexEncoder VertexEncoder { get; }
         private ulong VertexEncodingHash { get; }
@@ -420,10 +429,14 @@ public static partial class ClusterBuilder
         private List<PackedCluster> CurrentClusters { get; } = [];
         private List<byte> CurrentVertexBlobs { get; } = [];
         private List<byte> CurrentIndices { get; } = [];
+        private List<uint> CurrentMaterialData { get; } = [];
         private Dictionary<uint, ushort> UsedMap { get; } = new(MaxVerticesPerMeshlet);
         private List<uint> LocalVertices { get; } = new(MaxVerticesPerMeshlet);
         private List<byte> LocalIndices { get; } = new(MaxTrianglesPerMeshlet * 3);
         private int PageCount { get; set; }
+        private bool CurrentPageIsRoot { get; set; } = true;
+        private int CurrentPageSize => CurrentPageIsRoot ? MeshPageHeader.RootPageSize : MeshPageHeader.MaxPageSize;
+        private int CurrentClusterLimit => CurrentPageIsRoot ? 64 : 256;
         private int CurrentVertexCount { get; set; }
         private int CurrentBytes { get; set; } = PageHeaderSize;
 
@@ -451,10 +464,19 @@ public static partial class ClusterBuilder
             ReadOnlySpan<uint> meshletIndices = globalIndices.Slice(meshlet.IndicesOffset, meshlet.IndicesCount);
             EncodedCluster encoded = EncodeLocalCluster(meshletIndices);
             ValidateVertReuseBatches(meshlet, encoded.VertexCount);
-            EnsurePageSpace(ClusterPayloadSize(encoded));
+            EnsurePageSpace(ClusterPayloadSize(encoded, meshlet));
             PageStarts starts = CurrentPageStarts();
-            AppendLocalPayload(encoded);
-            CurrentClusters.Add(CreatePackedCluster(meshlet, encoded, starts));
+            uint materialOffset = uint.MaxValue;
+            uint batchOffset = uint.MaxValue;
+            if (meshlet.MaterialRanges.Length > 3)
+            {
+                materialOffset = checked((uint)CurrentMaterialData.Count * sizeof(uint));
+                CurrentMaterialData.AddRange(meshlet.MaterialRanges);
+                batchOffset = checked((uint)CurrentMaterialData.Count * sizeof(uint));
+                CurrentMaterialData.AddRange(meshlet.VertReuseBatchWords);
+            }
+            AppendLocalPayload(encoded, meshlet);
+            CurrentClusters.Add(CreatePackedCluster(meshlet, encoded, starts, materialOffset, batchOffset));
             ClusterInfos.Add(CreateClusterInfo(meshlet, encoded));
         }
 
@@ -514,15 +536,7 @@ public static partial class ClusterBuilder
         {
             int triangleCount = LocalIndices.Count / 3;
             Span<byte> indices = CollectionsMarshal.AsSpan(LocalIndices);
-            Span<int> rangeEnds = stackalloc int[3]
-            {
-                meshlet.Range0End,
-                meshlet.Range1End,
-                triangleCount,
-            };
-            int rangeCount = meshlet.Range0End == triangleCount
-                ? 1
-                : (meshlet.Range1End == triangleCount ? 2 : 3);
+            int rangeCount = meshlet.MaterialRanges.Length;
 
             int triangleStart = 0;
             int flatBatchIndex = 0;
@@ -532,12 +546,13 @@ public static partial class ClusterBuilder
                 if (batchCount <= 0)
                     throw new InvalidDataException("A material range has no vertex-reuse batch.");
 
-                int rangeEnd = rangeEnds[rangeIndex];
+                uint range = meshlet.MaterialRanges[rangeIndex];
+                int rangeEnd = checked((int)((range & 0xFFu) + ((range >> 8) & 0xFFu)));
                 for (int batchIndex = 0; batchIndex < batchCount; batchIndex++)
                 {
                     int batchTriangleCount = checked((int)ReadVertReuseBits(
                         meshlet,
-                        12 + flatBatchIndex * 5,
+                        Math.Max(rangeCount, 3) * 4 + flatBatchIndex * 5,
                         5)) + 1;
                     int batchEnd = checked(triangleStart + batchTriangleCount);
                     if (batchTriangleCount > 32 || batchEnd > rangeEnd)
@@ -570,7 +585,8 @@ public static partial class ClusterBuilder
             int bitOffset,
             int bitCount)
         {
-            if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 || bitOffset + bitCount > 128)
+            if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 ||
+                bitOffset + bitCount > meshlet.VertReuseBatchWords.Length * 32)
                 throw new InvalidDataException("Vertex-reuse batch metadata exceeds its inline encoding.");
 
             int wordIndex = bitOffset >> 5;
@@ -584,14 +600,7 @@ public static partial class ClusterBuilder
         }
 
         private static uint VertReuseWord(in BuilderMeshlet meshlet, int index)
-            => index switch
-            {
-                0 => meshlet.VertReuseBatchWord0,
-                1 => meshlet.VertReuseBatchWord1,
-                2 => meshlet.VertReuseBatchWord2,
-                3 => meshlet.VertReuseBatchWord3,
-                _ => throw new ArgumentOutOfRangeException(nameof(index)),
-            };
+            => meshlet.VertReuseBatchWords[index];
 
         private static void ValidateVertReuseBatch(
             Span<byte> indices,
@@ -625,31 +634,33 @@ public static partial class ClusterBuilder
                     $"(max 32), cluster triangles={triangleCount}, vertices={vertexCount}.");
             }
         }
-        private int ClusterPayloadSize(EncodedCluster encoded)
+        private int ClusterPayloadSize(EncodedCluster encoded, BuilderMeshlet meshlet)
         {
-            return checked(PackedCluster.SizeInBytes + encoded.Blob.Length + LocalIndices.Count);
+            int materialBytes = meshlet.MaterialRanges.Length > 3
+                ? checked((meshlet.MaterialRanges.Length + meshlet.VertReuseBatchWords.Length) * sizeof(uint) + 3)
+                : 0;
+            return checked(PackedCluster.SizeInBytes + encoded.Blob.Length + LocalIndices.Count + materialBytes);
         }
 
         private void EnsurePageSpace(int bytesToAdd)
         {
-            if (CurrentBytes + bytesToAdd > PageSize ||
-                CurrentIndices.Count > MaxEncodedTriangleStart ||
-                CurrentClusters.Count >= 0x1000)
+            if (CurrentBytes + bytesToAdd > CurrentPageSize ||
+                CurrentClusters.Count >= CurrentClusterLimit)
             {
                 FlushPage();
             }
-            if (CurrentBytes + bytesToAdd > PageSize)
+            if (CurrentBytes + bytesToAdd > CurrentPageSize)
             {
                 throw new InvalidDataException(
                     $"A single encoded cluster requires {bytesToAdd} payload bytes, exceeding the " +
-                    $"{PageSize - PageHeaderSize}-byte page payload limit.");
+                    $"{CurrentPageSize - PageHeaderSize}-byte page payload limit.");
             }
         }
 
         private PageStarts CurrentPageStarts()
         {
             uint vertexBlobStart = checked((uint)CurrentVertexBlobs.Count);
-            uint triangleStart = (uint)CurrentIndices.Count;
+            uint triangleStart = (uint)CurrentIndices.Count / 3;
             ValidatePageStarts(triangleStart);
             return new PageStarts(vertexBlobStart, triangleStart);
         }
@@ -662,16 +673,16 @@ public static partial class ClusterBuilder
                     $"Cluster page triangle start exceeds encoded range: {triangleStart} > {ushort.MaxValue}");
             }
 
-            if (CurrentClusters.Count > 0xFFF)
+            if (CurrentClusters.Count > 255)
             {
                 throw new InvalidOperationException(
-                    $"Cluster page cluster start exceeds BVH leaf encoding range: {CurrentClusters.Count} > 4095");
+                    $"Cluster page cluster start exceeds BVH leaf encoding range: {CurrentClusters.Count} > 255");
             }
         }
 
-        private void AppendLocalPayload(EncodedCluster encoded)
+        private void AppendLocalPayload(EncodedCluster encoded, BuilderMeshlet meshlet)
         {
-            int payloadSize = ClusterPayloadSize(encoded);
+            int payloadSize = ClusterPayloadSize(encoded, meshlet);
             CurrentVertexBlobs.AddRange(encoded.Blob);
             CurrentIndices.AddRange(LocalIndices);
             CurrentVertexCount = checked(CurrentVertexCount + encoded.VertexCount);
@@ -681,7 +692,7 @@ public static partial class ClusterBuilder
         private PackedCluster CreatePackedCluster(
             BuilderMeshlet meshlet,
             EncodedCluster encoded,
-            PageStarts starts)
+            PageStarts starts, uint materialOffset, uint batchOffset)
         {
             return new PackedCluster
             {
@@ -692,22 +703,48 @@ public static partial class ClusterBuilder
                 LODCenter = meshlet.SelfLodCenter,
                 LODRadius = meshlet.SelfLodRadius,
                 LODErrorHalf = BitConverter.HalfToUInt16Bits(
-                    (Half)EncodeFiniteLodError(meshlet.Error)),
+                    (Half)meshlet.Error),
                 TriangleStart = (ushort)starts.Triangle,
-                GroupId = (short)meshlet.GroupId,
-                PackedCounts = PackedCounts(
-                    encoded.VertexCount,
-                    meshlet.Level),
+                MaximumEdgeLengthHalf = EncodeMaximumTriangleEdgeLength(),
+                PackedCounts = PackedCounts(encoded.VertexCount, meshlet.Level) |
+                    ((meshlet.Level == 0 ? PackedCluster.FullLeaf : PackedCluster.StreamingLeaf) << 24),
                 PackedMaterials = PackedMaterials(meshlet),
-                PackedRanges = PackedRanges(meshlet),
-                MaterialTableOffset = 0xFFFFFFFF,
-                VertReuseBatchWord0 = meshlet.VertReuseBatchWord0,
-                VertReuseBatchWord1 = meshlet.VertReuseBatchWord1,
-                VertReuseBatchWord2 = meshlet.VertReuseBatchWord2,
-                VertReuseBatchWord3 = meshlet.VertReuseBatchWord3,
+                PackedRanges = PackedRanges(meshlet) | (materialOffset != uint.MaxValue
+                    ? checked((uint)meshlet.MaterialRanges.Length << 16) : 0u),
+                MaterialTableOffset = materialOffset,
+                VertReuseBatchWord0 = materialOffset == uint.MaxValue ? meshlet.VertReuseBatchWords[0] : batchOffset,
+                VertReuseBatchWord1 = materialOffset == uint.MaxValue ? meshlet.VertReuseBatchWords[1] : checked((uint)meshlet.MaterialRanges.Length),
+                VertReuseBatchWord2 = materialOffset == uint.MaxValue ? meshlet.VertReuseBatchWords[2] : checked((uint)meshlet.VertReuseBatchWords.Length),
+                VertReuseBatchWord3 = materialOffset == uint.MaxValue ? meshlet.VertReuseBatchWords[3] : 0u,
                 BoundMin = encoded.BoundMin,
                 BoundMax = encoded.BoundMax,
             };
+        }
+
+        private ushort EncodeMaximumTriangleEdgeLength()
+        {
+            double maximumSquared = 0.0;
+            for (int index = 0; index < LocalIndices.Count; index += 3)
+            {
+                Vector3 first = MeshInput.Positions[LocalVertices[LocalIndices[index]]];
+                Vector3 second = MeshInput.Positions[LocalVertices[LocalIndices[index + 1]]];
+                Vector3 third = MeshInput.Positions[LocalVertices[LocalIndices[index + 2]]];
+                maximumSquared = Math.Max(maximumSquared, CalculateSquaredEdgeLength(first, second));
+                maximumSquared = Math.Max(maximumSquared, CalculateSquaredEdgeLength(second, third));
+                maximumSquared = Math.Max(maximumSquared, CalculateSquaredEdgeLength(third, first));
+            }
+            double maximum = Math.Sqrt(maximumSquared);
+            Half encoded = (Half)maximum;
+            if ((double)encoded < maximum) encoded = Half.BitIncrement(encoded);
+            return BitConverter.HalfToUInt16Bits(encoded);
+        }
+
+        private static double CalculateSquaredEdgeLength(Vector3 first, Vector3 second)
+        {
+            double x = (double)first.X - second.X;
+            double y = (double)first.Y - second.Y;
+            double z = (double)first.Z - second.Z;
+            return x * x + y * y + z * z;
         }
     }
 
@@ -721,10 +758,21 @@ public static partial class ClusterBuilder
                 | ((uint)(byte)level << 16);
 
         private static uint PackedMaterials(BuilderMeshlet meshlet)
-            => (uint)meshlet.Mat0 | ((uint)meshlet.Mat1 << 8) | ((uint)meshlet.Mat2 << 16);
+        {
+            uint value = 0;
+            for (int range = 0; range < Math.Min(meshlet.MaterialRanges.Length, 3); range++)
+                value |= ((meshlet.MaterialRanges[range] >> 16) & 0xFFu) << (range * 8);
+            return value;
+        }
 
         private static uint PackedRanges(BuilderMeshlet meshlet)
-            => (uint)meshlet.Range0End | ((uint)meshlet.Range1End << 8);
+        {
+            uint first = meshlet.MaterialRanges[0];
+            uint second = meshlet.MaterialRanges[Math.Min(1, meshlet.MaterialRanges.Length - 1)];
+            uint firstEnd = (first & 0xFFu) + ((first >> 8) & 0xFFu);
+            uint secondEnd = (second & 0xFFu) + ((second >> 8) & 0xFFu);
+            return firstEnd | (secondEnd << 8);
+        }
 
         private ClusterInfo CreateClusterInfo(BuilderMeshlet meshlet, EncodedCluster encoded)
         {
@@ -733,26 +781,14 @@ public static partial class ClusterBuilder
                 BoundMin = encoded.BoundMin,
                 BoundMax = encoded.BoundMax,
                 LODSphere = new Vector4(meshlet.LodCenter.X, meshlet.LodCenter.Y, meshlet.LodCenter.Z, meshlet.LodRadius),
-                LODError = EncodeFiniteLodError(meshlet.ParentError),
+                LODError = meshlet.ParentError,
+                OwnError = meshlet.Error,
+                Level = meshlet.Level,
                 PageIndex = checked((uint)PageCount),
                 ClusterStart = (uint)(CurrentClusters.Count - 1),
                 GroupId = meshlet.Level == 0 ? -1 : meshlet.GroupId,
                 ParentGroupId = meshlet.ParentGroupId,
             };
-        }
-
-        private static float EncodeFiniteLodError(float value)
-        {
-            if (float.IsNaN(value) || value < 0.0f)
-                throw new InvalidDataException($"Cluster LOD error {value} is invalid.");
-
-            // The hierarchy uses float.MaxValue to mark a terminal/root LOD. Both the page
-            // cluster ABI and the BVH need a finite value, while the largest finite half already
-            // keeps that terminal LOD selected throughout the supported projection range.
-            // The BVH rejects the finer group with the same error that the
-            // packed coarse clusters accept. Different rounding opens a gap
-            // or draws both groups at the LOD transition.
-            return (float)(Half)MathF.Min(value, (float)Half.MaxValue);
         }
 
         private void FlushPage()
@@ -770,6 +806,7 @@ public static partial class ClusterBuilder
 
             WritePage(offsets);
             PageCount++;
+            CurrentPageIsRoot = false;
             ClearCurrentPage();
         }
 
@@ -782,6 +819,9 @@ public static partial class ClusterBuilder
             uint indicesOffset = checked(vertexBlobsOffset + (uint)vertexBlobsSize);
             int indicesSize = CurrentIndices.Count;
             uint extensionDataOffset = checked(indicesOffset + (uint)indicesSize);
+            if (CurrentMaterialData.Count != 0)
+                extensionDataOffset = checked((extensionDataOffset + 3u) & ~3u);
+            int materialSize = checked(CurrentMaterialData.Count * sizeof(uint));
             return new PageOffsets(
                 clustersOffset,
                 clustersSize,
@@ -790,8 +830,8 @@ public static partial class ClusterBuilder
                 indicesOffset,
                 indicesSize,
                 extensionDataOffset,
-                0,
-                checked((int)extensionDataOffset));
+                materialSize,
+                checked((int)extensionDataOffset + materialSize));
         }
 
         private void WritePage(PageOffsets offsets)
@@ -816,7 +856,7 @@ public static partial class ClusterBuilder
             header.ExtensionDataOffset = offsets.ExtensionDataOffset;
             header.VertexEncodingHash = VertexEncodingHash;
             header.ExtensionDataSize = checked((uint)offsets.ExtensionDataSize);
-            header.Reserved = 0;
+            header.Flags = CurrentPageIsRoot ? MeshPageHeader.RootPage : 0;
         }
     }
 
@@ -826,12 +866,22 @@ public static partial class ClusterBuilder
 
         private void WritePagePayload(Span<byte> pageSpan, PageOffsets offsets)
         {
+            for (int index = 0; index < CurrentClusters.Count; index++)
+            {
+                PackedCluster cluster = CurrentClusters[index];
+                if (cluster.MaterialTableOffset == uint.MaxValue) continue;
+                cluster.MaterialTableOffset += offsets.ExtensionDataOffset;
+                cluster.VertReuseBatchWord0 += offsets.ExtensionDataOffset;
+                CurrentClusters[index] = cluster;
+            }
             MemoryMarshal.Cast<PackedCluster, byte>(CollectionsMarshal.AsSpan(CurrentClusters))
                 .CopyTo(pageSpan.Slice((int)offsets.ClustersOffset, offsets.ClustersSize));
             CollectionsMarshal.AsSpan(CurrentVertexBlobs)
                 .CopyTo(pageSpan.Slice((int)offsets.VertexBlobsOffset, offsets.VertexBlobsSize));
             CollectionsMarshal.AsSpan(CurrentIndices)
                 .CopyTo(pageSpan.Slice((int)offsets.IndicesOffset, offsets.IndicesSize));
+            MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(CurrentMaterialData))
+                .CopyTo(pageSpan.Slice((int)offsets.ExtensionDataOffset, offsets.ExtensionDataSize));
         }
 
         private void ClearCurrentPage()
@@ -839,17 +889,38 @@ public static partial class ClusterBuilder
             CurrentClusters.Clear();
             CurrentVertexBlobs.Clear();
             CurrentIndices.Clear();
+            CurrentMaterialData.Clear();
             CurrentVertexCount = 0;
             CurrentBytes = PageHeaderSize;
         }
     }
 
-    private readonly record struct PreparedRawMesh(
-        Vector3[] Positions,
-        uint[] Indices,
-        int VertexCount,
-        int IndexCount,
-        List<RawAttribute> Attributes);
+    private sealed class ClusterMeshData(Vector3[] positions, uint[] indices, int vertexCount,
+        int indexCount, List<RawAttribute> attributes)
+    {
+        internal Vector3[] Positions = positions;
+        internal uint[] Indices = indices;
+        internal int VertexCount = vertexCount;
+        internal readonly int IndexCount = indexCount;
+        internal readonly List<RawAttribute> Attributes = attributes;
+
+        internal uint CopyVertex(uint source)
+        {
+            uint index = checked((uint)VertexCount);
+            int required = checked(VertexCount + 1);
+            if (required > Positions.Length) Array.Resize(ref Positions, Math.Max(required, Positions.Length * 2));
+            Positions[index] = Positions[source];
+            foreach (RawAttribute data in Attributes)
+            {
+                int length = checked(required * data.Dimension);
+                if (length > data.Data.Length) Array.Resize(ref data.Data, Math.Max(length, data.Data.Length * 2));
+                data.Data.AsSpan((int)source * data.Dimension, data.Dimension).CopyTo(data.Data.AsSpan((int)index * data.Dimension));
+            }
+            VertexCount = required;
+            return index;
+        }
+
+    }
 
     private readonly record struct MeshletBuild(
         List<BuilderMeshlet> Meshlets,

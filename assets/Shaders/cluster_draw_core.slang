@@ -19,7 +19,7 @@ struct DrawUniforms
 struct DrawDispatchUniforms
 {
     uint DrawArgsByteOffset;
-    uint Pad0;
+    uint EarlyDepthEnabled;
     uint Pad1;
     uint Pad2;
 };
@@ -30,7 +30,7 @@ StructuredBuffer<ClusterViewUniforms> HardwareRasterPolicyViews;
 ConstantBuffer<DrawDispatchUniforms> HardwareRasterDispatchUniformData;
 
 StructuredBuffer<uint> HardwareRasterBinnedClusterIndexBuffer;
-StructuredBuffer<DrawRequest> HardwareRasterVisibleClusters;
+StructuredBuffer<VisibleCluster> HardwareRasterVisibleClusters;
 ByteAddressBuffer HardwareRasterVisibleClusterMeta;
 groupshared float4 HardwareRasterClipPositions[64];
 
@@ -42,16 +42,15 @@ struct PSVisBufferOutput
 
 VisibilityPixelResult EvaluateHardwareRasterPixel<TVertex, TVisibility>(
     uniform TVisibility visibility,
-    ClusterRasterPixelInput<TVisibility.Varying> input)
+    ClusterRasterPixelInput<TVisibility.Varying> input,
+    ClusterViewUniforms view,
+    uint encodedTargetDepth)
     where TVisibility : IVisibilityEvaluate<TVertex>
 {
-    ClusterViewUniforms view = LoadClusterView(
-        HardwareRasterViews,
-        HardwareRasterPolicyViews,
-        input.ViewIndex);
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
-    pixelInput.Depth = input.Pos.z;
+    pixelInput.Depth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
+    pixelInput.EncodedTargetDepth = encodedTargetDepth;
     pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
     pixelInput.TriangleID = input.TriangleID;
     pixelInput.ViewIndex = input.ViewIndex;
@@ -106,7 +105,7 @@ bool DecodeDrawVertex(
     uint binEntry = HardwareRasterBinnedClusterIndexBuffer[binnedIndex];
     visibleClusterIndex = RasterWorkVisibleIndex(binEntry);
 
-    DrawRequest req = HardwareRasterVisibleClusters[visibleClusterIndex];
+    DrawRequest req = VisibleClusterRequest(HardwareRasterVisibleClusters[visibleClusterIndex]);
     viewIndex = DrawRequestViewIndex(req);
     uint pageOffset = req.PageOffset;
     clusterID = DrawRequestClusterID(req);
@@ -217,9 +216,12 @@ ClusterRasterPixelInput<TVisibility.Varying> BuildVisBufferVertex<TVE, TVisibili
         HardwareRasterViews,
         HardwareRasterPolicyViews,
         viewIndex);
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, realInstanceID, view);
+    float3 position = evaluator.getPosition(vertex);
     output.Pos = mul(
-        float4(evaluator.getPosition(vertex), 1.0),
+        float4(ClusterPositionForView(position, view), 1.0),
         view.ViewProj);
+    output.ClipDepth = CalculateClusterRasterDepthInput(position, output.Pos, view);
     output.Pos = ClusterHardwareRasterPosition(output.Pos, visibleClusterIndex, view,
         float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight));
     VisibilityVertexInput visibilityInput;
@@ -267,7 +269,7 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         uint batch = HardwareRasterBinnedClusterIndexBuffer[args.StartInstance + batchIndex];
         visible = RasterWorkVisibleIndex(batch);
         fullRange = TriangleCapacity > 32 && RasterWorkIsRange(batch >> 22u);
-        request = HardwareRasterVisibleClusters[visible];
+        request = VisibleClusterRequest(HardwareRasterVisibleClusters[visible]);
         DecodeRasterWorkRange(PageHeap, request, batch, first, end);
         LoadClusterInfo(PageHeap, request.PageOffset, DrawRequestClusterID(request),
             address, size, triangleStart, counts);
@@ -285,6 +287,7 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
     if (!validBatch) return;
     uint viewIndex = DrawRequestViewIndex(request);
     ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, viewIndex);
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, request.InstanceID, view);
     RenderInstanceTransform transform = GetCurrentInstanceTransform(request.InstanceID);
     float2 targetWindowSize = 0.0.xx;
     if (view.TargetPolicy != 0u)
@@ -301,7 +304,9 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
             request.InstanceID, transform);
         TVE.Vertex value = evaluator.evaluate(context);
         ClusterRasterVertexData<TVisibility.Varying> output = {};
-        output.Pos = mul(float4(evaluator.getPosition(value), 1.0), view.ViewProj);
+        float3 position = evaluator.getPosition(value);
+        output.Pos = mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
+        output.ClipDepth = CalculateClusterRasterDepthInput(position, output.Pos, view);
         output.Pos = ClusterHardwareRasterPosition(output.Pos, visible, view,
             float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight));
         VisibilityVertexInput visibilityInput;
@@ -310,6 +315,8 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         visibilityInput.ViewIndex = viewIndex;
         visibilityInput.LocalVertexIndex = localVertex;
         output.Varying = visibility.makeVarying(value, visibilityInput);
+        output.VisibleClusterIndex = visible;
+        output.ViewIndex = viewIndex;
         uint outputVertex = fullRange ? localVertex : ClusterMeshVertexRank(used, localVertex);
         vertices[outputVertex] = output;
         if (view.TargetPolicy != 0u) HardwareRasterClipPositions[outputVertex] = output.Pos;
@@ -341,19 +348,16 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
                 // cluster can address a smaller rectangle of requested pages.
                 if (any(maximumPixel < 0.0.xx) || any(minimumPixel > targetWindowSize) ||
                     !ClusterRasterTargetCachedBoundsAccepts(
-                        minimumPixel, maximumPixel, view.TargetViewIndex, targetWindowSize))
+                        minimumPixel, maximumPixel, view.TargetViewIndex, targetWindowSize,
+                        RasterOutputDepthCacheClass(visible)))
                     outputIndices = 0u.xxx;
             }
         }
         indices[triangleIndex] = outputIndices;
         ClusterMeshPrimitive output;
-        output.VisibleClusterIndex = visible;
         output.TriangleID = first + triangleIndex;
-        output.ViewIndex = viewIndex;
         output.RenderTargetIndex = view.TargetPolicy == 0u ? view.TargetViewIndex : 0u;
-        primitives[triangleIndex].VisibleClusterIndex = output.VisibleClusterIndex;
         primitives[triangleIndex].TriangleID = output.TriangleID;
-        primitives[triangleIndex].ViewIndex = output.ViewIndex;
         primitives[triangleIndex].RenderTargetIndex = output.RenderTargetIndex;
     }
 }
@@ -396,10 +400,11 @@ ClusterRasterPixelInput<TVarying> MakeMeshPixelInput<TVarying>(
 {
     ClusterRasterPixelInput<TVarying> result;
     result.Pos = vertex.Pos;
+    result.ClipDepth = vertex.ClipDepth;
     result.Varying = vertex.Varying;
-    result.VisibleClusterIndex = primitive.VisibleClusterIndex;
+    result.VisibleClusterIndex = vertex.VisibleClusterIndex;
     result.TriangleID = primitive.TriangleID;
-    result.ViewIndex = primitive.ViewIndex;
+    result.ViewIndex = vertex.ViewIndex;
     result.RenderTargetIndex = primitive.RenderTargetIndex;
     return result;
 }

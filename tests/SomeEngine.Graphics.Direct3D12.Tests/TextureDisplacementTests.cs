@@ -76,11 +76,13 @@ public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler)
                     all(floor(d.uv(t,middle-dv)*8.0-0.5)==cell);
                 Results[id.x*2u] = float4(violation,edgeViolation,boundsViolation,error.Interior);
                 ClusterViewUniforms view = {};
+                view.GeometryLodScale = 1.0;
                 view.ScreenWidth = 800; view.ScreenHeight = 600;
                 bool orthographic = test % 3u == 0u;
                 view.ViewProj = orthographic
                     ? float4x4(0.3,0,0,0, 0,0.4,0,0, 0,0,0.1,0, 0.2,-0.3,0,1)
                     : float4x4(1.2,0,0,0.2, 0,0.8,0,0.3, 0.4,-0.3,-1,-1, 0.2,-0.3,-0.1,0);
+                view.GeometryViewProj = view.ViewProj;
                 float3 center = float3(-1.0+float(test)*0.05,0.35,-5.0-float(depth));
                 float projectedBound = ClusterSphereError(center,0.7,0.15,view);
                 float projectionViolation = -1e30;

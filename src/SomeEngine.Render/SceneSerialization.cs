@@ -13,13 +13,14 @@ public static class SceneSerialization
 {
     public static SerializationRegistry CreateRegistry() => new SerializationRegistry()
         .Register<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"))
+        .Register<WorldOrigin, WorldOriginCodec>(Key(nameof(WorldOrigin), "x:f64;y:f64;z:f64"))
         .RegisterHierarchyDomain<DefaultHierarchyDomain>()
-        .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f"))
+        .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f;depthCache:u32;firstPersonKind:u32;player:u32;playerVisibility:u32"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
-        .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f"))
-        .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32"))
-        .Register<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32"))
-        .Register<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32"));
+        .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f;dofPresent:u32;focus:f;infinityRadius:f;minRadius:f;maxRadius:f;depthBlurRadius:f;depthBlurExponent:f;shadowBiasStrength:f;player:u32;firstPersonPresent:u32;firstPersonFov:f;firstPersonScale:f"))
+        .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32;sourceRadius:f;sourceAnglePresent:u32;sourceAngle:f"))
+        .Register<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32;sourceRadius:f;sourceAnglePresent:u32;sourceAngle:f"))
+        .Register<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32;sourceRadius:f;sourceAnglePresent:u32;sourceAngle:f"));
 
     private static SerializationTypeKey Key(string name, string fields)
         => new(BinaryTypeId.FromLogicalName("SomeEngine.Scene." + name), "SomeEngine.Scene." + name, BinaryFieldKey.FromName(fields));
@@ -28,6 +29,32 @@ public static class SceneSerialization
         writer.WriteSingle(value.X); writer.WriteSingle(value.Y); writer.WriteSingle(value.Z);
     }
     private static Vector3 ReadVector(ref DataReader reader) => new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+
+    private static void WriteShadowSettings(ref DataWriter writer, in LightShadowSettings value)
+    {
+        writer.WriteSingle(value.ResolutionLodBias);
+        writer.WriteUInt32((uint)value.Mobility);
+        writer.WriteSingle(value.SourceRadius);
+        writer.WriteUInt32(value.SourceAngleDegrees.HasValue ? 1u : 0u);
+        if (value.SourceAngleDegrees is { } angle) writer.WriteSingle(angle);
+    }
+
+    private static LightShadowSettings ReadShadowSettings(ref DataReader reader)
+    {
+        float bias = reader.ReadSingle();
+        var mobility = (LightMobility)reader.ReadUInt32();
+        float radius = reader.ReadSingle();
+        float? angle = reader.ReadUInt32() != 0u ? reader.ReadSingle() : null;
+        return new(bias, mobility, radius, angle);
+    }
+
+    private struct WorldOriginCodec : ICanonicalComponentCodec<WorldOrigin>
+    {
+        public void Write(ref DataWriter writer, in WorldOrigin value)
+        { writer.WriteDouble(value.X); writer.WriteDouble(value.Y); writer.WriteDouble(value.Z); }
+        public void Read(ref DataReader reader, out WorldOrigin value) =>
+            value = new(reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble());
+    }
 
     private struct TransformCodec : ICanonicalComponentCodec<WorldTransform>
     {
@@ -48,9 +75,19 @@ public static class SceneSerialization
         public void Write(ref DataWriter writer, in MeshSource value)
         {
             writer.WriteExternalReference(new(value.Mesh.Value)); writer.WriteSingle(value.BoundsExpansion);
+            writer.WriteUInt32((uint)value.DepthCacheClass);
+            writer.WriteUInt32((uint)value.FirstPerson.Kind); writer.WriteUInt32(value.FirstPerson.PlayerId);
+            writer.WriteUInt32((uint)value.FirstPerson.PlayerVisibility);
         }
         public void Read(ref DataReader reader, out MeshSource value)
-            => value = new() { Mesh = new(reader.ReadExternalReference().Value), BoundsExpansion = reader.ReadSingle() };
+            => value = new()
+            {
+                Mesh = new(reader.ReadExternalReference().Value),
+                BoundsExpansion = reader.ReadSingle(),
+                DepthCacheClass = (DepthCacheClass)reader.ReadUInt32(),
+                FirstPerson = new((FirstPersonMeshKind)reader.ReadUInt32(), reader.ReadUInt32(),
+                    (MeshPlayerVisibility)reader.ReadUInt32()),
+            };
     }
     private struct MotionCodec : ICanonicalComponentCodec<MeshMotion>
     {
@@ -63,11 +100,30 @@ public static class SceneSerialization
         {
             WriteVector(ref writer, value.Position); WriteVector(ref writer, value.Target); WriteVector(ref writer, value.Up);
             writer.WriteSingle(value.VerticalFieldOfView); writer.WriteSingle(value.NearPlane); writer.WriteSingle(value.FarPlane);
+            writer.WriteUInt32(value.DepthOfField.HasValue ? 1u : 0u);
+            if (value.DepthOfField is { } depthOfField)
+            {
+                writer.WriteSingle(depthOfField.FocusDistance);
+                writer.WriteSingle(depthOfField.InfinityCircleRadiusPixels);
+                writer.WriteSingle(depthOfField.MinCircleRadiusPixels);
+                writer.WriteSingle(depthOfField.MaxCircleRadiusPixels);
+                writer.WriteSingle(depthOfField.DepthBlurRadiusPixels);
+                writer.WriteSingle(depthOfField.DepthBlurExponent);
+                writer.WriteSingle(depthOfField.ShadowResolutionBiasStrength);
+            }
+            writer.WriteUInt32(value.PlayerId);
+            writer.WriteUInt32(value.FirstPerson.HasValue ? 1u : 0u);
+            if (value.FirstPerson is { } firstPerson)
+            { writer.WriteSingle(firstPerson.FieldOfViewCorrection); writer.WriteSingle(firstPerson.Scale); }
         }
         public void Read(ref DataReader reader, out SceneCamera value) => value = new()
         {
             Position = ReadVector(ref reader), Target = ReadVector(ref reader), Up = ReadVector(ref reader),
             VerticalFieldOfView = reader.ReadSingle(), NearPlane = reader.ReadSingle(), FarPlane = reader.ReadSingle(),
+            DepthOfField = reader.ReadUInt32() != 0u ? new CameraDepthOfField(reader.ReadSingle(), reader.ReadSingle(),
+                reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()) : null,
+            PlayerId = reader.ReadUInt32(),
+            FirstPerson = reader.ReadUInt32() != 0u ? new FirstPersonCamera(reader.ReadSingle(), reader.ReadSingle()) : null,
         };
     }
     private struct DirectionalCodec : ICanonicalComponentCodec<DirectionalLight>
@@ -78,9 +134,10 @@ public static class SceneSerialization
             WriteVector(ref writer, value.Color);
             writer.WriteSingle(value.Intensity);
             writer.WriteUInt32(value.LayerMask);
+            WriteShadowSettings(ref writer, value.ShadowSettings);
         }
         public void Read(ref DataReader reader, out DirectionalLight value) => value = new(
-            ReadVector(ref reader), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32());
+            ReadVector(ref reader), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32(), ReadShadowSettings(ref reader));
     }
     private struct PointCodec : ICanonicalComponentCodec<PointLight>
     {
@@ -91,9 +148,10 @@ public static class SceneSerialization
             WriteVector(ref writer, value.Color);
             writer.WriteSingle(value.Intensity);
             writer.WriteUInt32(value.LayerMask);
+            WriteShadowSettings(ref writer, value.ShadowSettings);
         }
         public void Read(ref DataReader reader, out PointLight value) => value = new(
-            ReadVector(ref reader), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32());
+            ReadVector(ref reader), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32(), ReadShadowSettings(ref reader));
     }
     private struct SpotCodec : ICanonicalComponentCodec<SpotLight>
     {
@@ -107,8 +165,9 @@ public static class SceneSerialization
             WriteVector(ref writer, value.Color);
             writer.WriteSingle(value.Intensity);
             writer.WriteUInt32(value.LayerMask);
+            WriteShadowSettings(ref writer, value.ShadowSettings);
         }
         public void Read(ref DataReader reader, out SpotLight value) => value = new(
-            ReadVector(ref reader), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32());
+            ReadVector(ref reader), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadSingle(), ReadVector(ref reader), reader.ReadSingle(), reader.ReadUInt32(), ReadShadowSettings(ref reader));
     }
 }

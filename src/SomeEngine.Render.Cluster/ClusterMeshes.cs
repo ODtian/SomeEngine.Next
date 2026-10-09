@@ -40,16 +40,28 @@ internal sealed record ClusterMeshPublication(
     uint[] ResidentPages,
     PageRetirement[] Retirements,
     ClusterStagedUpload[] PageUploads,
-    BufferRange[] ResidentPageRanges);
+    BufferRange[] ResidentPageRanges,
+    ClusterLeafFlagFixup[] LeafFlagFixups,
+    ClusterLodChange[] LodChanges);
 
 internal sealed partial class ClusterMeshes : IDisposable
 {
+    private uint _maximumRasterBatchesPerCluster = 9;
+    internal uint MaximumRasterBatchesPerCluster
+    {
+        get { lock (_gate) return _maximumRasterBatchesPerCluster; }
+    }
+    internal uint GeometryPageCount
+    {
+        get { lock (_gate) return _pages.Count; }
+    }
     private static long s_nextEpochId;
 
     private readonly PageHeap _heap;
     private readonly object _gate = new();
     private readonly ClusterBvh _bvh;
     private readonly MeshPages _pages = new();
+    private readonly ClusterPageFixups _fixups = new();
     private readonly ResidencyBudgetLedger _residency;
     private readonly IClusterPageStorage _pageStorage;
     private readonly Dictionary<uint, StagedPageLoad> _stagingLoads = new();
@@ -192,7 +204,26 @@ internal sealed partial class ClusterMeshes : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            _bvh.CollectPageDependencies(pages);
+            _fixups.ExpandDependencies(pages);
+        }
+    }
+
+    internal void CollectPageDependencies(Dictionary<uint, uint> priorities)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            _fixups.ExpandDependencies(priorities);
+        }
+    }
+
+    internal (ulong Bytes, ulong Capacity) CalculateStreamingDemand(IEnumerable<uint> pages)
+    {
+        lock (_gate)
+        {
+            ulong bytes = 0;
+            foreach (uint page in pages) bytes += _pages.CalculateStreamingPageBytes(page);
+            return (bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity));
         }
     }
 
@@ -211,18 +242,17 @@ internal sealed partial class ClusterMeshes : IDisposable
         {
             if (IsPreparedRetirement(pageID))
                 return new PageFaultResolution(PageFaultResolutionKind.Pending, pageID, size);
-            _bvh.ReservePagePatch(pageID);
             ClusterBvhCheckpoint bvhCheckpoint = _bvh.CaptureChanges();
             if (!_pages.TryCancelPendingEviction(pageID, out uint offset))
                 throw new InvalidOperationException("Pending page eviction could not be cancelled atomically.");
             try
             {
-                _bvh.PatchPage(pageID, offset);
+                _fixups.PageChanged(pageID);
             }
             catch
             {
                 _bvh.RestoreChanges(bvhCheckpoint);
-                if (!_pages.StageEviction(pageID, out _))
+                if (_fixups.HasResidentDependents(pageID, PageAvailable) || !_pages.StageEviction(pageID, out _))
                     throw new InvalidOperationException("Cancelled page eviction could not be rolled back atomically.");
                 throw;
             }
@@ -397,11 +427,12 @@ internal sealed partial class ClusterMeshes : IDisposable
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            ValidateStreamedPage(load.Destination.Span, load.Source);
+            uint maximumRasterBatches = ValidateStreamedPage(load.Destination.Span, load.Source);
 
             lock (_gate)
             {
                 ThrowIfDisposed();
+                _maximumRasterBatchesPerCluster = Math.Max(_maximumRasterBatchesPerCluster, maximumRasterBatches);
                 if (!_stagingLoads.TryGetValue(pageID, out StagedPageLoad? current) ||
                     !ReferenceEquals(current, load))
                 {
@@ -411,7 +442,6 @@ internal sealed partial class ClusterMeshes : IDisposable
                 ResidencyReservation gpuReservation = load.Reservation
                     ?? throw new InvalidOperationException($"Cluster page {pageID} staging destination was already committed.");
                 _pageAllocations.EnsureCapacity(checked(_pageAllocations.Count + 1));
-                _bvh.ReservePagePatch(pageID);
                 ClusterBvhCheckpoint bvhCheckpoint = _bvh.CaptureChanges();
                 bool staged = false;
                 bool backingTracked = false;
@@ -422,7 +452,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                     _pageStorage.Stage(load.Offset, checked((int)PageHeap.AllocationSize(load.Size)));
                     _pageAllocations.Add(pageID, new PageAllocation(load.Offset, load.Size));
                     backingTracked = true;
-                    _bvh.PatchPage(pageID, load.Offset);
+                    _fixups.PageChanged(pageID);
                     load.Reservation = null;
                     _stagingLoads.Remove(pageID);
                     AdvanceRevision();
@@ -491,14 +521,13 @@ internal sealed partial class ClusterMeshes : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            _bvh.ReservePagePatch(pageID);
-            if (!_pages.StageEviction(pageID, out _))
+            if (_fixups.HasResidentDependents(pageID, PageAvailable) || !_pages.StageEviction(pageID, out _))
                 return false;
 
             ClusterBvhCheckpoint bvhCheckpoint = _bvh.CaptureChanges();
             try
             {
-                _bvh.PatchPage(pageID, ClusterBvh.PageFaultMarker);
+                _fixups.PageChanged(pageID);
             }
             catch
             {
@@ -525,7 +554,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
-    private static void ValidatePage(
+    private static uint ValidatePage(
         ReadOnlySpan<byte> page,
         in MeshPageHeader header,
         int payloadOffset)
@@ -534,6 +563,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(
             page.Slice(checked((int)header.ClustersOffset), clusterBytes));
         uint expectedVertexBlobStart = 0;
+        uint maximumRasterBatches = 1;
         uint expectedVertexCount = 0;
         uint expectedIndexStart = 0;
         uint totalIndexCount = checked(header.TotalTriangleCount * 3);
@@ -549,7 +579,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                     $"Cluster page at byte {payloadOffset} has invalid encoded counts in cluster {index}.");
             }
             if (cluster.VertexBlobOffset != expectedVertexBlobStart ||
-                cluster.TriangleStart != expectedIndexStart)
+                cluster.TriangleStart * 3u != expectedIndexStart)
             {
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} has non-canonical stream starts in cluster {index}: " +
@@ -570,7 +600,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             float lodError = (float)BitConverter.UInt16BitsToHalf(cluster.LODErrorHalf);
             if (!IsFinite(cluster.LODCenter) ||
                 !float.IsFinite(cluster.LODRadius) || cluster.LODRadius < 0 ||
-                !float.IsFinite(lodError) || lodError < 0 ||
+                float.IsNaN(lodError) || lodError < 0 ||
                 !IsFinite(cluster.BoundMin) || !IsFinite(cluster.BoundMax) ||
                 cluster.BoundMin.X > cluster.BoundMax.X ||
                 cluster.BoundMin.Y > cluster.BoundMax.Y ||
@@ -579,21 +609,15 @@ internal sealed partial class ClusterMeshes : IDisposable
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} cluster {index} has invalid bounds or LOD data.");
             }
-            if (cluster.MaterialTableOffset != uint.MaxValue)
-            {
-                throw new InvalidDataException(
-                    $"Cluster page at byte {payloadOffset} cluster {index} requests an undefined slow material-table path.");
-            }
             ValidateExtensionRange(cluster, header, payloadOffset, index);
-            if ((cluster.PackedGroup & 0xFFFF0000u) != 0)
-            {
-                throw new InvalidDataException(
-                    $"Cluster page at byte {payloadOffset} cluster {index} has non-zero reserved protocol bits.");
-            }
-            ValidateFastMaterialEncoding(cluster, triangleCount, payloadOffset, index);
-            ValidateVertReuseBatchEncoding(cluster, triangleCount, payloadOffset, index);
+            if (cluster.MaterialTableOffset == uint.MaxValue)
+                ValidateFastMaterialEncoding(cluster, triangleCount, payloadOffset, index);
+            else
+                ValidateMaterialTable(page, cluster, header, payloadOffset, index);
+            maximumRasterBatches = Math.Max(maximumRasterBatches,
+                ValidateVertReuseBatchEncoding(page, cluster, triangleCount, payloadOffset, index));
 
-            int indicesStart = checked((int)header.IndicesOffset + cluster.TriangleStart);
+            int indicesStart = checked((int)(header.IndicesOffset + cluster.TriangleStart * 3u));
             int indicesLength = checked((int)triangleCount * 3);
             foreach (byte vertexIndex in page.Slice(indicesStart, indicesLength))
             {
@@ -613,6 +637,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             throw new InvalidDataException(
                 $"Cluster page at byte {payloadOffset} does not completely describe its blob, vertex, and index streams.");
         }
+        return maximumRasterBatches;
     }
 
     private static void ValidateExtensionRange(
@@ -640,7 +665,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
-    private static void ValidateStreamedPage(
+    private static uint ValidateStreamedPage(
         ReadOnlySpan<byte> page,
         in MeshPageReadSource expectedSource)
     {
@@ -657,7 +682,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
 
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(page);
-        ValidatePage(page, header, payloadOffset: 0);
+        return ValidatePage(page, header, payloadOffset: 0);
     }
 
     private static bool IsFinite(Vector3 value)
@@ -681,41 +706,62 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
-    private static void ValidateVertReuseBatchEncoding(
+    private static void ValidateMaterialTable(ReadOnlySpan<byte> page, in PackedCluster cluster,
+        in MeshPageHeader header, int payloadOffset, int clusterIndex)
+    {
+        uint rangeCount = cluster.PackedRanges >> 16;
+        ulong extensionEnd = (ulong)header.ExtensionDataOffset + header.ExtensionDataSize;
+        if (rangeCount is < 4 or > 64 || cluster.MaterialTableOffset < header.ExtensionDataOffset ||
+            (cluster.MaterialTableOffset & 3u) != 0 ||
+            (ulong)cluster.MaterialTableOffset + rangeCount * sizeof(uint) > extensionEnd ||
+            cluster.VertReuseBatchWord0 < header.ExtensionDataOffset || (cluster.VertReuseBatchWord0 & 3u) != 0 ||
+            (ulong)cluster.VertReuseBatchWord0 + (ulong)cluster.VertReuseBatchWord2 * sizeof(uint) > extensionEnd ||
+            cluster.VertReuseBatchWord1 != rangeCount || cluster.VertReuseBatchWord2 < Math.Max(4u, (rangeCount * 9u + 31u) / 32u))
+            throw new InvalidDataException($"Cluster page at byte {payloadOffset} cluster {clusterIndex} has an invalid material table.");
+        uint triangle = 0;
+        for (int range = 0; range < rangeCount; range++)
+        {
+            uint value = cluster.GetMaterialRange(page, range);
+            uint length = (value >> 8) & 0xFFu;
+            if ((value & 0xFFu) != triangle || length == 0 || (value & 0xFF000000u) != 0)
+                throw new InvalidDataException($"Cluster page at byte {payloadOffset} cluster {clusterIndex} has an invalid material range.");
+            triangle += length;
+        }
+        if (triangle != ((cluster.PackedCounts >> 8) & 0xFFu))
+            throw new InvalidDataException($"Cluster page at byte {payloadOffset} cluster {clusterIndex} has incomplete material ranges.");
+    }
+
+    private static uint ValidateVertReuseBatchEncoding(
+        ReadOnlySpan<byte> page,
         in PackedCluster cluster,
         uint triangleCount,
         int payloadOffset,
         int clusterIndex)
     {
-        uint range0End = cluster.PackedRanges & 0xFFu;
-        uint range1End = (cluster.PackedRanges >> 8) & 0xFFu;
-        int rangeCount = range0End == triangleCount
-            ? 1
-            : (range1End == triangleCount ? 2 : 3);
-        Span<uint> rangeEnds = stackalloc uint[3]
-        {
-            range0End,
-            range1End,
-            triangleCount,
-        };
+        int rangeCount = cluster.MaterialRangeCount;
+        int countBits = Math.Max(rangeCount, 3) * 4;
+        int totalBits = cluster.MaterialTableOffset == uint.MaxValue ? 128 : checked((int)cluster.VertReuseBatchWord2 * 32);
 
         uint triangleStart = 0;
         int flatBatchIndex = 0;
         for (int rangeIndex = 0; rangeIndex < rangeCount; rangeIndex++)
         {
-            uint batchCount = ReadVertReuseBits(cluster, rangeIndex * 4, 4);
+            uint batchCount = cluster.GetVertexReuseBits(page, rangeIndex * 4, 4);
             if (batchCount == 0)
             {
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} cluster {clusterIndex} has a material range without a vertex-reuse batch.");
             }
 
-            uint rangeEnd = rangeEnds[rangeIndex];
+            uint range = cluster.GetMaterialRange(page, rangeIndex);
+            uint rangeEnd = (range & 0xFFu) + ((range >> 8) & 0xFFu);
             for (uint batch = 0; batch < batchCount; batch++)
             {
-                uint batchTriangleCount = ReadVertReuseBits(
-                    cluster,
-                    12 + flatBatchIndex * 5,
+                if (countBits + flatBatchIndex * 5 + 5 > totalBits)
+                    throw new InvalidDataException($"Cluster page at byte {payloadOffset} cluster {clusterIndex} has truncated batch data.");
+                uint batchTriangleCount = cluster.GetVertexReuseBits(
+                    page,
+                    countBits + flatBatchIndex * 5,
                     5) + 1u;
                 triangleStart = checked(triangleStart + batchTriangleCount);
                 if (triangleStart > rangeEnd)
@@ -735,51 +781,24 @@ internal sealed partial class ClusterMeshes : IDisposable
 
         for (int rangeIndex = rangeCount; rangeIndex < 3; rangeIndex++)
         {
-            if (ReadVertReuseBits(cluster, rangeIndex * 4, 4) != 0)
+            if (cluster.GetVertexReuseBits(page, rangeIndex * 4, 4) != 0)
             {
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} cluster {clusterIndex} stores batch counts for an unused material range.");
             }
         }
 
-        int usedBits = 12 + flatBatchIndex * 5;
-        for (int bit = usedBits; bit < 128; bit++)
+        int usedBits = countBits + flatBatchIndex * 5;
+        for (int bit = usedBits; bit < totalBits; bit++)
         {
-            if (ReadVertReuseBits(cluster, bit, 1) != 0)
+            if (cluster.GetVertexReuseBits(page, bit, 1) != 0)
             {
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} cluster {clusterIndex} stores unused vertex-reuse batch bits.");
             }
         }
+        return checked((uint)flatBatchIndex);
     }
-
-    private static uint ReadVertReuseBits(
-        in PackedCluster cluster,
-        int bitOffset,
-        int bitCount)
-    {
-        if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 || bitOffset + bitCount > 128)
-            throw new InvalidDataException("Vertex-reuse batch metadata exceeds its inline encoding.");
-
-        int wordIndex = bitOffset >> 5;
-        int wordBit = bitOffset & 31;
-        uint first = VertReuseWord(cluster, wordIndex) >> wordBit;
-        int lowBits = Math.Min(bitCount, 32 - wordBit);
-        uint value = first;
-        if (lowBits < bitCount)
-            value |= VertReuseWord(cluster, wordIndex + 1) << lowBits;
-        return value & ((1u << bitCount) - 1u);
-    }
-
-    private static uint VertReuseWord(in PackedCluster cluster, int index)
-        => index switch
-        {
-            0 => cluster.VertReuseBatchWord0,
-            1 => cluster.VertReuseBatchWord1,
-            2 => cluster.VertReuseBatchWord2,
-            3 => cluster.VertReuseBatchWord3,
-            _ => throw new ArgumentOutOfRangeException(nameof(index)),
-        };
 
     public bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
@@ -813,7 +832,7 @@ internal sealed partial class ClusterMeshes : IDisposable
 
     private bool TryEvictPage(uint protectedPageID)
     {
-        return _pages.TryVictim(protectedPageID, out uint pageID)
+        return _pages.TryVictim(protectedPageID, page => !_fixups.HasResidentDependents(page, PageAvailable), out uint pageID)
             && EvictPage(pageID);
     }
 
@@ -846,6 +865,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             _pendingPageRetirements.EnsureCapacity(checked(
                 _pendingPageRetirements.Count + retirements.Length));
             _heap.ReserveFrees(retirements.Length);
+            var fixups = _fixups.Apply(PageAvailable, PageOffset, _bvh);
             ClusterBvhPublication bvh = _bvh.PreparePublication();
 
             _preparedPublication = new ClusterMeshPublication(
@@ -853,7 +873,8 @@ internal sealed partial class ClusterMeshes : IDisposable
                 residentPages,
                 retirements,
                 _pageStorage.CaptureStagedUploads(),
-                BuildResidentPageRanges(residentPages, retirements));
+                BuildResidentPageRanges(residentPages, retirements), fixups.Flags, fixups.Changes);
+            _fixups.Accept(fixups);
             return _preparedPublication;
         }
     }
@@ -974,6 +995,16 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
         if (cleanupFailure is not null)
             RecordCleanupFailure(ClusterCleanupStage.Publication, cleanupFailure);
+    }
+
+    private bool PageAvailable(uint page) => !_pages.IsRetiring(page) &&
+        (_pages.IsResident(page) || _pages.IsLoadPending(page));
+
+    private uint PageOffset(uint page)
+    {
+        if (!_pageAllocations.TryGetValue(page, out PageAllocation allocation))
+            throw new InvalidOperationException("A geometry fixup requires a resident page allocation.");
+        return allocation.Offset;
     }
 
     private BufferRange[] _residentPageRanges = [];
@@ -1219,6 +1250,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             _preparedPublication = null;
             _pages.CommitDisposal(pageDisposal);
             cleanupFailure = _bvh.Clear();
+            _fixups.Clear();
             _heap.Reset();
         }
 

@@ -21,7 +21,7 @@ namespace Game.Build;
 public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("a91c86d1-551d-48e3-8e33-a25e30e2c2f4");
-    private readonly Dictionary<float, Guid> _shaders = [];
+    private readonly Dictionary<(float Cutoff, bool TwoSided), Guid> _shaders = [];
     private AssetId<TextureAsset> _white;
     public override async ValueTask ImportMaterialAsync(GltfMaterial source, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
@@ -68,7 +68,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
         content.SetParameter(new("OcclusionMap", MaterialParameterKind.Texture) { Texture = occlusionId });
         content.SetParameter(new("NormalScale", MaterialParameterKind.Float) { Float = source.FindChannel("Normal")?.GetFactor("NormalScale") ?? 1 });
         content.SetParameter(new("OcclusionStrength", MaterialParameterKind.Float) { Float = occlusion?.GetFactor("OcclusionStrength") ?? 1 });
-        content.Shader = new(_shaders[Cutoff(source)]);
+        content.Shader = new(_shaders[(Cutoff(source), source.DoubleSided)]);
         MaterialBlock block = content.Duplicate();
         try { output.SetBlock(block); }
         catch { block.Dispose(); throw; }
@@ -85,23 +85,14 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(file, destination, overwrite: true);
         }
-        string surface = File.ReadAllText(Path.Combine(defaults, "standard_material.slang"));
-        surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
-        surface = Replace(surface, "Texture2D ARMMap;", "Texture2D ARMMap;\n    Texture2D OcclusionMap;\n    Texture2D EmissiveMap;");
-        surface = Replace(surface, "float3 N_geom =", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom =");
-        surface = Replace(surface, "float3 baseColor = albedoSample.rgb", "float3 baseColor = SceneSrgbToLinear(albedoSample.rgb)");
-        surface = Replace(surface, "float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;",
-            "float ao = lerp(1.0, OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r, scalars.OcclusionStrength);\n" +
-            "        float3 emission = SceneSrgbToLinear(EmissiveMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb) * scalars.EmissiveFactor;\n" +
-            "        float3 finalColor = baseColor * ao * 0.03 + emission;");
-        surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
-        WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
-        foreach (float cutoff in model.LogicalMaterials.Select(Cutoff).Distinct())
+        WriteSurfaceShader(directory, defaults);
+        foreach (var (cutoff, twoSided) in model.LogicalMaterials.Select(material => (Cutoff(material), material.DoubleSided)).Distinct())
         {
             string suffix = cutoff < 0 ? "opaque" : "mask_" + BitConverter.SingleToInt32Bits(cutoff).ToString("x8");
-            string shaderName = "scene_" + suffix;
+            string shaderName = "scene_" + suffix + (twoSided ? "_both" : "");
             string shader = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
                 .Replace("\"standard_material.slang\"", "\"scene_material.slang\"");
+            if (twoSided) shader = "#define CLUSTER_RASTER_TWO_SIDED 1\n" + shader;
             if (cutoff >= 0)
                 shader = Replace(shader, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
                     MaskShader.Replace("ALPHA_CUTOFF", cutoff.ToString("R", CultureInfo.InvariantCulture)) + "\ntypedef SceneMask VisibilityEvaluate;");
@@ -115,7 +106,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(shaderName + ".slang");
             WriteIfChanged(definitionPath, definition.ToJsonString());
             await project.BuildAsync(definitionPath);
-            _shaders.Add(cutoff, shaderId);
+            _shaders.Add((cutoff, twoSided), shaderId);
         }
         string templatePath = Path.Combine(project.RootPath, "assets/Materials/Standard.material.asset");
         using var template = await MaterialAsset.OpenAsync(templatePath);
@@ -132,6 +123,24 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             block.Shader = new(_shaders.Values.First());
             project.RegisterAsset(await replacement.SaveAsync(templatePath));
         }
+    }
+
+    internal static void WriteSurfaceShader(string directory, string defaults)
+    {
+        string surface = File.ReadAllText(Path.Combine(defaults, "standard_material.slang"));
+        surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
+        surface = Replace(surface, "uint ARMMap;", "uint ARMMap;\n    uint OcclusionMap;\n    uint EmissiveMap;");
+        surface = Replace(surface, "return StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;",
+            "float3 normal = StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;\n" +
+            "        normal.xy *= scalars.NormalScale;\n" +
+            "        return normal;");
+        surface = Replace(surface, "data.BaseColor = albedo.rgb", "data.BaseColor = SceneSrgbToLinear(albedo.rgb)");
+        surface = Replace(surface, "data.Occlusion = arm.r;",
+            "data.Occlusion = lerp(1.0, StandardMaterialTextures[NonUniformResourceIndex(scalars.OcclusionMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).r, scalars.OcclusionStrength);");
+        surface = Replace(surface, "data.Emissive = scalars.EmissiveFactor;",
+            "data.Emissive = SceneSrgbToLinear(StandardMaterialTextures[NonUniformResourceIndex(scalars.EmissiveMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb) * scalars.EmissiveFactor;");
+        surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
+        WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
     }
 
     protected override ValueTask AddSceneContentAsync(World world, Scene scene, ImportContext context,
@@ -161,6 +170,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
 
     private const string MaskShader = """
 struct SceneMaskVarying { float2 UV : TEXCOORD0; };
+[VisibilityDepth("masked")]
 struct SceneMask : IVisibilityEvaluate<StandardVertex>
 {
     typealias Varying = SceneMaskVarying;
@@ -177,8 +187,13 @@ struct SceneMask : IVisibilityEvaluate<StandardVertex>
     VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
     {
         VisibilityPixelResult result;
-        result.Visible = AlbedoMap.SampleLevel(MaterialSampler, varying.UV, 0.0).a >= ALPHA_CUTOFF ? 1u : 0u;
         result.Depth = input.Depth;
+        if (input.TargetPolicy != 0u && input.EncodedTargetDepth >= asuint(1.0 - saturate(input.Depth)))
+        {
+            result.Visible = 0u;
+            return result;
+        }
+        result.Visible = AlbedoMap.SampleLevel(MaterialSampler, varying.UV, 0.0).a >= ALPHA_CUTOFF ? 1u : 0u;
         return result;
     }
 };

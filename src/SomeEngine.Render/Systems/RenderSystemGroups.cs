@@ -7,7 +7,7 @@ using SomeEngine.RenderGraph;
 namespace SomeEngine.Render.Systems;
 
 /// <summary>
-/// Capability passed only while render preparation owns the exclusive frame boundary. It exposes
+/// Capability passed only while render preparation owns the exclusive render-data boundary. It exposes
 /// RenderWorld reads and high-level batch composition, never the storage allocator or mapped
 /// buffers.
 /// </summary>
@@ -74,9 +74,8 @@ public readonly struct RenderPrepareSystemContext
     public void Retire(RenderInstanceBatch batch) =>
         RequireInstances().Retire(RequireScope(), RequireWriteScope(), batch);
 
-    // Pipeline assemblies receive this only through explicit friend access. The public system
-    // capability remains high-level instance composition; resource owners use the boundary to
-    // acquire only their own timelines.
+    // Rendering features receive the open write scope through friend access.
+    // Public systems compose instance batches through the context above.
     internal RenderPrepareScope ActiveScope => RequireScope();
 
     private RenderInstanceStorageSystem RequireInstances() => _instances ??
@@ -98,7 +97,7 @@ public readonly struct RenderPrepareSystemContext
 public ref struct RenderFrameSystemContext
 {
     private readonly RenderInstanceStorageSystem? _instances;
-    private readonly RenderFrame? _frame;
+    private readonly RenderReadScope? _readScope;
     private RenderGraphFrame _graph;
     private bool _hasGraph;
     private uint _lastSystemVersion;
@@ -107,13 +106,13 @@ public ref struct RenderFrameSystemContext
     internal RenderFrameSystemContext(
         RenderWorld world,
         RenderInstanceStorageSystem? instances,
-        RenderFrame? frame,
+        RenderReadScope? readScope,
         uint lastSystemVersion,
         uint currentSystemVersion)
     {
         World = world;
         _instances = instances;
-        _frame = frame;
+        _readScope = readScope;
         _graph = default;
         _hasGraph = false;
         _lastSystemVersion = lastSystemVersion;
@@ -123,12 +122,12 @@ public ref struct RenderFrameSystemContext
     internal RenderFrameSystemContext(
         RenderWorld world,
         RenderInstanceStorageSystem? instances,
-        RenderFrame frame,
+        RenderReadScope readScope,
         RenderGraphFrame graph)
     {
         World = world;
         _instances = instances;
-        _frame = frame;
+        _readScope = readScope;
         _graph = graph;
         _hasGraph = true;
         _lastSystemVersion = 0;
@@ -163,14 +162,14 @@ public ref struct RenderFrameSystemContext
         }
     }
 
-    public readonly RenderInstanceStorageView OpenInstances() =>
+    public RenderInstanceStorageView OpenInstances() =>
         RequireInstances().OpenRead(
-            _frame ?? throw new InvalidOperationException(
-                "A render frame is not active during this lifecycle callback."));
+            _readScope ?? throw new InvalidOperationException(
+                "A render read scope is not active during this lifecycle callback."), ref _graph);
 
-    internal readonly RenderFrame ActiveFrame =>
-        _frame ?? throw new InvalidOperationException(
-            "A render frame is not active during this lifecycle callback.");
+    internal readonly RenderReadScope ReadScope =>
+        _readScope ?? throw new InvalidOperationException(
+            "A render read scope is not active during this lifecycle callback.");
 
     internal void SetSystemVersion(uint lastSystemVersion, uint currentSystemVersion)
     {
@@ -267,11 +266,11 @@ public sealed class RenderPrepareSystems : IDisposable
         }
     }
 
-    public void Update(RenderPrepareScope scope)
+    public void Update(RenderPrepareScope scope, RenderGraphNextFrame? nextFrame = null)
     {
         ArgumentNullException.ThrowIfNull(scope);
         ObjectDisposedException.ThrowIf(_shutdown, this);
-        _driver.Enter(scope);
+        _driver.Enter(scope, nextFrame: nextFrame);
         try
         {
             _extraction.ApplyPendingCandidate();
@@ -314,6 +313,7 @@ public sealed class RenderPrepareSystems : IDisposable
         RenderWorld world,
         RenderInstanceStorageSystem? instances) : ISystemDriver<RenderPrepareSystemContext>
     {
+        private bool _rewriteValues;
         private RenderInstanceWriteScope? _write;
         private RenderPrepareScope? _scope;
 
@@ -324,10 +324,10 @@ public sealed class RenderPrepareSystems : IDisposable
             instances,
             _write,
             _scope,
-            slot.LastSystemVersion,
+            _rewriteValues ? 0 : slot.LastSystemVersion,
             slot.CurrentSystemVersion);
 
-        internal void Enter(RenderPrepareScope scope, bool writeInstances = true)
+        internal void Enter(RenderPrepareScope scope, bool writeInstances = true, RenderGraphNextFrame? nextFrame = null)
         {
             if (Interlocked.CompareExchange(ref _scope, scope, null) is not null)
                 throw new InvalidOperationException("Render prepare systems are already updating.");
@@ -336,9 +336,9 @@ public sealed class RenderPrepareSystems : IDisposable
             {
                 scope.EnterOperation();
                 entered = true;
-                // Applying extracted components does not write GPU instance data. Keep that
-                // phase independent of writable buffer availability and buffer rotation.
-                _write = writeInstances ? instances?.OpenWrite(scope) : null;
+                // Extraction publishes ECS components; the update phase borrows the next frame's upload pages.
+                _rewriteValues = writeInstances && instances?.RequiresValueWrite == true;
+                _write = writeInstances ? instances?.OpenWrite(scope, nextFrame) : null;
             }
             catch
             {
@@ -397,10 +397,10 @@ public sealed class RenderFrameSystems : IDisposable
     /// <summary>Creates enabled frame systems before retained graph installation.</summary>
     public void Initialize() => _systems.Initialize();
 
-    public void Update(RenderFrame frame, RenderGraphFrame graph)
+    public void Update(RenderReadScope readScope, RenderGraphFrame graph)
     {
-        ArgumentNullException.ThrowIfNull(frame);
-        _driver.Enter(frame);
+        ArgumentNullException.ThrowIfNull(readScope);
+        _driver.Enter(readScope);
         try
         {
             RenderFrameSystemContext context = _driver.CreateRecordingContext(graph);
@@ -408,7 +408,7 @@ public sealed class RenderFrameSystems : IDisposable
         }
         finally
         {
-            _driver.Exit(frame);
+            _driver.Exit(readScope);
         }
     }
 
@@ -418,14 +418,14 @@ public sealed class RenderFrameSystems : IDisposable
         RenderWorld world,
         RenderInstanceStorageSystem? instances) : ISystemDriver<RenderFrameSystemContext>
     {
-        private RenderFrame? _frame;
+        private RenderReadScope? _readScope;
 
         public uint AcquireSystemVersion(ref SystemSlot slot) => world.AcquireSystemVersion();
 
         public RenderFrameSystemContext CreateContext(scoped ref SystemSlot slot) => new(
             world,
             instances,
-            _frame,
+            _readScope,
             slot.LastSystemVersion,
             slot.CurrentSystemVersion);
 
@@ -438,20 +438,20 @@ public sealed class RenderFrameSystems : IDisposable
             new(
                 world,
                 instances,
-                _frame ?? throw new InvalidOperationException("A render frame is not active."),
+                _readScope ?? throw new InvalidOperationException("A render read scope is not active."),
                 graph);
 
-        internal void Enter(RenderFrame frame)
+        internal void Enter(RenderReadScope readScope)
         {
-            if (frame.IsClosed) throw new ObjectDisposedException(nameof(RenderFrame));
-            if (Interlocked.CompareExchange(ref _frame, frame, null) is not null)
-                throw new InvalidOperationException("Render frame systems are already updating.");
+            if (readScope.IsClosed) throw new ObjectDisposedException(nameof(RenderReadScope));
+            if (Interlocked.CompareExchange(ref _readScope, readScope, null) is not null)
+                throw new InvalidOperationException("Render read scope systems are already updating.");
         }
 
-        internal void Exit(RenderFrame frame)
+        internal void Exit(RenderReadScope readScope)
         {
-            if (!ReferenceEquals(Interlocked.CompareExchange(ref _frame, null, frame), frame))
-                throw new InvalidOperationException("Render frame-system ownership was lost.");
+            if (!ReferenceEquals(Interlocked.CompareExchange(ref _readScope, null, readScope), readScope))
+                throw new InvalidOperationException("Render read scope-system ownership was lost.");
         }
     }
 }

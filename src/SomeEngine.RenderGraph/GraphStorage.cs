@@ -183,7 +183,7 @@ internal sealed class GraphOrders : IEnumerable<ExplicitPassOrder>
     IEnumerator<ExplicitPassOrder> IEnumerable<ExplicitPassOrder>.GetEnumerator() => GetEnumerator();
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }
-internal sealed class GraphStructure
+internal sealed partial class GraphStructure
 {
     internal GraphRows<GraphBuffer> Buffers { get; private init; } =
         new(GraphIdentityDomain.Buffer, static value => value.Clone());
@@ -201,10 +201,11 @@ internal sealed class GraphStructure
         new(GraphIdentityDomain.Pass, static value => value.Clone());
     internal GraphRows<PassResourceAccess> Accesses { get; private init; } =
         new(GraphIdentityDomain.Access, static value => value.Clone());
-    internal GraphRows<GraphExtensionPoint> ExtensionPoints { get; private init; } =
-        new(GraphIdentityDomain.ExtensionPoint);
     internal GraphOrders Orders { get; private init; } = new();
-    internal int NextDeclarationOrdinal { get; set; }
+    internal GraphRows<GraphRegion> Regions { get; private init; } =
+        new(GraphIdentityDomain.Region, static value => value.Clone());
+    internal GraphRegion RootRegion { get; private init; } = new() { Label = "Root" };
+    internal GraphRegionId BufferUploadRegion;
 
     internal GraphStructure Fork()
     {
@@ -218,9 +219,10 @@ internal sealed class GraphStructure
             Views = Views.Fork(),
             Passes = Passes.Fork(),
             Accesses = Accesses.Fork(),
-            ExtensionPoints = ExtensionPoints.Fork(),
             Orders = Orders.Fork(),
-            NextDeclarationOrdinal = NextDeclarationOrdinal,
+            Regions = Regions.Fork(),
+            RootRegion = RootRegion.Clone(),
+            BufferUploadRegion = BufferUploadRegion,
         };
     }
 
@@ -235,8 +237,8 @@ internal sealed class GraphStructure
         if (ReferenceEquals(Views.BlockIdentity, other.Views.BlockIdentity)) count++;
         if (ReferenceEquals(Passes.BlockIdentity, other.Passes.BlockIdentity)) count++;
         if (ReferenceEquals(Accesses.BlockIdentity, other.Accesses.BlockIdentity)) count++;
-        if (ReferenceEquals(ExtensionPoints.BlockIdentity, other.ExtensionPoints.BlockIdentity)) count++;
         if (ReferenceEquals(Orders.BlockIdentity, other.Orders.BlockIdentity)) count++;
+        if (ReferenceEquals(Regions.BlockIdentity, other.Regions.BlockIdentity)) count++;
         return count;
     }
 }
@@ -252,11 +254,13 @@ internal sealed class GraphBuffer
     internal Buffer? RegisteredResource;
     internal Buffer? BoundResource;
     internal BufferRange? CurrentViewRange;
+    internal GraphPassId BufferUploadPass;
     internal BufferBoundaryState[] BoundaryStates = [];
     internal string? Label => Description.Label;
 
     internal GraphBuffer Clone() => new()
     {
+        BufferUploadPass = BufferUploadPass,
         Description = Description,
         MemoryType = MemoryType,
         Ownership = Ownership,
@@ -272,6 +276,8 @@ internal sealed class GraphBuffer
 
 internal sealed class GraphTexture
 {
+    private GraphTextureState? _state;
+    internal GraphTextureState GetState(GraphTextureId id) => _state ??= new(this, id);
     internal required TextureDimension Dimension;
     internal required uint Width;
     internal required uint Height;
@@ -416,7 +422,6 @@ internal sealed class GraphView
 
 internal readonly record struct ExplicitPassOrder(GraphIdentity Predecessor, GraphIdentity Consumer);
 
-internal readonly record struct GraphExtensionPoint(string Label, int DeclarationOrdinal);
 
 internal sealed class GraphPass
 {
@@ -432,7 +437,8 @@ internal sealed class GraphPass
     internal List<GraphParameterResourceBinding> ParameterBindings = [];
     internal HashSet<GraphIdentity> ViewReferences = [];
     internal List<GraphIdentity> PersistentBindings = [];
-    internal int DeclarationOrdinal;
+    internal long DeclarationOrdinal;
+    internal GraphIdentity Region;
     internal List<GraphIdentity> Accesses = [];
     internal List<GraphColorAttachment> ColorAttachments = [];
     internal GraphDepthStencilAttachment? DepthStencilAttachment;
@@ -453,6 +459,7 @@ internal sealed class GraphPass
         ViewReferences = new HashSet<GraphIdentity>(ViewReferences),
         PersistentBindings = new List<GraphIdentity>(PersistentBindings),
         DeclarationOrdinal = DeclarationOrdinal,
+        Region = Region,
         Accesses = new List<GraphIdentity>(Accesses),
         ColorAttachments = new List<GraphColorAttachment>(ColorAttachments),
         DepthStencilAttachment = DepthStencilAttachment,
@@ -469,6 +476,8 @@ internal sealed class PassResourceAccess
     internal GraphTextureInput? TextureInput;
     internal GraphParameterInput? ParameterInput;
     internal bool ParameterSecondary;
+    internal bool BufferDescriptor;
+    internal bool BufferDescriptorOnly;
     internal BufferRange? CurrentBufferRange;
     internal TextureSubresourceRange? CurrentTextureRange;
     internal required GraphAccessMode Mode;

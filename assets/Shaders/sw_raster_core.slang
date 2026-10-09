@@ -23,7 +23,7 @@ struct ClusterSoftwareRasterUniforms
     uint MaxBins;
     uint DebugDump;  // non-zero = dump debug data this frame
     uint CurrentBin; // Per-bin dispatch: which bin this dispatch covers
-    uint _pad0;
+    uint EarlyDepthEnabled;
     uint _pad1;
     uint _pad2;
 };
@@ -36,7 +36,7 @@ cbuffer ClusterSoftwareRasterPushConstants : register(b100, space0)
 // Instance-property accessors are declared in cluster_common.slang (via vertex_evaluate.slang).
 StructuredBuffer<ClusterViewUniforms> SoftwareRasterViews;
 StructuredBuffer<ClusterViewUniforms> SoftwareRasterPolicyViews;
-StructuredBuffer<DrawRequest> SoftwareRasterVisibleClusters;
+StructuredBuffer<VisibleCluster> SoftwareRasterVisibleClusters;
 StructuredBuffer<uint> SoftwareRasterBinnedClusterIndexBuffer; // visible index, triangle range
 StructuredBuffer<RasterBinEntry> SoftwareRasterBinMeta;
 
@@ -158,7 +158,7 @@ void SWRasterKernel<
     uint binEntry = SoftwareRasterBinnedClusterIndexBuffer[binnedIndex];
     uint originalIndex = RasterWorkVisibleIndex(binEntry);
 
-    DrawRequest req = SoftwareRasterVisibleClusters[originalIndex];
+    DrawRequest req = VisibleClusterRequest(SoftwareRasterVisibleClusters[originalIndex]);
     uint viewIndex = DrawRequestViewIndex(req);
     ClusterViewUniforms view = LoadClusterView(
         SoftwareRasterViews,
@@ -167,6 +167,7 @@ void SWRasterKernel<
     uint pageOffset = req.PageOffset;
     uint clusterID = DrawRequestClusterID(req);
     uint realInstanceID = req.InstanceID;
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, realInstanceID, view);
 
     // ─── Load Cluster Geometry ───
     uint vertexBlobAddress, vertexBlobSize, tStart, vertexCount, triangleCount, idxOffset;
@@ -219,7 +220,9 @@ void SWRasterKernel<
                 VertexEvalContext ctx = MakeSWRasterVertexEvalContext(
                     vertexBlobAddress, vertexBlobSize, localVertex, realInstanceID, transform);
                 VertexEvaluate.Vertex vertex = evaluator.evaluate(ctx);
-                float4 clip = mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
+                float3 worldPosition = evaluator.getPosition(vertex);
+                float4 clip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
+                clip.zw = CalculateClusterRasterDepthInput(worldPosition, clip, view);
                 VisibilityVertexInput input;
                 input.VisibleClusterIndex = originalIndex;
                 input.InstanceID = realInstanceID;
@@ -253,7 +256,7 @@ void SWRasterKernel<
             RasterizeClusterTriangleWave<VertexEvaluate.Vertex, VisibilityEvaluate, TOutput>(
                 visibility, rasterOutput, clips, triangleVaryings, scissor, originalIndex,
                 triangle, viewIndex, view.TargetPolicy, view.TargetViewIndex, active,
-                view.ScreenWidth, view.ScreenHeight);
+                view.ScreenWidth, view.ScreenHeight, ClusterViewClipsDepth(view), ClusterSoftwareRasterUniformData.EarlyDepthEnabled);
         }
         return;
     }
@@ -305,7 +308,9 @@ void SWRasterKernel<
             realInstanceID,
             transform);
         VertexEvaluate.Vertex vertex = evaluator.evaluate(ctx);
-        producerClip = mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
+        float3 worldPosition = evaluator.getPosition(vertex);
+        producerClip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
+        producerClip.zw = CalculateClusterRasterDepthInput(worldPosition, producerClip, view);
         VisibilityVertexInput visibilityInput;
         visibilityInput.VisibleClusterIndex = originalIndex;
         visibilityInput.InstanceID = realInstanceID;
@@ -342,7 +347,7 @@ void SWRasterKernel<
         view.TargetViewIndex,
         bTriValid,
         view.ScreenWidth,
-        view.ScreenHeight);
+        view.ScreenHeight, ClusterViewClipsDepth(view), ClusterSoftwareRasterUniformData.EarlyDepthEnabled);
 }
 
 #endif // SW_RASTER_CORE_SLANG

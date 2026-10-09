@@ -6,6 +6,13 @@
 #include "cluster_bin_io.slang"
 #include "visbuffer_encoding.slang"
 
+struct ShadePixelWork
+{
+    uint PixelIndex;
+    uint Mask;
+    uint SurfaceDataIndex;
+};
+
 struct ShadeBinUniforms
 {
     uint ScreenWidth;
@@ -13,9 +20,9 @@ struct ShadeBinUniforms
     uint ShadeBinCount;
     uint SlotCapacity;
     uint BinItemCapacity;
-    uint Pad1;
-    uint Pad2;
-    uint Pad3;
+    uint AdditionalReceiverLayerCount;
+    uint ViewCount;
+    uint SurfaceDataStride;
 };
 
 uint FindShadeBin(
@@ -30,8 +37,7 @@ uint FindShadeBin(
         cluster.PageOffset + pageHeap.Load(cluster.PageOffset + 16u) +
         DrawRequestClusterID(cluster) * PACKED_CLUSTER_STRIDE_BYTES;
     uint material = LocalMaterial(
-        pageHeap.Load(clusterOffset + 68u),
-        pageHeap.Load(clusterOffset + 72u),
+        pageHeap, clusterOffset, cluster.PageOffset,
         triangle);
     return SlotBin(
         slots,

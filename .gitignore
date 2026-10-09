@@ -10,6 +10,7 @@ tmp/
 .agent-tmp/
 .artifacts/
 Library/
+**/assets/Shaders/generated/EngineSources/
 
 # Build outputs
 bin/

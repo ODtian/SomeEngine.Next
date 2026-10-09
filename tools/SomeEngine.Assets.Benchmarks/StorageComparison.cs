@@ -416,7 +416,7 @@ internal static class StorageComparison
     private static Workload LoadWorkload(string caseName, string root)
         => caseName switch
         {
-            "shader" => LoadFiles(caseName, Path.Combine(root, "assets", "Shaders"), ".shader.asset"),
+            "shader" => LoadFiles(caseName, Path.Combine(root, "templates", "DefaultProject", "assets", "Shaders"), ".shader.asset"),
             "mesh" => LoadFiles(caseName, Path.Combine(root, "templates", "DefaultProject", "assets"), ".mesh.asset"),
             "texture" => LoadFiles(caseName, Path.Combine(root, "templates", "DefaultProject", "assets"), ".texture.asset"),
             "document" => LoadDocuments(root),

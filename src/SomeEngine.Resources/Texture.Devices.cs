@@ -23,9 +23,15 @@ public sealed partial class Texture
     private TaskCompletionSource? _updateCompletion;
     private bool _committingUpdate;
 
-    internal Texture GetUploadContent()
+    internal Texture GetUploadContent<TData>(Device device, out TData? data)
+        where TData : class, ITextureDeviceData
     {
-        lock (_deviceGate) return _replacement ?? this;
+        lock (_deviceGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+            data = _devices.TryGetValue(device, out ITextureDeviceData? value) ? (TData)value : null;
+            return _replacement ?? this;
+        }
     }
 
     private Task QueueUpdate(Texture replacement)
@@ -74,6 +80,7 @@ public sealed partial class Texture
             else _updateCompletion!.TrySetException(error);
             _updateCompletion = null;
         }
+        RaiseChanged();
     }
 
     private async Task CommitUpdateAsync()

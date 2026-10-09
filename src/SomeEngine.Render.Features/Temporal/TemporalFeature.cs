@@ -60,7 +60,8 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         int height,
         Shader shader,
         string vertexEntryPoint,
-        string pixelEntryPoint)
+        string pixelEntryPoint,
+        GraphRegionId region = default)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
@@ -83,7 +84,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 [Format.R16G16B16A16Float],
                 rasterizer: new RasterizerState(Cull: CullType.None),
                 label: "Temporal resolve");
-            _resourceOrder = FeatureResourceLayout.Resolve<TemporalResource>(
+            _resourceOrder = ShaderResourceLayout.Resolve<TemporalResource>(
                 pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 ResolveResource);
 
@@ -114,17 +115,17 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 new TemporalInitializePassData(_history),
                 new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 static (ref PassDefinition pass, ref TemporalInitializePassData data) => data.Declare(ref pass),
-                TemporalInitializePassData.Record);
+                TemporalInitializePassData.Record, region: region);
             _resolvePass = edit.AddRasterFramePass(
                 "Temporal resolve",
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new TemporalResolvePassData(resolvedAttachment, width, height),
-                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                new PassOptions(Culling: PassCullingMode.NeverCull),
                 pipeline.Pipeline,
                 pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 default,
                 TemporalResolvePassData.Declare,
-                TemporalResolvePassData.Record);
+                TemporalResolvePassData.Record, region: region);
             edit.OrderAfter(_resolvePass, _initializePass);
             PassDefinition resolve = edit.GetPass(_resolvePass);
             foreach (TemporalResource resource in _resourceOrder)

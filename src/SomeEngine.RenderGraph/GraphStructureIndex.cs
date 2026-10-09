@@ -31,8 +31,8 @@ internal sealed class GraphStructureIndex
     internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> BindingReferences { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
     internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> BindingDependents { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
     internal ImmutableHashSet<GraphDependencyEdge> ExplicitEdges { get; private init; } = ImmutableHashSet<GraphDependencyEdge>.Empty;
-    internal ImmutableSortedDictionary<int, GraphIdentity> OrderedPasses { get; private init; } = ImmutableSortedDictionary<int, GraphIdentity>.Empty;
-    internal ImmutableDictionary<GraphIdentity, int> OrderPositions { get; private init; } = ImmutableDictionary<GraphIdentity, int>.Empty;
+    internal ImmutableSortedDictionary<long, GraphIdentity> OrderedPasses { get; private init; } = ImmutableSortedDictionary<long, GraphIdentity>.Empty;
+    internal ImmutableDictionary<GraphIdentity, long> OrderPositions { get; private init; } = ImmutableDictionary<GraphIdentity, long>.Empty;
     internal ImmutableHashSet<GraphIdentity> TransientResources { get; private init; } = ImmutableHashSet<GraphIdentity>.Empty;
 
     internal GraphStructureIndex WithStructure(GraphStructure structure)
@@ -142,7 +142,7 @@ internal sealed class GraphStructureIndex
         {
             if (!structure.Passes.Contains(pass))
             {
-                if (positions.TryGetValue(pass, out int oldPosition))
+                if (positions.TryGetValue(pass, out long oldPosition))
                 {
                     positions.Remove(pass);
                     schedule.Remove(oldPosition);
@@ -150,7 +150,8 @@ internal sealed class GraphStructureIndex
             }
             else if (!positions.ContainsKey(pass))
             {
-                int position = structure.Passes.Get(pass).DeclarationOrdinal;
+                long position = structure.Passes.Get(pass).DeclarationOrdinal;
+                while (schedule.ContainsKey(position)) position = checked(position + 1);
                 positions.Add(pass, position);
                 schedule.Add(position, pass);
                 reordered.Add(pass);
@@ -227,19 +228,19 @@ internal sealed class GraphStructureIndex
     private static void RepairOrder(GraphDependencyEdge edge,
         IReadOnlyDictionary<GraphIdentity, GraphIdentity[]> predecessors,
         IReadOnlyDictionary<GraphIdentity, GraphIdentity[]> successors,
-        ImmutableDictionary<GraphIdentity, int>.Builder positions,
-        ImmutableSortedDictionary<int, GraphIdentity>.Builder schedule,
+        ImmutableDictionary<GraphIdentity, long>.Builder positions,
+        ImmutableSortedDictionary<long, GraphIdentity>.Builder schedule,
         HashSet<GraphIdentity> reordered)
     {
-        if (!positions.TryGetValue(edge.Predecessor, out int upper) ||
-            !positions.TryGetValue(edge.Consumer, out int lower) || upper < lower) return;
+        if (!positions.TryGetValue(edge.Predecessor, out long upper) ||
+            !positions.TryGetValue(edge.Consumer, out long lower) || upper < lower) return;
         var forward = new HashSet<GraphIdentity>();
         var backward = new HashSet<GraphIdentity>();
         var work = new Stack<GraphIdentity>();
         work.Push(edge.Consumer);
         while (work.TryPop(out GraphIdentity pass))
         {
-            if (!positions.TryGetValue(pass, out int rank) || rank > upper || !forward.Add(pass)) continue;
+            if (!positions.TryGetValue(pass, out long rank) || rank > upper || !forward.Add(pass)) continue;
             if (pass == edge.Predecessor)
                 throw new InvalidOperationException("RG5001: The render graph contains a structural dependency cycle.");
             foreach (GraphIdentity next in successors.GetValueOrDefault(pass, [])) work.Push(next);
@@ -247,18 +248,18 @@ internal sealed class GraphStructureIndex
         work.Push(edge.Predecessor);
         while (work.TryPop(out GraphIdentity pass))
         {
-            if (!positions.TryGetValue(pass, out int rank) || rank < lower || !backward.Add(pass)) continue;
+            if (!positions.TryGetValue(pass, out long rank) || rank < lower || !backward.Add(pass)) continue;
             if (forward.Contains(pass))
                 throw new InvalidOperationException("RG5001: The render graph contains a structural dependency cycle.");
             foreach (GraphIdentity next in predecessors.GetValueOrDefault(pass, [])) work.Push(next);
         }
         GraphIdentity[] before = backward.OrderBy(pass => positions[pass]).ToArray();
         GraphIdentity[] after = forward.OrderBy(pass => positions[pass]).ToArray();
-        int[] ranks = before.Concat(after).Select(pass => positions[pass]).Order().ToArray();
+        long[] ranks = before.Concat(after).Select(pass => positions[pass]).Order().ToArray();
         int index = 0;
         foreach (GraphIdentity pass in before.Concat(after))
         {
-            int rank = ranks[index++];
+            long rank = ranks[index++];
             if (positions[pass] == rank) continue;
             positions[pass] = rank;
             schedule[rank] = pass;
@@ -337,8 +338,6 @@ internal sealed class GraphStructureIndex
             PassResourceAccess row = structure.Accesses.Rows[i];
             changes.TouchAccess(id, row.Pass, row.Target, membership: true);
         }
-        for (int i = 0; i < structure.ExtensionPoints.Count; i++)
-            changes.TouchExtensionPoint(structure.ExtensionPoints.IdentityAt(owner, i), membership: true);
         foreach (ExplicitPassOrder order in structure.Orders)
             changes.TouchOrder(order.Predecessor, order.Consumer);
     }

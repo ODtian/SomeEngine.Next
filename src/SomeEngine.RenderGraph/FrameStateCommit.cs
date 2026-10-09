@@ -27,7 +27,7 @@ internal sealed partial class FrameExecutor
     private List<ShaderTableStateUpdate>?[] _shaderTableUpdatesByResource = [];
 
     private readonly record struct TextureStateValue(TextureBoundaryState State, int CompletionSource,
-        int LastPass = -1, bool AtomicMergeable = false);
+        int LastPass = -1, bool MergeableWrites = false);
     private sealed class TextureStateUpdate
     {
         internal int Submission;
@@ -44,7 +44,7 @@ internal sealed partial class FrameExecutor
 
     private readonly record struct BufferStateValue(BufferBoundaryState State, int CompletionSource);
     private readonly record struct BufferStateStep(int Pass, int[] Accesses,
-        PipelineSync Sync, ResourceAccess Access, bool Writes, bool Acquired, bool AtomicMergeable);
+        PipelineSync Sync, ResourceAccess Access, bool Writes, bool Acquired, bool MergeableWrites);
 
     private sealed class BufferStateUpdate
     {
@@ -143,17 +143,17 @@ internal sealed partial class FrameExecutor
                     PipelineSync sync = default;
                     ResourceAccess access = default;
                     bool writes = false;
-                    bool atomicMergeable = true;
+                    bool mergeableWrites = true;
                     while (end < indices.Count && _accesses[indices[end]].PassIndex == pass)
                     {
                         FrameResourceAccess value = _accesses[indices[end++]];
                         sync |= value.Sync;
                         access = MergeBufferAccess(access, value.Access);
                         writes |= value.Mode != GraphAccessMode.Read;
-                        atomicMergeable &= value.UnorderedAccessHazards == UnorderedAccessHazardMode.AtomicMergeable;
+                        mergeableWrites &= value.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered;
                     }
                     steps.Add(new(pass, CollectionsMarshal.AsSpan(indices).Slice(first, end - first).ToArray(), sync, access, writes,
-                        HasIncomingBufferAcquire(pass, _buffers[key.Index].Resource), atomicMergeable));
+                        HasIncomingBufferAcquire(pass, _buffers[key.Index].Resource), mergeableWrites));
                     first = end;
                 }
                 var update = new BufferStateUpdate { Submission = submission, ResourceIndex = key.Index,
@@ -462,7 +462,7 @@ internal sealed partial class FrameExecutor
         PipelineSync previousSync = default;
         ResourceAccess previousAccess = default;
         Queue? previousQueue = null;
-        bool previousAtomicMergeable = false;
+        bool previousMergeableWrites = false;
         BufferStateStep? previousRead = null;
         foreach (BufferStateStep step in update.Steps)
         {
@@ -475,13 +475,13 @@ internal sealed partial class FrameExecutor
             previousRead = !step.Writes && !step.Acquired ? step : null;
             Queue? queue = _passes[step.Pass].Queue;
             PipelineSync sync = step.Sync;
-            if (previousAtomicMergeable && step.AtomicMergeable && !step.Acquired &&
+            if (previousMergeableWrites && step.MergeableWrites && !step.Acquired &&
                 ReferenceEquals(previousQueue, queue) && previousAccess == step.Access)
                 sync |= previousSync;
             previousSync = sync;
             previousAccess = step.Access;
             previousQueue = queue;
-            previousAtomicMergeable = step.AtomicMergeable;
+            previousMergeableWrites = step.MergeableWrites;
             bool retainDistinctQueueReaders = !step.Writes && !step.Acquired;
             BufferBoundaryState endpoint = default;
             foreach (int index in step.Accesses)
@@ -633,7 +633,7 @@ internal sealed partial class FrameExecutor
                 _textureContentScratch.AddRange(_textureBoundaryScratch);
             }
             var value = new TextureStateValue(endpoint, -1, access.PassIndex,
-                access.UnorderedAccessHazards == UnorderedAccessHazardMode.AtomicMergeable);
+                access.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered);
             UpdateTextureBoundaryStates(_textureBoundaryScratch, value,
                 access.Mode == GraphAccessMode.Read && !update.Acquired[item]);
             if (preserveContents)
@@ -1005,9 +1005,9 @@ internal sealed partial class FrameExecutor
             current.RemoveAt(index);
             Subtract(existing, update.State.Range, current);
             bool samePass = update.LastPass >= 0 && existing.LastPass == update.LastPass;
-            bool atomicChain = existing.AtomicMergeable && update.AtomicMergeable &&
+            bool writeChain = existing.MergeableWrites && update.MergeableWrites &&
                 existing.State.Access == update.State.Access;
-            if ((!samePass && !atomicChain) || existing.State.Layout != update.State.Layout ||
+            if ((!samePass && !writeChain) || existing.State.Layout != update.State.Layout ||
                 !ReferenceEquals(existing.State.Queue, update.State.Queue)) continue;
 
             // No barrier separates these uses. Preserve every shader stage that can
@@ -1037,7 +1037,7 @@ internal sealed partial class FrameExecutor
                         Sync = value.State.Sync | existing.State.Sync,
                         Access = value.State.Access | existing.State.Access,
                     },
-                    AtomicMergeable = value.AtomicMergeable && existing.AtomicMergeable,
+                    MergeableWrites = value.MergeableWrites && existing.MergeableWrites,
                 });
             }
         }

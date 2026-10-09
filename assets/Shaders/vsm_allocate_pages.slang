@@ -1,4 +1,6 @@
+#define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
+#include "vsm_depth_cache.slang"
 #include "resource_effects.slang"
 
 struct VirtualShadowPageAllocationUniforms
@@ -8,7 +10,7 @@ struct VirtualShadowPageAllocationUniforms
     uint MaxPhysicalPages;
     uint ViewCount;
     uint FrameIndex;
-    uint EvictionBucketCount;
+    int DeferredInvalidationBudget;
     uint HierarchyWordsPerView;
     uint MipLevelCount;
 };
@@ -18,19 +20,76 @@ StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
 StructuredBuffer<uint> RequestedPageIndices;
 StructuredBuffer<uint> RequestedPageCount;
 StructuredBuffer<uint> RequestedPageFlags;
-RWStructuredBuffer<uint4> ShadowPageTable;
+RWStructuredBuffer<uint> ShadowPageTable;
 RWStructuredBuffer<uint> PhysicalPageOwners;
-RWStructuredBuffer<uint4> PageMetadata;
-RWStructuredBuffer<uint> FreePages;
-RWStructuredBuffer<uint> FreePageCount;
-RWStructuredBuffer<uint> EvictionPages;
-RWStructuredBuffer<uint> EvictionBucketCounts;
+RWStructuredBuffer<VirtualShadowPageMetadata> PageMetadata;
+#include "vsm_page_lists.slang"
 RWStructuredBuffer<uint4> ActivePhysicalPages;
 RWStructuredBuffer<uint> ActivePhysicalPageCount;
 RWStructuredBuffer<uint4> UncachedPageRectBounds;
-RWStructuredBuffer<uint> RasterTargetPageHierarchy;
+RWStructuredBuffer<uint2> RasterTargetPageHierarchy;
 RWStructuredBuffer<uint> ShadowAllocationFailures;
-RWStructuredBuffer<uint2> PageReceiverMasks;
+RWTexture2D<uint> PageReceiverMasks;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip1;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip2;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip3;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip4;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip5;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip6;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWTexture2D<uint> PageReceiverMaskMip7;
+
+
+void ReduceReceiverMask(RWTexture2D<uint> destination, inout uint mask, inout uint2 address)
+{
+    uint2 fraction = address & 1u;
+    mask = ShrinkVirtualShadowReceiverMask(mask) << (fraction.y * 8u + fraction.x * 2u);
+    address >>= 1u;
+    uint ignored;
+    InterlockedOr(destination[address], mask, ignored);
+}
+
+void BuildReceiverMaskHierarchy(VirtualShadowMapParameters view, uint mipLevel, uint2 localPage)
+{
+    if ((view.Flags & VSM_VIEW_USE_RECEIVER_MASK) == 0u) return;
+    uint4 masks = LoadVirtualShadowReceiverMask(PageReceiverMasks, view, mipLevel, localPage);
+    uint mask = ShrinkVirtualShadowReceiverMask(masks.x) |
+        (ShrinkVirtualShadowReceiverMask(masks.y) << 2u) |
+        (ShrinkVirtualShadowReceiverMask(masks.z) << 8u) |
+        (ShrinkVirtualShadowReceiverMask(masks.w) << 10u);
+    uint2 address = (VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u) >> 1u;
+    uint pages = VirtualShadowPagesPerRow(view);
+    uint ignored;
+    if (pages >= 2u) InterlockedOr(PageReceiverMaskMip1[address], mask, ignored);
+    if (pages >= 4u) ReduceReceiverMask(PageReceiverMaskMip2, mask, address);
+    if (pages >= 8u) ReduceReceiverMask(PageReceiverMaskMip3, mask, address);
+    if (pages >= 16u) ReduceReceiverMask(PageReceiverMaskMip4, mask, address);
+    if (pages >= 32u) ReduceReceiverMask(PageReceiverMaskMip5, mask, address);
+    if (pages >= 64u) ReduceReceiverMask(PageReceiverMaskMip6, mask, address);
+    if (pages >= 128u) ReduceReceiverMask(PageReceiverMaskMip7, mask, address);
+}
+
+void FillReceiverMask(VirtualShadowMapParameters view, uint mipLevel, uint2 localPage)
+{
+    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u;
+    PageReceiverMasks[address] = 0xffffu;
+    PageReceiverMasks[address + uint2(1, 0)] = 0xffffu;
+    PageReceiverMasks[address + uint2(0, 1)] = 0xffffu;
+    PageReceiverMasks[address + 1u.xx] = 0xffffu;
+}
+
+bool VirtualShadowPageMetadataMatches(uint entry, VirtualShadowMapParameters view, int2 worldPage)
+{
+    uint page;
+    if ((entry & VSM_PAGE_RENDERING) == 0u || !DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, page)) return false;
+    return PageMetadata[page].Generation == view.CacheGeneration && all(PageMetadata[page].WorldPage == worldPage);
+}
 
 static const uint VSM_UNOWNED_PAGE = 0xFFFFFFFFu;
 
@@ -62,50 +121,33 @@ bool ReservePages(RWStructuredBuffer<uint> counts, uint counterIndex, out uint i
     return WavePrefixCountBits(true) < taken;
 }
 
-bool PopEvictionPage(out uint page)
-{
-    for (int bucket = int(PageAllocation.EvictionBucketCount) - 1; bucket >= 0; bucket--)
-    {
-        uint local;
-        if (ReservePages(EvictionBucketCounts, uint(bucket), local))
-        {
-            page = EvictionPages[uint(bucket) * PageAllocation.MaxPhysicalPages + local];
-            return true;
-        }
-    }
-    page = 0u;
-    return false;
-}
-
 void ReleaseOldMapping(uint atlasPage)
 {
     uint oldOwner = PhysicalPageOwners[atlasPage];
     if (oldOwner < PageAllocation.PageTableEntryCount)
     {
-        uint expected = PackVirtualShadowPage(atlasPage + 1u);
-        uint ignored;
-        InterlockedCompareExchange(
-            ShadowPageTable[oldOwner].x,
-            expected,
-            VSM_PAGE_UNMAPPED,
-            ignored);
+        uint expected = ShadowPageTable[oldOwner];
+        uint oldPage;
+        if ((expected & VSM_PAGE_RENDERING) != 0u &&
+            DecodeVirtualShadowPage(expected, ShadowViews[PageMetadata[atlasPage].ViewIndex].PhysicalPagesPerRow, oldPage) && oldPage == atlasPage)
+        {
+            uint ignored;
+            InterlockedCompareExchange(ShadowPageTable[oldOwner], expected, VSM_PAGE_UNMAPPED, ignored);
+        }
     }
     PhysicalPageOwners[atlasPage] = VSM_UNOWNED_PAGE;
 }
 
 bool AcquireAtlasPage(uint newTableIndex, out uint atlasPage)
 {
-    uint freeIndex;
-    if (ReservePages(FreePageCount, 0u, freeIndex))
-    {
-        atlasPage = FreePages[freeIndex];
-        PhysicalPageOwners[atlasPage] = newTableIndex;
-        return true;
-    }
-    if (!PopEvictionPage(atlasPage))
+    uint index;
+    if (!ReservePages(ShadowPageLists,
+        ShadowPageListCountIndex(VSM_PAGE_LIST_AVAILABLE, PageAllocation.MaxPhysicalPages), index))
         return false;
+    atlasPage = ShadowPageLists[ShadowPageListStart(VSM_PAGE_LIST_AVAILABLE, PageAllocation.MaxPhysicalPages) + index];
     ReleaseOldMapping(atlasPage);
     PhysicalPageOwners[atlasPage] = newTableIndex;
+    AppendShadowPage(VSM_PAGE_LIST_REQUESTED, PageAllocation.MaxPhysicalPages, atlasPage);
     return true;
 }
 
@@ -127,7 +169,7 @@ void PublishDirtyPage(
             atlasPage,
             tableIndex,
             previousLayer,
-            0u);
+            ShadowViews[viewIndex].CacheGeneration);
     uint ignored;
     uint rectIndex = viewIndex * PageAllocation.MipLevelCount + mipLevel;
     InterlockedMin(
@@ -160,10 +202,11 @@ void PublishDirtyPage(
             hierarchyOffset +
             hierarchyPage.y * wordsPerRow +
             hierarchyPage.x / 32u;
-        InterlockedOr(
-            RasterTargetPageHierarchy[wordIndex],
-            1u << (hierarchyPage.x & 31u),
-            ignored);
+        uint flags = PageMetadata[atlasPage].Flags;
+        if ((flags & VSM_PAGE_DYNAMIC_UNCACHED) != 0u)
+            InterlockedOr(RasterTargetPageHierarchy[wordIndex].x, 1u << (hierarchyPage.x & 31u), ignored);
+        if ((flags & VSM_PAGE_STATIC_UNCACHED) != 0u)
+            InterlockedOr(RasterTargetPageHierarchy[wordIndex].y, 1u << (hierarchyPage.x & 31u), ignored);
         hierarchyOffset += dimension * wordsPerRow;
         if (dimension == 1u)
             break;
@@ -185,7 +228,7 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
         return;
     uint requestFlags = RequestedPageFlags[tableIndex];
 
-    uint viewIndex = tableIndex / PageAllocation.PageTableEntriesPerView;
+    uint viewIndex = VirtualShadowViewFromPageTableIndex(ShadowViews, PageAllocation.ViewCount, tableIndex);
     if (viewIndex >= PageAllocation.ViewCount)
         return;
     VirtualShadowMapParameters view = ShadowViews[viewIndex];
@@ -194,46 +237,79 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
     if (!VirtualShadowDecodePageTableIndex(view, tableIndex, mipLevel, localPage))
         return;
     int2 expectedWorldPage = VirtualShadowWorldPage(view, mipLevel, localPage);
+    BuildReceiverMaskHierarchy(view, mipLevel, localPage);
 
-    uint4 entry = ShadowPageTable[tableIndex];
-    bool sameTag = entry.x != VSM_PAGE_UNMAPPED &&
-        entry.x != VSM_PAGE_LOCKED &&
-        IsVirtualShadowPageTag(entry, expectedWorldPage);
+    uint entry = ShadowPageTable[tableIndex];
+    if (entry != VSM_PAGE_UNMAPPED && entry != VSM_PAGE_LOCKED)
+    {
+        entry = (entry & ~(VSM_PAGE_PRIMARY | VSM_PAGE_SECONDARY)) |
+            ((requestFlags & VSM_PAGE_REQUEST_PRIMARY) != 0u ? VSM_PAGE_PRIMARY : 0u) |
+            ((requestFlags & VSM_PAGE_REQUEST_SECONDARY) != 0u ? VSM_PAGE_SECONDARY : 0u);
+        ShadowPageTable[tableIndex] = entry;
+    }
+    bool sameTag = entry != VSM_PAGE_UNMAPPED &&
+        entry != VSM_PAGE_LOCKED &&
+        VirtualShadowPageMetadataMatches(entry, view, expectedWorldPage);
     uint atlasPage = 0u;
     uint packedPage = VSM_PAGE_UNMAPPED;
     uint previousLayer = 0xFFFFFFFFu;
-    bool partialReceivers = sameTag && entry.w != view.CacheGeneration &&
-        (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u;
+    bool partialReceivers = (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u &&
+        any(LoadVirtualShadowReceiverMask(PageReceiverMasks, view, mipLevel, localPage) != 0xffffu.xxxx);
+    bool staticUncached = true;
+    bool dynamicUncached = true;
+    bool keepDeferred = false;
+    bool previousHiZ = false;
     if (sameTag)
     {
-        if (!DecodeVirtualShadowPage(entry.x, atlasPage))
+        if (!DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, atlasPage))
             return;
-        previousLayer = atlasPage;
-        packedPage = entry.x;
-        uint previousFlags = PageMetadata[atlasPage].z;
-        PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
-        PageMetadata[atlasPage].z = requestFlags;
+        // Metadata.y identifies completed static depth and both conservative HiZ depths.
+        previousHiZ = PageMetadata[atlasPage].StaticDepthGeneration == view.CacheGeneration &&
+            (view.Flags & VSM_VIEW_PREVIOUS_PROJECTION_VALID) != 0u;
+        previousLayer = previousHiZ ? atlasPage : 0xFFFFFFFFu;
+        packedPage = entry;
+        uint previousFlags = PageMetadata[atlasPage].RequestFlags;
+        PageMetadata[atlasPage].LastRequestedFrame = PageAllocation.FrameIndex;
+        PageMetadata[atlasPage].RequestFlags = requestFlags;
         bool detailUpgrade =
             (requestFlags & VSM_PAGE_REQUEST_DETAIL) != 0u &&
             (previousFlags & VSM_PAGE_REQUEST_DETAIL) == 0u;
-        // Clipmaps scroll by a quarter of the base page grid. Higher mips
-        // move by a fraction of their page, so a matching coarse tag alone
-        // cannot preserve the depth pixels when the projection changes.
-        uint scrollingMip = firstbithigh(VirtualShadowPagesPerRow(view)) - 2u;
-        bool coarseProjectionChanged = view.LightKind == VSM_LIGHT_DIRECTIONAL &&
-            mipLevel > scrollingMip &&
-            (view.Flags & VSM_VIEW_PREVIOUS_PROJECTION_VALID) == 0u;
-        // A receiver-masked depth page is incomplete even if its projection and
-        // casters did not change. Render it fully once before retaining it.
-        if (entry.w == view.CacheGeneration && !detailUpgrade && !coarseProjectionChanged &&
-            PageMetadata[atlasPage].w == 0u)
-            return;
+        bool primaryUpgrade = (requestFlags & VSM_PAGE_REQUEST_PRIMARY) != 0u &&
+            (previousFlags & VSM_PAGE_REQUEST_PRIMARY) == 0u;
+        uint dirtyFlags = PageMetadata[atlasPage].Flags;
+        staticUncached = PageMetadata[atlasPage].StaticDepthGeneration != view.CacheGeneration ||
+            (dirtyFlags & VSM_PAGE_INVALIDATE_STATIC) != 0u || detailUpgrade || primaryUpgrade;
+        bool retainDynamicCoarse = (view.Flags & VSM_VIEW_CACHED_DISTANT_LIGHT) != 0u ||
+            (view.Flags & VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE) != 0u &&
+            (requestFlags & VSM_PAGE_REQUEST_DETAIL) == 0u && !staticUncached;
+        if ((dirtyFlags & VSM_PAGE_DEFERRED_INVALIDATION) != 0u)
+        {
+            bool consume = false;
+            if ((view.Flags & VSM_VIEW_SINGLE_PAGE) == 0u && !retainDynamicCoarse)
+            {
+                consume = PageAllocation.DeferredInvalidationBudget < 0;
+                if (PageAllocation.DeferredInvalidationBudget > 0)
+                {
+                    uint count = WaveActiveCountBits(true);
+                    uint first = 0u;
+                    if (WaveIsFirstLane()) InterlockedAdd(ShadowAllocationFailures[2], count, first);
+                    consume = WaveReadLaneFirst(first) + WavePrefixCountBits(true) < uint(PageAllocation.DeferredInvalidationBudget);
+                }
+            }
+            staticUncached |= consume;
+            keepDeferred = !consume;
+        }
+        bool receiverRefresh = (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u && !retainDynamicCoarse;
+        dynamicUncached = staticUncached || !VirtualShadowPageHasOwnDepth(entry) ||
+            ((dirtyFlags & VSM_PAGE_INVALIDATE_DYNAMIC) != 0u && !retainDynamicCoarse) || receiverRefresh;
+        if (!staticUncached && !dynamicUncached) return;
+
     }
-    else if (entry.x != VSM_PAGE_UNMAPPED && entry.x != VSM_PAGE_LOCKED)
+    else if ((entry & VSM_PAGE_RENDERING) != 0u && entry != VSM_PAGE_LOCKED)
     {
-        if (!DecodeVirtualShadowPage(entry.x, atlasPage))
+        if (!DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, atlasPage))
             return;
-        packedPage = entry.x;
+        packedPage = entry;
         PhysicalPageOwners[atlasPage] = tableIndex;
     }
     else
@@ -244,20 +320,27 @@ void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
             InterlockedAdd(ShadowAllocationFailures[0], 1u, ignored);
             return;
         }
-        packedPage = PackVirtualShadowPage(atlasPage + 1u);
+        packedPage = PackVirtualShadowPage(atlasPage + 1u, view.PhysicalPagesPerRow);
     }
 
-    ShadowPageTable[tableIndex] = uint4(
-        packedPage,
-        asuint(expectedWorldPage.x),
-        asuint(expectedWorldPage.y),
-        view.CacheGeneration);
-    PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
-    PageMetadata[atlasPage].y = view.CacheGeneration;
-    PageMetadata[atlasPage].z = requestFlags;
-    PageMetadata[atlasPage].w = partialReceivers ? 1u : 0u;
+    ShadowPageTable[tableIndex] = (packedPage & 0x000fffffu) | VSM_PAGE_RENDERING |
+        ((requestFlags & VSM_PAGE_REQUEST_PRIMARY) != 0u ? VSM_PAGE_PRIMARY : 0u) |
+        ((requestFlags & VSM_PAGE_REQUEST_SECONDARY) != 0u ? VSM_PAGE_SECONDARY : 0u);
+    PageMetadata[atlasPage].WorldPage = expectedWorldPage;
+    PageMetadata[atlasPage].Generation = view.CacheGeneration;
+    PageMetadata[atlasPage].ViewIndex = viewIndex;
+    PageMetadata[atlasPage].LastRequestedFrame = PageAllocation.FrameIndex;
     if (!partialReceivers)
-        PageReceiverMasks[tableIndex] = 0xFFFFFFFFu.xx;
+        FillReceiverMask(view, mipLevel, localPage);
+    // Coarse/full receiver requests are whole-page work even on an invalidated page.
+    partialReceivers = partialReceivers && any(LoadVirtualShadowReceiverMask(PageReceiverMasks, view, mipLevel, localPage) != 0xffffu.xxxx);
+    if (staticUncached) PageMetadata[atlasPage].StaticDepthGeneration = 0u;
+    PageMetadata[atlasPage].RequestFlags = requestFlags;
+    PageMetadata[atlasPage].Flags = (partialReceivers ? VSM_PAGE_MASKED : 0u) |
+        (previousHiZ && !staticUncached ? VSM_PAGE_PRIOR_HIZ : 0u) |
+        (staticUncached ? VSM_PAGE_STATIC_UNCACHED : 0u) |
+        (dynamicUncached ? VSM_PAGE_DYNAMIC_UNCACHED : 0u) |
+        (keepDeferred ? VSM_PAGE_DEFERRED_INVALIDATION : 0u);
     PublishDirtyPage(
         tableIndex,
         viewIndex,

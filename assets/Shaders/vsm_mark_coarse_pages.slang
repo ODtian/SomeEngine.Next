@@ -1,3 +1,4 @@
+#define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
 
 struct VirtualShadowCoarsePageDemandUniforms
@@ -24,7 +25,7 @@ void PublishPage(
         CoarsePageDemand.FrameIndex,
         CoarsePageDemand.PageTableEntryCount);
     if ((view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
-        MarkVirtualShadowFullReceiverMask(tableIndex);
+        MarkVirtualShadowFullReceiverMask(view, mipLevel, localPage);
 }
 
 [shader("compute")]
@@ -38,21 +39,16 @@ void MarkVirtualShadowCoarsePages(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     if (view.LightKind == VSM_LIGHT_DIRECTIONAL)
     {
-        int lastClipmapLevel =
-            view.FirstClipmapLevel + int(max(view.ClipmapLevelCount, 1u)) - 1;
-        if (view.ClipmapLevel == lastClipmapLevel)
-        {
-            uint lastMip = max(view.MipLevelCount, 1u) - 1u;
-            PublishPage(view, lastMip, 0u.xx);
-        }
         if ((view.Flags & VSM_VIEW_COARSE_CLIP_LEVEL) == 0u)
             return;
-        // UE-style directional coarse coverage: selected clipmap levels contribute only
-        // the center pages. Sampling continues into coarser clipmaps when this view
-        // has no resident page.
+        // Coarse coverage follows the current camera origin inside the snapped
+        // projection. The four page addresses surround this projected origin.
         uint dimension = VirtualShadowMipPagesPerRow(view, 0u);
-        uint2 low = max(dimension / 2u, 1u) - 1u;
-        uint2 high = min(low + 1u, dimension - 1u);
+        float4 originClip = ProjectVirtualShadowClip(view, view.ClipmapWorldOrigin);
+        float2 originUv = originClip.xy / originClip.w * float2(0.5, -0.5) + 0.5;
+        float2 pageAddress = originUv * float(dimension);
+        uint2 low = (uint2)floor(pageAddress - 0.5);
+        uint2 high = (uint2)ceil(pageAddress - 0.5);
         PublishPage(view, 0u, uint2(low.x, low.y));
         PublishPage(view, 0u, uint2(low.x, high.y));
         PublishPage(view, 0u, uint2(high.x, low.y));
@@ -60,6 +56,8 @@ void MarkVirtualShadowCoarsePages(uint3 dispatchThreadId : SV_DispatchThreadID)
         return;
     }
 
-    uint lastMip = max(view.MipLevelCount, 1u) - 1u;
+    if ((view.Flags & (VSM_VIEW_COARSE_CLIP_LEVEL | VSM_VIEW_SINGLE_PAGE)) == 0u)
+        return;
+    uint lastMip = view.MipLevelCount - 1u;
     PublishPage(view, lastMip, 0u.xx);
 }

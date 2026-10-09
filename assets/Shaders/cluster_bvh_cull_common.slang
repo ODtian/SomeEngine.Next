@@ -26,7 +26,7 @@ struct ClusterProjectedBounds
 };
 
 void ClusterNodeWorldBounds(
-    ClusterBVHNode node,
+    ClusterHierarchySlice node,
     RenderInstanceTransform transform,
     float boundsExpansion,
     out float3 worldMin,
@@ -35,8 +35,8 @@ void ClusterNodeWorldBounds(
     float localExpansion = ClusterLocalExpansionForWorldRadius(
         transform,
         boundsExpansion);
-    float3 localMin = node.BoundMin.xyz - localExpansion.xxx;
-    float3 localMax = node.BoundMax.xyz + localExpansion.xxx;
+    float3 localMin = node.BoundsCenter - node.BoundsExtent - localExpansion.xxx;
+    float3 localMax = node.BoundsCenter + node.BoundsExtent + localExpansion.xxx;
     worldMin = 1e30.xxx;
     worldMax = -1e30.xxx;
     [unroll]
@@ -52,6 +52,22 @@ void ClusterNodeWorldBounds(
     }
 }
 
+void ClusterRootWorldBounds(ByteAddressBuffer hierarchy, uint root,
+    RenderInstanceTransform transform, float expansion, out float3 low, out float3 high)
+{
+    low = 1e30.xxx;
+    high = -1e30.xxx;
+    for (uint child = 0u; child < 4u; child++)
+    {
+        ClusterHierarchySlice slice = LoadClusterNode(hierarchy, root, child);
+        if (!ClusterSliceEnabled(slice)) continue;
+        float3 childLow, childHigh;
+        ClusterNodeWorldBounds(slice, transform, expansion, childLow, childHigh);
+        low = min(low, childLow);
+        high = max(high, childHigh);
+    }
+}
+
 bool IsWorldAabbOutsideView(float3 worldMin, float3 worldMax, ClusterViewUniforms view)
 {
     if (view.CullingRadius > 0.0)
@@ -62,8 +78,8 @@ bool IsWorldAabbOutsideView(float3 worldMin, float3 worldMax, ClusterViewUniform
     }
     float3 center = (worldMin + worldMax) * 0.5;
     float3 extent = (worldMax - worldMin) * 0.5;
-    float4 clip = mul(float4(center, 1.0), view.ViewProj);
-    float4 magnitude = mul(float4(abs(center), 1.0), abs(view.ViewProj));
+    float4 clip = mul(float4(ClusterPositionForView(center, view), 1.0), view.ViewProj);
+    float4 magnitude = mul(float4(abs(ClusterPositionForView(center, view)), 1.0), abs(view.ViewProj));
     float3 x = float3(view.ViewProj[0][0], view.ViewProj[1][0], view.ViewProj[2][0]);
     float3 y = float3(view.ViewProj[0][1], view.ViewProj[1][1], view.ViewProj[2][1]);
     float3 z = float3(view.ViewProj[0][2], view.ViewProj[1][2], view.ViewProj[2][2]);
@@ -76,7 +92,7 @@ bool IsWorldAabbOutsideView(float3 worldMin, float3 worldMax, ClusterViewUniform
     float2 depthRadius = float2(dot(extent, abs(z)), dot(extent, abs(w - z)));
     float2 depthDistance = float2(clip.z, clip.w - clip.z);
     float2 depthRounding = (float2(magnitude.z, magnitude.w + magnitude.z) + depthRadius + 1.0) * 9.5367431640625e-7;
-    return any(depthDistance + depthRadius < -depthRounding);
+    return ClusterViewClipsDepth(view) && any(depthDistance + depthRadius < -depthRounding);
 }
 
 bool ProjectWorldAabb(
@@ -107,7 +123,7 @@ bool ProjectWorldAabb(
             (corner & 1u) != 0u ? worldMax.x : worldMin.x,
             (corner & 2u) != 0u ? worldMax.y : worldMin.y,
             (corner & 4u) != 0u ? worldMax.z : worldMin.z);
-        float4 clip = mul(float4(world, 1.0), view.ViewProj);
+        float4 clip = mul(float4(ClusterPositionForView(world, view), 1.0), view.ViewProj);
         if (clip.w <= 1e-5)
         {
             projectedBounds.CrossesNearPlane = true;
@@ -134,7 +150,7 @@ bool ProjectWorldAabb(
 
     return outsideLeft == 8u || outsideRight == 8u ||
         outsideBottom == 8u || outsideTop == 8u ||
-        outsideNear == 8u || outsideFar == 8u;
+        (ClusterViewClipsDepth(view) && (outsideNear == 8u || outsideFar == 8u));
 }
 
 // Reuse is local to one fixed world AABB; callers reset this data for each node.
@@ -163,7 +179,7 @@ bool ProjectWorldAabbForView(
 }
 
 bool ProjectClusterNode(
-    ClusterBVHNode node,
+    ClusterHierarchySlice node,
     RenderInstanceTransform transform,
     float boundsExpansion,
     ClusterViewUniforms view,
@@ -184,18 +200,32 @@ bool ProjectClusterNode(
         projectedBounds);
 }
 
-bool ClusterNodePassesLod(
-    ClusterBVHNode node,
-    RenderInstanceTransform transform,
-    ClusterViewUniforms view)
+struct ClusterNodeLodBounds
 {
-    if (view.CullingEnabled == 0u)
-        return true;
-    float3 worldCenter = TransformInstanceLocalPosition(node.LODSphere.xyz, transform);
+    float3 Center;
+    float Radius;
+    float ErrorScale;
+};
+
+ClusterNodeLodBounds ComputeClusterNodeLodBounds(
+    ClusterHierarchySlice node,
+    RenderInstanceTransform transform)
+{
+    ClusterNodeLodBounds bounds;
+    bounds.Center = TransformInstanceLocalPosition(node.LODBounds.xyz, transform);
     float maxScale = abs(transform.Scale) *
         max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
-    float worldRadius = node.LODSphere.w * maxScale;
-    return ClusterSphereError(worldCenter, worldRadius, node.LODError * maxScale, view) > view.LodThreshold;
+    bounds.Radius = node.LODBounds.w * maxScale;
+    bounds.ErrorScale = abs(transform.Scale) * min(min(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
+    return bounds;
+}
+
+bool ClusterNodePassesLod(ClusterHierarchySlice node, ClusterNodeLodBounds bounds, ClusterViewUniforms view)
+{
+    if (view.CullingEnabled == 0u) return true;
+    return ClusterSphereError(bounds.Center, bounds.Radius, node.MaxParentLODError * bounds.ErrorScale, view) > view.LodThreshold &&
+        (!ClusterSliceLeaf(node) || node.MinLODError <= 0.0 ||
+        ClusterSphereErrorBounds(bounds.Center, bounds.Radius, node.MinLODError * bounds.ErrorScale, view).x <= view.LodThreshold);
 }
 
 #endif

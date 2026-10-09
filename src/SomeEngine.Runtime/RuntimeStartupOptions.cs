@@ -34,9 +34,15 @@ public sealed record RuntimeStartupOptions(
     public string? ScenePlayback { get; init; }
     public float FixedFrameSeconds { get; init; }
     public string? FrameOutputPath { get; init; }
+    /// <summary>Packed top-down linear RGBA16F material color, before temporal resolve and tone mapping.</summary>
+    public string? LinearFrameOutputPath { get; init; }
+    /// <summary>Zero-based scene frame to capture; finite runs default to their last frame.</summary>
+    public int? CaptureFrame { get; init; }
     public bool HideDebugUi { get; init; }
     public bool TemporalAntialiasing { get; init; } = true;
     public bool VirtualShadows { get; init; } = true;
+    /// <summary>Optional directional and local ray count; zero selects hard depth comparison.</summary>
+    public uint? ShadowRayCount { get; init; }
 
     public static RuntimeStartupOptions Parse(string[] args)
     {
@@ -62,10 +68,36 @@ public sealed record RuntimeStartupOptions(
         if (frameOutputPath is not null &&
             !Path.GetExtension(frameOutputPath).Equals(".bmp", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("--frame-output requires a .bmp destination.");
+        string? linearFrameOutputPath = ReadOptionalValue(args, "--linear-frame-output");
+        if (linearFrameOutputPath is not null &&
+            !Path.GetExtension(linearFrameOutputPath).Equals(".rgba16", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("--linear-frame-output requires a .rgba16 destination.", "--linear-frame-output");
+        int? captureFrame = null;
+        string? captureText = ReadOptionalValue(args, "--capture-frame");
+        if (captureText is not null)
+        {
+            if (!int.TryParse(captureText, out int parsed) || parsed < 0 || (frameLimit > 0 && parsed >= frameLimit))
+                throw new ArgumentOutOfRangeException("--capture-frame");
+            if (frameOutputPath is null && linearFrameOutputPath is null)
+                throw new ArgumentException("--capture-frame requires an output destination.", "--capture-frame");
+            captureFrame = parsed;
+        }
+        else if (frameLimit > 0 && (frameOutputPath is not null || linearFrameOutputPath is not null))
+            captureFrame = frameLimit - 1;
+        else if (linearFrameOutputPath is not null)
+            throw new ArgumentException("Linear output requires --frames or --capture-frame.", "--linear-frame-output");
         string? playback = ReadOptionalValue(args, "--scene-playback");
         if (playback is not null and not "motion" and not "materials" and not "camera")
             throw new ArgumentException("--scene-playback requires 'motion', 'materials', or 'camera'.");
         bool synchronousFrames = args.Contains("--synchronous-frames", StringComparer.OrdinalIgnoreCase);
+        uint? shadowRayCount = null;
+        if (ReadOptionalValue(args, "--vsm-ray-count") is { } rayText)
+        {
+            if (!uint.TryParse(rayText, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out uint rays))
+                throw new ArgumentOutOfRangeException("--vsm-ray-count");
+            shadowRayCount = rays;
+        }
         float fixedStep = 0;
         string? stepText = ReadOptionalValue(args, "--fixed-step");
         if (stepText is not null && (!float.TryParse(stepText, System.Globalization.CultureInfo.InvariantCulture, out fixedStep)
@@ -120,9 +152,12 @@ public sealed record RuntimeStartupOptions(
             ScenePlayback = playback,
             FixedFrameSeconds = fixedStep,
             FrameOutputPath = frameOutputPath,
+            LinearFrameOutputPath = linearFrameOutputPath,
+            CaptureFrame = captureFrame,
             HideDebugUi = args.Contains("--no-debug-ui", StringComparer.OrdinalIgnoreCase),
             TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
             VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
+            ShadowRayCount = shadowRayCount,
         };
     }
 

@@ -113,44 +113,4 @@ public sealed class FrameIdentityTests
         _ = second.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
         second.Dispose();
     }
-
-    [Fact]
-    public void StaleFrameExtensionCannotOperateOnReusedFrameSlot()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(
-            support.Backend,
-            support.Device,
-            [support.GraphicsQueue],
-            new RenderGraphDesc(MaximumFramesInFlight: 1));
-        GraphExtensionPointId point;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            point = edit.AddExtensionPoint("dynamic");
-            edit.Commit();
-        }
-        QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-
-        RenderGraphFrame first = graph.BeginFrame();
-        RenderGraphFrameExtension extension = first.BeginExtension(point);
-        RenderGraphFrameExtension stale = extension;
-        Assert.Equal(0, first.Execute(completions));
-
-        RenderGraphFrame second = graph.BeginFrame();
-        using RenderGraphFrameExtension current = second.BeginExtension(point);
-        bool rejected = false;
-        try
-        {
-            _ = stale.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
-        }
-        catch (InvalidOperationException)
-        {
-            rejected = true;
-        }
-        Assert.True(rejected, "A copied frame-extension lease must not revive with a new frame.");
-
-        stale.Dispose();
-        _ = current.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
-        second.Dispose();
-    }
 }

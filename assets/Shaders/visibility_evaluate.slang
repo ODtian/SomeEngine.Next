@@ -1,6 +1,9 @@
 #ifndef VISIBILITY_EVALUATE_SLANG
 #define VISIBILITY_EVALUATE_SLANG
 
+[__AttributeUsage(_AttributeTargets.Struct)]
+struct VisibilityDepthAttribute { string behavior; };
+
 struct VisibilityVertexInput
 {
     uint VisibleClusterIndex;
@@ -26,6 +29,9 @@ struct VisibilityPixelInput
 {
     uint3 PixelCoord;
     float Depth;
+    // Reversed integer depth already stored at the resolved target pixel.
+    // A shader retaining input.Depth can reject covered target pixels itself.
+    uint EncodedTargetDepth;
     uint VisibleClusterIndex;
     uint TriangleID;
     uint ViewIndex;
@@ -72,6 +78,7 @@ struct EmptyVisibilityVarying
 {
 };
 
+[VisibilityDepth("opaque")]
 struct OpaqueVisibilityEvaluate<TVertex> : IVisibilityEvaluate<TVertex>
 {
     typealias Varying = EmptyVisibilityVarying;
@@ -107,7 +114,8 @@ struct OpaqueVisibilityEvaluate<TVertex> : IVisibilityEvaluate<TVertex>
     VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
     {
         VisibilityPixelResult result;
-        result.Visible = 1u;
+        result.Visible = input.TargetPolicy == 0u ||
+            input.EncodedTargetDepth < asuint(1.0 - saturate(input.Depth)) ? 1u : 0u;
         result.Depth = input.Depth;
         return result;
     }

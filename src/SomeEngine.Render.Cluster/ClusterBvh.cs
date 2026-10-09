@@ -20,10 +20,8 @@ internal readonly record struct ClusterBvhRegistration(
     int ByteLength,
     uint NodeCount,
     int PageCount,
-    uint[] LocalPageByNode,
-    int[][] NodesByPage,
+    uint[] LeafReferences,
     Memory<byte> Nodes,
-    ClusterLodGroups LodGroups,
     int HierarchyLevels);
 
 internal readonly record struct ClusterBvhLeafIndex(
@@ -31,11 +29,8 @@ internal readonly record struct ClusterBvhLeafIndex(
     uint FirstNode,
     uint NodeCount,
     uint FirstPage,
-    int PageCount,
-    uint[] LocalPageByNode,
-    int[][] NodesByPage,
-    Memory<byte> Nodes,
-    ClusterLodGroups LodGroups);
+    uint[] LeafReferences,
+    Memory<byte> Nodes);
 
 internal readonly record struct ClusterBvhDestination(ulong Offset, Memory<byte> Memory);
 internal readonly record struct ClusterBvhAllocation(ulong Offset, uint Length);
@@ -47,6 +42,7 @@ internal readonly record struct ClusterBvhCheckpoint(int PatchCount);
 internal sealed record ClusterBvhPublication(
     int PatchCount,
     Mesh[] RootMeshes,
+    Mesh[] ChangedMeshes,
     ClusterStagedUpload[] Uploads);
 
 internal sealed class ClusterBvh
@@ -56,8 +52,7 @@ internal sealed class ClusterBvh
     internal const ulong DefaultCapacityBytes = 64UL * 1024 * 1024;
     internal const uint PageFaultMarker = uint.MaxValue;
     internal static readonly uint NodeBytes = checked((uint)Unsafe.SizeOf<ClusterBVHNode>());
-    private static readonly uint ChildPointerByteOffset = checked(
-        (uint)Marshal.OffsetOf<ClusterBVHNode>(nameof(ClusterBVHNode.ChildPointer)).ToInt64());
+    private const uint ChildReferenceByteOffset = 140;
 
     private readonly IClusterBvhStorage _storage;
     private readonly List<ClusterBvhAllocation> _allocations = [];
@@ -108,9 +103,12 @@ internal sealed class ClusterBvh
 
     public bool TryPageForLeaf(uint nodeIndex, out uint pageId)
     {
+        uint child = nodeIndex & 3;
+        nodeIndex >>= 2;
         if (TryFindLeafIndexByNode(nodeIndex, out ClusterBvhLeafIndex index))
         {
-            uint localPage = index.LocalPageByNode[checked((int)(nodeIndex - index.FirstNode))];
+            uint reference = index.LeafReferences[checked((int)((nodeIndex - index.FirstNode) * 4 + child))];
+            uint localPage = reference == uint.MaxValue ? uint.MaxValue : reference >> 8;
             if (localPage != uint.MaxValue)
             {
                 pageId = checked(index.FirstPage + localPage);
@@ -182,22 +180,8 @@ internal sealed class ClusterBvh
 
         Span<ClusterBVHNode> patched = MemoryMarshal.Cast<byte, ClusterBVHNode>(destination.Memory.Span);
         int hierarchyDepth = ValidateTopology(patched);
-        var lodGroups = new ClusterLodGroups(patched);
         uint[] localPageByNode = PatchNodes(patched, firstNode, firstPage, pages);
-        var nodesByPage = new int[pages.Count][];
-        var pageCounts = new int[pages.Count];
-        foreach (uint page in localPageByNode)
-            if (page != uint.MaxValue) pageCounts[page]++;
-        for (int page = 0; page < pages.Count; page++)
-            nodesByPage[page] = new int[pageCounts[page]];
-        Array.Clear(pageCounts);
-        for (int node = 0; node < localPageByNode.Length; node++)
-        {
-            uint page = localPageByNode[node];
-            if (page != uint.MaxValue) nodesByPage[page][pageCounts[page]++] = node;
-        }
-
-        uint root = firstNode + checked((uint)nodeCount) - 1;
+        uint root = firstNode;
         return new ClusterBvhRegistration(
             mesh,
             firstNode,
@@ -207,10 +191,8 @@ internal sealed class ClusterBvh
             nodeCount32,
             pages.Count,
             localPageByNode,
-            nodesByPage,
             destination.Memory,
-            lodGroups,
-            Math.Max(1, hierarchyDepth - 1));
+            hierarchyDepth);
     }
 
     public uint Commit(in ClusterBvhRegistration registration)
@@ -227,11 +209,8 @@ internal sealed class ClusterBvh
             registration.FirstNode,
             registration.NodeCount,
             registration.FirstPage,
-            registration.PageCount,
-            registration.LocalPageByNode,
-            registration.NodesByPage,
-            registration.Nodes,
-            registration.LodGroups));
+            registration.LeafReferences,
+            registration.Nodes));
         _registeredPageCount = checked(
             registration.FirstPage + checked((uint)registration.PageCount));
         _pendingRootMeshes.Add(registration.Mesh);
@@ -245,8 +224,8 @@ internal sealed class ClusterBvh
             registration.NodeCount == 0 ||
             registration.ByteLength != checked((int)(registration.NodeCount * NodeBytes)) ||
             registration.PageCount <= 0 ||
-            registration.LocalPageByNode is null ||
-            registration.LocalPageByNode.Length != checked((int)registration.NodeCount) ||
+            registration.LeafReferences is null ||
+            registration.LeafReferences.Length != checked((int)registration.NodeCount * 4) ||
             _roots.ContainsKey(registration.Mesh))
         {
             throw new InvalidOperationException("The prepared Cluster BVH registration is stale or malformed.");
@@ -258,54 +237,25 @@ internal sealed class ClusterBvh
         _pendingRootMeshes.EnsureCapacity(checked(_pendingRootMeshes.Count + 1));
     }
 
-    public void ReservePagePatch(uint pageId)
-    {
-        ClusterBvhLeafIndex index = GetLeafIndexByPage(pageId);
-        uint localPage = pageId - index.FirstPage;
-        int leafCount = index.NodesByPage[localPage].Length;
-        _pendingPatches.EnsureCapacity(checked(_pendingPatches.Count + leafCount));
-    }
+    internal void PatchPart(uint node, uint child, uint reference)
+        => PatchPartWord(node, child, ChildReferenceByteOffset, reference);
 
-    public void PatchPage(uint pageId, uint pagePointer)
+    internal void PatchPartErrors(uint node, uint child, uint errors)
+        => PatchPartWord(node, child, 76, errors);
+
+    private void PatchPartWord(uint node, uint child, uint wordOffset, uint value)
     {
-        ClusterBvhLeafIndex index = GetLeafIndexByPage(pageId);
-        uint localPage = pageId - index.FirstPage;
-        foreach (int localNode in index.NodesByPage[localPage])
-        {
-            uint leaf = checked(index.FirstNode + checked((uint)localNode));
-            ulong offset = checked((ulong)leaf * NodeBytes + ChildPointerByteOffset);
-            _pendingPatches.Add(new ClusterBvhPatch(
-                offset,
-                pagePointer,
-                index.Nodes.Slice(checked(localNode * (int)NodeBytes + (int)ChildPointerByteOffset), sizeof(uint))));
-        }
+        if (!TryFindLeafIndexByNode(node, out ClusterBvhLeafIndex mesh))
+            throw new InvalidOperationException("A hierarchy fixup references an unknown mesh node.");
+        int localNode = checked((int)(node - mesh.FirstNode));
+        int referenceOffset = checked(localNode * (int)NodeBytes + (int)wordOffset + (int)child * 16);
+        if (BinaryPrimitives.ReadUInt32LittleEndian(mesh.Nodes.Span.Slice(referenceOffset, sizeof(uint))) == value) return;
+        ulong offset = checked((ulong)mesh.FirstNode * NodeBytes + (uint)referenceOffset);
+        _pendingPatches.Add(new ClusterBvhPatch(offset, value, mesh.Nodes.Slice(referenceOffset, sizeof(uint))));
     }
 
     public ClusterBvhCheckpoint CaptureChanges()
         => new(_pendingPatches.Count);
-
-    internal void CollectPageDependencies(HashSet<uint> pages)
-    {
-        uint[] requestedPages = [.. pages];
-        Array.Sort(requestedPages);
-        var nodes = new List<int>();
-        var visitedGroups = new HashSet<int>();
-        ClusterLodGroups? previousGroups = null;
-        foreach (uint pageId in requestedPages)
-        {
-            ClusterBvhLeafIndex mesh = GetLeafIndexByPage(pageId);
-            if (!ReferenceEquals(previousGroups, mesh.LodGroups))
-            {
-                visitedGroups.Clear();
-                previousGroups = mesh.LodGroups;
-            }
-            nodes.Clear();
-            uint localPage = pageId - mesh.FirstPage;
-            mesh.LodGroups.CollectRequiredNodes(mesh.NodesByPage[localPage], nodes, visitedGroups);
-            foreach (int node in nodes)
-                pages.Add(checked(mesh.FirstPage + mesh.LocalPageByNode[node]));
-        }
-    }
 
     public void RestoreChanges(in ClusterBvhCheckpoint checkpoint)
     {
@@ -326,19 +276,10 @@ internal sealed class ClusterBvh
             BinaryPrimitives.WriteUInt32LittleEndian(
                 patch.Destination.Span,
                 patch.Value);
+            _storage.Stage(patch.Offset / NodeBytes * NodeBytes, checked((int)NodeBytes));
             uint node = checked((uint)(patch.Offset / NodeBytes));
             if (TryFindLeafIndexByNode(node, out ClusterBvhLeafIndex mesh))
                 changedMeshes.Add(mesh.FirstNode);
-        }
-        foreach (ClusterBvhLeafIndex mesh in _leafIndexes)
-        {
-            if (!changedMeshes.Contains(mesh.FirstNode) && !_pendingRootMeshes.Contains(mesh.Mesh))
-                continue;
-            ulong offset = checked((ulong)mesh.FirstNode * NodeBytes);
-            int length = checked((int)(mesh.NodeCount * NodeBytes));
-            Span<ClusterBVHNode> nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(mesh.Nodes.Span);
-            if (mesh.LodGroups.UpdateReadiness(nodes) || changedMeshes.Contains(mesh.FirstNode))
-                _storage.Stage(offset, length);
         }
         foreach (Mesh mesh in _pendingRootMeshes)
         {
@@ -350,6 +291,8 @@ internal sealed class ClusterBvh
         return new ClusterBvhPublication(
             _pendingPatches.Count,
             [.. _pendingRootMeshes],
+            _leafIndexes.Where(mesh => changedMeshes.Contains(mesh.FirstNode) ||
+                _pendingRootMeshes.Contains(mesh.Mesh)).Select(static mesh => mesh.Mesh).ToArray(),
             _storage.CaptureStagedUploads());
     }
 
@@ -412,87 +355,46 @@ internal sealed class ClusterBvh
         return firstFailure;
     }
 
-    private static uint[] PatchNodes(
-        Span<ClusterBVHNode> nodes,
-        uint firstNode,
-        uint firstPage,
+    private static uint[] PatchNodes(Span<ClusterBVHNode> nodes, uint firstNode, uint firstPage,
         IReadOnlyList<MeshPayloadPage> pages)
     {
-        if (pages.Count == 0)
-            throw new InvalidOperationException("A Cluster BVH must reference at least one page.");
-
-        var pageStates = new PageLeafBuildState[pages.Count];
-        for (int i = 0; i < nodes.Length; i++)
+        var references = Enumerable.Repeat(uint.MaxValue, nodes.Length * 4).ToArray();
+        var coverage = pages.Select(page => new bool[page.ClusterCount]).ToArray();
+        for (int index = 0; index < nodes.Length; index++)
         {
-            if (nodes[i].NodeType == 0)
+            for (int child = 0; child < 4; child++)
             {
-                nodes[i].ChildPointer = checked(nodes[i].ChildPointer + firstNode);
-                continue;
+                ClusterHierarchySlice slice = nodes[index].GetChild(child);
+                if (!slice.IsEnabled) continue;
+                if (!slice.IsLeaf)
+                {
+                    slice.ChildReference = checked(slice.ChildReference + firstNode);
+                }
+                else
+                {
+                    uint page = slice.ChildReference >> 8;
+                    uint start = slice.FirstCluster, count = slice.ClusterCount;
+                    if (page >= pages.Count || start + count > pages[(int)page].ClusterCount || count == 0)
+                        throw new InvalidDataException("A hierarchy part exceeds its geometry page.");
+                    for (uint cluster = start; cluster < start + count; cluster++)
+                    {
+                        if (coverage[page][cluster]) throw new InvalidDataException("Hierarchy parts overlap.");
+                        coverage[page][cluster] = true;
+                    }
+                    references[index * 4 + child] = slice.ChildReference;
+                    uint first = checked(slice.FirstPage + firstPage);
+                    if (first + slice.PageCount > 0x2000000u)
+                        throw new InvalidDataException("Geometry page ranges exceed their 25-bit representation.");
+                    slice.PageRangeKey = (first << 5) | slice.PageCount | (slice.PageRangeKey & 0x40000000u);
+                    slice.ChildReference = PageFaultMarker;
+                }
+                nodes[index].SetChild(child, slice);
             }
-
-            uint localPage = nodes[i].ChildPointer;
-            if (localPage >= checked((uint)pages.Count))
-            {
-                throw new InvalidOperationException(
-                    $"BVH leaf node {i} references local page {localPage}, but the mesh contains {pages.Count} pages.");
-            }
-
-            nodes[i].GetLeafData(out uint clusterStart, out uint clusterCount);
-            int pageIndex = checked((int)localPage);
-            uint pageClusterCount = pages[pageIndex].ClusterCount;
-            if (clusterCount == 0 || clusterStart > pageClusterCount || clusterCount > pageClusterCount - clusterStart)
-            {
-                throw new InvalidOperationException(
-                    $"BVH leaf node {i} references page {localPage} cluster range " +
-                    $"[{clusterStart}, {checked((ulong)clusterStart + clusterCount)}), but the page contains {pageClusterCount} clusters.");
-            }
-
-            PageLeafBuildState state = pageStates[pageIndex];
-            if (clusterStart != state.CoveredClusters)
-            {
-                string reason = clusterStart < state.CoveredClusters
-                    ? "overlaps a previous ordered range"
-                    : "leaves a gap in ordered ranges";
-                throw new InvalidOperationException(
-                    $"BVH leaf range [{clusterStart}, {checked(clusterStart + clusterCount)}) for page {localPage} {reason} at cluster {state.CoveredClusters}.");
-            }
-            pageStates[pageIndex] = new PageLeafBuildState(
-                checked(state.LeafCount + 1),
-                checked(clusterStart + clusterCount));
         }
-
-        for (int page = 0; page < pages.Count; page++)
-        {
-            PageLeafBuildState state = pageStates[page];
-            if (state.LeafCount == 0)
-                throw new InvalidOperationException($"Cluster page {page} is not referenced by any BVH leaf.");
-            if (state.CoveredClusters != pages[page].ClusterCount)
-            {
-                throw new InvalidOperationException(
-                    $"BVH leaves cover {state.CoveredClusters} clusters on page {page}, but the page contains {pages[page].ClusterCount}.");
-            }
-
-        }
-
-        var localPageByNode = new uint[nodes.Length];
-        Array.Fill(localPageByNode, uint.MaxValue);
-        for (int node = 0; node < nodes.Length; node++)
-        {
-            if (nodes[node].NodeType != 1)
-                continue;
-
-            localPageByNode[node] = nodes[node].ChildPointer;
-            // Geometry pages, rather than instances or leaf ranges, identify
-            // streaming demand. XYZ remains the caster's bounds.
-            nodes[node].BoundMax.W = BitConverter.UInt32BitsToSingle(
-                checked(firstPage + nodes[node].ChildPointer));
-            nodes[node].ChildPointer = PageFaultMarker;
-        }
-
-        return localPageByNode;
+        foreach (bool[] page in coverage)
+            if (page.Contains(false)) throw new InvalidDataException("Hierarchy parts leave geometry uncovered.");
+        return references;
     }
-
-    private readonly record struct PageLeafBuildState(int LeafCount, uint CoveredClusters);
 
     private bool TryFindLeafIndexByNode(uint nodeIndex, out ClusterBvhLeafIndex result)
     {
@@ -521,183 +423,40 @@ internal sealed class ClusterBvh
         return false;
     }
 
-    private ClusterBvhLeafIndex GetLeafIndexByPage(uint pageId)
-    {
-        int low = 0;
-        int high = _leafIndexes.Count - 1;
-        while (low <= high)
-        {
-            int middle = low + ((high - low) / 2);
-            ClusterBvhLeafIndex candidate = _leafIndexes[middle];
-            if (pageId < candidate.FirstPage)
-            {
-                high = middle - 1;
-                continue;
-            }
-            if (pageId - candidate.FirstPage >= checked((uint)candidate.PageCount))
-            {
-                low = middle + 1;
-                continue;
-            }
-
-            return candidate;
-        }
-
-        throw new ArgumentOutOfRangeException(
-            nameof(pageId),
-            pageId,
-            "Cluster page id is outside the BVH leaf index.");
-    }
-
     private static int ValidateTopology(ReadOnlySpan<ClusterBVHNode> nodes)
     {
-        if (nodes.IsEmpty)
-            throw new InvalidOperationException("A Cluster BVH must contain a root node.");
-
-        int root = nodes.Length - 1;
-        int[] parentCounts = new int[nodes.Length];
-        for (int node = 0; node < nodes.Length; node++)
-        {
-            ClusterBVHNode value = nodes[node];
-            ValidateNodeData(value, node);
-            if (value.NodeType == 1)
-                continue;
-            if (value.NodeType != 0)
-                throw new InvalidOperationException($"BVH node {node} has unsupported node type {value.NodeType}.");
-
-            uint firstChild = value.ChildPointer;
-            uint childCount = value.ChildCount;
-            if (childCount == 0)
-                throw new InvalidOperationException($"BVH internal node {node} has no children.");
-            uint length = checked((uint)nodes.Length);
-            if (firstChild >= length || childCount > length - firstChild)
-                throw new InvalidOperationException($"BVH internal node {node} child range is outside the local node range.");
-
-            for (uint child = 0; child < childCount; child++)
-            {
-                int childIndex = checked((int)(firstChild + child));
-                parentCounts[childIndex] = checked(parentCounts[childIndex] + 1);
-                if (parentCounts[childIndex] > 1)
-                {
-                    throw new InvalidOperationException(
-                        $"BVH node {childIndex} has more than one parent.");
-                }
-            }
-        }
-
-        if (parentCounts[root] != 0)
-            throw new InvalidOperationException("The final BVH node must be the unique root.");
-        for (int node = 0; node < root; node++)
-        {
-            if (parentCounts[node] != 1)
-            {
-                throw new InvalidOperationException(
-                    $"BVH node {node} must have exactly one parent, but has {parentCounts[node]}.");
-            }
-        }
-
-        byte[] states = new byte[nodes.Length];
-        int[] stackNodes = new int[nodes.Length];
-        uint[] stackNextChildren = new uint[nodes.Length];
-        int stackCount = 1;
-        stackNodes[0] = root;
-        states[root] = 1;
-        int maximumDepth = 1;
-
-        while (stackCount != 0)
-        {
-            int stackIndex = stackCount - 1;
-            int node = stackNodes[stackIndex];
-            ClusterBVHNode value = nodes[node];
-            if (value.NodeType == 1)
-            {
-                states[node] = 2;
-                stackCount--;
-                continue;
-            }
-
-            uint nextChild = stackNextChildren[stackIndex];
-            if (nextChild < value.ChildCount)
-            {
-                int child = checked((int)(value.ChildPointer + nextChild));
-                stackNextChildren[stackIndex] = nextChild + 1;
-                if (states[child] == 1)
-                    throw new InvalidOperationException($"BVH node {child} participates in a cycle.");
-                if (states[child] == 0)
-                {
-                    states[child] = 1;
-                    stackNodes[stackCount] = child;
-                    stackNextChildren[stackCount] = 0;
-                    stackCount++;
-                    maximumDepth = Math.Max(maximumDepth, stackCount);
-                }
-                continue;
-            }
-
-            states[node] = 2;
-            stackCount--;
-        }
-
-        for (int node = 0; node < states.Length; node++)
-        {
-            if (states[node] != 2)
-                throw new InvalidOperationException($"BVH node {node} is not reachable from the final root.");
-        }
-
-        ValidateTraversalStack(nodes, root, stackNodes);
+        if (nodes.Length == 0) throw new InvalidDataException("A cluster hierarchy requires a root.");
+        ClusterBVHNode[] data = nodes.ToArray();
+        var states = new byte[data.Length];
+        int maximumDepth = 0;
+        Visit(0, 1);
+        if (states.Contains((byte)0)) throw new InvalidDataException("The hierarchy contains unreachable nodes.");
         return maximumDepth;
-    }
 
-    private static void ValidateTraversalStack(
-        ReadOnlySpan<ClusterBVHNode> nodes,
-        int root,
-        Span<int> stack)
-    {
-        int stackCount = 1;
-        stack[0] = root;
-        while (stackCount != 0)
+        void Visit(int index, int depth)
         {
-            int node = stack[--stackCount];
-            ClusterBVHNode value = nodes[node];
-            if (value.NodeType == 1)
-                continue;
-
-            int childCount = checked((int)value.ChildCount);
-            if (childCount > TraversalStackCapacity - stackCount)
+            if ((uint)index >= data.Length || states[index] == 1)
+                throw new InvalidDataException("The hierarchy contains an invalid child reference or cycle.");
+            if (states[index] == 2) return;
+            states[index] = 1;
+            maximumDepth = Math.Max(maximumDepth, depth);
+            for (int child = 0; child < 4; child++)
             {
-                throw new InvalidOperationException(
-                    $"BVH node {node} requires {checked(stackCount + childCount)} pending traversal " +
-                    $"entries, but the Cluster shader supports {TraversalStackCapacity}.");
+                ClusterHierarchySlice slice = data[index].GetChild(child);
+                if (!slice.IsEnabled) continue;
+                if (!IsFinite(slice.BoundsCenter) || !IsFinite(slice.BoundsExtent) ||
+                    slice.BoundsExtent.X < 0 || slice.BoundsExtent.Y < 0 || slice.BoundsExtent.Z < 0 ||
+                    !IsFinite(new System.Numerics.Vector3(slice.LODBounds.X, slice.LODBounds.Y, slice.LODBounds.Z)) ||
+                    !float.IsFinite(slice.LODBounds.W) || slice.LODBounds.W < 0 ||
+                    float.IsNaN(slice.MinLODError) || slice.MinLODError < 0 ||
+                    float.IsNaN(slice.MaxParentLODError) || slice.MaxParentLODError < 0)
+                    throw new InvalidDataException("The hierarchy contains invalid bounds or errors.");
+                if (!slice.IsLeaf) Visit(checked((int)slice.ChildReference), depth + 1);
             }
-
-            for (int child = 0; child < childCount; child++)
-                stack[stackCount++] = checked((int)value.ChildPointer + child);
+            states[index] = 2;
         }
     }
 
-    private static void ValidateNodeData(in ClusterBVHNode node, int nodeIndex)
-    {
-        if (!IsFinite(node.BoundMin) ||
-            !IsFinite(node.BoundMax) ||
-            node.BoundMin.X > node.BoundMax.X ||
-            node.BoundMin.Y > node.BoundMax.Y ||
-            node.BoundMin.Z > node.BoundMax.Z ||
-            !IsFinite(node.LODSphere) ||
-            node.LODSphere.W < 0 ||
-            !float.IsFinite(node.LODError) ||
-            node.LODError < 0)
-        {
-            throw new InvalidOperationException(
-                $"BVH node {nodeIndex} contains invalid bounds or LOD data.");
-        }
-    }
-
-    private static bool IsFinite(in System.Numerics.Vector4 value)
-        => float.IsFinite(value.X) &&
-           float.IsFinite(value.Y) &&
-           float.IsFinite(value.Z) &&
-           float.IsFinite(value.W);
-
+    private static bool IsFinite(System.Numerics.Vector3 value)
+        => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
 }
-
-

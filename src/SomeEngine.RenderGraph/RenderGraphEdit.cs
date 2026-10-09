@@ -194,6 +194,8 @@ public ref partial struct RenderGraphEdit
     public void Remove(GraphBufferId buffer)
     {
         ValidateOwner(buffer.Value);
+        GraphPassId upload = Structure.Buffers.Get(buffer.Value).BufferUploadPass;
+        if (upload != default) Remove(upload);
         Changes.TouchBuffer(buffer.Value, membership: true);
         _ = Staging.Buffers.Remove(buffer.Value);
     }
@@ -231,6 +233,12 @@ public ref partial struct RenderGraphEdit
         ValidateOwner(pass.Value);
         Changes.TouchPass(pass.Value, membership: true);
         GraphPass removed = Staging.Passes.Remove(pass.Value);
+        if (removed.CallbackStorage is BufferUploadCommands upload && Staging.Buffers.Contains(upload.Buffer.Value))
+        {
+            Staging.Buffers.GetMutable(upload.Buffer.Value).BufferUploadPass = default;
+            Changes.TouchBuffer(upload.Buffer.Value);
+        }
+        RemoveRegionEntry(removed.Region, pass.Value);
         Changes.ReleasedViews.UnionWith(removed.ViewReferences);
         foreach (GraphParameterResourceBinding binding in removed.ParameterBindings)
         {
@@ -254,25 +262,6 @@ public ref partial struct RenderGraphEdit
     public void Remove(GraphBufferAccessId access) => RemoveAccess(access.Value);
 
     public void Remove(GraphTextureAccessId access) => RemoveAccess(access.Value);
-
-    public void Remove(GraphExtensionPointId point)
-    {
-        ValidateOwner(point.Value);
-        Changes.TouchExtensionPoint(point.Value, membership: true);
-        _ = Staging.ExtensionPoints.Remove(point.Value);
-    }
-
-    public GraphExtensionPointId AddExtensionPoint(string label)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(label);
-        GraphIdentity identity = Staging.ExtensionPoints.Add(
-            Graph.Identity,
-            new GraphExtensionPoint(
-                label,
-                checked(Staging.NextDeclarationOrdinal++)));
-        Changes.TouchExtensionPoint(identity, membership: true);
-        return new GraphExtensionPointId(identity);
-    }
 
     public void OrderAfter(GraphPassId pass, GraphPassId predecessor)
     {
@@ -438,7 +427,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        RasterPassCallback<TStatic, TFrame> callback)
+        RasterPassCallback<TStatic, TFrame> callback,
+        GraphRegionId region = default)
     {
         return AddPass(
             label,
@@ -447,7 +437,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new RasterPassCallbackStorage<TStatic, TFrame>(staticData, callback));
+            new RasterPassCallbackStorage<TStatic, TFrame>(staticData, callback), region);
     }
 
     public GraphPassId AddComputePass<TStatic, TFrame>(
@@ -456,7 +446,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        ComputePassCallback<TStatic, TFrame> callback)
+        ComputePassCallback<TStatic, TFrame> callback,
+        GraphRegionId region = default)
     {
         return AddPass(
             label,
@@ -465,7 +456,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new ComputePassCallbackStorage<TStatic, TFrame>(staticData, callback));
+            new ComputePassCallbackStorage<TStatic, TFrame>(staticData, callback), region);
     }
 
     public GraphPassId AddCopyPass<TStatic, TFrame>(
@@ -474,7 +465,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        CopyPassCallback<TStatic, TFrame> callback)
+        CopyPassCallback<TStatic, TFrame> callback,
+        GraphRegionId region = default)
     {
         return AddPass(
             label,
@@ -483,7 +475,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new CopyPassCallbackStorage<TStatic, TFrame>(staticData, callback));
+            new CopyPassCallbackStorage<TStatic, TFrame>(staticData, callback), region);
     }
 
     public GraphPassId AddGeneralPass<TStatic, TFrame>(
@@ -492,7 +484,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        GeneralPassCallback<TStatic, TFrame> callback)
+        GeneralPassCallback<TStatic, TFrame> callback,
+        GraphRegionId region = default)
     {
         return AddPass(
             label,
@@ -501,7 +494,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new GeneralPassCallbackStorage<TStatic, TFrame>(staticData, callback));
+            new GeneralPassCallbackStorage<TStatic, TFrame>(staticData, callback), region);
     }
 
     public GraphBufferCbvId CreateBufferCbv(GraphBufferId buffer, in BufferRange range, string? label = null) =>
@@ -626,7 +619,8 @@ public ref partial struct RenderGraphEdit
         in TStatic staticData,
         in PassOptions options,
         PassDeclaration<TStatic> declaration,
-        PassCallbackStorage callbackStorage)
+        PassCallbackStorage callbackStorage,
+        GraphRegionId region)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         ArgumentNullException.ThrowIfNull(declaration);
@@ -637,9 +631,9 @@ public ref partial struct RenderGraphEdit
             Queue = queue,
             Options = options,
             CallbackStorage = callbackStorage,
-            DeclarationOrdinal = checked(Staging.NextDeclarationOrdinal++),
         };
         GraphIdentity identity = Staging.Passes.Add(Graph.Identity, pass);
+        SetPassRegion(identity, region);
         Changes.TouchPass(identity, membership: true);
         TStatic mutable = staticData;
         try
@@ -653,6 +647,7 @@ public ref partial struct RenderGraphEdit
         {
             foreach (GraphIdentity access in pass.Accesses)
                 if (Structure.Accesses.Contains(access)) _ = Staging.Accesses.Remove(access);
+            RemoveRegionEntry(pass.Region, identity);
             _ = Staging.Passes.Remove(identity);
             throw;
         }
@@ -1162,6 +1157,44 @@ public ref partial struct RenderGraphEdit
         return new GraphParameterInput(Graph.Identity, type);
     }
 
+    /// <summary>Returns the parameter inputs read or bound by passes in this edit.</summary>
+    public GraphParameterInput[] GetParameterInputs() => Staging.Passes.Rows
+        .SelectMany(static pass => pass.ParameterBindings)
+        .Where(static binding => binding.ParameterInput is not null)
+        .Select(static binding => binding.ParameterInput!)
+        .Concat(Staging.Accesses.Rows.Where(static access => access.ParameterInput is not null)
+            .Select(static access => access.ParameterInput!))
+        .Distinct().ToArray();
+
+    /// <summary>Replaces one input in both a pass's bindings and its resource accesses.</summary>
+    public void ReplaceParameterInput(GraphPassId pass, GraphParameterInput previous, GraphParameterInput input)
+    {
+        ValidatePass(pass);
+        DevelopmentCheck.Require(previous is not null && input is not null &&
+            previous.Graph == Graph.Identity && input.Graph == Graph.Identity && previous.Type == input.Type,
+            "Both parameter inputs must belong to this graph and have the same resource type.");
+        if (ReferenceEquals(previous, input)) return;
+        GraphPass row = Staging.Passes.GetMutable(pass.Value);
+        for (int index = 0; index < row.ParameterBindings.Count; index++)
+            if (ReferenceEquals(row.ParameterBindings[index].ParameterInput, previous))
+                row.ParameterBindings[index] = GraphParameterResourceBinding.FromInput(input);
+        foreach (GraphIdentity access in row.Accesses)
+        {
+            PassResourceAccess resource = Staging.Accesses.Get(access);
+            if (!ReferenceEquals(resource.ParameterInput, previous)) continue;
+            Staging.Accesses.GetMutable(access).ParameterInput = input;
+            Changes.TouchAccess(access, pass.Value, resource.Target);
+        }
+        Changes.TouchPass(pass.Value);
+    }
+
+    internal void SetBufferDescriptorRead(GraphBufferAccessId access, bool descriptorOnly)
+    {
+        PassResourceAccess row = Staging.Accesses.GetMutable(access.Value);
+        row.BufferDescriptor = true;
+        row.BufferDescriptorOnly = descriptorOnly;
+    }
+
     internal void AddParameterInput(GraphIdentity pass, GraphParameterInput input, PipelineSync sync)
     {
         DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
@@ -1187,6 +1220,7 @@ public ref partial struct RenderGraphEdit
                 TargetKind = texture ? GraphAccessTargetKind.Texture : GraphAccessTargetKind.Buffer,
                 ParameterInput = input,
                 ParameterSecondary = secondary,
+                BufferDescriptor = !texture && !writable,
                 Mode = writable && !sampled ? GraphAccessMode.ReadWrite : GraphAccessMode.Read,
                 Coverage = WriteCoverage.Partial,
                 Sync = sync,

@@ -18,6 +18,24 @@ The build reads the engine's `assets/Shaders` directory as an include library. P
 
 `Game.App` copies this project's built `.asset` files and manifest. It refuses to start when its own output manifest is absent. It does not use the engine repository's default content or search for a cache to compensate for an unbuilt project.
 
+`Game.App --test-scene <content directory> <rendering options>` runs a bounded capture through `SceneTestPlatform`.
+For example, use `--frames 64 --static-scene --fixed-step 0.016666667 --synchronous-frames --hidden-window --no-debug-ui --no-taa --frame-output <image.bmp>`.
+The selected content directory supplies its scene and application settings; `--vsm` and `--no-vsm` provide matching shadow and illumination controls.
+The interactive application continues to select its three scenes and settings in the F1 panel.
+
+DefaultGame enables virtual-shadow resolution feedback. Directional page demand and material sampling
+share the first clipmap covering each receiver, and page-pool pressure reduces that projection's density.
+Image readback runs after UI in the same image submission. Receiver-plane depth at the sampled shadow
+texel center permits a default normalized depth bias of `0.00002` while preserving contact shadows.
+The three-scene regression compares VSM visibility directly with hardware DXR inline `RayQuery`
+against source glTF geometry, instance transforms, alpha masks and normal maps. CPU source-triangle
+rays supplement isolated lights, caster motion and directional fallback updates.
+
+`tools/Test-Shadows.ps1` builds all three scene applications and runs their hardware RT shadow comparisons
+with the ordinary shadow regressions. Pass `-DownloadScenes` for the initial source preparation and
+`-EvidenceDirectory <directory>` to retain scene images, RT/VSM masks and per-pixel differences.
+`DefaultGameRayShadowTests` also runs through normal `dotnet test` discovery after the scene content is built.
+
 `EnginePath.props` and the local package source in `NuGet.config` record relative paths where possible. Move the project and engine together, or edit `EnginePath.props` and pass the new engine location to `Game.Build`. The engine checkout supplies its C# projects and native shader toolchain. The content build does not require any existing `.asset` files or `Library` directory from that checkout.
 
 To reproduce an uncached content build, remove only this project's generated `.asset` outputs, `Library`, and `assets/Shaders/generated`, retaining the source files and source `.meta` settings, then run `Game.Build` again. Installation intentionally refuses a nonempty destination; it is not an update command.

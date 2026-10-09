@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Collections.Immutable;
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 
 namespace SomeEngine.Resources;
 
@@ -32,7 +33,8 @@ public unsafe partial class Shader
         ImmutableArray<ISlangBlob?> entryBlobs,
         ImmutableArray<byte[]?> targetBytes,
         ImmutableArray<byte[]> entryBytes,
-        int entryCount)
+        int entryCount,
+        ImmutableArray<ImmutableHashSet<SlangDescriptorLocation>> usedParameters)
     {
         Name = name;
         _slangGlobal = global;
@@ -47,6 +49,8 @@ public unsafe partial class Shader
         _slangTargetBytes = targetBytes;
         _slangEntryBytes = entryBytes;
         _slangEntryCount = entryCount;
+        _slangUsedParameters = usedParameters;
+        IndexSlangEntries();
     }
 
     /// <summary>
@@ -123,7 +127,9 @@ public unsafe partial class Shader
             entryBlobs.ToImmutable(),
             Enumerable.Repeat<byte[]?>(null, targets.Length).ToImmutableArray(),
             Enumerable.Repeat(Array.Empty<byte>(), codeCount).ToImmutableArray(),
-            entryCount);
+            entryCount,
+            generateCode ? ReadSlangUsedParameters(linkedCode, targets.Length, entryCount) :
+                Enumerable.Repeat(ImmutableHashSet<SlangDescriptorLocation>.Empty, codeCount).ToImmutableArray());
     }
 
     public bool HasSlangData => true;
@@ -209,16 +215,10 @@ public unsafe partial class Shader
         out EntryPointReflection entry)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ShaderReflection reflection = GetSlangReflection(targetIndex);
-        for (int entryIndex = 0; entryIndex < _slangEntryCount; entryIndex++)
+        if (_slangNamedEntries.TryGetValue((targetIndex, name), out var found))
         {
-            EntryPointReflection candidate = reflection.GetEntryPointByIndex(checked((nuint)entryIndex));
-            if (string.Equals(candidate.Name, name, StringComparison.Ordinal) ||
-                string.Equals(candidate.NameOverride, name, StringComparison.Ordinal))
-            {
-                entry = candidate;
-                return true;
-            }
+            entry = found.Entry;
+            return true;
         }
         entry = EntryPointReflection.Null;
         return false;
@@ -231,29 +231,20 @@ public unsafe partial class Shader
         out EntryPointReflection entry)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ShaderReflection reflection = GetSlangReflection(targetIndex);
-        for (int entryIndex = 0; entryIndex < _slangEntryCount; entryIndex++)
-        {
-            EntryPointReflection candidate = reflection.GetEntryPointByIndex(checked((nuint)entryIndex));
-            if (candidate.Stage == stage &&
-                string.Equals(candidate.Name, name, StringComparison.Ordinal))
-            {
-                entry = candidate;
-                return true;
-            }
-        }
+        if (_slangStageEntries.TryGetValue((targetIndex, name, stage), out entry)) return true;
         entry = EntryPointReflection.Null;
         return false;
     }
 
     internal Shader WithManagedCode(
         IReadOnlyList<byte[]?> targetCode,
-        IReadOnlyList<byte[]> entryCode)
+        IReadOnlyList<byte[]> entryCode,
+        IReadOnlyList<ImmutableHashSet<SlangDescriptorLocation>> usedParameters)
     {
         ArgumentNullException.ThrowIfNull(targetCode);
         ArgumentNullException.ThrowIfNull(entryCode);
         if (targetCode.Count != _slangTargets.Length ||
-            entryCode.Count != checked(_slangTargets.Length * _slangEntryCount))
+            entryCode.Count != checked(_slangTargets.Length * _slangEntryCount) || usedParameters.Count != entryCode.Count)
         {
             throw new ArgumentException("Saved shader code does not match Slang reflection.");
         }
@@ -273,7 +264,8 @@ public unsafe partial class Shader
             Enumerable.Repeat<ISlangBlob?>(null, entryCode.Count).ToImmutableArray(),
             targetCode.ToImmutableArray(),
             entryCode.ToImmutableArray(),
-            _slangEntryCount);
+            _slangEntryCount,
+            usedParameters.ToImmutableArray());
     }
 
     private int GetCodeIndex(int targetIndex, int entryIndex)

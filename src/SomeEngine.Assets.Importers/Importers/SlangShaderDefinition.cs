@@ -82,7 +82,10 @@ public static partial class SlangShaderImporter
                 ISlangBlob? targetCode = compiled.Shader.GetSlangTargetBlob(target);
                 if (targetCode is not null) code.SetTargetCode(sessionDescription, target, targetCode.Buffer);
                 for (int entry = 0; entry < compiled.Shader.SlangEntryCount; entry++)
+                {
                     code.SetEntryCode(sessionDescription, target, entry, compiled.Shader.GetSlangEntryBlob(target, entry)!.Buffer);
+                    code.SetEntryUsage(sessionDescription, target, entry, compiled.Shader.GetSlangUsedParameters(target, entry));
+                }
             }
             var dependencies = compiled.Files.Select(file => new FileDependency
             {

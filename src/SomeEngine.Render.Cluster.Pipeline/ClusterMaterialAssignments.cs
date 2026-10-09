@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Collections.Immutable;
-using System.Buffers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.ECS;
@@ -72,6 +71,31 @@ public sealed class ClusterMaterialAssignmentSet
     internal IEnumerable<int> ActiveOffsets => _entries.Keys;
     internal IEnumerable<int> ChangedOffsets => _changedOffsets;
     internal IEnumerable<Entity> Entities => _entities.Keys;
+    internal void CollectChangedEntities(HashSet<Entity> entities)
+    {
+        foreach ((Entity entity, ClusterMaterialSequence sequence) in _entities)
+        {
+            uint offset = _sequences[sequence].Offset;
+            for (int index = 0; index < sequence.Count; index++)
+                if (_changedOffsets.Contains(checked((int)offset + index)) ||
+                    _changes.Contains(sequence.MaterialAt(index)))
+                {
+                    entities.Add(entity);
+                    break;
+                }
+        }
+    }
+
+    internal void CollectMaterialEntities(HashSet<long> materials, HashSet<Entity> entities)
+    {
+        foreach ((Entity entity, ClusterMaterialSequence sequence) in _entities)
+            for (int index = 0; index < sequence.Count; index++)
+                if (materials.Contains(sequence.MaterialAt(index)))
+                {
+                    entities.Add(entity);
+                    break;
+                }
+    }
     internal IEnumerable<int> GetMaterialOffsets(long id) =>
         _materialOffsets.TryGetValue(id, out var offsets) ? offsets : [];
     internal bool TryGetMaterial(long id, out Material material)
@@ -240,6 +264,7 @@ internal sealed class ClusterMaterialSequence : IEquatable<ClusterMaterialSequen
         _hash = hash.ToHashCode();
     }
     internal int Count => _materials.Length;
+    internal long MaterialAt(int index) => _materials[index];
     internal bool Matches(ReadOnlySpan<RenderMaterialBinding> bindings, string encoding)
     {
         if (_encoding != encoding || bindings.Length != _materials.Length) return false;
@@ -402,19 +427,6 @@ public readonly struct ClusterMaterialOffsetProducer : IRenderInstanceProducer
     public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
     {
         ClusterMaterialAssignmentSet assignments = _assignments.Current;
-        uint[]? rented = null;
-        scoped Span<uint> offsets = packet.Count <= 1_024
-            ? stackalloc uint[packet.Count]
-            : (rented = ArrayPool<uint>.Shared.Rent(packet.Count)).AsSpan(0, packet.Count);
-        try
-        {
-            assignments.Resolve(packet.Entities, offsets);
-            destination.Write(_slot, offsets);
-        }
-        finally
-        {
-            if (rented is not null)
-                ArrayPool<uint>.Shared.Return(rented);
-        }
+        assignments.Resolve(packet.Entities, destination.GetWriteSpan(_slot));
     }
 }

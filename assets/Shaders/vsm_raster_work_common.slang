@@ -13,8 +13,8 @@ struct VirtualShadowRasterWorkUniforms
     uint PhysicalPagesPerRow;
     uint InstanceGroupCount;
     uint HasPreviousHistory;
-    uint Pad0;
-    uint Pad1;
+    uint WorkFeedbackEnabled;
+    uint StaticHiZLayerOffset;
 };
 
 #endif

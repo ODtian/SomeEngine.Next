@@ -20,14 +20,15 @@ public sealed record ClusterPipelineOptions
     private const uint PortableDispatchDimension = 65_535;
 
     /// <summary>
-    /// Bounds visibility candidates, the final tessellation pool, and each level of
-    /// a compatible tessellation group's shared work queue. Overflow is counted;
-    /// increasing material count does not multiply the available work memory.
+    /// Bounds candidates, visible geometry items/page windows, the final surface-patch pool,
+    /// and each level of a compatible surface group's work queue. Raster-batch storage uses
+    /// the largest per-cluster batch count in resident geometry. Rejected required work
+    /// fails the frame through ClusterWorkOverflowException.
     /// </summary>
     public uint MaxCandidates { get; init; } = 1_048_576;
 
 
-    public float LodThreshold { get; init; } = 1.0f;
+    public float LodThreshold { get; init; } = 0.25f;
 
     public uint MaxTessellationFactor { get; init; } = 256;
 
@@ -41,10 +42,12 @@ public sealed record ClusterPipelineOptions
     public bool UseInstanceGroups { get; init; }
 
     /// <summary>
-    /// Maximum projected Cluster edge length routed to software rasterization.  The hard
-    /// 64-pixel software bounding-box limit remains authoritative.
+    /// Maximum projected triangle edge routed to software rasterization in every Cluster view.
     /// </summary>
-    public float SoftwareRasterEdgeThreshold { get; init; } = 4.0f;
+    public float SoftwareRasterEdgeThreshold { get; init; } = 32.0f;
+
+    /// <summary>Order pixel-programmable raster work by logarithmic view-depth buckets.</summary>
+    public bool EnableDepthBuckets { get; init; } = true;
 
     public bool EnableFrameMetricsReadback { get; init; }
 

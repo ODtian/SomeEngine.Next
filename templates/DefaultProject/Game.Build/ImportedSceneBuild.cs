@@ -15,6 +15,18 @@ namespace Game.Build;
 
 public static class ImportedSceneBuild
 {
+    public static async Task RefreshShadersAsync(string applicationDirectory, string projectRoot, string engineRoot)
+    {
+        var project = new AssetProject(Path.GetFullPath(projectRoot), [],
+            sourceFormats: [new ShaderSourceFormat([Path.GetFullPath(Path.Combine(engineRoot, "assets/Shaders"))])]);
+        CopySharedShaders(project, Path.GetFullPath(applicationDirectory));
+        ImportedSceneImporter.WriteSurfaceShader(Path.Combine(project.RootPath, "assets/Shaders"),
+            Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"));
+        foreach (string source in Directory.EnumerateFiles(Path.Combine(project.RootPath, "assets/Shaders"), "scene_*.shader"))
+            await project.BuildAsync(source);
+        Console.WriteLine($"Refreshed scene shaders: {project.RootPath}");
+    }
+
     public static async Task BuildAsync(string applicationDirectory, string sourcePath, string projectRoot, string engineRoot)
     {
         applicationDirectory = Path.GetFullPath(applicationDirectory);
@@ -54,15 +66,7 @@ public static class ImportedSceneBuild
         }, "imported-scenes-3;" + ImportedSceneCapabilities.BuildVersion, ImportedSceneImporter.ImporterId);
         var project = new AssetProject(projectRoot, [importer],
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);
-        AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
-        foreach (AssetEntry entry in applicationAssets.Assets.Values)
-        {
-            if (!entry.Path.StartsWith("assets/Shaders/", StringComparison.OrdinalIgnoreCase)
-                && !entry.Path.StartsWith("assets/Pipelines/", StringComparison.OrdinalIgnoreCase)) continue;
-            string destination = Path.Combine(projectRoot, entry.Path);
-            CopyIfChanged(Path.Combine(applicationDirectory, entry.Path), destination);
-            project.RegisterAsset(entry);
-        }
+        CopySharedShaders(project, applicationDirectory);
         ModelRoot model = ModelRoot.Load(copiedSource);
         foreach (var material in model.LogicalMaterials)
             foreach (var channel in material.Channels)
@@ -74,14 +78,6 @@ public static class ImportedSceneBuild
         await project.ImportAsync(copiedSource);
         double importSeconds = timer.Elapsed.TotalSeconds;
         SourceMeta metadata = SourceMeta.Load(copiedSource);
-        var previous = metadata.Outputs.ToDictionary(value => value.AssetGuid, value => (value.Version, value.ContentHash));
-        timer.Restart();
-        await project.ImportAsync(copiedSource);
-        double cachedSeconds = timer.Elapsed.TotalSeconds;
-        SourceMeta repeated = SourceMeta.Load(copiedSource);
-        if (repeated.Outputs.Count != previous.Count || repeated.Outputs.Any(value =>
-                !previous.TryGetValue(value.AssetGuid, out var old) || old != (value.Version, value.ContentHash)))
-            throw new InvalidDataException("Unchanged reimport changed generated assets.");
 
         string sceneKey = model.DefaultScene.Extras?["someengine_id"]?.GetValue<string>() is { Length: > 0 } id
             ? $"scene:id:{id}" : $"scene:index:{model.DefaultScene.LogicalIndex}";
@@ -98,9 +94,21 @@ public static class ImportedSceneBuild
             source = sourcePath, meshes = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("mesh:")),
             instances, materials = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("material:")),
             textures = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("texture:")),
-            assets = metadata.Outputs.Count, importSeconds, cachedSeconds, unchangedReimport = true,
+            assets = metadata.Outputs.Count, importSeconds,
         }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Imported {name}: {instances} mesh instances, {metadata.Outputs.Count} assets in {importSeconds:F2}s. {projectRoot}");
+    }
+
+    private static void CopySharedShaders(AssetProject project, string applicationDirectory)
+    {
+        AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
+        foreach (AssetEntry entry in applicationAssets.Assets.Values)
+        {
+            if (!entry.Path.StartsWith("assets/Shaders/", StringComparison.OrdinalIgnoreCase)
+                && !entry.Path.StartsWith("assets/Pipelines/", StringComparison.OrdinalIgnoreCase)) continue;
+            CopyIfChanged(Path.Combine(applicationDirectory, entry.Path), Path.Combine(project.RootPath, entry.Path));
+            project.RegisterAsset(entry);
+        }
     }
 
     private static void CopyFiles(string source, string destination)

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <Using Include="Xunit" />
+    <Using Include="SomeEngine.Tests" />
+    <Compile Include="../Shared/ImageArtifacts.cs" Link="ImageArtifacts.cs" />
+    <Compile Include="../SomeEngine.Render.Cluster.Tests/ShadowEvidence.cs" Link="ShadowEvidence.cs" />
+    <ProjectReference Include="../../src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <Compile Include="../SomeEngine.Render.Cluster.Tests/RayShadowComparison.cs" Link="RayShadowComparison.cs" />
+    <Compile Include="../SomeEngine.Render.Cluster.Tests/ShadowReferenceComparison.cs" Link="ShadowReferenceComparison.cs" />
+    <Compile Include="../SomeEngine.Render.Cluster.Tests/ShadowImageFiles.cs" Link="ShadowImageFiles.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

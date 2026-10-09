@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -14,12 +13,9 @@ using Texture = SomeEngine.Graphics.Texture;
 
 namespace SomeEngine.Runtime;
 
-internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutionObserver
+internal sealed class RuntimeUiRenderer : IDisposable
 {
     private const int FontGraphId = 1;
-    private const int InitialVertexCapacity = 10_000;
-    private const int InitialIndexCapacity = 20_000;
-    private const ulong UniformBufferSize = 256;
     private static readonly TimeSpan ResourceTimeout = TimeSpan.FromSeconds(60);
 
     private readonly IGraphicsBackend _backend;
@@ -29,12 +25,6 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
     private nint _iniFilename;
     private ShaderReflection _reflection = ShaderReflection.Null;
     private Pipeline? _pipeline;
-    private readonly Buffer?[] _vertexBuffers = new Buffer?[2];
-    private readonly Buffer?[] _indexBuffers = new Buffer?[2];
-    private readonly Buffer?[] _uniformBuffers = new Buffer?[2];
-    private readonly MappedBuffer[] _vertexMappings = new MappedBuffer[2];
-    private readonly MappedBuffer[] _indexMappings = new MappedBuffer[2];
-    private readonly MappedBuffer[] _uniformMappings = new MappedBuffer[2];
     private global::SomeEngine.RenderGraph.RenderGraph? _graph;
     private GraphTextureId _target;
     private GraphPassId _pass;
@@ -43,18 +33,9 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
     private GraphBufferInput _uniform = null!;
     private GraphTextureInput _font = null!;
     private RuntimeUiPassData _passData;
-    private readonly BufferBoundaryState[][] _vertexEndpoints = new BufferBoundaryState[2][];
-    private readonly BufferBoundaryState[][] _indexEndpoints = new BufferBoundaryState[2][];
-    private readonly BufferBoundaryState[][] _uniformEndpoints = new BufferBoundaryState[2][];
-    private readonly QueueCompletion[][] _readiness = [[], []];
     private Texture? _fontTexture;
     private Sampler? _fontSampler;
-    private readonly int[] _vertexCapacities = new int[2];
-    private readonly int[] _indexCapacities = new int[2];
-    private ImDrawDataPtr _pendingDrawData;
-    private int _admittedGeneration = -1;
-    private int _writeGeneration = -1;
-    private int _preferredGeneration;
+    private ImDrawDataPtr _drawData;
     private bool _disposed;
 
     internal RuntimeUiRenderer(
@@ -100,25 +81,7 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
                 AddressType.ClampToEdge,
                 AddressType.ClampToEdge,
                 Label: "Runtime ImGui font sampler"));
-            for (int generation = 0; generation < 2; generation++)
-            {
-                _uniformBuffers[generation] = _backend.CreateBuffer(
-                    _device,
-                    new BufferDesc(
-                        UniformBufferSize,
-                        BufferUsages.Constant,
-                        $"Runtime ImGui transform {generation}"),
-                    MemoryType.Upload);
-                _uniformMappings[generation] = _backend.Map(_uniformBuffers[generation]!, MapType.Write,
-                    new BufferRange(0, UniformBufferSize));
-                _uniformMappings[generation].Bytes.Clear();
-                _uniformEndpoints[generation] = [InitialBufferEndpoint(
-                    _uniformBuffers[generation]!)];
-                EnsureBuffers(
-                    generation,
-                    InitialVertexCapacity,
-                    InitialIndexCapacity);
-            }
+
         }
         catch (Exception failure)
         {
@@ -248,7 +211,8 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         ImGui.End();
     }
 
-    internal void InstallGraph(global::SomeEngine.RenderGraph.RenderGraph graph, GraphTextureId target)
+    internal void InstallGraph(global::SomeEngine.RenderGraph.RenderGraph graph, GraphTextureId target,
+        GraphRegionId region)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (ReferenceEquals(_graph, graph) && _target == target && _pass != default) return;
@@ -273,7 +237,8 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
             _fontSampler ?? throw new InvalidOperationException("The ImGui sampler is unavailable."), 0, 0);
         GraphPassId pass = edit.AddRasterFramePass("Runtime ImGui overlay",
             PassQueueSelection.AnyOfType(QueueType.Graphics), data,
-            new PassOptions(Recording: PassRecordingMode.CallingThread), RuntimeUiPassData.Declare, RuntimeUiPassData.Record);
+            new PassOptions(Recording: PassRecordingMode.CallingThread), RuntimeUiPassData.Declare,
+            RuntimeUiPassData.Record, region: region);
         edit.Commit();
         _graph = graph;
         _target = target;
@@ -293,128 +258,22 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
-        if (_writeGeneration >= 0)
-            throw new InvalidOperationException("The previous Runtime ImGui graph has not been committed or discarded.");
-
-        if (_pass == default) throw new InvalidOperationException("The ImGui graph has not been installed.");
+        if (_pass == default) throw new InvalidOperationException("The ImGui graph must be installed before recording.");
         MakeCurrent();
         ImGui.Render();
         ImDrawDataPtr drawData = ImGui.GetDrawData();
-        if (drawData.TotalVtxCount <= 0 || drawData.TotalIdxCount <= 0)
-        {
-            _admittedGeneration = -1;
-            UpdateInputs(ref graph, 0);
-            graph.SetPassEnabled(_pass, false);
-            return;
-        }
-
-        int generation = _admittedGeneration >= 0
-            ? _admittedGeneration
-            : AcquireGeneration();
-        _admittedGeneration = -1;
-        EnsureBuffers(
-            generation,
-            drawData.TotalVtxCount,
-            drawData.TotalIdxCount);
-        UploadDrawData(drawData, generation);
-
-        UpdateInputs(ref graph, generation);
-
-        try
-        {
-            _pendingDrawData = drawData;
-            _writeGeneration = generation;
-            graph.SetPassData(_pass, _passData with { Width = width, Height = height });
-            graph.SetPassEnabled(_pass, true);
-            graph.ObserveExecution(this);
-        }
-        catch
-        {
-            _pendingDrawData = default;
-            _admittedGeneration = -1;
-            _writeGeneration = -1;
-            throw;
-        }
-    }
-
-    private void UpdateInputs(ref RenderGraphFrame graph, int generation)
-    {
-        graph.SetBufferInput(_vertices, new GraphBufferSlice(
-            graph.Import(_vertexBuffers[generation]!, _vertexEndpoints[generation]), BufferRange.Whole));
-        graph.SetBufferInput(_indices, new GraphBufferSlice(
-            graph.Import(_indexBuffers[generation]!, _indexEndpoints[generation]), BufferRange.Whole));
-        graph.SetBufferInput(_uniform, new GraphBufferSlice(
-            graph.Import(_uniformBuffers[generation]!, _uniformEndpoints[generation]), new BufferRange(0, UniformBufferSize)));
+        UploadDrawData(ref graph, drawData);
         Texture font = _fontTexture ?? throw new InvalidOperationException("The ImGui font is unavailable.");
         graph.SetTextureInput(_font, graph.Import(font, [new TextureBoundaryState(
             new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
             PipelineSync.PixelShading, ResourceAccess.ShaderResource, TextureLayout.ShaderResource,
             ResourceContentState.Defined, _backend.GetQueue(_device, QueueType.Graphics))]));
+        _drawData = drawData;
+        graph.SetPassData(_pass, _passData with { Width = width, Height = height });
+        graph.SetPassEnabled(_pass, drawData.TotalVtxCount > 0 && drawData.TotalIdxCount > 0);
     }
 
-    internal int AdmitFrameResources()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_writeGeneration >= 0)
-        {
-            throw new InvalidOperationException(
-                "The previous Runtime ImGui graph has not been committed or discarded.");
-        }
-        if (_admittedGeneration >= 0)
-            return 1;
-        _admittedGeneration = AcquireGeneration(out int availableGenerationCount);
-        return availableGenerationCount;
-    }
-
-    internal bool TryAdmitFrameResources(
-        out int availableGenerationCount,
-        out QueueCompletion[] retirementFences)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_writeGeneration >= 0)
-        {
-            throw new InvalidOperationException(
-                "The previous Runtime ImGui graph has not been committed or discarded.");
-        }
-        if (_admittedGeneration >= 0)
-        {
-            availableGenerationCount = 1;
-            retirementFences = [];
-            return true;
-        }
-        if (!TryAcquireGeneration(
-                out int generation,
-                out availableGenerationCount,
-                out retirementFences))
-        {
-            return false;
-        }
-        _admittedGeneration = generation;
-        return true;
-    }
-
-    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
-    {
-        if (_writeGeneration < 0) return;
-        int generation = _writeGeneration;
-        try
-        {
-            if (result.SubmittedCompletions.IsEmpty) return;
-            _readiness[generation] = MergeCompletions(_readiness[generation], result.SubmittedCompletions);
-            _vertexEndpoints[generation] = result.GetBufferStates(_vertexBuffers[generation]!).ToArray();
-            _indexEndpoints[generation] = result.GetBufferStates(_indexBuffers[generation]!).ToArray();
-            _uniformEndpoints[generation] = result.GetBufferStates(_uniformBuffers[generation]!).ToArray();
-            _preferredGeneration = 1 - generation;
-        }
-        finally { Discard(); }
-    }
-
-    internal void Discard()
-    {
-        _pendingDrawData = default;
-        _admittedGeneration = -1;
-        _writeGeneration = -1;
-    }
+    internal void Discard() => _drawData = default;
 
     public void Dispose()
     {
@@ -424,22 +283,6 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         List<Exception>? failures = null;
         Destroy(_fontSampler, ref failures);
         _fontSampler = null;
-        for (int generation = 0; generation < 2; generation++)
-        {
-            int capturedGeneration = generation;
-            Destroy(_vertexMappings[generation], ref failures);
-            _vertexMappings[generation] = default;
-            Destroy(_vertexBuffers[generation], ref failures);
-            _vertexBuffers[capturedGeneration] = null;
-            Destroy(_indexMappings[generation], ref failures);
-            _indexMappings[generation] = default;
-            Destroy(_indexBuffers[generation], ref failures);
-            _indexBuffers[capturedGeneration] = null;
-            Destroy(_uniformMappings[generation], ref failures);
-            _uniformMappings[generation] = default;
-            Destroy(_uniformBuffers[generation], ref failures);
-            _uniformBuffers[capturedGeneration] = null;
-        }
         Destroy(_fontTexture, ref failures);
         _fontTexture = null;
         Destroy(_pipeline, ref failures);
@@ -655,166 +498,57 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         io.Fonts.ClearTexData();
     }
 
-    private int AcquireGeneration() => AcquireGeneration(out _);
-
-    private int AcquireGeneration(out int availableGenerationCount)
-    {
-        if (TryAcquireGeneration(
-                out int generation,
-                out availableGenerationCount,
-                out _))
-        {
-            return generation;
-        }
-
-        int preferred = _preferredGeneration;
-        int alternate = 1 - preferred;
-
-        var elapsed = Stopwatch.StartNew();
-        while (elapsed.Elapsed < ResourceTimeout)
-        {
-            _ = _window.PumpMessages();
-            if (WaitForAll(_readiness[preferred], TimeSpan.FromMilliseconds(1)))
-            {
-                availableGenerationCount = 1;
-                return preferred;
-            }
-            if (WaitForAll(_readiness[alternate], TimeSpan.Zero))
-            {
-                availableGenerationCount = 1;
-                return alternate;
-            }
-        }
-        throw new TimeoutException(
-            "Both Runtime ImGui resource generations remained in flight past the retirement timeout.");
-    }
-
-    private bool TryAcquireGeneration(
-        out int generation,
-        out int availableGenerationCount,
-        out QueueCompletion[] retirementFences)
-    {
-        int preferred = _preferredGeneration;
-        int alternate = 1 - preferred;
-        bool preferredAvailable = IsGenerationAvailable(preferred);
-        bool alternateAvailable = IsGenerationAvailable(alternate);
-        availableGenerationCount =
-            (preferredAvailable ? 1 : 0) + (alternateAvailable ? 1 : 0);
-        if (preferredAvailable)
-        {
-            generation = preferred;
-            retirementFences = [];
-            return true;
-        }
-        if (alternateAvailable)
-        {
-            generation = alternate;
-            retirementFences = [];
-            return true;
-        }
-
-        generation = -1;
-        retirementFences = _readiness[preferred];
-        if (retirementFences.Length == 0)
-        {
-            throw new InvalidOperationException(
-                "An unavailable Runtime ImGui generation has no retirement position.");
-        }
-        return false;
-    }
-
-    private bool IsGenerationAvailable(int generation)
-    {
-        QueueCompletion[] readiness = _readiness[generation];
-        return readiness.Length == 0 || WaitForAll(readiness, TimeSpan.Zero);
-    }
-
-    private void EnsureBuffers(int generation, int vertexCount, int indexCount)
-    {
-        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)generation, 1u);
-        if (vertexCount <= 0 || indexCount <= 0)
-            throw new ArgumentOutOfRangeException(nameof(vertexCount));
-        if (_vertexBuffers[generation] is null
-            || vertexCount > _vertexCapacities[generation])
-        {
-            _vertexMappings[generation].Dispose();
-            _vertexMappings[generation] = default;
-            _vertexBuffers[generation]?.Dispose();
-            _vertexCapacities[generation] = Grow(_vertexCapacities[generation], vertexCount);
-            _vertexBuffers[generation] = _backend.CreateBuffer(
-                _device,
-                new BufferDesc(
-                    checked((ulong)_vertexCapacities[generation] * (ulong)Unsafe.SizeOf<ImDrawVert>()),
-                    BufferUsages.Vertex,
-                    $"Runtime ImGui vertices {generation}"),
-                MemoryType.Upload);
-            _vertexMappings[generation] = _backend.Map(_vertexBuffers[generation]!, MapType.Write,
-                new BufferRange(0, _vertexBuffers[generation]!.Info.Size));
-            _vertexMappings[generation].Bytes.Clear();
-            _vertexEndpoints[generation] = [InitialBufferEndpoint(_vertexBuffers[generation]!)];
-        }
-        if (_indexBuffers[generation] is null
-            || indexCount > _indexCapacities[generation])
-        {
-            _indexMappings[generation].Dispose();
-            _indexMappings[generation] = default;
-            _indexBuffers[generation]?.Dispose();
-            _indexCapacities[generation] = Grow(_indexCapacities[generation], indexCount);
-            _indexBuffers[generation] = _backend.CreateBuffer(
-                _device,
-                new BufferDesc(
-                    checked((ulong)_indexCapacities[generation] * sizeof(ushort)),
-                    BufferUsages.Index,
-                    $"Runtime ImGui indices {generation}"),
-                MemoryType.Upload);
-            _indexMappings[generation] = _backend.Map(_indexBuffers[generation]!, MapType.Write,
-                new BufferRange(0, _indexBuffers[generation]!.Info.Size));
-            _indexMappings[generation].Bytes.Clear();
-            _indexEndpoints[generation] = [InitialBufferEndpoint(_indexBuffers[generation]!)];
-        }
-    }
-
-    private unsafe void UploadDrawData(ImDrawDataPtr drawData, int generation)
+    private void UploadDrawData(ref RenderGraphFrame graph, ImDrawDataPtr drawData)
     {
         float left = drawData.DisplayPos.X;
-        float right = drawData.DisplayPos.X + drawData.DisplaySize.X;
+        float right = left + drawData.DisplaySize.X;
         float top = drawData.DisplayPos.Y;
-        float bottom = drawData.DisplayPos.Y + drawData.DisplaySize.Y;
-        if (!(right > left) || !(bottom > top))
-            throw new InvalidOperationException("ImGui produced an empty display rectangle.");
+        float bottom = top + drawData.DisplaySize.Y;
         Vector4 transform = new(
             2.0f / (right - left),
             -2.0f / (bottom - top),
             -1.0f - left * 2.0f / (right - left),
             1.0f + top * 2.0f / (bottom - top));
-        Span<byte> uniform = stackalloc byte[Unsafe.SizeOf<Vector4>()];
-        MemoryMarshal.Write(uniform, in transform);
-        uniform.CopyTo(_uniformMappings[generation].Bytes);
-        _uniformMappings[generation].Flush(new BufferRange(0, UniformBufferSize));
+        graph.SetBufferInput(_uniform, graph.Upload(in transform, BufferUsages.Constant, "ImGui transform"));
+        graph.SetBufferInput(_vertices, graph.Upload(
+            Math.Max(1, checked(drawData.TotalVtxCount * Unsafe.SizeOf<ImDrawVert>())),
+            BufferUsages.Vertex, drawData, CopyVertices, "ImGui vertices"));
+        graph.SetBufferInput(_indices, graph.Upload(
+            Math.Max(1, checked(drawData.TotalIdxCount * sizeof(ushort))),
+            BufferUsages.Index, drawData, CopyIndices, "ImGui indices"));
+    }
 
-        ulong vertexOffset = 0;
-        ulong indexOffset = 0;
-        for (int listIndex = 0; listIndex < drawData.CmdListsCount; listIndex++)
+    private static unsafe void CopyVertices(Span<byte> bytes, ImDrawDataPtr drawData)
+    {
+        int offset = 0;
+        for (int index = 0; index < drawData.CmdListsCount; index++)
         {
-            ImDrawListPtr commandList = drawData.CmdLists[listIndex];
-            int vertexBytes = checked(commandList.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>());
-            int indexBytes = checked(commandList.IdxBuffer.Size * sizeof(ushort));
-            new ReadOnlySpan<byte>((void*)commandList.VtxBuffer.Data, vertexBytes)
-                .CopyTo(_vertexMappings[generation].Bytes.Slice(checked((int)vertexOffset), vertexBytes));
-            new ReadOnlySpan<byte>((void*)commandList.IdxBuffer.Data, indexBytes)
-                .CopyTo(_indexMappings[generation].Bytes.Slice(checked((int)indexOffset), indexBytes));
-            vertexOffset = checked(vertexOffset + (ulong)vertexBytes);
-            indexOffset = checked(indexOffset + (ulong)indexBytes);
+            ImDrawListPtr list = drawData.CmdLists[index];
+            int size = checked(list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>());
+            new ReadOnlySpan<byte>((void*)list.VtxBuffer.Data, size).CopyTo(bytes.Slice(offset, size));
+            offset += size;
         }
-        _vertexMappings[generation].Flush(new BufferRange(0, vertexOffset));
-        _indexMappings[generation].Flush(new BufferRange(0, indexOffset));
+        bytes[offset..].Clear();
+    }
+
+    private static unsafe void CopyIndices(Span<byte> bytes, ImDrawDataPtr drawData)
+    {
+        int offset = 0;
+        for (int index = 0; index < drawData.CmdListsCount; index++)
+        {
+            ImDrawListPtr list = drawData.CmdLists[index];
+            int size = checked(list.IdxBuffer.Size * sizeof(ushort));
+            new ReadOnlySpan<byte>((void*)list.IdxBuffer.Data, size).CopyTo(bytes.Slice(offset, size));
+            offset += size;
+        }
+        bytes[offset..].Clear();
     }
 
     internal unsafe void DrawGraphCommands(
         ref RasterPassCommandScope commands,
         in RuntimeUiPassData parameters)
     {
-        ImDrawDataPtr drawData = _pendingDrawData;
+        ImDrawDataPtr drawData = _drawData;
         if (drawData.NativePtr is null)
             throw new InvalidOperationException("Runtime ImGui draw data was not retained for graph execution.");
         Viewport viewport = new(0, 0, parameters.Width, parameters.Height);
@@ -894,32 +628,6 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         mapping.Flush(range);
     }
 
-    private bool WaitForAll(ReadOnlySpan<QueueCompletion> completions, TimeSpan timeout)
-    {
-        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
-            throw new ArgumentOutOfRangeException(nameof(timeout));
-        if (timeout == TimeSpan.Zero)
-        {
-            foreach (ref readonly QueueCompletion completion in completions)
-                if (!_backend.IsComplete(completion))
-                    return false;
-            return true;
-        }
-
-        long started = Environment.TickCount64;
-        foreach (ref readonly QueueCompletion completion in completions)
-        {
-            TimeSpan remaining = timeout == Timeout.InfiniteTimeSpan
-                ? Timeout.InfiniteTimeSpan
-                : timeout - TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
-            if (remaining < TimeSpan.Zero)
-                remaining = TimeSpan.Zero;
-            if (_backend.WaitCpu(completion, remaining) != WaitStatus.Completed)
-                return false;
-        }
-        return true;
-    }
-
     private void MakeCurrent()
     {
         if (_context != 0 && ImGui.GetCurrentContext() != _context)
@@ -989,51 +697,6 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
             0xDE => ImGuiKey.Apostrophe,
             _ => ImGuiKey.None,
         };
-    }
-
-    private static int Grow(int current, int required)
-    {
-        if (required <= current)
-            return current;
-        int baseline = Math.Max(current, 256);
-        return Math.Max(required, checked(baseline + baseline / 2));
-    }
-
-    private static BufferBoundaryState InitialBufferEndpoint(Buffer buffer) => new(
-        new BufferRange(0, buffer.Info.Size),
-        buffer.InitialSync,
-        buffer.InitialAccess,
-        ResourceContentState.Defined);
-
-    private static QueueCompletion[] MergeCompletions(
-        ReadOnlySpan<QueueCompletion> left,
-        ReadOnlySpan<QueueCompletion> right)
-    {
-        QueueCompletion[] merged = new QueueCompletion[checked(left.Length + right.Length)];
-        int count = 0;
-        Add(left);
-        Add(right);
-        return merged.AsSpan(0, count).ToArray();
-
-        void Add(ReadOnlySpan<QueueCompletion> values)
-        {
-            foreach (ref readonly QueueCompletion value in values)
-            {
-                int existing = -1;
-                for (int index = 0; index < count; index++)
-                {
-                    if (ReferenceEquals(merged[index].Queue, value.Queue))
-                    {
-                        existing = index;
-                        break;
-                    }
-                }
-                if (existing < 0)
-                    merged[count++] = value;
-                else if (value.Value > merged[existing].Value)
-                    merged[existing] = value;
-            }
-        }
     }
 
     private static void Destroy(IDisposable? value, ref List<Exception>? failures)

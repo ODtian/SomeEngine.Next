@@ -14,6 +14,9 @@ public readonly record struct ClusterPipelineOutputDescription
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
         ArgumentOutOfRangeException.ThrowIfZero(viewCount);
+        // DrawRequest has a 20-bit view identity, with one bit selecting target views.
+        if (viewCount > ClusterRenderContext.MaximumViewCount)
+            throw new ArgumentOutOfRangeException(nameof(viewCount), "Primary view identities exceed the Cluster draw ABI.");
         if (checked((ulong)width * (ulong)height * viewCount) > uint.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(viewCount),
                 "The combined view pixels must fit the 32-bit shading counters and offsets.");
@@ -43,6 +46,10 @@ public readonly record struct ClusterPipelineOutputs(
     int Height,
     uint ViewCount)
 {
+    public GraphBufferId SurfaceReceivers { get; init; }
+    public GraphBufferId AdditionalSurfaceReceivers { get; init; }
+    public uint AdditionalReceiverLayerCount { get; init; }
+    public GraphTextureId CurrentHiZ { get; init; }
     public bool IsValid =>
         Visibility != default &&
         Depth != default &&
@@ -58,6 +65,10 @@ public readonly record struct ClusterPipelineOutputs(
 /// Feature-owned policy data for views participating in the shared Cluster work stream.
 /// The context contributes only destination and occlusion policy resources; it never owns a
 /// second traversal, cull, bin, tessellation, or raster pipeline.
+/// Root dispatch arguments use ceil(instance count / 64) X groups and
+/// <see cref="GetViewWorkGroupCount"/> view groups split across Y and Z at
+/// 65535 groups per Y dimension. GPU producers use
+/// ClusterViewWorkGroups from cluster_view_work.slang for the same dimensions.
 /// </summary>
 public readonly record struct ClusterRenderContext(
     uint PolicyId,
@@ -70,18 +81,29 @@ public readonly record struct ClusterRenderContext(
     uint MaximumInvocationCount,
     uint RasterWidth,
     uint RasterHeight,
-    GraphPassId ActivationReady,
-    GraphPassId IntermediateOcclusionBuildBegin,
-    GraphPassId IntermediateOcclusionReady,
-    GraphPassId FinalOcclusionBuildBegin,
-    GraphPassId FinalOcclusionReady,
     uint OcclusionMipCount,
     uint OcclusionTexelSize,
-    GraphPassId FinishBefore = default,
-    bool HardwareRasterOnly = false,
-    GraphPassId BoundsConsumer = default)
+    bool HardwareRasterOnly = false)
 {
-    public const uint TargetViewSizeInBytes = 80;
+    public const uint MaximumViewCount = 1u << 19;
+    public const uint TargetViewSizeInBytes = 96;
+    public const int ViewSizeInBytes = 816;
+
+    /// <summary>Distributes each compressed 32-view batch across instance and view threads.</summary>
+    public static uint GetViewWorkGroupCount(uint viewCount)
+    {
+        uint tail = viewCount & 31u;
+        return (viewCount >> 5) * 16u + (tail == 0u ? 0u :
+            System.Numerics.BitOperations.RoundUpToPowerOf2(Math.Min(tail, 16u)));
+    }
+
+    public GraphResourceBinder? BindTargetPageBounds { get; init; }
+    public GraphResourceBinder? BindWorkTargetViews { get; init; }
+    public GraphResourceBinder? BindDepthCacheClasses { get; init; }
+    public GraphBufferId DepthWorkCounter { get; init; }
+    public uint ViewDetailCount { get; init; } = 1u;
+    /// <summary>Maximum number of raster windows across all details of one source view.</summary>
+    public uint MaximumRasterWindowsPerSourceView { get; init; }
 
     public bool IsValid =>
         PolicyId != 0u &&
@@ -91,14 +113,9 @@ public readonly record struct ClusterRenderContext(
         InvocationCountBinder is not null &&
         InvocationDispatchArguments != default &&
         PolicyRasterWorkCounter != default &&
-        MaximumInvocationCount != 0 &&
+        MaximumInvocationCount is > 0 and <= MaximumViewCount &&
         RasterWidth != 0 &&
         RasterHeight != 0 &&
-        ActivationReady != default &&
-        IntermediateOcclusionBuildBegin != default &&
-        IntermediateOcclusionReady != default &&
-        FinalOcclusionBuildBegin != default &&
-        FinalOcclusionReady != default &&
         OcclusionMipCount != 0u &&
         OcclusionTexelSize != 0u;
 }
@@ -113,6 +130,7 @@ public sealed class ClusterGeometryCapabilities
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
     private BufferRangeSet _lastResidentPageReads = BufferRangeSet.Empty;
     private BufferRange _bvhRange;
+    private BufferRangeSet _bvhReadRanges = BufferRangeSet.Empty;
 
     internal ClusterGeometryCapabilities(
         GraphBufferId packedViews,
@@ -144,6 +162,8 @@ public sealed class ClusterGeometryCapabilities
     public uint PackedViewStride => ClusterViewUniforms.SizeInBytes;
     public GraphBufferId InstanceData { get; }
     public GraphBufferId InstanceWorldBounds { get; internal init; }
+    /// <summary>Whole-frame ClusterWorkOverflow flags. Nonzero forbids publishing cached depth as complete.</summary>
+    public GraphBufferId WorkStatus { get; internal init; }
     public GraphPassId BoundsReady { get; internal init; }
     public GraphBufferId InstanceProperties { get; }
     public BufferRange InstancePropertiesRange { get; }
@@ -190,6 +210,7 @@ public sealed class ClusterGeometryCapabilities
     internal BufferRangeSet ResidentPageReads => _residentPageReads;
 
     internal BufferRange BvhRange => _bvhRange;
+    internal BufferRangeSet BvhReadRanges => _bvhReadRanges;
 
     internal void SetFrameRanges(BufferRange[] pageRanges, in BufferRange bvhRange)
     {
@@ -200,6 +221,9 @@ public sealed class ClusterGeometryCapabilities
             _lastResidentPageReads = new BufferRangeSet(pageRanges);
         }
         _residentPageReads = _lastResidentPageReads;
+        if (bvhRange.Size == 0) _bvhReadRanges = BufferRangeSet.Empty;
+        else if (_bvhReadRanges.Count == 0 || _bvhReadRanges.Ranges[0] != bvhRange)
+            _bvhReadRanges = new BufferRangeSet([bvhRange]);
         _bvhRange = bvhRange;
     }
 

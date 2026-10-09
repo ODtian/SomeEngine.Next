@@ -9,6 +9,8 @@ internal enum ClusterConservativeBounds : byte
     Unbounded = 2,
 }
 
+internal enum ClusterVisibilityDepth : byte { Opaque, Masked, Offset }
+
 internal static class ClusterGeometryRequirements
 {
     internal const string VertexEncodingAttribute = "VertexEncoding";
@@ -31,6 +33,42 @@ internal static class ClusterGeometryRequirements
             string value => throw new InvalidDataException(
                 $"{subject} entry '{entryPoint}' declares unsupported conservative bounds '{value}'."),
         };
+
+    internal static ClusterVisibilityDepth RequireVisibilityDepth(Shader shader)
+    {
+        TypeReflection type = shader.GetSlangReflection(0).FindTypeByName("VisibilityEvaluate")
+            ?? throw new InvalidDataException($"Shader '{shader.Name}' must expose its VisibilityEvaluate type.");
+        for (uint index = 0; index < type.AttributeCount; index++)
+        {
+            AttributeReflection attribute = type.GetAttribute(index);
+            if (attribute.Name != "VisibilityDepth") continue;
+            return attribute.GetArgumentValueString(0) switch
+            {
+                "opaque" => ClusterVisibilityDepth.Opaque,
+                "masked" => ClusterVisibilityDepth.Masked,
+                "offset" => ClusterVisibilityDepth.Offset,
+                _ => throw new InvalidDataException($"Shader '{shader.Name}' has an unsupported VisibilityDepth value."),
+            };
+        }
+        throw new InvalidDataException($"Shader '{shader.Name}' must declare VisibilityDepth on its visibility type.");
+    }
+
+    internal static bool UsesBothRasterFaces(EntryPointReflection entry, bool targetOutput = false)
+    {
+        FunctionReflection function = entry.Function;
+        for (uint index = 0; index < function.AttributeCount; index++)
+        {
+            AttributeReflection attribute = function.GetAttribute(index);
+            if (attribute.Name != "RasterFaces") continue;
+            return attribute.GetArgumentValueString(targetOutput ? 1u : 0u) switch
+            {
+                "front" => false,
+                "both" => true,
+                _ => throw new InvalidDataException($"Raster entry '{entry.Name}' declares unsupported RasterFaces."),
+            };
+        }
+        return false;
+    }
 
     private static string RequireSingleValue(
         Shader shader,

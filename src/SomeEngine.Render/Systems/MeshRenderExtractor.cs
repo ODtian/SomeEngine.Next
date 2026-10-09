@@ -159,7 +159,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     continue;
                 }
                 _snapshots.Add(new MeshSnapshot(source, default, data, instance.BoundsExpansion,
-                    false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource));
+                    false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource, instance.DepthCacheClass, instance.FirstPerson));
                 _meshSources.Add(source);
                 changed = true;
             }
@@ -230,7 +230,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 materialCount,
                 MeshChanged: true,
                 MaterialsChanged: true,
-                meshes[row].PageSource));
+                meshes[row].PageSource, meshes[row].DepthCacheClass, meshes[row].FirstPerson));
             _meshSources.Add(source);
         }
     }
@@ -289,7 +289,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialCount,
                     meshChanged,
                     materialsChanged,
-                    mesh.PageSource));
+                    mesh.PageSource, mesh.DepthCacheClass, mesh.FirstPerson));
             }
         }
 
@@ -308,7 +308,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             context.Upsert(entity, new RenderMesh(
                 snapshot.Mesh,
                 snapshot.BoundsExpansion,
-                snapshot.PageSource));
+                snapshot.PageSource, snapshot.DepthCacheClass, snapshot.FirstPerson));
             SyncMaterials(context.World, snapshot, entity, allowStructuralChanges: true);
         }
 
@@ -341,7 +341,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     new RenderMesh(
                         snapshot.Mesh,
                         snapshot.BoundsExpansion,
-                        snapshot.PageSource));
+                        snapshot.PageSource, snapshot.DepthCacheClass, snapshot.FirstPerson));
             }
             if (snapshot.MaterialsChanged)
             {
@@ -460,7 +460,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         int MaterialCount,
         bool MeshChanged,
         bool MaterialsChanged,
-        SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource);
+        SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource, DepthCacheClass DepthCacheClass, FirstPersonMeshData FirstPerson);
 
     private readonly record struct MaterialSlice(
         List<Material> Values,

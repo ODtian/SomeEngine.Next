@@ -127,13 +127,50 @@ internal sealed partial class FrameExecutor
     {
         FramePass row = _passes[pass];
         _frame.Graph.ResolveQueueCandidates(row.QueuePolicy, row.Kind, _queueCandidateScratch);
-        if (row.Queue is not null && _queueCandidateScratch.Contains(row.Queue)) return;
+        bool chooseCopyQueue = row.Kind == GraphPassKind.Copy && row.QueuePolicy.AllowsAnyType;
+        if (!chooseCopyQueue && row.Queue is not null && _queueCandidateScratch.Contains(row.Queue)) return;
         Queue? chosen = null;
+        int producerTransfers = int.MaxValue;
+        int consumerTransfers = int.MaxValue;
         foreach (Queue candidate in _queueCandidateScratch)
-            if (QueueBefore(candidate, chosen)) chosen = candidate;
+        {
+            int producers = chooseCopyQueue ? CountPredecessorQueueTransfers(pass, candidate) : 0;
+            int consumers = chooseCopyQueue ? CountConsumerQueueTransfers(pass, candidate) : 0;
+            if (producers > producerTransfers || producers == producerTransfers && consumers > consumerTransfers) continue;
+            bool equal = producers == producerTransfers && consumers == consumerTransfers;
+            if (equal && (ReferenceEquals(chosen, row.Queue) ||
+                !ReferenceEquals(candidate, row.Queue) && !QueueBefore(candidate, chosen))) continue;
+            chosen = candidate;
+            producerTransfers = producers;
+            consumerTransfers = consumers;
+        }
         row.Queue = chosen ?? throw new InvalidOperationException("RG9002: No Queue satisfies the Pass declaration.");
+        if (ReferenceEquals(_passes[pass].Queue, chosen)) return;
         _passes[pass] = row;
         _executionOrder.Changed.Add(pass);
+    }
+
+    private int CountPredecessorQueueTransfers(int pass, Queue queue)
+    {
+        int transfers = 0;
+        foreach (int predecessor in _predecessors[pass])
+            if (_live[predecessor] && !ReferenceEquals(_passes[predecessor].Queue, queue)) transfers++;
+        return transfers;
+    }
+
+    private int CountConsumerQueueTransfers(int pass, Queue queue)
+    {
+        if (_passes[pass].Kind != GraphPassKind.Copy) return 0;
+        int transfers = 0;
+        foreach (int consumer in _successors[pass])
+        {
+            if (!_live[consumer]) continue;
+            PassQueueSelection selection = _passes[consumer].QueuePolicy;
+            if (selection.AllowsAnyType) continue;
+            if (selection.IsExact ? !ReferenceEquals(selection.Queue, queue) : selection.Type != queue.Type)
+                transfers++;
+        }
+        return transfers;
     }
 
     private void RepairOrder(long first, long last)
@@ -224,14 +261,20 @@ internal sealed partial class FrameExecutor
                     _passes[pass].Kind,
                     _queueCandidateScratch);
                 int minimumTransfers = int.MaxValue;
+                int minimumConsumerTransfers = int.MaxValue;
                 if (_passes[pass].QueuePolicy.AllowsAnyType)
                 {
                     foreach (Queue candidate in _queueCandidateScratch)
                     {
-                        int transfers = 0;
-                        foreach (int predecessor in _predecessors[pass])
-                            if (_live[predecessor] && !ReferenceEquals(_passes[predecessor].Queue, candidate)) transfers++;
-                        minimumTransfers = Math.Min(minimumTransfers, transfers);
+                        int transfers = CountPredecessorQueueTransfers(pass, candidate);
+                        int consumers = CountConsumerQueueTransfers(pass, candidate);
+                        if (transfers < minimumTransfers)
+                        {
+                            minimumTransfers = transfers;
+                            minimumConsumerTransfers = consumers;
+                        }
+                        else if (transfers == minimumTransfers)
+                            minimumConsumerTransfers = Math.Min(minimumConsumerTransfers, consumers);
                     }
                 }
                 foreach (Queue queue in _queueCandidateScratch)
@@ -247,6 +290,7 @@ internal sealed partial class FrameExecutor
                         if (!ReferenceEquals(_passes[predecessor].Queue, queue)) transfers++;
                     }
                     if (transfers > minimumTransfers) continue;
+                    if (CountConsumerQueueTransfers(pass, queue) > minimumConsumerTransfers) continue;
                     long start = Math.Max(queueAvailable, predecessorFinish);
                     int rank = criticalRanks[pass];
                     long declaration = _passes[pass].DeclarationOrdinal;
@@ -464,27 +508,28 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _orderConsumerResources = [];
     private readonly HashSet<GraphIdentity> _changedOrderIdentities = [];
     private readonly HashSet<int> _fixedValuePasses = [];
-    private readonly Dictionary<ExplicitPassOrder, PassEdge> _dynamicValueEdges = [];
-    private readonly Dictionary<ExplicitPassOrder, bool> _dynamicOrderChanges = [];
-    private readonly Dictionary<GraphIdentity, HashSet<ExplicitPassOrder>> _dynamicOrdersByPass = [];
+    private readonly HashSet<PassEdge> _dynamicValueEdges = [];
+    private readonly HashSet<PassEdge> _currentDynamicEdges = [];
+    private readonly Dictionary<PassEdge, bool> _dynamicOrderChanges = [];
 
-    internal void ChangeDynamicOrder(ExplicitPassOrder order, bool exists)
+    private void PrepareDynamicOrders()
     {
-        if (_dynamicValueEdges.ContainsKey(order) == exists)
-            _dynamicOrderChanges.Remove(order);
-        else
-            _dynamicOrderChanges[order] = exists;
-    }
-
-    private void RefreshDynamicOrders(GraphIdentity identity)
-    {
-        if (!_dynamicOrdersByPass.TryGetValue(identity, out var orders)) return;
-        foreach (ExplicitPassOrder order in orders)
-            _dynamicOrderChanges.TryAdd(order, true);
+        _currentDynamicEdges.Clear();
+        _dynamicOrderChanges.Clear();
+        foreach (ExplicitPassOrder order in _frame.DynamicOrders)
+        {
+            var edge = new PassEdge(ResolvePass(order.Predecessor), ResolvePass(order.Consumer));
+            _currentDynamicEdges.Add(edge);
+            if (!_dynamicValueEdges.Contains(edge)) _dynamicOrderChanges[edge] = true;
+        }
+        foreach (PassEdge edge in _dynamicValueEdges)
+            if (!_currentDynamicEdges.Contains(edge)) _dynamicOrderChanges[edge] = false;
+        _analysisChanged |= _dynamicOrderChanges.Count != 0;
     }
 
     private void SetPassRow(int index, in FramePass row)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetPassRow);
         _passAccesses[index] ??= [];
         _parameterPassChanges.Add(index);
@@ -494,8 +539,6 @@ internal sealed partial class FrameExecutor
             (previous.Definition is not null || row.Definition is not null);
         if (identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal)
         {
-            RefreshDynamicOrders(previous.Identity);
-            RefreshDynamicOrders(row.Identity);
             RemoveValuePass(index);
         }
         if (!previous.Identity.IsValid || identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal ||
@@ -551,20 +594,9 @@ internal sealed partial class FrameExecutor
 
             foreach (var change in _dynamicOrderChanges)
             {
-                if (!_dynamicValueEdges.Remove(change.Key, out PassEdge previous)) continue;
-                SetValueOrderEdge(previous, 2, false);
-                RemoveReference(change.Key.Predecessor, change.Key);
-                RemoveReference(change.Key.Consumer, change.Key);
-            }
-            foreach (var change in _dynamicOrderChanges)
-            {
-                if (!change.Value) continue;
-                ExplicitPassOrder order = change.Key;
-                var edge = new PassEdge(ResolvePass(order.Predecessor), ResolvePass(order.Consumer));
-                _dynamicValueEdges.Add(order, edge);
-                AddReference(order.Predecessor, order);
-                AddReference(order.Consumer, order);
-                SetValueOrderEdge(edge, 2, true);
+                SetValueOrderEdge(change.Key, 2, change.Value);
+                if (change.Value) _dynamicValueEdges.Add(change.Key);
+                else _dynamicValueEdges.Remove(change.Key);
             }
             _dynamicOrderChanges.Clear();
 
@@ -593,26 +625,9 @@ internal sealed partial class FrameExecutor
             _orderEdgesByPass.Clear();
             _fixedValuePasses.Clear();
             _dynamicValueEdges.Clear();
-            _dynamicOrdersByPass.Clear();
-            _dynamicOrderChanges.Clear();
-            foreach (ExplicitPassOrder order in _frame.DynamicOrders)
-                _dynamicOrderChanges[order] = true;
+            PrepareDynamicOrders();
             for (int index = 0; index < _passes.Count; index++) _changedValuePasses.Add(index);
             throw;
-        }
-
-        void AddReference(GraphIdentity identity, ExplicitPassOrder order)
-        {
-            if (!_dynamicOrdersByPass.TryGetValue(identity, out var orders))
-                _dynamicOrdersByPass.Add(identity, orders = []);
-            orders.Add(order);
-        }
-
-        void RemoveReference(GraphIdentity identity, ExplicitPassOrder order)
-        {
-            if (!_dynamicOrdersByPass.TryGetValue(identity, out var orders)) return;
-            orders.Remove(order);
-            if (orders.Count == 0) _dynamicOrdersByPass.Remove(identity);
         }
     }
 
@@ -651,7 +666,10 @@ internal sealed partial class FrameExecutor
         if (!_orderEdgesByPass.TryGetValue(index, out HashSet<PassEdge>? removedEdges)) return;
         _changedExecutionEdges.UnionWith(removedEdges);
         foreach (PassEdge edge in removedEdges.ToArray())
+        {
+            _dynamicValueEdges.Remove(edge);
             SetValueOrderEdge(edge, 7, false);
+        }
         _orderEdgesByPass.Remove(index);
         _fixedValuePasses.Remove(index);
     }

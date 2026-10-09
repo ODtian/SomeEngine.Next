@@ -137,6 +137,7 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             Task completion = QueueUpdate(replacement);
+            if (IsUpdating) RaiseChanged();
             using CancellationTokenRegistration cancel = cancellationToken.Register(() =>
                 FailDeviceUpdate(replacement, new OperationCanceledException(cancellationToken)));
             await completion.ConfigureAwait(false);

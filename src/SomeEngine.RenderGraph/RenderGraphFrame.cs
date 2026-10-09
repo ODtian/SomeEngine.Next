@@ -78,6 +78,10 @@ public ref partial struct RenderGraphFrame
     public void SetBufferRange(GraphBufferId buffer, in BufferRange range) =>
         State.SetBufferViewRanges(buffer, range);
 
+    /// <summary>Sets the accessible ranges for every read descriptor bound to this buffer in this frame.</summary>
+    public void SetBufferRanges(GraphBufferId buffer, BufferRangeSet ranges) =>
+        State.SetBufferRanges(buffer, ranges);
+
     public void SetBufferRange(GraphBufferCbvId view, in BufferRange range) =>
         State.SetBufferRange(view.Value, GraphViewKind.BufferCbv, range);
 
@@ -137,10 +141,12 @@ public ref partial struct RenderGraphFrame
         State.Upload(byteCount, usages, data, write, label);
 
     /// <summary>
-    /// Writes a declared upload buffer for this frame. Each in-flight frame keeps its own
-    /// mapped buffer, so updating bytes does not replace the buffer used by its commands.
-    /// Data must cover the declaration; the GPU may only read this buffer.
+    /// Returns this frame's mapped bytes for a declared upload buffer. Fill the declaration
+    /// before execution; its storage remains with the frame until GPU work completes.
     /// </summary>
+    public Span<byte> GetBufferDataWriteSpan(GraphBufferId buffer) => State.GetBufferDataWriteSpan(buffer);
+
+    /// <summary>Copies bytes covering a declared upload buffer into this frame's mapped storage.</summary>
     public void SetBufferData(GraphBufferId buffer, scoped ReadOnlySpan<byte> data) =>
         State.SetBufferData(buffer, data);
 
@@ -271,8 +277,9 @@ public ref partial struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        RasterFrameCallback<TState> callback) =>
-        State.AddRasterPass(label, queue, state, options, declaration, callback, -1);
+        RasterFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
+        State.AddRasterPass(label, queue, state, options, declaration, callback, region);
 
     public GraphPassId AddRasterPass<TState>(
         string label,
@@ -283,9 +290,10 @@ public ref partial struct RenderGraphFrame
         VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
-        RasterFrameCallback<TState> callback) =>
+        RasterFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         State.AddRasterPass(label, queue, state, options, pipeline,
-            parameterLayout, parameterBindings, declaration, callback, -1);
+            parameterLayout, parameterBindings, declaration, callback, region);
 
     public GraphPassId AddComputePass<TState>(
         string label,
@@ -293,8 +301,9 @@ public ref partial struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        ComputeFrameCallback<TState> callback) =>
-        State.AddComputePass(label, queue, state, options, declaration, callback, -1);
+        ComputeFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
+        State.AddComputePass(label, queue, state, options, declaration, callback, region);
 
     public GraphPassId AddComputePass<TState>(
         string label,
@@ -305,9 +314,10 @@ public ref partial struct RenderGraphFrame
         VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
-        ComputeFrameCallback<TState> callback) =>
+        ComputeFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         State.AddComputePass(label, queue, state, options, pipeline,
-            parameterLayout, parameterBindings, declaration, callback, -1);
+            parameterLayout, parameterBindings, declaration, callback, region);
 
     public GraphPassId AddCopyPass<TState>(
         string label,
@@ -315,8 +325,9 @@ public ref partial struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        CopyFrameCallback<TState> callback) =>
-        State.AddCopyPass(label, queue, state, options, declaration, callback, -1);
+        CopyFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
+        State.AddCopyPass(label, queue, state, options, declaration, callback, region);
 
     public GraphPassId AddGeneralPass<TState>(
         string label,
@@ -324,13 +335,19 @@ public ref partial struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        GeneralFrameCallback<TState> callback) =>
-        State.AddGeneralPass(label, queue, state, options, declaration, callback, -1);
+        GeneralFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
+        State.AddGeneralPass(label, queue, state, options, declaration, callback, region);
 
     public void OrderAfter(GraphPassId pass, GraphPassId predecessor) => State.OrderAfter(pass, predecessor);
 
-    public RenderGraphFrameExtension BeginExtension(GraphExtensionPointId point) =>
-        new(State, _identity, State.ResolveExtensionPoint(point));
+    /// <summary>Orders every pass bound to the input after the given pass.</summary>
+    public void OrderAfter(GraphParameterInput input, GraphPassId predecessor) =>
+        State.OrderAfter(input, predecessor, consumersAfter: true);
+
+    /// <summary>Orders the given pass after every pass bound to the input.</summary>
+    public void OrderAfter(GraphPassId pass, GraphParameterInput input) =>
+        State.OrderAfter(input, pass, consumersAfter: false);
 
     public int Execute(Span<QueueCompletion> destination)
     {
@@ -353,4 +370,10 @@ public ref partial struct RenderGraphFrame
 
     /// <summary>Supplies an existing RHI binding after importing its resources into this frame.</summary>
     public void SetParameterInput(GraphParameterInput input, ResourceBinding value) => State.SetParameterInput(input, value);
+
+    /// <summary>Updates a retained shader connection. Its registered resources and binding remain in use until changed.</summary>
+    public void SetPersistentParameterInput(GraphParameterInput input, ResourceBinding value) => State.SetPersistentParameterInput(input, value);
+
+    /// <summary>Returns the registered texture's submitted state holder for reuse within and across graphs.</summary>
+    public GraphTextureState? GetTextureState(Texture texture) => State.GetTextureState(texture);
 }

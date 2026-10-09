@@ -4,8 +4,14 @@
 #include "cluster_tessellation_core.slang"
 #include "cluster_policy_raster_output.slang"
 
+// User material entries declare their domain's bound. Linear/identity domains
+// can select finite; displaced domains retain the unbounded default unless proven.
+#ifndef CLUSTER_TESSELLATION_BOUNDS
+#define CLUSTER_TESSELLATION_BOUNDS "unbounded"
+#endif
+
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void ClusterTessellationSeed(
@@ -17,7 +23,7 @@ void ClusterTessellationSeed(
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void ClusterTessellationSplit(
@@ -30,7 +36,7 @@ void ClusterTessellationSplit(
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -41,7 +47,7 @@ void ClusterTessellationDiceImageAtomic64(
     uint3 groupId : SV_GroupID,
     uint groupThreadIndex : SV_GroupThreadID)
 {
-    ClusterRasterOutputImageAtomic64 output;
+    ClusterDicedRasterOutput<ClusterRasterOutputImageAtomic64> output;
     DiceTessellationPatches(
         vertex,
         domain,
@@ -52,7 +58,7 @@ void ClusterTessellationDiceImageAtomic64(
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -63,14 +69,14 @@ void ClusterTessellationDiceBufferAtomic64(
     uint3 groupId : SV_GroupID,
     uint groupThreadIndex : SV_GroupThreadID)
 {
-    ClusterRasterOutputBufferAtomic64 output;
-    output.Width = TessellationUniformData.ScreenWidth;
-    output.Height = TessellationUniformData.ScreenHeight;
+    ClusterDicedRasterOutput<ClusterRasterOutputBufferAtomic64> output;
+    output.Primary.Width = TessellationUniformData.ScreenWidth;
+    output.Primary.Height = TessellationUniformData.ScreenHeight;
     DiceTessellationPatches(vertex, domain, visibility, output, groupId, groupThreadIndex);
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("vertex")]
 ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareVertex(
     uniform VertexEvaluate vertex,
@@ -123,7 +129,9 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
         TessellationViews,
         TessellationPolicyViews,
         viewIndex);
-    output.Pos = mul(float4(position, 1.0), view.ViewProj);
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID, view);
+    output.Pos = mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
+    output.ClipDepth = CalculateClusterRasterDepthInput(position, output.Pos, view);
     output.Pos = ClusterHardwareRasterPosition(output.Pos, patch.VisibleClusterIndex, view,
         ClusterRasterTargetViewport(view));
     output.Varying = visibility.interpolateVertex(
@@ -139,7 +147,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(32, 1, 1)]
@@ -183,6 +191,7 @@ void ClusterTessellationHardwareMesh(
     SetMeshOutputCounts(vertexCount, triangleCount);
     uint viewIndex = DrawRequestViewIndex(TessellationVisibleClusters[patch.VisibleClusterIndex]);
     ClusterViewUniforms view = LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex);
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID, view);
     for (uint index = lane; index < vertexCount; index += 32u)
     {
         float3 localBary = TessellationGridBarycentric(factor, TessellationPatchEdgeFactors(patch), index);
@@ -190,9 +199,13 @@ void ClusterTessellationHardwareMesh(
             DecodeTessellationPatchBarycentric(patch, 0u),
             DecodeTessellationPatchBarycentric(patch, 1u),
             DecodeTessellationPatchBarycentric(patch, 2u), localBary);
-        float4 clip = mul(float4(domain.position(triangle, sourceBary), 1.0), view.ViewProj);
+        float3 position = domain.position(triangle, sourceBary);
+        float4 clip = mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
+        vertices[index].ClipDepth = CalculateClusterRasterDepthInput(position, clip, view);
         vertices[index].Pos = ClusterHardwareRasterPosition(clip, patch.VisibleClusterIndex, view,
             ClusterRasterTargetViewport(view));
+        vertices[index].VisibleClusterIndex = patch.VisibleClusterIndex;
+        vertices[index].ViewIndex = viewIndex;
         vertices[index].Varying = visibility.interpolateVertex(
             sourceVaryings[0],
             sourceVaryings[1],
@@ -202,9 +215,7 @@ void ClusterTessellationHardwareMesh(
     for (uint index = lane; index < triangleCount; index += 32u)
     {
         indices[index] = TessellationGridTriangleVertexIndices(factor, index);
-        primitives[index].VisibleClusterIndex = patch.VisibleClusterIndex;
         primitives[index].TriangleID = TessellationPatchTriangle(patch);
-        primitives[index].ViewIndex = viewIndex;
         primitives[index].RenderTargetIndex = view.TargetPolicy == 0u ? view.TargetViewIndex : 0u;
     }
 }
@@ -225,28 +236,25 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
         TessellationPolicyViews,
         input.ViewIndex);
     input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
+    ClusterRasterOutputPixel outputPixel;
+    bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    if (!ClusterRasterQuadAcceptsPixel(accepted))
+        discard;
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
-    pixelInput.Depth = input.Pos.z;
+    pixelInput.Depth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
+    pixelInput.EncodedTargetDepth = ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted);
     pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
     pixelInput.TriangleID = input.TriangleID;
     pixelInput.ViewIndex = input.ViewIndex;
     pixelInput.TargetPolicy = view.TargetPolicy;
     pixelInput.TargetViewIndex = view.TargetViewIndex;
     VisibilityPixelResult result = visibility.evaluate(pixelInput, input.Varying);
-    if (result.Visible == 0u)
+    if (!accepted || result.Visible == 0u)
         discard;
     if (view.TargetPolicy != 0u)
     {
-        if (!ClusterRasterTargetWindowContainsPixel(
-                input.VisibleClusterIndex,
-                view.TargetViewIndex,
-                int2(input.Pos.xy)))
-            discard;
-        WriteRasterTargetDepth(
-            int2(input.Pos.xy),
-            view.TargetViewIndex,
-            saturate(result.Depth));
+        WriteRasterTargetPixelDepth(uint2(outputPixel.Position), result.Depth, outputPixel.DepthCacheClass);
         discard;
     }
     ClusterTessellationHardwareOutput output;
@@ -255,6 +263,7 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
     return output;
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 ClusterTessellationHardwareOutput ClusterTessellationHardwareMeshPixel(
     uniform VisibilityEvaluate visibility,
@@ -263,15 +272,17 @@ ClusterTessellationHardwareOutput ClusterTessellationHardwareMeshPixel(
 {
     ClusterRasterPixelInput<VisibilityEvaluate.Varying> input;
     input.Pos = vertex.Pos;
+    input.ClipDepth = vertex.ClipDepth;
     input.Varying = vertex.Varying;
-    input.VisibleClusterIndex = primitive.VisibleClusterIndex;
+    input.VisibleClusterIndex = vertex.VisibleClusterIndex;
     input.TriangleID = primitive.TriangleID;
-    input.ViewIndex = primitive.ViewIndex;
+    input.ViewIndex = vertex.ViewIndex;
     input.RenderTargetIndex = primitive.RenderTargetIndex;
     return EvaluateClusterTessellationHardwarePixel(visibility, input);
 }
 
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 ClusterTessellationHardwareOutput ClusterTessellationHardwarePixel(
     uniform VisibilityEvaluate visibility,

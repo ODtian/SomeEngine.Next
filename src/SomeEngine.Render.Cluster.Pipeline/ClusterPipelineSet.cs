@@ -76,6 +76,8 @@ internal sealed class ClusterPipelineSet : IDisposable
                         pixelEntry);
 
             Traversal = Compute(ClusterShaderOperationRole.BvhTraversal, "Cluster BVH traversal");
+            LeafFlagFixups = Compute(ClusterShaderOperationRole.LeafFlagFixups, "Cluster streaming leaf flags");
+            PageRequests = Compute(ClusterShaderOperationRole.PageRequests, "Cluster page request priorities");
             SceneBounds = Compute(ClusterShaderOperationRole.SceneBounds, "Cluster spatial scene bounds");
 
                 TraversalInitialize = Compute(
@@ -190,6 +192,8 @@ internal sealed class ClusterPipelineSet : IDisposable
     }
 
     internal ClusterComputePipeline Traversal { get; }
+    internal ClusterComputePipeline PageRequests { get; }
+    internal ClusterComputePipeline LeafFlagFixups { get; }
     internal ClusterComputePipeline SceneBounds { get; }
     internal ClusterComputePipeline TraversalInitialize { get; }
     internal ClusterComputePipeline DeferredResume { get; }
@@ -311,6 +315,16 @@ internal sealed class ClusterPipelineSet : IDisposable
                         "MSVisBufferMeshlet",
                         SlangStage.Mesh)
                         ? "MSVisBufferMeshlet" : "MSVisBuffer";
+            if (role == ClusterShaderOperationRole.HardwareVisibilityRaster)
+            {
+                EntryPointReflection rasterPixel = shader.RequireSlangEntry(
+                    shader.RequireSlangTarget(device.Capabilities.CompileTarget),
+                    pixelEntry ?? pixel.Entry.Name, SlangStage.Fragment);
+                rasterizerState = rasterizerState with
+                {
+                    Cull = ClusterGeometryRequirements.UsesBothRasterFaces(rasterPixel) ? CullType.None : CullType.Back,
+                };
+            }
             created = ClusterRasterPipeline.Create(
                 backend,
                 device,

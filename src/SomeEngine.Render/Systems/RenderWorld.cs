@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Render.Components;
 using SomeEngine.Resources;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Render.Systems;
 
@@ -16,11 +17,34 @@ internal readonly record struct RenderMaterialIndex(ImmutableDictionary<long, En
 public sealed class RenderWorld : World
 {
     private readonly Entity _materialIndexEntity;
+    private readonly QueryHandle _worldOriginQuery;
 
     public RenderWorld(int initialEntityCapacity = 256, WorldExecution? execution = null)
         : base(initialEntityCapacity, execution)
     {
         _materialIndexEntity = CreateEntity(new RenderMaterialIndex(ImmutableDictionary<long, Entity>.Empty));
+        _worldOriginQuery = Query(new QueryDefinitionBuilder().Read<RenderWorldOrigin>());
+    }
+
+    /// <summary>The shared origin extracted for this world; coordinates use engine world units.</summary>
+    public WorldOrigin WorldOrigin
+    {
+        get
+        {
+            WorldOrigin origin = default;
+            int count = 0;
+            ExecuteQuery(_worldOriginQuery, query =>
+            {
+                foreach (QueryChunkView chunk in query.Chunks)
+                    foreach (RenderWorldOrigin value in chunk.Read<RenderWorldOrigin>())
+                    {
+                        SomeEngine.Core.Diagnostics.DevelopmentCheck.Require(++count == 1,
+                            "A render world has one shared coordinate origin.");
+                        origin = value.Value;
+                    }
+            });
+            return origin;
+        }
     }
 
     /// <summary>Reads the shared material referenced through this world's extraction boundary.</summary>

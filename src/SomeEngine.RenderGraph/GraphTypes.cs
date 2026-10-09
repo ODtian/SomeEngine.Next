@@ -131,6 +131,7 @@ public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
     /// <summary>
     /// Allows any registered queue that supports the pass commands, preferring
     /// fewer transfers from predecessor queues before comparing available time.
+    /// Copies also prefer the queues explicitly requested by their direct consumers.
     /// </summary>
     public static PassQueueSelection AnyCompatible() => new(null, default, false, true);
 }
@@ -194,11 +195,14 @@ public enum GraphAccessMode : byte
 /// Describes whether overlapping unordered-access writes require an execution order.
 /// AtomicMergeable is a strong caller contract: every write is an atomic, associative,
 /// commutative reduction into the existing value, so peer passes may execute in either order.
+/// DisjointWrites promises that written bytes or texels are separate from every peer
+/// unordered writer's accesses. Readers wait for every writer in either mode.
 /// </summary>
 public enum UnorderedAccessHazardMode : byte
 {
     Ordered,
     AtomicMergeable,
+    DisjointWrites,
 }
 
 internal static class UnorderedAccessHazardRules
@@ -216,6 +220,15 @@ internal static class UnorderedAccessHazardRules
             throw new ArgumentOutOfRangeException(nameof(hazards));
         if (hazards == UnorderedAccessHazardMode.Ordered)
             return;
+        if (hazards == UnorderedAccessHazardMode.DisjointWrites)
+        {
+            if (mode == GraphAccessMode.Write && coverage == WriteCoverage.Partial &&
+                access == ResourceAccess.UnorderedAccess &&
+                resultContents is null or ResourceContentState.Defined &&
+                layout is TextureLayout.Undefined or TextureLayout.UnorderedAccess)
+                return;
+            throw new ArgumentException("Disjoint writes require a partial UAV write in UnorderedAccess layout.");
+        }
         if (mode != GraphAccessMode.ReadWrite ||
             coverage != WriteCoverage.Partial ||
             access != ResourceAccess.UnorderedAccess ||

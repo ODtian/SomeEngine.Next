@@ -4,38 +4,14 @@
 #include "material_interfaces.slang"
 #include "render_lighting.slang"
 #include "brdf.slang"
-#include "vsm_sampling.slang"
-#include "vsm_receiver_pixel.slang"
+#include "vsm_projected_sampling.slang"
 
 StructuredBuffer<ClusteredLightGridParameters> LightingViews;
 StructuredBuffer<GPULight> LightBuffer;
 StructuredBuffer<uint2> ClusteredLightGrid;
 StructuredBuffer<uint> LightIndexList;
 Texture2DArray<float4> LightingCookieAtlas;
-
-struct VirtualShadowSamplingUniforms
-{
-    uint ViewCount;
-    uint DirectionalLightCount;
-    uint DirectionalClipmapLevels;
-    uint PointLightCount;
-    uint PointLightBufferOffset;
-    uint PointViewOffset;
-    uint SpotLightCount;
-    uint SpotLightBufferOffset;
-    uint SpotViewOffset;
-    uint BlockerSampleCount;
-    uint FilterSampleCount;
-    float BlockerSearchRadiusTexels;
-    float MaxFilterRadiusTexels;
-    float NormalBias;
-};
-
-StructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;
-StructuredBuffer<uint4> VirtualShadowPageTable;
-Texture2D<uint> VirtualShadowAtlas;
-ConstantBuffer<VirtualShadowSamplingUniforms> VirtualShadowSampling;
-StructuredBuffer<float2> VirtualShadowDynamicResolutionBias;
+Texture2D<float4> StandardMaterialTextures[];
 
 float EvaluateLightingCookie(GPULight light, float3 worldPosition)
 {
@@ -55,7 +31,7 @@ float EvaluateLightingCookie(GPULight light, float3 worldPosition)
 }
 
 // C# imports this marked struct through Slang reflection and writes the material
-// scalar payload using Slang's own field offsets and type size.
+// scalar payload using Slang's buffer field offsets and type size.
 [MaterialScalars]
 struct StandardScalars
 {
@@ -63,87 +39,90 @@ struct StandardScalars
     float MetallicFactor;
     float Roughness;
     float3 EmissiveFactor;
+    uint AlbedoMap;
+    uint NormalMap;
+    uint ARMMap;
 };
 
-struct StandardPixelContext
+[MaterialSurfaceData]
+struct StandardSurfaceData
 {
-    uint3 pixelCoord;
-    uint instanceID;
-    float3 surfacePosition;
-    float3 worldNormal;
-    float4 worldTangent;
-    float2 uv0;
+    float3 BaseColor;
+    float Metallic;
+    float3 Emissive;
+    float Roughness;
+    float Occlusion;
+    float3 DebugColor;
 };
-
-StandardPixelContext BuildStandardPixelContext(
-    uint3 pixelCoord,
-    uint instanceID,
-    SurfaceEval surface)
-{
-    StandardPixelContext ctx;
-    ctx.pixelCoord = pixelCoord;
-    ctx.instanceID = instanceID;
-    ctx.surfacePosition = surface.Position;
-    ctx.worldNormal = surface.Normal;
-    ctx.worldTangent = surface.Tangent;
-    ctx.uv0 = surface.TexCoord;
-    return ctx;
-}
 
 struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
-    // Textures
-    Texture2D AlbedoMap;
-    Texture2D NormalMap;
-    Texture2D ARMMap;
+    typealias Data = StandardSurfaceData;
     SamplerState MaterialSampler;
 
-    void evaluateSurface(
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
-        SurfaceEval surface,
-        float3 bary,
-        Triangle triangle,
-        RWTexture2DArray<float4> outputColor)
+    float3 sampleNormal(float2 uv, StandardScalars scalars)
     {
-        StandardPixelContext ctx = BuildStandardPixelContext(
-            pixelCoord,
-            instanceID,
-            surface);
+        return StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;
+    }
 
-        // Sample material textures
-        float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
-        float3 armSample    = ARMMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb;
-        float3 normalTS     = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;
-        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(materialSlot);
+    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle, out SurfaceReceiver receiver)
+    {
+        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(pixel.MaterialIndex);
+        float3 baseNormal = normalize(surface.Normal);
+        float3 tangent = normalize(surface.Tangent.xyz - baseNormal * dot(baseNormal, surface.Tangent.xyz));
+        float3 bitangent = cross(baseNormal, tangent) * surface.Tangent.w;
+        float3 normalTS = sampleNormal(surface.TexCoord, scalars);
+        receiver = (SurfaceReceiver)0;
+        receiver.Position = pixel.VisibilityDepth == 2u ? pixel.PositionFromDepth : surface.Position;
+        receiver.Depth = pixel.Depth;
+        receiver.ShadingNormal = normalize(tangent * normalTS.x + bitangent * normalTS.y + baseNormal * normalTS.z);
+        receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
+            triangle.Position2 - triangle.Position0), baseNormal);
+        if (dot(receiver.GeometricNormal, baseNormal) < 0.0) receiver.GeometricNormal = -receiver.GeometricNormal;
+        receiver.Flags = SURFACE_RECEIVER_LIGHTING;
+        ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties,
+            pixel.InstanceID, Views[pixel.PixelCoord.z]);
+        float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
+        receiver.DepthOffset = pixel.VisibilityDepth == 2u ? pixel.Depth - sourceClip.z / sourceClip.w : 0.0;
+        float4 albedo = StandardMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0);
+        float3 arm = StandardMaterialTextures[NonUniformResourceIndex(scalars.ARMMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb;
+        Data data;
+        data.BaseColor = albedo.rgb * scalars.BaseColorTint.rgb;
+        data.Metallic = saturate(arm.b * scalars.MetallicFactor);
+        data.Emissive = scalars.EmissiveFactor;
+        data.Roughness = max(saturate(arm.g * scalars.Roughness), .04);
+        data.Occlusion = arm.r;
+        data.DebugColor = float3(1,0,1);
+        if (pixel.DebugMode == 8u) data.DebugColor = bary;
+        if (pixel.DebugMode == 9u)
+            data.DebugColor = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, pixel.InstanceID,
+                Views[pixel.PixelCoord.z], baseNormal) * .5 + .5;
+        if (pixel.DebugMode == 10u)
+        {
+            float checker = step(.5, frac(surface.TexCoord.x * 8)) != step(.5, frac(surface.TexCoord.y * 8)) ? .8 : .2;
+            data.DebugColor = float3(surface.TexCoord, checker);
+        }
+        if (pixel.DebugMode == 11u) data.DebugColor = abs(surface.Position - EvalLinearPosition(triangle, bary)) * 3;
+        return data;
+    }
 
-        // TBN matrix: transform normal from tangent space to world space
-        float3 N_geom = normalize(ctx.worldNormal);
-        float3 T = normalize(ctx.worldTangent.xyz - N_geom * dot(N_geom, ctx.worldTangent.xyz)); // Gram-Schmidt
-        float3 B = cross(N_geom, T) * ctx.worldTangent.w; // handedness
-        float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
-
-        float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
-        float roughness = saturate(armSample.g * scalars.Roughness);
-        float metallic = saturate(armSample.b * scalars.MetallicFactor);
-        roughness = max(roughness, 0.04);
-        ClusteredLightGridParameters lighting = LightingViews[ctx.pixelCoord.z];
-        float3 viewPosition = mul(float4(ctx.surfacePosition, 1.0), lighting.View).xyz;
+    float4 shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver)
+    {
+        if (debugMode != 0u) return float4(data.DebugColor,1);
+        float3 mappedNormal = receiver.ShadingNormal;
+        float3 baseColor = data.BaseColor;
+        float roughness = data.Roughness;
+        float metallic = data.Metallic;
+        ClusteredLightGridParameters lighting = LightingViews[pixelCoord.z];
+        float3 viewPosition = mul(float4(receiver.Position, 1.0), lighting.View).xyz;
         float viewDepth = max(-viewPosition.z, lighting.ZParams.x);
-        ClusterViewUniforms receiverView = Views[ctx.pixelCoord.z];
-        VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
-            DepthBuffer, ctx.pixelCoord, uint2(receiverView.ScreenWidth, receiverView.ScreenHeight),
-            DepthBuffer.Load(int4(ctx.pixelCoord, 0)), receiverView.ClipToWorld);
-        float3 receiverPositionDx = ctx.surfacePosition + (receiver.PositionDx - receiver.Position);
-        float3 receiverPositionDy = ctx.surfacePosition + (receiver.PositionDy - receiver.Position);
-        float3 V = normalize(MaterialCameraPosition(ctx.pixelCoord.z) - ctx.surfacePosition);
-        float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
+        float3 V = normalize(MaterialCameraPosition(pixelCoord.z) - receiver.Position);
+        float3 finalColor = baseColor * data.Occlusion * .03 + data.Emissive;
 
         if (dot(mappedNormal, V) <= 0.0)
         {
-            outputColor[ctx.pixelCoord] = float4(finalColor, 1.0);
-            return;
+            return float4(finalColor, 1.0);
         }
 
         for (uint lightIndex = 0u; lightIndex < lighting.DirectionalCount; lightIndex++)
@@ -151,34 +130,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             GPULight light = LightBuffer[lightIndex];
             if (dot(mappedNormal, -light.Direction) <= 0.0)
                 continue;
-            float3 shadowPosition = ctx.surfacePosition +
-                mappedNormal * VirtualShadowSampling.NormalBias;
-            float shadow = 1.0;
-            if (lightIndex < VirtualShadowSampling.DirectionalLightCount &&
-                VirtualShadowSampling.DirectionalClipmapLevels != 0u)
-            {
-                uint firstShadowView =
-                    lightIndex * VirtualShadowSampling.DirectionalClipmapLevels;
-                if (firstShadowView < VirtualShadowSampling.ViewCount)
-                {
-                    shadow = SampleDirectionalVirtualShadowMap(
-                        VirtualShadowViews,
-                        VirtualShadowPageTable,
-                        VirtualShadowAtlas,
-                        firstShadowView,
-                        min(
-                            VirtualShadowSampling.DirectionalClipmapLevels,
-                            VirtualShadowSampling.ViewCount - firstShadowView),
-                        VirtualShadowDynamicResolutionBias[0].x,
-                        shadowPosition,
-                        receiverPositionDx + mappedNormal * VirtualShadowSampling.NormalBias,
-                        receiverPositionDy + mappedNormal * VirtualShadowSampling.NormalBias,
-                        VirtualShadowSampling.BlockerSampleCount,
-                        VirtualShadowSampling.FilterSampleCount,
-                        VirtualShadowSampling.BlockerSearchRadiusTexels,
-                        VirtualShadowSampling.MaxFilterRadiusTexels);
-                }
-            }
+            float shadow = ReadVirtualShadowProjectedVisibility(pixelCoord, lightIndex,
+                uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount));
             finalColor += EvaluateDirectionalLight(
                 baseColor,
                 metallic,
@@ -187,13 +140,13 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                 V,
                 -normalize(light.Direction),
                 light.Color * (light.Intensity * shadow),
-                EvaluateLightingCookie(light, ctx.surfacePosition));
+                EvaluateLightingCookie(light, receiver.Position));
         }
 
         uint cell = ClusteredLightCellIndex(
             lighting,
-            ctx.pixelCoord.z,
-            ctx.pixelCoord.xy,
+            pixelCoord.z,
+            pixelCoord.xy,
             viewDepth);
         uint localCount = min(
             ClusteredLightGrid[cell].y,
@@ -203,7 +156,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         {
             uint lightIndex = LightIndexList[firstIndex + localIndex];
             GPULight light = LightBuffer[lightIndex];
-            float3 toLight = light.Position - ctx.surfacePosition;
+            float3 toLight = light.Position - receiver.Position;
             float distanceSq = dot(toLight, toLight);
             if (light.Range <= 0.0 || distanceSq >= light.Range * light.Range || dot(mappedNormal, toLight) <= 0.0)
                 continue;
@@ -211,58 +164,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             if (spotLight && EvaluateSpotCone(toLight * rsqrt(max(distanceSq, MIN_DISTANCE_SQ)),
                     light.Direction, light.InnerConeCos, light.OuterConeCos) <= 0.0)
                 continue;
-            float3 shadowPosition = ctx.surfacePosition +
-                mappedNormal * VirtualShadowSampling.NormalBias;
-            float shadow = 1.0;
-            if (lightIndex >= VirtualShadowSampling.PointLightBufferOffset &&
-                lightIndex < VirtualShadowSampling.PointLightBufferOffset +
-                    VirtualShadowSampling.PointLightCount)
-            {
-                uint pointLightIndex = lightIndex -
-                    VirtualShadowSampling.PointLightBufferOffset;
-                uint firstShadowView = VirtualShadowSampling.PointViewOffset +
-                    pointLightIndex * 6u;
-                if (firstShadowView + 5u < VirtualShadowSampling.ViewCount)
-                {
-                    shadow = SamplePointVirtualShadowMap(
-                        VirtualShadowViews,
-                        VirtualShadowPageTable,
-                        VirtualShadowAtlas,
-                        firstShadowView,
-                        VirtualShadowDynamicResolutionBias[0].y,
-                        shadowPosition,
-                        receiverPositionDx + mappedNormal * VirtualShadowSampling.NormalBias,
-                        receiverPositionDy + mappedNormal * VirtualShadowSampling.NormalBias,
-                        VirtualShadowSampling.BlockerSampleCount,
-                        VirtualShadowSampling.FilterSampleCount,
-                        VirtualShadowSampling.BlockerSearchRadiusTexels,
-                        VirtualShadowSampling.MaxFilterRadiusTexels);
-                }
-            }
-            else if (lightIndex >= VirtualShadowSampling.SpotLightBufferOffset &&
-                lightIndex < VirtualShadowSampling.SpotLightBufferOffset +
-                    VirtualShadowSampling.SpotLightCount)
-            {
-                uint spotLightIndex = lightIndex -
-                    VirtualShadowSampling.SpotLightBufferOffset;
-                uint shadowView = VirtualShadowSampling.SpotViewOffset + spotLightIndex;
-                if (shadowView < VirtualShadowSampling.ViewCount)
-                {
-                    shadow = SampleSpotVirtualShadowMap(
-                        VirtualShadowViews,
-                        VirtualShadowPageTable,
-                        VirtualShadowAtlas,
-                        shadowView,
-                        VirtualShadowDynamicResolutionBias[0].y,
-                        shadowPosition,
-                        receiverPositionDx + mappedNormal * VirtualShadowSampling.NormalBias,
-                        receiverPositionDy + mappedNormal * VirtualShadowSampling.NormalBias,
-                        VirtualShadowSampling.BlockerSampleCount,
-                        VirtualShadowSampling.FilterSampleCount,
-                        VirtualShadowSampling.BlockerSearchRadiusTexels,
-                        VirtualShadowSampling.MaxFilterRadiusTexels);
-                }
-            }
+            float shadow = ReadVirtualShadowProjectedVisibility(pixelCoord, lightIndex,
+                uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount));
             float3 radiance = light.Color * (light.Intensity * shadow);
             if (spotLight)
             {
@@ -272,14 +175,14 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                     roughness,
                     mappedNormal,
                     V,
-                    ctx.surfacePosition,
+                    receiver.Position,
                     light.Position,
                     light.Range,
                     light.Direction,
                     light.InnerConeCos,
                     light.OuterConeCos,
                     radiance,
-                    EvaluateLightingCookie(light, ctx.surfacePosition));
+                    EvaluateLightingCookie(light, receiver.Position));
             }
             else
             {
@@ -289,62 +192,17 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
                     roughness,
                     mappedNormal,
                     V,
-                    ctx.surfacePosition,
+                    receiver.Position,
                     light.Position,
                     light.Range,
                     radiance,
-                    EvaluateLightingCookie(light, ctx.surfacePosition));
+                    EvaluateLightingCookie(light, receiver.Position));
             }
         }
 
-        outputColor[ctx.pixelCoord] = float4(finalColor, 1.0);
+        return float4(finalColor, 1.0);
     }
 
-    void evaluateDebug(
-        uint debugMode,
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
-        SurfaceEval surface,
-        float3 bary,
-        Triangle triangle,
-        RWTexture2DArray<float4> outputColor)
-    {
-        if (debugMode == 8)
-        {
-            outputColor[pixelCoord] = float4(bary, 1.0);
-            return;
-        }
-
-        StandardPixelContext ctx = BuildStandardPixelContext(
-            pixelCoord,
-            instanceID,
-            surface);
-
-        if (debugMode == 9)
-        {
-            outputColor[pixelCoord] = float4(ctx.worldNormal * 0.5 + 0.5, 1.0);
-            return;
-        }
-
-        if (debugMode == 10)
-        {
-            float checker = step(0.5, frac(ctx.uv0.x * 8.0)) != step(0.5, frac(ctx.uv0.y * 8.0)) ? 0.8 : 0.2;
-            outputColor[pixelCoord] = float4(ctx.uv0.x, ctx.uv0.y, checker, 1.0);
-            return;
-        }
-
-        if (debugMode == 11)
-        {
-            float3 pos = surface.Position;
-            float3 basePos = EvalLinearPosition(triangle, bary);
-            float3 delta = abs(pos - basePos) * 3.0;
-            outputColor[pixelCoord] = float4(delta, 1.0);
-            return;
-        }
-
-        outputColor[pixelCoord] = float4(1.0, 0.0, 1.0, 1.0);
-    }
 };
 
 #endif

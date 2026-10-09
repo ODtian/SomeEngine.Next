@@ -1,17 +1,19 @@
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Runtime;
 
-/// <summary>Reads the standard presentation target without changing the runtime render path.</summary>
+/// <summary>Reads a standard render output without changing the runtime render path.</summary>
 internal sealed class FrameOutputVerifier : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly int _width;
     private readonly int _height;
+    private readonly Format _format;
     private readonly TextureCopyFootprint _footprint;
     private readonly Buffer _readback;
     private readonly byte[] _bytes;
@@ -28,11 +30,12 @@ internal sealed class FrameOutputVerifier : IDisposable
         _device = device ?? throw new ArgumentNullException(nameof(device));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
-        if (format != Format.R8G8B8A8UNorm)
+        if (format is not (Format.R8G8B8A8UNorm or Format.R16G16B16A16Float))
             throw new NotSupportedException($"Runtime frame verification does not support {format}.");
 
         _width = width;
         _height = height;
+        _format = format;
         TextureDesc description = new(
             TextureDimension.Texture2D,
             checked((uint)width),
@@ -73,7 +76,8 @@ internal sealed class FrameOutputVerifier : IDisposable
     internal void Record(
         ref RenderGraphFrame graph,
         GraphTextureId source,
-        Queue presentationQueue)
+        Queue presentationQueue,
+        GraphRegionId region)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(presentationQueue);
@@ -132,17 +136,37 @@ internal sealed class FrameOutputVerifier : IDisposable
                     data.Width,
                     data.Height,
                     1));
-            });
+            }, region: region);
     }
 
-    internal FrameOutputMetrics Read()
+    internal void ReadPixels()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         BufferRange range = new(0, checked((ulong)_bytes.Length));
         using MappedBuffer mapping = _backend.Map(_readback, MapType.Read, range);
         mapping.Invalidate(range);
         mapping.Bytes.CopyTo(_bytes);
+    }
+
+    internal FrameOutputMetrics Read()
+    {
+        if (_format != Format.R8G8B8A8UNorm) throw new InvalidOperationException();
+        ReadPixels();
         return Analyze();
+    }
+
+    internal SceneLinearImage CopyLinearImage(SceneFrame frame)
+    {
+        if (_format != Format.R16G16B16A16Float) throw new InvalidOperationException();
+        var pixels = new Half[checked(_width * _height * 4)];
+        int rowBytes = checked(_width * 8);
+        for (int row = 0; row < _height; row++)
+        {
+            int offset = checked((int)(_footprint.Offset + (ulong)row * _footprint.RowPitch));
+            MemoryMarshal.Cast<byte, Half>(_bytes.AsSpan(offset, rowBytes))
+                .CopyTo(pixels.AsSpan(row * _width * 4));
+        }
+        return new(frame, pixels);
     }
 
     private FrameOutputMetrics Analyze()

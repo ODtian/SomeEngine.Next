@@ -10,7 +10,7 @@ public sealed class RenderTestDevice : IDisposable
     public IGraphicsBackend Backend { get; } = D3D12GraphicsBackend.Create();
     public Device Device { get; }
     public RenderDevice RenderDevice { get; }
-    public RenderFrameCoordinator Coordinator { get; }
+    public RenderDataLock DataLock { get; }
 
     public RenderTestDevice() : this(DeviceFeatures.None) { }
 
@@ -24,26 +24,24 @@ public sealed class RenderTestDevice : IDisposable
         Device = Backend.CreateDevice(new DeviceDesc(warp.Id, queues ?? [new DeviceQueueDesc(QueueType.Graphics)],
             requiredFeatures: features, label: "Render public behavior tests"));
         RenderDevice = new RenderDevice(Backend, Device);
-        Coordinator = new RenderFrameCoordinator(RenderDevice);
+        DataLock = new RenderDataLock();
     }
 
     public bool Apply(RenderExtractionSystems extraction, RenderWorld world)
     {
         var prepare = new RenderPrepareSystems(world, extraction);
-        Assert.True(Coordinator.TryBeginPrepare(out var scope));
+        Assert.True(DataLock.TryBeginPrepare(out var scope));
         using (scope)
         {
             bool changed;
             try { changed = prepare.ApplyExtraction(scope); }
             finally { prepare.Shutdown(scope); prepare.Dispose(); }
-            scope.Commit();
             return changed;
         }
     }
 
     public void Dispose()
     {
-        Coordinator.Dispose();
         RenderDevice.Dispose();
         Device.Dispose();
         Backend.Dispose();

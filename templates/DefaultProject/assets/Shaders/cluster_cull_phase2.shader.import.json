@@ -1,75 +1,103 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 29,
-  "input_hash": "82fcc7f56d3bb2d49ea5f194a87a743be19f5d8b7a0e2286c2478fbf72c59640",
+  "importer_version": 31,
+  "input_hash": "ed7cf98125bfdd8f1c4755db6c958bde5adc261ec12033bef5a0e344c33a45f0",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bvh_cull_common.slang",
-      "content_hash": "c47abcca3bfcb4bb1289c169ceb81b3471ae8ccb42023682ca3270984de1c23a"
+      "content_hash": "67222f223096bc06b43a2064e9eca3761dc4506162433faae76d3e5209fa6f0d"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_cull.slang",
-      "content_hash": "83c22aa664a325d4af3697a6d1292c77aafce4b2c4c82c6f6632434de6ff7802"
+      "content_hash": "69fa953957203268db5a2fdaba455ae508ec5c3e2c67db9775795432c060c946"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_cull_phase2.slang",
       "content_hash": "04a28d159448c6841f83152a00ba8c67423a2b8742c0948a2a562a88cb5c49ab"
     },
     {
+      "relative_path": "../../assets/Shaders/cluster_depth_cache.slang",
+      "content_hash": "ca1c80c3aa20ce1b124155e82de641b49f5d16fd421a74e68bf81529105ee091"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_hierarchy.slang",
+      "content_hash": "976685517fc9f950b25e4a097ebc3bf457536a8643463a738cdf3fee7802595b"
+    },
+    {
       "relative_path": "../../assets/Shaders/cluster_hiz_shared.slang",
-      "content_hash": "5ee460509aa3908a853f0625d0ec3247f33aca98f1aa705ef8e3cff7da889cc0"
+      "content_hash": "abdd28d2ee5b84089dda01844cbe0c907a8ea8f5a8995cfd46c20ccf7a77d7b0"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_instance_properties.slang",
-      "content_hash": "a881c699f3ae666c6d0cda6a391ac173605c29c5f87cb028185a5d57b4726a01"
+      "content_hash": "205e41a2395b9198ca3ae0f41060c4db59a841f0dcc60e71526f1ab509fcbcd1"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_filter.slang",
-      "content_hash": "9c51ad6126be6869c190b8b21f5b8c51b204e04249d2a6a466a72bbfe4380372"
+      "content_hash": "ff60f5aab02f6bb77afd546d76aa47bd3f39b8aef72f6b9e1828bdf5ba8c35f0"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_raster_target_resources.slang",
+      "content_hash": "fc5b899ed722622d01fb8b9958d05dd54e48b707c2c968aea36bdaad88050bb5"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_raster_target_view.slang",
-      "content_hash": "213c68e0987ddfaf92e7778e7db7e78b005c09cdcc028dc2b9197b1d0b461ec1"
+      "content_hash": "b538d3b386ace294b943167131a295f9785b18fecc2dc2b6eb963a5cb7b30257"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "89677843803ec893351df7ca9e5652bdf398ba2803ae4167189a7836cf30cfd2"
+      "content_hash": "5a6d7541617c13957945a67fecd22fd872a97e8d32f0dac1130d682928c82adc"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_target_policy_contract.slang",
-      "content_hash": "f02d6b3d9470d18fcec5b8e17762f3e8bf8c008c012a8e15ad55032a5c18e083"
+      "content_hash": "1986e34ffa9645ce21dadb55471aee1c1c8dfa2fc7b9e518c4a10547a7108552"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_view.slang",
-      "content_hash": "7407665c428aa7c4008237ee119dca991b4389594cc8724442c2dedf50ec954f"
+      "content_hash": "bd97da01ec33fbca27b7192acc240140e6effb18f9f26b039e5a889e1248fe3d"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_view_access.slang",
       "content_hash": "5ba4e87d6592de3acfb3e625385e1f693b3bd6a2d501c88e257723d4c54acf75"
     },
     {
+      "relative_path": "../../assets/Shaders/cluster_work_status.slang",
+      "content_hash": "e30c3735a446f9ffcf9f2c0497f623be7cded6b71924a8bc5432d11a5b0805da"
+    },
+    {
       "relative_path": "../../assets/Shaders/common.slang",
       "content_hash": "15b848671166b0f7760a59b569030982263a5486a537cf5bc0543279f04166dd"
     },
     {
+      "relative_path": "../../assets/Shaders/depth_page_hiz.slang",
+      "content_hash": "f9d22734ca7a6eb4944090d172f4ca08f2ad8c4cc04b25b47f221e5a06b870d9"
+    },
+    {
       "relative_path": "../../assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "b3deb519f6691bbb7bbd28a7d6e5f162dc95b49212ad3bdcf4ff4d78eee5cc06"
+      "content_hash": "14b44f6e73bd7a464a6dec26a86618c12f98501d17665adcb39c4161879e5322"
     },
     {
       "relative_path": "../../assets/Shaders/raster_sample_bounds.slang",
-      "content_hash": "fc649da665bb6e071aaa01cf932721a3bbd40374c872a381ebfb435507707b22"
+      "content_hash": "d33e49f854973bb55f9b71f7b30236e2815ccfb344a75e9c44a1d52b874739d6"
     },
     {
       "relative_path": "../../assets/Shaders/render_instance_properties.slang",
-      "content_hash": "d63867a87e179b0b11ab4cd4a06b5a8f937f1d219d2816853db156eef7c14b8a"
+      "content_hash": "33eb01451d41f3ff6649fdd438a416ca212ec3c0128e9d36e20ac5c374234f54"
     },
     {
       "relative_path": "../../assets/Shaders/render_instance_transform.slang",
-      "content_hash": "bee8de55a909be0fe22219acb566c9275974e7a7e2f42966b3452cbb5d979927"
+      "content_hash": "a57a9965b0626215c09dcdbe7f86c7119ca1effdbbdce24e1d570001ac5abe67"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_page_entry.slang",
+      "content_hash": "6ee61bbbb6ec605b974407be17416c08a6e867af5dc94244dfc397a0b84111b8"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_receiver_mask_bits.slang",
+      "content_hash": "0b6345cb7b8ec83b3bf1c1861f2c7953c27cc0c87257aa804ce375df47cfe841"
     },
     {
       "relative_path": "../../assets/Shaders/wave_aggregation.slang",
@@ -89,7 +117,7 @@
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+      "content_hash": "ca411c4e64e36d5e042244e087f1d2726187cb2f1434ccdd46b78d4f0a9040ee"
     }
   ],
   "reported_inputs": [],
@@ -97,11 +125,11 @@
     {
       "asset_guid": "77284f71-c4ad-543d-870e-bed9e215ead5",
       "sub_asset_key": "",
-      "input_hash": "82fcc7f56d3bb2d49ea5f194a87a743be19f5d8b7a0e2286c2478fbf72c59640",
+      "input_hash": "ed7cf98125bfdd8f1c4755db6c958bde5adc261ec12033bef5a0e344c33a45f0",
       "dependencies": [],
       "asset_path": "cluster_cull_phase2.shader.asset",
-      "version": "fc78f2db-4d55-8554-9c53-a5013b94c0d5",
-      "content_hash": "AC7389E687394F0C99CF04239ADCCA457F85931472C13B72014A97523B88A6FA",
+      "version": "ec70f9c1-bb41-259d-56dc-ae8091709fe5",
+      "content_hash": "1ED20BEB729910C20CB2EA4AE639CDBBF8FA809224807BC16D8695880AC968D0",
       "asset_dependencies": []
     }
   ]

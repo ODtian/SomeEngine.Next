@@ -29,6 +29,8 @@ public sealed class SceneScript
     }
 
     public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
+    /// <summary>Maximum hierarchy, candidate and deferred entries retained by the geometry pipeline.</summary>
+    public uint ClusterWorkCapacity { get; init; } = 1_048_576;
     public bool WaitForFrames { get; init; } = true;
     public float RasterEdgePixels { get; init; } = 4;
     public bool UseCameraHistory { get; init; } = true;
@@ -51,16 +53,19 @@ public sealed class SceneEdit
     private readonly RuntimeScene _scene;
     private readonly NativeWindow _window;
     private readonly List<Action<SceneImage>> _images = [];
+    private readonly List<Action<SceneLinearImage>> _linearImages = [];
     private bool _active;
 
     internal SceneEdit(RuntimeScene scene, NativeWindow window) => (_scene, _window) = (scene, window);
     internal IReadOnlyList<Action<SceneImage>> Images => _images;
+    internal IReadOnlyList<Action<SceneLinearImage>> LinearImages => _linearImages;
     internal bool FrameCanceled { get; private set; }
     internal bool CameraCut { get; private set; }
     internal bool ShadowMapRefreshRequested { get; private set; }
     internal void Begin()
     {
         _images.Clear();
+        _linearImages.Clear();
         FrameCanceled = CameraCut = ShadowMapRefreshRequested = false;
         _active = true;
     }
@@ -78,6 +83,14 @@ public sealed class SceneEdit
     {
         RequireAction();
         _scene.SetCameraTransform(position, rotation);
+    }
+
+    /// <summary>Moves the entire scene by changing its double precision origin in engine world units.</summary>
+    public void SetWorldOrigin(WorldOrigin origin)
+    {
+        RequireAction();
+        _scene.SetWorldOrigin(origin);
+        CameraCut = true;
     }
 
     public Material GetMaterial(Entity entity, int index = 0)
@@ -136,6 +149,14 @@ public sealed class SceneEdit
         RequireAction();
         ArgumentNullException.ThrowIfNull(receive);
         _images.Add(receive);
+    }
+
+    /// <summary>Retains this submitted frame's linear material color and its matching scene inputs.</summary>
+    public void CaptureLinearImage(Action<SceneLinearImage> receive)
+    {
+        RequireAction();
+        ArgumentNullException.ThrowIfNull(receive);
+        _linearImages.Add(receive);
     }
 
     private void RequireAction()

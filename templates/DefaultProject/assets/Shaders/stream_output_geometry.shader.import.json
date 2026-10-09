@@ -1,11 +1,15 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 29,
-  "input_hash": "aa04ca92c88442b76e836243405dcf5ea79fa500009e553942f733161f781823",
+  "importer_version": 31,
+  "input_hash": "d11db20dbf64b73254373ff142637d222a0be17f88f453ef0421a783026e807a",
   "inputs": [
     {
+      "relative_path": "../../assets/Shaders/cluster_hierarchy.slang",
+      "content_hash": "976685517fc9f950b25e4a097ebc3bf457536a8643463a738cdf3fee7802595b"
+    },
+    {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "89677843803ec893351df7ca9e5652bdf398ba2803ae4167189a7836cf30cfd2"
+      "content_hash": "5a6d7541617c13957945a67fecd22fd872a97e8d32f0dac1130d682928c82adc"
     },
     {
       "relative_path": "../../assets/Shaders/feature_visible_clusters.slang",
@@ -13,7 +17,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/stream_output_geometry.slang",
-      "content_hash": "154c1d958f7ef033ee07403bb48a2a5683785b5b769e2179b7e110fa1a4e2a0d"
+      "content_hash": "e9cd342b6884aa55ccfc956c7608ee831e08315d9b9e287679b2680074901865"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_stream_output_geometry.slang",
@@ -21,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+      "content_hash": "ca411c4e64e36d5e042244e087f1d2726187cb2f1434ccdd46b78d4f0a9040ee"
     },
     {
       "relative_path": "assets/Shaders/stream_output_geometry.shader",
@@ -33,11 +37,11 @@
     {
       "asset_guid": "e6ded447-fb9a-5e51-af41-85e07802cecb",
       "sub_asset_key": "",
-      "input_hash": "aa04ca92c88442b76e836243405dcf5ea79fa500009e553942f733161f781823",
+      "input_hash": "d11db20dbf64b73254373ff142637d222a0be17f88f453ef0421a783026e807a",
       "dependencies": [],
       "asset_path": "stream_output_geometry.shader.asset",
-      "version": "134d30f7-f84e-6992-3510-a8c20e7b66e3",
-      "content_hash": "1C08AB5126BE1BF20ACFBAC37B125048400216D4C7050CDAC62EA38AB9CFA5DC",
+      "version": "e338b6ee-4c55-69e4-39d2-db5388bb1a91",
+      "content_hash": "DD164E3CE815E177A813799B2FC5894438005662AEC5F6B5ED0E1D33FAF36B55",
       "asset_dependencies": []
     }
   ]
