@@ -136,6 +136,9 @@ public sealed partial class ClusterPipelineSystem
 
     private void SetGeometryPassesEnabled(ref RenderGraphFrame graph, bool hasGeometry, bool hasTargetGeometry)
     {
+        CullWork work = GraphData.Resources.Work;
+        work.FramePhases = hasGeometry ? hasTargetGeometry ? 15u : 3u : 0u;
+        graph.SetRegionEnabled(work.Initialization, !work.Initialized);
         bool scatter = hasGeometry && CalculateShadeBinItemCapacity(GraphData.Resources) == 0u;
         graph.SetRegionEnabled(GraphData.EmptyReceivers, !hasGeometry);
         graph.SetRegionEnabled(GraphData.PrimaryGeometry, hasGeometry);

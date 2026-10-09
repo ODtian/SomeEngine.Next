@@ -289,8 +289,13 @@ void SeedHierarchyRoots(
     waveBase = WaveReadLaneFirst(waveBase);
     uint outputIndex = waveBase + outputOffset;
     if (activeViewMask != 0u && outputIndex < TraversalSeed.MaxNodes)
+    {
         TraversalNodes[outputIndex] = MakeClusterTraversalNode(
             rootIndex, instanceID, ClusterSeedViewIndex(viewSlotBase), activeViewMask);
+        DeviceMemoryBarrier();
+        uint ignored;
+        InterlockedExchange(TraversalReady[outputIndex], 1u, ignored);
+    }
 
     uint deferredCount = countbits(deferredViewMask);
     uint deferredOffset = WavePrefixSum(deferredCount);
@@ -325,3 +330,4 @@ void SeedHierarchyRoots(
 }
 
 #include "cluster_work_status.slang"
+#include "cluster_work_queue.slang"

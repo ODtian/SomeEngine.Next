@@ -84,7 +84,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 [Format.R16G16B16A16Float],
                 rasterizer: new RasterizerState(Cull: CullType.None),
                 label: "Temporal resolve");
-            _resourceOrder = FeatureResourceLayout.Resolve<TemporalResource>(
+            _resourceOrder = ShaderResourceLayout.Resolve<TemporalResource>(
                 pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 ResolveResource);
 

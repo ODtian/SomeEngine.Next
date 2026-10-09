@@ -170,7 +170,7 @@ public static class DefaultContent
                 ComputeOperation(
                     ClusterShaderOperationRole.BvhTraversal,
                     ResolveRequired(project, "assets/Shaders/cluster_bvh_traverse.shader"),
-                    "TraverseHierarchyLevel"),
+                    "CullClusterWork"),
                 ComputeOperation(
                     ClusterShaderOperationRole.LeafFlagFixups,
                     ResolveRequired(project, "assets/Shaders/cluster_leaf_flags.shader"),

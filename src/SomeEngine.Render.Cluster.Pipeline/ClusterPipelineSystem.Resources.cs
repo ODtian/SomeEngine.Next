@@ -138,38 +138,15 @@ public sealed partial class ClusterPipelineSystem
             stackalloc byte[checked((int)ClusterRenderContext.TargetViewSizeInBytes)],
             BufferUsages.ShaderRead,
             "Cluster neutral target view");
-        frame.TraversalNodes0 = frame.AddBuffer(
-            ref graph,
-            checked(candidates * TraversalNodeStride),
-            BufferUsages.None,
-            "Cluster hierarchy nodes for even levels");
-        frame.TraversalNodes1 = frame.AddBuffer(
-            ref graph,
-            checked(candidates * TraversalNodeStride),
-            BufferUsages.None,
-            "Cluster hierarchy nodes for odd levels");
-        ulong traversalArgumentBytes = checked(
-            ((ulong)_resources.HierarchyLevels + 1u) * TraversalArgumentStride);
-        frame.TraversalArguments0 = frame.AddBuffer(
-            ref graph,
-            traversalArgumentBytes,
-            BufferUsages.Indirect,
-            "Cluster hierarchy indirect arguments 0");
-        frame.TraversalArguments1 = frame.AddBuffer(
-            ref graph,
-            traversalArgumentBytes,
-            BufferUsages.Indirect,
-            "Cluster hierarchy indirect arguments 1");
+        frame.Work = CreateCullWork(ref graph, candidates);
+        frame.TraversalNodes0 = frame.Work.Nodes;
+        frame.TraversalArguments0 = frame.Work.Arguments;
         frame.CandidateArgsInitialization = UploadWords(
             ref graph,
             [0u, 1u, 1u, 0u],
             BufferUsages.CopySource,
             "Cluster candidate dispatch initialization");
-        frame.CandidateClusters = frame.AddBuffer(
-            ref graph,
-            checked(candidates * CandidateStride),
-            BufferUsages.None,
-            "Cluster candidates");
+        frame.CandidateClusters = frame.Work.Clusters;
         frame.CandidateCount = frame.AddBuffer(ref graph, sizeof(uint), BufferUsages.CopySource, "Cluster candidate count");
         frame.DrawArgs = frame.AddBuffer(ref graph, 16, BufferUsages.CopySource, "Cluster phase-one counts");
         frame.PageFaults = frame.AddBuffer(
@@ -837,11 +814,7 @@ public sealed partial class ClusterPipelineSystem
             frame.TraversalArguments0,
             BufferRange.Whole,
             "Initialize Cluster hierarchy arguments 0");
-        AddSmallClear(
-            ref graph,
-            frame.TraversalArguments1,
-            BufferRange.Whole,
-            "Initialize Cluster hierarchy arguments 1");
+
         AddSmallClear(
             ref graph,
             frame.PageFaults,
@@ -1159,10 +1132,9 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId NeutralPolicyCounter;
         internal GraphBufferId NeutralPolicyView;
         internal GraphTextureId NeutralPolicyOutput;
+        internal CullWork Work = null!;
         internal GraphBufferId TraversalNodes0;
-        internal GraphBufferId TraversalNodes1;
         internal GraphBufferId TraversalArguments0;
-        internal GraphBufferId TraversalArguments1;
         internal GraphBufferId CandidateArgsInitialization;
         internal GraphBufferId CandidateClusters;
         internal GraphBufferId CandidateCount;
