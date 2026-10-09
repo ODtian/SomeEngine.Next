@@ -106,9 +106,10 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
             for (uint mip = 0; mip < 7; mip++)
             {
                 uint size = 64u >> checked((int)mip);
-                backend.CopyTextureToBuffer(context, new BufferTextureCopy(readback, offset, 512, size, hiz,
+                uint pitch = (size * sizeof(uint) + 255u) & ~255u;
+                backend.CopyTextureToBuffer(context, new BufferTextureCopy(readback, offset, pitch, size, hiz,
                     mip, 0, TextureAspects.Color, page * size, 0, 0, size, size, 1));
-                offset += Math.Max(size, 2u) * 512u;
+                offset += Math.Max(size, 2u) * pitch;
             }
             using RecordedCommands commands = backend.End(context);
             QueueCompletion completion = backend.Submit(backend.GetQueue(device, QueueType.Compute),
@@ -122,6 +123,7 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
                 float[] previous = depth[layer];
                 for (int size = 64; size != 0; size >>= 1)
                 {
+                    int pitch = (size * sizeof(uint) + 255) & ~255;
                     var expected = new float[size * size];
                     for (int y = 0; y < size; y++)
                     for (int x = 0; x < size; x++)
@@ -130,10 +132,10 @@ public sealed class VirtualShadowHiZTests(D3D12TestCompiler shaderCompiler)
                         expected[y * size + x] = Math.Max(Math.Max(previous[p], previous[p + 1]),
                             Math.Max(previous[p + size * 2], previous[p + size * 2 + 1]));
                         float actual = BitConverter.UInt32BitsToSingle(BinaryPrimitives.ReadUInt32LittleEndian(
-                            mapping.Bytes.Slice(readOffset + y * 512 + x * 4, 4)));
+                            mapping.Bytes.Slice(readOffset + y * pitch + x * 4, 4)));
                         Assert.Equal(expected[y * size + x], actual);
                     }
-                    readOffset += Math.Max(size, 2) * 512;
+                    readOffset += Math.Max(size, 2) * pitch;
                     previous = expected;
                 }
             }
