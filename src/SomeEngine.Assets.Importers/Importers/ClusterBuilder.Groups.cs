@@ -1,44 +1,36 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using MeshOptimizer;
 
 namespace SomeEngine.Assets.Importers;
 
 public static partial class ClusterBuilder
 {
-    private static List<int[]> PartitionClusterGroups(Vector3[] positions, List<BuilderMeshlet> clusters,
+    private static List<int[]> PartitionClusterGroups(ReadOnlySpan<Vector3> positions, List<BuilderMeshlet> clusters,
         List<uint> indices, List<int> current)
     {
-        if (current.Count <= 32) return [Enumerable.Range(0, current.Count).ToArray()];
-        var graph = new ClusterGraph(current.Count);
-        var edges = new Dictionary<(Vector3 First, Vector3 Second), List<int>>();
-        var sharedEdges = new Dictionary<(int First, int Second), int>();
+        if (current.Count <= 16) return [Enumerable.Range(0, current.Count).ToArray()];
+        var remap = new uint[positions.Length];
+        ReadOnlySpan<float> positionValues = MemoryMarshal.Cast<Vector3, float>(positions);
+        Meshopt.GeneratePositionRemap(remap, positionValues, 12);
+        var indexCounts = new uint[current.Count];
+        var clusterIndices = new uint[current.Sum(index => clusters[index].IndicesCount)];
+        int offset = 0;
         for (int index = 0; index < current.Count; index++)
         {
             BuilderMeshlet cluster = clusters[current[index]];
-            Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
             ReadOnlySpan<uint> triangles = CollectionsMarshal.AsSpan(indices).Slice(cluster.IndicesOffset, cluster.IndicesCount);
-            for (int corner = 0; corner < triangles.Length; corner++)
-            {
-                Vector3 first = positions[triangles[corner]];
-                minimum = Vector3.Min(minimum, first); maximum = Vector3.Max(maximum, first);
-            }
-            ClusterGraph.AddTriangleEdges(edges, triangles, positions, index, neighbor =>
-            {
-                if (neighbor == index) return;
-                var pair = (neighbor, index);
-                sharedEdges[pair] = sharedEdges.GetValueOrDefault(pair) + 1;
-            });
-            graph.Include(minimum); graph.Include(maximum);
-            graph.Centers[index] = (minimum + maximum) * .5f;
+            indexCounts[index] = (uint)triangles.Length;
+            foreach (uint vertex in triangles)
+                clusterIndices[offset++] = remap[vertex];
         }
-        foreach (var pair in sharedEdges)
-        {
-            BuilderMeshlet a = clusters[current[pair.Key.First]], b = clusters[current[pair.Key.Second]];
-            bool siblings = a.Level != 0 && a.GroupId == b.GroupId;
-            graph.Connect(pair.Key.First, pair.Key.Second, pair.Value * (siblings ? 12 : 16) + 4);
-        }
-        graph.ConnectNearbyComponents();
-        return graph.Partition(8, 32);
+        var groupIndices = new uint[current.Count];
+        int groupCount = checked((int)Meshopt.PartitionClusters(groupIndices, clusterIndices,
+            indexCounts, positionValues, 12, 16));
+        var groups = Enumerable.Range(0, groupCount).Select(_ => new List<int>()).ToArray();
+        for (int index = 0; index < current.Count; index++)
+            groups[groupIndices[index]].Add(index);
+        return groups.Select(static group => group.ToArray()).ToList();
     }
 
     private static byte[] LockGroupBoundaries(Vector3[] positions, int vertexCount, List<BuilderMeshlet> clusters,
@@ -52,7 +44,14 @@ public static partial class ClusterBuilder
         {
             BuilderMeshlet data = clusters[current[cluster]];
             ReadOnlySpan<uint> triangles = CollectionsMarshal.AsSpan(indices).Slice(data.IndicesOffset, data.IndicesCount);
-            ClusterGraph.AddTriangleEdges(edges, triangles, positions, clusterGroups[cluster]);
+            for (int corner = 0; corner < triangles.Length; corner++)
+            {
+                Vector3 first = positions[triangles[corner]];
+                Vector3 second = positions[triangles[corner - corner % 3 + (corner + 1) % 3]];
+                if (!edges.TryGetValue((first, second), out List<int>? groupsForEdge))
+                    edges.Add((first, second), groupsForEdge = []);
+                groupsForEdge.Add(clusterGroups[cluster]);
+            }
         }
         var locked = new HashSet<Vector3>();
         foreach (var pair in edges)
