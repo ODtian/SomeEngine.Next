@@ -88,7 +88,10 @@ ImGui 顶点/索引与常量沿用图帧的完成、取消及复用边界，不�
 生产者须在同步 prepare 内填满范围，不能在发布后保留跨度；分离的 slice 可并行写入。
 Cluster roots/expansions 在该范围内直接计算，组件属性按各自变化行连续范围写入。
 放弃组合或下一帧仍丢弃复制记录并要求后续重写，不引入 CPU 回滚值或 GPU 回读备份。
-实际相邻不同属性的范围回归仍待完成；源码/验证边界见
+`ClusterInstanceUploadTests` 通过公开上传范围与 GPU 回读验证相邻不同属性、并行 packet、
+取消及放弃后重写。`RenderMesh` 是一个 ECS 变化列：同一变化行的 root、bounds expansion、
+depth cache class 与 first-person 数据分别写入各自范围；变换列及其它行保持原值。
+这些范围、非零 mesh 标志和未变化值已有 WARP 回归；其它源码/验证边界见
 [[architecture/validation/Review-Fixes-70]]。
 
 ## Behavior evidence

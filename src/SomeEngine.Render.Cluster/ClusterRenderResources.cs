@@ -788,6 +788,8 @@ public sealed class ClusterRenderResources : IDisposable
                 WriteChangedProperty(destination, packet, _previousTransform, lastSystemVersion);
             }
             if (!packet.ChangedSince<RenderMesh>(lastSystemVersion)) return;
+            // RenderMesh is one ECS change column. Its four derived properties
+            // share these changed rows; transform columns keep their own ranges.
             int start = 0;
             while (NextChangedRows<RenderMesh>(packet, lastSystemVersion, ref start, out int count))
             {
