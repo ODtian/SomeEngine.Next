@@ -11,11 +11,13 @@ internal sealed class FrameBufferTransfers : IDisposable
     private readonly ThreadLocal<List<BufferUpload>> _uploads = new(static () => [], trackAllValues: true);
     private readonly object _uploadPageGate = new();
     private UploadPage? _uploadPage;
+    private long _uploadSequence;
 
     internal BufferUpload[] TakeUploads()
     {
         IList<List<BufferUpload>> writes = _uploads.Values;
         BufferUpload[] uploads = writes.SelectMany(values => values).ToArray();
+        Array.Sort(uploads, static (left, right) => left.Sequence.CompareTo(right.Sequence));
         foreach (List<BufferUpload> values in writes) values.Clear();
         return uploads;
     }
@@ -37,7 +39,7 @@ internal sealed class FrameBufferTransfers : IDisposable
     }
 
     internal readonly record struct BufferUpload(GraphBufferId Destination, ulong Offset,
-        UploadPage Page, BufferRange Range);
+        UploadPage Page, BufferRange Range, long Sequence);
 
     internal Span<byte> GetWriteSpan(GraphBufferId buffer, ulong offset, int length)
     {
@@ -46,7 +48,13 @@ internal sealed class FrameBufferTransfers : IDisposable
         return GetUploadSpan(upload);
     }
 
-    internal void AddUploads(IEnumerable<BufferUpload> uploads) => _uploads.Value!.AddRange(uploads);
+    internal void AddUploads(IEnumerable<BufferUpload> uploads)
+    {
+        List<BufferUpload> writes = _uploads.Value!;
+        // A group joins frame order at Commit while retaining its own write order.
+        foreach (BufferUpload upload in uploads.OrderBy(upload => upload.Sequence))
+            writes.Add(upload with { Sequence = Interlocked.Increment(ref _uploadSequence) });
+    }
 
     internal void AddUploadRanges(GraphBufferId buffer, List<BufferRange> ranges)
     {
@@ -84,7 +92,8 @@ internal sealed class FrameBufferTransfers : IDisposable
                 Volatile.Write(ref _uploadPage, target);
             }
         }
-        return new BufferUpload(buffer, offset, target, new BufferRange(start, checked((ulong)length)));
+        return new BufferUpload(buffer, offset, target, new BufferRange(start, checked((ulong)length)),
+            Interlocked.Increment(ref _uploadSequence));
     }
 
     private UploadPage CreateUploadPage(ulong size)
@@ -125,6 +134,7 @@ internal sealed class FrameBufferTransfers : IDisposable
         foreach (List<BufferUpload> values in _uploads.Values) values.Clear();
         foreach (UploadPage page in _uploadPages) page.Used = 0;
         _uploadPage = _uploadPages.FirstOrDefault();
+        _uploadSequence = 0;
     }
 
     internal FrameBufferTransfers(IGraphicsBackend backend, Device device, HeapByteBudget budget)

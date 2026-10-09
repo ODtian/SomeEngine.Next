@@ -53,6 +53,8 @@ if (graph.TryOpenNextFrame(out RenderGraphNextFrame next, timeout))
 `next.BeginBufferWrites()` 返回一组上传写入。组内的 `GetWriteSpan` 与 `WriteBuffer` 直接使用
 同一帧上传页，允许并行任务写入各自范围。写入者汇合后调用 `Commit()`，把这组范围交给
 帧上传；释放写入组则丢弃该组记录，帧上的其它写入继续生效。页内空间由图随帧资源回收。
+组内跨线程但有先后关系的重叠写入保留登记顺序。`Commit()` 按该顺序把范围登记到帧上传，
+覆盖此前已登记的重叠字节；之后的帧写入或组提交仍可覆盖这些字节。
 
 使用者可以通过 `edit.AddBufferUploadPass(buffer)` 显式安装持久上传 pass。
 `frame.GetBufferUploadRanges(buffer)` 返回下一帧已提交及录制阶段的上传范围，使用者可以
