@@ -11,7 +11,6 @@ internal sealed partial class RenderGraphFrameState
     private readonly List<FrameView> _dynamicViews = [];
     private readonly List<FramePass> _dynamicPasses = [];
     private readonly List<FrameResourceAccess> _dynamicAccesses = [];
-    private readonly List<BufferRangeRead> _bufferRangeReads = [];
     private readonly Dictionary<GraphIdentity, BufferRangeSet> _bufferRanges = [];
     private readonly Dictionary<(GraphViewKind, GraphIdentity, BufferRange, Format?, uint, GraphIdentity, ulong, string?), GraphIdentity> _bufferViews = [];
     private readonly Dictionary<(GraphViewKind, GraphIdentity, TextureSubresourceRange, Format, TextureViewDimension, bool, bool, string?), GraphIdentity> _textureViews = [];
@@ -69,7 +68,6 @@ internal sealed partial class RenderGraphFrameState
     internal IReadOnlyList<FrameView> DynamicViews => _dynamicViews;
     internal IReadOnlyList<FramePass> DynamicPasses => _dynamicPasses;
     internal IReadOnlyList<FrameResourceAccess> DynamicAccesses => _dynamicAccesses;
-    internal IReadOnlyList<BufferRangeRead> BufferRangeReads => _bufferRangeReads;
     internal IReadOnlyDictionary<GraphIdentity, BufferRangeSet> BufferRanges => _bufferRanges;
     internal IReadOnlyList<ExplicitPassOrder> DynamicOrders => _dynamicOrders;
     internal IReadOnlyList<(GraphIdentity Identity, SwapchainImage Image, Queue PresentQueue)> SwapchainImages => _swapchainImages;
@@ -988,8 +986,21 @@ internal sealed partial class RenderGraphFrameState
         EnsureAuthoring();
         ValidatePassIdentity(pass);
         ValidateResourceIdentity(buffer.Value, true);
-        if (ranges.Count != 0)
-            _bufferRangeReads.Add(new BufferRangeRead(pass, buffer.Value, ranges, sync, access));
+        if (ranges.Count == 0) return;
+        GraphIdentity identity = NewIdentity(_dynamicAccesses.Count, GraphIdentityDomain.Access);
+        _dynamicAccesses.Add(new FrameResourceAccess
+        {
+            Identity = identity,
+            Pass = pass,
+            Target = buffer.Value,
+            TargetKind = GraphAccessTargetKind.Buffer,
+            Mode = GraphAccessMode.Read,
+            Coverage = WriteCoverage.Partial,
+            Sync = sync,
+            Access = access,
+            BufferRange = BufferRange.Whole,
+            SharedBufferRanges = ranges,
+        });
     }
 
     internal GraphBufferAccessId AddBufferAccess(
@@ -1315,7 +1326,6 @@ internal sealed partial class RenderGraphFrameState
             {
                 _dynamicAccesses.RemoveRange(firstAccess, _dynamicAccesses.Count - firstAccess);
             }
-            _bufferRangeReads.RemoveAll(read => read.Pass == identity);
             DynamicRenderingRegions.Remove(identity);
             DynamicColorAttachments.Remove(identity);
             DynamicDepthAttachments.Remove(identity);
@@ -1535,7 +1545,6 @@ internal sealed partial class RenderGraphFrameState
         _textureViews.Clear();
         _dynamicPasses.Clear();
         _dynamicAccesses.Clear();
-        _bufferRangeReads.Clear();
         _bufferRanges.Clear();
         _dynamicOrders.Clear();
         foreach (var image in _swapchainImages)

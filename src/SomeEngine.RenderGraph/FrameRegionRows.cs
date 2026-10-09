@@ -18,7 +18,6 @@ internal sealed partial class FrameExecutor
     private readonly Dictionary<GraphIdentity, int> _regionPassCounts = [];
     private PassAccessPosition[] _dynamicAccessPositions = [];
     private readonly Dictionary<int, int> _dynamicAccessCounts = [];
-    private int _accessRowCount;
 
     private void PreparePassRows()
     {
@@ -144,10 +143,8 @@ internal sealed partial class FrameExecutor
     private int AddAccessRow()
     {
         if (_freeAccessRows.TryPop(out int row)) return row;
-        int index = _accessRowCount++;
-        if (index < _accesses.Count) DetachAccess(index);
-        else _accesses.Add(default);
-        return index;
+        _accesses.Add(default);
+        return _accesses.Count - 1;
     }
 
     private void RemoveAccessRow(int row)

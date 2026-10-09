@@ -378,13 +378,7 @@ internal sealed partial class FrameExecutor
             SetPassRow(_dynamicPassRows[i], source);
         }
 
-        int previousRangeStart = _rangeReadStart;
         PrepareAccessRows();
-        bool rangeReadsChanged = PrepareBufferRangeReads(
-            _accessRowCount, out int accessCount);
-        if (rangeReadsChanged)
-            for (int index = previousRangeStart; index < _accesses.Count; index++) DetachAccess(index);
-        PrepareRows(_accesses, accessCount);
         foreach (int sourceRow in CollectChangedRows(structureIndex.Structure.Accesses, _rowChanges.Accesses))
         {
             GraphIdentity identity = structureIndex.AccessIds[sourceRow];
@@ -458,8 +452,6 @@ internal sealed partial class FrameExecutor
             int destination = _dynamicAccessRows[i];
             SetAccessRow(destination, source);
         }
-
-        BuildBufferRangeReads(rangeReadsChanged);
 
         EndRows();
     }
@@ -813,6 +805,7 @@ internal sealed partial class FrameExecutor
     {
         _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetAccessRow);
+        FrameResourceAccess previous = _accesses[index];
         access.PassIndex = ResolvePass(access.Pass);
         DevelopmentCheck.Require(Enum.IsDefined(access.TargetKind), "The resource access target kind is invalid.");
         access.ResourceIndex = access.TargetKind switch
@@ -828,12 +821,16 @@ internal sealed partial class FrameExecutor
             if (access.BufferDescriptor)
                 access.SharedBufferRanges = _frame.BufferRanges.GetValueOrDefault(access.Target) ??
                     (access.BufferDescriptorOnly ? BufferRangeSet.Empty : null);
+            else if (access.SharedBufferRanges is { } ranges &&
+                (!previous.Connected || previous.BufferDescriptor || previous.TargetKind != GraphAccessTargetKind.Buffer ||
+                    previous.BufferRange != access.BufferRange || !ReferenceEquals(previous.SharedBufferRanges, ranges)))
+                foreach (BufferRange range in ranges.Ranges)
+                    _ = GraphStructureIndex.ResolveRange(range, _buffers[access.ResourceIndex].Description.Size);
         }
         else if (access.TargetKind == GraphAccessTargetKind.Texture)
             ValidateTextureRange(_textures[access.ResourceIndex], access.TextureRange);
         else if (access.TargetKind == GraphAccessTargetKind.QueryPool)
             ValidateQueryRange(_queryPools[access.ResourceIndex], access.QueryRange);
-        FrameResourceAccess previous = _accesses[index];
         if (previous.Connected && previous.PassIndex == access.PassIndex &&
             previous.TargetKind == access.TargetKind && previous.ResourceIndex == access.ResourceIndex)
         {
@@ -922,7 +919,6 @@ internal sealed partial class FrameExecutor
         }
     }
 
-    private List<ResolvedBufferRead> _bufferReads = [];
     private readonly Dictionary<GraphIdentity, BufferRangeSet> _previousBufferRanges = [];
 
     private void UpdateBufferRanges()
@@ -948,62 +944,6 @@ internal sealed partial class FrameExecutor
         foreach (int row in accesses)
             if (_accesses[row].BufferDescriptor && _accesses[row].Identity.IsValid)
                 ChangeAccess(_accesses[row].Identity);
-    }
-
-    private List<ResolvedBufferRead> _previousBufferReads = [];
-    private int _rangeReadStart;
-
-    private readonly record struct ResolvedBufferRead(
-        BufferRangeRead Read, int PassIndex, int ResourceIndex, ulong BufferSize);
-
-    private bool PrepareBufferRangeReads(int firstAccess, out int accessCount)
-    {
-        _bufferReads.Clear();
-        accessCount = firstAccess;
-        foreach (BufferRangeRead read in _frame.BufferRangeReads)
-        {
-            if (read.Ranges.Count == 0) continue;
-            int resource = ResolveBuffer(read.Buffer);
-            _bufferReads.Add(new ResolvedBufferRead(read, ResolvePass(read.Pass), resource,
-                _buffers[resource].Description.Size));
-            accessCount = checked(accessCount + 1);
-        }
-        bool changed = _rangeReadStart != firstAccess || _accesses.Count != accessCount ||
-            !CollectionsMarshal.AsSpan(_bufferReads).SequenceEqual(
-                CollectionsMarshal.AsSpan(_previousBufferReads));
-        _rangeReadStart = firstAccess;
-        if (changed)
-            _analysisChanged = true;
-        return changed;
-    }
-
-    private void BuildBufferRangeReads(bool changed)
-    {
-        int index = _rangeReadStart;
-        foreach (ResolvedBufferRead resolved in _bufferReads)
-        {
-            if (changed)
-            {
-                foreach (BufferRange range in resolved.Read.Ranges.Ranges)
-                    _ = GraphStructureIndex.ResolveRange(range, resolved.BufferSize);
-                SetAccessRow(index, new FrameResourceAccess
-                {
-                    Pass = resolved.Read.Pass,
-                    Target = resolved.Read.Buffer,
-                    TargetKind = GraphAccessTargetKind.Buffer,
-                    Mode = GraphAccessMode.Read,
-                    Coverage = WriteCoverage.Partial,
-                    Sync = resolved.Read.Sync,
-                    Access = resolved.Read.Access,
-                    BufferRange = new(0, resolved.BufferSize),
-                    SharedBufferRanges = resolved.Read.Ranges,
-                    PassIndex = resolved.PassIndex,
-                    ResourceIndex = resolved.ResourceIndex,
-                });
-            }
-            index++;
-        }
-        (_bufferReads, _previousBufferReads) = (_previousBufferReads, _bufferReads);
     }
 
     private readonly HashSet<GraphBufferInput> _changedBufferInputs = [];
