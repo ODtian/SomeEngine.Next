@@ -9,6 +9,51 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class ClusterLodErrorTests
 {
     [Fact]
+    public void ReducedFlatMeshReportsOriginalNormalDetail()
+    {
+        var (positions, indices) = CreateFlatGrid();
+        float[] normals = Enumerable.Range(0, positions.Length).SelectMany(index =>
+            index % 2 == 0 ? new[] { 0f, 0f, 1f } : new[] { .6f, 0f, .8f }).ToArray();
+        using MeshAsset asset = ClusterBuilder.ProcessRaw(positions,
+            [new("NORMAL", normals, 3, ValueType.Int8, 3, true)], indices,
+            ClusterBuilderTestMaterials.Slots(), "Flat normal detail", new NormalVertexEncoder());
+        using MeshAsset flat = ClusterBuilder.ProcessRaw(positions,
+            [new("NORMAL", positions.SelectMany(_ => new[] { 0f, 0f, 1f }).ToArray(), 3, ValueType.Int8, 3, true)],
+            indices, ClusterBuilderTestMaterials.Slots(), "Flat normal", new NormalVertexEncoder());
+
+        Assert.True(FirstReducedError(asset) > FirstReducedError(flat));
+    }
+
+    [Fact]
+    public void ReducedFlatMeshReportsOriginalTextureDetail()
+    {
+        var (positions, indices) = CreateFlatGrid();
+        float[] normals = positions.SelectMany(_ => new[] { 0f, 0f, 1f }).ToArray();
+        float[] uv = positions.SelectMany(position => new[] { (position.X % 2) * .5f, position.Y / 16 }).ToArray();
+        using MeshAsset asset = ClusterBuilder.ProcessRaw(positions,
+            [new("NORMAL", normals, 3, ValueType.Int8, 3, true), new("TEXCOORD_0", uv, 2, ValueType.Float16, 2, false)],
+            indices, ClusterBuilderTestMaterials.Slots(), "Flat texture detail", new NormalVertexEncoder());
+        using MeshAsset flat = ClusterBuilder.ProcessRaw(positions,
+            [new("NORMAL", normals, 3, ValueType.Int8, 3, true), new("TEXCOORD_0", new float[positions.Length * 2], 2,
+                ValueType.Float16, 2, false)], indices, ClusterBuilderTestMaterials.Slots(), "Flat texture", new NormalVertexEncoder());
+
+        Assert.True(FirstReducedError(asset) > FirstReducedError(flat));
+    }
+
+    private static (Vector3[] Positions, uint[] Indices) CreateFlatGrid()
+    {
+        const int size = 16;
+        Vector3[] positions = Enumerable.Range(0, size * size)
+            .Select(index => new Vector3(index % size, index / size, 0)).ToArray();
+        uint[] indices = Enumerable.Range(0, (size - 1) * (size - 1)).SelectMany(index =>
+        {
+            uint first = (uint)(index % (size - 1) + index / (size - 1) * size);
+            return new[] { first, first + 1, first + size, first + 1, first + size + 1, first + size };
+        }).ToArray();
+        return (positions, indices);
+    }
+
+    [Fact]
     public void ReducedMeshKeepsOriginalVertexPositionsAndAttributes()
     {
         var sphere = PrimitiveMeshGenerator.CreateIcoSphere(2);

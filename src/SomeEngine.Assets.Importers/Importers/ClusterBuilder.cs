@@ -689,6 +689,7 @@ public static partial class ClusterBuilder
     private static void BuildClusterLod(ClusterLodConfig config, ClusterMeshData mesh,
         ReadOnlySpan<uint> indices, List<BuilderMeshlet> clusters, List<uint> globalIndices)
     {
+        var attributes = new ClusterSimplificationAttributes(mesh);
         Clusterize(config, indices, mesh.Positions.AsSpan(0, mesh.VertexCount), ExtractMaterialIndices(mesh), clusters, globalIndices);
         int nextGroupId = InitializeLeafClusters(mesh.Positions.AsSpan(0, mesh.VertexCount), clusters, globalIndices);
         List<int> current = Enumerable.Range(0, clusters.Count).ToList();
@@ -710,11 +711,13 @@ public static partial class ClusterBuilder
                 var parents = new List<BuilderMeshlet>();
                 var parentIndices = new List<uint>();
                 var reducedIndices = new List<uint>();
+                float[] attributeWeights = attributes.GroupWeights(mesh.Positions.AsSpan(0, mesh.VertexCount),
+                    CollectionsMarshal.AsSpan(mergedIndices));
                 do
                 {
                     Simplify(mesh.Positions.AsSpan(0, mesh.VertexCount),
                         CollectionsMarshal.AsSpan(mergedIndices), locks, parentCount * targetClusterSize * 3,
-                        out float reductionError, reducedIndices);
+                        attributes.Values, attributeWeights, out float reductionError, reducedIndices);
                     error = Math.Max(error, reductionError);
                     parents.Clear();
                     parentIndices.Clear();
@@ -799,7 +802,8 @@ public static partial class ClusterBuilder
     }
 
     private static void Simplify(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> indices,
-        ReadOnlySpan<byte> locks, int targetIndexCount, out float error, List<uint> outputIndices)
+        ReadOnlySpan<byte> locks, int targetIndexCount, ReadOnlySpan<float> attributes,
+        ReadOnlySpan<float> attributeWeights, out float error, List<uint> outputIndices)
     {
         outputIndices.Clear();
         if (targetIndexCount >= indices.Length)
@@ -815,7 +819,8 @@ public static partial class ClusterBuilder
             const SimplificationOptions permissive = (SimplificationOptions)(1 << 5);
             int count = checked((int)Meshopt.SimplifyWithAttributes(reducedIndices, indices,
                 MemoryMarshal.Cast<Vector3, float>(positions), (nuint)Unsafe.SizeOf<Vector3>(),
-                null, 0, null, 0, locks, (nuint)targetIndexCount, float.MaxValue,
+                attributes, (nuint)(attributeWeights.Length * sizeof(float)), attributeWeights,
+                (nuint)attributeWeights.Length, locks, (nuint)targetIndexCount, float.MaxValue,
                 SimplificationOptions.SimplifyLockBorder | SimplificationOptions.meshopt_SimplifySparse |
                 SimplificationOptions.meshopt_SimplifyErrorAbsolute | permissive, out error));
             outputIndices.AddRange(reducedIndices.AsSpan(0, count));
