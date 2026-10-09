@@ -5,6 +5,57 @@ namespace SomeEngine.RenderGraph.Tests;
 
 public sealed class RepeatedCommandSequenceTests
 {
+    [Fact]
+    public void ChangingOneRepeatedWriteKeepsTheOtherWriteRecorded()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue], new RenderGraphDesc(MaximumFramesInFlight: 1));
+        using Buffer output = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(8, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphBufferId destination;
+        GraphPassId changing;
+        int fixedRecords = 0;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            destination = edit.RegisterExternalBuffer(output,
+                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            GraphPassId first = edit.AddCopyFramePass("write fixed word", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                new BufferWord(destination, 0, 7), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                static (ref PassDefinition pass, ref BufferWord data) => pass.Write(data.Buffer,
+                    new BufferRange(data.Offset, 4), PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
+                (ref CopyPassCommandScope commands, in BufferWord data) =>
+                {
+                    fixedRecords++;
+                    commands.ClearBuffer(commands.GetBuffer(data.Buffer), new BufferRange(data.Offset, 4), data.Value);
+                });
+            changing = edit.AddCopyFramePass("write changing word", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                new BufferWord(destination, 4, 11), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                static (ref PassDefinition pass, ref BufferWord data) => pass.Write(data.Buffer,
+                    new BufferRange(data.Offset, 4), PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
+                static (ref CopyPassCommandScope commands, in BufferWord data) =>
+                    commands.ClearBuffer(commands.GetBuffer(data.Buffer), new BufferRange(data.Offset, 4), data.Value));
+            edit.OrderAfter(changing, first);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (uint value = 11; value <= 12; value++) Execute(value);
+        int recordings = fixedRecords;
+        Execute(13);
+        Assert.Equal(recordings, fixedRecords);
+
+        void Execute(uint value)
+        {
+            using RenderGraphFrame frame = graph.BeginFrame();
+            frame.SetPassDataIfChanged(changing, new BufferWord(destination, 4, value));
+            frame.Execute(completions);
+            support.Wait(completions);
+            using MappedBuffer mapping = support.Backend.Map(output, MapType.Read, BufferRange.Whole);
+            mapping.Invalidate(mapping.Range);
+            Assert.Equal(new uint[] { 7, value }, MemoryMarshal.Cast<byte, uint>(mapping.Bytes).ToArray());
+        }
+    }
+
     [Theory]
     [InlineData(FrameSubmissionMode.RecordAhead)]
     [InlineData(FrameSubmissionMode.RecordAllThenSubmit)]
