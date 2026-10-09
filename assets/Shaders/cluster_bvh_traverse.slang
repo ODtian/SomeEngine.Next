@@ -9,88 +9,84 @@
 #include "cluster_cull.slang"
 
 groupshared uint WorkNodeStart;
-groupshared uint WorkNodeReadyMask;
+groupshared uint WorkNodeCount;
 groupshared ClusterTraversalNode WorkNodes[CLUSTER_BVH_PARENTS_PER_GROUP];
 groupshared uint WorkClusterBatch;
 groupshared uint WorkClusterReady;
 groupshared uint WorkNodesRemaining;
+groupshared bool WorkFinished;
+
+bool ClaimReadyNodes(out uint first, out uint count)
+{
+    first = NodeIndirectArgs.Load(CLUSTER_NODE_READ);
+    uint end = min(NodeIndirectArgs.Load(CLUSTER_NODE_WRITE), TraversalLevel.MaxNodes);
+    count = 0u;
+    while (count < CLUSTER_BVH_PARENTS_PER_GROUP && first + count < end && TraversalReady[first + count] != 0u)
+        count++;
+    if (count == 0u) return false;
+    uint observed;
+    NodeIndirectArgs.InterlockedCompareExchange(CLUSTER_NODE_READ, first, first + count, observed);
+    if (observed != first) { count = 0u; return false; }
+    return true;
+}
+
+bool ClaimReadyClusters(uint nodesRemaining, out uint batch, out uint count)
+{
+    batch = NodeIndirectArgs.Load(CLUSTER_BATCH_READ);
+    uint batches = (CandidateCount[0] + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
+    count = batch < batches ? ClusterBatchReady[batch] : 0u;
+    if (count != CLUSTER_BATCH_SIZE && (nodesRemaining != 0u || count == 0u)) return false;
+    uint observed;
+    NodeIndirectArgs.InterlockedCompareExchange(CLUSTER_BATCH_READ, batch, batch + 1u, observed);
+    return observed == batch;
+}
 
 void CullPersistentWork(uint thread)
 {
-    uint nodeStart = 0u;
-    uint nodeUsed = CLUSTER_BVH_PARENTS_PER_GROUP;
-    uint clusterBatch = 0xffffffffu;
-    bool nodesWithinCapacity = true;
     for (;;)
     {
         GroupMemoryBarrierWithGroupSync();
-        if (thread == 0u) WorkNodeReadyMask = 0u;
-        GroupMemoryBarrierWithGroupSync();
-        if (nodesWithinCapacity)
-        {
-            if (nodeUsed == CLUSTER_BVH_PARENTS_PER_GROUP)
-            {
-                if (thread == 0u)
-                    NodeIndirectArgs.InterlockedAdd(CLUSTER_NODE_READ, CLUSTER_BVH_PARENTS_PER_GROUP, WorkNodeStart);
-                GroupMemoryBarrierWithGroupSync();
-                nodeStart = WorkNodeStart;
-                nodeUsed = 0u;
-                nodesWithinCapacity = nodeStart < TraversalLevel.MaxNodes;
-            }
-            if (nodesWithinCapacity && thread < CLUSTER_BVH_PARENTS_PER_GROUP)
-            {
-                uint index = nodeStart + nodeUsed + thread;
-                if (nodeUsed + thread < CLUSTER_BVH_PARENTS_PER_GROUP && index < TraversalLevel.MaxNodes && TraversalReady[index] != 0u)
-                {
-                    DeviceMemoryBarrier();
-                    WorkNodes[thread] = TraversalNodes[index];
-                    InterlockedOr(WorkNodeReadyMask, 1u << thread);
-                }
-            }
-            AllMemoryBarrierWithGroupSync();
-            uint readyMask = WorkNodeReadyMask;
-            if ((readyMask & 1u) != 0u)
-            {
-                uint count = firstbitlow(~readyMask);
-                if (count > CLUSTER_BVH_PARENTS_PER_GROUP) count = CLUSTER_BVH_PARENTS_PER_GROUP;
-                uint parent = min(thread / CLUSTER_BVH_FANOUT, count - 1u);
-                ProcessTraversalNode(WorkNodes[parent], thread / CLUSTER_BVH_FANOUT < count,
-                    thread & (CLUSTER_BVH_FANOUT - 1u));
-                DeviceMemoryBarrierWithGroupSync();
-                if (thread < count) TraversalReady[nodeStart + nodeUsed + thread] = 0u;
-                DeviceMemoryBarrierWithGroupSync();
-                if (thread == 0u)
-                {
-                    uint ignored;
-                    NodeIndirectArgs.InterlockedAdd(CLUSTER_NODE_OUTSTANDING, 0u - count, ignored);
-                }
-                nodeUsed += count;
-                continue;
-            }
-        }
-        if (clusterBatch == 0xffffffffu)
-        {
-            if (thread == 0u) NodeIndirectArgs.InterlockedAdd(CLUSTER_BATCH_READ, 1u, WorkClusterBatch);
-            GroupMemoryBarrierWithGroupSync();
-            clusterBatch = WorkClusterBatch;
-        }
         if (thread == 0u)
         {
+            DeviceMemoryBarrier();
+            ClaimReadyNodes(WorkNodeStart, WorkNodeCount);
+            WorkClusterReady = 0u;
             WorkNodesRemaining = NodeIndirectArgs.Load(CLUSTER_NODE_OUTSTANDING);
-            WorkClusterReady = clusterBatch < (TraversalLevel.MaxNodes + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE
-                ? ClusterBatchReady[clusterBatch] : 0u;
+            if (WorkNodeCount == 0u && !ClaimReadyClusters(WorkNodesRemaining, WorkClusterBatch, WorkClusterReady))
+                WorkClusterReady = 0u;
+            WorkFinished = WorkNodeCount == 0u && WorkClusterReady == 0u && WorkNodesRemaining == 0u &&
+                NodeIndirectArgs.Load(CLUSTER_BATCH_READ) >= (CandidateCount[0] + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
         }
-        AllMemoryBarrierWithGroupSync();
-        uint count = WorkClusterReady;
-        if (count == CLUSTER_BATCH_SIZE || WorkNodesRemaining == 0u && count != 0u)
+        GroupMemoryBarrierWithGroupSync();
+        if (WorkNodeCount != 0u)
         {
-            if (thread < count) CullClusterCandidate(clusterBatch * CLUSTER_BATCH_SIZE + thread);
+            DeviceMemoryBarrier();
+            if (thread < WorkNodeCount)
+                WorkNodes[thread] = TraversalNodes[WorkNodeStart + thread];
+            GroupMemoryBarrierWithGroupSync();
+            uint count = WorkNodeCount;
+            uint parent = min(thread / CLUSTER_BVH_FANOUT, count - 1u);
+            ProcessTraversalNode(WorkNodes[parent], thread / CLUSTER_BVH_FANOUT < count,
+                thread & (CLUSTER_BVH_FANOUT - 1u));
             DeviceMemoryBarrierWithGroupSync();
-            if (thread == 0u) ClusterBatchReady[clusterBatch] = 0u;
+            if (thread < count) TraversalReady[WorkNodeStart + thread] = 0u;
             DeviceMemoryBarrierWithGroupSync();
-            clusterBatch = 0xffffffffu;
+            if (thread == 0u)
+            {
+                uint ignored;
+                NodeIndirectArgs.InterlockedAdd(CLUSTER_NODE_OUTSTANDING, 0u - count, ignored);
+            }
+            continue;
         }
-        else if (WorkNodesRemaining == 0u && count == 0u)
+        uint count = WorkClusterReady;
+        if (count != 0u)
+        {
+            DeviceMemoryBarrier();
+            if (thread < count) CullClusterCandidate(WorkClusterBatch * CLUSTER_BATCH_SIZE + thread);
+            DeviceMemoryBarrierWithGroupSync();
+            if (thread == 0u) ClusterBatchReady[WorkClusterBatch] = 0u;
+        }
+        else if (WorkFinished)
             break;
     }
 }

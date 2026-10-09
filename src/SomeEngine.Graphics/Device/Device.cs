@@ -164,7 +164,8 @@ public readonly record struct DeviceLimits(
     uint ShaderBufferAlignment,
     uint TextureDataPitchAlignment,
     uint TextureDataPlacementAlignment,
-    uint MaximumConstantBufferRange);
+    uint MaximumConstantBufferRange,
+    uint MaximumComputeThreadsPerGroup = 0);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -282,7 +283,8 @@ public sealed class DeviceCapabilities
         bool supportsBufferInt64Atomics = false,
         bool supportsImageInt64Atomics = false,
         bool supportsComputeForwardProgress = false,
-        bool supportsConcurrentBufferReads = false)
+        bool supportsConcurrentBufferReads = false,
+        uint shaderLaneCount = 0)
     {
         Limits = limits;
         SupportsBundles = supportsBundles;
@@ -306,6 +308,7 @@ public sealed class DeviceCapabilities
         SupportsImageInt64Atomics = supportsImageInt64Atomics;
         SupportsComputeForwardProgress = supportsComputeForwardProgress;
         SupportsConcurrentBufferReads = supportsConcurrentBufferReads;
+        ShaderLaneCount = shaderLaneCount;
         _formats = formats.ToArray();
 
         Format[] definedFormats = Enum.GetValues<Format>();
@@ -323,6 +326,9 @@ public sealed class DeviceCapabilities
     }
 
     public DeviceLimits Limits { get; }
+
+    /// <summary>Total SIMD lanes reported by the device; zero means the native API did not report this count.</summary>
+    public uint ShaderLaneCount { get; }
     public bool SupportsBundles { get; }
     public bool SupportsPipelineStatistics { get; }
     public bool SupportsStreamOutputStatistics { get; }
