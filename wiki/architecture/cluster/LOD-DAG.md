@@ -4,6 +4,12 @@ Cluster 的 LOD 关系保持 DAG。简化生成的父级 cluster 与基础 clust
 
 LOD 关系不替代 spatial hierarchy；它只表达几何细节层级与 selection 所需关系。
 
+导入器以 meshoptimizer 创建、分组及简化 cluster。简化输入同时包含原位置和
+`RawAttribute` 属性，保留原顶点及属性索引；normal、tangent、color、UV 和用户属性
+共同参与边折叠选择及误差。权重沿用固定 UE `Cluster.cpp:973–1020` 的定义，
+从 UE 三角尺寸单位换算到 meshopt 当前组的包围盒单位。输出误差为世界绝对单位，
+父层误差取本次简化误差与子层误差的最大值，供所有视图的同一 LOD 选择使用。
+
 参见 [[Spatial-BVH]]。
 
 Cluster 几何元数据保存该 cluster 的最大源三角形边长，按向上取整的 half 编码在
