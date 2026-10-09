@@ -53,6 +53,23 @@ internal static class ClusterGeometryRequirements
         throw new InvalidDataException($"Shader '{shader.Name}' must declare VisibilityDepth on its visibility type.");
     }
 
+    internal static bool UsesBothRasterFaces(EntryPointReflection entry, bool targetOutput = false)
+    {
+        FunctionReflection function = entry.Function;
+        for (uint index = 0; index < function.AttributeCount; index++)
+        {
+            AttributeReflection attribute = function.GetAttribute(index);
+            if (attribute.Name != "RasterFaces") continue;
+            return attribute.GetArgumentValueString(targetOutput ? 1u : 0u) switch
+            {
+                "front" => false,
+                "both" => true,
+                _ => throw new InvalidDataException($"Raster entry '{entry.Name}' declares unsupported RasterFaces."),
+            };
+        }
+        return false;
+    }
+
     private static string RequireSingleValue(
         Shader shader,
         string entryPoint,

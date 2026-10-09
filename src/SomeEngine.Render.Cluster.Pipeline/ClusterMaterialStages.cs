@@ -1100,7 +1100,7 @@ internal sealed class ClusterRasterStages : IDisposable
             targetIndex,
             pixelEntry,
             SlangStage.Fragment);
-        var key = new ClusterRasterHardwareKey(shader.SlangCode, vertex, pixel);
+        var key = new ClusterRasterHardwareKey(shader.SlangCode, vertex, pixel, targetOutput);
         if (_hardwarePipelines.TryGetValue(key, out ClusterRasterPipeline? pipeline))
             return pipeline;
         pipeline = ClusterRasterPipeline.Create(
@@ -1115,7 +1115,8 @@ internal sealed class ClusterRasterStages : IDisposable
             depthStencilFormat: !targetOutput && _visibilityMode == ClusterVisibilityMode.HardwareOnly
                 ? Format.D32Float
                 : null,
-            rasterizer: new RasterizerState(Cull: CullType.Back),
+            rasterizer: new RasterizerState(Cull: ClusterGeometryRequirements.UsesBothRasterFaces(pixel, targetOutput)
+                ? CullType.None : CullType.Back),
             depthStencil: !targetOutput && _visibilityMode == ClusterVisibilityMode.HardwareOnly
                 ? new DepthStencilState(
                     DepthTest: true,
@@ -1305,7 +1306,8 @@ internal readonly record struct ClusterRasterSoftwareKey(
 internal readonly record struct ClusterRasterHardwareKey(
     IComponentType SlangCode,
     EntryPointReflection Vertex,
-    EntryPointReflection Pixel);
+    EntryPointReflection Pixel,
+    bool TargetOutput);
 
 /// <summary>
 /// Resolves the final cooked shade entries and groups work by execution plus command binding

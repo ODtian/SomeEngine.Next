@@ -236,6 +236,7 @@ void ClusterSurfaceData(uniform VertexEvaluate vertex, uniform DomainEvaluate do
 }
 
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void ClusterRasterMeshPixelImageAtomic64(
     uniform VisibilityEvaluate visibility,
@@ -247,6 +248,7 @@ void ClusterRasterMeshPixelImageAtomic64(
         MakeMeshPixelInput<VisibilityEvaluate.Varying>(vertex, primitive));
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void ClusterRasterMeshPixelBufferAtomic64(
     uniform VisibilityEvaluate visibility,
@@ -258,6 +260,7 @@ void ClusterRasterMeshPixelBufferAtomic64(
         MakeMeshPixelInput<VisibilityEvaluate.Varying>(vertex, primitive));
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 PSVisBufferOutput ClusterRasterMeshPixelHardwareOnly(
     uniform VisibilityEvaluate visibility,
@@ -270,6 +273,7 @@ PSVisBufferOutput ClusterRasterMeshPixelHardwareOnly(
 }
 
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void ClusterRasterPixelImageAtomic64(
     uniform VisibilityEvaluate visibility,
@@ -278,6 +282,7 @@ void ClusterRasterPixelImageAtomic64(
     EvaluateClusterRasterPixelImageAtomic64(visibility, input);
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void ClusterRasterPixelBufferAtomic64(
     uniform VisibilityEvaluate visibility,
@@ -286,6 +291,7 @@ void ClusterRasterPixelBufferAtomic64(
     EvaluateClusterRasterPixelBufferAtomic64(visibility, input);
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 PSVisBufferOutput ClusterRasterPixelHardwareOnly(
     uniform VisibilityEvaluate visibility,
@@ -345,6 +351,7 @@ void EvaluateClusterRasterPixelTarget(
     WriteRasterTargetPixelDepth(uint2(outputPixel.Position), result.Depth, outputPixel.DepthCacheClass);
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void ClusterRasterPixelTarget(
     uniform VisibilityEvaluate visibility,
@@ -353,6 +360,7 @@ void ClusterRasterPixelTarget(
     EvaluateClusterRasterPixelTarget(visibility, input);
 }
 
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 void ClusterRasterMeshPixelTarget(
     uniform VisibilityEvaluate visibility,
