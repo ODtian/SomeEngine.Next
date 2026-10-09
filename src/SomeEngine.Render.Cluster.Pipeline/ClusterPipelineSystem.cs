@@ -653,8 +653,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     primaryViewCount);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(RasterInputsTrace))
                 UpdateRasterDispatches(ref graph);
-            uint workerGroups = Math.Max(1u, Math.Min((_options.MaxCandidates + 15u) / 16u,
-                (checked((uint)binding.DispatchExtent) + 15u) / 16u));
+            ulong hierarchyNodes = binding.BvhRange.Size / ClusterBvh.NodeBytes;
+            ulong work = Math.Min(_options.MaxCandidates, Math.Max(hierarchyNodes, checked((ulong)binding.DispatchExtent)));
+            uint groupBudget = Math.Max(1u, Math.Max(_device.Capabilities.ShaderLaneCount,
+                _device.Capabilities.Limits.MaximumComputeThreadsPerGroup) / 64u);
+            uint workerGroups = Math.Max(1u, Math.Min(groupBudget, checked((uint)((work + 15u) / 16u))));
             foreach (GraphPassId phase in GraphData.Resources.Work.Phases)
                 if (phase != default)
                     graph.SetPassData(phase, new ClusterDispatchParameters(new DispatchArguments(workerGroups, 1, 1)));
