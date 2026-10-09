@@ -360,7 +360,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool materialDepthChanged = assignmentsChanged || assignments.ChangedMaterialIds.Any();
         if (!assignmentsChanged && !materialResourcesChanged)
         {
-            ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments);
+            ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments,
+                _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
             if (!ReferenceEquals(updated, _materialScalars))
             {
                 QueueBufferWrites(GraphData.ScalarBytes, updated.Bytes, updated.ByteChanges);
@@ -368,6 +369,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     QueueBufferWrites(GraphData.ScalarOffsets, updated.Offsets, updated.OffsetChanges);
                 _materialScalars = updated;
             }
+            _textureScalarChanges.Clear();
             RecordMaterialCasterChanges(assignments);
             AcceptMaterialChanges(assignments);
             if (materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
@@ -389,7 +391,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 rasterStages = _rasterStages!.Resolve(assignments);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ShadeStagesTrace))
                 shadeStages = _shadeStages!.Resolve(assignments);
-            scalars = _materialScalars.Update(shadeStages, assignments);
+            scalars = _materialScalars.Update(shadeStages, assignments,
+                _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
             cullingEnabled = _pipelines!.DefaultRasterCullingEnabled && rasterStages.HasFiniteBounds;
             rasterChanged = _installedRasterStages is null || rasterStages.ChangedBins.Count != 0 ||
                 _installedRasterStages.BinIndices.Length != rasterStages.BinIndices.Length || _cullingEnabled != cullingEnabled;
@@ -405,13 +408,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     if (rasterChanged) GraphData.RasterPhases = ReconcileRasterPhases(ref edit, rasterStages);
                     UpdateRasterBinning(ref edit, GraphData.RasterPhases);
                     UpdateRasterCapacity(ref edit, rasterBinCount, GraphData.RasterPhases);
-                    if (shadeChanged)
-                    {
-                        UpdateShadeBinning(ref edit);
-                        GraphData.ShadeGroups = UpdateShadeGroups(ref edit, shadeStages);
-                    }
+                    if (shadeChanged) UpdateShadeBinning(ref edit);
                 }
                 else UpdateMaterialIndexBuffers(ref edit, rasterStages, shadeStages);
+                if (shadeChanged || materialResourcesChanged || assignmentsChanged)
+                    GraphData.ShadeGroups = UpdateShadeGroups(ref edit, shadeStages);
             }
             else
             {
@@ -427,6 +428,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             GraphData.MaterialTextures = materialResources.Textures;
         });
         _materialScalars = scalars;
+        _textureScalarChanges.Clear();
         _installedMaterialTopologyVersion = assignments.TopologyVersion;
         RecordMaterialCasterChanges(assignments);
         AcceptMaterialChanges(assignments);
@@ -632,6 +634,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     "Cluster active policy views");
             if (_renderContext.IsValid)
                 _renderContext.InvocationSourceBinder(ref graph, _framePolicyViews);
+            using (SomeEngine.Diagnostics.EngineTrace.Begin(MaterialInputsTrace))
+                UpdateMaterialInputs(ref graph);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(FrameResourcesTrace))
                 BindFrameResources(
                     ref graph,
@@ -662,8 +666,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 if (phase != default)
                     graph.SetPassData(phase, new ClusterDispatchParameters(new DispatchArguments(workerGroups, 1, 1)));
             UpdateShadeInputs(ref graph, _installedShadeStages!);
-            using (SomeEngine.Diagnostics.EngineTrace.Begin(MaterialInputsTrace))
-                UpdateMaterialInputs(ref graph);
             uint viewGroups = ClusterRenderContext.GetViewWorkGroupCount(checked((uint)primaryViewCount));
             graph.SetPassData(
                 GraphData.PrimarySeed.Pass,

@@ -1157,11 +1157,13 @@ public ref partial struct RenderGraphEdit
         return new GraphParameterInput(Graph.Identity, type);
     }
 
-    /// <summary>Returns the parameter inputs bound by passes in this edit.</summary>
+    /// <summary>Returns the parameter inputs read or bound by passes in this edit.</summary>
     public GraphParameterInput[] GetParameterInputs() => Staging.Passes.Rows
         .SelectMany(static pass => pass.ParameterBindings)
         .Where(static binding => binding.ParameterInput is not null)
         .Select(static binding => binding.ParameterInput!)
+        .Concat(Staging.Accesses.Rows.Where(static access => access.ParameterInput is not null)
+            .Select(static access => access.ParameterInput!))
         .Distinct().ToArray();
 
     /// <summary>Replaces one input in both a pass's bindings and its resource accesses.</summary>

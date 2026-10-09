@@ -18,56 +18,13 @@ public sealed partial class ClusterPipelineSystem
     private readonly object _materialTextureChangeGate = new();
     private readonly HashSet<EngineTexture> _changedMaterialTextures = [];
     private readonly HashSet<EngineTexture> _materialTextureInputsToPrepare = [];
+    private readonly HashSet<int> _textureScalarChanges = [];
     private readonly List<RenderDevice.TextureReference> _newTextureReferences = [];
     private bool _missingTextureInputsToPrepare;
 
     private ImmutableDictionary<EngineTexture, MaterialTexture> UpdateMaterialTextures(
-        ref RenderGraphEdit edit, ClusterRasterStageSet rasterStages, ClusterShadeStageSet shadeStages)
+        ref RenderGraphEdit edit)
     {
-        var changes = new Dictionary<EngineTexture, int>();
-        var resources = new HashSet<EngineTexture>();
-        foreach (uint bin in rasterStages.ChangedBins)
-        {
-            if (_installedRasterStages is not null && _installedRasterStages.TryGetBin(bin, out var before))
-                Count(before.CommandBindings, -1);
-            if (rasterStages.TryGetBin(bin, out var after)) Count(after.CommandBindings, 1);
-        }
-        foreach (uint bin in shadeStages.ChangedBins)
-        {
-            if (_installedShadeStages is not null && _installedShadeStages.TryGetBin(bin, out var before))
-            {
-                Count(before.CommandBindings, -1);
-                if (before.SurfaceShader is { } receiver) Count(receiver.CommandBindings, -1);
-            }
-            if (shadeStages.TryGetBin(bin, out var after))
-            {
-                Count(after.CommandBindings, 1);
-                if (after.SurfaceShader is { } receiver) Count(receiver.CommandBindings, 1);
-            }
-        }
-        void Count(ClusterCommandBindingKey bindings, int change)
-        {
-            resources.Clear();
-            bindings.CollectTextures(resources);
-            foreach (EngineTexture texture in resources)
-                changes[texture] = changes.GetValueOrDefault(texture) + change;
-        }
-        var textures = _graphData.MaterialTextures;
-        foreach ((EngineTexture texture, int change) in changes)
-        {
-            if (change == 0) continue;
-            if (textures.TryGetValue(texture, out MaterialTexture current))
-            {
-                int references = checked(current.References + change);
-                if (references != 0) textures = textures.SetItem(texture, current with { References = references });
-                else
-                {
-                    if (current.RegisteredHere) edit.Remove(current.Id);
-                    textures = textures.Remove(texture);
-                }
-            }
-            else textures = textures.Add(texture, RegisterMaterialTexture(ref edit, texture, change));
-        }
         var textureInputs = new Dictionary<EngineTexture, List<GraphParameterInput>>();
         var missingInputs = new List<GraphParameterInput>();
         foreach (((var material, uint property), MaterialInput input) in GraphData.MaterialInputs)
@@ -82,9 +39,21 @@ public sealed partial class ClusterPipelineSystem
                 throw new InvalidDataException($"Material '{material.Name}' slot '{input.Name}' requires a Texture for writable access.");
             else missingInputs.Add(input.Input);
         }
+        var textures = _graphData.MaterialTextures;
+        foreach ((EngineTexture asset, MaterialTexture previous) in _graphData.MaterialTextures)
+            if (!textureInputs.ContainsKey(asset))
+            {
+                if (previous.RegisteredHere) edit.Remove(previous.Id);
+                textures = textures.Remove(asset);
+            }
         foreach ((EngineTexture asset, List<GraphParameterInput> inputs) in textureInputs)
-            if (!textures[asset].Inputs.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(inputs)))
-                textures = textures.SetItem(asset, textures[asset] with { Inputs = inputs.ToImmutableArray(), Srv = null, Uav = null });
+        {
+            MaterialTexture value = textures.TryGetValue(asset, out var current)
+                ? current : RegisterMaterialTexture(ref edit, asset, inputs.Count);
+            if (!value.Inputs.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(inputs)))
+                value = value with { Inputs = inputs.ToImmutableArray(), Srv = null, Uav = null };
+            textures = textures.SetItem(asset, value with { References = inputs.Count });
+        }
         if (missingInputs.Count != 0)
         {
             MaterialTexture missing;
@@ -175,6 +144,14 @@ public sealed partial class ClusterPipelineSystem
                 if (current.RegisteredHere) edit.Remove(current.Id);
                 textures = textures.SetItem(asset, RegisterMaterialTexture(ref edit, asset, current.References) with { Inputs = current.Inputs });
             }
+            if (_installedShadeStages is { } stages)
+                foreach (int address in _materialAssignments.Current.ActiveOffsets)
+                {
+                    _materialAssignments.Current.TryGetEntry(address, out var material, out _);
+                    if (stages.ScalarLayouts.TryGetValue(address, out var layout) && layout.TextureProperties.Any(property =>
+                            material.GetTexture(property) is { IsUpdating: false } texture && changed.Contains(texture)))
+                        _textureScalarChanges.Add(address);
+                }
             edit.Commit();
             AcceptMaterialTextures(textures, _graphData.MissingMaterialTexture);
             foreach (EngineTexture asset in changed)
@@ -209,6 +186,14 @@ public sealed partial class ClusterPipelineSystem
             RenderDevice.TextureViews views = _renderDevice.PrepareTextureForInputs(ref frame, material.Inputs.AsSpan(), asset, out bool hasFrameUploads);
             TextureSrv? srv = views.Srv;
             TextureUav? uav = views.Uav;
+            if (!ReferenceEquals(views.Texture, material.Texture) && _installedShadeStages is { } stages)
+                foreach (int address in _materialAssignments.Current.ActiveOffsets)
+                {
+                    _materialAssignments.Current.TryGetEntry(address, out var value, out _);
+                    if (stages.ScalarLayouts.TryGetValue(address, out var layout) &&
+                        layout.TextureProperties.Any(property => ReferenceEquals(value.GetTexture(property), asset)))
+                        _textureScalarChanges.Add(address);
+                }
             bool registered = _graph.TryGetTextureId(views.Texture, out _);
             if (registered && !hasFrameUploads) _materialTextureInputsToPrepare.Remove(asset);
             if (registered && ReferenceEquals(srv, material.Srv) && ReferenceEquals(uav, material.Uav)) continue;

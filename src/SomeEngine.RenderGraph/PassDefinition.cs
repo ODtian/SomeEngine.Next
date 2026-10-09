@@ -1006,5 +1006,16 @@ public ref partial struct PassDefinition
         _edit.AddParameterInput(_pass, input, sync);
         AddParameterBinding(GraphParameterResourceBinding.FromInput(input));
     }
+
+    /// <summary>Declares the resource read when a shader obtains its descriptor through indexed data.</summary>
+    public void Read(GraphParameterInput input, PipelineSync sync)
+    {
+        DevelopmentCheck.Require(_frame is null,
+            "Indexed resource connections must be declared during a graph edit.");
+        DevelopmentCheck.Require(input.Type is ResourceBindingType.TextureSrv or ResourceBindingType.BufferSrv or
+            ResourceBindingType.ConstantBuffer or ResourceBindingType.AccelerationStructure,
+            "Indexed reads require a read-only resource input.");
+        _edit.AddParameterInput(_pass, input, sync);
+    }
 }
 

@@ -144,12 +144,33 @@ public sealed class ClusterMaterialTextureTests
             Assert.Contains(before, color => Near(color, new Vector4(.2f, .3f, .9f, 1)));
 
             firstMaterial.AlbedoMap = blue;
+            await Render(discard: true);
+            Assert.Equal(before, ReadColors());
             await Render();
             Vector4[] after = ReadColors();
             Assert.Contains(after, color => Near(color, new Vector4(0, 0, .2f, 1)));
             Assert.Contains(after, color => Near(color, new Vector4(.2f, .3f, .9f, 1)));
 
-            async Task Render()
+            Task canceled = ReplaceSharedTexture();
+            await Render(discard: true);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceled);
+            Assert.Equal(after, ReadColors());
+            await Render();
+            Assert.Equal(after, ReadColors());
+            Task replacement = ReplaceSharedTexture();
+            await Render();
+            await replacement.WaitAsync(TimeSpan.FromSeconds(10));
+            Vector4[] replaced = ReadColors();
+            Assert.Contains(replaced, color => Near(color, new Vector4(0, 0, .2f, 1)));
+            Assert.Contains(replaced, color => Near(color, new Vector4(0, .3f, 0, 1)));
+
+            Task ReplaceSharedTexture() => white.UpdateAsync(
+                new TextureDesc(TextureDimension.Texture2D, 2, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,
+                    TextureUsages.Sampled | TextureUsages.CopyDestination),
+                [new TexturePixels(new TextureMipTile { Width = 2, Height = 1, RowPitch = 8, SlicePitch = 8 },
+                    new byte[] { 0, 255, 0, 255, 0, 255, 0, 255 })], TextureViewDimension.Texture2D).AsTask();
+
+            async Task Render(bool discard = false)
             {
                 extraction.Extract(game);
                 Assert.True(graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(10)));
@@ -169,6 +190,7 @@ public sealed class ClusterMaterialTextureTests
                 {
                     frameSystems.Update(frame, commands);
                     commands.SetTextureInput(output, outputs.MaterialColor);
+                    if (discard) return;
                     commands.Execute(completions);
                     QueueCompletion[] used = completions.Where(static completion => completion != default).ToArray();
                     renderDevice.TrackSubmission(used);
