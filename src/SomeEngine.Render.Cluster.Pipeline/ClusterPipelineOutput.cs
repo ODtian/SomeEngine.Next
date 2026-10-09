@@ -65,6 +65,10 @@ public readonly record struct ClusterPipelineOutputs(
 /// Feature-owned policy data for views participating in the shared Cluster work stream.
 /// The context contributes only destination and occlusion policy resources; it never owns a
 /// second traversal, cull, bin, tessellation, or raster pipeline.
+/// Root dispatch arguments use ceil(instance count / 64) X groups and
+/// <see cref="GetViewWorkGroupCount"/> view groups split across Y and Z at
+/// 65535 groups per Y dimension. GPU producers use
+/// ClusterViewWorkGroups from cluster_view_work.slang for the same dimensions.
 /// </summary>
 public readonly record struct ClusterRenderContext(
     uint PolicyId,
@@ -84,6 +88,15 @@ public readonly record struct ClusterRenderContext(
     public const uint MaximumViewCount = 1u << 19;
     public const uint TargetViewSizeInBytes = 96;
     public const int ViewSizeInBytes = 816;
+
+    /// <summary>Distributes each compressed 32-view batch across instance and view threads.</summary>
+    public static uint GetViewWorkGroupCount(uint viewCount)
+    {
+        uint tail = viewCount & 31u;
+        return (viewCount >> 5) * 16u + (tail == 0u ? 0u :
+            System.Numerics.BitOperations.RoundUpToPowerOf2(Math.Min(tail, 16u)));
+    }
+
     public GraphResourceBinder? BindTargetPageBounds { get; init; }
     public GraphResourceBinder? BindWorkTargetViews { get; init; }
     public GraphResourceBinder? BindDepthCacheClasses { get; init; }

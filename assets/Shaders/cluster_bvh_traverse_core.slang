@@ -8,6 +8,7 @@
 #include "resource_effects.slang"
 #include "wave_aggregation.slang"
 #include "cluster_page_requests.slang"
+#include "cluster_view_work.slang"
 
 StructuredBuffer<ClusterViewUniforms> Views;
 
@@ -28,12 +29,17 @@ globallycoherent RWStructuredBuffer<uint> CandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer PageFaultBuffer;
 
-// One 64-thread group evaluates the four slices of sixteen hierarchy parents.
+// A single-view 64-thread group evaluates four slices of sixteen parents.
 static const uint CLUSTER_TRAVERSAL_THREADS = 64u;
 static const uint CLUSTER_BVH_FANOUT = 4u;
 static const uint CLUSTER_BVH_PARENTS_PER_GROUP =
     CLUSTER_TRAVERSAL_THREADS / CLUSTER_BVH_FANOUT;
 static const uint CLUSTER_NODE_ARG_STRIDE = 32u;
+
+#ifdef CLUSTER_PERSISTENT_CULL
+groupshared uint TraversalActiveViews[CLUSTER_TRAVERSAL_THREADS];
+groupshared uint TraversalStreamingPriorities[CLUSTER_TRAVERSAL_THREADS];
+#endif
 
 struct ClusterTraversalLevelUniforms
 {
@@ -199,7 +205,8 @@ void AppendDeferredTraversalNode(ClusterTraversalNode node, uint maxNodes)
         DeferredWork[output] = MakeClusterCandidate(MakeDeferredTraversalNode(node), 0u);
 }
 
-void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint childIndex)
+void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint childIndex,
+    uint viewLane = 0u, uint viewLanes = 1u, uint groupChild = 0u)
 {
     uint nodeIndex = ClusterTraversalNodeIndex(parent);
     ClusterHierarchySlice node = (ClusterHierarchySlice)0;
@@ -230,10 +237,13 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     uint inputViews = validNode ? parent.ViewMask : 0u;
     ClusterBoundsProjection previousProjection = (ClusterBoundsProjection)0;
     uint remainingViews = WaveActiveBitOr(inputViews);
+    uint viewOrdinal = 0u;
     while (remainingViews != 0u)
     {
         uint bit = firstbitlow(remainingViews);
         remainingViews &= remainingViews - 1u;
+        bool assigned = (viewOrdinal++ % viewLanes) == viewLane;
+        if (!assigned) continue;
         if ((inputViews & (1u << bit)) == 0u)
             continue;
         uint viewIndex = viewBase + bit;
@@ -265,6 +275,23 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
                 PackClusterStreamingPriority(error, view.LodThreshold, view.StreamingPriorityCategory));
         }
     }
+
+#ifdef CLUSTER_PERSISTENT_CULL
+    if (viewLanes > 1u)
+    {
+        if (viewLane == 0u)
+        {
+            TraversalActiveViews[groupChild] = 0u;
+            TraversalStreamingPriorities[groupChild] = 1u;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        InterlockedOr(TraversalActiveViews[groupChild], activeViews);
+        InterlockedMax(TraversalStreamingPriorities[groupChild], streamingPriority);
+        GroupMemoryBarrierWithGroupSync();
+        activeViews = viewLane == 0u ? TraversalActiveViews[groupChild] : 0u;
+        streamingPriority = TraversalStreamingPriorities[groupChild];
+    }
+#endif
 
     bool leaf = validNode && ClusterSliceLeaf(node);
     bool pageFault = activeViews != 0u && leaf && !ClusterSliceAvailable(node);

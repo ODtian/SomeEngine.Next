@@ -9,7 +9,15 @@
 队列容量来自全帧 `MaxCandidates`，worker 数量按实际 BVH 节点和实例工作范围更新，
 并由设备报告的 SIMD lane 数与单组线程上限派生的预算约束。单个实例的宽层级也能由多个 worker 消费。
 
-node 消费者以 CAS 领取已发布就绪的父节点前缀，每次至多十六个父节点，每个父节点检查四个子切片。生产者先预留容量，
+node 消费者以 CAS 领取已发布就绪的父节点前缀，每次至多十六个父节点，每个父节点检查四个子切片。
+每组按已发布节点的实际 view mask 把线程分配给 parent、child 和 view；单 view 使用十六 parent × 四 child，
+多个 view 共享子切片测试，并在组内合并可见 mask 与 streaming priority 后仍发布一个压缩节点。
+根工作以六十四实例和三十二 view 为批次，按实际 view 数拆实例子块并并行 view 测试，合并后保留一个 root。
+CPU dispatch 使用 `ClusterRenderContext.GetViewWorkGroupCount`，设备 producer 使用 `cluster_view_work.slang` 的
+`ClusterViewWorkGroups`：X 为 `ceil(instanceCount / 64)`，view 组数为每完整三十二 view 的十六组加尾部 view 数
+（至多十六）的下一二次幂。Y 为 `min(viewGroups, 65535)`，Z 为至少一的 `ceil(viewGroups / 65535)`；
+shader 以 `groupID.y + groupID.z * 65535` 读取 view 组。目标根参数由现有 view compaction producer 维护。
+生产者先预留容量，
 把实际接受的子节点计入剩余工作，再写入 payload 并发布就绪标记；消费父节点后的计数递减发生在子节点发布之后。
 没有就绪 node 前缀时，worker 以 CAS 领取六十四个 cluster 的已发布完整批次；剩余 node 为零时领取最后的部分批次。
 已消费的就绪标记恢复为零。新分配和中断消费后的下一帧执行队列初始化，成功完成的各轮直接复用缓冲。

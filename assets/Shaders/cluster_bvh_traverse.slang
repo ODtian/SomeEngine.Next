@@ -14,14 +14,20 @@ groupshared ClusterTraversalNode WorkNodes[CLUSTER_BVH_PARENTS_PER_GROUP];
 groupshared uint WorkClusterBatch;
 groupshared uint WorkClusterReady;
 groupshared uint WorkNodesRemaining;
+groupshared uint WorkViewLanes;
 groupshared bool WorkFinished;
 
-bool ClaimReadyNodes(out uint first, out uint count)
+bool ClaimReadyNodes(out uint first, out uint count, out uint viewLanes)
 {
     first = NodeIndirectArgs.Load(CLUSTER_NODE_READ);
     uint end = min(NodeIndirectArgs.Load(CLUSTER_NODE_WRITE), TraversalLevel.MaxNodes);
     count = 0u;
-    while (count < CLUSTER_BVH_PARENTS_PER_GROUP && first + count < end && TraversalReady[first + count] != 0u)
+    viewLanes = 1u;
+    if (first >= end || TraversalReady[first] == 0u) return false;
+    DeviceMemoryBarrier();
+    viewLanes = ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask));
+    uint parentsPerGroup = CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes;
+    while (count < parentsPerGroup && first + count < end && TraversalReady[first + count] != 0u)
         count++;
     if (count == 0u) return false;
     uint observed;
@@ -48,7 +54,7 @@ void CullPersistentWork(uint thread)
         GroupMemoryBarrierWithGroupSync();
         if (thread == 0u)
         {
-            ClaimReadyNodes(WorkNodeStart, WorkNodeCount);
+            ClaimReadyNodes(WorkNodeStart, WorkNodeCount, WorkViewLanes);
             WorkClusterReady = 0u;
             WorkNodesRemaining = NodeIndirectArgs.Load(CLUSTER_NODE_OUTSTANDING);
             if (WorkNodeCount == 0u && !ClaimReadyClusters(WorkNodesRemaining, WorkClusterBatch, WorkClusterReady))
@@ -64,9 +70,12 @@ void CullPersistentWork(uint thread)
                 WorkNodes[thread] = TraversalNodes[WorkNodeStart + thread];
             GroupMemoryBarrierWithGroupSync();
             uint count = WorkNodeCount;
-            uint parent = min(thread / CLUSTER_BVH_FANOUT, count - 1u);
-            ProcessTraversalNode(WorkNodes[parent], thread / CLUSTER_BVH_FANOUT < count,
-                thread & (CLUSTER_BVH_FANOUT - 1u));
+            uint parentIndex = thread / (CLUSTER_BVH_FANOUT * WorkViewLanes);
+            uint parent = min(parentIndex, count - 1u);
+            uint child = thread & (CLUSTER_BVH_FANOUT - 1u);
+            uint viewLane = (thread / CLUSTER_BVH_FANOUT) % WorkViewLanes;
+            ProcessTraversalNode(WorkNodes[parent], parentIndex < count, child,
+                viewLane, WorkViewLanes, parentIndex * CLUSTER_BVH_FANOUT + child);
             DeviceMemoryBarrierWithGroupSync();
             if (thread < count) TraversalReady[WorkNodeStart + thread] = 0u;
             DeviceMemoryBarrierWithGroupSync();

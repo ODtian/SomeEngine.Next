@@ -664,12 +664,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             UpdateShadeInputs(ref graph, _installedShadeStages!);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(MaterialInputsTrace))
                 UpdateMaterialInputs(ref graph);
+            uint viewGroups = ClusterRenderContext.GetViewWorkGroupCount(checked((uint)primaryViewCount));
             graph.SetPassData(
                 GraphData.PrimarySeed.Pass,
                 new ClusterDispatchParameters(new DispatchArguments(
                     checked((checked((uint)binding.DispatchExtent) + 63u) / 64u),
-                    checked((checked((uint)primaryViewCount) + 31u) / 32u),
-                    1)));
+                    Math.Min(viewGroups, 65535u),
+                    Math.Max(1u, (viewGroups + 65534u) / 65535u))));
             foreach (ClusterLayerDispatch dispatch in GraphData.LayerDispatches)
             {
                 graph.SetPassData(
