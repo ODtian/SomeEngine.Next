@@ -115,7 +115,9 @@ internal static class RayShadowImage
                     matrix.M13, matrix.M23, matrix.M33, matrix.M43];
                 MemoryMarshal.AsBytes(transform.AsSpan()).CopyTo(instanceBytes.AsSpan(index * 64));
                 BinaryPrimitives.WriteUInt32LittleEndian(instanceBytes.AsSpan(index * 64 + 48), instance.GeometryStart | 0xff000000u);
-                BinaryPrimitives.WriteUInt32LittleEndian(instanceBytes.AsSpan(index * 64 + 52), 1u << 24);
+                // Ray-query facing uses object winding; raster facing includes the instance transform.
+                uint instanceFlags = 1u | (matrix.GetDeterminant() < 0 ? 2u : 0u);
+                BinaryPrimitives.WriteUInt32LittleEndian(instanceBytes.AsSpan(index * 64 + 52), instanceFlags << 24);
                 BinaryPrimitives.WriteUInt64LittleEndian(instanceBytes.AsSpan(index * 64 + 56), structures[instance.Mesh].DeviceAddress);
             }
             Buffer instances = Upload(instanceBytes, BufferUsages.AccelerationStructureInput);

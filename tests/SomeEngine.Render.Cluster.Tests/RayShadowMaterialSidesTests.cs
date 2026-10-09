@@ -26,6 +26,11 @@ public sealed class RayShadowMaterialSidesTests
         Assert.Equal(uint.MaxValue, (await RayShadowImage.TraceSoftAsync(FindEngine(), new(singleReceiver), cameraBack, false))[0].Flags);
         Assert.Equal(1f, (await RayShadowImage.TraceSoftAsync(FindEngine(), new(twoSidedReceiver), cameraBack, false))[0].Visibility);
 
+        Matrix4x4 mirror = Matrix4x4.CreateScale(-1, 1, 1);
+        Assert.Equal(uint.MaxValue, (await RayShadowImage.TraceSoftAsync(FindEngine(), new(singleReceiver, [mirror]), cameraFront, false))[0].Flags);
+        Assert.Equal(1f, (await RayShadowImage.TraceSoftAsync(FindEngine(), new(singleReceiver, [mirror]), cameraBack, false))[0].Visibility);
+        Assert.Equal(1f, (await RayShadowImage.TraceSoftAsync(FindEngine(), new(twoSidedReceiver, [mirror]), cameraFront, false))[0].Visibility);
+
         string frontCaster = await WriteScene("single-front-caster", [new(receiver, front, 0), new(blocker, front, 0)]);
         string backCaster = await WriteScene("single-back-caster", [new(receiver, front, 0), new(blocker, back, 0)]);
         string twoSidedCaster = await WriteScene("two-sided-back-caster", [new(receiver, front, 0), new(blocker, back, 1)]);
@@ -35,6 +40,16 @@ public sealed class RayShadowMaterialSidesTests
         Assert.Equal(0u, (await RayShadowImage.TraceAsync(FindEngine(), new(twoSidedCaster), lighting, false))[0]);
         Assert.Equal(1f, (await RayShadowImage.TraceSoftAsync(FindEngine(), new(backCaster), lighting, false))[0].Visibility);
         Assert.Equal(0f, (await RayShadowImage.TraceSoftAsync(FindEngine(), new(twoSidedCaster), lighting, false))[0].Visibility);
+
+        string mirroredFrontCaster = await WriteScene("mirrored-front-caster", [new(receiver, back, 0), new(blocker, back, 0)]);
+        string mirroredBackCaster = await WriteScene("mirrored-back-caster", [new(receiver, back, 0), new(blocker, front, 0)]);
+        string mirroredTwoSidedCaster = await WriteScene("mirrored-two-sided-caster", [new(receiver, back, 0), new(blocker, front, 1)]);
+        var mirroredLighting = Inputs(new(0, 0, 2), Vector3.Normalize(new(-2, 0, 1)));
+        Assert.Equal(0u, (await RayShadowImage.TraceAsync(FindEngine(), new(mirroredFrontCaster, [mirror]), mirroredLighting, false))[0]);
+        Assert.Equal(1u, (await RayShadowImage.TraceAsync(FindEngine(), new(mirroredBackCaster, [mirror]), mirroredLighting, false))[0]);
+        Assert.Equal(0u, (await RayShadowImage.TraceAsync(FindEngine(), new(mirroredTwoSidedCaster, [mirror]), mirroredLighting, false))[0]);
+        Assert.Equal(1f, (await RayShadowImage.TraceSoftAsync(FindEngine(), new(mirroredBackCaster, [mirror]), mirroredLighting, false))[0].Visibility);
+        Assert.Equal(0f, (await RayShadowImage.TraceSoftAsync(FindEngine(), new(mirroredTwoSidedCaster, [mirror]), mirroredLighting, false))[0].Visibility);
         evidence.Complete();
 
         RayShadowImage.Inputs Inputs(Vector3 camera, Vector3 toLight)
