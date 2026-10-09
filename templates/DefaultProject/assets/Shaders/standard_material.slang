@@ -11,6 +11,7 @@ StructuredBuffer<GPULight> LightBuffer;
 StructuredBuffer<uint2> ClusteredLightGrid;
 StructuredBuffer<uint> LightIndexList;
 Texture2DArray<float4> LightingCookieAtlas;
+Texture2D<float4> StandardMaterialTextures[];
 
 float EvaluateLightingCookie(GPULight light, float3 worldPosition)
 {
@@ -38,6 +39,9 @@ struct StandardScalars
     float MetallicFactor;
     float Roughness;
     float3 EmissiveFactor;
+    uint AlbedoMap;
+    uint NormalMap;
+    uint ARMMap;
 };
 
 [MaterialSurfaceData]
@@ -54,24 +58,21 @@ struct StandardSurfaceData
 struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
     typealias Data = StandardSurfaceData;
-    // Textures
-    Texture2D AlbedoMap;
-    Texture2D NormalMap;
-    Texture2D ARMMap;
     SamplerState MaterialSampler;
 
-    float3 sampleNormal(float2 uv, uint materialIndex)
+    float3 sampleNormal(float2 uv, StandardScalars scalars)
     {
-        return NormalMap.SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;
+        return StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;
     }
 
     Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
         Triangle triangle, out SurfaceReceiver receiver)
     {
+        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(pixel.MaterialIndex);
         float3 baseNormal = normalize(surface.Normal);
         float3 tangent = normalize(surface.Tangent.xyz - baseNormal * dot(baseNormal, surface.Tangent.xyz));
         float3 bitangent = cross(baseNormal, tangent) * surface.Tangent.w;
-        float3 normalTS = sampleNormal(surface.TexCoord, pixel.MaterialIndex);
+        float3 normalTS = sampleNormal(surface.TexCoord, scalars);
         receiver = (SurfaceReceiver)0;
         receiver.Position = pixel.VisibilityDepth == 2u ? pixel.PositionFromDepth : surface.Position;
         receiver.Depth = pixel.Depth;
@@ -84,9 +85,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             pixel.InstanceID, Views[pixel.PixelCoord.z]);
         float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
         receiver.DepthOffset = pixel.VisibilityDepth == 2u ? pixel.Depth - sourceClip.z / sourceClip.w : 0.0;
-        float4 albedo = AlbedoMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0);
-        float3 arm = ARMMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb;
-        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(pixel.MaterialIndex);
+        float4 albedo = StandardMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0);
+        float3 arm = StandardMaterialTextures[NonUniformResourceIndex(scalars.ARMMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb;
         Data data;
         data.BaseColor = albedo.rgb * scalars.BaseColorTint.rgb;
         data.Metallic = saturate(arm.b * scalars.MetallicFactor);

@@ -1380,6 +1380,7 @@ internal sealed class ClusterShadeStages : IDisposable
             if (invocation.SurfaceShader is { } receiver) ClusterMaterialEntries.AddResourceProperties(properties, receiver.MaterialBindings);
             scalarLayouts = scalarLayouts.SetItem(address, invocation.Scalars.PayloadByteSize != 0u
                 ? invocation.Scalars : invocation.SurfaceShader!.Scalars);
+            properties.UnionWith(scalarLayouts[address].TextureProperties);
             var key = new ClusterShadeBinKey(invocation.Key, encoding,
                 invocation.Scalars.LayoutHash, invocation.Scalars.PayloadByteSize, invocation.CommandBindings,
                 invocation.SurfaceShader?.Key, invocation.SurfaceShader?.CommandBindings);
@@ -1894,8 +1895,15 @@ internal sealed class ClusterLinkedStageLayout
             string name = contents.GetBindingRangeLeafVariable(range).Name;
             if (string.IsNullOrWhiteSpace(name))
                 throw new InvalidDataException($"Linked material binding range {range} has no field name.");
+            nint reflectedCount = contents.GetBindingRangeBindingCount(range);
+            // Unbounded descriptor tables are bound by the RHI. Their actual
+            // material texture reads are declared through indexed scalar fields.
+            if (unchecked((nuint)reflectedCount) == Slang.UnboundedSize)
+            {
+                continue;
+            }
             int logicalCount = ResolveCount(
-                contents.GetBindingRangeBindingCount(range),
+                reflectedCount,
                 $"descriptor count for binding range {range}");
             for (int relative = 0; relative < descriptorRangeCount; relative++)
             {

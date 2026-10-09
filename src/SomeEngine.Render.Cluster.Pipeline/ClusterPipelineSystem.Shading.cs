@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Buffers.Binary;
+using System.Collections.Immutable;
 using SlangShaderSharp;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
@@ -15,7 +17,10 @@ public sealed partial class ClusterPipelineSystem
         return sizes;
     }
 
-    private sealed record ShadeGroup(ClusterShadeInvocation Stage)
+    private readonly record struct IndexedTextureRead(SomeEngine.Resources.Material Material, uint Property,
+        SomeEngine.Resources.Texture? Texture);
+
+    private sealed record ShadeGroup(ClusterShadeInvocation Stage, ImmutableArray<IndexedTextureRead> TextureReads)
     {
         internal GraphBufferSlice Uniforms;
     }
@@ -28,7 +33,8 @@ public sealed partial class ClusterPipelineSystem
             ReferenceEquals(left.Stage.Material, right.Stage.Material) &&
             left.Stage.Pipeline == right.Stage.Pipeline &&
             left.Stage.CommandBindings.Equals(right.Stage.CommandBindings) &&
-            left.Stage.MaterialBindings.AsSpan().SequenceEqual(right.Stage.MaterialBindings);
+            left.Stage.MaterialBindings.AsSpan().SequenceEqual(right.Stage.MaterialBindings) &&
+            left.TextureReads.AsSpan().SequenceEqual(right.TextureReads.AsSpan());
         public int GetHashCode(ShadeGroup value) => value.Stage.BinIndex.GetHashCode();
     }
 
@@ -44,8 +50,25 @@ public sealed partial class ClusterPipelineSystem
     private GraphRegionMap<uint, ShadeGroup> UpdateMaterialGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages,
         GraphRegionMap<uint, ShadeGroup> previousGroups, bool receivers)
     {
-        var desired = stages.Invocations
-            .ToDictionary(static stage => stage.BinIndex, stage => new ShadeGroup(receivers ? stage.SurfaceShader! : stage));
+        var reads = new Dictionary<uint, HashSet<IndexedTextureRead>>();
+        Span<byte> binBytes = stackalloc byte[sizeof(uint)];
+        foreach (int address in _materialAssignments.Current.ActiveOffsets)
+        {
+            if (!stages.ScalarLayouts.TryGetValue(address, out var scalarLayout)) continue;
+            _materialAssignments.Current.TryGetEntry(address, out var material, out _);
+            stages.BinIndices.CopyTo(binBytes, address * sizeof(uint));
+            uint bin = BinaryPrimitives.ReadUInt32LittleEndian(binBytes);
+            foreach (uint property in scalarLayout.TextureProperties)
+            {
+                if (!reads.TryGetValue(bin, out var members)) reads.Add(bin, members = []);
+                members.Add(new(material, property, material.GetTexture(property)));
+            }
+        }
+        var desired = stages.Invocations.ToDictionary(static stage => stage.BinIndex,
+            stage => new ShadeGroup(receivers ? stage.SurfaceShader! : stage,
+                reads.TryGetValue(stage.BinIndex, out var members)
+                    ? members.OrderBy(static value => value.Material.MaterialId).ThenBy(static value => value.Property).ToImmutableArray()
+                    : []));
         foreach (ShadeGroup group in previousGroups.Values)
             if (!desired.TryGetValue(group.Stage.BinIndex, out ShadeGroup? next) ||
                 !ShadeGroupComparer.Instance.Equals(group, next))
@@ -63,6 +86,13 @@ public sealed partial class ClusterPipelineSystem
                             PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
                     ClusterIndirectDispatchParameters.Record, region: region);
                 value.Uniforms = BindShadeResources(ref edit, pass, value.Stage, stages);
+                PassDefinition access = edit.GetPass(pass);
+                foreach (IndexedTextureRead read in value.TextureReads)
+                {
+                    MaterialInput input = GetMaterialInput(ref edit, read.Material, read.Property,
+                        read.Material.Properties[checked((int)read.Property)].Name, ResourceBindingType.TextureSrv);
+                    access.Read(input.Input, PipelineSync.ComputeShading);
+                }
             });
         if (_installedShadeStages is { } previous &&
             (previous.BinCount != stages.BinCount || previous.BinIndices.Length != stages.BinIndices.Length ||

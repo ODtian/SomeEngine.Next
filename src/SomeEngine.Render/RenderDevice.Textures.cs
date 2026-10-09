@@ -88,18 +88,45 @@ public sealed partial class RenderDevice
         return GetTextureSrv(realization, range, format, dimension, label);
     }
 
+    /// <summary>Returns the sampled descriptor index carried by this allocation's material data.</summary>
+    public uint GetTextureDescriptorIndex(EngineTexture? asset)
+    {
+        ThrowIfDisposed();
+        TextureRealization texture = asset is null ? RequireMissingTexture() : GetOrCreateTexture(asset);
+        if (texture.SampledDescriptor is null)
+        {
+            TextureShape shape = texture.Shape;
+            texture.SampledDescriptor = _backend.CreateDescriptorTable(_device,
+                [new DescriptorSlotDesc(ResourceBindingType.TextureSrv, shape.SampledFormat,
+                    TextureDimension: shape.SampledDimension)], "Material sampled texture");
+            texture.SampledIndex = _backend.GetDescriptorIndex(texture.SampledDescriptor, 0).Value;
+            if (texture.FirstResidentMip < shape.MipLevelCount)
+                UpdateSampledDescriptor(texture, GetTextureSrv(texture, null, null, null, null));
+        }
+        return texture.SampledIndex;
+    }
+
     private TextureSrv GetTextureSrv(TextureRealization realization, TextureSubresourceRange? range,
         Format? format, TextureViewDimension? dimension, string? label)
     {
         TextureShape shape = realization.Shape;
         TextureSubresourceRange resolved = range ?? shape.ResidentRange(realization.FirstResidentMip);
         ValidateResidentRange(realization, resolved);
-        return GetTextureSrv(
+        TextureSrv view = GetTextureSrv(
             realization,
             resolved,
             format ?? shape.SampledFormat,
             dimension ?? shape.SampledDimension,
             label);
+        if (range is null && format is null && dimension is null) UpdateSampledDescriptor(realization, view);
+        return view;
+    }
+
+    private void UpdateSampledDescriptor(TextureRealization texture, TextureSrv view)
+    {
+        if (texture.SampledDescriptor is null || ReferenceEquals(texture.SampledView, view)) return;
+        _backend.WriteDescriptor(texture.SampledDescriptor, 0, ResourceBinding.SampledTexture(view));
+        texture.SampledView = view;
     }
 
     public TextureUav GetTextureUav(
@@ -202,8 +229,10 @@ public sealed partial class RenderDevice
         hasFrameUploads = realization.PendingFrameGraph is not null;
         if (realization.UploadPasses.Count != 0)
             foreach (GraphParameterInput input in inputs) OrderTextureConsumers(ref frame, realization, [], input);
-        return GetTextureSrv(realization, realization.Shape.FullRange,
+        TextureSrv view = GetTextureSrv(realization, realization.Shape.FullRange,
             realization.Shape.SampledFormat, realization.Shape.SampledDimension, null);
+        UpdateSampledDescriptor(realization, view);
+        return view;
     }
 
     /// <summary>Prepares one texture and orders every supplied consumer after its uploads.</summary>
@@ -1065,6 +1094,9 @@ public sealed partial class RenderDevice
         internal TextureShape Shape { get; }
         internal RhiTexture Resource { get; }
         internal Dictionary<TextureViewKey, DeviceResource> Views { get; } = [];
+        internal DescriptorTable? SampledDescriptor { get; set; }
+        internal uint SampledIndex { get; set; }
+        internal TextureSrv? SampledView { get; set; }
         internal ulong Revision { get; set; }
         internal bool Initialized { get; set; }
         internal bool ReleaseAfterUpload { get; set; }
@@ -1107,6 +1139,8 @@ public sealed partial class RenderDevice
         {
             if (_released) return;
             _released = true;
+            SampledDescriptor?.Dispose();
+            SampledDescriptor = null;
             foreach (DeviceResource view in Views.Values)
                 view.Dispose();
             Views.Clear();

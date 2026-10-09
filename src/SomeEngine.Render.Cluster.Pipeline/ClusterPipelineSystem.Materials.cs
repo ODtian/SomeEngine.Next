@@ -98,7 +98,7 @@ public sealed partial class ClusterPipelineSystem
                 buffers = buffers.Add(buffer, new MaterialBuffer(id, change, registeredHere));
             }
         }
-        return (buffers, UpdateMaterialTextures(ref edit, rasterStages, shadeStages));
+        return (buffers, UpdateMaterialTextures(ref edit));
     }
 
     private readonly Dictionary<SamplerDesc, Sampler> _materialSamplers = [];
@@ -1265,5 +1265,13 @@ public sealed partial class ClusterPipelineSystem
         }
         GraphData.MaterialInputChanges = GraphData.MaterialInputChanges.Clear();
         UpdateMaterialTextureInputs(ref graph);
+        if (_textureScalarChanges.Count != 0)
+        {
+            ClusterMaterialScalars values = _materialScalars.Update(_installedShadeStages!,
+                _materialAssignments.Current, _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
+            QueueBufferWrites(GraphData.ScalarBytes, values.Bytes, values.ByteChanges);
+            _materialScalars = values;
+            _textureScalarChanges.Clear();
+        }
     }
 }

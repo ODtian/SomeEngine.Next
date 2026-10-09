@@ -255,7 +255,8 @@ public sealed class ScalarLayout
         return new ScalarMaterialLayout(this, [.. bindings]);
     }
 
-    private byte[] Encode(Material material, ReadOnlySpan<ScalarMaterialBinding> bindings)
+    private byte[] Encode(Material material, ReadOnlySpan<ScalarMaterialBinding> bindings,
+        Func<SomeEngine.Resources.Texture?, uint>? textureIndex)
     {
         var result = new byte[ByteSize];
         WriteHeader(result);
@@ -270,6 +271,14 @@ public sealed class ScalarLayout
                 WriteFloatField(fieldBytes, field.ComponentCount, material.GetFloatComponents(binding.MaterialSlot));
             else if (type == typeof(int) || type == typeof(uint) || type == typeof(bool))
                 WriteIntegerField(fieldBytes, field, unchecked((int)material.GetInteger(binding.MaterialSlot)));
+            else if (typeof(SomeEngine.Resources.Texture).IsAssignableFrom(type))
+            {
+                if (textureIndex is null || field.Size != sizeof(uint) ||
+                    field.ScalarType != (byte)SlangScalarType.UInt32)
+                    throw new InvalidDataException($"Indexed texture '{field.Name}' requires a uint scalar field.");
+                uint index = textureIndex(material.GetTexture(binding.MaterialSlot));
+                BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, index);
+            }
             else
                 throw new InvalidDataException(
                     $"Material slot {binding.MaterialSlot} cannot be encoded as scalar data.");
@@ -292,7 +301,12 @@ public sealed class ScalarLayout
         internal uint LayoutHash => _layout.LayoutHash;
         internal uint PayloadByteSize => _layout.PayloadByteSize;
 
-        internal byte[] Encode(Material material) => _layout.Encode(material, _bindings);
+        internal byte[] Encode(Material material, Func<SomeEngine.Resources.Texture?, uint>? textureIndex = null)
+            => _layout.Encode(material, _bindings, textureIndex);
+
+        internal IEnumerable<uint> TextureProperties => _bindings
+            .Where(static binding => typeof(SomeEngine.Resources.Texture).IsAssignableFrom(binding.PropertyType))
+            .Select(static binding => binding.MaterialSlot);
     }
 
     internal readonly record struct ScalarMaterialBinding(

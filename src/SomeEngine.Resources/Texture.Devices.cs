@@ -80,6 +80,7 @@ public sealed partial class Texture
             else _updateCompletion!.TrySetException(error);
             _updateCompletion = null;
         }
+        RaiseChanged();
     }
 
     private async Task CommitUpdateAsync()

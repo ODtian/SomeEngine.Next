@@ -1709,7 +1709,10 @@ internal sealed partial class RenderGraphFrameState
     internal void ParameterInputChanged(GraphParameterInput input)
     {
         foreach (GraphIdentity access in StructureIndex.ParameterInputAccesses.GetValueOrDefault(input, []))
+        {
             _executor.ChangeAccess(access);
+            _executor.ChangeCommandData(StructureIndex.Structure.Accesses.Get(access).Pass);
+        }
         _executor.ChangeParameterInput(input);
     }
 

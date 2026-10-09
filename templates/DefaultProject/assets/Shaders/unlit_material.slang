@@ -1,11 +1,13 @@
 #ifndef GAME_UNLIT_MATERIAL_SLANG
 #define GAME_UNLIT_MATERIAL_SLANG
 #include "material_interfaces.slang"
+Texture2D<float4> UnlitMaterialTextures[];
 
 [MaterialScalars]
 struct UnlitScalars
 {
     float4 BaseColorTint;
+    uint AlbedoMap;
 };
 
 [MaterialSurfaceData]
@@ -18,7 +20,6 @@ struct UnlitSurfaceData
 struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
     typealias Data = UnlitSurfaceData;
-    Texture2D AlbedoMap;
     SamplerState MaterialSampler;
 
     Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
@@ -32,7 +33,7 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             triangle.Position2 - triangle.Position0), surface.Normal);
         UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(pixel.MaterialIndex);
         Data data;
-        data.Color = AlbedoMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb * scalars.BaseColorTint.rgb;
+        data.Color = UnlitMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb * scalars.BaseColorTint.rgb;
         data.DebugColor = float3(1,0,1);
         if (pixel.DebugMode == 8u) data.DebugColor = bary;
         if (pixel.DebugMode == 9u) data.DebugColor = surface.Normal * .5 + .5;
