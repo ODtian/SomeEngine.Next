@@ -148,19 +148,18 @@ TDomain.TriangleData evaluateTriangleWithTransform<TVE, TDomain>(
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
-    TVE.Vertex v0 = EvaluateVertexWave(
-        evaluator,
-        makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0),
-        tri.visibleClusterIndex);
-    TVE.Vertex v1 = EvaluateVertexWave(
-        evaluator,
-        makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi1),
-        tri.visibleClusterIndex);
-    TVE.Vertex v2 = EvaluateVertexWave(
-        evaluator,
-        makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2),
-        tri.visibleClusterIndex);
-    return domain.makeTriangle(v0, v1, v2);
+    uint4 matching = WaveMatchingLanes(tri.visibleClusterIndex) & WaveMatchingLanes(tri.triangleID)
+        & WaveMatchingLanes(isPreviousFrame);
+    uint leader = WaveMaskFirstLane(matching);
+    TDomain.TriangleData triangle;
+    if (WaveGetLaneIndex() == leader)
+    {
+        TVE.Vertex v0 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0));
+        TVE.Vertex v1 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi1));
+        TVE.Vertex v2 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2));
+        triangle = domain.makeTriangle(v0, v1, v2);
+    }
+    return domain.readLane(triangle, leader);
 }
 
 TDomain.TriangleData evaluateTriangle<TVE, TDomain>(
@@ -178,17 +177,52 @@ TDomain.TriangleData evaluateTriangle<TVE, TDomain>(
         0u);
 }
 
-float3 computeTriangleBarycentricAt<TVertex, TDomain>(
+struct PipelineTriangleProjection
+{
+    float2 Origin;
+    float2 FirstEdge;
+    float2 SecondEdge;
+    float InverseArea;
+    float3 InverseW;
+};
+
+PipelineTriangleProjection ProjectTriangleWave<TVertex, TDomain>(
     uniform TDomain domain,
-    float2 pixelPosition,
     ClusterViewUniforms view,
-    TDomain.TriangleData triangle)
+    TDomain.TriangleData triangle,
+    TriangleInfo info)
     where TDomain : IDomainEvaluate<TVertex>
 {
-    ScreenProjection sp0 = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 0u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    ScreenProjection sp1 = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 1u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    ScreenProjection sp2 = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 2u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    return ComputePerspectiveBarycentric(pixelPosition, sp0, sp1, sp2);
+    uint4 matching = WaveMatchingLanes(info.visibleClusterIndex) & WaveMatchingLanes(info.triangleID);
+    uint leader = WaveMaskFirstLane(matching);
+    PipelineTriangleProjection projection;
+    if (WaveGetLaneIndex() == leader)
+    {
+        ScreenProjection first = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 0u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+        ScreenProjection second = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 1u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+        ScreenProjection third = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 2u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+        projection.Origin = first.Pixel;
+        projection.FirstEdge = second.Pixel - first.Pixel;
+        projection.SecondEdge = third.Pixel - first.Pixel;
+        projection.InverseArea = 1.0 / (projection.FirstEdge.x * projection.SecondEdge.y - projection.FirstEdge.y * projection.SecondEdge.x);
+        projection.InverseW = float3(first.InvW, second.InvW, third.InvW);
+    }
+    projection.Origin = WaveReadLaneAt(projection.Origin, leader);
+    projection.FirstEdge = WaveReadLaneAt(projection.FirstEdge, leader);
+    projection.SecondEdge = WaveReadLaneAt(projection.SecondEdge, leader);
+    projection.InverseArea = WaveReadLaneAt(projection.InverseArea, leader);
+    projection.InverseW = WaveReadLaneAt(projection.InverseW, leader);
+    return projection;
+}
+
+float3 TriangleBarycentricAt(PipelineTriangleProjection projection, float2 pixel)
+{
+    float2 offset = pixel - projection.Origin;
+    float second = (offset.x * projection.SecondEdge.y - offset.y * projection.SecondEdge.x) * projection.InverseArea;
+    float third = (projection.FirstEdge.x * offset.y - projection.FirstEdge.y * offset.x) * projection.InverseArea;
+    float3 weighted = float3(1.0 - second - third, second, third) * projection.InverseW;
+    float sum = weighted.x + weighted.y + weighted.z;
+    return abs(sum) < 1e-8 ? 0.0.xxx : weighted / sum;
 }
 
 float3 ReconstructWorldPositionAt(
@@ -208,20 +242,22 @@ SurfaceBarycentrics ResolveBarycentrics<TVertex, TDomain>(
     uniform TDomain domain,
     uint3 pixelCoord,
     ClusterViewUniforms view,
-    TDomain.TriangleData triangle)
+    TDomain.TriangleData triangle,
+    TriangleInfo info,
+    out float depth,
+    out float3 positionFromDepth)
     where TDomain : IDomainEvaluate<TVertex>
 {
     float2 pixelCenter = float2(pixelCoord.xy) + 0.5;
-    float3 seed = computeTriangleBarycentricAt<TVertex, TDomain>(
-        domain, pixelCenter, view, triangle);
-    float3 seedX = computeTriangleBarycentricAt<TVertex, TDomain>(
-        domain, pixelCenter + float2(1.0, 0.0), view, triangle);
-    float3 seedY = computeTriangleBarycentricAt<TVertex, TDomain>(
-        domain, pixelCenter + float2(0.0, 1.0), view, triangle);
-    float depth = DepthBuffer.Load(int4(pixelCoord, 0));
+    PipelineTriangleProjection projection = ProjectTriangleWave<TVertex, TDomain>(domain, view, triangle, info);
+    float3 seed = TriangleBarycentricAt(projection, pixelCenter);
+    float3 seedX = TriangleBarycentricAt(projection, pixelCenter + float2(1.0, 0.0));
+    float3 seedY = TriangleBarycentricAt(projection, pixelCenter + float2(0.0, 1.0));
+    depth = DepthBuffer.Load(int4(pixelCoord, 0));
+    positionFromDepth = ReconstructWorldPositionAt(pixelCenter, depth, view);
 
     SurfaceReconstructionInput input;
-    input.TargetPosition = ReconstructWorldPositionAt(pixelCenter, depth, view);
+    input.TargetPosition = positionFromDepth;
     input.TargetPositionDx = ReconstructWorldPositionAt(
         pixelCenter + float2(1.0, 0.0), depth, view);
     input.TargetPositionDy = ReconstructWorldPositionAt(
@@ -279,16 +315,19 @@ void WriteClusterMotion<
 
 bool TryEvaluateMaterialPixel<TVE, TDomain>(uniform TVE vertexEval, uniform TDomain domain, uint3 tid,
     out uint3 pixelCoord, out TriangleInfo tri, out ClusterViewUniforms view,
-    out TDomain.TriangleData triangle, out float3 bary, out TDomain.Surface evaluated, out uint surfaceIndex)
+    out TDomain.TriangleData triangle, out float3 bary, out TDomain.Surface evaluated, out uint surfaceIndex,
+    out float depth, out float3 positionFromDepth)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
+    depth = 0.0;
+    positionFromDepth = 0.0.xxx;
     if (!TryReadMaterialPixel(tid, pixelCoord, surfaceIndex)) return false;
     if (!decodeTriangle(pixelCoord, tri)) return false;
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
     triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
     SurfaceBarycentrics coordinates = ResolveBarycentrics<TVE.Vertex, TDomain>(
-        domain, pixelCoord, view, triangle);
+        domain, pixelCoord, view, triangle, tri, depth, positionFromDepth);
     if (coordinates.Valid == 0u) return false;
     bary = coordinates.Value;
     evaluated = domain.eval(triangle, bary);
@@ -347,16 +386,18 @@ void CSEvaluateSurface<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform T
     float3 bary;
     TDomain.Surface evaluated;
     uint surfaceIndex;
+    float depth;
+    float3 positionFromDepth;
     if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
-        coord, tri, view, triangle, bary, evaluated, surfaceIndex)) return;
+        coord, tri, view, triangle, bary, evaluated, surfaceIndex, depth, positionFromDepth)) return;
     SurfacePixel pixel;
     pixel.PixelCoord = coord;
     pixel.InstanceID = tri.instanceID;
     pixel.MaterialIndex = tri.materialSlot;
     pixel.DebugMode = Uniforms.DebugMode;
     pixel.VisibilityDepth = Uniforms.VisibilityDepth;
-    pixel.Depth = DepthBuffer.Load(int4(coord, 0));
-    pixel.PositionFromDepth = ReconstructWorldPositionAt(float2(coord.xy) + .5, pixel.Depth, view);
+    pixel.Depth = depth;
+    pixel.PositionFromDepth = positionFromDepth;
     SurfaceReceiver receiver;
     TSurface.Data data = surface.evaluateSurface(pixel, evaluated, bary, triangle, receiver);
     ClusterViewUniforms sourceView = Views[tri.viewIndex];

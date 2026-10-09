@@ -8,3 +8,8 @@ Vertex reuse batch 只覆盖一个 material range，并对 triangle 数和 uniqu
 匹配 wave 内的 lanes；混合多个 cluster 的 wave 也能分别复用各自的完整顶点结果。
 当前帧和前一帧的顶点评估分别调用，各自匹配。用户的 `IVertexEvaluate.readLane` 运输完整 `Vertex`，
 管线继续使用接口提供的位置与三角形数据。
+
+接收者与运动求值按 `visibleClusterIndex`、`triangleID` 和当前/前帧匹配 wave 内的三角形。
+每组由一个 lane 调用用户顶点评估和 `IDomainEvaluate.makeTriangle`；用户域的 `readLane`
+运输完整 `TriangleData`。管线从域提供的三个角点构造自己的投影数据，按同一三角形匹配共享
+屏幕原点、边、逆面积及逆 W。各像素继续生成中心与梯度并调用用户 `reconstruct`。
