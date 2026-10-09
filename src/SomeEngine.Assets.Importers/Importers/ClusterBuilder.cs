@@ -709,10 +709,10 @@ public static partial class ClusterBuilder
                 ClusterMeshSimplifier.Result result;
                 var parents = new List<BuilderMeshlet>();
                 var parentIndices = new List<uint>();
+                var simplifier = new ClusterMeshSimplifier(mesh.Positions, mesh.Attributes,
+                    CollectionsMarshal.AsSpan(mergedIndices), locks);
                 do
                 {
-                    var simplifier = new ClusterMeshSimplifier(mesh.Positions, mesh.Attributes,
-                        CollectionsMarshal.AsSpan(mergedIndices), locks);
                     result = simplifier.Simplify(parentCount * targetClusterSize);
                     float[] material = result.Attributes[mesh.Attributes.FindIndex(static attribute => attribute.Name == "_MATERIAL_INDEX")];
                     parents.Clear();
