@@ -5,6 +5,7 @@
 #include "vsm_material.slang"
 #include "vsm_soft_sampling.slang"
 #include "vsm_receiver_pixel.slang"
+#include "vsm_projected_sampling.slang"
 
 StructuredBuffer<GPULight> LightBuffer;
 
@@ -71,23 +72,8 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
     }
     float4 shadeSurface(uint3 pixel, uint debugMode, Data data, SurfaceReceiver receiver)
     {
-        uint levelCount = min(VirtualShadowSampling.DirectionalClipmapLevels, VirtualShadowSampling.ViewCount);
-        float visibility = 1.0;
-        if (SurfaceReceiverReceivesDirectionalShadow(receiver, -LightBuffer[0].Direction,
-            VirtualShadowViews[0].SourceAngleRadians, VirtualShadowSampling.CullBackfacingPixels != 0u))
-        {
-            float biasLength = CalculateVirtualShadowNormalBiasLength(VirtualShadowSampling.ReceiverProjection,
-                receiver.Position, VirtualShadowSampling.NormalBias, VirtualShadowViews[0].WorldUnitsPerCentimeter);
-            float3 position = receiver.Position + receiver.ShadingNormal * biasLength;
-            VirtualShadowProjectionResult projection = SampleVirtualShadowDirectionalSoft(VirtualShadowViews,
-                VirtualShadowPageTable, VirtualShadowAtlas, 0u, levelCount, position, receiver.ShadingNormal,
-                VirtualShadowDynamicResolutionBias[0].x,
-                CalculateVirtualShadowReceiverResolutionBias(VirtualShadowSampling.ReceiverProjection, receiver.Position),
-                VirtualShadowSampling.BlockerSampleCount, VirtualShadowSampling.FilterSampleCount,
-                VirtualShadowSampling.MaxFilterRadiusTexels, pixel.xy, VirtualShadowSampling.FrameIndex);
-            visibility = projection.Visibility * SampleDirectionalVirtualShadowPrefiltered(VirtualShadowViews,
-                VirtualShadowPageTable, VirtualShadowPrefilteredAtlas, 0u, levelCount, position).Visibility;
-        }
+        float visibility = ReadVirtualShadowProjectedVisibility(pixel, 0u,
+            uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount));
         return float4(visibility, 1.0, data.ShadingFacesLight != 0u ? 1.0 : 0.0, 1.0);
     }
 

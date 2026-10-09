@@ -164,7 +164,8 @@ public struct VirtualShadowSamplingUniforms
     public VirtualShadowRaySettings DirectionalRays;
     public VirtualShadowRaySettings LocalRays;
     public uint CullBackfacingPixels;
-    private uint _receiverPadding0, _receiverPadding1, _receiverPadding2;
+    public float ScreenRayLength;
+    private uint _receiverPadding1, _receiverPadding2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]

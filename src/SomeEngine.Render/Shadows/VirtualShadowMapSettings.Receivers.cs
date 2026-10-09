@@ -8,6 +8,7 @@ public sealed partial record VirtualShadowMapSettings
     public uint MaximumViewsPerLight => Math.Max(6u, checked(DirectionalClipmapLevels +
         (FirstPersonShadowsEnabled ? (uint)(FirstPersonLastClipmapLevel - FirstPersonFirstClipmapLevel + 1) : 0u)));
     public bool CullBackfacingPixels { get; init; } = true;
+    public float ScreenRayLength { get; init; } = .015f;
     public float FirstPersonPixelRequestBias { get; init; } = 2f;
     public int FirstPersonPixelRequestMinLevel { get; init; } = 8;
     public float DirectionalPageDilationBorder { get; init; } = .05f;

@@ -984,6 +984,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BlockerSearchRadiusTexels = _shadowMap.Settings.BlockerSearchRadiusTexels,
                 MaxFilterRadiusTexels = _shadowMap.Settings.MaxFilterRadiusTexels,
                 CullBackfacingPixels = _shadowMap.Settings.CullBackfacingPixels ? 1u : 0u,
+                ScreenRayLength = _shadowMap.Settings.ScreenRayLength,
                 NormalBias = _shadowMap.Settings.NormalBias,
                 FrameIndex = _frameIndex,
                 DirectionalRays = new()
