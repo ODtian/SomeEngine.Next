@@ -48,7 +48,6 @@ public sealed partial class ClusterPipelineSystem
         internal ClusterLayerDispatch SceneBounds;
         internal ClusterLayerDispatch PrimarySeed;
         internal ClusterLayerDispatch[] ShadeBinDispatches = [];
-        internal ImmutableDictionary<int, GraphRegionMap<int, bool>> TraversalLevels = ImmutableDictionary<int, GraphRegionMap<int, bool>>.Empty;
         internal ImmutableDictionary<FeedbackKind, GraphPassId> Feedback = ImmutableDictionary<FeedbackKind, GraphPassId>.Empty;
         internal ImmutableDictionary<int, RasterPhase> RasterPhases = ImmutableDictionary<int, RasterPhase>.Empty;
         internal RasterBinning?[] RasterBinning = new RasterBinning?[RasterPhaseCount];

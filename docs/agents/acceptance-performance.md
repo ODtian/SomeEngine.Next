@@ -4,6 +4,17 @@
 
 目标为 P95：1024 运动小球 ≤1ms、Sponza ≤2ms、Amazon Bistro ≤3ms。
 
+2026-10-09 当前源码 `e13e48627650e9c7b8afbb2ac6fee109b97db6f0` 合并层级遍历与 cluster 剔除，四阶段各一次持久 kernel。原完整几何、中断恢复、容量不足公开行为 3/3 通过。原三场景 `tools/Measure-Scenes.ps1` 无 trace 反馈共 39.73 秒，框架采样 26.8280756 秒，Complete=true、3/3 Measured。
+
+| 当前场景 | P50（ms） | P95（ms） | 采样帧 | P95 目标（ms） |
+| --- | ---: | ---: | ---: | ---: |
+| 1024 运动小球 | 1.8279 | 2.0078 | 1093 | 1 |
+| Sponza | 3.3307 | 3.5152 | 601 | 2 |
+| Amazon Bistro | 3.0889 | 3.3776 | 648 | 3 |
+
+三景 queued/active loads、backpressure、dropped faults 均为 0；1280×720、JIT=false、原运动/光源、TAA/async/mesh、4+8 查询与 8 texels 保持原配置，1536 项几何身份相同。相对上一轮 `5a29d2fc` 的 P95 2.0630/2.8346/3.5176ms，本轮变化为 -0.0552/+0.6806/-0.1400ms。继续修复 Sponza 合并队列回退与现有 GPU 热点，1/2/3ms 目标持续验收。
+
+当次证据：`F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/reduce-render-cost-190/persistent-normal-feedback/results.json`、`persistent-normal-identity.json`、`persistent-normal-application-files.json`。[#190 当次反馈](https://github.com/ODtian/SomeEngine.Next/issues/190#issuecomment-6072397492)。以下保留前次来源记录。
 2026-10-09 本批源码 `594c66efd4621671517c2fec179c6b4beda42220` 修复材质核心颜色写入归属和通用队列选择：材质返回当前像素颜色，管线写入唯一坐标；自动 copy 队列在前驱传输成本后计入显式消费队列。公开颜色行为 2/2、队列行为 8/8 通过。复用原三景 QEM 几何与原配置，通过 `tools/Measure-Scenes.ps1` 执行一次统一反馈；测量期间两个阴影实现代理暂停重 CPU 工作。报告 `Complete=true`，三景均 `Measured`，框架计时 26.1214475 秒，脚本含启动 33.71 秒。
 
 | 当前场景 | P50（ms） | P95（ms） | 采样帧 | P95 目标（ms） |
