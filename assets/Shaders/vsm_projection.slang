@@ -150,6 +150,15 @@ float VirtualShadowOccluderDistance(VirtualShadowMapParameters view,
     return max(minimumDistance, receiverDistance * (1.0 - occluderViewDistance / receiverViewDistance));
 }
 
+float CalculateVirtualShadowRayStartBias(VirtualShadowMapParameters source, float3 position,
+    float rayStartDistance)
+{
+    float depthScale = IsDirectionalVirtualShadowProjection(source)
+        ? abs(source.ProjectionDepthScale)
+        : abs(1.0 + source.ProjectionDepthScale) / ProjectVirtualShadowClip(source, position).w;
+    return max(rayStartDistance, 0.0) * depthScale;
+}
+
 VirtualShadowProjectionResult ProjectVirtualShadowHard(
     StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages,
     Texture2DArray<uint> atlas, uint viewIndex, float3 position, float3 normal,
@@ -168,11 +177,8 @@ VirtualShadowProjectionResult ProjectVirtualShadowHard(
     result.RayCount = 1u;
     VirtualShadowMapParameters source = views[sample.ViewIndex];
     ProjectVirtualShadowPosition(source, position, ndc, uv);
-    float clipW = ProjectVirtualShadowClip(source, position).w;
-    float rayBiasScale = IsDirectionalVirtualShadowProjection(source)
-        ? abs(source.ProjectionDepthScale) : abs(1.0 + source.ProjectionDepthScale) / clipW;
     float nativeSlopeBias = VirtualShadowOptimalSlopeBias(views, sample.ViewIndex, sample, position, normal);
-    float rayBias = max(rayStartDistance, 0.0) * rayBiasScale;
+    float rayBias = CalculateVirtualShadowRayStartBias(source, position, rayStartDistance);
     float slopeBias = nativeSlopeBias + rayBias;
     float biasedDepth = sample.Depth - nativeSlopeBias - rayBias;
     float receiverDepth = 1.0 - ndc.z;

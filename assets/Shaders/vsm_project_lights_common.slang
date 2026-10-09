@@ -67,6 +67,44 @@ VirtualShadowProjectionReceiver ReadVirtualShadowProjectionReceiver(uint3 pixel,
     return result;
 }
 
+float ReadVirtualShadowScreenDepth(float2 uv, uint viewIndex)
+{
+    int2 pixel = clamp(int2(uv * float2(Projection.Width, Projection.Height)),
+        0, int2(Projection.Width, Projection.Height) - 1);
+    return ProjectionDepth.Load(int4(pixel, viewIndex, 0));
+}
+
+float CalculateVirtualShadowScreenRayStart(uint3 pixel, VirtualShadowProjectionReceiver receiver,
+    float3 position, float3 direction)
+{
+    if (VirtualShadowSampling.ScreenRayLength <= 0.0) return 0.0;
+    ClusterViewUniforms view = ProjectionViews[pixel.z];
+    float3 translatedPosition = ClusterPositionForView(position, view);
+    float3 viewPosition = mul(float4(ClusterPositionForView(receiver.Position, view), 1.0), view.View).xyz;
+    bool perspective = ClusterProjectionScales(view).z != 0.0;
+    float rayLength = (perspective ? VirtualShadowSampling.ScreenRayLength * max(-viewPosition.z, 0.0) : 1.0)
+        / abs(view.P11);
+    if ((receiver.Flags & (SURFACE_RECEIVER_HAIR | SURFACE_RECEIVER_SUBSURFACE)) != 0u) return rayLength;
+    float4 startClip = mul(float4(translatedPosition, 1.0), view.ViewProj);
+    float4 endClip = startClip + mul(float4(direction * rayLength, 0.0), view.ViewProj);
+    float3 startNdc = startClip.xyz / startClip.w;
+    float3 endNdc = endClip.xyz / endClip.w;
+    float3 start = float3(startNdc.xy * float2(.5, -.5) + .5, startNdc.z);
+    float3 step = float3((endNdc.xy - startNdc.xy) * float2(.5, -.5), endNdc.z - startNdc.z);
+    float startDepth = ReadVirtualShadowScreenDepth(start.xy, pixel.z);
+    float sampleTime = (VirtualShadowRayStepOffset(pixel.xy, VirtualShadowSampling.FrameIndex) - .5) * .25 + .25;
+    for (uint sample = 0u; sample < 4u; sample++)
+    {
+        float3 query = start + step * sampleTime;
+        float depth = ReadVirtualShadowScreenDepth(query.xy, pixel.z);
+        // The primary depth uses forward Z. Native reverse-Z ordering is inverted here.
+        if (depth != startDepth && query.z > depth)
+            return rayLength * max(0.0, sampleTime - .375);
+        sampleTime += .25;
+    }
+    return rayLength;
+}
+
 #if VSM_PROJECT_DIRECTIONAL_LIGHTS
 float ProjectVirtualShadowReceiver(uint3 pixel, uint light, VirtualShadowProjectionReceiver receiver)
 {
@@ -84,6 +122,7 @@ float ProjectVirtualShadowReceiver(uint3 pixel, uint light, VirtualShadowProject
     float3 normal = (receiver.Flags & SURFACE_RECEIVER_HAIR) != 0u ? -source.Direction : receiver.Normal;
     float3 shadowPosition = receiver.Position;
     if ((receiver.Flags & SURFACE_RECEIVER_SUBSURFACE) == 0u) shadowPosition += normal * receiver.NormalBiasLength;
+    float rayStartDistance = CalculateVirtualShadowScreenRayStart(pixel, receiver, shadowPosition, -source.Direction);
     VirtualShadowProjectionResult result = SampleVirtualShadowDirectionalFilteredSoft(VirtualShadowViews, VirtualShadowPageTable,
         VirtualShadowAtlas, VirtualShadowPrefilteredAtlas, firstView, levels, shadowPosition, normal,
         receiver.ResolutionBias,
@@ -92,7 +131,7 @@ float ProjectVirtualShadowReceiver(uint3 pixel, uint light, VirtualShadowProject
         (receiver.Flags & SURFACE_RECEIVER_FIRST_PERSON) != 0u,
         VirtualShadowSampling.FirstPersonViewOffset < VirtualShadowSampling.ViewCount
             ? VirtualShadowSampling.FirstPersonViewOffset + light * VirtualShadowViews[VirtualShadowSampling.FirstPersonViewOffset].ClipmapLevelCount
-            : 0xffffffffu);
+            : 0xffffffffu, rayStartDistance);
     return result.Visibility;
 }
 #else
@@ -131,11 +170,12 @@ float ProjectVirtualShadowLocalReceiver(uint3 pixel, uint light, uint sourceLigh
     float3 normal = (receiver.Flags & SURFACE_RECEIVER_HAIR) != 0u ? normalize(towardLight) : receiver.Normal;
     float3 shadowPosition = receiver.Position;
     if ((receiver.Flags & SURFACE_RECEIVER_SUBSURFACE) == 0u) shadowPosition += normal * receiver.NormalBiasLength;
+    float rayStartDistance = CalculateVirtualShadowScreenRayStart(pixel, receiver, shadowPosition, normalize(towardLight));
     return SampleVirtualShadowLocalSoft(VirtualShadowViews, VirtualShadowPageTable, VirtualShadowAtlas,
         firstView, shadowPosition, normal, receiver.NominalPixelRadius,
         VirtualShadowDynamicResolutionBias[0], VirtualShadowSampling.BlockerSampleCount,
         VirtualShadowSampling.FilterSampleCount, VirtualShadowSampling.MaxFilterRadiusTexels,
-        pixel.xy, VirtualShadowSampling.FrameIndex).Visibility;
+        pixel.xy, VirtualShadowSampling.FrameIndex, rayStartDistance).Visibility;
 }
 
 uint4 PackVirtualShadowLocalVisibility(uint4 mask, uint light, float visibility, float noise)
