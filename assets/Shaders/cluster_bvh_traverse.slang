@@ -48,7 +48,6 @@ void CullPersistentWork(uint thread)
         GroupMemoryBarrierWithGroupSync();
         if (thread == 0u)
         {
-            DeviceMemoryBarrier();
             ClaimReadyNodes(WorkNodeStart, WorkNodeCount);
             WorkClusterReady = 0u;
             WorkNodesRemaining = NodeIndirectArgs.Load(CLUSTER_NODE_OUTSTANDING);
