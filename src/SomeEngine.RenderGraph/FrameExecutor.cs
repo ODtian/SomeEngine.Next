@@ -75,11 +75,7 @@ internal sealed partial class FrameExecutor
         _rowChanges.ShaderTables.UnionWith(changes.ShaderTables);
         _rowChanges.Views.UnionWith(changes.Views);
         _rowChanges.Passes.UnionWith(changes.Passes);
-        foreach (GraphIdentity pass in changes.Passes)
-        {
-            ChangeCommandData(pass);
-            if (!_frame.StructureIndex.Structure.Passes.Contains(pass)) _recordingFirstPasses.Remove(pass);
-        }
+        foreach (GraphIdentity pass in changes.Passes) ChangeCommandData(pass);
         _rowChanges.Accesses.UnionWith(changes.Accesses);
 
         _changedOrderIdentities.UnionWith(changes.OrderPasses);

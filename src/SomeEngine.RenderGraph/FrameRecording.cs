@@ -126,7 +126,6 @@ internal sealed partial class FrameExecutor
             }
             using (global::SomeEngine.Diagnostics.EngineTrace.Begin(RecordStateProbe))
                 PrepareStateUpdates();
-            if (SeparateChangedCommands()) BuildRecordingGroups(waveCount, repartition: false);
             using var executionProbe =
                 global::SomeEngine.Diagnostics.EngineTrace.Begin(RecordExecutionProbe);
             if (_frame.Options.SubmissionMode == FrameSubmissionMode.RecordAllThenSubmit)
@@ -633,8 +632,7 @@ internal sealed partial class FrameExecutor
             {
                 bool repeatable = CanRepeatCommands(passes[start]);
                 int end = start + 1;
-                while (end < passes.Count && CanRepeatCommands(passes[end]) == repeatable &&
-                    !_recordingFirstPasses.Contains(_passes[passes[end]].Identity)) end++;
+                while (end < passes.Count && CanRepeatCommands(passes[end]) == repeatable) end++;
                 // Keep adjacent passes that allow command reuse in one native list.
                 // Split the remaining callbacks for parallel recording.
                 int unitCount = repeatable || !workerEligible ? 1 :
