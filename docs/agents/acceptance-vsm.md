@@ -24,7 +24,11 @@
 
 源码 `cb6b531ae6261f206ea01d5746c64d806f98b109` 的既有硬阴影、公开来源比较与局部光 RT 批次完成 24 项：21 通过、3 失败；4 项局部光启动/恢复及 Spot 范围行为等待修复后补齐。六行硬阴影中的小球与 Sponza 两种模式共 4 行通过，Bistro 默认/诊断模式错误比例分别为 4.3210853% / 4.3386668%；七项公开来源比较中 6 项通过，directional-grid 软阴影平均误差 2.0353781%、错误比例 2.293044%；已完成的 11 项局部光行为均通过。原 2% 判定及全部有效接收像素保持，测试规则检查 0 违规。批次在完成结果边界停止，逐项结果、4 项待验收名称、原 App/资产身份及失败图像保存于 `F:/SomeEngine.AgentWork/rg70-delivery-evidence/final/rt-gt/final-hard-local/` 的 `progress.json`、`entrypoint-identity.json` 与各 case 目录。
 
-同目录 `opaque-caster-lod.json` 记录 132 个 Opaque 来源 caster 的公共资产解码与纹素射线：原来源深度全部在 2 bit 内复现，叶层及初始 Cluster 视图 0.25 阈值下均 132/132 命中，选中 cluster 最大投影误差 0.24986263，阴影几何比例 0.5。CPU 选择器使用 `ChildReference` 指定的几何页；早期使用 group 请求页范围产生的 122/10 诊断已由此结果纠正。实际 GPU 后继 `vsm_view_compact.slang` 将阈值覆写为 `MaxPixelsPerEdge=1`；`actual-shadow-lod.json` 按最终 1/0.5 重算相同 132 个当前纹素，目标 caster 127 条命中、120 条选中深度与实际 R32 在 2 bit 内吻合。`caster417-geometry.json` 与 `current-caster-raster.json` 将剩余差异限定到单页、单个零误差 Cluster 的近面三角形及实际更远深度，继续定位候选、分箱和写入阶段。当前 `07874636` 帧工作完成且容量、分配、加载错误为 0；原 RT 判定继续驱动 Bistro 验收。
+同目录 `opaque-caster-lod.json` 记录 132 个 Opaque 来源 caster 的公共资产解码与纹素射线：原来源深度全部在 2 bit 内复现，叶层及初始 Cluster 视图 0.25 阈值下均 132/132 命中，选中 cluster 最大投影误差 0.24986263，阴影几何比例 0.5。CPU 选择器使用 `ChildReference` 指定的几何页；早期使用 group 请求页范围产生的 122/10 诊断已由此结果纠正。实际 GPU 后继 `vsm_view_compact.slang` 将阈值覆写为 `MaxPixelsPerEdge=1`；`actual-shadow-lod.json` 按最终 1/0.5 重算相同 132 个当前纹素，目标 caster 的双面几何射线 127 条命中、120 条选中深度与实际 R32 在 2 bit 内吻合。
+
+实际 root、candidate、分箱和写入读数进一步定位两处 HW 获胜三角形：来源 mesh829 的 page0/cluster7/triangle18 写入 `1056965498`，来源 mesh1194 的 page0/cluster6/triangle13 写入 `1056964460`；正式几何计算与实际 atlas 同值。前者的 LOD2 轮廓移入 0.479 个阴影纹素，命中点距原源 20.24mm、小于原 OwnError 59.57mm；后者保持原源深度。mesh1195 的最终 37 个 cluster、1098 个三角形中，正面轮廓移开 0.165 个纹素，原双面交点 `1056964645` 对应被裁剪的背面，资格已在 `near-view6-source.json` 修正。Native group 极值、共同 LOD bounds、误差编码及外部组边界锁规则与固定参照一致。
+
+`current-source-frontface.json` 与 `current-hard-slope-margin.json` 保存原 132 个实际接收点的来源射线和深度数学：当前 77 个漏影代表中 75 个原射线有正面遮挡，当前接收点射线有 66 个，按原 Native normal bias 偏移后有 46 个；21 条正面遮挡移开、1 条移入。原 slope2 和 R32 表示区间重算与 132 条实际硬判定全部吻合，其中 10 个漏影由 slope bias 翻为亮区。CPU 来源中心重现原判定 130 条，另 2 条及全部原 RT 像素保留。原阈值和待验收 case 继续驱动 Bistro 与 directional-grid 的源修复。
 
 原 49 项对应如下；各票正文记录具体算法、数据关系与消费者。
 
