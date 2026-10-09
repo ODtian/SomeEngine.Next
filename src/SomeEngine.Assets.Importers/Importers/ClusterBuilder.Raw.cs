@@ -908,22 +908,6 @@ public static partial class ClusterBuilder
             return index;
         }
 
-        internal uint Append(ClusterMeshSimplifier.Result simplified)
-        {
-            int start = VertexCount;
-            int required = checked(start + simplified.Positions.Length);
-            if (required > Positions.Length) Array.Resize(ref Positions, Math.Max(required, Positions.Length * 2));
-            simplified.Positions.CopyTo(Positions, start);
-            for (int index = 0; index < Attributes.Count; index++)
-            {
-                RawAttribute data = Attributes[index];
-                int length = checked(required * data.Dimension);
-                if (length > data.Data.Length) Array.Resize(ref data.Data, Math.Max(length, data.Data.Length * 2));
-                simplified.Attributes[index].CopyTo(data.Data, start * data.Dimension);
-            }
-            VertexCount = required;
-            return checked((uint)start);
-        }
     }
 
     private readonly record struct MeshletBuild(
