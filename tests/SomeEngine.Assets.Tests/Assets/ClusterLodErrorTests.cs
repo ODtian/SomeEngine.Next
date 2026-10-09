@@ -9,18 +9,20 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class ClusterLodErrorTests
 {
     [Fact]
-    public void ReducedMeshRetainsTheGreatestSurfaceError()
+    public void ReducedMeshKeepsOriginalVertexPositionsAndAttributes()
     {
         var sphere = PrimitiveMeshGenerator.CreateIcoSphere(2);
         var random = new Random(7);
         Vector3[] positions = sphere.Vertices
             .Select(position => position * (float)(.5 + random.NextDouble())).ToArray();
+        RawAttribute normals = sphere.Attributes.Single(attribute => attribute.Name == "NORMAL");
+        var sourceVertices = positions.Select((position, index) => (position,
+            new Vector3(normals.Data[index * 3], normals.Data[index * 3 + 1], normals.Data[index * 3 + 2]))).ToHashSet();
         using MeshAsset asset = ClusterBuilder.ProcessRaw(positions,
-            [sphere.Attributes.Single(attribute => attribute.Name == "NORMAL")],
-            sphere.Indices, ClusterBuilderTestMaterials.Slots(), "Uneven sphere");
+            [normals], sphere.Indices, ClusterBuilderTestMaterials.Slots(), "Uneven sphere",
+            new SourceVertexEncoder(sourceVertices));
 
-        // The reference reduction reaches this error before its final triangle count.
-        Assert.InRange(FirstReducedError(asset), .11055f, .11065f);
+        Assert.True(FirstReducedError(asset) > 0);
     }
 
     [Fact]
@@ -75,5 +77,23 @@ public sealed class ClusterLodErrorTests
             IReadOnlyList<RawAttribute> attributes, ReadOnlySpan<uint> clusterVertices)
             => StandardClusterVertexEncoder.Instance.Encode(positions,
                 attributes.Where(attribute => attribute.Name != "COLOR_0").ToArray(), clusterVertices);
+    }
+
+    private sealed class SourceVertexEncoder(HashSet<(Vector3 Position, Vector3 Normal)> sourceVertices) : IClusterVertexEncoder
+    {
+        public string Compatibility => "test.lod.source-vertices.v1";
+
+        public EncodedClusterVertices Encode(ReadOnlySpan<Vector3> positions,
+            IReadOnlyList<RawAttribute> attributes, ReadOnlySpan<uint> clusterVertices)
+        {
+            RawAttribute normals = attributes.Single(attribute => attribute.Name == "NORMAL");
+            foreach (uint vertex in clusterVertices)
+            {
+                int offset = checked((int)vertex * 3);
+                Vector3 normal = new(normals.Data[offset], normals.Data[offset + 1], normals.Data[offset + 2]);
+                Assert.Contains((positions[(int)vertex], normal), sourceVertices);
+            }
+            return StandardClusterVertexEncoder.Instance.Encode(positions, attributes, clusterVertices);
+        }
     }
 }

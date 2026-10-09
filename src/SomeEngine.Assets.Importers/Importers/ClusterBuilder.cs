@@ -706,18 +706,20 @@ public static partial class ClusterBuilder
                 ClusterLodBounds groupBounds = BoundsMerge(clusters, group);
                 int parentCount = Math.Max(1, (mergedIndices.Count / 3 + config.MaxTriangles * 2 - 1) / (config.MaxTriangles * 2));
                 int targetClusterSize = config.MaxTriangles - 2;
-                ClusterMeshSimplifier.Result result;
+                float error = groupBounds.Error;
                 var parents = new List<BuilderMeshlet>();
                 var parentIndices = new List<uint>();
-                var simplifier = new ClusterMeshSimplifier(mesh.Positions, mesh.Attributes,
-                    CollectionsMarshal.AsSpan(mergedIndices), locks);
+                var reducedIndices = new List<uint>();
                 do
                 {
-                    result = simplifier.Simplify(parentCount * targetClusterSize);
-                    float[] material = result.Attributes[mesh.Attributes.FindIndex(static attribute => attribute.Name == "_MATERIAL_INDEX")];
+                    Simplify(mesh.Positions.AsSpan(0, mesh.VertexCount),
+                        CollectionsMarshal.AsSpan(mergedIndices), locks, parentCount * targetClusterSize * 3,
+                        out float reductionError, reducedIndices);
+                    error = Math.Max(error, reductionError);
                     parents.Clear();
                     parentIndices.Clear();
-                    Clusterize(config, result.Indices, result.Positions, material, parents, parentIndices);
+                    Clusterize(config, CollectionsMarshal.AsSpan(reducedIndices),
+                        mesh.Positions.AsSpan(0, mesh.VertexCount), ExtractMaterialIndices(mesh), parents, parentIndices);
                     if (parents.Count <= parentCount) break;
                     targetClusterSize -= 2;
                 } while (targetClusterSize > config.MaxTriangles / 2);
@@ -731,7 +733,6 @@ public static partial class ClusterBuilder
                     }
                     continue;
                 }
-                float error = Math.Max(groupBounds.Error, result.Error);
                 int groupId = nextGroupId++;
                 foreach (int index in group)
                 {
@@ -740,11 +741,10 @@ public static partial class ClusterBuilder
                     child.LodCenter = groupBounds.Center; child.LodRadius = groupBounds.Radius;
                     clusters[index] = child;
                 }
-                uint firstVertex = mesh.Append(result);
                 int firstParent = clusters.Count;
                 int firstIndex = globalIndices.Count;
                 foreach (uint index in parentIndices)
-                    globalIndices.Add(index + firstVertex);
+                    globalIndices.Add(index);
                 foreach (BuilderMeshlet data in parents)
                 {
                     BuilderMeshlet parent = data;
@@ -796,6 +796,34 @@ public static partial class ClusterBuilder
         destination.Clear();
         foreach (int cluster in group)
             destination.AddRange(CollectionsMarshal.AsSpan(globalIndices).Slice(clusters[cluster].IndicesOffset, clusters[cluster].IndicesCount));
+    }
+
+    private static void Simplify(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> indices,
+        ReadOnlySpan<byte> locks, int targetIndexCount, out float error, List<uint> outputIndices)
+    {
+        outputIndices.Clear();
+        if (targetIndexCount >= indices.Length)
+        {
+            outputIndices.AddRange(indices);
+            error = 0;
+            return;
+        }
+
+        uint[] reducedIndices = ArrayPool<uint>.Shared.Rent(indices.Length);
+        try
+        {
+            const SimplificationOptions permissive = (SimplificationOptions)(1 << 5);
+            int count = checked((int)Meshopt.SimplifyWithAttributes(reducedIndices, indices,
+                MemoryMarshal.Cast<Vector3, float>(positions), (nuint)Unsafe.SizeOf<Vector3>(),
+                null, 0, null, 0, locks, (nuint)targetIndexCount, float.MaxValue,
+                SimplificationOptions.SimplifyLockBorder | SimplificationOptions.meshopt_SimplifySparse |
+                SimplificationOptions.meshopt_SimplifyErrorAbsolute | permissive, out error));
+            outputIndices.AddRange(reducedIndices.AsSpan(0, count));
+        }
+        finally
+        {
+            ArrayPool<uint>.Shared.Return(reducedIndices);
+        }
     }
 
 }
