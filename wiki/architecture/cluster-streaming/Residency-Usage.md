@@ -21,6 +21,8 @@ quality 的压力来自完整 demand 中 resident 与尚未 resident 的可流�
 
 祖先页以 child priority + 1 请求；uint priority 饱和而不回绕。当前 cook 允许相邻组或不同 LOD 的 clusters 共处一页，因此不能直接沿 page/group 环反复加一。注册 mesh 时从不可变组页范围建立重叠区间 component，再压缩 parent 边的强连通分量，并缓存 child-before-parent 顺序。跨页混合 LOD 形成的物理 parent 环使用同一个 component；只保留真实页区间，不纳入区间之间的无关页。一个 component 的页使用相同最大 priority；只有跨 component 的 parent 边提升 priority。每次 demand 传播只访问每个可达 component 一次，不在每帧重建拓扑。
 
+淘汰优先沿既有逐页 LRU 选择。冷 parent 环没有单页候选时，复用同一 component，一次暂存其全部可用页的卸载；常驻粗页、当前需求、正在请求的 component 和 component 外仍驻留的子页继续阻止卸载。整批暂存失败时取消已暂存的全部成员。页的 fixup、提交和 GPU 完成后的容量归还沿既有 publication 一起执行，不在环内任意断开依赖。
+
 该适配对应固定参考 [UE NaniteStreamingManager.cpp](https://github.com/EpicGames/UnrealEngine/blob/396c9f059903aed5fec78ecd3d437a40c6415368/Engine/Source/Runtime/Engine/Private/Rendering/NaniteStreamingManager.cpp)：2407–2429 区分 registered/new requests，2579–2665 提升 parent priority，2751–2772 统计全部可见需求并刷新 registered LRU，2904–2924 排除当前引用页并在无候选时停止本次分配。
 
 截断处理也遵循同一参考的 [NaniteReadbackManager.cpp](https://github.com/EpicGames/UnrealEngine/blob/396c9f059903aed5fec78ecd3d437a40c6415368/Engine/Source/Runtime/Engine/Private/Nanite/NaniteReadbackManager.cpp) 94–127：选择最近完成的回读并钳制请求数；StreamingManager 2740、2838–2843、3009 在每次更新重建请求集合并清除上一轮的引用标记。这里保留既有的“不用截断观测调整 quality”规则。
