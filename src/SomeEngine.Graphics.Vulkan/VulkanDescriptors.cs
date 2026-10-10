@@ -321,6 +321,8 @@ internal sealed unsafe partial class VulkanBackend
         VkBufferView texelView = default;
         if (value.IsNull)
         {
+            // A null buffer descriptor still requires VK_WHOLE_SIZE (VUID 02999).
+            bufferInfo.Range = Vk.WholeSize;
             if (slot.BindingType == ResourceBindingType.Sampler)
                 throw new ArgumentException("Sampler bindings cannot be null.", nameof(value));
             if (!device.ExtendedFeatures.NullDescriptor)
