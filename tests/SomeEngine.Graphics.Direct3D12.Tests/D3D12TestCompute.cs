@@ -42,6 +42,10 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             image,
             images);
 
+    internal uint[][] ExecuteSourceImages(string source, string entry, DispatchArguments dispatch,
+        BufferInput[] inputs, SampledImage[] images) =>
+        ExecuteSourceCore(source, entry, dispatch, inputs, null, images);
+
     private uint[][] ExecuteSourceCore(
         string source,
         string entry,
@@ -66,7 +70,7 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             backend.Begin(context, new CommandRecordingDesc(64, 8, 64));
             List<(string Name, ResourceBinding Binding)> bindings = [];
             List<(Buffer Buffer, ulong Size)> outputs = [];
-            List<(Texture Texture, SampledImage Image, uint Pitch)> imageOutputs = [];
+            List<(Texture Texture, SampledImage Image, uint Pitch, ulong LayerBytes)> imageOutputs = [];
             foreach (var input in inputs)
             {
                 ulong bytes = (ulong)input.Data.Length * 4u;
@@ -98,14 +102,17 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             {
                 uint texelBytes = sourceImage.PixelFormat == Format.R8UNorm ? 1u : 4u;
                 uint pitch = (sourceImage.Width * texelBytes + 255u) & ~255u;
-                Buffer upload = Keep(backend.CreateBuffer(device, new((ulong)pitch * sourceImage.Height * sourceImage.Layers, BufferUsages.CopySource), MemoryType.Upload));
+                ulong layerBytes = ((ulong)pitch * sourceImage.Height + 511ul) & ~511ul;
+                Buffer upload = Keep(backend.CreateBuffer(device, new(layerBytes * sourceImage.Layers, BufferUsages.CopySource), MemoryType.Upload));
                 using (MappedBuffer map = backend.Map(upload, MapType.Write, BufferRange.Whole))
                 {
                     map.Bytes.Clear();
                     for (int row = 0; row < sourceImage.Height * sourceImage.Layers; row++)
                     {
                         ReadOnlySpan<uint> pixels = sourceImage.Pixels.AsSpan(row * (int)sourceImage.Width, (int)sourceImage.Width);
-                        Span<byte> destination = map.Bytes.Slice(row * (int)pitch);
+                        int layer = row / (int)sourceImage.Height;
+                        int rowInLayer = row % (int)sourceImage.Height;
+                        Span<byte> destination = map.Bytes.Slice(checked((int)((ulong)layer * layerBytes) + rowInLayer * (int)pitch));
                         if (texelBytes == 1u)
                             for (int column = 0; column < pixels.Length; column++) destination[column] = (byte)pixels[column];
                         else MemoryMarshal.AsBytes(pixels).CopyTo(destination);
@@ -121,7 +128,7 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                 backend.Barrier(context, new TextureBarrier(texture, range, PipelineSync.None, PipelineSync.Copy,
                     ResourceAccess.NoAccess, ResourceAccess.CopyDestination, TextureLayout.Undefined, TextureLayout.CopyDestination));
                 for (uint layer = 0; layer < sourceImage.Layers; layer++)
-                    backend.CopyBufferToTexture(context, new(upload, (ulong)pitch * sourceImage.Height * layer, pitch, sourceImage.Height,
+                    backend.CopyBufferToTexture(context, new(upload, layerBytes * layer, pitch, sourceImage.Height,
                         texture, 0, layer, TextureAspects.Color, 0, 0, 0, sourceImage.Width, sourceImage.Height, 1));
                 backend.Barrier(context, new TextureBarrier(texture, range, PipelineSync.Copy, PipelineSync.ComputeShading,
                     ResourceAccess.CopyDestination, writable ? ResourceAccess.UnorderedAccess : ResourceAccess.ShaderResource,
@@ -130,7 +137,7 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                     ? ResourceBinding.StorageTexture(Keep(backend.CreateTextureUav(device, new(texture, range, sourceImage.PixelFormat, sourceImage.ViewDimension))))
                     : ResourceBinding.SampledTexture(Keep(backend.CreateTextureSrv(device, new(texture, range, sourceImage.PixelFormat, sourceImage.ViewDimension))));
                 bindings.Insert(sourceImage.BindingIndex, (sourceImage.Name, binding));
-                if (writable) imageOutputs.Add((texture, sourceImage, pitch));
+                if (writable) imageOutputs.Add((texture, sourceImage, pitch, layerBytes));
             }
             Pipeline pipeline = Keep(backend.CreateComputePipeline(device, new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0))));
             backend.SetPipeline(context, pipeline);
@@ -143,7 +150,7 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             ulong total = outputs.Aggregate(0ul, (sum, buffer) => sum + buffer.Size), offset = 0;
             ulong imageOffset = (total + 511u) & ~511ul;
             ulong imageBytes = imageOutputs.Aggregate(0ul, (sum, output) =>
-                sum + (ulong)output.Pitch * output.Image.Height * output.Image.Layers);
+                sum + output.LayerBytes * output.Image.Layers);
             Buffer readback = Keep(backend.CreateBuffer(device, new(imageOutputs.Count == 0 ? total : imageOffset + imageBytes,
                 BufferUsages.CopyDestination), MemoryType.Readback));
             foreach (var output in outputs)
@@ -159,10 +166,10 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                 backend.Barrier(context, new TextureBarrier(output.Texture, range, PipelineSync.ComputeShading, PipelineSync.Copy,
                     ResourceAccess.UnorderedAccess, ResourceAccess.CopySource, TextureLayout.UnorderedAccess, TextureLayout.CopySource));
                 for (uint layer = 0; layer < output.Image.Layers; layer++)
-                    backend.CopyTextureToBuffer(context, new(readback, textureOffset + (ulong)output.Pitch * output.Image.Height * layer,
+                    backend.CopyTextureToBuffer(context, new(readback, textureOffset + output.LayerBytes * layer,
                         output.Pitch, output.Image.Height, output.Texture, 0, layer, TextureAspects.Color,
                         0, 0, 0, output.Image.Width, output.Image.Height, 1));
-                textureOffset += (ulong)output.Pitch * output.Image.Height * output.Image.Layers;
+                textureOffset += output.LayerBytes * output.Image.Layers;
             }
             using RecordedCommands commands = backend.End(context);
             QueueCompletion completion = backend.Submit(backend.GetQueue(device, QueueType.Compute), new([], [], [commands], [], []));
@@ -179,14 +186,16 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                 uint[] pixels = new uint[output.Image.Width * output.Image.Height * output.Image.Layers];
                 for (int row = 0; row < output.Image.Height * output.Image.Layers; row++)
                 {
-                    int startByte = checked((int)textureOffset + row * (int)output.Pitch);
+                    int layer = row / (int)output.Image.Height;
+                    int rowInLayer = row % (int)output.Image.Height;
+                    int startByte = checked((int)(textureOffset + (ulong)layer * output.LayerBytes) + rowInLayer * (int)output.Pitch);
                     Span<uint> destination = pixels.AsSpan(row * (int)output.Image.Width, (int)output.Image.Width);
                     if (output.Image.PixelFormat == Format.R8UNorm)
                         for (int column = 0; column < destination.Length; column++) destination[column] = result.Bytes[startByte + column];
                     else MemoryMarshal.Cast<byte, uint>(result.Bytes.Slice(startByte, checked((int)output.Image.Width * 4))).CopyTo(destination);
                 }
                 values.Add(pixels);
-                textureOffset += (ulong)output.Pitch * output.Image.Height * output.Image.Layers;
+                textureOffset += output.LayerBytes * output.Image.Layers;
             }
             return values.ToArray();
         }

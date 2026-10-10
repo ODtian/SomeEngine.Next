@@ -105,9 +105,10 @@ public sealed class ShadowReceiverLayersTests(D3D12TestCompiler compiler)
              new("RequestedPageFlags", new uint[21], ResourceBindingType.BufferUav, 4),
              new("RequestedPageIndices", new uint[21], ResourceBindingType.BufferUav, 4),
              new("RequestedPageCount", [0], ResourceBindingType.BufferUav, 4),
-             new("PageReceiverMasks", new uint[42], ResourceBindingType.BufferUav, 8)],
+            ],
             [new(8,1,Enumerable.Repeat(BitConverter.SingleToUInt32Bits(.5f),8).ToArray(),0,
-                Format.R32Float,TextureViewDimension.Texture2DArray, Name: "ReceiverDepth")]);
+                Format.R32Float,TextureViewDimension.Texture2DArray, Name: "ReceiverDepth"),
+             ShadowTestImages.ReceiverMask(8, 12)]);
         uint[][] coverage = compute.ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"

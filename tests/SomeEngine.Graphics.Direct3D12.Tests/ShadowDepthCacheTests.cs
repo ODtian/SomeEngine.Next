@@ -21,9 +21,9 @@ public sealed class ShadowDepthCacheTests(D3D12TestCompiler compiler)
         };
         uint[] view = MemoryMarshal.Cast<byte, uint>(MemoryMarshal.AsBytes(new[] { shadowView }.AsSpan())).ToArray();
         uint[] table = [VirtualShadowPageEntry.Encode(0, 1)];
-        uint[] masks = [1, 0];
+        uint[] masks = [1, 0, 0, 0, 0, 0];
         var compute = new D3D12TestCompute(compiler);
-        uint[][] allocation = compute.Execute("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(1, 1, 1),
+        uint[][] allocation = compute.ExecuteImages("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(1, 1, 1),
         [
             new BufferInput("PageAllocation", [1, 1, 1, 1, 3, 0, 1, 1], ResourceBindingType.ConstantBuffer, 0),
             new BufferInput("ShadowViews", view, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
@@ -37,11 +37,10 @@ public sealed class ShadowDepthCacheTests(D3D12TestCompiler compiler)
             new BufferInput("ActivePhysicalPages", new uint[4], ResourceBindingType.BufferUav, 16),
             new BufferInput("ActivePhysicalPageCount", [0], ResourceBindingType.BufferUav, 4),
             new BufferInput("UncachedPageRectBounds", [uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
-            new BufferInput("RasterTargetPageHierarchy", new uint[1], ResourceBindingType.BufferUav, 4),
-            new BufferInput("ShadowAllocationFailures", new uint[2], ResourceBindingType.BufferUav, 4),
-            new BufferInput("PageReceiverMasks", masks, ResourceBindingType.BufferUav, 8),
-        ]);
-        uint[][] depth = compute.ExecuteImages("vsm_clear_pages.slang", "ClearVirtualShadowPages", new(8, 8, 1),
+            new BufferInput("RasterTargetPageHierarchy", new uint[2], ResourceBindingType.BufferUav, 8),
+            new BufferInput("ShadowAllocationFailures", new uint[3], ResourceBindingType.BufferUav, 4),
+        ], ShadowTestImages.ReceiverHierarchy(2, 3, masks));
+        uint[][] depth = compute.ExecuteImages("vsm_clear_pages.slang", "ClearVirtualShadowPages", new(1, 8, 8),
         [
             new("PageClear", [128, 1, 128, 0], ResourceBindingType.ConstantBuffer, 0),
             new("ActivePhysicalPages", allocation[4], ResourceBindingType.BufferSrv, 16),
@@ -59,10 +58,10 @@ public sealed class ShadowDepthCacheTests(D3D12TestCompiler compiler)
             new BufferInput("ActivePhysicalPages", allocation[4], ResourceBindingType.BufferSrv, 16),
             new BufferInput("CompletePageCount", allocation[5], ResourceBindingType.BufferSrv, 4),
             new BufferInput("CompletedShadowPageTable", allocation[0], ResourceBindingType.BufferUav, 4),
-            new BufferInput("GeometryWorkStatus", [0], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("GeometryWorkStatus", [0], ResourceBindingType.BufferSrv, 0),
             new BufferInput("CompletedPageMetadata", allocation[2], ResourceBindingType.BufferUav, 32),
         ]);
-        uint[][] sampled = compute.ExecuteSource("""
+        uint[][] sampled = compute.ExecuteSourceImages("""
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint> Pages;
@@ -81,12 +80,12 @@ public sealed class ShadowDepthCacheTests(D3D12TestCompiler compiler)
                 Depths[0] = float3(dynamicValid ? 1.0 : 0.0, dynamicDepth, staticDepth);
             }
             """, "ReadRefreshedDepth", new(1, 1, 1),
-            [(allocation[9], ResourceBindingType.BufferSrv, 8),
-             (view, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
-             (completion[0], ResourceBindingType.BufferSrv, 4),
-             (completion[0], ResourceBindingType.BufferSrv, 4),
-             (new uint[3], ResourceBindingType.BufferUav, 12)],
-            images: [new(128, 128, depth[0], 4, ViewDimension: TextureViewDimension.Texture2DArray, Layers: 2)]);
+            [new("Views", view, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
+             new("Pages", completion[0], ResourceBindingType.BufferSrv, 4),
+             new("Residents", completion[0], ResourceBindingType.BufferSrv, 4),
+             new("Depths", new uint[3], ResourceBindingType.BufferUav, 12)],
+            [new(2, 3, allocation[9], 0, Name: "VirtualShadowReceiverMasks"),
+             new(128, 128, depth[0], 0, ViewDimension: TextureViewDimension.Texture2DArray, Layers: 2, Name: "Atlas")]);
         Assert.Equal(1f, BitConverter.UInt32BitsToSingle(sampled[0][0]));
         Assert.InRange(BitConverter.UInt32BitsToSingle(sampled[0][1]), .2499999f, .2500001f);
         Assert.InRange(BitConverter.UInt32BitsToSingle(sampled[0][2]), .2499999f, .2500001f);

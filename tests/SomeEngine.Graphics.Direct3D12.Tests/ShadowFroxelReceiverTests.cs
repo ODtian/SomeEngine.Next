@@ -54,11 +54,11 @@ public sealed class ShadowFroxelReceiverTests(D3D12TestCompiler compiler)
              new("RequestedPageFlags",new uint[21],ResourceBindingType.BufferUav,4),
              new("RequestedPageIndices",new uint[21],ResourceBindingType.BufferUav,4),
              new("RequestedPageCount",[0],ResourceBindingType.BufferUav,4),
-             new("PageReceiverMasks",new uint[42],ResourceBindingType.BufferUav,8),
              new("FroxelParameters",froxelUniforms,ResourceBindingType.ConstantBuffer,0),
              new("Froxels",[0,0],ResourceBindingType.BufferSrv,8),
              new("FroxelArguments",arguments,ResourceBindingType.BufferSrv,4)],
-            [new(16,16,new uint[256],0,Format.R32Float,TextureViewDimension.Texture2DArray,Name:"ReceiverDepth")]);
+            [new(16,16,new uint[256],0,Format.R32Float,TextureViewDimension.Texture2DArray,Name:"ReceiverDepth"),
+             ShadowTestImages.ReceiverMask(8, 12)]);
         uint[][] coverage = compute.ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
@@ -143,11 +143,11 @@ public sealed class ShadowFroxelReceiverTests(D3D12TestCompiler compiler)
              new("RequestedPageFlags",new uint[21],ResourceBindingType.BufferUav,4),
              new("RequestedPageIndices",new uint[21],ResourceBindingType.BufferUav,4),
              new("RequestedPageCount",[0],ResourceBindingType.BufferUav,4),
-             new("PageReceiverMasks",new uint[42],ResourceBindingType.BufferUav,8),
              new("FroxelParameters",froxelUniforms,ResourceBindingType.ConstantBuffer,0),
              new("Froxels",froxels[0],ResourceBindingType.BufferSrv,8),
              new("FroxelArguments",froxels[1],ResourceBindingType.BufferSrv,4)],
-            [new(16,16,depth,0,Format.R32Float,TextureViewDimension.Texture2DArray,Name:"ReceiverDepth")]);
+            [new(16,16,depth,0,Format.R32Float,TextureViewDimension.Texture2DArray,Name:"ReceiverDepth"),
+             ShadowTestImages.ReceiverMask(8, 12)]);
         uint[][] coverage = compute.ExecuteSource("""
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
