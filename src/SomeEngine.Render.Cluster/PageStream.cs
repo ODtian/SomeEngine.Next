@@ -224,8 +224,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             if (resolution.Kind == PageFaultResolutionKind.Unknown)
                 continue;
             _knownFaultLeafCount++;
-            if (resolution.Kind == PageFaultResolutionKind.Satisfied)
-                continue;
+            // A resident part can still fault while another page in its group is missing.
+            // Expand the complete demand before deciding which individual pages need reads.
             for (uint index = 0u; index < request.PageCount; index++)
             {
                 uint page = request.FirstPageId + index;
