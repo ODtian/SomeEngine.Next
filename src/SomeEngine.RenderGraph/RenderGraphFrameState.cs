@@ -1694,10 +1694,11 @@ internal sealed partial class RenderGraphFrameState
         ParameterInputValue next = CreateParameterInputValue(input, binding);
         InputData<ParameterInputValue> data = _parameterInputs.GetValue(input, static _ => new());
         bool changed = data.Frame == 0 || data.Value != next;
+        bool bindingChanged = data.Frame == 0 || data.Value.Binding != next.Binding;
         data.Value = next;
         data.Frame = Identity;
         if (input.PersistentValue.HasValue) _temporaryParameterInputs.Add(input);
-        if (changed) ParameterInputChanged(input);
+        if (changed) ParameterInputChanged(input, bindingChanged);
     }
 
     internal void SetPersistentParameterInput(GraphParameterInput input, ResourceBinding binding)
@@ -1715,12 +1716,16 @@ internal sealed partial class RenderGraphFrameState
         Graph.SetParameterInputValue(input, next);
     }
 
-    internal void ParameterInputChanged(GraphParameterInput input)
+    internal void ParameterInputChanged(GraphParameterInput input, bool bindingChanged = true)
     {
         foreach (GraphIdentity access in StructureIndex.ParameterInputAccesses.GetValueOrDefault(input, []))
         {
             _executor.ChangeAccess(access);
-            _executor.ChangeCommandData(StructureIndex.Structure.Accesses.Get(access).Pass);
+            PassResourceAccess value = StructureIndex.Structure.Accesses.Get(access);
+            // Re-importing the same bound view changes its graph identity, not its commands.
+            // Indexed reads have no bound descriptor and keep their separate invalidation.
+            if (bindingChanged || value.IndexedParameterRead)
+                _executor.ChangeCommandData(value.Pass);
         }
         _executor.ChangeParameterInput(input);
     }
