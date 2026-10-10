@@ -616,6 +616,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     DepthWorkCounter = _depthWorkCount,
                     ViewDetailCount = settings.MipLevelCount,
                     MaximumRasterWindowsPerSourceView = rasterWindows,
+                    InvocationCountIndex = 3u,
                 });
                 _clusterSourceViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameShadowViews = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.ShaderWrite);
@@ -1731,7 +1732,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _clusterInvocationDispatchArguments,
-                range: new BufferRange(12u, 4u),
+                range: new BufferRange(0u, 16u),
                 structureStride: sizeof(uint),
                 label: "Virtual shadow raster invocation count"),
             sync);
