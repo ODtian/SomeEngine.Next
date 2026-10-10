@@ -319,6 +319,54 @@ public sealed class GeometryStreamingHandoffTests
         AssertImage(fine, await ReadUntilDepthAsync(scene, fine.Depth));
     }
 
+    [Fact]
+    public async Task ResidentDetailKeepsItsColdParentPagesAvailableUnderPressure()
+    {
+        var transform = new SomeEngine.Core.Math.TransformQvvs(new Vector3(0, 0, -4), Quaternion.Identity);
+        RasterImage fine, nextCoarse;
+        await using (var reference = await FrameStageScene.CreateAsync("D3D12", false,
+            new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true, EnableFrameMetricsReadback = true }, await RasterTestGeometry.CreatePlaneAsync()))
+        {
+            reference.SetGeometryVisible(false);
+            var detail = reference.AddGeometryMesh(await RasterTestGeometry.CreatePlaneAsync(),
+                new SomeEngine.Core.Math.TransformQvvs(new Vector3(0, 0, -3.75f), Quaternion.Identity));
+            fine = await reference.ReadNextRasterImageAsync();
+            reference.RemoveMaterialMesh(detail);
+            reference.AddGeometryMesh(await RasterTestGeometry.CreatePlaneAsync(),
+                new SomeEngine.Core.Math.TransformQvvs(new Vector3(0, 0, -4.5f), Quaternion.Identity));
+            nextCoarse = await reference.ReadNextRasterImageAsync();
+        }
+        using MeshAsset file = await CreateStreamingPlaneWithResidentDetailAsync();
+        ClusterMeshBlock geometry = file.GetBlock<ClusterMeshBlock>();
+        var mesh = await geometry.CreateAsync(file.GetBlock<MeshBlock>(), file.Name);
+        using var source = await geometry.OpenPayloadSourceAsync();
+        using MeshAsset nextFile = await CreateStreamingPartsAsync(
+            [(-1f, 1f, -.5f), (-1f, 1f, 0f)], new(0, 0, -.25f, 1.5f));
+        ClusterMeshBlock nextGeometry = nextFile.GetBlock<ClusterMeshBlock>();
+        var nextMesh = await nextGeometry.CreateAsync(nextFile.GetBlock<MeshBlock>(), nextFile.Name);
+        using var nextSource = await nextGeometry.OpenPayloadSourceAsync();
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
+            new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true, EnableFrameMetricsReadback = true }, await RasterTestGeometry.CreatePlaneAsync(),
+            residencyOptions: new ClusterResidencyOptions
+            {
+                PageHeapCapacityBytes = 2560, BvhCapacityBytes = 65536,
+                PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+            });
+        scene.SetGeometryVisible(false);
+        var previous = scene.AddStreamingMesh(mesh, source, transform);
+        AssertImage(fine, await ReadUntilDepthAsync(scene, fine.Depth));
+
+        // The outside detail shares a page with independent coarse geometry.
+        // That page must stay resident, so its cold parent pages remain required.
+        scene.RemoveMaterialMesh(previous);
+        var newcomer = scene.AddStreamingMesh(nextMesh, nextSource, transform);
+        for (int frame = 0; frame < 24; frame++)
+            AssertImage(nextCoarse, await scene.ReadNextRasterImageAsync());
+        scene.RemoveMaterialMesh(newcomer);
+        scene.AddStreamingMesh(mesh, source, transform);
+        AssertImage(fine, await scene.ReadNextRasterImageAsync());
+    }
+
     [Theory]
     [InlineData(1, true)]
     [InlineData(16, false)]
@@ -561,6 +609,73 @@ public sealed class GeometryStreamingHandoffTests
                 new() { FirstPage = 2, PageCount = 1, Parents = [new() { PageIndex = 1, ClusterIndex = 0 }],
                     HierarchyParts = [new() { NodeIndex = 2, ChildIndex = 1, PageIndex = 2, FirstCluster = 1 }] },
             ];
+        geometry.SetPayload(payload, (ulong)(payload.Length - bvh.Length));
+        result.SetBlock(geometry);
+        return result;
+    }
+
+    private static async Task<MeshAsset> CreateStreamingPlaneWithResidentDetailAsync()
+    {
+        using MeshAsset parts = await CreateOverlappingStreamingPlaneAsync(crossParentPages: true);
+        ClusterMeshBlock partsGeometry = parts.GetBlock<ClusterMeshBlock>();
+        var mesh = await partsGeometry.CreateAsync(parts.GetBlock<MeshBlock>(), parts.Name);
+        await partsGeometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
+        var pages = Enumerable.Range(0, mesh.PageCount).Select(index =>
+        {
+            mesh.TryGetPage(index, out var bytes);
+            return bytes.ToArray();
+        }).ToArray();
+        var nodes = new ClusterBVHNode[4];
+        MemoryMarshal.Cast<byte, ClusterBVHNode>(mesh.Bvh.Span).CopyTo(nodes);
+        for (int page = 1; page <= 2; page++)
+        {
+            ref PackedCluster parent = ref MemoryMarshal.Cast<byte, PackedCluster>(pages[page].AsSpan(MeshPageHeader.Size))[1];
+            parent.Flags = PackedCluster.StreamingLeaf;
+            parent.LODErrorHalf = BitConverter.HalfToUInt16Bits((Half).125f);
+            var slice = nodes[2].GetChild(page - 1);
+            slice.SetErrors(.125f, .25f);
+            nodes[2].SetChild(page - 1, slice);
+        }
+        using MeshAsset extra = await CreateStreamingPartsAsync(
+            [(9f, 11f, -.5f), (-1f, 1f, .25f)], new(5, 0, -.125f, 6.5f));
+        ClusterMeshBlock extraGeometry = extra.GetBlock<ClusterMeshBlock>();
+        var extraMesh = await extraGeometry.CreateAsync(extra.GetBlock<MeshBlock>(), extra.Name);
+        await extraGeometry.LoadPagesAsync(extraMesh, Enumerable.Range(0, extraMesh.PageCount));
+        extraMesh.TryGetPage(0, out var coarseBytes);
+        extraMesh.TryGetPage(1, out var fineBytes);
+        byte[] lastPage = CombinePlanePages(coarseBytes.ToArray(), fineBytes.ToArray());
+        ClusterBVHNode extraNode = MemoryMarshal.Cast<byte, ClusterBVHNode>(extraMesh.Bvh.Span)[0];
+        var root = extraNode.GetChild(0);
+        root.ChildReference = 3u << 8;
+        root.PageRangeKey = (3u << 5) | 1u;
+        nodes[3].SetChild(0, root);
+        var detail = extraNode.GetChild(1);
+        detail.ChildReference = (3u << 8) | 1u;
+        detail.PageRangeKey = (3u << 5) | 1u | 0x40000000u;
+        detail.SetErrors(0f, .125f);
+        nodes[3].SetChild(1, detail);
+        var branch = nodes[0].GetChild(1);
+        branch.ChildReference = 3;
+        branch.BoundsCenter = new(5, 0, -.125f);
+        branch.BoundsExtent = new(6, 1, .375f);
+        branch.LODBounds = new(5, 0, -.125f, 6.5f);
+        nodes[0].SetChild(3, branch);
+        byte[] bvh = MemoryMarshal.AsBytes(nodes.AsSpan()).ToArray();
+        byte[] payload = [.. pages.SelectMany(static page => page), .. lastPage, .. bvh];
+        var result = new MeshAsset(Guid.NewGuid()) { Name = "Streamed parents with resident detail" };
+        result.SetBlock(new MeshBlock { Bounds = new() { Radius = 12f } });
+        using var geometry = new ClusterMeshBlock();
+        geometry.VertexEncoding = mesh.VertexEncoding;
+        geometry.LowestDetailPageIndices = [0, 3];
+        geometry.ClusterGroups =
+        [
+            .. partsGeometry.ClusterGroups,
+            new() { FirstPage = 3, PageCount = 1,
+                HierarchyParts = [new() { NodeIndex = 3, ChildIndex = 0, PageIndex = 3 }] },
+            new() { FirstPage = 3, PageCount = 1,
+                Parents = [new() { PageIndex = 1, ClusterIndex = 1 }, new() { PageIndex = 2, ClusterIndex = 1 }],
+                HierarchyParts = [new() { NodeIndex = 3, ChildIndex = 1, PageIndex = 3, FirstCluster = 1 }] },
+        ];
         geometry.SetPayload(payload, (ulong)(payload.Length - bvh.Length));
         result.SetBlock(geometry);
         return result;
