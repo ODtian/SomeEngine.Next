@@ -210,7 +210,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         GraphBufferId depthDestination = edit.RegisterExternalBuffer(_depthReadback,
             [new BufferBoundaryState(BufferRange.Whole, _depthReadback.InitialSync, _depthReadback.InitialAccess,
                 ResourceContentState.Undefined)]);
-        edit.AddCopyFramePass("Read frame stage depth", PassQueueSelection.AnyOfType(QueueType.Copy),
+        edit.AddCopyFramePass("Read frame stage depth", PassQueueSelection.AnyOfType(QueueType.Graphics),
             (_readbackDepth, depthDestination), new PassOptions(Culling: PassCullingMode.NeverCull),
             static (ref PassDefinition pass, ref (GraphTextureInput Depth, GraphBufferId Destination) data) =>
             {
