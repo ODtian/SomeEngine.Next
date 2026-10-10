@@ -8,18 +8,12 @@ float3 MaterialCameraPosition(uint viewIndex) { return Views[viewIndex].CameraPo
 struct ShadowReferenceVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
     typealias Data = StandardSurfaceData;
-    Texture2D AlbedoMap;
-    Texture2D NormalMap;
-    Texture2D ARMMap;
     SamplerState MaterialSampler;
 
     Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
         Triangle triangle, out SurfaceReceiver receiver)
     {
         StandardMaterial material;
-        material.AlbedoMap = AlbedoMap;
-        material.NormalMap = NormalMap;
-        material.ARMMap = ARMMap;
         material.MaterialSampler = MaterialSampler;
         return material.evaluateSurface(pixel, surface, bary, triangle, receiver);
     }

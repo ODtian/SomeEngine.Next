@@ -50,9 +50,9 @@ public sealed partial class VirtualShadowFeature
             _ = pass.Bind(_froxelUniforms[index == 1 ? 1 : 0],PipelineSync.ComputeShading);
             _ = pass.Bind(graph.CreateBufferSrv(_frameFroxels,structureStride:8),PipelineSync.ComputeShading,BufferContentScope.CountBoundedPrefix);
             _ = pass.Bind(graph.CreateBufferSrv(_froxelArguments,structureStride:4),PipelineSync.ComputeShading);
+            // Requests and receiver masks are cleared after their current-frame consumers.
+            // Initial storage comes from the same initialization as pixel marking.
             graph.OrderAfter(id,_initializePass);
-            graph.OrderAfter(id,_requestResetPass);
-            graph.OrderAfter(id,_receiverMaskResetPass);
             graph.OrderAfter(id,_dynamicResolutionResetPass);
             graph.OrderAfter(_poolPreparePass,id);
         }
