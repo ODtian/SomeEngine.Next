@@ -200,23 +200,30 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
         VulkanTexture native = RequireTexture((VulkanDevice)command.Device, texture, nameof(texture));
-        ValidateTextureRange(native.Info, range);
-        if ((range.Aspects & ~TextureAspects.Color) != 0)
+        if ((native.Info.Usages & TextureUsages.ColorAttachment) == 0)
+            throw new ArgumentException("ClearTexture requires ColorAttachment usage.", nameof(texture));
+        ValidateAttachmentRange(native.Info, range);
+        if (range.Aspects != TextureAspects.Color)
             throw new ArgumentException("ClearTexture requires the Color aspect.", nameof(range));
-        command.Capture(native);
-        ClearColorValue clear = default;
-        clear.Float32_0 = color.X;
-        clear.Float32_1 = color.Y;
-        clear.Float32_2 = color.Z;
-        clear.Float32_3 = color.W;
-        ImageSubresourceRange nativeRange = ToNative(range);
-        Api.CmdClearColorImage(
-            command.NativeRecording,
-            native.Native,
-            ImageLayout.General,
-            &clear,
-            1,
-            &nativeRange);
+        for (uint mip = range.FirstMipLevel; mip < range.FirstMipLevel + range.MipLevelCount; mip++)
+        {
+            TextureSubresourceRange single = new(mip, 1, range.FirstArrayLayer, range.ArrayLayerCount, range.Aspects);
+            using ColorAttachmentView view = CreateColorAttachmentView(command.Device,
+                new ColorAttachmentViewDesc(texture, single, native.Info.Format, ClearViewDimension(native.Info)));
+            RenderingAttachmentInfo attachment = CreateColorAttachment(command,
+                new ColorAttachmentDesc(view, LoadType.Clear, StoreType.Store, color));
+            RenderingInfo rendering = new()
+            {
+                SType = StructureType.RenderingInfo,
+                RenderArea = new Rect2D(default, new Extent2D(MipExtent(native.Info.Width, mip), MipExtent(native.Info.Height, mip))),
+                LayerCount = range.ArrayLayerCount,
+                ColorAttachmentCount = 1,
+                PColorAttachments = &attachment,
+            };
+            // A clear is self-contained and leaves the command's pipeline and rendering state unchanged.
+            Api.CmdBeginRendering(command.NativeRecording, &rendering);
+            Api.CmdEndRendering(command.NativeRecording);
+        }
     }
 
     internal void ClearDepthStencil(
@@ -228,21 +235,56 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
         VulkanTexture native = RequireTexture((VulkanDevice)command.Device, texture, nameof(texture));
+        if ((native.Info.Usages & TextureUsages.DepthStencilAttachment) == 0)
+            throw new ArgumentException("ClearDepthStencil requires DepthStencilAttachment usage.", nameof(texture));
         ValidateTextureRange(native.Info, range);
-        if ((range.Aspects & (TextureAspects.Depth | TextureAspects.Stencil)) == 0)
-            throw new ArgumentException("ClearDepthStencil requires a Depth or Stencil aspect.", nameof(range));
+        const TextureAspects depthStencilAspects = TextureAspects.Depth | TextureAspects.Stencil;
+        if ((range.Aspects & depthStencilAspects) == 0 || (range.Aspects & ~depthStencilAspects) != 0)
+            throw new ArgumentException("ClearDepthStencil requires Depth and/or Stencil aspects.", nameof(range));
         if (!float.IsFinite(depth) || depth is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(depth));
-        command.Capture(native);
-        ClearDepthStencilValue clear = new(depth, stencil);
-        ImageSubresourceRange nativeRange = ToNative(range);
-        Api.CmdClearDepthStencilImage(
-            command.NativeRecording,
-            native.Native,
-            ImageLayout.General,
-            &clear,
-            1,
-            &nativeRange);
+        for (uint mip = range.FirstMipLevel; mip < range.FirstMipLevel + range.MipLevelCount; mip++)
+        {
+            TextureSubresourceRange single = new(mip, 1, range.FirstArrayLayer, range.ArrayLayerCount, range.Aspects);
+            using DepthStencilView view = CreateDepthStencilView(command.Device,
+                new DepthStencilViewDesc(texture, single, native.Info.Format, ClearViewDimension(native.Info)));
+            var (depthAttachment, stencilAttachment, hasDepth, hasStencil) = CreateDepthStencilAttachment(command,
+                new DepthStencilAttachmentDesc(view, LoadType.Clear, StoreType.Store, LoadType.Clear, StoreType.Store, depth, stencil));
+            RenderingInfo rendering = new()
+            {
+                SType = StructureType.RenderingInfo,
+                RenderArea = new Rect2D(default, new Extent2D(MipExtent(native.Info.Width, mip), MipExtent(native.Info.Height, mip))),
+                LayerCount = range.ArrayLayerCount,
+                PDepthAttachment = hasDepth ? &depthAttachment : null,
+                PStencilAttachment = hasStencil ? &stencilAttachment : null,
+            };
+            Api.CmdBeginRendering(command.NativeRecording, &rendering);
+            Api.CmdEndRendering(command.NativeRecording);
+        }
+    }
+
+    private static TextureViewDimension ClearViewDimension(TextureInfo info) => info.Dimension switch
+    {
+        TextureDimension.Texture1D => TextureViewDimension.Texture1DArray,
+        TextureDimension.Texture2D => info.SampleCount > 1
+            ? TextureViewDimension.Texture2DMultisampledArray : TextureViewDimension.Texture2DArray,
+        TextureDimension.Texture3D => TextureViewDimension.Texture3D,
+        _ => throw new ArgumentOutOfRangeException(nameof(info)),
+    };
+
+    private static void ValidateAttachmentRange(TextureInfo info, in TextureSubresourceRange range)
+    {
+        if (info.Dimension != TextureDimension.Texture3D)
+        {
+            ValidateTextureRange(info, range);
+            return;
+        }
+        if (range.MipLevelCount == 0 || range.FirstMipLevel >= info.MipLevelCount ||
+            range.MipLevelCount > info.MipLevelCount - range.FirstMipLevel || range.ArrayLayerCount == 0)
+            throw new ArgumentOutOfRangeException(nameof(range));
+        uint depth = MipExtent(info.Depth, range.FirstMipLevel + range.MipLevelCount - 1);
+        if (range.FirstArrayLayer >= depth || range.ArrayLayerCount > depth - range.FirstArrayLayer)
+            throw new ArgumentOutOfRangeException(nameof(range));
     }
 
     private static BufferImageCopy2 CreateBufferImageCopy(

@@ -48,11 +48,13 @@ public partial interface IGraphicsBackend
     void CopyTexture(CommandContext context, in TextureCopy copy);
     void ResolveTexture(CommandContext context, in TextureResolve resolve);
     void ClearBuffer(CommandContext context, Buffer buffer, in BufferRange range, uint value = 0);
+    /// <summary>Clears color attachment subresources on a graphics context in RenderTarget layout.</summary>
     void ClearTexture(
         CommandContext context,
         Texture texture,
         in TextureSubresourceRange range,
         in Vector4 color);
+    /// <summary>Clears depth/stencil attachment subresources on a graphics context in DepthStencilWrite layout.</summary>
     void ClearDepthStencil(
         CommandContext context,
         Texture texture,

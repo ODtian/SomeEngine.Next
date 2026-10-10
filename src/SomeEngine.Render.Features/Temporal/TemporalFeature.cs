@@ -319,8 +319,8 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
     private readonly record struct TemporalInitializePassData(GraphTextureId History)
     {
         internal void Declare(ref PassDefinition pass) =>
-            _ = pass.Write(History, HistoryRange, PipelineSync.Copy,
-                ResourceAccess.CopyDestination, TextureLayout.CopyDestination, WriteCoverage.Complete);
+            _ = pass.Write(History, HistoryRange, PipelineSync.RenderTarget,
+                ResourceAccess.RenderTarget, TextureLayout.RenderTarget, WriteCoverage.Complete);
 
         internal static void Record(
             ref CopyPassCommandScope commands,
