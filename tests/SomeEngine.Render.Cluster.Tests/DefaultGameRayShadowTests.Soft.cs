@@ -34,7 +34,7 @@ public sealed partial class DefaultGameRayShadowTests
         string geometry = spheres ? Path.Combine(sourceContent, "assets", "Models", "ico_sphere.glb")
             : Path.Combine(sourceContent, "assets", "Imported", scene == "sponza" ? "Sponza" : "Bistro",
                 scene == "sponza" ? "Sponza.gltf" : "Bistro.glb");
-        await ShadowVisibilityContent.BuildAsync(engine, sourceContent, evidence.Content, geometry, spheres);
+        await ShadowVisibilityContent.BuildAsync(engine, sourceContent, evidence.Content);
         SceneLinearImage visibility = await Capture("vsm-shadow");
         SceneFrame frame = visibility.Frame;
         Assert.Equal(CaptureFrames - 1, frame.Frame);
