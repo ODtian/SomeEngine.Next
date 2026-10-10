@@ -77,6 +77,27 @@
 
 - **多页卸载中途异常：** ClusterMeshes.StagePageEvictions 在任何失败出口取消全部已暂存成员；当前 demand、常驻粗页及 component 外可用子页继续阻止卸载。页空间仍按原读者完成边界归还。尚未执行公共入口的中途分配异常注入，不为此添加测试专用生产接口。
 
-## 既存失败策略差异
+## SourceReadFailed 设计澄清与公开行为
 
-Streaming-Failure.md 要求不可读取页进入终止失败状态。当前 PageStream.RecordFailure 将 SourceReadFailed 排除在终止集合之外；无效内容和永久容量失败则进入集合。MeshPayloadSource.ReadIntoAsync 只复用成功缓存，其他情况重新打开并读取来源；AssetByteCache 在失败后移除共享读取，符合其自身允许重试的规则。该行为早于本轮 demand/SCC 修改。本次仅记录此差异，没有改变失败策略，也没有把源码推导写成新增运行测试通过。
+旧 Streaming-Failure.md 的“不可读取页一律终止”来自 19da2ae92（2026-09-02）。后续交付记录 Render-Delivery-2026-09-09.md 的 B36 明确把“所有页面读取失败都永久拉黑”列为缺陷，提交 4b87345c648254bd73fa6b1ff2255677e9710b22 在 PageStream.RecordFailure 中排除 SourceReadFailed，允许后续 fault/demand 重新请求。当前策略是这一有意修复的延续；不是本轮 demand/SCC 引入的功能回归。
+
+文档修正独立提交 d62849dd：认证、格式与解码的 InvalidPayload 仍是终止失败；普通来源异常没有瞬时/永久 I/O 分类。持续 SourceReadFailed 仍可随新反馈重试，目前没有单页退避或重试上限。没有擅自改变这一兼容策略。
+
+新增 GeometryStreamingSourceFailureTests 两个用例，从公共 AssetLoader / IRangeSource 到真实 D3D12 场景图像观察：
+
+- ASourceReadFailureKeepsCoarseCoverageUntilALaterRequestRecoversDetail：第一次 detail 读取抛 IOException；第2次读取显式挂起，5帧颜色/深度保持已证实非空的粗层。释放读取后，图像与完整细节参考场景相同，后续3帧保持；仅2次 detail 请求，其中1次成功。1024字节页堆内恢复说明失败没有永久占住后续页面所需容量。
+- RepeatedSourceFailuresKeepCoarseCoverageAndSceneDisposalCancelsTheNextRead：连续3次 IOException 后仍产生第4次 detail 请求；7帧粗层完整颜色/深度不变。第4读等待真实来源取消 token，Scene.Dispose 取消并等待读终态，最终在途 detail 读与来源句柄计数均为0。
+
+两例使用每用例自有来源包装和显式同步；没有生产内部接口、反射、失败消息断言或睡眠。资源计数观察的是测试所提供的公共来源，不是全引擎/GPU堆泄漏测量。无效内容黑名单及多页卸载中途分配异常仍不能由这两例宣布通过。
+
+本次实际结果：2/2、0跳过；持续失败例7.5742598秒，恢复例5.9901940秒；默认测试规则0违规。dotnet进程于2026-10-10 14:40:12.904 UTC启动、14:40:44.982 UTC以exit0退出，无timeout。
+
+排槽交接消息曾与另一条VSM正确性运行交叉。本次两例实际GPU用例窗口与VSM MaterialRanges（14:40:28.929–14:40:50.830 UTC）重叠，真实结果保留为披露这一条件的功能证据；不作为GPU独占或性能证据，不为重复计数重跑。具体事件记录见 streaming-source-failure-01-scheduling.json。14:41:32 UTC健康检查：RTX3080状态OK、ConfigManagerErrorCode 0，无dotnet/testhost/Game.App或本次监控进程残留。
+
+执行使用既有 integration DefaultProject cook，catalog b0bb292319583d6c8b866e63152d7444944f4b137dae8056a36415f4c84e5272 和81资产全部与之前身份一致，没有新cook或复制。仅新测试的3个 contentRoot 实参临时指向该内容，执行后全部撤回。首次正常构建43.15秒、默认路径恢复后的最终正常构建9.29秒，均0警错；最终构建于14:43:19.190 UTC退出，testDLL为030ea7be74e53223048222cdd833ee86215d2cb13bf5c13f97d9241034dd429c，App五SHA在本次收尾前后不变。另一路的可选 traversalShader 未启用，现场BVH候选shader没有进入这两例。执行testDLL SHA256为9f2421fe78a8bc30f1cb2c213521aac5504e464d1a05dc81fab381ef6d4148ce。
+
+实际TRX streaming-source-failure-01.trx，SHA256：
+
+d813391a0b0c3782e0af8dffcd4c3f3232d2ec57f86979feb1c7c7be3b5f7adc
+
+日志、启动/退出、健康、内容、程序集和临时实参恢复记录均在原验收目录的 streaming-source-failure-*。这些结果只新增失败恢复与关闭边界，没有重跑此前12项、epoch或乱序例。
