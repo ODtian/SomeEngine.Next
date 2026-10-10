@@ -1121,9 +1121,7 @@ internal static class RuntimeApplication
                     startup.RecordPresent(window, present, frameIndex);
                     if (startup.Result is { } times) platform?.RecordStartup(times);
                 }
-                if (present == PresentStatus.Occluded)
-                    window.WaitForEvents(TimeSpan.FromMilliseconds(16));
-                else if (present == PresentStatus.OutOfDate)
+                if (present == PresentStatus.OutOfDate)
                     ReconfigureSwapchain(
                         backend,
                         swapchain,
