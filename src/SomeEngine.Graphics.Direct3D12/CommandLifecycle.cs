@@ -1047,6 +1047,7 @@ internal sealed unsafe partial class D3D12Backend
                     _ = ResourceTrace.Release(((IUnknown*)value));
             }
             _transientObjects.Clear();
+            ReleaseReplacedDescriptorHeaps();
             _captures.ReleaseAll();
             foreach (D3D12RecordedBundle bundle in _capturedBundles)
                 bundle.ReleaseExecution();
