@@ -6,7 +6,7 @@ namespace SomeEngine.Assets.Importers;
 
 public static partial class SlangShaderImporter
 {
-    private const string DefaultTargetSetting = "slang-targets:dxil-sm_6_6|spirv-glsl_460";
+    private const string DefaultTargetSetting = "slang-targets:dxil-sm_6_6|spirv-spirv_1_5";
 
     public static ImportInputs? GetDefinitionInputs(
         ShaderAsset definition,

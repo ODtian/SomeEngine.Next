@@ -15,7 +15,7 @@ public sealed class ReferenceShaderTests
         var shader = await source.CreateAsync(global, new SessionDesc
         {
             SearchPaths = [Path.Combine(engine, "tests/SomeEngine.Render.Cluster.Tests/Shaders")],
-            Targets = [new TargetDesc { Format = SlangCompileTarget.Spirv, Profile = global.FindProfile("glsl_460") }],
+            Targets = [new TargetDesc { Format = SlangCompileTarget.Spirv, Profile = global.FindProfile("spirv_1_5") }],
             DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
         }, "Independent source triangles");
         var entry = shader.RequireSlangEntry(0, "TraceRayShadow", SlangStage.Compute);

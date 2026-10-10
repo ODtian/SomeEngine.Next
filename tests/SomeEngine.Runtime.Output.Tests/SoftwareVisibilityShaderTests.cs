@@ -21,7 +21,7 @@ public sealed class SoftwareVisibilityShaderTests
         {
             SearchPaths = [sourceDirectory, Path.Combine(engine, "tests/SomeEngine.Render.Cluster.Tests/Shaders"),
                 Path.Combine(engine, "templates/DefaultProject/assets/Shaders"), Path.Combine(engine, "assets/Shaders")],
-            Targets = [new TargetDesc { Format = target, Profile = global.FindProfile(target == SlangCompileTarget.Dxil ? "sm_6_6" : "glsl_460") }],
+            Targets = [new TargetDesc { Format = target, Profile = global.FindProfile(target == SlangCompileTarget.Dxil ? "sm_6_6" : "spirv_1_5") }],
             DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
             CompilerOptionEntries = [new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1)),
                 new(CompilerOptionName.VulkanEmitReflection, CompilerOptionValue.FromInt(1)),
