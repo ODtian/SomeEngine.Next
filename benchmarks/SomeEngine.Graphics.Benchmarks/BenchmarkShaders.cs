@@ -169,7 +169,7 @@ internal static class BenchmarkShaders
     {
         Compiled compiled = Compile(SlangCompileTarget.Spirv);
         string identity = BenchmarkEnvironment.Sha256Bytes(
-            System.Text.Encoding.UTF8.GetBytes(Source + "\nspirv/glsl_460"));
+            System.Text.Encoding.UTF8.GetBytes(Source + "\nspirv/spirv_1_5"));
         return CreateShader(compiled, identity);
     }
 
@@ -229,7 +229,7 @@ internal static class BenchmarkShaders
     {
         IGlobalSession global = GlobalSession.Value;
         SlangProfileID profile = global.FindProfile(
-            target == SlangCompileTarget.Spirv ? "glsl_460" : ProfileName);
+            target == SlangCompileTarget.Spirv ? "spirv_1_5" : ProfileName);
         SessionDesc description = new()
         {
             Targets =
