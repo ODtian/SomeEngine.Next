@@ -1015,7 +1015,7 @@ public ref partial struct PassDefinition
         DevelopmentCheck.Require(input.Type is ResourceBindingType.TextureSrv or ResourceBindingType.BufferSrv or
             ResourceBindingType.ConstantBuffer or ResourceBindingType.AccelerationStructure,
             "Indexed reads require a read-only resource input.");
-        _edit.AddParameterInput(_pass, input, sync);
+        _edit.AddParameterInput(_pass, input, sync, indexedRead: true);
     }
 }
 
