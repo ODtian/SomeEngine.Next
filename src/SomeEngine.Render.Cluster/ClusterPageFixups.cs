@@ -251,12 +251,19 @@ internal sealed class ClusterPageFixups
         pages.UnionWith(priorities.Keys);
     }
 
-    internal bool HasResidentDependents(uint page, Func<uint, bool> available)
+    internal PageDependency? FindPageDependency(uint page)
+        => _dependenciesByPage.GetValueOrDefault(page);
+
+    internal bool HasResidentDependents(uint page, Func<uint, bool> available,
+        PageDependency? evicting = null)
     {
         if (!_groupsByParentPage.TryGetValue(page, out List<Group>? groups)) return false;
         foreach (Group group in groups)
+        {
+            if (group.Dependency == evicting) continue;
             for (uint child = group.Data.FirstPage; child < group.Data.FirstPage + group.Data.PageCount; child++)
                 if (child + group.FirstPage != page && available(child + group.FirstPage)) return true;
+        }
         return false;
     }
 

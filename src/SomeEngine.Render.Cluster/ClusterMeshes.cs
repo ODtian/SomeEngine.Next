@@ -528,24 +528,38 @@ internal sealed partial class ClusterMeshes : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            if (_referencedPages.Contains(pageID) || _fixups.HasResidentDependents(pageID, PageAvailable) ||
-                !_pages.StageEviction(pageID, out _))
+            if (_referencedPages.Contains(pageID) || _fixups.HasResidentDependents(pageID, PageAvailable))
                 return false;
+            return StagePageEvictions([pageID]);
+        }
+    }
 
-            ClusterBvhCheckpoint bvhCheckpoint = _bvh.CaptureChanges();
-            try
+    private bool StagePageEvictions(ReadOnlySpan<uint> pages)
+    {
+        ClusterBvhCheckpoint bvhCheckpoint = _bvh.CaptureChanges();
+        int staged = 0;
+        bool complete = false;
+        try
+        {
+            while (staged < pages.Length)
             {
-                _fixups.PageChanged(pageID);
+                if (!_pages.StageEviction(pages[staged], out _)) return false;
+                staged++;
             }
-            catch
+            foreach (uint page in pages) _fixups.PageChanged(page);
+            AdvanceRevision();
+            complete = true;
+            return true;
+        }
+        finally
+        {
+            if (!complete)
             {
                 _bvh.RestoreChanges(bvhCheckpoint);
-                if (!_pages.TryCancelPendingEviction(pageID, out _))
-                    throw new InvalidOperationException("Pending page eviction could not be rolled back atomically.");
-                throw;
+                for (int index = 0; index < staged; index++)
+                    if (!_pages.TryCancelPendingEviction(pages[index], out _))
+                        throw new InvalidOperationException("Pending page eviction could not be rolled back atomically.");
             }
-            AdvanceRevision();
-            return true;
         }
     }
 
@@ -827,9 +841,35 @@ internal sealed partial class ClusterMeshes : IDisposable
 
     private bool TryEvictPage(uint protectedPageID)
     {
-        return _pages.TryVictim(protectedPageID, page => !_referencedPages.Contains(page) &&
-            !_fixups.HasResidentDependents(page, PageAvailable), out uint pageID)
-            && EvictPage(pageID);
+        if (_pages.TryVictim(protectedPageID, page => !_referencedPages.Contains(page) &&
+            !_fixups.HasResidentDependents(page, PageAvailable), out uint pageID))
+            return EvictPage(pageID);
+
+        // A cold parent cycle has no individually removable page. Retire its
+        // available members together, after checking the same view/root protection
+        // and every resident child outside the component. The normal publication
+        // applies all fixups before any allocation becomes reusable.
+        var examined = new HashSet<ClusterPageFixups.PageDependency>();
+        var pages = new List<uint>();
+        ClusterPageFixups.PageDependency? protectedDependency = _fixups.FindPageDependency(protectedPageID);
+        return _pages.TryVictim(protectedPageID, CanEvictDependency, out _) &&
+            StagePageEvictions(CollectionsMarshal.AsSpan(pages));
+
+        bool CanEvictDependency(uint page)
+        {
+            if (_referencedPages.Contains(page) || _fixups.FindPageDependency(page) is not { } dependency ||
+                dependency == protectedDependency || !examined.Add(dependency)) return false;
+            pages.Clear();
+            foreach ((uint first, uint end) in dependency.Ranges)
+                for (uint member = first; member < end; member++)
+                {
+                    if (!PageAvailable(member)) continue;
+                    if (_referencedPages.Contains(member) || !_pages.CanEvictPage(member) ||
+                        _fixups.HasResidentDependents(member, PageAvailable, dependency)) return false;
+                    pages.Add(member);
+                }
+            return pages.Count != 0;
+        }
     }
 
     /// <summary>
