@@ -63,6 +63,7 @@ internal static class ShadowVisibilityContent
         File.Copy(Path.Combine(tests, "shadow_visibility_material.slang"),
             Path.Combine(shaders, "shadow_visibility_material.slang"), overwrite: true);
         ModelRoot model = ModelRoot.Load(geometry);
+        AssetManifest sourceManifest = AssetManifest.Load(Path.Combine(sourceContent, "Library", "AssetManifest"));
         var project = new AssetProject(content, [],
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engine, "assets", "Shaders")])]);
         var variants = new Dictionary<(float Cutoff, float NormalScale, bool DoubleSided), Guid>();
@@ -70,11 +71,12 @@ internal static class ShadowVisibilityContent
         {
             using MaterialAsset material = await MaterialAsset.OpenAsync(Path.Combine(content, entry.Path));
             MaterialBlock values = material.GetBlock<MaterialBlock>();
+            AssetEntry sourceEntry = sourceManifest.Assets[entry.AssetGuid];
             float cutoff = -1;
             bool doubleSided = false;
-            if (!spheres && entry.SubAssetKey.StartsWith("material:index:", StringComparison.Ordinal))
+            if (!spheres && sourceEntry.SubAssetKey.StartsWith("material:index:", StringComparison.Ordinal))
             {
-                int index = int.Parse(entry.SubAssetKey.AsSpan("material:index:".Length), CultureInfo.InvariantCulture);
+                int index = int.Parse(sourceEntry.SubAssetKey.AsSpan("material:index:".Length), CultureInfo.InvariantCulture);
                 var original = model.LogicalMaterials[index];
                 doubleSided = original.DoubleSided;
                 if (original.Alpha == AlphaMode.MASK)
@@ -84,8 +86,17 @@ internal static class ShadowVisibilityContent
             var key = (cutoff, normalScale, doubleSided);
             if (!variants.TryGetValue(key, out Guid shader))
             {
-                shader = Guid.NewGuid();
                 string name = $"shadow_visibility_{variants.Count}";
+                string file = Path.Combine(shaders, name + ".shader");
+                if (File.Exists(file))
+                {
+                    AssetEntry previous = AssetText.Describe(await File.ReadAllBytesAsync(file));
+                    if (previous.AssetType != ShaderAsset.FileType || previous.Name != name)
+                        throw new InvalidDataException("The generated visibility path contains another asset.");
+                    shader = previous.AssetGuid;
+                }
+                else
+                    shader = Guid.NewGuid();
                 string source = (doubleSided ? "#define CLUSTER_RASTER_TWO_SIDED 1\n" : "") +
                     $"#define SHADOW_ALPHA_CUTOFF {cutoff.ToString("R", CultureInfo.InvariantCulture)}\n" +
                     $"#define SHADOW_NORMAL_SCALE {normalScale.ToString("R", CultureInfo.InvariantCulture)}\n" +
@@ -95,7 +106,6 @@ internal static class ShadowVisibilityContent
                 definition["Fields"]!["Id"] = shader.ToString();
                 definition["Fields"]!["Name"] = name;
                 definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(name + ".slang");
-                string file = Path.Combine(shaders, name + ".shader");
                 await File.WriteAllTextAsync(file, definition.ToJsonString());
                 await project.BuildAsync(file);
                 variants.Add(key, shader);
