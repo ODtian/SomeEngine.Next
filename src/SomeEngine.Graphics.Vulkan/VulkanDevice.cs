@@ -20,6 +20,8 @@ internal sealed unsafe partial class VulkanBackend
     private const string DeferredHostOperationsExtension = "VK_KHR_deferred_host_operations";
     private const string ExternalMemoryWin32Extension = "VK_KHR_external_memory_win32";
     private const string ExternalSemaphoreWin32Extension = "VK_KHR_external_semaphore_win32";
+    private const string ShaderUserTypeExtension = "VK_GOOGLE_user_type";
+    private const string HlslFunctionalityExtension = "VK_GOOGLE_hlsl_functionality1";
 
     internal RhiDevice CreateDevice(in DeviceDesc desc)
     {
@@ -221,12 +223,14 @@ internal sealed unsafe partial class VulkanBackend
                 vk,
                 adapter.PhysicalDevice,
                 out PhysicalDeviceFeatures2 availableFeatures,
+                out PhysicalDeviceVulkan11Features available11,
                 out PhysicalDeviceVulkan12Features available12,
                 out PhysicalDeviceVulkan13Features available13);
             VulkanExtendedFeatureSupport extendedFeatures = VulkanExtendedFeatureSupport.Query(
                 vk,
                 adapter.PhysicalDevice,
-                extensions);
+                extensions,
+                available12.BufferDeviceAddress);
             RequireCoreFeatures(available12, available13);
             QueuePlan queuePlan = QueuePlan.Create(
                 vk,
@@ -250,6 +254,11 @@ internal sealed unsafe partial class VulkanBackend
                 (desc.OptionalFeatures & supportedFeatures);
 
             List<string> enabledExtensions = [];
+            // Slang retains these SPIR-V reflection annotations in linked entry code.
+            if (extensions.Contains(ShaderUserTypeExtension))
+                enabledExtensions.Add(ShaderUserTypeExtension);
+            if (extensions.Contains(HlslFunctionalityExtension))
+                enabledExtensions.Add(HlslFunctionalityExtension);
             if ((enabledFeatures & DeviceFeatures.Presentation) != 0)
                 enabledExtensions.Add(SwapchainExtension);
             if ((enabledFeatures & DeviceFeatures.Residency) != 0)
@@ -264,6 +273,7 @@ internal sealed unsafe partial class VulkanBackend
                 queuePlan,
                 enabledExtensions,
                 availableFeatures,
+                available11,
                 available12,
                 available13,
                 extendedFeatures,
@@ -866,6 +876,7 @@ internal sealed unsafe partial class VulkanBackend
             if ((enabledFeatures & DeviceFeatures.IndirectCommands) != 0 &&
                 features.DeviceGeneratedCommands)
             {
+                extensions.Add(VulkanExtendedFeatureSupport.Maintenance5ExtensionName);
                 extensions.Add(
                     VulkanExtendedFeatureSupport.DeviceGeneratedCommandsExtensionName);
             }
@@ -1035,6 +1046,7 @@ internal sealed unsafe partial class VulkanBackend
             QueuePlan queuePlan,
             IReadOnlyList<string> extensions,
             in PhysicalDeviceFeatures2 availableFeatures,
+            in PhysicalDeviceVulkan11Features available11,
             in PhysicalDeviceVulkan12Features available12,
             in PhysicalDeviceVulkan13Features available13,
             VulkanExtendedFeatureSupport extended,
@@ -1049,6 +1061,11 @@ internal sealed unsafe partial class VulkanBackend
                     SType = StructureType.PhysicalDeviceFeatures2,
                     Features = availableFeatures.Features,
                 };
+                PhysicalDeviceVulkan11Features enabled11 = new()
+                {
+                    SType = StructureType.PhysicalDeviceVulkan11Features,
+                    ShaderDrawParameters = available11.ShaderDrawParameters,
+                };
                 PhysicalDeviceVulkan12Features enabled12 = CreateEnabledFeatures(available12);
                 PhysicalDeviceVulkan13Features enabled13 = new()
                 {
@@ -1059,7 +1076,8 @@ internal sealed unsafe partial class VulkanBackend
                     SubgroupSizeControl = available13.SubgroupSizeControl,
                     PipelineCreationCacheControl = available13.PipelineCreationCacheControl,
                 };
-                enabledFeatures.PNext = &enabled12;
+                enabledFeatures.PNext = &enabled11;
+                enabled11.PNext = &enabled12;
                 enabled12.PNext = &enabled13;
                 PrependExtendedFeatures(
                     ref enabled13,
@@ -1079,6 +1097,15 @@ internal sealed unsafe partial class VulkanBackend
                     out PhysicalDeviceRayTracingPipelineFeaturesKHR rayTracing,
                     out PhysicalDeviceRayQueryFeaturesKHR rayQuery,
                     out PhysicalDeviceShaderImageAtomicInt64FeaturesEXT imageInt64);
+                PhysicalDeviceMaintenance5FeaturesKHR maintenance5 = new()
+                {
+                    SType = StructureType.PhysicalDeviceMaintenance5FeaturesKhr,
+                    Maintenance5 = extended.DeviceGeneratedCommands,
+                    PNext = enabled13.PNext,
+                };
+                if ((enabledDeviceFeatures & DeviceFeatures.IndirectCommands) != 0 &&
+                    extended.DeviceGeneratedCommands)
+                    enabled13.PNext = &maintenance5;
                 fixed (DeviceQueueCreateInfo* queuePointer = queues)
                 {
                     DeviceCreateInfo createInfo = new()
@@ -1130,6 +1157,8 @@ internal sealed unsafe partial class VulkanBackend
             DrawIndirectCount = available.DrawIndirectCount,
             BufferDeviceAddress = available.BufferDeviceAddress,
             ScalarBlockLayout = available.ScalarBlockLayout,
+            ShaderFloat16 = available.ShaderFloat16,
+            ShaderOutputLayer = available.ShaderOutputLayer,
             HostQueryReset = available.HostQueryReset,
             ShaderBufferInt64Atomics = available.ShaderBufferInt64Atomics,
         };
@@ -1138,9 +1167,14 @@ internal sealed unsafe partial class VulkanBackend
             Vk vk,
             VkPhysicalDevice physicalDevice,
             out PhysicalDeviceFeatures2 features,
+            out PhysicalDeviceVulkan11Features features11,
             out PhysicalDeviceVulkan12Features features12,
             out PhysicalDeviceVulkan13Features features13)
         {
+            features11 = new PhysicalDeviceVulkan11Features
+            {
+                SType = StructureType.PhysicalDeviceVulkan11Features,
+            };
             features13 = new PhysicalDeviceVulkan13Features
             {
                 SType = StructureType.PhysicalDeviceVulkan13Features,
@@ -1153,15 +1187,18 @@ internal sealed unsafe partial class VulkanBackend
             {
                 SType = StructureType.PhysicalDeviceFeatures2,
             };
+            fixed (PhysicalDeviceVulkan11Features* pointer11 = &features11)
             fixed (PhysicalDeviceVulkan13Features* pointer13 = &features13)
             fixed (PhysicalDeviceVulkan12Features* pointer12 = &features12)
             fixed (PhysicalDeviceFeatures2* pointer = &features)
             {
-                pointer->PNext = pointer12;
+                pointer->PNext = pointer11;
+                pointer11->PNext = pointer12;
                 pointer12->PNext = pointer13;
                 vk.GetPhysicalDeviceFeatures2(physicalDevice, pointer);
             }
             features.PNext = null;
+            features11.PNext = null;
             features12.PNext = null;
             features13.PNext = null;
         }
