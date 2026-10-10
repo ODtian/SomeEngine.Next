@@ -503,7 +503,7 @@ public sealed class GeometryStreamingHandoffTests
         AssertImage(rightFine, await ReadUntilDepthAsync(scene, rightFine.Depth));
     }
 
-    private static async Task<RasterImage> ReadUntilDepthAsync(FrameStageScene scene, byte[] depth)
+    internal static async Task<RasterImage> ReadUntilDepthAsync(FrameStageScene scene, byte[] depth)
     {
         RasterImage image = await scene.ReadNextRasterImageAsync();
         for (int frame = 0; frame < 24 && !depth.AsSpan().SequenceEqual(image.Depth); frame++)
@@ -522,7 +522,7 @@ public sealed class GeometryStreamingHandoffTests
     private static Task<MeshAsset> CreateStreamingPlaneAsync() => CreateStreamingPartsAsync(
         [(-1f, 1f, -.5f), (-1f, 0f, 0f), (0f, 1f, 0f)], new(0, 0, -.25f, 1.5f));
 
-    private static async Task<MeshAsset> CreateStreamingPartsAsync(
+    internal static async Task<MeshAsset> CreateStreamingPartsAsync(
         (float Left, float Right, float Depth)[] surfaces, Vector4 lodBounds)
     {
         var meshes = new List<SomeEngine.Resources.Mesh>();
