@@ -123,7 +123,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
         Material standard, Material unlit, ClusterShaders clusterShaders,
         VirtualShadowMapShaders shadowShaders, Shader lightingShader, Shader temporalShader,
         ApplicationSettingsBlock settings, bool shadows, ClusterPipelineOptions? pipelineOptions, string backendName,
-        VirtualShadowMapSettings? shadowSettings, ClusterResidencyOptions? residencyOptions)
+        VirtualShadowMapSettings? shadowSettings, ClusterResidencyOptions? residencyOptions,
+        ClusterStreamingFeedbackChannel? feedbackChannel)
     {
         _backend = backend;
         _backendName = backendName;
@@ -177,7 +178,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             new ClusteredLightGridSettings { MaxLights = 1, MaxLightsPerCell = 1 }, region: scene);
         var resources = new GraphResourceGroup();
         resources.Add(_lighting);
-        var feedback = new ClusterStreamingFeedbackChannel();
+        var feedback = feedbackChannel ?? new ClusterStreamingFeedbackChannel();
         _feedback = feedback;
         _streaming = new ClusterStreamingFeedbackConsumer(_cluster, feedback);
         _pipeline = new ClusterPipelineSystem(backend, device, _renderDevice, _cluster, instanceSystem,
@@ -247,7 +248,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
     internal static async Task<FrameStageScene> CreateAsync(string backendName, bool shadows,
         ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null,
         VirtualShadowMapSettings? shadowSettings = null, DeviceFeatures optionalFeatures = DeviceFeatures.None,
-        ClusterResidencyOptions? residencyOptions = null)
+        ClusterResidencyOptions? residencyOptions = null, ClusterStreamingFeedbackChannel? feedbackChannel = null)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -297,7 +298,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             requiredFeatures: DeviceFeatures.IndirectCommands, optionalFeatures: optionalFeatures));
         return new FrameStageScene(backend, device, mesh, standard, unlit, clusterShaders,
             shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName, shadowSettings,
-            residencyOptions);
+            residencyOptions, feedbackChannel);
     }
 
     internal void SetView(RenderView view) => _world.Replace(_view, view);
