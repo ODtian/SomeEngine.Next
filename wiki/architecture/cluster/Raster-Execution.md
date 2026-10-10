@@ -27,7 +27,9 @@ Indirect draw/dispatch 只是 Cluster triangle raster pipeline 当前内部命�
 位置投射由共享helper将用户Game-origin位置平移到每视图近端坐标；过去顶点另消费过去Game origin到当前Game origin的平移。HiZ用当前位置投射到过去视图。first-person变换在近端空间保持同一组合次序。
 
 目标页硬件光栅先根据当前窗口、页请求、页表和接收区域解析 atlas 像素地址，
-通过筛选的像素再调用用户的可见性 shader，并将其深度原子合并到目标像素。
+opaque和masked沿HW/SW共享深度比较排除已被遮挡的像素，offset保留用户深度求值。
+专用目标入口与普通入口共同保留有接受像素的整个quad执行用户可见性shader，
+保持相邻lane和导数可用；仅接受且可见的像素将最终深度原子合并到目标像素。
 地址解析和写入共用原页表及 atlas，用户 shader 继续解释自己的 varying 和深度。
 
 目标页 mesh 光栅将用户 shader 输出的位置投影到当前光栅窗口。整个三角形的

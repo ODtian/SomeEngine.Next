@@ -37,6 +37,11 @@ float ReadClusterRasterDepth(float4 pixelPosition, float2 clipDepth, ClusterView
         GetClusterRasterDepthCenter(view)) : pixelPosition.z;
 }
 
+bool ClusterRasterDepthAccepts(float depth, uint encodedDepth, uint earlyDepthEnabled)
+{
+    return earlyDepthEnabled == 0u || asuint(1.0 - saturate(depth)) >= encodedDepth;
+}
+
 static const uint CLUSTER_RASTER_SUBPIXEL_BITS = 8u;
 static const uint CLUSTER_RASTER_SUBPIXEL_SCALE = 1u << CLUSTER_RASTER_SUBPIXEL_BITS;
 static const float CLUSTER_RASTER_SUBPIXEL_SCALE_F = float(CLUSTER_RASTER_SUBPIXEL_SCALE);
@@ -485,7 +490,7 @@ struct ClusterPixelRasterTask<
                 triangle.DepthPlane.z * edge2;
             float depth = saturate(ReadClusterRasterDepth(depthInput, DepthCenter));
             uint encodedDepth = Output.readDepth(outputPixel, targetPolicy, targetViewIndex);
-            if (EarlyDepthEnabled != 0u && asuint(1.0 - depth) < encodedDepth)
+            if (!ClusterRasterDepthAccepts(depth, encodedDepth, EarlyDepthEnabled))
                 continue;
             float3 fanLinear = ClusterRasterLinearBarycentric(
                 triangle,
