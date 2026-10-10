@@ -298,7 +298,7 @@ internal static class RuntimeApplication
             {
                 if (_windowVSync != options.WindowVSync)
                     ReconfigureSwapchain(Backend, Swapchain, options, Window.ClientWidth, Window.ClientHeight,
-                        Device.Adapter.HardwareAccelerated);
+                        Device.Adapter.HardwareAccelerated, Window);
                 _windowVSync = options.WindowVSync;
                 return;
             }
@@ -443,25 +443,51 @@ internal static class RuntimeApplication
             AllowTearing: !options.WindowVSync && hardwareAccelerated,
             MaximumFrameLatency: 2);
 
-    private static void ReconfigureSwapchain(
+    private static bool ReconfigureSwapchain(
         IGraphicsBackend backend,
         Swapchain swapchain,
         RuntimeStartupOptions options,
         int width,
         int height,
-        bool hardwareAccelerated)
-    {
-        ReconfigureStatus status = backend.Reconfigure(
-            swapchain,
+        bool hardwareAccelerated,
+        NativeWindow window) =>
+        ReconfigureSwapchain(backend, swapchain, window,
             CreateSwapchainConfig(options, width, height, hardwareAccelerated));
-        if (status != ReconfigureStatus.Success)
+
+    private static bool ReconfigureSwapchain(
+        IGraphicsBackend backend,
+        Swapchain swapchain,
+        NativeWindow window,
+        SwapchainConfig config)
+    {
+        long started = Stopwatch.GetTimestamp();
+        while (window.PumpMessages())
         {
-            throw new InvalidOperationException(
-                $"The Runtime swapchain could not be reconfigured: {status}.");
+            if (window.IsMinimized || window.ClientWidth <= 0 || window.ClientHeight <= 0)
+            {
+                window.WaitForEvents(Timeout.InfiniteTimeSpan);
+                started = Stopwatch.GetTimestamp();
+                continue;
+            }
+            config = config with
+            {
+                Width = checked((uint)window.ClientWidth),
+                Height = checked((uint)window.ClientHeight),
+            };
+            ReconfigureStatus status = backend.Reconfigure(swapchain, config);
+            if (status == ReconfigureStatus.Success)
+                return true;
+            if (status == ReconfigureStatus.Unsupported)
+                throw new NotSupportedException("The Runtime swapchain configuration is unsupported.");
+            if (Stopwatch.GetElapsedTime(started) >= FrameTimeout)
+                throw new TimeoutException("Presentation work did not finish before the swapchain reconfiguration timeout.");
+            // Busy is an outstanding image/present fence, not an occlusion pacing policy.
+            window.WaitForEvents(TimeSpan.FromMilliseconds(1));
         }
+        return false;
     }
 
-    private static SwapchainImage AcquireImage(
+    private static SwapchainImage? AcquireImage(
         IGraphicsBackend backend,
         Swapchain swapchain,
         NativeWindow window)
@@ -469,6 +495,10 @@ internal static class RuntimeApplication
         long started = Environment.TickCount64;
         while (true)
         {
+            if (window.CloseRequested || window.IsMinimized)
+                return null;
+            if (Environment.TickCount64 - started >= FrameTimeout.TotalMilliseconds)
+                throw new TimeoutException("No presentation image became available before the frame timeout.");
             SwapchainAcquireStatus status = backend.Acquire(
                 swapchain,
                 new SwapchainAcquireOptions(TimeSpan.Zero, PreserveContents: false),
@@ -477,12 +507,15 @@ internal static class RuntimeApplication
                 return image;
             if (status == SwapchainAcquireStatus.OutOfDate)
             {
-                throw new InvalidOperationException(
-                    "The Runtime swapchain became out of date before image acquisition.");
+                SwapchainConfig previous = swapchain.Info.Config;
+                if (!ReconfigureSwapchain(backend, swapchain, window, previous))
+                    return null;
+                if (previous.Width != swapchain.Info.Config.Width || previous.Height != swapchain.Info.Config.Height)
+                    return null;
+                continue;
             }
-            if (Environment.TickCount64 - started >= FrameTimeout.TotalMilliseconds)
-                throw new TimeoutException("No presentation image became available before the frame timeout.");
-            _ = window.PumpMessages();
+            if (!window.PumpMessages())
+                return null;
             window.WaitForEvents(TimeSpan.FromMilliseconds(1));
         }
     }
@@ -820,15 +853,17 @@ internal static class RuntimeApplication
                     outputVerifier = null;
                     linearVerifier?.Dispose();
                     linearVerifier = null;
-                    ReconfigureSwapchain(
+                    if (!ReconfigureSwapchain(
                         backend,
                         swapchain,
                         options,
                         clientWidth,
                         clientHeight,
-                        device.Adapter.HardwareAccelerated);
-                    width = clientWidth;
-                    height = clientHeight;
+                        device.Adapter.HardwareAccelerated,
+                        window))
+                        break;
+                    width = checked((int)swapchain.Info.Config.Width);
+                    height = checked((int)swapchain.Info.Config.Height);
                     cameraCut = true;
                     outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && captureFrame is null)
                         ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
@@ -1122,13 +1157,17 @@ internal static class RuntimeApplication
                     if (startup.Result is { } times) platform?.RecordStartup(times);
                 }
                 if (present == PresentStatus.OutOfDate)
-                    ReconfigureSwapchain(
+                {
+                    if (!ReconfigureSwapchain(
                         backend,
                         swapchain,
                         options,
                         width,
                         height,
-                        device.Adapter.HardwareAccelerated);
+                        device.Adapter.HardwareAccelerated,
+                        window))
+                        break;
+                }
 
                 if (platform?.IsMeasuring == true && !platform.ReloadRequested)
                     platform.RecordFrame(new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
