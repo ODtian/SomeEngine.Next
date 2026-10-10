@@ -45,9 +45,9 @@ internal readonly record struct VirtualShadowAtlasInitializePassData(GraphTextur
         _ = access.Write(
             data.Atlas,
             data.AtlasRange,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            TextureLayout.CopyDestination,
+            PipelineSync.RenderTarget,
+            ResourceAccess.RenderTarget,
+            TextureLayout.RenderTarget,
             WriteCoverage.Complete);
 
     internal static void Record(
@@ -69,9 +69,9 @@ internal readonly record struct VirtualShadowPageHiZStorageInitializePassData(
         _ = access.Write(
             data.PageHiZ,
             data.Range,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            TextureLayout.CopyDestination,
+            PipelineSync.RenderTarget,
+            ResourceAccess.RenderTarget,
+            TextureLayout.RenderTarget,
             WriteCoverage.Complete);
 
     internal static void Record(

@@ -160,9 +160,9 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                         _ = pass.Write(
                             texture,
                             new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
-                            PipelineSync.Copy,
-                            ResourceAccess.CopyDestination,
-                            TextureLayout.CopyDestination,
+                            PipelineSync.RenderTarget,
+                            ResourceAccess.RenderTarget,
+                            TextureLayout.RenderTarget,
                             WriteCoverage.Complete),
                     static (ref CopyPassCommandScope commands, in GraphTextureId texture) =>
                         commands.ClearTexture(
