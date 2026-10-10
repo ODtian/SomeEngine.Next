@@ -18,7 +18,7 @@ public sealed class ShadowVisibilityContentTests
         using var files = new MaterialFiles();
         await files.WriteAsync("""{"doubleSided":false}""", """{"doubleSided":true}""");
         await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(),
-            files.Source, files.Content, files.Geometry, false);
+            files.Source, files.Content);
         Shader frontOnly = await files.ReadShaderAsync(0);
         Shader bothFaces = await files.ReadShaderAsync(1);
         using Texture albedo = PixelTexture(255, 255, 255, 255);
@@ -49,12 +49,12 @@ public sealed class ShadowVisibilityContentTests
         using var files = new MaterialFiles();
         await files.WriteAsync("""{"alphaMode":"MASK","alphaCutoff":0.5}""", """{"alphaMode":"OPAQUE"}""");
         await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(),
-            files.Source, files.Content, files.Geometry, false);
+            files.Source, files.Content);
         Guid firstShaderId = await files.ReadShaderIdAsync(0);
         Shader first = await files.ReadShaderAsync(0);
         Shader opaque = await files.ReadShaderAsync(1);
         await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(),
-            files.Source, files.Content, files.Geometry, false);
+            files.Source, files.Content);
         Assert.Equal(firstShaderId, await files.ReadShaderIdAsync(0));
         Shader second = await files.ReadShaderAsync(0);
         using Texture albedo = PixelTexture(255, 255, 255, 0);
@@ -84,6 +84,49 @@ public sealed class ShadowVisibilityContentTests
         AssertCoverage(1, opaqueFrame);
     }
 
+    [Fact]
+    public async Task MaterialsWithTheSameIndexKeepTheirSourceCoverageAfterRepeatedConversion()
+    {
+        using var files = new MaterialFiles();
+        await files.WriteSourcesAsync(
+            ["""{"alphaMode":"OPAQUE","doubleSided":false}"""],
+            ["""{"alphaMode":"MASK","alphaCutoff":0.25,"doubleSided":true,"pbrMetallicRoughness":{"baseColorFactor":[1,1,1,0.5]}}"""]);
+        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(), files.Source, files.Content);
+        Guid opaqueShaderId = await files.ReadShaderIdAsync(0);
+        Guid maskedShaderId = await files.ReadShaderIdAsync(1);
+        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(), files.Source, files.Content);
+        Assert.Equal(opaqueShaderId, await files.ReadShaderIdAsync(0));
+        Assert.Equal(maskedShaderId, await files.ReadShaderIdAsync(1));
+        Shader opaque = await files.ReadShaderAsync(0);
+        Shader masked = await files.ReadShaderAsync(1);
+        using Texture belowCutoff = PixelTexture(255, 255, 255, 64);
+        using Texture aboveCutoff = PixelTexture(255, 255, 255, 192);
+        using Texture normal = PixelTexture(128, 128, 255, 255);
+        var plane = await RasterTestGeometry.CreatePlaneAsync();
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
+            new ClusterPipelineOptions { MaxCandidates = 1024, SoftwareRasterEdgeThreshold = 65536 }, plane);
+        var opaqueMaterial = scene.CreateEmissiveMaterial(opaque, Vector3.Zero);
+        opaqueMaterial.AlbedoMap = belowCutoff;
+        opaqueMaterial.NormalMap = normal;
+        var maskedMaterial = scene.CreateEmissiveMaterial(masked, Vector3.Zero);
+        maskedMaterial.AlbedoMap = belowCutoff;
+        maskedMaterial.NormalMap = normal;
+        scene.SetMeshTransform(0, new(new Vector3(20, 0, -8), Quaternion.Identity));
+        scene.SetMeshTransform(1, new(new Vector3(0, 0, -6), Quaternion.Identity));
+        scene.UseMaterial(1, opaqueMaterial);
+        AssertCoverage(1, await scene.ReadClusterColorAsync());
+        scene.UseMaterial(1, maskedMaterial);
+        AssertCoverage(0, await scene.ReadClusterColorAsync());
+        maskedMaterial.AlbedoMap = aboveCutoff;
+        AssertCoverage(1, await scene.ReadClusterColorAsync());
+        scene.SetMeshTransform(1, new(new Vector3(0, 0, -6),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI)));
+        scene.UseMaterial(1, opaqueMaterial);
+        AssertCoverage(0, await scene.ReadClusterColorAsync());
+        scene.UseMaterial(1, maskedMaterial);
+        AssertCoverage(1, await scene.ReadClusterColorAsync());
+    }
+
     private static void AssertCoverage(float expected, byte[] frame)
     {
         float coverage = (float)MemoryMarshal.Read<Half>(frame.AsSpan((32 * 64 + 32) * 8 + 2, 2));
@@ -103,9 +146,9 @@ public sealed class ShadowVisibilityContentTests
         private readonly List<Guid> _materials = [];
         internal string Source => Path.Combine(_directory, "source");
         internal string Content => Path.Combine(_directory, "converted");
-        internal string Geometry => Path.Combine(Source, "materials.gltf");
+        internal Task WriteAsync(params string[] materials) => WriteSourcesAsync(materials);
 
-        internal async Task WriteAsync(params string[] materials)
+        internal async Task WriteSourcesAsync(params string[][] sources)
         {
             Directory.CreateDirectory(Path.Combine(Source, "assets", "Shaders"));
             Directory.CreateDirectory(Path.Combine(Content, "assets", "Shaders"));
@@ -113,19 +156,26 @@ public sealed class ShadowVisibilityContentTests
             Directory.CreateDirectory(generated);
             File.Copy(Path.Combine(FrameStageScene.FindRoot(), "templates", "DefaultProject", "assets", "Shaders",
                 "generated", "render_instance_layout.slang"), Path.Combine(generated, "render_instance_layout.slang"));
-            await File.WriteAllTextAsync(Geometry,
-                """{"asset":{"version":"2.0"},"materials":[""" + string.Join(',', materials) + "]}");
             var manifest = new AssetManifest();
-            for (int index = 0; index < materials.Length; index++)
+            for (int sourceIndex = 0; sourceIndex < sources.Length; sourceIndex++)
             {
-                Guid id = Guid.NewGuid();
-                _materials.Add(id);
-                string relative = Path.Combine("assets", $"material-{index}.material.asset");
-                using var material = new MaterialAsset(id) { Name = $"Material {index}" };
-                AssetEntry saved = await material.SaveAsync(Path.Combine(Source, relative));
-                manifest.AddAsset(saved.AssetGuid, saved.Name, relative, saved.AssetType, saved.SchemaFingerprint,
-                    subAssetKey: $"material:index:{index}", dependencies: saved.Dependencies, version: saved.Version);
-                File.Copy(Path.Combine(Source, relative), Path.Combine(Content, relative));
+                string geometry = $"materials-{sourceIndex}.gltf";
+                await File.WriteAllTextAsync(Path.Combine(Source, geometry),
+                    """{"asset":{"version":"2.0"},"materials":[""" + string.Join(',', sources[sourceIndex]) + "]}");
+                SourceGuid sourceGuid = SourceGuid.New();
+                manifest.AddSource(sourceGuid, geometry);
+                for (int index = 0; index < sources[sourceIndex].Length; index++)
+                {
+                    Guid id = Guid.NewGuid();
+                    int materialIndex = _materials.Count;
+                    _materials.Add(id);
+                    string relative = Path.Combine("assets", $"material-{materialIndex}.material.asset");
+                    using var material = new MaterialAsset(id) { Name = $"Material {materialIndex}" };
+                    AssetEntry saved = await material.SaveAsync(Path.Combine(Source, relative));
+                    manifest.AddAsset(saved.AssetGuid, saved.Name, relative, saved.AssetType, saved.SchemaFingerprint,
+                        sourceGuid, subAssetKey: $"material:index:{index}", dependencies: saved.Dependencies, version: saved.Version);
+                    File.Copy(Path.Combine(Source, relative), Path.Combine(Content, relative));
+                }
             }
             manifest.Save(Path.Combine(Source, "Library", "AssetManifest"));
             manifest.Save(Path.Combine(Content, "Library", "AssetManifest"));
