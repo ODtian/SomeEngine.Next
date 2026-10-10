@@ -6,15 +6,7 @@
 #include "wave_aggregation.slang"
 #include "cluster_view_work.slang"
 
-struct ClusterTraversalSeedUniforms
-{
-    uint ViewCount;
-    uint ViewIndexMode;
-    uint MaxNodes;
-    uint ArgsOffset;
-    uint UseInstanceGroups;
-    uint3 Padding;
-};
+#include "cluster_traversal_seed_input.slang"
 
 StructuredBuffer<ClusterViewUniforms> Views;
 ByteAddressBuffer GlobalBVH;
@@ -46,8 +38,7 @@ groupshared uint ClusterRootDeferredViews[64];
 
 uint ClusterSeedViewCount()
 {
-    if (TraversalSeed.ViewIndexMode == 0u) return TraversalSeed.ViewCount;
-    return min(PolicyActiveViewCount[0], TraversalSeed.ViewCount);
+    return ResolveClusterTraversalViewCount(TraversalSeed, PolicyActiveViewCount);
 }
 
 uint ClusterSeedViewIndex(uint compactViewIndex)

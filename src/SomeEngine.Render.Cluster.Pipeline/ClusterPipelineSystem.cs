@@ -714,7 +714,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 GraphData.Resources.NeutralPolicyValue,
-                range: new BufferRange(2u * sizeof(uint), sizeof(uint)),
+                range: new BufferRange(0u, 3u * sizeof(uint)),
                 structureStride: sizeof(uint),
                 label: "Cluster neutral raster-invocation count"),
             PipelineSync.ComputeShading);
