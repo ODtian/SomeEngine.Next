@@ -21,6 +21,9 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
 {
     private const string SurfaceExtension = "VK_KHR_surface";
     private const string Win32SurfaceExtension = "VK_KHR_win32_surface";
+    private const string SurfaceCapabilities2Extension = "VK_KHR_get_surface_capabilities2";
+    private const string SurfaceMaintenanceExtension = "VK_EXT_surface_maintenance1";
+    private const string KhrSurfaceMaintenanceExtension = "VK_KHR_surface_maintenance1";
     private const string DebugUtilsExtension = "VK_EXT_debug_utils";
     private const string ValidationLayer = "VK_LAYER_KHRONOS_validation";
 
@@ -38,6 +41,8 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private PfnDebugUtilsMessengerCallbackEXT _debugCallback;
     private DisposeGate _disposeGate;
     private Exception? _releaseFailure;
+    private bool _surfaceMaintenance;
+    private bool _khrSurfaceMaintenance;
 
     internal VulkanBackend(in VulkanBackendOptions options = default)
     {
@@ -209,6 +214,14 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         RequireName(availableExtensions, Win32SurfaceExtension, "instance extension");
 
         List<string> extensions = [SurfaceExtension, Win32SurfaceExtension];
+        if (availableExtensions.Contains(SurfaceCapabilities2Extension))
+        {
+            extensions.Add(SurfaceCapabilities2Extension);
+            _surfaceMaintenance = availableExtensions.Contains(SurfaceMaintenanceExtension);
+            _khrSurfaceMaintenance = availableExtensions.Contains(KhrSurfaceMaintenanceExtension);
+            if (_surfaceMaintenance) extensions.Add(SurfaceMaintenanceExtension);
+            if (_khrSurfaceMaintenance) extensions.Add(KhrSurfaceMaintenanceExtension);
+        }
         if (_options.EnableDebugMessages && availableExtensions.Contains(DebugUtilsExtension))
             extensions.Add(DebugUtilsExtension);
 
