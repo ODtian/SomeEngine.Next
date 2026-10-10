@@ -333,7 +333,7 @@ public sealed partial class ClusterPipelineSystem
         frame.ShadeBinCounts = frame.AddBuffer(
                 ref graph,
                 checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
-                BufferUsages.None,
+                _options.EnableFrameMetricsReadback ? BufferUsages.CopySource : BufferUsages.None,
                 "Cluster shade bin counts");
             frame.ShadeBinOffsets = frame.AddBuffer(
                 ref graph,
