@@ -42,6 +42,8 @@ internal sealed class ClusterPageFixups
     }
 
     private readonly Dictionary<uint, PageDependency> _dependenciesByPage = [];
+    private readonly Dictionary<PageDependency, uint> _dependencyDemand = [];
+    private readonly PriorityQueue<PageDependency, int> _dependencyQueue = new();
     private readonly Dictionary<uint, List<Group>> _groupsByPage = [];
     private readonly Dictionary<uint, List<Group>> _groupsByParentPage = [];
     private readonly HashSet<Group> _changedGroups = [];
@@ -219,18 +221,27 @@ internal sealed class ClusterPageFixups
 
     internal void ExpandDependencies(Dictionary<uint, uint> priorities)
     {
-        var demand = new Dictionary<PageDependency, uint>();
-        var queue = new PriorityQueue<PageDependency, int>();
-        foreach ((uint page, uint priority) in priorities)
-            if (_dependenciesByPage.TryGetValue(page, out PageDependency? dependency))
-                Include(dependency, priority);
-        while (queue.TryDequeue(out PageDependency? dependency, out _))
+        // The enclosing mesh gate serializes expansion. Retain storage, never frame demand.
+        var demand = _dependencyDemand;
+        var queue = _dependencyQueue;
+        try
         {
-            uint priority = demand[dependency];
-            foreach ((uint first, uint end) in dependency.Ranges)
-                for (uint page = first; page < end; page++) priorities[page] = priority;
-            uint parentPriority = priority == uint.MaxValue ? priority : priority + 1;
-            foreach (PageDependency parent in dependency.Parents) Include(parent, parentPriority);
+            foreach ((uint page, uint priority) in priorities)
+                if (_dependenciesByPage.TryGetValue(page, out PageDependency? dependency))
+                    Include(dependency, priority);
+            while (queue.TryDequeue(out PageDependency? dependency, out _))
+            {
+                uint priority = demand[dependency];
+                foreach ((uint first, uint end) in dependency.Ranges)
+                    for (uint page = first; page < end; page++) priorities[page] = priority;
+                uint parentPriority = priority == uint.MaxValue ? priority : priority + 1;
+                foreach (PageDependency parent in dependency.Parents) Include(parent, parentPriority);
+            }
+        }
+        finally
+        {
+            demand.Clear();
+            queue.Clear();
         }
 
         void Include(PageDependency dependency, uint priority)
@@ -320,5 +331,6 @@ internal sealed class ClusterPageFixups
     internal void Clear()
     {
         _dependenciesByPage.Clear(); _groupsByPage.Clear(); _groupsByParentPage.Clear(); _changedGroups.Clear(); _groupCount = 0;
+        _dependencyDemand.Clear(); _dependencyQueue.Clear();
     }
 }

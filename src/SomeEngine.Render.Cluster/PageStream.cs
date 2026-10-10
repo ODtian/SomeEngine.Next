@@ -259,8 +259,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             _resources.CollectPageDependencies(_pagePriorities);
             demand = _resources.SetReferencedPages(_pagePriorities.Keys, demandComplete.Value);
             _queuedPages.Clear();
-            foreach ((uint page, uint priority) in _pagePriorities)
-                QueuePageIfNeeded(page, _resources.ResolvePage(page), priority);
+            QueueResolvedPages();
             _pagePriorities.Clear();
         }
 
@@ -285,18 +284,21 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                 _pagePriorities[resolution.PageId] = request.Priority;
         }
         _resources.CollectPageDependencies(_pagePriorities);
-        foreach ((uint page, uint priority) in _pagePriorities)
-            QueuePageIfNeeded(page, _resources.ResolvePage(page), priority);
+        QueueResolvedPages();
         _pendingRequests.Clear();
         _pagePriorities.Clear();
         return demand;
     }
 
-    private void QueuePageIfNeeded(uint pageID, in PageFaultResolution resolution, uint priority)
+    private void QueueResolvedPages()
     {
-        if (resolution.Kind is PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending)
-            return;
+        _resources.ResolvePages(_pagePriorities, _loadCandidates);
+        foreach ((uint page, uint priority) in _loadCandidates)
+            QueuePageIfNeeded(page, priority);
+    }
 
+    private void QueuePageIfNeeded(uint pageID, uint priority)
+    {
         if (_permanentlyFailedPages.Contains(pageID) ||
             _loadingPages.ContainsKey(pageID))
         {
