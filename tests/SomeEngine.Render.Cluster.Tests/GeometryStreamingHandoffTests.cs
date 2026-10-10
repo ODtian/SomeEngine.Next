@@ -272,6 +272,53 @@ public sealed class GeometryStreamingHandoffTests
         AssertImage(fine, await ReadUntilDepthAsync(scene, fine.Depth));
     }
 
+    [Fact]
+    public async Task ColdCrossParentPagesReleaseCapacityForNewVisibleDetail()
+    {
+        var transform = new SomeEngine.Core.Math.TransformQvvs(new Vector3(0, 0, -4), Quaternion.Identity);
+        RasterImage fine;
+        await using (var reference = await FrameStageScene.CreateAsync("D3D12", false,
+            new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true, EnableFrameMetricsReadback = true }, await RasterTestGeometry.CreatePlaneAsync()))
+        {
+            reference.SetGeometryVisible(false);
+            reference.AddGeometryMesh(await RasterTestGeometry.CreatePlaneAsync(), transform);
+            fine = await reference.ReadNextRasterImageAsync();
+        }
+        using MeshAsset file = await CreateOverlappingStreamingPlaneAsync(crossParentPages: true);
+        ClusterMeshBlock geometry = file.GetBlock<ClusterMeshBlock>();
+        var mesh = await geometry.CreateAsync(file.GetBlock<MeshBlock>(), file.Name);
+        using var source = await geometry.OpenPayloadSourceAsync();
+        using MeshAsset nextFile = await CreateStreamingPartsAsync(
+            [(-1f, 1f, -.5f), (-1f, 1f, 0f)], new(0, 0, -.25f, 1.5f));
+        ClusterMeshBlock nextGeometry = nextFile.GetBlock<ClusterMeshBlock>();
+        var nextMesh = await nextGeometry.CreateAsync(nextFile.GetBlock<MeshBlock>(), nextFile.Name);
+        using var nextSource = await nextGeometry.OpenPayloadSourceAsync();
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
+            new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true, EnableFrameMetricsReadback = true }, await RasterTestGeometry.CreatePlaneAsync(),
+            residencyOptions: new ClusterResidencyOptions
+            {
+                PageHeapCapacityBytes = 2048, BvhCapacityBytes = 65536,
+                PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+            });
+        scene.SetGeometryVisible(false);
+        var previous = scene.AddStreamingMesh(mesh, source, transform);
+        RasterImage coarse = await scene.ReadNextRasterImageAsync();
+        Assert.NotEqual(fine.Depth, coarse.Depth);
+        AssertImage(fine, await ReadUntilDepthAsync(scene, fine.Depth));
+
+        // Both old detail pages contain a parent of the other page's finer part.
+        // Once that mesh leaves the view, the whole cold set can release capacity.
+        scene.RemoveMaterialMesh(previous);
+        var newcomer = scene.AddStreamingMesh(nextMesh, nextSource, transform);
+        AssertImage(coarse, await scene.ReadNextRasterImageAsync());
+        AssertImage(fine, await ReadUntilDepthAsync(scene, fine.Depth));
+
+        scene.RemoveMaterialMesh(newcomer);
+        scene.AddStreamingMesh(mesh, source, transform);
+        AssertImage(coarse, await scene.ReadNextRasterImageAsync());
+        AssertImage(fine, await ReadUntilDepthAsync(scene, fine.Depth));
+    }
+
     [Theory]
     [InlineData(1, true)]
     [InlineData(16, false)]
