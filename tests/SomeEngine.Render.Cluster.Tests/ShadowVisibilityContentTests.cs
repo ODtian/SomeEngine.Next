@@ -2,7 +2,10 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.ECS;
 using SomeEngine.Graphics;
+using SomeEngine.Render;
+using SomeEngine.Render.Components;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Resources;
 using Texture = SomeEngine.Resources.Texture;
@@ -18,7 +21,7 @@ public sealed class ShadowVisibilityContentTests
         using var files = new MaterialFiles();
         await files.WriteAsync("""{"doubleSided":false}""", """{"doubleSided":true}""");
         await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(),
-            files.Source, files.Content);
+            files.Source, files.Content, files.Materials);
         Shader frontOnly = await files.ReadShaderAsync(0);
         Shader bothFaces = await files.ReadShaderAsync(1);
         using Texture albedo = PixelTexture(255, 255, 255, 255);
@@ -49,12 +52,12 @@ public sealed class ShadowVisibilityContentTests
         using var files = new MaterialFiles();
         await files.WriteAsync("""{"alphaMode":"MASK","alphaCutoff":0.5}""", """{"alphaMode":"OPAQUE"}""");
         await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(),
-            files.Source, files.Content);
+            files.Source, files.Content, files.Materials);
         Guid firstShaderId = await files.ReadShaderIdAsync(0);
         Shader first = await files.ReadShaderAsync(0);
         Shader opaque = await files.ReadShaderAsync(1);
         await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(),
-            files.Source, files.Content);
+            files.Source, files.Content, files.Materials);
         Assert.Equal(firstShaderId, await files.ReadShaderIdAsync(0));
         Shader second = await files.ReadShaderAsync(0);
         using Texture albedo = PixelTexture(255, 255, 255, 0);
@@ -91,10 +94,11 @@ public sealed class ShadowVisibilityContentTests
         await files.WriteSourcesAsync(
             ["""{"alphaMode":"OPAQUE","doubleSided":false}"""],
             ["""{"alphaMode":"MASK","alphaCutoff":0.25,"doubleSided":true,"pbrMetallicRoughness":{"baseColorFactor":[1,1,1,0.5]}}"""]);
-        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(), files.Source, files.Content);
+        Guid application = await files.WriteApplicationAsync(0, 1);
+        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(), files.Source, files.Content, [application]);
         Guid opaqueShaderId = await files.ReadShaderIdAsync(0);
         Guid maskedShaderId = await files.ReadShaderIdAsync(1);
-        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(), files.Source, files.Content);
+        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(), files.Source, files.Content, [application]);
         Assert.Equal(opaqueShaderId, await files.ReadShaderIdAsync(0));
         Assert.Equal(maskedShaderId, await files.ReadShaderIdAsync(1));
         Shader opaque = await files.ReadShaderAsync(0);
@@ -125,6 +129,35 @@ public sealed class ShadowVisibilityContentTests
         AssertCoverage(0, await scene.ReadClusterColorAsync());
         scene.UseMaterial(1, maskedMaterial);
         AssertCoverage(1, await scene.ReadClusterColorAsync());
+    }
+
+    [Fact]
+    public async Task UnreferencedMissingSourceDoesNotAffectVisibilityConversion()
+    {
+        using var files = new MaterialFiles();
+        await files.WriteSourcesAsync(["{}"], ["""{"alphaMode":"MASK","doubleSided":true}"""]);
+        Guid application = await files.WriteApplicationAsync(1);
+        files.DeleteSource(0);
+        byte[] untouched = await files.ReadMaterialBytesAsync(0);
+        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(), files.Source, files.Content, [application]);
+        Assert.Equal(untouched, await files.ReadMaterialBytesAsync(0));
+        Guid shader = await files.ReadShaderIdAsync(1);
+        Assert.NotEqual(Guid.Empty, shader);
+        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(), files.Source, files.Content, [application]);
+        Assert.Equal(shader, await files.ReadShaderIdAsync(1));
+        Assert.Equal(untouched, await files.ReadMaterialBytesAsync(0));
+    }
+
+    [Fact]
+    public async Task ReferencedMissingSourceFailsVisibilityConversion()
+    {
+        using var files = new MaterialFiles();
+        await files.WriteAsync("{}");
+        Guid application = await files.WriteApplicationAsync(0);
+        files.DeleteSource(0);
+        ArgumentException error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(), files.Source, files.Content, [application]));
+        Assert.Equal("filePath", error.ParamName);
     }
 
     private static void AssertCoverage(float expected, byte[] frame)
@@ -179,6 +212,44 @@ public sealed class ShadowVisibilityContentTests
             }
             manifest.Save(Path.Combine(Source, "Library", "AssetManifest"));
             manifest.Save(Path.Combine(Content, "Library", "AssetManifest"));
+        }
+
+        internal IReadOnlyList<Guid> Materials => _materials;
+
+        internal void DeleteSource(int source) => File.Delete(Path.Combine(Source, $"materials-{source}.gltf"));
+
+        internal async Task<byte[]> ReadMaterialBytesAsync(int material)
+        {
+            AssetManifest manifest = AssetManifest.Load(Path.Combine(Content, "Library", "AssetManifest"));
+            return await File.ReadAllBytesAsync(Path.Combine(Content, manifest.Assets[_materials[material]].Path));
+        }
+
+        internal async Task<Guid> WriteApplicationAsync(params int[] materials)
+        {
+            AssetManifest manifest = AssetManifest.Load(Path.Combine(Source, "Library", "AssetManifest"));
+            void Register(AssetEntry saved, string path)
+            {
+                manifest.AddAsset(saved.AssetGuid, saved.Name, path, saved.AssetType, saved.SchemaFingerprint,
+                    dependencies: saved.Dependencies, version: saved.Version);
+                File.Copy(Path.Combine(Source, path), Path.Combine(Content, path));
+            }
+            using var mesh = new MeshAsset(Guid.NewGuid());
+            mesh.SetBlock(new MeshMaterialsBlock
+            {
+                Materials = materials.Select(index => new AssetId<MaterialAsset>(_materials[index])).ToArray(),
+            });
+            Register(await mesh.SaveAsync(Path.Combine(Source, "assets/selected.mesh.asset")), "assets/selected.mesh.asset");
+            using var world = new World();
+            world.CreateEntity(new MeshSource { Mesh = new(mesh.Id) });
+            using var scene = new WorldAsset(Guid.NewGuid());
+            scene.WriteWorld(world, SceneSerialization.CreateRegistry());
+            Register(await scene.SaveAsync(Path.Combine(Source, "assets/selected.scene.asset")), "assets/selected.scene.asset");
+            using var application = new ApplicationSettingsAsset(Guid.NewGuid());
+            application.SetBlock(new ApplicationSettingsBlock { Scene = new(scene.Id) });
+            Register(await application.SaveAsync(Path.Combine(Source, "assets/selected.runtime.asset")), "assets/selected.runtime.asset");
+            manifest.Save(Path.Combine(Source, "Library", "AssetManifest"));
+            manifest.Save(Path.Combine(Content, "Library", "AssetManifest"));
+            return application.Id;
         }
 
         internal async Task<Guid> ReadShaderIdAsync(int material)

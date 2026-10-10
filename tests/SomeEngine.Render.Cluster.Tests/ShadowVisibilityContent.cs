@@ -47,7 +47,7 @@ internal static class ShadowVisibilityContent
         project.RegisterAsset(await material.SaveAsync(Path.Combine(content, entry.Path)));
     }
 
-    internal static async Task BuildAsync(string engine, string sourceContent, string content)
+    internal static async Task BuildAsync(string engine, string sourceContent, string content, IEnumerable<Guid> roots)
     {
         _ = Registered.Value;
         string shaders = Path.Combine(content, "assets", "Shaders");
@@ -64,9 +64,18 @@ internal static class ShadowVisibilityContent
         AssetManifest sourceManifest = AssetManifest.Load(Path.Combine(sourceContent, "Library", "AssetManifest"));
         var project = new AssetProject(content, [],
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engine, "assets", "Shaders")])]);
+        var required = new HashSet<Guid>();
+        var dependencies = new Stack<Guid>(roots);
+        while (dependencies.TryPop(out Guid asset))
+        {
+            if (!required.Add(asset)) continue;
+            foreach (Guid dependency in sourceManifest.Assets[asset].Dependencies)
+                dependencies.Push(dependency);
+        }
         var models = new Dictionary<SourceGuid, ModelRoot>();
         var variants = new Dictionary<(float Cutoff, float NormalScale, bool DoubleSided), Guid>();
-        foreach (AssetEntry entry in project.Manifest.List(MaterialAsset.FileType).ToArray())
+        foreach (AssetEntry entry in project.Manifest.List(MaterialAsset.FileType)
+            .Where(entry => required.Contains(entry.AssetGuid)).ToArray())
         {
             using MaterialAsset material = await MaterialAsset.OpenAsync(Path.Combine(content, entry.Path));
             MaterialBlock values = material.GetBlock<MaterialBlock>();
