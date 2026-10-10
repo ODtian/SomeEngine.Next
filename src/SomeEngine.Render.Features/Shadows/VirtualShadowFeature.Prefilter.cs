@@ -307,15 +307,15 @@ public sealed partial class VirtualShadowFeature
     {
         public static void Declare(ref PassDefinition pass, ref PrefilterInitializeData data)
         {
-            _ = pass.Write(data.AxisX, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), PipelineSync.Copy,
-                ResourceAccess.CopyDestination, TextureLayout.CopyDestination, WriteCoverage.Complete);
-            _ = pass.Write(data.Separate, new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color), PipelineSync.Copy,
-                ResourceAccess.CopyDestination, TextureLayout.CopyDestination, WriteCoverage.Complete);
-            _ = pass.Write(data.Merged, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), PipelineSync.Copy,
-                ResourceAccess.CopyDestination, TextureLayout.CopyDestination, WriteCoverage.Complete);
+            _ = pass.Write(data.AxisX, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), PipelineSync.RenderTarget,
+                ResourceAccess.RenderTarget, TextureLayout.RenderTarget, WriteCoverage.Complete);
+            _ = pass.Write(data.Separate, new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color), PipelineSync.RenderTarget,
+                ResourceAccess.RenderTarget, TextureLayout.RenderTarget, WriteCoverage.Complete);
+            _ = pass.Write(data.Merged, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), PipelineSync.RenderTarget,
+                ResourceAccess.RenderTarget, TextureLayout.RenderTarget, WriteCoverage.Complete);
             _ = pass.Write(data.Pages, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            _ = pass.Write(data.Masks, new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color), PipelineSync.Copy,
-                ResourceAccess.CopyDestination, TextureLayout.CopyDestination, WriteCoverage.Complete);
+            _ = pass.Write(data.Masks, new TextureSubresourceRange(0, 1, 0, 2, TextureAspects.Color), PipelineSync.RenderTarget,
+                ResourceAccess.RenderTarget, TextureLayout.RenderTarget, WriteCoverage.Complete);
             _ = pass.Write(data.WorkPages, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             _ = pass.Write(data.Arguments, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
         }
