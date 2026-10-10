@@ -284,6 +284,7 @@ public sealed partial class ClusterPipelineSystem
                     MaxNodes = _options.MaxCandidates,
                     ArgsOffset = 0u,
                     UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
+                    InvocationCountIndex = viewIndexMode == 0u ? 2u : _renderContext.InvocationCountIndex,
                 },
                 $"Cluster {epochLabel} traversal seed uniforms");
             if (viewIndexMode == 0u)

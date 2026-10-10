@@ -102,6 +102,8 @@ public readonly record struct ClusterRenderContext(
     public GraphResourceBinder? BindDepthCacheClasses { get; init; }
     public GraphBufferId DepthWorkCounter { get; init; }
     public uint ViewDetailCount { get; init; } = 1u;
+    /// <summary>Element in the aligned uint view supplied by InvocationCountBinder; defaults to a scalar count.</summary>
+    public uint InvocationCountIndex { get; init; }
     /// <summary>Maximum number of raster windows across all details of one source view.</summary>
     public uint MaximumRasterWindowsPerSourceView { get; init; }
 
