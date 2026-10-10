@@ -42,6 +42,7 @@ internal sealed record VulkanExtendedFeatureSupport(
         "VK_EXT_custom_border_color";
     internal const string DeviceGeneratedCommandsExtensionName =
         "VK_EXT_device_generated_commands";
+    internal const string Maintenance5ExtensionName = "VK_KHR_maintenance5";
     internal const string Robustness2ExtensionName = "VK_EXT_robustness2";
     internal const string ShaderImageAtomicInt64ExtensionName =
         "VK_EXT_shader_image_atomic_int64";
@@ -49,7 +50,8 @@ internal sealed record VulkanExtendedFeatureSupport(
     internal static unsafe VulkanExtendedFeatureSupport Query(
         Vk vk,
         VkPhysicalDevice physicalDevice,
-        IReadOnlySet<string> extensions)
+        IReadOnlySet<string> extensions,
+        bool bufferDeviceAddress)
     {
         PhysicalDeviceConditionalRenderingFeaturesEXT conditional = QueryFeature<PhysicalDeviceConditionalRenderingFeaturesEXT>(
             vk, physicalDevice, extensions.Contains("VK_EXT_conditional_rendering"),
@@ -81,6 +83,12 @@ internal sealed record VulkanExtendedFeatureSupport(
                 physicalDevice,
                 extensions.Contains(CustomBorderColorExtensionName),
                 StructureType.PhysicalDeviceCustomBorderColorFeaturesExt);
+        PhysicalDeviceMaintenance5FeaturesKHR maintenance5 =
+            QueryFeature<PhysicalDeviceMaintenance5FeaturesKHR>(
+                vk,
+                physicalDevice,
+                extensions.Contains(Maintenance5ExtensionName),
+                StructureType.PhysicalDeviceMaintenance5FeaturesKhr);
         PhysicalDeviceDeviceGeneratedCommandsFeaturesEXT generatedCommands =
             QueryFeature<PhysicalDeviceDeviceGeneratedCommandsFeaturesEXT>(
                 vk,
@@ -143,7 +151,10 @@ internal sealed record VulkanExtendedFeatureSupport(
             transformProperties.MaxTransformFeedbackBufferDataSize,
             transformProperties.MaxTransformFeedbackBufferDataStride,
             transformProperties.MaxTransformFeedbackStreamDataSize,
-            generatedCommands.DeviceGeneratedCommands,
+            // Counted dispatch needs buffer addresses and the 64-bit flags from
+            // maintenance5. Keep its support and device enablement in agreement.
+            generatedCommands.DeviceGeneratedCommands && maintenance5.Maintenance5 &&
+                bufferDeviceAddress,
             generatedProperties.MaxIndirectSequenceCount,
             extensions.Contains(ConservativeRasterizationExtensionName),
             divisor.VertexAttributeInstanceRateDivisor,
