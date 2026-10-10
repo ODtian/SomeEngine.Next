@@ -28,7 +28,8 @@ internal sealed class PreparedMeshPages
         bool ownsSource,
         LinkedListNode<uint>[] lruNodes,
         int pageCount,
-        uint[] lowestDetailPageIds)
+        uint[] lowestDetailPageIds,
+        ulong lowestDetailBytes)
     {
         Mesh = mesh;
         FirstPageId = firstPageId;
@@ -38,6 +39,7 @@ internal sealed class PreparedMeshPages
         LruNodes = lruNodes;
         PageCount = pageCount;
         LowestDetailPageIds = lowestDetailPageIds;
+        LowestDetailBytes = lowestDetailBytes;
     }
 
     internal Mesh Mesh { get; }
@@ -48,6 +50,7 @@ internal sealed class PreparedMeshPages
     internal LinkedListNode<uint>[] LruNodes { get; }
     internal int PageCount { get; }
     internal uint[] LowestDetailPageIds { get; }
+    internal ulong LowestDetailBytes { get; }
 }
 
 internal readonly record struct PreparedMeshPagesDisposal(
@@ -95,6 +98,7 @@ internal sealed class MeshPages
     private readonly HashSet<uint> _pendingLoads = new();
     private readonly HashSet<uint> _pendingEvictions = new();
     private readonly HashSet<uint> _lowestDetailPageIds = new();
+    private ulong _lowestDetailBytes;
     private readonly List<uint> _offsets = [];
     private readonly List<LinkedListNode<uint>> _lruNodes = [];
     private readonly LinkedList<uint> _residentLru = new();
@@ -145,6 +149,15 @@ internal sealed class MeshPages
         if (expectedOffset != pageRegionLength)
             throw new InvalidDataException("Streamed mesh page descriptors do not exactly cover the payload page region.");
 
+        // Root page sizes are fixed for this registration, independent of residency or visibility.
+        ulong lowestDetailBytes = 0;
+        foreach (uint pageId in lowestDetailPageIds.Distinct())
+        {
+            int pageIndex = checked((int)(pageId - firstPageId));
+            uint size = checked((uint)payloadPages[pageIndex].Size);
+            lowestDetailBytes += PageHeap.AllocationSize(size);
+        }
+
         return new PreparedMeshPages(
             mesh,
             firstPageId,
@@ -153,7 +166,8 @@ internal sealed class MeshPages
             ownsSource,
             lruNodes,
             payloadPages.Count,
-            lowestDetailPageIds);
+            lowestDetailPageIds,
+            lowestDetailBytes);
     }
 
     public void ReserveRegistration(PreparedMeshPages registration)
@@ -189,6 +203,7 @@ internal sealed class MeshPages
         }
         foreach (uint pageId in registration.LowestDetailPageIds)
             _lowestDetailPageIds.Add(pageId);
+        _lowestDetailBytes += registration.LowestDetailBytes;
     }
 
     public bool TryRegistration(
@@ -285,15 +300,7 @@ internal sealed class MeshPages
     }
 
     internal ulong CalculateStreamingCapacityBytes(uint heapCapacity)
-    {
-        ulong roots = 0;
-        foreach (uint page in _lowestDetailPageIds)
-        {
-            _ = TrySource(page, out uint size, out _);
-            roots += PageHeap.AllocationSize(size);
-        }
-        return heapCapacity > roots ? heapCapacity - roots : 0;
-    }
+        => heapCapacity > _lowestDetailBytes ? heapCapacity - _lowestDetailBytes : 0;
 
     internal uint CalculateStreamingPageBytes(uint page)
     {
@@ -550,6 +557,7 @@ internal sealed class MeshPages
         _pageRegistrationIndices.Clear();
         _residentPages.Clear();
         _lowestDetailPageIds.Clear();
+        _lowestDetailBytes = 0;
         _pendingLoads.Clear();
         _pendingEvictions.Clear();
         _residentLru.Clear();
