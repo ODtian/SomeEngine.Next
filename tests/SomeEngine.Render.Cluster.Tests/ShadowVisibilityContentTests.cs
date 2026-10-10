@@ -43,6 +43,47 @@ public sealed class ShadowVisibilityContentTests
         AssertCoverage(1, covered);
     }
 
+    [Fact]
+    public async Task RepeatedVisibilityConversionPreservesMaskedCoverage()
+    {
+        using var files = new MaterialFiles();
+        await files.WriteAsync("""{"alphaMode":"MASK","alphaCutoff":0.5}""", """{"alphaMode":"OPAQUE"}""");
+        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(),
+            files.Source, files.Content, files.Geometry, false);
+        Guid firstShaderId = await files.ReadShaderIdAsync(0);
+        Shader first = await files.ReadShaderAsync(0);
+        Shader opaque = await files.ReadShaderAsync(1);
+        await ShadowVisibilityContent.BuildAsync(FrameStageScene.FindRoot(),
+            files.Source, files.Content, files.Geometry, false);
+        Assert.Equal(firstShaderId, await files.ReadShaderIdAsync(0));
+        Shader second = await files.ReadShaderAsync(0);
+        using Texture albedo = PixelTexture(255, 255, 255, 0);
+        using Texture normal = PixelTexture(128, 128, 255, 255);
+        var plane = await RasterTestGeometry.CreatePlaneAsync();
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
+            new ClusterPipelineOptions { MaxCandidates = 1024, SoftwareRasterEdgeThreshold = 65536 }, plane);
+        var firstMaterial = scene.CreateEmissiveMaterial(first, Vector3.Zero);
+        firstMaterial.AlbedoMap = albedo;
+        firstMaterial.NormalMap = normal;
+        var secondMaterial = scene.CreateEmissiveMaterial(second, Vector3.Zero);
+        secondMaterial.AlbedoMap = albedo;
+        secondMaterial.NormalMap = normal;
+        var opaqueMaterial = scene.CreateEmissiveMaterial(opaque, Vector3.Zero);
+        opaqueMaterial.AlbedoMap = albedo;
+        opaqueMaterial.NormalMap = normal;
+        scene.SetMeshTransform(0, new(new Vector3(20, 0, -8), Quaternion.Identity));
+        scene.SetMeshTransform(1, new(new Vector3(0, 0, -6), Quaternion.Identity));
+        scene.UseMaterial(1, firstMaterial);
+        byte[] firstFrame = await scene.ReadClusterColorAsync();
+        scene.UseMaterial(1, secondMaterial);
+        byte[] secondFrame = await scene.ReadClusterColorAsync();
+        scene.UseMaterial(1, opaqueMaterial);
+        byte[] opaqueFrame = await scene.ReadClusterColorAsync();
+        AssertCoverage(0, firstFrame);
+        AssertCoverage(0, secondFrame);
+        AssertCoverage(1, opaqueFrame);
+    }
+
     private static void AssertCoverage(float expected, byte[] frame)
     {
         float coverage = (float)MemoryMarshal.Read<Half>(frame.AsSpan((32 * 64 + 32) * 8 + 2, 2));
@@ -88,6 +129,13 @@ public sealed class ShadowVisibilityContentTests
             }
             manifest.Save(Path.Combine(Source, "Library", "AssetManifest"));
             manifest.Save(Path.Combine(Content, "Library", "AssetManifest"));
+        }
+
+        internal async Task<Guid> ReadShaderIdAsync(int material)
+        {
+            AssetManifest manifest = AssetManifest.Load(Path.Combine(Content, "Library", "AssetManifest"));
+            using MaterialAsset asset = await MaterialAsset.OpenAsync(Path.Combine(Content, manifest.Assets[_materials[material]].Path));
+            return asset.GetBlock<MaterialBlock>().Shader.Value;
         }
 
         internal async Task<Shader> ReadShaderAsync(int material)
