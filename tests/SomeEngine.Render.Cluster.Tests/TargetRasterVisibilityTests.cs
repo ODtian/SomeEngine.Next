@@ -16,6 +16,8 @@ public sealed class TargetRasterVisibilityTests
     [Theory]
     [InlineData("d3d12", "masked")]
     [InlineData("d3d12", "offset")]
+    [InlineData("vulkan", "masked")]
+    [InlineData("vulkan", "offset")]
     public async Task DepthTargetEntriesPreserveQuadVisibilityAndUserDepth(string backend, string depthBehavior)
     {
         string root = FrameStageScene.FindRoot();
