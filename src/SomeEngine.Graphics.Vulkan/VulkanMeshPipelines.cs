@@ -68,6 +68,17 @@ internal sealed unsafe partial class VulkanBackend
                     ShaderStageFlags.FragmentBit,
                     desc.Pixel));
             }
+            if (desc.Pixel != EntryPointReflection.Null)
+            {
+                int meshIndex = shaders.FindIndex(value => value.Stage == ShaderStageFlags.MeshBitExt);
+                int fragmentIndex = shaders.FindIndex(value => value.Stage == ShaderStageFlags.FragmentBit);
+                MeshShaderStage mesh = shaders[meshIndex];
+                MeshShaderStage fragment = shaders[fragmentIndex];
+                byte[] code = MatchSpirvMeshFragmentInputs(
+                    mesh.Shader.Code, mesh.Shader.Name, fragment.Shader.Code, fragment.Shader.Name);
+                shaders[fragmentIndex] = new MeshShaderStage(
+                    new CompiledSpirv(code, fragment.Shader.Name), fragment.Stage, desc.Pixel);
+            }
             if (nativeCache is null)
                 native = CreateMeshPipelineNative(nativeDevice, layout, shaders, desc, default);
             else
