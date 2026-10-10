@@ -26,10 +26,11 @@ public sealed class FiniteShadowTessellationTests
             Path.Combine(root, "templates/DefaultProject/assets/Shaders"), Path.Combine(root, "assets/Shaders")];
         var finite = await source.CreateAsync(TestShaderLoading.Slang, description, "Finite linear triangle caster");
         var options = new ClusterPipelineOptions { MaxCandidates = 65536, EnableFrameMetricsReadback = true,
-            ForceHardwareRaster = hardware, SoftwareRasterEdgeThreshold = 64, MaxTessellationFactor = 16 };
+            ForceHardwareRaster = hardware, SoftwareRasterEdgeThreshold = 65536, MaxTessellationFactor = 16 };
         var shadows = new VirtualShadowMapSettings { VirtualResolution = 4096, AtlasSize = 2048,
             MaxShadowLights = 1, DirectionalClipmapLevels = 16, DirectionalFirstClipmapLevel = -4,
-            DirectionalFirstCoarseClipmapLevel = 8, DirectionalLastCoarseClipmapLevel = 11, DynamicResolutionEnabled = false };
+            DirectionalFirstCoarseClipmapLevel = 8, DirectionalLastCoarseClipmapLevel = 11,
+            DirectionalMinCameraViewportWidth = 256, DynamicResolutionEnabled = false };
         await using var original = await FrameStageScene.CreateAsync(backend, true, options, shadowSettings: shadows, optionalFeatures: optionalFeatures);
         await using var tessellated = await FrameStageScene.CreateAsync(backend, true, options, shadowSettings: shadows, optionalFeatures: optionalFeatures);
         foreach (var scene in new[] { original, tessellated })
@@ -45,13 +46,27 @@ public sealed class FiniteShadowTessellationTests
             if (frame == 3)
                 foreach (var scene in new[] { original, tessellated })
                     scene.SetMeshTransform(1, new(new Vector3(.7f, 4, -4), Quaternion.Identity) { Stretch = new(1.6f, .2f, .5f) });
-            RasterImage expected = await original.ReadNextRasterImageAsync();
-            RasterImage actual = await tessellated.ReadNextRasterImageAsync();
+            RasterImage expected = await ReadFrame(original, frame == 0);
+            RasterImage actual = await ReadFrame(tessellated, frame == 0);
+            Console.WriteLine($"Finite tessellation frame {frame}, {backend}, hardware={hardware}: {actual.Metrics}");
             Assert.True(actual.Metrics.Work.Complete);
+            if (!hardware) Assert.True(actual.Metrics.SoftwareRasterBatches > 0);
             RasterImage.AssertEqual(expected, actual);
         }
         byte[] shadowed = await original.ReadClusterColorAsync();
         original.SetMeshTransform(1, new(new Vector3(20, 4, -4), Quaternion.Identity) { Stretch = new(1.6f, .2f, .5f) });
         Assert.NotEqual(shadowed, await original.ReadClusterColorAsync());
+
+        static async Task<RasterImage> ReadFrame(FrameStageScene scene, bool firstFrame)
+        {
+            if (!firstFrame) return await scene.ReadNextRasterImageAsync();
+            var (image, quality) = await scene.ReadShadowQualityAsync();
+            Assert.True(quality.RequestedPages > 0, "The fixture must request shadow pages.");
+            // At 7.9–8.26 meters, a 256-pixel camera floor selects absolute L11.
+            // A 64-pixel camera selects L13, outside this fixture's -4..11 range.
+            Assert.Contains(quality.Views, view => view.ClipmapLevel == 11 &&
+                view.Mips.Any(mip => mip.CoveredReceiverCells > 0));
+            return image;
+        }
     }
 }
