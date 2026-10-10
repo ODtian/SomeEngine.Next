@@ -106,8 +106,7 @@ public sealed class ClusterRenderResources : IDisposable
     private bool _streamStopped;
     private bool _residencyDestroyed;
     private bool _instanceBorrowerReleased;
-    private ulong _lastFaultFeedbackSequence;
-    private ulong _lastUsageFeedbackSequence;
+    private ulong _lastStreamingFeedbackSequence;
 
     public ClusterRenderResources(
         IGraphicsBackend backend,
@@ -174,6 +173,7 @@ public sealed class ClusterRenderResources : IDisposable
     }
 
     internal ClusterResidency Residency => _residency;
+    internal ClusterEpochId EpochId => _epoch;
 
     internal RenderWorld World => _renderWorld;
 
@@ -332,10 +332,13 @@ public sealed class ClusterRenderResources : IDisposable
         }
     }
 
-    /// <summary>Ingests all page-fault producers from one later host visit to a submitted frame.</summary>
-    internal void IngestPageFaultReadbackBatch(
+    /// <summary>Ingests faults and complete visible demand from one submitted frame.</summary>
+    internal void IngestStreamingFeedback(
         ClusterReadbackTicket ticket,
-        ReadOnlySpan<byte[]> payloads)
+        ReadOnlySpan<byte[]> payloads,
+        ReadOnlySpan<ClusterPageDemand> demands,
+        bool demandComplete,
+        ulong frameIdentity)
     {
         if (payloads.IsEmpty)
             throw new ArgumentException("Cluster page-fault feedback must contain a producer payload.", nameof(payloads));
@@ -344,15 +347,15 @@ public sealed class ClusterRenderResources : IDisposable
         {
             lock (_feedbackGate)
             {
-                ValidateReadbackTicket(ticket, _lastFaultFeedbackSequence);
+                ValidateReadbackTicket(ticket, _lastStreamingFeedbackSequence);
                 foreach (byte[] payload in payloads)
                 {
                     if (payload is null)
                         throw new ArgumentException("Cluster page-fault feedback contains a null payload.", nameof(payloads));
                     _residency.IngestFaults(payload);
                 }
-                _residency.UpdateStreamingQuality();
-                _lastFaultFeedbackSequence = ticket.FeedbackSequence;
+                _residency.IngestDemand(demands, demandComplete, frameIdentity);
+                _lastStreamingFeedbackSequence = ticket.FeedbackSequence;
             }
         }
         finally
@@ -367,26 +370,6 @@ public sealed class ClusterRenderResources : IDisposable
         try
         {
             _residency.PumpStreaming();
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
-    }
-
-    internal void IngestPageUsageReadback(
-        ClusterReadbackTicket ticket,
-        ReadOnlySpan<uint> leafNodeIndices)
-    {
-        EnterActiveOperation();
-        try
-        {
-            lock (_feedbackGate)
-            {
-                ValidateReadbackTicket(ticket, _lastUsageFeedbackSequence);
-                _residency.ReportLeafUsage(leafNodeIndices);
-                _lastUsageFeedbackSequence = ticket.FeedbackSequence;
-            }
         }
         finally
         {

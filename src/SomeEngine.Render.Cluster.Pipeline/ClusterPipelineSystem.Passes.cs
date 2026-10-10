@@ -239,8 +239,8 @@ public sealed partial class ClusterPipelineSystem
             }, ClusterBufferCopyParameters.Record, region: _regions.Feedback);
         graph.OrderAfter(work, requests);
         GraphData.PageFaultReadback = graph.AddReadback(frame.PageFaults,
-            new BufferRange(0, workOffset + sizeof(uint)),
-            new PageFaultReceiver(this), "Read back Cluster page requests", _regions.Feedback);
+            new BufferRange(0, checked(3u * sizeof(uint) + (ulong)frame.PageFaultCapacity * 24u)),
+            new PageFaultReceiver(this, frame.PageFaultCapacity, _resources.EpochId), "Read back Cluster page requests", _regions.Feedback);
         graph.OrderAfter(GraphData.PageFaultReadback, work);
     }
 

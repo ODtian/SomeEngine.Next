@@ -23,6 +23,11 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         Exception? Error);
 
     private readonly ClusterPageRequest[] _faultInbox;
+    private readonly ClusterPageDemand[] _demandInbox;
+    private int _demandCount;
+    private bool _hasDemand;
+    private bool _demandComplete;
+    private ulong _demandFrameIdentity;
     private readonly Dictionary<uint, ClusterPageRequest> _pendingRequests = new();
     private readonly Dictionary<uint, uint> _pagePriorities = [];
     private readonly Dictionary<uint, uint> _queuedPages = new();
@@ -112,6 +117,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         _maxPendingFaultWords = maxPendingFaultWords;
         _maxQueuedPages = maxQueuedPages;
         _faultInbox = new ClusterPageRequest[maxPendingFaultWords];
+        _demandInbox = new ClusterPageDemand[maxPendingFaultWords];
         _pendingRequests.EnsureCapacity(maxPendingFaultWords);
         _queuedPages.EnsureCapacity(maxQueuedPages);
         _loadCandidates.EnsureCapacity(maxQueuedPages);
@@ -160,7 +166,24 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         }
     }
 
-    public void Update()
+    internal void PushDemand(ReadOnlySpan<ClusterPageDemand> demands, bool complete, ulong frameIdentity)
+    {
+        lock (_faultGate)
+        {
+            ThrowIfNotActive();
+            // Slots can complete in callback order 4, 2, 3 after slot reuse.
+            // The graph's authored-frame identity, not arrival order, establishes recency.
+            if (frameIdentity <= _demandFrameIdentity) return;
+            _demandFrameIdentity = frameIdentity;
+            // Fault diagnostics retain their separate accumulation across all frames.
+            _demandCount = Math.Min(demands.Length, _demandInbox.Length);
+            demands[.._demandCount].CopyTo(_demandInbox);
+            _demandComplete = complete && _demandCount == demands.Length;
+            _hasDemand = true;
+        }
+    }
+
+    public ClusterStreamingDemand? Update()
     {
         ThrowIfNotActive();
         if (!Monitor.TryEnter(_coordinatorGate))
@@ -169,15 +192,16 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         try
         {
             ThrowIfNotActive();
-            DrainFaultInbox();
+            bool? demandComplete = DrainFaultInbox();
             DrainCompleted(out uint stagedPages, out uint failedPages);
-            QueueRequestedPages();
+            ClusterStreamingDemand? demand = QueueRequestedPages(demandComplete);
             StartQueuedPageLoads();
             _stagedPageCount = stagedPages;
             _failedPageCount = failedPages;
             _totalLoadFailureCount = SaturatingAdd(_totalLoadFailureCount, failedPages);
             _updateRevision = SaturatingAdd(_updateRevision, 1);
             PublishSnapshot(PageStreamLifecycle.Active);
+            return demand;
         }
         finally
         {
@@ -185,11 +209,13 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         }
     }
 
-    private void DrainFaultInbox()
+    private bool? DrainFaultInbox()
     {
         _uniqueFaultLeafCount = 0;
         _knownFaultLeafCount = 0;
         _backpressuredPageCount = 0;
+        _pagePriorities.Clear();
+        bool? demandComplete = null;
 
         lock (_faultGate)
         {
@@ -206,17 +232,40 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                 if (!_pendingRequests.TryGetValue(request.LeafNodeIndex, out var current) || request.Priority > current.Priority)
                     _pendingRequests[request.LeafNodeIndex] = request;
             _pendingFaultWords = 0;
+            if (_hasDemand)
+            {
+                demandComplete = _demandComplete;
+                foreach (ClusterPageDemand demand in _demandInbox.AsSpan(0, _demandCount))
+                    if (!_pagePriorities.TryGetValue(demand.PageId, out uint priority) || demand.Priority > priority)
+                        _pagePriorities[demand.PageId] = demand.Priority;
+                _hasDemand = false;
+                _demandCount = 0;
+            }
         }
 
         if (_droppedFaultCount != 0)
             _totalDroppedFaultCount = SaturatingAdd(_totalDroppedFaultCount, _droppedFaultCount);
+        return demandComplete;
     }
 
-    private void QueueRequestedPages()
+    private ClusterStreamingDemand? QueueRequestedPages(bool? demandComplete)
     {
-        if (_pendingRequests.Count == 0)
-            return;
+        if (_pendingRequests.Count == 0 && !demandComplete.HasValue)
+            return null;
 
+        ClusterStreamingDemand? demand = null;
+        if (demandComplete.HasValue)
+        {
+            _resources.CollectPageDependencies(_pagePriorities);
+            demand = _resources.SetReferencedPages(_pagePriorities.Keys, demandComplete.Value);
+            _queuedPages.Clear();
+            foreach ((uint page, uint priority) in _pagePriorities)
+                QueuePageIfNeeded(page, _resources.ResolvePage(page), priority);
+            _pagePriorities.Clear();
+        }
+
+        // Fault packets may be older than the latest view. They still contribute
+        // diagnostics and reads, but never replace that view's protection or quality.
         _uniqueFaultLeafCount = checked((uint)_pendingRequests.Count);
         foreach (ClusterPageRequest request in _pendingRequests.Values)
         {
@@ -240,6 +289,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             QueuePageIfNeeded(page, _resources.ResolvePage(page), priority);
         _pendingRequests.Clear();
         _pagePriorities.Clear();
+        return demand;
     }
 
     private void QueuePageIfNeeded(uint pageID, in PageFaultResolution resolution, uint priority)
@@ -542,6 +592,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                     WriteSnapshot(disposing);
 
                     _pendingFaultWords = 0;
+                    _demandCount = 0;
+                    _hasDemand = false;
                     _pendingReportedFaults = 0;
                     _pendingStoredFaults = 0;
                     _pendingDroppedFaults = 0;

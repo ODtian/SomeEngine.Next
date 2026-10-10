@@ -139,6 +139,20 @@ void PublishClusterPageFault(uint sliceIndex, uint pageIndex, uint capacity)
     if (index < capacity) PageFaultBuffer.Store4(4u + index * 16u, uint4(sliceIndex, pageIndex, 1u, 0u));
 }
 
+void PublishClusterPageDemand(uint pageIndex, uint capacity)
+{
+    uint4 active = WaveActiveBallot(true);
+    uint lane = WaveGetLaneIndex();
+    uint leader = WaveMaskFirstLane(active);
+    uint first = 0u;
+    if (lane == leader)
+        PageFaultBuffer.InterlockedAdd(ClusterPageDemandCountOffset(capacity), WaveMaskBitCount(active), first);
+    first = WaveReadLaneAt(first, leader);
+    uint index = first + WaveMaskPrefix(active, lane);
+    if (index < capacity)
+        PageFaultBuffer.Store2(ClusterPageDemandOffset(capacity, index), uint2(pageIndex, 0u));
+}
+
 uint ClusterHierarchyNodeState(
     float3 worldMin,
     float3 worldMax,
@@ -320,8 +334,12 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
             uint previous;
             PageFaultBuffer.InterlockedMax(ClusterPageRequestPriorityOffset(firstView.MaxPageFaults, page),
                 streamingPriority, previous);
-            if (pageFault && previous == 0u)
-                PublishClusterPageFault(nodeIndex * 4u + childIndex, page, firstView.MaxPageFaults);
+            if (previous == 0u)
+            {
+                PublishClusterPageDemand(page, firstView.MaxPageFaults);
+                if (pageFault)
+                    PublishClusterPageFault(nodeIndex * 4u + childIndex, page, firstView.MaxPageFaults);
+            }
         }
     }
 

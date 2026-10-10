@@ -25,8 +25,23 @@ internal sealed class ClusterPageFixups
         internal Part[] Parts = [];
         internal Part[] ParentParts = [];
         internal bool Complete;
+        internal PageDependency Dependency = null!;
     }
 
+    internal sealed class PageDependency((uint First, uint End)[] ranges)
+    {
+        internal readonly (uint First, uint End)[] Ranges = ranges;
+        internal uint FirstPage => Ranges[0].First;
+        internal uint EndPage
+        {
+            get => Ranges[^1].End;
+            set => Ranges[^1] = (Ranges[^1].First, value);
+        }
+        internal PageDependency[] Parents = [];
+        internal int Order;
+    }
+
+    private readonly Dictionary<uint, PageDependency> _dependenciesByPage = [];
     private readonly Dictionary<uint, List<Group>> _groupsByPage = [];
     private readonly Dictionary<uint, List<Group>> _groupsByParentPage = [];
     private readonly HashSet<Group> _changedGroups = [];
@@ -63,6 +78,8 @@ internal sealed class ClusterPageFixups
             group.ParentParts = group.Data.Parents.Select(parent => partsByCluster[(parent.PageIndex, parent.ClusterIndex)]).Distinct().ToArray();
             foreach (Part part in group.ParentParts) part.ChildGroups.Add(group);
         }
+        BuildPageDependencies(groups);
+        _dependenciesByPage.EnsureCapacity(checked(_dependenciesByPage.Count + (int)registration.PageCount));
         Reserve(_groupsByPage, groups, static group => Enumerable.Range((int)group.Data.FirstPage, (int)group.Data.PageCount).Select(static page => (uint)page));
         Reserve(_groupsByParentPage, groups, static group => group.Data.Parents.Select(static parent => parent.PageIndex).Distinct());
         _changedGroups.EnsureCapacity(checked(_groupCount + groups.Count));
@@ -78,6 +95,105 @@ internal sealed class ClusterPageFixups
         }
     }
 
+    private static void BuildPageDependencies(List<Group> groups)
+    {
+        // Overlapping group ranges describe one indivisible set of physical pages.
+        // Co-located parents cannot have a different physical load priority.
+        var dependencies = new List<PageDependency>();
+        foreach (Group group in groups.OrderBy(static group => group.Data.FirstPage))
+        {
+            uint first = group.FirstPage + group.Data.FirstPage;
+            uint end = first + group.Data.PageCount;
+            PageDependency dependency;
+            if (dependencies.Count == 0 || first >= dependencies[^1].EndPage)
+                dependencies.Add(dependency = new PageDependency([(first, end)]));
+            else
+            {
+                dependency = dependencies[^1];
+                dependency.EndPage = Math.Max(dependency.EndPage, end);
+            }
+            group.Dependency = dependency;
+        }
+        var byPage = new Dictionary<uint, PageDependency>();
+        foreach (PageDependency dependency in dependencies)
+            for (uint page = dependency.FirstPage; page < dependency.EndPage; page++)
+                byPage.Add(page, dependency);
+        foreach (var component in groups.GroupBy(static group => group.Dependency))
+            component.Key.Parents = component.SelectMany(group => group.Data.Parents.Select(parent =>
+                byPage[parent.PageIndex + group.FirstPage])).Where(parent => parent != component.Key).Distinct().ToArray();
+
+        dependencies = CondenseParentCycles(groups, dependencies);
+
+        // Cache child-before-parent order once at registration. Priority propagation
+        // then visits every demanded component at most once, including shared parents.
+        var childCounts = dependencies.ToDictionary(static dependency => dependency, static _ => 0);
+        foreach (PageDependency dependency in dependencies)
+            foreach (PageDependency parent in dependency.Parents) childCounts[parent]++;
+        var ready = new Queue<PageDependency>(dependencies.Where(dependency => childCounts[dependency] == 0));
+        int order = 0;
+        while (ready.TryDequeue(out PageDependency? dependency))
+        {
+            dependency.Order = order++;
+            foreach (PageDependency parent in dependency.Parents)
+                if (--childCounts[parent] == 0) ready.Enqueue(parent);
+        }
+        if (order != dependencies.Count)
+            throw new InvalidOperationException("Condensed Cluster page dependencies must be acyclic.");
+    }
+
+    private static List<PageDependency> CondenseParentCycles(List<Group> groups, List<PageDependency> dependencies)
+    {
+        // Different LODs can also share distinct pages whose parent edges form a
+        // physical cycle, even though the cluster reduction hierarchy is acyclic.
+        // Collapse those strongly connected sets once, without adding gap pages.
+        var children = dependencies.ToDictionary(static dependency => dependency, static _ => new List<PageDependency>());
+        foreach (PageDependency dependency in dependencies)
+            foreach (PageDependency parent in dependency.Parents) children[parent].Add(dependency);
+        var visited = new HashSet<PageDependency>();
+        var finishOrder = new List<PageDependency>();
+        var walk = new Stack<(PageDependency Dependency, bool Finish)>();
+        foreach (PageDependency start in dependencies)
+        {
+            walk.Push((start, false));
+            while (walk.TryPop(out var step))
+            {
+                if (step.Finish) finishOrder.Add(step.Dependency);
+                else if (visited.Add(step.Dependency))
+                {
+                    walk.Push((step.Dependency, true));
+                    foreach (PageDependency parent in step.Dependency.Parents) walk.Push((parent, false));
+                }
+            }
+        }
+
+        visited.Clear();
+        var components = new Dictionary<PageDependency, PageDependency>();
+        var members = new List<PageDependency>();
+        for (int index = finishOrder.Count - 1; index >= 0; index--)
+        {
+            PageDependency start = finishOrder[index];
+            if (visited.Contains(start)) continue;
+            members.Clear();
+            walk.Push((start, false));
+            while (walk.TryPop(out var step))
+                if (visited.Add(step.Dependency))
+                {
+                    members.Add(step.Dependency);
+                    foreach (PageDependency child in children[step.Dependency]) walk.Push((child, false));
+                }
+            PageDependency component = members.Count == 1 ? members[0] :
+                new PageDependency([.. members.SelectMany(static member => member.Ranges).OrderBy(static range => range.First)]);
+            foreach (PageDependency member in members) components.Add(member, component);
+        }
+        var parentSets = dependencies.GroupBy(dependency => components[dependency]).ToDictionary(
+            static group => group.Key,
+            group => group.SelectMany(static member => member.Parents).Select(parent => components[parent])
+                .Where(parent => parent != group.Key).Distinct().ToArray());
+        foreach ((PageDependency component, PageDependency[] parents) in parentSets) component.Parents = parents;
+        foreach (Group group in groups) group.Dependency = components[group.Dependency];
+        return [.. parentSets.Keys];
+    }
+
     internal void Register(Group[] groups)
     {
         _groupCount += groups.Length;
@@ -85,7 +201,10 @@ internal sealed class ClusterPageFixups
         {
             MeshClusterGroup data = group.Data;
             for (uint page = data.FirstPage; page < data.FirstPage + data.PageCount; page++)
+            {
                 _groupsByPage[page + group.FirstPage].Add(group);
+                _dependenciesByPage[page + group.FirstPage] = group.Dependency;
+            }
             foreach (uint page in data.Parents.Select(static parent => parent.PageIndex).Distinct())
                 _groupsByParentPage[page + group.FirstPage].Add(group);
             _changedGroups.Add(group);
@@ -100,26 +219,28 @@ internal sealed class ClusterPageFixups
 
     internal void ExpandDependencies(Dictionary<uint, uint> priorities)
     {
-        var queue = new Queue<uint>(priorities.Keys);
-        var visited = new HashSet<uint>();
-        while (queue.TryDequeue(out uint page))
+        var demand = new Dictionary<PageDependency, uint>();
+        var queue = new PriorityQueue<PageDependency, int>();
+        foreach ((uint page, uint priority) in priorities)
+            if (_dependenciesByPage.TryGetValue(page, out PageDependency? dependency))
+                Include(dependency, priority);
+        while (queue.TryDequeue(out PageDependency? dependency, out _))
         {
-            if (!visited.Add(page) || !_groupsByPage.TryGetValue(page, out List<Group>? groups)) continue;
-            uint priority = priorities[page];
-            foreach (Group group in groups)
-            {
-                for (uint dependency = group.Data.FirstPage; dependency < group.Data.FirstPage + group.Data.PageCount; dependency++)
-                    Include(dependency + group.FirstPage);
-                foreach (MeshClusterReference parent in group.Data.Parents) Include(parent.PageIndex + group.FirstPage);
-            }
+            uint priority = demand[dependency];
+            foreach ((uint first, uint end) in dependency.Ranges)
+                for (uint page = first; page < end; page++) priorities[page] = priority;
+            uint parentPriority = priority == uint.MaxValue ? priority : priority + 1;
+            foreach (PageDependency parent in dependency.Parents) Include(parent, parentPriority);
+        }
 
-            void Include(uint dependency)
+        void Include(PageDependency dependency, uint priority)
+        {
+            if (!demand.TryGetValue(dependency, out uint previous))
             {
-                if (!priorities.TryGetValue(dependency, out uint previous))
-                { priorities.Add(dependency, priority); queue.Enqueue(dependency); }
-                else if (priority > previous)
-                { priorities[dependency] = priority; visited.Remove(dependency); queue.Enqueue(dependency); }
+                demand.Add(dependency, priority);
+                queue.Enqueue(dependency, dependency.Order);
             }
+            else if (priority > previous) demand[dependency] = priority;
         }
     }
 
@@ -191,6 +312,6 @@ internal sealed class ClusterPageFixups
 
     internal void Clear()
     {
-        _groupsByPage.Clear(); _groupsByParentPage.Clear(); _changedGroups.Clear(); _groupCount = 0;
+        _dependenciesByPage.Clear(); _groupsByPage.Clear(); _groupsByParentPage.Clear(); _changedGroups.Clear(); _groupCount = 0;
     }
 }

@@ -622,7 +622,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
             RenderGraphFrame graph = context.Graph;
             graph.ObserveExecution(this);
-            graph.SetReadbackTag(GraphData.PageFaultReadback, binding.ReadbackEpoch.Value);
+            graph.SetReadbackTag(GraphData.PageFaultReadback, graph.FrameIdentity);
             if (_options.EnableFrameMetricsReadback)
                 graph.SetReadbackTag(GraphData.FrameMetricsReadback, binding.ReadbackEpoch.Value);
             int policyViewCount = views.Length - primaryViewCount;

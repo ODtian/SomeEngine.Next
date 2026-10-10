@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-/// <summary>Completed page-fault data awaiting streaming consumption.</summary>
+/// <summary>Completed page faults and visible demand awaiting streaming consumption.</summary>
 public sealed class ClusterStreamingFeedbackChannel
 {
     private static readonly byte[][] EmptyPayloads = [[]];
@@ -12,13 +12,18 @@ public sealed class ClusterStreamingFeedbackChannel
 
     public ClusterStreamingFeedbackStatistics CaptureStatistics() => _statistics;
 
-    internal void Publish(ulong epoch, ReadOnlySpan<byte> payload)
+    internal void Publish(ulong epoch, ulong frameIdentity, ReadOnlySpan<byte> payload, ReadOnlySpan<byte> demandPayload)
     {
         var ticket = new ClusterReadbackTicket(new ClusterEpochId(epoch), checked(_statistics.ReceivedFrames + 1));
         uint reportedCount = MemoryMarshal.Read<uint>(payload);
         int storedCount = checked((int)Math.Min(reportedCount, (uint)((payload.Length - sizeof(uint)) / 16)));
         byte[] bytes = reportedCount == 0 ? [] : payload[..(sizeof(uint) + storedCount * 16)].ToArray();
-        _packets.Enqueue(new ClusterStreamingFeedbackPacket(ticket, bytes.Length == 0 ? EmptyPayloads : [bytes]));
+        uint reportedDemand = MemoryMarshal.Read<uint>(demandPayload);
+        int storedDemand = checked((int)Math.Min(reportedDemand, (uint)((demandPayload.Length - sizeof(uint)) / 8)));
+        ClusterPageDemand[] demands = MemoryMarshal.Cast<byte, ClusterPageDemand>(
+            demandPayload.Slice(sizeof(uint), storedDemand * 8)).ToArray();
+        _packets.Enqueue(new ClusterStreamingFeedbackPacket(ticket, bytes.Length == 0 ? EmptyPayloads : [bytes],
+            demands, reportedDemand == (uint)storedDemand, frameIdentity));
         _statistics = _statistics with
         {
             ReceivedFrames = ticket.FeedbackSequence,
@@ -46,7 +51,7 @@ public readonly record struct ClusterStreamingFeedbackStatistics(
     ulong ReceivedFrames, ulong ConsumedFrames, ulong ReportedPageFaults, ulong ConsumedPageFaults, ulong LastEpoch);
 
 /// <summary>
-/// Consumes geometry page faults and advances reads through the shared feedback channel.
+/// Consumes geometry demand and advances reads through the shared feedback channel.
 /// </summary>
 public sealed class ClusterStreamingFeedbackConsumer
 {
@@ -63,15 +68,15 @@ public sealed class ClusterStreamingFeedbackConsumer
 
     public void Pump()
     {
-        ConsumeFaults();
+        ConsumeFeedback();
         _resources.PumpStreaming();
     }
 
-    private void ConsumeFaults()
+    private void ConsumeFeedback()
     {
         while (_channel.TryTake(out ClusterStreamingFeedbackPacket packet))
         {
-            _resources.IngestPageFaultReadbackBatch(packet.Ticket, packet.Payloads);
+            _resources.IngestStreamingFeedback(packet.Ticket, packet.Payloads, packet.Demands, packet.DemandComplete, packet.FrameIdentity);
             _channel.RecordConsumption(packet);
         }
     }
@@ -79,4 +84,7 @@ public sealed class ClusterStreamingFeedbackConsumer
 
 internal readonly record struct ClusterStreamingFeedbackPacket(
     ClusterReadbackTicket Ticket,
-    byte[][] Payloads);
+    byte[][] Payloads,
+    ClusterPageDemand[] Demands,
+    bool DemandComplete,
+    ulong FrameIdentity);
