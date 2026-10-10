@@ -22,7 +22,7 @@ internal static class TestShaderLoading
                 {
                     Format = target,
                     Profile = slang.FindProfile(
-                        target == SlangCompileTarget.Dxil ? "sm_6_6" : "glsl_460"),
+                        target == SlangCompileTarget.Dxil ? "sm_6_6" : "spirv_1_5"),
                 },
             ],
             DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
