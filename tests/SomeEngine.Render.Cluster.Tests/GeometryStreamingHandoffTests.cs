@@ -406,6 +406,58 @@ public sealed class GeometryStreamingHandoffTests
     }
 
     [Fact]
+    public async Task NewMeshRegistrationUpdatesStreamingCapacityForVisibleDetail()
+    {
+        var transform = new SomeEngine.Core.Math.TransformQvvs(new Vector3(0, 0, -24), Quaternion.Identity);
+        var options = new ClusterPipelineOptions
+        {
+            MaxCandidates = 1024, LodThreshold = 1.0f,
+            ForceHardwareRaster = true, EnableFrameMetricsReadback = true,
+        };
+        RasterImage fine;
+        await using (var reference = await FrameStageScene.CreateAsync("D3D12", false,
+            options, await RasterTestGeometry.CreatePlaneAsync()))
+        {
+            reference.SetGeometryVisible(false);
+            reference.AddGeometryMesh(await RasterTestGeometry.CreatePlaneAsync(), transform);
+            fine = await reference.ReadNextRasterImageAsync();
+        }
+        using MeshAsset file = await CreateStreamingPlaneAsync();
+        ClusterMeshBlock geometry = file.GetBlock<ClusterMeshBlock>();
+        var mesh = await geometry.CreateAsync(file.GetBlock<MeshBlock>(), file.Name);
+        using var source = await geometry.OpenPayloadSourceAsync();
+        for (int sceneIndex = 0; sceneIndex < 2; sceneIndex++)
+        {
+            await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
+                options, await RasterTestGeometry.CreatePlaneAsync(),
+                residencyOptions: new ClusterResidencyOptions
+                {
+                    PageHeapCapacityBytes = 2048, BvhCapacityBytes = 65536,
+                    PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                });
+            scene.SetGeometryVisible(false);
+            scene.AddStreamingMesh(mesh, source, transform);
+            RasterImage coarse = await scene.ReadNextRasterImageAsync();
+            Assert.NotEqual(fine.Depth, coarse.Depth);
+            AssertImage(fine, await ReadUntilDepthAsync(scene, fine.Depth));
+            RasterImage image = fine;
+            for (int frame = 0; frame < 36; frame++)
+                image = await scene.ReadNextRasterImageAsync();
+            AssertImage(fine, image);
+            if (sceneIndex != 0) continue;
+
+            // A later offscreen mesh still needs its root page. That changes the detail
+            // budget, although the already resident visible detail issues no load faults.
+            scene.AddGeometryMesh(await RasterTestGeometry.CreatePlaneAsync(),
+                new SomeEngine.Core.Math.TransformQvvs(new Vector3(100, 0, -24), Quaternion.Identity));
+            for (int frame = 0; frame < 36; frame++)
+                image = await scene.ReadNextRasterImageAsync();
+            AssertImage(coarse, image);
+            // Disposing this scene must not carry its reduced budget into the next one.
+        }
+    }
+
+    [Fact]
     public async Task DeferredDetailLoadsAfterTheViewReleasesProtectedGeometry()
     {
         var left = new SomeEngine.Core.Math.TransformQvvs(new Vector3(-1.25f, 0, -4), Quaternion.Identity);

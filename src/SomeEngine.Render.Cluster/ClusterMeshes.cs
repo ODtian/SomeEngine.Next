@@ -200,6 +200,23 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
+    internal void ResolvePages(
+        Dictionary<uint, uint> priorities,
+        List<KeyValuePair<uint, uint>> unresolved)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            unresolved.Clear();
+            foreach (KeyValuePair<uint, uint> request in priorities)
+            {
+                PageFaultResolution resolution = ResolvePageCore(request.Key);
+                if (resolution.Kind is not (PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending))
+                    unresolved.Add(request);
+            }
+        }
+    }
+
     internal void CollectPageDependencies(HashSet<uint> pages)
     {
         lock (_gate)
