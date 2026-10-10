@@ -1530,6 +1530,12 @@ internal sealed partial class FrameExecutor
 
     private void ReconnectResourceParameters((GraphAccessTargetKind Kind, int Index) resource)
     {
+        // Indexed reads have no descriptor binding. Re-resolve their resource identities
+        // when an edit moves dense resource rows, just as for bound parameters.
+        if (_resourceAccessLists.TryGetValue(resource, out List<int>? accesses))
+            foreach (int access in accesses)
+                if (_accesses[access].Identity.Owner == _frame.Graph.Identity)
+                    _rowChanges.Accesses.Add(_accesses[access].Identity);
         if (_resourceParameterConnections.TryGetValue(resource, out HashSet<ParameterConnection>? connections))
             foreach (ParameterConnection connection in connections) _parameterPassChanges.Add(connection.Pass);
     }
