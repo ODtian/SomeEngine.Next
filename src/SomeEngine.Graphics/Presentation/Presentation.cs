@@ -142,7 +142,7 @@ public abstract class Swapchain : DeviceResource
     }
 
     public Surface Surface { get; }
-    public SwapchainInfo Info { get; }
+    public SwapchainInfo Info { get; internal set; }
     public TextureUsages ImageUsages { get; }
 }
 
