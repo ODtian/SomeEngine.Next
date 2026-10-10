@@ -27,7 +27,8 @@ struct ClusteredLightGridParameters
     uint TileCountY;
     float4 ZParams;
     uint DepthSliceCount;
-    uint MaxLightsPerCluster;
+    // Average entries per cell used to size the shared allocation budget.
+    uint LightEntriesPerCell;
     uint DirectionalCount;
     uint NonDirectionalCount;
     uint ScreenWidth;

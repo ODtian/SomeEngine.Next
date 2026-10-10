@@ -11,10 +11,12 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Features.Lighting;
 
-/// <summary>Explicit resources produced by the independent clustered-lighting feature.</summary>
+/// <summary>Explicit clustered-lighting resources. AllocationStatus contains one uint:
+/// zero means complete assignment; nonzero means the shared budget omitted required lights.</summary>
 public readonly record struct LightingFeatureResources(
     GraphBufferId Grid,
     GraphBufferId LightIndices,
+    GraphBufferId AllocationStatus,
     GraphTextureId CookieAtlas,
     uint CellCountPerView,
     uint MaxLightsPerCell,
@@ -23,6 +25,7 @@ public readonly record struct LightingFeatureResources(
     public bool IsValid =>
         Grid != default &&
         LightIndices != default &&
+        AllocationStatus != default &&
         CookieAtlas != default &&
         CellCountPerView != 0 &&
         MaxLightsPerCell != 0 &&
@@ -30,7 +33,7 @@ public readonly record struct LightingFeatureResources(
 }
 
 /// <summary>
-/// Owns light conversion, fixed-capacity spatial assignment resources, and retained graph passes.
+/// Owns light conversion, shared-budget spatial assignment resources, and retained graph passes.
 /// Standard shade discovers these resources from its final linked program through the generic
 /// graph resource boundary.
 /// </summary>
@@ -39,11 +42,16 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     private const uint ThreadCount = 64;
     private readonly LinkedComputePipeline _pipeline;
     private readonly LinkedComputePipeline _clearPipeline;
+    private readonly LinkedComputePipeline _compactPipeline;
     private readonly GraphPassId _clearPass;
     private readonly GraphPassId _buildPass;
+    private readonly GraphPassId _compactPass;
     private readonly GraphPassId _cookieInitializePass;
     private readonly GraphBufferId _grid;
     private readonly GraphBufferId _lightIndices;
+    private readonly GraphBufferId _lightLinks;
+    private readonly GraphBufferId _allocationCounters;
+    private readonly GraphBufferId _allocationStatus;
     private readonly GraphTextureId _cookieAtlas;
     private readonly int _width;
     private readonly int _height;
@@ -91,11 +99,12 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         uint tileCountY = DivideRoundUp(checked((uint)_height), _settings.TileSize);
         uint cellsPerView = checked(tileCountX * tileCountY * _settings.DepthSliceCount);
         ulong gridBytes = checked((ulong)cellsPerView * _viewCount * 2u * sizeof(uint));
-        ulong indexBytes = checked(
-            (ulong)cellsPerView * _viewCount * _settings.MaxLightsPerCell * sizeof(uint));
+        uint lightEntryCapacity = checked(cellsPerView * _viewCount * _settings.MaxLightsPerCell);
+        ulong indexBytes = (ulong)lightEntryCapacity * sizeof(uint);
 
         LinkedComputePipeline? pipeline = null;
         LinkedComputePipeline? clearPipeline = null;
+        LinkedComputePipeline? compactPipeline = null;
         try
         {
             pipeline = LinkedComputePipeline.Create(
@@ -106,6 +115,8 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 "Build clustered lighting grid");
             clearPipeline = LinkedComputePipeline.Create(
                 backend, device, shader, "ClearClusteredLightGrid", "Clear clustered lighting counts");
+            compactPipeline = LinkedComputePipeline.Create(
+                backend, device, shader, "CompactClusteredLightGrid", "Compact clustered lighting lists");
             RenderGraphEdit edit = graph.BeginEdit();
             try
             {
@@ -118,7 +129,16 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 _lightIndices = edit.CreateBuffer(new BufferDesc(
                     indexBytes,
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
-                        "Lighting clustered indices"));
+                    "Lighting clustered indices"));
+                _lightLinks = edit.CreateBuffer(new BufferDesc(
+                    indexBytes * 2u, BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
+                    "Lighting pooled links"));
+                _allocationCounters = edit.CreateBuffer(new BufferDesc(
+                    2u * sizeof(uint), BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
+                    "Lighting list allocation counters"));
+                _allocationStatus = edit.CreateBuffer(new BufferDesc(
+                    sizeof(uint), BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource,
+                    "Lighting list allocation status"));
                 _cookieAtlas = edit.CreatePersistentTexture(new TextureDesc(
                     TextureDimension.Texture2D,
                     1,
@@ -171,18 +191,34 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                     default,
                     static (ref PassDefinition _, ref LightingBuildPassData _) => { },
                     LightingBuildPassData.Record, region: region);
-                for (int assignment = 0; assignment < 2; assignment++)
+                _compactPass = edit.AddComputeFramePass(
+                    "Compact lighting assignment",
+                    PassQueueSelection.AnyCompatible(),
+                    new LightingBuildPassData(default),
+                    new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                    compactPipeline.Pipeline,
+                    compactPipeline.ParameterLayout,
+                    default,
+                    static (ref PassDefinition _, ref LightingBuildPassData _) => { },
+                    LightingBuildPassData.Record, region: region);
+                edit.OrderAfter(_buildPass, _clearPass);
+                edit.OrderAfter(_compactPass, _buildPass);
+                for (int assignment = 0; assignment < 3; assignment++)
                 {
                     bool clear = assignment == 0;
-                    PassDefinition pass = edit.GetPass(clear ? _clearPass : _buildPass);
+                    bool compact = assignment == 2;
+                    PassDefinition pass = edit.GetPass(clear ? _clearPass : compact ? _compactPass : _buildPass);
                     int[] resources = ShaderResourceLayout.Resolve<int>(
-                        clear ? clearPipeline.ParameterLayout : pipeline.ParameterLayout,
+                        clear ? clearPipeline.ParameterLayout : compact ? compactPipeline.ParameterLayout : pipeline.ParameterLayout,
                         static (name, type) => (name, type) switch
                         {
                             ("LightingViews", ResourceBindingType.BufferSrv) => 0,
                             ("LightBuffer", ResourceBindingType.BufferSrv) => 1,
                             ("ClusteredLightGrid", ResourceBindingType.BufferUav) => 2,
                             ("LightIndexList", ResourceBindingType.BufferUav) => 3,
+                            ("LightLinkList", ResourceBindingType.BufferUav) => 4,
+                            ("LightAllocationCounters", ResourceBindingType.BufferUav) => 5,
+                            ("LightAllocationStatus", ResourceBindingType.BufferUav) => 6,
                             _ => null,
                         });
                     foreach (int resource in resources)
@@ -212,6 +248,20 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                                     WriteCoverage.Partial, resultContents: ResourceContentState.Defined,
                                     contentScope: BufferContentScope.CountBoundedPrefix);
                                 break;
+                            case 4:
+                                _ = pass.Bind(edit.CreateBufferUav(_lightLinks,
+                                    structureStride: 2 * sizeof(uint), label: "Lighting link pool"),
+                                    PipelineSync.ComputeShading, compact ? GraphAccessMode.Read : GraphAccessMode.Write,
+                                    WriteCoverage.Partial, resultContents: ResourceContentState.Defined,
+                                    contentScope: BufferContentScope.CountBoundedPrefix);
+                                break;
+                            case 5:
+                            case 6:
+                                _ = pass.Bind(edit.CreateBufferUav(resource == 5 ? _allocationCounters : _allocationStatus,
+                                    structureStride: sizeof(uint), label: "Lighting allocation state"),
+                                    PipelineSync.ComputeShading, clear ? GraphAccessMode.Write : GraphAccessMode.ReadWrite,
+                                    clear ? WriteCoverage.Complete : WriteCoverage.Partial);
+                                break;
                         }
                     // Clearing every cell count establishes an empty valid index prefix even
                     // when the compiled clear entry has no index-list descriptor.
@@ -229,11 +279,14 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
             }
             _pipeline = pipeline;
             _clearPipeline = clearPipeline;
+            _compactPipeline = compactPipeline;
             pipeline = null;
             clearPipeline = null;
+            compactPipeline = null;
             Resources = new LightingFeatureResources(
                 _grid,
                 _lightIndices,
+                _allocationStatus,
                 _cookieAtlas,
                 cellsPerView,
                 _settings.MaxLightsPerCell,
@@ -243,6 +296,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         {
             pipeline?.Dispose();
             clearPipeline?.Dispose();
+            compactPipeline?.Dispose();
             throw;
         }
     }
@@ -312,10 +366,13 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 nonDirectionalCount,
                 checked((uint)views.Length),
                 parameters[0].GroupsPerLight)));
+        graph.SetPassData(_compactPass, new LightingBuildPassData(new DispatchArguments(
+            DivideRoundUp(Resources.CellCountPerView, ThreadCount), checked((uint)views.Length), 1)));
         graph.SetPassEnabled(_clearPass, true);
         graph.SetPassEnabled(_cookieInitializePass, !_cookieInitialized);
         if (!_cookieInitialized) graph.ObserveExecution(this);
         graph.SetPassEnabled(_buildPass, enabled && nonDirectionalCount != 0);
+        graph.SetPassEnabled(_compactPass, enabled && nonDirectionalCount != 0);
     }
 
     void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
@@ -486,6 +543,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
             return;
         _pipeline.Dispose();
         _clearPipeline.Dispose();
+        _compactPipeline.Dispose();
         _gpuLights.Clear();
         Array.Clear(_viewParameters);
         _disposed = true;
@@ -513,7 +571,7 @@ internal struct ClusteredLightGridParameters
     internal uint TileCountY;
     internal Vector4 ZParams;
     internal uint DepthSliceCount;
-    internal uint MaxLightsPerCluster;
+    internal uint LightEntriesPerCell;
     internal uint DirectionalCount;
     internal uint NonDirectionalCount;
     internal uint ScreenWidth;
@@ -545,7 +603,7 @@ internal struct ClusteredLightGridParameters
                 sliceScale,
                 -MathF.Log2(nearDepth) * sliceScale),
             DepthSliceCount = settings.DepthSliceCount,
-            MaxLightsPerCluster = settings.MaxLightsPerCell,
+            LightEntriesPerCell = settings.MaxLightsPerCell,
             DirectionalCount = directionalCount,
             NonDirectionalCount = nonDirectionalCount,
             // Share the grid's slice parallelism between lights without expanding every light by every slice.

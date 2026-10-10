@@ -15,7 +15,7 @@ public sealed class ClusteredLightingTests(D3D12TestCompiler shaderCompiler)
     [InlineData(3, false)]
     [InlineData(80, true)]
     [InlineData(80, false)]
-    public void Clear_and_group_assignment_preserve_view_boundaries_and_bounded_indices(int lightCount, bool large)
+    public void PooledAssignmentPreservesEveryLightUntilTheSharedBudgetIsExhausted(int lightCount, bool large)
     {
         const int cells = 8 * 4 * 4, capacity = 16, views = 2, directional = 2;
         uint sliceGroups = (uint)(4 + Math.Max(lightCount, 1) - 1) / (uint)Math.Max(lightCount, 1);
@@ -43,32 +43,58 @@ public sealed class ClusteredLightingTests(D3D12TestCompiler shaderCompiler)
         }
         uint[] grid = Enumerable.Repeat(untouched, cells * views * 2).ToArray();
         uint[] indices = Enumerable.Repeat(untouched, cells * views * capacity).ToArray();
-        uint[][] cleared = Dispatch("ClearClusteredLightGrid", new(cells / 64, views, 1), grid, indices);
-        Assert.All(cleared[0], value => Assert.Equal(0u, value));
+        uint[] links = Enumerable.Repeat(untouched, indices.Length * 2).ToArray();
+        uint[][] cleared = Dispatch("ClearClusteredLightGrid", new(cells / 64, views, 1),
+            [grid, indices, links, [untouched, untouched], [untouched]]);
+        for (int cell = 0; cell < cells * views; cell++) Assert.Equal(0u, cleared[0][cell * 2 + 1]);
         Assert.All(cleared[1], value => Assert.Equal(untouched, value));
+        Assert.Equal(0u, cleared[4][0]);
         uint[][] assigned = lightCount == 0 ? cleared : Dispatch("BuildClusteredLightGrid",
-            new((uint)lightCount, views, sliceGroups), cleared[0], cleared[1]);
+            new((uint)lightCount, views, sliceGroups), cleared);
+        assigned = Dispatch("CompactClusteredLightGrid", new(cells / 64, views, 1), assigned);
+        int requested = (large ? cells : 1) * lightCount;
+        int retained = Math.Min(requested, indices.Length);
+        bool overflow = requested > indices.Length;
+        Assert.Equal(overflow ? 1u : 0u, assigned[4][0]);
+        var addresses = new HashSet<int>();
+        int stored = 0;
         for (int cell = 0; cell < cells * views; cell++)
         {
             // Small spheres lie strictly within tile (4, 1), depth slice 1.
             bool covered = cell < cells && (large || cell == (1 * 4 + 1) * 8 + 4);
-            uint count = covered ? (uint)lightCount : 0;
-            Assert.Equal(0u, assigned[0][cell * 2]);
-            Assert.Equal(count, assigned[0][cell * 2 + 1]);
-            int valid = Math.Min((int)count, capacity);
-            uint[] prefix = assigned[1].AsSpan(cell * capacity, valid).ToArray();
-            Assert.Equal(valid, prefix.Distinct().Count());
+            int first = checked((int)assigned[0][cell * 2]);
+            int count = checked((int)assigned[0][cell * 2 + 1]);
+            if (!covered || !overflow) Assert.Equal(covered ? lightCount : 0, count);
+            else Assert.InRange(count, 0, lightCount);
+            Assert.InRange(first, 0, indices.Length);
+            Assert.InRange(count, 0, indices.Length - first);
+            uint[] prefix = assigned[1].AsSpan(first, count).ToArray();
+            Assert.Equal(count, prefix.Distinct().Count());
             Assert.All(prefix, value => Assert.InRange(value, (uint)directional, (uint)(directional + lightCount - 1)));
-            Assert.All(assigned[1].AsSpan(cell * capacity + valid, capacity - valid).ToArray(),
-                value => Assert.Equal(untouched, value));
+            for (int index = first; index < first + count; index++) Assert.True(addresses.Add(index));
+            stored += count;
         }
+        Assert.Equal(retained, stored);
+        Assert.Equal(Enumerable.Range(0, retained), addresses.Order());
+        Assert.All(assigned[1].AsSpan(retained).ToArray(), value => Assert.Equal(untouched, value));
 
-        uint[][] Dispatch(string entry, DispatchArguments dispatch, uint[] counts, uint[] output) =>
+        // A following empty frame clears the overflow indication and every effective list.
+        uint[][] reset = Dispatch("ClearClusteredLightGrid", new(cells / 64, views, 1), assigned);
+        Assert.Equal(0u, reset[4][0]);
+        for (int cell = 0; cell < cells * views; cell++) Assert.Equal(0u, reset[0][cell * 2 + 1]);
+
+        uint[][] Dispatch(string entry, DispatchArguments dispatch, uint[][] state) =>
             new D3D12TestCompute(shaderCompiler).Execute("clustered_light_grid.slang", entry, dispatch,
-            [
-                (parameters, ResourceBindingType.BufferSrv, 192), (lights, ResourceBindingType.BufferSrv, 144),
-                (counts, ResourceBindingType.BufferUav, 8), (output, ResourceBindingType.BufferUav, 4),
-            ]);
+            new BufferInput[]
+            {
+                new("LightingViews", parameters, ResourceBindingType.BufferSrv, 192),
+                new("LightBuffer", lights, ResourceBindingType.BufferSrv, 144),
+                new("ClusteredLightGrid", state[0], ResourceBindingType.BufferUav, 8),
+                new("LightIndexList", state[1], ResourceBindingType.BufferUav, 4),
+                new("LightLinkList", state[2], ResourceBindingType.BufferUav, 8),
+                new("LightAllocationCounters", state[3], ResourceBindingType.BufferUav, 4),
+                new("LightAllocationStatus", state[4], ResourceBindingType.BufferUav, 4),
+            });
     }
 
     private static uint Float(float value) => BitConverter.SingleToUInt32Bits(value);

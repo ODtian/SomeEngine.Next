@@ -253,8 +253,9 @@ void ProjectVirtualShadowLocalLights(uint3 group : SV_GroupID, uint lane : SV_Gr
         ClusteredLightGridParameters lighting = LightingViews[pixel.z];
         float viewDepth = max(-mul(float4(receiver.Position, 1.0), lighting.View).z, lighting.ZParams.x);
         uint cell = ClusteredLightCellIndex(lighting, pixel.z, pixel.xy, viewDepth);
-        localCount = min(ClusteredLightGrid[cell].y, lighting.MaxLightsPerCluster);
-        firstLight = cell * lighting.MaxLightsPerCluster;
+        uint2 cellLights = ClusteredLightGrid[cell];
+        localCount = cellLights.y;
+        firstLight = cellLights.x;
     }
     float noise = VirtualShadowRayStepOffset(pixel.xy, VirtualShadowSampling.FrameIndex);
     uint packedGroups = (Projection.LightLayerCount + 31u) / 32u;

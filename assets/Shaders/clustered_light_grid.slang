@@ -8,6 +8,12 @@ StructuredBuffer<GPULight> LightBuffer;
 RWStructuredBuffer<uint2> ClusteredLightGrid;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> LightIndexList;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
+RWStructuredBuffer<uint2> LightLinkList;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> LightAllocationCounters;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> LightAllocationStatus;
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -16,7 +22,12 @@ void ClearClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
     ClusteredLightGridParameters parameters = LightingViews[dispatchThreadId.y];
     uint cell = dispatchThreadId.x;
     if (cell < parameters.CellCountPerView)
-        ClusteredLightGrid[dispatchThreadId.y * parameters.CellCountPerView + cell] = uint2(0u, 0u);
+        ClusteredLightGrid[dispatchThreadId.y * parameters.CellCountPerView + cell] = uint2(0xffffffffu, 0u);
+    if (cell == 0u && dispatchThreadId.y == 0u)
+    {
+        LightAllocationCounters[0] = LightAllocationCounters[1] = 0u;
+        LightAllocationStatus[0] = 0u;
+    }
 }
 
 void GetClusteredLightBoundingSphere(
@@ -173,6 +184,34 @@ bool GetClusteredLightCellBounds(
 groupshared uint3 LightCellMinimum;
 groupshared uint3 LightCellExtent;
 
+// A wave reserves from the shared budget, rather than truncating each cell.
+// Saturation keeps both list addresses and the allocator safe even after overflow.
+bool AllocateClusteredLightLink(out uint link)
+{
+    uint capacity, stride;
+    LightLinkList.GetDimensions(capacity, stride);
+    uint requested = WaveActiveCountBits(true);
+    uint first = 0u, retained = 0u;
+    if (WaveIsFirstLane())
+    {
+        uint expected = LightAllocationCounters[0];
+        for (;;)
+        {
+            retained = min(requested, capacity - expected);
+            first = expected;
+            if (retained == 0u) break;
+            uint observed;
+            InterlockedCompareExchange(LightAllocationCounters[0], expected, expected + retained, observed);
+            if (observed == expected) break;
+            expected = observed;
+        }
+        if (retained != requested) InterlockedOr(LightAllocationStatus[0], 1u);
+    }
+    uint lane = WavePrefixCountBits(true);
+    link = WaveReadLaneFirst(first) + lane;
+    return lane < WaveReadLaneFirst(retained);
+}
+
 void AssignClusteredLightCell(ClusteredLightGridParameters parameters, uint viewOffset, uint lightIndex, uint index)
 {
     uint x = index % LightCellExtent.x;
@@ -181,10 +220,12 @@ void AssignClusteredLightCell(ClusteredLightGridParameters parameters, uint view
     uint z = yz / LightCellExtent.y;
     uint3 coordinate = LightCellMinimum + uint3(x, y, z);
     uint cell = viewOffset + (coordinate.z * parameters.TileCountY + coordinate.y) * parameters.TileCountX + coordinate.x;
-    uint destination;
-    InterlockedAdd(ClusteredLightGrid[cell].y, 1u, destination);
-    if (destination < parameters.MaxLightsPerCluster)
-        LightIndexList[cell * parameters.MaxLightsPerCluster + destination] = lightIndex;
+    uint link;
+    if (!AllocateClusteredLightLink(link)) return;
+    uint previous;
+    InterlockedExchange(ClusteredLightGrid[cell].x, link, previous);
+    LightLinkList[link] = uint2(lightIndex, previous);
+    InterlockedAdd(ClusteredLightGrid[cell].y, 1u);
 }
 
 [shader("compute")]
@@ -218,4 +259,28 @@ void BuildClusteredLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_G
     else
         for (uint index = groupId.z * 64u + threadIndex; index < count; index += 64u * parameters.GroupsPerLight)
             AssignClusteredLightCell(parameters, viewOffset, lightIndex, index);
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void CompactClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    ClusteredLightGridParameters parameters = LightingViews[dispatchThreadId.y];
+    if (dispatchThreadId.x >= parameters.CellCountPerView) return;
+    uint cell = dispatchThreadId.y * parameters.CellCountPerView + dispatchThreadId.x;
+    uint2 head = ClusteredLightGrid[cell];
+    uint first = 0u;
+    if (head.y != 0u)
+    {
+        // Every stored link contributes once, so the compact list fits the same budget.
+        InterlockedAdd(LightAllocationCounters[1], head.y, first);
+        uint link = head.x;
+        for (uint count = head.y; count != 0u; count--)
+        {
+            uint2 entry = LightLinkList[link];
+            LightIndexList[first + count - 1u] = entry.x;
+            link = entry.y;
+        }
+    }
+    ClusteredLightGrid[cell] = uint2(first, head.y);
 }

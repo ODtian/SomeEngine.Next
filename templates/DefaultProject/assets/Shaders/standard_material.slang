@@ -148,10 +148,9 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             pixelCoord.z,
             pixelCoord.xy,
             viewDepth);
-        uint localCount = min(
-            ClusteredLightGrid[cell].y,
-            lighting.MaxLightsPerCluster);
-        uint firstIndex = cell * lighting.MaxLightsPerCluster;
+        uint2 cellLights = ClusteredLightGrid[cell];
+        uint localCount = cellLights.y;
+        uint firstIndex = cellLights.x;
         for (uint localIndex = 0u; localIndex < localCount; localIndex++)
         {
             uint lightIndex = LightIndexList[firstIndex + localIndex];

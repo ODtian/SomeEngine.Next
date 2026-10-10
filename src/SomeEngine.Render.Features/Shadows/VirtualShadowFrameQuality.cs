@@ -9,6 +9,8 @@ public sealed record VirtualShadowFrameQuality(ulong RenderingFrame, float Direc
     uint FreePhysicalPages, uint RasterPageArea, ClusterWorkOverflow WorkOverflow, VirtualShadowViewQuality[] Views)
 {
     public double RasterBatchEquivalents => RasterPageArea / 64.0;
+    /// <summary>The shared local-light list budget omitted required assignments in this frame.</summary>
+    public bool LightAssignmentOverflow { get; init; }
 }
 
 /// <summary>Actual submitted projection and mip-resolution/completed-depth populations, not next-frame policy.</summary>

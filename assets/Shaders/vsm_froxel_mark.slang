@@ -93,8 +93,9 @@ void MarkVirtualShadowFroxelPages(uint index : SV_DispatchThreadID)
     ClusteredLightGridParameters lighting = LightingViews[PageDemand.ReceiverViewIndex];
     float3 centerView = mul(float4(center,1.0),lighting.View).xyz;
     uint cell = ClusteredLightCellIndex(lighting,PageDemand.ReceiverViewIndex,pixel,max(-centerView.z,lighting.ZParams.x));
-    uint countLocal = min(ClusteredLightGrid[cell].y,lighting.MaxLightsPerCluster);
-    uint firstLight = cell * lighting.MaxLightsPerCluster;
+    uint2 cellLights = ClusteredLightGrid[cell];
+    uint countLocal = cellLights.y;
+    uint firstLight = cellLights.x;
     for (uint local = 0u; local < countLocal; local++)
     {
         uint light = LightIndexList[firstLight + local];

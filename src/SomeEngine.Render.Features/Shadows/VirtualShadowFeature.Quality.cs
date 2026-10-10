@@ -38,6 +38,7 @@ public sealed partial class VirtualShadowFeature
             AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _pageOwners);
             AddQualityReadback(ref edit, readbacks, QualityData.RasterArea, _policyRasterWorkCount);
             AddQualityReadback(ref edit, readbacks, QualityData.DepthWork, _depthWorkCount);
+            AddQualityReadback(ref edit, readbacks, QualityData.LightAssignment, _lighting.Resources.AllocationStatus);
             _qualityReceiverCoverage = edit.CreateBuffer(new BufferDesc(
                 (ulong)ReceiverCoverageRowPitch * ReceiverMaskHeight, BufferUsages.CopyDestination | BufferUsages.CopySource,
                 "Virtual shadow quality receiver cells"));
@@ -80,7 +81,7 @@ public sealed partial class VirtualShadowFeature
         }
     }
 
-    private enum QualityData { FrameBias, RequestCount, DirtyCount, Failures, FreeCount, RasterArea, ReceiverCoverage, Views, Pages, Work, DepthWork }
+    private enum QualityData { FrameBias, RequestCount, DirtyCount, Failures, FreeCount, RasterArea, ReceiverCoverage, Views, Pages, Work, DepthWork, LightAssignment }
 
     private sealed class QualityReadbacks
     {
@@ -102,7 +103,7 @@ public sealed partial class VirtualShadowFeature
 
     private sealed class QualityRequest(int viewCount, float[] baseBias, uint coverageRowWords, Action<VirtualShadowFrameQuality> receive)
     {
-        internal readonly byte[][] Bytes = new byte[11][];
+        internal readonly byte[][] Bytes = new byte[12][];
         internal readonly Action<VirtualShadowFrameQuality> Receive = receive;
         internal int Received;
 
@@ -170,7 +171,8 @@ public sealed partial class VirtualShadowFeature
             }
             return new(frame, bias[0], bias[0], Word(QualityData.RequestCount), Word(QualityData.DirtyCount),
                 Word(QualityData.Failures), Word(QualityData.Failures, 1), FreePages(),
-                Word(QualityData.RasterArea), (ClusterWorkOverflow)Word(QualityData.Work), result);
+                Word(QualityData.RasterArea), (ClusterWorkOverflow)Word(QualityData.Work), result)
+            { LightAssignmentOverflow = Word(QualityData.LightAssignment) != 0u };
         }
 
         private uint FreePages()
