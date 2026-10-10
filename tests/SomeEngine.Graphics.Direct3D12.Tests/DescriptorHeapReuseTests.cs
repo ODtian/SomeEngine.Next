@@ -164,6 +164,163 @@ public sealed class DescriptorHeapReuseTests(D3D12TestCompiler shaderCompiler)
         Assert.Equal(42u, MemoryMarshal.Read<uint>(mapped.Bytes));
     }
 
+    [Fact]
+    public unsafe void Mixed_bindings_repeat_across_retirement_but_reject_changed_descriptor_generations()
+    {
+        using var data = new DescriptorResources(shaderCompiler);
+        // ValidationLayer may decline the optional repetition API. Exercise the
+        // public D3D12 receiver directly; the fixture still enables native validation.
+        IGraphicsBackend backend = data.NativeBackend;
+        using CommandContext context = backend.CreateCommandContext(data.Device, new(QueueType.Compute, 0, 1));
+        Queue queue = backend.GetQueue(data.Device, QueueType.Compute);
+        using ExternalTimeline gate = data.Backend.CreateExternalTimeline(data.Device, 0);
+        var nativeGate = data.Backend.GetNativeTimeline(gate);
+        try
+        {
+            for (int recording = 0; recording < 3; recording++)
+            {
+                if (recording != 0)
+                {
+                    backend.WriteDescriptor(data.Textures, 0,
+                        ResourceBinding.SampledTexture(recording == 1 ? data.SecondView : data.FirstView));
+                    backend.WriteDescriptor(data.Samplers, 0,
+                        ResourceBinding.SampledWith(recording == 1 ? data.Border : data.Edge));
+                    backend.PublishDescriptors(data.Device);
+                    Assert.False(backend.TryRepeatCommands(context, out _));
+                }
+
+                // The larger middle recording replaces the previous spare while older
+                // native caches still retain the heaps referenced by their command data.
+                uint capacity = recording == 1 ? 64u : 8u;
+                backend.Begin(context, new CommandRecordingDesc(capacity, capacity, 16));
+                backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.None,
+                    PipelineSync.ComputeShading, ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
+                backend.SetPipeline(context, data.Ordinary);
+                backend.SetTransientParameterBindings(context, new(data.OrdinaryLayout,
+                    data.OrdinaryResources, UInts(0, (uint)recording * 10 + 1)));
+                backend.Dispatch(context, new(1, 1, 1));
+                backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.ComputeShading,
+                    PipelineSync.ComputeShading, ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
+                backend.SetPipeline(context, data.Indexed);
+                backend.SetTransientParameterBindings(context, new(data.IndexedLayout,
+                    [ResourceBinding.WritableBuffer(data.OutputView)],
+                    UInts(backend.GetDescriptorIndex(data.Textures, 0).Value,
+                        backend.GetDescriptorIndex(data.Samplers, 0).Value)));
+                backend.Dispatch(context, new(1, 1, 1));
+                backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.ComputeShading,
+                    PipelineSync.ComputeShading, ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
+                backend.SetPipeline(context, data.Ordinary);
+                backend.SetTransientParameterBindings(context, new(data.OrdinaryLayout,
+                    data.OrdinaryResources, UInts(3, (uint)recording * 10 + 3)));
+                backend.Dispatch(context, new(1, 1, 1));
+                backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.ComputeShading,
+                    PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+                backend.CopyBuffer(context, new(data.Output, 0, data.Readback, (ulong)recording * 16, 16));
+                using (RecordedCommands commands = backend.End(context))
+                {
+                    QueueCompletion completion = recording == 0
+                        ? backend.Submit(queue, new([], [new(gate, 1)], [commands], [], []))
+                        : backend.Submit(queue, new([], [], [commands], [], []));
+                    if (recording == 0)
+                    {
+                        Assert.False(backend.IsComplete(completion));
+                        Assert.False(backend.TryRepeatCommands(context, out _));
+                        Assert.True(nativeGate->Signal(1) >= 0);
+                    }
+                    Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+                }
+                backend.CollectCompleted(data.Device);
+
+                backend.PublishDescriptors(data.Device);
+                Assert.True(backend.TryRepeatCommands(context, out RecordedCommands discarded));
+                discarded.Dispose();
+                Assert.True(backend.TryRepeatCommands(context, out RecordedCommands repeated));
+                using (repeated)
+                {
+                    // Executable command storage must retain all four mixed heaps even
+                    // when the public context is disposed before its final submission.
+                    if (recording == 2) context.Dispose();
+                    QueueCompletion completion = backend.Submit(queue, new([], [], [repeated], [], []));
+                    Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+                }
+                backend.CollectCompleted(data.Device);
+            }
+
+            using MappedBuffer mapped = backend.Map(data.Readback, MapType.Read, new(0, 48));
+            mapped.Invalidate(new(0, 48));
+            Assert.Equal(new uint[] { 26, 25, 25, 28, 36, 75, 0, 38, 46, 25, 25, 48 },
+                MemoryMarshal.Cast<byte, uint>(mapped.Bytes).ToArray());
+        }
+        finally
+        {
+            _ = nativeGate->Signal(1);
+        }
+    }
+
+    [Fact]
+    public void Multiple_heap_replacements_preserve_every_dispatch_and_decline_repetition()
+    {
+        using var data = new DescriptorResources(shaderCompiler);
+        IGraphicsBackend backend = data.NativeBackend;
+        using CommandContext context = backend.CreateCommandContext(data.Device, new(QueueType.Compute, 0, 1));
+        Queue queue = backend.GetQueue(data.Device, QueueType.Compute);
+
+        // Alternating both resource and sampler bindings consumes new descriptor
+        // positions. The first recording grows both heaps several times.
+        for (int recording = 0; recording < 2; recording++)
+        {
+            backend.Begin(context, recording == 0
+                ? new CommandRecordingDesc(2, 1, 16)
+                : new CommandRecordingDesc(64, 32, 16));
+            backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.None,
+                PipelineSync.ComputeShading, ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
+            backend.SetPipeline(context, data.Ordinary);
+            for (uint dispatch = 0; dispatch < 8; dispatch++)
+            {
+                ResourceBinding[] bindings = dispatch % 2 == 0 ? data.OrdinaryResources :
+                    [ResourceBinding.SampledTexture(data.SecondView), ResourceBinding.SampledWith(data.Border),
+                        ResourceBinding.WritableBuffer(data.OutputView)];
+                backend.SetTransientParameterBindings(context, new(data.OrdinaryLayout,
+                    bindings, UInts(0, dispatch)));
+                backend.Dispatch(context, new(1, 1, 1));
+                backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.ComputeShading,
+                    PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+                backend.CopyBuffer(context, new(data.Output, 0, data.Readback, dispatch * 4, 4));
+                backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.Copy,
+                    PipelineSync.ComputeShading, ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
+            }
+            using (RecordedCommands commands = backend.End(context))
+            {
+                QueueCompletion completion = backend.Submit(queue, new([], [], [commands], [], []));
+                Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+            }
+            backend.CollectCompleted(data.Device);
+            using (MappedBuffer mapped = backend.Map(data.Readback, MapType.Read, new(0, 32)))
+            {
+                mapped.Invalidate(new(0, 32));
+                Assert.Equal(new uint[] { 25, 1, 27, 3, 29, 5, 31, 7 },
+                    MemoryMarshal.Cast<byte, uint>(mapped.Bytes).ToArray());
+            }
+
+            if (recording == 0)
+                Assert.False(backend.TryRepeatCommands(context, out _));
+            else
+            {
+                Assert.True(backend.TryRepeatCommands(context, out RecordedCommands repeated));
+                using (repeated)
+                {
+                    QueueCompletion completion = backend.Submit(queue, new([], [], [repeated], [], []));
+                    Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+                }
+                backend.CollectCompleted(data.Device);
+                using MappedBuffer mapped = backend.Map(data.Readback, MapType.Read, new(0, 32));
+                mapped.Invalidate(new(0, 32));
+                Assert.Equal(new uint[] { 25, 1, 27, 3, 29, 5, 31, 7 },
+                    MemoryMarshal.Cast<byte, uint>(mapped.Bytes).ToArray());
+            }
+        }
+    }
+
     private static byte[] UInts(uint first, uint second)
     {
         byte[] values = new byte[8];
@@ -177,6 +334,7 @@ public sealed class DescriptorHeapReuseTests(D3D12TestCompiler shaderCompiler)
         internal static DescriptorSlotDesc TextureSlot => new(ResourceBindingType.TextureSrv,
             Format.R32Float, TextureDimension: TextureViewDimension.Texture2D);
         internal ValidationLayer Backend { get; }
+        internal IGraphicsBackend NativeBackend { get; }
         internal Device Device { get; }
         internal Pipeline Ordinary { get; }
         internal Pipeline Indexed { get; }
@@ -229,7 +387,8 @@ public sealed class DescriptorHeapReuseTests(D3D12TestCompiler shaderCompiler)
                 """, [new("computeMain", SlangStage.Compute)], "sm_6_6");
             OrdinaryLayout = ordinary.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
             IndexedLayout = indexed.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-            Backend = new ValidationLayer(D3D12GraphicsBackend.Create());
+            NativeBackend = D3D12GraphicsBackend.Create();
+            Backend = new ValidationLayer(NativeBackend);
             Device = D3D12TestSupport.CreateWarpDevice(Backend);
             Ordinary = Backend.CreateComputePipeline(Device, new(ordinary.SlangCode, ordinary.Reflection,
                 ordinary.GetEntryPoint(0), ordinary.GetEntryCode(0)));
