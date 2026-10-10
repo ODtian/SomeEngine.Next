@@ -369,7 +369,7 @@ internal sealed unsafe partial class VulkanBackend
             desc.Dimension,
             desc,
             static (nativeDevice, description, native) =>
-                new VulkanColorAttachmentView(nativeDevice, description, native));
+                new VulkanColorAttachmentView(nativeDevice, description, native), colorAttachment: true);
 
     internal DepthStencilView CreateDepthStencilView(
         RhiDevice device,
@@ -469,18 +469,21 @@ internal sealed unsafe partial class VulkanBackend
         RhiFormat format,
         TextureViewDimension dimension,
         in TDescription description,
-        Func<VulkanDevice, TDescription, VkImageView, TView> factory)
+        Func<VulkanDevice, TDescription, VkImageView, TView> factory,
+        bool colorAttachment = false)
         where TView : GraphicsObject
         where TDescription : struct
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanTexture nativeTexture = RequireTexture(nativeDevice, texture, nameof(texture));
-        ValidateTextureRange(nativeTexture.Info, range);
+        bool depthSlices = colorAttachment && nativeTexture.Info.Dimension == TextureDimension.Texture3D;
+        if (depthSlices) ValidateAttachmentRange(nativeTexture.Info, range);
+        else ValidateTextureRange(nativeTexture.Info, range);
         ImageViewCreateInfo createInfo = new()
         {
             SType = StructureType.ImageViewCreateInfo,
             Image = nativeTexture.Native,
-            ViewType = ToNative(dimension),
+            ViewType = depthSlices ? ImageViewType.Type2DArray : ToNative(dimension),
             Format = VulkanFormats.ToNative(format),
             Components = new ComponentMapping(
                 ComponentSwizzle.Identity,
@@ -566,6 +569,8 @@ internal sealed unsafe partial class VulkanBackend
                 PNext = nativeViewFormats.Length == 0 ? null : &formatList,
             };
             ImageCreateFlags flags = aliasable ? ImageCreateFlags.CreateAliasBit : ImageCreateFlags.None;
+            if (desc.Dimension == TextureDimension.Texture3D && (desc.Usages & TextureUsages.ColorAttachment) != 0)
+                flags |= ImageCreateFlags.Create2DArrayCompatibleBit;
             if (sparse)
             {
                 flags |= ImageCreateFlags.CreateSparseBindingBit |
