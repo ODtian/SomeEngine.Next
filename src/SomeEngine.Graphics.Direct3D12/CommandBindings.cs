@@ -1435,6 +1435,8 @@ internal sealed unsafe partial class D3D12Backend
         private ID3D12DescriptorHeap* _samplerArena;
         private DescriptorHeapStorage _resourceSpare;
         private DescriptorHeapStorage _samplerSpare;
+        private readonly List<nint> _replacedResourceHeaps = [];
+        private readonly List<nint> _replacedSamplerHeaps = [];
         private bool _usesPrivateDescriptorArena;
         private uint _initialResourceDescriptorCapacity;
         private uint _initialSamplerDescriptorCapacity;
@@ -1692,10 +1694,7 @@ internal sealed unsafe partial class D3D12Backend
                 : _samplerCapacity;
             ValidateCapacity(ParameterHeap.Resource, resourceCapacity);
             ValidateCapacity(ParameterHeap.Sampler, samplerCapacity);
-            int replacedHeapCount =
-                (replaceResources && _resourceArena is not null ? 1 : 0) +
-                (replaceSamplers && _samplerArena is not null ? 1 : 0);
-            PrepareTransientObjects(replacedHeapCount);
+            PrepareReplacedDescriptorHeaps(replaceResources, replaceSamplers);
             ulong nextVersion = checked(_descriptorArenaVersion + 1);
 
             ID3D12DescriptorHeap* resourceReplacement = null;
@@ -2119,10 +2118,7 @@ internal sealed unsafe partial class D3D12Backend
             if (!replaceResource && !replaceSampler)
                 return;
             bool rebind = _descriptorHeapsBound;
-            int retainedHeapCount =
-                (replaceResource && _resourceArena is not null ? 1 : 0) +
-                (replaceSampler && _samplerArena is not null ? 1 : 0);
-            PrepareTransientObjects(retainedHeapCount);
+            PrepareReplacedDescriptorHeaps(replaceResource, replaceSampler);
 
             uint resourceCapacity = replaceResource
                 ? GrowCapacity(ParameterHeap.Resource, _resourceCapacity, resourceRequired)
@@ -2237,6 +2233,24 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
+        private void PrepareReplacedDescriptorHeaps(bool resources, bool samplers)
+        {
+            if (resources && _resourceArena is not null)
+                _replacedResourceHeaps.EnsureCapacity(checked(_replacedResourceHeaps.Count + 1));
+            if (samplers && _samplerArena is not null)
+                _replacedSamplerHeaps.EnsureCapacity(checked(_replacedSamplerHeaps.Count + 1));
+        }
+
+        private void ReleaseReplacedDescriptorHeaps()
+        {
+            foreach (nint heap in _replacedResourceHeaps)
+                _ = ResourceTrace.Release((IUnknown*)heap);
+            foreach (nint heap in _replacedSamplerHeaps)
+                _ = ResourceTrace.Release((IUnknown*)heap);
+            _replacedResourceHeaps.Clear();
+            _replacedSamplerHeaps.Clear();
+        }
+
         private void RetainReplacedDescriptorHeap(
             ParameterHeap heap, ID3D12DescriptorHeap* previous, uint capacity)
         {
@@ -2244,15 +2258,16 @@ internal sealed unsafe partial class D3D12Backend
             ref DescriptorHeapStorage spare = ref heap == ParameterHeap.Resource
                 ? ref _resourceSpare
                 : ref _samplerSpare;
-            // Keep at most one spare per heap type. The original reference still
-            // follows the normal submission retirement path, including repeat restrictions.
+            // The original reference remains with this recording until GPU retirement.
+            // A spare and any cached commands retain their own independent references.
             if (spare.Heap is null || spare.Capacity <= capacity)
             {
                 _ = previous->AddRef();
                 if (spare.Heap is not null) _ = ResourceTrace.Release(spare.Heap);
                 spare = new DescriptorHeapStorage { Heap = previous, Capacity = capacity };
             }
-            _transientObjects.Add((nint)previous);
+            (heap == ParameterHeap.Resource ? _replacedResourceHeaps : _replacedSamplerHeaps)
+                .Add((nint)previous);
         }
 
         private ID3D12DescriptorHeap* CreateShaderVisibleHeap(
