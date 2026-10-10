@@ -16,8 +16,9 @@ struct CameraDepthOfField
 struct VirtualShadowReceiverProjection
 {
     float4 WorldToClipW;
-    float ScreenPixelRadius;
+    // Match CPU/DXIL packing while keeping float3 aligned for SPIR-V uniform buffers.
     float3 WorldTranslation;
+    float ScreenPixelRadius;
     float4 WorldToViewDepth;
     CameraDepthOfField DepthOfField;
     float3 CameraPosition;
