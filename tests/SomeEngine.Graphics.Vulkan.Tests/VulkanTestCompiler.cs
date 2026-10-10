@@ -29,7 +29,7 @@ public sealed class VulkanTestCompiler : IDisposable
                 new TargetDesc
                 {
                     Format = SlangCompileTarget.Spirv,
-                    Profile = global.FindProfile("glsl_460"),
+                    Profile = global.FindProfile("spirv_1_5"),
                     Flags = SlangTargetFlags.GenerateSpirvDirectly,
                     CompilerOptionEntries =
                     [

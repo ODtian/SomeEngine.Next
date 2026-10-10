@@ -33,7 +33,8 @@ public static partial class SlangShaderImporter
             new TargetDesc
             {
                 Format = SlangCompileTarget.Spirv,
-                Profile = slang.FindProfile("glsl_460"),
+                // ShaderLayer is core in SPIR-V 1.5; the Vulkan backend requires Vulkan 1.3.
+                Profile = slang.FindProfile("spirv_1_5"),
             },
         ];
     }
