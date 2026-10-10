@@ -338,7 +338,9 @@ internal sealed unsafe partial class VulkanBackend
         SrcQueueFamilyIndex = sourceFamily,
         DstQueueFamilyIndex = destinationFamily,
         Image = texture.Native,
-        SubresourceRange = ToNative(range),
+        SubresourceRange = texture.Info.Dimension == TextureDimension.Texture3D
+            ? new ImageSubresourceRange(ToNative(range.Aspects), range.FirstMipLevel, range.MipLevelCount, 0, Vk.RemainingArrayLayers)
+            : ToNative(range),
     };
 
     private void EmitBarriers(
