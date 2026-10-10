@@ -64,7 +64,7 @@ Cluster 的提前准备与材质阶段解析共用入口选择。着色、细分
 
 `.shader` 是人类可编辑来源，只有 `SourceNames` 属于定义。构建 target 是工具选择，不进入 `Shader` 语义。`SlangShaderImporter` 使用官方 Slang API 编译、保存模块 IR 和可用代码，并记录实际读取的依赖。
 
-默认 Vulkan target 明确使用 `spirv_1_5`，Importer 与应用加载使用同一设置，导入输入身份包含该 target。SPIR-V 1.5 是 `ShaderLayer` 核心 capability 的最低版本，允许顶点 shader 输出 `SV_RenderTargetArrayIndex`；现有 Vulkan 1.3 backend 支持该版本。无需为此提升到 1.6，也不向未使用分层输出的代码强行加入 capability。旧 target 的资产通过正常增量构建刷新。
+默认 Vulkan target 明确使用 `spirv_1_5`，Importer 与应用加载使用同一设置，导入输入身份包含该 target。SPIR-V 1.5 是 `ShaderLayer` 核心 capability 的最低版本，允许顶点 shader 输出 `SV_RenderTargetArrayIndex`；现有 Vulkan 1.3 backend 支持该版本。无需为此提升到 1.6，也不向未使用分层输出的代码强行加入 capability。内建 NativeAOT 资产 smoke 与 graphics benchmark 使用同一默认 target，benchmark 的代码身份也包含该 profile。调用方显式提供的 `SessionDesc` / `TargetDesc` 保留原值，不由资产加载或 RHI 重写。旧 target 的资产通过正常增量构建刷新：导入输入 hash 包含默认 target，保存代码的 key 包含实际 profile；加载时不匹配的代码不会复用，而是按调用方设置从序列化 Slang 数据重新生成。
 
 这是破坏性 schema；旧反射字段和旧代码容器没有兼容 reader。编译器、来源、依赖、Block 编码或 target 设置变化时重新构建同一资产身份。
 
