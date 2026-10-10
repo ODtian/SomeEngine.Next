@@ -57,6 +57,8 @@ internal sealed unsafe partial class D3D12Backend
         internal bool Complete;
         private ID3D12DescriptorHeap* _resources;
         private ID3D12DescriptorHeap* _samplers;
+        private ID3D12DescriptorHeap* _priorResources;
+        private ID3D12DescriptorHeap* _priorSamplers;
 
         internal bool Matches(NativeCommandData data, List<object> references)
         {
@@ -78,11 +80,19 @@ internal sealed unsafe partial class D3D12Backend
                 _ = ResourceTrace.Release((IUnknown*)_resources);
             if (_samplers is not null)
                 _ = ResourceTrace.Release((IUnknown*)_samplers);
+            if (_priorResources is not null)
+                _ = ResourceTrace.Release((IUnknown*)_priorResources);
+            if (_priorSamplers is not null)
+                _ = ResourceTrace.Release((IUnknown*)_priorSamplers);
             _resources = null;
             _samplers = null;
+            _priorResources = null;
+            _priorSamplers = null;
         }
 
-        internal void StoreReferences(List<object> references, ID3D12DescriptorHeap* resources, ID3D12DescriptorHeap* samplers)
+        internal void StoreReferences(List<object> references,
+            ID3D12DescriptorHeap* resources, ID3D12DescriptorHeap* samplers,
+            ID3D12DescriptorHeap* priorResources, ID3D12DescriptorHeap* priorSamplers)
         {
             References.AddRange(references);
             // Retain only descriptor heaps. Resource identities are managed references;
@@ -90,6 +100,14 @@ internal sealed unsafe partial class D3D12Backend
             // Keeping heaps alive also prevents false matches after native address reuse.
             _resources = resources;
             _samplers = samplers;
+            // A mixed recording may reference both its original and final heaps.
+            // Keep the original heaps alive even after the slot replaces its spare.
+            _priorResources = priorResources;
+            _priorSamplers = priorSamplers;
+            if (priorResources is not null)
+                _ = priorResources->AddRef();
+            if (priorSamplers is not null)
+                _ = priorSamplers->AddRef();
             if (resources is not null)
                 _ = resources->AddRef();
             if (samplers is not null)
@@ -128,12 +146,16 @@ internal sealed unsafe partial class D3D12Backend
 
         internal void FinishCommandData()
         {
-            _repeatRestrictions = (!_collectingCommands ? 1 : 0) | (_transientObjects.Count != 0 ? 2 : 0) |
+            // Bound cache retention to one replaced heap of each type. Larger
+            // recordings still retire safely, but do not retain an unbounded chain.
+            bool descriptorHeapsReusable = _replacedResourceHeaps.Count <= 1 && _replacedSamplerHeaps.Count <= 1;
+            _repeatRestrictions = (!_collectingCommands ? 1 : 0) |
+                (_transientObjects.Count != 0 || !descriptorHeapsReusable ? 2 : 0) |
                 (_capturedBundles.Count != 0 ? 4 : 0) | (SwapchainUseCount != 0 ? 8 : 0) |
                 (_captures.SparseCount != 0 ? 16 : 0);
             // Attachment arenas belong to this command slot and reset at its next Begin after completion.
             bool reusable = _collectingCommands &&
-                _transientObjects.Count == 0 && _capturedBundles.Count == 0 &&
+                _transientObjects.Count == 0 && descriptorHeapsReusable && _capturedBundles.Count == 0 &&
                 SwapchainUseCount == 0 && _captures.SparseCount == 0;
             if (reusable)
             {
@@ -164,7 +186,9 @@ internal sealed unsafe partial class D3D12Backend
             if (reusable)
             {
                 CachedNativeCommands cached = _nativeRecording;
-                cached.StoreReferences(_commandReferences, _resourceArena, _samplerArena);
+                cached.StoreReferences(_commandReferences, _resourceArena, _samplerArena,
+                    _replacedResourceHeaps.Count == 0 ? null : (ID3D12DescriptorHeap*)_replacedResourceHeaps[0],
+                    _replacedSamplerHeaps.Count == 0 ? null : (ID3D12DescriptorHeap*)_replacedSamplerHeaps[0]);
                 (cached.Data, _commandData) = (_commandData, cached.Data);
             }
             FinishCommandRecording();
