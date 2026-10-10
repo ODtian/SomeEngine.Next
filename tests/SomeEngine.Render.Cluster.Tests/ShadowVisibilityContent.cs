@@ -47,8 +47,7 @@ internal static class ShadowVisibilityContent
         project.RegisterAsset(await material.SaveAsync(Path.Combine(content, entry.Path)));
     }
 
-    internal static async Task BuildAsync(string engine, string sourceContent, string content, string geometry,
-        bool spheres)
+    internal static async Task BuildAsync(string engine, string sourceContent, string content)
     {
         _ = Registered.Value;
         string shaders = Path.Combine(content, "assets", "Shaders");
@@ -62,10 +61,10 @@ internal static class ShadowVisibilityContent
         string tests = Path.Combine(engine, "tests", "SomeEngine.Render.Cluster.Tests", "Shaders");
         File.Copy(Path.Combine(tests, "shadow_visibility_material.slang"),
             Path.Combine(shaders, "shadow_visibility_material.slang"), overwrite: true);
-        ModelRoot model = ModelRoot.Load(geometry);
         AssetManifest sourceManifest = AssetManifest.Load(Path.Combine(sourceContent, "Library", "AssetManifest"));
         var project = new AssetProject(content, [],
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engine, "assets", "Shaders")])]);
+        var models = new Dictionary<SourceGuid, ModelRoot>();
         var variants = new Dictionary<(float Cutoff, float NormalScale, bool DoubleSided), Guid>();
         foreach (AssetEntry entry in project.Manifest.List(MaterialAsset.FileType).ToArray())
         {
@@ -74,8 +73,14 @@ internal static class ShadowVisibilityContent
             AssetEntry sourceEntry = sourceManifest.Assets[entry.AssetGuid];
             float cutoff = -1;
             bool doubleSided = false;
-            if (!spheres && sourceEntry.SubAssetKey.StartsWith("material:index:", StringComparison.Ordinal))
+            if (sourceEntry.SubAssetKey.StartsWith("material:index:", StringComparison.Ordinal))
             {
+                if (!models.TryGetValue(sourceEntry.SourceGuid, out ModelRoot? model))
+                {
+                    string sourcePath = sourceManifest.Sources[sourceEntry.SourceGuid];
+                    model = ModelRoot.Load(Path.Combine(sourceContent, sourcePath));
+                    models.Add(sourceEntry.SourceGuid, model);
+                }
                 int index = int.Parse(sourceEntry.SubAssetKey.AsSpan("material:index:".Length), CultureInfo.InvariantCulture);
                 var original = model.LogicalMaterials[index];
                 doubleSided = original.DoubleSided;
