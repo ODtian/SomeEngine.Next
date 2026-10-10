@@ -65,26 +65,29 @@ internal static class ShadowVisibilityContent
         ModelRoot model = ModelRoot.Load(geometry);
         var project = new AssetProject(content, [],
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engine, "assets", "Shaders")])]);
-        var variants = new Dictionary<(float Cutoff, float NormalScale), Guid>();
+        var variants = new Dictionary<(float Cutoff, float NormalScale, bool DoubleSided), Guid>();
         foreach (AssetEntry entry in project.Manifest.List(MaterialAsset.FileType).ToArray())
         {
             using MaterialAsset material = await MaterialAsset.OpenAsync(Path.Combine(content, entry.Path));
             MaterialBlock values = material.GetBlock<MaterialBlock>();
             float cutoff = -1;
+            bool doubleSided = false;
             if (!spheres && entry.SubAssetKey.StartsWith("material:index:", StringComparison.Ordinal))
             {
                 int index = int.Parse(entry.SubAssetKey.AsSpan("material:index:".Length), CultureInfo.InvariantCulture);
                 var original = model.LogicalMaterials[index];
+                doubleSided = original.DoubleSided;
                 if (original.Alpha == AlphaMode.MASK)
                     cutoff = original.AlphaCutoff / Math.Max(original.FindChannel("BaseColor")?.Color.W ?? 1, 1e-8f);
             }
             float normalScale = values.GetParameter("NormalScale")?.Float ?? 1;
-            var key = (cutoff, normalScale);
+            var key = (cutoff, normalScale, doubleSided);
             if (!variants.TryGetValue(key, out Guid shader))
             {
                 shader = Guid.NewGuid();
                 string name = $"shadow_visibility_{variants.Count}";
-                string source = $"#define SHADOW_ALPHA_CUTOFF {cutoff.ToString("R", CultureInfo.InvariantCulture)}\n" +
+                string source = (doubleSided ? "#define CLUSTER_RASTER_TWO_SIDED 1\n" : "") +
+                    $"#define SHADOW_ALPHA_CUTOFF {cutoff.ToString("R", CultureInfo.InvariantCulture)}\n" +
                     $"#define SHADOW_NORMAL_SCALE {normalScale.ToString("R", CultureInfo.InvariantCulture)}\n" +
                     "#include \"shadow_visibility_material.slang\"\n";
                 await File.WriteAllTextAsync(Path.Combine(shaders, name + ".slang"), source);
