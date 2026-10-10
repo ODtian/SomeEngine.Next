@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text.Json;
 using SomeEngine.Runtime;
+using SomeEngine.Assets.Schema;
 using Xunit.Abstractions;
 
 namespace SomeEngine.Render.Cluster.Tests;
@@ -82,7 +83,9 @@ public sealed partial class DefaultGameRayShadowTests(ITestOutputHelper output)
             string geometry = spheres ? Path.Combine(sourceContent, "assets", "Models", "ico_sphere.glb")
                 : Path.Combine(sourceContent, "assets", "Imported", scene == "sponza" ? "Sponza" : "Bistro",
                     scene == "sponza" ? "Sponza.gltf" : "Bistro.glb");
-            await ShadowVisibilityContent.BuildAsync(engine, sourceContent, content);
+            using ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(
+                Path.Combine(sourceContent, "assets", "Runtime", "default.runtime.asset"));
+            await ShadowVisibilityContent.BuildAsync(engine, sourceContent, content, [settings.Id]);
             SceneLinearImage visibility = await Capture("vsm-shadow");
             SceneFrame frame = visibility.Frame;
             Assert.Equal(beauty.Frame.View, frame.View);
