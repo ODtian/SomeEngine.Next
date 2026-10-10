@@ -33,8 +33,22 @@ public static partial class ClusterBuilder
         return groups.Select(static group => group.ToArray()).ToList();
     }
 
+    private static HashSet<Vector3> FindMaterialBoundaries(ReadOnlySpan<Vector3> positions,
+        ReadOnlySpan<float> materials)
+    {
+        var firstMaterials = new Dictionary<Vector3, float>();
+        var boundaries = new HashSet<Vector3>();
+        for (int vertex = 0; vertex < positions.Length; vertex++)
+        {
+            Vector3 position = positions[vertex];
+            if (!firstMaterials.TryAdd(position, materials[vertex]) && firstMaterials[position] != materials[vertex])
+                boundaries.Add(position);
+        }
+        return boundaries;
+    }
+
     private static byte[] LockGroupBoundaries(Vector3[] positions, int vertexCount, List<BuilderMeshlet> clusters,
-        List<uint> indices, List<int> current, List<int[]> groups)
+        List<uint> indices, List<int> current, List<int[]> groups, HashSet<Vector3> materialBoundaries)
     {
         int[] clusterGroups = new int[current.Count];
         for (int group = 0; group < groups.Count; group++)
@@ -61,7 +75,14 @@ public static partial class ClusterBuilder
                 locked.Add(pair.Key.First); locked.Add(pair.Key.Second);
             }
         var result = new byte[vertexCount];
-        for (int vertex = 0; vertex < vertexCount; vertex++) result[vertex] = locked.Contains(positions[vertex]) ? (byte)1 : (byte)0;
+        for (int vertex = 0; vertex < vertexCount; vertex++)
+        {
+            // Meshoptimizer's Lock bit fixes group borders; Protect preserves a material
+            // discontinuity while permissive simplification can still simplify along it.
+            byte flags = locked.Contains(positions[vertex]) ? (byte)1 : (byte)0;
+            if (materialBoundaries.Contains(positions[vertex])) flags |= 2;
+            result[vertex] = flags;
+        }
         return result;
     }
 }

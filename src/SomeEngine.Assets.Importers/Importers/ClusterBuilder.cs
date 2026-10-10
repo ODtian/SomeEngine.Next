@@ -690,6 +690,8 @@ public static partial class ClusterBuilder
         ReadOnlySpan<uint> indices, List<BuilderMeshlet> clusters, List<uint> globalIndices)
     {
         var attributes = new ClusterSimplificationAttributes(mesh);
+        HashSet<Vector3> materialBoundaries = FindMaterialBoundaries(mesh.Positions.AsSpan(0, mesh.VertexCount),
+            ExtractMaterialIndices(mesh));
         Clusterize(config, indices, mesh.Positions.AsSpan(0, mesh.VertexCount), ExtractMaterialIndices(mesh), clusters, globalIndices);
         int nextGroupId = InitializeLeafClusters(mesh.Positions.AsSpan(0, mesh.VertexCount), clusters, globalIndices);
         List<int> current = Enumerable.Range(0, clusters.Count).ToList();
@@ -697,7 +699,8 @@ public static partial class ClusterBuilder
         while (current.Count > 1)
         {
             List<int[]> groups = PartitionClusterGroups(mesh.Positions.AsSpan(0, mesh.VertexCount), clusters, globalIndices, current);
-            byte[] locks = LockGroupBoundaries(mesh.Positions, mesh.VertexCount, clusters, globalIndices, current, groups);
+            byte[] locks = LockGroupBoundaries(mesh.Positions, mesh.VertexCount, clusters, globalIndices, current,
+                groups, materialBoundaries);
             var next = new List<int>();
             foreach (int[] groupIndices in groups)
             {

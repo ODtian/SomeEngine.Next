@@ -360,6 +360,16 @@ internal sealed class FrameStageScene : IAsyncDisposable
     internal void UseMaterial(int index, Material material) => SetEntityMaterial(_meshes[index], material);
     internal void UseEntityMaterial(Entity entity, Material material) => SetEntityMaterial(entity, material);
 
+    internal void UseEntityMaterials(Entity entity, params Material[] materials)
+    {
+        _gameWorld.ExecuteBufferWrite<MeshMaterialBinding, Material[]>(entity, ref materials,
+            static (DynamicBuffer<MeshMaterialBinding> buffer, ref Material[] values) =>
+            {
+                buffer.Clear();
+                foreach (Material value in values) buffer.Add(new MeshMaterialBinding(value));
+            });
+    }
+
     private void SetEntityMaterial(Entity entity, Material material)
     {
         _gameWorld.ExecuteBufferWrite<MeshMaterialBinding, Material>(entity, ref material,

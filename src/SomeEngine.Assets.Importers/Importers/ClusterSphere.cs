@@ -23,11 +23,10 @@ internal static class ClusterSphere
         }
         Vector3 center = (points[minimum[largestAxis]] + points[maximum[largestAxis]]) * .5f;
         float radius = MathF.Sqrt(largest) * .5f;
-        float initialSquared = radius * radius;
         foreach (Vector3 point in points)
         {
             float squared = Vector3.DistanceSquared(point, center);
-            if (squared <= initialSquared) continue;
+            if (squared <= radius * radius) continue;
             float distance = MathF.Sqrt(squared);
             float t = .5f + .5f * radius / distance;
             center = point * (1 - t) + center * t;
