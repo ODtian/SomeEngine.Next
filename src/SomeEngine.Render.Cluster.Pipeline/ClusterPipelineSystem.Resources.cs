@@ -787,13 +787,14 @@ public sealed partial class ClusterPipelineSystem
         WriteUniform(parametersBytes, _sceneValues, GraphData.SceneUniforms);
         WriteUniform(parametersBytes, new ClusterTraversalSeedUniforms
         {
-            ViewCount = checked((uint)primaryViewCount), ViewIndexMode = 0u,
+            ViewCount = checked((uint)primaryViewCount), ViewIndexMode = 0u, InvocationCountIndex = 2u,
             MaxNodes = _options.MaxCandidates, UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
         }, GraphData.PrimarySeedUniforms);
         if (_renderContext.IsValid)
             WriteUniform(parametersBytes, new ClusterTraversalSeedUniforms
             {
                 ViewCount = _renderContext.MaximumInvocationCount, ViewIndexMode = 1u,
+                InvocationCountIndex = _renderContext.InvocationCountIndex,
                 MaxNodes = _options.MaxCandidates, UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
             }, GraphData.TargetSeedUniforms);
     }

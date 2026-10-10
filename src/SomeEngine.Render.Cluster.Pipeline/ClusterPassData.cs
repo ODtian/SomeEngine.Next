@@ -14,6 +14,7 @@ internal struct ClusterTraversalSeedUniforms
     internal uint MaxNodes;
     internal uint ArgsOffset;
     internal uint UseInstanceGroups;
+    internal uint InvocationCountIndex;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
