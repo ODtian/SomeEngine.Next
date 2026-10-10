@@ -312,7 +312,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         _ = RequireBuffer(nativeDevice, desc.Buffer, nameof(desc));
-        _ = desc.Range.Resolve(desc.Buffer.Info.Size);
+        ValidateShaderBufferRange(nativeDevice, desc.Buffer, desc.Range);
         if (desc.CounterBuffer is not null)
         {
             VulkanBuffer counter = RequireBuffer(nativeDevice, desc.CounterBuffer, nameof(desc));
@@ -444,7 +444,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanBuffer nativeBuffer = RequireBuffer(nativeDevice, buffer, nameof(buffer));
-        _ = range.Resolve(buffer.Info.Size);
+        ValidateShaderBufferRange(nativeDevice, buffer, range);
         VkBufferView native = format.HasValue
             ? CreateNativeBufferView(nativeDevice, nativeBuffer, range, format.Value)
             : default;
@@ -460,6 +460,14 @@ internal sealed unsafe partial class VulkanBackend
             throw;
         }
         return RegisterChildOrDispose(nativeDevice, view);
+    }
+
+    private static void ValidateShaderBufferRange(VulkanDevice device, RhiBuffer buffer, in BufferRange range)
+    {
+        BufferRange resolved = range.Resolve(buffer.Info.Size);
+        uint alignment = Math.Max(1u, device.Capabilities.Limits.ShaderBufferAlignment);
+        if (resolved.Offset % alignment != 0)
+            throw new ArgumentException($"Shader buffer views require {alignment}-byte aligned offsets.", nameof(range));
     }
 
     private TView CreateTextureView<TView, TDescription>(
