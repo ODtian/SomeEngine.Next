@@ -1195,7 +1195,8 @@ public ref partial struct RenderGraphEdit
         row.BufferDescriptorOnly = descriptorOnly;
     }
 
-    internal void AddParameterInput(GraphIdentity pass, GraphParameterInput input, PipelineSync sync)
+    internal void AddParameterInput(GraphIdentity pass, GraphParameterInput input, PipelineSync sync,
+        bool indexedRead = false)
     {
         DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
             "The parameter input must belong to this graph.");
@@ -1220,6 +1221,7 @@ public ref partial struct RenderGraphEdit
                 TargetKind = texture ? GraphAccessTargetKind.Texture : GraphAccessTargetKind.Buffer,
                 ParameterInput = input,
                 ParameterSecondary = secondary,
+                IndexedParameterRead = indexedRead,
                 BufferDescriptor = !texture && !writable,
                 Mode = writable && !sampled ? GraphAccessMode.ReadWrite : GraphAccessMode.Read,
                 Coverage = WriteCoverage.Partial,
