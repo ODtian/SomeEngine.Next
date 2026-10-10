@@ -393,7 +393,8 @@ internal sealed unsafe partial class VulkanBackend
         Add(PipelineSync.RenderTarget, PipelineStageFlags2.ColorAttachmentOutputBit);
         Add(PipelineSync.ComputeShading, PipelineStageFlags2.ComputeShaderBit);
         Add(PipelineSync.RayTracing, PipelineStageFlags2.RayTracingShaderBitKhr);
-        Add(PipelineSync.Copy, PipelineStageFlags2.CopyBit);
+        // RHI copy scopes also contain ClearBuffer, recorded as vkCmdFillBuffer.
+        Add(PipelineSync.Copy, PipelineStageFlags2.CopyBit | PipelineStageFlags2.ClearBit);
         Add(PipelineSync.Resolve, PipelineStageFlags2.ResolveBit);
         Add(PipelineSync.ExecuteIndirect, PipelineStageFlags2.DrawIndirectBit);
         Add(PipelineSync.Predication, PipelineStageFlags2.ConditionalRenderingBitExt);
