@@ -151,7 +151,7 @@ try
         new TargetDesc
         {
             Format = SlangCompileTarget.Spirv,
-            Profile = slang.FindProfile("glsl_460"),
+            Profile = slang.FindProfile("spirv_1_5"),
         },
     ];
     SessionDesc sessionDescription = new()
