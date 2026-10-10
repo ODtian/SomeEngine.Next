@@ -6,6 +6,8 @@ using Silk.NET.Vulkan.Extensions.EXT;
 internal sealed unsafe partial class VulkanBackend
 {
     private const string SwapchainExtension = "VK_KHR_swapchain";
+    private const string SwapchainMaintenanceExtension = "VK_EXT_swapchain_maintenance1";
+    private const string KhrSwapchainMaintenanceExtension = "VK_KHR_swapchain_maintenance1";
     private const string MemoryBudgetExtension = "VK_EXT_memory_budget";
     private const string CalibratedTimestampsExtension = "VK_KHR_calibrated_timestamps";
     private const string ConditionalRenderingExtension = "VK_EXT_conditional_rendering";
@@ -20,6 +22,13 @@ internal sealed unsafe partial class VulkanBackend
     private const string DeferredHostOperationsExtension = "VK_KHR_deferred_host_operations";
     private const string ExternalMemoryWin32Extension = "VK_KHR_external_memory_win32";
     private const string ExternalSemaphoreWin32Extension = "VK_KHR_external_semaphore_win32";
+
+    private string? GetSwapchainMaintenanceExtension(IReadOnlySet<string> extensions) =>
+        _khrSurfaceMaintenance && extensions.Contains(KhrSwapchainMaintenanceExtension)
+            ? KhrSwapchainMaintenanceExtension
+            : _surfaceMaintenance && extensions.Contains(SwapchainMaintenanceExtension)
+                ? SwapchainMaintenanceExtension
+                : null;
 
     internal RhiDevice CreateDevice(in DeviceDesc desc)
     {
@@ -231,7 +240,8 @@ internal sealed unsafe partial class VulkanBackend
             QueuePlan queuePlan = QueuePlan.Create(
                 vk,
                 adapter.PhysicalDevice,
-                queueDescriptions);
+                queueDescriptions,
+                (desc.RequiredFeatures & DeviceFeatures.Presentation) != 0 ? backend._win32SurfaceApi : null);
 
             DeviceFeatures supportedFeatures = GetSupportedFeatures(
                 vk,
@@ -240,6 +250,10 @@ internal sealed unsafe partial class VulkanBackend
                 availableFeatures.Features,
                 extendedFeatures,
                 queuePlan);
+            string? swapchainMaintenance = backend.GetSwapchainMaintenanceExtension(extensions);
+            if (swapchainMaintenance is not null &&
+                SupportsPresentation(backend, adapter.PhysicalDevice, extensions, queuePlan))
+                supportedFeatures |= DeviceFeatures.Presentation;
             DeviceFeatures missing = desc.RequiredFeatures & ~supportedFeatures;
             if (missing != DeviceFeatures.None)
             {
@@ -251,7 +265,10 @@ internal sealed unsafe partial class VulkanBackend
 
             List<string> enabledExtensions = [];
             if ((enabledFeatures & DeviceFeatures.Presentation) != 0)
+            {
                 enabledExtensions.Add(SwapchainExtension);
+                enabledExtensions.Add(swapchainMaintenance!);
+            }
             if ((enabledFeatures & DeviceFeatures.Residency) != 0)
                 enabledExtensions.Add(MemoryBudgetExtension);
             if ((enabledFeatures & DeviceFeatures.CalibratedTimestamps) != 0)
@@ -1079,6 +1096,14 @@ internal sealed unsafe partial class VulkanBackend
                     out PhysicalDeviceRayTracingPipelineFeaturesKHR rayTracing,
                     out PhysicalDeviceRayQueryFeaturesKHR rayQuery,
                     out PhysicalDeviceShaderImageAtomicInt64FeaturesEXT imageInt64);
+                PhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchainMaintenance = new()
+                {
+                    SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt,
+                    SwapchainMaintenance1 = true,
+                    PNext = enabled13.PNext,
+                };
+                if ((enabledDeviceFeatures & DeviceFeatures.Presentation) != 0)
+                    enabled13.PNext = &swapchainMaintenance;
                 fixed (DeviceQueueCreateInfo* queuePointer = queues)
                 {
                     DeviceCreateInfo createInfo = new()
@@ -1190,6 +1215,33 @@ internal sealed unsafe partial class VulkanBackend
                 throw new PlatformNotSupportedException(
                     "SomeEngine's Vulkan backend requires descriptor-indexing update-after-bind support.");
             }
+        }
+
+        private static bool SupportsPresentation(
+            VulkanBackend backend,
+            VkPhysicalDevice physicalDevice,
+            IReadOnlySet<string> extensions,
+            QueuePlan queues)
+        {
+            if (!extensions.Contains(SwapchainExtension))
+                return false;
+            PhysicalDeviceSwapchainMaintenance1FeaturesEXT maintenance = new()
+            {
+                SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt,
+            };
+            PhysicalDeviceFeatures2 features = new()
+            {
+                SType = StructureType.PhysicalDeviceFeatures2,
+                PNext = &maintenance,
+            };
+            backend.Api.GetPhysicalDeviceFeatures2(physicalDevice, &features);
+            if (!maintenance.SwapchainMaintenance1)
+                return false;
+            foreach (QueueAssignment queue in queues.Assignments)
+                if (queue.Type == QueueType.Graphics && queue.RhiIndex == 0)
+                    return backend._win32SurfaceApi!.GetPhysicalDeviceWin32PresentationSupport(
+                        physicalDevice, queue.FamilyIndex);
+            return false;
         }
 
         private static DeviceFeatures GetSupportedFeatures(
@@ -1407,7 +1459,8 @@ internal sealed unsafe partial class VulkanBackend
         internal static QueuePlan Create(
             Vk vk,
             VkPhysicalDevice physicalDevice,
-            ReadOnlySpan<DeviceQueueDesc> descriptions)
+            ReadOnlySpan<DeviceQueueDesc> descriptions,
+            KhrWin32Surface? presentationApi)
         {
             uint count = 0;
             vk.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, null);
@@ -1427,13 +1480,14 @@ internal sealed unsafe partial class VulkanBackend
                 if (!float.IsFinite(description.Priority) || description.Priority is < 0 or > 1)
                     throw new ArgumentOutOfRangeException(nameof(descriptions), "Queue Priority must be in [0, 1].");
 
-                uint familyIndex = SelectFamily(properties, families, description.Type, description.Count);
+                uint firstRhiIndex = nextRhiIndex.GetValueOrDefault(description.Type);
+                uint familyIndex = SelectFamily(properties, families, description.Type, description.Count,
+                    physicalDevice, firstRhiIndex == 0 ? presentationApi : null);
                 if (!families.TryGetValue(familyIndex, out FamilyPlan? family))
                 {
                     family = new FamilyPlan(familyIndex);
                     families.Add(familyIndex, family);
                 }
-                uint firstRhiIndex = nextRhiIndex.GetValueOrDefault(description.Type);
                 for (uint index = 0; index < description.Count; index++)
                 {
                     uint nativeIndex = checked((uint)family.Priorities.Count);
@@ -1478,7 +1532,9 @@ internal sealed unsafe partial class VulkanBackend
             QueueFamilyProperties[] properties,
             IReadOnlyDictionary<uint, FamilyPlan> existing,
             QueueType type,
-            uint requestedCount)
+            uint requestedCount,
+            VkPhysicalDevice physicalDevice,
+            KhrWin32Surface? presentationApi)
         {
             uint selected = uint.MaxValue;
             int selectedScore = int.MinValue;
@@ -1490,6 +1546,9 @@ internal sealed unsafe partial class VulkanBackend
                     : 0;
                 if (candidate.QueueCount - Math.Min(candidate.QueueCount, used) < requestedCount ||
                     !Supports(candidate.QueueFlags, type))
+                    continue;
+                if (type == QueueType.Graphics && presentationApi is not null &&
+                    !presentationApi.GetPhysicalDeviceWin32PresentationSupport(physicalDevice, index))
                     continue;
                 int score = Score(candidate.QueueFlags, type);
                 if (score <= selectedScore)
