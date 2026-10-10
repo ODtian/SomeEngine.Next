@@ -47,12 +47,35 @@
 
 完整证据为上述原目录中的 `streaming-epoch-green.{log,trx}`、`streaming-epoch-{start,exit,health,execution-identity,content-identity}.json` 及三份编译记录。运行时另一路的 FrameRecording marker 诊断代码处于关闭状态；保留的 App 五个二进制哈希在所有构建前后均未变化。健康交接确认 RTX 3080 状态 OK、ConfigManagerErrorCode 0，无 dotnet/testhost/Game.App 残留。
 
+## 新增乱序回调与旧 fault 行为
+
+在基点 `80ac99a153d8318b1ef3d438800dd287c86205d5` 上新增：
+
+`GeometryStreamingOrderTests.OlderFaultsLoadWithoutReplacingTheNewestViewsResidentDetail`
+
+测试从 GameWorld 场景与真实 GPU fault/demand 回读进入生产流送链。三个常驻粗页与两个细页的预算内，先加载可见 A 与随后变冷的 D；旧帧 2/3 显示缺两细页的 B，最新帧 4 只显示 A。两个公开 ExternalTimeline 和不属于图的第二 graphics queue 控制三帧资源的复用。实际图回读 FrameIdentity 为 **11、14、12、13**，即相对帧顺序 **1、4、2、3**，没有伪造反馈 packet 或序号。
+
+收到该批反馈后暂停后续 Feedback region，独立图像回读仍逐帧运行，避免更晚反馈重新保护 A 而掩盖旧 demand 覆盖问题。B 的真实 IRangeSource 完成两个不同细页范围读取（offset 4370、4644），证明旧 fault 仍处理；推进旧页读取与发布的 27 帧中，A 的完整颜色、深度均与完整驻留参考图一致；其中最后 3 帧在确认两次来源读取完成之后。预算要求旧页读入释放冷页，新视图的细节必须持续受保护。
+
+- D3D12 硬件单例：1/1 通过，0 跳过，11.9724125 秒；默认测试入口行为规则 0 违规。
+- 进程终态：2026-10-10 13:42:13.101 UTC，exit 0，无 timeout。
+- 纯测试编译预检 7.68 秒、正常 -m:1 增量 9.63 秒，均 0 警告、0 错误。
+- 临时内容路径已恢复；默认路径最终正常 -m:1 增量于 13:48:32.498 UTC 完成，9.34 秒，0 警告、0 错误。没有对已知旧本地 cook 重跑 GPU 用例。
+- 未重跑前述 12 项或 epoch 单例；现在为已有 12 项加两个分别运行的新行为，不声称 14 项同批通过。
+
+两 gate 与独立信号队列在首个等待提交前完成构造。异常 finally 分别尝试释放两 gate，任一释放失败不阻断另一条；等待 gate 提交与全部已追踪帧（含部分提交）后才销毁 fence。正常逐帧 Render 仍按提交、等待、收集执行。所有夹具扩展位于测试项目，未暴露生产内部 API。
+
+执行前既有 integration cook 的 catalog 与全部 81 资产逐项匹配 epoch 身份。实际执行程序集、临时路径及恢复哈希见 `streaming-order-execution-identity.json`、`streaming-order-content-identity.json` 和 `streaming-order-fixture-content-identity.json`。临时 marker/support-query 诊断在本例进程中均关闭，五个锁定 App 二进制在构建、运行前后保持原 SHA。2026-10-10 13:43:13 UTC RTX 3080 状态 OK、ConfigManagerErrorCode 0，本次 dotnet/testhost/监控进程均已退出。
+
+实际 TRX：`streaming-order-01.trx`，SHA256：
+
+`5a7599e2a27a14cb99ee677ce2494ac9902da2767819d703895a460ee4b1e5df`
+
+日志、启动、退出与健康记录为原证据目录的 `streaming-order-01.log`、`streaming-order-01-{start,exit,health}.json`。这是功能验收，不作为 #190 性能通过或 Nsight 捕获成功的证据。
+
 ## 仍属源码审查的边界
 
-- **乱序与旧 fault：** PageStream.PushDemand 按图的 FrameIdentity 保留最新 demand；旧 fault 继续独立读取、统计，不改写当前保护或质量。现有图像夹具逐帧等待和收集，尚未执行强制 4/2/3 回调顺序的流送图像用例。
 - **多页卸载中途异常：** ClusterMeshes.StagePageEvictions 在任何失败出口取消全部已暂存成员；当前 demand、常驻粗页及 component 外可用子页继续阻止卸载。页空间仍按原读者完成边界归还。尚未执行公共入口的中途分配异常注入，不为此添加测试专用生产接口。
-
-确定乱序可使用现有 ExternalTimeline：三帧资源，帧 1 前 gate A、帧 1/2 间 gate B；先提交 1/2/3，由不属于图的第二 graphics queue 释放 A，只等待帧 1，再提交复用首资源的帧 4，释放 B 后等待帧 4并收集。普通图回读记录 FrameIdentity 可证明 4/2/3。测试夹具还需分离提交与完成；信号不可排在可能已等待该 gate 的图内 compute queue 上。
 
 ## 既存失败策略差异
 

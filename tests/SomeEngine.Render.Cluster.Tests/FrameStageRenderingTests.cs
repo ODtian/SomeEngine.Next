@@ -116,6 +116,9 @@ internal sealed class FrameStageScene : IAsyncDisposable
     private readonly Material _unlit;
     private readonly GraphTextureInput _readbackColor;
     private readonly GraphRegionId _failureRegion;
+    private readonly GraphRegionId _feedbackRegion;
+    private GraphReadbackId? _completedFrameReadback;
+    private bool _feedbackEnabled = true;
     private IRenderGraphFrameExecutionObserver? _executionReceiver;
     private readonly QueueCompletion[] _completions;
 
@@ -200,6 +203,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _frames.Add(_pipeline);
         _frames.Initialize();
         _failureRegion = shading;
+        _feedbackRegion = feedbackRegion;
         _temporal = new TemporalFeature(backend, device, _graph, Width, Height,
             temporalShader, settings.TemporalVertexEntry, settings.TemporalPixelEntry, region: post);
         _readback = backend.CreateBuffer(device,
@@ -207,6 +211,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _depthReadback = backend.CreateBuffer(device,
             new BufferDesc(Width * Height * 4, BufferUsages.CopyDestination), MemoryType.Readback);
         using RenderGraphEdit edit = _graph.BeginEdit();
+        GraphRegionId imageReadbackRegion = edit.AddRegion("Test image readback");
         _readbackDepth = edit.CreateTextureInput();
         GraphBufferId depthDestination = edit.RegisterExternalBuffer(_depthReadback,
             [new BufferBoundaryState(BufferRange.Whole, _depthReadback.InitialSync, _depthReadback.InitialAccess,
@@ -223,7 +228,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             static (ref CopyPassCommandScope commands, in (GraphTextureInput Depth, GraphBufferId Destination) data) =>
                 commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Destination), 0,
                     Width * 4, Height, commands.GetTexture(data.Depth), 0, 0, TextureAspects.Depth,
-                    0, 0, 0, Width, Height, 1)), region: feedbackRegion);
+                    0, 0, 0, Width, Height, 1)), region: imageReadbackRegion);
         _readbackColor = edit.CreateTextureInput();
         GraphBufferId destination = edit.RegisterExternalBuffer(_readback,
             [new BufferBoundaryState(BufferRange.Whole, _readback.InitialSync, _readback.InitialAccess,
@@ -240,7 +245,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             static (ref CopyPassCommandScope commands, in (GraphTextureInput Color, GraphBufferId Destination) data) =>
                 commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Destination), 0,
                     RowPitch, Height, commands.GetTexture(data.Color), 0, 0, TextureAspects.Color,
-                    0, 0, 0, Width, Height, 1)), region: feedbackRegion);
+                    0, 0, 0, Width, Height, 1)), region: imageReadbackRegion);
         edit.Commit();
         _completions = new QueueCompletion[_graph.MaximumQueueCompletionCount];
     }
@@ -248,7 +253,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
     internal static async Task<FrameStageScene> CreateAsync(string backendName, bool shadows,
         ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null,
         VirtualShadowMapSettings? shadowSettings = null, DeviceFeatures optionalFeatures = DeviceFeatures.None,
-        ClusterResidencyOptions? residencyOptions = null, ClusterStreamingFeedbackChannel? feedbackChannel = null)
+        ClusterResidencyOptions? residencyOptions = null, ClusterStreamingFeedbackChannel? feedbackChannel = null,
+        uint graphicsQueueCount = 1)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -294,7 +300,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         var adapters = new AdapterInfo[count];
         backend.TryEnumerateAdapters(enumeration, adapters, out _);
         Device device = backend.CreateDevice(new DeviceDesc(adapters.First(item => item.HardwareAccelerated).Id,
-            [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)],
+            [new(QueueType.Graphics, Count: graphicsQueueCount), new(QueueType.Compute), new(QueueType.Copy)],
             requiredFeatures: DeviceFeatures.IndirectCommands, optionalFeatures: optionalFeatures));
         return new FrameStageScene(backend, device, mesh, standard, unlit, clusterShaders,
             shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName, shadowSettings,
@@ -404,6 +410,25 @@ internal sealed class FrameStageScene : IAsyncDisposable
     }
 
     internal void PumpStreaming() => _streaming.Pump();
+    internal IGraphicsBackend Backend => _backend;
+    internal Device Device => _device;
+    internal void PauseStreamingFeedback() => _feedbackEnabled = false;
+
+    internal void ObserveCompletedFrames(IGraphReadbackReceiver receiver)
+    {
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        GraphBufferId value = edit.CreatePersistentBuffer(new BufferDesc(4,
+            BufferUsages.CopySource | BufferUsages.CopyDestination));
+        GraphRegionId region = edit.AddRegion("Test frame completion");
+        edit.AddCopyFramePass("Write frame completion marker", PassQueueSelection.AnyOfType(QueueType.Graphics),
+            value, default,
+            static (ref PassDefinition pass, ref GraphBufferId buffer) =>
+                pass.Write(buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
+            static (ref CopyPassCommandScope commands, in GraphBufferId buffer) =>
+                commands.ClearBuffer(commands.GetBuffer(buffer), BufferRange.Whole, 0), region: region);
+        _completedFrameReadback = edit.AddReadback(value, BufferRange.Whole, receiver, "Completed frame", region);
+        edit.Commit();
+    }
 
     internal void SetGeometryVisible(bool visible)
     {
@@ -544,6 +569,31 @@ internal sealed class FrameStageScene : IAsyncDisposable
 
     private async Task RenderAsync(bool postProcessedColor = false)
     {
+        FrameStageSubmission submission;
+        try { submission = await SubmitRenderAsync(postProcessedColor); }
+        catch
+        {
+            foreach (QueueCompletion completion in _completions.Where(value => value != default))
+                Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
+            throw;
+        }
+        WaitForFrame(submission);
+        CollectCompletedFrames();
+    }
+
+    internal Task<FrameStageSubmission> SubmitNextFrameAsync() => SubmitRenderAsync(false);
+
+    internal void WaitForFrame(FrameStageSubmission submission)
+    {
+        foreach (QueueCompletion completion in submission.Completions)
+            Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
+    }
+
+    internal void WaitForSubmittedFrames() => _renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(20));
+    internal void CollectCompletedFrames() => _graph.CollectCompleted();
+
+    private async Task<FrameStageSubmission> SubmitRenderAsync(bool postProcessedColor)
+    {
         _extraction.Extract(_gameWorld);
         Assert.True(_graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(20)));
         using var nextFrameResources = nextFrame;
@@ -567,6 +617,9 @@ internal sealed class FrameStageScene : IAsyncDisposable
             })))
         {
             _frames.Update(frame, commands);
+            commands.SetRegionEnabled(_feedbackRegion, _feedbackEnabled);
+            if (_completedFrameReadback is { } completedFrameReadback)
+                commands.SetReadbackTag(completedFrameReadback, commands.FrameIdentity);
             var qualityFrame = commands;
             if (_receiveQuality is not null) _shadows.CaptureQuality(ref qualityFrame, _receiveQuality);
             var temporalFrame = commands;
@@ -577,22 +630,18 @@ internal sealed class FrameStageScene : IAsyncDisposable
             commands.SetTextureInput(_readbackColor, postProcessedColor ? _temporal.Output.ResolvedColor : outputs.MaterialColor);
             var executionFrame = commands;
             if (_executionReceiver is not null) executionFrame.ObserveExecution(_executionReceiver);
+            ulong identity = commands.FrameIdentity;
             try { commands.Execute(_completions); }
             catch
             {
                 QueueCompletion[] partial = _completions.Where(value => value != default).ToArray();
                 if (partial.Length != 0) _renderDevice.TrackSubmission(partial);
-                foreach (QueueCompletion completion in partial)
-                    Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
                 throw;
             }
             QueueCompletion[] accepted = _completions.Where(value => value != default).ToArray();
             _renderDevice.TrackSubmission(accepted);
-            frame.Dispose();
-            foreach (QueueCompletion completion in accepted)
-                Assert.Equal(WaitStatus.Completed, _backend.WaitCpu(completion, TimeSpan.FromSeconds(20)));
+            return new FrameStageSubmission(identity, accepted);
         }
-        _graph.CollectCompleted();
     }
 
     internal async Task<RasterImage> ReadRasterImageAsync() => new(
@@ -663,6 +712,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 }
+
+internal readonly record struct FrameStageSubmission(ulong Identity, QueueCompletion[] Completions);
 
 internal sealed record RasterImage(byte[] Color, byte[] Depth, ClusterFrameMetrics Metrics)
 {
