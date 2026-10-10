@@ -258,7 +258,7 @@ internal static class RuntimeApplication
         IGlobalSession slang,
         SlangCompileTarget target)
     {
-        string profile = target == SlangCompileTarget.Dxil ? "sm_6_6" : "glsl_460";
+        string profile = target == SlangCompileTarget.Dxil ? "sm_6_6" : "spirv_1_5";
         return new SessionDesc
         {
             Targets =
