@@ -349,11 +349,13 @@ internal sealed class MeshPages
         return reservation;
     }
 
+    internal bool CanEvictPage(uint pageId)
+        => !_lowestDetailPageIds.Contains(pageId) &&
+            _residentPages.Contains(pageId) && !_pendingEvictions.Contains(pageId);
+
     public bool StageEviction(uint pageId, out PageRetirement retirement)
     {
-        if (_lowestDetailPageIds.Contains(pageId) ||
-            !_residentPages.Contains(pageId) ||
-            _pendingEvictions.Contains(pageId))
+        if (!CanEvictPage(pageId))
         {
             retirement = default;
             return false;
