@@ -101,3 +101,30 @@
 d813391a0b0c3782e0af8dffcd4c3f3232d2ec57f86979feb1c7c7be3b5f7adc
 
 日志、启动/退出、健康、内容、程序集和临时实参恢复记录均在原验收目录的 streaming-source-failure-*。这些结果只新增失败恢复与关闭边界，没有重跑此前12项、epoch或乱序例。
+
+## InvalidPayload 终止失败的公开行为
+
+2026-10-10 UTC，在 streaming 基点 `791e70aec7da9030f16326e854f30f4e398ec9a3` 上新增：
+
+`GeometryStreamingInvalidPageTests.ACorruptDetailPageKeepsCoarseCoverageWithoutBlockingHealthyPages`
+
+测试由公共 AssetLoader / IRangeSource 提供两个真实文件网格。第一网格只在细页读取时改动一个实际来源字节，由正常摘要认证产生 InvalidDataException；保留最低粗层。随后同一场景加入健康网格，单并发加载预算仍能把其细页加载完成。4096 字节页堆足够容纳两网格的粗、细页，不能靠容量不足抑制坏页重试。
+
+坏页粗层与健康细层的完整颜色、深度，与直接构造相同几何状态的参考图一致。细化后连续 12 帧仍只有一次坏页自动读取。再通过公共 ClusterMeshBlock.LoadPagesAsync 显式加载坏页，来源计数确实增加为 2，正常抛出 InvalidDataException；后续 3 帧图像与计数继续不变。显式读证明来源可再次被调用，健康细页已完成则证明唯一加载名额已释放，避免把未完成的 I/O 误认作终止策略。两来源在释放后句柄数均为 0。断言没有依赖生产内部状态或异常消息。
+
+- 实际 D3D12 硬件用例于 19:42:28.2505298–19:42:34.2234963 UTC 执行，报告时长 5.9726874 秒，通过；规则检查 0 违规。
+- 复用 HiZ 候选的同一次普通 Cluster.Tests 增量构建（14.38 秒，0 警错）与本树 DefaultProject 正常 cook，无临时内容路径、额外输出树或重复构建。
+- 与 HiZ 两行按 OR filter 同进程执行，19:41:57.459–19:42:34.500 UTC，37.041 秒，exit 0、无 timeout。此处只新增 1 个流送行为；原 16 个分别运行的有效行为未重跑，不声称 17 项同批。
+- 执行 TestDLL SHA256：`c2f4be3151ccd67a89d185cf514f0308e679c0f18cc1b4aa6221d8f1ee1b76db`；新增测试源码 SHA256：`14e89ab251ee5099c7ec10f653c248dc78d189c68b80e2d7760b553e7f3a88bf`。
+- 正常 cook 的 81 资产 catalog SHA256：`f98ef63b03fc4275b566a86156f717372ad7cf95d8728117f8d116caacfe436e`。该内容刷新及 HiZ 候选不同于旧批次身份；不据这一个新用例追认其它 shader/backend 或所有旧用例均已复测。
+- 19:44:03 UTC 收尾记录中原 dotnet/testhost 均已退出，RTX 3080 可正常查询。
+
+本批原证据在同 session 的 `evidence/performance/hiz-static-pages-frame-public-01.{trx,log}`、`-start.json`、`-exit.json`、`-health.json`；普通构建与内容身份在 `hiz-static-pages-fullgraph-ready-identity.json`。原 TRX SHA256：
+
+`5e8351ba6e9af43b57af7a3c299fc7379b8539530746c131a24e89ed77f96765`
+
+### 本轮流送收口范围
+
+SCC 冷环释放/再加载、component 外依赖保护、粗细完整交接、需求优先级与容量变化，复用已核 SHA 的 12 项原结果；跨驻留 epoch、乱序反馈各复用独立结果；SourceReadFailed 恢复与关闭复用原 2 项结果并保留其并行 GPU 窗口披露。本轮补齐 InvalidPayload 的终止自动重读与其它页继续推进。上述流送生产源码自 `1c72ccf2` 到 `791e70ae` 没有差异，本轮没有修改失败策略。
+
+仍缺公共行为证据的是多页卸载中途分配异常的整体回滚。当前公开 API 无确定性触发该异常的入口，保留前述源码审查边界，不为验收暴露生产内部接口。本页不代替 #189 的其它渲染正确性验收或 #190 性能验收。
