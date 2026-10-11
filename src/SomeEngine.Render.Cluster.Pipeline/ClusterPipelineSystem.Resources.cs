@@ -670,7 +670,8 @@ public sealed partial class ClusterPipelineSystem
             SetStageBuffer(ref graph, frame.SurfaceDataOffsets, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface data offsets");
             SetStageBuffer(ref graph, frame.ShadeBinCounts,
                 checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
-                BufferUsages.None, "Cluster shade bin counts");
+                _options.EnableFrameMetricsReadback ? BufferUsages.CopySource : BufferUsages.None,
+                "Cluster shade bin counts");
             SetStageBuffer(ref graph, frame.ShadeBinOffsets,
                 checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
                 BufferUsages.None, "Cluster shade bin offsets");
