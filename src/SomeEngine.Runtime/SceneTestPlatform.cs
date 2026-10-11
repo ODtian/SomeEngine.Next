@@ -32,6 +32,8 @@ public sealed class SceneTestPlatform
     internal TestScene Current => Scenes[SelectedScene];
     private readonly List<SceneTiming> _results = [];
     private readonly List<FrameTiming> _frames = [];
+    private readonly List<SceneFrameWindow> _frameWindows = [];
+    private int _firstSampleRenderedFrame;
     private long _testStarted;
     private long _sceneStarted;
     private long _sampleStarted;
@@ -91,6 +93,7 @@ public sealed class SceneTestPlatform
             return;
         }
         _results.Clear();
+        _frameWindows.Clear();
         _recordTrace = recordTrace;
         _interactiveOptions = Options;
         _interactiveScene = SelectedScene;
@@ -127,6 +130,7 @@ public sealed class SceneTestPlatform
         _sceneTimeLimit = (45 - Stopwatch.GetElapsedTime(_testStarted).TotalSeconds) / (Scenes.Count - SelectedScene);
         _sceneStarted = Stopwatch.GetTimestamp();
         _sampleStarted = 0;
+        _firstSampleRenderedFrame = 0;
         _renderingStarted = 0;
         _renderedFrames = 0;
         _streamingFrames = 0;
@@ -173,17 +177,24 @@ public sealed class SceneTestPlatform
         double elapsed = Stopwatch.GetElapsedTime(_sceneStarted).TotalSeconds;
         if (_readyFrames >= 32 && _renderedFrames >= 128 && Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= 3)
         {
-            if (_sampleStarted == 0) _sampleStarted = Stopwatch.GetTimestamp();
+            if (_sampleStarted == 0)
+            {
+                _sampleStarted = Stopwatch.GetTimestamp();
+                _firstSampleRenderedFrame = _renderedFrames;
+            }
             _frames.Add(frame);
         }
         else
         {
             _sampleStarted = 0;
+            _firstSampleRenderedFrame = 0;
             _frames.Clear();
         }
         bool sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= 2;
         bool expired = elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= 45;
         if (!sampled && !expired) return;
+        _frameWindows.Add(new SceneFrameWindow(Current.Name, _firstSampleRenderedFrame,
+            Options.FixedFrameSeconds, _frames.ToArray()));
         double[] times = _frames.Select(f => f.ElapsedMs).Order().ToArray();
         _results.Add(new(Current.Name, sampled ? "Measured" : "Not converged within time limit", times.Length,
             times.Length == 0 ? null : times.Average(),
@@ -209,6 +220,14 @@ public sealed class SceneTestPlatform
             SelectScene(SelectedScene + 1);
             return;
         }
+        var frameSamples = new JsonObject
+        {
+            ["SchemaVersion"] = 1,
+            ["Sampling"] = "Unchanged official warmup and timed sampling; frames are contiguous from FirstRenderedFrame.",
+            ["Scenes"] = JsonSerializer.SerializeToNode(_frameWindows, SceneJsonContext.Default.ListSceneFrameWindow),
+        };
+        File.WriteAllText(Path.Combine(_resultDirectory!, "frame-samples.json"),
+            frameSamples.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         LastReport = Path.Combine(_resultDirectory!, "results.json");
         var report = new JsonObject
         {
@@ -227,6 +246,7 @@ public sealed class SceneTestPlatform
             ["ElapsedSeconds"] = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
             ["Timing"] = "Presented frame elapsed time and CPU-side stage elapsed time; GPU duration is not measured",
             ["TraceEnabled"] = _recordTrace,
+            ["FrameSamples"] = "frame-samples.json",
             ["Startup"] = JsonSerializer.SerializeToNode(Startup, SceneJsonContext.Default.ApplicationStartupTimes),
             ["TraceDetail"] = Options.TraceDetail,
             ["TraceAllocations"] = Options.TraceAllocations,
@@ -331,5 +351,8 @@ public sealed class SceneTestPlatform
         uint GeometryUsedBytes, uint GeometryFreeBytes, ulong BackpressuredPages,
         int RenderWidth, int RenderHeight, bool AnimateScene,
         double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults);
+    internal sealed record SceneFrameWindow(
+        string Scene, int FirstRenderedFrame, float FixedFrameSeconds, FrameTiming[] Frames);
+
 }
 
