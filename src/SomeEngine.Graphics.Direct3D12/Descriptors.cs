@@ -1228,6 +1228,10 @@ internal sealed unsafe partial class D3D12Backend
         {
             CpuDescriptorHandle destination = ResourceTrace.GetCPUDescriptorHandleForHeapStart(heap);
             uint increment = device.DescriptorIncrement(type);
+            const int copyCapacity = 64;
+            CpuDescriptorHandle* sources = stackalloc CpuDescriptorHandle[copyCapacity];
+            CpuDescriptorHandle* destinations = stackalloc CpuDescriptorHandle[copyCapacity];
+            int copyCount = 0;
             for (int index = 0; index < records.Length; index++)
             {
                 DescriptorRecord? record = records[index];
@@ -1240,7 +1244,13 @@ internal sealed unsafe partial class D3D12Backend
                         record.Retain();
                         retained[retainedCount++] = record;
                     }
-                    DeviceQueryTrace.CopyDescriptorsSimple(device.Native, 1, target, source.Cpu, type);
+                    sources[copyCount] = source.Cpu;
+                    destinations[copyCount++] = target;
+                    if (copyCount == copyCapacity)
+                    {
+                        DeviceQueryTrace.CopyDescriptors(device.Native, copyCapacity, destinations, sources, type);
+                        copyCount = 0;
+                    }
                     continue;
                 }
                 if (record is not null &&
@@ -1261,6 +1271,12 @@ internal sealed unsafe partial class D3D12Backend
                     target,
                     allowDummySampler: record is null || record.AllowDummySampler);
             }
+            // Sources remain in their retained CPU heaps. Explicit destination handles
+            // preserve typed-null positions without reading a shader-visible heap.
+            if (copyCount == 1)
+                DeviceQueryTrace.CopyDescriptorsSimple(device.Native, 1, destinations[0], sources[0], type);
+            else if (copyCount > 1)
+                DeviceQueryTrace.CopyDescriptors(device.Native, checked((uint)copyCount), destinations, sources, type);
         }
     }
 
