@@ -6,10 +6,10 @@ Install this template once into an absent or empty directory. The copied C#, sha
 pwsh -File <engine>/templates/DefaultProject/Install.ps1 -Destination <project> -EnginePath <engine>
 dotnet run --project <project>/Game.Build/Game.Build.csproj -c Release -- --project <project> --engine <engine>
 dotnet build <project>/Game.App/Game.App.csproj -c Release
-& <project>/Game.App/bin/Release/net10.0/Game.App.exe
+& <project>/Game.App/bin/Release/net10.0/publish/Game.App.exe
 ```
 
-The Release build compiles Game.App as NativeAOT and writes the native executable to the normal output directory. The application reads its scene configuration through generated JSON code. Use F1 for settings, F9 for the three-scene measurement, and F10 for traces. The measurement completes the initial scene startup before switching scenes and records the window-to-scene-frame time separately from scene reload times.
+The Release build compiles Game.App as NativeAOT with the pinned .NET 10 PublishWithSatoriGC SDK and writes the native executable to the output directory’s `publish` subdirectory. `tools/Measure-Scenes.ps1` uses that native output by default. For managed diagnostics, build with `-p:PublishAot=false` and pass `-Managed` to the measurement script. The application reads its scene configuration through generated JSON code. Use F1 for settings, F9 for the three-scene measurement, and F10 for traces. The measurement completes the initial scene startup before switching scenes and records the window-to-scene-frame time separately from scene reload times.
 
 `Game.Build` compiles every project `.shader`, creates the default textures and materials from the declarations in `DefaultTextures.cs` and `DefaultMaterials.cs`, and imports the copied glTF model through the project's importer capabilities. The glTF importer produces the source scene and shared mesh assets. `DefaultContent` then builds the separate 1024-instance test world from that mesh and writes application settings pointing to the test world. `DefaultContentIds.cs` holds identities for code-defined assets; changing a display name keeps its identity. The glTF source has its own persisted import identities and settings after the first import.
 
