@@ -1,4 +1,5 @@
 using System.Numerics;
+using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.RenderGraph;
@@ -12,6 +13,11 @@ public sealed partial class VirtualShadowFeature
     private GraphBufferInput _frameLodBounds = null!;
     private byte[] _casterCacheAges = [];
     private byte[] _frameCasterCacheAges = [];
+    private Entity[] _casterEntities = [];
+    private Entity[] _frameCasterEntities = [];
+    private uint _casterInputVersion;
+    private uint _frameCasterInputVersion;
+    private readonly List<uint> _rebuiltCasterChanges = [];
     private uint[] _casterStaticBits = [];
     private uint[] _frameCasterStaticBits = [];
     private readonly List<Vector4> _lodCasterBounds = [];
@@ -21,7 +27,21 @@ public sealed partial class VirtualShadowFeature
     {
         bool newInstances = !ReferenceEquals(_frameInstances, _committedInstances);
         _lodCasterBounds.Clear();
-        ReadOnlySpan<DepthCacheClass> classes = _geometry.CollectCasterCacheInputs(_lodCasterBounds);
+        ReadOnlySpan<DepthCacheClass> classes = _geometry.CollectCasterCacheInputs(_lodCasterBounds, out _frameCasterInputVersion);
+        Dictionary<Entity, byte>? previousAges = null;
+        if (newInstances)
+        {
+            previousAges = new Dictionary<Entity, byte>(_casterEntities.Length);
+            for (int row = 0; row < _casterEntities.Length; row++)
+                previousAges.Add(_casterEntities[row], _casterCacheAges[row]);
+            if (_frameCasterEntities.Length != instanceCount || ReferenceEquals(_frameCasterEntities, _casterEntities))
+                _frameCasterEntities = new Entity[instanceCount];
+            _rebuiltCasterChanges.Clear();
+            _geometry.CollectCasterEntities(_frameCasterEntities, _casterInputVersion, _rebuiltCasterChanges);
+            _rebuiltCasterChanges.AddRange(_rasterChangedInstances);
+            _rebuiltCasterChanges.Sort();
+        }
+        else _frameCasterEntities = _casterEntities;
         if (_frameCasterCacheAges.Length != instanceCount) _frameCasterCacheAges = new byte[instanceCount];
         int wordCount = Math.Max((instanceCount + 31) / 32, 1);
         if (_frameCasterStaticBits.Length != wordCount) _frameCasterStaticBits = new uint[wordCount];
@@ -33,7 +53,15 @@ public sealed partial class VirtualShadowFeature
         {
             bool changed = changedIndex < changedCount && _changedInstances[changedIndex] == row;
             if (changed) changedIndex++;
-            byte age = newInstances ? (byte)101 : changed || _invalidateAllCasters ? (byte)0 : (byte)Math.Min(_casterCacheAges[row] + 1, 101);
+            byte previousAge = 101;
+            bool added = newInstances && !previousAges!.TryGetValue(_frameCasterEntities[row], out previousAge);
+            if (newInstances)
+                changed = _rebuiltCasterChanges.BinarySearch((uint)row) >= 0;
+            else previousAge = _casterCacheAges[row];
+            // Batch rows can move when unrelated entities are added or removed. Only
+            // actual invalidation resets an existing entity's completed-frame age.
+            byte age = added ? (byte)101 : changed || _invalidateAllCasters ? (byte)0 :
+                (byte)Math.Min(previousAge + 1, 101);
             _frameCasterCacheAges[row] = age;
             bool isStatic = classes[row] == DepthCacheClass.Static ||
                 classes[row] == DepthCacheClass.Auto && age > 100;
@@ -57,6 +85,8 @@ public sealed partial class VirtualShadowFeature
     {
         (_casterCacheAges, _frameCasterCacheAges) = (_frameCasterCacheAges, _casterCacheAges);
         (_casterStaticBits, _frameCasterStaticBits) = (_frameCasterStaticBits, _casterStaticBits);
+        _casterEntities = _frameCasterEntities;
+        _casterInputVersion = _frameCasterInputVersion;
     }
 
     private void BindRasterDepthCacheClasses(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>

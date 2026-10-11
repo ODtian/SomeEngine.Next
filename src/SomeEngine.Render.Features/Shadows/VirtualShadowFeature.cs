@@ -956,7 +956,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BufferUsages.CopySource,
                 "Virtual shadow view upload");
             GraphBufferId viewBuffer = graph.CreateBuffer(new BufferDesc(viewUpload.Range.Size,
-                BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination,
+                BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination |
+                    (_qualityReadbacks is not null ? BufferUsages.CopySource : BufferUsages.None),
                 "Virtual shadow view parameters"));
             var viewCopy = new VirtualShadowViewCopyPassData(viewUpload, viewBuffer);
             graph.AddCopyPass("Upload virtual shadow view parameters", PassQueueSelection.AnyOfType(QueueType.Graphics),

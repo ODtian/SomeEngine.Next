@@ -34,6 +34,12 @@ public sealed partial class VirtualShadowFeature
             GrowLightBuffer(ref edit, _uncachedPageHierarchy, (ulong)hierarchyWords * 2u * sizeof(uint), "Virtual shadow uncached page hierarchy");
             GrowLightBuffer(ref edit, _allocatedPageHierarchy, (ulong)hierarchyWords * sizeof(uint), "Virtual shadow allocated page hierarchy");
             GrowLightBuffer(ref edit, _policyRasterWorkCount, (1ul + 2ul * sourceViews) * sizeof(uint), "Virtual shadow policy raster work count");
+            if (_workFeedbackPipeline is not null)
+            {
+                GrowLightBuffer(ref edit, _previousWorkCounts, (1ul + 2ul * sourceViews) * sizeof(uint), "Previous virtual shadow visible work");
+                GrowLightBuffer(ref edit, _previousWorkPressure, (1ul + sourceViews) * sizeof(float), "Previous virtual shadow work pressure");
+                GrowLightBuffer(ref edit, _frameWorkPressure, (1ul + sourceViews) * sizeof(float), "Frame virtual shadow work pressure");
+            }
             GrowLightBuffer(ref edit, _depthWorkCount, (ulong)sourceViews * 4u * sizeof(uint), "Virtual shadow static/dynamic visible work");
             GrowLightBuffer(ref edit, _rasterInvocationViews, (ulong)rasterViews * ClusterRenderContext.ViewSizeInBytes, "Virtual shadow raster invocation views");
             GrowLightBuffer(ref edit, _rasterTargetViews, (ulong)rasterViews * ClusterRenderContext.TargetViewSizeInBytes, "Virtual shadow raster target views");

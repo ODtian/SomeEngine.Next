@@ -158,9 +158,14 @@ public sealed partial class ClusterPipelineSystem
     }
 
     /// <summary>Reads caller cache choices and collects world-space bounds only for changed LOD groups.</summary>
-    public ReadOnlySpan<DepthCacheClass> CollectCasterCacheInputs(List<Vector4> lodBounds)
+    public ReadOnlySpan<DepthCacheClass> CollectCasterCacheInputs(List<Vector4> lodBounds) =>
+        CollectCasterCacheInputs(lodBounds, out _);
+
+    /// <summary>Reads cache choices and the render-world version observed with them.</summary>
+    public ReadOnlySpan<DepthCacheClass> CollectCasterCacheInputs(List<Vector4> lodBounds, out uint version)
     {
         RefreshCasterInputs();
+        version = _casterInputVersion;
         ReadOnlyMemory<ClusterLodChange> changes = _resources.LodChanges;
         if (!changes.IsEmpty)
         {
@@ -169,6 +174,35 @@ public sealed partial class ClusterPipelineSystem
                 static (QueryCursor query, ref CasterLodBounds data) => data.Collect(query));
         }
         return _casterCacheClasses;
+    }
+
+    /// <summary>Maps rebuilt caster rows to entities and reports actual transform or mesh writes.</summary>
+    public void CollectCasterEntities(Span<Entity> entities, uint afterVersion, List<uint> changedRows)
+    {
+        var inputs = new CasterEntities(_instances.Current!, entities, changedRows);
+        _resources.World.ExecuteQuery(_sceneQuery, afterVersion, ref inputs,
+            static (QueryCursor query, ref CasterEntities data) => data.Collect(query));
+    }
+
+    private ref struct CasterEntities(RenderInstanceBatches<RenderInstanceSingleGroup> batches,
+        Span<Entity> entities, List<uint> changedRows)
+    {
+        private readonly Span<Entity> _entities = entities;
+        internal void Collect(QueryCursor query)
+        {
+            int entityIndex = 0;
+            foreach (QueryChunkView chunk in query.Chunks)
+                for (int row = 0; row < chunk.Count; row++)
+                {
+                    bool changed = chunk.RowChangedSinceLastSystemVersion<RenderTransform>(row) ||
+                        chunk.RowChangedSinceLastSystemVersion<RenderMesh>(row);
+                    foreach (var address in batches.RowsForEntity(entityIndex++))
+                    {
+                        _entities[address.Row] = chunk.GetEntity(row);
+                        if (changed) changedRows.Add(checked((uint)address.Row));
+                    }
+                }
+        }
     }
 
     private ref struct CasterLodBounds(RenderInstanceBatches<RenderInstanceSingleGroup> batches,

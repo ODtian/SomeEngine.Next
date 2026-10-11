@@ -254,7 +254,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null,
         VirtualShadowMapSettings? shadowSettings = null, DeviceFeatures optionalFeatures = DeviceFeatures.None,
         ClusterResidencyOptions? residencyOptions = null, ClusterStreamingFeedbackChannel? feedbackChannel = null,
-        uint graphicsQueueCount = 1)
+        uint graphicsQueueCount = 1, bool nativeVulkanValidation = false)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -293,8 +293,10 @@ internal sealed class FrameStageScene : IAsyncDisposable
         Material unlit = await unlitFile.CreateAsync(assets, TestShaderLoading.Slang,
             TestShaderLoading.CreateSessionDescription(target));
         IGraphicsBackend backend = new ValidationLayer(backendName == "Vulkan"
-            ? VulkanGraphicsBackend.Create() : D3D12GraphicsBackend.Create(),
-            new ValidationOptions(NativeValidationDisabled: backendName == "Vulkan"));
+            ? VulkanGraphicsBackend.Create(new VulkanBackendOptions(
+                EnableValidation: nativeVulkanValidation, EnableDebugMessages: nativeVulkanValidation))
+            : D3D12GraphicsBackend.Create(),
+            new ValidationOptions(NativeValidationDisabled: backendName == "Vulkan" && !nativeVulkanValidation));
         var enumeration = new AdapterEnumerationOptions(AdapterPreference.HighPerformance);
         backend.TryEnumerateAdapters(enumeration, [], out int count);
         var adapters = new AdapterInfo[count];
@@ -333,7 +335,10 @@ internal sealed class FrameStageScene : IAsyncDisposable
         _gameWorld.Replace(_meshes[index], new MeshInstance { Mesh = _mesh, BoundsExpansion = expansion });
 
     internal void SetMeshTransform(int index, TransformQvvs transform) =>
-        _gameWorld.Replace(_meshes[index], new WorldTransform { Qvvs = transform });
+        SetMeshTransform(_meshes[index], transform);
+
+    internal void SetMeshTransform(Entity entity, TransformQvvs transform) =>
+        _gameWorld.Replace(entity, new WorldTransform { Qvvs = transform });
 
     internal void SetMeshFirstPerson(int index, FirstPersonMeshData firstPerson)
     {
