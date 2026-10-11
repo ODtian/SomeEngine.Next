@@ -4,48 +4,52 @@
 #include "wave_queue.slang"
 #include "material_interfaces.slang"
 #include "cluster_view.slang"
-
-float GetClusterRasterDepthCenter(bool clipDepth)
-{
-    return clipDepth ? 0.0 : 0.5;
-}
-
-float GetClusterRasterDepthCenter(ClusterViewUniforms view)
-{
-    return GetClusterRasterDepthCenter(ClusterViewClipsDepth(view));
-}
+#include "depth_projection.slang"
 
 float2 CalculateClusterRasterDepthInput(float3 worldPosition, float4 clip, ClusterViewUniforms view)
 {
-    float center = GetClusterRasterDepthCenter(view);
-    if (center == 0.0) return clip.zw;
-    // Preserve the small directional depth through interpolation; the pixel adds the center.
-    float3 position = ClusterPositionForView(worldPosition, view);
-    float depth = dot(position, float3(view.ViewProj[0][2], view.ViewProj[1][2], view.ViewProj[2][2])) +
-        (view.ViewProj[3][2] - center);
-    return float2(depth, clip.w);
-}
-
-float ReadClusterRasterDepth(float depth, float center)
-{
-    return depth + center;
+    if (view.TargetPolicy == 0u) return clip.zw;
+    float4 position = float4(ClusterPositionForView(worldPosition, view), 1.0);
+    return float2(ProjectReverseDepth(position, view.ViewProj), clip.w);
 }
 
 float ReadClusterRasterDepth(float4 pixelPosition, float2 clipDepth, ClusterViewUniforms view)
 {
-    return view.TargetPolicy != 0u ? ReadClusterRasterDepth(clipDepth.x / clipDepth.y,
-        GetClusterRasterDepthCenter(view)) : pixelPosition.z;
+    return view.TargetPolicy != 0u ? clipDepth.x / clipDepth.y : pixelPosition.z;
 }
 
-bool ClusterRasterDepthAccepts(float depth, uint encodedDepth, uint earlyDepthEnabled)
+uint EncodeClusterRasterDepth(float depth, uint targetPolicy)
 {
-    return earlyDepthEnabled == 0u || asuint(1.0 - saturate(depth)) >= encodedDepth;
+    return asuint(targetPolicy != 0u ? saturate(depth) : 1.0 - saturate(depth));
+}
+
+float ClusterRasterMaterialDepth(float depth, uint targetPolicy)
+{
+    return targetPolicy != 0u ? 1.0 - depth : depth;
+}
+
+float ClusterRasterResultDepth(float rasterDepth, float materialDepth, float resultDepth, uint targetPolicy)
+{
+    if (targetPolicy == 0u) return resultDepth;
+    // Public material depth stays forward. An unchanged value must not quantize
+    // the native raster depth through a forward/reverse round trip.
+    return resultDepth == materialDepth ? rasterDepth : 1.0 - resultDepth;
+}
+
+bool ClusterRasterDepthAccepts(float depth, uint encodedDepth, uint earlyDepthEnabled, uint targetPolicy)
+{
+    uint incomingDepth = EncodeClusterRasterDepth(depth, targetPolicy);
+    return earlyDepthEnabled == 0u || (targetPolicy != 0u
+        ? incomingDepth > encodedDepth : incomingDepth >= encodedDepth);
 }
 
 static const uint CLUSTER_RASTER_SUBPIXEL_BITS = 8u;
 static const uint CLUSTER_RASTER_SUBPIXEL_SCALE = 1u << CLUSTER_RASTER_SUBPIXEL_BITS;
 static const float CLUSTER_RASTER_SUBPIXEL_SCALE_F = float(CLUSTER_RASTER_SUBPIXEL_SCALE);
 static const uint CLUSTER_RASTER_MAX_CLIPPED_VERTICES = 16u;
+static const uint CLUSTER_RASTER_COVERAGE_FLOAT_BOUNDS = 0u;
+static const uint CLUSTER_RASTER_COVERAGE_INTEGER = 1u;
+static const uint CLUSTER_RASTER_COVERAGE_FLOAT_PIXELS = 2u;
 
 struct ClusterRasterOutputPixel
 {
@@ -96,6 +100,7 @@ struct ClusterRasterTriangle
     int2 MinPixel;
     int2 MaxPixel;
     uint Valid;
+    uint CoverageMode;
 };
 
 float ClusterRasterClipDistance(float4 value, uint plane)
@@ -217,6 +222,14 @@ uint ClusterRasterClipTriangle(
     return count;
 }
 
+int ClusterRasterIntegerPixelBound(float subpixel, int offset)
+{
+    int64_t value = int64_t(subpixel) + int64_t(offset);
+    int64_t scale = int64_t(CLUSTER_RASTER_SUBPIXEL_SCALE);
+    // Signed division rounds towards zero; raster bounds require floor.
+    return int(value >= 0 ? value / scale : -((-value + scale - 1) / scale));
+}
+
 ClusterRasterTriangle SetupClusterRasterTriangle(
     float4 clipVerts[3],
     int4 scissorRect,
@@ -234,6 +247,9 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
         CLUSTER_RASTER_SUBPIXEL_SCALE_F + 0.5);
     float2 v2 = floor((clipVerts[2].xy * inverseW.z * screenScale + screenBias) *
         CLUSTER_RASTER_SUBPIXEL_SCALE_F + 0.5);
+
+    if (!all(isfinite(v0)) || !all(isfinite(v1)) || !all(isfinite(v2)))
+        return tri;
 
     tri.Screen0 = v0 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
     tri.Screen1 = v1 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
@@ -253,12 +269,36 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
 
     float2 minimum = min(v0, min(v1, v2));
     float2 maximum = max(v0, max(v1, v2));
-    tri.MinPixel = int2(floor(
-        (minimum + (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
-        CLUSTER_RASTER_SUBPIXEL_SCALE_F));
-    tri.MaxPixel = int2(floor(
-        (maximum - (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
-        CLUSTER_RASTER_SUBPIXEL_SCALE_F));
+    float2 span = maximum - minimum;
+    float largestCoordinate = max(max(abs(minimum.x), abs(minimum.y)),
+        max(abs(maximum.x), abs(maximum.y)));
+    // In this domain all setup and edge intermediates retain the 8-bit
+    // subpixel grid: 4 * (7 * 256)^2 + 1 < 2^24. Test the original
+    // triangle, never its possibly narrow scissor intersection.
+    bool floatCoverageIsExact = all(span <= 7.0 * CLUSTER_RASTER_SUBPIXEL_SCALE_F) &&
+        largestCoordinate <= 16776960.0; // 2^24 - 256
+    // Relative-coordinate products and their difference fit signed 64 bits.
+    // The margin also bounds pixel centers reconstructed by the raster box.
+    bool integerCoverageIsSafe = largestCoordinate <= 536870656.0; // 2^29 - 256
+    tri.CoverageMode = floatCoverageIsExact ? CLUSTER_RASTER_COVERAGE_FLOAT_BOUNDS :
+        integerCoverageIsSafe ? CLUSTER_RASTER_COVERAGE_INTEGER :
+        CLUSTER_RASTER_COVERAGE_FLOAT_PIXELS;
+    if (tri.CoverageMode == CLUSTER_RASTER_COVERAGE_INTEGER)
+    {
+        tri.MinPixel = int2(ClusterRasterIntegerPixelBound(minimum.x, 127),
+            ClusterRasterIntegerPixelBound(minimum.y, 127));
+        tri.MaxPixel = int2(ClusterRasterIntegerPixelBound(maximum.x, -129),
+            ClusterRasterIntegerPixelBound(maximum.y, -129));
+    }
+    else
+    {
+        tri.MinPixel = int2(floor(
+            (minimum + (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
+            CLUSTER_RASTER_SUBPIXEL_SCALE_F));
+        tri.MaxPixel = int2(floor(
+            (maximum - (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
+            CLUSTER_RASTER_SUBPIXEL_SCALE_F));
+    }
     tri.MinPixel = max(tri.MinPixel, scissorRect.xy);
     tri.MaxPixel = min(tri.MaxPixel, scissorRect.zw - 1);
     if (any(tri.MinPixel > tri.MaxPixel))
@@ -320,6 +360,34 @@ float3 ClusterRasterPerspectiveBarycentric(
         : float3(1.0, 0.0, 0.0);
 }
 
+bool ClusterRasterIntegerEdgeAccepts(float2 first, float2 second, int2 pixel, int winding)
+{
+    int64_t ax = int64_t(first.x * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+    int64_t ay = int64_t(first.y * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+    int64_t bx = int64_t(second.x * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+    int64_t by = int64_t(second.y * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+    int64_t px = int64_t(pixel.x) * int64_t(CLUSTER_RASTER_SUBPIXEL_SCALE) + 128;
+    int64_t py = int64_t(pixel.y) * int64_t(CLUSTER_RASTER_SUBPIXEL_SCALE) + 128;
+    int64_t ex = (ax - bx) * int64_t(winding);
+    int64_t ey = (ay - by) * int64_t(winding);
+    int64_t bias = ey > 0 || (ey == 0 && ex <= 0) ? int64_t(1) : int64_t(0);
+    // Rebase at the current pixel before multiplying; never reconstruct
+    // coverage from the already rounded float C coefficient.
+    return ey * (ax - px) - ex * (ay - py) - bias >= 0;
+}
+
+bool ClusterRasterIntegerCoverageAccepts(ClusterRasterTriangle triangle, int2 pixel)
+{
+    // Preserve the orientation selected by the existing setup and cull rule.
+    bool sameDirection = triangle.Edge12.x != 0.0
+        ? ((triangle.Edge12.x > 0.0) == (triangle.Screen1.x > triangle.Screen2.x))
+        : ((triangle.Edge12.y > 0.0) == (triangle.Screen1.y > triangle.Screen2.y));
+    int winding = sameDirection ? 1 : -1;
+    return ClusterRasterIntegerEdgeAccepts(triangle.Screen1, triangle.Screen2, pixel, winding) &&
+        ClusterRasterIntegerEdgeAccepts(triangle.Screen2, triangle.Screen0, pixel, winding) &&
+        ClusterRasterIntegerEdgeAccepts(triangle.Screen0, triangle.Screen1, pixel, winding);
+}
+
 struct ClusterPixelRasterTask<
     TVertex,
     TVisibility : IVisibilityEvaluate<TVertex>,
@@ -341,7 +409,6 @@ struct ClusterPixelRasterTask<
     uint PixelCount;
     uint Scanline;
     uint EarlyDepthEnabled;
-    float DepthCenter;
     TOutput Output;
 
     [mutating] uint GetTaskCount()
@@ -366,6 +433,7 @@ struct ClusterPixelRasterTask<
         result.Triangle.C0 = WaveReadLaneAt(Triangle.C0, sourceLane);
         result.Triangle.C1 = WaveReadLaneAt(Triangle.C1, sourceLane);
         result.Triangle.C2 = WaveReadLaneAt(Triangle.C2, sourceLane);
+        result.Triangle.CoverageMode = WaveReadLaneAt(Triangle.CoverageMode, sourceLane);
         result.Triangle.MinPixel = int2(
             WaveReadLaneAt(Triangle.MinPixel.x, sourceLane),
             WaveReadLaneAt(Triangle.MinPixel.y, sourceLane));
@@ -409,7 +477,6 @@ struct ClusterPixelRasterTask<
         result.TargetViewIndex = WaveReadLaneAt(TargetViewIndex, sourceLane);
         result.Scanline = WaveReadLaneAt(Scanline, sourceLane);
         result.EarlyDepthEnabled = WaveReadLaneAt(EarlyDepthEnabled, sourceLane);
-        result.DepthCenter = WaveReadLaneAt(DepthCenter, sourceLane);
         result.Varying0 = visibility.readLane(Varying0, sourceLane);
         result.Varying1 = visibility.readLane(Varying1, sourceLane);
         result.Varying2 = visibility.readLane(Varying2, sourceLane);
@@ -449,7 +516,7 @@ struct ClusterPixelRasterTask<
         int firstX = scanline != 0u ? 0 : int(localIndex) % width;
         int lastX = scanline != 0u ? width : firstX + 1;
         int y = scanline != 0u ? int(localIndex) : int(localIndex) / width;
-        if (scanline != 0u)
+        if (scanline != 0u && triangle.CoverageMode == CLUSTER_RASTER_COVERAGE_FLOAT_BOUNDS)
         {
             float3 rowEdges = float3(triangle.C0, triangle.C1, triangle.C2) +
                 float(y) * float3(triangle.Edge12.x, triangle.Edge20.x, triangle.Edge01.x);
@@ -477,10 +544,14 @@ struct ClusterPixelRasterTask<
             float edge0 = triangle.C0 - triangle.Edge12.y * float(x) + triangle.Edge12.x * float(y);
             float edge1 = triangle.C1 - triangle.Edge20.y * float(x) + triangle.Edge20.x * float(y);
             float edge2 = triangle.C2 - triangle.Edge01.y * float(x) + triangle.Edge01.x * float(y);
-            if (edge0 < 0.0 || edge1 < 0.0 || edge2 < 0.0)
-                continue;
-
             int2 pixel = triangle.MinPixel + int2(x, y);
+            if (triangle.CoverageMode == CLUSTER_RASTER_COVERAGE_INTEGER)
+            {
+                if (!ClusterRasterIntegerCoverageAccepts(triangle, pixel))
+                    continue;
+            }
+            else if (edge0 < 0.0 || edge1 < 0.0 || edge2 < 0.0)
+                continue;
             ClusterRasterOutputPixel outputPixel;
             if (!Output.resolvePixel(pixel, targetPolicy, targetViewIndex, visibilityValue, outputPixel))
                 continue;
@@ -488,9 +559,9 @@ struct ClusterPixelRasterTask<
                 triangle.DepthPlane.x +
                 triangle.DepthPlane.y * edge1 +
                 triangle.DepthPlane.z * edge2;
-            float depth = saturate(ReadClusterRasterDepth(depthInput, DepthCenter));
+            float depth = saturate(depthInput);
             uint encodedDepth = Output.readDepth(outputPixel, targetPolicy, targetViewIndex);
-            if (!ClusterRasterDepthAccepts(depth, encodedDepth, EarlyDepthEnabled))
+            if (!ClusterRasterDepthAccepts(depth, encodedDepth, EarlyDepthEnabled, targetPolicy))
                 continue;
             float3 fanLinear = ClusterRasterLinearBarycentric(
                 triangle,
@@ -550,7 +621,8 @@ struct ClusterPixelRasterTask<
                 interpolation);
             VisibilityPixelInput pixelInput;
             pixelInput.PixelCoord = uint3(pixel, viewIndex);
-            pixelInput.Depth = depth;
+            pixelInput.Depth = ClusterRasterMaterialDepth(depth, targetPolicy);
+            pixelInput.EncodedDepth = EncodeClusterRasterDepth(depth, targetPolicy);
             pixelInput.EncodedTargetDepth = encodedDepth;
             pixelInput.VisibleClusterIndex = visibleClusterIndex;
             pixelInput.TriangleID = triangleID;
@@ -565,7 +637,7 @@ struct ClusterPixelRasterTask<
                 viewIndex,
                 targetPolicy,
                 targetViewIndex,
-                saturate(pixelResult.Depth),
+                saturate(ClusterRasterResultDepth(depth, pixelInput.Depth, pixelResult.Depth, targetPolicy)),
                 visibilityValue);
         }
     }
@@ -655,7 +727,6 @@ void RasterizeClusterTriangleWave<
         task.TargetPolicy = targetPolicy;
         task.TargetViewIndex = targetViewIndex;
         task.EarlyDepthEnabled = earlyDepthEnabled;
-        task.DepthCenter = GetClusterRasterDepthCenter(clipDepth);
         task.Output = output;
         if (active && rasterTriangle.Valid != 0u)
         {

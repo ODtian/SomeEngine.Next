@@ -8,8 +8,9 @@ namespace SomeEngine.Render.Shadows;
 public struct VirtualShadowReceiverProjection
 {
     public Vector4 WorldToClipW;
-    public float ScreenPixelRadius;
+    // Keep the shared uniform layout valid for both DXIL and SPIR-V.
     public Vector3 WorldTranslation;
+    public float ScreenPixelRadius;
     public Vector4 WorldToViewDepth;
     public CameraDepthOfField DepthOfField;
     public Vector3 CameraPosition;

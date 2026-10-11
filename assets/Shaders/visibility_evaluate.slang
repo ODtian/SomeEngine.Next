@@ -28,7 +28,10 @@ struct VisibilityInterpolationInput
 struct VisibilityPixelInput
 {
     uint3 PixelCoord;
+    // Public material depth is forward even when the target raster uses reverse-Z.
     float Depth;
+    // Incoming depth in the same reversed integer representation as the target.
+    uint EncodedDepth;
     // Reversed integer depth already stored at the resolved target pixel.
     // A shader retaining input.Depth can reject covered target pixels itself.
     uint EncodedTargetDepth;
@@ -115,7 +118,7 @@ struct OpaqueVisibilityEvaluate<TVertex> : IVisibilityEvaluate<TVertex>
     {
         VisibilityPixelResult result;
         result.Visible = input.TargetPolicy == 0u ||
-            input.EncodedTargetDepth < asuint(1.0 - saturate(input.Depth)) ? 1u : 0u;
+            input.EncodedTargetDepth < input.EncodedDepth ? 1u : 0u;
         result.Depth = input.Depth;
         return result;
     }

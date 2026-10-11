@@ -251,7 +251,7 @@ uint ReadRasterTargetPixelDepth(uint2 targetPixel, uint depthCacheClass = 0u)
 
 void WriteRasterTargetPixelDepth(uint2 targetPixel, float depth, uint depthCacheClass = 0u)
 {
-    uint encodedDepth = asuint(1.0 - saturate(depth));
+    uint encodedDepth = asuint(saturate(depth));
     uint ignored;
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
     if (depthCacheClass == 1u)
