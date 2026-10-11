@@ -71,26 +71,48 @@ public static partial class SlangShaderImporter
             string? definitionHash = File.Exists(fullPath) ? ImportHash.FileSha256(fullPath) : null;
             TargetDesc[] targets = CreateDefaultTargets(GlobalSession);
             SessionDesc sessionDescription = CreateSessionDescription(fullPath, targets, includeDirectories);
-            ShaderCompilation compiled = definition.CompileAsync(GlobalSession, sessionDescription,
-                string.IsNullOrWhiteSpace(asset.Name) ? Path.GetFileNameWithoutExtension(fullPath) : asset.Name,
+            string shaderName = string.IsNullOrWhiteSpace(asset.Name) ? Path.GetFileNameWithoutExtension(fullPath) : asset.Name;
+            ShaderCompilation compiled = definition.CompileAsync(GlobalSession, sessionDescription, shaderName,
                 cancellationToken).AsTask().GetAwaiter().GetResult();
             for (int index = 0; index < compiled.SerializedSources.Count; index++)
                 definition.SetSerializedSource(index, compiled.SerializedSources[index].Span);
-            foreach (ulong key in code.Chunks.Keys.ToArray()) code.RemoveBytes(key);
-            for (int target = 0; target < targets.Length; target++)
+            foreach (ulong key in code.ContentKeys.ToArray()) code.RemoveBytes(key);
+            var dependencies = new List<FileDependency>();
+            SaveCode(compiled, null, []);
+            foreach (ShaderSpecialization specialization in definition.Specializations)
             {
-                ISlangBlob? targetCode = compiled.Shader.GetSlangTargetBlob(target);
-                if (targetCode is not null) code.SetTargetCode(sessionDescription, target, targetCode.Buffer);
-                for (int entry = 0; entry < compiled.Shader.SlangEntryCount; entry++)
-                {
-                    code.SetEntryCode(sessionDescription, target, entry, compiled.Shader.GetSlangEntryBlob(target, entry)!.Buffer);
-                    code.SetEntryUsage(sessionDescription, target, entry, compiled.Shader.GetSlangUsedParameters(target, entry));
-                }
+                string[] arguments = specialization.Arguments.ToArray();
+                ShaderCompilation variant = definition.CompileAsync(GlobalSession, sessionDescription,
+                    shaderName, specialization.EntryPoint,
+                    arguments.Select(SpecializationArg.FromExpression).ToArray(), cancellationToken)
+                    .AsTask().GetAwaiter().GetResult();
+                SaveCode(variant, specialization.EntryPoint, arguments);
             }
-            var dependencies = compiled.Files.Select(file => new FileDependency
+
+            void SaveCode(ShaderCompilation result, string? entryPoint, string[] arguments)
             {
-                RelativePath = SlangDeps.RelPath(projectRoot, file.Path), ContentHash = file.ContentHash,
-            }).ToList();
+                bool hasUnboundEntries = entryPoint is null && Enumerable.Range(0, result.Shader.SlangEntryCount)
+                    .Any(entry => result.Shader.GetSlangEntryPoint(entry).GetSpecializationParamCount() != 0);
+                for (int target = 0; target < targets.Length; target++)
+                {
+                    ISlangBlob? targetCode = hasUnboundEntries ? null : result.Shader.GetSlangTargetBlob(target);
+                    if (targetCode is not null)
+                        code.SetTargetCode(sessionDescription, target, targetCode.Buffer, arguments, entryPoint);
+                    for (int entry = 0; entry < result.Shader.SlangEntryCount; entry++)
+                    {
+                        if (entryPoint is null && result.Shader.GetSlangEntryPoint(entry).GetSpecializationParamCount() != 0)
+                            continue;
+                        code.SetEntryCode(sessionDescription, target, entry,
+                            result.Shader.GetSlangEntryBlob(target, entry)!.Buffer, arguments, entryPoint);
+                        code.SetEntryUsage(sessionDescription, target, entry,
+                            result.Shader.GetSlangUsedParameters(target, entry), arguments, entryPoint);
+                    }
+                }
+                dependencies.AddRange(result.Files.Select(file => new FileDependency
+                {
+                    RelativePath = SlangDeps.RelPath(projectRoot, file.Path), ContentHash = file.ContentHash,
+                }));
+            }
             if (definitionHash is not null)
                 dependencies.Add(new FileDependency { RelativePath = SlangDeps.RelPath(projectRoot, fullPath), ContentHash = definitionHash });
             FileDependency[] inputs = dependencies.DistinctBy(static value => value.RelativePath, StringComparer.OrdinalIgnoreCase)

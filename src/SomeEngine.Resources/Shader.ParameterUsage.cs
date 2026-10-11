@@ -35,13 +35,18 @@ public partial class Shader
     }
 
     private static ImmutableArray<ImmutableHashSet<SlangDescriptorLocation>> ReadSlangUsedParameters(
-        IComponentType code, int targetCount, int entryCount)
+        IComponentType code, int targetCount, int entryCount, ImmutableArray<bool> unboundEntries)
     {
         var result = ImmutableArray.CreateBuilder<ImmutableHashSet<SlangDescriptorLocation>>();
         for (int target = 0; target < targetCount; target++)
         {
             for (int entry = 0; entry < entryCount; entry++)
             {
+                if (unboundEntries[entry])
+                {
+                    result.Add(ImmutableHashSet<SlangDescriptorLocation>.Empty);
+                    continue;
+                }
                 SlangResult status = code.GetEntryPointMetadata(entry, target, out IMetadata metadata,
                     out ISlangBlob? diagnostics);
                 if (status.Failed)

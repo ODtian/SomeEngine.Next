@@ -10,7 +10,7 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "B7BA7FC20330279C",
+      "Schema": "68AF469430D4B902",
       "Fields": {
         "SourceNames": [
           "vsm_prefilter_requests.slang"

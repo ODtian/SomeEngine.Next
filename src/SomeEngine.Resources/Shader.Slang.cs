@@ -19,6 +19,7 @@ public unsafe partial class Shader
     private readonly ImmutableArray<byte[]?> _slangTargetBytes;
     private readonly ImmutableArray<byte[]> _slangEntryBytes;
     private readonly int _slangEntryCount;
+    private readonly ImmutableArray<bool> _slangUnboundEntries;
 
     private Shader(
         string name,
@@ -34,7 +35,9 @@ public unsafe partial class Shader
         ImmutableArray<byte[]?> targetBytes,
         ImmutableArray<byte[]> entryBytes,
         int entryCount,
-        ImmutableArray<ImmutableHashSet<SlangDescriptorLocation>> usedParameters)
+        ImmutableArray<ImmutableHashSet<SlangDescriptorLocation>> usedParameters,
+        ImmutableArray<bool> unboundEntries,
+        ImmutableArray<(string EntryPoint, ImmutableArray<string> Arguments, Shader Shader)> specializations = default)
     {
         Name = name;
         _slangGlobal = global;
@@ -50,6 +53,8 @@ public unsafe partial class Shader
         _slangEntryBytes = entryBytes;
         _slangEntryCount = entryCount;
         _slangUsedParameters = usedParameters;
+        _slangUnboundEntries = unboundEntries;
+        _specializations = specializations;
         IndexSlangEntries();
     }
 
@@ -76,6 +81,9 @@ public unsafe partial class Shader
         if (targets.IsEmpty)
             throw new ArgumentException("Creating a shader requires at least one Slang target.", nameof(targets));
 
+        bool unbound = linkedCode.GetSpecializationParamCount() != 0;
+        ImmutableArray<bool> unboundEntries = entries.Select(entry =>
+            unbound && entry.GetSpecializationParamCount() != 0).ToImmutableArray();
         var reflections = ImmutableArray.CreateBuilder<ShaderReflection>(targets.Length);
         var targetBlobs = ImmutableArray.CreateBuilder<ISlangBlob?>(targets.Length);
         var entryBlobs = ImmutableArray.CreateBuilder<ISlangBlob?>();
@@ -101,13 +109,13 @@ public unsafe partial class Shader
                 throw new InvalidDataException("Slang reflection differs from the supplied entry points.");
 
             reflections.Add(reflection);
-            targetBlobs.Add(generateCode
+            targetBlobs.Add(generateCode && !unbound
                 ? GetTargetBlob(linkedCode, targetIndex)
                 : null);
 
             for (int entryIndex = 0; entryIndex < reflectedEntryCount; entryIndex++)
             {
-                entryBlobs.Add(generateCode
+                entryBlobs.Add(generateCode && !unboundEntries[entryIndex]
                     ? GetEntryBlob(linkedCode, targetIndex, entryIndex)
                     : null);
             }
@@ -128,8 +136,9 @@ public unsafe partial class Shader
             Enumerable.Repeat<byte[]?>(null, targets.Length).ToImmutableArray(),
             Enumerable.Repeat(Array.Empty<byte>(), codeCount).ToImmutableArray(),
             entryCount,
-            generateCode ? ReadSlangUsedParameters(linkedCode, targets.Length, entryCount) :
-                Enumerable.Repeat(ImmutableHashSet<SlangDescriptorLocation>.Empty, codeCount).ToImmutableArray());
+            generateCode ? ReadSlangUsedParameters(linkedCode, targets.Length, entryCount, unboundEntries) :
+                Enumerable.Repeat(ImmutableHashSet<SlangDescriptorLocation>.Empty, codeCount).ToImmutableArray(),
+            unboundEntries);
     }
 
     public bool HasSlangData => true;
@@ -248,8 +257,9 @@ public unsafe partial class Shader
         {
             throw new ArgumentException("Saved shader code does not match Slang reflection.");
         }
-        if (entryCode.Any(static bytes => bytes.Length == 0))
-            throw new ArgumentException("Saved shader entry code cannot be empty.", nameof(entryCode));
+        for (int index = 0; index < entryCode.Count; index++)
+            if (entryCode[index].Length == 0 && !_slangUnboundEntries[index % _slangEntryCount])
+                throw new ArgumentException("Saved shader entry code cannot be empty.", nameof(entryCode));
 
         return new Shader(
             Name,
@@ -265,7 +275,8 @@ public unsafe partial class Shader
             targetCode.ToImmutableArray(),
             entryCode.ToImmutableArray(),
             _slangEntryCount,
-            usedParameters.ToImmutableArray());
+            usedParameters.ToImmutableArray(),
+            _slangUnboundEntries);
     }
 
     private int GetCodeIndex(int targetIndex, int entryIndex)
@@ -276,6 +287,8 @@ public unsafe partial class Shader
             throw new ArgumentOutOfRangeException(nameof(targetIndex));
         if (entryIndex >= _slangEntryCount)
             throw new ArgumentOutOfRangeException(nameof(entryIndex));
+        if (_slangUnboundEntries[entryIndex])
+            throw new InvalidOperationException($"Shader entry '{GetSlangReflection(targetIndex).GetEntryPointByIndex((nuint)entryIndex).Name}' requires specialization.");
         return checked(targetIndex * _slangEntryCount + entryIndex);
     }
 
