@@ -53,17 +53,19 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferId base0, GraphBufferId base1, GraphBufferId base2, bool target,
         int phase, string label, GraphRegionId region)
     {
+        uint maximumViews = target ? _renderContext.MaximumInvocationCount : frame.ViewCount;
+        ClusterComputePipeline traversal = _pipelines!.GetTraversal(target, maximumViews > 1u);
         GraphBufferSlice parameters = UploadUniform(ref graph,
             new ClusterTraversalLevelUniforms { MaxNodes = _options.MaxCandidates, TraversalMode = mode },
             $"Cluster {label} work parameters");
         var dispatch = new ClusterDispatchParameters(new DispatchArguments(1, 1, 1));
         GraphPassId id = graph.AddComputeFramePass($"Cull Cluster {label} work", PassQueueSelection.AnyOfType(QueueType.Graphics),
-            dispatch, new PassOptions(RepeatCommands: true), _pipelines!.Traversal.Pipeline, _pipelines.Traversal.ParameterLayout,
+            dispatch, new PassOptions(RepeatCommands: true), traversal.Pipeline, traversal.ParameterLayout,
             default, static (ref PassDefinition _, ref ClusterDispatchParameters _) => { },
             ClusterDispatchParameters.Record, region: region);
         PassDefinition pass = graph.GetPass(id);
         var inputs = ShaderResourceLayout.Resolve<(string Name, ResourceBindingType Type)>(
-            _pipelines.Traversal.ParameterLayout, static (name, type) => (name, type));
+            traversal.ParameterLayout, static (name, type) => (name, type));
         bool filters = false;
         foreach (var input in inputs)
         {

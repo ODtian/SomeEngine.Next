@@ -220,7 +220,8 @@ void AppendDeferredTraversalNode(ClusterTraversalNode node, uint maxNodes)
 }
 
 void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint childIndex,
-    uint viewLane = 0u, uint viewLanes = 1u, uint groupChild = 0u)
+    uint viewLane = 0u, uint viewLanes = 1u, uint groupChild = 0u,
+    bool targetFilters = true, bool multipleViews = true)
 {
     uint nodeIndex = ClusterTraversalNodeIndex(parent);
     ClusterHierarchySlice node = (ClusterHierarchySlice)0;
@@ -230,7 +231,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     uint instanceID = parent.InstanceID;
     uint viewBase = ClusterTraversalViewIndex(parent);
     ClusterViewUniforms firstView = validNode
-        ? LoadClusterCullView(Views, PolicyClusterViews, viewBase)
+        ? LoadClusterCullView(Views, PolicyClusterViews, viewBase, targetFilters)
         : (ClusterViewUniforms)0;
     validNode = validNode && instanceID < firstView.InstanceCount;
     RenderInstanceTransform transform = (RenderInstanceTransform)0;
@@ -264,15 +265,16 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         lodBounds.ErrorScale = WaveReadLaneAt(lodBounds.ErrorScale, firstViewLane);
     }
     uint inputViews = validNode ? parent.ViewMask : 0u;
+    if (!multipleViews) inputViews &= 1u;
     ClusterBoundsProjection previousProjection = (ClusterBoundsProjection)0;
     uint remainingViews = viewLanes == 1u ? inputViews : DistributeClusterViewMask(inputViews, viewLane, viewLanes);
     while (WaveActiveAnyTrue(remainingViews != 0u))
     {
         if (remainingViews == 0u) continue;
         uint bit = firstbitlow(remainingViews);
-        remainingViews &= remainingViews - 1u;
+        remainingViews = multipleViews ? remainingViews & (remainingViews - 1u) : 0u;
         uint viewIndex = viewBase + bit;
-        ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
+        ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
         view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
         if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
                 worldMin, worldMax, view,
