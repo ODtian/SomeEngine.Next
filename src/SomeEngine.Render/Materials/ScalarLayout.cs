@@ -91,73 +91,44 @@ public sealed class ScalarLayout
             ComputeHash(name, materialFields, payloadByteSize));
     }
 
-    internal static ScalarLayout FromSlang(
+    internal static ScalarLayout FromSlangByteAddress(
         string name,
         TypeLayoutReflection typeLayout)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("A material scalar type requires a name.", nameof(name));
-        if (typeLayout == TypeLayoutReflection.Null)
-            throw new ArgumentException("The Slang type layout is null.", nameof(typeLayout));
+        if (typeLayout == TypeLayoutReflection.Null || typeLayout.Kind != SlangTypeKind.Struct)
+            throw new ArgumentException("Material scalars require a reflected struct type.", nameof(typeLayout));
 
-        nuint reflectedPayloadSize = typeLayout.GetSize(SlangParameterCategory.Uniform);
-        if (reflectedPayloadSize == Slang.UnknownSize ||
-            reflectedPayloadSize == Slang.UnboundedSize ||
-            reflectedPayloadSize > uint.MaxValue)
-        {
-            throw new InvalidDataException(
-                $"Material scalar type '{name}' has an unresolved size.");
-        }
-        uint payloadSize = checked((uint)reflectedPayloadSize);
-        uint baseOffset = uint.MaxValue;
-        uint maximumFieldEnd = 0;
+        // MaterialScalarRegion.Load<T> uses Slang natural byte-address layout, not
+        // the target-specific StructuredBuffer layout. For the material property
+        // types supported here, every scalar (including bool) is 32 bits and
+        // vectors inherit that 4-byte alignment, without float3 tail padding.
+        // Keep declaration order from Slang; never infer fields from a C# struct.
+        uint byteOffset = 0;
         var fields = new List<ScalarFieldLayout>(checked((int)typeLayout.FieldCount));
         for (uint fieldIndex = 0; fieldIndex < typeLayout.FieldCount; fieldIndex++)
         {
             VariableLayoutReflection field = typeLayout.GetFieldByIndex(fieldIndex);
             if (field == VariableLayoutReflection.Null || string.IsNullOrWhiteSpace(field.Name))
-                continue;
+                throw new InvalidDataException($"Material scalar type '{name}' has an unnamed field.");
             TypeLayoutReflection fieldType = field.TypeLayout;
-            nuint reflectedOffset = field.GetOffset(SlangParameterCategory.Uniform);
-            nuint reflectedSize = fieldType.GetSize(SlangParameterCategory.Uniform);
-            if (reflectedSize == 0)
-                reflectedSize = fieldType.GetStride(SlangParameterCategory.Uniform);
-            if (reflectedOffset == Slang.UnknownSize ||
-                reflectedOffset == Slang.UnboundedSize ||
-                reflectedSize == Slang.UnknownSize ||
-                reflectedSize == Slang.UnboundedSize ||
-                reflectedOffset > uint.MaxValue || reflectedSize > uint.MaxValue)
-            {
+            bool scalar = fieldType.Kind == SlangTypeKind.Scalar &&
+                fieldType.ScalarType is SlangScalarType.Bool or SlangScalarType.Int32 or
+                    SlangScalarType.UInt32 or SlangScalarType.Float32;
+            bool vector = fieldType.Kind == SlangTypeKind.Vector &&
+                fieldType.ScalarType == SlangScalarType.Float32 &&
+                fieldType.ColumnCount is >= 1 and <= 4;
+            if (!scalar && !vector)
                 throw new InvalidDataException(
-                    $"Material scalar field '{name}.{field.Name}' has an unresolved layout.");
-            }
-            uint offset = checked((uint)reflectedOffset);
-            uint size = checked((uint)reflectedSize);
-            baseOffset = Math.Min(baseOffset, offset);
-            maximumFieldEnd = Math.Max(maximumFieldEnd, checked(offset + size));
-            fields.Add(new ScalarFieldLayout(
-                field.Name,
-                offset,
-                size,
-                fieldType.RowCount,
-                fieldType.ColumnCount,
-                checked((byte)fieldType.ScalarType)));
+                    $"Material scalar field '{name}.{field.Name}' must be a 32-bit scalar or float vector.");
+            uint components = scalar ? 1u : fieldType.ColumnCount;
+            uint size = checked(components * sizeof(uint));
+            fields.Add(new ScalarFieldLayout(field.Name, byteOffset, size,
+                fieldType.RowCount, fieldType.ColumnCount, checked((byte)fieldType.ScalarType)));
+            byteOffset = checked(byteOffset + size);
         }
-
-        if (payloadSize == 0)
-            payloadSize = maximumFieldEnd;
-        if (baseOffset != uint.MaxValue && baseOffset > 0)
-        {
-            for (int index = 0; index < fields.Count; index++)
-            {
-                ScalarFieldLayout field = fields[index];
-                fields[index] = field with { Offset = checked(field.Offset - baseOffset) };
-            }
-            if (payloadSize >= maximumFieldEnd)
-                payloadSize -= baseOffset;
-            payloadSize = Math.Max(payloadSize, maximumFieldEnd - baseOffset);
-        }
-        return FromFields(name, fields, payloadSize);
+        return FromFields(name, fields, byteOffset);
     }
 
     internal bool HasSameContract(ScalarLayout other)
