@@ -401,10 +401,11 @@ internal sealed unsafe partial class VulkanBackend
         Add(PipelineSync.AllShading, device.NonPixelShadingStages | PipelineStageFlags2.FragmentShaderBit);
         Add(PipelineSync.NonPixelShading, device.NonPixelShadingStages);
         Add(PipelineSync.Clear, PipelineStageFlags2.ClearBit);
-        Add(PipelineSync.AccelerationStructureCopy, PipelineStageFlags2.AccelerationStructureCopyBitKhr);
+        // Acceleration-structure copies use the build stage without rayTracingMaintenance1.
+        Add(PipelineSync.AccelerationStructureCopy, PipelineStageFlags2.AccelerationStructureBuildBitKhr);
         Add(PipelineSync.EmitAccelerationStructurePostBuildInfo, PipelineStageFlags2.AccelerationStructureBuildBitKhr);
         Add(PipelineSync.BuildRayTracingAccelerationStructure, PipelineStageFlags2.AccelerationStructureBuildBitKhr);
-        Add(PipelineSync.CopyRayTracingAccelerationStructure, PipelineStageFlags2.AccelerationStructureCopyBitKhr);
+        Add(PipelineSync.CopyRayTracingAccelerationStructure, PipelineStageFlags2.AccelerationStructureBuildBitKhr);
         return result == 0 ? PipelineStageFlags2.AllCommandsBit : result;
 
         void Add(PipelineSync source, PipelineStageFlags2 destination)
