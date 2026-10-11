@@ -1533,7 +1533,7 @@ internal sealed class ClusterShadeStages : IDisposable
     private static ScalarLayout ResolveScalarLayout(Shader shader, int targetIndex)
     {
         TypeLayoutReflection layout = ResolveMaterialTypeLayout(shader, targetIndex, "MaterialScalars");
-        return ScalarLayout.FromSlang(layout.Type.Name, layout);
+        return ScalarLayout.FromSlangByteAddress(layout.Type.Name, layout);
     }
 
     private static TypeLayoutReflection ResolveMaterialTypeLayout(Shader shader, int targetIndex, string attributeName)
@@ -1556,7 +1556,8 @@ internal sealed class ClusterShadeStages : IDisposable
         TypeReflection type = reflection.FindTypeByName(typeName)
             ?? throw new InvalidDataException(
                 $"Shader '{shader.Name}' has no linked {attributeName} type '{typeName}'.");
-        // MaterialScalarRegion.Load<T> reads the buffer layout of T.
+        // Surface storage uses the target buffer layout. Material scalar encoding
+        // derives its raw-buffer contract separately from the reflected field types.
         TypeLayoutReflection layout = reflection.GetTypeLayout(type, LayoutRules.DefaultStructuredBuffer)
             ?? throw new InvalidDataException(
                 $"Shader '{shader.Name}' has no layout for {attributeName} type '{type.Name}'.");

@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
@@ -14,14 +16,18 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class TargetRasterVisibilityTests
 {
     [Theory]
-    [InlineData("d3d12", "masked")]
-    [InlineData("d3d12", "offset")]
-    [InlineData("vulkan", "masked")]
-    [InlineData("vulkan", "offset")]
-    public async Task DepthTargetEntriesPreserveQuadVisibilityAndUserDepth(string backend, string depthBehavior)
+    [InlineData("d3d12", "masked", false)]
+    [InlineData("d3d12", "masked", true)]
+    [InlineData("d3d12", "offset", false)]
+    [InlineData("d3d12", "offset", true)]
+    [InlineData("vulkan", "masked", false)]
+    [InlineData("vulkan", "masked", true)]
+    [InlineData("vulkan", "offset", false)]
+    [InlineData("vulkan", "offset", true)]
+    public async Task DepthTargetEntriesPreserveQuadVisibilityAndUserDepth(string backend, string depthBehavior, bool hardware)
     {
         string root = FrameStageScene.FindRoot();
-        using var files = new ShadowEvidence("target-raster-" + backend + "-" + depthBehavior);
+        using var files = new ShadowEvidence("target-raster-" + backend + "-" + depthBehavior + "-" + hardware);
         var inputs = new ShadowReferenceInputs(96, 96,
             new SceneCamera { Position = Vector3.Zero, Target = new(0, 0, -8), Up = Vector3.UnitY,
                 VerticalFieldOfView = 1, NearPlane = .1f, FarPlane = 100 },
@@ -52,8 +58,8 @@ public sealed class TargetRasterVisibilityTests
             VirtualResolution = 2048, AtlasSize = 1024, PageSize = 128, MaxShadowLights = 1,
             DynamicResolutionEnabled = false, LocalReceiverMask = true, MaxFilterRadiusTexels = 0,
         };
-        SceneLinearImage expected = await CaptureAsync(files.Content, backend, shared, shadows);
-        SceneLinearImage actual = await CaptureAsync(files.Content, backend, specialized, shadows);
+        SceneLinearImage expected = await CaptureAsync(files.Content, backend, shared, shadows, hardware);
+        SceneLinearImage actual = await CaptureAsync(files.Content, backend, specialized, shadows, hardware);
         Assert.Contains(expected.Pixels.ToArray().Chunk(4), pixel => pixel[1] == (Half)1 && pixel[0] < (Half).5f);
         Assert.Contains(expected.Pixels.ToArray().Chunk(4), pixel => pixel[1] == (Half)1 && pixel[0] > (Half).9f);
         ImageArtifacts.AssertEqual(new(96, 96, Format.R16G16B16A16Float,
@@ -72,7 +78,7 @@ public sealed class TargetRasterVisibilityTests
     }
 
     private static async Task<SceneLinearImage> CaptureAsync(
-        string content, string backend, Shader shader, VirtualShadowMapSettings shadows)
+        string content, string backend, Shader shader, VirtualShadowMapSettings shadows, bool hardware)
     {
         SceneLinearImage? image = null;
         var script = new SceneScript(content, 16,
@@ -83,11 +89,36 @@ public sealed class TargetRasterVisibilityTests
                     edit.GetMaterial(entity).Shader = shader;
             }),
             new(15, edit => edit.CaptureLinearImage(value => image = value)),
-        ]) { ShadowSettings = shadows };
-        ApplicationResult result = await Application.RunAsync(
-            ["--hardware-adapter", "--graphics-backend", backend, "--hardware-raster",
-             "--hidden-window", "--no-vsync", "--no-debug-ui", "--no-taa", "--fixed-step", "0.016666667"], script);
-        Assert.True(result.Succeeded, result.Error?.ToString());
-        return Assert.IsType<SceneLinearImage>(image);
+        ]) { ShadowSettings = shadows, RasterEdgePixels = 4096 };
+        string[] raster = hardware ? ["--hardware-raster"] : [];
+        using var messages = new VulkanErrors();
+        Trace.Listeners.Add(messages);
+        try
+        {
+            ApplicationResult result = await Application.RunAsync(
+                ["--hardware-adapter", "--graphics-backend", backend,
+                 backend == "vulkan" ? "--rhi-validation" : "--no-rhi-validation",
+                 "--hidden-window", "--no-vsync", "--no-debug-ui", "--no-taa", "--fixed-step", "0.016666667", .. raster], script);
+            Assert.True(result.Succeeded, result.Error?.ToString());
+            Assert.True(messages.Errors.IsEmpty, string.Join(Environment.NewLine, messages.Errors));
+            return Assert.IsType<SceneLinearImage>(image);
+        }
+        finally
+        {
+            Trace.Listeners.Remove(messages);
+        }
+    }
+
+    private sealed class VulkanErrors : TraceListener
+    {
+        internal ConcurrentQueue<string> Errors { get; } = new();
+
+        public override void Write(string? message)
+        {
+            if (message?.StartsWith("Vulkan [ErrorBitExt/", StringComparison.Ordinal) == true)
+                Errors.Enqueue(message);
+        }
+
+        public override void WriteLine(string? message) => Write(message);
     }
 }

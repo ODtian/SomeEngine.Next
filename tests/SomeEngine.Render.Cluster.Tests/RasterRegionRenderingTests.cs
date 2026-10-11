@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
@@ -35,6 +36,9 @@ public sealed class RasterRegionRenderingTests(Xunit.Abstractions.ITestOutputHel
         byte[] previous = await changed.ReadClusterColorAsync();
         changed.AddMaterialMesh(changed.CreateRasterMaterial(kind, Blue));
         RasterImage current = await changed.ReadRasterImageAsync();
+        output.WriteLine($"Added {kind}, {backend}, hardware={hardware}: {current.Metrics}");
+        AssertDistinctMaterialColors(expected);
+        AssertDistinctMaterialColors(current);
         Assert.NotEqual(previous, current.Color);
         AssertSameImage(expected, current);
         if (kind == RasterMaterialKind.Tessellated) Assert.True(current.Metrics.TessellationFinalPatches > 0);
@@ -146,6 +150,19 @@ public sealed class RasterRegionRenderingTests(Xunit.Abstractions.ITestOutputHel
     {
         Mesh mesh = await RasterTestGeometry.CreateAsync();
         return await FrameStageScene.CreateAsync(backend, true, Options(hardware), mesh);
+    }
+
+    private static void AssertDistinctMaterialColors(RasterImage image)
+    {
+        ReadOnlySpan<Half> pixels = MemoryMarshal.Cast<byte, Half>(image.Color);
+        // Interior points on the original neutral plane and the separately added blue mesh.
+        int original = (32 * 64 + 20) * 4;
+        int added = (31 * 64 + 47) * 4;
+        Assert.True((float)pixels[original] > 0);
+        Assert.Equal(pixels[original], pixels[original + 1]);
+        Assert.Equal(pixels[original], pixels[original + 2]);
+        Assert.True((float)pixels[added + 2] > (float)pixels[added + 1]);
+        Assert.True((float)pixels[added + 1] > (float)pixels[added]);
     }
 
     private static void AssertSameImage(RasterImage expected, RasterImage actual)

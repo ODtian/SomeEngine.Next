@@ -161,17 +161,24 @@ struct WaveQueue
     {
         uint myCount = task.GetTaskCount();
         uint myOffset = WavePrefixSum(myCount);
-        uint totalTasks = WaveActiveSum(myCount);
+        uint4 nonEmptyMask = WaveActiveBallot(myCount > 0);
+        uint numProducers = MaskBitCount(nonEmptyMask);
+        if (numProducers == 0u)
+            return;
 
-        if (totalTasks == 0)
+        // The last producer's inclusive prefix is the complete wave total,
+        // including sparse active lanes. Reuse the scan instead of reducing twice.
+        uint lastProducer = nonEmptyMask.w != 0u ? 96u + firstbithigh(nonEmptyMask.w) :
+            nonEmptyMask.z != 0u ? 64u + firstbithigh(nonEmptyMask.z) :
+            nonEmptyMask.y != 0u ? 32u + firstbithigh(nonEmptyMask.y) :
+            firstbithigh(nonEmptyMask.x);
+        uint totalTasks = WaveReadLaneAt(myOffset + myCount, lastProducer);
+        if (totalTasks == 0u)
             return;
 
         uint laneIdx = WavePrefixSum(1u);
         uint activeLaneCount = WaveActiveSum(1u);
-
-        uint4 nonEmptyMask = WaveActiveBallot(myCount > 0);
-        uint numProducers = MaskBitCount(nonEmptyMask);
-        uint maxCompact = numProducers > 0 ? numProducers - 1 : 0;
+        uint maxCompact = numProducers - 1u;
 
         uint compactHead = 0;
         uint workHead = 0;

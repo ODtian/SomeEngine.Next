@@ -54,7 +54,7 @@ public sealed class CasterMaterialChangeTests
         var shader = await LoadShaderAsync(backend);
         var plane = await RasterTestGeometry.CreatePlaneAsync();
         var options = new ClusterPipelineOptions { MaxCandidates = 65536, EnableFrameMetricsReadback = true,
-            ForceHardwareRaster = hardware, SoftwareRasterEdgeThreshold = 64 };
+            ForceHardwareRaster = hardware, SoftwareRasterEdgeThreshold = 65536 };
         var settings = Shadows();
         await using var changed = await FrameStageScene.CreateAsync(backend, true, options, plane, settings);
         Configure(changed);
@@ -70,6 +70,8 @@ public sealed class CasterMaterialChangeTests
         await changed.ReadNextRasterImageAsync();
         await update;
         RasterImage first = await changed.ReadNextRasterImageAsync();
+        Console.WriteLine($"Patterned alpha {backend}, hardware={hardware}: {first.Metrics}");
+        if (!hardware) Assert.True(first.Metrics.SoftwareRasterBatches > 0);
         await using var fresh = await FrameStageScene.CreateAsync(backend, true, options, plane, settings);
         Configure(fresh);
         using Texture expectedTexture = Pattern(1);

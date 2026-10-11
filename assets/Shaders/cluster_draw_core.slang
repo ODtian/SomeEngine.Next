@@ -49,14 +49,18 @@ VisibilityPixelResult EvaluateHardwareRasterPixel<TVertex, TVisibility>(
 {
     VisibilityPixelInput pixelInput;
     pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
-    pixelInput.Depth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
+    float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
+    pixelInput.Depth = ClusterRasterMaterialDepth(rasterDepth, view.TargetPolicy);
+    pixelInput.EncodedDepth = EncodeClusterRasterDepth(rasterDepth, view.TargetPolicy);
     pixelInput.EncodedTargetDepth = encodedTargetDepth;
     pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
     pixelInput.TriangleID = input.TriangleID;
     pixelInput.ViewIndex = input.ViewIndex;
     pixelInput.TargetPolicy = view.TargetPolicy;
     pixelInput.TargetViewIndex = view.TargetViewIndex;
-    return visibility.evaluate(pixelInput, input.Varying);
+    VisibilityPixelResult result = visibility.evaluate(pixelInput, input.Varying);
+    result.Depth = ClusterRasterResultDepth(rasterDepth, pixelInput.Depth, result.Depth, view.TargetPolicy);
+    return result;
 }
 
 uint GetBinnedClusterIndex(uint instanceID)
