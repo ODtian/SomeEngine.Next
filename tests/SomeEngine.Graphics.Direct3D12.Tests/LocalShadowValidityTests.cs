@@ -17,7 +17,9 @@ public sealed class LocalShadowValidityTests(D3D12TestCompiler compiler)
         // Authored public shader inputs; assertions observe Try's validity and visibility.
         const int queries = 9, entries = 5, pageSize = 8, atlasSize = 32;
         var views = new VirtualShadowView[queries * faces];
-        uint[] pages = new uint[queries * entries], masks = new uint[queries * entries * 2];
+        // Two fine pages per axis use 4x4 mask texels; the coarser mip uses two more rows.
+        const int maskWidth = 4, maskRowsPerView = 6;
+        uint[] pages = new uint[queries * entries], masks = new uint[maskWidth * maskRowsPerView * queries];
         uint[] atlas = new uint[atlasSize * atlasSize];
         for (int query = 0; query < queries; query++)
         {
@@ -26,7 +28,8 @@ public sealed class LocalShadowValidityTests(D3D12TestCompiler compiler)
                     VirtualResolution = 16, PageSize = pageSize, AtlasSize = atlasSize, PhysicalPagesPerRow = 4,
                     MaxPhysicalPages = 16, PageTableOffset = (uint)(query * entries), CacheGeneration = 7,
                     MipLevelCount = 2, LightKind = faces == 6 ? VirtualShadowLightKind.Point : VirtualShadowLightKind.Spot,
-                    FaceIndex = (uint)face, LightRange = 10 };
+                    FaceIndex = (uint)face, LightRange = 10,
+                    ReceiverMaskOriginY = (uint)(query * maskRowsPerView) };
             // Fine sample is page (1,0), coarse is (0,0). Atlas depth is reversed.
             uint fine = (uint)Math.Min(query * 2, 14), coarse = fine + 1;
             FillDepth(fine, query == 4 ? 1f : .25f);
@@ -37,14 +40,17 @@ public sealed class LocalShadowValidityTests(D3D12TestCompiler compiler)
             if (query == 6 || query == 7)
             {
                 Put(query, 1, fine, 1, 0, 7u | 0x80000000u);
-                if (query == 7) masks[(query * entries + 1) * 2 + 1] = 1u << 18; // actual sample cell (2,6)
+                // Fine page (1,0), cell (2,6): lower-left mask word, bit (2,2).
+                if (query == 7) masks[(query * maskRowsPerView + 1) * maskWidth + 2] = 1u << 10;
             }
         }
         uint[] viewWords = MemoryMarshal.Cast<VirtualShadowView, uint>(views).ToArray();
-        uint[][] result = new D3D12TestCompute(compiler).ExecuteSource(Shader, entry, new(1, 1, 1),
-            [(masks, ResourceBindingType.BufferSrv, 8), (viewWords, ResourceBindingType.BufferSrv, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes),
-             (pages, ResourceBindingType.BufferSrv, 4), (new uint[queries * 2], ResourceBindingType.BufferUav, 8)],
-            new SampledImage(atlasSize, atlasSize, atlas, 3, ViewDimension: TextureViewDimension.Texture2DArray));
+        uint[][] result = new D3D12TestCompute(compiler).ExecuteSourceImages(Shader, entry, new(1, 1, 1),
+            [new("Views", viewWords, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
+             new("Pages", pages, ResourceBindingType.BufferSrv, 4),
+             new("Observations", new uint[queries * 2], ResourceBindingType.BufferUav, 8)],
+            [new(maskWidth, maskRowsPerView * queries, masks, 0, Name: "VirtualShadowReceiverMasks"),
+             new(atlasSize, atlasSize, atlas, 3, ViewDimension: TextureViewDimension.Texture2DArray, Name: "Atlas")]);
         float[] observations = result[0].Select(BitConverter.UInt32BitsToSingle).ToArray();
         Assert.Equal(new float[] { 0,1, 0,1, 1,0, 1,0, 1,1, 1,0, 1,0, 1,0, 0,1 }, observations);
 

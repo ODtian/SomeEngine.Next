@@ -12,6 +12,8 @@ public sealed class RasterClippingTests(D3D12TestCompiler shaderCompiler)
         const int cases = 128;
         const string source = """
             #include "visbuffer_encoding.slang"
+            #define CLUSTER_RASTER_TWO_SIDED 0
+            #define CLUSTER_TARGET_RASTER_TWO_SIDED 0
             #include "cluster_raster_shared.slang"
             StructuredBuffer<float4> Input;
             RWStructuredBuffer<uint> Results;

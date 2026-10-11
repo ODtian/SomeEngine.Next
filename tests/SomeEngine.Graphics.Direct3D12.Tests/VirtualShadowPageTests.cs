@@ -1,6 +1,7 @@
 using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 using System.Numerics;
 using SomeEngine.Render.Shadows;
+using SomeEngine.Resources.Geometry;
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using Xunit;
@@ -294,13 +295,18 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
             for (int axis = 0; axis < 3; axis++)
             { bounds[id * 16 + axis] = Float(-1000 - id); bounds[id * 16 + 4 + axis] = Float(1000 + id); }
         }
-        uint[] node = new uint[16];
-        node[0] = node[1] = node[2] = Float(-1);
-        node[4] = node[5] = node[6] = Float(1);
+        ClusterBVHNode[] nodes = [new()];
+        nodes[0].SetChild(0, new ClusterHierarchySlice
+        {
+            BoundsCenter = Vector3.Zero,
+            BoundsExtent = Vector3.One,
+            PageRangeKey = 1,
+        });
+        uint[] node = MemoryMarshal.Cast<ClusterBVHNode, uint>(nodes).ToArray();
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("cluster_scene_bounds.slang", "BuildClusterSceneBounds", new(3, 1, 1),
         [
             ([(uint)count, history ? 1u : 0u, instanceGroups ? 1u : 0u, 0], ResourceBindingType.ConstantBuffer, 0),
-            (node, ResourceBindingType.BufferSrv, 64), (data, ResourceBindingType.BufferSrv, 0),
+            (node, ResourceBindingType.BufferSrv, 0), (data, ResourceBindingType.BufferSrv, 0),
             ([0x80000000, 0x80000000 | count * 4, 0, 0x80000000 | (uint)currentOffset,
                 0x80000000 | (uint)previousOffset], ResourceBindingType.ConstantBuffer, 0),
             (order, ResourceBindingType.BufferSrv, 4), (new uint[3 * 8], ResourceBindingType.BufferUav, 16),

@@ -11,6 +11,8 @@ public sealed class RasterSubpixelCoverageTests(D3D12TestCompiler shaderCompiler
     {
         uint[][] pixels = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "visbuffer_encoding.slang"
+            #define CLUSTER_RASTER_TWO_SIDED 0
+            #define CLUSTER_TARGET_RASTER_TWO_SIDED 0
             #include "cluster_raster_shared.slang"
             RWStructuredBuffer<uint> Pixels;
             struct PixelOutput : IClusterRasterOutput
@@ -20,7 +22,7 @@ public sealed class RasterSubpixelCoverageTests(D3D12TestCompiler shaderCompiler
                 bool resolvePixel(int2 pixel, uint policy, uint target, uint visibility,
                     out ClusterRasterOutputPixel outputPixel)
                 { outputPixel.Position = pixel; outputPixel.DepthCacheClass = 0u; return true; }
-                uint readDepth(ClusterRasterOutputPixel pixel, uint policy) { return 0u; }
+                uint readDepth(ClusterRasterOutputPixel pixel, uint policy, uint target) { return 0u; }
                 void write(ClusterRasterOutputPixel pixel, uint view, uint policy, uint target, float depth, uint visibility)
                 { Pixels[pixel.Position.y * 2 + pixel.Position.x] = 1u; }
             };
@@ -31,7 +33,7 @@ public sealed class RasterSubpixelCoverageTests(D3D12TestCompiler shaderCompiler
                 float4 clip[3] = { float4(-.4994,1,.5,1), float4(-.4994,-1,.5,1), float4(1,1,.5,1) };
                 ClusterPixelRasterTask<float,OpaqueVisibilityEvaluate<float>,PixelOutput> task =
                     (ClusterPixelRasterTask<float,OpaqueVisibilityEvaluate<float>,PixelOutput>)0;
-                task.Triangle = SetupClusterRasterTriangle(clip,int4(0,0,2,2),2u,2u);
+                task.Triangle = SetupClusterRasterTriangle(clip,int4(0,0,2,2),2u,2u,true);
                 task.SourceBarycentric0 = float3(1,0,0);
                 task.SourceBarycentric1 = float3(0,1,0);
                 task.SourceBarycentric2 = float3(0,0,1);
