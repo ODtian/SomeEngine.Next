@@ -214,7 +214,7 @@ void SWRasterKernel<
         [unroll]
         for (uint vertexHalf = 0u; vertexHalf < 2u; vertexHalf++)
         {
-            uint localVertex = groupThreadIndex + vertexHalf * 32u;
+            uint localVertex = WaveGetLaneIndex() + vertexHalf * 32u;
             if (localVertex < vertexCount)
             {
                 VertexEvalContext ctx = MakeSWRasterVertexEvalContext(
@@ -294,8 +294,8 @@ void SWRasterKernel<
     // leaves its producer lane. Cluster only transports clip position and asks the
     // user visibility evaluator to transport its opaque Varying.
     uint producerLocalVertex = 0xFFFFFFFFu;
-    if (groupThreadIndex < uniqueVertexCount)
-        producerLocalVertex = SoftwareRasterVertexIndex(usedVertices, groupThreadIndex);
+    if (WaveGetLaneIndex() < uniqueVertexCount)
+        producerLocalVertex = SoftwareRasterVertexIndex(usedVertices, WaveGetLaneIndex());
 
     float4 producerClip = 0.0.xxxx;
     VisibilityEvaluate.Varying producerVarying = {};
