@@ -46,6 +46,9 @@ static const uint CLUSTER_RASTER_SUBPIXEL_BITS = 8u;
 static const uint CLUSTER_RASTER_SUBPIXEL_SCALE = 1u << CLUSTER_RASTER_SUBPIXEL_BITS;
 static const float CLUSTER_RASTER_SUBPIXEL_SCALE_F = float(CLUSTER_RASTER_SUBPIXEL_SCALE);
 static const uint CLUSTER_RASTER_MAX_CLIPPED_VERTICES = 16u;
+static const uint CLUSTER_RASTER_COVERAGE_FLOAT_BOUNDS = 0u;
+static const uint CLUSTER_RASTER_COVERAGE_INTEGER = 1u;
+static const uint CLUSTER_RASTER_COVERAGE_FLOAT_PIXELS = 2u;
 
 struct ClusterRasterOutputPixel
 {
@@ -96,6 +99,7 @@ struct ClusterRasterTriangle
     int2 MinPixel;
     int2 MaxPixel;
     uint Valid;
+    uint CoverageMode;
 };
 
 float ClusterRasterClipDistance(float4 value, uint plane)
@@ -217,6 +221,14 @@ uint ClusterRasterClipTriangle(
     return count;
 }
 
+int ClusterRasterIntegerPixelBound(float subpixel, int offset)
+{
+    int64_t value = int64_t(subpixel) + int64_t(offset);
+    int64_t scale = int64_t(CLUSTER_RASTER_SUBPIXEL_SCALE);
+    // Signed division rounds towards zero; raster bounds require floor.
+    return int(value >= 0 ? value / scale : -((-value + scale - 1) / scale));
+}
+
 ClusterRasterTriangle SetupClusterRasterTriangle(
     float4 clipVerts[3],
     int4 scissorRect,
@@ -234,6 +246,9 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
         CLUSTER_RASTER_SUBPIXEL_SCALE_F + 0.5);
     float2 v2 = floor((clipVerts[2].xy * inverseW.z * screenScale + screenBias) *
         CLUSTER_RASTER_SUBPIXEL_SCALE_F + 0.5);
+
+    if (!all(isfinite(v0)) || !all(isfinite(v1)) || !all(isfinite(v2)))
+        return tri;
 
     tri.Screen0 = v0 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
     tri.Screen1 = v1 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
@@ -253,12 +268,36 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
 
     float2 minimum = min(v0, min(v1, v2));
     float2 maximum = max(v0, max(v1, v2));
-    tri.MinPixel = int2(floor(
-        (minimum + (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
-        CLUSTER_RASTER_SUBPIXEL_SCALE_F));
-    tri.MaxPixel = int2(floor(
-        (maximum - (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
-        CLUSTER_RASTER_SUBPIXEL_SCALE_F));
+    float2 span = maximum - minimum;
+    float largestCoordinate = max(max(abs(minimum.x), abs(minimum.y)),
+        max(abs(maximum.x), abs(maximum.y)));
+    // In this domain all setup and edge intermediates retain the 8-bit
+    // subpixel grid: 4 * (7 * 256)^2 + 1 < 2^24. Test the original
+    // triangle, never its possibly narrow scissor intersection.
+    bool floatCoverageIsExact = all(span <= 7.0 * CLUSTER_RASTER_SUBPIXEL_SCALE_F) &&
+        largestCoordinate <= 16776960.0; // 2^24 - 256
+    // Relative-coordinate products and their difference fit signed 64 bits.
+    // The margin also bounds pixel centers reconstructed by the raster box.
+    bool integerCoverageIsSafe = largestCoordinate <= 536870656.0; // 2^29 - 256
+    tri.CoverageMode = floatCoverageIsExact ? CLUSTER_RASTER_COVERAGE_FLOAT_BOUNDS :
+        integerCoverageIsSafe ? CLUSTER_RASTER_COVERAGE_INTEGER :
+        CLUSTER_RASTER_COVERAGE_FLOAT_PIXELS;
+    if (tri.CoverageMode == CLUSTER_RASTER_COVERAGE_INTEGER)
+    {
+        tri.MinPixel = int2(ClusterRasterIntegerPixelBound(minimum.x, 127),
+            ClusterRasterIntegerPixelBound(minimum.y, 127));
+        tri.MaxPixel = int2(ClusterRasterIntegerPixelBound(maximum.x, -129),
+            ClusterRasterIntegerPixelBound(maximum.y, -129));
+    }
+    else
+    {
+        tri.MinPixel = int2(floor(
+            (minimum + (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
+            CLUSTER_RASTER_SUBPIXEL_SCALE_F));
+        tri.MaxPixel = int2(floor(
+            (maximum - (CLUSTER_RASTER_SUBPIXEL_SCALE / 2u) - 1.0) /
+            CLUSTER_RASTER_SUBPIXEL_SCALE_F));
+    }
     tri.MinPixel = max(tri.MinPixel, scissorRect.xy);
     tri.MaxPixel = min(tri.MaxPixel, scissorRect.zw - 1);
     if (any(tri.MinPixel > tri.MaxPixel))
@@ -320,10 +359,38 @@ float3 ClusterRasterPerspectiveBarycentric(
         : float3(1.0, 0.0, 0.0);
 }
 
+bool ClusterRasterIntegerEdgeAccepts(float2 first, float2 second, int2 pixel, int winding)
+{
+    int64_t ax = int64_t(first.x * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+    int64_t ay = int64_t(first.y * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+    int64_t bx = int64_t(second.x * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+    int64_t by = int64_t(second.y * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+    int64_t px = int64_t(pixel.x) * int64_t(CLUSTER_RASTER_SUBPIXEL_SCALE) + 128;
+    int64_t py = int64_t(pixel.y) * int64_t(CLUSTER_RASTER_SUBPIXEL_SCALE) + 128;
+    int64_t ex = (ax - bx) * int64_t(winding);
+    int64_t ey = (ay - by) * int64_t(winding);
+    int64_t bias = ey > 0 || (ey == 0 && ex <= 0) ? int64_t(1) : int64_t(0);
+    // Rebase at the current pixel before multiplying; never reconstruct
+    // coverage from the already rounded float C coefficient.
+    return ey * (ax - px) - ex * (ay - py) - bias >= 0;
+}
+
+bool ClusterRasterIntegerCoverageAccepts(ClusterRasterTriangle triangle, int2 pixel)
+{
+    // Preserve the orientation selected by the existing setup and cull rule.
+    bool sameDirection = triangle.Edge12.x != 0.0
+        ? ((triangle.Edge12.x > 0.0) == (triangle.Screen1.x > triangle.Screen2.x))
+        : ((triangle.Edge12.y > 0.0) == (triangle.Screen1.y > triangle.Screen2.y));
+    int winding = sameDirection ? 1 : -1;
+    return ClusterRasterIntegerEdgeAccepts(triangle.Screen1, triangle.Screen2, pixel, winding) &&
+        ClusterRasterIntegerEdgeAccepts(triangle.Screen2, triangle.Screen0, pixel, winding) &&
+        ClusterRasterIntegerEdgeAccepts(triangle.Screen0, triangle.Screen1, pixel, winding);
+}
+
 struct ClusterPixelRasterTask<
     TVertex,
     TVisibility : IVisibilityEvaluate<TVertex>,
-    TOutput : IClusterRasterOutput> : IWaveUniformTask<TVisibility>
+    TOutput : IClusterRasterOutput>
 {
     ClusterRasterTriangle Triangle;
     float3 SourceBarycentric0;
@@ -338,96 +405,10 @@ struct ClusterPixelRasterTask<
     uint ViewIndex;
     uint TargetPolicy;
     uint TargetViewIndex;
-    uint PixelCount;
     uint Scanline;
     uint EarlyDepthEnabled;
     float DepthCenter;
     TOutput Output;
-
-    [mutating] uint GetTaskCount()
-    {
-        return PixelCount;
-    }
-
-    ClusterPixelRasterTask<TVertex, TVisibility, TOutput> ReadLane(
-        uniform TVisibility visibility,
-        uint sourceLane)
-    {
-        ClusterPixelRasterTask<TVertex, TVisibility, TOutput> result;
-        result.Triangle.Edge01 = float2(
-            WaveReadLaneAt(Triangle.Edge01.x, sourceLane),
-            WaveReadLaneAt(Triangle.Edge01.y, sourceLane));
-        result.Triangle.Edge12 = float2(
-            WaveReadLaneAt(Triangle.Edge12.x, sourceLane),
-            WaveReadLaneAt(Triangle.Edge12.y, sourceLane));
-        result.Triangle.Edge20 = float2(
-            WaveReadLaneAt(Triangle.Edge20.x, sourceLane),
-            WaveReadLaneAt(Triangle.Edge20.y, sourceLane));
-        result.Triangle.C0 = WaveReadLaneAt(Triangle.C0, sourceLane);
-        result.Triangle.C1 = WaveReadLaneAt(Triangle.C1, sourceLane);
-        result.Triangle.C2 = WaveReadLaneAt(Triangle.C2, sourceLane);
-        result.Triangle.MinPixel = int2(
-            WaveReadLaneAt(Triangle.MinPixel.x, sourceLane),
-            WaveReadLaneAt(Triangle.MinPixel.y, sourceLane));
-        result.Triangle.MaxPixel = int2(
-            WaveReadLaneAt(Triangle.MaxPixel.x, sourceLane),
-            WaveReadLaneAt(Triangle.MaxPixel.y, sourceLane));
-        result.Triangle.DepthPlane = float3(
-            WaveReadLaneAt(Triangle.DepthPlane.x, sourceLane),
-            WaveReadLaneAt(Triangle.DepthPlane.y, sourceLane),
-            WaveReadLaneAt(Triangle.DepthPlane.z, sourceLane));
-        result.Triangle.Screen0 = float2(
-            WaveReadLaneAt(Triangle.Screen0.x, sourceLane),
-            WaveReadLaneAt(Triangle.Screen0.y, sourceLane));
-        result.Triangle.Screen1 = float2(
-            WaveReadLaneAt(Triangle.Screen1.x, sourceLane),
-            WaveReadLaneAt(Triangle.Screen1.y, sourceLane));
-        result.Triangle.Screen2 = float2(
-            WaveReadLaneAt(Triangle.Screen2.x, sourceLane),
-            WaveReadLaneAt(Triangle.Screen2.y, sourceLane));
-        result.Triangle.InvW = float3(
-            WaveReadLaneAt(Triangle.InvW.x, sourceLane),
-            WaveReadLaneAt(Triangle.InvW.y, sourceLane),
-            WaveReadLaneAt(Triangle.InvW.z, sourceLane));
-        result.SourceBarycentric0 = float3(
-            WaveReadLaneAt(SourceBarycentric0.x, sourceLane),
-            WaveReadLaneAt(SourceBarycentric0.y, sourceLane),
-            WaveReadLaneAt(SourceBarycentric0.z, sourceLane));
-        result.SourceBarycentric1 = float3(
-            WaveReadLaneAt(SourceBarycentric1.x, sourceLane),
-            WaveReadLaneAt(SourceBarycentric1.y, sourceLane),
-            WaveReadLaneAt(SourceBarycentric1.z, sourceLane));
-        result.SourceBarycentric2 = float3(
-            WaveReadLaneAt(SourceBarycentric2.x, sourceLane),
-            WaveReadLaneAt(SourceBarycentric2.y, sourceLane),
-            WaveReadLaneAt(SourceBarycentric2.z, sourceLane));
-        result.VisibilityValue = WaveReadLaneAt(VisibilityValue, sourceLane);
-        result.VisibleClusterIndex = WaveReadLaneAt(VisibleClusterIndex, sourceLane);
-        result.TriangleID = WaveReadLaneAt(TriangleID, sourceLane);
-        result.ViewIndex = WaveReadLaneAt(ViewIndex, sourceLane);
-        result.TargetPolicy = WaveReadLaneAt(TargetPolicy, sourceLane);
-        result.TargetViewIndex = WaveReadLaneAt(TargetViewIndex, sourceLane);
-        result.Scanline = WaveReadLaneAt(Scanline, sourceLane);
-        result.EarlyDepthEnabled = WaveReadLaneAt(EarlyDepthEnabled, sourceLane);
-        result.DepthCenter = WaveReadLaneAt(DepthCenter, sourceLane);
-        result.Varying0 = visibility.readLane(Varying0, sourceLane);
-        result.Varying1 = visibility.readLane(Varying1, sourceLane);
-        result.Varying2 = visibility.readLane(Varying2, sourceLane);
-        result.PixelCount = WaveReadLaneAt(PixelCount, sourceLane);
-        result.Output = Output;
-        return result;
-    }
-
-    [mutating] void ExecuteTask(
-        uniform TVisibility visibility,
-        uint sourceLane,
-        uint localIndex,
-        bool active)
-    {
-        ClusterPixelRasterTask<TVertex, TVisibility, TOutput> source = ReadLane(visibility, sourceLane);
-        if (active)
-            source.RasterizePixels(visibility, localIndex);
-    }
 
     void RasterizePixels(uniform TVisibility visibility, uint localIndex)
     {
@@ -449,7 +430,7 @@ struct ClusterPixelRasterTask<
         int firstX = scanline != 0u ? 0 : int(localIndex) % width;
         int lastX = scanline != 0u ? width : firstX + 1;
         int y = scanline != 0u ? int(localIndex) : int(localIndex) / width;
-        if (scanline != 0u)
+        if (scanline != 0u && triangle.CoverageMode == CLUSTER_RASTER_COVERAGE_FLOAT_BOUNDS)
         {
             float3 rowEdges = float3(triangle.C0, triangle.C1, triangle.C2) +
                 float(y) * float3(triangle.Edge12.x, triangle.Edge20.x, triangle.Edge01.x);
@@ -477,10 +458,14 @@ struct ClusterPixelRasterTask<
             float edge0 = triangle.C0 - triangle.Edge12.y * float(x) + triangle.Edge12.x * float(y);
             float edge1 = triangle.C1 - triangle.Edge20.y * float(x) + triangle.Edge20.x * float(y);
             float edge2 = triangle.C2 - triangle.Edge01.y * float(x) + triangle.Edge01.x * float(y);
-            if (edge0 < 0.0 || edge1 < 0.0 || edge2 < 0.0)
-                continue;
-
             int2 pixel = triangle.MinPixel + int2(x, y);
+            if (triangle.CoverageMode == CLUSTER_RASTER_COVERAGE_INTEGER)
+            {
+                if (!ClusterRasterIntegerCoverageAccepts(triangle, pixel))
+                    continue;
+            }
+            else if (edge0 < 0.0 || edge1 < 0.0 || edge2 < 0.0)
+                continue;
             ClusterRasterOutputPixel outputPixel;
             if (!Output.resolvePixel(pixel, targetPolicy, targetViewIndex, visibilityValue, outputPixel))
                 continue;
@@ -659,23 +644,15 @@ void RasterizeClusterTriangleWave<
         task.Output = output;
         if (active && rasterTriangle.Valid != 0u)
         {
-            int width = rasterTriangle.MaxPixel.x - rasterTriangle.MinPixel.x + 1;
-            int height = rasterTriangle.MaxPixel.y - rasterTriangle.MinPixel.y + 1;
-            // Narrow triangles are cheaper as rectangle tasks.  Wider triangles
-            // use one wave task per scanline, bounding queue pressure while the
-            // A scanline task bounds queue pressure independently of cluster extent.
-            task.Scanline = width > 4 ? 1u : 0u;
-            task.PixelCount = task.Scanline != 0u
-                ? uint(height)
-                : uint(width * height);
+            // UE5 Nanite programmable triangle rasterization keeps pixels on the
+            // triangle producer lane. Every public visibility evaluator here is
+            // programmable; do not infer a fixed-function path from its material name.
+            task.Scanline = 1u;
+            uint scanlineCount = uint(rasterTriangle.MaxPixel.y - rasterTriangle.MinPixel.y + 1);
+            [loop]
+            for (uint localIndex = 0u; localIndex < scanlineCount; localIndex++)
+                task.RasterizePixels(visibility, localIndex);
         }
-        else
-        {
-            task.PixelCount = 0u;
-            task.Scanline = 0u;
-        }
-        WaveQueue::DistributeWithUniform<TVisibility,
-            ClusterPixelRasterTask<TVertex, TVisibility, TOutput>>(task, visibility);
     }
 }
 
