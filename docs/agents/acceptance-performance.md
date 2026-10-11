@@ -2,7 +2,13 @@
 
 规格：[#190](https://github.com/ODtian/SomeEngine.Next/issues/190)。统一反馈票为 [#81](https://github.com/ODtian/SomeEngine.Next/issues/81)，本轮交付为 #189/#201。
 
-目标为 P95：1024 运动小球 ≤1ms、Sponza ≤2ms、Amazon Bistro ≤3ms。
+当前目标（2026-10-11 更新）：1024 运动小球、Sponza、Amazon Bistro 的整帧 P95 均须严格小于 1ms（`P95Ms < 1`）；等于 1ms 不达标。沿用原场景、分辨率、质量与 presented-frame elapsed 计时口径。
+
+`tools/Measure-Scenes.ps1` 与性能报告只检查采样完整性并报告数值，没有 P95 阈值判定。`Complete=true`、三景 `Measured` 表示反馈完整，不表示达到上述目标。
+
+## 历史反馈
+
+以下日期与提交记录保留当时的 1/2/3ms 目标、构建配置及测量结果，不代表当前目标；历史报告不改写。
 
 2026-10-09 当前源码 `e13e48627650e9c7b8afbb2ac6fee109b97db6f0` 合并层级遍历与 cluster 剔除，四阶段各一次持久 kernel。原完整几何、中断恢复、容量不足公开行为 3/3 通过。原三场景 `tools/Measure-Scenes.ps1` 无 trace 反馈共 39.73 秒，框架采样 26.8280756 秒，Complete=true、3/3 Measured。
 
