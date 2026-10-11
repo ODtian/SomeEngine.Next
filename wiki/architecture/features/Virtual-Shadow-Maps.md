@@ -96,7 +96,11 @@ clipmap 使用原版绝对级别，默认 first 6 至 last 22。级别 L 的半�
 当前/上次完成帧的有效静态位集，每 32 个实例使用一个 uint。新增 Auto 内容归静态；
 变换、几何、材质或外部 caster 输入实际变化后归动态，连续安静超过 100 帧后归静态并刷新静态深度。
 显式 Static/Dynamic 保持用户选择。裁剪、分箱、SW/HW/mesh/tessellation 共用有效分类；
-成功完成阴影帧后提交年龄和位集，取消帧继续从上次完成状态处理变化。
+成功完成阴影帧后提交年龄、实体对应关系和位集，取消帧继续从上次完成状态处理变化。
+批次因其它实体增删而重建时，按 RenderWorld Entity（含代号）迁移已有 caster 的年龄；
+使用已提交帧的 RenderTransform/RenderMesh 写版本区分实际变化与行号搬移，不把所有保留实体重新当作新增静态内容。
+该数据寿命对应固定 UE5.8.3 `VirtualShadowMapCacheManager.cpp:1783–1806` 的 persistent primitive 年龄；
+正常批次仍直接更新逐行年龄，仅成员变化时建立实体对应关系。
 静态足迹失效刷新两类深度，动态足迹失效保留静态完成代号。旧、新足迹分别使用完成帧与本帧分类。
 几何、材质和外部光栅输入变化沿整实例足迹强制刷新两类深度，覆盖已留用的 coarse 缓存；流送 `LodChanges` 的对象空间 sphere 按当前实例变换形成局部范围，
 沿已有 deferred invalidation budget 更新受影响页，和流送页/BVH/leaf flags 的完成及取消边界一致。
@@ -248,7 +252,11 @@ Froxel消费同一接收资格和最终深度，front-layer高质量条件沿既
 
 零 ray 的直接比较采用原版几何 slope allowance：在反向深度中取
 `2 * max(0, slopeUV · texelCenterOffsetUV)`，并按100厘米的投影深度尺度限制。
-当前 forward-depth 表示使用等价的 `2 * max(0, -gradientUV · offsetUV)`。
+接收平面梯度仍按 forward-depth 求导，使用等价的 `2 * max(0, -gradientUV · offsetUV)`。
+
+阴影光栅在顶点投影前将引擎的 forward-depth 矩阵深度列转换为 reverse-Z，插值后直接写入 atlas；硬比较沿用 UE 的 `sampleDepth - slopeBias - rayStartBias > receiverDepth`，不叠加独立的归一化深度 ULP 半径。对应固定源码为 EpicGames/UnrealEngine `396c9f059903aed5fec78ecd3d437a40c6415368` 的 `NaniteWritePixel.ush` 与 `VirtualShadowMapProjectionCommon.ush`。粗层回退仍在实际采样层计算，属于另一个对齐边界。PCSS 软采样仍保留原 centered 差值与保守舍入界；它读取同域的 reverse-Z atlas，但这次硬比较对齐不宣称软采样已与 UE 一致。
+
+用户 `VisibilityPixelInput.Depth` / `VisibilityPixelResult.Depth` 保持 forward-depth 语义；`EncodedDepth` 与 `EncodedTargetDepth` 则使用相同的 reverse-Z 整数表示。用户原样返回输入深度时保留光栅原值，确实修改时才转换返回值。这层是 SomeEngine 材质 API 的兼容适配，不是 UE 原样接口。
 倾斜平面独立例的 receiver depth `.65`、stored depth `.5`、UV slope `-.4`、
 texel offset `.25` 产生 allowance `.2`，实际 public shader sampler 从 shadowed 到 lit。
 该片 TRX 与来源哈希保存在仓库外 `rg70-delivery-evidence/ticket-143/native-slope/`。

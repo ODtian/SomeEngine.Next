@@ -17,6 +17,8 @@
     <ProjectReference Include="../../src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
     <Compile Include="../SomeEngine.Render.Cluster.Tests/RayShadowComparison.cs" Link="RayShadowComparison.cs" />
+    <Compile Include="../SomeEngine.Render.Cluster.Tests/BistroShadowBaseline.cs" Link="BistroShadowBaseline.cs" />
+    <Content Include="../SomeEngine.Render.Cluster.Tests/Baselines/bistro-hard-default.json" Link="Baselines/bistro-hard-default.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../SomeEngine.Render.Cluster.Tests/ShadowReferenceComparison.cs" Link="ShadowReferenceComparison.cs" />
     <Compile Include="../SomeEngine.Render.Cluster.Tests/ShadowImageFiles.cs" Link="ShadowImageFiles.cs" />
   </ItemGroup>

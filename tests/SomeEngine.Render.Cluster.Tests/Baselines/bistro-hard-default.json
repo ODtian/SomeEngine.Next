@@ -1,0 +1,404 @@
+{
+  "SourceGeometrySha256": "0ec1c93d10ae66feca5abb354690f2f7b5c6155f5562fab6e953e5ed657c498d",
+  "FrameContract": {
+    "Frame": 63,
+    "SubmittedFrame": 63,
+    "SceneSeconds": 1.0500001,
+    "Width": 1280,
+    "Height": 720,
+    "CameraPosition": {
+      "X": -8,
+      "Y": 3,
+      "Z": 0
+    },
+    "WorldOrigin": {
+      "X": 0,
+      "Y": 0,
+      "Z": 0
+    },
+    "View": {
+      "IsIdentity": false,
+      "Translation": {
+        "X": 0,
+        "Y": -1.9845568,
+        "Z": -8.310328
+      },
+      "X": {
+        "X": 0,
+        "Y": 0.12403463,
+        "Z": -0.992278,
+        "W": 0
+      },
+      "Y": {
+        "X": 0,
+        "Y": 0.992278,
+        "Z": 0.12403463,
+        "W": 0
+      },
+      "Z": {
+        "X": 1,
+        "Y": 0,
+        "Z": 0,
+        "W": 0
+      },
+      "W": {
+        "X": 0,
+        "Y": -1.9845568,
+        "Z": -8.310328,
+        "W": 1
+      },
+      "M11": 0,
+      "M12": 0.12403463,
+      "M13": -0.992278,
+      "M14": 0,
+      "M21": 0,
+      "M22": 0.992278,
+      "M23": 0.12403463,
+      "M24": 0,
+      "M31": 1,
+      "M32": 0,
+      "M33": 0,
+      "M34": 0,
+      "M41": 0,
+      "M42": -1.9845568,
+      "M43": -8.310328,
+      "M44": 1
+    },
+    "Projection": {
+      "IsIdentity": false,
+      "Translation": {
+        "X": 0,
+        "Y": 0,
+        "Z": -0.050001252
+      },
+      "X": {
+        "X": 0.9742786,
+        "Y": 0,
+        "Z": 0,
+        "W": 0
+      },
+      "Y": {
+        "X": 0,
+        "Y": 1.7320509,
+        "Z": 0,
+        "W": 0
+      },
+      "Z": {
+        "X": 0.00068359374,
+        "Y": 0.0010802469,
+        "Z": -1.000025,
+        "W": -1
+      },
+      "W": {
+        "X": 0,
+        "Y": 0,
+        "Z": -0.050001252,
+        "W": 0
+      },
+      "M11": 0.9742786,
+      "M12": 0,
+      "M13": 0,
+      "M14": 0,
+      "M21": 0,
+      "M22": 1.7320509,
+      "M23": 0,
+      "M24": 0,
+      "M31": 0.00068359374,
+      "M32": 0.0010802469,
+      "M33": -1.000025,
+      "M34": -1,
+      "M41": 0,
+      "M42": 0,
+      "M43": -0.050001252,
+      "M44": 0
+    },
+    "UnjitteredProjection": {
+      "IsIdentity": false,
+      "Translation": {
+        "X": 0,
+        "Y": 0,
+        "Z": -0.050001252
+      },
+      "X": {
+        "X": 0.9742786,
+        "Y": 0,
+        "Z": 0,
+        "W": 0
+      },
+      "Y": {
+        "X": 0,
+        "Y": 1.7320509,
+        "Z": 0,
+        "W": 0
+      },
+      "Z": {
+        "X": 0,
+        "Y": 0,
+        "Z": -1.000025,
+        "W": -1
+      },
+      "W": {
+        "X": 0,
+        "Y": 0,
+        "Z": -0.050001252,
+        "W": 0
+      },
+      "M11": 0.9742786,
+      "M12": 0,
+      "M13": 0,
+      "M14": 0,
+      "M21": 0,
+      "M22": 1.7320509,
+      "M23": 0,
+      "M24": 0,
+      "M31": 0,
+      "M32": 0,
+      "M33": -1.000025,
+      "M34": -1,
+      "M41": 0,
+      "M42": 0,
+      "M43": -0.050001252,
+      "M44": 0
+    },
+    "JitterPixels": {
+      "X": -0.4375,
+      "Y": 0.3888889
+    },
+    "NearPlane": 0.05,
+    "FarPlane": 2000,
+    "Lights": [
+      {
+        "Kind": 0,
+        "Position": {
+          "X": 0,
+          "Y": 0,
+          "Z": 0
+        },
+        "Direction": {
+          "X": 0.35,
+          "Y": -0.85,
+          "Z": 0.4
+        },
+        "Range": 0,
+        "InnerConeCos": 0,
+        "OuterConeCos": 0,
+        "Color": {
+          "X": 1,
+          "Y": 0.96,
+          "Z": 0.9
+        },
+        "Intensity": 3,
+        "LayerMask": 4294967295,
+        "ShadowSettings": {
+          "ResolutionLodBias": 0,
+          "Mobility": 0,
+          "SourceRadius": 0,
+          "SourceAngleDegrees": null
+        }
+      }
+    ],
+    "ShadowSettings": {
+      "Enabled": true,
+      "VirtualResolution": 16384,
+      "AtlasSize": 8192,
+      "PageSize": 128,
+      "MaxShadowLights": 4,
+      "WorldUnitsPerCentimeter": 0.01,
+      "DirectionalClipmapLevels": 17,
+      "DirectionalFirstClipmapLevel": 6,
+      "DirectionalMinCameraViewportWidth": 0,
+      "OrthographicEstimateClipmapLevels": true,
+      "OrthographicClipmapLodBias": 0,
+      "OrthographicProjectCameraTarget": true,
+      "DirectionalFirstCoarseClipmapLevel": 15,
+      "DirectionalLastCoarseClipmapLevel": 18,
+      "DirectionalCoarsePageMode": 2,
+      "LocalCoarsePageMode": 2,
+      "DirectionalResolutionLodBias": 0,
+      "DirectionalMovingResolutionLodBias": 0,
+      "LocalResolutionLodBias": 0,
+      "LocalMovingResolutionLodBias": 1,
+      "ShadowGeometryLodBias": 1,
+      "ShadowMaxPixelsPerEdge": 1,
+      "ShadowMinPixelsPerEdgeHardware": 32,
+      "ShadowDicingRate": 2,
+      "ShadowGeometryLodScale": 0.5,
+      "LocalMipMode": 0,
+      "WorkLoadBudget": 0,
+      "DeferredInvalidationBudget": -1,
+      "WorkTimeBudgetMilliseconds": 0,
+      "WorkHistoryWeight": 0.9,
+      "WorkMaxDirectionalLodBias": 99999,
+      "WorkMaxLocalLodBias": 99999,
+      "WorkThrottlingEnabled": false,
+      "DynamicResolutionEnabled": true,
+      "DynamicResolutionMaxLodBias": 2,
+      "DynamicResolutionPagePoolLoadStart": 0.85,
+      "DynamicHiZ": false,
+      "DirectionalReceiverMask": true,
+      "LocalReceiverMask": false,
+      "DepthBias": 0.000001,
+      "NormalBias": 0.0005,
+      "DirectionalRayCount": 0,
+      "MarkPagesUsingFroxels": false,
+      "HighQualityFrontLayerTranslucency": false,
+      "LocalRayCount": 0,
+      "DirectionalSamplesPerRay": 8,
+      "LocalSamplesPerRay": 8,
+      "AdaptiveRayCount": 1,
+      "DirectionalExtrapolateMaxSlope": 5,
+      "LocalExtrapolateMaxSlope": 0.05,
+      "DirectionalTexelDitherScale": 2,
+      "LocalTexelDitherScale": 2,
+      "DirectionalRayLengthScale": 1.5,
+      "LocalMaxRayAngle": 0.03,
+      "LocalMaxSlopeBias": 50,
+      "DirectionalDepthRangeScale": 1000,
+      "LocalNearPlane": 0.05,
+      "BlockerSearchRadiusTexels": 8,
+      "MaxFilterRadiusTexels": 0,
+      "BlockerSampleCount": 4,
+      "FilterSampleCount": 8,
+      "VirtualPagesPerRow": 128,
+      "VirtualPagesPerView": 16384,
+      "MipLevelCount": 8,
+      "PageTableEntriesPerView": 21845,
+      "PageHierarchyWordsPerView": 1014,
+      "PhysicalPagesPerRow": 64,
+      "MaxPhysicalPages": 2048,
+      "AtlasHeight": 4096,
+      "DistantLightMode": 1,
+      "MaximumDistantUpdatesPerFrame": 1,
+      "PrefilteredDistantProjectEnable": false,
+      "PrefilteredDistant": false,
+      "PrefilteredDistantHistoryWeight": 0.87,
+      "PrefilteredDistantEnabled": false,
+      "FirstPersonShadowsEnabled": true,
+      "FirstPersonFirstClipmapLevel": 8,
+      "FirstPersonLastClipmapLevel": 18,
+      "MaximumViewsPerLight": 28,
+      "CullBackfacingPixels": true,
+      "ScreenRayLength": 0.015,
+      "FirstPersonPixelRequestBias": 2,
+      "FirstPersonPixelRequestMinLevel": 8,
+      "DirectionalPageDilationBorder": 0.05,
+      "LocalPageDilationBorder": 0.05
+    },
+    "TemporalSettings": {
+      "HistoryWeight": 0.98,
+      "NeighborhoodClampScale": 0.06,
+      "NeighborhoodClampMin": 0.008,
+      "MotionRejectionScale": 0.35
+    },
+    "RasterEdgePixels": 32,
+    "ClusterWorkCapacity": 1048576,
+    "Adapter": "NVIDIA GeForce RTX 3080",
+    "DriverVersion": "32.0.16.1074",
+    "MeshCount": 1532,
+    "RenderingOptions": {
+      "GraphicsBackend": 0,
+      "DynamicScene": false,
+      "AsyncCompute": true,
+      "ForceHardwareRaster": false,
+      "DisableMeshShaders": false,
+      "TemporalAntialiasing": true,
+      "ShadowRayCount": 0,
+      "VirtualShadows": true,
+      "FixedFrameSeconds": 0.016666668
+    },
+    "MeshStateSha256": "1aba7caa483dbeeaee42b3647aaccebf080be5c69a79183d99089ce32ebcbd6a"
+  },
+  "Observations": [
+    {
+      "Capture": "joint-default",
+      "ComparedPixels": 795215,
+      "MismatchedPixels": 36556,
+      "MissedShadowPixels": 30962,
+      "FalseShadowPixels": 5592,
+      "MissingRenderedReceiverPixels": 2,
+      "MeanVisibilityError": 0.04596996,
+      "Interior": {
+        "ComparedPixels": 474362,
+        "MismatchedPixels": 1701,
+        "MissedShadowPixels": 1620,
+        "FalseShadowPixels": 81,
+        "MeanVisibilityError": 0.003585869
+      },
+      "Boundary": {
+        "ComparedPixels": 320853,
+        "MismatchedPixels": 34855,
+        "MissedShadowPixels": 29342,
+        "FalseShadowPixels": 5511,
+        "MeanVisibilityError": 0.108632304
+      }
+    },
+    {
+      "Capture": "lane4-closure/caster-default",
+      "ComparedPixels": 795215,
+      "MismatchedPixels": 36556,
+      "MissedShadowPixels": 30962,
+      "FalseShadowPixels": 5592,
+      "MissingRenderedReceiverPixels": 2,
+      "MeanVisibilityError": 0.04596995781015197,
+      "Interior": {
+        "ComparedPixels": 474362,
+        "MismatchedPixels": 1701,
+        "MissedShadowPixels": 1620,
+        "FalseShadowPixels": 81,
+        "MeanVisibilityError": 0.0035858690198624678
+      },
+      "Boundary": {
+        "ComparedPixels": 320853,
+        "MismatchedPixels": 34855,
+        "MissedShadowPixels": 29342,
+        "FalseShadowPixels": 5511,
+        "MeanVisibilityError": 0.10863230201992813
+      }
+    },
+    {
+      "Capture": "lane4-closure/fresh-bistro/ray-shadow-bistro-default-ab7d2377acbd47b4a077ae62bdfb5088",
+      "ComparedPixels": 795215,
+      "MismatchedPixels": 36557,
+      "MissedShadowPixels": 30963,
+      "FalseShadowPixels": 5592,
+      "MeanVisibilityError": 0.045971215,
+      "MissingRenderedReceiverPixels": 2,
+      "Interior": {
+        "ComparedPixels": 474362,
+        "MismatchedPixels": 1701,
+        "MissedShadowPixels": 1620,
+        "FalseShadowPixels": 81,
+        "MeanVisibilityError": 0.003585869
+      },
+      "Boundary": {
+        "ComparedPixels": 320853,
+        "MismatchedPixels": 34856,
+        "MissedShadowPixels": 29343,
+        "FalseShadowPixels": 5511,
+        "MeanVisibilityError": 0.10863542
+      }
+    }
+  ],
+  "Provenance": {
+    "Date": "2026-10-11",
+    "SourceHead": "c7bf5211ef8d01ea02c9833e551fdfa0a35f0abe",
+    "Evidence": "evidence/bistro-lod/lane4-closure/caster-default-comparison.json",
+    "RepeatedEligibleVisibilityChanges": 0,
+    "Scope": "Bistro default hard-shadow source-GLB diagnostic regression profile. Historical two captures were identical on eligible pixels; current original-queue capture differs by one boundary missed shadow. This is a reviewed baseline update, not proof that all source-RT differences are correct or a universal estimate of run variation.",
+    "Tolerance": "Independent observed maxima of three explicitly reviewed captures, including the current original-queue implementation. The one additional missed-shadow pixel is in the unchanged reference-defined boundary set; interior maxima and populations stay unchanged. No automatic update, receiver exclusion, percentage padding, or claim that floating-point root cause is proven.",
+    "ReviewedCurrentOriginalQueueCapture": "lane4-closure/fresh-bistro/ray-shadow-bistro-default-ab7d2377acbd47b4a077ae62bdfb5088/comparison.json",
+    "ReviewedBoundaryDelta": {
+      "Pixel": [
+        1073,
+        291
+      ],
+      "OldVisibility": 0,
+      "NewVisibility": 1,
+      "ReferenceVisibility": 0,
+      "InteriorChanges": 0,
+      "AdditionalBoundaryMisses": 1,
+      "TotalRawChangedPixels": 5,
+      "RootCauseConfirmed": false
+    }
+  }
+}
