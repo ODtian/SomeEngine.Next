@@ -1,7 +1,7 @@
 using Game.Assets;
 using Game.Content;
 
-#if !DEBUG
+#if !DEBUG && !GAME_MANAGED_DIAGNOSTICS
 if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
 {
     Console.Error.WriteLine("Build the NativeAOT Release application before launching DefaultGame.");
