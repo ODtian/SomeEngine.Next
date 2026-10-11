@@ -1410,7 +1410,6 @@ internal static class RuntimeApplication
                     using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
                         systems.Update(readScope, graphFrame);
                     renderDevice.OrderTextureUploadsBefore(ref graphFrame, presentation.DrawPass);
-                    graphFrame.ObserveExecution(streamingConsumer);
                     var motion = new MotionFeatureOutput(
                         clusterOutputs.MotionVectors,
                         clusterOutputs.Width,
