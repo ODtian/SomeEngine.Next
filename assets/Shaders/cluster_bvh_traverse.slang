@@ -17,23 +17,46 @@ groupshared uint WorkNodesRemaining;
 groupshared uint WorkViewLanes;
 groupshared bool WorkFinished;
 
-bool ClaimReadyNodes(out uint first, out uint count, out uint viewLanes)
+void ClaimReadyNodes(uint thread)
 {
-    first = NodeIndirectArgs.Load(CLUSTER_NODE_READ);
-    uint end = min(NodeIndirectArgs.Load(CLUSTER_NODE_WRITE), TraversalLevel.MaxNodes);
-    count = 0u;
-    viewLanes = 1u;
-    if (first >= end || TraversalReady[first] == 0u) return false;
-    DeviceMemoryBarrier();
-    viewLanes = ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask));
-    uint parentsPerGroup = CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes;
-    while (count < parentsPerGroup && first + count < end && TraversalReady[first + count] != 0u)
-        count++;
-    if (count == 0u) return false;
-    uint observed;
-    NodeIndirectArgs.InterlockedCompareExchange(CLUSTER_NODE_READ, first, first + count, observed);
-    if (observed != first) { count = 0u; return false; }
-    return true;
+    uint first = 0u;
+    uint available = 0u;
+    uint viewLanes = 1u;
+    if (thread == 0u)
+    {
+        first = NodeIndirectArgs.Load(CLUSTER_NODE_READ);
+        uint end = min(NodeIndirectArgs.Load(CLUSTER_NODE_WRITE), TraversalLevel.MaxNodes);
+        if (first < end && TraversalReady[first] != 0u)
+        {
+            DeviceMemoryBarrier();
+            viewLanes = ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask));
+            available = min(CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes, end - first);
+        }
+    }
+
+    // One wave reads the bounded ready prefix together; only thread zero claims it.
+    uint leader = WaveMaskFirstLane(WaveActiveBallot(thread == 0u));
+    first = WaveReadLaneAt(first, leader);
+    available = WaveReadLaneAt(available, leader);
+    uint4 active = WaveActiveBallot(true);
+    uint index = WaveMaskPrefix(active, WaveGetLaneIndex());
+    bool ready = false;
+    if (index < available) ready = TraversalReady[first + index] != 0u;
+    uint4 unavailable = WaveActiveBallot(!ready);
+    uint count = min(available, WaveMaskBitCount(active));
+    if (any(unavailable != 0u)) count = WaveMaskPrefix(active, WaveMaskFirstLane(unavailable));
+    if (thread == 0u)
+    {
+        WorkNodeStart = first;
+        WorkNodeCount = 0u;
+        WorkViewLanes = viewLanes;
+        if (count != 0u)
+        {
+            uint observed;
+            NodeIndirectArgs.InterlockedCompareExchange(CLUSTER_NODE_READ, first, first + count, observed);
+            if (observed == first) WorkNodeCount = count;
+        }
+    }
 }
 
 bool ClaimReadyClusters(uint nodesRemaining, out uint batch, out uint count)
@@ -52,9 +75,9 @@ void CullPersistentWork(uint thread)
     for (;;)
     {
         GroupMemoryBarrierWithGroupSync();
+        if (WaveActiveAnyTrue(thread == 0u)) ClaimReadyNodes(thread);
         if (thread == 0u)
         {
-            ClaimReadyNodes(WorkNodeStart, WorkNodeCount, WorkViewLanes);
             WorkClusterReady = 0u;
             WorkNodesRemaining = NodeIndirectArgs.Load(CLUSTER_NODE_OUTSTANDING);
             if (WorkNodeCount == 0u && !ClaimReadyClusters(WorkNodesRemaining, WorkClusterBatch, WorkClusterReady))
