@@ -817,12 +817,15 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
         Assert.True(changed.StaticSamplers.IsEmpty);
     }
 
-    [Fact]
-    public void Dxil_constant_buffer_fact_preserves_category_register_and_space()
+    [Theory]
+    [InlineData(3u, 2u)]
+    [InlineData(0u, 0u)]
+    [InlineData(7u, 5u)]
+    public void Dxil_constant_buffer_fact_preserves_category_register_and_space(uint register, uint space)
     {
-        const string source = """
+        string source = $$"""
             struct Values { uint value; };
-            ConstantBuffer<Values> constants : register(b3, space2);
+            ConstantBuffer<Values> constants : register(b{{register}}, space{{space}});
             RWStructuredBuffer<uint> outputValues;
             uint addend;
 
@@ -857,11 +860,17 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             data.GetDescriptorSetDescriptorRangeType(constantSet, constantDescriptorRange));
         VariableLayoutReflection constants = data.GetSubObjectRangeOffset(subObject);
         Assert.Equal(
-            (nuint)3,
+            (nuint)register,
             constants.GetOffset(SlangParameterCategory.ConstantBuffer));
         Assert.Equal(
-            (nuint)2,
+            (nuint)space,
             constants.GetBindingSpace(SlangParameterCategory.ConstantBuffer));
+
+        SlangDescriptorLocation location = SlangDescriptorLocation.FromLayout(
+            globals, data, constantSet, constantDescriptorRange);
+        Assert.Equal(SlangParameterCategory.ConstantBuffer, location.Category);
+        Assert.Equal((ulong)register, location.Register);
+        Assert.Equal((ulong)space, location.Space);
 
         Assert.Equal((nuint)4, GetDataLayout(constants).GetSize(SlangParameterCategory.Uniform));
         using var backend = D3D12GraphicsBackend.Create();
@@ -912,6 +921,38 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
         using MappedBuffer result = backend.Map(readback, MapType.Read, new BufferRange(0, 4));
         result.Invalidate(new BufferRange(0, 4));
         Assert.Equal(42u, BitConverter.ToUInt32(result.Bytes));
+    }
+
+    [Theory]
+    [InlineData(3u, 2u)]
+    [InlineData(0u, 0u)]
+    [InlineData(7u, 5u)]
+    public void Spirv_constant_buffers_keep_the_declared_binding_and_set(uint binding, uint set)
+    {
+        string source = $$"""
+            struct Values { uint value; };
+            ConstantBuffer<Values> constants : register(b{{binding}}, space{{set}});
+            RWStructuredBuffer<uint> outputValues;
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void computeMain() { outputValues[0] = constants.value; }
+            """;
+        D3D12TestShader shader = shaderCompiler.CompileForReflection(
+            "spirv_constant_buffer_address", source,
+            [new("computeMain", SlangStage.Compute)], SlangCompileTarget.Spirv, "spirv_1_5");
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection data = GetDataLayout(globals);
+        nint range = Enumerable.Range(0, checked((int)data.BindingRangeCount))
+            .Select(static index => (nint)index)
+            .Single(index => (data.GetBindingRangeType(index) & SlangBindingType.BaseMask)
+                == SlangBindingType.ConstantBuffer);
+        SlangDescriptorLocation location = SlangDescriptorLocation.FromLayout(globals, data,
+            data.GetBindingRangeDescriptorSetIndex(range),
+            data.GetBindingRangeFirstDescriptorRangeIndex(range));
+        Assert.Equal(SlangParameterCategory.DescriptorTableSlot, location.Category);
+        Assert.Equal((ulong)binding, location.Register);
+        Assert.Equal((ulong)set, location.Space);
     }
 
     [Fact]

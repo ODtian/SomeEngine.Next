@@ -1,5 +1,7 @@
 namespace SomeEngine.Graphics.Vulkan.Tests;
 
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using SlangShaderSharp;
 using Xunit;
 
@@ -187,10 +189,14 @@ public sealed class VulkanAdvancedStateTests(VulkanTestCompiler shaderCompiler)
         Assert.False(rayTracing.ShaderRecordResourceBindings);
     }
 
-    [Fact]
-    public void Khr_bottom_level_acceleration_structure_sizes_builds_and_clones()
+    [Theory]
+    [InlineData(PipelineSync.AccelerationStructureCopy)]
+    [InlineData(PipelineSync.CopyRayTracingAccelerationStructure)]
+    public void Khr_bottom_level_acceleration_structure_sizes_builds_and_clones(PipelineSync copyStage)
     {
-        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        using var messages = new VulkanErrors();
+        using IGraphicsBackend backend = VulkanGraphicsBackend.Create(
+            new VulkanBackendOptions(EnableValidation: true, EnableDebugMessages: true));
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(
             default,
@@ -265,7 +271,7 @@ public sealed class VulkanAdvancedStateTests(VulkanTestCompiler shaderCompiler)
                 BufferRange.Whole));
         backend.Barrier(context, new MemoryBarrier(
             PipelineSync.BuildRayTracingAccelerationStructure,
-            PipelineSync.CopyRayTracingAccelerationStructure,
+            copyStage,
             ResourceAccess.RayTracingAccelerationStructureWrite,
             ResourceAccess.RayTracingAccelerationStructureRead));
         backend.CopyAccelerationStructure(
@@ -276,6 +282,9 @@ public sealed class VulkanAdvancedStateTests(VulkanTestCompiler shaderCompiler)
         using RecordedCommands commands = backend.End(context);
         QueueCompletion completion = backend.Submit(queue, new QueueSubmitDesc([], [], [commands], [], []));
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(5)));
+
+        Assert.Equal(DeviceStatus.Active, device.Status);
+        Assert.True(messages.Errors.IsEmpty, string.Join(Environment.NewLine, messages.Errors));
 
         static ulong Align(ulong value, ulong alignment) =>
             checked((value + alignment - 1) & ~(alignment - 1));
@@ -498,5 +507,26 @@ public sealed class VulkanAdvancedStateTests(VulkanTestCompiler shaderCompiler)
         using MappedBuffer mapped = backend.Map(readback, MapType.Read, BufferRange.Whole);
         mapped.Invalidate(mapped.Range);
         Assert.Equal(73u, BitConverter.ToUInt32(mapped.Bytes));
+    }
+
+    private sealed class VulkanErrors : TraceListener
+    {
+        internal ConcurrentQueue<string> Errors { get; } = new();
+
+        internal VulkanErrors() => Trace.Listeners.Add(this);
+
+        public override void Write(string? message)
+        {
+            if (message?.StartsWith("Vulkan [ErrorBitExt/", StringComparison.Ordinal) == true)
+                Errors.Enqueue(message);
+        }
+
+        public override void WriteLine(string? message) => Write(message);
+
+        protected override void Dispose(bool disposing)
+        {
+            Trace.Listeners.Remove(this);
+            base.Dispose(disposing);
+        }
     }
 }
