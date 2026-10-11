@@ -167,7 +167,7 @@ public sealed partial class VirtualShadowMap : IDisposable
                 new BufferDesc(
                     checked((ulong)settings.MaxPhysicalPages * sizeof(uint)),
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite |
-                        BufferUsages.CopyDestination,
+                        BufferUsages.CopySource | BufferUsages.CopyDestination,
                     "Virtual shadow physical-page owners"),
                 MemoryType.DeviceLocal);
             atlas = _backend.CreateTexture(

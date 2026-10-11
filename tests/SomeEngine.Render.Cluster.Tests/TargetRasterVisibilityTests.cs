@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
@@ -84,10 +86,34 @@ public sealed class TargetRasterVisibilityTests
             }),
             new(15, edit => edit.CaptureLinearImage(value => image = value)),
         ]) { ShadowSettings = shadows };
-        ApplicationResult result = await Application.RunAsync(
-            ["--hardware-adapter", "--graphics-backend", backend, "--hardware-raster",
-             "--hidden-window", "--no-vsync", "--no-debug-ui", "--no-taa", "--fixed-step", "0.016666667"], script);
-        Assert.True(result.Succeeded, result.Error?.ToString());
-        return Assert.IsType<SceneLinearImage>(image);
+        using var messages = new VulkanErrors();
+        Trace.Listeners.Add(messages);
+        try
+        {
+            ApplicationResult result = await Application.RunAsync(
+                ["--hardware-adapter", "--graphics-backend", backend, "--hardware-raster",
+                 backend == "vulkan" ? "--rhi-validation" : "--no-rhi-validation",
+                 "--hidden-window", "--no-vsync", "--no-debug-ui", "--no-taa", "--fixed-step", "0.016666667"], script);
+            Assert.True(result.Succeeded, result.Error?.ToString());
+            Assert.True(messages.Errors.IsEmpty, string.Join(Environment.NewLine, messages.Errors));
+            return Assert.IsType<SceneLinearImage>(image);
+        }
+        finally
+        {
+            Trace.Listeners.Remove(messages);
+        }
+    }
+
+    private sealed class VulkanErrors : TraceListener
+    {
+        internal ConcurrentQueue<string> Errors { get; } = new();
+
+        public override void Write(string? message)
+        {
+            if (message?.StartsWith("Vulkan [ErrorBitExt/", StringComparison.Ordinal) == true)
+                Errors.Enqueue(message);
+        }
+
+        public override void WriteLine(string? message) => Write(message);
     }
 }
